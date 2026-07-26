@@ -7,7 +7,7 @@
 Amadeus brings interruptible voice, an embodied character, desktop scenes,<br>
 and Coding / Browser Agents into one visible, resumable, user-steerable interface.
 
-[简体中文](./README.md) · [English](./README_EN.md) · [Bilibili Demo](https://www.bilibili.com/video/BV1783G6hEYY/) · [Architecture](./assets/architecture-overview.svg)
+[简体中文](./README.md) · [English](./README_EN.md) · [Bilibili Demo](https://www.bilibili.com/video/BV1783G6hEYY/) · [Architecture](./assets/architecture-overview-crt.svg)
 
 [![The Provider workspace in Amadeus, with task state, tool events, streaming results, and the embodied character visible together](./assets/demo/provider-runtime.jpg)](https://www.bilibili.com/video/BV1783G6hEYY/)
 
@@ -84,7 +84,7 @@ The video demonstrates real-time voice, character performance, desktop scenes, B
 
 Click the diagram to open the original 1800 × 1120 version:
 
-[![Amadeus architecture: user surfaces, core runtime, execution Providers, and the Locus integration with Claude Code and Codex CLI](./assets/architecture-overview.svg)](./assets/architecture-overview.svg)
+[![Amadeus architecture: user surfaces, core runtime, execution Providers, and the Locus integration with Claude Code and Codex CLI](./assets/architecture-overview-crt.svg)](./assets/architecture-overview-crt.svg)
 
 ### How Locus relates to Claude Code and Codex
 

@@ -7,7 +7,7 @@
 把可打断语音、角色具身、桌面场景与 Coding / Browser Agent<br>
 放进同一个可见、可恢复、可由用户接管的工作界面。
 
-[简体中文](./README.md) · [English](./README_EN.md) · [B 站演示](https://www.bilibili.com/video/BV1783G6hEYY/) · [架构大图](./assets/architecture-overview.svg)
+[简体中文](./README.md) · [English](./README_EN.md) · [B 站演示](https://www.bilibili.com/video/BV1783G6hEYY/) · [架构大图](./assets/architecture-overview-crt.svg)
 
 [![Amadeus 中的 Provider 工作界面：任务状态、工具事件、流式结果与场景角色同时可见](./assets/demo/provider-runtime.jpg)](https://www.bilibili.com/video/BV1783G6hEYY/)
 
@@ -84,7 +84,7 @@ Amadeus 并不是给聊天窗口加一张立绘，也不是把 IDE 缩小后塞�
 
 点击下图查看 1800 × 1120 原始尺寸：
 
-[![Amadeus 系统架构：用户界面、核心运行时、执行 Provider，以及 Locus 对 Claude Code 和 Codex CLI 的接入关系](./assets/architecture-overview.svg)](./assets/architecture-overview.svg)
+[![Amadeus 系统架构：用户界面、核心运行时、执行 Provider，以及 Locus 对 Claude Code 和 Codex CLI 的接入关系](./assets/architecture-overview-crt.svg)](./assets/architecture-overview-crt.svg)
 
 ### Locus 与 Claude Code / Codex
 
