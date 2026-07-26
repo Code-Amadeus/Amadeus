@@ -19,40 +19,12 @@ Amadeus 是一个以**实时对话、角色具身、桌面感知和任务执行*
 
 - 用户可以随时通过语音或文字与角色交流，并在她说话时自然打断；
 - 角色的语音、字幕、口型、情绪和动画沿同一条时间线同步发生；
-- OpenClaw、Locus、浏览器等执行端在后台完成工作，Amadeus 负责意图理解、状态呈现、权限边界、结果解释和用户接管；
+- OpenClaw、Browser，以及经 Locus 接入的 Claude Code / Codex 等执行端在后台完成工作，Amadeus 负责意图理解、状态呈现、权限边界、结果解释和用户接管；
 - 桌面上的角色与 CRT 工作画布提供轻量反馈，详细控制和审查则留给 Electron 主界面。
 
-项目当前围绕三条相互连接的闭环演进：
+项目当前围绕实时对话、角色具身和任务执行三条相互连接的闭环演进。点击下图可以查看原始尺寸：
 
-```mermaid
-flowchart LR
-    User["用户：语音 / 文字 / 操作"]
-
-    subgraph Dialogue["实时对话闭环"]
-        ASR["ASR / 唤醒 / AEC"]
-        Turn["TurnCoordinator<br/>轮次与打断控制"]
-        LLM["云端 / 本地 LLM"]
-        TTS["流式 TTS / 有序播放"]
-    end
-
-    subgraph Embodiment["角色具身闭环"]
-        Intent["情绪与行为意图"]
-        Graph["SpriteForge 行为图"]
-        Scene["PixiJS / 壁纸场景<br/>字幕、口型、动画"]
-    end
-
-    subgraph Work["任务执行闭环"]
-        Provider["Provider Runtime<br/>OpenClaw / Locus / Browser"]
-        Ledger["持久 Work Ledger"]
-        Canvas["Task Dock / CRT Canvas<br/>进度、Diff、产物、权限"]
-    end
-
-    User --> ASR --> Turn --> LLM --> TTS
-    TTS --> Intent --> Graph --> Scene
-    LLM --> Provider --> Ledger --> Canvas
-    Canvas --> User
-    Ledger --> LLM
-```
+[![Amadeus 系统架构：用户界面、核心运行时、Provider，以及 Locus 对 Claude Code 和 Codex CLI 的接入关系](./assets/architecture-overview.svg)](./assets/architecture-overview.svg)
 
 ## 演示
 
@@ -107,11 +79,26 @@ Coding Agent 和游戏陪玩等方向仍在继续开发，后续将通过新演�
 Amadeus 不要求所有任务都由主对话模型亲自执行。它通过统一的 Provider Runtime 接入不同执行端：
 
 - **OpenClaw**：通用工具调用、搜索和外部任务委派；
-- **Locus**：面向代码仓库、终端、文件修改、测试和 Diff 的本地 Coding Provider；
 - **Browser Provider**：基于 Playwright 的页面打开、搜索、观察、文本点击和连续会话；
+- **Locus / Coding CLI Gateway**：面向代码仓库、终端、文件修改、测试和 Diff 的编码执行入口，在同一份任务合同下选择 **Claude Code CLI** 或 **Codex CLI**；
 - **未来 Provider**：文件、邮件、日历及其他本地或在线服务。
 
 Provider Runtime 统一处理运行、取消、实时事件、语义进度、工具调用、终端输出、产物、权限请求和最终结果。执行端负责完成工作，Amadeus 负责让工作过程可见、可打断、可审查。
+
+#### Locus 与 Claude Code / Codex 的关系
+
+Locus 不是第三个 Coding Agent，也不是另一个模型。它更接近一个面向 Coding CLI 的稳定接入层或 runtime switch：
+
+```text
+Amadeus
+  → Locus Local Job API
+      → runtime.id = claude-code  → Claude Code CLI
+      → runtime.id = codex        → Codex CLI
+```
+
+Amadeus 向 Locus 提交任务、工作目录、模式和 runtime 选择；Locus 负责启动相应 Coding CLI，并吸收不同 CLI 的协议、流式输出、持久化和断线续读差异。返回 Amadeus 的始终是统一的运行状态、工具事件、终端输出、文件产物、Diff 和最终结果。
+
+这种分层类似于 Coding CLI 的切换与适配层，但还额外提供了稳定 Job API、事件序列和任务恢复能力。因此 Amadeus 不需要分别耦合 Claude Code 与 Codex 的内部输出格式。
 
 ### 6. 持久任务控制面
 
