@@ -4,45 +4,69 @@
 
   <defs>
     <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#08111f"/>
-      <stop offset="0.52" stop-color="#101831"/>
-      <stop offset="1" stop-color="#16102c"/>
+      <stop offset="0" stop-color="#020b08"/>
+      <stop offset="0.52" stop-color="#061710"/>
+      <stop offset="1" stop-color="#0b1711"/>
     </linearGradient>
     <linearGradient id="coreGlow" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#142744"/>
-      <stop offset="1" stop-color="#1a1839"/>
+      <stop offset="0" stop-color="#09251b"/>
+      <stop offset="1" stop-color="#0b1b15"/>
     </linearGradient>
+    <radialGradient id="screenGlow" cx="50%" cy="38%" r="72%">
+      <stop offset="0" stop-color="#65f2b1" stop-opacity="0.07"/>
+      <stop offset="0.64" stop-color="#163d2b" stop-opacity="0.025"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.28"/>
+    </radialGradient>
+    <pattern id="grid" width="42" height="42" patternUnits="userSpaceOnUse">
+      <path d="M 42 0 L 0 0 0 42" fill="none" stroke="#78e5ad" stroke-width="1" opacity="0.055"/>
+    </pattern>
+    <pattern id="scanlines" width="6" height="6" patternUnits="userSpaceOnUse">
+      <rect width="6" height="1" fill="#b6f9d5" opacity="0.022"/>
+    </pattern>
     <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000814" flood-opacity="0.45"/>
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000604" flood-opacity="0.62"/>
+    </filter>
+    <filter id="phosphor" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
     </filter>
     <marker id="arrowCyan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#55d9ff"/>
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#61eeb6"/>
     </marker>
     <marker id="arrowPurple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#b89cff"/>
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#d7a95f"/>
     </marker>
     <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#65e6a7"/>
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#82f5b8"/>
     </marker>
     <marker id="arrowOrange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#ffbf69"/>
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#efbd68"/>
     </marker>
     <style>
-      .title { font: 700 44px Inter, "Microsoft YaHei", "PingFang SC", sans-serif; fill: #f7fbff; }
-      .subtitle { font: 400 21px Inter, "Microsoft YaHei", "PingFang SC", sans-serif; fill: #9eb1ce; }
-      .column-title { font: 700 22px Inter, "Microsoft YaHei", "PingFang SC", sans-serif; letter-spacing: 1.5px; fill: #b8c6dd; }
-      .card-title { font: 700 25px Inter, "Microsoft YaHei", "PingFang SC", sans-serif; fill: #f8fbff; }
-      .card-subtitle { font: 600 17px Inter, "Microsoft YaHei", "PingFang SC", sans-serif; fill: #c9d7ea; }
-      .body { font: 400 17px Inter, "Microsoft YaHei", "PingFang SC", sans-serif; fill: #aebfd6; }
-      .small { font: 500 15px Inter, "Microsoft YaHei", "PingFang SC", sans-serif; fill: #90a4bf; }
-      .chip { font: 650 16px Inter, "Microsoft YaHei", "PingFang SC", sans-serif; fill: #ecf5ff; }
-      .flow-label { font: 600 15px Inter, "Microsoft YaHei", "PingFang SC", sans-serif; fill: #c8d8ed; }
+      .title { font: 700 44px "Cascadia Mono", "Microsoft YaHei", "PingFang SC", monospace; letter-spacing: 0.4px; fill: #eafff2; }
+      .subtitle { font: 400 21px Inter, "Microsoft YaHei", "PingFang SC", sans-serif; fill: #91bca5; }
+      .column-title { font: 700 22px "Cascadia Mono", "Microsoft YaHei", "PingFang SC", monospace; letter-spacing: 2px; fill: #83d7aa; }
+      .card-title { font: 700 25px Inter, "Microsoft YaHei", "PingFang SC", sans-serif; fill: #effff5; }
+      .card-subtitle { font: 650 17px "Cascadia Mono", "Microsoft YaHei", "PingFang SC", monospace; fill: #d9f7e6; }
+      .body { font: 400 17px Inter, "Microsoft YaHei", "PingFang SC", sans-serif; fill: #b2d2bf; }
+      .small { font: 500 15px "Cascadia Mono", "Microsoft YaHei", "PingFang SC", monospace; fill: #82aa92; }
+      .chip { font: 650 16px "Cascadia Mono", "Microsoft YaHei", "PingFang SC", monospace; fill: #ddf9e8; }
+      .flow-label { font: 600 15px "Cascadia Mono", "Microsoft YaHei", "PingFang SC", monospace; fill: #a8cdb8; }
     </style>
   </defs>
 
   <rect width="1800" height="1120" rx="34" fill="url(#background)"/>
-  <circle cx="140" cy="60" r="180" fill="#0b80b8" opacity="0.09"/>
-  <circle cx="1640" cy="980" r="260" fill="#8b5cf6" opacity="0.08"/>
+  <rect width="1800" height="1120" rx="34" fill="url(#grid)"/>
+  <rect width="1800" height="1120" rx="34" fill="url(#scanlines)"/>
+  <rect width="1800" height="1120" rx="34" fill="url(#screenGlow)"/>
+  <circle cx="140" cy="60" r="180" fill="#39c98d" opacity="0.055"/>
+  <circle cx="1640" cy="980" r="260" fill="#d39c49" opacity="0.045"/>
+  <circle cx="1730" cy="64" r="6" fill="#79f2b8" opacity="0.9" filter="url(#phosphor)"/>
+  <circle cx="1752" cy="64" r="6" fill="#79f2b8" opacity="0.42"/>
+  <circle cx="1774" cy="64" r="6" fill="#d7a95f" opacity="0.7"/>
 
   <text x="70" y="72" class="title">Amadeus · Local AI OS Interface</text>
   <text x="72" y="108" class="subtitle">对话、角色具身与任务执行共享同一套可打断、可观察、可审查的运行时</text>
@@ -53,69 +77,69 @@
 
   <!-- User and surfaces -->
   <g filter="url(#shadow)">
-    <rect x="70" y="185" width="350" height="126" rx="22" fill="#11243a" stroke="#55d9ff" stroke-width="2"/>
+    <rect x="70" y="185" width="350" height="126" rx="22" fill="#0a281d" stroke="#61eeb6" stroke-width="2"/>
     <text x="100" y="226" class="card-title">用户</text>
     <text x="100" y="258" class="body">语音 · 文字 · 点击 · 授权</text>
     <text x="100" y="286" class="small">随时插话、改变目标或接管任务</text>
   </g>
 
   <g filter="url(#shadow)">
-    <rect x="70" y="350" width="350" height="150" rx="22" fill="#121d32" stroke="#4e6382" stroke-width="1.5"/>
+    <rect x="70" y="350" width="350" height="150" rx="22" fill="#081b14" stroke="#335f4b" stroke-width="1.5"/>
     <text x="100" y="391" class="card-title">Electron Desktop</text>
     <text x="100" y="423" class="body">聊天 · 会话 · 设置 · Provider 控制</text>
     <text x="100" y="451" class="body">详细审查 · 后端状态 · 表达调试</text>
-    <rect x="100" y="466" width="135" height="24" rx="12" fill="#24324c"/>
+    <rect x="100" y="466" width="135" height="24" rx="12" fill="#123b2b"/>
     <text x="116" y="483" class="small">Durable control</text>
   </g>
 
   <g filter="url(#shadow)">
-    <rect x="70" y="535" width="350" height="174" rx="22" fill="#121d32" stroke="#4e6382" stroke-width="1.5"/>
+    <rect x="70" y="535" width="350" height="174" rx="22" fill="#081b14" stroke="#335f4b" stroke-width="1.5"/>
     <text x="100" y="576" class="card-title">Wallpaper / CRT Surface</text>
     <text x="100" y="608" class="body">角色场景 · 字幕 · 口型 · 动画</text>
     <text x="100" y="636" class="body">Task Dock · Diff · 产物 · 权限卡片</text>
     <text x="100" y="664" class="small">轻量呈现，不把原始日志铺满桌面</text>
-    <rect x="100" y="677" width="164" height="24" rx="12" fill="#24324c"/>
+    <rect x="100" y="677" width="164" height="24" rx="12" fill="#123b2b"/>
     <text x="116" y="694" class="small">Ambient interface</text>
   </g>
 
   <!-- Amadeus core boundary -->
-  <rect x="490" y="175" width="650" height="800" rx="30" fill="url(#coreGlow)" stroke="#435170" stroke-width="2"/>
+  <rect x="490" y="175" width="650" height="800" rx="30" fill="url(#coreGlow)" stroke="#2f624a" stroke-width="2"/>
   <text x="520" y="211" class="small">Python / FastAPI / WebSocket / asyncio</text>
 
   <g filter="url(#shadow)">
-    <rect x="520" y="235" width="590" height="158" rx="22" fill="#102b40" stroke="#55d9ff" stroke-width="2"/>
+    <rect x="520" y="235" width="590" height="158" rx="22" fill="#0b2c21" stroke="#61eeb6" stroke-width="2"/>
     <text x="550" y="276" class="card-title">Conversation Runtime</text>
     <text x="550" y="308" class="body">ASR → TurnCoordinator → LLM → 流式 TTS → Playback</text>
     <text x="550" y="337" class="body">唤醒 · 投机端点 · AEC · epoch 打断 · 会话历史</text>
-    <rect x="550" y="354" width="116" height="25" rx="12" fill="#16445c"/>
+    <rect x="550" y="354" width="142" height="25" rx="12" fill="#15513a"/>
     <text x="568" y="372" class="chip">Interruptible</text>
-    <rect x="680" y="354" width="122" height="25" rx="12" fill="#16445c"/>
-    <text x="698" y="372" class="chip">Low latency</text>
+    <rect x="706" y="354" width="130" height="25" rx="12" fill="#15513a"/>
+    <text x="724" y="372" class="chip">Low latency</text>
   </g>
 
   <g filter="url(#shadow)">
-    <rect x="520" y="425" width="590" height="142" rx="22" fill="#251d45" stroke="#b89cff" stroke-width="2"/>
+    <rect x="520" y="425" width="590" height="142" rx="22" fill="#1c2118" stroke="#d7a95f" stroke-width="2"/>
     <text x="550" y="466" class="card-title">Provider Gateway &amp; Runtime</text>
     <text x="550" y="498" class="body">统一 run / cancel / resume 与 Adapter 协议</text>
     <text x="550" y="526" class="body">把不同执行端转换为 ProviderEvent / Result</text>
-    <rect x="550" y="538" width="206" height="24" rx="12" fill="#3b2b68"/>
+    <rect x="550" y="538" width="206" height="24" rx="12" fill="#483820"/>
     <text x="568" y="555" class="small">Provider-neutral boundary</text>
   </g>
 
   <g filter="url(#shadow)">
-    <rect x="520" y="600" width="590" height="182" rx="22" fill="#12352f" stroke="#65e6a7" stroke-width="2"/>
+    <rect x="520" y="600" width="590" height="182" rx="22" fill="#0d3023" stroke="#82f5b8" stroke-width="2"/>
     <text x="550" y="641" class="card-title">Work Control Plane</text>
     <text x="550" y="673" class="body">SQLite Work Ledger · WorkItem / RunAttempt</text>
     <text x="550" y="701" class="body">Artifact · Diff · Completion · Permission · Recovery</text>
     <text x="550" y="729" class="body">Observer 把关键进展转成画布与有节奏的角色叙述</text>
-    <rect x="550" y="743" width="124" height="25" rx="12" fill="#1f5148"/>
+    <rect x="550" y="743" width="124" height="25" rx="12" fill="#184b36"/>
     <text x="568" y="761" class="chip">Persistent</text>
-    <rect x="688" y="743" width="118" height="25" rx="12" fill="#1f5148"/>
+    <rect x="688" y="743" width="118" height="25" rx="12" fill="#184b36"/>
     <text x="706" y="761" class="chip">Auditable</text>
   </g>
 
   <g filter="url(#shadow)">
-    <rect x="520" y="815" width="590" height="126" rx="22" fill="#3a1835" stroke="#ff8bd5" stroke-width="2"/>
+    <rect x="520" y="815" width="590" height="126" rx="22" fill="#272018" stroke="#d7a95f" stroke-width="2"/>
     <text x="550" y="856" class="card-title">Embodiment &amp; Scene Runtime</text>
     <text x="550" y="888" class="body">情绪意图 · SpriteForge 行为图 · PixiJS · 口型 · 字幕</text>
     <text x="550" y="916" class="small">语音实际开播时才触发表情和动画</text>
@@ -123,80 +147,80 @@
 
   <!-- Execution providers -->
   <g filter="url(#shadow)">
-    <rect x="1230" y="185" width="500" height="126" rx="22" fill="#18233a" stroke="#8aa0c4" stroke-width="1.5"/>
+    <rect x="1230" y="185" width="500" height="126" rx="22" fill="#091d16" stroke="#46745d" stroke-width="1.5"/>
     <text x="1260" y="226" class="card-title">OpenClaw</text>
     <text x="1260" y="258" class="body">通用工具、搜索与外部任务委派</text>
     <text x="1260" y="286" class="small">Streaming tools / results</text>
   </g>
 
   <g filter="url(#shadow)">
-    <rect x="1230" y="345" width="500" height="126" rx="22" fill="#18233a" stroke="#8aa0c4" stroke-width="1.5"/>
+    <rect x="1230" y="345" width="500" height="126" rx="22" fill="#091d16" stroke="#46745d" stroke-width="1.5"/>
     <text x="1260" y="386" class="card-title">Browser Provider</text>
     <text x="1260" y="418" class="body">Playwright 页面会话、观察、搜索与交互</text>
     <text x="1260" y="446" class="small">Task-scoped interaction branch</text>
   </g>
 
   <g filter="url(#shadow)">
-    <rect x="1230" y="505" width="500" height="302" rx="24" fill="#3b2918" stroke="#ffbf69" stroke-width="2.5"/>
+    <rect x="1230" y="505" width="500" height="302" rx="24" fill="#2a2112" stroke="#efbd68" stroke-width="2.5"/>
     <text x="1260" y="548" class="card-title">Locus · Coding CLI Gateway</text>
     <text x="1260" y="579" class="body">稳定 Local Job API · runtime 选择 · 持久事件</text>
     <text x="1260" y="607" class="small">吸收不同 Coding CLI 的协议、输出与重连差异</text>
 
-    <rect x="1260" y="635" width="205" height="72" rx="16" fill="#5a3c20" stroke="#ffd194" stroke-width="1.5"/>
+    <rect x="1260" y="635" width="205" height="72" rx="16" fill="#3e311c" stroke="#f1cd8a" stroke-width="1.5"/>
     <text x="1282" y="666" class="card-subtitle">Claude Code CLI</text>
-    <text x="1282" y="691" class="small">runtime.id = claude-code</text>
+    <text x="1282" y="691" class="small" textLength="159" lengthAdjust="spacingAndGlyphs">runtime.id = claude-code</text>
 
-    <rect x="1480" y="635" width="220" height="72" rx="16" fill="#5a3c20" stroke="#ffd194" stroke-width="1.5"/>
+    <rect x="1480" y="635" width="220" height="72" rx="16" fill="#3e311c" stroke="#f1cd8a" stroke-width="1.5"/>
     <text x="1502" y="666" class="card-subtitle">Codex CLI</text>
     <text x="1502" y="691" class="small">runtime.id = codex</text>
 
-    <path d="M 1480 610 L 1362 634" fill="none" stroke="#ffbf69" stroke-width="2.5" marker-end="url(#arrowOrange)"/>
-    <path d="M 1480 610 L 1590 634" fill="none" stroke="#ffbf69" stroke-width="2.5" marker-end="url(#arrowOrange)"/>
+    <path d="M 1480 610 L 1362 634" fill="none" stroke="#efbd68" stroke-width="2.5" marker-end="url(#arrowOrange)"/>
+    <path d="M 1480 610 L 1590 634" fill="none" stroke="#efbd68" stroke-width="2.5" marker-end="url(#arrowOrange)"/>
     <text x="1378" y="744" class="small">同一上层合同，可切换不同编码执行 runtime</text>
-    <rect x="1260" y="760" width="440" height="30" rx="15" fill="#4a331d"/>
-    <text x="1318" y="781" class="small">Locus = coding kernel / CLI switch layer, not another model</text>
+    <rect x="1260" y="760" width="440" height="30" rx="15" fill="#362916"/>
+    <text x="1285" y="781" class="small" textLength="390" lengthAdjust="spacingAndGlyphs">Coding kernel / CLI gateway · not another model</text>
   </g>
 
   <g filter="url(#shadow)">
-    <rect x="1230" y="842" width="500" height="99" rx="22" fill="#18233a" stroke="#566a8c" stroke-width="1.5" stroke-dasharray="8 7"/>
+    <rect x="1230" y="842" width="500" height="99" rx="22" fill="#091d16" stroke="#355c49" stroke-width="1.5" stroke-dasharray="8 7"/>
     <text x="1260" y="881" class="card-title">Future Providers</text>
     <text x="1260" y="913" class="body">文件 · 邮件 · 日历 · 本地服务 · 其他 Coding CLI</text>
   </g>
 
   <!-- Main flows -->
-  <path d="M 420 248 C 460 248, 475 280, 520 280" fill="none" stroke="#55d9ff" stroke-width="4" marker-end="url(#arrowCyan)"/>
+  <path d="M 420 248 C 460 248, 475 280, 520 280" fill="none" stroke="#61eeb6" stroke-width="4" marker-end="url(#arrowCyan)"/>
   <text x="434" y="230" class="flow-label">input</text>
 
-  <path d="M 815 393 L 815 425" fill="none" stroke="#b89cff" stroke-width="3.5" marker-end="url(#arrowPurple)"/>
+  <path d="M 815 393 L 815 425" fill="none" stroke="#d7a95f" stroke-width="3.5" marker-end="url(#arrowPurple)"/>
   <text x="832" y="414" class="flow-label">delegate</text>
 
-  <path d="M 815 567 L 815 600" fill="none" stroke="#65e6a7" stroke-width="3.5" marker-end="url(#arrowGreen)"/>
+  <path d="M 815 567 L 815 600" fill="none" stroke="#82f5b8" stroke-width="3.5" marker-end="url(#arrowGreen)"/>
   <text x="832" y="590" class="flow-label">normalized events</text>
 
-  <path d="M 1035 393 C 1090 410, 1120 435, 1120 485 L 1120 725 C 1120 775, 1090 800, 1035 815" fill="none" stroke="#ff8bd5" stroke-width="3.5" marker-end="url(#arrowPurple)"/>
+  <path d="M 1035 393 C 1090 410, 1120 435, 1120 485 L 1120 725 C 1120 775, 1090 800, 1035 815" fill="none" stroke="#d7a95f" stroke-width="3.5" marker-end="url(#arrowPurple)"/>
   <text x="938" y="800" class="flow-label">speech / emotion</text>
 
-  <path d="M 1110 476 C 1160 420, 1178 250, 1230 250" fill="none" stroke="#b89cff" stroke-width="3.5" marker-end="url(#arrowPurple)"/>
-  <path d="M 1110 490 C 1160 470, 1178 408, 1230 408" fill="none" stroke="#b89cff" stroke-width="3.5" marker-end="url(#arrowPurple)"/>
-  <path d="M 1110 510 C 1160 535, 1178 575, 1230 575" fill="none" stroke="#ffbf69" stroke-width="4" marker-end="url(#arrowOrange)"/>
+  <path d="M 1110 476 C 1160 420, 1178 250, 1230 250" fill="none" stroke="#d7a95f" stroke-width="3.5" marker-end="url(#arrowPurple)"/>
+  <path d="M 1110 490 C 1160 470, 1178 408, 1230 408" fill="none" stroke="#d7a95f" stroke-width="3.5" marker-end="url(#arrowPurple)"/>
+  <path d="M 1110 510 C 1160 535, 1178 575, 1230 575" fill="none" stroke="#efbd68" stroke-width="4" marker-end="url(#arrowOrange)"/>
   <text x="1138" y="548" class="flow-label">Coding job</text>
 
-  <path d="M 1230 280 C 1185 300, 1170 458, 1110 478" fill="none" stroke="#65e6a7" stroke-width="2.5" stroke-dasharray="9 8" marker-end="url(#arrowGreen)" opacity="0.8"/>
-  <path d="M 1230 435 C 1185 445, 1170 490, 1110 500" fill="none" stroke="#65e6a7" stroke-width="2.5" stroke-dasharray="9 8" marker-end="url(#arrowGreen)" opacity="0.8"/>
-  <path d="M 1230 755 C 1175 720, 1170 540, 1110 528" fill="none" stroke="#65e6a7" stroke-width="3.5" stroke-dasharray="10 8" marker-end="url(#arrowGreen)"/>
+  <path d="M 1230 280 C 1185 300, 1170 458, 1110 478" fill="none" stroke="#82f5b8" stroke-width="2.5" stroke-dasharray="9 8" marker-end="url(#arrowGreen)" opacity="0.8"/>
+  <path d="M 1230 435 C 1185 445, 1170 490, 1110 500" fill="none" stroke="#82f5b8" stroke-width="2.5" stroke-dasharray="9 8" marker-end="url(#arrowGreen)" opacity="0.8"/>
+  <path d="M 1230 755 C 1175 720, 1170 540, 1110 528" fill="none" stroke="#82f5b8" stroke-width="3.5" stroke-dasharray="10 8" marker-end="url(#arrowGreen)"/>
   <text x="1146" y="597" class="flow-label">streams / results</text>
 
-  <path d="M 520 690 C 470 690, 465 622, 420 622" fill="none" stroke="#65e6a7" stroke-width="4" marker-end="url(#arrowGreen)"/>
+  <path d="M 520 690 C 470 690, 465 622, 420 622" fill="none" stroke="#82f5b8" stroke-width="4" marker-end="url(#arrowGreen)"/>
   <text x="444" y="647" class="flow-label">work view</text>
 
-  <path d="M 520 878 C 468 850, 455 690, 420 664" fill="none" stroke="#ff8bd5" stroke-width="3.5" marker-end="url(#arrowPurple)"/>
+  <path d="M 520 878 C 468 850, 455 690, 420 664" fill="none" stroke="#d7a95f" stroke-width="3.5" marker-end="url(#arrowPurple)"/>
   <text x="432" y="820" class="flow-label">character scene</text>
 
   <!-- Footer -->
-  <rect x="70" y="1010" width="1660" height="64" rx="20" fill="#0c1528" stroke="#2e3d59" stroke-width="1.5"/>
-  <circle cx="105" cy="1042" r="6" fill="#b89cff"/>
+  <rect x="70" y="1010" width="1660" height="64" rx="20" fill="#06130e" stroke="#29523f" stroke-width="1.5"/>
+  <circle cx="105" cy="1042" r="6" fill="#d7a95f"/>
   <text x="122" y="1048" class="small">实线：控制与委派</text>
-  <line x1="300" y1="1042" x2="350" y2="1042" stroke="#65e6a7" stroke-width="3" stroke-dasharray="9 7"/>
+  <line x1="300" y1="1042" x2="350" y2="1042" stroke="#82f5b8" stroke-width="3" stroke-dasharray="9 7"/>
   <text x="365" y="1048" class="small">虚线：事件、证据与产物回流</text>
   <text x="725" y="1048" class="small">关键边界：Amadeus 不直接解析 Claude Code / Codex CLI 输出；Locus 负责 runtime 适配，Amadeus 只消费稳定事件合同。</text>
 </svg>
