@@ -5,6 +5,8 @@
 # to pass a clean install before that snapshot can become a release lock.
 --extra-index-url https://download.pytorch.org/whl/cu124
 
+# torch builds with the cu124 tag come from the index above; the pyproject
+# local-cu124 extra declares the bare versions that this index satisfies.
 torch==2.5.1+cu124
 torchaudio==2.5.1+cu124
-.[local-cu124]
+.[voice,local-cu124]

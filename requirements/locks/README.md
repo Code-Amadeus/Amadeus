@@ -14,12 +14,10 @@ install and test run are the current open-source release boundary. Per-wheel
 hashes can be added later if Amadeus ships a signed installer or needs a
 stricter supply-chain policy.
 
-Regenerate the supported locks from a Python 3.12 environment containing the
-`lock` extra:
+Regenerate the supported locks from any OS with uv installed:
 
-```powershell
-python -m pip install -e ".[lock]"
-python tools\generate_python_locks.py
+```bash
+uv run tools/generate_python_locks.py   # 或 python3 tools/generate_python_locks.py
 ```
 
 Do not edit generated lock files by hand. After regeneration, run the clean
