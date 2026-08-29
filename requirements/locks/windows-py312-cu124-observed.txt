@@ -4,7 +4,7 @@
 accelerate==1.12.0
 aec-audio-processing==1.0.1
 aiohappyeyeballs==2.6.2
-aiohttp==3.13.5
+aiohttp==3.14.3
 aiosignal==1.4.0
 aliyun-python-sdk-core==2.16.0
 aliyun-python-sdk-kms==2.16.5
