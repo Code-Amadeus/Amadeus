@@ -168,7 +168,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   const [streamingText, setStreamingText] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [input, setInput] = useState('')
-  const [provider, setProvider] = useState('local')
+  const [provider, setProvider] = useState('deepseek')
   const [chatAvatars, setChatAvatars] = useState({ user: '', assistant: '' })
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
   const [projects, setProjects] = useState<ChatProjectSummary[]>([])

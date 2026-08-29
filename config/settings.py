@@ -65,9 +65,9 @@ EVENT_BUS_SLOW_CALLBACK_S = _float("EVENT_BUS_SLOW_CALLBACK_S", 1.0)
 # local operator explicitly enables diagnostic content capture.
 LOG_USER_CONTENT = _bool("LOG_USER_CONTENT", False)
 # ===========================================================================
-# Main Chat LLM routing — local first-release baseline
+# Main Chat LLM routing — remote DeepSeek first-release baseline
 # ===========================================================================
-LLM_PROVIDER = _str("LLM_PROVIDER", "local").strip().lower()
+LLM_PROVIDER = _str("LLM_PROVIDER", "deepseek").strip().lower()
 LLM_PROVIDERS = frozenset(
     {"deepseek", "openai", "gemini", "bedrock", "local", "hybrid", "hybrid2", "hybrid3"}
 )
@@ -112,7 +112,7 @@ AWS_BEDROCK_KEEPALIVE_EXPIRY    = _float("AWS_BEDROCK_KEEPALIVE_EXPIRY", 60.0)
 AWS_BEDROCK_ENDPOINT = f"https://bedrock-runtime.{AWS_BEDROCK_REGION}.amazonaws.com"
 
 # ===========================================================================
-# 本地 LLM（默认 llama.cpp server；LM Studio / Ollama / CLI 为兼容入口）
+# 可选本地 LLM（pure-local profile 内默认 llama.cpp server）
 # ===========================================================================
 _LEGACY_USE_LOCAL_LLM = _bool("USE_LOCAL_LLM", False)
 # Compatibility projection only. LLM_PROVIDER is the sole routing authority.

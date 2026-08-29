@@ -75,6 +75,8 @@ The Electron Voice settings use the same precedence and encrypted-secret store
 as model connections. `ASR_API_KEY` and `TTS_API_KEY` are never returned to the
 renderer. Remote voice backends are selected explicitly; local failures never
 silently upload microphone audio or synthesis text.
+The first-release Main Chat default is remote DeepSeek; local model settings
+apply only when the user explicitly selects the pure-local profile.
 `LOCAL_LLM_TYPE` is editable for the pure `local` provider and synchronizes
 ChatRuntime with the synchronous fallback. `LLM_PROVIDER` is the only chat
 router; the deprecated `USE_LOCAL_LLM` value no longer overrides it.

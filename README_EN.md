@@ -73,7 +73,7 @@ product slice rather than a pixel-exact installation preview.
 | Area | Current public source |
 |---|---|
 | **Interruptible real-time conversation** | Shared microphone lifecycle, independent Wake / Conversation ASR, two-stage endpointing, AEC / barge-in, and interruption across LLM, TTS, and physical playback. |
-| **Local models and voice** | llama.cpp Main Chat; Qwen3-ASR / SenseVoice; embedded GPT-SoVITS v3 streaming synthesis, continuous playback, and mouth values published before matching PCM windows. |
+| **Remote Main Chat and local voice** | DeepSeek V4 Flash Main Chat; Qwen3-ASR / SenseVoice; embedded GPT-SoVITS v3 streaming synthesis, continuous playback, and mouth values published before matching PCM windows. |
 | **Character and desktop presentation** | SpriteForge graph state, a KTX2/PixiJS runtime, subtitle, lip-sync, and emotion timing; Chat, Work, and headless startup remain available without a character pack. |
 | **Provider Runtime** | Browser, Codex App Server / Direct Codex, and optional OpenClaw are current Providers. Claude CLI is a committed future direct Provider. |
 | **Durable Work control plane** | Projects, default Drafts, WorkItems / Attempts, Continue / Retry, restart recovery, permissions, the Artifact Registry, and structured diffs. |
@@ -81,9 +81,9 @@ product slice rather than a pixel-exact installation preview.
 | **Unified settings** | Models, Voice, Providers/MCP, vision, character-pack status, and chat appearance are managed in Electron Settings. |
 
 MCP and Skills remain compatible-Provider capabilities even when they share a
-Host registry; **Main Chat cannot invoke MCP tools directly**. Remote Chat,
-ASR, and TTS are explicit compatibility routes. A local failure never silently
-uploads data or creates a second billable request.
+Host registry; **Main Chat cannot invoke MCP tools directly**. Remote DeepSeek
+is the Main Chat baseline; remote ASR/TTS remain explicit compatibility routes.
+A local voice failure never silently uploads data or creates a second billable request.
 
 ## Architecture
 
@@ -126,11 +126,12 @@ The current schema is `amadeus.auip/v0` and is implemented here. See
 public namespace placeholder; this release does not claim a standalone SDK or
 conformance suite.
 
-## Quick start — CUDA 12.4 local baseline
+## Quick start — remote Chat + CUDA 12.4 local voice baseline
 
-The first release follows the current full local Amadeus experience: Windows
-11, CUDA 12.4, local llama.cpp, Qwen/SenseVoice, and GPT-SoVITS v3.
-CPU/model-less and third-party APIs remain compatibility routes.
+The first release follows the configuration used by the current Amadeus
+runtime: Windows 11, CUDA 12.4, remote DeepSeek Main Chat, local
+Qwen/SenseVoice, and GPT-SoVITS v3. llama.cpp remains an optional local LLM
+profile rather than an installation requirement.
 
 ### Reference hardware
 
@@ -140,9 +141,9 @@ CPU/model-less and third-party APIs remain compatibility routes.
 - CUDA 12.4-compatible NVIDIA GPU, targeting **8 GiB VRAM**
 - **16 GiB system RAM minimum; 32 GiB recommended**
 
-Peak memory depends on LLM size, context, llama.cpp offload, and which voice
-models remain resident. This target describes the intended first-release
-configuration; it cannot guarantee every model combination fits in 8 GiB.
+Peak memory depends on local ASR/TTS models and concurrency. The target describes
+the remote-Chat/local-voice profile. An optional local LLM needs additional
+memory according to its model, quantization, context, and GPU offload.
 
 ### Install
 
@@ -176,17 +177,11 @@ Copy-Item .env.example .env
 
 Replace relevant `<...>` placeholders, then review:
 
-- **Models:** `local`, llama.cpp endpoint/model, and external or managed launch;
+- **Models:** `deepseek`, the official endpoint, `deepseek-v4-flash`, and an API key;
 - **Voice:** Qwen3-ASR / SenseVoice paths, GPT-SoVITS **v3** checkpoints, reference audio/text, microphone, AEC, and barge-in;
 - **General:** optional character-pack status and presentation settings.
 
-For an `external` llama.cpp profile, start it in another terminal:
-
-```powershell
-.\start_llm_server.bat
-```
-
-Then launch Amadeus:
+Launch Amadeus directly:
 
 ```powershell
 .\run_electron_cu124.bat
@@ -196,7 +191,22 @@ Use **Restart backend to apply** after changing startup settings. A
 **Not installed** character pack is healthy and does not disable Chat, Work,
 or headless startup.
 
-## CPU and remote compatibility routes
+## Compatibility routes
+
+### Optional local LLM
+
+To use llama.cpp instead of the remote Main Chat baseline, set
+`LLM_PROVIDER=local`, configure its executable/GGUF or an existing
+OpenAI-compatible endpoint, and start it when needed:
+
+```powershell
+.\start_llm_server.bat
+```
+
+LM Studio, Ollama, llama-cli, and hybrid profiles remain available, but none is
+an automatic fallback after a DeepSeek failure.
+
+### CPU/model-less
 
 CPU/model-less remains available for CI, headless development, and text
 Chat/Work:
@@ -212,13 +222,13 @@ $env:AMADEUS_PYTHON = (Resolve-Path .\.venv\Scripts\python.exe)
 ```
 
 Set `TTS_BACKEND=disabled` and disable Wake for a strict text-only profile.
-OpenAI-compatible remote ASR/TTS and remote Chat Providers can be selected
-explicitly in Settings, but they are not the first-release default experience.
+Remote DeepSeek is the first-release Main Chat profile. OpenAI-compatible remote
+ASR/TTS remain explicit compatibility routes.
 
 ### Optional remote model recommendations
 
-These are recommended profiles for the current APIs. They do not replace the
-local baseline, and Amadeus never switches Providers silently after an endpoint
+These are recommended profiles for the current APIs. They do not change the
+role split above, and Amadeus never switches Providers silently after an endpoint
 failure:
 
 | Responsibility | Recommended profile | Current boundary |
@@ -276,10 +286,11 @@ advanced diagnostics, experimental thresholds, and test-only flags remain in
 
 | Scope | Status |
 |---|---|
-| Windows + CUDA 12.4 local experience | First-release product baseline, following the current working installation |
+| Windows + remote DeepSeek + CUDA 12.4 local voice | First-release product baseline, following the current working installation |
 | 8 GiB VRAM / 16–32 GiB RAM | Target configuration; actual use depends on model selection |
 | CPU/model-less | CI and compatibility path |
-| Remote Chat / ASR / TTS | Explicit compatibility path, never a silent fallback |
+| Remote DeepSeek Main Chat | First-release default profile |
+| Remote ASR / TTS | Explicit compatibility path, never a silent fallback |
 | Electron installer | Not provided yet; launch from source |
 | Docker | Not a supported desktop installation path |
 | SpriteForge character pack | Externally distributed; source starts without it |

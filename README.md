@@ -67,7 +67,7 @@ Amadeus 试图把这些体验连成一个闭环：
 | 能力 | 当前公开源码 |
 |---|---|
 | **可打断实时对话** | 共享麦克风生命周期、独立 Wake / Conversation ASR、两段式端点、AEC / barge-in，以及贯穿 LLM、TTS 与物理播放的中断。 |
-| **本地模型与语音** | llama.cpp Main Chat；Qwen3-ASR / SenseVoice；内嵌 GPT-SoVITS v3 流式合成、连续播放与播放前口型发布。 |
+| **远程主 Chat 与本地语音** | DeepSeek V4 Flash Main Chat；Qwen3-ASR / SenseVoice；内嵌 GPT-SoVITS v3 流式合成、连续播放与播放前口型发布。 |
 | **角色与桌面呈现** | SpriteForge 图状态、KTX2/PixiJS 运行时、字幕、口型和情绪同步；没有角色包时 Chat、Work 与 headless 仍可启动。 |
 | **Provider Runtime** | 当前包括 Browser、Codex App Server / Direct Codex 与可选 OpenClaw；Claude CLI 是已确定的后续 direct Provider。 |
 | **持久 Work 控制面** | Project、默认 Draft、WorkItem / Attempt、Continue / Retry、重启恢复、权限、Artifact Registry 与结构化 Diff。 |
@@ -75,8 +75,8 @@ Amadeus 试图把这些体验连成一个闭环：
 | **统一设置入口** | Models、Voice、Providers/MCP、视觉、角色包状态和聊天外观在 Electron Settings 中集中管理。 |
 
 MCP 与 Skills 即使共用 Host registry，也只授予兼容 Provider；**Main Chat
-不能直接调用 MCP 工具**。远程 Chat / ASR / TTS 是显式兼容路径，不会在本地失败
-后静默上传或产生第二笔计费请求。
+不能直接调用 MCP 工具**。远程 DeepSeek 是主 Chat 基线；远程 ASR/TTS 是显式
+兼容路径，不会在本地语音失败后静默上传或产生第二笔计费请求。
 
 ## 系统架构
 
@@ -116,11 +116,11 @@ verified Work Artifact
 [Code-Amadeus/auip](https://github.com/Code-Amadeus/auip) 目前仍是公共 namespace
 placeholder，本版本不声称已经发布独立 SDK 或 conformance suite。
 
-## 快速开始 — CUDA 12.4 本地基线
+## 快速开始 — 远程 Chat + CUDA 12.4 本地语音基线
 
-第一版以当前本地完整体验为安装基线：Windows 11、CUDA 12.4、本地
-llama.cpp、Qwen/SenseVoice 和 GPT-SoVITS v3。CPU/model-less 与第三方 API
-保留为兼容旁路。
+第一版以当前实际使用方式为安装基线：Windows 11、CUDA 12.4、远程
+DeepSeek 主 Chat、本地 Qwen/SenseVoice 和 GPT-SoVITS v3。llama.cpp 是可选
+本地 LLM profile，不是首发安装前提。
 
 ### 参考硬件
 
@@ -130,8 +130,9 @@ llama.cpp、Qwen/SenseVoice 和 GPT-SoVITS v3。CPU/model-less 与第三方 API
 - CUDA 12.4-compatible NVIDIA GPU，目标 **8 GiB VRAM**
 - **16 GiB 内存起步，32 GiB 推荐**
 
-具体峰值取决于 LLM 大小、context、llama.cpp offload 与同时驻留的语音模型；
-这组数字描述第一版目标配置，不保证任意模型组合都能同时塞入 8 GiB 显存。
+具体峰值取决于本地 ASR/TTS 模型与并发配置；8 GiB / 16–32 GiB
+描述的是远程 Chat + 本地语音配置。选用本地 LLM 时需要按模型、量化、
+context 和 GPU offload 另行评估内存。
 
 ### 安装
 
@@ -161,19 +162,13 @@ cd ..
 Copy-Item .env.example .env
 ```
 
-替换本地 profile 所需的 `<...>` 占位符，并在 Settings 中核对：
+替换远程 Chat + 本地语音 profile 使用的 `<...>` 占位符，并在 Settings 中核对：
 
-- **Models**：`local`、llama.cpp endpoint/model、external 或 managed launch；
+- **Models**：`deepseek`、官方 endpoint、`deepseek-v4-flash` 与 API key；
 - **Voice**：Qwen3-ASR / SenseVoice 路径、GPT-SoVITS **v3** checkpoints、reference audio/text、麦克风、AEC 和 barge-in；
 - **General**：可选角色包状态与呈现设置。
 
-若 llama.cpp 使用 `external` 模式，在单独终端启动：
-
-```powershell
-.\start_llm_server.bat
-```
-
-然后启动 Amadeus：
+直接启动 Amadeus：
 
 ```powershell
 .\run_electron_cu124.bat
@@ -182,7 +177,21 @@ Copy-Item .env.example .env
 启动型设置变更后按 **Restart backend to apply**。角色包显示
 **Not installed** 是健康状态，不影响 Chat、Work 或 headless 启动。
 
-## CPU 与远程兼容路径
+## 兼容路径
+
+### 可选本地 LLM
+
+需要 llama.cpp 时，显式设置 `LLM_PROVIDER=local`，配置 executable / GGUF
+或已存在的 OpenAI-compatible endpoint，再按需启动：
+
+```powershell
+.\start_llm_server.bat
+```
+
+LM Studio、Ollama、llama-cli 和 hybrid profiles 仍保留，但不会在
+DeepSeek 失败后自动切换。
+
+### CPU/model-less
 
 CPU/model-less 用于 CI、headless 开发与文字 Chat/Work：
 
@@ -196,12 +205,12 @@ $env:AMADEUS_PYTHON = (Resolve-Path .\.venv\Scripts\python.exe)
 .\run_electron_utf8.bat
 ```
 
-严格文字模式应设置 `TTS_BACKEND=disabled` 并关闭 Wake。OpenAI-compatible
-远程 ASR/TTS 与远程 Chat provider 可在 Settings 显式选择，但不是第一版本地默认体验。
+严格文字模式应设置 `TTS_BACKEND=disabled` 并关闭 Wake。远程 DeepSeek
+是首发主 Chat profile；OpenAI-compatible 远程 ASR/TTS 仍是显式兼容路径。
 
 ### 可选远程模型建议
 
-下表是面向当前 API 的推荐 profile，不改变本地基线，也不会在端点
+下表是面向当前 API 的推荐 profile，不改变上述角色分工，也不会在端点
 失败后自动切换 provider：
 
 | 职责 | 推荐 profile | 当前边界 |
@@ -255,10 +264,11 @@ Settings 不会回写 `.env`。普通模型、语音、麦克风、Provider/MCP�
 
 | 范围 | 状态 |
 |---|---|
-| Windows + CUDA 12.4 本地体验 | 第一版产品基线；以当前实际运行环境为准 |
+| Windows + 远程 DeepSeek + CUDA 12.4 本地语音 | 第一版产品基线；以当前实际运行环境为准 |
 | 8 GiB VRAM / 16–32 GiB RAM | 目标配置；实际占用由模型组合决定 |
 | CPU/model-less | CI 与兼容路径 |
-| 远程 Chat / ASR / TTS | 显式兼容路径，不静默 fallback |
+| 远程 DeepSeek Main Chat | 第一版默认 profile |
+| 远程 ASR / TTS | 显式兼容路径，不静默 fallback |
 | Electron installer | 尚未提供；当前从源码启动 |
 | Docker | 不是支持的桌面安装路径 |
 | SpriteForge 角色包 | 外部分发；缺包仍可启动 |

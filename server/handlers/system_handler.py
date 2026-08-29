@@ -596,7 +596,7 @@ def _model_connections(
         {
             "id": "local",
             "label": "Pure-local model",
-            "description": "llama.cpp server is the default. LM Studio, Ollama, and llama-cli remain compatibility profiles.",
+            "description": "Within the optional pure-local profile, llama.cpp is the default backend; LM Studio, Ollama, and llama-cli remain compatibility choices.",
             "active": "local" in active_connections,
             "configured": bool(local_status.get("configured")),
             "status": str(local_status.get("state") or "unavailable"),

@@ -702,8 +702,8 @@ export default function SettingsPage({ send, subscribe }: Props) {
             {section === 'models' ? (
               <div className="flex flex-col gap-5">
                 <SettingsGroup title="Main chat model" detail="These controls affect the current backend process. Connection edits below are desktop defaults and require a restart.">
-                  <ComboCard icon="Robot" title="Current model profile" content="The model used by the main conversational role" value={val('llm_provider', 'local')} onChange={value => handleChange('llm_provider', value)} options={['local', 'deepseek', 'openai', 'gemini', 'bedrock', 'hybrid', 'hybrid2', 'hybrid3']} />
-                  <ComboCard icon="CommandPrompt" title="Pure-local Backend Type" content="llama.cpp server is the default; Hybrid uses its dedicated local-head endpoint below" value={val('local_llm_type', 'llama_server')} onChange={value => handleChange('local_llm_type', value)} options={['llama_server', 'lmstudio', 'ollama', 'cli']} disabled={val('llm_provider', 'local') !== 'local'} />
+                  <ComboCard icon="Robot" title="Current model profile" content="The model used by the main conversational role" value={val('llm_provider', 'deepseek')} onChange={value => handleChange('llm_provider', value)} options={['deepseek', 'openai', 'gemini', 'bedrock', 'local', 'hybrid', 'hybrid2', 'hybrid3']} />
+                  <ComboCard icon="CommandPrompt" title="Pure-local Backend Type" content="llama.cpp is the default only inside the optional pure-local profile; Hybrid uses its dedicated local-head endpoint below" value={val('local_llm_type', 'llama_server')} onChange={value => handleChange('local_llm_type', value)} options={['llama_server', 'lmstudio', 'ollama', 'cli']} disabled={val('llm_provider', 'deepseek') !== 'local'} />
                 </SettingsGroup>
                 <SettingsGroup title="Model connections" detail="Secrets are encrypted by the operating system and are never returned to the renderer.">
                   {modelConnections.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} />)}
