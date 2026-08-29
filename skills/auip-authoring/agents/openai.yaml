@@ -1,0 +1,4 @@
+interface:
+  display_name: "AUIP App Authoring"
+  short_description: "Build apps Amadeus can observe and operate"
+  default_prompt: "Use $auip-authoring to make this interactive app observable and safely operable by Amadeus."

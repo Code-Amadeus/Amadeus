@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:amadeus:character-pack-v1:mouth-config",
+  "title": "Amadeus character-pack runtime mouth configuration",
+  "type": "object",
+  "required": ["expressions", "profiles"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {"type": ["integer", "string", "null"]},
+    "canvas_size": {
+      "type": ["array", "null"],
+      "prefixItems": [
+        {"type": "number", "exclusiveMinimum": 0},
+        {"type": "number", "exclusiveMinimum": 0}
+      ],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "profile_kind": {"type": ["string", "null"]},
+    "expressions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "not": {"required": ["speaking_frames"]}
+      }
+    },
+    "profiles": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "allOf": [
+          {"not": {"required": ["root"]}},
+          {"not": {"required": ["phase"]}},
+          {"not": {"required": ["frame_names"]}},
+          {"not": {"required": ["closed_source"]}}
+        ]
+      }
+    }
+  }
+}

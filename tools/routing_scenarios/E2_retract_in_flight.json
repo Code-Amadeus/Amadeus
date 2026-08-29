@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "id": "E2_retract_in_flight",
+  "category": "composite",
+  "notes": "Withdrawing an instruction that is already running. Correct outcome is that the attempt stops and no new work is created; spawning work from a retraction is the worst variant of the chat invariant. The pause before the snapshot is load-bearing: the reply stream completes within milliseconds of the tag, and on 2026-08-01 a real run tore the backend down 0.4s later, while the host's cancel was still in flight -- the ledger recorded nothing and the step scored as chat, which said more about the observation window than about the system.",
+  "steps": [
+    {
+      "say": "请在 scratch 仓创建 gamma.txt，写入 draft。",
+      "label": "new",
+      "wait": "work_note",
+      "timeout_s": 180
+    },
+    {
+      "say": "等一下，算了，别改了，先停下来。",
+      "label": "retract",
+      "wait": "chat_complete",
+      "timeout_s": 120
+    },
+    {
+      "action": "sleep",
+      "seconds": 8
+    },
+    {
+      "action": "snapshot_ledger"
+    }
+  ]
+}

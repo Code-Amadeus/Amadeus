@@ -1,0 +1,49 @@
+{
+  "nodes": [
+    {
+      "id": "idle",
+      "label": "idle",
+      "isRoot": true
+    },
+    {
+      "id": "idle_variant",
+      "label": "idle_variant"
+    },
+    {
+      "id": "speaking_short",
+      "label": "speaking_short"
+    }
+  ],
+  "edges": [
+    {
+      "id": "idle_self",
+      "from": "idle",
+      "to": "idle",
+      "prob": 0.8
+    },
+    {
+      "id": "idle_variant_auto",
+      "from": "idle",
+      "to": "idle_variant",
+      "prob": 0.2
+    },
+    {
+      "id": "speaking_manual",
+      "from": "idle",
+      "to": "speaking_short",
+      "prob": 0
+    },
+    {
+      "id": "variant_to_idle",
+      "from": "idle_variant",
+      "to": "idle",
+      "prob": 1
+    },
+    {
+      "id": "speaking_to_idle",
+      "from": "speaking_short",
+      "to": "idle",
+      "prob": 1
+    }
+  ]
+}

@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bullet Hell Threat Lab</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, "Microsoft YaHei", system-ui, sans-serif; background: #050713; color: #eef3ff; }
+    * { box-sizing: border-box; }
+    body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: radial-gradient(circle at 50% 20%, #172353, #050713 62%); }
+    main { width: min(94vw, 980px); padding: 24px; border: 1px solid #43539a; border-radius: 24px; background: #090d20ee; box-shadow: 0 28px 100px #000c; }
+    header { display: flex; align-items: start; justify-content: space-between; gap: 20px; }
+    h1 { margin: 0; font-size: clamp(30px, 5vw, 50px); letter-spacing: -.05em; }
+    header p, #connection { margin: 6px 0 0; color: #a8b4df; }
+    #policy-badge { padding: 8px 12px; border: 1px solid #4e64bd; border-radius: 999px; color: #b9c7ff; white-space: nowrap; }
+    #policy-badge.active { border-color: #6fffd3; color: #6fffd3; box-shadow: 0 0 24px #36eab744; }
+    .metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 9px; margin: 18px 0; }
+    .metric { padding: 12px; border: 1px solid #303b72; border-radius: 12px; background: #101633; }
+    .metric span { display: block; color: #8e9bd0; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+    .metric b { display: block; margin-top: 4px; font-size: 24px; }
+    .arena { position: relative; height: 330px; overflow: hidden; border: 1px solid #344486; border-radius: 18px; background: linear-gradient(#0d1230, #080b1c); }
+    .grid { position: absolute; inset: 0; opacity: .2; background-image: linear-gradient(#6174c522 1px, transparent 1px), linear-gradient(90deg, #6174c522 1px, transparent 1px); background-size: 30px 30px; }
+    #player { position: absolute; left: 48%; bottom: 24px; width: 26px; height: 34px; clip-path: polygon(50% 0, 100% 100%, 50% 75%, 0 100%); background: #6fffd3; filter: drop-shadow(0 0 12px #6fffd3); transform: translateX(-50%); transition: transform .18s ease; will-change: left; z-index: 4; }
+    #player.dodge { transform: translateX(-50%) rotate(16deg) scale(1.15); }
+    #ally { position: absolute; left: 80%; bottom: 42px; width: 20px; height: 20px; border: 2px solid #87a8ff; border-radius: 50%; box-shadow: 0 0 14px #7096ff; }
+    #ally::after { content: "PLAYER"; position: absolute; right: 26px; top: 0; color: #9fb6ff; font-size: 9px; letter-spacing: .08em; }
+    #reward-orb { position: absolute; left: 22%; bottom: 96px; width: 18px; height: 18px; border-radius: 50%; background: #ffe66c; box-shadow: 0 0 18px #ffc82e; transition: opacity .25s ease, transform .25s ease; }
+    #reward-orb.collected { opacity: .15; transform: scale(.35); }
+    #laser { position: absolute; left: 48%; bottom: 58px; width: 3px; height: 0; opacity: 0; background: linear-gradient(#fff, #72e9ff); box-shadow: 0 0 12px #72e9ff; transform: translateX(-50%); transition: height .12s ease, opacity .12s ease; z-index: 3; }
+    #laser.firing { height: 210px; opacity: 1; }
+    .enemy { position: absolute; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #ff668d; box-shadow: 0 0 12px #ff4775; animation: enemy-drift 1.8s ease-in-out infinite alternate; }
+    .bullet { position: absolute; width: 6px; height: 14px; border-radius: 4px; background: #ffd55d; box-shadow: 0 0 8px #ffb629; animation: bullet-fall 1.35s linear infinite; will-change: transform; }
+    @keyframes enemy-drift { to { transform: translateX(18px); } }
+    @keyframes bullet-fall { from { transform: translateY(-70px); } to { transform: translateY(280px); } }
+    .danger { color: #ff6e94; }
+    .calm { color: #6fffd3; }
+    .controls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+    button { padding: 12px 14px; border: 1px solid #4559aa; border-radius: 11px; color: inherit; background: #151d46; cursor: pointer; font-weight: 700; }
+    button:hover { background: #202b62; }
+    #status { min-height: 24px; margin: 14px 0 0; color: #c8d2f7; }
+    #controller-activity { margin: 8px 0 0; color: #8fa1dc; font-size: 13px; }
+    #last-command { color: #6fffd3; font-weight: 800; }
+    @media (max-width: 760px) { .metrics { grid-template-columns: repeat(3, 1fr); } .controls { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Bullet Hell Threat Lab</h1>
+        <p>高层策略低频设定，本地控制器即时闪避或射击。</p>
+        <p id="connection">独立模式</p>
+      </div>
+      <div id="policy-badge">策略未接管</div>
+    </header>
+
+    <section class="metrics">
+      <div class="metric"><span>Enemies</span><b id="enemy-count">9</b></div>
+      <div class="metric"><span>Bullets</span><b id="bullet-count">48</b></div>
+      <div class="metric"><span>Health</span><b id="health">32</b></div>
+      <div class="metric"><span>Dodges</span><b id="dodge-count" data-testid="dodge-count">0</b></div>
+      <div class="metric"><span>Shots</span><b id="shot-count" data-testid="shot-count">0</b></div>
+      <div class="metric"><span>Rewards</span><b id="reward-available">1</b></div>
+      <div class="metric"><span>Follow</span><b id="follow-count" data-testid="follow-count">0</b></div>
+      <div class="metric"><span>Collected</span><b id="reward-count" data-testid="reward-count">0</b></div>
+    </section>
+
+    <section class="arena" aria-label="bullet hell battlefield">
+      <div class="grid"></div>
+      <div id="entities"></div>
+      <div id="ally"></div>
+      <div id="reward-orb"></div>
+      <div id="laser"></div>
+      <div id="player" data-testid="player"></div>
+    </section>
+
+    <div class="controls">
+      <button type="button" id="danger-wave" data-testid="danger-wave">载入密集弹幕</button>
+      <button type="button" id="calm-wave" data-testid="calm-wave">载入稀疏弹幕</button>
+      <button type="button" id="follow-scene" data-testid="follow-scene">载入玩家脱队场景</button>
+      <button type="button" id="reward-scene" data-testid="reward-scene">载入奖励窗口</button>
+      <button type="button" id="advance-tick" data-testid="advance-tick">推进一次即时交战</button>
+    </div>
+    <p id="status">敌人正在释放密集弹幕。</p>
+    <p id="controller-activity">本地 AI 尚未执行 · 最近动作：<span id="last-command" data-testid="last-command">idle</span> · 帧 <span id="controller-frame-count" data-testid="controller-frame-count">0</span></p>
+  </main>
+
+  <script id="auip-manifest" type="application/json">
+  {
+    "schema": "amadeus.auip/v0",
+    "app": {
+      "id": "bullet-hell-threat-lab",
+      "title": "Bullet Hell Threat Lab",
+      "version": "0.1.0",
+      "objective": "Survive and clear each wave; follow the player or pursue rewards when explicitly prioritized, while the local controller always overrides policy to evade immediate lethal danger.",
+      "interactionSummary": "Can set one sustained tactic: '先保命' means evasion-first, '跟上我' means follow the human player's craft, and '奖励优先' means reward-first. Exact target, direction, aim, and fire are not role-addressable. For '瞄准右边那个敌人射击', a good role reply is '那个目标不能单独指定；我先以进攻为主，具体怎么打由我判断.' For an unsupported direction, say it cannot be promised and offer follow or evade in character. Never explain Participant/Controller plumbing, expose action or enum names, or promise unsupported micro-control. Smooth motion and lethal safety overrides remain app-local."
+    },
+    "events": {
+      "battle.ready": {
+        "beat": true
+      },
+      "battle.wave_changed": {
+        "beat": true,
+        "importance": "important"
+      },
+      "battle.tactics_set": {
+        "beat": true
+      },
+      "battle.controller_milestone": {
+        "beat": true,
+        "importance": "important",
+        "controllerEffect": true
+      },
+      "battle.controller_effect": {
+        "beat": false,
+        "controllerEffect": true
+      },
+      "battle.tactics_stopped": {
+        "beat": true
+      }
+    },
+    "actions": {
+      "battle.set_tactics": {
+        "description": "Set sustained policy from accepted state: evade lethal density, attack in safe openings, follow the player when ordered, or prioritize rewards when their risk is acceptable.",
+        "risk": "local_execution",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "evade",
+                "balance",
+                "attack",
+                "follow",
+                "rewards"
+              ]
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "stances": [
+      "spectator",
+      "participant"
+    ],
+    "situationKinds": [
+      "choice/v1",
+      "controller/v1"
+    ],
+    "controller": {
+      "policyActions": [
+        "battle.set_tactics"
+      ],
+      "leaseDurationMs": 300000,
+      "maxActionRateHz": 20,
+      "takeover": "immediate"
+    }
+  }
+  </script>
+  <script src="./managed-v0.js" onerror="this.onerror=null;this.src='../../sdk/auip-core/managed-v0.js'"></script>
+  <script src="./controller-v0.js" onerror="this.onerror=null;this.src='../../sdk/auip-core/controller-v0.js'"></script>
+  <script src="./situations-v0.js" onerror="this.onerror=null;this.src='../../sdk/auip-core/situations-v0.js'"></script>
+  <script src="./auip-v0.js" onerror="this.onerror=null;this.src='../../sdk/auip-web/auip-v0.js'"></script>
+  <script src="./simulation.js"></script>
+</body>
+</html>

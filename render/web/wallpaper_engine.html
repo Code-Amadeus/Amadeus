@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amadeus Wallpaper Engine Scene</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #05070b url("../assets/images/amadeus_desktop_wallpaper.png") center/cover no-repeat;
+    }
+    #canvas-container {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+    /* 确保 Pixi 创建的 canvas 不遮挡 body 背景图 */
+    #canvas-container canvas {
+      background: transparent !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="canvas-container"></div>
+
+  <script>
+    (function () {
+      window.__DISABLE_RENDERER_SUBTITLE__ = true;
+      window.__DISABLE_RENDERER_WS__ = true;
+      var live2dValue = String(new URLSearchParams(window.location.search).get("live2d") || "").toLowerCase();
+      var live2dCompatEnabled = ["1", "true", "yes", "on"].indexOf(live2dValue) >= 0;
+      var SCRIPTS = [
+        "/render/web/vendor/pixi.min.js",
+        "/render/web/vendor/pixi-basis-ktx2.global.js"
+      ];
+      if (live2dCompatEnabled) {
+        SCRIPTS.push(
+          "/render/web/vendor/live2dcubismcore.min.js",
+          "/render/web/vendor/pixi-live2d-display.cubism4.min.js"
+        );
+      }
+      SCRIPTS.push(
+        "/render/web/renderer.js",
+        "/render/web/crt_canvas_surface.js",
+        "/render/web/wallpaper_scene.js",
+        "/render/web/wallpaper_engine_bridge.js"
+      );
+      var CACHE_BUST = String(Date.now());
+
+      function loadAt(i) {
+        if (i >= SCRIPTS.length) return;
+        var s = document.createElement("script");
+        var src = SCRIPTS[i];
+        if (src.indexOf("/render/web/vendor/") !== 0) {
+          src += "?v=" + CACHE_BUST;
+        }
+        s.src = src;
+        s.onload = function () { loadAt(i + 1); };
+        s.onerror = function () {
+          console.error("[WallpaperEngineLoader] failed to load: " + SCRIPTS[i]);
+          loadAt(i + 1);
+        };
+        document.head.appendChild(s);
+      }
+
+      loadAt(0);
+    })();
+  </script>
+</body>
+</html>

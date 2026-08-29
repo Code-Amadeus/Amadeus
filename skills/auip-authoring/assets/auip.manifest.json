@@ -1,0 +1,20 @@
+{
+  "schema": "amadeus.auip/v0",
+  "app": {
+    "id": "replace-with-app-id",
+    "title": "Replace with app title",
+    "version": "0.1.0",
+    "objective": "Replace with one bounded sentence describing the objective",
+    "interactionSummary": "Describe what the participant can do, with two or three natural user-phrase examples mapped to the app's declared actions"
+  },
+  "events": {
+    "app.ready": {
+      "beat": true
+    }
+  },
+  "situationKinds": [],
+  "actions": {},
+  "stances": [
+    "spectator"
+  ]
+}

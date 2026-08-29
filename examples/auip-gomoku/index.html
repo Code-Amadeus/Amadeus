@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gomoku Nine</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      background: #071312;
+      color: #e5fff7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at 18% 12%, rgba(43, 160, 137, .18), transparent 32rem),
+        linear-gradient(145deg, #081412, #030706 72%);
+    }
+    main {
+      width: min(94vw, 760px);
+      display: grid;
+      grid-template-columns: minmax(300px, 1fr) 220px;
+      gap: 24px;
+      padding: 24px;
+      border: 1px solid rgba(117, 255, 220, .24);
+      border-radius: 22px;
+      background: rgba(4, 15, 13, .86);
+      box-shadow: 0 26px 80px rgba(0, 0, 0, .52);
+    }
+    header { grid-column: 1 / -1; }
+    h1 { margin: 0; font-size: clamp(28px, 5vw, 46px); letter-spacing: -.04em; }
+    header p { margin: 8px 0 0; color: #8bb8ad; }
+    #board {
+      aspect-ratio: 1;
+      display: grid;
+      grid-template-columns: repeat(9, 1fr);
+      padding: 18px;
+      border-radius: 16px;
+      background-color: #c79a52;
+      background-image:
+        linear-gradient(rgba(55, 31, 11, .62) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(55, 31, 11, .62) 1px, transparent 1px);
+      background-size: calc(100% / 8) calc(100% / 8);
+      background-position: 18px 18px;
+      box-shadow: inset 0 0 28px rgba(70, 37, 8, .42);
+    }
+    .cell {
+      appearance: none;
+      border: 0;
+      padding: 0;
+      background: transparent;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+    }
+    .cell::before {
+      content: "";
+      width: 76%;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      transform: scale(.2);
+      opacity: 0;
+      transition: transform 130ms ease, opacity 130ms ease;
+    }
+    .cell.black::before {
+      opacity: 1;
+      transform: scale(1);
+      background: radial-gradient(circle at 34% 28%, #5f6763, #111 52%, #000);
+      box-shadow: 0 5px 8px rgba(0, 0, 0, .42);
+    }
+    .cell.white::before {
+      opacity: 1;
+      transform: scale(1);
+      background: radial-gradient(circle at 34% 28%, #fff, #d9e2dd 56%, #8f9b95);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, .3);
+    }
+    .cell.last::before { outline: 3px solid #45efc5; outline-offset: 2px; }
+    .cell:focus-visible { outline: 3px solid #45efc5; outline-offset: -3px; }
+    aside { display: flex; flex-direction: column; gap: 16px; }
+    .panel {
+      padding: 16px;
+      border: 1px solid rgba(117, 255, 220, .18);
+      border-radius: 14px;
+      background: rgba(8, 28, 24, .72);
+    }
+    .eyebrow { color: #59e5c0; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; }
+    #status { margin: 8px 0 0; font-size: 22px; font-weight: 700; }
+    #connection { margin: 6px 0 0; color: #8bb8ad; font-size: 13px; }
+    dl { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 9px; }
+    dt { color: #8bb8ad; }
+    dd { margin: 0; font-weight: 700; }
+    button.control {
+      appearance: none;
+      width: 100%;
+      border: 1px solid rgba(117, 255, 220, .42);
+      border-radius: 10px;
+      padding: 11px 14px;
+      color: #e5fff7;
+      background: rgba(31, 111, 94, .28);
+      cursor: pointer;
+    }
+    button.control:hover { background: rgba(45, 154, 131, .38); }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .note { margin: 0; color: #8bb8ad; font-size: 13px; line-height: 1.5; }
+    @media (max-width: 680px) {
+      main { grid-template-columns: 1fr; }
+      header { grid-column: 1; }
+      aside { display: grid; grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="eyebrow">AUIP cooperative application</div>
+      <h1>Gomoku Nine</h1>
+      <p>A complete local two-player game. When attached, each participant controls its declared side.</p>
+    </header>
+    <div id="board" role="grid" aria-label="Nine by nine Gomoku board"></div>
+    <aside>
+      <section class="panel">
+        <div class="eyebrow">Match</div>
+        <p id="status">Black to move</p>
+        <p id="connection">Standalone mode</p>
+      </section>
+      <section class="panel">
+        <dl>
+          <dt>Board</dt><dd>9 × 9</dd>
+          <dt>Goal</dt><dd>Five</dd>
+          <dt>Moves</dt><dd id="move-count">0</dd>
+          <dt>Revision</dt><dd id="revision">0</dd>
+        </dl>
+      </section>
+      <button class="control" id="reset" type="button">Reset match</button>
+      <button class="control" id="finish" type="button">Finish series</button>
+      <p class="note">Standalone play alternates both sides locally. AUIP adds observation and typed moves without changing the rules.</p>
+    </aside>
+  </main>
+
+  <script id="auip-manifest" type="application/json">
+  {
+    "schema": "amadeus.auip/v0",
+    "app": {
+      "id": "gomoku-nine",
+      "title": "Gomoku Nine",
+      "version": "0.1.0",
+      "objective": "Create five consecutive stones before the opponent.",
+      "interactionSummary": "Can choose side, place, resign, and choose after a result. Example—participant=white, turn=black, user says '你先下'. Good: choose a stone and say '那我执黑先下.' Atomic game.take_first_move speaks from the resulting black role and places it in one receipt. Bad: say the old white role still governs while promising the first move, ask confirmation, or split side/place. '再来一盘' uses game.restart_round only after a result; while playing, say the round is not over and do nothing. Gomoku has no movement: for '往右走', say it is unsupported. After a result, '结束系列' uses game.finish_experience; '关掉游戏' is Host leave."
+    },
+    "events": {
+      "game.ready": {
+        "beat": true
+      },
+      "game.move_committed": {
+        "beat": true
+      },
+      "game.participant_turn_ready": {
+        "beat": false,
+        "participantOpportunity": true
+      },
+      "game.participants_configured": {
+        "beat": true
+      },
+      "game.reset": {
+        "beat": true
+      },
+      "game.round_finished": {
+        "beat": true,
+        "importance": "important"
+      },
+      "game.experience_finished": {
+        "beat": true,
+        "importance": "important",
+        "terminal": true
+      }
+    },
+    "actions": {
+      "game.place_stone": {
+        "description": "Place at payload x,y only when state.turn equals state.roleBindings.participant, state.winner is none, and state.board.rows[payload.y][payload.x] equals state.board.empty.",
+        "risk": "local_execution",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "integer",
+              "description": "Zero-based board column.",
+              "minimum": 0,
+              "maximum": 8
+            },
+            "y": {
+              "type": "integer",
+              "description": "Zero-based board row.",
+              "minimum": 0,
+              "maximum": 8
+            }
+          },
+          "required": [
+            "x",
+            "y"
+          ],
+          "additionalProperties": false
+        },
+        "preconditions": [
+          {
+            "kind": "action_available/v1",
+            "statePath": "actionAvailability"
+          },
+          {
+            "kind": "grid_cell_empty/v1",
+            "statePath": "board",
+            "xField": "x",
+            "yField": "y"
+          }
+        ]
+      },
+      "game.take_first_move": {
+        "description": "Atomically bind the participant to black and place one black stone at payload x,y. Legal only before any move when state.turn is black, state.roleBindings.participant is not black, state.winner is none, and the target cell is empty.",
+        "risk": "local_execution",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "integer",
+              "description": "Zero-based board column.",
+              "minimum": 0,
+              "maximum": 8
+            },
+            "y": {
+              "type": "integer",
+              "description": "Zero-based board row.",
+              "minimum": 0,
+              "maximum": 8
+            }
+          },
+          "required": [
+            "x",
+            "y"
+          ],
+          "additionalProperties": false
+        },
+        "preconditions": [
+          {
+            "kind": "action_available/v1",
+            "statePath": "actionAvailability"
+          },
+          {
+            "kind": "grid_cell_empty/v1",
+            "statePath": "board",
+            "xField": "x",
+            "yField": "y"
+          }
+        ]
+      },
+      "game.configure_participants": {
+        "description": "Change the role binding before the first move. Use only when payload participantSide differs from state.roleBindings.participant; when the participant already owns the current turn, choose game.place_stone instead.",
+        "risk": "local_execution",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "participantSide": {
+              "type": "string",
+              "description": "The new participant side; it must differ from the current state.roleBindings.participant value.",
+              "enum": [
+                "black",
+                "white"
+              ]
+            }
+          },
+          "required": [
+            "participantSide"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "game.resign": {
+        "description": "Resign the participant's bound side only while state.lifecycle is playing and no winner exists; this ends the current round but keeps the experience open for the post-round choice.",
+        "risk": "local_execution",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      },
+      "game.restart_round": {
+        "description": "Start a new round with the accepted role binding only when state.lifecycle is round_finished.",
+        "risk": "local_execution",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      },
+      "game.finish_experience": {
+        "description": "End this match series only when state.lifecycle is round_finished; this commits the series result but does not claim to close the operating-system window.",
+        "risk": "local_execution",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      }
+    },
+    "stances": [
+      "spectator",
+      "participant"
+    ],
+    "situationKinds": [
+      "action_availability/v1",
+      "grid/v1",
+      "choice/v1"
+    ]
+  }
+  </script>
+  <script src="../../sdk/auip-core/managed-v0.js"></script>
+  <script src="../../sdk/auip-core/situations-v0.js"></script>
+  <script src="../../sdk/auip-web/auip-v0.js"></script>
+  <script src="./game.js"></script>
+</body>
+</html>

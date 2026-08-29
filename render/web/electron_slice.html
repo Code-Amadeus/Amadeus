@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' http://127.0.0.1:* data: blob:; connect-src http://127.0.0.1:*; frame-src 'self' data: blob:;" />
+  <title>Amadeus Slice</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body, #canvas-container {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: transparent;
+    }
+  </style>
+</head>
+<body>
+  <div id="canvas-container"></div>
+  <script src="/render/web/crt_canvas_surface.js"></script>
+  <script src="/render/web/electron_slice_host.js"></script>
+</body>
+</html>

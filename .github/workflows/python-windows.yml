@@ -1,0 +1,78 @@
+name: Python Windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  cpu-model-less:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    env:
+      AMADEUS_E2E_NO_TTS: "1"
+      TTS_DEVICE: "cpu"
+      WORK_WORKTREE_ISOLATION: "0"
+      AUIP_APPSESSION_ROLE_BRANCH_MODE: "b2"
+      AUIP_ACTION_PROVIDER: ""
+      AUIP_ACTION_MODEL: ""
+      AUIP_ACTION_REASONING_EFFORT: "none"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12.10"
+          cache: pip
+          cache-dependency-path: requirements/locks/windows-py312-ci.txt
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.21.1"
+          cache: npm
+          cache-dependency-path: electron/package-lock.json
+
+      - name: Install locked environment
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip==26.2 setuptools==83.0.0 wheel==0.47.0
+          python -m pip install -r requirements-dev.txt
+          python -m pip install --no-deps --no-build-isolation -e .
+
+      - name: Verify environment
+        run: python tools/verify_python_environment.py --profile ci
+
+      - name: Check source and architecture views
+        shell: pwsh
+        run: |
+          python -m ruff check .
+          python tools/architecture/generate_views.py --check
+
+      - name: Audit Python dependencies
+        # Accepted until the already-green suite is qualified on pytest 9.
+        run: >-
+          python -m pip_audit --local --progress-spinner off
+          --ignore-vuln PYSEC-2026-1845
+
+      - name: Run Python suites
+        run: python -X utf8 tools/run_tests.py
+
+      - name: Build Electron model-less smoke target
+        working-directory: electron
+        run: |
+          npm ci
+          npm run build
+
+      - name: Run Electron model-less smoke
+        run: >-
+          python -X utf8 tools\smoke_electron_model_less.py
+          --report-dir build\electron-smoke
+
+      - name: Upload Electron smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: electron-model-less-smoke-${{ github.run_id }}
+          path: build/electron-smoke/**
+          if-no-files-found: ignore

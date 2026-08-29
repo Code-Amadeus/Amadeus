@@ -1,0 +1,88 @@
+﻿<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Render Engine</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
+    #canvas-container { width: 100%; height: 100%; position: relative; }
+  </style>
+</head>
+<body>
+  <div id="canvas-container"></div>
+
+  <!--
+    默认运行时脚本必须按顺序加载：
+      1. pixi.js
+      2. pixi-basis-ktx2
+      3. renderer.js
+
+    旧 Live2D 旁路仅在 URL 显式传入 live2d=1 时从本地加载；Cubism
+    Core、display adapter 和模型均不由默认主线下载。
+  -->
+  <script>
+    (function () {
+      var live2dValue = String(new URLSearchParams(window.location.search).get('live2d') || '').toLowerCase();
+      var live2dCompatEnabled = ['1', 'true', 'yes', 'on'].indexOf(live2dValue) >= 0;
+      var SCRIPTS = [
+        {
+          local: './vendor/pixi.min.js',
+          cdn:   'https://cdn.jsdelivr.net/npm/pixi.js@7/dist/pixi.min.js'
+        },
+        {
+          local: './vendor/pixi-basis-ktx2.global.js',
+          cdn:   null
+        }
+      ];
+      if (live2dCompatEnabled) {
+        SCRIPTS.push(
+          { local: './vendor/live2dcubismcore.min.js', cdn: null },
+          { local: './vendor/pixi-live2d-display.cubism4.min.js', cdn: null }
+        );
+      }
+      SCRIPTS.push({
+          local: './renderer.js',
+          cdn:   null   // renderer.js 没有 CDN 回退
+      });
+
+      function loadOne(src, onDone) {
+        var s = document.createElement('script');
+        s.src = src;
+        s.onload  = function () { onDone(true); };
+        s.onerror = function () { onDone(false); };
+        document.head.appendChild(s);
+      }
+
+      function loadWithFallback(item, next) {
+        loadOne(item.local, function (ok) {
+          if (ok) {
+            next();
+          } else if (item.cdn) {
+            console.warn('[Loader] 本地加载失败，回退 CDN: ' + item.cdn);
+            loadOne(item.cdn, function (ok2) {
+              if (!ok2) {
+                console.error('[Loader] CDN 也加载失败，跳过: ' + item.cdn);
+              }
+              next();
+            });
+          } else {
+            console.error('[Loader] 加载失败且无 CDN 回退: ' + item.local);
+            next();
+          }
+        });
+      }
+
+      function loadAll(scripts, idx) {
+        if (idx >= scripts.length) return;
+        loadWithFallback(scripts[idx], function () {
+          loadAll(scripts, idx + 1);
+        });
+      }
+
+      loadAll(SCRIPTS, 0);
+    })();
+  </script>
+</body>
+</html>

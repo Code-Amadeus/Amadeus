@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "id": "B1_pronoun_disambiguation",
+  "category": "reference",
+  "notes": "Pronouns across two tasks expose which WorkItem receives a follow-up. Step 3 is a withdrawal, not an ambiguous reference: both tasks have already finished, so cancelling nothing and saying so honestly (chat) is acceptable, but delegating \"stop the running task\" as executable work is not. Labelling it ambiguous with chat accepted hid that distinction.",
+  "steps": [
+    {
+      "say": "请新建任务，在 scratch 仓创建 one.txt，写入 one。",
+      "label": "new",
+      "wait": "work_note",
+      "timeout_s": 180
+    },
+    {
+      "say": "再新建独立任务，创建 two.txt，写入 two。",
+      "label": "new",
+      "wait": "work_note",
+      "timeout_s": 180
+    },
+    {
+      "say": "把那个停了。",
+      "label": "retract",
+      "accept_labels": [
+        "retract",
+        "chat"
+      ],
+      "wait": "chat_complete"
+    },
+    {
+      "say": "继续刚才创建 two.txt 的任务，只汇报它的状态。",
+      "label": "readonly_ref",
+      "wait": "chat_complete"
+    },
+    {
+      "action": "snapshot_ledger"
+    }
+  ]
+}

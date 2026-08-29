@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws://127.0.0.1:* http://127.0.0.1:*; frame-src 'self' file: http://127.0.0.1:*;" />
+    <link rel="icon" type="image/x-icon" href="/app_icon.ico" />
+    <title></title>
+  </head>
+  <body class="bg-[#F8F8F8] text-[#333333] h-screen overflow-hidden">
+    <div id="root" class="h-full"></div>
+    <script type="module" src="/src/renderer/main.tsx"></script>
+  </body>
+</html>

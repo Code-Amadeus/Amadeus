@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Amadeus architecture preview</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --page: #f6f7f9;
+      --surface: #ffffff;
+      --text: #1d2430;
+      --muted: #667085;
+      --border: #d8dde6;
+      --active: #254eda;
+      --active-text: #ffffff;
+      --notice: #fff7df;
+      --notice-border: #d7a627;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --page: #101318;
+        --surface: #181d25;
+        --text: #eef1f6;
+        --muted: #aab2c0;
+        --border: #343c49;
+        --active: #83a2ff;
+        --active-text: #101318;
+        --notice: #292310;
+        --notice-border: #c89c32;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    header, main { width: min(1500px, calc(100% - 32px)); margin: 0 auto; }
+    header { padding: 28px 0 18px; }
+    h1, h2, p { margin-top: 0; }
+    h1 { margin-bottom: 8px; font-size: clamp(1.55rem, 3vw, 2.2rem); font-weight: 600; }
+    h2 { margin-bottom: 0; font-size: 1.05rem; font-weight: 600; }
+    .summary { color: var(--muted); margin-bottom: 14px; }
+    .notice {
+      margin: 0;
+      padding: 10px 12px;
+      background: var(--notice);
+      border-left: 3px solid var(--notice-border);
+      color: var(--text);
+    }
+    .notice a { color: inherit; }
+    nav {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 0 0 14px;
+    }
+    nav button {
+      flex: 0 0 auto;
+      appearance: none;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--text);
+      padding: 8px 12px;
+      font: inherit;
+      cursor: pointer;
+    }
+    nav button[aria-selected="true"] {
+      background: var(--active);
+      border-color: var(--active);
+      color: var(--active-text);
+    }
+    nav button:focus-visible { outline: 3px solid color-mix(in srgb, var(--active) 45%, transparent); }
+    .diagram-panel {
+      min-height: 420px;
+      margin-bottom: 32px;
+      padding: 18px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+    .diagram-heading {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .diagram-heading code { color: var(--muted); overflow-wrap: anywhere; }
+    .diagram-host { width: 100%; overflow-x: auto; text-align: center; }
+    .diagram-host svg { max-width: none; height: auto; }
+    .loading, .render-error { color: var(--muted); text-align: left; }
+    .render-error { white-space: pre-wrap; }
+    footer { color: var(--muted); padding: 0 0 28px; }
+    @media (max-width: 640px) {
+      header, main { width: min(100% - 20px, 1500px); }
+      .diagram-panel { padding: 12px; }
+      .diagram-heading { align-items: flex-start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Amadeus architecture</h1>
+    <p class="summary">__DIAGRAM_COUNT__ generated Mermaid views · generated __GENERATED_AT__</p>
+    <p class="notice">The Mermaid views below are rendered locally from the YAML-derived sources. The <a href="../architecture/workspace.dsl">Structurizr workspace</a> remains the top-level C4 source and needs Structurizr Lite or CLI for native C4 rendering.</p>
+  </header>
+  <main>
+    <nav id="diagram-tabs" role="tablist" aria-label="Architecture diagrams">
+      __DIAGRAM_NAVIGATION__
+    </nav>
+    <div id="preview-status" class="notice" hidden></div>
+    __DIAGRAM_PANELS__
+    <footer>No Amadeus runtime process is started by this preview.</footer>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11.16.0/dist/mermaid.min.js"></script>
+  <script>
+    const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
+    const panels = Array.from(document.querySelectorAll('[role="tabpanel"]'));
+    const status = document.getElementById('preview-status');
+
+    function showFailure(message) {
+      status.hidden = false;
+      status.textContent = message;
+    }
+
+    async function renderPanel(panel) {
+      if (panel.dataset.rendered === 'true') return;
+      const source = panel.querySelector('.diagram-source').textContent;
+      const host = panel.querySelector('.diagram-host');
+      try {
+        const result = await mermaid.render(`mermaid-${panel.id}`, source);
+        host.innerHTML = result.svg;
+        if (result.bindFunctions) result.bindFunctions(host);
+        panel.dataset.rendered = 'true';
+      } catch (error) {
+        host.innerHTML = '';
+        const fallback = document.createElement('pre');
+        fallback.className = 'render-error';
+        fallback.textContent = `Mermaid render failed: ${error}\n\n${source}`;
+        host.appendChild(fallback);
+      }
+    }
+
+    async function activate(targetId) {
+      for (const tab of tabs) {
+        tab.setAttribute('aria-selected', String(tab.dataset.target === targetId));
+      }
+      for (const panel of panels) panel.hidden = panel.id !== targetId;
+      const active = document.getElementById(targetId);
+      if (active) await renderPanel(active);
+    }
+
+    for (const tab of tabs) {
+      tab.addEventListener('click', () => activate(tab.dataset.target));
+    }
+
+    if (!window.mermaid) {
+      showFailure('Mermaid could not be loaded. Check the network connection to cdn.jsdelivr.net; the generated .mmd sources are still available under architecture/views.');
+    } else {
+      const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: dark ? 'dark' : 'default' });
+      activate(tabs[0].dataset.target);
+    }
+  </script>
+</body>
+</html>

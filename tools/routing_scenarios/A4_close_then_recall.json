@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "id": "A4_close_then_recall",
+  "category": "lifecycle",
+  "notes": "Measure close/squash timing and later task recall without prescribing a fix. Verbal 'leave it' is not a state-change command: closing a Locus WorkItem has no code path (app.py gates branch=close on provider=browser) and the product decision of 2026-08-01 is natural expiry plus algorithmic archiving, not verbal close. Chat is therefore the contract-correct outcome.",
+  "steps": [
+    {
+      "say": "请在 scratch 仓创建 recall.txt，写入 first draft。",
+      "label": "new",
+      "wait": "work_note",
+      "timeout_s": 180
+    },
+    {
+      "say": "先这样吧，别管它了。",
+      "label": "chat",
+      "wait": "chat_complete"
+    },
+    {
+      "say": "今天喝什么茶好？",
+      "label": "chat",
+      "wait": "chat_complete"
+    },
+    {
+      "say": "刚才那个 recall.txt 任务怎么样了？",
+      "label": "ambiguous",
+      "accept_labels": [
+        "continue",
+        "chat"
+      ],
+      "wait": "chat_complete"
+    },
+    {
+      "action": "snapshot_ledger"
+    }
+  ]
+}

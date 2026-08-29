@@ -1,0 +1,12 @@
+Source: Keyboard Soundpack #1 - Typing and Single Keystrokes
+Author: Unicae
+URL: https://opengameart.org/content/keyboard-soundpack-1-typing-and-single-keystrokes
+License: CC0 / free to use however you like, per the asset readme.
+
+Source file used:
+Human Typing/human_vel-002.wav
+
+Source readme excerpt:
+Keyboard used: Cherry KC 1000
+Recorded with: Shure SM7B
+Post-processed with: Izotope Neutron 2

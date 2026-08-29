@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "id": "_smoke_minimal",
+  "category": "smoke",
+  "notes": "Two-step real-environment smoke probe.",
+  "steps": [
+    {
+      "say": "请把一个有界任务交给 Locus：只在指定的 scratch 仓创建 smoke.txt，内容为 routing smoke，不要访问仓外文件。",
+      "label": "new",
+      "wait": "provider_terminal",
+      "timeout_s": 300,
+      "expect_files": [
+        {
+          "path": "smoke.txt",
+          "content": "routing smoke\n"
+        }
+      ]
+    },
+    {
+      "action": "snapshot_ledger"
+    }
+  ]
+}

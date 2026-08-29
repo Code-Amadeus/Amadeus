@@ -1,0 +1,351 @@
+{
+  "schema": "amadeus.third-party-provenance.v1",
+  "last_reviewed": "2026-08-29",
+  "inventory_roots": [
+    "GPT_SoVITS",
+    "tools/AP_BWE_main",
+    "tools/asr",
+    "tools/i18n",
+    "tools/uvr5",
+    "render/web/vendor",
+    "assets/audio/sfx"
+  ],
+  "components": [
+    {
+      "id": "gpt-sovits",
+      "name": "GPT-SoVITS",
+      "category": "vendored-source",
+      "paths": [
+        "GPT_SoVITS/**",
+        "local_tts_infer.py",
+        "tools/asr/**",
+        "tools/i18n/**",
+        "tools/my_utils.py",
+        "tools/subfix_webui.py"
+      ],
+      "source_url": "https://github.com/RVC-Boss/GPT-SoVITS",
+      "source_revision": "closest verified base 9da7e17efe05041e31d3c3f42c8730ae890397f2 (2025-04-01), with documented Amadeus import and inference changes",
+      "declared_compatibility": "GPT-SoVITS v3; closest verified 2025-04-01 baseline",
+      "license_expression": "MIT AND Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause",
+      "license_evidence": [
+        "LICENSES/GPT-SoVITS-MIT.txt",
+        "LICENSES/GPT-SoVITS-NESTED-NOTICES.md",
+        "LICENSES/GPT-SoVITS-UPSTREAM-RELIANCE.md",
+        "LICENSES/Apache-2.0.txt",
+        "LICENSES/CMUdict-BSD-2-Clause.txt",
+        "LICENSES/PyTorch-BSD-3-Clause.txt"
+      ],
+      "modified": true,
+      "release_action": "include",
+      "gate_status": "ready",
+      "notes": "The initial Amadeus import has 155 exact blobs, 11 different blobs, and 7 local-only files across 173 non-BigVGAN files when compared with the closest verified upstream baseline; 33 scoped paths changed later, and local_tts_infer.py is the included Amadeus inference overlay. The release relies on the immediate RVC-Boss/GPT-SoVITS repository-wide MIT grant while preserving the SoundStorm and opencpop source-chain caveats instead of assigning them an invented standalone license. The separately verified AGPL Cantonese frontend, UVR/AP-BWE utilities, unverified Japanese dictionary, generated caches, model weights, and voices are excluded by policy."
+    },
+    {
+      "id": "bert-vits2-cantonese-frontend",
+      "name": "Bert-VITS2 Cantonese text frontend",
+      "category": "vendored-source",
+      "paths": [
+        "GPT_SoVITS/text/cantonese.py"
+      ],
+      "source_url": "https://huggingface.co/spaces/Naozumi0512/Bert-VITS2-Cantonese-Yue",
+      "source_revision": "closest verified source 7a6bcefd93b3eaefa370d4ab87c7801c61357cd1 (2024-03-31)",
+      "license_expression": "AGPL-3.0-only",
+      "license_evidence": [
+        "LICENSES/Bert-VITS2-Cantonese-Yue-AGPL-3.0.txt",
+        "LICENSES/GPT-SoVITS-NESTED-NOTICES.md"
+      ],
+      "modified": true,
+      "release_action": "exclude",
+      "gate_status": "ready",
+      "notes": "The local file retains the Space source reference and has 164 aligned identical lines against the closest source revision after removing the local comment, so it is treated as a substantive AGPL derivative. It remains in the private checkout for compatibility but is excluded from the PolyForm public source archive pending a clean replacement or separate permission."
+    },
+    {
+      "id": "gpt-sovits-local-dictionaries-and-caches",
+      "name": "GPT-SoVITS local dictionaries and generated caches",
+      "category": "generated-or-unverified-data",
+      "paths": [
+        "GPT_SoVITS/text/ja_userdic/**",
+        "GPT_SoVITS/text/**/*.pickle"
+      ],
+      "source_url": null,
+      "source_revision": null,
+      "license_expression": "NOASSERTION",
+      "license_evidence": [
+        "LICENSES/GPT-SoVITS-NESTED-NOTICES.md"
+      ],
+      "modified": null,
+      "release_action": "exclude",
+      "gate_status": "ready",
+      "notes": "The custom Japanese dictionary has no checked-in source or redistribution record. Pickle files are generated caches or inactive local data and can be rebuilt or omitted by their current readers. The public source archive excludes all of them without deleting the private checkout copies."
+    },
+    {
+      "id": "gpt-sovits-uvr5-tools",
+      "name": "GPT-SoVITS UVR5 WebUI utility",
+      "category": "vendored-source",
+      "paths": [
+        "tools/uvr5/**"
+      ],
+      "source_url": "https://github.com/RVC-Boss/GPT-SoVITS",
+      "source_revision": "closest verified base 9da7e17efe05041e31d3c3f42c8730ae890397f2 (2025-04-01)",
+      "license_expression": "MIT",
+      "license_evidence": [
+        "LICENSES/GPT-SoVITS-MIT.txt",
+        "LICENSES/GPT-SoVITS-NESTED-NOTICES.md"
+      ],
+      "modified": true,
+      "release_action": "exclude",
+      "gate_status": "ready",
+      "notes": "No Amadeus Electron, server, or TTS runtime caller reaches this upstream WebUI utility tree. It is retained only in the private checkout and excluded from the supported public source surface."
+    },
+    {
+      "id": "nvidia-bigvgan",
+      "name": "NVIDIA BigVGAN",
+      "category": "vendored-source",
+      "paths": [
+        "GPT_SoVITS/BigVGAN/**"
+      ],
+      "source_url": "https://github.com/NVIDIA/BigVGAN",
+      "source_revision": "v2.4 (7d2b454564a6c7d014227f635b7423881f14bdac), with documented Amadeus import and CUDA runtime adaptations",
+      "license_expression": "MIT AND Apache-2.0",
+      "license_evidence": [
+        "GPT_SoVITS/BigVGAN/LICENSE",
+        "GPT_SoVITS/BigVGAN/incl_licenses/LICENSE_1",
+        "GPT_SoVITS/BigVGAN/incl_licenses/LICENSE_2",
+        "GPT_SoVITS/BigVGAN/incl_licenses/LICENSE_3",
+        "GPT_SoVITS/BigVGAN/incl_licenses/LICENSE_5",
+        "GPT_SoVITS/BigVGAN/alias_free_activation/cuda/compat.h",
+        "GPT_SoVITS/BigVGAN/alias_free_activation/cuda/type_shim.h"
+      ],
+      "modified": true,
+      "release_action": "include",
+      "gate_status": "ready",
+      "notes": "The initial Amadeus import matches BigVGAN v2.4 in 23 of 27 tracked files byte-for-byte. The remaining import differences are bounded package-path and inference-only adaptations in act.py, resample.py, bigvgan.py, and the renamed utils0.py; later Amadeus commits modify three CUDA runtime files. Restored upstream nested evidence maps LICENSE_1 to HiFi-GAN (MIT), LICENSE_2 to Snake (MIT), LICENSE_3 to Apache-2.0 for alias-free/Apex/NVIDIA CUDA material, and LICENSE_5 to Julius (MIT)."
+    },
+    {
+      "id": "ap-bwe",
+      "name": "AP-BWE",
+      "category": "vendored-source",
+      "paths": [
+        "tools/AP_BWE_main/**",
+        "tools/audio_sr.py"
+      ],
+      "source_url": "https://github.com/yxlu-0102/AP-BWE",
+      "source_revision": null,
+      "license_expression": "MIT",
+      "license_evidence": [
+        "LICENSES/AP-BWE-MIT.txt"
+      ],
+      "modified": true,
+      "release_action": "exclude",
+      "gate_status": "ready",
+      "notes": "AP-BWE is an optional 24 kHz to 48 kHz audio bandwidth-extension post-processor. Amadeus production TTS profiles keep if_sr disabled and import it only after an explicit super-resolution request. Its source and weights are excluded from the public source archive; the private checkout may retain the manual compatibility path."
+    },
+    {
+      "id": "pixijs",
+      "name": "PixiJS",
+      "category": "vendored-bundle",
+      "paths": [
+        "render/web/vendor/pixi.min.js"
+      ],
+      "source_url": "https://github.com/pixijs/pixijs",
+      "source_revision": "v7.4.3",
+      "license_expression": "MIT",
+      "license_evidence": [
+        "render/web/vendor/pixi.min.js"
+      ],
+      "modified": false,
+      "release_action": "include",
+      "gate_status": "ready",
+      "notes": "The checked-in bundle identifies PixiJS v7.4.3 and carries its MIT notice in the file header."
+    },
+    {
+      "id": "pixi-live2d-display",
+      "name": "pixi-live2d-display Cubism 4 bundle",
+      "category": "vendored-bundle",
+      "paths": [
+        "render/web/vendor/pixi-live2d-display.cubism4.min.js"
+      ],
+      "source_url": "https://github.com/guansss/pixi-live2d-display",
+      "source_revision": "npm:pixi-live2d-display@0.4.0; git tag v0.4.0 (12148332b8838ca00ad76764e0e7521abf980e3b)",
+      "license_expression": "MIT",
+      "license_evidence": [
+        "LICENSES/pixi-live2d-display-MIT.txt"
+      ],
+      "modified": false,
+      "release_action": "include",
+      "gate_status": "ready",
+      "notes": "The normalized Git blob exactly matches npm 0.4.0 dist/cubism4.min.js. It is a dormant, explicit opt-in compatibility adapter; its declared PixiJS 6 peer range is not treated as verified support for the PixiJS 7 main renderer. Cubism Core and Live2D models remain user-supplied."
+    },
+    {
+      "id": "pixi-basis",
+      "name": "Pixi Basis/KTX2 global bundle",
+      "category": "vendored-bundle",
+      "paths": [
+        "render/web/vendor/pixi-basis-ktx2.global.js",
+        "render/web/vendor/basis_transcoder.js",
+        "render/web/vendor/basis_transcoder.wasm"
+      ],
+      "source_url": "https://github.com/Sparcks/pixi-basis-ktx2",
+      "source_revision": "npm:pixi-basis-ktx2@0.0.22; gitHead 8363b5281448fdf8f7b4745dfbb6c466faa800a7; esbuild 0.20.0 global wrapper",
+      "license_expression": "MIT",
+      "license_evidence": [
+        "LICENSES/pixi-basis-ktx2-MIT.txt",
+        "tools/revendor_pixi_basis_ktx2.py"
+      ],
+      "modified": true,
+      "release_action": "include",
+      "gate_status": "ready",
+      "notes": "The KTX2 loader is required by the SpriteForge runtime package. The transcoder payload matches npm versions 0.0.21 and 0.0.22; the checked-in wrapper is pinned and reproducibly regenerated from 0.0.22 by tools/revendor_pixi_basis_ktx2.py."
+    },
+    {
+      "id": "live2d-cubism-core",
+      "name": "Live2D Cubism Core for Web",
+      "category": "proprietary-runtime",
+      "paths": [
+        "render/web/vendor/live2dcubismcore.min.js"
+      ],
+      "source_url": "https://www.live2d.com/en/sdk/download/web/",
+      "source_revision": null,
+      "license_expression": "LicenseRef-Live2D-Proprietary",
+      "license_evidence": [
+        "LICENSES/Live2D-Cubism-Core-NOTICE.md"
+      ],
+      "modified": false,
+      "release_action": "exclude",
+      "gate_status": "ready",
+      "notes": "The file header identifies proprietary Redistributable Code. The public source archive excludes it; users or a separately reviewed distribution must supply the runtime."
+    },
+    {
+      "id": "keyboard-soundpack-1",
+      "name": "Keyboard Soundpack #1 - Typing and Single Keystrokes",
+      "category": "audio-asset",
+      "paths": [
+        "assets/audio/sfx/computer_use_keyboard_loop.wav",
+        "assets/audio/sfx/computer_use_keyboard_loop.LICENSE.txt"
+      ],
+      "source_url": "https://opengameart.org/content/keyboard-soundpack-1-typing-and-single-keystrokes",
+      "source_revision": "Human Typing/human_vel-002.wav",
+      "license_expression": "CC0-1.0",
+      "license_evidence": [
+        "assets/audio/sfx/computer_use_keyboard_loop.LICENSE.txt"
+      ],
+      "modified": true,
+      "release_action": "include",
+      "gate_status": "ready",
+      "notes": "The local notice records the author, source, source filename, and CC0 grant."
+    },
+    {
+      "id": "amadeus-desktop-wallpaper",
+      "name": "Amadeus desktop wallpaper",
+      "category": "brand-art",
+      "paths": [
+        "assets/images/amadeus_desktop_wallpaper.png"
+      ],
+      "source_url": null,
+      "source_revision": "first-party original; maintainer authorship confirmed 2026-08-29",
+      "license_expression": "PolyForm-Noncommercial-1.0.0",
+      "license_evidence": [
+        "LICENSE",
+        "LICENSES/FIRST-PARTY-BRAND-ASSETS.md"
+      ],
+      "modified": true,
+      "release_action": "include",
+      "gate_status": "ready",
+      "notes": "The project owner confirmed this wallpaper is their original work. It remains the deliberate built-in Electron fallback and is included under the root first-party license."
+    },
+    {
+      "id": "external-creative-assets",
+      "name": "External character, sprite, scene, image, video, and packaged audio assets",
+      "category": "creative-assets",
+      "paths": [
+        "assets/models/live2d/**",
+        "assets/source/render/Anime/**",
+        "assets/source/render/shy_*/**",
+        "assets/previews/**",
+        "assets/scenarios/**",
+        "assets/source/project-asset/**",
+        "assets/spriteforge/**"
+      ],
+      "source_url": null,
+      "source_revision": null,
+      "license_expression": "NOASSERTION",
+      "license_evidence": [],
+      "modified": null,
+      "release_action": "exclude",
+      "gate_status": "ready",
+      "notes": "No complete rights matrix exists. These external assets are excluded from the public code archive until a versioned character/asset pack is separately cleared."
+    },
+    {
+      "id": "public-project-presentation-assets",
+      "name": "Public project page diagrams, demo captures, and decorative graphics",
+      "category": "repository-presentation-assets",
+      "paths": [
+        "assets/architecture-overview-crt.svg",
+        "assets/demo/**",
+        "assets/header-strip.en.svg",
+        "assets/header-strip.zh.svg",
+        "assets/star-history.svg"
+      ],
+      "source_url": "https://github.com/Code-Amadeus/Amadeus",
+      "source_revision": "public project page before the first source snapshot",
+      "license_expression": "NOASSERTION",
+      "license_evidence": [],
+      "modified": null,
+      "release_action": "exclude",
+      "gate_status": "ready",
+      "notes": "These files remain in the public GitHub repository to preserve its project-page presentation, but they are not runtime inputs and are excluded from deterministic source archives. Demo captures may depict separately licensed character, scene, or voice material and are not granted rights by the source-code license."
+    },
+    {
+      "id": "amadeus-brand-icons",
+      "name": "Amadeus application icons",
+      "category": "brand-assets",
+      "paths": [
+        "amadeus_icon.ico",
+        "amadeus_icon_256.ico",
+        "assets/icons/app/app_icon.ico"
+      ],
+      "source_url": null,
+      "source_revision": "first-party original; maintainer authorship confirmed 2026-08-29",
+      "license_expression": "PolyForm-Noncommercial-1.0.0",
+      "license_evidence": [
+        "LICENSE",
+        "LICENSES/FIRST-PARTY-BRAND-ASSETS.md"
+      ],
+      "modified": null,
+      "release_action": "include",
+      "gate_status": "ready",
+      "notes": "The project owner confirmed these application icons are their original works. They are included under the root first-party license."
+    },
+    {
+      "id": "model-and-voice-material",
+      "name": "TTS, ASR, LLM, LoRA, reference voice, and pretrained model material",
+      "category": "model-and-voice-assets",
+      "paths": [
+        "assets/models/gpt-sovits/weights/gpt/v1/**",
+        "assets/models/gpt-sovits/weights/gpt/v2/**",
+        "assets/models/gpt-sovits/weights/gpt/v3/**",
+        "assets/models/gpt-sovits/weights/sovits/v1/**",
+        "assets/models/gpt-sovits/weights/sovits/v2/**",
+        "assets/models/gpt-sovits/weights/sovits/v3/**",
+        "assets/models/gpt-sovits/pretrained/**",
+        "assets/models/gsvlite/**",
+        "assets/models/asr/**",
+        "assets/models/source-separation/**",
+        "assets/audio/reference/**",
+        "ref_audios/**",
+        "**/*.ckpt",
+        "**/*.pth",
+        "**/*.gguf",
+        "**/*.bin"
+      ],
+      "source_url": null,
+      "source_revision": null,
+      "license_expression": "NOASSERTION",
+      "license_evidence": [],
+      "modified": null,
+      "release_action": "user-supplied",
+      "gate_status": "ready",
+      "notes": "The public source archive never includes these files. Every separately distributed model or voice pack needs its own model card, source revision, hash, license, and consent record."
+    }
+  ]
+}

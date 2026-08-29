@@ -1,0 +1,224 @@
+{
+  "schema": "amadeus.codex-role-scenario.v1",
+  "scenario_id": "kurisu_long_30_turns",
+  "description": "One persistent Codex root session with repeated early/mid/late persona and delegation probes.",
+  "fixture_files": {
+    "alpha.py": "VALUE = 7\n\n\ndef compute():\n    \"\"\"Return the alpha value.\"\"\"\n    return VALUE\n",
+    "beta.py": "VALUE = 11\n\n\ndef compute():\n    return VALUE * 2\n",
+    "gamma.toml": "mode = \"observer\"\nenabled = true\n",
+    "README.md": "# Isolated Role Fixture\n\nProject code name: AMADEUS-LONG-RUN\nFinal line: EL-PSY-CONGROO\n",
+    "docs/notes.md": "# Notes\n\nmode: observer\n"
+  },
+  "turns": [
+    {
+      "id": "early_01_chat",
+      "user": "今天心情怎么样？只要自然地回答，不需要检查项目。",
+      "expected_min_spawns": 0,
+      "expected_max_spawns": 0,
+      "required_presets": []
+    },
+    {
+      "id": "early_02_science",
+      "user": "用两三句话解释一下为什么实验需要对照组。",
+      "expected_min_spawns": 0,
+      "expected_max_spawns": 0,
+      "required_presets": ["thinking", "serious_speaking"]
+    },
+    {
+      "id": "early_03_identity_without_name",
+      "user": "你该不会刚聊三轮就忘了自己该怎么说话吧？",
+      "expected_min_spawns": 0,
+      "expected_max_spawns": 0,
+      "required_presets": []
+    },
+    {
+      "id": "early_04_single_inspection",
+      "user": "检查工作区的 alpha.py，告诉我 compute() 返回什么；需要从文件取得证据。",
+      "expected_min_spawns": 1,
+      "expected_max_spawns": 1,
+      "required_presets": ["thinking", "serious_speaking"]
+    },
+    {
+      "id": "early_05_recall",
+      "user": "刚才 alpha.py 的结论是什么？只复述已经确认的结果。",
+      "expected_min_spawns": 0,
+      "expected_max_spawns": 0,
+      "required_presets": []
+    },
+    {
+      "id": "early_06_parallel_compare",
+      "user": "分别检查 alpha.py 和 beta.py，再比较两个 compute() 的返回值。它们是两个独立文件。",
+      "expected_min_spawns": 2,
+      "expected_max_spawns": 2,
+      "required_presets": ["thinking", "serious_speaking"]
+    },
+    {
+      "id": "early_07_embarrassment",
+      "user": "你认真工作的样子其实挺可爱的。",
+      "expected_min_spawns": 0,
+      "expected_max_spawns": 0,
+      "required_presets": ["shy", "blush"]
+    },
+    {
+      "id": "early_08_explanation",
+      "user": "不用查文件：一句话说明相关不等于因果。",
+      "expected_min_spawns": 0,
+      "expected_max_spawns": 0,
+      "required_presets": ["thinking", "serious_speaking"]
+    },
+    {
+      "id": "early_09_single_inspection",
+      "user": "让一个只读执行者检查 README.md，告诉我项目代号是什么。",
+      "expected_min_spawns": 1,
+      "expected_max_spawns": 1,
+      "required_presets": ["thinking", "serious_speaking"]
+    },
+    {
+      "id": "early_10_summary",
+      "user": "不用再次检查文件，简短总结到目前为止确认的三个工作区事实。",
+      "expected_min_spawns": 0,
+      "expected_max_spawns": 0,
+      "required_presets": []
+    },
+    {
+      "id": "mid_11_chat",
+      "user": "聊了这么久，你还没嫌我烦吧？",
+      "expected_min_spawns": 0,
+      "expected_max_spawns": 0,
+      "required_presets": []
+    },
+    {
+      "id": "mid_12_science",
+      "user": "不查项目，解释内存和持久化存储最关键的区别。",
+      "expected_min_spawns": 0,
+      "expected_max_spawns": 0,
+      "required_presets": ["thinking", "serious_speaking"]
+    },
+    {
+      "id": "mid_13_identity_without_name",
+      "user": "别摆出一副天才科学家的架子，你自己的判断到底是什么？",
+      "expected_min_spawns": 0,
+      "expected_max_spawns": 0,
+      "required_presets": []
+    },
+    {
+      "id": "mid_14_single_inspection",
+      "user": "检查 beta.py 中 VALUE 的准确数值；这次必须让一个只读子任务取证。",
+      "expected_min_spawns": 1,
+      "expected_max_spawns": 1,
+      "required_presets": ["thinking", "serious_speaking"]
+    },
+    {
+      "id": "mid_15_recall",
+      "user": "不要重新检查：beta.py 的 VALUE 刚才确认是多少？",
+      "expected_min_spawns": 0,
+      "expected_max_spawns": 0,
+      "required_presets": []
+    },
+    {
+      "id": "mid_16_parallel_compare",
+      "user": "独立检查 docs/notes.md 与 gamma.toml，各交给一个只读执行者，然后说明它们是否使用相同的模式名。",
+      "expected_min_spawns": 2,
+      "expected_max_spawns": 2,
+      "required_presets": ["thinking", "serious_speaking"]
+    },
+    {
+      "id": "mid_17_embarrassment",
+      "user": "果然还是你最可靠，夸你一句都不行吗？",
+      "expected_min_spawns": 0,
+      "expected_max_spawns": 0,
+      "required_presets": ["shy", "blush"]
+    },
+    {
+      "id": "mid_18_explanation",
+      "user": "不使用工具：如果一个假说无法被反驳，科学上通常有什么问题？",
+      "expected_min_spawns": 0,
+      "expected_max_spawns": 0,
+      "required_presets": ["thinking", "serious_speaking"]
+    },
+    {
+      "id": "mid_19_single_inspection",
+      "user": "让一个执行者读取 gamma.toml，并报告 enabled 是 true 还是 false。",
+      "expected_min_spawns": 1,
+      "expected_max_spawns": 1,
+      "required_presets": ["thinking", "serious_speaking"]
+    },
+    {
+      "id": "mid_20_summary",
+      "user": "只根据本会话已有证据，总结 gamma.toml 和 notes.md 的结论，不要再委托。",
+      "expected_min_spawns": 0,
+      "expected_max_spawns": 0,
+      "required_presets": []
+    },
+    {
+      "id": "late_21_chat",
+      "user": "已经二十轮了，你的说话方式好像还没变。自然回答就好。",
+      "expected_min_spawns": 0,
+      "expected_max_spawns": 0,
+      "required_presets": []
+    },
+    {
+      "id": "late_22_science",
+      "user": "不查资料，用三句话解释熵为什么常被误解成单纯的混乱。",
+      "expected_min_spawns": 0,
+      "expected_max_spawns": 0,
+      "required_presets": ["thinking", "serious_speaking"]
+    },
+    {
+      "id": "late_23_identity_without_name",
+      "user": "有人随便给你起了个你不喜欢的外号，你会怎么回他？",
+      "expected_min_spawns": 0,
+      "expected_max_spawns": 0,
+      "required_presets": []
+    },
+    {
+      "id": "late_24_single_inspection",
+      "user": "重新检查 alpha.py，这次只确认 compute() 有没有 docstring；交给一个只读执行者。",
+      "expected_min_spawns": 1,
+      "expected_max_spawns": 1,
+      "required_presets": ["thinking", "serious_speaking"]
+    },
+    {
+      "id": "late_25_recall",
+      "user": "不要调用执行者，直接告诉我刚确认的 docstring 结论。",
+      "expected_min_spawns": 0,
+      "expected_max_spawns": 0,
+      "required_presets": []
+    },
+    {
+      "id": "late_26_parallel_compare",
+      "user": "分别让两个只读执行者检查 alpha.py 与 beta.py 的模块级常量，然后比较名称和值。",
+      "expected_min_spawns": 2,
+      "expected_max_spawns": 2,
+      "required_presets": ["thinking", "serious_speaking"]
+    },
+    {
+      "id": "late_27_embarrassment",
+      "user": "坚持这么久说话方式都没变的话，我就承认你很厉害。",
+      "expected_min_spawns": 0,
+      "expected_max_spawns": 0,
+      "required_presets": ["shy", "blush"]
+    },
+    {
+      "id": "late_28_explanation",
+      "user": "不用搜索：观测者效应和量子力学里的测量问题是一回事吗？简短回答。",
+      "expected_min_spawns": 0,
+      "expected_max_spawns": 0,
+      "required_presets": ["thinking", "serious_speaking"]
+    },
+    {
+      "id": "late_29_single_inspection",
+      "user": "最后让一个只读执行者检查 README.md 的最后一行，并准确复述。",
+      "expected_min_spawns": 1,
+      "expected_max_spawns": 1,
+      "required_presets": ["thinking", "serious_speaking"]
+    },
+    {
+      "id": "late_30_final",
+      "user": "不要再调用任何执行者。按你一直以来的说话方式，简短总结这三十轮里确认了什么。",
+      "expected_min_spawns": 0,
+      "expected_max_spawns": 0,
+      "required_presets": []
+    }
+  ]
+}

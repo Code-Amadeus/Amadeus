@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "id": "A6_narration_ledger_divergence",
+  "category": "lifecycle",
+  "notes": "Compare narrated completion with the ledger's execution state.",
+  "steps": [
+    {
+      "say": "请在 scratch 仓创建 status.txt，写入 done，并完成后汇报。",
+      "label": "new",
+      "wait": "provider_terminal",
+      "timeout_s": 300
+    },
+    {
+      "say": "它在账本里现在是什么状态？只汇报，不要创建或继续任务。",
+      "label": "chat",
+      "wait": "chat_complete"
+    },
+    {
+      "action": "snapshot_ledger"
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "schema": "amadeus.auip/v0",
+  "app": {
+    "id": "merge-2048",
+    "title": "Merge 2048",
+    "version": "0.1.0",
+    "objective": "Combine equal tiles until the target tile is reached.",
+    "interactionSummary": "The participant can make one legal board slide at a time. Examples: '往空位多的方向走' means inspect the visible grid and choose one available game.slide direction; '继续合并最大的两块' still maps to one currently legal slide, not an invented multi-step macro."
+  },
+  "events": {
+    "game.ready": {
+      "beat": true
+    },
+    "game.slide_committed": {
+      "beat": true
+    },
+    "game.finished": {
+      "beat": true,
+      "importance": "important",
+      "terminal": true
+    }
+  },
+  "actions": {
+    "game.slide": {
+      "description": "Slide in one exact available payload listed by state.actions while state.status is playing.",
+      "risk": "local_execution",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "direction": {
+            "type": "string",
+            "description": "Slide direction.",
+            "enum": ["up", "down", "left", "right"]
+          }
+        },
+        "required": ["direction"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "stances": [
+    "spectator",
+    "participant"
+  ],
+  "situationKinds": [
+    "grid/v1",
+    "choice/v1"
+  ]
+}

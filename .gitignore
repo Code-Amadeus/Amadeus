@@ -1,0 +1,142 @@
+# =============================================================================
+# amadeus-realtime — .gitignore
+# =============================================================================
+
+# ── 密钥 / 凭证（绝对不能入库） ────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+.envrc
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+*_API_KEY.txt
+vts_auth_token.json
+
+# ── Python 虚拟环境 ─────────────────────────────────────────────────────────
+.venv/
+.venv_*/
+.venv1/
+venv/
+env/
+ENV/
+
+# ── Python 编译产物 ─────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+
+# ── 模型权重（体积巨大，用 .env 指向本地路径） ───────────────────────────────────
+assets/models/gpt-sovits/weights/gpt/v1/
+assets/models/gpt-sovits/weights/gpt/v2/
+assets/models/gpt-sovits/weights/gpt/v3/
+assets/models/gpt-sovits/weights/sovits/v1/
+assets/models/gpt-sovits/weights/sovits/v2/
+assets/models/gpt-sovits/weights/sovits/v3/
+weight.json
+*.ckpt
+*.pth
+*.gguf
+*.bin
+
+# ── 运行时生成数据 ──────────────────────────────────────────────────────────
+sessions/
+output/
+logs/
+TEMP/
+runtime/
+.amadeus/
+*.log
+
+# ── RAG 向量数据（本地个人数据，不共享） ─────────────────────────────────────
+kurisu_data.json
+kurisu_index.faiss
+
+# ── 参考音频（大文件，版权敏感） ─────────────────────────────────────────────
+assets/audio/reference/
+ref_audios/
+
+# ── 超大预训练文件（超过 GitHub 100MB 限制） ──────────────────────────────────
+tools/AP_BWE_main/24kto48k/*.zip
+tools/AP_BWE_main/24kto48k/*.pth
+tools/AP_BWE_main/24kto48k/*.bin
+
+# ── 二进制可执行（ffmpeg 等） ───────────────────────────────────────────────
+ffmpeg.exe
+ffprobe.exe
+ffmpeg
+ffprobe
+
+# ── IDE / OS ────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+.claude/
+.DS_Store
+Thumbs.db
+
+# ── 构建 / 打包产物 ─────────────────────────────────────────────────────────
+build/
+dist/
+node_modules/
+.electron-user-data/
+.electron-cache/
+electron/src/renderer/assets/assets/
+*.egg-info/
+*.egg
+MANIFEST
+wheels/
+
+# ── 测试 / 覆盖率 ──────────────────────────────────────────────────────────
+htmlcov/
+.coverage
+.coverage.*
+.pytest_cache/
+.pytest_tmp/
+.tmp-tests-live-launcher/
+.auip-e2e/
+.codex-worktrees/
+.tox/
+nosetests.xml
+coverage.xml
+
+# ── Jupyter ─────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ── 类型检查工具缓存 ────────────────────────────────────────────────────────
+.mypy_cache/
+.pytype/
+.pyre/
+.ruff_cache/
+.cache/
+
+# BigVGAN CUDA extension build caches
+GPT_SoVITS/BigVGAN/alias_free_activation/cuda/build*/
+
+# ── 其他临时文件 ────────────────────────────────────────────────────────────
+tmp/
+*.tmp
+*.bak
+*.backup_*.json
+*.swp
+*.swo
+pip-log.txt
+.tmp_pip/
+
+# ── 外部运行资产与创作素材（体积大，仅本地；不入库）──────────────────────────
+assets/models/live2d/
+assets/models/gsvlite/
+assets/source/**
+assets/spriteforge/runtime/**
+assets/images/*
+!assets/images/amadeus_desktop_wallpaper.png
+assets/previews/**
+assets/scenarios/**
+assets/audio/sfx/*.wav
+
+# 口型调试用参考图（本地生成）
+tools/debug_mouth/*.png

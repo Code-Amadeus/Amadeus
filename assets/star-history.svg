@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" viewBox="0 0 900 280">
+<title id="title">Amadeus star history</title>
+<desc id="desc">Cumulative GitHub stars over time. No user data is stored.</desc>
+<style>
+.background{fill:#ffffff}.grid{stroke:#d8dee4;stroke-width:1}.axis{fill:#57606a;font:12px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.heading{fill:#24292f;font:600 16px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.meta{fill:#6e7781;font:12px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.line{fill:none;stroke:#2f81f7;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}.endpoint{fill:#2f81f7}
+@media(prefers-color-scheme:dark){.background{fill:#0d1117}.grid{stroke:#30363d}.axis{fill:#8b949e}.heading{fill:#e6edf3}.meta{fill:#8b949e}.line{stroke:#58a6ff}.endpoint{fill:#58a6ff}}
+</style>
+<rect class="background" x="0.5" y="0.5" width="899" height="279" rx="12"/>
+<text class="heading" x="72" y="25">Star growth · 154</text>
+<text class="meta" x="72" y="43">Code-Amadeus/Amadeus · latest star 2026-08-29</text>
+<line class="grid" x1="72" y1="232.0" x2="872" y2="232.0"/>
+<text class="axis" x="60" y="236.0" text-anchor="end">0</text>
+<line class="grid" x1="72" y1="187.5" x2="872" y2="187.5"/>
+<text class="axis" x="60" y="191.5" text-anchor="end">50</text>
+<line class="grid" x1="72" y1="143.0" x2="872" y2="143.0"/>
+<text class="axis" x="60" y="147.0" text-anchor="end">100</text>
+<line class="grid" x1="72" y1="98.5" x2="872" y2="98.5"/>
+<text class="axis" x="60" y="102.5" text-anchor="end">150</text>
+<line class="grid" x1="72" y1="54.0" x2="872" y2="54.0"/>
+<text class="axis" x="60" y="58.0" text-anchor="end">200</text>
+<text class="axis" x="72.0" y="262" text-anchor="start">2026-07-26</text>
+<text class="axis" x="260.2" y="262" text-anchor="middle">2026-08-03</text>
+<text class="axis" x="472.0" y="262" text-anchor="middle">2026-08-12</text>
+<text class="axis" x="683.8" y="262" text-anchor="middle">2026-08-21</text>
+<text class="axis" x="872.0" y="262" text-anchor="end">2026-08-29</text>
+<path class="line" d="M 72.0 232.0 L 72.0 222.2 L 95.5 208.0 L 119.1 203.5 L 142.6 196.4 L 166.1 192.8 L 189.6 188.4 L 213.2 184.8 L 236.7 183.9 L 260.2 180.4 L 283.8 176.8 L 307.3 173.3 L 330.8 170.6 L 354.4 168.8 L 377.9 164.4 L 401.4 161.7 L 424.9 158.1 L 448.5 157.2 L 472.0 152.8 L 495.5 149.2 L 519.1 143.9 L 542.6 141.2 L 566.1 135.0 L 589.6 129.7 L 613.2 127.0 L 636.7 123.4 L 660.2 119.9 L 683.8 117.2 L 707.3 111.8 L 730.8 109.2 L 754.4 107.4 L 777.9 104.7 L 801.4 100.3 L 824.9 98.5 L 848.5 96.7 L 872.0 94.9"/>
+<circle class="endpoint" cx="872.0" cy="94.9" r="4"/>
+</svg>
