@@ -13,7 +13,6 @@ import binascii
 import json
 
 import httpx
-import numpy as np
 
 from tts.backend import BaseTTSBackend, TTSAudioChunk, TTSSynthesisRequest, TTSBackendError
 from tts.backends.openai_compatible import (
@@ -25,6 +24,7 @@ from tts.backends.openai_compatible import (
 _MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 _SAMPLE_RATE = 24000
 _STREAM_CHUNK_MILLISECONDS = 80
+MIMO_TTS_MODEL_ID = "mimo-v2.5-tts"
 
 
 def _chat_endpoint(base_url: str) -> str:
@@ -69,11 +69,15 @@ class MiMoTTSBackend(BaseTTSBackend):
             raise TTSBackendError("MIMO_TTS_API_KEY is required")
         if not self._model:
             raise TTSBackendError("MIMO_TTS_MODEL is required")
+        if self._model != MIMO_TTS_MODEL_ID:
+            raise TTSBackendError(
+                f"unsupported MIMO_TTS_MODEL {self._model!r}; expected {MIMO_TTS_MODEL_ID!r}"
+            )
         if not self._voice:
             raise TTSBackendError("MIMO_TTS_VOICE is required")
 
     def _headers(self, *, streaming: bool = False) -> dict[str, str]:
-        headers = {"api-key": self._api_key}
+        headers = {"Authorization": f"Bearer {self._api_key}"}
         if streaming:
             headers["Accept"] = "text/event-stream"
         return headers
@@ -146,10 +150,17 @@ class MiMoTTSBackend(BaseTTSBackend):
                         event = json.loads(raw_event)
                     except json.JSONDecodeError as exc:
                         raise TTSBackendError("MiMo TTS returned malformed SSE JSON") from exc
+                    if event.get("error"):
+                        raise TTSBackendError(f"MiMo TTS streaming failed: {event['error']}")
                     choices = event.get("choices")
                     if not choices:
                         continue
-                    delta = choices[0].get("delta") or {}
+                    choice = choices[0]
+                    if not isinstance(choice, dict):
+                        continue
+                    delta = choice.get("delta") or {}
+                    if not isinstance(delta, dict):
+                        continue
                     audio = delta.get("audio")
                     if not isinstance(audio, dict):
                         continue
@@ -172,13 +183,12 @@ class MiMoTTSBackend(BaseTTSBackend):
 
         if pending:
             if len(pending) % 2:
-                del pending[-1:]
-            if pending:
-                yield TTSAudioChunk(
-                    _SAMPLE_RATE,
-                    _decode_pcm16le(bytes(pending)),
-                    request.text if not yielded else "",
-                )
-                yielded = True
+                raise TTSBackendError("MiMo TTS returned an incomplete PCM16 sample")
+            yield TTSAudioChunk(
+                _SAMPLE_RATE,
+                _decode_pcm16le(bytes(pending)),
+                request.text if not yielded else "",
+            )
+            yielded = True
         if not yielded:
             raise TTSBackendError("MiMo TTS stream completed without audio")

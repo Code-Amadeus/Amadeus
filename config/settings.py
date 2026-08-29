@@ -274,7 +274,7 @@ TTS_API_TIMEOUT_SECONDS = _float("TTS_API_TIMEOUT_SECONDS", 60.0)
 MIMO_TTS_BASE_URL = _str("MIMO_TTS_BASE_URL", "https://api.xiaomimimo.com/v1")
 MIMO_TTS_API_KEY = _str("MIMO_TTS_API_KEY", "")
 MIMO_TTS_MODEL = _str("MIMO_TTS_MODEL", "mimo-v2.5-tts")
-MIMO_TTS_VOICE = _str("MIMO_TTS_VOICE", "mimo_default")
+MIMO_TTS_VOICE = _str("MIMO_TTS_VOICE", "冰糖")
 
 
 def _resolve_tts_device() -> str:

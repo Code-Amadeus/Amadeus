@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
+import wave
 
 import httpx
 import numpy as np
@@ -12,7 +14,17 @@ import pytest
 from tts.backend import TTSSynthesisRequest, TTSBackendError
 from tts.backends.mimo import MiMoTTSBackend, _chat_endpoint
 from tts.registry import tts_backend_ids, tts_backend_statuses
-from tests.test_voice_backend_registry import _wav_bytes
+
+
+def _wav_bytes(*, sample_rate: int = 24000) -> bytes:
+    output = io.BytesIO()
+    samples = (np.asarray([0.0, 0.25, -0.25], dtype=np.float32) * 32767).astype("<i2")
+    with wave.open(output, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate)
+        wav.writeframes(samples.tobytes())
+    return output.getvalue()
 
 
 def _backend(**overrides) -> MiMoTTSBackend:
@@ -80,6 +92,11 @@ def test_load_requires_api_key() -> None:
         _backend(api_key="").load()
 
 
+def test_load_rejects_unsupported_mimo_variants() -> None:
+    with pytest.raises(TTSBackendError, match="unsupported MIMO_TTS_MODEL"):
+        _backend(model="mimo-v2.5-tts-voiceclone").load()
+
+
 def test_payload_uses_assistant_message_and_pcm16_stream() -> None:
     backend = _backend()
     request = TTSSynthesisRequest("你好，世界", voice="茉莉")
@@ -109,7 +126,7 @@ def test_buffered_synthesize_decodes_message_audio(monkeypatch) -> None:
     chunk = _backend().synthesize(TTSSynthesisRequest("Hello"))
 
     assert observed["url"] == "https://api.xiaomimimo.com/v1/chat/completions"
-    assert observed["headers"]["api-key"] == "secret"
+    assert observed["headers"]["Authorization"] == "Bearer secret"
     assert chunk.sample_rate == 24000
     assert chunk.audio.dtype == np.float32
     assert chunk.text == "Hello"
@@ -164,4 +181,21 @@ def test_stream_without_audio_raises(monkeypatch) -> None:
     lines = _sse_lines([{"choices": [{"delta": {"role": "assistant"}}]}])
     monkeypatch.setattr(httpx, "stream", _fake_stream(lines, observed))
     with pytest.raises(TTSBackendError, match="without audio"):
+        list(_backend().synthesize_stream(TTSSynthesisRequest("Hello")))
+
+
+def test_stream_surfaces_provider_errors(monkeypatch) -> None:
+    observed: dict = {}
+    lines = _sse_lines([{"error": {"message": "quota exceeded"}}])
+    monkeypatch.setattr(httpx, "stream", _fake_stream(lines, observed))
+    with pytest.raises(TTSBackendError, match="quota exceeded"):
+        list(_backend().synthesize_stream(TTSSynthesisRequest("Hello")))
+
+
+def test_stream_rejects_an_incomplete_pcm_sample(monkeypatch) -> None:
+    observed: dict = {}
+    odd_pcm = base64.b64encode(b"\x01").decode()
+    lines = _sse_lines([{"choices": [{"delta": {"audio": {"data": odd_pcm}}}]}])
+    monkeypatch.setattr(httpx, "stream", _fake_stream(lines, observed))
+    with pytest.raises(TTSBackendError, match="incomplete PCM16"):
         list(_backend().synthesize_stream(TTSSynthesisRequest("Hello")))

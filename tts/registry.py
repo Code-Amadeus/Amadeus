@@ -93,9 +93,17 @@ def _mimo_factory() -> BaseTTSBackend:
 
 def _mimo_probe() -> tuple[str, str]:
     from config import settings
+    from tts.backends.mimo import MIMO_TTS_MODEL_ID
 
+    if not str(settings.MIMO_TTS_BASE_URL or "").strip():
+        return "unavailable", "MiMo TTS endpoint is not configured"
     if not str(settings.MIMO_TTS_API_KEY or "").strip():
         return "unavailable", "MiMo TTS API key is not configured"
+    model = str(settings.MIMO_TTS_MODEL or "").strip()
+    if model != MIMO_TTS_MODEL_ID:
+        return "unavailable", f"MiMo TTS supports only {MIMO_TTS_MODEL_ID}"
+    if not str(settings.MIMO_TTS_VOICE or "").strip():
+        return "unavailable", "MiMo TTS voice is not configured"
     return "remote", "MiMo TTS endpoint configured for PCM16 SSE streaming"
 
 
