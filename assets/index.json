@@ -26,8 +26,7 @@
         "images/amadeus_ambient_low_blend.png",
         "images/amadeus_ambient_high_blend.png",
         "images/subtitle_frame_big.png",
-        "audio/sfx/computer_use_keyboard_loop.wav",
-        "audio/sfx/computer_use_keyboard_loop.LICENSE.txt"
+        "audio/sfx/computer_use_keyboard_loop.wav"
       ],
       "trees": [
         "scenarios/runtime"
@@ -56,6 +55,63 @@
         "spriteforge/runtime/kurisu/spriteforge_mouth_config.json"
       ],
       "validator": "character_pack"
+    },
+    {
+      "id": "asr-qwen3-0.6b",
+      "display_name": "Qwen3-ASR 0.6B Model Pack",
+      "spec_version": 1,
+      "paths": [],
+      "trees": [
+        "models/asr/qwen3-asr-0.6b"
+      ],
+      "required": [
+        "models/asr/qwen3-asr-0.6b/chat_template.json",
+        "models/asr/qwen3-asr-0.6b/config.json",
+        "models/asr/qwen3-asr-0.6b/generation_config.json",
+        "models/asr/qwen3-asr-0.6b/merges.txt",
+        "models/asr/qwen3-asr-0.6b/model.safetensors",
+        "models/asr/qwen3-asr-0.6b/preprocessor_config.json",
+        "models/asr/qwen3-asr-0.6b/tokenizer_config.json",
+        "models/asr/qwen3-asr-0.6b/vocab.json"
+      ],
+      "validator": "required_files"
+    },
+    {
+      "id": "voice-kurisu-gpt-sovits-v3",
+      "display_name": "Kurisu GPT-SoVITS v3 Voice Pack",
+      "spec_version": 1,
+      "paths": [
+        "models/gpt-sovits/pretrained/s2Gv3.pth",
+        "models/gpt-sovits/pretrained/chinese-roberta-wwm-ext-large/config.json",
+        "models/gpt-sovits/pretrained/chinese-roberta-wwm-ext-large/model.safetensors",
+        "models/gpt-sovits/pretrained/chinese-roberta-wwm-ext-large/tokenizer.json",
+        "models/gpt-sovits/pretrained/chinese-hubert-base/config.json",
+        "models/gpt-sovits/pretrained/chinese-hubert-base/model.safetensors",
+        "models/gpt-sovits/pretrained/chinese-hubert-base/preprocessor_config.json",
+        "models/gpt-sovits/pretrained/models--nvidia--bigvgan_v2_24khz_100band_256x/config.json",
+        "models/gpt-sovits/pretrained/models--nvidia--bigvgan_v2_24khz_100band_256x/bigvgan_generator.pt",
+        "models/gpt-sovits/weights/gpt/v3/xxx-e15.ckpt",
+        "models/gpt-sovits/weights/sovits/v3/xxx_e2_s174_l32.pth",
+        "audio/reference/kurisu_reference.wav",
+        "audio/reference/english_recording.wav"
+      ],
+      "trees": [],
+      "required": [
+        "models/gpt-sovits/pretrained/s2Gv3.pth",
+        "models/gpt-sovits/pretrained/chinese-roberta-wwm-ext-large/config.json",
+        "models/gpt-sovits/pretrained/chinese-roberta-wwm-ext-large/model.safetensors",
+        "models/gpt-sovits/pretrained/chinese-roberta-wwm-ext-large/tokenizer.json",
+        "models/gpt-sovits/pretrained/chinese-hubert-base/config.json",
+        "models/gpt-sovits/pretrained/chinese-hubert-base/model.safetensors",
+        "models/gpt-sovits/pretrained/chinese-hubert-base/preprocessor_config.json",
+        "models/gpt-sovits/pretrained/models--nvidia--bigvgan_v2_24khz_100band_256x/config.json",
+        "models/gpt-sovits/pretrained/models--nvidia--bigvgan_v2_24khz_100band_256x/bigvgan_generator.pt",
+        "models/gpt-sovits/weights/gpt/v3/xxx-e15.ckpt",
+        "models/gpt-sovits/weights/sovits/v3/xxx_e2_s174_l32.pth",
+        "audio/reference/kurisu_reference.wav",
+        "audio/reference/english_recording.wav"
+      ],
+      "validator": "required_files"
     }
   ]
 }

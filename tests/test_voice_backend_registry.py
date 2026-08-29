@@ -5,13 +5,17 @@ import io
 import builtins
 import json
 import wave
+from pathlib import Path
 from unittest.mock import patch
 
 import httpx
 import numpy as np
+import pytest
 
 from asr.backends.openai_compatible import OpenAICompatibleASRBackend
+from asr.backends.qwen3_asr import Qwen3ASRBackend
 from asr.backend import BaseASRBackend
+from asr.qwen_model import REQUIRED_MODEL_FILES, qwen_model_status, resolve_qwen_model_source
 from asr.registry import (
     ASRBackendDescriptor,
     asr_backend_ids,
@@ -61,6 +65,56 @@ def test_builtin_voice_registries_keep_embedded_defaults_and_remote_sidepaths() 
     embedded_tts = next(item for item in tts_statuses if item["id"] == "gpt_sovits")
     assert "v3" in embedded_tts["label"]
     assert "only GPT-SoVITS v3 checkpoints" in embedded_tts["summary"]
+
+
+def test_qwen_conversation_language_maps_iso_codes_and_auto_detection() -> None:
+    backend = Qwen3ASRBackend()
+
+    assert backend._language is None
+    backend.set_language("ja")
+    assert backend._language == "Japanese"
+    backend.set_language("zh-CN")
+    assert backend._language == "Chinese"
+    backend.set_language("auto")
+    assert backend._language is None
+
+
+def test_qwen_model_prefers_the_canonical_asset_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from config import settings
+
+    model = tmp_path / "qwen"
+    model.mkdir()
+    for name in REQUIRED_MODEL_FILES:
+        (model / name).write_bytes(b"fixture")
+    monkeypatch.setattr(settings, "QWEN3_ASR_MODEL_PATH", str(model))
+
+    ready, detail, path = qwen_model_status()
+
+    assert ready is True
+    assert "asset directory" in detail
+    assert path == model
+    assert resolve_qwen_model_source() == str(model)
+
+
+def test_qwen_model_reports_an_explicit_incomplete_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from config import settings
+
+    missing = tmp_path / "missing"
+    monkeypatch.setattr(settings, "QWEN3_ASR_MODEL_PATH", str(missing))
+
+    ready, detail, path = qwen_model_status()
+
+    assert ready is False
+    assert str(missing) in detail
+    assert path is None
+    with pytest.raises(FileNotFoundError, match="incomplete"):
+        resolve_qwen_model_source()
 
 
 def test_public_asr_registry_accepts_and_removes_third_party_backends() -> None:

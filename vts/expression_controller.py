@@ -10,7 +10,7 @@
 
 依赖注入（configure() 调用后生效）：
   - vts_manager      VTSConnectionManager 实例
-  - registry_path    emotion_presets.json 路径（可选，默认 emotion_presets.json）
+  - registry_path    optional legacy VTS preset registry; omitted by mainline
 """
 
 import json
@@ -131,12 +131,15 @@ class ExpressionController:
         self._backend = backend
         logger.info(f"[ExprCtrl] SpriteForgeAnimator bound, backend={backend!r}")
 
-    def configure(self, vts_manager=None, registry_path: str = "emotion_presets.json") -> None:
+    def configure(self, vts_manager=None, registry_path: str | None = None) -> None:
         if vts_manager is not None:
             self._vts_manager = vts_manager
             # VTS重连后自动恢复表情状态
             vts_manager.on_reconnect_callback = self._on_vts_reconnect
-        self.load_registry(registry_path)
+        if registry_path:
+            self.load_registry(registry_path)
+        else:
+            self._registry = {}
 
     def load_registry(self, path: str) -> None:
         if not os.path.isabs(path):

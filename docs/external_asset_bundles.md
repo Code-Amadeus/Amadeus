@@ -16,6 +16,12 @@ py -3.12 tools\external_assets.py install C:\Downloads\amadeus-visual-runtime.zi
 py -3.12 tools\external_assets.py verify C:\Downloads\amadeus-character-kurisu.zip
 py -3.12 tools\external_assets.py install C:\Downloads\amadeus-character-kurisu.zip
 
+py -3.12 tools\external_assets.py verify C:\Downloads\amadeus-asr-qwen3-0.6b.zip
+py -3.12 tools\external_assets.py install C:\Downloads\amadeus-asr-qwen3-0.6b.zip
+
+py -3.12 tools\external_assets.py verify C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
+py -3.12 tools\external_assets.py install C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
+
 py -3.12 tools\external_assets.py status
 ```
 
@@ -42,6 +48,12 @@ py -3.12 tools\external_assets.py build visual-runtime `
 
 py -3.12 tools\external_assets.py build character-kurisu `
   --output output\amadeus-character-kurisu.zip
+
+py -3.12 tools\external_assets.py build asr-qwen3-0.6b `
+  --output output\amadeus-asr-qwen3-0.6b.zip
+
+py -3.12 tools\external_assets.py build voice-kurisu-gpt-sovits-v3 `
+  --output output\amadeus-voice-kurisu-gpt-sovits-v3.zip
 ```
 
 The `visual-runtime` bundle contains the ambient layers, subtitle frame,
@@ -52,6 +64,13 @@ The `character-kurisu` build first validates
 `assets/spriteforge/runtime/kurisu/runtime_manifest.json`, requires KTX2-only
 runtime textures, and rejects unindexed KTX2 or authoring PNG files. This keeps
 the bundle identical to the renderer's actual frame index.
+
+The two voice-model packs keep the offline runtime under canonical `assets/`
+paths. `asr-qwen3-0.6b` contains the complete local Hugging Face snapshot used
+by Qwen inference. `voice-kurisu-gpt-sovits-v3` contains only the GPT-SoVITS v3
+pretrained/runtime weights, selected v3 checkpoints, and configured reference
+audio. Model and voice redistribution terms remain independent of this bundle
+format and must be reviewed before publishing either archive.
 
 ## Archive contract
 

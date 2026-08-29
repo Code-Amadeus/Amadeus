@@ -40,3 +40,4 @@ def test_python_windows_ci_runs_the_real_electron_smoke() -> None:
     assert "npm run build" in workflow
     assert "tools\\smoke_electron_model_less.py" in workflow
     assert "build\\electron-smoke" in workflow
+    assert 'AUIP_APPSESSION_ROLE_BRANCH_MODE: "off"' in workflow

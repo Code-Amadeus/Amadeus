@@ -361,6 +361,7 @@ VAD_ENERGY_THRESHOLD = _int("VAD_ENERGY_THRESHOLD", 600)
 # may run alongside this backend on the shared microphone service.
 ASR_BACKEND = _str("ASR_BACKEND", "qwen3_asr")
 ASR_LANGUAGE = _str("ASR_LANGUAGE", "auto")
+QWEN3_ASR_MODEL_PATH = _str("QWEN3_ASR_MODEL_PATH", "")
 QWEN3_ASR_DEVICE = _str("QWEN3_ASR_DEVICE", "auto").strip().lower()
 if QWEN3_ASR_DEVICE in {"cuda:0", "gpu"}:
     QWEN3_ASR_DEVICE = "cuda"

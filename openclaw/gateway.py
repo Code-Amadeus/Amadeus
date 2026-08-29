@@ -27,6 +27,10 @@ async def start_openclaw_gateway() -> bool:
     """
     global _openclaw_gateway_proc
 
+    if not str(OPENCLAW_TOKEN or "").strip() and not str(OPENCLAW_PROJECT_DIR or "").strip():
+        logger.info("[OpenClaw] optional Gateway is not configured; skipping local auto-start")
+        return False
+
     healthz_url = f"{OPENCLAW_BASE_URL}/healthz"
 
     # 1. 检测是否已在运行
@@ -40,6 +44,9 @@ async def start_openclaw_gateway() -> bool:
         pass
 
     # 2. 检查项目目录
+    if not str(OPENCLAW_PROJECT_DIR or "").strip():
+        logger.info("[OpenClaw] external Gateway is unavailable; no local project is configured")
+        return False
     run_script = os.path.join(OPENCLAW_PROJECT_DIR, "scripts", "run-node.mjs")
     if not os.path.exists(run_script):
         logger.warning(f"[OpenClaw] startup script not found: {run_script}; check OPENCLAW_PROJECT_DIR")
