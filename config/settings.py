@@ -270,6 +270,12 @@ TTS_API_VOICE = _str("TTS_API_VOICE", "alloy")
 TTS_API_STREAM_PROTOCOL = _str("TTS_API_STREAM_PROTOCOL", "buffered").strip().lower()
 TTS_API_TIMEOUT_SECONDS = _float("TTS_API_TIMEOUT_SECONDS", 60.0)
 
+# MiMo TTS（小米远程后端，chat-completions 音频协议，非 /audio/speech）
+MIMO_TTS_BASE_URL = _str("MIMO_TTS_BASE_URL", "https://api.xiaomimimo.com/v1")
+MIMO_TTS_API_KEY = _str("MIMO_TTS_API_KEY", "")
+MIMO_TTS_MODEL = _str("MIMO_TTS_MODEL", "mimo-v2.5-tts")
+MIMO_TTS_VOICE = _str("MIMO_TTS_VOICE", "冰糖")
+
 
 def _resolve_tts_device() -> str:
     """

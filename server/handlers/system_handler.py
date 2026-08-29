@@ -67,6 +67,10 @@ def _voice_configuration(settings: Any) -> list[dict[str, Any]]:
         (item for item in tts_statuses if item["id"] == "openai_compatible"),
         {},
     )
+    mimo_tts_status = next(
+        (item for item in tts_statuses if item["id"] == "mimo"),
+        {},
+    )
     reference_consumers = [
         str(item.get("label") or item.get("id") or "")
         for item in tts_statuses
@@ -359,6 +363,22 @@ def _voice_configuration(settings: Any) -> list[dict[str, Any]]:
                     ),
                     description="Use OpenAI SSE only when the endpoint implements speech.audio.delta events.",
                 ),
+            ],
+        },
+        {
+            "id": "tts_mimo",
+            "label": "MiMo speech API (Xiaomi)",
+            "description": "MiMo-TTS chat-completions synthesis. Streaming PCM16 runs on mimo-v2.5-tts; voicedesign/voiceclone variants are not supported by this runtime.",
+            "active": tts_selected == "mimo",
+            "configured": bool(mimo_tts_status.get("available")),
+            "status": str(mimo_tts_status.get("state") or "unavailable"),
+            "status_ok": bool(mimo_tts_status.get("available")),
+            "status_detail": str(mimo_tts_status.get("detail") or ""),
+            "fields": [
+                _startup_field("MIMO_TTS_BASE_URL", "API base URL", settings.MIMO_TTS_BASE_URL, field_type="url"),
+                _startup_field("MIMO_TTS_API_KEY", "API key", field_type="secret", secret_configured=bool(settings.MIMO_TTS_API_KEY)),
+                _startup_field("MIMO_TTS_MODEL", "Model", settings.MIMO_TTS_MODEL),
+                _startup_field("MIMO_TTS_VOICE", "Voice", settings.MIMO_TTS_VOICE),
             ],
         },
     ]
