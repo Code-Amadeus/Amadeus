@@ -90,7 +90,13 @@ for _cuda_ver in ("v12.1", "v12.2", "v12.4", "v12.6"):
     if os.path.isdir(_cuda_bin):
         os.add_dll_directory(_cuda_bin)
         break
-import onnxruntime  # noqa: F401  # eager before torchmetrics chain
+# Eager-load onnxruntime before the torchmetrics chain on local-model installs
+# (CUDA DLL ordering). It is a T2b (local-cu124) dependency, so skip silently on
+# headless/voice-less installs where neither onnxruntime nor torchmetrics exist.
+import importlib.util as _importlib_util
+
+if _importlib_util.find_spec("onnxruntime") is not None:
+    import onnxruntime  # noqa: F401  # eager before torchmetrics chain
 
 def _session_log_path() -> str:
     """One log file per process start, under runtime/logs.

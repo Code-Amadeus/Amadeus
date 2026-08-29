@@ -24,6 +24,7 @@ import numpy as np
 
 from asr.backend import ASRBackendFatalError, BaseASRBackend
 from asr.qwen_model import resolve_qwen_model_source
+from config.environment import venv_python as _venv_python
 from config.settings import QWEN3_ASR_REQUIRE_CUDA
 
 logger = logging.getLogger(__name__)
@@ -34,8 +35,9 @@ os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _SIDECAR_SCRIPT = _PROJECT_ROOT / "asr" / "qwen3_asr_sidecar.py"
-_VENV_ASR_PYTHON = _PROJECT_ROOT / ".venv_asr" / "Scripts" / "python.exe"
-_VENV_CU124_PYTHON = _PROJECT_ROOT / ".venv_cu124" / "Scripts" / "python.exe"
+
+_VENV_ASR_PYTHON = _venv_python(_PROJECT_ROOT, ".venv_asr")
+_VENV_CU124_PYTHON = _venv_python(_PROJECT_ROOT, ".venv_cu124")
 _TOKENS_PER_SEC = 10
 _MAX_TOKENS_CAP = 256
 _MAX_TOKENS_FLOOR = 32

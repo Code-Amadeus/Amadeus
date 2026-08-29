@@ -18,10 +18,16 @@ from dataclasses import dataclass
 from typing import Callable, Coroutine, Iterable
 
 import numpy as np
-import pyaudio
-import torch
 
 from config.log_privacy import protected_text
+
+# torch / pyaudio are voice-tier (T2) dependencies and are imported lazily:
+# this module must stay importable in audio-less (T1) installs.
+
+def _is_tensor_like(value) -> bool:
+    """True for torch tensors without requiring torch to be installed."""
+    return all(hasattr(value, attr) for attr in ("cpu", "detach", "numpy"))
+
 from tools.text_utils import _parse_sentence_seq
 from config.settings import USE_FIRST_SENTENCE_SPRINT
 from tts.aec_debug_capture import get_aec_debug_capture
@@ -148,7 +154,7 @@ class StreamPlayer:
     ) -> None:
         if loop is None:
             loop = asyncio.get_running_loop()
-        if torch.is_tensor(audio_chunk):
+        if _is_tensor_like(audio_chunk):
             audio_chunk = audio_chunk.cpu().detach().numpy()
         if audio_chunk.dtype != np.float32:
             audio_chunk = audio_chunk.astype(np.float32)
@@ -190,7 +196,7 @@ class StreamPlayer:
     def _mouth_value_for_audio(self, audio_chunk, minimum: float | None = None) -> float:
         if audio_chunk is None:
             return 0.0
-        if torch.is_tensor(audio_chunk):
+        if _is_tensor_like(audio_chunk):
             audio_chunk = audio_chunk.cpu().detach().numpy()
         audio_chunk = np.asarray(audio_chunk)
         if audio_chunk.size == 0:
@@ -211,6 +217,8 @@ class StreamPlayer:
         return mouth_value
 
     def initialize(self, sample_rate: int) -> None:
+        import pyaudio
+
         if self.pyaudio_instance is None:
             self.pyaudio_instance = pyaudio.PyAudio()
 
@@ -258,7 +266,7 @@ class StreamPlayer:
         if not self.is_playing or self.stream is None:
             return
 
-        if torch.is_tensor(audio_chunk):
+        if _is_tensor_like(audio_chunk):
             audio_chunk = audio_chunk.cpu().detach().numpy()
         if audio_chunk.dtype != np.float32:
             audio_chunk = audio_chunk.astype(np.float32)
@@ -1641,7 +1649,7 @@ class StreamPlayerWithBuffer(StreamPlayer):
         subtitle_text: str = None,
         sentence_id: str = None,
     ) -> None:
-        if torch.is_tensor(audio_chunk):
+        if _is_tensor_like(audio_chunk):
             audio_chunk = audio_chunk.cpu().detach().numpy()
         if audio_chunk.dtype != np.float32:
             audio_chunk = audio_chunk.astype(np.float32)
@@ -1716,7 +1724,7 @@ class StreamPlayerWithBuffer(StreamPlayer):
     def play_chunk(self, audio_chunk) -> None:
         if not self.is_playing or self.stream is None:
             return
-        if torch.is_tensor(audio_chunk):
+        if _is_tensor_like(audio_chunk):
             audio_chunk = audio_chunk.cpu().detach().numpy()
         if audio_chunk.dtype != np.float32:
             audio_chunk = audio_chunk.astype(np.float32)

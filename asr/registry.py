@@ -94,9 +94,11 @@ def _qwen_probe() -> tuple[str, str]:
         runtime_available = True
         runtime_detail = "configured isolated runtime"
     else:
+        from config.environment import venv_python as _venv_python
+
         for candidate in (
-            _PROJECT_ROOT / ".venv_cu124" / "Scripts" / "python.exe",
-            _PROJECT_ROOT / ".venv_asr" / "Scripts" / "python.exe",
+            _venv_python(_PROJECT_ROOT, ".venv_cu124"),
+            _venv_python(_PROJECT_ROOT, ".venv_asr"),
         ):
             if candidate.is_file():
                 runtime_available = True
