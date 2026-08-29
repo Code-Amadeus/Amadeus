@@ -53,7 +53,7 @@ colorama==0.4.6
     # via
     #   click
     #   tqdm
-cryptography==50.0.1
+cryptography==50.0.0
     # via
     #   google-auth
     #   pyjwt
