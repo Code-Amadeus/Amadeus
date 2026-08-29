@@ -62,7 +62,10 @@ def _fake_stream(lines, observed):
 
         @staticmethod
         def iter_lines():
-            yield from lines
+            for line in lines:
+                if line == "data: [DONE]":
+                    observed["saw_done"] = True
+                yield line
 
     def fake_stream(method, url, **kwargs):
         observed.update(method=method, url=url, **kwargs)
@@ -156,12 +159,16 @@ def test_stream_yields_pcm_chunks_and_skips_empty_choices(monkeypatch) -> None:
     observed: dict = {}
     monkeypatch.setattr(httpx, "stream", _fake_stream(lines, observed))
 
-    chunks = list(_backend().synthesize_stream(TTSSynthesisRequest("Hello")))
+    stream = _backend().synthesize_stream(TTSSynthesisRequest("Hello"))
+    first_chunk = next(stream)
 
     assert observed["headers"]["Accept"] == "text/event-stream"
     assert observed["json"]["stream"] is True
     assert observed["json"]["audio"]["format"] == "pcm16"
+    assert observed.get("saw_done") is None
+    chunks = [first_chunk, *stream]
     assert observed["closed"] is True
+    assert observed["saw_done"] is True
     assert all(chunk.sample_rate == 24000 for chunk in chunks)
     assert chunks[0].text == "Hello"
     assert all(chunk.text == "" for chunk in chunks[1:])
@@ -188,8 +195,17 @@ def test_stream_surfaces_provider_errors(monkeypatch) -> None:
     observed: dict = {}
     lines = _sse_lines([{"error": {"message": "quota exceeded"}}])
     monkeypatch.setattr(httpx, "stream", _fake_stream(lines, observed))
+    post_calls = 0
+
+    def forbidden_post(*_args, **_kwargs):
+        nonlocal post_calls
+        post_calls += 1
+        raise AssertionError("a streaming failure must not create a second billable request")
+
+    monkeypatch.setattr(httpx, "post", forbidden_post)
     with pytest.raises(TTSBackendError, match="quota exceeded"):
         list(_backend().synthesize_stream(TTSSynthesisRequest("Hello")))
+    assert post_calls == 0
 
 
 def test_stream_rejects_an_incomplete_pcm_sample(monkeypatch) -> None:
