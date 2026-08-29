@@ -114,7 +114,7 @@ mypy==2.3.0
 mypy_extensions==1.1.0
 nagisa==0.2.11
 networkx==3.6.1
-nltk==3.9.4
+nltk==3.10.0
 numba==0.65.1
 numpy==1.26.4
 omegaconf==2.3.0
