@@ -53,6 +53,7 @@ local-cu124 = [
     "av==17.0.1",
     "cn2an==0.5.24",
     "fast-langdetect==1.0.1",
+    "ffmpeg-python==0.2.0",
     "funasr==1.3.7",
     "g2p-en==2.1.0",
     "g2pk2==0.0.3",

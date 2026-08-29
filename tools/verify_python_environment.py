@@ -33,6 +33,11 @@ PROJECT_IMPORTS = (
     "core.chat_runtime",
     "server.app",
 )
+CU124_IMPORTS = (
+    "ffmpeg",
+    "qwen_asr",
+    "local_tts_infer",
+)
 
 
 def _distribution_installed(name: str) -> bool:
@@ -57,6 +62,9 @@ def verify(profile: str, *, require_cuda_device: bool = False) -> None:
 
     for module_name in (*BASE_IMPORTS, *PROJECT_IMPORTS):
         importlib.import_module(module_name)
+    if profile == "cu124":
+        for module_name in CU124_IMPORTS:
+            importlib.import_module(module_name)
 
     import torch
     import torchaudio
