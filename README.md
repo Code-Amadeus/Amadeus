@@ -154,7 +154,37 @@ cd ..
 
 `npm ci` 会通过项目 postinstall 安装锁定的 Electron 运行时。cu124 profile 固定
 `torch==2.5.1+cu124`、`torchaudio==2.5.1+cu124` 和本地模型依赖集；它以当前
-实际运行环境为第一版基线，但尚未描述为所有全新机器的通用一键安装保证。
+实际运行环境为第一版基线。
+
+### 安装外部运行资产
+
+完整本地语音需要 Qwen ASR 与 GPT-SoVITS v3 语音包；视觉和角色包可选：
+
+```powershell
+py -3.12 tools\external_assets.py verify C:\Downloads\amadeus-asr-qwen3-0.6b.zip
+py -3.12 tools\external_assets.py install C:\Downloads\amadeus-asr-qwen3-0.6b.zip
+py -3.12 tools\external_assets.py verify C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
+py -3.12 tools\external_assets.py install C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
+
+# 可选：场景与 KTX2 角色动画
+py -3.12 tools\external_assets.py install C:\Downloads\amadeus-visual-runtime.zip
+py -3.12 tools\external_assets.py install C:\Downloads\amadeus-character-kurisu.zip
+py -3.12 tools\external_assets.py status
+```
+
+如果没有预制 Qwen 包，可直接把上游 snapshot 下载到同一个固定落点；运行时
+保持离线，不会在第一次录音时临时联网：
+
+```powershell
+.\.venv_cu124\Scripts\python.exe -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-ASR-0.6B', local_dir='assets/models/asr/qwen3-asr-0.6b')"
+```
+
+GPT-SoVITS 日文前端第一次使用会准备 OpenJTalk 字典。希望正式启动时不再下载，
+可预先运行一次：
+
+```powershell
+.\.venv_cu124\Scripts\python.exe -c "import pyopenjtalk; print(pyopenjtalk.g2p('準備完了'))"
+```
 
 ### 配置与启动
 
@@ -162,10 +192,10 @@ cd ..
 Copy-Item .env.example .env
 ```
 
-替换远程 Chat + 本地语音 profile 使用的 `<...>` 占位符，并在 Settings 中核对：
+填写 DeepSeek API key，并在 Settings 中核对：
 
 - **Models**：`deepseek`、官方 endpoint、`deepseek-v4-flash` 与 API key；
-- **Voice**：Qwen3-ASR / SenseVoice 路径、GPT-SoVITS **v3** checkpoints、reference audio/text、麦克风、AEC 和 barge-in；
+- **Voice**：Qwen model 目录、GPT-SoVITS **v3** checkpoints、reference audio/text、麦克风、AEC 和 barge-in；
 - **General**：可选角色包状态与呈现设置。
 
 直接启动 Amadeus：
@@ -225,6 +255,10 @@ $env:AMADEUS_PYTHON = (Resolve-Path .\.venv\Scripts\python.exe)
 
 模型权重、参考音频、角色包及大型/版权敏感素材独立分发；源码仓库只保留
 必要图标、默认壁纸、schema、validator 和安装工具。
+
+当前目录合同包括 `asr-qwen3-0.6b`、`voice-kurisu-gpt-sovits-v3`、
+`visual-runtime` 与 `character-kurisu`。前两个组成完整本地语音 profile；
+后两个只影响场景和角色呈现。
 
 ```powershell
 py -3.12 tools\external_assets.py verify C:\path\to\asset-bundle.zip
