@@ -55,7 +55,7 @@ _REGISTRY: dict[str, TTSBackendDescriptor] = {}
 _LOCK = threading.Lock()
 _BUILTINS_READY = False
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
-_BUILTIN_IDS = frozenset({"gpt_sovits", "openai_compatible"})
+_BUILTIN_IDS = frozenset({"gpt_sovits", "openai_compatible", "mimo"})
 
 
 def register_tts_backend(
@@ -83,6 +83,20 @@ def _remote_factory() -> BaseTTSBackend:
     from tts.backends.openai_compatible import OpenAICompatibleTTSBackend
 
     return OpenAICompatibleTTSBackend()
+
+
+def _mimo_factory() -> BaseTTSBackend:
+    from tts.backends.mimo import MiMoTTSBackend
+
+    return MiMoTTSBackend()
+
+
+def _mimo_probe() -> tuple[str, str]:
+    from config import settings
+
+    if not str(settings.MIMO_TTS_API_KEY or "").strip():
+        return "unavailable", "MiMo TTS API key is not configured"
+    return "remote", "MiMo TTS endpoint configured for PCM16 SSE streaming"
 
 
 def _local_probe() -> tuple[str, str]:
@@ -159,6 +173,15 @@ def _ensure_builtins() -> None:
                     _remote_probe,
                     "Buffered WAV compatibility or explicit OpenAI SSE first-packet playback.",
                     supports_streaming=_remote_streaming_enabled,
+                ),
+                "mimo": TTSBackendDescriptor(
+                    "mimo",
+                    "MiMo TTS (Xiaomi)",
+                    "remote",
+                    _mimo_factory,
+                    _mimo_probe,
+                    "MiMo chat-completions speech synthesis; PCM16 SSE streaming on mimo-v2.5-tts.",
+                    supports_streaming=True,
                 ),
             }
         )
