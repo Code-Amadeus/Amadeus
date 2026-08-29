@@ -128,6 +128,14 @@ def _voice_configuration(settings: Any) -> list[dict[str, Any]]:
                     description="Prompt or domain vocabulary used by compatible full recognizers.",
                 ),
                 _startup_field(
+                    "QWEN3_ASR_MODEL_PATH", "Qwen model directory",
+                    settings.QWEN3_ASR_MODEL_PATH, field_type="path",
+                    description=(
+                        "Leave blank to use assets/models/asr/qwen3-asr-0.6b, then a legacy "
+                        "Hugging Face cache if present."
+                    ),
+                ),
+                _startup_field(
                     "QWEN3_ASR_DEVICE", "Qwen device", settings.QWEN3_ASR_DEVICE,
                     field_type="select", options=("auto", "cpu", "cuda"),
                     description="Used only by the embedded Qwen recognizer.",

@@ -230,14 +230,25 @@ def test_repository_catalog_keeps_built_in_art_outside_external_packs() -> None:
     specs = asset_pack_specs()
     visual = specs["visual-runtime"]
     character = specs["character-kurisu"]
+    qwen = specs["asr-qwen3-0.6b"]
+    voice = specs["voice-kurisu-gpt-sovits-v3"]
 
     assert not path_belongs_to_pack(
         PurePosixPath("images/amadeus_desktop_wallpaper.png"), visual
     )
     assert not path_belongs_to_pack(PurePosixPath("icons/app/app_icon.ico"), visual)
     assert not path_belongs_to_pack(PurePosixPath("images/kurisu_normal1.png"), visual)
+    assert not path_belongs_to_pack(
+        PurePosixPath("audio/sfx/computer_use_keyboard_loop.LICENSE.txt"), visual
+    )
     assert path_belongs_to_pack(
         PurePosixPath("spriteforge/runtime/kurisu/textures/idle/0001.ktx2"), character
+    )
+    assert path_belongs_to_pack(
+        PurePosixPath("models/asr/qwen3-asr-0.6b/model.safetensors"), qwen
+    )
+    assert path_belongs_to_pack(
+        PurePosixPath("models/gpt-sovits/pretrained/s2Gv3.pth"), voice
     )
 
 

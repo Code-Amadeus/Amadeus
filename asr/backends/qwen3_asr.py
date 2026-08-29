@@ -23,6 +23,7 @@ from typing import Optional
 import numpy as np
 
 from asr.backend import ASRBackendFatalError, BaseASRBackend
+from asr.qwen_model import resolve_qwen_model_source
 from config.settings import QWEN3_ASR_REQUIRE_CUDA
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,50 @@ _VENV_CU124_PYTHON = _PROJECT_ROOT / ".venv_cu124" / "Scripts" / "python.exe"
 _TOKENS_PER_SEC = 10
 _MAX_TOKENS_CAP = 256
 _MAX_TOKENS_FLOOR = 32
+_LANGUAGE_ALIASES = {
+    "zh": "Chinese",
+    "zh-cn": "Chinese",
+    "zh-tw": "Chinese",
+    "yue": "Cantonese",
+    "en": "English",
+    "ar": "Arabic",
+    "de": "German",
+    "fr": "French",
+    "es": "Spanish",
+    "pt": "Portuguese",
+    "id": "Indonesian",
+    "it": "Italian",
+    "ko": "Korean",
+    "ru": "Russian",
+    "th": "Thai",
+    "vi": "Vietnamese",
+    "ja": "Japanese",
+    "jp": "Japanese",
+    "tr": "Turkish",
+    "hi": "Hindi",
+    "ms": "Malay",
+    "nl": "Dutch",
+    "sv": "Swedish",
+    "da": "Danish",
+    "fi": "Finnish",
+    "pl": "Polish",
+    "cs": "Czech",
+    "fil": "Filipino",
+    "tl": "Filipino",
+    "fa": "Persian",
+    "el": "Greek",
+    "ro": "Romanian",
+    "hu": "Hungarian",
+    "mk": "Macedonian",
+}
+
+
+def _qwen_language(value: object) -> str | None:
+    raw = str(value or "").strip()
+    clean = raw.lower().replace("_", "-")
+    if clean in {"", "auto", "automatic", "detect"}:
+        return None
+    return _LANGUAGE_ALIASES.get(clean, raw[:1].upper() + raw[1:].lower())
 _FATAL_CUDA_MARKERS = (
     "unspecified launch failure",
     "illegal memory access",
@@ -75,6 +120,10 @@ class Qwen3ASRBackend(BaseASRBackend):
         self._owns_proc = False
         self._owns_model = False
         self._mode = "unloaded"
+        self._language: str | None = None
+
+    def set_language(self, language: str) -> None:
+        self._language = _qwen_language(language)
 
     @staticmethod
     def _is_running(proc: Optional[subprocess.Popen]) -> bool:
@@ -221,7 +270,7 @@ class Qwen3ASRBackend(BaseASRBackend):
             logger.info("[ASR:Qwen3ASR] loading in-process model (device=%s)", device_map)
             t0 = time.perf_counter()
             model = Qwen3ASRModel.from_pretrained(
-                "Qwen/Qwen3-ASR-0.6B",
+                resolve_qwen_model_source(),
                 dtype=dtype,
                 device_map=device_map,
                 max_inference_batch_size=1,

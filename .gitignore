@@ -38,6 +38,8 @@ assets/models/gpt-sovits/weights/gpt/v3/
 assets/models/gpt-sovits/weights/sovits/v1/
 assets/models/gpt-sovits/weights/sovits/v2/
 assets/models/gpt-sovits/weights/sovits/v3/
+assets/models/gpt-sovits/pretrained/
+assets/models/asr/
 weight.json
 *.ckpt
 *.pth
