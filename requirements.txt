@@ -1,0 +1,3 @@
+# Windows 11 / CPython 3.12 CPU runtime.
+# Generated from pyproject.toml; do not edit the lock by hand.
+-r requirements/locks/windows-py312-cpu.txt

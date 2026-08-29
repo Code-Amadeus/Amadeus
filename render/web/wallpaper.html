@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amadeus Desktop Scene</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #05070b;
+    }
+    #canvas-container {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+  </style>
+</head>
+<body>
+  <div id="canvas-container"></div>
+
+  <script>
+    (function () {
+      var live2dValue = String(new URLSearchParams(window.location.search).get("live2d") || "").toLowerCase();
+      var live2dCompatEnabled = ["1", "true", "yes", "on"].indexOf(live2dValue) >= 0;
+      var SCRIPTS = [
+        { local: "/render/web/vendor/pixi.min.js", cdn: null },
+        { local: "/render/web/vendor/pixi-basis-ktx2.global.js", cdn: null }
+      ];
+      if (live2dCompatEnabled) {
+        SCRIPTS.push(
+          { local: "/render/web/vendor/live2dcubismcore.min.js", cdn: null },
+          { local: "/render/web/vendor/pixi-live2d-display.cubism4.min.js", cdn: null }
+        );
+      }
+      SCRIPTS.push(
+        { local: "/render/web/renderer.js", cdn: null },
+        { local: "/render/web/crt_canvas_surface.js", cdn: null },
+        { local: "/render/web/wallpaper_scene.js", cdn: null }
+      );
+      var CACHE_BUST = String(Date.now());
+
+      function scriptSrc(src) {
+        if (src.indexOf("/render/web/vendor/") === 0) return src;
+        return src + "?v=" + CACHE_BUST;
+      }
+
+      function loadOne(src, onDone) {
+        var s = document.createElement("script");
+        s.src = scriptSrc(src);
+        s.onload = function () { onDone(true); };
+        s.onerror = function () {
+          console.error("[WallpaperLoader] failed to load: " + src);
+          onDone(false);
+        };
+        document.head.appendChild(s);
+      }
+
+      function loadAt(i) {
+        if (i >= SCRIPTS.length) return;
+        loadOne(SCRIPTS[i].local, function () {
+          loadAt(i + 1);
+        });
+      }
+
+      loadAt(0);
+    })();
+  </script>
+</body>
+</html>

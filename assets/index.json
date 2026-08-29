@@ -1,0 +1,61 @@
+{
+  "schema": "amadeus.asset-index.v2",
+  "asset_root": "assets",
+  "built_in": [
+    {
+      "id": "desktop-wallpaper",
+      "display_name": "Amadeus Desktop Wallpaper",
+      "paths": [
+        "images/amadeus_desktop_wallpaper.png"
+      ]
+    },
+    {
+      "id": "electron-icons",
+      "display_name": "Electron and UI Icons",
+      "trees": [
+        "icons"
+      ]
+    }
+  ],
+  "external_packs": [
+    {
+      "id": "visual-runtime",
+      "display_name": "Visual Runtime Pack",
+      "spec_version": 1,
+      "paths": [
+        "images/amadeus_ambient_low_blend.png",
+        "images/amadeus_ambient_high_blend.png",
+        "images/subtitle_frame_big.png",
+        "audio/sfx/computer_use_keyboard_loop.wav",
+        "audio/sfx/computer_use_keyboard_loop.LICENSE.txt"
+      ],
+      "trees": [
+        "scenarios/runtime"
+      ],
+      "required": [
+        "images/amadeus_ambient_low_blend.png",
+        "images/amadeus_ambient_high_blend.png",
+        "images/subtitle_frame_big.png",
+        "audio/sfx/computer_use_keyboard_loop.wav",
+        "scenarios/runtime/scenario_graph.json",
+        "scenarios/runtime/scenario_backplate.png"
+      ],
+      "validator": "visual_runtime"
+    },
+    {
+      "id": "character-kurisu",
+      "display_name": "Kurisu Character Pack",
+      "spec_version": 1,
+      "paths": [],
+      "trees": [
+        "spriteforge/runtime/kurisu"
+      ],
+      "required": [
+        "spriteforge/runtime/kurisu/runtime_manifest.json",
+        "spriteforge/runtime/kurisu/graph_config.json",
+        "spriteforge/runtime/kurisu/spriteforge_mouth_config.json"
+      ],
+      "validator": "character_pack"
+    }
+  ]
+}

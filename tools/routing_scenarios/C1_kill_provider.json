@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "id": "C1_kill_provider",
+  "category": "transport",
+  "notes": "Kill the provider child and retain orphan/stalled evidence.",
+  "steps": [
+    {
+      "say": "请在 scratch 仓依次创建 transport-1.txt 和 transport-2.txt，各写入文件名。",
+      "label": "new",
+      "wait": "work_note",
+      "timeout_s": 180
+    },
+    {
+      "action": "kill_provider"
+    },
+    {
+      "action": "sleep",
+      "seconds": 3
+    },
+    {
+      "say": "刚才的任务状态如何？只汇报中断状态，不要自动重试。",
+      "label": "readonly_ref",
+      "wait": "chat_complete",
+      "timeout_s": 120
+    },
+    {
+      "action": "snapshot_ledger"
+    }
+  ]
+}

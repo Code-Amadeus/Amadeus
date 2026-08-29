@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:amadeus:character-pack-v1:graph-config",
+  "title": "Amadeus character-pack runtime graph",
+  "type": "object",
+  "required": ["nodes", "edges"],
+  "additionalProperties": false,
+  "properties": {
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "label"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "label": {"type": "string", "minLength": 1},
+          "isRoot": {"type": "boolean"}
+        }
+      },
+      "contains": {
+        "type": "object",
+        "required": ["isRoot"],
+        "properties": {"isRoot": {"const": true}}
+      },
+      "minContains": 1,
+      "maxContains": 1
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "from", "to", "prob"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "from": {"type": "string", "minLength": 1},
+          "to": {"type": "string", "minLength": 1},
+          "prob": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Zero marks a manual trigger edge. Positive values are relative automatic traversal weights and do not need to sum to 1."
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "id": "A2_unrelated_new_task",
+  "category": "lifecycle",
+  "notes": "An unrelated bounded delegation should become a distinct task/worktree.",
+  "steps": [
+    {
+      "say": "请在 scratch 仓创建 alpha.txt，写入 alpha。",
+      "label": "new",
+      "wait": "work_note",
+      "timeout_s": 180
+    },
+    {
+      "say": "另外新开一个独立任务：创建 beta.json，内容是一个字段 ok=true，不要修改 alpha.txt。",
+      "label": "new",
+      "wait": "provider_terminal",
+      "timeout_s": 300
+    },
+    {
+      "action": "snapshot_ledger"
+    }
+  ]
+}

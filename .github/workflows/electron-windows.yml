@@ -1,0 +1,35 @@
+name: Electron Windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: electron
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.21.1"
+          cache: npm
+          cache-dependency-path: electron/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Typecheck and build renderer
+        run: npm run build
+
+      - name: Audit desktop runtime and build supply chain
+        run: npm audit --audit-level=high

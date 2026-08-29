@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "thinking": {
+      "offset_x": 0.0,
+      "offset_y": 0.0,
+      "scale_mul": 1.0,
+      "baseline_offset_px": 0.0,
+      "show_baseline": false,
+      "lock_to_live2d": false
+    }
+  }
+}

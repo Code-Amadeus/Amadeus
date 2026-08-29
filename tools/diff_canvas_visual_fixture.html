@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Amadeus Diff Canvas Fixture</title>
+    <style>
+      html,
+      body,
+      #canvas-container {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+      }
+
+      body {
+        background:
+          radial-gradient(circle at 72% 28%, rgba(31, 117, 112, 0.3), transparent 34%),
+          linear-gradient(135deg, #06151b, #0a2027 52%, #071319);
+        color: #d8fff3;
+        font-family: "Cascadia Mono", Consolas, monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="canvas-container"></div>
+    <script src="../render/web/crt_canvas_surface.js"></script>
+    <script>
+      const surface = window.createCrtCanvasSurface();
+      surface.layout({ x: 0, y: 0, width: window.innerWidth, height: window.innerHeight });
+      surface.setPayload({
+        mode: "markdown",
+        phase: "Result",
+        title: "Locus result report",
+        lead: "Implemented the requested Slice diff canvas.",
+        markdown: "### Locus result report\nStatus: `done`\n\nImplemented the requested Slice diff canvas and preserved the Markdown report.",
+        open: true,
+        sizePreset: "compact"
+      });
+      surface.setPayload({
+        mode: "diff",
+        phase: "Preview",
+        title: "Locus diff preview",
+        lead: "2 files: +4 / -2",
+        reportMarkdown: "### Locus result report\nStatus: `done`\n\nImplemented the requested Slice diff canvas and preserved the Markdown report.",
+        diff: {
+          fileCount: 2,
+          additions: 4,
+          deletions: 2,
+          lineCount: 10,
+          clean: false,
+          truncated: false,
+          files: [
+            {
+              path: "server/ai_os_schema.py",
+              status: "modified",
+              additions: 2,
+              deletions: 1,
+              hunks: [
+                {
+                  header: "@@ -30,4 +30,5 @@ CanvasMode = Literal[",
+                  lines: [
+                    { kind: "context", oldLine: 30, newLine: 30, text: "    \"workflow\"," },
+                    { kind: "context", oldLine: 31, newLine: 31, text: "    \"markdown\"," },
+                    { kind: "remove", oldLine: 32, text: "    \"code\"," },
+                    { kind: "add", newLine: 32, text: "    \"diff\"," },
+                    { kind: "add", newLine: 33, text: "    \"code\"," },
+                    { kind: "context", oldLine: 33, newLine: 34, text: "]" }
+                  ]
+                }
+              ]
+            },
+            {
+              path: "render/web/crt_canvas_surface.js",
+              status: "modified",
+              additions: 2,
+              deletions: 1,
+              hunks: [
+                {
+                  header: "@@ -2310,3 +2310,4 @@ function render()",
+                  lines: [
+                    { kind: "remove", oldLine: 2310, text: "return markdownPane();" },
+                    { kind: "add", newLine: 2310, text: "if (state.mode === \"diff\") return diffPane();" },
+                    { kind: "add", newLine: 2311, text: "return markdownPane();" }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        open: true,
+        sizePreset: "wide",
+        size: { width: 680, height: 580 }
+      });
+    </script>
+  </body>
+</html>

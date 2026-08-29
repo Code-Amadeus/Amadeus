@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 170" width="1280" height="170" role="img" aria-label="Amadeus runtime in four layers: interruptible voice, speech-synced performance, delegated providers, resumable and steerable">
+  <title>AMADEUS // CHAPTER 00 — TALK / EMBODY / ACT / CONTROL</title>
+  <defs>
+    <linearGradient id="s_panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b1711"/>
+      <stop offset="1" stop-color="#061710"/>
+    </linearGradient>
+    <linearGradient id="s_hair" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#a8cdb8" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#a8cdb8" stop-opacity=".03"/>
+    </linearGradient>
+    <radialGradient id="s_wash" cx="6%" cy="0%" r="52%">
+      <stop offset="0" stop-color="#39c98d" stop-opacity=".14"/>
+      <stop offset="1" stop-color="#39c98d" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="s_tung" cx="97%" cy="110%" r="46%">
+      <stop offset="0" stop-color="#d7a95f" stop-opacity=".10"/>
+      <stop offset="1" stop-color="#d7a95f" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="s_scan" width="3" height="3" patternUnits="userSpaceOnUse">
+      <rect width="3" height="1" fill="#b6f9d5" opacity=".05"/>
+    </pattern>
+    <filter id="s_soft" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+    <clipPath id="s_frame"><rect x="12" y="12" width="1256" height="146" rx="8"/></clipPath>
+    <style>
+      .mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"DejaVu Sans Mono",monospace}
+      .sans{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+      .rec{animation:rec 2.2s ease-in-out infinite}
+      @keyframes rec{0%,100%{opacity:1}50%{opacity:.25}}
+      @media (prefers-reduced-motion:reduce){.rec{animation:none}}
+    </style>
+  </defs>
+
+  <g clip-path="url(#s_frame)">
+    <rect x="12" y="12" width="1256" height="146" fill="url(#s_panel)"/>
+    <rect x="12" y="12" width="1256" height="146" fill="url(#s_wash)"/>
+    <rect x="12" y="12" width="1256" height="146" fill="url(#s_tung)"/>
+    <rect x="12" y="12" width="1256" height="146" fill="url(#s_scan)"/>
+    <rect x="12" y="12" width="4" height="146" fill="#61eeb6" opacity=".9"/>
+    <rect x="12" y="12" width="16" height="146" fill="#61eeb6" opacity=".13" filter="url(#s_soft)"/>
+
+    <text class="mono" x="44" y="48" font-size="15" letter-spacing="4.4" fill="#83d7aa">AMADEUS // CHAPTER 00</text>
+
+    <g>
+      <rect x="1021.5" y="33.5" width="188" height="25" rx="12.5" fill="#272018" stroke="#483820"/>
+      <text class="mono" x="1115" y="50" font-size="11.5" letter-spacing="1.4" fill="#d7a95f" text-anchor="middle">SOURCE PENDING</text>
+    </g>
+    <g stroke="#46745d" fill="none"><rect x="1225.5" y="33.5" width="19" height="19" rx="2"/></g>
+    <rect class="rec" x="1230" y="38" width="10" height="10" rx="1" fill="#61eeb6" opacity=".8"/>
+
+    <rect x="44" y="78" width="1192" height="1" fill="url(#s_hair)"/>
+    <g fill="#a8cdb8" opacity=".1">
+      <rect x="320" y="90" width="1" height="52"/><rect x="618" y="90" width="1" height="52"/><rect x="916" y="90" width="1" height="52"/>
+    </g>
+    <g class="mono" font-size="12" letter-spacing="2.4" fill="#82aa92">
+      <text x="44" y="106">TALK</text><text x="342" y="106">EMBODY</text><text x="640" y="106">ACT</text><text x="938" y="106">CONTROL</text>
+    </g>
+    <g class="sans" font-size="18" font-weight="600" fill="#d9f7e6">
+      <text x="44" y="136">interruptible voice</text><text x="342" y="136">speech-synced performance</text><text x="640" y="136">delegated providers</text><text x="938" y="136">resumable · steerable</text>
+    </g>
+  </g>
+  <rect x="12.5" y="12.5" width="1255" height="145" rx="8" fill="none" stroke="#2f624a"/>
+</svg>

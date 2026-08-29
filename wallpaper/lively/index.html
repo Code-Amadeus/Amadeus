@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amadeus Desktop Agent</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body, iframe {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      border: 0;
+      background: #05070b;
+    }
+  </style>
+</head>
+<body>
+  <iframe
+    id="amadeus-wallpaper"
+    allow="autoplay; fullscreen"
+    referrerpolicy="no-referrer"
+  ></iframe>
+  <script>
+    (async function () {
+      var params = new URLSearchParams(window.location.search || "");
+      function normalizePort(value) {
+        var port = Number(value);
+        return Number.isInteger(port) && port > 0 && port <= 65535
+          ? String(port)
+          : "";
+      }
+
+      var assetPort = normalizePort(params.get("assetPort"));
+      var bridgePort = normalizePort(params.get("bridgePort"));
+      var sliceHost = params.get("sliceHost") === "electron" ? "electron" : "";
+
+      // This wrapper can be served either by the backend (normally 17777) or
+      // by the dedicated asset server (normally 17778+).  Discover the
+      // canonical ports before creating the iframe so the wallpaper page,
+      // textures, bridge token, SSE stream, and Canvas actions all share the
+      // intended local origins.  Falling back to window.location.port here
+      // made the backend wrapper silently load assets from the wrong server.
+      var discoveryWarningLogged = false;
+      while (!assetPort || !bridgePort) {
+        try {
+          var response = await fetch(
+            window.location.origin + "/wallpaper/bridge-info",
+            { cache: "no-store" }
+          );
+          if (response.ok) {
+            var info = await response.json();
+            assetPort = assetPort || normalizePort(info.assetPort);
+            bridgePort = bridgePort || normalizePort(info.bridgePort);
+            if (info.sliceHost === "electron") sliceHost = "electron";
+          }
+        } catch (error) {
+          if (!discoveryWarningLogged) {
+            console.warn("[AmadeusLively] bridge discovery failed; retrying", error);
+            discoveryWarningLogged = true;
+          }
+        }
+
+        if (!assetPort || !bridgePort) {
+          // Manual-off is a healthy state. Keep the wrapper idle and resolve
+          // the canonical origin after the user starts wallpaper mode.
+          await new Promise(function (resolve) {
+            window.setTimeout(resolve, 5000);
+          });
+        }
+      }
+
+      var url = "http://127.0.0.1:" + assetPort +
+        "/render/web/wallpaper_engine.html?bridgePort=" + bridgePort +
+        "&host=lively";
+      if (sliceHost) url += "&sliceHost=" + encodeURIComponent(sliceHost);
+      document.getElementById("amadeus-wallpaper").src = url;
+    })();
+  </script>
+</body>
+</html>

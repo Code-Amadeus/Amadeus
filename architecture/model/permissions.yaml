@@ -1,0 +1,154 @@
+schema: amadeus.architecture.permissions.v1
+observed_at: 2026-07-22
+actors:
+  user:
+    label: User
+    kind: principal
+  chat_or_gui:
+    label: Chat / Electron GUI
+    kind: request_surface
+  wallpaper_canvas:
+    label: Wallpaper CRT canvas
+    kind: untrusted_surface
+  canvas_router:
+    label: CanvasActionRouter
+    kind: security_boundary
+  work_api:
+    label: WorkLedgerHandler
+    kind: validation_boundary
+  work_control:
+    label: WorkLedgerCoordinator
+    kind: authority
+  provider_runtime:
+    label: ProviderRuntime
+    kind: executor
+  provider_adapter:
+    label: Provider adapter / provider policy
+    kind: executor
+  export_service:
+    label: WorkExportService
+    kind: executor
+  work_store:
+    label: WorkLedgerStore
+    kind: durable_authority
+  host_filesystem:
+    label: Workspace / Desktop filesystem
+    kind: resource
+
+capabilities:
+  - id: provider.run
+    label: Start delegated provider work
+    requested_by: chat_or_gui
+    gate: work_control
+    executor: provider_runtime
+    resource: provider_adapter
+    risk: local_execution
+    approval: implicit_after_routing
+    guards:
+      - provider is registered
+      - task is non-empty
+      - every new run crosses prepare_request
+      - workspace routing and active-writer policy pass
+    sources:
+      - server/handlers/provider_handler.py
+      - agent_host/provider_runtime.py
+      - server/work_ledger_coordinator.py
+
+  - id: workspace.write
+    label: Modify the selected project workspace
+    requested_by: provider_runtime
+    gate: work_control
+    executor: provider_adapter
+    resource: host_filesystem
+    risk: local_execution
+    approval: host_route_plus_provider_policy
+    guards:
+      - workspace canonical identity is resolved
+      - Host Project trust and Provider workspace policy pass
+      - one active writer lease per local workspace
+      - attempt identity is durable
+    sources:
+      - server/work_ledger_coordinator.py
+      - agent_host/work_ledger_store.py
+      - agent_host/adapters/codex_app_server.py
+      - agent_host/adapters/direct_codex.py
+
+  - id: filesystem.export
+    label: Copy exact staged artifacts to Desktop
+    requested_by: wallpaper_canvas
+    gate: work_api
+    executor: export_service
+    resource: host_filesystem
+    risk: external_side_effect
+    approval: explicit_allow_once
+    guards:
+      - current canvas revision matches
+      - selected WorkItem and attempt match the request
+      - permission request id is current and pending
+      - source entries and target names are host-owned
+      - durable receipt prevents replay after restart
+    sources:
+      - server/handlers/work_ledger_handler.py
+      - server/work_ledger_coordinator.py
+      - server/work_export_service.py
+
+  - id: provider.permission.resolve
+    label: Resolve a provider-reported gated tool action
+    requested_by: wallpaper_canvas
+    gate: work_api
+    executor: work_control
+    resource: provider_adapter
+    risk: sensitive
+    approval: explicit_bounded_decision
+    guards:
+      - revision and selected identities match
+      - request capability, action, scope, and idempotency key are durable
+      - only a pending request can resolve
+      - provider-native continuation remains adapter-specific
+    sources:
+      - agent_host/adapters/codex_app_server.py
+      - server/handlers/work_ledger_handler.py
+      - server/work_ledger_coordinator.py
+
+  - id: work.disposition
+    label: Accept, reopen, or archive a WorkItem
+    requested_by: wallpaper_canvas
+    gate: work_api
+    executor: work_control
+    resource: work_store
+    risk: local_view
+    approval: explicit_user_action
+    guards:
+      - canvas revision and WorkItem identity match
+      - no active attempt for accept, reopen, or archive
+      - accept requires a completion assessment and no pending permission
+      - reopen requires the workspace to exist
+    sources:
+      - server/handlers/work_ledger_handler.py
+      - server/work_ledger_coordinator.py
+
+  - id: work.retry_resume
+    label: Retry failed work or resume an orphaned attempt
+    requested_by: wallpaper_canvas
+    gate: work_api
+    executor: provider_runtime
+    resource: provider_adapter
+    risk: local_execution
+    approval: explicit_context_bound_action
+    guards:
+      - revision, selected WorkItem, and latest attempt all match
+      - retry is limited to failed or cancelled attempts
+      - resume is limited to orphaned resumable attempts
+      - resume cannot change task, provider, or workspace
+    sources:
+      - server/handlers/work_ledger_handler.py
+      - agent_host/provider_runtime.py
+
+canvas_entry:
+  from: wallpaper_canvas
+  through: canvas_router
+  to: work_api
+  guards:
+    - allowlisted target and action
+    - no authority is inferred from presentation fields
+    - provider inspection and work mutation use separate routes

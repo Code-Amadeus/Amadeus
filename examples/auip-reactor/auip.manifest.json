@@ -1,0 +1,53 @@
+{
+  "schema": "amadeus.auip/v0",
+  "app": {
+    "id": "reactor-drift",
+    "title": "Reactor Drift",
+    "version": "0.1.0",
+    "interactionSummary": "The participant can set one cooling level from the current public reactor readings. Examples: '先降温' means choose a higher reactor.set_cooling level when heat is excessive; '别降过头' means select a bounded level that moves the visible reading toward its safe interval."
+  },
+  "events": {
+    "simulation.ready": {
+      "beat": true
+    },
+    "reactor.heat_warning": {
+      "beat": true,
+      "importance": "important"
+    },
+    "reactor.cooling_changed": {
+      "beat": true
+    },
+    "reactor.stabilized": {
+      "beat": true,
+      "importance": "important",
+      "terminal": true
+    }
+  },
+  "actions": {
+    "reactor.set_cooling": {
+      "description": "Set one exact available cooling level from state.actions after reading state.metrics heat, trend, and safe interval.",
+      "risk": "local_execution",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "level": {
+            "type": "integer",
+            "description": "Cooling level from zero through three.",
+            "minimum": 0,
+            "maximum": 3
+          }
+        },
+        "required": ["level"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "stances": [
+    "spectator",
+    "participant"
+  ],
+  "situationKinds": [
+    "scalars/v1",
+    "choice/v1"
+  ]
+}

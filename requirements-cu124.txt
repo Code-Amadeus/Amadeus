@@ -1,0 +1,10 @@
+# Windows 11 / CPython 3.12 / CUDA 12.4 local-model install profile.
+#
+# This is intentionally not called a lock yet. The current machine snapshot is
+# recorded under requirements/locks, but the combined ASR/TTS stack still has
+# to pass a clean install before that snapshot can become a release lock.
+--extra-index-url https://download.pytorch.org/whl/cu124
+
+torch==2.5.1+cu124
+torchaudio==2.5.1+cu124
+.[local-cu124]

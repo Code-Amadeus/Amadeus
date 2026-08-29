@@ -1,0 +1,239 @@
+schema: amadeus.architecture.interactions.v1
+observed_at: 2026-07-22
+scenarios:
+  provider_work_and_narration:
+    title: Provider work, concurrent status query, and narration
+    sources:
+      - core/chat_runtime.py
+      - server/app.py
+      - agent_host/provider_runtime.py
+      - server/work_ledger_coordinator.py
+      - server/handlers/work_activity_handler.py
+      - server/work_observer.py
+      - tools/e2e_real_work_conversation.py
+    participants:
+      user: User
+      surface: Voice / chat surface
+      chat: ChatRuntime
+      gateway: ProviderHandler
+      work: WorkLedger control plane
+      runtime: ProviderRuntime
+      adapter: Codex / OpenClaw / browser adapter
+      bus: EventBus
+      activity: WorkActivity projection
+      observer: WorkObserver + cadence governor
+      canvas: CRT canvas
+      speech: Character speech channel
+    steps:
+      - type: message
+        from: user
+        to: surface
+        label: Submit a task
+      - type: message
+        from: surface
+        to: chat
+        label: chat.send
+      - type: message
+        from: chat
+        to: gateway
+        label: Structured delegation with provider, task, and cwd
+      - type: message
+        from: gateway
+        to: work
+        label: prepare_request creates or binds WorkItem and RunAttempt
+      - type: message
+        from: gateway
+        to: runtime
+        label: Start normalized ProviderRunRequest
+      - type: message
+        from: runtime
+        to: adapter
+        label: run(request, run_id, emit)
+      - type: loop_start
+        label: Normalized provider event stream
+      - type: message
+        from: adapter
+        to: runtime
+        label: status, tool, semantic progress, artifact, permission
+        arrow: reply
+      - type: message
+        from: runtime
+        to: bus
+        label: provider.event
+      - type: message
+        from: bus
+        to: work
+        label: Persist attempt, evidence, artifact, permission, and projection
+        arrow: reply
+      - type: message
+        from: bus
+        to: activity
+        label: Project current activity and semantic keypoints
+        arrow: reply
+      - type: message
+        from: activity
+        to: canvas
+        label: wallpaper.canvas / activity / character intent
+        arrow: reply
+      - type: message
+        from: activity
+        to: bus
+        label: chat.work_note
+      - type: message
+        from: bus
+        to: observer
+        label: Observe semantic note
+        arrow: reply
+      - type: alt_start
+        label: Keypoint, speech idle, and cadence permits
+      - type: message
+        from: observer
+        to: speech
+        label: Queue one coalesced intermediate report
+      - type: else
+        label: Busy, too soon, or routine progress
+      - type: note
+        over:
+          - observer
+        label: Merge keypoints or stay silent; canvas remains current
+      - type: alt_end
+      - type: loop_end
+      - type: alt_start
+        label: User asks for status while provider is active
+      - type: message
+        from: user
+        to: surface
+        label: Ask what is happening now
+      - type: message
+        from: surface
+        to: chat
+        label: New conversational turn
+      - type: message
+        from: chat
+        to: work
+        label: Read bounded active-provider context
+      - type: message
+        from: chat
+        to: surface
+        label: Answer status without starting a second provider run
+        arrow: reply
+      - type: alt_end
+      - type: message
+        from: adapter
+        to: runtime
+        label: ProviderRunResult
+        arrow: reply
+      - type: message
+        from: runtime
+        to: bus
+        label: provider.result
+      - type: message
+        from: bus
+        to: work
+        label: Completion assessment and final selected-work projection
+        arrow: reply
+      - type: message
+        from: work
+        to: bus
+        label: Terminal chat.work_note
+      - type: message
+        from: bus
+        to: observer
+        label: Terminal keypoint bypasses normal cadence
+        arrow: reply
+      - type: message
+        from: observer
+        to: speech
+        label: Final spoken report when output channel is available
+      - type: message
+        from: observer
+        to: chat
+        label: Append selected conclusion to main conversation
+
+  desktop_export_permission:
+    title: Exact Desktop export permission and durable recovery
+    sources:
+      - server/work_ledger_coordinator.py
+      - server/work_export_service.py
+      - server/canvas_action_router.py
+      - server/handlers/work_ledger_handler.py
+      - agent_host/work_ledger_store.py
+    participants:
+      provider: Provider event stream
+      work: WorkLedger control plane
+      store: WorkLedgerStore
+      canvas: CRT permission card
+      router: CanvasActionRouter
+      api: WorkLedgerHandler
+      export: WorkExportService
+      filesystem: Desktop filesystem
+      observer: WorkObserver
+    steps:
+      - type: message
+        from: provider
+        to: work
+        label: External artifact is staged but not published
+      - type: message
+        from: work
+        to: store
+        label: Create idempotent pending filesystem.export request
+      - type: message
+        from: work
+        to: canvas
+        label: Render exact scope and allow-once / deny actions
+      - type: message
+        from: work
+        to: observer
+        label: Emit one actionable permission keypoint
+      - type: message
+        from: canvas
+        to: router
+        label: Action plus revision, WorkItem, attempt, and request ids
+      - type: message
+        from: router
+        to: api
+        label: Route allowlisted permission action
+      - type: message
+        from: api
+        to: work
+        label: Validate current revision and selected identities
+      - type: alt_start
+        label: User allows once
+      - type: message
+        from: work
+        to: export
+        label: Resolve exact pending request
+      - type: message
+        from: export
+        to: store
+        label: Persist authorization and transaction receipt
+      - type: message
+        from: export
+        to: filesystem
+        label: Copy host-owned staged entries to exact targets
+      - type: message
+        from: export
+        to: store
+        label: Commit receipt and exported artifact evidence
+      - type: else
+        label: User denies
+      - type: message
+        from: work
+        to: store
+        label: Resolve request as denied; perform no external copy
+      - type: alt_end
+      - type: alt_start
+        label: Process stops after authorization but before commit
+      - type: message
+        from: work
+        to: store
+        label: Startup scans allowed unfinished receipts
+      - type: message
+        from: work
+        to: export
+        label: Resume only the same authorized transaction
+      - type: alt_end
+      - type: message
+        from: work
+        to: canvas
+        label: Publish updated permission and WorkItem projection

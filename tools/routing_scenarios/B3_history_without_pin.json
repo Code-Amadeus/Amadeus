@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "id": "B3_history_without_pin",
+  "category": "reference",
+  "notes": "Viewing an older task is not itself a routing pin.",
+  "steps": [
+    {
+      "say": "请在 scratch 仓创建 old.txt，写入 old。",
+      "label": "new",
+      "wait": "provider_terminal",
+      "timeout_s": 300
+    },
+    {
+      "say": "请新开任务创建 current.txt，写入 current。",
+      "label": "new",
+      "wait": "provider_terminal",
+      "timeout_s": 300
+    },
+    {
+      "say": "给旧任务加一行 reviewed；这里的旧任务指 old.txt。",
+      "label": "continue",
+      "wait": "provider_terminal",
+      "timeout_s": 300
+    },
+    {
+      "action": "snapshot_ledger"
+    }
+  ]
+}

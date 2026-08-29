@@ -1,0 +1,48 @@
+name: Source Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  source-archive:
+    runs-on: windows-2025
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12.10"
+
+      - name: Verify included third-party provenance
+        run: python tools/check_third_party_provenance.py --release-ready
+
+      - name: Build deterministic source archive
+        run: >-
+          python tools/build_source_release.py
+          --manifest-output build/release/source-manifest.json
+          --output dist/amadeus-source.zip
+
+      - name: Write SHA-256 checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -Algorithm SHA256 dist/amadeus-source.zip).Hash.ToLowerInvariant()
+          "$hash  amadeus-source.zip" | Set-Content -Encoding ascii dist/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: amadeus-source-${{ github.ref_name }}
+          path: |
+            dist/amadeus-source.zip
+            dist/SHA256SUMS.txt
+            build/release/source-manifest.json
+          if-no-files-found: error

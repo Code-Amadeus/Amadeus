@@ -1,0 +1,12 @@
+@echo off
+chcp 65001 >NUL
+set PYTHONUTF8=1
+set PYTHONIOENCODING=utf-8
+set PYTHONUNBUFFERED=1
+set LANG=zh_CN.UTF-8
+set RAG_ENABLED_FOR_LOCAL=0
+set VTS_ENABLED=0
+set VTS_HEARTBEAT_ENABLED=0
+set VTS_RECONNECT_ENABLED=0
+cd /d "%~dp0electron"
+npm run electron:dev

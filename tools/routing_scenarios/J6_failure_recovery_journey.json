@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "J6_failure_recovery_journey",
+  "category": "transport",
+  "notes": "Alpha semantic Journey J6. The first provider is deliberately held in a real validation command long enough to cross the semantic-silence boundary, then killed. The same isolated ledger is restarted before one bounded retry. This scenario is excluded unless --long-silence is explicit because the 145 second observation window is load-bearing and includes the production heartbeat quantization.",
+  "steps": [
+    {
+      "say": "请在 scratch 仓执行一个可恢复性任务。先创建 resilience.txt，内容严格为一行 before-failure。然后实际运行 PowerShell 命令 Start-Sleep -Seconds 210 作为长验证；只有命令返回后才追加 validation-complete。不要在其他目录操作。",
+      "label": "new",
+      "wait": "work_note",
+      "timeout_s": 180
+    },
+    {
+      "action": "sleep",
+      "seconds": 145
+    },
+    {
+      "say": "刚才正在运行的任务现在是什么状态？只读取当前账本事实，不要修改、重试或新建任务。",
+      "label": "readonly_ref",
+      "wait": "chat_complete",
+      "timeout_s": 120
+    },
+    {
+      "action": "kill_provider"
+    },
+    {
+      "action": "sleep",
+      "seconds": 8
+    },
+    {
+      "say": "中断后的任务现在是什么状态？只汇报真实状态，不要自动恢复或声称已经完成。",
+      "label": "readonly_ref",
+      "wait": "chat_complete",
+      "timeout_s": 120
+    },
+    {
+      "action": "restart_backend"
+    },
+    {
+      "say": "后端重启后，刚才中断的任务和工作目录还在吗？只查询，不要执行。",
+      "label": "readonly_ref",
+      "wait": "chat_complete",
+      "timeout_s": 120
+    },
+    {
+      "say": "现在重试刚才中断的同一项工作，但不要再执行长等待。保留 resilience.txt 的 before-failure，并把文件内容严格改成两行：第一行 before-failure，第二行 recovery-complete。读取文件验证后结束，不要创建新的目标任务。",
+      "label": "continue",
+      "wait": "provider_terminal",
+      "timeout_s": 600,
+      "expect_files": [
+        {
+          "path": "resilience.txt",
+          "content": "before-failure\nrecovery-complete\n"
+        }
+      ]
+    },
+    {
+      "action": "snapshot_ledger"
+    }
+  ]
+}

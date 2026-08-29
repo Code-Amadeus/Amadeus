@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reactor Drift</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; background: #061014; color: #e8fffb; }
+    * { box-sizing: border-box; }
+    body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: radial-gradient(circle at 50% 34%, #113d43, #061014 55%); }
+    main { width: min(92vw, 760px); padding: 28px; border: 1px solid #34747a; border-radius: 26px; background: rgba(4, 22, 26, .94); box-shadow: 0 28px 90px #000a; }
+    header { display: flex; justify-content: space-between; gap: 24px; align-items: start; }
+    h1 { margin: 0; font-size: 42px; letter-spacing: -.04em; }
+    header p, #connection { color: #8fbfc0; }
+    .dial { width: min(66vw, 330px); aspect-ratio: 1; margin: 24px auto; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(#58f0ce var(--heat-angle), #132d32 0); box-shadow: inset 0 0 0 24px #071519, 0 0 70px #40d9bb22; }
+    .dial div { width: 60%; aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center; text-align: center; background: #0a1d21; }
+    .dial b { display: block; font-size: 54px; }
+    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .metrics div { padding: 13px; border: 1px solid #28565c; border-radius: 12px; background: #0a2024; }
+    .metrics span { display: block; color: #8fbfc0; font-size: 12px; }
+    .metrics b { font-size: 20px; }
+    .controls { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 18px; }
+    button { border: 1px solid #3b7b82; border-radius: 10px; padding: 12px; color: inherit; background: #123239; cursor: pointer; }
+    button:hover { background: #19454e; }
+    button.active { border-color: #65f5d4; color: #65f5d4; }
+    #status { margin: 16px 0 0; font-weight: 700; }
+    #connection { margin: 4px 0 0; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div><h1>Reactor Drift</h1><p>A continuous simulation with sparse semantic checkpoints.</p></div>
+      <div><b>Target ≤ 44°C</b><p>Hold for three ticks</p></div>
+    </header>
+    <div class="dial" id="dial"><div><span>CORE</span><b id="heat">56</b><span>°C</span></div></div>
+    <div class="metrics">
+      <div><span>Cooling</span><b id="cooling">0</b></div>
+      <div><span>Trend</span><b id="trend">rising</b></div>
+      <div><span>Ticks</span><b id="ticks">0</b></div>
+      <div><span>Revision</span><b id="revision">0</b></div>
+    </div>
+    <div class="controls">
+      <button type="button" data-level="0">Cooling 0</button>
+      <button type="button" data-level="1">Cooling 1</button>
+      <button type="button" data-level="2">Cooling 2</button>
+      <button type="button" data-level="3">Cooling 3</button>
+    </div>
+    <p id="status">Drifting</p>
+    <p id="connection">Standalone mode</p>
+  </main>
+  <script id="auip-manifest" type="application/json">
+  {
+    "schema": "amadeus.auip/v0",
+    "app": {
+      "id": "reactor-drift",
+      "title": "Reactor Drift",
+      "version": "0.1.0",
+      "interactionSummary": "The participant can set one cooling level from the current public reactor readings. Examples: '先降温' means choose a higher reactor.set_cooling level when heat is excessive; '别降过头' means select a bounded level that moves the visible reading toward its safe interval."
+    },
+    "events": {
+      "simulation.ready": {
+        "beat": true
+      },
+      "reactor.heat_warning": {
+        "beat": true,
+        "importance": "important"
+      },
+      "reactor.cooling_changed": {
+        "beat": true
+      },
+      "reactor.stabilized": {
+        "beat": true,
+        "importance": "important",
+        "terminal": true
+      }
+    },
+    "actions": {
+      "reactor.set_cooling": {
+        "description": "Set one exact available cooling level from state.actions after reading state.metrics heat, trend, and safe interval.",
+        "risk": "local_execution",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "level": {
+              "type": "integer",
+              "description": "Cooling level from zero through three.",
+              "minimum": 0,
+              "maximum": 3
+            }
+          },
+          "required": [
+            "level"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "stances": [
+      "spectator",
+      "participant"
+    ],
+    "situationKinds": [
+      "scalars/v1",
+      "choice/v1"
+    ]
+  }
+  </script>
+  <script src="../../sdk/auip-core/managed-v0.js"></script>
+  <script src="../../sdk/auip-core/situations-v0.js"></script>
+  <script src="../../sdk/auip-web/auip-v0.js"></script>
+  <script src="./simulation.js"></script>
+</body>
+</html>

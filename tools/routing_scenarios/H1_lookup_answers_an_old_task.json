@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "id": "H1_lookup_answers_an_old_task",
+  "category": "composite",
+  "notes": "The acceptance task lookup was built for (task_lookup_work_order.md sections 7.4 and 7.8). Six tasks are created so the one asked about is no longer among the recent few, then it is named only by paraphrase -- no filename, so level 1 cannot answer and the side channel has to. Two things are under test that no stub can settle: whether the model still declares intent=\"report\" this deep into a conversation, and whether the answer that comes back is about the RIGHT task. The hard invariant (a read-only question creates no work) is scored automatically; the answer itself arrives on a second pass with no turn_id, so it is read from the [TASK-LOOKUP] log lines rather than asserted here -- expect_reply_mentions filters by turn_id and would report a failure that is the instrument's, not the system's. The sleeps are load-bearing: the answer deliberately waits for the floor, and the first run of this scenario fired both questions back to back, so neither answer ever got one and the run proved nothing about them.",
+  "steps": [
+    {"say": "请在 scratch 仓创建 colors.txt，依次写入 red、green、blue，每行一个。", "label": "new", "wait": "work_note", "timeout_s": 180},
+    {"say": "再建一个 notes.md，写上今天的会议纪要标题。", "label": "new", "wait": "work_note", "timeout_s": 180},
+    {"say": "再建一个 config.ini，写一行 timeout=30。", "label": "new", "wait": "work_note", "timeout_s": 180},
+    {"say": "再建一个 readme.txt，写上项目标题。", "label": "new", "wait": "work_note", "timeout_s": 180},
+    {"say": "再建一个 data.csv，写两行示例数据。", "label": "new", "wait": "work_note", "timeout_s": 180},
+    {"say": "再建一个 log.txt，写一行启动记录。", "label": "new", "wait": "work_note", "timeout_s": 180},
+    {"say": "最开始那个写颜色的任务后来怎么样了？只汇报状态，不要重试。", "label": "readonly_ref", "wait": "chat_complete"},
+    {"action": "sleep", "seconds": 15},
+    {"say": "那个记会议纪要的呢？也只说状态。", "label": "readonly_ref", "wait": "chat_complete"},
+    {"action": "sleep", "seconds": 15},
+    {"action": "snapshot_ledger"}
+  ]
+}

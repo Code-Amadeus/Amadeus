@@ -1,0 +1,75 @@
+{
+  "schema": "amadeus.auip/v0",
+  "app": {
+    "id": "bullet-hell-threat-lab",
+    "title": "Bullet Hell Threat Lab",
+    "version": "0.1.0",
+    "objective": "Survive and clear each wave; follow the player or pursue rewards when explicitly prioritized, while the local controller always overrides policy to evade immediate lethal danger.",
+    "interactionSummary": "Can set one sustained tactic: '先保命' means evasion-first, '跟上我' means follow the human player's craft, and '奖励优先' means reward-first. Exact target, direction, aim, and fire are not role-addressable. For '瞄准右边那个敌人射击', a good role reply is '那个目标不能单独指定；我先以进攻为主，具体怎么打由我判断.' For an unsupported direction, say it cannot be promised and offer follow or evade in character. Never explain Participant/Controller plumbing, expose action or enum names, or promise unsupported micro-control. Smooth motion and lethal safety overrides remain app-local."
+  },
+  "events": {
+    "battle.ready": {
+      "beat": true
+    },
+    "battle.wave_changed": {
+      "beat": true,
+      "importance": "important"
+    },
+    "battle.tactics_set": {
+      "beat": true
+    },
+    "battle.controller_milestone": {
+      "beat": true,
+      "importance": "important",
+      "controllerEffect": true
+    },
+    "battle.controller_effect": {
+      "beat": false,
+      "controllerEffect": true
+    },
+    "battle.tactics_stopped": {
+      "beat": true
+    }
+  },
+  "actions": {
+    "battle.set_tactics": {
+      "description": "Set sustained policy from accepted state: evade lethal density, attack in safe openings, follow the player when ordered, or prioritize rewards when their risk is acceptable.",
+      "risk": "local_execution",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "evade",
+              "balance",
+              "attack",
+              "follow",
+              "rewards"
+            ]
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "stances": [
+    "spectator",
+    "participant"
+  ],
+  "situationKinds": [
+    "choice/v1",
+    "controller/v1"
+  ],
+  "controller": {
+    "policyActions": [
+      "battle.set_tactics"
+    ],
+    "leaseDurationMs": 300000,
+    "maxActionRateHz": 20,
+    "takeover": "immediate"
+  }
+}

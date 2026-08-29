@@ -1,0 +1,257 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1120" viewBox="0 0 1800 1120" role="img" aria-labelledby="title desc">
+  <title id="title">Amadeus current public architecture</title>
+  <desc id="desc">Electron surfaces connect to an authenticated Python Host. Main Chat delegates through the Host-owned Work control plane to Browser, Codex, or optional OpenClaw Providers, with Claude CLI planned as a future direct Provider. MCP and Skills remain Provider-scoped. Verified Artifacts may attach to bounded AUIP AppSessions. Voice and SpriteForge presentation remain separate from execution authority.</desc>
+
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#020b08"/>
+      <stop offset="0.52" stop-color="#061710"/>
+      <stop offset="1" stop-color="#0b1711"/>
+    </linearGradient>
+    <linearGradient id="hostGlow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#09251b"/>
+      <stop offset="1" stop-color="#0b1b15"/>
+    </linearGradient>
+    <linearGradient id="workGlow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16271d"/>
+      <stop offset="1" stop-color="#181b14"/>
+    </linearGradient>
+    <linearGradient id="auipGlow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#241d14"/>
+      <stop offset="1" stop-color="#171712"/>
+    </linearGradient>
+    <radialGradient id="screenGlow" cx="50%" cy="38%" r="72%">
+      <stop offset="0" stop-color="#65f2b1" stop-opacity="0.07"/>
+      <stop offset="0.64" stop-color="#163d2b" stop-opacity="0.025"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.28"/>
+    </radialGradient>
+    <pattern id="grid" width="42" height="42" patternUnits="userSpaceOnUse">
+      <path d="M 42 0 L 0 0 0 42" fill="none" stroke="#78e5ad" stroke-width="1" opacity="0.055"/>
+    </pattern>
+    <pattern id="scanlines" width="6" height="6" patternUnits="userSpaceOnUse">
+      <rect width="6" height="1" fill="#b6f9d5" opacity="0.022"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000604" flood-opacity="0.62"/>
+    </filter>
+    <filter id="phosphor" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#61eeb6"/>
+    </marker>
+    <marker id="arrowMint" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#82f5b8"/>
+    </marker>
+    <marker id="arrowAmber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#efbd68"/>
+    </marker>
+    <style>
+      .title { font: 700 44px "Cascadia Mono", "Microsoft YaHei", "PingFang SC", monospace; letter-spacing: 0.4px; fill: #eafff2; }
+      .subtitle { font: 400 21px Inter, "Microsoft YaHei", "PingFang SC", sans-serif; fill: #91bca5; }
+      .column-title { font: 700 21px "Cascadia Mono", "Microsoft YaHei", "PingFang SC", monospace; letter-spacing: 2px; fill: #83d7aa; }
+      .card-title { font: 700 24px Inter, "Microsoft YaHei", "PingFang SC", sans-serif; fill: #effff5; }
+      .card-subtitle { font: 650 16px "Cascadia Mono", "Microsoft YaHei", "PingFang SC", monospace; fill: #d9f7e6; }
+      .body { font: 400 17px Inter, "Microsoft YaHei", "PingFang SC", sans-serif; fill: #b2d2bf; }
+      .small { font: 500 14.5px "Cascadia Mono", "Microsoft YaHei", "PingFang SC", monospace; fill: #82aa92; }
+      .chip { font: 650 15px "Cascadia Mono", "Microsoft YaHei", "PingFang SC", monospace; fill: #ddf9e8; }
+      .flow { font: 600 14px "Cascadia Mono", "Microsoft YaHei", "PingFang SC", monospace; fill: #a8cdb8; }
+      .invariant { font: 650 15px "Cascadia Mono", "Microsoft YaHei", "PingFang SC", monospace; fill: #c8ead7; }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1120" rx="34" fill="url(#background)"/>
+  <rect width="1800" height="1120" rx="34" fill="url(#grid)"/>
+  <rect width="1800" height="1120" rx="34" fill="url(#scanlines)"/>
+  <rect width="1800" height="1120" rx="34" fill="url(#screenGlow)"/>
+  <circle cx="140" cy="60" r="180" fill="#39c98d" opacity="0.055"/>
+  <circle cx="1640" cy="980" r="260" fill="#d39c49" opacity="0.045"/>
+  <circle cx="1730" cy="64" r="6" fill="#79f2b8" opacity="0.9" filter="url(#phosphor)"/>
+  <circle cx="1752" cy="64" r="6" fill="#79f2b8" opacity="0.42"/>
+  <circle cx="1774" cy="64" r="6" fill="#d7a95f" opacity="0.7"/>
+
+  <text x="70" y="72" class="title">Amadeus · Current Public Architecture</text>
+  <text x="72" y="108" class="subtitle">Host 持有身份、状态与执行权；Chat、Provider、AUIP 和角色呈现保持清晰边界</text>
+
+  <text x="70" y="157" class="column-title">USER &amp; SURFACES</text>
+  <text x="470" y="157" class="column-title">HOST-OWNED AUTHORITY</text>
+  <text x="1210" y="157" class="column-title">BOUNDED RUNTIMES</text>
+
+  <!-- User and product surfaces -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="185" width="330" height="122" rx="22" fill="#0a281d" stroke="#61eeb6" stroke-width="2"/>
+    <text x="100" y="226" class="card-title">用户</text>
+    <text x="100" y="258" class="body">语音 · 文字 · 点击 · 授权</text>
+    <text x="100" y="285" class="small">可随时插话、改变目标或接管</text>
+  </g>
+
+  <path d="M 235 307 L 235 340" fill="none" stroke="#61eeb6" stroke-width="3.5" marker-end="url(#arrowGreen)"/>
+  <text x="253" y="329" class="flow">input / consent</text>
+
+  <g filter="url(#shadow)">
+    <rect x="70" y="340" width="330" height="206" rx="22" fill="#081b14" stroke="#335f4b" stroke-width="1.5"/>
+    <text x="100" y="382" class="card-title">Electron Desktop</text>
+    <text x="100" y="416" class="body">Chat · Projects · Drafts · Artifacts</text>
+    <text x="100" y="445" class="body">Work · Settings · Backend</text>
+    <text x="100" y="474" class="body">VN Player <tspan fill="#d7a95f">(experimental)</tspan></text>
+    <rect x="100" y="497" width="183" height="28" rx="14" fill="#123b2b"/>
+    <text x="117" y="517" class="chip">durable control UI</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="70" y="590" width="330" height="176" rx="22" fill="#081b14" stroke="#335f4b" stroke-width="1.5"/>
+    <text x="100" y="632" class="card-title">Presentation Surface</text>
+    <text x="100" y="666" class="body">Wallpaper · SpriteForge / PixiJS</text>
+    <text x="100" y="695" class="body">字幕 · 口型 · 表情 · 场景行为</text>
+    <text x="100" y="727" class="small">可选 KTX2 角色包；缺包不影响 Chat</text>
+    <rect x="100" y="738" width="172" height="25" rx="12" fill="#123b2b"/>
+    <text x="117" y="756" class="small">presentation only</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="70" y="808" width="330" height="132" rx="22" fill="#071812" stroke="#294d3d" stroke-width="1.5" stroke-dasharray="8 7"/>
+    <text x="100" y="849" class="card-title">Headless / API Clients</text>
+    <text x="100" y="882" class="body">无角色包、无本地模型也可启动</text>
+    <text x="100" y="912" class="small">authenticated local server boundary</text>
+  </g>
+
+  <!-- Host boundary -->
+  <rect x="470" y="175" width="650" height="800" rx="30" fill="url(#hostGlow)" stroke="#2f624a" stroke-width="2"/>
+  <text x="500" y="211" class="small">Python · FastAPI · authenticated WebSocket · durable stores</text>
+
+  <g filter="url(#shadow)">
+    <rect x="500" y="235" width="590" height="154" rx="22" fill="#0b2c21" stroke="#61eeb6" stroke-width="2"/>
+    <text x="530" y="276" class="card-title">Main Chat &amp; Turn Authority</text>
+    <text x="530" y="309" class="body">Session context · LLM profiles · visual context</text>
+    <text x="530" y="337" class="body">TurnCoordinator · stream lifecycle · interruption epochs</text>
+    <rect x="530" y="352" width="154" height="25" rx="12" fill="#15513a"/>
+    <text x="548" y="370" class="chip">conversation only</text>
+    <rect x="699" y="352" width="191" height="25" rx="12" fill="#113d2d"/>
+    <text x="717" y="370" class="chip">no direct MCP tools</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="500" y="425" width="590" height="215" rx="22" fill="url(#workGlow)" stroke="#82f5b8" stroke-width="2"/>
+    <text x="530" y="467" class="card-title">Work Control Plane</text>
+    <text x="530" y="500" class="body">Project · Draft · WorkItem / Attempt · permissions</text>
+    <text x="530" y="529" class="body">Provider selection · run / cancel / continue / retry</text>
+    <text x="530" y="558" class="body">Ledger · Artifact Registry · Diff · completion · recovery</text>
+    <text x="530" y="588" class="small">模型翻译是证据；Host identity 与执行事实才是权威</text>
+    <rect x="530" y="601" width="118" height="25" rx="12" fill="#184b36"/>
+    <text x="548" y="619" class="chip">persistent</text>
+    <rect x="662" y="601" width="111" height="25" rx="12" fill="#184b36"/>
+    <text x="680" y="619" class="chip">auditable</text>
+    <rect x="787" y="601" width="151" height="25" rx="12" fill="#184b36"/>
+    <text x="805" y="619" class="chip">artifact-owned</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="500" y="675" width="590" height="128" rx="22" fill="url(#auipGlow)" stroke="#efbd68" stroke-width="2"/>
+    <text x="530" y="716" class="card-title">AUIP Session Authority</text>
+    <text x="530" y="748" class="body">attach ticket · AppSession identity · revision · typed action</text>
+    <text x="530" y="776" class="small">只投影声明状态与 receipt；不授予 Work / Provider / TTS 权限</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="500" y="838" width="590" height="105" rx="22" fill="#0c2a20" stroke="#46745d" stroke-width="1.7"/>
+    <text x="530" y="879" class="card-title">Voice &amp; Embodiment Pipeline</text>
+    <text x="530" y="911" class="body">Wake / Conversation ASR · TTS · playback · mouth / render events</text>
+  </g>
+
+  <!-- Bounded runtimes -->
+  <g filter="url(#shadow)">
+    <rect x="1210" y="185" width="520" height="145" rx="22" fill="#091d16" stroke="#46745d" stroke-width="1.5"/>
+    <text x="1240" y="226" class="card-title">Model &amp; Voice Endpoints</text>
+    <text x="1240" y="259" class="body">Main Chat profiles · local / hybrid model servers</text>
+    <text x="1240" y="288" class="body">local ASR/TTS · explicit remote ASR/TTS</text>
+    <text x="1240" y="314" class="small">CUDA 12.4 local baseline · remote compatibility is explicit</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1210" y="365" width="520" height="280" rx="24" fill="#201b13" stroke="#d7a95f" stroke-width="2"/>
+    <text x="1240" y="407" class="card-title">Work Providers</text>
+    <text x="1240" y="438" class="body">每个 Provider 拥有自己的 transport 与 capability</text>
+
+    <rect x="1240" y="466" width="140" height="105" rx="16" fill="#302719" stroke="#e4bd79" stroke-width="1.4"/>
+    <text x="1260" y="499" class="card-subtitle">Browser</text>
+    <text x="1260" y="528" class="small">Playwright</text>
+    <text x="1260" y="552" class="small">scoped session</text>
+
+    <rect x="1395" y="466" width="150" height="105" rx="16" fill="#302719" stroke="#e4bd79" stroke-width="1.4"/>
+    <text x="1415" y="499" class="card-subtitle">Codex</text>
+    <text x="1415" y="528" class="small">App Server</text>
+    <text x="1415" y="552" class="small">or Direct</text>
+
+    <rect x="1560" y="466" width="140" height="105" rx="16" fill="#302719" stroke="#e4bd79" stroke-width="1.4" stroke-dasharray="7 6"/>
+    <text x="1580" y="499" class="card-subtitle">OpenClaw</text>
+    <text x="1580" y="528" class="small">optional</text>
+    <text x="1580" y="552" class="small">gateway</text>
+
+    <text x="1240" y="606" class="small">Provider events / results return to the Host-owned Ledger</text>
+    <rect x="1240" y="615" width="306" height="22" rx="11" fill="#44351f"/>
+    <text x="1257" y="631" class="small">planned: Claude CLI direct Provider</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1210" y="680" width="520" height="110" rx="22" fill="#10261c" stroke="#61eeb6" stroke-width="1.7"/>
+    <text x="1240" y="721" class="card-title">Provider-scoped Capabilities</text>
+    <text x="1240" y="752" class="body">MCP connections · Skills · Provider-specific tools</text>
+    <text x="1240" y="777" class="small">shared registry ≠ Main Chat authority</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="1210" y="825" width="520" height="140" rx="22" fill="#2a2116" stroke="#efbd68" stroke-width="2"/>
+    <text x="1240" y="866" class="card-title">Attached AUIP Applications</text>
+    <text x="1240" y="899" class="body">declared state/events · bounded typed actions</text>
+    <text x="1240" y="928" class="body">verified Artifact entry · visible disconnect state</text>
+    <text x="1240" y="951" class="small">application session, not an execution Provider</text>
+  </g>
+
+  <!-- Primary control and evidence flows -->
+  <path d="M 400 430 C 443 430, 454 310, 500 310" fill="none" stroke="#61eeb6" stroke-width="4" marker-end="url(#arrowGreen)"/>
+  <text x="411" y="403" class="flow">authenticated WS</text>
+
+  <path d="M 1090 286 C 1140 286, 1160 258, 1210 258" fill="none" stroke="#61eeb6" stroke-width="3.5" marker-end="url(#arrowGreen)"/>
+  <text x="1120" y="244" class="flow">inference</text>
+
+  <path d="M 795 389 L 795 425" fill="none" stroke="#82f5b8" stroke-width="3.5" marker-end="url(#arrowMint)"/>
+  <text x="813" y="414" class="flow">delegate</text>
+
+  <path d="M 1090 508 C 1140 508, 1160 503, 1210 503" fill="none" stroke="#efbd68" stroke-width="4" marker-end="url(#arrowAmber)"/>
+  <text x="1122" y="487" class="flow">run control</text>
+
+  <path d="M 1210 570 C 1162 570, 1142 574, 1090 574" fill="none" stroke="#82f5b8" stroke-width="3" stroke-dasharray="10 8" marker-end="url(#arrowMint)"/>
+  <text x="1120" y="598" class="flow">evidence return</text>
+
+  <path d="M 1470 645 L 1470 680" fill="none" stroke="#61eeb6" stroke-width="3.5" marker-end="url(#arrowGreen)"/>
+  <text x="1488" y="668" class="flow">scoped grant</text>
+
+  <path d="M 795 640 L 795 675" fill="none" stroke="#efbd68" stroke-width="3.5" marker-end="url(#arrowAmber)"/>
+  <text x="813" y="665" class="flow">verified Artifact</text>
+
+  <path d="M 1090 736 C 1147 736, 1155 876, 1210 876" fill="none" stroke="#efbd68" stroke-width="4" marker-end="url(#arrowAmber)"/>
+  <text x="1118" y="813" class="flow">attach / action</text>
+
+  <path d="M 1210 928 C 1157 928, 1145 780, 1090 780" fill="none" stroke="#82f5b8" stroke-width="3" stroke-dasharray="10 8" marker-end="url(#arrowMint)"/>
+  <text x="1128" y="932" class="flow">state / receipt</text>
+
+  <path d="M 520 355 C 478 392, 474 830, 520 886" fill="none" stroke="#61eeb6" stroke-width="3.2" marker-end="url(#arrowGreen)"/>
+
+  <path d="M 500 890 C 455 877, 446 682, 400 682" fill="none" stroke="#61eeb6" stroke-width="3.5" marker-end="url(#arrowGreen)"/>
+
+  <path d="M 500 625 C 455 625, 445 518, 400 518" fill="none" stroke="#82f5b8" stroke-width="3" stroke-dasharray="10 8" marker-end="url(#arrowMint)"/>
+  <text x="412" y="584" class="flow">Work projection</text>
+
+  <!-- Invariant footer -->
+  <rect x="70" y="1010" width="1660" height="64" rx="20" fill="#06130e" stroke="#29523f" stroke-width="1.5"/>
+  <circle cx="104" cy="1042" r="6" fill="#61eeb6"/>
+  <text x="121" y="1048" class="invariant">Main Chat ≠ Provider ≠ AUIP application</text>
+  <circle cx="635" cy="1042" r="6" fill="#61eeb6"/>
+  <text x="652" y="1048" class="invariant">MCP / Skills → compatible Providers only</text>
+  <circle cx="1161" cy="1042" r="6" fill="#efbd68"/>
+  <text x="1178" y="1048" class="invariant">identity · permission · Artifact · receipt → Host-owned</text>
+</svg>

@@ -1,0 +1,219 @@
+[build-system]
+requires = ["setuptools>=83,<84"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "amadeus"
+version = "0.1.0"
+description = "Amadeus runtime: voice, chat runtime, provider host, and work ledger."
+requires-python = ">=3.12,<3.13"
+
+# Direct dependencies for the supported Electron/headless backend. Exact
+# transitive versions live in the Windows lock files. Torch's
+# local build tag (+cpu or +cu124) is selected by the lock profile and index;
+# both builds satisfy the tested 2.5.1 API contract declared here.
+dependencies = [
+    "aiohttp==3.14.3",
+    "beautifulsoup4==4.14.3",
+    "boto3==1.43.16",
+    "fastapi==0.136.3",
+    "google-genai==2.6.0",
+    "httpx==0.28.1",
+    "mcp==2.0.0",
+    "mss==10.2.0",
+    "numpy==1.26.4",
+    "onnxruntime==1.26.0",
+    "openai==2.38.0",
+    "openai-codex==0.147.0",
+    "Pillow==12.3.0",
+    "playwright==1.60.0",
+    "psutil==7.2.2",
+    "PyAudio==0.2.14",
+    "pydantic==2.13.4",
+    "python-dotenv==1.2.3",
+    "PyYAML==6.0.3",
+    "requests==2.34.2",
+    "starlette==1.3.1",
+    "torch==2.5.1",
+    "torchaudio==2.5.1",
+    "typing-extensions==4.15.0",
+    "uvicorn==0.48.0",
+    "websocket-client==1.9.0",
+    "websockets==16.0",
+]
+
+[project.optional-dependencies]
+# Local model stack observed in the working Windows / Python 3.12 / cu124
+# environment. flash-attn is deliberately absent: Qwen ASR already falls back
+# to Torch SDPA, while no reproducible Windows cp312 wheel exists in the
+# supported install path.
+local-cu124 = [
+    "accelerate==1.12.0",
+    "aec-audio-processing==1.0.1",
+    "av==17.0.1",
+    "cn2an==0.5.24",
+    "fast-langdetect==1.0.1",
+    "funasr==1.3.7",
+    "g2p-en==2.1.0",
+    "g2pk2==0.0.3",
+    "gradio>=6.16.0,<7",
+    "huggingface-hub==0.36.2",
+    "hydra-core>=1.3.4,<2",
+    "jieba==0.42.1",
+    "jieba-fast==0.53",
+    "ko-pron==1.3",
+    "librosa==0.11.0",
+    "msgpack>=1.2.1,<2",
+    "nltk>=3.10.0,<4",
+    "numba==0.65.1",
+    "OpenCC==1.3.1",
+    "peft==0.19.1",
+    "pyopenjtalk==0.4.1",
+    "pypinyin==0.55.0",
+    "qwen-asr==0.0.6",
+    "rotary-embedding-torch==0.8.9",
+    "scipy==1.17.1",
+    "sentencepiece==0.2.1",
+    "silero-vad==6.2.1",
+    "soundfile==0.13.1",
+    "split-lang==2.1.1",
+    "ToJyutping==3.2.0",
+    "tokenizers==0.22.1",
+    "torchmetrics==1.5.0",
+    "tqdm==4.67.3",
+    "transformers==4.57.6",
+    "wordsegment==1.3.1",
+    "x-transformers==2.19.6",
+]
+dev = [
+    "packaging==26.2",
+    "pip-audit==2.10.1",
+    "pytest==8.4.2",
+    "pytest-asyncio==1.4.0",
+    "ruff==0.16.3",
+    "setuptools==83.0.0",
+    "torchmetrics==1.5.0",
+    "wheel==0.47.0",
+]
+lock = [
+    "pip-tools==7.6.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.setuptools]
+# Listed explicitly rather than auto-discovered. A flat layout invites
+# discovery to also pick up vendored trees (GPT_SoVITS), build scratch, and
+# test directories, which would change what `import` resolves to.
+packages = [
+    "agent_host",
+    "asr",
+    "config",
+    "core",
+    "llm",
+    "openclaw",
+    "render",
+    "server",
+    "tools",
+    "tts",
+    "vn_player",
+    "vts",
+    "wallpaper",
+]
+
+# ---------------------------------------------------------------------------
+# Tool configuration below is declared but NOT yet enforced: neither ruff nor
+# mypy is installed, and nothing runs them automatically. It is written down
+# now so that adopting either is a decision about running a command, not a
+# decision about what the rules should be.
+#
+# A config file on its own checks nothing. A stale external project demonstrates
+# the failure mode: biome.json and tsconfig.json may both be present, but with no
+# gate that runs them, `biome check` has drifted to reporting failures for every
+# file in the repository, which makes it unreadable rather than useful.
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [
+    "GPT_SoVITS",
+    "assets",
+    ".venv",
+    ".venv_cu124",
+    # Same origin, under tools/. Everything listed here dates to the initial
+    # commit; the first-party tooling beside it (probes, e2e journeys,
+    # run_tests) is deliberately still linted.
+    "tools/audio_sr.py",
+    "tools/subfix_webui.py",
+    "tools/cmd-denoise.py",
+    "tools/slice_audio.py",
+    "tools/my_utils.py",
+    "tools/uvr5",
+    "tools/AP_BWE_main",
+    "tools/asr",
+    "tools/i18n",
+]
+
+[tool.ruff.lint]
+# Intentionally narrow: real errors only, no style opinions.
+#   F   pyflakes      - undefined names, unused imports
+#   E9  syntax/IO errors
+# Style and simplification rules are omitted on purpose. Turning them on would
+# produce a large diff across 57k lines and bury the findings that matter.
+select = ["F", "E9"]
+
+[tool.ruff.lint.per-file-ignores]
+# local_tts_infer.py is the TTS integration layer, not a vendored script: it is
+# 2153 lines, has been revised seven times, and server/app.py imports
+# TTSInferencer from it directly. It was wrongly excluded here at first on the
+# assumption that anything descended from the GPT-SoVITS import belonged to
+# upstream.
+#
+# It is linted, but three codes are ignored for it, because its module header
+# is a deliberate availability probe: every GPT-SoVITS symbol the runtime needs
+# is imported inside one try block so that a missing dependency fails loudly at
+# startup rather than mid-synthesis. Duplicate and unreferenced imports are
+# what that pattern looks like -- ruff even suggests find_spec for one of them,
+# having recognised it. Rewriting it would weaken an explicit startup check to
+# satisfy a linter. F821 and the syntax rules still apply, which are the ones
+# that would catch a real mistake here.
+"local_tts_infer.py" = ["F401", "F811", "F841"]
+
+[tool.mypy]
+python_version = "3.12"
+# The repository root carries an empty __init__.py, so mypy otherwise treats
+# the checkout directory itself as a package named after the folder and finds
+# every module twice -- once as `agent_host.x` and once as `amadeus.agent_host.x`.
+# Nothing imports `amadeus.*`, so the root package is vestigial, but deleting it
+# is a separate decision; this just tells mypy where package roots actually are.
+explicit_package_bases = true
+mypy_path = "."
+# Deliberately permissive for a first pass. 75% of functions already carry
+# return annotations, so the value is in checking what exists rather than in
+# demanding the rest. Tightening belongs to a later, per-module decision.
+ignore_missing_imports = true
+follow_imports = "silent"
+warn_unused_ignores = false
+exclude = "(GPT_SoVITS|assets|\\.venv)"
+
+# Four codes are off, and the reason is the same for all of them: this codebase
+# defends against untyped JSON with a check-then-read idiom that mypy cannot
+# follow.
+#
+#     job = parsed.get("job") if isinstance(parsed.get("job"), dict) else {}
+#
+# `job` is a dict or {}, never None, but mypy does not know that two calls to
+# .get() return the same object, so the isinstance guard narrows nothing. On
+# agent_host alone this produced 86 union-attr findings plus most of the
+# arg-type, index, and operator ones -- none of them real, all of them
+# drowning the findings that were.
+#
+# The remaining codes then reported 8 issues, all genuine, all now fixed. Turn
+# these back on if that idiom is ever refactored to assign-then-narrow; they
+# are the codes that would catch a real None dereference.
+disable_error_code = ["union-attr", "arg-type", "index", "operator"]
