@@ -328,6 +328,8 @@ def test_remote_tts_runtime_does_not_import_embedded_model_stack(monkeypatch) ->
 def test_runtime_adapter_preserves_existing_pipeline_tuple_contract() -> None:
     class FakeBackend(BaseTTSBackend):
         backend_id = "fake"
+        deployment = "remote"
+        supports_streaming = True
 
         def synthesize(self, request: TTSSynthesisRequest) -> TTSAudioChunk:
             return TTSAudioChunk(22050, np.ones(2, dtype=np.float32), request.text)
@@ -337,6 +339,8 @@ def test_runtime_adapter_preserves_existing_pipeline_tuple_contract() -> None:
     sample_rate, audio = adapter.infer("hello", "unused.wav")
     streamed = list(adapter.infer_stream("hello", "unused.wav"))
 
+    assert adapter.deployment == "remote"
+    assert adapter.supports_streaming is True
     assert sample_rate == 22050
     assert audio.tolist() == [1.0, 1.0]
     assert streamed[0][0] == 22050

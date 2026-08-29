@@ -471,6 +471,49 @@ def test_backend_stream_uses_shared_first_sentence_playback_path() -> None:
     asyncio.run(run())
 
 
+def test_experimental_scheduler_only_forwards_native_remote_streams() -> None:
+    from tts import pipeline
+
+    async def run_case(*, deployment: str, supports_streaming: bool, stream_tts: bool) -> bool:
+        observed: list[bool] = []
+
+        async def fake_speak(*_args, **kwargs) -> None:
+            observed.append(bool(kwargs.get("stream_to_player")))
+
+        runtime = SimpleNamespace(
+            deployment=deployment,
+            supports_streaming=supports_streaming,
+        )
+        with (
+            patch.object(pipeline, "_tts_runtime", runtime),
+            patch.object(pipeline, "speak_stream_enhanced_asyncio_queue", new=fake_speak),
+        ):
+            await pipeline._synthesize_experimental(
+                "hello",
+                "sentence_1_remote",
+                True,
+                stream_tts=stream_tts,
+                segments=None,
+                interrupt_epoch=3,
+                task_semaphore=None,
+            )
+        assert len(observed) == 1
+        return observed[0]
+
+    assert asyncio.run(
+        run_case(deployment="remote", supports_streaming=True, stream_tts=True)
+    ) is True
+    assert asyncio.run(
+        run_case(deployment="remote", supports_streaming=False, stream_tts=True)
+    ) is False
+    assert asyncio.run(
+        run_case(deployment="remote", supports_streaming=True, stream_tts=False)
+    ) is False
+    assert asyncio.run(
+        run_case(deployment="embedded", supports_streaming=True, stream_tts=True)
+    ) is False
+
+
 def test_audio_writer_publishes_mouth_envelope_before_each_physical_subwrite() -> None:
     from tts.playback import StreamPlayer
 

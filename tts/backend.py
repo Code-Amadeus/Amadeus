@@ -76,6 +76,10 @@ class TTSRuntimeAdapter:
         return str(self.backend.backend_id)
 
     @property
+    def deployment(self) -> str:
+        return str(self.backend.deployment)
+
+    @property
     def supports_streaming(self) -> bool:
         return bool(self.backend.supports_streaming)
 

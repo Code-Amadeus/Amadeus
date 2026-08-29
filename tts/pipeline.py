@@ -1147,11 +1147,21 @@ async def _synthesize_experimental(
     interrupt_epoch,
     task_semaphore,
 ):
-    del stream_tts
+    runtime = _tts_runtime
+    # Embedded synthesis modes retain their established playback policy. A
+    # remote backend that already yields native audio chunks must not have that
+    # stream buffered merely because the local experimental scheduler is active.
+    stream_to_player = bool(
+        stream_tts
+        and runtime is not None
+        and runtime.deployment == "remote"
+        and runtime.supports_streaming
+    )
     await speak_stream_enhanced_asyncio_queue(
         text,
         sentence_id,
         is_first,
+        stream_to_player=stream_to_player,
         segments=segments,
         interrupt_epoch=interrupt_epoch,
         task_semaphore=task_semaphore,
