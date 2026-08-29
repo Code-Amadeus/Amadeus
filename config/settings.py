@@ -78,7 +78,7 @@ if LLM_PROVIDER not in LLM_PROVIDERS:
         + f"; observed {LLM_PROVIDER!r}"
     )
 DEEPSEEK_API_KEY   = _str("DEEPSEEK_API_KEY")
-DEEPSEEK_BASE_URL  = _str("DEEPSEEK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
+DEEPSEEK_BASE_URL  = _str("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 DEEPSEEK_MODEL_NAME = _str("DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
 
 # ===========================================================================

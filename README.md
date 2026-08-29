@@ -199,6 +199,18 @@ $env:AMADEUS_PYTHON = (Resolve-Path .\.venv\Scripts\python.exe)
 严格文字模式应设置 `TTS_BACKEND=disabled` 并关闭 Wake。OpenAI-compatible
 远程 ASR/TTS 与远程 Chat provider 可在 Settings 显式选择，但不是第一版本地默认体验。
 
+### 可选远程模型建议
+
+下表是面向当前 API 的推荐 profile，不改变本地基线，也不会在端点
+失败后自动切换 provider：
+
+| 职责 | 推荐 profile | 当前边界 |
+|---|---|---|
+| 主 Chat API | DeepSeek-V4-Flash-0731：`DEEPSEEK_BASE_URL=https://api.deepseek.com`，`DEEPSEEK_MODEL_NAME=deepseek-v4-flash` | `deepseek-v4-flash` 是稳定 API alias，当前指向 0731 版本；不把日期写进运行时 model id。 |
+| 多模态 / Vision | 优先 `gemini-3.7-flash`；需要较保守的兼容 profile 时可用 `gemini-3.5-flash` | 当前图像发送仍跟随主 Chat provider；“DeepSeek 主 Chat + 独立 Gemini Vision”还不是已实现的 sidecar。 |
+| Work 执行 | Codex Provider 可显式选择 GPT-5.6 family 或 `deepseek-v4-flash` | 执行模型属于 Work Provider，不与主 Chat 共用路由或密钥。 |
+| AUIP 运行时动作判定 | `AUIP_ACTION_PROVIDER=openai`、`AUIP_ACTION_MODEL=gpt-5.6-terra`、`AUIP_ACTION_REASONING_EFFORT=low`、`AUIP_ACTION_SERVICE_TIER=fast` | 这是 AppSession 的动作 / 参与判定模型，不是 AUIP Artifact 的执行 Provider；`fast` 需要对应 API 项目可用。 |
+
 ## 外部模型与运行资产
 
 模型权重、参考音频、角色包及大型/版权敏感素材独立分发；源码仓库只保留

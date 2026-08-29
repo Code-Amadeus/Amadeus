@@ -364,7 +364,7 @@ def _client(provider: str) -> OpenAI:
         )
     return OpenAI(
         api_key=_env("DEEPSEEK_API_KEY"),
-        base_url=_env("DEEPSEEK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
+        base_url=_env("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
     )
 
 
