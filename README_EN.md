@@ -266,6 +266,24 @@ skips identical files, and rejects unexpected overwrites. See
 [external asset bundles](docs/external_asset_bundles.md) and the
 [character-pack contract](docs/character_pack_authoring.md).
 
+### Wallpaper mode (Lively Wallpaper recommended)
+
+On Windows, the open-source
+[Lively Wallpaper](https://github.com/rocksdanister/lively) is the recommended
+host for Amadeus's web wallpaper; Wallpaper Engine remains compatible. Start
+Amadeus, add the local webpage URL below to Lively (WebView2 is recommended),
+then click **Wallpaper** in the Amadeus sidebar:
+
+```text
+http://127.0.0.1:17777/wallpaper/lively/index.html
+```
+
+This stable entry discovers the actual asset and bridge ports automatically
+and waits in place while wallpaper mode is off. Do not hard-code `17778` or
+`17797`. For diagnostics, run
+`py -3.12 tools\run_wallpaper_engine_bridge.py` and use the printed `Lively URL`.
+See the [Lively entry guide](wallpaper/lively/README.md).
+
 ## Configuration ownership
 
 Startup values use one precedence order:

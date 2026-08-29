@@ -246,6 +246,22 @@ assets/spriteforge/runtime/kurisu/
 详见[外部资产包](docs/external_asset_bundles.md)与
 [角色包合同](docs/character_pack_authoring.md)。
 
+### 壁纸模式（推荐 Lively Wallpaper）
+
+Windows 下推荐用开源的
+[Lively Wallpaper](https://github.com/rocksdanister/lively) 托管 Amadeus 网页壁纸；
+Wallpaper Engine 仍保留兼容。启动 Amadeus 后，将下列本地网页 URL
+添加到 Lively（推荐 WebView2），再在 Amadeus 左侧栏点击 **Wallpaper**：
+
+```text
+http://127.0.0.1:17777/wallpaper/lively/index.html
+```
+
+该稳定入口会自动发现实际 asset/bridge 端口；壁纸模式关闭时会原地等待，
+不要手工写死 `17778` 或 `17797`。诊断时可运行
+`py -3.12 tools\run_wallpaper_engine_bridge.py` 并使用它打印的 `Lively URL`。
+详见 [Lively 入口说明](wallpaper/lively/README.md)。
+
 ## 配置所有权
 
 启动值优先级固定为：
