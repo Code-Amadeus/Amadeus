@@ -21,6 +21,24 @@ from server.ws_handler import RequestHandler
 
 logger = logging.getLogger(__name__)
 
+_CANVAS_CONTENT_KEYS = frozenset(
+    {
+        "artifact",
+        "reportView",
+        "reportMarkdown",
+        "diff",
+        "diffView",
+        "html",
+        "url",
+        "screenshot",
+        "permissionRequest",
+        "title",
+        "lead",
+        "phase",
+        "signals",
+    }
+)
+
 
 class WallpaperHandler(RequestHandler):
     methods = [
@@ -257,6 +275,7 @@ class WallpaperHandler(RequestHandler):
                     projected = candidate
             except Exception:
                 logger.exception("failed to project wallpaper canvas through work ledger")
+        projected = self._collapse_empty_canvas(projected)
         self._last_canvas_payload = dict(projected)
         host = self._wallpaper_host
         if host is None:
@@ -274,6 +293,22 @@ class WallpaperHandler(RequestHandler):
             logger.exception("failed to set wallpaper canvas")
             return False
         return True
+
+    @classmethod
+    def _collapse_empty_canvas(cls, payload: dict[str, Any]) -> dict[str, Any]:
+        output = dict(payload or {})
+        work_context = output.get("workContext")
+        has_selected_work_item = isinstance(work_context, dict) and bool(
+            work_context.get("workItemId")
+        )
+        if (
+            any(output.get(key) for key in _CANVAS_CONTENT_KEYS)
+            or has_selected_work_item
+            or output.get("visible")
+            or output.get("open")
+        ):
+            return output
+        return {"clear": True, "visible": False, "expanded": False}
 
     def _apply_asr_status(self, payload: dict[str, Any]) -> bool:
         host = self._wallpaper_host
