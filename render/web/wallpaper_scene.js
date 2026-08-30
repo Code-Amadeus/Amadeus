@@ -1802,7 +1802,7 @@
         if (previousBg && previousBg !== nextBg) {
           try {
             this.app.stage.removeChild(previousBg);
-            previousBg.destroy({ texture: true, baseTexture: true });
+            previousBg.destroy();
           } catch (err) {
             console.warn("[WallpaperScene] previous background cleanup failed:", err);
           }
@@ -1851,7 +1851,7 @@
     _replaceAmbientLowSprite(texture) {
       if (this.ambientLowSprite) {
         this.ambientLayer.removeChild(this.ambientLowSprite);
-        this.ambientLowSprite.destroy({ texture: true, baseTexture: true });
+        this.ambientLowSprite.destroy();
       }
       this.ambientLowSprite = new PIXI.Sprite(texture);
       this.ambientLowSprite.width = this.app.screen.width;
@@ -1881,7 +1881,7 @@
     _replaceAmbientSprite(texture, sourceKind) {
       if (this.ambientSprite) {
         this.ambientLayer.removeChild(this.ambientSprite);
-        this.ambientSprite.destroy({ texture: true, baseTexture: true });
+        this.ambientSprite.destroy();
       }
       this.ambientSprite = new PIXI.Sprite(texture);
       this.ambientSprite.width = this.app.screen.width;
