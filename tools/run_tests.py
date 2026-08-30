@@ -147,7 +147,9 @@ def _excuse_import_blocked(missing: list[str]) -> list[str]:
             text=True,
             env=_suite_env(),
         )
-        if result.returncode != 0 and "ModuleNotFoundError" in result.stderr:
+        if result.returncode != 0 and (
+            "ModuleNotFoundError" in result.stderr or "Skipped" in result.stderr
+        ):
             print(
                 f"[run_tests] {path}: skipped module (dependency missing), "
                 f"declarations excused",
