@@ -185,6 +185,7 @@ class Text extends Sprite {
 const stage = new Container();
 const timers = new Map();
 let nextTimer = 1;
+const clock = { now: 1700000000000 };
 const app = {
   screen: { width: 1000, height: 600 },
   stage,
@@ -227,7 +228,7 @@ const context = {
   console: { log() {}, info() {}, warn() {}, error() {} },
   setTimeout: windowObject.setTimeout,
   clearTimeout: windowObject.clearTimeout,
-  Date,
+  Date: { now() { return clock.now; } },
   Math,
   Map,
   AbortController,
@@ -268,10 +269,10 @@ function statusValue() {
 
 const ready = textValue("READY");
 const readyLayout = ready ? { x: ready.x, y: ready.y } : null;
-const now = Date.now();
+const now = clock.now;
 runtime.setAsrStatus({ status: "awake", source: "wake", awake_deadline_ms: now + 60000 });
 const awake = statusValue();
-runtime.setAsrStatus({ status: "listening", source: "wake", awake_deadline_ms: now + 60000 });
+clock.now += 500;
 app.ticker.fn(1);
 const listening = statusValue();
 runtime.setAsrStatus({ status: "recognized", source: "wake", text: "你好" });

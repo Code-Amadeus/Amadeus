@@ -178,10 +178,11 @@
     container: null,
     label: null,
     state: null,
-    lastStatus: "",
     speaking: false,
     _bounds: null,
     _visibleText: "",
+    _awakeLabelDurationMs: 500,
+    _awakeLabelUntilMs: 0,
 
     _api() {
       return window.AmadeusWallpaperVoiceState || null;
@@ -229,7 +230,10 @@
       const next = api.reduce(previous, payload);
       if (next === previous) return;
       this.state = next;
-      this.lastStatus = String((payload && payload.status) || "").trim().toLowerCase();
+      const status = String((payload && payload.status) || "").trim().toLowerCase();
+      this._awakeLabelUntilMs = (
+        status === "awake" && next.phase === "listening" && !previous.active
+      ) ? Date.now() + this._awakeLabelDurationMs : 0;
       if ((next.phase === "recognized" || next.phase === "thinking") && next.userText) {
         desktopScene._clearSubtitleTimer();
         desktopScene._lastSubtitleText = `你：${next.userText}`;
@@ -262,7 +266,7 @@
       if (this.speaking && state.active) return "正在说话";
       if (state.phase === "error") return state.error || "语音不可用";
       if (state.phase === "listening") {
-        if (this.lastStatus === "awake") return "已唤醒";
+        if (nowMs < this._awakeLabelUntilMs) return "已唤醒";
         const api = this._api();
         const remaining = api ? api.remainingSeconds(state, nowMs) : null;
         return remaining === null ? "正在听" : `正在听 · ${remaining}s`;
