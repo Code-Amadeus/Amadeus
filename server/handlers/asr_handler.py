@@ -161,13 +161,14 @@ class AsrHandler(RequestHandler):
             return {"status": "ignored", "source": self._source, "expected_source": expected_source}
         return await self.stop_listening()
 
-    async def stop_listening(self) -> dict[str, Any]:
+    async def stop_listening(self, reason: str = "manual_stop") -> dict[str, Any]:
         self._active = False
         self._one_shot = False
-        if self._listen_task:
-            self._listen_task.cancel()
-            self._listen_task = None
-        await self._finish_listening("manual_stop")
+        listen_task = self._listen_task
+        self._listen_task = None
+        if listen_task is not None and listen_task is not asyncio.current_task():
+            listen_task.cancel()
+        await self._finish_listening(reason)
         return {"status": "stopped"}
 
     def _arm_awake(self, params: dict[str, Any]) -> None:
@@ -351,6 +352,25 @@ class AsrHandler(RequestHandler):
         await bus.emit(Method.ASR_STATUS, {"status": "unloaded"})
         return {"status": "unloaded"}
 
+    async def _dispatch_recognized(self, text: str) -> None:
+        from server.desktop_voice import is_desktop_voice_exit_command
+
+        payload: dict[str, Any] = {"text": text, "is_final": True}
+        if self._source:
+            payload["source"] = self._source
+        if self._wake_payload:
+            payload["wake"] = self._wake_payload
+        if self._source_payload:
+            payload["source_payload"] = self._source_payload
+        if self._source == "wake" and is_desktop_voice_exit_command(text):
+            payload["control"] = "stop"
+        else:
+            await bus.emit(Method.ASR_RECOGNIZED, payload)
+        if self._on_recognized is not None:
+            result = self._on_recognized(payload)
+            if hasattr(result, "__await__"):
+                await result
+
     async def _listen_loop(self) -> None:
         while self._active:
             try:
@@ -374,18 +394,7 @@ class AsrHandler(RequestHandler):
                         # Do not start the idle countdown from user speech.
                         # The hot window is reset after the assistant finishes speaking.
                         self._waiting_turn_complete = True
-                    payload: dict[str, Any] = {"text": text, "is_final": True}
-                    if self._source:
-                        payload["source"] = self._source
-                    if self._wake_payload:
-                        payload["wake"] = self._wake_payload
-                    if self._source_payload:
-                        payload["source_payload"] = self._source_payload
-                    await bus.emit(Method.ASR_RECOGNIZED, payload)
-                    if self._on_recognized is not None:
-                        result = self._on_recognized(payload)
-                        if hasattr(result, "__await__"):
-                            await result
+                    await self._dispatch_recognized(text)
                 elif self._active and self._is_awake_session():
                     remaining = max(0.0, self._awake_until - time.monotonic())
                     logger.info("awake ASR heard nothing; continuing for %.1fs", remaining)

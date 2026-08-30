@@ -1218,6 +1218,12 @@ async def bootstrap(port: int = 17777) -> None:
 
     async def _start_asr_from_wake(payload=None):
         payload = payload or {}
+        command_text = str(payload.get("command_text") or "").strip()
+        from server.desktop_voice import is_desktop_voice_exit_command
+
+        if command_text and is_desktop_voice_exit_command(command_text):
+            logger.info("wake inline stop command received; remaining in passive wake")
+            return
         qwen_hot_window = max(float(WAKE_AWAKE_SECONDS), float(ASR_IDLE_UNLOAD_SECONDS))
         if not await _main_voice_allowed_now("wake detected"):
             return
@@ -1228,7 +1234,6 @@ async def bootstrap(port: int = 17777) -> None:
             get_turn_coordinator().on_wake_detected()
         except Exception:
             logger.debug("turn coordinator notify failed", exc_info=True)
-        command_text = str(payload.get("command_text") or "").strip()
         if command_text and WAKE_AUTO_SEND_TO_CHAT:
             try:
                 await bus.emit(Method.ASR_RECOGNIZED, {"text": command_text, "is_final": True, "source": "wake", "wake": payload})
@@ -1314,6 +1319,10 @@ async def bootstrap(port: int = 17777) -> None:
             await _handle_vn_player_asr_recognized(payload)
             return
         if source != "wake":
+            return
+        if payload.get("control") == "stop":
+            logger.info("desktop voice stop command received; returning to passive wake")
+            await asr_h.stop_listening("voice_stop_command")
             return
         await _send_wake_text(str(payload.get("text") or ""), source="wake ASR")
 
