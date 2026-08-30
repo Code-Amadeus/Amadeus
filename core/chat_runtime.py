@@ -80,7 +80,7 @@ from llm.sentence_splitter import (
 )
 from llm.stream_parser import StreamTagParser, clean_sentence_for_tts
 from server.control_proposal import ControlProposalBatch, seal_control_proposals
-from tools.text_utils import _compute_text_sha1
+from tools.text_utils import _compute_text_sha1, strip_tags
 from tts.contract import TTSRequest
 from tts.latency_clock import mark_llm_stream_request_sent, log_latency_marker
 from tts.sentence_state import sentence_state_manager, pre_translation_cache
@@ -96,6 +96,52 @@ except Exception:
     RAGSystem = None
 
 logger = logging.getLogger("chat_runtime")
+
+
+_DELEGATE_SOURCE_CONTEXT_MAX_MESSAGES = 6
+_DELEGATE_SOURCE_CONTEXT_MAX_CHARS = 2000
+_DELEGATE_SOURCE_CONTEXT_MESSAGE_CHARS = 280
+_DELEGATE_CONTEXT_CONTROL_TAG_RE = re.compile(
+    r"\[(?:CONTROL|WORK_OBSERVER)\b[^\]]*\]",
+    flags=re.IGNORECASE,
+)
+
+
+def _bounded_delegate_source_context(
+    prior_messages,
+    *,
+    current_user: str,
+) -> str:
+    """Render recent parent dialogue without replaying executable control tags."""
+
+    current = " ".join(str(current_user or "").split())
+    rendered: list[str] = []
+    for message in tuple(prior_messages or ()):
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role") or "").strip().lower()
+        if role not in {"user", "assistant"}:
+            continue
+        content = strip_tags(str(message.get("content") or ""))
+        content = _DELEGATE_CONTEXT_CONTROL_TAG_RE.sub("", content)
+        content = " ".join(content.split())
+        if not content or (role == "user" and content == current):
+            continue
+        if len(content) > _DELEGATE_SOURCE_CONTEXT_MESSAGE_CHARS:
+            content = f"{content[:180].rstrip()} … {content[-90:].lstrip()}"
+        label = "User" if role == "user" else "Main Chat"
+        rendered.append(f"{label}: {json.dumps(content, ensure_ascii=False)}")
+
+    selected: list[str] = []
+    remaining = _DELEGATE_SOURCE_CONTEXT_MAX_CHARS
+    for line in reversed(rendered[-_DELEGATE_SOURCE_CONTEXT_MAX_MESSAGES:]):
+        cost = len(line) + (1 if selected else 0)
+        if cost > remaining:
+            continue
+        selected.append(line)
+        remaining -= cost
+    selected.reverse()
+    return "\n".join(selected)
 
 
 def _trace_raw_role_chunk(turn_id: str, raw_content: str) -> None:
@@ -2950,14 +2996,15 @@ class ChatRuntime:
         turn_id: str = "",
         prior_messages=(),
     ) -> None:
-        """Carry the user's exact instruction across the model-owned delegate.
+        """Carry the exact request and bounded parent dialogue across delegation.
 
         ``task`` is a provider prompt assembled by the model and may paraphrase
         away a host-owned side-effect destination such as "写到我的桌面".  The
         original utterance is therefore attached as an internal attribute after
         parsing.  ``vts.action.record_actions`` preserves ``_host_*`` values
         when it reparses legacy tag text, so a model-authored attribute cannot
-        overwrite this evidence.
+        overwrite this evidence. Prior user and Main Chat lines remain reference
+        context only; they cannot create a clause absent from the authorized task.
         """
 
         attrs = action.get("attrs") if isinstance(action.get("attrs"), dict) else None
@@ -2967,13 +3014,12 @@ class ChatRuntime:
         source = " ".join(str(question or "").split())
         if source:
             attrs["_host_source_user_text"] = source
-        for message in reversed(tuple(prior_messages or ())):
-            if str(message.get("role") or "").strip().lower() != "user":
-                continue
-            context = " ".join(str(message.get("content") or "").split())
-            if context and context != source:
-                attrs["_host_source_user_context"] = context[:2000]
-                break
+        context = _bounded_delegate_source_context(
+            prior_messages,
+            current_user=source,
+        )
+        if context:
+            attrs["_host_source_user_context"] = context
         if turn_id:
             attrs["_host_turn_id"] = str(turn_id)
 
@@ -3690,6 +3736,7 @@ class ChatRuntime:
                 action,
                 question,
                 turn_id=str(getattr(st, "turn_id", "") or ""),
+                prior_messages=getattr(st, "control_prior_messages", ()) or (),
             )
             ChatRuntime._ground_unique_active_amendment(
                 action,
@@ -4095,6 +4142,7 @@ class ChatRuntime:
                 action,
                 question,
                 turn_id=str(getattr(st, "turn_id", "") or ""),
+                prior_messages=getattr(st, "control_prior_messages", ()) or (),
             )
             record_actions([action])
             st.delegate_seen = True

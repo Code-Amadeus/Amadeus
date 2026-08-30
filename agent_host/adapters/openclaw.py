@@ -19,7 +19,7 @@ from agent_host.provider_progress import (
     split_progress_stream,
     with_progress_contract,
 )
-from agent_host.provider_identity import with_main_role_reference
+from agent_host.provider_identity import with_parent_conversation_context
 from agent_host.provider_types import (
     EmitProviderEvent,
     ProviderEvent,
@@ -208,7 +208,7 @@ class OpenClawAdapter:
                     call_task = asyncio.create_task(
                         self._run_gateway_turn(
                             control,
-                            task=with_main_role_reference(
+                            task=with_parent_conversation_context(
                                 current_task,
                                 metadata=current_metadata,
                                 execution_provider=self.provider_id,

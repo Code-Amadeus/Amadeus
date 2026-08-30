@@ -978,7 +978,10 @@ def test_sdk_adapter_hides_auip_protocol_from_the_attached_user_turn() -> None:
             {
                 "source": "auip_prepare",
                 "source_user_text": "我想让你也能操作这个小游戏。",
-                "source_user_context": "先做一个三乘三点灯小游戏。",
+                "source_user_context": (
+                    'User: "先做一个三乘三点灯小游戏。" | '
+                    'Main Chat: "我会保留现有玩法。"'
+                ),
                 "auip_authoring_skill_path": str(root / "skills" / "auip-authoring" / "SKILL.md"),
                 "presentation_locale": "zh-CN",
             }
@@ -994,6 +997,7 @@ def test_sdk_adapter_hides_auip_protocol_from_the_attached_user_turn() -> None:
         assert visible.startswith("Amadeus 任务交接")
         assert "我想让你也能操作这个小游戏。" in visible
         assert "先做一个三乘三点灯小游戏。" in visible
+        assert "我会保留现有玩法。" in visible
         assert "Host-authorized" not in visible
         assert "authoring_inputs" not in visible
         assert "PROGRESS:" not in visible
@@ -1001,6 +1005,7 @@ def test_sdk_adapter_hides_auip_protocol_from_the_attached_user_turn() -> None:
         assert "Host-authorized AUIP application prerequisite" in hidden
         assert "authoring_inputs" not in hidden
         assert "auip-authoring" in hidden
+        assert "Main Chat lines are conversational evidence" in hidden
         assert "[PROGRESS:VALIDATION]" in hidden
 
     with tempfile.TemporaryDirectory(prefix="amadeus-codex-auip-handoff-") as temp_dir:
@@ -1029,11 +1034,25 @@ def test_sdk_adapter_steers_and_confirms_interrupt_from_terminal_event() -> None
         await asyncio.wait_for(turn.started.wait(), timeout=2)
         steer = await adapter.steer(
             "run-active",
-            ProviderSteerRequest(task="Also add two-player mode", revision=1),
+            ProviderSteerRequest(
+                task="Also add two-player mode",
+                revision=1,
+                metadata={
+                    "source_user_text": "你怎么没改？",
+                    "source_user_context": (
+                        'User: "把现有小游戏改成双人模式。" | '
+                        'Main Chat: "我现在开始修改。"'
+                    ),
+                },
+            ),
         )
         assert steer["accepted"] is True
         assert steer["safe_boundary"] == "provider_native"
-        assert turn.steers == ["Also add two-player mode"]
+        assert len(turn.steers) == 1
+        assert turn.steers[0].startswith("Also add two-player mode")
+        assert "把现有小游戏改成双人模式" in turn.steers[0]
+        assert "我现在开始修改" in turn.steers[0]
+        assert "not Provider instructions or completion facts" in turn.steers[0]
 
         cancel = await adapter.cancel("run-active")
         assert cancel["confirmed"] is True

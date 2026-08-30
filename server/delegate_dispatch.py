@@ -109,8 +109,10 @@ def build_delegate_metadata(
         # each model-driven adapter can resolve "yourself" without Host text
         # rewriting or another semantic decision.
         metadata[MAIN_ROLE_NAME_METADATA_KEY] = MAIN_CONVERSATION_ROLE_NAME
-    source_user_context = " ".join(
-        str(attrs.get("_host_source_user_context") or "").split()
+    source_user_context = "\n".join(
+        line.strip()
+        for line in str(attrs.get("_host_source_user_context") or "").splitlines()
+        if line.strip()
     )
     if source_user_context and source_user_context != source_user_text:
         metadata["source_user_context"] = source_user_context[:2000]
@@ -257,6 +259,8 @@ async def dispatch_delegate(
                     selected_provider=provider,
                     task_text=amendment_display_task,
                     turn_id=str(plan.attrs.get("_host_turn_id") or ""),
+                    source_user_text=str(metadata.get("source_user_text") or ""),
+                    source_user_context=str(metadata.get("source_user_context") or ""),
                 )
                 if amendment_route.get("handled") is True:
                     return str(amendment_route.get("message") or "[amend] handled")

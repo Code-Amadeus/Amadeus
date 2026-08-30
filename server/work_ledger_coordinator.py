@@ -33,7 +33,10 @@ from agent_host.provider_authoring import (
     stage_auip_authoring_bundle,
 )
 from agent_host.provider_contract import ProviderRequirements
-from agent_host.provider_identity import MAIN_ROLE_NAME_METADATA_KEY
+from agent_host.provider_identity import (
+    MAIN_ROLE_NAME_METADATA_KEY,
+    parent_conversation_context_delivery,
+)
 from agent_host.provider_types import ProviderRecoveryContext, ProviderRunRequest
 from agent_host.provider_workspace import workspace_route_authority
 from agent_host.work_ledger_store import (
@@ -1040,6 +1043,25 @@ class WorkLedgerCoordinator:
         )
         request.session = provider_session.session
         provider_session_attach = provider_session.audit
+        source_context = str(metadata.get("source_user_context") or "")
+        delivered_context, context_mode = parent_conversation_context_delivery(
+            source_context,
+            previous_source_user_text=(
+                str(previous_attempt.metadata.get("source_user_text") or "")
+                if previous_attempt is not None
+                else ""
+            ),
+            session_attached=request.session is not None,
+        )
+        if delivered_context:
+            metadata["source_user_context"] = delivered_context
+        else:
+            metadata.pop("source_user_context", None)
+        metadata["source_context_mode"] = context_mode
+        if previous_attempt is not None and request.session is not None:
+            base_turn_id = str(previous_attempt.metadata.get("turn_id") or "").strip()
+            if base_turn_id:
+                metadata["source_context_base_turn_id"] = base_turn_id[:200]
         ensured_workspace: dict[str, Any] | None = None
         work_item_id_for_create = ""
         # The container needs turning into a real per-task directory; a draft
@@ -1230,6 +1252,16 @@ class WorkLedgerCoordinator:
             **(
                 {"source_user_text": str(metadata["source_user_text"])[:4000]}
                 if str(metadata.get("source_user_text") or "").strip()
+                else {}
+            ),
+            "source_context_mode": str(metadata.get("source_context_mode") or "none"),
+            **(
+                {
+                    "source_context_base_turn_id": str(
+                        metadata["source_context_base_turn_id"]
+                    )[:200]
+                }
+                if str(metadata.get("source_context_base_turn_id") or "").strip()
                 else {}
             ),
             "continuation": continuation,

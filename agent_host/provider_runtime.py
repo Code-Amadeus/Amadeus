@@ -718,6 +718,22 @@ class ProviderRuntime:
             "requested_at": time.time(),
             "turn_id": str(request.metadata.get("turn_id") or ""),
         }
+        if str(request.metadata.get("source_user_text") or "").strip():
+            record.metadata["source_user_text"] = str(
+                request.metadata["source_user_text"]
+            )[:4000]
+        if str(request.metadata.get("source_user_context") or "").strip():
+            record.metadata["source_user_context"] = str(
+                request.metadata["source_user_context"]
+            )[:2000]
+        else:
+            record.metadata.pop("source_user_context", None)
+        record.metadata["source_context_mode"] = str(
+            request.metadata.get("source_context_mode") or "none"
+        )
+        source_turn_id = str(request.metadata.get("turn_id") or "").strip()
+        if source_turn_id:
+            record.metadata["source_context_cursor_turn_id"] = source_turn_id[:200]
         record.updated_at = time.time()
         await self._emit(
             record,

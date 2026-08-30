@@ -30,7 +30,7 @@ from agent_host.browser_outcome import (
 )
 from agent_host.provider_catalog import BROWSER_MANIFEST
 from agent_host.provider_outcome import ProviderOutcomeEvidence
-from agent_host.provider_identity import with_main_role_reference
+from agent_host.provider_identity import with_parent_conversation_context
 from agent_host.provider_types import (
     EmitProviderEvent,
     ProviderEvent,
@@ -684,7 +684,7 @@ class BrowserBranchAdapter:
             "parent_session_id": session_id,
             "branch_id": branch_id,
             "provider_run_id": run_id,
-            "user_message": with_main_role_reference(
+            "user_message": with_parent_conversation_context(
                 request.task,
                 metadata=metadata,
                 execution_provider=request.provider,

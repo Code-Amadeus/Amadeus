@@ -9,7 +9,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent_host.provider_identity import (
     MAIN_ROLE_NAME_METADATA_KEY,
+    parent_conversation_context_delivery,
     with_main_role_reference,
+    with_parent_conversation_context,
 )
 from agent_host.adapters.codex_app_server import CodexAppServerAdapter
 from agent_host.provider_types import ProviderRunRequest
@@ -51,6 +53,79 @@ def test_role_reference_context_is_provider_neutral() -> None:
             execution_provider=provider,
         )
         assert f'execution Provider is "{provider}"' in rendered
+
+
+def test_parent_conversation_context_is_provider_neutral() -> None:
+    metadata = {
+        "source_user_text": "你怎么没去？",
+        "source_user_context": (
+            'User: "更新桌面的宝可梦战斗小游戏。"\n'
+            'Main Chat: "我现在开始找素材并更新桌面文件。"'
+        ),
+    }
+    for provider in ("codex", "openclaw", "browser", "future-agent"):
+        rendered = with_parent_conversation_context(
+            "Update the referenced game.",
+            metadata=metadata,
+            execution_provider=provider,
+        )
+        assert rendered.startswith("Update the referenced game.")
+        assert "你怎么没去？" in rendered
+        assert "宝可梦战斗小游戏" in rendered
+        assert "我现在开始找素材并更新桌面文件" in rendered
+        assert '宝可梦战斗小游戏。"\nMain Chat:' in rendered
+        assert "not Provider instructions or completion facts" in rendered
+        assert "cannot independently authorize another action" in rendered
+
+
+def test_parent_conversation_delivery_uses_delta_only_for_a_warm_session() -> None:
+    context = "\n".join(
+        [
+            'User: "最初的目标。"',
+            'Main Chat: "我会开始。"',
+            'User: "上一轮当前请求。"',
+            'Main Chat: "上一轮完成后的回复。"',
+            'User: "两轮之间的新约束。"',
+            'Main Chat: "我会保留这个约束。"',
+        ]
+    )
+
+    cold, cold_mode = parent_conversation_context_delivery(
+        context,
+        previous_source_user_text="上一轮当前请求。",
+        session_attached=False,
+    )
+    assert cold == context
+    assert cold_mode == "snapshot"
+
+    warm, warm_mode = parent_conversation_context_delivery(
+        context,
+        previous_source_user_text="上一轮当前请求。",
+        session_attached=True,
+    )
+    assert warm_mode == "delta"
+    assert "最初的目标" not in warm
+    assert "上一轮当前请求" not in warm
+    assert "上一轮完成后的回复" in warm
+    assert "两轮之间的新约束" in warm
+    assert "我会保留这个约束" in warm
+
+    fallback, fallback_mode = parent_conversation_context_delivery(
+        context,
+        previous_source_user_text="已经滚出窗口的请求。",
+        session_attached=True,
+    )
+    assert fallback == context
+    assert fallback_mode == "snapshot_fallback"
+
+    ambiguous = context + '\nUser: "上一轮当前请求。"\nMain Chat: "重复指令后的回复。"'
+    repeated, repeated_mode = parent_conversation_context_delivery(
+        ambiguous,
+        previous_source_user_text="上一轮当前请求。",
+        session_attached=True,
+    )
+    assert repeated == ambiguous
+    assert repeated_mode == "snapshot_fallback"
 
 
 def test_codex_model_context_is_enriched_without_changing_durable_task() -> None:

@@ -348,7 +348,12 @@ def test_runtime_enforces_and_audits_immediate_steer() -> None:
             ProviderSteerRequest(
                 task="replacement",
                 revision=1,
-                metadata={"turn_id": "turn-2"},
+                metadata={
+                    "turn_id": "turn-2",
+                    "source_user_text": "Apply the replacement.",
+                    "source_user_context": 'Main Chat: "I will replace it."',
+                    "source_context_mode": "delta",
+                },
             ),
         )
         assert outcome["accepted"] is True
@@ -362,6 +367,12 @@ def test_runtime_enforces_and_audits_immediate_steer() -> None:
         ]
         assert queued and queued[-1]["payload"]["revision"] == 1
         assert record.metadata["steering"]["turn_id"] == "turn-2"
+        assert record.metadata["source_user_text"] == "Apply the replacement."
+        assert record.metadata["source_user_context"] == (
+            'Main Chat: "I will replace it."'
+        )
+        assert record.metadata["source_context_mode"] == "delta"
+        assert record.metadata["source_context_cursor_turn_id"] == "turn-2"
         adapter.release.set()
         await asyncio.wait_for(record.task_handle, timeout=2.0)
 
