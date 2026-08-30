@@ -17,15 +17,23 @@ BASE_IMPORTS = (
     "google.genai",
     "mcp",
     "numpy",
-    "onnxruntime",
     "openai",
     "PIL",
     "playwright",
-    "pyaudio",
     "starlette",
+    "uvicorn",
+)
+# T2 voice common layer (pyproject `[voice]` extra).
+VOICE_IMPORTS = (
+    "pyaudio",
+    "scipy",
+    "silero_vad",
+)
+# T2b local-model layer (pyproject `[local-cu124]` extra).
+LOCAL_MODEL_IMPORTS = (
+    "onnxruntime",
     "torch",
     "torchaudio",
-    "uvicorn",
 )
 PROJECT_IMPORTS = (
     "llm.gemini_client",
@@ -62,30 +70,30 @@ def verify(profile: str, *, require_cuda_device: bool = False) -> None:
 
     for module_name in (*BASE_IMPORTS, *PROJECT_IMPORTS):
         importlib.import_module(module_name)
-    if profile == "cu124":
-        for module_name in CU124_IMPORTS:
+    if profile in {"cpu", "cu124"}:
+        for module_name in VOICE_IMPORTS:
             importlib.import_module(module_name)
-
-    import torch
-    import torchaudio
+    if profile == "cu124":
+        for module_name in (*LOCAL_MODEL_IMPORTS, *CU124_IMPORTS):
+            importlib.import_module(module_name)
 
     _require(
         not _distribution_installed("google-generativeai"),
         "deprecated google-generativeai is installed; use google-genai only",
     )
-    _require(
-        str(torch.__version__).startswith("2.5.1"),
-        f"expected torch 2.5.1, found {torch.__version__}",
-    )
-    _require(
-        str(torchaudio.__version__).startswith("2.5.1"),
-        f"expected torchaudio 2.5.1, found {torchaudio.__version__}",
-    )
 
-    if profile in {"cpu", "ci"}:
-        _require(str(torch.__version__).endswith("+cpu"), "CPU torch wheel is required")
-        _require(torch.version.cuda is None, "CPU profile unexpectedly exposes CUDA")
-    else:
+    if profile == "cu124":
+        import torch
+        import torchaudio
+
+        _require(
+            str(torch.__version__).startswith("2.5.1"),
+            f"expected torch 2.5.1, found {torch.__version__}",
+        )
+        _require(
+            str(torchaudio.__version__).startswith("2.5.1"),
+            f"expected torchaudio 2.5.1, found {torchaudio.__version__}",
+        )
         _require(
             str(torch.__version__).endswith("+cu124"),
             "cu124 torch wheel is required",
@@ -93,6 +101,9 @@ def verify(profile: str, *, require_cuda_device: bool = False) -> None:
         _require(str(torch.version.cuda) == "12.4", "torch must target CUDA 12.4")
         if require_cuda_device:
             _require(torch.cuda.is_available(), "no usable CUDA device was detected")
+        torch_summary = f" torch={torch.__version__} torchaudio={torchaudio.__version__}"
+    else:
+        torch_summary = ""
 
     subprocess.run(
         [sys.executable, "-m", "pip", "check"],
@@ -101,8 +112,8 @@ def verify(profile: str, *, require_cuda_device: bool = False) -> None:
     )
     print(
         "environment ok: "
-        f"profile={profile} python={platform.python_version()} "
-        f"torch={torch.__version__} torchaudio={torchaudio.__version__}"
+        f"profile={profile} python={platform.python_version()}"
+        + torch_summary
     )
 
 
