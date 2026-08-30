@@ -17,15 +17,19 @@ import time
 from typing import Optional
 
 import numpy as np
-import torch
 
 from config.log_privacy import protected_text
+
+# torch is a local-model tier (T2b) dependency. Remote ASR installs (L2) have
+# no torch: every use below is guarded so device selection degrades to CPU
+# (remote backends ignore the device hint anyway).
 from config.settings import (
     ASR_BACKEND as _CFG_ASR_BACKEND,
     ASR_CONTEXT as _CFG_ASR_CONTEXT,
     ASR_LANGUAGE as _CFG_ASR_LANGUAGE,
     ASR_ENERGY_END_MS as _CFG_ASR_ENERGY_END_MS,
     ASR_ENERGY_END_RMS as _CFG_ASR_ENERGY_END_RMS,
+    ASR_ENERGY_START_RMS as _CFG_ASR_ENERGY_START_RMS,
     ASR_HANDOFF_MAX_CAPTURE_SECONDS as _CFG_ASR_HANDOFF_MAX_CAPTURE_SECONDS,
     ASR_LISTEN_TIMEOUT_SECONDS as _CFG_ASR_LISTEN_TIMEOUT_SECONDS,
     ASR_MAX_SPEECH_SECONDS as _CFG_ASR_MAX_SPEECH_SECONDS,
@@ -59,6 +63,7 @@ _MAX_SPEECH_SEC = float(_CFG_ASR_MAX_SPEECH_SECONDS)
 _LISTEN_TIMEOUT = float(_CFG_ASR_LISTEN_TIMEOUT_SECONDS)
 _PREROLL_MS     = int(_CFG_ASR_PREROLL_MS)
 _ENERGY_END_RMS = float(_CFG_ASR_ENERGY_END_RMS)
+_ENERGY_START_RMS = float(_CFG_ASR_ENERGY_START_RMS)
 _ENERGY_END_MS  = int(_CFG_ASR_ENERGY_END_MS)
 _HANDOFF_MAX_CAPTURE_SEC = float(_CFG_ASR_HANDOFF_MAX_CAPTURE_SECONDS)
 _PREROLL_CHUNKS = max(1, int(_PREROLL_MS / (_CHUNK_SAMPLES / _SAMPLE_RATE * 1000)))
@@ -237,7 +242,7 @@ class ASRManager:
     def _load_backend_bg(self) -> None:
         """在后台线程中加载 ASR 后端，完成后 set _backend_ready。"""
         try:
-            cuda_available = bool(torch.cuda.is_available())
+            cuda_available, torch_version = self._torch_runtime()
             requested_device = _CFG_QWEN3_ASR_DEVICE
             if requested_device in {"cuda", "cuda:0", "gpu"}:
                 device = "cuda"
@@ -245,17 +250,24 @@ class ASRManager:
                 device = "cpu"
             else:
                 device = "cuda" if cuda_available else "cpu"
-            logger.info(
-                "[ASR] torch runtime exe=%s torch=%s cuda_available=%s "
-                "cuda_version=%s visible=%s requested_device=%s selected_device=%s",
-                sys.executable,
-                getattr(torch, "__version__", "?"),
-                cuda_available,
-                getattr(torch.version, "cuda", None),
-                os.environ.get("CUDA_VISIBLE_DEVICES"),
-                requested_device or "auto",
-                device,
-            )
+            if torch_version:
+                logger.info(
+                    "[ASR] torch runtime exe=%s torch=%s cuda_available=%s "
+                    "cuda_version=%s visible=%s requested_device=%s selected_device=%s",
+                    sys.executable,
+                    torch_version,
+                    cuda_available,
+                    self._torch_cuda_version(),
+                    os.environ.get("CUDA_VISIBLE_DEVICES"),
+                    requested_device or "auto",
+                    device,
+                )
+            else:
+                logger.info(
+                    "[ASR] torch absent (remote ASR install); device=%s backend=%s",
+                    device,
+                    self._backend_name,
+                )
             self._backend.load(device)
             logger.info(f"[ASR] backend {self._backend_name} loaded (device={device})")
         except Exception as e:
@@ -264,13 +276,33 @@ class ASRManager:
         finally:
             self._backend_ready.set()
 
+    @staticmethod
+    def _torch_runtime() -> tuple[bool, str]:
+        """Return (cuda_available, torch_version); (False, "") without torch."""
+        try:
+            import torch
+
+            return bool(torch.cuda.is_available()), str(torch.__version__)
+        except ImportError:
+            return False, ""
+
+    @staticmethod
+    def _torch_cuda_version() -> str | None:
+        try:
+            import torch
+
+            return getattr(torch.version, "cuda", None)
+        except ImportError:
+            return None
+
     def _select_backend_device(self) -> str:
         requested_device = _CFG_QWEN3_ASR_DEVICE
         if requested_device in {"cuda", "cuda:0", "gpu"}:
             return "cuda"
         if requested_device == "cpu":
             return "cpu"
-        return "cuda" if torch.cuda.is_available() else "cpu"
+        cuda_available, _ = self._torch_runtime()
+        return "cuda" if cuda_available else "cpu"
 
     def _recover_backend_after_failure(self, exc: Exception) -> bool:
         """Rebuild the current backend after a fatal runtime failure."""
@@ -308,14 +340,22 @@ class ASRManager:
             return True
 
     def _init_vad(self) -> None:
-        from silero_vad import load_silero_vad
         try:
+            from silero_vad import load_silero_vad
+
             self._vad_model = load_silero_vad()
             self._vad_model.eval()
             logger.info("[ASR] Silero VAD loaded")
         except Exception as e:
-            logger.error(f"[ASR] Silero VAD load failed: {e}")
-            raise
+            # silero-vad pulls torch (L3 realtime tier). Remote-ASR installs
+            # (L2) have neither: capture falls back to energy endpointing.
+            self._vad_model = None
+            logger.warning(
+                "[ASR] Silero VAD unavailable (%s); ASR capture falls back to "
+                "energy endpointing (install -e '.[vad'] for VAD-based "
+                "endpointing and barge-in)",
+                e,
+            )
 
     # ------------------------------------------------------------------
     # 公开接口（与历史版本兼容）
@@ -390,7 +430,8 @@ class ASRManager:
             elif requested_device == "cpu":
                 device = "cpu"
             else:
-                device = "cuda" if torch.cuda.is_available() else "cpu"
+                cuda_available, _ = self._torch_runtime()
+                device = "cuda" if cuda_available else "cpu"
             new_backend.load(device)
             old = self._backend
             self._backend = new_backend
@@ -450,6 +491,7 @@ class ASRManager:
             preroll_ms=_PREROLL_MS,
             energy_end_rms=_ENERGY_END_RMS,
             energy_end_ms=_ENERGY_END_MS,
+            energy_start_rms=_ENERGY_START_RMS,
             handoff_max_capture_sec=_HANDOFF_MAX_CAPTURE_SEC,
             block_mic_fn=_should_block_mic,
             on_speech_start=self._on_speech_start_fn,

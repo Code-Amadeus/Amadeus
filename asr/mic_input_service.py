@@ -232,6 +232,7 @@ class MicInputService:
         preroll_ms: int,
         energy_end_rms: float = _ENERGY_END_RMS,
         energy_end_ms: int = _ENERGY_END_MS,
+        energy_start_rms: float = 0.0,
         handoff_max_capture_sec: float = _HANDOFF_MAX_CAPTURE_SEC,
         block_mic_fn: Callable[[], bool] | None = None,
         on_speech_start: Callable[[], None] | None = None,
@@ -240,18 +241,24 @@ class MicInputService:
         on_probable_end: Callable[[np.ndarray], None] | None = None,
         on_probable_end_cancelled: Callable[[], None] | None = None,
     ) -> np.ndarray | None:
-        import torch
-
-        from silero_vad import VADIterator
-
         self.start()
-        vad_iter = VADIterator(
-            vad_model,
-            threshold=float(threshold),
-            sampling_rate=self.sample_rate,
-            min_silence_duration_ms=int(min_silence_ms),
-            speech_pad_ms=int(speech_pad_ms),
-        )
+        if vad_model is not None:
+            import torch
+
+            from silero_vad import VADIterator
+
+            vad_iter = VADIterator(
+                vad_model,
+                threshold=float(threshold),
+                sampling_rate=self.sample_rate,
+                min_silence_duration_ms=int(min_silence_ms),
+                speech_pad_ms=int(speech_pad_ms),
+            )
+        else:
+            # Energy-endpoint fallback (L2 installs without the vad tier):
+            # speech starts above energy_start_rms; the existing energy_end
+            # path already ends the turn without silero.
+            vad_iter = None
 
         speech_chunks: list[np.ndarray] = []
         speech_raw_chunks: list[np.ndarray] = []
@@ -373,44 +380,54 @@ class MicInputService:
                 block_mic = bool(block_mic_fn and block_mic_fn())
                 if block_mic and not speech_started:
                     preroll_buf.clear()
-                    vad_iter.reset_states()
+                    if vad_iter is not None:
+                        vad_iter.reset_states()
                     continue
                 if not speech_started:
                     preroll_buf.append(chunk_np)
 
-                vad_out = vad_iter(torch.from_numpy(chunk_np), return_seconds=False)
-                if vad_out is not None:
-                    if "start" in vad_out:
-                        if handoff_capture and not handoff_vad_owned:
-                            handoff_vad_owned = True
-                            logger.info("[MicInput] handoff Conversation VAD took ownership")
-                        if not speech_started:
-                            speech_started = True
-                            speech_chunks = list(preroll_buf)
-                            speech_raw_chunks = list(preroll_buf)
-                            speech_times = []
-                            capture_started_at = time.monotonic()
-                            silence_chunks = 0
-                            if on_speech_start is not None:
-                                try:
-                                    on_speech_start()
-                                except Exception:
-                                    logger.debug("[MicInput] speech-start callback failed", exc_info=True)
-                    elif "end" in vad_out and speech_started:
-                        audio = finish_audio("vad_end")
-                        if echo_dropped:
-                            return None
-                        if audio is not None:
-                            return audio
-                        if probable_end_fired:
-                            _cancel_probable_end()
-                        speech_chunks = []
-                        speech_raw_chunks = []
-                        speech_times = []
-                        speech_started = False
-                        preroll_buf.clear()
-                        capture_started_at = 0.0
-                        silence_chunks = 0
+                if vad_iter is not None:
+                    vad_out = vad_iter(torch.from_numpy(chunk_np), return_seconds=False)
+                else:
+                    vad_out = None
+                # Handoff takeover marks on every VAD start event, even while
+                # speech is already running (#36 semantics); the energy-endpoint
+                # fallback (vad_iter None) never marks, since there is no VAD.
+                if vad_out is not None and "start" in vad_out and handoff_capture and not handoff_vad_owned:
+                    handoff_vad_owned = True
+                    logger.info("[MicInput] handoff Conversation VAD took ownership")
+                vad_start = (vad_out is not None and "start" in vad_out) or (
+                    vad_iter is None
+                    and not speech_started
+                    and frame.rms >= energy_start_rms
+                )
+                if vad_start and not speech_started:
+                    speech_started = True
+                    speech_chunks = list(preroll_buf)
+                    speech_raw_chunks = list(preroll_buf)
+                    speech_times = []
+                    capture_started_at = time.monotonic()
+                    silence_chunks = 0
+                    if on_speech_start is not None:
+                        try:
+                            on_speech_start()
+                        except Exception:
+                            logger.debug("[MicInput] speech-start callback failed", exc_info=True)
+                elif vad_out is not None and "end" in vad_out and speech_started:
+                    audio = finish_audio("vad_end")
+                    if echo_dropped:
+                        return None
+                    if audio is not None:
+                        return audio
+                    if probable_end_fired:
+                        _cancel_probable_end()
+                    speech_chunks = []
+                    speech_raw_chunks = []
+                    speech_times = []
+                    speech_started = False
+                    preroll_buf.clear()
+                    capture_started_at = 0.0
+                    silence_chunks = 0
 
                 if speech_started:
                     speech_chunks.append(chunk_np)
@@ -443,7 +460,8 @@ class MicInputService:
                         capture_started_at = 0.0
                         silence_chunks = 0
                         preroll_buf.clear()
-                        vad_iter.reset_states()
+                        if vad_iter is not None:
+                            vad_iter.reset_states()
                         continue
                     if (
                         handoff_capture
@@ -459,7 +477,8 @@ class MicInputService:
                     if len(speech_chunks) >= int(max_speech_sec * self.sample_rate / self.chunk_samples):
                         return finish_audio("max_speech")
         finally:
-            vad_iter.reset_states()
+            if vad_iter is not None:
+                vad_iter.reset_states()
         if speech_started and speech_chunks:
             return finish_audio("timeout")
         return None

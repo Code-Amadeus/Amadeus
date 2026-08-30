@@ -395,6 +395,8 @@ ASR_MAX_SPEECH_SECONDS = _float("ASR_MAX_SPEECH_SECONDS", 30.0)
 ASR_LISTEN_TIMEOUT_SECONDS = _float("ASR_LISTEN_TIMEOUT_SECONDS", 15.0)
 ASR_PREROLL_MS = _int("ASR_PREROLL_MS", 500)
 ASR_ENERGY_END_RMS = _float("ASR_ENERGY_END_RMS", 0.008)
+# 能量端点回退（无 vad 梯级时）：语音起始阈值，需高于结束阈值形成迟滞
+ASR_ENERGY_START_RMS = _float("ASR_ENERGY_START_RMS", 0.02)
 ASR_ENERGY_END_MS = _int("ASR_ENERGY_END_MS", 450)
 # Recovery watchdog while a post-barge-in capture still lacks ownership from
 # its fresh Conversation VAD iterator.  This is not the user's speech limit;

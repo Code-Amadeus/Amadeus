@@ -38,16 +38,19 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# T2 voice common layer: playback, capture, echo cancellation, barge-in.
-# Needed by every voice path (remote TTS included), on every platform.
+# L2 voice interaction layer: playback, capture, echo cancellation, remote
+# TTS/ASR. Torch-free on purpose: L2 stays a few hundred MB.
 voice = [
     "PyAudio==0.2.14",
     "aec-audio-processing==1.0.1",
     "av==17.0.1",
     "ffmpeg-python==0.2.0",
     "scipy==1.17.1",
-    "silero-vad==6.2.1",
     "soundfile==0.13.1",
+]
+# L3 realtime interruption: silero VAD for barge-in. Pulls torch transitively.
+vad = [
+    "silero-vad==6.2.1",
 ]
 # T2b local model stack observed in the working Windows / Python 3.12 / cu124
 # environment. Includes the voice layer transitively (installed alongside).
