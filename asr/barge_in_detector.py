@@ -15,7 +15,6 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 import numpy as np
-import torch
 
 from asr.mic_input_service import get_mic_input_service
 from config.settings import (
@@ -162,6 +161,9 @@ class BargeInDetector:
                 return
 
             from silero_vad import VADIterator
+            # torch is a voice-tier (T2) dependency; the barge-in VAD loop only
+            # runs after start() in a voice-capable environment.
+            import torch
 
             vad_iter = VADIterator(
                 self._ensure_vad(),

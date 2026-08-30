@@ -95,8 +95,11 @@ for _cuda_ver in ("v12.1", "v12.2", "v12.4", "v12.6"):
 # headless/voice-less installs where neither onnxruntime nor torchmetrics exist.
 import importlib.util as _importlib_util
 
-if _importlib_util.find_spec("onnxruntime") is not None:
-    import onnxruntime  # noqa: F401  # eager before torchmetrics chain
+try:
+    if _importlib_util.find_spec("onnxruntime") is not None:
+        import onnxruntime  # noqa: F401  # eager before torchmetrics chain
+except ImportError:  # local-model stack absent in T1 installs
+    pass
 
 def _session_log_path() -> str:
     """One log file per process start, under runtime/logs.
