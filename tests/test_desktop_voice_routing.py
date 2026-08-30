@@ -81,3 +81,51 @@ async def test_stop_listening_does_not_cancel_its_current_listener_task(monkeypa
     assert handler._listen_task is None
     assert emitted[-1][1]["status"] == "idle"
     assert emitted[-1][1]["reason"] == "voice_stop_command"
+
+
+@pytest.mark.asyncio
+async def test_awake_status_contains_wall_clock_deadline(monkeypatch) -> None:
+    emitted: list[tuple[object, dict]] = []
+
+    async def capture(method, payload):
+        emitted.append((method, payload))
+
+    handler = AsrHandler()
+    handler._source = "wake"
+    handler._awake_seconds = 60.0
+    handler._awake_until = 112.0
+    monkeypatch.setattr("server.handlers.asr_handler.time.monotonic", lambda: 100.0)
+    monkeypatch.setattr("server.handlers.asr_handler.time.time", lambda: 1_000.0)
+    monkeypatch.setattr("server.handlers.asr_handler.bus.emit", capture)
+
+    await handler._emit_listening_status()
+
+    payload = emitted[-1][1]
+    assert payload["status"] == "awake"
+    assert payload["awake_remaining"] == pytest.approx(12.0)
+    assert payload["awake_deadline_ms"] == 1_012_000
+
+
+@pytest.mark.asyncio
+async def test_turn_complete_resets_and_publishes_full_hot_window(monkeypatch) -> None:
+    emitted: list[tuple[object, dict]] = []
+
+    async def capture(method, payload):
+        emitted.append((method, payload))
+
+    handler = AsrHandler()
+    handler._active = True
+    handler._source = "wake"
+    handler._awake_seconds = 60.0
+    handler._awake_until = 120.0
+    handler._waiting_turn_complete = True
+    monkeypatch.setattr("server.handlers.asr_handler.time.monotonic", lambda: 200.0)
+    monkeypatch.setattr("server.handlers.asr_handler.time.time", lambda: 1_000.0)
+    monkeypatch.setattr("server.handlers.asr_handler.bus.emit", capture)
+
+    await handler.notify_turn_complete("playback")
+
+    payload = emitted[-1][1]
+    assert payload["status"] == "turn_complete"
+    assert payload["awake_remaining"] == pytest.approx(60.0)
+    assert payload["awake_deadline_ms"] == 1_060_000

@@ -199,6 +199,18 @@ class AsrHandler(RequestHandler):
         self._finish_after_turn_complete = False
         return info
 
+    def _status_payload(self, status: str, **extra: Any) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "status": status,
+            "source": self._source or "",
+            **extra,
+        }
+        if self._is_awake_session() and status in {"awake", "listening", "no_speech", "turn_complete"}:
+            remaining = max(0.0, self._awake_until - time.monotonic())
+            payload["awake_remaining"] = remaining
+            payload["awake_deadline_ms"] = int((time.time() + remaining) * 1000)
+        return payload
+
     async def _emit_listening_status(self) -> None:
         try:
             from core.turn_coordinator import get_turn_coordinator
@@ -210,20 +222,14 @@ class AsrHandler(RequestHandler):
         except Exception:
             logger.debug("turn coordinator notify failed", exc_info=True)
         if self._is_awake_session():
-            remaining = max(0.0, self._awake_until - time.monotonic())
             await bus.emit(
                 Method.ASR_STATUS,
-                {
-                    "status": "awake",
-                    "source": "wake",
-                    "awake_remaining": remaining,
-                    "source_payload": self._source_payload,
-                },
+                self._status_payload("awake", source_payload=self._source_payload),
             )
             return
         await bus.emit(
             Method.ASR_STATUS,
-            {"status": "listening", "source": self._source or "", "source_payload": self._source_payload},
+            self._status_payload("listening", source_payload=self._source_payload),
         )
 
     async def _wait_until_manager_ready(self, asr_manager) -> bool:
@@ -303,7 +309,7 @@ class AsrHandler(RequestHandler):
                 reason,
                 self._awake_seconds,
             )
-        await bus.emit(Method.ASR_STATUS, {"status": "turn_complete", "source": self._source or "", "reason": reason})
+        await bus.emit(Method.ASR_STATUS, self._status_payload("turn_complete", reason=reason))
         if self._finish_after_turn_complete:
             self._active = False
             await self._finish_listening(f"turn_complete:{reason}")
@@ -365,6 +371,8 @@ class AsrHandler(RequestHandler):
         if self._source == "wake" and is_desktop_voice_exit_command(text):
             payload["control"] = "stop"
         else:
+            if self._source == "wake" and "control" not in payload:
+                await bus.emit(Method.ASR_STATUS, self._status_payload("recognized", text=text))
             await bus.emit(Method.ASR_RECOGNIZED, payload)
         if self._on_recognized is not None:
             result = self._on_recognized(payload)
@@ -400,11 +408,7 @@ class AsrHandler(RequestHandler):
                     logger.info("awake ASR heard nothing; continuing for %.1fs", remaining)
                     await bus.emit(
                         Method.ASR_STATUS,
-                        {
-                            "status": "no_speech",
-                            "source": "wake",
-                            "awake_remaining": remaining,
-                        },
+                        self._status_payload("no_speech"),
                     )
                 if self._one_shot:
                     self._active = False

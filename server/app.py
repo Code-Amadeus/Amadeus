@@ -1288,6 +1288,10 @@ async def bootstrap(port: int = 17777) -> None:
                 return
         except Exception:
             logger.exception("failed to check ASR prompt leak")
+        await bus.emit(
+            Method.ASR_STATUS,
+            {"status": "thinking", "source": "wake", "text": text},
+        )
         # 投机决议（切片 D2）：正式文本与投机轮一致则确认放行，不再重发；
         # 不一致 / 投机轮已被作废则按原路径正常发送
         try:
