@@ -42,7 +42,9 @@ def _compile(profile: str) -> None:
         "windows",
         "--python-version",
         "3.12",
-        f"--output-file={config['output']}",
+        # Relative to ROOT: uv records the command line in the lock header,
+        # and an absolute path would leak the generator's home directory.
+        f"--output-file={config['output'].relative_to(ROOT)}",
     ]
     for extra in config["extras"]:
         command.extend(("--extra", extra))
