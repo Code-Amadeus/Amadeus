@@ -16,7 +16,9 @@ from typing import Any
 
 import numpy as np
 
-from asr.mic_input_service import get_mic_input_service
+# NOTE: asr.mic_input_service is imported lazily inside _run() — it pulls
+# voice-tier deps (pyaudio) and must not break module import in audio-less
+# installs (this module is imported from backend bootstrap).
 from config.settings import (
     BARGE_IN_ECHO_CONFIRM_MS,
     BARGE_IN_MIN_RMS,
@@ -164,6 +166,8 @@ class BargeInDetector:
             # torch is a voice-tier (T2) dependency; the barge-in VAD loop only
             # runs after start() in a voice-capable environment.
             import torch
+
+            from asr.mic_input_service import get_mic_input_service
 
             vad_iter = VADIterator(
                 self._ensure_vad(),

@@ -16,8 +16,10 @@ from dataclasses import dataclass
 from typing import Callable
 
 import numpy as np
-import pyaudio
-import torch
+
+# pyaudio / torch are voice-tier (T2) dependencies, imported lazily so that
+# this module stays importable in audio-less installs (it is reachable from
+# backend bootstrap via barge-in / wake shutdown paths).
 
 from asr.microphone import (
     configured_device_index,
@@ -238,6 +240,8 @@ class MicInputService:
         on_probable_end: Callable[[np.ndarray], None] | None = None,
         on_probable_end_cancelled: Callable[[], None] | None = None,
     ) -> np.ndarray | None:
+        import torch
+
         from silero_vad import VADIterator
 
         self.start()
@@ -461,6 +465,8 @@ class MicInputService:
         return None
 
     def _run(self) -> None:
+        import pyaudio
+
         stream = None
         pa = None
         try:
