@@ -31,7 +31,7 @@ class _Blocker:
     # ModuleNotFoundError, which is what a real T1 install raises.
     def find_spec(self, name, path=None, target=None):
         if name.split(".")[0] in _BLOCKED:
-            raise ModuleNotFoundError(f"{name} is not part of the T1 core install")
+            raise ModuleNotFoundError(f"{{name}} is not part of the T1 core install")
         return None
 
 sys.meta_path.insert(0, _Blocker())
