@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "GPT_SoVITS"))
 import pytest
 
 pytest.importorskip("torch", reason="local-model tier (torch) is not installed")
+pytest.importorskip("torchmetrics", reason="local-model tier (torchmetrics) is not installed")
 
 from AR.models.t2s_model import Text2SemanticDecoder, _env_flag_enabled, _should_stop_on_eos
 import AR.models.t2s_model as t2s_model
