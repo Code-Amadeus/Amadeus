@@ -106,9 +106,11 @@ class SuiteResult:
         # model-less checkout may legitimately skip an optional local-asset
         # assertion, so requiring every collected node to say "passed" would
         # turn supported absence into a false regression. A tier-gated module
-        # (module-level importorskip) collects zero nodes while still being
-        # healthy: "skipped" in the summary is the healthy marker there.
-        return self.returncode == 0 and (self.collected > 0 or self.skipped > 0)
+        # (module-level importorskip) exits with code 5 (no tests collected)
+        # and reports "skipped" in the summary — healthy supported absence.
+        if self.returncode == 5:
+            return self.skipped > 0
+        return self.returncode == 0 and self.collected > 0
 
 
 def _count_passed(output: str) -> int:
