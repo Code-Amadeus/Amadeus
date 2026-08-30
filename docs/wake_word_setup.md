@@ -50,6 +50,19 @@ MICROPHONE_DEVICE_INDEX=-1
 fallback can be set with `MICROPHONE_PREFERRED_NAME`; the Voice page lists the
 indices detected on the current machine.
 
+## Desktop continuous conversation
+
+With Wallpaper running, a Wake phrase opens the Qwen conversation recognizer.
+Final speech is sent to the current Chat Session automatically. After physical
+assistant playback completes, the listener remains hot for 60 seconds; each
+completed turn resets that window. The Electron window may be minimized and is
+not restored by Wake. Say exactly `停止对话`, `结束对话`, or `退出对话` to leave the
+hot window without adding that command to Chat history.
+
+This flow requires `WAKE_AUTO_SEND_TO_CHAT=true`. When
+`WAKE_AUTO_START_WITH_WALLPAPER=true`, Wallpaper owns the Wake start/stop
+lifecycle.
+
 ## Matching and capture tuning
 
 Normal installations should keep the defaults from `.env.example`. Change one
