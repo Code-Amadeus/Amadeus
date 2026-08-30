@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 _CANVAS_CONTENT_KEYS = frozenset(
     {
         "artifact",
+        "markdown",
         "reportView",
         "reportMarkdown",
         "diff",

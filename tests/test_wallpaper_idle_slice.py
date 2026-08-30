@@ -37,6 +37,13 @@ def test_selected_work_projection_remains_visible() -> None:
     assert calls[-1].get("visible") is not False
 
 
+def test_markdown_work_result_remains_visible() -> None:
+    handler, calls = configured_handler(projected={"markdown": "work result"})
+
+    assert handler._apply_canvas({}) is True
+    assert calls[-1]["markdown"] == "work result"
+
+
 def test_permission_projection_remains_visible() -> None:
     payload = {"permissionRequest": {"id": "permission-1"}}
     handler, calls = configured_handler(projected=payload)
