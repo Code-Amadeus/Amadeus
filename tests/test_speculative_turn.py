@@ -161,6 +161,9 @@ def test_stale_slot_discarded():
 
 def test_manager_on_result_callback():
     """_SpeculativeTranscription：完成且有效才回调；作废后不回调。"""
+    import pytest
+
+    pytest.importorskip("torch", reason="local-model tier (torch) is not installed")
     import numpy as np
     from asr.manager import _SpeculativeTranscription
 

@@ -105,8 +105,10 @@ class SuiteResult:
         # Pytest exit status is authoritative for non-failing outcomes. A
         # model-less checkout may legitimately skip an optional local-asset
         # assertion, so requiring every collected node to say "passed" would
-        # turn supported absence into a false regression.
-        return self.returncode == 0 and self.collected > 0
+        # turn supported absence into a false regression. A tier-gated module
+        # (module-level importorskip) collects zero nodes while still being
+        # healthy: "skipped" in the summary is the healthy marker there.
+        return self.returncode == 0 and (self.collected > 0 or self.skipped > 0)
 
 
 def _count_passed(output: str) -> int:
