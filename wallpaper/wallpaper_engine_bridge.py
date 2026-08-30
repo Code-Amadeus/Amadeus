@@ -64,6 +64,7 @@ _WALLPAPER_CLIENT_ASSETS = (
     _PROJECT_ROOT / "render" / "web" / "electron_slice.html",
     _PROJECT_ROOT / "render" / "web" / "electron_slice_host.js",
     _PROJECT_ROOT / "render" / "web" / "crt_canvas_surface.js",
+    _PROJECT_ROOT / "render" / "web" / "wallpaper_voice_state.js",
     _PROJECT_ROOT / "render" / "web" / "wallpaper_scene.js",
     _PROJECT_ROOT / "render" / "web" / "renderer.js",
 )

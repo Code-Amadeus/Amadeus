@@ -1,0 +1,338 @@
+from __future__ import annotations
+
+import socket
+import subprocess
+import sys
+import urllib.request
+import json
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from render.server import AssetServer
+from wallpaper import wallpaper_engine_bridge
+
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_VOICE_STATE_PATH = _PROJECT_ROOT / "render" / "web" / "wallpaper_voice_state.js"
+_VOICE_STATE_URL = "/render/web/wallpaper_voice_state.js"
+_SCENE_URL = "/render/web/wallpaper_scene.js"
+
+
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def _get_text(url: str) -> str:
+    with urllib.request.urlopen(url, timeout=5) as response:
+        assert response.status == 200
+        return response.read().decode("utf-8")
+
+
+def test_wallpaper_voice_state_reduces_the_continuous_voice_sequence() -> None:
+    source = _VOICE_STATE_PATH.read_text(encoding="utf-8")
+    node_runner = r"""
+const assert = require("node:assert/strict");
+const vm = require("node:vm");
+
+const sandbox = { window: {} };
+vm.runInNewContext(require("node:fs").readFileSync(0, "utf8"), sandbox, {
+  filename: "wallpaper_voice_state.js",
+});
+const api = sandbox.window.AmadeusWallpaperVoiceState;
+
+let state = api.initial();
+state = api.reduce(state, {
+  status: "awake",
+  source: "wake",
+  awake_deadline_ms: 61000,
+});
+assert.equal(state.phase, "listening");
+assert.equal(api.remainingSeconds(state, 1000), 60);
+
+state = api.reduce(state, {
+  status: "recognized",
+  source: "wake",
+  text: "你好",
+});
+assert.equal(state.phase, "recognized");
+assert.equal(state.userText, "你好");
+assert.equal(api.remainingSeconds(state, 2000), null);
+
+state = api.reduce(state, { status: "thinking", source: "wake", text: "你好" });
+assert.equal(state.phase, "thinking");
+
+state = api.reduce(state, {
+  status: "turn_complete",
+  source: "wake",
+  awake_deadline_ms: 65000,
+});
+assert.equal(state.phase, "listening");
+assert.equal(api.remainingSeconds(state, 5000), 60);
+
+state = api.reduce(state, {
+  status: "idle",
+  source: "wake",
+  reason: "awake_timeout",
+});
+assert.equal(state.phase, "idle");
+assert.equal(state.userText, "");
+"""
+
+    completed = subprocess.run(
+        ["node", "-e", node_runner],
+        input=source,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=10,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_wallpaper_asset_service_loads_voice_state_before_the_scene() -> None:
+    server = AssetServer(_PROJECT_ROOT, start_port=_free_port())
+    port = server.start()
+    try:
+        for loader_path in (
+            "/render/web/wallpaper.html",
+            "/render/web/wallpaper_engine.html",
+        ):
+            loader = _get_text(f"http://127.0.0.1:{port}{loader_path}")
+            assert loader.index(_VOICE_STATE_URL) < loader.index(_SCENE_URL)
+
+        reducer = _get_text(f"http://127.0.0.1:{port}{_VOICE_STATE_URL}")
+        assert reducer
+    finally:
+        server.stop()
+
+
+def test_wallpaper_voice_state_participates_in_client_asset_revision() -> None:
+    assert _VOICE_STATE_PATH in wallpaper_engine_bridge._WALLPAPER_CLIENT_ASSETS
+
+
+def test_wallpaper_scene_presents_voice_status_and_dual_subtitles() -> None:
+    node_runner = r"""
+const vm = require("node:vm");
+const fs = require("node:fs");
+
+class Point {
+  constructor() { this.x = 0; this.y = 0; }
+  set(x, y) { this.x = x; this.y = y === undefined ? x : y; }
+}
+
+class Container {
+  constructor() {
+    this.children = [];
+    this.visible = true;
+    this.renderable = true;
+    this.alpha = 1;
+    this.x = 0;
+    this.y = 0;
+    this.mask = null;
+  }
+  addChild(...items) {
+    for (const item of items) {
+      this.removeChild(item);
+      this.children.push(item);
+    }
+    return items[items.length - 1];
+  }
+  addChildAt(item, index) {
+    this.removeChild(item);
+    this.children.splice(Math.max(0, Math.min(index, this.children.length)), 0, item);
+    return item;
+  }
+  removeChild(item) {
+    this.children = this.children.filter((child) => child !== item);
+    return item;
+  }
+}
+
+class Graphics extends Container {
+  clear() {}
+  beginFill() {}
+  lineStyle() {}
+  moveTo() {}
+  lineTo() {}
+  endFill() {}
+  drawRect() {}
+}
+
+class Sprite extends Container {
+  constructor(texture) {
+    super();
+    this.texture = texture || { valid: false, width: 1, height: 1 };
+    this.anchor = new Point();
+    this.scale = new Point();
+    this.width = 1;
+    this.height = 1;
+  }
+  destroy() {}
+}
+
+class Text extends Sprite {
+  constructor(text, style) {
+    super();
+    this.text = text;
+    this.style = Object.assign({}, style || {});
+  }
+}
+
+const stage = new Container();
+const timers = new Map();
+let nextTimer = 1;
+const app = {
+  screen: { width: 1000, height: 600 },
+  stage,
+  ticker: {
+    deltaMS: 16.6667,
+    add(fn) { this.fn = fn; },
+  },
+  view: { addEventListener() {} },
+};
+const PIXI = {
+  Container,
+  Graphics,
+  Sprite,
+  Text,
+  Texture: { from() { return { valid: true, width: 1, height: 1, baseTexture: { valid: true } }; } },
+  BLEND_MODES: { ADD: "add" },
+};
+const renderApp = new Proxy({ getPixiApp() { return app; } }, {
+  get(target, property) {
+    if (property in target) return target[property];
+    return () => {};
+  },
+});
+const windowObject = {
+  PIXI,
+  renderApp,
+  location: { search: "" },
+  addEventListener() {},
+  setTimeout(fn) {
+    const id = nextTimer++;
+    timers.set(id, fn);
+    return id;
+  },
+  clearTimeout(id) { timers.delete(id); },
+};
+const context = {
+  window: windowObject,
+  PIXI,
+  URLSearchParams,
+  console: { log() {}, info() {}, warn() {}, error() {} },
+  setTimeout: windowObject.setTimeout,
+  clearTimeout: windowObject.clearTimeout,
+  Date,
+  Math,
+  Map,
+  AbortController,
+};
+
+vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), context);
+vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), context);
+
+const runtime = context.window.wallpaperApp;
+runtime.initDesktopScene({
+  crtConfig: {
+    img_size: [1000, 600],
+    crt_polygon: [[0, 0], [1000, 0], [1000, 600], [0, 600]],
+  },
+});
+
+function texts() {
+  const found = [];
+  function visit(item) {
+    if (item instanceof Text) found.push(item);
+    for (const child of item.children || []) visit(child);
+  }
+  visit(stage);
+  return found;
+}
+function textValue(value) {
+  return texts().find((item) => item.text === value);
+}
+function statusValue() {
+  return texts().map((item) => item.text).find((value) =>
+    value === "READY"
+    || value === "已唤醒"
+    || value.startsWith("正在听")
+    || value === "思考中"
+    || value === "正在说话"
+  );
+}
+
+const ready = textValue("READY");
+const readyLayout = ready ? { x: ready.x, y: ready.y } : null;
+const now = Date.now();
+runtime.setAsrStatus({ status: "awake", source: "wake", awake_deadline_ms: now + 60000 });
+const awake = statusValue();
+runtime.setAsrStatus({ status: "listening", source: "wake", awake_deadline_ms: now + 60000 });
+app.ticker.fn(1);
+const listening = statusValue();
+runtime.setAsrStatus({ status: "recognized", source: "wake", text: "你好" });
+const userSubtitle = !!textValue("你：你好");
+runtime.setAsrStatus({ status: "thinking", source: "wake", text: "你好" });
+const thinking = statusValue();
+runtime.setSpeaking(true);
+const speaking = statusValue();
+runtime.setSubtitle("第一句");
+const assistantSubtitle = !!textValue("助手：第一句");
+runtime.setSpeaking(false);
+runtime.setAsrStatus({ status: "idle", source: "wake", reason: "awake_timeout" });
+const idle = statusValue();
+const subtitleBeforeClear = !!textValue("助手：第一句");
+for (const fn of Array.from(timers.values())) fn();
+const subtitleAfterClear = texts().some((item) => item.text === "助手：第一句");
+runtime.setSubtitle("普通字幕");
+const inactiveSubtitle = !!textValue("普通字幕");
+
+process.stdout.write(JSON.stringify({
+  ready: !!ready,
+  readyLayout,
+  awake,
+  listening,
+  userSubtitle,
+  thinking,
+  speaking,
+  assistantSubtitle,
+  idle,
+  subtitleBeforeClear,
+  subtitleAfterClear,
+  inactiveSubtitle,
+}));
+"""
+    completed = subprocess.run(
+        [
+            "node",
+            "-e",
+            node_runner,
+            str(_VOICE_STATE_PATH),
+            str(_PROJECT_ROOT / "render" / "web" / "wallpaper_scene.js"),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=10,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout)
+    assert result == {
+        "ready": True,
+        "readyLayout": {"x": 988, "y": 12},
+        "awake": "已唤醒",
+        "listening": "正在听 · 60s",
+        "userSubtitle": True,
+        "thinking": "思考中",
+        "speaking": "正在说话",
+        "assistantSubtitle": True,
+        "idle": "READY",
+        "subtitleBeforeClear": True,
+        "subtitleAfterClear": False,
+        "inactiveSubtitle": True,
+    }

@@ -173,6 +173,113 @@
     },
   };
 
+  const wallpaperVoicePresentation = {
+    app: null,
+    container: null,
+    label: null,
+    state: null,
+    lastStatus: "",
+    speaking: false,
+    _bounds: null,
+    _visibleText: "",
+
+    _api() {
+      return window.AmadeusWallpaperVoiceState || null;
+    },
+
+    init(app) {
+      this.app = app;
+      const api = this._api();
+      this.state = api ? api.initial() : null;
+      if (!this.container && this.app && window.PIXI) {
+        this.container = new PIXI.Container();
+        this.label = new PIXI.Text("", {
+          fontFamily: "Arial, 'Microsoft YaHei', sans-serif",
+          fontSize: 13,
+          fontWeight: "600",
+          fill: 0xbfefff,
+          align: "right",
+          dropShadow: true,
+          dropShadowColor: 0x071019,
+          dropShadowAlpha: 0.9,
+          dropShadowDistance: 1,
+          dropShadowBlur: 2,
+        });
+        this.label.anchor.set(1, 0);
+        this.container.addChild(this.label);
+        this.app.stage.addChild(this.container);
+      }
+      this.layout(desktopScene._crtBounds);
+      this._render(Date.now());
+    },
+
+    layout(bounds) {
+      this._bounds = bounds || this._bounds;
+      if (!this.label || !this._bounds) return;
+      const margin = Math.max(8, this._bounds.width * 0.012);
+      this.label.x = this._bounds.right - margin;
+      this.label.y = this._bounds.y + margin;
+      this.label.style.fontSize = Math.max(11, Math.min(15, Math.round(this._bounds.width / 62)));
+    },
+
+    setAsrStatus(payload) {
+      const api = this._api();
+      if (!api) return;
+      const previous = this.state || api.initial();
+      const next = api.reduce(previous, payload);
+      if (next === previous) return;
+      this.state = next;
+      this.lastStatus = String((payload && payload.status) || "").trim().toLowerCase();
+      if ((next.phase === "recognized" || next.phase === "thinking") && next.userText) {
+        desktopScene._clearSubtitleTimer();
+        desktopScene._lastSubtitleText = `你：${next.userText}`;
+        wallpaperSubtitle.setText(desktopScene._lastSubtitleText);
+      } else if (next.phase === "idle" && previous.active) {
+        desktopScene._scheduleSubtitleClear(desktopScene._lastSubtitleText);
+      }
+      this._render(Date.now());
+    },
+
+    setSpeaking(speaking) {
+      this.speaking = !!speaking;
+      this._render(Date.now());
+    },
+
+    setSubtitle(value) {
+      const text = String(value || "");
+      if (!text || !this.state || !this.state.active) return text;
+      return `助手：${text}`;
+    },
+
+    tick(nowMs) {
+      if (!this.state || this.state.phase !== "listening") return;
+      this._render(nowMs);
+    },
+
+    _statusText(nowMs) {
+      const state = this.state;
+      if (!state || state.phase === "idle") return "READY";
+      if (this.speaking && state.active) return "正在说话";
+      if (state.phase === "error") return state.error || "语音不可用";
+      if (state.phase === "listening") {
+        if (this.lastStatus === "awake") return "已唤醒";
+        const api = this._api();
+        const remaining = api ? api.remainingSeconds(state, nowMs) : null;
+        return remaining === null ? "正在听" : `正在听 · ${remaining}s`;
+      }
+      if (state.phase === "recognized" || state.phase === "thinking") return "思考中";
+      return "READY";
+    },
+
+    _render(nowMs) {
+      if (!this.label) return;
+      const value = this._statusText(nowMs);
+      if (value === this._visibleText) return;
+      this._visibleText = value;
+      this.label.text = value;
+    },
+  };
+
   const keyboardSfx = {
     ctx: null,
     master: null,
@@ -1765,6 +1872,7 @@
         this.canvasSurface = window.createCrtCanvasSurface();
       }
       scenarioRuntime.init(this.app, (payload && payload.scenario) || {});
+      wallpaperVoicePresentation.init(this.app);
       if (!this._defaultSubtitleEnabled) characterRuntime.setSubtitle("");
       this.layout();
       console.log("[WallpaperScene] initialized with separated scene/character controllers");
@@ -2040,6 +2148,7 @@
       callRender("setSpriteViewportBounds", [bounds]);
       scenarioRuntime.layout(bounds, this.mask);
       wallpaperSubtitle.layout(bounds);
+      wallpaperVoicePresentation.layout(bounds);
       if (this.canvasSurface && typeof this.canvasSurface.layout === "function") {
         this.canvasSurface.layout(bounds);
       }
@@ -2105,11 +2214,13 @@
     setSpeaking(speaking) {
       this._speakingGate = speaking ? 1 : 0;
       scenarioRuntime.setSpeaking(!!speaking);
+      wallpaperVoicePresentation.setSpeaking(!!speaking);
       wallpaperSubtitle.updateVisibility();
     },
 
     setAsrStatus(payload) {
       scenarioRuntime.setAsrStatus(payload || {});
+      wallpaperVoicePresentation.setAsrStatus(payload || {});
     },
 
     setMouth(value) {
@@ -2155,6 +2266,7 @@
         this._scanlineFlash = 0.75 + Math.random() * 0.25;
       }
       scenarioRuntime.tick(dt);
+      wallpaperVoicePresentation.tick(Date.now());
       wallpaperSubtitle.updateVisibility();
       this._drawGlow();
       this._drawScanlineNoise();
@@ -2410,7 +2522,7 @@
     clearSpriteHold() { characterRuntime.clearSpriteHold(); },
     releaseSpriteForge(options) { characterRuntime.releaseSpriteForge(options); },
     setSubtitle(text) {
-      const value = String(text || "");
+      const value = wallpaperVoicePresentation.setSubtitle(text);
       desktopScene._lastSubtitleText = value;
       if (value) scenarioRuntime.noteActivity();
       wallpaperSubtitle.setText(value);
