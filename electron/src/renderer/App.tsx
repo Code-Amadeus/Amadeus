@@ -104,6 +104,7 @@ function AmadeusApp() {
   const handleToggleWallpaper = useCallback(async () => {
     const next = !wallpaperActive
     setPage('chat')
+    setWallpaperActive(next)
 
     if (next) {
       if (renderActive) {
@@ -112,14 +113,14 @@ function AmadeusApp() {
         setRenderActive(false)
         setRenderAssetUrl('')
       }
-      try {
-        const res = await send('wallpaper.start', ELECTRON_SLICE_START_PARAMS)
-        setWallpaperActive(res?.status !== 'error')
-        if (res?.status !== 'error') await syncElectronSliceHost(res)
-      } catch {
-        setWallpaperActive(false)
-      }
-    } else {
+     try {
+      const res = await send('wallpaper.start', ELECTRON_SLICE_START_PARAMS)
+      if (res?.status === 'error') setWallpaperActive(false)   // 失败回退
+      else await syncElectronSliceHost(res)
+    } catch {
+      setWallpaperActive(false)     // 失败回退
+    }
+  } else {
       try { await send('wallpaper.stop', {}) } catch {}
       await window.amadeus?.closeElectronSlice()
       setWallpaperActive(false)
