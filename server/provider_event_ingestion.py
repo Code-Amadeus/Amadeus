@@ -18,6 +18,11 @@ from agent_host.work_ledger_store import (
     WorkLedgerStore,
 )
 from agent_host.work_ledger_types import RunAttemptRecord
+from agent_host.provider_identity import (
+    PARENT_CONTEXT_DELIVERED_EVENT,
+    PARENT_CONTEXT_DELIVERY_METADATA_KEY,
+    project_parent_context_delivery,
+)
 from server.work_activity_snapshot import (
     ACTIVITY_METADATA_KEY,
     is_material_activity_event,
@@ -80,13 +85,30 @@ class ProviderEventIngestor:
                 if not attempt.provider_run_id:
                     attempt = self.store.bind_provider_run(attempt.attempt_id, run_id)
                 self.store.update_attempt(attempt.attempt_id, execution_status="queued")
+            elif event_type == PARENT_CONTEXT_DELIVERED_EVENT:
+                event_metadata = (
+                    params.get("metadata")
+                    if isinstance(params.get("metadata"), dict)
+                    else {}
+                )
+                receipt = event_metadata.get(PARENT_CONTEXT_DELIVERY_METADATA_KEY)
+                if isinstance(receipt, dict):
+                    projection = project_parent_context_delivery(
+                        event_metadata,
+                        receipt=receipt,
+                    )
+                    if projection:
+                        self.store.merge_attempt_control_metadata(
+                            attempt.attempt_id,
+                            projection,
+                        )
             elif event_type == "run.status":
                 status = str(payload.get("status") or "").strip().lower()
                 mapped = self.execution_status(status)
                 liveness = str(payload.get("liveness") or "").strip().lower()
-                liveness_metadata: dict[str, Any] = {}
+                status_metadata: dict[str, Any] = {}
                 if liveness:
-                    liveness_metadata["provider_liveness"] = {
+                    status_metadata["provider_liveness"] = {
                         "state": liveness,
                         **{
                             key: payload[key]
@@ -105,11 +127,11 @@ class ProviderEventIngestor:
                             if key in payload
                         },
                     }
-                if mapped or liveness_metadata:
+                if mapped or status_metadata:
                     self.store.update_attempt(
                         attempt.attempt_id,
                         execution_status=mapped or None,
-                        metadata=liveness_metadata or None,
+                        metadata=status_metadata or None,
                     )
             elif event_type == "run.started":
                 self.store.update_attempt(attempt.attempt_id, execution_status="running")

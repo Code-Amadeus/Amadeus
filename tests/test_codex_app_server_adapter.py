@@ -14,6 +14,7 @@ from openai_codex import Sandbox
 from openai_codex.generated.v2_all import ReasoningEffort
 
 from agent_host.adapters.codex_app_server import CodexAppServerAdapter
+from agent_host.provider_identity import PARENT_CONTEXT_DELIVERED_EVENT
 from agent_host.provider_bootstrap import builtin_provider_specs
 from agent_host.provider_contract import ProviderRequirements
 from agent_host.provider_types import (
@@ -223,11 +224,16 @@ def test_sdk_adapter_maps_thread_turn_events_and_terminal_truth() -> None:
         async def emit(event) -> None:
             events.append(event)
 
-        result = await adapter.run(
-            _request(root, "Create result.txt", write=True),
-            "run-1",
-            emit,
+        request = _request(root, "Create result.txt", write=True)
+        request.metadata.update(
+            {
+                "turn_id": "chat-turn-1",
+                "source_user_text": "Create result.txt",
+                "source_context_scope": "chat:chat-1",
+                "source_context_mode": "snapshot",
+            }
         )
+        result = await adapter.run(request, "run-1", emit)
 
         assert result.status == "done"
         assert result.result == "The requested result is ready."
@@ -273,6 +279,13 @@ def test_sdk_adapter_maps_thread_turn_events_and_terminal_truth() -> None:
             "schema_version": 1,
         }
         event_types = [event.type for event in events]
+        delivery = next(
+            event
+            for event in events
+            if event.type == PARENT_CONTEXT_DELIVERED_EVENT
+        )
+        assert delivery.metadata["turn_id"] == "chat-turn-1"
+        assert delivery.metadata["source_context_scope"] == "chat:chat-1"
         assert "assistant.delta" in event_types
         assert "semantic.progress" in event_types
         assert event_types.count("tool.call") == 1
@@ -298,6 +311,41 @@ def test_sdk_adapter_maps_thread_turn_events_and_terminal_truth() -> None:
         ]
 
     with tempfile.TemporaryDirectory(prefix="amadeus-codex-sdk-") as temp_dir:
+        asyncio.run(scenario(Path(temp_dir)))
+
+
+def test_sdk_adapter_does_not_ack_context_before_native_turn_acceptance() -> None:
+    class _RejectingThread(_FakeThread):
+        async def turn(self, task: str, **kwargs):
+            self.turn_calls.append((task, dict(kwargs)))
+            raise RuntimeError("native turn rejected")
+
+    async def scenario(root: Path) -> None:
+        thread = _RejectingThread("thread-rejected", _FakeTurn("unused"))
+        adapter = CodexAppServerAdapter(codex=_FakeCodex([thread]))
+        events = []
+
+        async def emit(event) -> None:
+            events.append(event)
+
+        request = _request(root, "Create result.txt", write=True)
+        request.metadata.update(
+            {
+                "turn_id": "chat-turn-rejected",
+                "source_user_text": "Create result.txt",
+                "source_context_scope": "chat:chat-1",
+                "source_context_mode": "snapshot",
+            }
+        )
+        result = await adapter.run(request, "run-rejected", emit)
+
+        assert result.status == "error"
+        assert not any(
+            event.type == PARENT_CONTEXT_DELIVERED_EVENT
+            for event in events
+        )
+
+    with tempfile.TemporaryDirectory(prefix="amadeus-codex-reject-") as temp_dir:
         asyncio.run(scenario(Path(temp_dir)))
 
 

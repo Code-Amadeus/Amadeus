@@ -53,7 +53,10 @@ from agent_host.mcp_connections import (
     load_mcp_connections,
     mcp_provider_environment,
 )
-from agent_host.provider_identity import with_parent_conversation_context
+from agent_host.provider_identity import (
+    PARENT_CONTEXT_DELIVERED_EVENT,
+    with_parent_conversation_context,
+)
 from agent_host.provider_progress import split_progress_stream, with_progress_contract
 from agent_host.provider_types import (
     EmitProviderEvent,
@@ -487,6 +490,14 @@ class CodexAppServerAdapter:
             with self._approval_condition:
                 self._active[run_id] = active
                 self._approval_condition.notify_all()
+            await emit(
+                ProviderEvent(
+                    provider=self.provider_id,
+                    run_id=run_id,
+                    type=PARENT_CONTEXT_DELIVERED_EVENT,
+                    metadata=dict(request.metadata or {}),
+                )
+            )
             terminal_payload = await self._consume_with_deadline(
                 active,
                 state,
@@ -594,6 +605,14 @@ class CodexAppServerAdapter:
                     str(request.task or "").strip(),
                     metadata=request.metadata,
                     execution_provider=self.provider_id,
+                )
+            )
+            await active.emit(
+                ProviderEvent(
+                    provider=self.provider_id,
+                    run_id=str(run_id or "").strip(),
+                    type=PARENT_CONTEXT_DELIVERED_EVENT,
+                    metadata=dict(request.metadata or {}),
                 )
             )
         except Exception as exc:

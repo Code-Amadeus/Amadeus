@@ -905,6 +905,60 @@ def _turn_uses_conversation_history(st: "_TurnState", enabled: bool) -> bool:
     )
 
 
+def _delegate_source_context(
+    st: "_TurnState",
+) -> tuple[tuple[dict[str, str], ...], str]:
+    """Return the exact dialogue source that owns this Provider handoff.
+
+    A live A1 turn is sourced from its AppSession role branch. Independent
+    Work remains a parent-Chat operation even when an application is also
+    active. If a scoped branch is unexpectedly unavailable, preserve its
+    identity with an empty snapshot instead of leaking unrelated parent Chat.
+    """
+
+    messages = tuple(getattr(st, "control_prior_messages", ()) or ())
+    session_id = str(getattr(st, "session_id", "") or "").strip()
+    scope = f"chat:{session_id}" if session_id else ""
+    branch_target = _auip_role_branch_target(st)
+    work_relation = str(
+        getattr(getattr(st, "auip_decision_result", None), "work_relation", "")
+        or ""
+    )
+    if not branch_target or work_relation == "independent":
+        return messages, scope
+    scope = f"auip:{branch_target}"
+    try:
+        from server.auip_runtime import runtime as auip_runtime
+
+        branch_messages = auip_runtime.recent_role_branch_messages(
+            session_id,
+            app_session_id=branch_target,
+            limit=6,
+        )
+    except Exception as exc:
+        logger.debug(
+            "AUIP Provider handoff branch context unavailable turn_id=%s error=%s",
+            str(getattr(st, "turn_id", "") or ""),
+            exc,
+        )
+        branch_messages = None
+    if branch_messages is None:
+        return (), scope
+    return (
+        tuple(
+            {
+                "role": str(message.get("role") or ""),
+                "content": str(message.get("content") or ""),
+            }
+            for message in branch_messages
+            if isinstance(message, dict)
+            and str(message.get("role") or "") in {"user", "assistant"}
+            and str(message.get("content") or "")
+        ),
+        scope,
+    )
+
+
 class _TurnState:
     """一次对话轮的可变状态（原 stream_llm_query 闭包变量）。"""
 
@@ -1743,13 +1797,15 @@ class ChatRuntime:
         """Restore host annotations after canonical control reconciliation."""
 
         actions: list[dict] = []
+        prior_messages, source_scope = _delegate_source_context(st)
         for control in controls:
             action = {"type": "DELEGATE", "attrs": dict(control), "raw": ""}
             self._annotate_delegate_source(
                 action,
                 st.question,
                 turn_id=st.turn_id,
-                prior_messages=st.control_prior_messages,
+                prior_messages=prior_messages,
+                source_scope=source_scope,
             )
             self._ground_unique_active_amendment(
                 action,
@@ -1865,6 +1921,7 @@ class ChatRuntime:
         actions = self._retain_compound_proposal_gate(st, list(actions))
         if not actions:
             return
+        prior_messages, source_scope = _delegate_source_context(st)
         proposal_actions = [
             {
                 "type": action.get("type"),
@@ -1878,7 +1935,8 @@ class ChatRuntime:
                 action,
                 st.question,
                 turn_id=st.turn_id,
-                prior_messages=st.control_prior_messages,
+                prior_messages=prior_messages,
+                source_scope=source_scope,
             )
             self._ground_unique_active_amendment(
                 action,
@@ -2029,12 +2087,14 @@ class ChatRuntime:
                     }
                     for action in _d
                 ]
+                prior_messages, source_scope = _delegate_source_context(st)
                 for action in _d:
                     self._annotate_delegate_source(
                         action,
                         st.question,
                         turn_id=st.turn_id,
-                        prior_messages=st.control_prior_messages,
+                        prior_messages=prior_messages,
+                        source_scope=source_scope,
                     )
                     self._ground_unique_active_amendment(
                         action,
@@ -2995,6 +3055,7 @@ class ChatRuntime:
         *,
         turn_id: str = "",
         prior_messages=(),
+        source_scope: str = "",
     ) -> None:
         """Carry the exact request and bounded parent dialogue across delegation.
 
@@ -3020,6 +3081,8 @@ class ChatRuntime:
         )
         if context:
             attrs["_host_source_user_context"] = context
+        if str(source_scope or "").strip():
+            attrs["_host_source_context_scope"] = str(source_scope).strip()[:800]
         if turn_id:
             attrs["_host_turn_id"] = str(turn_id)
 
@@ -3732,11 +3795,13 @@ class ChatRuntime:
             if not model_declared_route:
                 for key, value in route_attrs.items():
                     attrs.setdefault(key, value)
+            prior_messages, source_scope = _delegate_source_context(st)
             ChatRuntime._annotate_delegate_source(
                 action,
                 question,
                 turn_id=str(getattr(st, "turn_id", "") or ""),
-                prior_messages=getattr(st, "control_prior_messages", ()) or (),
+                prior_messages=prior_messages,
+                source_scope=source_scope,
             )
             ChatRuntime._ground_unique_active_amendment(
                 action,
@@ -4138,11 +4203,13 @@ class ChatRuntime:
                 },
                 "raw": "",
             }
+            prior_messages, source_scope = _delegate_source_context(st)
             ChatRuntime._annotate_delegate_source(
                 action,
                 question,
                 turn_id=str(getattr(st, "turn_id", "") or ""),
-                prior_messages=getattr(st, "control_prior_messages", ()) or (),
+                prior_messages=prior_messages,
+                source_scope=source_scope,
             )
             record_actions([action])
             st.delegate_seen = True

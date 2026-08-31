@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from agent_host.provider_identity import (  # noqa: E402
+    parent_context_delivery_receipt,
     parent_conversation_context_delivery,
     with_parent_conversation_context,
 )
@@ -32,6 +33,21 @@ def _legacy_latest_user_context(
         if content and content != current:
             return content[:2000]
     return ""
+
+
+def _pr18_unverified_delta(
+    context: str,
+    *,
+    previous_source_user_text: str,
+) -> tuple[str, str]:
+    """The PR #18 algorithm before delivery/source authority was added."""
+
+    lines = [line.strip() for line in str(context or "").splitlines() if line.strip()]
+    marker = f"User: {json.dumps(previous_source_user_text, ensure_ascii=False)}"
+    matches = [index for index, line in enumerate(lines) if line == marker]
+    if len(matches) != 1:
+        return "\n".join(lines), "snapshot_fallback"
+    return "\n".join(lines[matches[0] + 1 :]), "delta"
 
 
 def main() -> None:
@@ -73,8 +89,17 @@ def main() -> None:
     )
     turn_one, turn_one_mode = parent_conversation_context_delivery(
         turn_one_context,
-        previous_source_user_text="",
-        session_attached=False,
+        source_scope="chat:probe",
+        previous_delivery=None,
+        continuity_verified=False,
+    )
+    turn_one_delivery = parent_context_delivery_receipt(
+        {
+            "source_context_scope": "chat:probe",
+            "turn_id": "turn-1",
+            "source_user_text": "C first request",
+            "source_context_mode": turn_one_mode,
+        }
     )
     turn_two_context = "\n".join(
         [
@@ -85,8 +110,17 @@ def main() -> None:
     )
     turn_two, turn_two_mode = parent_conversation_context_delivery(
         turn_two_context,
-        previous_source_user_text="C first request",
-        session_attached=True,
+        source_scope="chat:probe",
+        previous_delivery=turn_one_delivery,
+        continuity_verified=True,
+    )
+    turn_two_delivery = parent_context_delivery_receipt(
+        {
+            "source_context_scope": "chat:probe",
+            "turn_id": "turn-2",
+            "source_user_text": "E second request",
+            "source_context_mode": turn_two_mode,
+        }
     )
     turn_three_context = "\n".join(
         [
@@ -97,13 +131,23 @@ def main() -> None:
     )
     turn_three, turn_three_mode = parent_conversation_context_delivery(
         turn_three_context,
-        previous_source_user_text="E second request",
-        session_attached=True,
+        source_scope="chat:probe",
+        previous_delivery=turn_two_delivery,
+        continuity_verified=True,
+    )
+    missing_delivery = parent_context_delivery_receipt(
+        {
+            "source_context_scope": "chat:probe",
+            "turn_id": "turn-missing",
+            "source_user_text": "cursor outside the rolling window",
+            "source_context_mode": "delta",
+        }
     )
     missing, missing_mode = parent_conversation_context_delivery(
         turn_three_context,
-        previous_source_user_text="cursor outside the rolling window",
-        session_attached=True,
+        source_scope="chat:probe",
+        previous_delivery=missing_delivery,
+        continuity_verified=True,
     )
     ambiguous_context = (
         turn_three_context
@@ -112,8 +156,62 @@ def main() -> None:
     )
     ambiguous, ambiguous_mode = parent_conversation_context_delivery(
         ambiguous_context,
-        previous_source_user_text="E second request",
-        session_attached=True,
+        source_scope="chat:probe",
+        previous_delivery=turn_two_delivery,
+        continuity_verified=True,
+    )
+
+    failed_context = "\n".join(
+        [
+            f"User: {quote}original goal{quote}",
+            f"Main Chat: {quote}starting it{quote}",
+            f"User: {quote}second constraint{quote}",
+            f"Main Chat: {quote}provider start failed before delivery{quote}",
+        ]
+    )
+    pr18_failed, pr18_failed_mode = _pr18_unverified_delta(
+        failed_context,
+        previous_source_user_text="second constraint",
+    )
+    verified_turn_one = parent_context_delivery_receipt(
+        {
+            "source_context_scope": "chat:chat-A",
+            "turn_id": "turn-original",
+            "source_user_text": "original goal",
+            "source_context_mode": "snapshot",
+        }
+    )
+    fixed_failed, fixed_failed_mode = parent_conversation_context_delivery(
+        failed_context,
+        source_scope="chat:chat-A",
+        previous_delivery=verified_turn_one,
+        continuity_verified=True,
+    )
+
+    cross_chat_context = "\n".join(
+        [
+            f"User: {quote}chat-B goal{quote}",
+            f"User: {quote}same old sentence{quote}",
+            f"Main Chat: {quote}chat-B constraint{quote}",
+        ]
+    )
+    pr18_cross, pr18_cross_mode = _pr18_unverified_delta(
+        cross_chat_context,
+        previous_source_user_text="same old sentence",
+    )
+    chat_a_delivery = parent_context_delivery_receipt(
+        {
+            "source_context_scope": "chat:chat-A",
+            "turn_id": "turn-chat-A",
+            "source_user_text": "same old sentence",
+            "source_context_mode": "delta",
+        }
+    )
+    fixed_cross, fixed_cross_mode = parent_conversation_context_delivery(
+        cross_chat_context,
+        source_scope="chat:chat-B",
+        previous_delivery=chat_a_delivery,
+        continuity_verified=True,
     )
 
     provider_checks = {}
@@ -155,6 +253,23 @@ def main() -> None:
         "provider_matrix": all(
             all(values.values()) for values in provider_checks.values()
         ),
+        "pr18_failed_attempt_drops_original": (
+            pr18_failed_mode == "delta"
+            and "original goal" not in pr18_failed
+            and "second constraint" not in pr18_failed
+        ),
+        "fixed_failed_attempt_keeps_undelivered_constraint": (
+            fixed_failed_mode == "delta"
+            and "second constraint" in fixed_failed
+            and "provider start failed" in fixed_failed
+        ),
+        "pr18_cross_session_drops_chat_b_goal": (
+            pr18_cross_mode == "delta" and "chat-B goal" not in pr18_cross
+        ),
+        "fixed_cross_session_uses_snapshot": (
+            fixed_cross_mode == "snapshot_fallback"
+            and fixed_cross == cross_chat_context
+        ),
     }
     report = {
         "schema": "amadeus.provider-parent-context-probe.v1",
@@ -169,6 +284,16 @@ def main() -> None:
             "ambiguous_cursor": {"mode": ambiguous_mode, "context": ambiguous},
         },
         "provider_checks": provider_checks,
+        "counterexamples": {
+            "failed_before_delivery": {
+                "pr18": {"mode": pr18_failed_mode, "context": pr18_failed},
+                "fixed": {"mode": fixed_failed_mode, "context": fixed_failed},
+            },
+            "cross_parent_session": {
+                "pr18": {"mode": pr18_cross_mode, "context": pr18_cross},
+                "fixed": {"mode": fixed_cross_mode, "context": fixed_cross},
+            },
+        },
         "checks": checks,
     }
     print(json.dumps(report, ensure_ascii=False, indent=2))

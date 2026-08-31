@@ -11,6 +11,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from config import settings
+from agent_host.provider_identity import PARENT_CONTEXT_DELIVERED_EVENT
 from server.character_presentation import coordinator as character_presentation
 from server.ai_os_schema import (
     action_ref,
@@ -103,6 +104,10 @@ class WorkActivityCoordinator:
 
     async def _on_provider_event(self, _method: str, params: dict[str, Any]) -> None:
         event_type = str(params.get("type") or "").strip().lower()
+        if event_type == PARENT_CONTEXT_DELIVERED_EVENT:
+            # Cursor authority is durable control-plane evidence, not visible
+            # execution progress, liveness, narration, or Canvas activity.
+            return
         run_id = str(params.get("run_id") or "").strip()
         payload = params.get("payload") if isinstance(params.get("payload"), dict) else {}
         state = self._run_state(params)

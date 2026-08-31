@@ -19,7 +19,10 @@ from agent_host.provider_contract import (
     ProviderRequirements,
     ProviderSelection,
 )
-from agent_host.provider_identity import MAIN_ROLE_NAME_METADATA_KEY
+from agent_host.provider_identity import (
+    MAIN_ROLE_NAME_METADATA_KEY,
+    SOURCE_CONTEXT_SCOPE_METADATA_KEY,
+)
 from agent_host.provider_types import ProviderRunRequest
 from server.inherited_role_prompt import MAIN_CONVERSATION_ROLE_NAME
 from server.work_export_service import WorkExportService
@@ -109,6 +112,12 @@ def build_delegate_metadata(
         # each model-driven adapter can resolve "yourself" without Host text
         # rewriting or another semantic decision.
         metadata[MAIN_ROLE_NAME_METADATA_KEY] = MAIN_CONVERSATION_ROLE_NAME
+        source_scope = str(attrs.get("_host_source_context_scope") or "").strip()
+        clean_session_id = str(session_id or "").strip()
+        if source_scope or clean_session_id:
+            metadata[SOURCE_CONTEXT_SCOPE_METADATA_KEY] = (
+                source_scope[:800] if source_scope else f"chat:{clean_session_id}"
+            )
     source_user_context = "\n".join(
         line.strip()
         for line in str(attrs.get("_host_source_user_context") or "").splitlines()
@@ -261,6 +270,9 @@ async def dispatch_delegate(
                     turn_id=str(plan.attrs.get("_host_turn_id") or ""),
                     source_user_text=str(metadata.get("source_user_text") or ""),
                     source_user_context=str(metadata.get("source_user_context") or ""),
+                    source_context_scope=str(
+                        metadata.get(SOURCE_CONTEXT_SCOPE_METADATA_KEY) or ""
+                    ),
                 )
                 if amendment_route.get("handled") is True:
                     return str(amendment_route.get("message") or "[amend] handled")
