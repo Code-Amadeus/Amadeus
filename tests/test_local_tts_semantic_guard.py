@@ -6,6 +6,17 @@ from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
+
+if os.environ.get("AMADEUS_E2E_NO_TTS", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}:
+    pytest.skip("full TTS runtime is disabled in model-less CI", allow_module_level=True)
+
 import torch
 
 
