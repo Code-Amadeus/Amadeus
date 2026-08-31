@@ -122,6 +122,18 @@ placeholder，本版本不声称已经发布独立 SDK 或 conformance suite。
 DeepSeek 主 Chat、本地 Qwen/SenseVoice 和 GPT-SoVITS v3。llama.cpp 是可选
 本地 LLM profile，不是首发安装前提。
 
+依赖按能力分四级，按需选装（torch 只在 L3/L4 进入安装）：
+
+| 梯级 | 能力 | 安装方式 |
+|---|---|---|
+| L1 core | 文字聊天、工作、Provider、角色渲染 | `pip install -e .` |
+| L2 voice | 说（远程 TTS、播放、口型）+ 听（麦克风、远程 ASR）| `pip install -e ".[voice]"` |
+| L3 vad | 实时打断（角色说话时可以插话）| `pip install -e ".[voice,vad]"` |
+| L4 local-cu124 | 本地 GPT-SoVITS / Qwen3 ASR / 唤醒词 | `pip install -e ".[voice,vad,local-cu124]"` |
+
+L2 无 vad 层时，语音端点自动降级为能量检测；安装 vad 后恢复
+silero 精准端点与打断。
+
 ### 参考硬件
 
 - Windows 11

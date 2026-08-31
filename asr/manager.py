@@ -340,20 +340,36 @@ class ASRManager:
             return True
 
     def _init_vad(self) -> None:
+        self._vad_degraded: str | None = None
         try:
             from silero_vad import load_silero_vad
-
+        except ModuleNotFoundError as exc:
+            if exc.name != "silero_vad":
+                # silero present but one of its dependencies (torch) is
+                # missing/broken — surface it instead of faking absence.
+                raise
+            # L2 install: the vad tier is absent; energy endpointing is the
+            # documented degradation for this tier.
+            self._vad_model = None
+            logger.info(
+                "[ASR] silero-vad not installed (L2 voice tier); "
+                "ASR capture uses energy endpointing "
+                "(install -e '.[vad]' for VAD endpointing and barge-in)"
+            )
+            return
+        try:
             self._vad_model = load_silero_vad()
             self._vad_model.eval()
             logger.info("[ASR] Silero VAD loaded")
         except Exception as e:
-            # silero-vad pulls torch (L3 realtime tier). Remote-ASR installs
-            # (L2) have neither: capture falls back to energy endpointing.
+            # Installed but failed to load: that is a broken environment,
+            # not supported absence. Record it as an observable degraded
+            # state instead of silently pretending the tier is missing.
             self._vad_model = None
-            logger.warning(
-                "[ASR] Silero VAD unavailable (%s); ASR capture falls back to "
-                "energy endpointing (install -e '.[vad'] for VAD-based "
-                "endpointing and barge-in)",
+            self._vad_degraded = str(e)
+            logger.error(
+                "[ASR] Silero VAD present but failed to load "
+                "(DEGRADED to energy endpointing): %s",
                 e,
             )
 

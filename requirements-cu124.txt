@@ -9,4 +9,4 @@
 # local-cu124 extra declares the bare versions that this index satisfies.
 torch==2.5.1+cu124
 torchaudio==2.5.1+cu124
-.[voice,local-cu124]
+.[voice,vad,local-cu124]

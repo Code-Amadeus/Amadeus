@@ -27,6 +27,9 @@ BASE_IMPORTS = (
 VOICE_IMPORTS = (
     "pyaudio",
     "scipy",
+)
+# L3 realtime interruption layer (pyproject `[vad]` extra); pulls torch.
+VAD_IMPORTS = (
     "silero_vad",
 )
 # T2b local-model layer (pyproject `[local-cu124]` extra).
@@ -70,11 +73,11 @@ def verify(profile: str, *, require_cuda_device: bool = False) -> None:
 
     for module_name in (*BASE_IMPORTS, *PROJECT_IMPORTS):
         importlib.import_module(module_name)
-    if profile in {"cpu", "cu124"}:
+    if profile in {"voice", "cu124"}:
         for module_name in VOICE_IMPORTS:
             importlib.import_module(module_name)
     if profile == "cu124":
-        for module_name in (*LOCAL_MODEL_IMPORTS, *CU124_IMPORTS):
+        for module_name in (*VAD_IMPORTS, *LOCAL_MODEL_IMPORTS, *CU124_IMPORTS):
             importlib.import_module(module_name)
 
     _require(
@@ -119,7 +122,7 @@ def verify(profile: str, *, require_cuda_device: bool = False) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profile", choices=("cpu", "ci", "cu124"), required=True)
+    parser.add_argument("--profile", choices=("cpu", "ci", "voice", "cu124"), required=True)
     parser.add_argument(
         "--require-cuda-device",
         action="store_true",

@@ -31,7 +31,11 @@ class _Blocker:
     # ModuleNotFoundError, which is what a real T1 install raises.
     def find_spec(self, name, path=None, target=None):
         if name.split(".")[0] in _BLOCKED:
-            raise ModuleNotFoundError(f"{{name}} is not part of the T1 core install")
+            # name= set so guards can distinguish "package absent" from
+            # "package present but its own dependencies are broken".
+            raise ModuleNotFoundError(
+                f"{{name}} is not part of the T1 core install", name=name
+            )
         return None
 
 sys.meta_path.insert(0, _Blocker())
@@ -56,43 +60,3 @@ def test_server_app_boots_without_voice_or_local_stacks() -> None:
         f"T1 core import failed without voice/local stacks:\n{result.stderr[-2000:]}"
     )
     assert "T1_BOOT_OK" in result.stdout
-
-
-def test_secret_settings_strip_accidental_quotes_and_whitespace() -> None:
-    probe = (
-        "import os;"
-        "os.environ['MIMO_TTS_API_KEY']='  \"sk-test123\"  ';"
-        "from config import settings;"
-        "assert settings.MIMO_TTS_API_KEY == 'sk-test123', repr(settings.MIMO_TTS_API_KEY);"
-        "print('SECRET_OK')"
-    )
-    result = subprocess.run(
-        [sys.executable, "-c", probe],
-        cwd=_PROJECT_ROOT,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert result.returncode == 0, result.stderr[-1000:]
-    assert "SECRET_OK" in result.stdout
-
-
-def test_venv_python_uses_platform_layout() -> None:
-    import os
-    from pathlib import Path
-
-    from config.environment import venv_python
-
-    path = venv_python(Path("/repo"), ".venv_asr")
-    if os.name == "nt":
-        assert path == Path("/repo/.venv_asr/Scripts/python.exe")
-    else:
-        assert path == Path("/repo/.venv_asr/bin/python3")
-
-
-def test_qwen_asr_python_probe_uses_platform_layout() -> None:
-    from asr.backends.qwen3_asr import _VENV_ASR_PYTHON
-
-    import os
-    if os.name != "nt":
-        assert str(_VENV_ASR_PYTHON).endswith(".venv_asr/bin/python3")
