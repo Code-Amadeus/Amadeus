@@ -9,13 +9,16 @@ from types import SimpleNamespace
 import pytest
 
 
-if os.environ.get("AMADEUS_E2E_NO_TTS", "").strip().lower() in {
+_MODEL_LESS = os.environ.get("AMADEUS_E2E_NO_TTS", "").strip().lower() in {
     "1",
     "true",
     "yes",
     "on",
-}:
-    pytest.skip("full TTS runtime is disabled in model-less CI", allow_module_level=True)
+}
+pytestmark = pytest.mark.skipif(
+    _MODEL_LESS,
+    reason="full TTS runtime is disabled in model-less CI",
+)
 
 import torch
 
@@ -23,8 +26,12 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from local_tts_infer import TTSInferencer
-from tts.semantic_stability import SemanticGenerationError
+if not _MODEL_LESS:
+    from local_tts_infer import TTSInferencer
+    from tts.semantic_stability import SemanticGenerationError
+else:
+    TTSInferencer = object
+    SemanticGenerationError = RuntimeError
 
 
 class _FakeSemanticDecoder:
