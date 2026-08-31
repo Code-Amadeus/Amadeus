@@ -12,6 +12,16 @@ import sys
 import urllib.parse
 from pathlib import Path
 
+"""Windows resolves MIME types from HKEY_CLASSES_ROOT, and a polluted
+``.js`` -> ``text/plain`` entry there silently overrides the stdlib table.
+The browser then refuses to execute the renderer bundle and the wallpaper 
+page stays black.  Declare the executable types this server owns so the 
+response never depends on client machine state.
+"""
+mimetypes.add_type("text/javascript", ".js")
+mimetypes.add_type("text/javascript", ".mjs")
+mimetypes.add_type("application/wasm", ".wasm")
+
 
 class _CORSHandler(http.server.SimpleHTTPRequestHandler):
     """Local asset handler with browser-readable secrets kept out of scope.
