@@ -687,7 +687,12 @@ def test_running_status_next_step_tracks_the_latest_semantic_phase() -> None:
         {
             **base,
             "activity_milestones": {
-                "design": {"summary": "Use one AUIP receipt loop.", "observedAt": 1}
+                "design": {
+                    "summary": "Use one AUIP receipt loop.",
+                    "source": "host.tool_observation",
+                    "verified": True,
+                    "observedAt": 1,
+                }
             },
         }
     )
@@ -697,6 +702,8 @@ def test_running_status_next_step_tracks_the_latest_semantic_phase() -> None:
             "activity_milestones": {
                 "capability": {
                     "summary": "Rejected moves can now recover once.",
+                    "source": "host.tool_observation",
+                    "verified": True,
                     "observedAt": 2,
                 }
             },

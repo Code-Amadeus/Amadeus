@@ -100,7 +100,7 @@ async def test_new_run_id_resets_the_clamp() -> None:
     print("ok: the monotonic clamp is per run and resets on a new run_id")
 
 
-async def test_run_intake_exposes_the_host_dispatched_goal_as_direction() -> None:
+async def test_run_intake_stays_on_the_work_surface_without_narration() -> None:
     coordinator = WorkActivityCoordinator()
     notes: list[dict[str, Any]] = []
 
@@ -120,9 +120,50 @@ async def test_run_intake_exposes_the_host_dispatched_goal_as_direction() -> Non
     note = notes[0]
     assert note["summary"] == "Render a monotonic progress bar."
     assert note["phase"] == "Intake"
-    assert note["metadata"]["narration_keypoint"] == "directional_progress"
+    assert "narration_keypoint" not in note["metadata"]
     assert "result" not in note["metadata"]
-    print("ok: bounded Host intake is a direction, not an invented result")
+    print("ok: bounded Host intake stays visible without becoming speech")
+
+
+async def test_first_provider_direction_after_intake_remains_narratable() -> None:
+    coordinator = WorkActivityCoordinator()
+    notes: list[dict[str, Any]] = []
+
+    async def capture_note(_method: str, params: dict[str, Any]) -> None:
+        notes.append(params)
+
+    bus.on(Method.CHAT_WORK_NOTE, capture_note)
+    try:
+        await coordinator._on_provider_event(
+            Method.PROVIDER_EVENT,
+            _event("run-first-provider-direction", "run.created"),
+        )
+        await coordinator._on_provider_event(
+            Method.PROVIDER_EVENT,
+            _event(
+                "run-first-provider-direction",
+                "assistant.update",
+                {
+                    "text": "Mapping the two-player controls before implementation.",
+                    "source": "provider_tool_title",
+                },
+            ),
+        )
+    finally:
+        bus.off(Method.CHAT_WORK_NOTE, capture_note)
+
+    directional = [
+        note
+        for note in notes
+        if note.get("metadata", {}).get("narration_keypoint")
+        == "directional_progress"
+    ]
+    assert len(directional) == 1
+    assert directional[0]["summary"] == (
+        "Mapping the two-player controls before implementation."
+    )
+    assert directional[0]["metadata"]["semantic_candidate"] is True
+    print("ok: the first Provider-authored direction remains narratable")
 
 
 async def test_artifact_canvases_share_the_clamp() -> None:
@@ -225,7 +266,8 @@ async def test_heartbeat_names_the_run_provider_instead_of_a_legacy_default() ->
 async def main() -> None:
     await test_live_event_progress_never_moves_backwards()
     await test_new_run_id_resets_the_clamp()
-    await test_run_intake_exposes_the_host_dispatched_goal_as_direction()
+    await test_run_intake_stays_on_the_work_surface_without_narration()
+    await test_first_provider_direction_after_intake_remains_narratable()
     await test_artifact_canvases_share_the_clamp()
     await test_semantic_lead_survives_status_and_heartbeat_refreshes()
     await test_heartbeat_names_the_run_provider_instead_of_a_legacy_default()

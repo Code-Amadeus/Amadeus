@@ -1183,27 +1183,53 @@ class CodexAppServerAdapter:
         )
         name = self._tool_name(safe_item_type, item)
         if method == "item/started":
-            return [
-                self._event(
-                    active,
-                    "tool.call",
-                    {
-                        "name": name,
-                        "item_id": item_id,
-                        "input": self._tool_input(safe_item_type, item),
-                    },
+            tool_input = self._tool_input(safe_item_type, item)
+            call_payload: dict[str, Any] = {
+                "tool": name,
+                "name": name,
+                "item_id": item_id,
+                "input": tool_input,
+            }
+            if isinstance(tool_input, dict):
+                command = str(tool_input.get("command") or "").strip()
+                title = " ".join(str(tool_input.get("title") or "").split())[:240]
+                changes = tool_input.get("changes")
+                if command:
+                    call_payload["command"] = command[:2000]
+                if title:
+                    call_payload["title"] = title
+                if isinstance(changes, list):
+                    call_payload["changes"] = changes
+            events = []
+            direction = self._reported_tool_direction(safe_item_type, tool_input)
+            if direction:
+                events.append(
+                    self._event(
+                        active,
+                        "assistant.update",
+                        {
+                            "text": direction,
+                            "source": "codex_native_tool_title",
+                            "explicit": False,
+                            "status": "reported_direction",
+                        },
+                    )
                 )
-            ]
+            events.append(self._event(active, "tool.call", call_payload))
+            return events
         success = self._item_succeeded(item)
         if not success:
             state.tool_failures += 1
         result_payload: dict[str, Any] = {
+            "tool": name,
             "name": name,
             "item_id": item_id,
             "success": success,
             "status": str(item.get("status") or ""),
             "output": self._tool_output(item),
         }
+        if safe_item_type == "commandExecution":
+            result_payload["exit_code"] = item.get("exitCode")
         if safe_item_type == "fileChange":
             result_payload["changes"] = self._file_changes(item)
         events = [
@@ -1504,6 +1530,16 @@ class CodexAppServerAdapter:
         if item_type == "fileChange":
             return {"changes": CodexAppServerAdapter._file_changes(item)}
         return item.get("arguments") or item.get("query") or {}
+
+    @staticmethod
+    def _reported_tool_direction(item_type: str, tool_input: Any) -> str:
+        """Return only the native human-facing title, never code or tool output."""
+
+        if item_type in {"commandExecution", "fileChange"} or not isinstance(
+            tool_input, dict
+        ):
+            return ""
+        return " ".join(str(tool_input.get("title") or "").split())[:240]
 
     @staticmethod
     def _file_changes(item: dict[str, Any]) -> list[dict[str, str]]:
