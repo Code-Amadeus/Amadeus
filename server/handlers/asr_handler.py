@@ -39,6 +39,7 @@ class AsrHandler(RequestHandler):
         self._awake_seconds = 0.0
         self._ready_callback_sent = False
         self._waiting_turn_complete = False
+        self._current_final_text = ""
         self._finish_after_turn_complete = False
         self._desired_backend = str(ASR_BACKEND or "qwen3_asr").strip().lower()
 
@@ -196,6 +197,7 @@ class AsrHandler(RequestHandler):
         self._awake_seconds = 0.0
         self._ready_callback_sent = False
         self._waiting_turn_complete = False
+        self._current_final_text = ""
         self._finish_after_turn_complete = False
         return info
 
@@ -281,7 +283,13 @@ class AsrHandler(RequestHandler):
     async def _wait_until_turn_complete(self) -> bool:
         if not self._waiting_turn_complete:
             return True
-        await bus.emit(Method.ASR_STATUS, {"status": "waiting_turn_complete", "source": self._source or ""})
+        await bus.emit(
+            Method.ASR_STATUS,
+            self._status_payload(
+                "waiting_turn_complete",
+                text=self._current_final_text,
+            ),
+        )
         started = time.monotonic()
         while self._active and self._waiting_turn_complete:
             if self._is_awake_session():
@@ -372,6 +380,7 @@ class AsrHandler(RequestHandler):
             payload["control"] = "stop"
         else:
             if self._source == "wake" and "control" not in payload:
+                self._current_final_text = text
                 await bus.emit(Method.ASR_STATUS, self._status_payload("recognized", text=text))
             await bus.emit(Method.ASR_RECOGNIZED, payload)
         if self._on_recognized is not None:

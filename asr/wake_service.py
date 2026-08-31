@@ -497,7 +497,6 @@ class WakeService:
                     "[Wake] SenseVoice bridge command: %s",
                     protected_text(payload["text"]),
                 )
-                self._emit(Method.ASR_RECOGNIZED, payload)
                 if self._on_awake_text is not None:
                     self._run_coro(self._on_awake_text(payload))
                 return

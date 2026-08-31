@@ -100,6 +100,10 @@ class SpeculativeTurnLauncher:
             source = str(self._asr_source_getter() if self._asr_source_getter else "")
             if source != "wake":
                 return f"asr_source_not_wake:{source or 'none'}"
+            from server.desktop_voice import is_desktop_voice_exit_command
+
+            if is_desktop_voice_exit_command(text):
+                return "desktop_voice_exit_command"
             if self._chat_busy_fn is not None and self._chat_busy_fn():
                 return "chat_busy"
             try:

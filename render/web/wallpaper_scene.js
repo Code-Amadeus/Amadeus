@@ -231,10 +231,26 @@
       if (next === previous) return;
       this.state = next;
       const status = String((payload && payload.status) || "").trim().toLowerCase();
-      this._awakeLabelUntilMs = (
-        status === "awake" && next.phase === "listening" && !previous.active
-      ) ? Date.now() + this._awakeLabelDurationMs : 0;
-      if ((next.phase === "recognized" || next.phase === "thinking") && next.userText) {
+      if (status === "awake" && next.phase === "listening") {
+        if (!previous.active) {
+          this._awakeLabelUntilMs = Date.now() + this._awakeLabelDurationMs;
+        }
+      } else {
+        this._awakeLabelUntilMs = 0;
+      }
+      const interrupted = (
+        status === "turn_complete"
+        && String((payload && payload.reason) || "").trim().toLowerCase() === "barge_in"
+        && desktopScene._lastSubtitleText.startsWith("助手：")
+      );
+      if (interrupted) {
+        desktopScene._lastSubtitleText = `${desktopScene._lastSubtitleText}（已打断）`;
+        wallpaperSubtitle.setText(desktopScene._lastSubtitleText);
+        characterRuntime.setSubtitle(
+          desktopScene._defaultSubtitleEnabled ? desktopScene._lastSubtitleText : ""
+        );
+        desktopScene._scheduleSubtitleClear(desktopScene._lastSubtitleText);
+      } else if ((next.phase === "recognized" || next.phase === "thinking") && next.userText) {
         desktopScene._clearSubtitleTimer();
         desktopScene._lastSubtitleText = `你：${next.userText}`;
         wallpaperSubtitle.setText(desktopScene._lastSubtitleText);

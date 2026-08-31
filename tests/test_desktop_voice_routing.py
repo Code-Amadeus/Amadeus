@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from unittest.mock import AsyncMock
 
+import numpy as np
 import pytest
 
+from asr.wake_service import WakeService
 from server.desktop_voice import is_desktop_voice_exit_command
 from server.handlers.asr_handler import AsrHandler
 from server.protocol import Method
@@ -59,6 +62,67 @@ async def test_normal_wake_text_is_published_and_callback_runs_once(monkeypatch)
     recognized = [payload for method, payload in emitted if method == Method.ASR_RECOGNIZED]
     assert len(recognized) == 1
     assert recognized[0]["text"] == "今天过得怎么样"
+
+
+@pytest.mark.asyncio
+async def test_wake_bridge_routes_exact_stop_privately_and_normal_sentence_once(monkeypatch) -> None:
+    wake_events: list[tuple[object, dict]] = []
+    host_events: list[tuple[object, dict]] = []
+    routed_chat: list[str] = []
+    scheduled: list[object] = []
+
+    async def capture_host_event(method, payload):
+        host_events.append((method, payload))
+
+    async def route_from_host(payload: dict) -> None:
+        if payload.get("control") != "stop":
+            routed_chat.append(str(payload.get("text") or ""))
+
+    handler = AsrHandler()
+    handler._source = "wake"
+    handler._on_recognized = route_from_host
+    monkeypatch.setattr("server.handlers.asr_handler.bus.emit", capture_host_event)
+    monkeypatch.setattr("asr.wake_service.WAKE_BRIDGE_AUTO_SEND", True)
+    monkeypatch.setattr("asr.wake_service.WAKE_MIN_SEGMENT_RMS", 0.0)
+
+    service = WakeService(
+        on_awake_text=lambda payload: handler._dispatch_recognized(payload["text"]),
+        backend_name="sense_voice",
+    )
+    service._backend = object()
+    service._bridge_until = time.time() + 60.0
+    service._bridge_wake_payload = {"phrase": "hi amadeus"}
+    service._match_template = lambda _audio, _duration_ms: None
+    service._emit = lambda method, payload: wake_events.append((method, payload))
+    service._run_coro = scheduled.append
+
+    recognized_text = "停止对话"
+    service._recognize_and_match = lambda _audio, _backend: (
+        recognized_text,
+        False,
+        "",
+        0.9,
+        "zh",
+    )
+    audio = np.full(8000, 0.1, dtype=np.float32)
+
+    service._handle_segment(audio)
+    while scheduled:
+        await scheduled.pop(0)
+
+    recognized_text = "如何停止对话"
+    service._handle_segment(audio)
+    while scheduled:
+        await scheduled.pop(0)
+
+    public_texts = [
+        str(payload.get("text") or "")
+        for method, payload in [*wake_events, *host_events]
+        if method == Method.ASR_RECOGNIZED
+    ]
+    assert "停止对话" not in public_texts
+    assert public_texts.count("如何停止对话") == 1
+    assert routed_chat == ["如何停止对话"]
 
 
 @pytest.mark.asyncio

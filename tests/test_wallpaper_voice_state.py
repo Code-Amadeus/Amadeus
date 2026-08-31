@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import socket
 import subprocess
 import sys
@@ -10,6 +11,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from render.server import AssetServer
+from server.handlers.asr_handler import AsrHandler
+from server.protocol import Method
 from wallpaper import wallpaper_engine_bridge
 
 
@@ -114,7 +117,34 @@ def test_wallpaper_voice_state_participates_in_client_asset_revision() -> None:
     assert _VOICE_STATE_PATH in wallpaper_engine_bridge._WALLPAPER_CLIENT_ASSETS
 
 
-def test_wallpaper_scene_presents_voice_status_and_dual_subtitles() -> None:
+def test_wallpaper_scene_presents_voice_status_and_dual_subtitles(monkeypatch) -> None:
+    async def latest_waiting_snapshot() -> dict:
+        host = wallpaper_engine_bridge.WallpaperEngineBridgeHost.__new__(
+            wallpaper_engine_bridge.WallpaperEngineBridgeHost
+        )
+        host._state = wallpaper_engine_bridge._BridgeState()
+        handler = AsrHandler()
+        handler._active = True
+        handler._source = "wake"
+        handler._waiting_turn_complete = True
+
+        async def publish_to_bridge(method, payload):
+            if method != Method.ASR_STATUS:
+                return
+            host.set_asr_status(payload)
+            if payload.get("status") == "waiting_turn_complete":
+                handler._waiting_turn_complete = False
+
+        monkeypatch.setattr("server.handlers.asr_handler.bus.emit", publish_to_bridge)
+        await handler._dispatch_recognized("断线重连")
+        await handler._wait_until_turn_complete()
+
+        calls = host._state.snapshot()["calls"]
+        replayed = [call for call in calls if call.get("method") == "setAsrStatus"]
+        assert len(replayed) == 1
+        return replayed[0]["args"][0]
+
+    reconnect_payload = asyncio.run(latest_waiting_snapshot())
     node_runner = r"""
 const vm = require("node:vm");
 const fs = require("node:fs");
@@ -244,6 +274,7 @@ runtime.initDesktopScene({
     crt_polygon: [[0, 0], [1000, 0], [1000, 600], [0, 600]],
   },
 });
+const reconnectPayload = JSON.parse(process.argv[3]);
 
 function texts() {
   const found = [];
@@ -267,11 +298,16 @@ function statusValue() {
   );
 }
 
+runtime.setAsrStatus(reconnectPayload);
+const reconnectUserSubtitle = !!textValue("你：断线重连");
+runtime.setAsrStatus({ status: "idle", source: "wake", reason: "test_reset" });
 const ready = textValue("READY");
 const readyLayout = ready ? { x: ready.x, y: ready.y } : null;
 const now = clock.now;
 runtime.setAsrStatus({ status: "awake", source: "wake", awake_deadline_ms: now + 60000 });
 const awake = statusValue();
+runtime.setAsrStatus({ status: "awake", source: "wake", awake_deadline_ms: now + 60000 });
+const duplicateAwake = statusValue();
 clock.now += 500;
 app.ticker.fn(1);
 const listening = statusValue();
@@ -284,6 +320,16 @@ const speaking = statusValue();
 runtime.setSubtitle("第一句");
 const assistantSubtitle = !!textValue("助手：第一句");
 runtime.setSpeaking(false);
+runtime.setAsrStatus({
+  status: "turn_complete",
+  source: "wake",
+  reason: "barge_in",
+  awake_deadline_ms: clock.now + 60000,
+});
+const interruptedSubtitle = !!textValue("助手：第一句（已打断）");
+runtime.setAsrStatus({ status: "recognized", source: "wake", text: "打断后的问题" });
+const postInterruptUserSubtitle = !!textValue("你：打断后的问题");
+runtime.setSubtitle("第一句");
 runtime.setAsrStatus({ status: "idle", source: "wake", reason: "awake_timeout" });
 const idle = statusValue();
 const subtitleBeforeClear = !!textValue("助手：第一句");
@@ -293,14 +339,18 @@ runtime.setSubtitle("普通字幕");
 const inactiveSubtitle = !!textValue("普通字幕");
 
 process.stdout.write(JSON.stringify({
+  reconnectUserSubtitle,
   ready: !!ready,
   readyLayout,
   awake,
+  duplicateAwake,
   listening,
   userSubtitle,
   thinking,
   speaking,
   assistantSubtitle,
+  interruptedSubtitle,
+  postInterruptUserSubtitle,
   idle,
   subtitleBeforeClear,
   subtitleAfterClear,
@@ -314,6 +364,7 @@ process.stdout.write(JSON.stringify({
             node_runner,
             str(_VOICE_STATE_PATH),
             str(_PROJECT_ROOT / "render" / "web" / "wallpaper_scene.js"),
+            json.dumps(reconnect_payload, ensure_ascii=False),
         ],
         capture_output=True,
         text=True,
@@ -324,14 +375,18 @@ process.stdout.write(JSON.stringify({
     assert completed.returncode == 0, completed.stderr
     result = json.loads(completed.stdout)
     assert result == {
+        "reconnectUserSubtitle": True,
         "ready": True,
         "readyLayout": {"x": 988, "y": 12},
         "awake": "已唤醒",
+        "duplicateAwake": "已唤醒",
         "listening": "正在听 · 60s",
         "userSubtitle": True,
         "thinking": "思考中",
         "speaking": "正在说话",
         "assistantSubtitle": True,
+        "interruptedSubtitle": True,
+        "postInterruptUserSubtitle": True,
         "idle": "READY",
         "subtitleBeforeClear": True,
         "subtitleAfterClear": False,

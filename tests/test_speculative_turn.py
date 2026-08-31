@@ -113,6 +113,21 @@ def test_policy_gates():
     asyncio.run(run())
 
 
+def test_exact_stop_never_starts_speculative_pending():
+    async def run():
+        rec = Recorder()
+        lc = _make_launcher(rec)
+
+        assert await lc.launch("结束对话。") is False
+        assert rec.sent == []
+        assert not lc.has_pending
+
+        assert await lc.launch("请解释如何结束对话") is True
+        assert [item["text"] for item in rec.sent] == ["请解释如何结束对话"]
+
+    asyncio.run(run())
+
+
 def test_supersede_and_abandon():
     async def run():
         rec = Recorder()

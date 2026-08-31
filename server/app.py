@@ -310,7 +310,6 @@ async def bootstrap(port: int = 17777) -> None:
         VTS_ENABLED, VTS_HEARTBEAT_ENABLED,
         AEC_REALTIME_BARGE_IN,
         AEC_REALTIME_ENABLED,
-        ASR_IDLE_UNLOAD_SECONDS,
         ASR_ECHO_TAIL_GUARD_MS,
         LOCAL_LLM_LAUNCH_MODE, LOCAL_LLM_TYPE, LLM_PROVIDER,
         EXP_TTS_MAX_CONCURRENCY, TTS_BACKEND,
@@ -908,7 +907,7 @@ async def bootstrap(port: int = 17777) -> None:
         except Exception:
             logger.exception("barge-in ASR release failed")
         try:
-            qwen_hot_window = max(float(WAKE_AWAKE_SECONDS), float(ASR_IDLE_UNLOAD_SECONDS))
+            qwen_hot_window = float(WAKE_AWAKE_SECONDS)
             await asr_h.start_listening(
                 {
                     "source": "wake",
@@ -1224,7 +1223,7 @@ async def bootstrap(port: int = 17777) -> None:
         if command_text and is_desktop_voice_exit_command(command_text):
             logger.info("wake inline stop command received; remaining in passive wake")
             return
-        qwen_hot_window = max(float(WAKE_AWAKE_SECONDS), float(ASR_IDLE_UNLOAD_SECONDS))
+        qwen_hot_window = float(WAKE_AWAKE_SECONDS)
         if not await _main_voice_allowed_now("wake detected"):
             return
         logger.info("wake detected; entering Qwen ASR hot window for %.1fs", qwen_hot_window)
@@ -1409,7 +1408,20 @@ async def bootstrap(port: int = 17777) -> None:
             await asr_h.notify_turn_complete("chat_complete_timeout")
 
     async def _handle_wake_bridge_text(payload: dict) -> None:
-        await _send_wake_text(str(payload.get("text") or ""), source="wake bridge")
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            return
+        from server.desktop_voice import is_desktop_voice_exit_command
+
+        if is_desktop_voice_exit_command(text):
+            logger.info("desktop voice stop command received from wake bridge")
+            await asr_h.stop_listening("voice_stop_command")
+            return
+        await bus.emit(
+            Method.ASR_RECOGNIZED,
+            {**payload, "text": text, "is_final": True, "source": "wake"},
+        )
+        await _send_wake_text(text, source="wake bridge")
 
     async def _handle_tts_interrupt(payload: dict) -> None:
         try:
