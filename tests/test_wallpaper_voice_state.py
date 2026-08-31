@@ -118,33 +118,56 @@ def test_wallpaper_voice_state_participates_in_client_asset_revision() -> None:
 
 
 def test_wallpaper_scene_presents_voice_status_and_dual_subtitles(monkeypatch) -> None:
-    async def latest_waiting_snapshot() -> dict:
+    async def latest_snapshot(status: str, *, speaking: bool) -> list[dict]:
         host = wallpaper_engine_bridge.WallpaperEngineBridgeHost.__new__(
             wallpaper_engine_bridge.WallpaperEngineBridgeHost
         )
         host._state = wallpaper_engine_bridge._BridgeState()
-        handler = AsrHandler()
-        handler._active = True
-        handler._source = "wake"
-        handler._waiting_turn_complete = True
+        host.set_asr_status(
+            {
+                "status": "awake",
+                "source": "wake",
+                "awake_deadline_ms": 1700000060000,
+            }
+        )
+        host.set_speaking(True)
+        host.set_subtitle("第一句")
+        host.set_speaking(speaking)
+        if status == "waiting_turn_complete":
+            handler = AsrHandler()
+            handler._active = True
+            handler._source = "wake"
+            handler._waiting_turn_complete = True
 
-        async def publish_to_bridge(method, payload):
-            if method != Method.ASR_STATUS:
-                return
-            host.set_asr_status(payload)
-            if payload.get("status") == "waiting_turn_complete":
-                handler._waiting_turn_complete = False
+            async def publish_to_bridge(method, payload):
+                if method != Method.ASR_STATUS:
+                    return
+                host.set_asr_status(payload)
+                if payload.get("status") == "waiting_turn_complete":
+                    handler._waiting_turn_complete = False
 
-        monkeypatch.setattr("server.handlers.asr_handler.bus.emit", publish_to_bridge)
-        await handler._dispatch_recognized("断线重连")
-        await handler._wait_until_turn_complete()
+            monkeypatch.setattr("server.handlers.asr_handler.bus.emit", publish_to_bridge)
+            await handler._dispatch_recognized("断线重连")
+            await handler._wait_until_turn_complete()
+        else:
+            host.set_asr_status({"status": status, "source": "wake", "text": "断线重连"})
 
         calls = host._state.snapshot()["calls"]
-        replayed = [call for call in calls if call.get("method") == "setAsrStatus"]
-        assert len(replayed) == 1
-        return replayed[0]["args"][0]
+        assert sorted(call.get("method") for call in calls) == sorted(
+            [
+                "setAsrStatus",
+                "setSpeaking",
+                "setSubtitle",
+            ]
+        )
+        return calls
 
-    reconnect_payload = asyncio.run(latest_waiting_snapshot())
+    reconnect_snapshots = {
+        "recognized": asyncio.run(latest_snapshot("recognized", speaking=False)),
+        "thinking": asyncio.run(latest_snapshot("thinking", speaking=False)),
+        "waiting": asyncio.run(latest_snapshot("waiting_turn_complete", speaking=False)),
+        "speaking": asyncio.run(latest_snapshot("waiting_turn_complete", speaking=True)),
+    }
     node_runner = r"""
 const vm = require("node:vm");
 const fs = require("node:fs");
@@ -274,7 +297,7 @@ runtime.initDesktopScene({
     crt_polygon: [[0, 0], [1000, 0], [1000, 600], [0, 600]],
   },
 });
-const reconnectPayload = JSON.parse(process.argv[3]);
+const reconnectCalls = JSON.parse(process.argv[3]);
 
 function texts() {
   const found = [];
@@ -298,8 +321,10 @@ function statusValue() {
   );
 }
 
-runtime.setAsrStatus(reconnectPayload);
+for (const call of reconnectCalls) runtime[call.method](...(call.args || []));
 const reconnectUserSubtitle = !!textValue("你：断线重连");
+const reconnectAssistantSubtitle = !!textValue("助手：第一句");
+runtime.setSpeaking(false);
 runtime.setAsrStatus({ status: "idle", source: "wake", reason: "test_reset" });
 const ready = textValue("READY");
 const readyLayout = ready ? { x: ready.x, y: ready.y } : null;
@@ -340,6 +365,7 @@ const inactiveSubtitle = !!textValue("普通字幕");
 
 process.stdout.write(JSON.stringify({
   reconnectUserSubtitle,
+  reconnectAssistantSubtitle,
   ready: !!ready,
   readyLayout,
   awake,
@@ -357,25 +383,34 @@ process.stdout.write(JSON.stringify({
   inactiveSubtitle,
 }));
 """
-    completed = subprocess.run(
-        [
-            "node",
-            "-e",
-            node_runner,
-            str(_VOICE_STATE_PATH),
-            str(_PROJECT_ROOT / "render" / "web" / "wallpaper_scene.js"),
-            json.dumps(reconnect_payload, ensure_ascii=False),
-        ],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=10,
-    )
+    reconnect_results = {}
+    presentation_result = None
+    for name, reconnect_calls in reconnect_snapshots.items():
+        completed = subprocess.run(
+            [
+                "node",
+                "-e",
+                node_runner,
+                str(_VOICE_STATE_PATH),
+                str(_PROJECT_ROOT / "render" / "web" / "wallpaper_scene.js"),
+                json.dumps(reconnect_calls, ensure_ascii=False),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=10,
+        )
 
-    assert completed.returncode == 0, completed.stderr
-    result = json.loads(completed.stdout)
-    assert result == {
-        "reconnectUserSubtitle": True,
+        assert completed.returncode == 0, completed.stderr
+        result = json.loads(completed.stdout)
+        reconnect_results[name] = {
+            "user": result.pop("reconnectUserSubtitle"),
+            "assistant": result.pop("reconnectAssistantSubtitle"),
+        }
+        presentation_result = presentation_result or result
+        assert result == presentation_result
+
+    assert presentation_result == {
         "ready": True,
         "readyLayout": {"x": 988, "y": 12},
         "awake": "已唤醒",
@@ -391,4 +426,10 @@ process.stdout.write(JSON.stringify({
         "subtitleBeforeClear": True,
         "subtitleAfterClear": False,
         "inactiveSubtitle": True,
+    }
+    assert reconnect_results == {
+        "recognized": {"user": True, "assistant": False},
+        "thinking": {"user": True, "assistant": False},
+        "waiting": {"user": True, "assistant": False},
+        "speaking": {"user": False, "assistant": True},
     }
