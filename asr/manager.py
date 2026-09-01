@@ -382,6 +382,20 @@ class ASRManager:
         """后端是否已加载完成（可用于 GUI 显示加载状态）。"""
         return self._backend_ready.is_set() and self._backend_load_err is None
 
+    def vad_status(self) -> tuple[str, str]:
+        """VAD 端点检测的公开状态，返回 (state, reason)。
+
+        - ready:    Silero VAD 已加载，barge-in/精准端点可用
+        - fallback: vad 层未安装，能量端点是该梯级的文档化降级
+        - degraded: 已安装但加载失败，reason 携带可观察的原因
+        """
+        if getattr(self, "_vad_model", None) is not None:
+            return "ready", ""
+        degraded = getattr(self, "_vad_degraded", None)
+        if degraded:
+            return "degraded", str(degraded)
+        return "fallback", ""
+
     def wait_until_ready(self, timeout: float = 120.0) -> bool:
         """阻塞等待后端就绪，返回是否成功。供需要同步等待的场景使用。"""
         return self._backend_ready.wait(timeout=timeout)

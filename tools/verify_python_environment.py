@@ -49,6 +49,15 @@ CU124_IMPORTS = (
     "qwen_asr",
     "local_tts_infer",
 )
+# Verification ladder: each release profile is a strict superset of the one
+# below it, mirroring the install tiers L1→L4 (base → voice → vad → local-cu124).
+PROFILE_TIER_IMPORTS: dict[str, tuple[str, ...]] = {
+    "cpu": (),
+    "ci": (),
+    "voice": VOICE_IMPORTS,
+    "vad": (*VOICE_IMPORTS, *VAD_IMPORTS),
+    "cu124": (*VOICE_IMPORTS, *VAD_IMPORTS, *LOCAL_MODEL_IMPORTS, *CU124_IMPORTS),
+}
 
 
 def _distribution_installed(name: str) -> bool:
@@ -73,12 +82,8 @@ def verify(profile: str, *, require_cuda_device: bool = False) -> None:
 
     for module_name in (*BASE_IMPORTS, *PROJECT_IMPORTS):
         importlib.import_module(module_name)
-    if profile in {"voice", "cu124"}:
-        for module_name in VOICE_IMPORTS:
-            importlib.import_module(module_name)
-    if profile == "cu124":
-        for module_name in (*VAD_IMPORTS, *LOCAL_MODEL_IMPORTS, *CU124_IMPORTS):
-            importlib.import_module(module_name)
+    for module_name in PROFILE_TIER_IMPORTS[profile]:
+        importlib.import_module(module_name)
 
     _require(
         not _distribution_installed("google-generativeai"),
@@ -122,7 +127,7 @@ def verify(profile: str, *, require_cuda_device: bool = False) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profile", choices=("cpu", "ci", "voice", "cu124"), required=True)
+    parser.add_argument("--profile", choices=tuple(PROFILE_TIER_IMPORTS), required=True)
     parser.add_argument(
         "--require-cuda-device",
         action="store_true",

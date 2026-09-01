@@ -134,6 +134,8 @@ DeepSeek 主 Chat、本地 Qwen/SenseVoice 和 GPT-SoVITS v3。llama.cpp 是可�
 L2 无 vad 层时，语音端点自动降级为能量检测；安装 vad 后恢复
 silero 精准端点与打断。
 
+各梯级安装完成后，可用 `python tools/verify_python_environment.py --profile <cpu|voice|vad|cu124>` 验证所装梯级的导入合同（`ci` 同 `cpu`）。
+
 ### 参考硬件
 
 - Windows 11
