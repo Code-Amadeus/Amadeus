@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from types import SimpleNamespace
+import sys
+from types import ModuleType, SimpleNamespace
 
 import numpy as np
 
@@ -111,9 +112,9 @@ def _capture(
     )
     monkeypatch.setattr(mic_module.time, "monotonic", cursor.clock.monotonic)
 
-    import silero_vad
-
-    monkeypatch.setattr(silero_vad, "VADIterator", lambda *args, **kwargs: vad)
+    fake_silero_vad = ModuleType("silero_vad")
+    fake_silero_vad.VADIterator = lambda *args, **kwargs: vad
+    monkeypatch.setitem(sys.modules, "silero_vad", fake_silero_vad)
     monkeypatch.setattr(
         echo_guard,
         "should_drop_handoff_candidate",
