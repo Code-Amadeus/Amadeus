@@ -39,12 +39,6 @@ def _str(key: str, default: str = "", *, aliases: tuple[str, ...] = ()) -> str:
     return _ENV.string(key, default, aliases=aliases)
 
 
-def _secret(key: str, default: str = "", *, aliases: tuple[str, ...] = ()) -> str:
-    """API keys/tokens: tolerate accidental surrounding quotes/whitespace from .env edits."""
-    value = _ENV.string(key, default, aliases=aliases)
-    return value.strip().strip('"').strip("'").strip()
-
-
 def declared_environment_fields():
     """Return the schema discovered while this compatibility facade was built."""
 
@@ -83,21 +77,21 @@ if LLM_PROVIDER not in LLM_PROVIDERS:
         + ", ".join(sorted(LLM_PROVIDERS))
         + f"; observed {LLM_PROVIDER!r}"
     )
-DEEPSEEK_API_KEY   = _secret("DEEPSEEK_API_KEY")
+DEEPSEEK_API_KEY   = _str("DEEPSEEK_API_KEY")
 DEEPSEEK_BASE_URL  = _str("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 DEEPSEEK_MODEL_NAME = _str("DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
 
 # ===========================================================================
 # LLM 提供商 — OpenAI / GPT
 # ===========================================================================
-OPENAI_API_KEY    = _secret("OPENAI_API_KEY")
+OPENAI_API_KEY    = _str("OPENAI_API_KEY")
 OPENAI_BASE_URL   = _str("OPENAI_BASE_URL", "https://api.openai.com/v1")
 OPENAI_MODEL_NAME = _str("OPENAI_MODEL_NAME", "gpt-5.4-mini")
 
 # ===========================================================================
 # LLM 提供商 — Gemini
 # ===========================================================================
-GEMINI_API_KEY    = _secret("GEMINI_API_KEY")
+GEMINI_API_KEY    = _str("GEMINI_API_KEY")
 GEMINI_MODEL_NAME = _str("GEMINI_MODEL_NAME", "gemini-2.5-flash")
 
 # ===========================================================================
@@ -270,7 +264,7 @@ VTS_RECONNECT_ENABLED = _bool("VTS_RECONNECT_ENABLED", True)
 # ===========================================================================
 TTS_BACKEND = _str("TTS_BACKEND", "gpt_sovits").strip().lower()
 TTS_API_BASE_URL = _str("TTS_API_BASE_URL", "https://api.openai.com/v1")
-TTS_API_KEY = _secret("TTS_API_KEY", "")
+TTS_API_KEY = _str("TTS_API_KEY", "")
 TTS_API_MODEL = _str("TTS_API_MODEL", "gpt-4o-mini-tts")
 TTS_API_VOICE = _str("TTS_API_VOICE", "alloy")
 TTS_API_STREAM_PROTOCOL = _str("TTS_API_STREAM_PROTOCOL", "buffered").strip().lower()
@@ -278,7 +272,7 @@ TTS_API_TIMEOUT_SECONDS = _float("TTS_API_TIMEOUT_SECONDS", 60.0)
 
 # MiMo TTS（小米远程后端，chat-completions 音频协议，非 /audio/speech）
 MIMO_TTS_BASE_URL = _str("MIMO_TTS_BASE_URL", "https://api.xiaomimimo.com/v1")
-MIMO_TTS_API_KEY = _secret("MIMO_TTS_API_KEY", "")
+MIMO_TTS_API_KEY = _str("MIMO_TTS_API_KEY", "")
 MIMO_TTS_MODEL = _str("MIMO_TTS_MODEL", "mimo-v2.5-tts")
 MIMO_TTS_VOICE = _str("MIMO_TTS_VOICE", "冰糖")
 
@@ -381,7 +375,7 @@ QWEN3_ASR_REQUIRE_CUDA = _bool("QWEN3_ASR_REQUIRE_CUDA", False)
 # 填入领域热词和指令；SenseVoice 后端会忽略此项
 ASR_CONTEXT = _str("ASR_CONTEXT", "")
 ASR_API_BASE_URL = _str("ASR_API_BASE_URL", "https://api.openai.com/v1")
-ASR_API_KEY = _secret("ASR_API_KEY", "")
+ASR_API_KEY = _str("ASR_API_KEY", "")
 ASR_API_MODEL = _str("ASR_API_MODEL", "gpt-4o-mini-transcribe")
 ASR_API_TIMEOUT_SECONDS = _float("ASR_API_TIMEOUT_SECONDS", 45.0)
 ASR_IDLE_UNLOAD_SECONDS = _float("ASR_IDLE_UNLOAD_SECONDS", 180.0)
