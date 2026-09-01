@@ -156,6 +156,32 @@ cd ..
 `torch==2.5.1+cu124`、`torchaudio==2.5.1+cu124` 和本地模型依赖集；它以当前
 实际运行环境为第一版基线。
 
+> **GeForce RTX 50 系（Blackwell，社区验证配置）**：本项目当前使用的
+> `torch==2.5.1+cu124` profile 不兼容 RTX 50 系，无法运行本地 CUDA
+> 语音模型。50 系用户需要更新 NVIDIA 驱动，并改用社区已验证可运行的
+> PyTorch 2.7.0 CUDA 12.8 组合。
+>
+> **GeForce RTX 50 series (Blackwell, community-validated configuration):**
+> the current `torch==2.5.1+cu124` profile is incompatible with RTX 50-series
+> GPUs and cannot run the local CUDA voice models. Update the NVIDIA driver and
+> use the community-validated PyTorch 2.7.0 CUDA 12.8 combination instead:
+>
+> ```powershell
+> python -m pip install --upgrade --force-reinstall `
+>   torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 `
+>   --index-url https://download.pytorch.org/whl/cu128
+> ```
+>
+> 该组合目前尚未经过项目的完整 clean-install、ASR/TTS/VAD 与 Electron 回归；
+> 当前 `requirements-cu124.txt` 和 `--profile cu124` 验证器仍以
+> `torch==2.5.1+cu124` 为准，因此不应将其视为 cu124 正式基线的替代品。
+>
+> This combination has not yet passed the project's full clean-install,
+> ASR/TTS/VAD, and Electron regression gates. The current
+> `requirements-cu124.txt` and `--profile cu124` verifier still require
+> `torch==2.5.1+cu124`, so this is not a replacement for the official cu124
+> baseline.
+
 ### 安装外部运行资产
 
 完整本地语音需要 Qwen ASR 与 GPT-SoVITS v3 语音包；视觉和角色包可选：
