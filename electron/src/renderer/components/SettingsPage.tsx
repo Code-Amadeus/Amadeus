@@ -694,6 +694,7 @@ export default function SettingsPage({ send, subscribe }: Props) {
                 </SettingsGroup>
                 <SettingsGroup title="Chat & Voice">
                   <ComboCard icon="Language" title="Slice Language" content="Language for process cards and Provider summaries" value={val('presentation_locale', 'en-US')} onChange={value => handleChange('presentation_locale', value)} options={['en-US', 'zh-CN', 'ja-JP']} />
+                  <SwitchCard icon="Language" title="Chat Translation Subtitles" content="Show Simplified Chinese below completed Japanese assistant messages. Display-only; never added to conversation history." checked={bool('chat_translation_subtitles_enabled')} onChange={value => handleChange('chat_translation_subtitles_enabled', value)} />
                   <ComboCard icon="Language" title="Wallpaper Caption Mode" content="Choose translated, source, bilingual, or no captions" value={val('wallpaper_caption_mode', 'translated')} onChange={value => handleChange('wallpaper_caption_mode', value)} options={['translated', 'source', 'bilingual', 'off']} />
                 </SettingsGroup>
               </div>

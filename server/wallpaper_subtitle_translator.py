@@ -1,7 +1,9 @@
-"""Provider-selectable Japanese -> Chinese translator for wallpaper subtitles.
+"""Provider-selectable Japanese -> Chinese presentation subtitle translator.
 
-This module is intentionally scoped to the Wallpaper/Lively subtitle surface.
-It does not affect chat memory, VN subtitle routing, or the text sent to TTS.
+Wallpaper/Lively and GUI Chat may share this provider configuration and output
+cleaning, but each surface owns its own enablement and render state.  This
+module never writes chat memory, changes VN subtitle routing, or alters TTS
+input.
 """
 
 from __future__ import annotations
@@ -49,7 +51,7 @@ def get_translation_runtime_info() -> dict[str, str | float | int]:
     }
 
 
-async def translate_wallpaper_subtitle(japanese_text: str) -> str:
+async def translate_presentation_subtitle(japanese_text: str) -> str:
     text = str(japanese_text or "").strip()
     if not text:
         return ""
@@ -67,7 +69,7 @@ async def translate_wallpaper_subtitle(japanese_text: str) -> str:
             if _looks_like_valid_translation(result):
                 elapsed_ms = int((asyncio.get_running_loop().time() - started) * 1000)
                 logger.info(
-                    "wallpaper subtitle translated provider=%s model=%s chars_in=%d chars_out=%d elapsed_ms=%d",
+                    "presentation subtitle translated provider=%s model=%s chars_in=%d chars_out=%d elapsed_ms=%d",
                     attempt.provider,
                     attempt.model,
                     len(text),
@@ -76,7 +78,7 @@ async def translate_wallpaper_subtitle(japanese_text: str) -> str:
                 )
                 return result
             logger.warning(
-                "wallpaper subtitle provider returned unusable text provider=%s model=%s chars_in=%d raw_len=%d",
+                "presentation subtitle provider returned unusable text provider=%s model=%s chars_in=%d raw_len=%d",
                 attempt.provider,
                 attempt.model,
                 len(text),
@@ -85,14 +87,20 @@ async def translate_wallpaper_subtitle(japanese_text: str) -> str:
         except Exception as exc:
             last_error = exc
             logger.warning(
-                "wallpaper subtitle translation attempt failed provider=%s: %s",
+                "presentation subtitle translation attempt failed provider=%s: %s",
                 provider,
                 exc,
             )
 
     if last_error is not None:
-        logger.error("wallpaper subtitle translation failed after fallbacks: %s", last_error)
+        logger.error("presentation subtitle translation failed after fallbacks: %s", last_error)
     return ""
+
+
+async def translate_wallpaper_subtitle(japanese_text: str) -> str:
+    """Compatibility entry point for the established Wallpaper pipeline."""
+
+    return await translate_presentation_subtitle(japanese_text)
 
 
 def _resolve_config() -> SubtitleTranslatorConfig:

@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class ChatHandler(RequestHandler):
-    methods = [Method.CHAT_SEND, Method.CHAT_ABORT]
+    methods = [Method.CHAT_SEND, Method.CHAT_ABORT, Method.CHAT_TRANSLATE]
 
     def __init__(self) -> None:
         self._stream_task: asyncio.Task | None = None
@@ -60,7 +60,19 @@ class ChatHandler(RequestHandler):
             return await self._handle_send(params)
         if method == Method.CHAT_ABORT:
             return await self._handle_abort(params)
+        if method == Method.CHAT_TRANSLATE:
+            return await self._handle_translate(params)
         return None
+
+    @staticmethod
+    async def _handle_translate(params: dict[str, Any]) -> dict[str, Any]:
+        """Return a derived GUI subtitle without touching Chat history."""
+
+        from server.chat_translation_runtime import translate_completed_message
+
+        result = await translate_completed_message(params.get("text", ""))
+        result["turn_id"] = str(params.get("turn_id") or "")
+        return result
 
     async def send_text(
         self,

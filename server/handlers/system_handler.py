@@ -833,6 +833,7 @@ class SystemHandler(RequestHandler):
         import llm.client as llm_client
         from server import visual_runtime
         from server import presentation_runtime
+        from server import chat_translation_runtime
         from render.character_pack import character_pack_status
         from config.asset_packages import external_asset_pack_status
         import tts.pipeline as tts_pipeline
@@ -896,6 +897,7 @@ class SystemHandler(RequestHandler):
             "vision_region": vision.get("region", ""),
             "vision_window_handle": vision.get("window_handle", ""),
             **presentation_runtime.get_config(),
+            **chat_translation_runtime.get_config(),
             "control_decision_mode": (
                 "authority"
                 if bool(getattr(chat_runtime, "_control_proposal_authority", False))
@@ -911,6 +913,7 @@ class SystemHandler(RequestHandler):
             raise ValueError("system.set_config requires a non-empty values object")
 
         from server import presentation_runtime
+        from server import chat_translation_runtime
         from server import visual_runtime
         from server import wallpaper_subtitle_runtime
         import tts.pipeline as tts_pipeline
@@ -932,6 +935,7 @@ class SystemHandler(RequestHandler):
             "presentation_locale",
             "wallpaper_caption_mode",
             "wallpaper_subtitle_language",
+            "chat_translation_subtitles_enabled",
         }
         unknown = sorted(str(key) for key in values if str(key) not in allowed)
         if unknown:
@@ -1003,6 +1007,11 @@ class SystemHandler(RequestHandler):
             if caption_mode not in presentation_runtime.VALID_CAPTION_MODES:
                 raise ValueError(f"unsupported wallpaper caption mode: {caption_mode!r}")
             values["wallpaper_caption_mode"] = caption_mode
+        if (
+            "chat_translation_subtitles_enabled" in values
+            and not isinstance(values["chat_translation_subtitles_enabled"], bool)
+        ):
+            raise ValueError("chat_translation_subtitles_enabled must be a boolean")
 
         if {"llm_provider", "local_llm_type"}.intersection(values):
             if self._is_chat_busy is not None and self._is_chat_busy():
@@ -1060,9 +1069,15 @@ class SystemHandler(RequestHandler):
 
         visual_updated = visual_runtime.set_config(values)
         presentation_updated = presentation_runtime.set_config(values)
+        chat_translation_updated = chat_translation_runtime.set_config(values)
         if presentation_updated:
             wallpaper_subtitle_runtime.refresh()
-        updated = list(dict.fromkeys([*updated, *visual_updated, *presentation_updated]))
+        updated = list(dict.fromkeys([
+            *updated,
+            *visual_updated,
+            *presentation_updated,
+            *chat_translation_updated,
+        ]))
         current = await self._get_config({})
         await bus.emit(Method.SYSTEM_CONFIG, {"values": current, "updated": updated})
         return {"updated": updated, "values": current}
