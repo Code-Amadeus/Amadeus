@@ -390,6 +390,9 @@ ASR_LISTEN_TIMEOUT_SECONDS = _float("ASR_LISTEN_TIMEOUT_SECONDS", 15.0)
 ASR_PREROLL_MS = _int("ASR_PREROLL_MS", 500)
 ASR_ENERGY_END_RMS = _float("ASR_ENERGY_END_RMS", 0.008)
 ASR_ENERGY_END_MS = _int("ASR_ENERGY_END_MS", 450)
+# Recovery watchdog while a post-barge-in capture still lacks ownership from
+# its fresh Conversation VAD iterator.  This is not the user's speech limit;
+# after VAD takeover, ASR_MAX_SPEECH_SECONDS is the absolute bound.
 ASR_HANDOFF_MAX_CAPTURE_SECONDS = _float("ASR_HANDOFF_MAX_CAPTURE_SECONDS", 5.0)
 # 两段式投机端点：短静音（下值）先把已捕获音频提交给 ASR 后端并行转写，
 # 长静音（ASR_VAD_SILENCE_MS / ASR_ENERGY_END_MS）确认端点后若说话未恢复
