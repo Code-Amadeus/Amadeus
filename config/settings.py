@@ -417,6 +417,7 @@ BRANCH_SQUASH_MERGE = _bool("BRANCH_SQUASH_MERGE", True)
 # ===========================================================================
 PROVIDER_DELEGATE_DEFAULT_PROVIDER = _str("PROVIDER_DELEGATE_DEFAULT_PROVIDER", "openclaw").strip().lower()
 AMADEUS_BROWSER_VISIBLE = _bool("AMADEUS_BROWSER_VISIBLE", False)
+AMADEUS_BROWSER_CHANNEL = _str("AMADEUS_BROWSER_CHANNEL", "").strip().lower()
 # Exactly one Codex transport may own the stable ``codex`` Provider id.  The
 # official persistent SDK/App Server transport is the local product default;
 # the turn-scoped CLI remains an explicit compatibility transport.

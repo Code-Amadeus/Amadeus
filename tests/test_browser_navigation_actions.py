@@ -76,8 +76,11 @@ class _VisibleLaunchBrowser:
 class _VisibleLaunchChromium:
     def __init__(self) -> None:
         self.browser: _VisibleLaunchBrowser | None = None
+        self.launch_options: dict[str, Any] = {}
 
-    async def launch(self, *, headless: bool) -> _VisibleLaunchBrowser:
+    async def launch(self, **options: Any) -> _VisibleLaunchBrowser:
+        self.launch_options = dict(options)
+        headless = bool(options.get("headless", True))
         self.browser = _VisibleLaunchBrowser(headless=headless)
         return self.browser
 
@@ -90,7 +93,10 @@ class _VisibleLaunchPlaywright:
 def test_desktop_visible_browser_setting_launches_a_windowed_session() -> None:
     async def run() -> None:
         playwright = _VisibleLaunchPlaywright()
-        with patch.object(settings, "AMADEUS_BROWSER_VISIBLE", True, create=True):
+        with (
+            patch.object(settings, "AMADEUS_BROWSER_VISIBLE", True, create=True),
+            patch.object(settings, "AMADEUS_BROWSER_CHANNEL", "", create=True),
+        ):
             adapter = BrowserAdapter()
             adapter._playwright = playwright
             session = await adapter._get_or_create_session(
@@ -102,6 +108,31 @@ def test_desktop_visible_browser_setting_launches_a_windowed_session() -> None:
 
         assert session.browser is playwright.chromium.browser
         assert session.browser.headless is False
+        assert playwright.chromium.launch_options == {"headless": False}
+
+    asyncio.run(run())
+
+
+def test_configured_browser_channel_is_used_for_the_visible_session() -> None:
+    async def run() -> None:
+        playwright = _VisibleLaunchPlaywright()
+        with (
+            patch.object(settings, "AMADEUS_BROWSER_VISIBLE", True, create=True),
+            patch.object(settings, "AMADEUS_BROWSER_CHANNEL", "msedge", create=True),
+        ):
+            adapter = BrowserAdapter()
+            adapter._playwright = playwright
+            await adapter._get_or_create_session(
+                "",
+                "chat-edge-browser",
+                "run-edge-browser",
+                lambda _event: asyncio.sleep(0),
+            )
+
+        assert playwright.chromium.launch_options == {
+            "headless": False,
+            "channel": "msedge",
+        }
 
     asyncio.run(run())
 

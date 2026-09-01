@@ -84,6 +84,7 @@ class BrowserAdapter:
         self._chat_to_session: dict[str, str] = {}
         self._session_ttl_s = max(60.0, float(os.environ.get("AMADEUS_BROWSER_SESSION_TTL_SECONDS", "900")))
         self._visible = bool(settings.AMADEUS_BROWSER_VISIBLE)
+        self._channel = str(settings.AMADEUS_BROWSER_CHANNEL or "").strip()
 
     async def run(
         self,
@@ -451,7 +452,10 @@ class BrowserAdapter:
                 payload={"tool": "browser.launch", "engine": "chromium", "browser_session_id": session_id},
             )
         )
-        browser = await playwright.chromium.launch(headless=not self._visible)
+        launch_options: dict[str, Any] = {"headless": not self._visible}
+        if self._channel:
+            launch_options["channel"] = self._channel
+        browser = await playwright.chromium.launch(**launch_options)
         context = await browser.new_context(
             viewport={"width": 1280, "height": 720},
             user_agent="AmadeusBrowserProvider/0.1 local-runtime",
