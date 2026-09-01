@@ -278,6 +278,16 @@ def test_sdk_adapter_maps_thread_turn_events_and_terminal_truth() -> None:
         assert event_types.count("tool.call") == 1
         assert event_types.count("tool.result") == 2
         assert all(event.run_id == "run-1" for event in events)
+        command_call = next(event for event in events if event.type == "tool.call")
+        assert command_call.payload["tool"] == "shell"
+        assert command_call.payload["command"] == "python verify.py"
+        command_result = next(
+            event
+            for event in events
+            if event.type == "tool.result" and event.payload["name"] == "shell"
+        )
+        assert command_result.payload["success"] is True
+        assert command_result.payload["exit_code"] == 0
         file_result = next(
             event
             for event in events
@@ -409,6 +419,85 @@ def test_completed_codex_commentary_becomes_an_unverified_direction_update() -> 
         assert result.result == "The integration is complete."
 
     with tempfile.TemporaryDirectory(prefix="amadeus-codex-direction-") as temp_dir:
+        asyncio.run(scenario(Path(temp_dir)))
+
+
+def test_dynamic_tool_title_becomes_a_bounded_reported_direction() -> None:
+    async def scenario(root: Path) -> None:
+        events = [
+            _Notification(
+                "item/started",
+                {
+                    "item": {
+                        "id": "dynamic-1",
+                        "type": "dynamicToolCall",
+                        "tool": "js",
+                        "arguments": {
+                            "code": "writeWorkspaceFile()",
+                            "title": "Updating the game for simultaneous two-player battle",
+                            "timeout_ms": 30_000,
+                        },
+                        "status": "inProgress",
+                    }
+                },
+            ),
+            _Notification(
+                "item/completed",
+                {
+                    "item": {
+                        "id": "dynamic-1",
+                        "type": "dynamicToolCall",
+                        "tool": "js",
+                        "status": "completed",
+                        "output": "pvz.html updated",
+                    }
+                },
+            ),
+            _Notification(
+                "item/completed",
+                {
+                    "item": {
+                        "id": "message-dynamic",
+                        "type": "agentMessage",
+                        "phase": "final_answer",
+                        "text": "The requested update is staged.",
+                    }
+                },
+            ),
+            _turn_completed("turn-dynamic", "completed"),
+        ]
+        adapter = CodexAppServerAdapter(
+            codex=_FakeCodex(
+                [_FakeThread("thread-dynamic", _FakeTurn("turn-dynamic", events))]
+            )
+        )
+        observed = []
+
+        async def emit(event) -> None:
+            observed.append(event)
+
+        result = await adapter.run(
+            _request(root, "Update the game", write=True),
+            "run-dynamic",
+            emit,
+        )
+
+        assert result.status == "done"
+        updates = [event for event in observed if event.type == "assistant.update"]
+        assert len(updates) == 1
+        assert updates[0].payload == {
+            "text": "Updating the game for simultaneous two-player battle",
+            "source": "codex_native_tool_title",
+            "explicit": False,
+            "status": "reported_direction",
+        }
+        call = next(event for event in observed if event.type == "tool.call")
+        assert call.payload["name"] == "js"
+        assert call.payload["title"] == updates[0].payload["text"]
+        assert call.payload["input"]["code"] == "writeWorkspaceFile()"
+        assert not any(event.type == "semantic.progress" for event in observed)
+
+    with tempfile.TemporaryDirectory(prefix="amadeus-codex-tool-title-") as temp_dir:
         asyncio.run(scenario(Path(temp_dir)))
 
 
@@ -1245,6 +1334,7 @@ def test_bootstrap_exposes_exactly_one_codex_transport() -> None:
 def _main() -> None:
     test_sdk_adapter_maps_thread_turn_events_and_terminal_truth()
     test_native_plan_becomes_an_early_reported_design_milestone()
+    test_dynamic_tool_title_becomes_a_bounded_reported_direction()
     test_unknown_and_collaboration_items_fail_closed_as_execution()
     test_windows_runtime_path_prefers_a_real_powershell_binary()
     test_sdk_runtime_config_isolated_from_codex_desktop_defaults()

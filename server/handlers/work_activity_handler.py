@@ -244,11 +244,6 @@ class WorkActivityCoordinator:
                 phase="Intake",
                 progress=10,
                 force=True,
-                # The Host knows which bounded goal it just dispatched even
-                # before the Provider reports an implementation milestone.
-                # Surface that one truthful direction so a long cold start is
-                # not two minutes of silence; results remain receipt-owned.
-                narration_keypoint="directional_progress",
             )
             return
 
@@ -831,6 +826,7 @@ class WorkActivityCoordinator:
         state["semantic_explicit"] = fact.explicit
         state["semantic_verified"] = fact.verified
         state["semantic_milestone"] = fact.milestone
+        state["semantic_evidence"] = fact.evidence
         return True
 
     @staticmethod
@@ -1495,8 +1491,23 @@ class WorkActivityCoordinator:
                 {
                     "narration_keypoint": narration_keypoint,
                     **(
-                        {"semantic_milestone": str(state.get("semantic_milestone") or "")}
-                        if semantic and state.get("semantic_milestone")
+                        {
+                            **(
+                                {
+                                    "semantic_milestone": str(
+                                        state.get("semantic_milestone") or ""
+                                    )
+                                }
+                                if state.get("semantic_milestone")
+                                else {}
+                            ),
+                            "semantic_source": str(state.get("semantic_source") or ""),
+                            "semantic_verified": state.get("semantic_verified") is True,
+                            "semantic_evidence": str(
+                                state.get("semantic_evidence") or "reported"
+                            ),
+                        }
+                        if semantic and not semantic_candidate
                         else {}
                     ),
                     **(
@@ -2001,9 +2012,11 @@ class WorkActivityCoordinator:
                     label="report" if semantic else "stream",
                     text=self._trim(text, 110),
                     detail=(
-                        "provider update; not terminal"
+                        "reported direction; not verified"
                         if semantic_candidate
-                        else "semantic"
+                        else "Host-observed semantic evidence"
+                        if semantic and state.get("semantic_verified") is True
+                        else "provider-reported semantic evidence; not verified"
                         if semantic
                         else "streaming"
                     ),

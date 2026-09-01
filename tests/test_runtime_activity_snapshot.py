@@ -321,6 +321,127 @@ def test_verified_tool_fact_advances_semantic_clock_once() -> None:
     assert result["lastSemanticProgressAt"] == 5_010.0
 
 
+def test_status_query_tracks_the_current_steer_evidence_end_to_end() -> None:
+    snapshot = project_activity_event(
+        {},
+        _event(1, "run.created", at=10.0),
+        execution_status="running",
+        now=10.0,
+    )
+    snapshot = project_activity_event(
+        snapshot,
+        _event(
+            2,
+            "semantic.progress",
+            {
+                "milestone": "design",
+                "summary": "I will implement the old one-player design.",
+                "source": "provider_explicit_progress",
+                "verified": False,
+            },
+            at=12.0,
+        ),
+        execution_status="running",
+        now=12.0,
+    )
+    snapshot = project_activity_event(
+        snapshot,
+        _event(
+            3,
+            "run.status",
+            {
+                "status": "running",
+                "stage": "steer_queued",
+                "revision": 1,
+                "replaces_revision": 0,
+            },
+            at=20.0,
+        ),
+        execution_status="running",
+        now=20.0,
+    )
+
+    def status_note(current: dict, *, now: float) -> dict:
+        fields = activity_report_fields(
+            current,
+            execution_status="running",
+            created_at=10.0,
+            started_at=10.0,
+            finished_at=None,
+            now=now,
+        )
+        return task_lookup.status_query_narration_note(
+            {
+                "work_item_id": "work-steer-freshness",
+                "attempt_id": "attempt-steer-freshness",
+                "title": "Build the game",
+                "execution": "running",
+                "completion": "unknown",
+                "attention": "none",
+                **fields,
+            }
+        )
+
+    stale = status_note(snapshot, now=21.0)
+    assert stale["metadata"]["semantic_milestone"] == ""
+    assert stale["metadata"]["status_facts"]["steering_revision"] == 1
+
+    snapshot = project_activity_event(
+        snapshot,
+        _event(
+            4,
+            "semantic.progress",
+            {
+                "milestone": "capability",
+                "summary": "The two-player controls are wired.",
+                "source": "provider_explicit_progress",
+                "verified": False,
+            },
+            at=30.0,
+        ),
+        execution_status="running",
+        now=30.0,
+    )
+    reported = status_note(snapshot, now=31.0)
+    assert reported["metadata"]["semantic_milestone"] == "capability"
+    assert reported["metadata"]["status_facts"]["fact_verified"] is False
+
+    snapshot = project_activity_event(
+        snapshot,
+        _event(
+            5,
+            "tool.call",
+            {
+                "tool": "command_execution",
+                "item_id": "validation-1",
+                "command": "python -m pytest tests/test_game.py",
+            },
+            at=40.0,
+        ),
+        execution_status="running",
+        now=40.0,
+    )
+    snapshot = project_activity_event(
+        snapshot,
+        _event(
+            6,
+            "tool.result",
+            {
+                "item_id": "validation-1",
+                "success": True,
+                "status": "completed",
+            },
+            at=41.0,
+        ),
+        execution_status="running",
+        now=41.0,
+    )
+    observed = status_note(snapshot, now=42.0)
+    assert observed["metadata"]["semantic_milestone"] == "validation"
+    assert observed["metadata"]["status_facts"]["fact_verified"] is True
+    assert observed["summary"] == "Project validation passed."
+
+
 def test_repeated_permission_fact_does_not_reset_clock_after_other_progress() -> None:
     permission_payload = {
         "capability": "tool.execute",
@@ -893,6 +1014,7 @@ def main() -> None:
     test_retrospective_permission_is_denied_activity_not_waiting_for_user()
     test_mechanical_events_do_not_reset_semantic_silence()
     test_verified_tool_fact_advances_semantic_clock_once()
+    test_status_query_tracks_the_current_steer_evidence_end_to_end()
     test_repeated_permission_fact_does_not_reset_clock_after_other_progress()
     test_staging_observation_is_bounded_to_the_attempt_namespace()
     test_report_refresh_combines_durable_activity_with_live_git_facts()

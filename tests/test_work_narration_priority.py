@@ -885,6 +885,146 @@ def test_status_query_consumes_progress_but_never_terminal_truth() -> None:
     )
 
 
+def test_steer_checkpoint_retires_pending_pre_steer_narration() -> None:
+    async def scenario() -> None:
+        observer = WorkObserverCoordinator()
+        session = ObserverSession(
+            narration_id="work:work-steer:attempt:attempt-steer",
+            run_id="run-steer",
+            session_id="session-steer",
+            provider="future_provider",
+            work_item_id="work-steer",
+            attempt_id="attempt-steer",
+        )
+        observer._sessions[session.narration_id] = session
+        observer._narration_governor.observe(
+            {
+                **_note("The old design is ready to implement.", "semantic_progress"),
+                "run_id": session.narration_id,
+            },
+            output_busy=True,
+        )
+        observer._queue = asyncio.Queue()
+        checkpoint = {
+            "provider": "future_provider",
+            "run_id": session.run_id,
+            "session_id": session.session_id,
+            "phase": "Checkpoint",
+            "summary": "The new instruction is waiting at a safe boundary.",
+            "observer_policy": "silent",
+            "metadata": {
+                "work_item_id": session.work_item_id,
+                "attempt_id": session.attempt_id,
+                "steering_stage": "steer_queued",
+                "steering_revision": 1,
+            },
+        }
+
+        with patch.object(observer, "_supersede_pending_delivery", return_value=0):
+            await observer._on_work_note(Method.CHAT_WORK_NOTE, checkpoint)
+
+        assert not observer._narration_governor.has_pending(session.narration_id)
+        assert observer._queue.empty()
+
+    asyncio.run(scenario())
+
+
+def test_status_query_uses_only_current_steer_evidence_and_preserves_authority() -> None:
+    from server import task_lookup
+
+    old_design = "I will build the old one-player plan, then validate it."
+    base = {
+        "work_item_id": "work-status-freshness",
+        "attempt_id": "attempt-status-freshness",
+        "title": "Build the board",
+        "execution": "running",
+        "activity_phase": "working",
+        "completion": "unknown",
+        "attention": "none",
+        "activity_direction_summary": old_design,
+        "activity_last_directional_update_at": 12,
+        "activity_milestones": {
+            "design": {
+                "summary": old_design,
+                "source": "provider_explicit_progress",
+                "verified": False,
+                "observedAt": 10,
+            }
+        },
+        "activity_steering": {
+            "state": "queued",
+            "revision": 1,
+            "observedAt": 20,
+        },
+    }
+
+    stale = task_lookup.status_query_narration_note(base)
+    assert stale["metadata"]["semantic_milestone"] == ""
+    assert stale["metadata"]["directional_summary"] == ""
+    assert stale["metadata"]["status_facts"]["fact_kind"] == ""
+    assert stale["metadata"]["status_facts"]["steering_revision"] == 1
+    assert all(old_design not in str(signal.get("text") or "") for signal in stale["signals"])
+    stale_fallback = task_lookup.current_status_facts(base)
+    assert stale_fallback["fact_kind"] == ""
+    assert stale_fallback["fact_verified"] == "false"
+
+    current_row = {
+        **base,
+        "activity_milestones": {
+            **base["activity_milestones"],
+            "capability": {
+                "summary": "The two-player controls are now wired.",
+                "source": "provider_explicit_progress",
+                "verified": False,
+                "observedAt": 30,
+            },
+        },
+    }
+    reported = task_lookup.status_query_narration_note(current_row)
+    report_signal = next(
+        signal for signal in reported["signals"] if signal.get("label") == "report"
+    )
+    assert reported["metadata"]["semantic_milestone"] == "capability"
+    assert reported["metadata"]["status_facts"]["fact_verified"] is False
+    assert report_signal["detail"] == "reported capability evidence; not Host-verified"
+    reported_fallback = task_lookup.current_status_facts(current_row)
+    assert reported_fallback["fact_kind"] == "capability"
+    assert reported_fallback["fact_verified"] == "false"
+
+    verified_row = {
+        **current_row,
+        "activity_milestones": {
+            **current_row["activity_milestones"],
+            "capability": {
+                **current_row["activity_milestones"]["capability"],
+                "verified": True,
+            },
+        },
+    }
+    verified = task_lookup.status_query_narration_note(verified_row)
+    verified_signal = next(
+        signal for signal in verified["signals"] if signal.get("label") == "report"
+    )
+    assert verified["metadata"]["status_facts"]["fact_verified"] is True
+    assert verified_signal["detail"] == "Host-verified capability evidence"
+
+    rejected_row = {
+        **base,
+        "activity_steering": {
+            "state": "rejected",
+            "revision": 1,
+            "observedAt": 20,
+        },
+    }
+    rejected = task_lookup.status_query_narration_note(rejected_row)
+    assert rejected["metadata"]["semantic_milestone"] == "design"
+    assert rejected["metadata"]["status_facts"]["fact_verified"] is False
+    assert rejected["summary"] == old_design
+    rejected_fallback = task_lookup.current_status_facts(rejected_row)
+    assert rejected_fallback["fact_kind"] == "design"
+    assert rejected_fallback["fact_verified"] == "false"
+
+
 def test_explicit_status_query_reuses_the_existing_narrator_and_attempt_context() -> None:
     async def scenario() -> None:
         from server import task_lookup
@@ -981,5 +1121,7 @@ if __name__ == "__main__":
     test_terminal_voice_omits_exact_sentences_already_spoken_but_keeps_full_history()
     test_terminal_narrator_cannot_reuse_a_predecessor_attempt_from_chat()
     test_status_query_consumes_progress_but_never_terminal_truth()
+    test_steer_checkpoint_retires_pending_pre_steer_narration()
+    test_status_query_uses_only_current_steer_evidence_and_preserves_authority()
     test_explicit_status_query_reuses_the_existing_narrator_and_attempt_context()
     print("ok: narration prioritises semantic milestones and permission state changes")

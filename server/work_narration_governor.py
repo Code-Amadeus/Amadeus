@@ -30,9 +30,8 @@ NARRATION_KEYPOINTS = frozenset(
     }
 )
 # These events open an observer decision window.  They do not all force the
-# character to speak: first-tool facts are useful on the Slice but contain no
-# new task knowledge on their own. New intake producers classify the explicit
-# Host-dispatched goal as directional progress instead of a mechanical event.
+# character to speak: intake and first-tool facts are useful on the Slice but
+# contain no new Provider-authored task knowledge on their own.
 _NARRATION_TRIGGERS = NARRATION_KEYPOINTS | {
     "directional_progress",
     "semantic_progress",

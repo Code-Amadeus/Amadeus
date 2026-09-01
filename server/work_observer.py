@@ -326,6 +326,20 @@ class WorkObserverCoordinator:
         after it is stale.  Terminal truth is never consumed here.
         """
 
+        return self._supersede_nonterminal(
+            work_item_id,
+            reason="status query",
+        )
+
+    def supersede_for_steer(self, work_item_id: str) -> int:
+        """Retire nonterminal narration from the superseded instruction."""
+
+        return self._supersede_nonterminal(
+            work_item_id,
+            reason="steer checkpoint",
+        )
+
+    def _supersede_nonterminal(self, work_item_id: str, *, reason: str) -> int:
         target = str(work_item_id or "").strip()
         if not target:
             return 0
@@ -343,7 +357,8 @@ class WorkObserverCoordinator:
                 task.cancel()
         if consumed:
             logger.info(
-                "[WORK-NARRATION] status query superseded %d pending update(s) for %s",
+                "[WORK-NARRATION] %s superseded %d pending update(s) for %s",
+                reason,
                 consumed,
                 target,
             )
@@ -479,6 +494,13 @@ class WorkObserverCoordinator:
         if self._closing or self._closed or self._queue is None:
             return
         note = dict(params or {})
+        metadata = note.get("metadata") if isinstance(note.get("metadata"), dict) else {}
+        if str(metadata.get("steering_stage") or "").strip().lower() in {
+            "steer_queued",
+            "steer_applied",
+        }:
+            work_item_id, _attempt_id = self._work_identity(note)
+            self.supersede_for_steer(work_item_id)
         if self._observer_policy(note) == "silent":
             self._trace_drop(note, "observer_policy_silent")
             return
@@ -1086,9 +1108,8 @@ class WorkObserverCoordinator:
                 metadata.get("narration_merged_count") or 0
             ),
         }
-        # Legacy intake snapshots and the first tool are useful visual/audit
-        # facts but contain no new direction. New intake producers explicitly
-        # mark the Host-dispatched bounded goal as directional_progress.
+        # Intake snapshots and the first tool are useful visual/audit facts but
+        # contain no Provider-authored direction or semantic result.
         if keypoints and set(keypoints).issubset({"run_started", "first_tool"}):
             return {
                 **annotated,
