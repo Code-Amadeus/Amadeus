@@ -38,6 +38,7 @@ _KEY_FIELDS = (
 )
 
 _CACHE_SCHEMA = "first_sentence_audio_cache.v1"
+_SYNTHESIS_REVISION = "gsv_static_kv_mask_semantic_guard.v1"
 
 
 def _portable_basename(value: Any) -> str:
@@ -75,6 +76,10 @@ class FirstSentenceAudioCache:
             output_language = "en" if TTS_OUTPUT_LANGUAGE == "英文" else "ja"
         return {
             "text": text,
+            # Audio produced before this decoder invariant/guard revision may
+            # already contain a collapsed long vowel.  Keep it out of the new
+            # path without deleting user files or scanning the cache tree.
+            "synthesis_revision": _SYNTHESIS_REVISION,
             "tts_output_language": output_language,
             "gpt_model": TTS_GPT_MODEL_PATH,
             "sovits_model": TTS_SOVITS_MODEL_PATH,
