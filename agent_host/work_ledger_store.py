@@ -1810,6 +1810,42 @@ class WorkLedgerStore:
             assert row is not None
             return self._attempt_from_row(row)
 
+    def merge_attempt_control_metadata(
+        self,
+        attempt_id: str,
+        metadata: dict[str, Any],
+    ) -> RunAttemptRecord:
+        """Persist hidden control-plane facts without fabricating activity.
+
+        Delivery cursors and similar receipts must survive restart, but their
+        persistence is not user work, Provider progress, or a lifecycle edge.
+        Preserve Attempt and WorkItem timestamps so history ordering and
+        visible activity clocks remain owned by material events.
+        """
+
+        if not isinstance(metadata, dict):
+            raise ValueError("metadata must be an object")
+        with self._transaction() as cursor:
+            row = cursor.execute(
+                "SELECT * FROM run_attempts WHERE attempt_id = ?",
+                (str(attempt_id),),
+            ).fetchone()
+            if row is None:
+                raise WorkLedgerNotFound(f"unknown attempt: {attempt_id}")
+            cursor.execute(
+                "UPDATE run_attempts SET metadata_json = ? WHERE attempt_id = ?",
+                (
+                    _merged_json(row["metadata_json"], metadata),
+                    str(attempt_id),
+                ),
+            )
+            row = cursor.execute(
+                "SELECT * FROM run_attempts WHERE attempt_id = ?",
+                (str(attempt_id),),
+            ).fetchone()
+            assert row is not None
+            return self._attempt_from_row(row)
+
     def compare_and_set_attempt_metadata(
         self,
         attempt_id: str,

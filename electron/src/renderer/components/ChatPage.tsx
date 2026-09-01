@@ -24,6 +24,10 @@ import {
   patchInterruptedMessage,
   type Message,
 } from './chatMessageState'
+import {
+  chatTranslationCandidates,
+  chatTranslationKey,
+} from './chatTranslationState'
 
 interface Props {
   send: (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
@@ -164,6 +168,8 @@ async function prepareImageAttachment(file: File): Promise<VisualAttachment> {
 
 export default function ChatPage({ send, subscribe, connected, renderActive, renderAssetUrl }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
+  const [chatTranslationEnabled, setChatTranslationEnabled] = useState(false)
+  const [chatTranslations, setChatTranslations] = useState<Record<string, string>>({})
   const [workActivities, setWorkActivities] = useState<ChatWorkActivityRun[]>([])
   const [streamingText, setStreamingText] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -208,6 +214,8 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   const activeStreamTurnIdRef = useRef('')
   const streamingTextRef = useRef('')
   const lastAssistantTurnIdRef = useRef('')
+  const chatTranslationRequestedRef = useRef<Set<string>>(new Set())
+  const chatTranslationGenerationRef = useRef(0)
   const activeSessionRef = useRef('')
   const visionPressTimerRef = useRef<number | null>(null)
   const visionLongPressRef = useRef(false)
@@ -262,7 +270,12 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       activeSessionRef.current = sessionId
       setActiveSession(sessionId)
     }
-    if (Array.isArray(res.messages)) setMessages(toMessages(res.messages))
+    if (Array.isArray(res.messages)) {
+      chatTranslationGenerationRef.current += 1
+      chatTranslationRequestedRef.current.clear()
+      setChatTranslations({})
+      setMessages(toMessages(res.messages))
+    }
     setStreaming(false)
     setStreamingText('')
     streamingTextRef.current = ''
@@ -296,6 +309,57 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       if (value) setChatAvatars(value)
     }).catch(error => console.error('[chat-avatar] load failed', error))
   }, [])
+
+  useEffect(() => {
+    if (!connected) return
+    let cancelled = false
+    const applyConfig = (payload: Record<string, unknown>) => {
+      const values = payload.values && typeof payload.values === 'object'
+        ? payload.values as Record<string, unknown>
+        : payload
+      const enabled = values.chat_translation_subtitles_enabled === true
+      if (!cancelled) setChatTranslationEnabled(enabled)
+    }
+    const unsubscribe = subscribe('system.config', applyConfig)
+    send('system.get_config', {}).then(applyConfig).catch(() => {
+      if (!cancelled) setChatTranslationEnabled(false)
+    })
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [connected, send, subscribe])
+
+  useEffect(() => {
+    if (!chatTranslationEnabled) {
+      chatTranslationGenerationRef.current += 1
+      chatTranslationRequestedRef.current.clear()
+      setChatTranslations({})
+      return
+    }
+
+    const generation = chatTranslationGenerationRef.current
+    for (const candidate of chatTranslationCandidates(messages)) {
+      if (chatTranslationRequestedRef.current.has(candidate.key)) continue
+      chatTranslationRequestedRef.current.add(candidate.key)
+      void send('chat.translate', {
+        text: candidate.text,
+        turn_id: candidate.turnId,
+      }).then(response => {
+        if (generation !== chatTranslationGenerationRef.current) return
+        const translation = String(response.translation ?? '').trim()
+        if (!translation) return
+        setChatTranslations(previous => ({
+          ...previous,
+          [candidate.key]: translation,
+        }))
+      }).catch(() => {
+        if (generation === chatTranslationGenerationRef.current) {
+          chatTranslationRequestedRef.current.delete(candidate.key)
+        }
+      })
+    }
+  }, [chatTranslationEnabled, messages, send])
 
   // auto-scroll
   useEffect(() => {
@@ -1297,6 +1361,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
                 <ChatBubble
                   role={msg.role}
                   text={msg.text}
+                  translation={chatTranslations[chatTranslationKey(msg, i)] || ''}
                   streaming={msg.streaming}
                   userAvatar={chatAvatars.user}
                   assistantAvatar={chatAvatars.assistant}

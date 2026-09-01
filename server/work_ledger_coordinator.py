@@ -33,8 +33,19 @@ from agent_host.provider_authoring import (
     stage_auip_authoring_bundle,
 )
 from agent_host.provider_contract import ProviderRequirements
-from agent_host.provider_identity import MAIN_ROLE_NAME_METADATA_KEY
-from agent_host.provider_types import ProviderRecoveryContext, ProviderRunRequest
+from agent_host.provider_identity import (
+    MAIN_ROLE_NAME_METADATA_KEY,
+    PARENT_CONTEXT_DELIVERED_EVENT,
+    PARENT_CONTEXT_DELIVERY_METADATA_KEY,
+    SOURCE_CONTEXT_SCOPE_METADATA_KEY,
+    parent_conversation_context_delivery,
+    validated_parent_context_delivery,
+)
+from agent_host.provider_types import (
+    ProviderRecoveryContext,
+    ProviderRunRequest,
+    ProviderSessionHandle,
+)
 from agent_host.provider_workspace import workspace_route_authority
 from agent_host.work_ledger_store import (
     WorkLedgerConflict,
@@ -714,6 +725,44 @@ class WorkLedgerCoordinator:
 
     # -- Provider intake -------------------------------------------------
 
+    def _latest_parent_context_delivery(
+        self,
+        work_item_id: str,
+        session: ProviderSessionHandle | None,
+    ) -> dict[str, str]:
+        """Find the latest delivered cursor for this exact native Session.
+
+        A later failed Attempt may inherit the same attachable handle without
+        ever sending its prompt. Skip such planned attachments and retain the
+        last adapter-acknowledged cursor instead.
+        """
+
+        if session is None or not str(work_item_id or "").strip():
+            return {}
+        for attempt in reversed(self.store.list_attempts(work_item_id)):
+            receipt = validated_parent_context_delivery(
+                attempt.metadata.get(PARENT_CONTEXT_DELIVERY_METADATA_KEY)
+            )
+            if not receipt:
+                continue
+            raw_session = attempt.metadata.get("provider_session")
+            if not isinstance(raw_session, dict):
+                result = (
+                    attempt.metadata.get("provider_result")
+                    if isinstance(attempt.metadata.get("provider_result"), dict)
+                    else {}
+                )
+                raw_session = result.get("provider_session")
+            if not isinstance(raw_session, dict):
+                continue
+            try:
+                delivered_session = ProviderSessionHandle.from_dict(raw_session)
+            except (TypeError, ValueError):
+                continue
+            if delivered_session == session:
+                return receipt
+        return {}
+
     def prepare_request(self, request: ProviderRunRequest) -> ProviderRunRequest:
         """Bind a new provider run to a WorkItem and a fresh RunAttempt.
 
@@ -920,6 +969,12 @@ class WorkLedgerCoordinator:
             or metadata.get("chat_session_id")
             or ""
         ).strip()
+        if (
+            str(metadata.get("source_user_text") or "").strip()
+            and session_id
+            and not str(metadata.get(SOURCE_CONTEXT_SCOPE_METADATA_KEY) or "").strip()
+        ):
+            metadata[SOURCE_CONTEXT_SCOPE_METADATA_KEY] = f"chat:{session_id}"
 
         continuation_lineage: dict[str, Any] = {}
         previous_attempt: RunAttemptRecord | None = None
@@ -1040,6 +1095,26 @@ class WorkLedgerCoordinator:
         )
         request.session = provider_session.session
         provider_session_attach = provider_session.audit
+        source_context = str(metadata.get("source_user_context") or "")
+        previous_delivery = self._latest_parent_context_delivery(
+            str(existing_item.work_item_id if existing_item is not None else ""),
+            request.session,
+        )
+        delivered_context, context_mode = parent_conversation_context_delivery(
+            source_context,
+            source_scope=str(metadata.get(SOURCE_CONTEXT_SCOPE_METADATA_KEY) or ""),
+            previous_delivery=previous_delivery,
+            continuity_verified=request.session is not None,
+        )
+        if delivered_context:
+            metadata["source_user_context"] = delivered_context
+        else:
+            metadata.pop("source_user_context", None)
+        metadata["source_context_mode"] = context_mode
+        if previous_delivery and request.session is not None:
+            base_turn_id = str(previous_delivery.get("source_turn_id") or "").strip()
+            if base_turn_id:
+                metadata["source_context_base_turn_id"] = base_turn_id[:200]
         ensured_workspace: dict[str, Any] | None = None
         work_item_id_for_create = ""
         # The container needs turning into a real per-task directory; a draft
@@ -1230,6 +1305,25 @@ class WorkLedgerCoordinator:
             **(
                 {"source_user_text": str(metadata["source_user_text"])[:4000]}
                 if str(metadata.get("source_user_text") or "").strip()
+                else {}
+            ),
+            "source_context_mode": str(metadata.get("source_context_mode") or "none"),
+            **(
+                {
+                    SOURCE_CONTEXT_SCOPE_METADATA_KEY: str(
+                        metadata[SOURCE_CONTEXT_SCOPE_METADATA_KEY]
+                    )[:800]
+                }
+                if str(metadata.get(SOURCE_CONTEXT_SCOPE_METADATA_KEY) or "").strip()
+                else {}
+            ),
+            **(
+                {
+                    "source_context_base_turn_id": str(
+                        metadata["source_context_base_turn_id"]
+                    )[:200]
+                }
+                if str(metadata.get("source_context_base_turn_id") or "").strip()
                 else {}
             ),
             "continuation": continuation,
@@ -2303,6 +2397,7 @@ class WorkLedgerCoordinator:
     ) -> None:
         event_type = str(params.get("type") or "").strip().lower()
         if event_type in {
+            PARENT_CONTEXT_DELIVERED_EVENT,
             "run.created",
             "run.started",
             "run.status",
@@ -3353,6 +3448,7 @@ class WorkLedgerCoordinator:
             "session_id",
             "source_user_text",
             "source_user_context",
+            SOURCE_CONTEXT_SCOPE_METADATA_KEY,
             MAIN_ROLE_NAME_METADATA_KEY,
             "presentation_locale",
             "host_outcome_requirement",

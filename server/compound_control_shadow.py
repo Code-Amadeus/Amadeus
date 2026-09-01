@@ -18,6 +18,7 @@ import json
 from typing import Any, Awaitable, Callable, Iterable, Literal, Mapping, Sequence
 
 from server.control_decision import (
+    CONTROL_PAYLOAD_GROUNDING_ATTR,
     CONTROL_REFERENCE_CANDIDATES_ATTR,
     DEFAULT_EXHAUSTIVE_CANDIDATE_LIMIT,
     reconcile_control_decision,
@@ -383,21 +384,35 @@ async def resolve_compound_control_plan(
             effective_clauses = (
                 SourceClause(source_user_text, 0, len(source_user_text)),
             )
-        operations = tuple(
-            CompoundControlOperation(
-                operation_index=index,
-                source_clause=(
-                    effective_clauses[index].text
-                    if index < len(effective_clauses)
-                    else source_user_text
-                ),
-                action=action,
+        operations: list[CompoundControlOperation] = []
+        for index, action in enumerate(actions):
+            source_clause = (
+                effective_clauses[index].text
+                if index < len(effective_clauses)
+                else source_user_text
             )
-            for index, action in enumerate(actions)
-        )
+            exact_action = dict(action)
+            if (
+                str(exact_action.get("intent") or "").strip().lower() != "focus"
+                and CONTROL_PAYLOAD_GROUNDING_ATTR not in exact_action
+                and source_clause
+            ):
+                # Under compound authority the role proposal is the gate, not
+                # the payload authority.  The exact source clause is complete
+                # user-authorized input and prevents a fragmented role tag from
+                # starting only the trailing half of one requested deliverable.
+                exact_action["task"] = source_clause
+                exact_action["_host_payload_source"] = "exact_current_user_clause"
+            operations.append(
+                CompoundControlOperation(
+                    operation_index=index,
+                    source_clause=source_clause,
+                    action=exact_action,
+                )
+            )
         return CompoundControlPlan(
             status="ok",
-            operations=operations,
+            operations=tuple(operations),
             clauses=effective_clauses,
             raw_reply=str(raw_reply or ""),
             reason="; ".join(notes),

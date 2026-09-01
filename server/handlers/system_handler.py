@@ -656,6 +656,34 @@ def _model_connections(
 
 
 def _model_role_configuration(settings: Any) -> list[dict[str, Any]]:
+    from server.auip_b2 import b2_runtime_unavailable_reason
+    from server.auip_b2_role_llm import has_b2_role_model_config
+
+    b2_unavailable = b2_runtime_unavailable_reason(
+        role_branch_mode=getattr(settings, "AUIP_APPSESSION_ROLE_BRANCH_MODE", "b2"),
+        control_decision_available=bool(
+            getattr(settings, "AUIP_CONTROL_DECISION_ENABLED", False)
+        ),
+        role_model_available=has_b2_role_model_config(),
+    )
+    b2_active = str(
+        getattr(settings, "AUIP_APPSESSION_ROLE_BRANCH_MODE", "b2") or ""
+    ).strip().lower() == "b2"
+    if b2_unavailable == "b2_control_decision_unavailable":
+        b2_status_detail = (
+            "B2 is selected, but its source-local AUIP decision lane is disabled. "
+            "Application actions remain blocked; Chat and Settings stay available."
+        )
+    elif b2_unavailable == "b2_role_model_unavailable":
+        b2_status_detail = (
+            "B2 is selected, but no supported OpenAI or DeepSeek action model credential "
+            "is configured. Application actions remain blocked until setup and restart."
+        )
+    elif b2_active:
+        b2_status_detail = "B2 application action decisions are available."
+    else:
+        b2_status_detail = "B2 is not selected; this action role is optional."
+
     return [
         {
             "id": "work_observer",
@@ -680,8 +708,12 @@ def _model_role_configuration(settings: Any) -> list[dict[str, Any]]:
         {
             "id": "auip_action",
             "label": "AUIP action decision",
-            "description": "Optional decision-quality override for AUIP participation.",
-            "configured": True,
+            "description": "Decision-quality model used by the default B2 AppSession action path.",
+            "active": b2_active,
+            "configured": not bool(b2_unavailable),
+            "status": "needs_setup" if b2_unavailable else "available" if b2_active else "optional",
+            "status_ok": not bool(b2_unavailable),
+            "status_detail": b2_status_detail,
             "fields": [
                 _startup_field("AUIP_ACTION_PROVIDER", "Provider override", settings.AUIP_ACTION_PROVIDER),
                 _startup_field("AUIP_ACTION_MODEL", "Model override", settings.AUIP_ACTION_MODEL),
@@ -833,6 +865,7 @@ class SystemHandler(RequestHandler):
         import llm.client as llm_client
         from server import visual_runtime
         from server import presentation_runtime
+        from server import chat_translation_runtime
         from render.character_pack import character_pack_status
         from config.asset_packages import external_asset_pack_status
         import tts.pipeline as tts_pipeline
@@ -896,6 +929,7 @@ class SystemHandler(RequestHandler):
             "vision_region": vision.get("region", ""),
             "vision_window_handle": vision.get("window_handle", ""),
             **presentation_runtime.get_config(),
+            **chat_translation_runtime.get_config(),
             "control_decision_mode": (
                 "authority"
                 if bool(getattr(chat_runtime, "_control_proposal_authority", False))
@@ -911,6 +945,7 @@ class SystemHandler(RequestHandler):
             raise ValueError("system.set_config requires a non-empty values object")
 
         from server import presentation_runtime
+        from server import chat_translation_runtime
         from server import visual_runtime
         from server import wallpaper_subtitle_runtime
         import tts.pipeline as tts_pipeline
@@ -932,6 +967,7 @@ class SystemHandler(RequestHandler):
             "presentation_locale",
             "wallpaper_caption_mode",
             "wallpaper_subtitle_language",
+            "chat_translation_subtitles_enabled",
         }
         unknown = sorted(str(key) for key in values if str(key) not in allowed)
         if unknown:
@@ -1003,6 +1039,11 @@ class SystemHandler(RequestHandler):
             if caption_mode not in presentation_runtime.VALID_CAPTION_MODES:
                 raise ValueError(f"unsupported wallpaper caption mode: {caption_mode!r}")
             values["wallpaper_caption_mode"] = caption_mode
+        if (
+            "chat_translation_subtitles_enabled" in values
+            and not isinstance(values["chat_translation_subtitles_enabled"], bool)
+        ):
+            raise ValueError("chat_translation_subtitles_enabled must be a boolean")
 
         if {"llm_provider", "local_llm_type"}.intersection(values):
             if self._is_chat_busy is not None and self._is_chat_busy():
@@ -1060,9 +1101,15 @@ class SystemHandler(RequestHandler):
 
         visual_updated = visual_runtime.set_config(values)
         presentation_updated = presentation_runtime.set_config(values)
+        chat_translation_updated = chat_translation_runtime.set_config(values)
         if presentation_updated:
             wallpaper_subtitle_runtime.refresh()
-        updated = list(dict.fromkeys([*updated, *visual_updated, *presentation_updated]))
+        updated = list(dict.fromkeys([
+            *updated,
+            *visual_updated,
+            *presentation_updated,
+            *chat_translation_updated,
+        ]))
         current = await self._get_config({})
         await bus.emit(Method.SYSTEM_CONFIG, {"values": current, "updated": updated})
         return {"updated": updated, "values": current}

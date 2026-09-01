@@ -15,6 +15,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent_host.adapters.browser_branch import BrowserBranchAdapter
 from agent_host.provider_contract import ProviderCapabilities, ProviderManifest
+from agent_host.provider_identity import (
+    PARENT_CONTEXT_DELIVERED_EVENT,
+    PARENT_CONTEXT_DELIVERY_METADATA_KEY,
+)
 from agent_host.provider_runtime import ProviderRuntime
 from agent_host.provider_types import (
     ProviderEvent,
@@ -136,6 +140,10 @@ def test_latest_steer_replans_after_current_atomic_action() -> None:
                             "browser_session_id": engine.session_id,
                             "branch_user_message": "use the old targets",
                             "max_branch_actions": 3,
+                            "turn_id": "chat-turn-initial",
+                            "source_user_text": "use the old targets",
+                            "source_context_scope": "chat:chat-browser",
+                            "source_context_mode": "snapshot",
                         },
                     ),
                     "browser_mid_run",
@@ -156,7 +164,13 @@ def test_latest_steer_replans_after_current_atomic_action() -> None:
                 ProviderSteerRequest(
                     task="use the newest target",
                     revision=2,
-                    metadata={"branch_user_message": "use the newest target"},
+                    metadata={
+                        "branch_user_message": "use the newest target",
+                        "turn_id": "chat-turn-steer",
+                        "source_user_text": "use the newest target",
+                        "source_context_scope": "chat:chat-browser",
+                        "source_context_mode": "delta",
+                    },
                 ),
             )
             assert first["accepted"] is True
@@ -174,6 +188,12 @@ def test_latest_steer_replans_after_current_atomic_action() -> None:
             and item["payload"].get("stage") == "steer_applied"
         ]
         assert applied == [2]
+        delivered = [
+            item["metadata"]["turn_id"]
+            for item in events
+            if item["type"] == PARENT_CONTEXT_DELIVERED_EVENT
+        ]
+        assert delivered == ["chat-turn-initial", "chat-turn-steer"]
         assert result.metadata["steering"]["applied_revisions"] == [2]
         actions = result.metadata["provider_branch"]["actions"]
         assert [item["ref"] for item in actions] == ["old_1", "newest"]
@@ -320,8 +340,10 @@ class _RuntimeSteerAdapter:
         self.started = asyncio.Event()
         self.release = asyncio.Event()
         self.received: list[ProviderSteerRequest] = []
+        self.emit = None
 
-    async def run(self, _request, _run_id, _emit) -> ProviderRunResult:
+    async def run(self, _request, _run_id, emit) -> ProviderRunResult:
+        self.emit = emit
         self.started.set()
         await self.release.wait()
         return ProviderRunResult(status="done", result="done")
@@ -348,7 +370,13 @@ def test_runtime_enforces_and_audits_immediate_steer() -> None:
             ProviderSteerRequest(
                 task="replacement",
                 revision=1,
-                metadata={"turn_id": "turn-2"},
+                metadata={
+                    "turn_id": "turn-2",
+                    "source_user_text": "Apply the replacement.",
+                    "source_user_context": 'Main Chat: "I will replace it."',
+                    "source_context_mode": "delta",
+                    "source_context_scope": "chat:session-1",
+                },
             ),
         )
         assert outcome["accepted"] is True
@@ -362,8 +390,119 @@ def test_runtime_enforces_and_audits_immediate_steer() -> None:
         ]
         assert queued and queued[-1]["payload"]["revision"] == 1
         assert record.metadata["steering"]["turn_id"] == "turn-2"
+        assert PARENT_CONTEXT_DELIVERY_METADATA_KEY not in record.metadata
+        assert "source_context_cursor_turn_id" not in record.metadata
+
+        assert adapter.emit is not None
+        await adapter.emit(
+            ProviderEvent(
+                provider=adapter.provider_id,
+                run_id=record.run_id,
+                type=PARENT_CONTEXT_DELIVERED_EVENT,
+                metadata=dict(adapter.received[0].metadata),
+            )
+        )
+
+        assert record.metadata["source_user_text"] == "Apply the replacement."
+        assert record.metadata["source_user_context"] == (
+            'Main Chat: "I will replace it."'
+        )
+        assert record.metadata["source_context_mode"] == "delta"
+        assert record.metadata["source_context_cursor_turn_id"] == "turn-2"
+        assert record.metadata[PARENT_CONTEXT_DELIVERY_METADATA_KEY][
+            "source_scope"
+        ] == "chat:session-1"
         adapter.release.set()
         await asyncio.wait_for(record.task_handle, timeout=2.0)
+
+    asyncio.run(run())
+
+
+def test_context_delivery_receipt_stays_out_of_public_run_and_result() -> None:
+    async def run() -> None:
+        runtime = ProviderRuntime()
+        adapter = _RuntimeSteerAdapter()
+        runtime.register(adapter)
+        captured_events: list[dict[str, Any]] = []
+        captured_results: list[dict[str, Any]] = []
+
+        async def capture_event(_method: str, params: dict[str, Any]) -> None:
+            if params.get("provider") == adapter.provider_id:
+                captured_events.append(dict(params))
+
+        async def capture_result(_method: str, params: dict[str, Any]) -> None:
+            if params.get("provider") == adapter.provider_id:
+                captured_results.append(dict(params))
+
+        bus.on(Method.PROVIDER_EVENT, capture_event)
+        bus.on(Method.PROVIDER_RESULT, capture_result)
+        try:
+            record = await runtime.start(
+                ProviderRunRequest(provider=adapter.provider_id, task="original")
+            )
+            await asyncio.wait_for(adapter.started.wait(), timeout=2.0)
+            public_updated_at = runtime.list_runs()[0]["updated_at"]
+            assert adapter.emit is not None
+            await adapter.emit(
+                ProviderEvent(
+                    provider=adapter.provider_id,
+                    run_id=record.run_id,
+                    type=PARENT_CONTEXT_DELIVERED_EVENT,
+                    metadata={
+                        "turn_id": "turn-public-projection",
+                        "source_user_text": "Keep this receipt internal.",
+                        "source_context_scope": "chat:session-public-projection",
+                        "source_context_mode": "snapshot",
+                    },
+                )
+            )
+            assert PARENT_CONTEXT_DELIVERY_METADATA_KEY in record.metadata
+            assert not any(
+                event.get("type") == PARENT_CONTEXT_DELIVERED_EVENT
+                for event in record.events
+            )
+
+            listed = runtime.list_runs()[0]
+            assert listed["updated_at"] == public_updated_at
+            assert listed["event_sequence"] == len(listed["events"])
+            assert PARENT_CONTEXT_DELIVERY_METADATA_KEY not in listed["metadata"]
+            assert listed["metadata"].get("source_context_scope") is None
+            assert listed["metadata"].get("source_context_cursor_turn_id") is None
+            assert all(
+                event.get("type") != PARENT_CONTEXT_DELIVERED_EVENT
+                for event in listed["events"]
+            )
+            assert all(
+                PARENT_CONTEXT_DELIVERY_METADATA_KEY
+                not in (event.get("metadata") or {})
+                for event in listed["events"]
+            )
+
+            adapter.release.set()
+            await asyncio.wait_for(record.task_handle, timeout=2.0)
+            terminal_event = next(
+                event
+                for event in reversed(captured_events)
+                if event.get("type") == "run.finished"
+            )
+            assert PARENT_CONTEXT_DELIVERY_METADATA_KEY not in terminal_event["metadata"]
+            assert terminal_event["metadata"].get("source_context_scope") is None
+            assert captured_results
+            public_result = captured_results[-1]
+            assert public_result["event_sequence"] == len(public_result["events"])
+            assert PARENT_CONTEXT_DELIVERY_METADATA_KEY not in public_result["metadata"]
+            assert all(
+                event.get("type") != PARENT_CONTEXT_DELIVERED_EVENT
+                for event in public_result["events"]
+            )
+            assert all(
+                PARENT_CONTEXT_DELIVERY_METADATA_KEY
+                not in (event.get("metadata") or {})
+                for event in public_result["events"]
+            )
+        finally:
+            bus.off(Method.PROVIDER_EVENT, capture_event)
+            bus.off(Method.PROVIDER_RESULT, capture_result)
 
     asyncio.run(run())
 

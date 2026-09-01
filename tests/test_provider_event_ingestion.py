@@ -10,6 +10,11 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent_host.work_ledger_store import WorkLedgerStore
+from agent_host.provider_identity import (
+    PARENT_CONTEXT_DELIVERED_EVENT,
+    PARENT_CONTEXT_DELIVERY_METADATA_KEY,
+    parent_context_delivery_receipt,
+)
 from server.provider_event_ingestion import ProviderEventIngestor
 from server.work_activity_snapshot import ACTIVITY_METADATA_KEY
 
@@ -118,6 +123,65 @@ def test_terminal_result_consumes_run_evidence_and_projects_activity() -> None:
             assert stored.result == "Finished."
             assert stored.metadata["provider_session"] == {"id": "opaque"}
             assert stored.metadata[ACTIVITY_METADATA_KEY]["phase"] == "review"
+
+
+def test_only_native_context_acceptance_persists_the_delivery_cursor() -> None:
+    with tempfile.TemporaryDirectory(prefix="provider_ingestion_context_") as temp:
+        root = Path(temp)
+        workspace = root / "project"
+        workspace.mkdir()
+        now = [100.0]
+        with WorkLedgerStore(root / "ledger.sqlite3", clock=lambda: now[0]) as store:
+            _, attempt = _prepared_attempt(store, workspace)
+            ingestor = ProviderEventIngestor(
+                store,
+                clock=lambda: now[0],
+                default_surface="test",
+            )
+            ingestor.ingest_event(_event(attempt.attempt_id, "run.created"))
+
+            planned = store.get_attempt(attempt.attempt_id)
+            assert planned is not None
+            assert PARENT_CONTEXT_DELIVERY_METADATA_KEY not in planned.metadata
+            item_before = store.get_work_item(planned.work_item_id)
+            assert item_before is not None
+            attempt_updated_at = planned.updated_at
+            item_updated_at = item_before.updated_at
+            item_last_activity_at = item_before.last_activity_at
+            now[0] = 250.0
+
+            source_metadata = {
+                "work": {"attempt_id": attempt.attempt_id},
+                "turn_id": "turn-delivered",
+                "source_user_text": "Apply the delivered constraint.",
+                "source_context_scope": "chat:chat-events",
+                "source_context_mode": "snapshot",
+            }
+            receipt = parent_context_delivery_receipt(source_metadata)
+            delivered = ingestor.ingest_event(
+                {
+                    "provider": "locus",
+                    "run_id": "run-one",
+                    "type": PARENT_CONTEXT_DELIVERED_EVENT,
+                    "payload": {},
+                    "metadata": {
+                        **source_metadata,
+                        PARENT_CONTEXT_DELIVERY_METADATA_KEY: receipt,
+                    },
+                }
+            )
+            assert delivered is not None and delivered.accepted is True
+            stored = store.get_attempt(attempt.attempt_id)
+            assert stored is not None
+            assert stored.metadata[PARENT_CONTEXT_DELIVERY_METADATA_KEY] == receipt
+            assert stored.metadata["source_context_cursor_turn_id"] == (
+                "turn-delivered"
+            )
+            item_after = store.get_work_item(stored.work_item_id)
+            assert item_after is not None
+            assert stored.updated_at == attempt_updated_at
+            assert item_after.updated_at == item_updated_at
+            assert item_after.last_activity_at == item_last_activity_at
 
 
 def test_late_contradictory_result_cannot_reinterpret_terminal_truth() -> None:

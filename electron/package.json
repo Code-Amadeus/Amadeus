@@ -6,6 +6,7 @@
   "main": "dist/main/index.js",
   "scripts": {
     "postinstall": "install-electron",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",

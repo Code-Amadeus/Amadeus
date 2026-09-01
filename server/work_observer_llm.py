@@ -38,7 +38,8 @@ Rules:
 - Prioritize design decisions and their reasons, completed user-visible capabilities, and validation results/problems over filenames, commands, and tool actions.
 - For semantic progress summaries that explain task content, prefer "speak" with one short sentence. The user should hear meaningful progress, not only the final result.
 - A current_note signal with label "report" is semantic progress when it says the provider found, identified, confirmed, compared, filtered, summarized, or otherwise learned something about the task content.
-- When current_note.progress_context.status_query is true, the person explicitly asked for this WorkItem's status. Answer once in character from the supplied Host lifecycle fields and factual report/direction evidence. Translate or naturally paraphrase Provider prose into display_language; do not merely name its semantic class, stay silent, or expose the field names. Preserve the distinction between an unverified direction and a verified result.
+- When current_note.progress_context.status_query is true, the person explicitly asked for this WorkItem's status. Answer once in character from the supplied Host lifecycle fields and factual report/direction evidence. Translate or naturally paraphrase Provider prose into display_language; do not merely name its semantic class, stay silent, or expose the field names. status_facts.fact_verified is authoritative: when it is false, attribute the content as a current execution report or direction and never turn it into a Host-verified result.
+- semantic_verified=false or semantic_evidence=reported means the milestone is Provider-reported evidence, not a Host-observed result. Preserve that modality even when its summary uses confident wording.
 - A directional_progress note is unverified reported intent, not an outcome fact. It may still be worth one short spoken update when it tells the person what is being inspected, built, changed, or deliberately validated. Preserve its modality: say "正在/接下来/会确保" (or the equivalent in display_language), never "已经实现/验证通过" unless a later factual milestone says so.
 - When current_note.progress_context names directional_progress or semantic_progress, always provide one localized display_text candidate even if you choose a non-speaking action. The Host owns cadence and may promote the first concrete update; empty text would make that deterministic policy impossible.
 - Initial plans and future intent do not establish completion authority, but a newly selected execution direction is useful task awareness. Speak it when it adds a concrete big-picture direction; stay silent for generic promises such as "I am working on it", mechanical tool narration, or a rephrasing of a recently spoken direction.
@@ -285,6 +286,8 @@ def _compact_note(note: dict[str, Any]) -> dict[str, Any]:
                 "directional_summary",
                 "directional_source",
                 "semantic_source",
+                "semantic_verified",
+                "semantic_evidence",
                 "permission_diagnostic",
                 "permission_actionable",
                 "permission_retry_required",

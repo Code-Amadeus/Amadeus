@@ -84,7 +84,11 @@ class AuipLaunchCandidate:
 
 @dataclass(frozen=True, slots=True)
 class AuipPreparationCandidate:
-    """Host-verified runnable Work that needs AUIP before it can launch."""
+    """Host-grounded Work that needs AUIP before it can launch.
+
+    ``files`` is populated for a verified runnable delivery and remains empty
+    while the same WorkItem is still producing its first Artifact.
+    """
 
     work_item_id: str
     work_title: str
@@ -410,11 +414,53 @@ class AuipLaunchCoordinator:
         turn_id: str,
         prepare_work: PreparationDispatcher | None,
     ) -> dict[str, Any]:
-        """Resolve one generic runnable delivery before starting ordinary Work."""
+        """Resolve one runnable or uniquely active Work before ordinary amend."""
 
         if prepare_work is None:
             await self._announce_failure(session_id, "preparation_unavailable")
             return {"ok": False, "error": "preparation_unavailable"}
+        active_attempt_ids = tuple(
+            dict.fromkeys(
+                str(value).strip()
+                for value in (attrs.get("_host_active_work_attempt_ids") or ())
+                if str(value).strip()
+            )
+        )
+        if active_attempt_ids:
+            rows = self._active_work_rows(session_id, active_attempt_ids)
+            candidates = [
+                AuipPreparationCandidate(
+                    work_item_id=str(row.get("work_item_id") or ""),
+                    work_title=str(row.get("title") or "WorkItem"),
+                    files=(),
+                )
+                for row in rows
+                if str(row.get("work_item_id") or "").strip()
+            ]
+            candidates = list(
+                {
+                    candidate.work_item_id: candidate
+                    for candidate in candidates
+                }.values()
+            )
+            if len(candidates) == 1:
+                return await self._begin_preparation(
+                    session_id,
+                    turn_id,
+                    candidates[0],
+                    _mode(attrs.get("mode")),
+                    prepare_work,
+                )
+            if len(candidates) > 1:
+                return await self._request_preparation_selection(
+                    session_id,
+                    turn_id,
+                    candidates,
+                    _mode(attrs.get("mode")),
+                    prepare_work,
+                )
+            await self._announce_failure(session_id, "deferred_work_unavailable")
+            return {"ok": False, "error": "deferred_work_unavailable"}
         candidates = self.preparation_candidates(session_id)
         frozen_work_item_id = str(
             attrs.get("_host_preparation_work_item_id") or ""
