@@ -2276,6 +2276,12 @@ async def bootstrap(port: int = 17777) -> None:
             await asyncio.to_thread(stop_llama_server)
         except Exception:
             logger.exception("failed to stop managed llama-server")
+        try:
+            from openclaw.gateway import stop_openclaw_gateway
+
+            await stop_openclaw_gateway()
+        except Exception:
+            logger.exception("failed to stop managed OpenClaw Gateway")
 
 
 # adapter: drives core.chat_runtime directly (no main.py attribute injection).
