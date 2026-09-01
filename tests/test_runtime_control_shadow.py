@@ -48,10 +48,22 @@ class _Coordinator:
                     "state": "active",
                     "execution": "running",
                     "relation": "running",
+                    "source_user_text": (
+                        "你能帮我做一个植物大战僵尸的游戏嘛？"
+                        "画面还原一些，然后导出到桌面"
+                    ),
                 }
             ],
             "complete": True,
         }
+
+    @classmethod
+    def conversation_work_items(cls, session_id: str, *, limit: int):
+        assert limit == 5
+        return cls.conversation_work_items_for_resolution(
+            session_id,
+            limit=200,
+        )["items"]
 
     @staticmethod
     def conversation_binding(session_id: str):
@@ -198,6 +210,104 @@ def test_control_prompt_augmentation_excludes_reference_rosters() -> None:
     assert "WorkItem identities are withheld" in prompt
     assert project_renderer.call_args.kwargs["include_candidates"] is False
     assert work_renderer.call_args.kwargs["include_candidates"] is False
+
+
+def test_runtime_correction_binds_multiplayer_followup_to_unique_active_work() -> None:
+    async def run() -> None:
+        asked = []
+
+        async def query(messages):
+            asked.append(messages)
+            joined = "\n".join(message["content"] for message in messages)
+            if "[Independent candidate verdict - FINAL]" in joined:
+                return (
+                    '{"evidence":"contextual"}'
+                    if "work_item:work_true" in joined
+                    else '{"evidence":"none"}'
+                )
+            assert "Unique active goal text" in joined
+            assert "植物大战僵尸" in joined
+            assert "双人对战" in joined
+            return (
+                '{"decisions":[{"proposal_index":0,"provider":"codex",'
+                '"intent":"amend","subject":"work_item",'
+                '"work_placement":"not_applicable",'
+                '"session_context":"unchanged","workspace_effect":"write",'
+                '"reference_mode":"candidates"}]}'
+            )
+
+        observer = RuntimeControlDecisionShadow(
+            coordinator=_Coordinator(),
+            query=query,
+        )
+        batch = seal_control_proposals(
+            [
+                {
+                    "type": "DELEGATE",
+                    "attrs": {
+                        "provider": "codex",
+                        "intent": "execute",
+                        "subject": "project",
+                        "project_id": "project_true",
+                        "task": "新建双人对战游戏",
+                    },
+                }
+            ],
+            turn_id="turn-multiplayer-amend",
+            session_id="session-shadow",
+            user_text=(
+                "你能帮我做成双人对战的嘛？一方可以控制植物，"
+                "另一方控制僵尸，僵尸也要资源才能布置"
+            ),
+            transport="inline_tag",
+            prior_messages=(
+                {
+                    "role": "user",
+                    "content": (
+                        "你能帮我做一个植物大战僵尸的游戏嘛？"
+                        "画面还原一些，然后导出到桌面"
+                    ),
+                },
+                {
+                    "role": "assistant",
+                    "content": "[REFERENCE_BLOCKED] 这个操作没有执行。",
+                },
+            ),
+        )
+        with (
+            patch(
+                "server.work_ledger_coordinator.get_work_ledger_coordinator",
+                return_value=_Coordinator(),
+            ),
+            patch(
+                "llm.prompts.registered_provider_ids",
+                return_value=("codex", "browser"),
+            ),
+        ):
+            from server.work_context import render_conversation_work_context
+
+            active_context = render_conversation_work_context(
+                "session-shadow",
+                include_candidates=False,
+            )
+            assert "Unique active goal text" in active_context, active_context
+            result = await observer.capture(batch)
+
+        assert result.decision_status == "ok", (
+            result.reason,
+            result.decision_reply,
+            len(asked),
+        )
+        assert result.outcome == "diverge"
+        assert len(result.canonical_actions) == 1
+        action = result.canonical_actions[0]
+        assert action["intent"] == "amend"
+        assert action["workspace_ref"] == "work_true"
+        assert action["subject"] == "work_item"
+        assert "project_id" not in action
+        assert len(asked) == 3
+
+    asyncio.run(run())
 
 
 def test_incomplete_project_catalog_fails_closed_without_querying() -> None:

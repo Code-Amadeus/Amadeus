@@ -17,6 +17,10 @@ from agent_host.provider_catalog import (
     CODEX_APP_SERVER_MANIFEST,
     OPENCLAW_MANIFEST,
 )
+from agent_host.provider_identity import (
+    PARENT_CONTEXT_DELIVERY_METADATA_KEY,
+    parent_context_delivery_receipt,
+)
 from agent_host.provider_types import ProviderRunRequest, ProviderSessionHandle
 from agent_host.provider_contract import ProviderRequirements, ProviderSelection
 from agent_host.work_ledger_store import WorkLedgerConflict, WorkLedgerStore
@@ -38,6 +42,9 @@ def test_workspace_less_work_item_attaches_its_provider_session() -> None:
                         metadata={
                             "session_id": "voice-session",
                             "intent": "execute",
+                            "turn_id": "turn-1",
+                            "source_user_text": "Find and summarize the Amadeus page.",
+                            "source_user_context": 'User: "We are researching Amadeus."',
                             "provider_manifest": OPENCLAW_MANIFEST.to_dict(),
                         },
                     )
@@ -54,7 +61,21 @@ def test_workspace_less_work_item_attaches_its_provider_session() -> None:
                 store.update_attempt(
                     first_attempt.attempt_id,
                     execution_status="succeeded",
-                    metadata={"provider_session": handle.to_dict()},
+                    metadata={
+                        "provider_session": handle.to_dict(),
+                        PARENT_CONTEXT_DELIVERY_METADATA_KEY: (
+                            parent_context_delivery_receipt(
+                                {
+                                    "source_context_scope": "chat:voice-session",
+                                    "turn_id": "turn-1",
+                                    "source_user_text": (
+                                        "Find and summarize the Amadeus page."
+                                    ),
+                                    "source_context_mode": "snapshot",
+                                }
+                            )
+                        ),
+                    },
                 )
 
                 # A terminal target must bypass the active steer/replacement
@@ -121,6 +142,16 @@ def test_workspace_less_work_item_attaches_its_provider_session() -> None:
                         metadata={
                             "session_id": "voice-session",
                             "intent": "amend",
+                            "turn_id": "turn-2",
+                            "source_user_text": "Inspect the first section now.",
+                            "source_user_context": "\n".join(
+                                [
+                                    'User: "We are researching Amadeus."',
+                                    'User: "Find and summarize the Amadeus page."',
+                                    'Main Chat: "I found the page and can continue."',
+                                    'User: "Keep the comparison concise."',
+                                ]
+                            ),
                             "continuation": "amend",
                             "provider_manifest": OPENCLAW_MANIFEST.to_dict(),
                             "work": {"work_item_id": work_item_id},
@@ -129,6 +160,20 @@ def test_workspace_less_work_item_attaches_its_provider_session() -> None:
                 )
                 assert followup.session == handle
                 assert followup.cwd is None
+                assert followup.metadata["source_context_mode"] == "delta"
+                assert followup.metadata["source_context_base_turn_id"] == "turn-1"
+                assert "We are researching Amadeus" not in followup.metadata[
+                    "source_user_context"
+                ]
+                assert "Find and summarize" not in followup.metadata[
+                    "source_user_context"
+                ]
+                assert "I found the page and can continue" in followup.metadata[
+                    "source_user_context"
+                ]
+                assert "Keep the comparison concise" in followup.metadata[
+                    "source_user_context"
+                ]
                 assert followup.metadata["work"]["work_item_id"] == work_item_id
                 latest = store.list_attempts(work_item_id)[-1]
                 assert latest.metadata["provider_session"] == handle.to_dict()
@@ -137,12 +182,206 @@ def test_workspace_less_work_item_attaches_its_provider_session() -> None:
                     "provider": "openclaw",
                     "previous_attempt_id": first_attempt.attempt_id,
                 }
+                assert latest.metadata["source_context_mode"] == "delta"
+                assert latest.metadata["source_context_base_turn_id"] == "turn-1"
                 assert "replaces_attempt_id" not in latest.metadata
                 operations = store.list_operations(work_item_id)
                 assert len(operations) == 2
                 assert operations[-1].metadata["previous_operation_id"] == (
                     first_attempt.operation_id
                 )
+            finally:
+                coordinator.close()
+
+
+def test_failed_prepared_attempt_does_not_advance_the_delivered_cursor() -> None:
+    with tempfile.TemporaryDirectory(prefix="provider-context-failed-attempt-") as temp:
+        with WorkLedgerStore(Path(temp) / "ledger.sqlite3") as store:
+            coordinator = WorkLedgerCoordinator(store)
+            coordinator.configure()
+            try:
+                first = coordinator.prepare_request(
+                    ProviderRunRequest(
+                        provider="openclaw",
+                        task="Start the original research goal.",
+                        metadata={
+                            "session_id": "chat-A",
+                            "intent": "execute",
+                            "turn_id": "turn-1",
+                            "source_user_text": "original goal",
+                            "source_user_context": 'User: "earlier setup"',
+                            "source_context_scope": "chat:chat-A",
+                            "provider_manifest": OPENCLAW_MANIFEST.to_dict(),
+                        },
+                    )
+                )
+                work_item_id = str(first.metadata["work"]["work_item_id"])
+                first_attempt = store.list_attempts(work_item_id)[-1]
+                handle = ProviderSessionHandle(
+                    provider="openclaw",
+                    session_id="agent:main:dashboard:receipt-test",
+                    scope="work_item",
+                )
+                store.update_attempt(
+                    first_attempt.attempt_id,
+                    execution_status="succeeded",
+                    metadata={
+                        "provider_session": handle.to_dict(),
+                        PARENT_CONTEXT_DELIVERY_METADATA_KEY: (
+                            parent_context_delivery_receipt(
+                                {
+                                    "source_context_scope": "chat:chat-A",
+                                    "turn_id": "turn-1",
+                                    "source_user_text": "original goal",
+                                    "source_context_mode": "snapshot",
+                                }
+                            )
+                        ),
+                    },
+                )
+
+                second = coordinator.prepare_request(
+                    ProviderRunRequest(
+                        provider="openclaw",
+                        task="Add the second constraint.",
+                        metadata={
+                            "session_id": "chat-A",
+                            "intent": "amend",
+                            "continuation": "amend",
+                            "turn_id": "turn-2",
+                            "source_user_text": "second constraint",
+                            "source_user_context": "\n".join(
+                                [
+                                    'User: "original goal"',
+                                    'Main Chat: "starting it"',
+                                ]
+                            ),
+                            "source_context_scope": "chat:chat-A",
+                            "provider_manifest": OPENCLAW_MANIFEST.to_dict(),
+                            "work": {"work_item_id": work_item_id},
+                        },
+                    )
+                )
+                second_attempt = store.get_attempt(second.metadata["work"]["attempt_id"])
+                assert second_attempt is not None
+                assert second_attempt.metadata["provider_session"] == handle.to_dict()
+                assert PARENT_CONTEXT_DELIVERY_METADATA_KEY not in second_attempt.metadata
+                store.update_attempt(
+                    second_attempt.attempt_id,
+                    execution_status="failed",
+                    error="provider failed before accepting the prompt",
+                )
+
+                third = coordinator.prepare_request(
+                    ProviderRunRequest(
+                        provider="openclaw",
+                        task="Continue after the failed start.",
+                        metadata={
+                            "session_id": "chat-A",
+                            "intent": "amend",
+                            "continuation": "amend",
+                            "turn_id": "turn-3",
+                            "source_user_text": "continue now",
+                            "source_user_context": "\n".join(
+                                [
+                                    'User: "original goal"',
+                                    'Main Chat: "starting it"',
+                                    'User: "second constraint"',
+                                    'Main Chat: "provider start failed before delivery"',
+                                ]
+                            ),
+                            "source_context_scope": "chat:chat-A",
+                            "provider_manifest": OPENCLAW_MANIFEST.to_dict(),
+                            "work": {"work_item_id": work_item_id},
+                        },
+                    )
+                )
+
+                assert third.metadata["source_context_mode"] == "delta"
+                assert third.metadata["source_context_base_turn_id"] == "turn-1"
+                delivered = third.metadata["source_user_context"]
+                assert "original goal" not in delivered
+                assert "second constraint" in delivered
+                assert "provider start failed before delivery" in delivered
+            finally:
+                coordinator.close()
+
+
+def test_provider_delta_never_crosses_parent_chat_sessions() -> None:
+    with tempfile.TemporaryDirectory(prefix="provider-context-cross-chat-") as temp:
+        with WorkLedgerStore(Path(temp) / "ledger.sqlite3") as store:
+            coordinator = WorkLedgerCoordinator(store)
+            coordinator.configure()
+            try:
+                first = coordinator.prepare_request(
+                    ProviderRunRequest(
+                        provider="openclaw",
+                        task="Start in chat A.",
+                        metadata={
+                            "session_id": "chat-A",
+                            "intent": "execute",
+                            "turn_id": "turn-A",
+                            "source_user_text": "same old sentence",
+                            "source_context_scope": "chat:chat-A",
+                            "provider_manifest": OPENCLAW_MANIFEST.to_dict(),
+                        },
+                    )
+                )
+                work_item_id = str(first.metadata["work"]["work_item_id"])
+                first_attempt = store.list_attempts(work_item_id)[-1]
+                handle = ProviderSessionHandle(
+                    provider="openclaw",
+                    session_id="agent:main:dashboard:cross-chat-test",
+                    scope="work_item",
+                )
+                store.update_attempt(
+                    first_attempt.attempt_id,
+                    execution_status="succeeded",
+                    metadata={
+                        "provider_session": handle.to_dict(),
+                        PARENT_CONTEXT_DELIVERY_METADATA_KEY: (
+                            parent_context_delivery_receipt(
+                                {
+                                    "source_context_scope": "chat:chat-A",
+                                    "turn_id": "turn-A",
+                                    "source_user_text": "same old sentence",
+                                    "source_context_mode": "snapshot",
+                                }
+                            )
+                        ),
+                    },
+                )
+
+                second = coordinator.prepare_request(
+                    ProviderRunRequest(
+                        provider="openclaw",
+                        task="Continue the WorkItem from chat B.",
+                        metadata={
+                            "session_id": "chat-B",
+                            "intent": "amend",
+                            "continuation": "amend",
+                            "turn_id": "turn-B",
+                            "source_user_text": "continue from chat B",
+                            "source_user_context": "\n".join(
+                                [
+                                    'User: "chat-B goal"',
+                                    'User: "same old sentence"',
+                                    'Main Chat: "chat-B constraint"',
+                                ]
+                            ),
+                            "source_context_scope": "chat:chat-B",
+                            "provider_manifest": OPENCLAW_MANIFEST.to_dict(),
+                            "work": {"work_item_id": work_item_id},
+                        },
+                    )
+                )
+
+                assert second.metadata["source_context_mode"] == "snapshot_fallback"
+                assert second.session == handle
+                delivered = second.metadata["source_user_context"]
+                assert "chat-B goal" in delivered
+                assert "same old sentence" in delivered
+                assert "chat-B constraint" in delivered
             finally:
                 coordinator.close()
 
@@ -260,6 +499,75 @@ def test_codex_claims_mid_run_steering_only_with_what_backs_it() -> None:
     assert CODEX_APP_SERVER_MANIFEST.capabilities.steering == "immediate"
     assert CODEX_APP_SERVER_MANIFEST.capabilities.resume == "attach"
     assert CODEX_APP_SERVER_MANIFEST.capabilities.cancellation == "confirmed"
+
+
+def test_active_steer_receives_only_parent_context_since_last_handoff() -> None:
+    async def scenario() -> None:
+        active = SimpleNamespace(
+            provider="codex",
+            provider_run_id="codex-active",
+            work_item_id="work-active",
+            attempt_id="attempt-active",
+        )
+        coordinator = SimpleNamespace(
+            active_attempt_for_item=lambda _work_item_id: active,
+        )
+        steer = AsyncMock(
+            return_value={"accepted": True, "safe_boundary": "provider_native"}
+        )
+        runtime = SimpleNamespace(
+            get_run=lambda _run_id: SimpleNamespace(
+                status="running",
+                metadata={
+                    "source_user_text": "上一轮当前请求。",
+                    "turn_id": "turn-1",
+                    "source_context_scope": "chat:chat-steer",
+                    PARENT_CONTEXT_DELIVERY_METADATA_KEY: (
+                        parent_context_delivery_receipt(
+                            {
+                                "source_context_scope": "chat:chat-steer",
+                                "turn_id": "turn-1",
+                                "source_user_text": "上一轮当前请求。",
+                                "source_context_mode": "snapshot",
+                            }
+                        )
+                    ),
+                    "steering": {},
+                },
+            ),
+            get_manifest=lambda _provider: CODEX_APP_SERVER_MANIFEST,
+            steer=steer,
+        )
+
+        outcome = await route_active_amendment(
+            runtime=runtime,
+            coordinator=coordinator,
+            work_item_id="work-active",
+            selected_provider="codex",
+            task_text="Apply the newly referenced constraint.",
+            turn_id="turn-2",
+            source_user_text="把新约束也加上。",
+            source_context_scope="chat:chat-steer",
+            source_user_context="\n".join(
+                [
+                    'User: "很早以前的目标。"',
+                    'User: "上一轮当前请求。"',
+                    'Main Chat: "上一轮结束后的回复。"',
+                    'User: "两轮之间的新约束。"',
+                ]
+            ),
+        )
+
+        assert outcome == {"handled": True, "message": "[amend] active run steered"}
+        request = steer.await_args.args[1]
+        assert request.metadata["source_context_mode"] == "delta"
+        assert request.metadata["source_context_base_turn_id"] == "turn-1"
+        assert "很早以前的目标" not in request.metadata["source_user_context"]
+        assert "上一轮当前请求" not in request.metadata["source_user_context"]
+        assert "上一轮结束后的回复" in request.metadata["source_user_context"]
+        assert "两轮之间的新约束" in request.metadata["source_user_context"]
+
+    asyncio.run(scenario())
 
 
 def test_intake_cannot_inject_a_session_without_work_item_lineage() -> None:

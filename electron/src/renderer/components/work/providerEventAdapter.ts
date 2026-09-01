@@ -6,6 +6,7 @@ import type {
   WorkSignalPhase,
 } from './types'
 import { eventNarrative, summarizePayload } from './workState'
+import { visibleProviderEvents } from './providerEventVisibility'
 
 function eventId(event: ProviderEvent, index: number): string {
   return `${event.run_id}:${index}:${event.type}`
@@ -188,7 +189,7 @@ function dedupeSignals(signals: WorkSignal[]): WorkSignal[] {
 }
 
 export function providerRunToWorkSignals(run: ProviderRun): WorkSignal[] {
-  const events = run.events || []
+  const events = visibleProviderEvents(run.events || [])
   if (events.length === 0) {
     return [{
       id: `${run.run_id}:queued`,

@@ -19,7 +19,10 @@ from agent_host.provider_progress import (
     split_progress_stream,
     with_progress_contract,
 )
-from agent_host.provider_identity import with_main_role_reference
+from agent_host.provider_identity import (
+    PARENT_CONTEXT_DELIVERED_EVENT,
+    with_parent_conversation_context,
+)
 from agent_host.provider_types import (
     EmitProviderEvent,
     ProviderEvent,
@@ -185,6 +188,14 @@ class OpenClawAdapter:
                         )
 
                 async def native_started_callback(_native_run_id: str) -> None:
+                    await emit(
+                        ProviderEvent(
+                            provider=self.provider_id,
+                            run_id=run_id,
+                            type=PARENT_CONTEXT_DELIVERED_EVENT,
+                            metadata=dict(current_metadata),
+                        )
+                    )
                     if current_revision <= 0:
                         return
                     await emit(
@@ -208,7 +219,7 @@ class OpenClawAdapter:
                     call_task = asyncio.create_task(
                         self._run_gateway_turn(
                             control,
-                            task=with_main_role_reference(
+                            task=with_parent_conversation_context(
                                 current_task,
                                 metadata=current_metadata,
                                 execution_provider=self.provider_id,

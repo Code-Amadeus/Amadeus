@@ -11,6 +11,7 @@ from typing import Any, Awaitable, Callable
 from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect
 
+from agent_host.provider_identity import PARENT_CONTEXT_DELIVERED_EVENT
 from server.protocol import Envelope, Method
 from server.event_bus import bus
 
@@ -51,6 +52,15 @@ class ConnectionManager:
 
         # forward internal events to this client
         async def forward(method: str, params: dict[str, Any]) -> None:
+            if (
+                method == Method.PROVIDER_EVENT
+                and str(params.get("type") or "").strip().lower()
+                == PARENT_CONTEXT_DELIVERED_EVENT
+            ):
+                # This receipt is internal cursor authority. Publishing it to
+                # clients would create a fake Work signal and update visible
+                # run timing even though no execution progress occurred.
+                return
             if conn_id in self._connections:
                 try:
                     if method == Method.CHAT_INTERRUPTED:

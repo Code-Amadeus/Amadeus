@@ -9,6 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from server.event_bus import bus
+from agent_host.provider_identity import PARENT_CONTEXT_DELIVERED_EVENT
 from server.protocol import Method
 from server.ws_handler import ConnectionManager
 
@@ -100,6 +101,34 @@ def test_outbound_events_are_serialized_per_connection() -> None:
     asyncio.run(run())
 
 
+def test_parent_context_delivery_receipt_stays_off_the_client_event_stream() -> None:
+    async def run() -> None:
+        manager = ConnectionManager()
+        ws = _ConcurrentWriteGuard()
+        task = asyncio.create_task(manager.handle_connection(ws))
+        for _ in range(20):
+            if manager._connections:
+                break
+            await asyncio.sleep(0)
+
+        await bus.emit(
+            Method.PROVIDER_EVENT,
+            {
+                "provider": "codex",
+                "run_id": "run_receipt",
+                "type": PARENT_CONTEXT_DELIVERED_EVENT,
+                "metadata": {"session_id": "chat_a", "turn_id": "turn_a"},
+            },
+        )
+        assert ws.payloads == []
+        assert len(manager._connections) == 1
+
+        ws.release.set()
+        await task
+
+    asyncio.run(run())
+
+
 def test_auip_launch_request_reaches_the_trusted_desktop_client() -> None:
     async def run() -> None:
         manager = ConnectionManager()
@@ -175,6 +204,7 @@ def test_auip_surface_close_request_reaches_the_trusted_desktop_client() -> None
 if __name__ == "__main__":
     test_failed_forward_is_removed_once()
     test_outbound_events_are_serialized_per_connection()
+    test_parent_context_delivery_receipt_stays_off_the_client_event_stream()
     test_auip_launch_request_reaches_the_trusted_desktop_client()
     test_auip_surface_close_request_reaches_the_trusted_desktop_client()
     print("all websocket disconnect tests passed")

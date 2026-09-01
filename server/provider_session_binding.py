@@ -42,6 +42,11 @@ def resolve_provider_session_attachment(
     ``resume=attach``, the predecessor belongs to another Provider, or the
     predecessor did not produce a work-item-scoped session.  A malformed or
     cross-Provider stored handle is a durable-state conflict and fails closed.
+
+    Dialogue-source scope is intentionally not an attachment key. It protects
+    parent-context delta provenance, while native Provider continuity remains
+    WorkItem-scoped; a cross-source amendment therefore reuses this session
+    but receives a bounded snapshot rather than a cross-source delta.
     """
 
     clean_provider = str(request_provider or "").strip().lower()

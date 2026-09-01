@@ -441,9 +441,18 @@ def test_active_amendment_assembly_starts_the_prepared_replacement_attempt() -> 
                     "provider": "codex",
                     "intent": "amend",
                     "workspace_ref": "w-active",
+                    "_host_source_user_text": "你怎么还没改？",
+                    "_host_source_user_context": (
+                        'User: "把现有小游戏改成双人模式。" | '
+                        'Main Chat: "我现在开始修改。"'
+                    ),
                 },
             )
         route_active.assert_awaited_once()
+        assert route_active.await_args.kwargs["source_user_text"] == "你怎么还没改？"
+        assert "把现有小游戏改成双人模式" in (
+            route_active.await_args.kwargs["source_user_context"]
+        )
         request = start.await_args.args[0]
         assert request.provider == "codex" and request.mode == "agent"
         assert request.task == replacement["instruction"]

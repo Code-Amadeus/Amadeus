@@ -340,6 +340,8 @@ def _is_validation_command(command: str) -> bool:
 def _tool_succeeded(payload: dict[str, Any]) -> bool:
     if "ok" in payload:
         return payload.get("ok") is True
+    if "success" in payload:
+        return payload.get("success") is True
     if payload.get("exit_code") is not None:
         try:
             return int(payload.get("exit_code")) == 0
