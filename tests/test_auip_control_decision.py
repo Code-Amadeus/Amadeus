@@ -600,6 +600,90 @@ def test_active_work_is_exposed_only_as_a_bounded_ambiguity_fact() -> None:
     ).status == "invalid"
 
 
+def test_pending_work_entry_compiles_to_host_grounded_preparation() -> None:
+    async def scenario() -> None:
+        captured: list[dict[str, str]] = []
+
+        async def query(messages):
+            captured.extend(messages)
+            return json.dumps(
+                {
+                    "action": "engage",
+                    "timing": "now",
+                    "mode": "collaborate",
+                    "target": "",
+                    "work_relation": "subsumed",
+                }
+            )
+
+        resolver = AuipControlDecisionResolver(
+            query=query,
+            app_runtime=_Runtime(),
+            launch_catalog=_Catalog(),
+            has_active_work=lambda _session_id: ("attempt-private",),
+        )
+        pending = resolver.capture(
+            session_id="s",
+            user_text="你能接入他吗？我想和你一起玩",
+            prior_messages=[
+                {"role": "user", "content": "帮我做一个双人游戏。"},
+                {"role": "assistant", "content": "还在制作。"},
+            ],
+            include_work_followup=True,
+        )
+        assert pending is not None
+        decision = await pending
+
+        assert decision.status == "ok"
+        assert decision.action == "prepare"
+        assert decision.mode == "collaborate"
+        assert decision.work_relation == "subsumed"
+        assert decision.active_work_attempt_ids == ("attempt-private",)
+        assert decision.control_attrs() == {
+            "action": "prepare",
+            "mode": "collaborate",
+            "_host_active_work_attempt_ids": ("attempt-private",),
+        }
+        wire = json.dumps(captured, ensure_ascii=False)
+        assert "other_provider_work_active" in wire
+        assert "attempt-private" not in wire
+
+    asyncio.run(scenario())
+
+
+def test_pending_work_does_not_absorb_an_independent_work_clause() -> None:
+    async def scenario() -> None:
+        async def query(_messages):
+            return json.dumps(
+                {
+                    "action": "engage",
+                    "timing": "now",
+                    "mode": "collaborate",
+                    "target": "",
+                    "work_relation": "independent",
+                }
+            )
+
+        resolver = AuipControlDecisionResolver(
+            query=query,
+            app_runtime=_Runtime(),
+            launch_catalog=_Catalog(),
+            has_active_work=lambda _session_id: ("attempt-private",),
+        )
+        pending = resolver.capture(
+            session_id="s",
+            user_text="游戏继续做，另外帮我查一下明天的天气。",
+            include_work_followup=True,
+        )
+        assert pending is not None
+        decision = await pending
+
+        assert decision.status == "invalid"
+        assert decision.control_attrs() is None
+
+    asyncio.run(scenario())
+
+
 def test_resolver_exposes_only_the_current_lifecycle_vocabulary() -> None:
     async def scenario() -> None:
         active_messages = []
@@ -1950,6 +2034,81 @@ def test_preparation_fills_only_a_missing_bounded_work_proposal() -> None:
                 "mode": "collaborate",
                 "target": "井字棋",
                 "_host_preparation_work_item_id": "work-existing-game",
+            }
+        ]
+
+    asyncio.run(scenario())
+
+
+def test_active_preparation_suppresses_a_duplicate_new_work_proposal() -> None:
+    async def scenario() -> None:
+        routed: list[dict] = []
+
+        async def route(attrs, **_context):
+            routed.append(dict(attrs))
+
+        async def decide(_messages):
+            return json.dumps(
+                {
+                    "action": "engage",
+                    "timing": "now",
+                    "mode": "collaborate",
+                    "target": "",
+                    "work_relation": "subsumed",
+                }
+            )
+
+        role_work = {
+            "provider": "codex",
+            "intent": "execute",
+            "subject": "project",
+            "project_id": "project-wrong",
+            "task": "你能接入他吗？我想和你一起玩",
+        }
+        runtime = ChatRuntime()
+        runtime.configure(
+            control_proposal_observer=_AuthorityObserver(
+                outcome="agree",
+                actions=(role_work,),
+            ),
+            control_proposal_authority=True,
+            auip_control_callback=route,
+            auip_control_decider=AuipControlDecisionResolver(
+                query=decide,
+                app_runtime=_Runtime(),
+                launch_catalog=_Catalog(),
+                has_active_work=lambda _session_id: ("attempt-active",),
+            ),
+        )
+        state = _state(
+            "turn-prepare-active-work",
+            question="你能接入他吗？我想和你一起玩",
+        )
+        with (
+            patch("core.chat_runtime.record_actions") as record,
+            patch.object(
+                provider_runtime,
+                "provider_manifests",
+                return_value=(CODEX_APP_SERVER_MANIFEST,),
+            ),
+        ):
+            runtime._consume_stream_chunk(
+                state,
+                '[DELEGATE provider="codex" intent="execute" subject="project" '
+                'project_id="project-wrong" task="你能接入他吗？我想和你一起玩"]',
+            )
+            await runtime._wait_for_control_authority(state)
+            await runtime._wait_for_auip_controls(state)
+
+        record.assert_not_called()
+        assert state.work_delegate_seen is False
+        assert state.control_effective_actions == []
+        assert "[DELEGATE" not in state.history_response
+        assert routed == [
+            {
+                "action": "prepare",
+                "mode": "collaborate",
+                "_host_active_work_attempt_ids": ("attempt-active",),
             }
         ]
 

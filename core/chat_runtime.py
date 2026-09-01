@@ -2488,6 +2488,37 @@ class ChatRuntime:
                 work_item_id = str(
                     getattr(decision, "preparation_work_item_id", "") or ""
                 ).strip()
+                active_attempt_ids = tuple(
+                    getattr(decision, "active_work_attempt_ids", ()) or ()
+                )
+                if (
+                    active_attempt_ids
+                    and str(getattr(decision, "work_relation", "") or "")
+                    == "subsumed"
+                ):
+                    # A pure request to join the one unfinished deliverable is
+                    # fulfilled by Host-grounded AUIP preparation of that
+                    # existing WorkItem.  A role/canonical execute proposal for
+                    # the same transition is duplicate Work, not the owner of
+                    # a second WorkItem.
+                    duplicate_starts = list(starts_work)
+                    actions = [
+                        action
+                        for action in actions
+                        if action not in duplicate_starts
+                    ]
+                    starts_work = [
+                        action
+                        for action in actions
+                        if self._delegate_action_starts_work(action)
+                    ]
+                    logger.info(
+                        "[AUIP-CONTROL] suppressed duplicate Work proposal for "
+                        "active preparation turn_id=%s attempts=%d count=%d",
+                        st.turn_id,
+                        len(active_attempt_ids),
+                        len(duplicate_starts),
+                    )
                 # Cross-axis reconciliation may collapse several competing
                 # Work starts to the one source-local preparation prerequisite,
                 # but it must not turn zero authority-approved starts into one.
