@@ -166,6 +166,12 @@ cd ..
 > GPUs and cannot run the local CUDA voice models. Update the NVIDIA driver and
 > use the community-validated PyTorch 2.7.0 CUDA 12.8 combination instead:
 >
+> 请只在单独的实验项目虚拟环境（例如 `.venv_cu128`）激活后运行以下命令，
+> 不要覆盖正式 `.venv_cu124`。
+>
+> Run this only after activating a separate experimental project venv (for
+> example `.venv_cu128`); do not overwrite the formal `.venv_cu124` environment.
+>
 > ```powershell
 > python -m pip install --upgrade --force-reinstall `
 >   torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 `
