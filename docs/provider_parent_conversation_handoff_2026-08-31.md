@@ -1,7 +1,7 @@
 # Provider parent-conversation handoff: hybrid checkpoint and delta
 
 Date: 2026-08-31
-Status: validated candidate contract; not current product semantics until merged
+Status: accepted current product contract
 Scope: Main Chat -> Host -> execution Provider handoff for new runs, attached continuations, recovery, and active steer
 Tracking: https://github.com/Code-Amadeus/Amadeus/issues/17
 
