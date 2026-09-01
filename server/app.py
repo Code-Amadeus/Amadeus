@@ -4265,10 +4265,10 @@ async def _adjudicate_delegate_reference(
         adjudication_reason,
     )
     await _speak_task_lookup_answer(
-        "这次目标没有可靠地对应到现有 Project 或当前会话的 WorkItem，所以我没有切换项目，也没有启动工作。",
+        "这个操作没有可靠地对应到现有 Project 或当前会话的 WorkItem，所以我没有执行这个操作，也没有更改它的会话目标。",
         voice_text_ja=(
-            "今回の対象を既存の Project または現在の会話の WorkItem に安全に対応できなかったため、"
-            "切り替えも作業開始もしていません。"
+            "この操作の対象を既存の Project または現在の会話の WorkItem に安全に対応できなかったため、"
+            "この操作は実行せず、会話の対象も変更していません。"
         ),
         history_marker="REFERENCE_BLOCKED",
         source="reference_clarification",

@@ -182,7 +182,7 @@ def test_single_action_and_no_action_paths_do_not_gain_operations() -> None:
     plan = asyncio.run(
         resolve_compound_control_plan(
             _messages(single),
-            ({"task": single},),
+            ({"task": "change only the last detail"},),
             (ALPHA, BETA),
             complete=True,
             query=single_query,
@@ -193,6 +193,10 @@ def test_single_action_and_no_action_paths_do_not_gain_operations() -> None:
     assert len(plan.operations) == 1
     assert plan.operations[0].action["workspace_ref"] == "work_alpha"
     assert plan.operations[0].action["task"] == single
+    assert (
+        plan.operations[0].action["_host_payload_source"]
+        == "exact_current_user_clause"
+    )
 
     query_count = 0
 
@@ -240,6 +244,74 @@ def test_single_action_and_no_action_paths_do_not_gain_operations() -> None:
     assert no_gate.status == "ok"
     assert no_gate.operations == ()
     assert never_called is False
+
+
+def test_confirmed_go_ahead_keeps_the_grounded_prior_payload() -> None:
+    current = "那你现在开始做。"
+
+    async def query(messages: list[dict[str, str]]) -> str:
+        joined = "\n".join(message["content"] for message in messages)
+        if "[Compound control decomposition - FINAL]" in joined:
+            return '{"clauses":["那你现在开始做。"]}'
+        return (
+            '{"decisions":[{"proposal_index":0,"provider":"codex",'
+            '"intent":"execute","work_placement":"draft",'
+            '"session_context":"unchanged","reference_mode":"none",'
+            '"payload_continuity":"confirmed_prior_request"}]}'
+        )
+
+    prior_payload = "Create the previously specified desktop game."
+    plan = asyncio.run(
+        resolve_compound_control_plan(
+            _messages(current),
+            ({"task": prior_payload},),
+            (),
+            complete=True,
+            query=query,
+            provider_ids={"codex"},
+        )
+    )
+
+    assert plan.status == "ok"
+    assert len(plan.operations) == 1
+    assert plan.operations[0].action["task"] == prior_payload
+    assert plan.operations[0].action["_host_payload_source"] == (
+        "confirmed_prior_request"
+    )
+
+
+def test_one_desktop_game_request_does_not_dispatch_only_its_trailing_fragment() -> None:
+    current = "你能帮我做一个植物大战僵尸的游戏嘛？画面还原一些，然后导出到桌面"
+
+    async def query(messages: list[dict[str, str]]) -> str:
+        joined = "\n".join(message["content"] for message in messages)
+        if "[Compound control decomposition - FINAL]" in joined:
+            return '{"clauses":["' + current + '"]}'
+        return (
+            '{"decisions":[{"proposal_index":0,"provider":"codex",'
+            '"intent":"execute","target":"desktop",'
+            '"work_placement":"draft","session_context":"unchanged",'
+            '"workspace_effect":"write","reference_mode":"none"}]}'
+        )
+
+    plan = asyncio.run(
+        resolve_compound_control_plan(
+            _messages(current),
+            ({"task": "画面还原一些，然后导出到桌面"},),
+            (),
+            complete=True,
+            query=query,
+            provider_ids={"codex"},
+        )
+    )
+
+    assert plan.status == "ok"
+    assert len(plan.operations) == 1
+    action = plan.operations[0].action
+    assert action["task"] == current
+    assert action["target"] == "desktop"
+    assert action["one_off"] is True
+    assert "project_id" not in action
 
 
 def test_duplicate_context_constraints_collapse_without_provider_payload() -> None:
@@ -308,6 +380,8 @@ if __name__ == "__main__":
     test_decomposition_enumerator_keeps_only_bounded_recent_history()
     test_compound_plan_aligns_amend_and_report_to_different_work_items()
     test_single_action_and_no_action_paths_do_not_gain_operations()
+    test_confirmed_go_ahead_keeps_the_grounded_prior_payload()
+    test_one_desktop_game_request_does_not_dispatch_only_its_trailing_fragment()
     test_duplicate_context_constraints_collapse_without_provider_payload()
     test_malformed_decomposition_gets_one_bounded_retry()
     print("all compound control shadow tests passed")

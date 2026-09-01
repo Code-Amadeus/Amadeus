@@ -1765,6 +1765,41 @@ class ChatRuntime:
             return self._schedule_control_authority(st, snapshot, actions)
         return record_actions(actions)
 
+    def _retain_compound_proposal_gate(
+        self,
+        st: _TurnState,
+        actions: list[dict],
+    ) -> list[dict]:
+        """Keep one action-existence gate for compound turn authority.
+
+        Compound authority decomposes the complete current user turn after one
+        role proposal proves that control exists.  A second role tag is not a
+        second source of user authority; treating it as another independent
+        gate races two full-turn decompositions and can start one operation
+        while a sibling announces that the whole turn was blocked.
+        """
+
+        if not bool(getattr(self, "_compound_control_authority", False)):
+            return actions
+        if st.control_proposal_batches:
+            if actions:
+                logger.warning(
+                    "[COMPOUND-CONTROL] dropped %d duplicate proposal gate(s) "
+                    "after the turn gate was sealed turn_id=%s",
+                    len(actions),
+                    st.turn_id,
+                )
+            return []
+        if len(actions) > 1:
+            logger.warning(
+                "[COMPOUND-CONTROL] collapsed %d same-boundary proposals to "
+                "one turn gate turn_id=%s",
+                len(actions),
+                st.turn_id,
+            )
+            return actions[:1]
+        return actions
+
     def _dispatch_tool_delegates(self, st: _TurnState, accumulator) -> None:
         """Dispatch calls once the stream ends, and record them in history.
 
@@ -1781,6 +1816,7 @@ class ChatRuntime:
         except Exception:
             logger.warning("delegate tool call could not be assembled", exc_info=True)
             return
+        actions = self._retain_compound_proposal_gate(st, list(actions))
         if not actions:
             return
         proposal_actions = [
@@ -1934,6 +1970,8 @@ class ChatRuntime:
                                 st,
                                 action,
                             )
+            if _d:
+                _d = self._retain_compound_proposal_gate(st, _d)
             if _d:
                 st.control_outcome_seen = True
                 st.control_outcome_valid = True
