@@ -239,6 +239,10 @@ Copy-Item .env.example .env
 启动型设置变更后按 **Restart backend to apply**。角色包显示
 **Not installed** 是健康状态，不影响 Chat、Work 或 headless 启动。
 
+默认 B2 AppSession 动作路径不会阻塞首次配置。尚未配置受支持的 AUIP
+动作模型凭据时，Chat 和 Settings 仍可启动；应用动作保持 fail-closed，
+Settings 会明确显示缺少的能力。
+
 ## 兼容路径
 
 ### 可选本地 LLM

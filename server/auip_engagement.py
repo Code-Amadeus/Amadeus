@@ -54,6 +54,7 @@ class AuipEngagementCoordinator:
         is_chat_busy: BusyProbe | None = None,
         receipt_timeout_s: float | None = None,
         b2_coordinator: Any | None = None,
+        b2_unavailable_reason: str = "",
     ) -> None:
         self.runtime = app_runtime or runtime
         self.participant = participant or AuipParticipantCoordinator(self.runtime)
@@ -71,6 +72,7 @@ class AuipEngagementCoordinator:
             ),
         )
         self.b2_coordinator = b2_coordinator
+        self.b2_unavailable_reason = str(b2_unavailable_reason or "").strip()[:160]
         self._tasks: dict[str, asyncio.Task] = {}
         self._task_reasons: dict[str, str] = {}
         self._deferred_automatic_tasks: dict[str, asyncio.Task] = {}
@@ -83,10 +85,16 @@ class AuipEngagementCoordinator:
         self._seen_receipts: deque[str] = deque(maxlen=256)
         self._seen_receipt_set: set[str] = set()
 
-    def set_b2_coordinator(self, coordinator: Any | None) -> None:
-        """Inject the default-off B2 owner after bootstrap dependencies exist."""
+    def set_b2_coordinator(
+        self,
+        coordinator: Any | None,
+        *,
+        unavailable_reason: str = "",
+    ) -> None:
+        """Inject B2 readiness after bootstrap dependencies are inspected."""
 
         self.b2_coordinator = coordinator
+        self.b2_unavailable_reason = str(unavailable_reason or "").strip()[:160]
 
     async def set_mode(self, *, app_session_id: str, mode: str) -> dict[str, Any]:
         clean_requested = str(mode or "").strip().lower()
@@ -121,7 +129,14 @@ class AuipEngagementCoordinator:
     ) -> dict[str, Any]:
         if str(reason or "") == "explicit_step":
             self._cancel_deferred_automatic(app_session_id)
-        if self.controller is None or self.role_authorizer is None:
+        b2_unavailable = bool(
+            self.runtime.role_branch_mode == "b2"
+            and self.b2_coordinator is None
+            and self.b2_unavailable_reason
+        )
+        if (
+            self.controller is None or self.role_authorizer is None
+        ) and not b2_unavailable:
             raise AuipProtocolError("participant_controller_unavailable")
         projection = self.runtime.get(app_session_id)
         if str(projection.get("status") or "") != "active":
@@ -508,6 +523,25 @@ class AuipEngagementCoordinator:
             "delegate_participant_opportunity",
             "explicit_step",
         }
+        if (
+            self.runtime.role_branch_mode == "b2"
+            and self.b2_coordinator is None
+            and self.b2_unavailable_reason
+        ):
+            unavailable_reason = (
+                self.b2_unavailable_reason or "b2_runtime_unavailable"
+            )
+            await self._publish_error(
+                app_session_id,
+                generation,
+                unavailable_reason,
+                instruction=instruction,
+                visible=action_required,
+            )
+            return {
+                "status": "blocked",
+                "reason": unavailable_reason,
+            }
         automatic_b2 = bool(
             self.runtime.role_branch_mode == "b2"
             and self.b2_coordinator is not None
@@ -1085,6 +1119,18 @@ def _operator_failure_reason(error: str, detail: str = "") -> str:
         "b2_role_decision_unavailable": (
             "The application turn could not be decided after one bounded retry, "
             "so no action was requested."
+        ),
+        "b2_role_model_unavailable": (
+            "The B2 application action model is not configured, so no application "
+            "action was requested."
+        ),
+        "b2_control_decision_unavailable": (
+            "The source-local AUIP decision lane is disabled, so no application "
+            "action was requested."
+        ),
+        "b2_runtime_unavailable": (
+            "The B2 application action runtime is unavailable, so no application "
+            "action was requested."
         ),
         "role_authorization_unavailable": (
             "The action could not be authorized, so no application action was requested."

@@ -8,7 +8,7 @@ from server.auip_action_candidates import (
     AuipActionCandidate,
     compile_auip_action_candidates,
 )
-from server.auip_b2 import AuipB2Coordinator
+from server.auip_b2 import AuipB2Coordinator, b2_runtime_unavailable_reason
 from server.auip_b2_role_llm import (
     choose_b2_open_role_action,
     choose_b2_role_action,
@@ -127,6 +127,29 @@ def _runtime(*, include_open_action: bool = False) -> tuple[AuipRuntime, dict]:
         },
     )
     return runtime, registered
+
+
+def test_b2_readiness_is_a_capability_fact_not_a_startup_requirement() -> None:
+    assert b2_runtime_unavailable_reason(
+        role_branch_mode="b2",
+        control_decision_available=True,
+        role_model_available=False,
+    ) == "b2_role_model_unavailable"
+    assert b2_runtime_unavailable_reason(
+        role_branch_mode="b2",
+        control_decision_available=False,
+        role_model_available=True,
+    ) == "b2_control_decision_unavailable"
+    assert b2_runtime_unavailable_reason(
+        role_branch_mode="b2",
+        control_decision_available=True,
+        role_model_available=True,
+    ) == ""
+    assert b2_runtime_unavailable_reason(
+        role_branch_mode="off",
+        control_decision_available=False,
+        role_model_available=False,
+    ) == ""
 
 
 def test_candidate_compiler_keeps_exact_payloads_and_omits_open_schema() -> None:
@@ -1561,6 +1584,80 @@ def test_required_b2_failure_publishes_a_visible_operator_outcome() -> None:
             assert "bounded retry" in updates[-1]["operator_outcome"]["reason"]
         finally:
             bus.off(Method.AUIP_UPDATED, capture)
+            await engagement.close()
+
+    asyncio.run(scenario())
+
+
+def test_unconfigured_b2_blocks_the_action_without_split_fallback() -> None:
+    async def scenario() -> None:
+        runtime, registered = _runtime()
+        sid = registered["app_session_id"]
+        updates: list[dict] = []
+        split_calls = 0
+
+        async def split_controller(_context):
+            nonlocal split_calls
+            split_calls += 1
+            return {"action": "wait"}
+
+        async def capture(_method: str, payload: dict) -> None:
+            if payload.get("operator_outcome"):
+                updates.append(dict(payload))
+
+        engagement = AuipEngagementCoordinator(
+            app_runtime=runtime,
+            controller=split_controller,
+            role_authorizer=lambda _context: {
+                "decision": "approve",
+                "reason": "unused",
+            },
+            b2_coordinator=None,
+            b2_unavailable_reason="b2_role_model_unavailable",
+        )
+        bus.on(Method.AUIP_UPDATED, capture)
+        try:
+            scheduled = engagement.request_step(
+                app_session_id=sid,
+                instruction="Place one stone.",
+                reason="explicit_step",
+            )
+            assert scheduled["scheduled"] is True
+            await engagement.wait_for_idle(sid)
+
+            projection = runtime.get(sid)
+            assert split_calls == 0
+            assert projection["operator_error"] == "b2_role_model_unavailable"
+            assert updates[-1]["operator_outcome"]["status"] == "blocked"
+            assert "not configured" in updates[-1]["operator_outcome"]["reason"]
+        finally:
+            bus.off(Method.AUIP_UPDATED, capture)
+            await engagement.close()
+
+    asyncio.run(scenario())
+
+
+def test_unconfigured_b2_can_report_failure_without_any_model_lane() -> None:
+    async def scenario() -> None:
+        runtime, registered = _runtime()
+        sid = registered["app_session_id"]
+        engagement = AuipEngagementCoordinator(
+            app_runtime=runtime,
+            controller=None,
+            role_authorizer=None,
+            b2_coordinator=None,
+            b2_unavailable_reason="b2_role_model_unavailable",
+        )
+        try:
+            scheduled = engagement.request_step(
+                app_session_id=sid,
+                instruction="Place one stone.",
+                reason="explicit_step",
+            )
+            assert scheduled["scheduled"] is True
+            await engagement.wait_for_idle(sid)
+            assert runtime.get(sid)["operator_error"] == "b2_role_model_unavailable"
+        finally:
             await engagement.close()
 
     asyncio.run(scenario())

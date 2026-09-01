@@ -656,6 +656,34 @@ def _model_connections(
 
 
 def _model_role_configuration(settings: Any) -> list[dict[str, Any]]:
+    from server.auip_b2 import b2_runtime_unavailable_reason
+    from server.auip_b2_role_llm import has_b2_role_model_config
+
+    b2_unavailable = b2_runtime_unavailable_reason(
+        role_branch_mode=getattr(settings, "AUIP_APPSESSION_ROLE_BRANCH_MODE", "b2"),
+        control_decision_available=bool(
+            getattr(settings, "AUIP_CONTROL_DECISION_ENABLED", False)
+        ),
+        role_model_available=has_b2_role_model_config(),
+    )
+    b2_active = str(
+        getattr(settings, "AUIP_APPSESSION_ROLE_BRANCH_MODE", "b2") or ""
+    ).strip().lower() == "b2"
+    if b2_unavailable == "b2_control_decision_unavailable":
+        b2_status_detail = (
+            "B2 is selected, but its source-local AUIP decision lane is disabled. "
+            "Application actions remain blocked; Chat and Settings stay available."
+        )
+    elif b2_unavailable == "b2_role_model_unavailable":
+        b2_status_detail = (
+            "B2 is selected, but no supported OpenAI or DeepSeek action model credential "
+            "is configured. Application actions remain blocked until setup and restart."
+        )
+    elif b2_active:
+        b2_status_detail = "B2 application action decisions are available."
+    else:
+        b2_status_detail = "B2 is not selected; this action role is optional."
+
     return [
         {
             "id": "work_observer",
@@ -680,8 +708,12 @@ def _model_role_configuration(settings: Any) -> list[dict[str, Any]]:
         {
             "id": "auip_action",
             "label": "AUIP action decision",
-            "description": "Optional decision-quality override for AUIP participation.",
-            "configured": True,
+            "description": "Decision-quality model used by the default B2 AppSession action path.",
+            "active": b2_active,
+            "configured": not bool(b2_unavailable),
+            "status": "needs_setup" if b2_unavailable else "available" if b2_active else "optional",
+            "status_ok": not bool(b2_unavailable),
+            "status_detail": b2_status_detail,
             "fields": [
                 _startup_field("AUIP_ACTION_PROVIDER", "Provider override", settings.AUIP_ACTION_PROVIDER),
                 _startup_field("AUIP_ACTION_MODEL", "Model override", settings.AUIP_ACTION_MODEL),
