@@ -602,13 +602,20 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       const turnId = crypto.randomUUID()
       interruptedTurnIdsRef.current.delete(turnId)
       activeStreamTurnIdRef.current = turnId
-      await send('chat.send', {
+      const response = await send('chat.send', {
         text,
         provider,
         turn_id: turnId,
         session_id: sessionId || '',
         ...(visual ? { visual } : {}),
       })
+      if (response.control === 'wake') {
+        activeStreamTurnIdRef.current = ''
+        setMessages(prev => {
+          const last = prev[prev.length - 1]
+          return last?.role === 'user' && last.text === text ? prev.slice(0, -1) : prev
+        })
+      }
       if (pendingVisualAttachment) setPendingVisualAttachment(null)
     } catch {
       setMessages(prev => [...prev, { role: 'system', text: 'Send failed: backend unreachable' }])

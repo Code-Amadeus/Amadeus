@@ -9,6 +9,7 @@ import uuid
 from typing import Any
 
 from config.settings import PENDING_TURN_GATE_TIMEOUT_S
+from server.desktop_voice import is_manual_wake_command
 from server.event_bus import bus
 from server.protocol import Method
 from server.ws_handler import RequestHandler
@@ -28,6 +29,8 @@ class ChatHandler(RequestHandler):
         self._assistant_voice_sink = None
         self._presentation_interrupt = None
         self._background_interaction_interrupt = None
+        self._manual_wake_handler = None
+        self._manual_wake_phrases = ""
         self._chat_epoch = 0
         self._active_turn_id = ""
         self._active_accumulated_text = ""
@@ -43,6 +46,8 @@ class ChatHandler(RequestHandler):
         assistant_voice_sink=None,
         presentation_interrupt=None,
         background_interaction_interrupt=None,
+        manual_wake_handler=None,
+        manual_wake_phrases="",
     ) -> None:
         self._stream_llm_query = stream_llm_query
         self._pending_sentence_items = pending_sentence_items
@@ -51,6 +56,8 @@ class ChatHandler(RequestHandler):
         self._assistant_voice_sink = assistant_voice_sink
         self._presentation_interrupt = presentation_interrupt
         self._background_interaction_interrupt = background_interaction_interrupt
+        self._manual_wake_handler = manual_wake_handler
+        self._manual_wake_phrases = manual_wake_phrases
 
     def is_busy(self) -> bool:
         return bool(self._active_turn_id or (self._stream_task is not None and not self._stream_task.done()))
@@ -88,6 +95,16 @@ class ChatHandler(RequestHandler):
             raise RuntimeError("chat handler not configured")
 
         text = params.get("text", "")
+        if self._manual_wake_handler and is_manual_wake_command(
+            text,
+            self._manual_wake_phrases,
+        ):
+            result = self._manual_wake_handler(
+                {"text": str(text), "source": "manual_text"}
+            )
+            if hasattr(result, "__await__"):
+                await result
+            return {"status": "awake", "control": "wake"}
         turn_id = params.get("turn_id", "")
         provider = params.get("provider", None)
         visual_request = params.get("visual", None)

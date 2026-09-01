@@ -317,6 +317,7 @@ async def bootstrap(port: int = 17777) -> None:
         WAKE_AUTO_SEND_TO_CHAT,
         WAKE_BRIDGE_AUTO_SEND,
         WAKE_ENABLED,
+        WAKE_PHRASES,
     )
 
     # wire handler registration.
@@ -2079,6 +2080,8 @@ async def bootstrap(port: int = 17777) -> None:
         background_interaction_interrupt=(
             _interrupt_background_interaction_before_chat
         ),
+        manual_wake_handler=_start_asr_from_wake if WAKE_ENABLED else None,
+        manual_wake_phrases=WAKE_PHRASES,
     )
     from server.interrupt_flow import get_interrupt_flow
     get_interrupt_flow().configure(chat_handler=chat_h, tts_handler=tts_h)
@@ -2156,6 +2159,7 @@ async def bootstrap(port: int = 17777) -> None:
         render_bridge=_render_signal_bridge,
         wake_start_fn=lambda: wake_h.start({}),
         wake_stop_fn=lambda: wake_h.stop({}),
+        voice_prepare_fn=_get_or_create_asr_manager,
         canvas_action_fn=canvas_action_router.route,
         canvas_projector=work_ledger.project_canvas,
         attention_snapshot=lambda: attention_requests.list_pending(

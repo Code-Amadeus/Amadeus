@@ -8,8 +8,12 @@ import numpy as np
 import pytest
 
 from asr.wake_service import WakeService
-from server.desktop_voice import is_desktop_voice_exit_command
+from server.desktop_voice import (
+    is_desktop_voice_exit_command,
+    is_manual_wake_command,
+)
 from server.handlers.asr_handler import AsrHandler
+from server.handlers.chat_handler import ChatHandler
 from server.protocol import Method
 
 
@@ -21,6 +25,49 @@ def test_exact_desktop_voice_exit_commands(text: str) -> None:
 @pytest.mark.parametrize("text", ["如何停止对话", "不要结束对话", "退出对话模式怎么用"])
 def test_exit_words_inside_a_sentence_are_normal_chat(text: str) -> None:
     assert is_desktop_voice_exit_command(text) is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Hi, Amadeus", " hi amadeus! ", "Ｈｉ，Ａｍａｄｅｕｓ。"],
+)
+def test_manual_wake_accepts_only_a_complete_configured_phrase(text: str) -> None:
+    assert is_manual_wake_command(text, "Hi Amadeus,Hey Amadeus") is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["为什么 Hi Amadeus 没反应", "Hi Amadeus 今天天气如何", "Amadeus"],
+)
+def test_wake_phrase_inside_normal_chat_does_not_trigger_manual_wake(text: str) -> None:
+    assert is_manual_wake_command(text, "Hi Amadeus,Hey Amadeus") is False
+
+
+@pytest.mark.asyncio
+async def test_exact_manual_wake_bypasses_the_llm_and_returns_control_receipt() -> None:
+    awakened: list[dict] = []
+    streamed: list[str] = []
+
+    async def stream(text, **_kwargs):
+        streamed.append(text)
+        return "unexpected reply"
+
+    async def activate(payload: dict) -> None:
+        awakened.append(payload)
+
+    handler = ChatHandler()
+    handler.configure(
+        stream_llm_query=stream,
+        pending_sentence_items=None,
+        manual_wake_handler=activate,
+        manual_wake_phrases="Hi Amadeus,Hey Amadeus",
+    )
+
+    result = await handler.send_text("Hi, Amadeus")
+
+    assert result == {"status": "awake", "control": "wake"}
+    assert awakened == [{"text": "Hi, Amadeus", "source": "manual_text"}]
+    assert streamed == []
 
 
 @pytest.mark.asyncio

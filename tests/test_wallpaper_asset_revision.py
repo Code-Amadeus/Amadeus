@@ -270,6 +270,7 @@ process.stdout.write(JSON.stringify({
 
 def test_electron_wallpaper_start_selects_the_external_slice_host(monkeypatch) -> None:
     created: list[object] = []
+    voice_events: list[str] = []
 
     class Host:
         asset_port = 17778
@@ -314,12 +315,23 @@ def test_electron_wallpaper_start_selects_the_external_slice_host(monkeypatch) -
 
     monkeypatch.setattr(wallpaper_engine_bridge, "WallpaperEngineBridgeHost", Host)
     monkeypatch.setattr(animator_module, "SpriteForgeAnimator", Animator)
+    monkeypatch.setattr("server.handlers.wallpaper_handler.WAKE_ENABLED", True)
+    monkeypatch.setattr(
+        "server.handlers.wallpaper_handler.WAKE_AUTO_START_WITH_WALLPAPER",
+        True,
+    )
 
     handler = WallpaperHandler()
+    handler.configure(
+        project_root=_PROJECT_ROOT,
+        wake_start_fn=lambda: voice_events.append("wake"),
+        voice_prepare_fn=lambda: voice_events.append("prepare"),
+    )
     result = asyncio.run(handler._start({"slice_host": "electron"}))
     assert created and created[0].slice_host == "electron"
     assert result["sliceHost"] == "electron"
     assert result["sliceBounds"] == Host.slice_bounds
+    assert voice_events == ["wake", "prepare"]
     asyncio.run(handler._stop({}))
 
 

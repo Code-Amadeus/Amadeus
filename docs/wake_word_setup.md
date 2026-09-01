@@ -53,11 +53,19 @@ indices detected on the current machine.
 ## Desktop continuous conversation
 
 With Wallpaper running, a Wake phrase opens the Qwen conversation recognizer.
+Wallpaper startup also begins loading that recognizer in the background, so
+the first successful wake does not have to pay the full model startup delay.
 Final speech is sent to the current Chat Session automatically. After physical
 assistant playback completes, the listener remains hot for 60 seconds; each
 completed turn resets that window. The Electron window may be minimized and is
 not restored by Wake. Say exactly `停止对话`, `结束对话`, or `退出对话` to leave the
 hot window without adding that command to Chat history.
+
+If audio wake recognition misses, type one complete configured Wake phrase in
+Chat, such as `Hi, Amadeus`. Case, spacing, and punctuation are ignored, but
+extra words make it a normal message. This control action opens the same hot
+window without calling the conversation model, speaking a reply, or saving the
+wake phrase to Chat history.
 
 This flow requires `WAKE_AUTO_SEND_TO_CHAT=true`. When
 `WAKE_AUTO_START_WITH_WALLPAPER=true`, Wallpaper owns the Wake start/stop
