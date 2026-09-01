@@ -464,6 +464,7 @@ def test_context_delivery_receipt_stays_out_of_public_run_and_result() -> None:
 
             listed = runtime.list_runs()[0]
             assert listed["updated_at"] == public_updated_at
+            assert listed["event_sequence"] == len(listed["events"])
             assert PARENT_CONTEXT_DELIVERY_METADATA_KEY not in listed["metadata"]
             assert listed["metadata"].get("source_context_scope") is None
             assert listed["metadata"].get("source_context_cursor_turn_id") is None
@@ -488,6 +489,7 @@ def test_context_delivery_receipt_stays_out_of_public_run_and_result() -> None:
             assert terminal_event["metadata"].get("source_context_scope") is None
             assert captured_results
             public_result = captured_results[-1]
+            assert public_result["event_sequence"] == len(public_result["events"])
             assert PARENT_CONTEXT_DELIVERY_METADATA_KEY not in public_result["metadata"]
             assert all(
                 event.get("type") != PARENT_CONTEXT_DELIVERED_EVENT

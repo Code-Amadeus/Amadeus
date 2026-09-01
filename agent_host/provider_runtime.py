@@ -925,8 +925,13 @@ class ProviderRuntime:
         for key in _CONTROL_PLANE_METADATA_KEYS:
             if key in record.metadata:
                 event.metadata[key] = record.metadata[key]
-        record.event_sequence += 1
-        event.sequence = record.event_sequence
+        if event.type == PARENT_CONTEXT_DELIVERED_EVENT:
+            # The receipt is an internal control-plane fact, so it must not
+            # create a gap in the public event cursor exposed by to_dict().
+            event.sequence = 0
+        else:
+            record.event_sequence += 1
+            event.sequence = record.event_sequence
         event.observed_at = time.time()
         event_identity = _identity_from_metadata(event.metadata)
         record_identity = _identity_from_metadata(record.metadata)
