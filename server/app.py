@@ -3883,7 +3883,10 @@ def _delegate_provider_selection(
                 )
         except Exception:
             logger.exception("failed to read bounded WorkItem routing facts")
-    from agent_host.browser_request_contract import web_addresses
+    from agent_host.browser_request_contract import (
+        requests_visible_browser,
+        web_addresses,
+    )
 
     facts = DelegateRequirementFacts.from_delegate(
         attrs,
@@ -3908,6 +3911,7 @@ def _delegate_provider_selection(
         source_has_browser_address=bool(
             web_addresses(source_user_text, allow_bare_domain=True)
         ),
+        source_requests_visible_browser=requests_visible_browser(source_user_text),
         required_workspace_access=str(
             attrs.get("_host_workspace_access") or ""
         ),

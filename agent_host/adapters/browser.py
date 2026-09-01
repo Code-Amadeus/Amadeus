@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
+from config import settings
 from agent_host.browser_request_contract import (
     browser_research_query,
     normalize_web_address,
@@ -82,6 +83,7 @@ class BrowserAdapter:
         self._run_to_session: dict[str, str] = {}
         self._chat_to_session: dict[str, str] = {}
         self._session_ttl_s = max(60.0, float(os.environ.get("AMADEUS_BROWSER_SESSION_TTL_SECONDS", "900")))
+        self._visible = bool(settings.AMADEUS_BROWSER_VISIBLE)
 
     async def run(
         self,
@@ -449,7 +451,7 @@ class BrowserAdapter:
                 payload={"tool": "browser.launch", "engine": "chromium", "browser_session_id": session_id},
             )
         )
-        browser = await playwright.chromium.launch(headless=True)
+        browser = await playwright.chromium.launch(headless=not self._visible)
         context = await browser.new_context(
             viewport={"width": 1280, "height": 720},
             user_agent="AmadeusBrowserProvider/0.1 local-runtime",

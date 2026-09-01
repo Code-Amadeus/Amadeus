@@ -9,6 +9,7 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -16,6 +17,7 @@ from agent_host.adapters.browser import BrowserAdapter, BrowserSession, BrowserS
 from agent_host.adapters.browser_branch import BrowserBranchAdapter
 from agent_host.browser_interaction_policy import BrowserInteractionPolicy
 from agent_host.provider_types import ProviderEvent, ProviderRunRequest, ProviderRunResult
+from config import settings
 from server.browser_branch_planner import _normalize_decision
 from server.provider_branch import ProviderBranchStore
 
@@ -56,6 +58,52 @@ class _FakeCapturedPage(_FakePage):
 
     async def evaluate(self, _script: str, _limit: int) -> list[dict[str, Any]]:
         return []
+
+
+class _VisibleLaunchContext:
+    async def new_page(self) -> _FakePage:
+        return _FakePage("about:blank")
+
+
+class _VisibleLaunchBrowser:
+    def __init__(self, *, headless: bool) -> None:
+        self.headless = headless
+
+    async def new_context(self, **_kwargs: Any) -> _VisibleLaunchContext:
+        return _VisibleLaunchContext()
+
+
+class _VisibleLaunchChromium:
+    def __init__(self) -> None:
+        self.browser: _VisibleLaunchBrowser | None = None
+
+    async def launch(self, *, headless: bool) -> _VisibleLaunchBrowser:
+        self.browser = _VisibleLaunchBrowser(headless=headless)
+        return self.browser
+
+
+class _VisibleLaunchPlaywright:
+    def __init__(self) -> None:
+        self.chromium = _VisibleLaunchChromium()
+
+
+def test_desktop_visible_browser_setting_launches_a_windowed_session() -> None:
+    async def run() -> None:
+        playwright = _VisibleLaunchPlaywright()
+        with patch.object(settings, "AMADEUS_BROWSER_VISIBLE", True, create=True):
+            adapter = BrowserAdapter()
+            adapter._playwright = playwright
+            session = await adapter._get_or_create_session(
+                "",
+                "chat-visible-browser",
+                "run-visible-browser",
+                lambda _event: asyncio.sleep(0),
+            )
+
+        assert session.browser is playwright.chromium.browser
+        assert session.browser.headless is False
+
+    asyncio.run(run())
 
 
 def _session(page: _FakePage, *, stack: list[_FakePage] | None = None) -> BrowserSession:

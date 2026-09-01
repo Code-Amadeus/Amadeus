@@ -23,6 +23,7 @@ from agent_host.provider_identity import (
 )
 from server.inherited_role_prompt import MAIN_CONVERSATION_ROLE_NAME
 from server.app import (
+    _delegate_provider_selection,
     _handle_delegate,
     _rebase_web_goal_for_selected_provider,
     _remove_ungrounded_persona_parameters,
@@ -50,6 +51,39 @@ class _ConversationHistory:
 class _SessionManager:
     def __init__(self, *messages: str) -> None:
         self.conversation_history = _ConversationHistory(*messages)
+
+
+def test_explicit_visible_browser_request_overrides_agent_research_label() -> None:
+    requirements, selection = _delegate_provider_selection(
+        "Search the web for Beijing weather.",
+        {
+            "provider": "openclaw",
+            "intent": "execute",
+            "action": "open",
+            "_host_source_user_text": "打开浏览器搜索北京天气",
+        },
+        manifests=(BROWSER_MANIFEST, OPENCLAW_MANIFEST),
+    )
+
+    assert requirements.task_kind == "browser"
+    assert requirements.interaction is None
+    assert selection.provider_id == "browser"
+
+
+def test_negated_browser_window_request_stays_with_research_agent() -> None:
+    requirements, selection = _delegate_provider_selection(
+        "Search the web for Beijing weather.",
+        {
+            "provider": "openclaw",
+            "intent": "execute",
+            "action": "open",
+            "_host_source_user_text": "不要打开浏览器，后台搜索北京天气就行",
+        },
+        manifests=(BROWSER_MANIFEST, OPENCLAW_MANIFEST),
+    )
+
+    assert requirements.task_kind == "general"
+    assert selection.provider_id == "openclaw"
 
 
 def test_sanitizer_prefers_current_turn_over_stale_history() -> None:

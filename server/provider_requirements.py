@@ -61,6 +61,7 @@ class DelegateRequirementFacts:
     requested_action: str = ""
     branch_intent: str = ""
     source_has_browser_address: bool = False
+    source_requests_visible_browser: bool = False
     required_workspace_access: WorkspaceAccess | None = None
 
     @classmethod
@@ -73,6 +74,7 @@ class DelegateRequirementFacts:
         target_workspace_mode: str = "",
         continuation_provider: str = "",
         source_has_browser_address: bool = False,
+        source_requests_visible_browser: bool = False,
         required_workspace_access: str = "",
     ) -> "DelegateRequirementFacts":
         values = attrs if isinstance(attrs, Mapping) else {}
@@ -105,6 +107,7 @@ class DelegateRequirementFacts:
             ).strip().lower(),
             branch_intent=str(values.get("branch") or "").strip().lower(),
             source_has_browser_address=bool(source_has_browser_address),
+            source_requests_visible_browser=bool(source_requests_visible_browser),
             required_workspace_access=(
                 normalized_workspace_access or None
             ),  # type: ignore[arg-type]
@@ -130,6 +133,8 @@ class DelegateRequirementFacts:
     def requires_browser_state(self) -> bool:
         """Whether the operation contract, rather than a label, needs Browser."""
 
+        if self.source_requests_visible_browser:
+            return True
         if self.required_interaction not in {None, "none"}:
             return True
         if self.branch_intent == "close":
