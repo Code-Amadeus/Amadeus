@@ -27,6 +27,7 @@ from agent_host.provider_outcome import (
     OUTCOME_EVIDENCE_METADATA_KEY,
     ProviderOutcomeEvidence,
 )
+from agent_host.provider_identity import PARENT_CONTEXT_DELIVERED_EVENT
 from server.outcome_verification import (
     ProviderOutcomeVerdict,
     assess_provider_outcome,
@@ -469,6 +470,8 @@ class InteractionBranchCoordinator:
             return
         metadata = params.get("metadata") if isinstance(params.get("metadata"), dict) else {}
         event_type = str(params.get("type") or "").strip().lower()
+        if event_type == PARENT_CONTEXT_DELIVERED_EVENT:
+            return
         payload = params.get("payload") if isinstance(params.get("payload"), dict) else {}
         run_id = str(params.get("run_id") or "").strip()
         session_id = str(metadata.get("session_id") or metadata.get("chat_session_id") or "").strip()

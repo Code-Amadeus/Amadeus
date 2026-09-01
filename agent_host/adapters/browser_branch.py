@@ -30,7 +30,10 @@ from agent_host.browser_outcome import (
 )
 from agent_host.provider_catalog import BROWSER_MANIFEST
 from agent_host.provider_outcome import ProviderOutcomeEvidence
-from agent_host.provider_identity import with_main_role_reference
+from agent_host.provider_identity import (
+    PARENT_CONTEXT_DELIVERED_EVENT,
+    with_parent_conversation_context,
+)
 from agent_host.provider_types import (
     EmitProviderEvent,
     ProviderEvent,
@@ -368,6 +371,14 @@ class BrowserBranchAdapter:
                 instruction_revision=active_revision,
             )
             planned = await _maybe_await(self.branch_planner(planner_context))
+            await branch_emit(
+                ProviderEvent(
+                    provider=self.provider_id,
+                    run_id=run_id,
+                    type=PARENT_CONTEXT_DELIVERED_EVENT,
+                    metadata=dict(active_metadata),
+                )
+            )
             decision = dict(planned) if isinstance(planned, dict) else {}
 
             # Planning is not an external side effect. If a newer instruction
@@ -684,7 +695,7 @@ class BrowserBranchAdapter:
             "parent_session_id": session_id,
             "branch_id": branch_id,
             "provider_run_id": run_id,
-            "user_message": with_main_role_reference(
+            "user_message": with_parent_conversation_context(
                 request.task,
                 metadata=metadata,
                 execution_provider=request.provider,

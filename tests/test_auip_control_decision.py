@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, patch
 from core.chat_runtime import (
     ChatRuntime,
     _TurnState,
+    _delegate_source_context,
     _turn_role_grounding,
     _turn_system_prompt,
     _turn_uses_conversation_history,
@@ -1605,12 +1606,22 @@ def test_a1_scopes_operational_turns_but_preserves_independent_parent_chat() -> 
         work_relation="subsumed",
         app_session_id=app_session_id,
     )
+    operational.control_prior_messages = (
+        {"role": "user", "content": "父会话里的无关工作。"},
+        {"role": "assistant", "content": "正在处理。"},
+    )
     with patch("server.auip_runtime.runtime", app_runtime):
         grounding = _turn_role_grounding(operational)
+        source_messages, source_scope = _delegate_source_context(operational)
         ChatRuntime._record_auip_role_branch_turn(operational)
 
     assert "Active AUIP AppSession dialogue branch" in grounding
     assert "刚才先别乱跑" in grounding
+    assert source_scope == f"auip:{app_session_id}"
+    assert source_messages == (
+        {"role": "user", "content": "刚才先别乱跑。"},
+        {"role": "assistant", "content": "知道了。"},
+    )
     assert operational.auip_role_branch_isolated is True
     assert app_runtime.recent_role_branch_messages("session-auip")[-1] == {
         "role": "assistant",
@@ -1652,9 +1663,16 @@ def test_a1_scopes_operational_turns_but_preserves_independent_parent_chat() -> 
         work_relation="independent",
         app_session_id=app_session_id,
     )
+    compound.control_prior_messages = (
+        {"role": "user", "content": "父会话里的论文目标。"},
+        {"role": "assistant", "content": "可以继续。"},
+    )
     with patch("server.auip_runtime.runtime", app_runtime):
         assert _turn_uses_conversation_history(compound, True) is True
+        source_messages, source_scope = _delegate_source_context(compound)
         ChatRuntime._record_auip_role_branch_turn(compound)
+    assert source_scope == "chat:session-auip"
+    assert source_messages == compound.control_prior_messages
     assert compound.auip_role_branch_isolated is False
     assert app_runtime.recent_role_branch_messages("session-auip")[-1] == {
         "role": "assistant",

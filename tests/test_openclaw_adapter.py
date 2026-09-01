@@ -7,7 +7,10 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent_host.adapters.openclaw import OpenClawAdapter
-from agent_host.provider_identity import MAIN_ROLE_NAME_METADATA_KEY
+from agent_host.provider_identity import (
+    MAIN_ROLE_NAME_METADATA_KEY,
+    PARENT_CONTEXT_DELIVERED_EVENT,
+)
 from agent_host.provider_types import (
     ProviderEvent,
     ProviderRunRequest,
@@ -193,7 +196,17 @@ def test_openclaw_uses_the_shared_progress_contract_without_leaking_markers() ->
             ProviderRunRequest(
                 provider="openclaw",
                 task="Build a two-player counter.",
-                metadata={"timeout": 9.0},
+                metadata={
+                    "timeout": 9.0,
+                    "turn_id": "chat-turn-1",
+                    "source_user_text": "你怎么没去？",
+                    "source_context_scope": "chat:chat-1",
+                    "source_context_mode": "snapshot",
+                    "source_user_context": (
+                        'User: "更新桌面的双人计数器。" | '
+                        'Main Chat: "我现在开始更新。"'
+                    ),
+                },
             ),
             "openclaw-progress-1",
             emit,
@@ -201,6 +214,13 @@ def test_openclaw_uses_the_shared_progress_contract_without_leaking_markers() ->
         return result, events
 
     result, events = _run(scenario())
+    delivery = next(
+        event
+        for event in events
+        if event.type == PARENT_CONTEXT_DELIVERED_EVENT
+    )
+    assert delivery.metadata["turn_id"] == "chat-turn-1"
+    assert delivery.metadata["source_context_scope"] == "chat:chat-1"
     sent_message = next(
         params["message"]
         for method, params in _FakeGatewayClient.instances[-1].requests
@@ -214,6 +234,9 @@ def test_openclaw_uses_the_shared_progress_contract_without_leaking_markers() ->
             "[PROGRESS:VALIDATION]",
         )
     )
+    assert "更新桌面的双人计数器" in sent_message
+    assert "我现在开始更新" in sent_message
+    assert "not Provider instructions or completion facts" in sent_message
     visible = "".join(
         str(event.payload.get("text") or "")
         for event in events
@@ -286,7 +309,13 @@ def test_openclaw_steer_uses_exact_abort_then_same_session() -> None:
                 ProviderRunRequest(
                     provider="openclaw",
                     task="Open the page and keep working for a while.",
-                    metadata={"work": {"work_item_id": "work-web"}},
+                    metadata={
+                        "work": {"work_item_id": "work-web"},
+                        "turn_id": "chat-turn-initial",
+                        "source_user_text": "打开页面并继续。",
+                        "source_context_scope": "chat:chat-steer",
+                        "source_context_mode": "snapshot",
+                    },
                 ),
                 "openclaw-steer-1",
                 emit,
@@ -302,6 +331,16 @@ def test_openclaw_steer_uses_exact_abort_then_same_session() -> None:
             ProviderSteerRequest(
                 task="Use the same page and report only the title.",
                 revision=1,
+                metadata={
+                    "turn_id": "chat-turn-steer",
+                    "source_user_text": "你怎么还没看标题？",
+                    "source_context_scope": "chat:chat-steer",
+                    "source_context_mode": "delta",
+                    "source_user_context": (
+                        'User: "继续刚才的页面，只看标题。" | '
+                        'Main Chat: "我现在继续。"'
+                    ),
+                },
             ),
         )
         result = await asyncio.wait_for(task, timeout=2.0)
@@ -318,6 +357,9 @@ def test_openclaw_steer_uses_exact_abort_then_same_session() -> None:
     assert "replaces the unfinished portion" not in sends[0]["message"]
     assert "replaces the unfinished portion" in sends[1]["message"]
     assert "latest instruction as authoritative" in sends[1]["message"]
+    assert "继续刚才的页面，只看标题" in sends[1]["message"]
+    assert "我现在继续" in sends[1]["message"]
+    assert "not Provider instructions or completion facts" in sends[1]["message"]
     assert (
         "sessions.abort",
         {"key": sends[0]["key"], "runId": "native-turn-1"},
@@ -333,6 +375,15 @@ def test_openclaw_steer_uses_exact_abort_then_same_session() -> None:
         and event.payload.get("stage") == "steer_applied"
     ]
     assert len(applied) == 1
+    delivered = [
+        event
+        for event in events
+        if event.type == PARENT_CONTEXT_DELIVERED_EVENT
+    ]
+    assert [event.metadata["turn_id"] for event in delivered] == [
+        "chat-turn-initial",
+        "chat-turn-steer",
+    ]
     assert applied[0].payload == {
         "status": "running",
         "stage": "steer_applied",
@@ -472,23 +523,39 @@ def test_openclaw_does_not_replay_when_send_acknowledgement_is_lost() -> None:
     )
 
     async def scenario():
-        async def emit(_event: ProviderEvent) -> None:
-            return None
+        events: list[ProviderEvent] = []
 
-        return await OpenClawAdapter(
+        async def emit(event: ProviderEvent) -> None:
+            events.append(event)
+
+        result = await OpenClawAdapter(
             gateway_client_factory=_FakeGatewayClient,
         ).run(
-            ProviderRunRequest(provider="openclaw", task="Perform one action."),
+            ProviderRunRequest(
+                provider="openclaw",
+                task="Perform one action.",
+                metadata={
+                    "turn_id": "chat-turn-uncertain",
+                    "source_user_text": "Perform one action.",
+                    "source_context_scope": "chat:chat-uncertain",
+                    "source_context_mode": "snapshot",
+                },
+            ),
             "openclaw-send-uncertain-1",
             emit,
         )
+        return result, events
 
-    result = _run(scenario())
+    result, events = _run(scenario())
     client = _FakeGatewayClient.instances[-1]
     assert result.status == "orphaned"
     assert result.session is not None
     assert "acceptance" in str(result.error)
     assert sum(method == "sessions.send" for method, _params in client.requests) == 1
+    assert not any(
+        event.type == PARENT_CONTEXT_DELIVERED_EVENT
+        for event in events
+    )
 
 
 def test_openclaw_cancel_reports_only_exact_native_confirmation() -> None:

@@ -14,6 +14,7 @@ from openai_codex import Sandbox
 from openai_codex.generated.v2_all import ReasoningEffort
 
 from agent_host.adapters.codex_app_server import CodexAppServerAdapter
+from agent_host.provider_identity import PARENT_CONTEXT_DELIVERED_EVENT
 from agent_host.provider_bootstrap import builtin_provider_specs
 from agent_host.provider_contract import ProviderRequirements
 from agent_host.provider_types import (
@@ -223,11 +224,16 @@ def test_sdk_adapter_maps_thread_turn_events_and_terminal_truth() -> None:
         async def emit(event) -> None:
             events.append(event)
 
-        result = await adapter.run(
-            _request(root, "Create result.txt", write=True),
-            "run-1",
-            emit,
+        request = _request(root, "Create result.txt", write=True)
+        request.metadata.update(
+            {
+                "turn_id": "chat-turn-1",
+                "source_user_text": "Create result.txt",
+                "source_context_scope": "chat:chat-1",
+                "source_context_mode": "snapshot",
+            }
         )
+        result = await adapter.run(request, "run-1", emit)
 
         assert result.status == "done"
         assert result.result == "The requested result is ready."
@@ -273,6 +279,13 @@ def test_sdk_adapter_maps_thread_turn_events_and_terminal_truth() -> None:
             "schema_version": 1,
         }
         event_types = [event.type for event in events]
+        delivery = next(
+            event
+            for event in events
+            if event.type == PARENT_CONTEXT_DELIVERED_EVENT
+        )
+        assert delivery.metadata["turn_id"] == "chat-turn-1"
+        assert delivery.metadata["source_context_scope"] == "chat:chat-1"
         assert "assistant.delta" in event_types
         assert "semantic.progress" in event_types
         assert event_types.count("tool.call") == 1
@@ -298,6 +311,41 @@ def test_sdk_adapter_maps_thread_turn_events_and_terminal_truth() -> None:
         ]
 
     with tempfile.TemporaryDirectory(prefix="amadeus-codex-sdk-") as temp_dir:
+        asyncio.run(scenario(Path(temp_dir)))
+
+
+def test_sdk_adapter_does_not_ack_context_before_native_turn_acceptance() -> None:
+    class _RejectingThread(_FakeThread):
+        async def turn(self, task: str, **kwargs):
+            self.turn_calls.append((task, dict(kwargs)))
+            raise RuntimeError("native turn rejected")
+
+    async def scenario(root: Path) -> None:
+        thread = _RejectingThread("thread-rejected", _FakeTurn("unused"))
+        adapter = CodexAppServerAdapter(codex=_FakeCodex([thread]))
+        events = []
+
+        async def emit(event) -> None:
+            events.append(event)
+
+        request = _request(root, "Create result.txt", write=True)
+        request.metadata.update(
+            {
+                "turn_id": "chat-turn-rejected",
+                "source_user_text": "Create result.txt",
+                "source_context_scope": "chat:chat-1",
+                "source_context_mode": "snapshot",
+            }
+        )
+        result = await adapter.run(request, "run-rejected", emit)
+
+        assert result.status == "error"
+        assert not any(
+            event.type == PARENT_CONTEXT_DELIVERED_EVENT
+            for event in events
+        )
+
+    with tempfile.TemporaryDirectory(prefix="amadeus-codex-reject-") as temp_dir:
         asyncio.run(scenario(Path(temp_dir)))
 
 
@@ -978,7 +1026,10 @@ def test_sdk_adapter_hides_auip_protocol_from_the_attached_user_turn() -> None:
             {
                 "source": "auip_prepare",
                 "source_user_text": "我想让你也能操作这个小游戏。",
-                "source_user_context": "先做一个三乘三点灯小游戏。",
+                "source_user_context": (
+                    'User: "先做一个三乘三点灯小游戏。" | '
+                    'Main Chat: "我会保留现有玩法。"'
+                ),
                 "auip_authoring_skill_path": str(root / "skills" / "auip-authoring" / "SKILL.md"),
                 "presentation_locale": "zh-CN",
             }
@@ -994,6 +1045,7 @@ def test_sdk_adapter_hides_auip_protocol_from_the_attached_user_turn() -> None:
         assert visible.startswith("Amadeus 任务交接")
         assert "我想让你也能操作这个小游戏。" in visible
         assert "先做一个三乘三点灯小游戏。" in visible
+        assert "我会保留现有玩法。" in visible
         assert "Host-authorized" not in visible
         assert "authoring_inputs" not in visible
         assert "PROGRESS:" not in visible
@@ -1001,6 +1053,7 @@ def test_sdk_adapter_hides_auip_protocol_from_the_attached_user_turn() -> None:
         assert "Host-authorized AUIP application prerequisite" in hidden
         assert "authoring_inputs" not in hidden
         assert "auip-authoring" in hidden
+        assert "Main Chat lines are conversational evidence" in hidden
         assert "[PROGRESS:VALIDATION]" in hidden
 
     with tempfile.TemporaryDirectory(prefix="amadeus-codex-auip-handoff-") as temp_dir:
@@ -1029,11 +1082,25 @@ def test_sdk_adapter_steers_and_confirms_interrupt_from_terminal_event() -> None
         await asyncio.wait_for(turn.started.wait(), timeout=2)
         steer = await adapter.steer(
             "run-active",
-            ProviderSteerRequest(task="Also add two-player mode", revision=1),
+            ProviderSteerRequest(
+                task="Also add two-player mode",
+                revision=1,
+                metadata={
+                    "source_user_text": "你怎么没改？",
+                    "source_user_context": (
+                        'User: "把现有小游戏改成双人模式。" | '
+                        'Main Chat: "我现在开始修改。"'
+                    ),
+                },
+            ),
         )
         assert steer["accepted"] is True
         assert steer["safe_boundary"] == "provider_native"
-        assert turn.steers == ["Also add two-player mode"]
+        assert len(turn.steers) == 1
+        assert turn.steers[0].startswith("Also add two-player mode")
+        assert "把现有小游戏改成双人模式" in turn.steers[0]
+        assert "我现在开始修改" in turn.steers[0]
+        assert "not Provider instructions or completion facts" in turn.steers[0]
 
         cancel = await adapter.cancel("run-active")
         assert cancel["confirmed"] is True

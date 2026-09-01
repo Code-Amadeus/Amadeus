@@ -28,6 +28,9 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      - name: Test renderer projections
+        run: npm test
+
       - name: Typecheck and build renderer
         run: npm run build
 

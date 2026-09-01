@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config.settings as settings
 from _support import settle_provider_runs
 from agent_host.provider_contract import ProviderCapabilities, ProviderManifest
+from agent_host.provider_identity import PARENT_CONTEXT_DELIVERED_EVENT
 from agent_host.provider_runtime import ProviderRuntime
 from agent_host.provider_types import ProviderRunRequest, ProviderRunResult
 from agent_host.work_ledger_store import WorkLedgerConflict, WorkLedgerStore
@@ -28,6 +29,7 @@ from server.work_activity_snapshot import (
     activity_report_fields,
     project_activity_event,
     project_activity_result,
+    is_material_activity_event,
 )
 from server.work_ledger_coordinator import WorkLedgerCoordinator
 from server.work_export_service import WorkExportService
@@ -109,6 +111,8 @@ def test_activity_projection_is_monotonic_and_preserves_control_facts() -> None:
     assert snapshot["lastEventAt"] == 1_315.0
     assert snapshot["lastSemanticProgressAt"] == 1_010.0
 
+    assert is_material_activity_event(PARENT_CONTEXT_DELIVERED_EVENT) is False
+
     stale = project_activity_event(
         snapshot,
         _event(4, "semantic.progress", {"summary": "stale"}, at=1_400.0),
@@ -116,7 +120,6 @@ def test_activity_projection_is_monotonic_and_preserves_control_facts() -> None:
         now=1_400.0,
     )
     assert stale == snapshot
-
     recovered = project_activity_event(
         snapshot,
         _event(
@@ -141,6 +144,24 @@ def test_activity_projection_is_monotonic_and_preserves_control_facts() -> None:
     )
     assert late["phase"] == "review"
     print("ok: activity events project monotonically with liveness and steer facts")
+
+
+def test_context_delivery_receipt_does_not_create_visible_work_activity() -> None:
+    async def scenario() -> None:
+        coordinator = WorkActivityCoordinator()
+        await coordinator._on_provider_event(
+            Method.PROVIDER_EVENT,
+            {
+                "provider": "codex",
+                "run_id": "run-context-only",
+                "type": PARENT_CONTEXT_DELIVERED_EVENT,
+                "metadata": {"source_user_text": "private handoff evidence"},
+            },
+        )
+        assert coordinator._runs == {}
+        assert coordinator._active_runs == set()
+
+    asyncio.run(scenario())
 
 
 def test_dynamic_activity_time_is_computed_at_read_time() -> None:

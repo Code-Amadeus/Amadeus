@@ -80,7 +80,7 @@ from llm.sentence_splitter import (
 )
 from llm.stream_parser import StreamTagParser, clean_sentence_for_tts
 from server.control_proposal import ControlProposalBatch, seal_control_proposals
-from tools.text_utils import _compute_text_sha1
+from tools.text_utils import _compute_text_sha1, strip_tags
 from tts.contract import TTSRequest
 from tts.latency_clock import mark_llm_stream_request_sent, log_latency_marker
 from tts.sentence_state import sentence_state_manager, pre_translation_cache
@@ -96,6 +96,52 @@ except Exception:
     RAGSystem = None
 
 logger = logging.getLogger("chat_runtime")
+
+
+_DELEGATE_SOURCE_CONTEXT_MAX_MESSAGES = 6
+_DELEGATE_SOURCE_CONTEXT_MAX_CHARS = 2000
+_DELEGATE_SOURCE_CONTEXT_MESSAGE_CHARS = 280
+_DELEGATE_CONTEXT_CONTROL_TAG_RE = re.compile(
+    r"\[(?:CONTROL|WORK_OBSERVER)\b[^\]]*\]",
+    flags=re.IGNORECASE,
+)
+
+
+def _bounded_delegate_source_context(
+    prior_messages,
+    *,
+    current_user: str,
+) -> str:
+    """Render recent parent dialogue without replaying executable control tags."""
+
+    current = " ".join(str(current_user or "").split())
+    rendered: list[str] = []
+    for message in tuple(prior_messages or ()):
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role") or "").strip().lower()
+        if role not in {"user", "assistant"}:
+            continue
+        content = strip_tags(str(message.get("content") or ""))
+        content = _DELEGATE_CONTEXT_CONTROL_TAG_RE.sub("", content)
+        content = " ".join(content.split())
+        if not content or (role == "user" and content == current):
+            continue
+        if len(content) > _DELEGATE_SOURCE_CONTEXT_MESSAGE_CHARS:
+            content = f"{content[:180].rstrip()} … {content[-90:].lstrip()}"
+        label = "User" if role == "user" else "Main Chat"
+        rendered.append(f"{label}: {json.dumps(content, ensure_ascii=False)}")
+
+    selected: list[str] = []
+    remaining = _DELEGATE_SOURCE_CONTEXT_MAX_CHARS
+    for line in reversed(rendered[-_DELEGATE_SOURCE_CONTEXT_MAX_MESSAGES:]):
+        cost = len(line) + (1 if selected else 0)
+        if cost > remaining:
+            continue
+        selected.append(line)
+        remaining -= cost
+    selected.reverse()
+    return "\n".join(selected)
 
 
 def _trace_raw_role_chunk(turn_id: str, raw_content: str) -> None:
@@ -856,6 +902,60 @@ def _turn_uses_conversation_history(st: "_TurnState", enabled: bool) -> bool:
     return not (
         str(getattr(decision, "action", "") or "none") != "none"
         or bool(str(getattr(decision, "ambiguity", "") or ""))
+    )
+
+
+def _delegate_source_context(
+    st: "_TurnState",
+) -> tuple[tuple[dict[str, str], ...], str]:
+    """Return the exact dialogue source that owns this Provider handoff.
+
+    A live A1 turn is sourced from its AppSession role branch. Independent
+    Work remains a parent-Chat operation even when an application is also
+    active. If a scoped branch is unexpectedly unavailable, preserve its
+    identity with an empty snapshot instead of leaking unrelated parent Chat.
+    """
+
+    messages = tuple(getattr(st, "control_prior_messages", ()) or ())
+    session_id = str(getattr(st, "session_id", "") or "").strip()
+    scope = f"chat:{session_id}" if session_id else ""
+    branch_target = _auip_role_branch_target(st)
+    work_relation = str(
+        getattr(getattr(st, "auip_decision_result", None), "work_relation", "")
+        or ""
+    )
+    if not branch_target or work_relation == "independent":
+        return messages, scope
+    scope = f"auip:{branch_target}"
+    try:
+        from server.auip_runtime import runtime as auip_runtime
+
+        branch_messages = auip_runtime.recent_role_branch_messages(
+            session_id,
+            app_session_id=branch_target,
+            limit=6,
+        )
+    except Exception as exc:
+        logger.debug(
+            "AUIP Provider handoff branch context unavailable turn_id=%s error=%s",
+            str(getattr(st, "turn_id", "") or ""),
+            exc,
+        )
+        branch_messages = None
+    if branch_messages is None:
+        return (), scope
+    return (
+        tuple(
+            {
+                "role": str(message.get("role") or ""),
+                "content": str(message.get("content") or ""),
+            }
+            for message in branch_messages
+            if isinstance(message, dict)
+            and str(message.get("role") or "") in {"user", "assistant"}
+            and str(message.get("content") or "")
+        ),
+        scope,
     )
 
 
@@ -1697,13 +1797,15 @@ class ChatRuntime:
         """Restore host annotations after canonical control reconciliation."""
 
         actions: list[dict] = []
+        prior_messages, source_scope = _delegate_source_context(st)
         for control in controls:
             action = {"type": "DELEGATE", "attrs": dict(control), "raw": ""}
             self._annotate_delegate_source(
                 action,
                 st.question,
                 turn_id=st.turn_id,
-                prior_messages=st.control_prior_messages,
+                prior_messages=prior_messages,
+                source_scope=source_scope,
             )
             self._ground_unique_active_amendment(
                 action,
@@ -1819,6 +1921,7 @@ class ChatRuntime:
         actions = self._retain_compound_proposal_gate(st, list(actions))
         if not actions:
             return
+        prior_messages, source_scope = _delegate_source_context(st)
         proposal_actions = [
             {
                 "type": action.get("type"),
@@ -1832,7 +1935,8 @@ class ChatRuntime:
                 action,
                 st.question,
                 turn_id=st.turn_id,
-                prior_messages=st.control_prior_messages,
+                prior_messages=prior_messages,
+                source_scope=source_scope,
             )
             self._ground_unique_active_amendment(
                 action,
@@ -1983,12 +2087,14 @@ class ChatRuntime:
                     }
                     for action in _d
                 ]
+                prior_messages, source_scope = _delegate_source_context(st)
                 for action in _d:
                     self._annotate_delegate_source(
                         action,
                         st.question,
                         turn_id=st.turn_id,
-                        prior_messages=st.control_prior_messages,
+                        prior_messages=prior_messages,
+                        source_scope=source_scope,
                     )
                     self._ground_unique_active_amendment(
                         action,
@@ -2949,15 +3055,17 @@ class ChatRuntime:
         *,
         turn_id: str = "",
         prior_messages=(),
+        source_scope: str = "",
     ) -> None:
-        """Carry the user's exact instruction across the model-owned delegate.
+        """Carry the exact request and bounded parent dialogue across delegation.
 
         ``task`` is a provider prompt assembled by the model and may paraphrase
         away a host-owned side-effect destination such as "写到我的桌面".  The
         original utterance is therefore attached as an internal attribute after
         parsing.  ``vts.action.record_actions`` preserves ``_host_*`` values
         when it reparses legacy tag text, so a model-authored attribute cannot
-        overwrite this evidence.
+        overwrite this evidence. Prior user and Main Chat lines remain reference
+        context only; they cannot create a clause absent from the authorized task.
         """
 
         attrs = action.get("attrs") if isinstance(action.get("attrs"), dict) else None
@@ -2967,13 +3075,14 @@ class ChatRuntime:
         source = " ".join(str(question or "").split())
         if source:
             attrs["_host_source_user_text"] = source
-        for message in reversed(tuple(prior_messages or ())):
-            if str(message.get("role") or "").strip().lower() != "user":
-                continue
-            context = " ".join(str(message.get("content") or "").split())
-            if context and context != source:
-                attrs["_host_source_user_context"] = context[:2000]
-                break
+        context = _bounded_delegate_source_context(
+            prior_messages,
+            current_user=source,
+        )
+        if context:
+            attrs["_host_source_user_context"] = context
+        if str(source_scope or "").strip():
+            attrs["_host_source_context_scope"] = str(source_scope).strip()[:800]
         if turn_id:
             attrs["_host_turn_id"] = str(turn_id)
 
@@ -3686,10 +3795,13 @@ class ChatRuntime:
             if not model_declared_route:
                 for key, value in route_attrs.items():
                     attrs.setdefault(key, value)
+            prior_messages, source_scope = _delegate_source_context(st)
             ChatRuntime._annotate_delegate_source(
                 action,
                 question,
                 turn_id=str(getattr(st, "turn_id", "") or ""),
+                prior_messages=prior_messages,
+                source_scope=source_scope,
             )
             ChatRuntime._ground_unique_active_amendment(
                 action,
@@ -4091,10 +4203,13 @@ class ChatRuntime:
                 },
                 "raw": "",
             }
+            prior_messages, source_scope = _delegate_source_context(st)
             ChatRuntime._annotate_delegate_source(
                 action,
                 question,
                 turn_id=str(getattr(st, "turn_id", "") or ""),
+                prior_messages=prior_messages,
+                source_scope=source_scope,
             )
             record_actions([action])
             st.delegate_seen = True
