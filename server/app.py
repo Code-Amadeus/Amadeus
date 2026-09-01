@@ -1965,39 +1965,54 @@ async def bootstrap(port: int = 17777) -> None:
     )
 
     auip_b2 = None
+    auip_b2_unavailable_reason = ""
     if str(settings.AUIP_APPSESSION_ROLE_BRANCH_MODE or "") == "b2":
-        from server.auip_b2 import AuipB2Coordinator
+        from server.auip_b2 import (
+            AuipB2Coordinator,
+            b2_runtime_unavailable_reason,
+        )
         from server.auip_b2_role_llm import (
             choose_b2_open_role_action,
             choose_b2_role_action,
             has_b2_role_model_config,
         )
 
-        if auip_control_decider is None:
-            raise RuntimeError("AUIP B2 requires the source-local control decision lane")
-        if not has_b2_role_model_config():
-            raise RuntimeError("AUIP B2 requires AUIP_ACTION_PROVIDER model config")
-        auip_b2 = AuipB2Coordinator(
-            runtime=auip_h.runtime,
-            control_decider=auip_control_decider,
-            role_chooser=choose_b2_role_action,
-            open_role_chooser=(
-                choose_b2_open_role_action
-                if settings.AUIP_B2_OPEN_PAYLOAD_MODE == "candidate"
-                else None
-            ),
-            open_payload_mode=settings.AUIP_B2_OPEN_PAYLOAD_MODE,
-            stage_decision=get_chat_runtime().stage_auip_decision,
+        auip_b2_unavailable_reason = b2_runtime_unavailable_reason(
+            role_branch_mode=settings.AUIP_APPSESSION_ROLE_BRANCH_MODE,
+            control_decision_available=auip_control_decider is not None,
+            role_model_available=has_b2_role_model_config(),
         )
-        auip_engagement.set_b2_coordinator(auip_b2)
-        logger.info(
-            "[AUIP-B2] foreground route enabled provider=%s model=%s "
-            "effort=%s service_tier=%s open_payload=%s",
-            settings.AUIP_ACTION_PROVIDER,
-            settings.AUIP_ACTION_MODEL,
-            settings.AUIP_ACTION_REASONING_EFFORT,
-            settings.AUIP_ACTION_SERVICE_TIER,
-            settings.AUIP_B2_OPEN_PAYLOAD_MODE,
+        if auip_b2_unavailable_reason:
+            logger.warning(
+                "[AUIP-B2] action capability unavailable reason=%s; "
+                "backend startup continues and application actions remain blocked",
+                auip_b2_unavailable_reason,
+            )
+        else:
+            auip_b2 = AuipB2Coordinator(
+                runtime=auip_h.runtime,
+                control_decider=auip_control_decider,
+                role_chooser=choose_b2_role_action,
+                open_role_chooser=(
+                    choose_b2_open_role_action
+                    if settings.AUIP_B2_OPEN_PAYLOAD_MODE == "candidate"
+                    else None
+                ),
+                open_payload_mode=settings.AUIP_B2_OPEN_PAYLOAD_MODE,
+                stage_decision=get_chat_runtime().stage_auip_decision,
+            )
+            logger.info(
+                "[AUIP-B2] foreground route enabled provider=%s model=%s "
+                "effort=%s service_tier=%s open_payload=%s",
+                settings.AUIP_ACTION_PROVIDER,
+                settings.AUIP_ACTION_MODEL,
+                settings.AUIP_ACTION_REASONING_EFFORT,
+                settings.AUIP_ACTION_SERVICE_TIER,
+                settings.AUIP_B2_OPEN_PAYLOAD_MODE,
+            )
+        auip_engagement.set_b2_coordinator(
+            auip_b2,
+            unavailable_reason=auip_b2_unavailable_reason,
         )
 
     # configure handlers with runtime deps.
