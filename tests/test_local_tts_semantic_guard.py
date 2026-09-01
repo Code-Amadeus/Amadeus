@@ -20,6 +20,12 @@ pytestmark = pytest.mark.skipif(
     reason="full TTS runtime is disabled in model-less CI",
 )
 
+# Module-level torch import runs before pytestmark applies; guard it so the
+# L1 model-less CI can collect this module (same tier contract as other suites).
+# The local_tts_infer chain (librosa) also belongs to L4 (local-cu124).
+pytest.importorskip("torch", reason="test requires the local-cu124 tier (torch)")
+pytest.importorskip("librosa", reason="test requires the local-cu124 extra (librosa)")
+
 import torch
 
 
