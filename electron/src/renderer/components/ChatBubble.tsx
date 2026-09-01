@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown'
 interface Props {
   role: 'user' | 'assistant' | 'system'
   text: string
+  translation?: string
   streaming?: boolean
   onStreamIdle?: () => void
   userAvatar?: string
@@ -12,7 +13,7 @@ interface Props {
 
 const DOT_PHASES = ['●', '● ●', '● ● ●', '● ●']
 
-export default function ChatBubble({ role, text, streaming, onStreamIdle, userAvatar = '', assistantAvatar = '' }: Props) {
+export default function ChatBubble({ role, text, translation = '', streaming, onStreamIdle, userAvatar = '', assistantAvatar = '' }: Props) {
   const [display, setDisplay] = useState(text)
   const [dotPhase, setDotPhase] = useState(0)
   const [cursorVisible, setCursorVisible] = useState(true)
@@ -116,6 +117,22 @@ export default function ChatBubble({ role, text, streaming, onStreamIdle, userAv
           }}
         >
           {isUser ? display : <ReactMarkdown className="markdown-body">{display}</ReactMarkdown>}
+          {!isUser && translation ? (
+            <div
+              aria-label="Simplified Chinese translation"
+              className="whitespace-pre-wrap break-words"
+              style={{
+                borderTop: '1px solid var(--border)',
+                color: 'var(--muted)',
+                fontSize: 11.5,
+                lineHeight: '155%',
+                marginTop: 7,
+                paddingTop: 7,
+              }}
+            >
+              {translation}
+            </div>
+          ) : null}
         </div>
       </div>
 

@@ -40,6 +40,7 @@ class Method(StrEnum):
     # Chat
     CHAT_SEND          = "chat.send"
     CHAT_ABORT         = "chat.abort"
+    CHAT_TRANSLATE     = "chat.translate"
     CHAT_TOKEN         = "chat.token"
     CHAT_COMPLETE      = "chat.complete"
     CHAT_ERROR         = "chat.error"
@@ -259,6 +260,10 @@ class ChatTokenParams(TypedDict):
 class ChatCompleteParams(TypedDict):
     turn_id: str
     full_text: str
+
+class ChatTranslateParams(TypedDict):
+    text: str
+    turn_id: NotRequired[str]
 
 class TtsSetModeParams(TypedDict):
     mode: str                # "gpt_sovits" | "edge" | ...
