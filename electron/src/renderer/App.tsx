@@ -113,14 +113,14 @@ function AmadeusApp() {
         setRenderActive(false)
         setRenderAssetUrl('')
       }
-     try {
-      const res = await send('wallpaper.start', ELECTRON_SLICE_START_PARAMS)
-      if (res?.status === 'error') setWallpaperActive(false)   // 失败回退
-      else await syncElectronSliceHost(res)
-    } catch {
-      setWallpaperActive(false)     // 失败回退
-    }
-  } else {
+      try {
+        const res = await send('wallpaper.start', ELECTRON_SLICE_START_PARAMS)
+        if (res?.status === 'error') setWallpaperActive(false)   // 失败回退
+        else await syncElectronSliceHost(res)
+      } catch {
+        setWallpaperActive(false)     // 失败回退
+      }
+    } else {
       try { await send('wallpaper.stop', {}) } catch {}
       await window.amadeus?.closeElectronSlice()
       setWallpaperActive(false)
