@@ -317,13 +317,16 @@ class T2SBlockWithStaticCache:
         k_cache: torch.Tensor,   # 固定大小 [B, bucket_size, hidden]
         v_cache: torch.Tensor,   # 固定大小 [B, bucket_size, hidden]
         pos_idx: torch.Tensor,   # [B, 1, hidden] long，持久化 GPU 张量，replay 前 fill_ 更新
+        key_valid_mask: torch.Tensor,  # [B, bucket_size] bool；仅真实 prompt/生成位为 True
+        valid_kv_len: int = -1,  # 非 Graph 路径可直接使用连续有效前缀
         torch_sdpa: bool = True
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
-        scatter_ 写入当前步位置，attention 看全量 bucket。
+        scatter_ 写入当前步位置，attention 只看有效 KV 位。
         pos_idx 是持久化 GPU 张量，graph 外每步 fill_(step_pos) 更新地址内容，
         graph replay 时直接读取，实现写入位置随步数递增并积累历史。
-        未写入位置为 0，attention logit=0，softmax 后权重极小，不影响真实 token。
+        未写入位置以及 CUDA Graph 对齐产生的 gap 必须被 mask；零 KV 的
+        attention logit 为 0，并不等价于“权重可忽略”。
         """
         q, k, v = F.linear(x, self.qkv_w, self.qkv_b).chunk(3, dim=-1)
 
@@ -332,16 +335,31 @@ class T2SBlockWithStaticCache:
         v_cache.scatter_(1, pos_idx, v)
 
         batch_size = q.shape[0]
-        kv_len = k_cache.shape[1]  # 始终等于 bucket_size（静态形状，CUDA Graph 友好）
+        kv_len = valid_kv_len if valid_kv_len > 0 else k_cache.shape[1]
 
         q = q.view(batch_size, 1, self.num_heads, -1).transpose(1, 2)
-        k_full = k_cache.view(batch_size, kv_len, self.num_heads, -1).transpose(1, 2)
-        v_full = v_cache.view(batch_size, kv_len, self.num_heads, -1).transpose(1, 2)
+        k_full = k_cache[:, :kv_len, :].view(
+            batch_size, kv_len, self.num_heads, -1
+        ).transpose(1, 2)
+        v_full = v_cache[:, :kv_len, :].view(
+            batch_size, kv_len, self.num_heads, -1
+        ).transpose(1, 2)
 
-        if torch_sdpa:
+        # PyTorch SDPA 的 bool mask 以 True 表示“允许参与 attention”。
+        # 自定义实现沿用旧约定，以 True 表示“屏蔽”，因此需要取反。
+        # 非 Graph 路径的有效 KV 已是连续前缀，可直接切片并走无 mask kernel。
+        if valid_kv_len > 0 and torch_sdpa:
             attn = F.scaled_dot_product_attention(q, k_full, v_full)
-        else:
+        elif valid_kv_len > 0:
             attn = scaled_dot_product_attention(q, k_full, v_full, None)
+        elif torch_sdpa:
+            valid_attn_mask = key_valid_mask.unsqueeze(1).unsqueeze(1)
+            attn = F.scaled_dot_product_attention(
+                q, k_full, v_full, attn_mask=valid_attn_mask
+            )
+        else:
+            valid_attn_mask = key_valid_mask.unsqueeze(1).unsqueeze(1)
+            attn = scaled_dot_product_attention(q, k_full, v_full, ~valid_attn_mask)
 
         attn = attn.transpose(1, 2).reshape(batch_size, 1, -1)
         attn = F.linear(attn, self.out_w, self.out_b)
@@ -424,14 +442,19 @@ class T2STransformerWithStaticCache:
         k_cache: List[torch.Tensor],   # 固定大小的缓冲区列表，每层一个
         v_cache: List[torch.Tensor],
         pos_idx: torch.Tensor,         # [B, 1, hidden] long，所有层共享同一写入位置
+        key_valid_mask: torch.Tensor,  # [B, bucket_size] bool，所有层共享
+        valid_kv_len: int = -1,
         torch_sdpa: bool = True
     ):
         """
-        所有层共享 pos_idx，scatter_ 写入当前步，attention 看全量 bucket。
+        所有层共享 pos_idx 和有效位 mask。当前写入位在进入各层前只标记一次，
+        CUDA Graph replay 会随 pos_idx 内容变化而累积有效历史。
         """
+        key_valid_mask.scatter_(1, pos_idx[:, :, 0], True)
         for i in range(self.num_blocks):
             x, k_cache[i], v_cache[i] = self.blocks[i].decode_next_token_with_static_cache(
-                x, k_cache[i], v_cache[i], pos_idx, torch_sdpa
+                x, k_cache[i], v_cache[i], pos_idx, key_valid_mask,
+                valid_kv_len, torch_sdpa
             )
         return x, k_cache, v_cache
 
@@ -720,20 +743,28 @@ class Text2SemanticDecoder(nn.Module):
             
             # 模拟 prompt 后的初始状态
             for i in range(self.num_layers):
-                k_cache[i][:, :initial_len, :] = torch.randn(batch_size, initial_len, hidden_dim, dtype=model_dtype, device=device)
-                v_cache[i][:, :initial_len, :] = torch.randn(batch_size, initial_len, hidden_dim, dtype=model_dtype, device=device)
-            
-            current_lens = [initial_len] * self.num_layers
+                # Graph capture must not advance the caller's sampling RNG.
+                # Constant non-zero values exercise the same kernels without
+                # save/restore races against concurrent inference.
+                k_cache[i][:, :initial_len, :].fill_(0.01)
+                v_cache[i][:, :initial_len, :].fill_(0.02)
+            key_valid_mask = torch.zeros(
+                batch_size, bucket_size, dtype=torch.bool, device=device
+            )
+            key_valid_mask[:, :initial_len] = True
             
             # 模拟 xy_pos 和 pos_idx
-            xy_pos = torch.randn(batch_size, 1, hidden_dim, dtype=model_dtype, device=device)
+            xy_pos = torch.full(
+                (batch_size, 1, hidden_dim), 0.03,
+                dtype=model_dtype, device=device,
+            )
             # pos_idx：持久化 [B,1,H] long 张量，scatter_ 索引，replay 前 fill_ 更新
             pos_idx = torch.full((batch_size, 1, hidden_dim), initial_len, dtype=torch.long, device=device)
             
             # 🚀 预热：使用静态版本的 transformer（新签名，传 pos_idx）
             for warmup_idx in range(self.cuda_graph_warmup_steps):
                 xy_dec, k_cache, v_cache = self.t2s_transformer_static.decode_next_token_with_static_cache(
-                    xy_pos, k_cache, v_cache, pos_idx
+                    xy_pos, k_cache, v_cache, pos_idx, key_valid_mask
                 )
                 logits = self.ar_predict_layer(xy_dec[:, -1])
             
@@ -744,15 +775,22 @@ class Text2SemanticDecoder(nn.Module):
             # 捕获阶段
             capture_start = time.perf_counter()
             
-            # 重置为固定状态（prompt 区随机，其余零）
+            # 重置为固定状态（prompt 区常量，其余零）
             k_cache = [torch.zeros(batch_size, bucket_size, hidden_dim, dtype=model_dtype, device=device) 
                       for _ in range(self.num_layers)]
             v_cache = [torch.zeros(batch_size, bucket_size, hidden_dim, dtype=model_dtype, device=device) 
                       for _ in range(self.num_layers)]
             for i in range(self.num_layers):
-                k_cache[i][:, :initial_len, :] = torch.randn(batch_size, initial_len, hidden_dim, dtype=model_dtype, device=device)
-                v_cache[i][:, :initial_len, :] = torch.randn(batch_size, initial_len, hidden_dim, dtype=model_dtype, device=device)
-            xy_pos = torch.randn(batch_size, 1, hidden_dim, dtype=model_dtype, device=device)
+                k_cache[i][:, :initial_len, :].fill_(0.01)
+                v_cache[i][:, :initial_len, :].fill_(0.02)
+            key_valid_mask = torch.zeros(
+                batch_size, bucket_size, dtype=torch.bool, device=device
+            )
+            key_valid_mask[:, :initial_len] = True
+            xy_pos = torch.full(
+                (batch_size, 1, hidden_dim), 0.03,
+                dtype=model_dtype, device=device,
+            )
             pos_idx = torch.full((batch_size, 1, hidden_dim), initial_len, dtype=torch.long, device=device)
             
             # 捕获 CUDA Graph（必须在目标设备上下文内创建，避免多卡时 stream 关联到 cuda:0）
@@ -768,7 +806,7 @@ class Text2SemanticDecoder(nn.Module):
 
                 with torch.cuda.graph(cuda_graph, **_graph_extra):
                     xy_dec, k_cache_out, v_cache_out = self.t2s_transformer_static.decode_next_token_with_static_cache(
-                        xy_pos, k_cache, v_cache, pos_idx
+                        xy_pos, k_cache, v_cache, pos_idx, key_valid_mask
                     )
                     logits = self.ar_predict_layer(xy_dec[:, -1])
             
@@ -782,6 +820,7 @@ class Text2SemanticDecoder(nn.Module):
                 'k_cache': k_cache,
                 'v_cache': v_cache,
                 'pos_idx': pos_idx,   # 持久化写入位置索引
+                'key_valid_mask': key_valid_mask,
             }
             self.bucket_static_outputs[graph_key] = {
                 'xy_dec': xy_dec,
@@ -1396,12 +1435,13 @@ class Text2SemanticDecoder(nn.Module):
         # 🚀 KV Cache 策略选择和初始化
         current_bucket = None
         bucket_captured = False
-        bucket_valid_len = None
         current_lens = None  # 用于静态缓存模式的长度追踪
         graph_key = None       # (bucket_size, initial_len) tuple，用于 CUDA Graph 字典查找
-        graph_initial_len = None  # Graph 捕获时的写入起始位置
+        graph_initial_len = None  # 仅用于选择可复用的 Graph key
+        graph_prompt_len = None   # 当前句真实 prompt 长度，也是连续 KV 的写入起点
         graph_step_count = 0   # 本句在 graph 路径已走的步数
         pos_idx_static: Optional[torch.Tensor] = None  # static path 用的持久化写入索引
+        key_valid_mask: Optional[torch.Tensor] = None  # static path 的真实 KV 有效位
         
         # 选择使用哪套 transformer
         static_transformer = self.t2s_transformer_static
@@ -1459,6 +1499,10 @@ class Text2SemanticDecoder(nn.Module):
                         k_cache = k_cache_static
                         v_cache = v_cache_static
                         current_lens = [kv_cache_len] * len(k_cache)
+                        key_valid_mask = torch.zeros(
+                            batch_size, current_bucket, dtype=torch.bool, device=device
+                        )
+                        key_valid_mask[:, :kv_cache_len] = True
                         
                         # 预分配 static path 用的 pos_idx（持久化，每步 fill_，避免重复分配）
                         pos_idx_static = torch.full(
@@ -1468,12 +1512,11 @@ class Text2SemanticDecoder(nn.Module):
                         
                         print(f"[T2S] fixed buffer initialized: bucket={current_bucket} current_len={kv_cache_len}")
                         
-                        # graph_initial_len 向上对齐到 _GRAPH_INITIAL_LEN_STRIDE 的倍数。
-                        # 好处：kv_cache_len=337/345/351 均映射到 352，共享同一张 graph，
-                        #       彻底消除每句重复 capture 的 0.4s 开销。
-                        # 代价：gap = (initial_len - kv_cache_len) ≤ stride-1 = 31 个零 KV，
-                        #       对于 330+ token 的 prompt 影响 < 10%，attention 实测无感知。
+                        # graph_initial_len 只用于将相近 prompt 复用到同一张 Graph。
+                        # 当前句仍从真实 kv_cache_len 开始连续写入，绝不能把对齐 gap
+                        # 当成有效 KV；Graph 内的 pos_idx/mask 都是持久化张量，内容可变。
                         graph_initial_len = None
+                        graph_prompt_len = kv_cache_len
                         graph_key = None
                         if graph_run_enabled:
                             if kv_cache_len >= current_bucket - 1:
@@ -1507,9 +1550,8 @@ class Text2SemanticDecoder(nn.Module):
                                         # 本 key 已在之前的句子中捕获，直接复用
                                         bucket_captured = True
 
-                                    # 新句子开始：把 prompt KV 写入 static buffer，
-                                    # gap 区 [kv_cache_len, graph_initial_len) 清零，生成区也清零。
-                                    # pos_idx 设为 graph_initial_len（第一步写入位置）。
+                                    # 新句子开始：只把真实 prompt 标为有效，所有 gap/未来位
+                                    # 都保持无效；第一步从真实 prompt 末尾连续写入。
                                     if bucket_captured and graph_key in self.bucket_graphs:
                                         static_in = self.bucket_static_inputs[graph_key]
                                         for _i in range(len(static_in['k_cache'])):
@@ -1518,8 +1560,9 @@ class Text2SemanticDecoder(nn.Module):
                                             static_in['v_cache'][_i][:, :kv_cache_len, :].copy_(v_cache[_i][:, :kv_cache_len, :])
                                             static_in['k_cache'][_i][:, kv_cache_len:, :].zero_()
                                             static_in['v_cache'][_i][:, kv_cache_len:, :].zero_()
-                                        # 第一步写入位置 = graph_initial_len（对齐后的 prompt 末尾）
-                                        static_in['pos_idx'].fill_(graph_initial_len)
+                                        static_in['key_valid_mask'].zero_()
+                                        static_in['key_valid_mask'][:, :kv_cache_len] = True
+                                        static_in['pos_idx'].fill_(kv_cache_len)
                     else:
                         print(f"[T2S] kv_cache_len={kv_cache_len} exceeds all buckets; using normal path")
                         static_mode_active = False
@@ -1528,29 +1571,27 @@ class Text2SemanticDecoder(nn.Module):
                 
             elif static_mode_active and current_bucket is not None and current_lens is not None:
                 # 🚀 使用静态缓存模式
-                
-                # 🔧 关键修复：在写入前检查是否需要滑动窗口
-                if current_lens[0] >= current_bucket - 1:
-                    # 缓冲区即将满，使用滑动窗口：保留最新的 N-1 个 token
-                    keep_len = current_bucket - 1
-                    # 只在第一次触发时打印，避免日志过多
-                    if not hasattr(self, '_sliding_window_triggered'):
-                        self._sliding_window_triggered = True
-                        print(f"[T2S] buffer nearly full ({current_lens[0]}/{current_bucket}); sliding window keep={keep_len}")
-                    
-                    # 移动 KV cache，丢弃最旧的 token
-                    for i in range(len(k_cache)):
-                        k_cache[i][:, :keep_len, :] = k_cache[i][:, -keep_len:, :].clone()
-                        v_cache[i][:, :keep_len, :] = v_cache[i][:, -keep_len:, :].clone()
-                        # 清零后面的部分
-                        k_cache[i][:, keep_len:, :].zero_()
-                        v_cache[i][:, keep_len:, :].zero_()
-                    
-                    # 重置 current_lens
-                    current_lens = [keep_len] * len(current_lens)
-                
+
+                # 固定桶装满后保留完整 prompt/历史，切到动态 KV 继续。旧的滑动窗口
+                # 会丢掉最早的文本与参考条件，正是长解码时不允许破坏的语义不变量。
+                if current_lens[0] >= current_bucket:
+                    _dynamic_len = current_lens[0]
+                    k_cache = [item[:, :_dynamic_len, :].clone() for item in k_cache]
+                    v_cache = [item[:, :_dynamic_len, :].clone() for item in v_cache]
+                    static_mode_active = False
+                    graph_run_enabled = False
+                    transformer = dynamic_transformer
+                    print(
+                        f"[T2S] fixed buffer full ({_dynamic_len}/{current_bucket}); "
+                        "continuing with full-context dynamic KV"
+                    )
+                    xy_dec, k_cache, v_cache = transformer.decode_next_token(
+                        xy_pos, k_cache, v_cache
+                    )
+                    logits = self.ar_predict_layer(xy_dec[:, -1])
+
                 # 🚀 尝试使用 CUDA Graph（如果已捕获）
-                if graph_run_enabled and bucket_captured and graph_key is not None and graph_key in self.bucket_graphs:
+                elif graph_run_enabled and bucket_captured and graph_key is not None and graph_key in self.bucket_graphs:
                     replay_failed = False
                     bucket_lock = self._get_bucket_lock(graph_key)
                     with bucket_lock:
@@ -1562,8 +1603,9 @@ class Text2SemanticDecoder(nn.Module):
                             # 每步只需 2 个轻量更新，无 per-layer KV copy：
                             # 1. 当前 token 嵌入
                             static_inputs['xy_pos'].copy_(xy_pos)
-                            # 2. 写入位置 = prompt长度 + 已生成步数（scatter_ 历史自动积累）
-                            static_inputs['pos_idx'].fill_(graph_initial_len + graph_step_count)
+                            # 2. 写入位置 = 真实 prompt 长度 + 已生成步数。
+                            # graph_initial_len 只是复用 key，不参与逻辑序列长度。
+                            static_inputs['pos_idx'].fill_(graph_prompt_len + graph_step_count)
                             
                             self._replay_cuda_graph(cuda_graph, xy_pos.device)
 
@@ -1576,25 +1618,23 @@ class Text2SemanticDecoder(nn.Module):
                                 self._cuda_graph_replay_started = True
                                 print(f"[CUDA Graph] replay enabled: key={graph_key} history mode")
                             
-                            # 安全阀：写入位置超出 bucket 时自动 fallback
-                            if graph_initial_len + graph_step_count >= current_bucket:
+                            # 安全阀：桶写满后转动态 KV，保留完整上下文。
+                            if graph_prompt_len + graph_step_count >= current_bucket:
                                 graph_run_enabled = False
-                                print("[CUDA Graph] write position reached bucket boundary; fallback to static path")
-                                # 把 graph buffer 的最新 KV 同步回主循环 k_cache，
-                                # 否则 static path 会用 prompt-only 的 stale k_cache，
-                                # graph 阶段积累的历史全部丢失，导致 attention 不一致。
-                                _fallback_len = graph_initial_len + graph_step_count
+                                static_mode_active = False
+                                transformer = dynamic_transformer
+                                print("[CUDA Graph] bucket full; continuing with full-context dynamic KV")
+                                _fallback_len = graph_prompt_len + graph_step_count
                                 static_in_fb = self.bucket_static_inputs[graph_key]
-                                for _fi in range(len(k_cache)):
-                                    k_cache[_fi].copy_(static_in_fb['k_cache'][_fi])
-                                    v_cache[_fi].copy_(static_in_fb['v_cache'][_fi])
+                                k_cache = [
+                                    item[:, :_fallback_len, :].clone()
+                                    for item in static_in_fb['k_cache']
+                                ]
+                                v_cache = [
+                                    item[:, :_fallback_len, :].clone()
+                                    for item in static_in_fb['v_cache']
+                                ]
                                 current_lens = [_fallback_len] * len(k_cache)
-                                if pos_idx_static is not None:
-                                    pos_idx_static.fill_(_fallback_len)
-                                else:
-                                    pos_idx_static = k_cache[0].new_full(
-                                        (k_cache[0].shape[0], 1, k_cache[0].shape[2]),
-                                        _fallback_len, dtype=torch.long)
                         except RuntimeError as e:
                             replay_failed = True
                             graph_run_enabled = False
@@ -1606,7 +1646,9 @@ class Text2SemanticDecoder(nn.Module):
                         for i in range(len(k_cache)):
                             k_cache[i].copy_(static_inputs['k_cache'][i])
                             v_cache[i].copy_(static_inputs['v_cache'][i])
-                        _fallback_len = graph_initial_len + graph_step_count
+                        if key_valid_mask is not None:
+                            key_valid_mask.copy_(static_inputs['key_valid_mask'])
+                        _fallback_len = graph_prompt_len + graph_step_count
                         current_lens = [_fallback_len] * len(k_cache)
                         if pos_idx_static is not None:
                             pos_idx_static.fill_(_fallback_len)
@@ -1615,7 +1657,8 @@ class Text2SemanticDecoder(nn.Module):
                                 (k_cache[0].shape[0], 1, k_cache[0].shape[2]),
                                 _fallback_len, dtype=torch.long)
                         xy_dec, k_cache, v_cache = transformer.decode_next_token_with_static_cache(
-                            xy_pos, k_cache, v_cache, pos_idx_static
+                            xy_pos, k_cache, v_cache, pos_idx_static, key_valid_mask,
+                            _fallback_len + 1
                         )
                         current_lens = [l + 1 for l in current_lens]
                         logits = self.ar_predict_layer(xy_dec[:, -1])
@@ -1629,7 +1672,8 @@ class Text2SemanticDecoder(nn.Module):
                             (k_cache[0].shape[0], 1, k_cache[0].shape[2]),
                             current_lens[0], dtype=torch.long)
                     xy_dec, k_cache, v_cache = transformer.decode_next_token_with_static_cache(
-                        xy_pos, k_cache, v_cache, pos_idx_static
+                        xy_pos, k_cache, v_cache, pos_idx_static, key_valid_mask,
+                        current_lens[0] + 1
                     )
                     current_lens = [l + 1 for l in current_lens]
                     logits = self.ar_predict_layer(xy_dec[:, -1])

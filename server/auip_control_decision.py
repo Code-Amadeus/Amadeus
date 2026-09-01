@@ -173,6 +173,14 @@ class AuipControlDecision:
                 attrs["_host_preparation_work_item_id"] = (
                     self.preparation_work_item_id
                 )
+            if self.active_work_attempt_ids:
+                # Host-captured identity for an unfinished deliverable that
+                # the user explicitly asked to prepare for participation.  The
+                # launch coordinator revalidates these Attempts against the
+                # current Session roster before it starts ordinary amend Work.
+                attrs["_host_active_work_attempt_ids"] = tuple(
+                    self.active_work_attempt_ids
+                )
             return attrs
         attrs = {"action": self.action}
         if self.action == "step":
@@ -563,6 +571,13 @@ open. Do not choose launch versus prepare. Questions, discussion, status or
 strategy queries, future wishes, and app feature authoring without a request
 to enter the experience are `none`.
 
+When `other_provider_work_active` is true and the current turn explicitly asks
+to connect to, join, or play the one pending deliverable discussed in history,
+return immediate `engage` with `work_relation=subsumed`. Host code may compile
+that request into preparation of the still-running WorkItem. Do not use this
+for an unrelated Work clause or infer application entry from work activity
+alone.
+
 Opening an unrelated web page is not AUIP. Use `after_work` only when the exact
 turn asks to enter after create/amend Work completes.
 
@@ -759,6 +774,7 @@ class AuipControlDecisionResolver:
                 decision,
                 candidates=candidates,
                 preparation_candidates=preparation_candidates,
+                active_work_attempt_ids=active_work_attempt_ids,
             )
         if decision.status == "ok" and decision.action == "prepare":
             target = decision.target.casefold()
@@ -839,8 +855,29 @@ def _compile_entry_decision(
     *,
     candidates: tuple[Any, ...],
     preparation_candidates: tuple[Any, ...],
+    active_work_attempt_ids: tuple[str, ...] = (),
 ) -> AuipControlDecision:
     """Resolve one requested experience against frozen Host capability facts."""
+
+    if (
+        decision.timing == "now"
+        and decision.work_relation == "subsumed"
+        and active_work_attempt_ids
+        and not candidates
+        and not preparation_candidates
+    ):
+        # The requested application is still being authored, so there is no
+        # Artifact identity to place in the ordinary preparation catalog yet.
+        # Preserve only frozen Attempt identity here; the launch coordinator
+        # must rejoin it to exactly one current Session WorkItem before amend.
+        return AuipControlDecision(
+            status="ok",
+            action="prepare",
+            mode=decision.mode,
+            active_work_attempt_ids=tuple(active_work_attempt_ids),
+            work_relation="subsumed",
+            raw_reply=decision.raw_reply,
+        )
 
     if decision.timing == "after_work" and preparation_candidates and not candidates:
         # "Connect/adapt it, then open it" still names the already-existing
@@ -1060,7 +1097,12 @@ def parse_auip_control_decision(
                 timing == "now"
                 and work_relation not in {"subsumed", "independent"}
             )
-            or (timing == "now" and not has_active and not available_titles)
+            or (
+                timing == "now"
+                and not has_active
+                and not available_titles
+                and not has_active_work
+            )
         ):
             return AuipControlDecision(
                 status="invalid",

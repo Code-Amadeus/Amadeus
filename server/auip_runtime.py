@@ -1370,6 +1370,7 @@ class AuipRuntime:
         self,
         conversation_id: str,
         *,
+        app_session_id: str = "",
         limit: int = 6,
     ) -> list[dict[str, str]] | None:
         """Return A1-local Participant context, or ``None`` when A1 is off.
@@ -1382,10 +1383,13 @@ class AuipRuntime:
         if not conversation:
             return None
         with self._lock:
-            target = self._focused_by_conversation.get(conversation, "")
+            target = str(app_session_id or "").strip()
+            if not target:
+                target = self._focused_by_conversation.get(conversation, "")
             session = self._sessions.get(target)
             if (
                 session is None
+                or session.conversation_id != conversation
                 or session.status != "active"
                 or session.role_branch is None
             ):

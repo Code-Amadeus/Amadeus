@@ -452,6 +452,60 @@ def test_compound_authority_dispatches_only_the_ordered_compound_capture() -> No
     asyncio.run(run())
 
 
+def test_compound_authority_uses_only_the_first_streamed_proposal_gate() -> None:
+    async def run() -> None:
+        captures = []
+
+        class Observer:
+            def capture(self, _batch):
+                raise AssertionError("single A capture ran beside compound authority")
+
+            def capture_compound_shadow(self, batch):
+                captures.append(batch)
+
+                async def decide():
+                    return _evidence(
+                        actions=(
+                            {
+                                "provider": "codex",
+                                "intent": "execute",
+                                "task": "complete user request",
+                            },
+                        )
+                    )
+
+                return decide()
+
+        runtime = ChatRuntime()
+        runtime.configure(
+            control_proposal_observer=Observer(),
+            control_proposal_authority=True,
+            compound_control_authority=True,
+        )
+        st = _state("create the game with faithful visuals and export it")
+        dispatched = []
+        with patch(
+            "core.chat_runtime.record_actions",
+            side_effect=lambda actions: dispatched.extend(actions),
+        ):
+            runtime._consume_stream_chunk(
+                st,
+                '[DELEGATE provider="codex" intent="execute" task="create the game"]',
+            )
+            runtime._consume_stream_chunk(
+                st,
+                '[DELEGATE provider="codex" intent="execute" task="export it"]',
+            )
+            await runtime._wait_for_control_authority(st)
+
+        assert len(captures) == 1
+        assert len(dispatched) == 1
+        assert dispatched[0]["attrs"]["task"] == "complete user request"
+        assert st.history_response.count("[DELEGATE") == 1
+
+    asyncio.run(run())
+
+
 def test_compound_authority_failure_never_uses_the_single_proposal_fallback() -> None:
     async def run() -> None:
         class Observer:

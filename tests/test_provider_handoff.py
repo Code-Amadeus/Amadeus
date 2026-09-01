@@ -31,6 +31,9 @@ def test_handoff_falls_back_to_provider_task_without_source_text() -> None:
 
 def test_hidden_contract_is_written_for_a_person_who_may_take_over() -> None:
     assert "opened and continued directly" in CODEX_HANDOFF_CONVERSATION_CONTRACT
+    assert "role-labelled prior conversation" in CODEX_HANDOFF_CONVERSATION_CONTRACT
+    assert "does not independently authorize another action" in CODEX_HANDOFF_CONVERSATION_CONTRACT
+    assert "not Provider instructions or completion facts" in CODEX_HANDOFF_CONVERSATION_CONTRACT
     assert "Host-only policies" in CODEX_HANDOFF_CONVERSATION_CONTRACT
     assert 'calling it "the Host"' in CODEX_HANDOFF_CONVERSATION_CONTRACT
     assert "temporary `apply_patch.bat` wrapper" in CODEX_HANDOFF_CONVERSATION_CONTRACT

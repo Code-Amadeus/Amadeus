@@ -1,4 +1,5 @@
 import type { ProviderInspectionDetails, ProviderEvent, ProviderRun, TurnPhase } from './types'
+import { visibleProviderEvents } from './providerEventVisibility'
 
 export const STATUS_META: Record<ProviderRun['status'], { label: string; tone: string }> = {
   queued: { label: 'Queued', tone: 'idle' },
@@ -64,7 +65,9 @@ export function normalizeRun(raw: unknown): ProviderRun | null {
     metadata: item.metadata && typeof item.metadata === 'object'
       ? item.metadata as Record<string, unknown>
       : {},
-    events: Array.isArray(item.events) ? item.events as ProviderEvent[] : [],
+    events: visibleProviderEvents(
+      Array.isArray(item.events) ? item.events as ProviderEvent[] : [],
+    ),
   }
 }
 

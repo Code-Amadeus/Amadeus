@@ -1522,6 +1522,11 @@ def test_roster_offers_a_recency_ordered_candidate_set() -> None:
         {
             "work_item_id": f"work_{c * 32}",
             "title": title,
+            "source_user_text": (
+                "Build the existing lawn-defense game with faithful visuals and export it."
+                if execution == "running"
+                else ""
+            ),
             "state": "open",
             "execution": execution,
             "completion": "unknown",
@@ -1583,6 +1588,9 @@ def test_roster_offers_a_recency_ordered_candidate_set() -> None:
     assert "Withdrawing what is already running" in without
     assert "currently has 1 queued/running WorkItem" in without
     assert "adds, removes, or changes a requirement" in without
+    assert "Unique active goal text" in without
+    assert "existing lawn-defense game" in without
+    assert "work_bbbbb" not in without
     assert len(without) < len(block)
 
 

@@ -562,18 +562,21 @@ def current_status_facts(
     stage_zh = stages_zh.get(stage_key, stages_zh.get(execution, stage_key or "未知"))
     stage_ja = stages_ja.get(stage_key, stages_ja.get(execution, stage_key or "不明"))
 
-    milestones = row.get("activity_milestones")
-    milestones = milestones if isinstance(milestones, dict) else {}
-    milestone_kind, milestone_fact = _latest_status_milestone(milestones)
+    milestones, direction, _steering = _current_status_evidence(row)
+    (
+        milestone_kind,
+        milestone_fact,
+        milestone_verified,
+        milestone_source,
+        _milestone_observed_at,
+    ) = _latest_status_milestone(milestones)
     terminal_fact = _terminal_status_fact(
         row,
         display_language=display_language,
         milestone_fact=milestone_fact,
     )
     recent = terminal_fact or milestone_fact
-    direction = " ".join(
-        str(row.get("activity_direction_summary") or "").split()
-    )[:360]
+    direction = direction[:360]
     direction_only = bool(
         direction
         and not recent
@@ -592,6 +595,9 @@ def current_status_facts(
         else ""
     )
     recent_source = recent or (direction if direction_only else "")
+    recent_verified = bool(terminal_fact) or bool(
+        milestone_fact and milestone_verified
+    )
     recent_zh = _localized_status_fact(
         recent_source,
         kind=recent_kind,
@@ -643,12 +649,24 @@ def current_status_facts(
     elif execution in {"failed", "cancelled", "orphaned"}:
         next_zh, next_ja = "处理失败原因后再决定是否重试", "失敗原因を確認してから再試行を判断します"
     elif execution in {"queued", "running"}:
-        if "validation" in milestones:
-            next_zh, next_ja = "继续收口剩余工作并形成终态报告", "残作業をまとめ、最終報告を作ります"
-        elif "capability" in milestones:
-            next_zh, next_ja = "验证已经实现的能力并报告结果", "実装済みの機能を検証し、結果を報告します"
-        elif "design" in milestones:
-            next_zh, next_ja = "按已确认的方案继续实现", "確認済みの方針に沿って実装を続けます"
+        if milestone_kind == "validation":
+            next_zh, next_ja = (
+                ("继续收口剩余工作并形成终态报告", "残作業をまとめ、最終報告を作ります")
+                if milestone_verified
+                else ("核对执行端报告的验证结果并继续收口", "報告された検証結果を確認して仕上げます")
+            )
+        elif milestone_kind == "capability":
+            next_zh, next_ja = (
+                ("验证已经实现的能力并报告结果", "実装済みの機能を検証し、結果を報告します")
+                if milestone_verified
+                else ("验证执行端报告的能力是否确实实现", "報告された機能が実際に動くか検証します")
+            )
+        elif milestone_kind == "design":
+            next_zh, next_ja = (
+                ("按已确认的方案继续实现", "確認済みの方針に沿って実装を続けます")
+                if milestone_verified
+                else ("核对执行端报告的方向并继续实现", "報告された方針を確認しながら実装を続けます")
+            )
         else:
             next_zh, next_ja = "形成可确认的实现方案并继续实现", "確認できる実装方針を固めて作業を続けます"
     elif completion == "complete":
@@ -673,12 +691,13 @@ def current_status_facts(
         "next_zh": next_zh,
         "next_ja": next_ja,
         "fact_kind": fact_kind,
+        "fact_verified": "true" if recent_verified else "false",
         "fact_source": (
             "terminal_outcome"
             if fact_kind == "terminal_result"
-            else "provider_direction"
+            else str(row.get("activity_direction_source") or "provider_direction")
             if fact_kind == "direction"
-            else "activity_milestone"
+            else milestone_source or "activity_milestone"
             if fact_kind
             else "none"
         ),
@@ -708,6 +727,10 @@ def render_current_status_facts(
     has_result = str(facts.get("fact_kind") or "") != ""
     direction_only = str(facts.get("direction_only") or "").lower() == "true"
     has_blocker = blocker_zh != "没有已知阻碍"
+    reported_result = (
+        has_result
+        and str(facts.get("fact_verified") or "false").lower() != "true"
+    )
 
     if stage_key in {"queued"}:
         display = f"还在等待开始，目前没有发现阻碍；下一步会{next_zh}。"
@@ -719,6 +742,12 @@ def render_current_status_facts(
         elif direction_only:
             display = f"还在处理中，当前执行方向是：{recent_zh}；这还不是完成结果，目前没有发现阻碍。"
             voice_ja = "まだ作業中よ。進め方は更新されていて、内容は画面に出してある。まだ完了報告ではないけど、今のところ問題はないわ。"
+        elif reported_result and has_blocker:
+            display = f"还在处理中，目前收到的执行报告是：{recent_zh}；这还不是宿主确认的结果，而且{blocker_zh}，接下来会{next_zh}。"
+            voice_ja = f"まだ作業中よ。実行側からは{recent_ja}と報告されているけれど、まだホスト確認済みの結果ではなく、{blocker_ja}。次は{next_ja}。"
+        elif reported_result:
+            display = f"还在处理中，目前收到的执行报告是：{recent_zh}；这还不是宿主确认的结果，目前没有发现阻碍。"
+            voice_ja = f"まだ作業中よ。実行側からは{recent_ja}と報告されているけれど、まだホスト確認済みの結果ではないわ。今のところ問題はない。"
         elif has_result and has_blocker:
             display = f"还在处理中，最近确认的是：{recent_zh}；不过{blocker_zh}，接下来会{next_zh}。"
             voice_ja = f"まだ作業中よ。{recent_ja}。ただ、{blocker_ja}。次は{next_ja}。"
@@ -730,8 +759,20 @@ def render_current_status_facts(
             display = f"还在处理“{title}”。暂时没有新的可确认成果，也没有发现阻碍；我会{next_zh}，有验证结果就告诉你。"
             voice_ja = f"「{title}」を進めているところよ。確認できる新しい成果も問題も、今のところ出ていない。{next_ja}から、検証結果が出たら知らせるわ。"
     elif stage_key in {"waiting_for_user", "stalled", "cancelling"} or has_blocker:
-        recent_clause_zh = f"目前确认到的是：{recent_zh}；" if has_result else ""
-        recent_clause_ja = f"ここまでに{recent_ja}は確認できているけれど、" if has_result else ""
+        recent_clause_zh = (
+            f"目前收到的执行报告是：{recent_zh}，但尚未由宿主确认；"
+            if reported_result
+            else f"目前确认到的是：{recent_zh}；"
+            if has_result
+            else ""
+        )
+        recent_clause_ja = (
+            f"実行側からは{recent_ja}と報告されているけれど、まだホスト確認済みではなく、"
+            if reported_result
+            else f"ここまでに{recent_ja}は確認できているけれど、"
+            if has_result
+            else ""
+        )
         display = f"这件事现在停在需要处理的环节。{recent_clause_zh}{blocker_zh}；接下来会{next_zh}。"
         voice_ja = f"今はここで止まっているわ。{recent_clause_ja}{blocker_ja}。次は{next_ja}。"
     elif stage_key in {"review", "succeeded", "terminal", "failed", "cancelled"}:
@@ -827,7 +868,7 @@ def status_query_narration_note(
     *,
     session_id: str = "",
 ) -> dict[str, Any]:
-    """Project one resolved WorkItem into verified Narrator evidence.
+    """Project one resolved WorkItem into authority-labelled Narrator evidence.
 
     Lookup has already selected the WorkItem before this function runs.  The
     resulting note deliberately retains Provider prose as evidence: it is the
@@ -845,12 +886,15 @@ def status_query_narration_note(
         str(row.get("completion_rationale") or "").split()
     )[:400]
 
-    milestones = row.get("activity_milestones")
-    milestones = milestones if isinstance(milestones, dict) else {}
-    milestone_kind, milestone_summary = _latest_status_milestone(milestones)
-    direction = " ".join(
-        str(row.get("activity_direction_summary") or "").split()
-    )[:420]
+    milestones, direction, steering = _current_status_evidence(row)
+    (
+        milestone_kind,
+        milestone_summary,
+        milestone_verified,
+        milestone_source,
+        milestone_observed_at,
+    ) = _latest_status_milestone(milestones)
+    direction = direction[:420]
 
     from agent_host.provider_progress import split_progress_milestones
 
@@ -858,16 +902,31 @@ def status_query_narration_note(
         str(row.get("terminal_summary") or "")
     )
     visible_terminal = " ".join(visible_terminal.split())[:600]
+    outcome_verdict = row.get("outcome_verdict")
+    outcome_verdict = outcome_verdict if isinstance(outcome_verdict, dict) else {}
     is_terminal = execution in {"succeeded", "failed", "cancelled", "orphaned"}
+    fact_verified = False
+    fact_source = ""
+    fact_observed_at = 0.0
     if is_terminal:
         fact_kind = "terminal_result"
         fact_summary = visible_terminal or milestone_summary
+        fact_verified = outcome_verdict.get("verified") is True
+        fact_source = "host_outcome" if fact_verified else "provider_terminal"
+        fact_observed_at = milestone_observed_at if not visible_terminal else 0.0
     elif milestone_summary:
         fact_kind = milestone_kind
         fact_summary = milestone_summary
+        fact_verified = milestone_verified
+        fact_source = milestone_source
+        fact_observed_at = milestone_observed_at
     elif direction:
         fact_kind = "direction"
         fact_summary = direction
+        fact_source = str(row.get("activity_direction_source") or "provider_direction")
+        fact_observed_at = _status_observed_at(
+            row.get("activity_last_directional_update_at")
+        )
     else:
         fact_kind = ""
         fact_summary = ""
@@ -886,12 +945,19 @@ def status_query_narration_note(
     if fact_summary:
         signals.append(
             {
-                "label": "direction" if fact_kind == "direction" else "report",
+                "label": (
+                    "direction"
+                    if fact_kind == "direction"
+                    or (fact_kind == "design" and not fact_verified)
+                    else "report"
+                ),
                 "text": fact_summary[:420],
                 "detail": (
                     "unverified reported execution direction"
                     if fact_kind == "direction"
-                    else f"verified {fact_kind} evidence"
+                    else f"Host-verified {fact_kind} evidence"
+                    if fact_verified
+                    else f"reported {fact_kind} evidence; not Host-verified"
                 ),
                 "kind": "status",
             }
@@ -906,8 +972,6 @@ def status_query_narration_note(
             }
         )
 
-    outcome_verdict = row.get("outcome_verdict")
-    outcome_verdict = outcome_verdict if isinstance(outcome_verdict, dict) else {}
     work_item_id = str(row.get("work_item_id") or "").strip()
     attempt_id = str(
         row.get("attempt_id") or row.get("current_attempt_id") or ""
@@ -925,7 +989,12 @@ def status_query_narration_note(
         "phase": "Checkpoint",
         "importance": "important",
         "title": title,
-        "summary": fact_summary or title,
+        "summary": fact_summary
+        or (
+            "No semantic milestone has been reported for the current instruction revision."
+            if _steering_has_freshness_fence(steering)
+            else title
+        ),
         "signals": signals,
         "metadata": {
             "status_query": True,
@@ -944,6 +1013,11 @@ def status_query_narration_note(
                 "uncertainty": uncertainty,
                 "completion_rationale": rationale,
                 "fact_kind": fact_kind,
+                "fact_verified": fact_verified,
+                "fact_source": fact_source,
+                "fact_observed_at": fact_observed_at,
+                "steering_state": str(steering.get("state") or ""),
+                "steering_revision": int(steering.get("revision") or 0),
             },
         },
     }
@@ -992,22 +1066,84 @@ def _terminal_status_fact(
 
 def _latest_status_milestone(
     milestones: dict[str, Any],
-) -> tuple[str, str]:
-    """Return the latest ledger milestone, never an unconfirmed candidate."""
+) -> tuple[str, str, bool, str, float]:
+    """Return the latest ledger milestone together with its evidence strength."""
 
-    rows: list[tuple[float, str, str]] = []
+    rows: list[tuple[float, str, str, bool, str]] = []
     for key, value in milestones.items():
         kind = str(key or "").strip().lower()
         if kind not in {"design", "diagnostic", "capability", "validation"} or not isinstance(value, dict):
             continue
         summary = " ".join(str(value.get("summary") or "").split())
         if summary:
-            rows.append((float(value.get("observedAt") or 0.0), kind, summary))
+            rows.append(
+                (
+                    _status_observed_at(value.get("observedAt")),
+                    kind,
+                    summary,
+                    value.get("verified") is True,
+                    str(value.get("source") or ""),
+                )
+            )
     rows.sort(reverse=True)
     if not rows:
-        return "", ""
-    _observed_at, kind, summary = rows[0]
-    return kind, summary
+        return "", "", False, "", 0.0
+    observed_at, kind, summary, verified, source = rows[0]
+    return kind, summary, verified, source, observed_at
+
+
+def _current_status_evidence(
+    row: dict[str, Any],
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    """Select the causal evidence view for the current steering instruction."""
+
+    raw_milestones = row.get("activity_milestones")
+    milestones = (
+        dict(raw_milestones) if isinstance(raw_milestones, dict) else {}
+    )
+    direction = " ".join(
+        str(row.get("activity_direction_summary") or "").split()
+    )
+    steering = (
+        dict(row.get("activity_steering"))
+        if isinstance(row.get("activity_steering"), dict)
+        else {}
+    )
+    if not _steering_has_freshness_fence(steering):
+        return milestones, direction, steering
+
+    cutoff = _status_observed_at(steering.get("observedAt"))
+    if cutoff <= 0.0:
+        return {}, "", steering
+    current_milestones = {
+        str(key): dict(value)
+        for key, value in milestones.items()
+        if isinstance(value, dict)
+        and _status_observed_at(value.get("observedAt")) > cutoff
+    }
+    direction_observed_at = _status_observed_at(
+        row.get("activity_last_directional_update_at")
+    )
+    if direction_observed_at <= cutoff:
+        direction = ""
+    return current_milestones, direction, steering
+
+
+def _steering_has_freshness_fence(steering: dict[str, Any]) -> bool:
+    return str(steering.get("state") or "").strip().lower() in {
+        "queued",
+        "applied",
+        "cancel_pending",
+        "restarted",
+        "replaced",
+    }
+
+
+def _status_observed_at(value: Any) -> float:
+    try:
+        return max(0.0, float(value or 0.0))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 # ── facts for the answering pass ─────────────────────────────────────────────
