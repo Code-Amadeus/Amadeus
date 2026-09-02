@@ -119,8 +119,6 @@ class MicInputService:
 
     def start(self, preferred_index: int | None = None, *, wait_timeout: float | None = None) -> None:
         timeout = _startup_timeout_seconds() if wait_timeout is None else max(0.0, wait_timeout)
-        if preferred_index is not None:
-            self._mic_index = preferred_index
         if self.running:
             if self._stream is None:
                 if not self._wait_until_ready(timeout):
@@ -130,7 +128,16 @@ class MicInputService:
                 raise RuntimeError(f"[MicInput] microphone service failed to start: {self._last_error}")
             if self._stream is None:
                 raise RuntimeError("[MicInput] microphone service is running without an input stream")
+            if preferred_index is not None and preferred_index != self._mic_index:
+                logger.warning(
+                    "[MicInput] requested microphone index=%s differs from active index=%s; "
+                    "keeping the active stream",
+                    preferred_index,
+                    self._mic_index,
+                )
             return
+        if preferred_index is not None:
+            self._mic_index = preferred_index
         self._last_error = ""
         self._ready_event.clear()
         self._stop_event.clear()
