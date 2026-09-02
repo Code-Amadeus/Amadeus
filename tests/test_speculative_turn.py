@@ -163,7 +163,7 @@ def test_manager_on_result_callback():
     """_SpeculativeTranscription：完成且有效才回调；作废后不回调。
 
     被测对象只依赖 backend/threading/numpy（asr.manager 顶层无 torch/silero），
-    model-less CI 也必须真实执行，不得用 importorskip 假跳过。
+    model-less CI 也必须真实执行，不得以依赖跳过假覆盖。
     """
     import numpy as np
     from asr.manager import _SpeculativeTranscription
