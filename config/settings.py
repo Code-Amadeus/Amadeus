@@ -92,7 +92,7 @@ OPENAI_MODEL_NAME = _str("OPENAI_MODEL_NAME", "gpt-5.4-mini")
 # LLM 提供商 — Gemini
 # ===========================================================================
 GEMINI_API_KEY    = _str("GEMINI_API_KEY")
-GEMINI_MODEL_NAME = _str("GEMINI_MODEL_NAME", "gemini-2.5-flash")
+GEMINI_MODEL_NAME = _str("GEMINI_MODEL_NAME", "gemini-3.6-flash")
 
 # ===========================================================================
 # LLM 提供商 — AWS Bedrock
@@ -428,6 +428,8 @@ BRANCH_SQUASH_MERGE = _bool("BRANCH_SQUASH_MERGE", True)
 # Execution providers
 # ===========================================================================
 PROVIDER_DELEGATE_DEFAULT_PROVIDER = _str("PROVIDER_DELEGATE_DEFAULT_PROVIDER", "openclaw").strip().lower()
+AMADEUS_BROWSER_VISIBLE = _bool("AMADEUS_BROWSER_VISIBLE", False)
+AMADEUS_BROWSER_CHANNEL = _str("AMADEUS_BROWSER_CHANNEL", "").strip().lower()
 # Exactly one Codex transport may own the stable ``codex`` Provider id.  The
 # official persistent SDK/App Server transport is the local product default;
 # the turn-scoped CLI remains an explicit compatibility transport.

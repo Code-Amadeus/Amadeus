@@ -64,6 +64,7 @@ _WALLPAPER_CLIENT_ASSETS = (
     _PROJECT_ROOT / "render" / "web" / "electron_slice.html",
     _PROJECT_ROOT / "render" / "web" / "electron_slice_host.js",
     _PROJECT_ROOT / "render" / "web" / "crt_canvas_surface.js",
+    _PROJECT_ROOT / "render" / "web" / "wallpaper_voice_state.js",
     _PROJECT_ROOT / "render" / "web" / "wallpaper_scene.js",
     _PROJECT_ROOT / "render" / "web" / "renderer.js",
 )
@@ -117,7 +118,26 @@ class _BridgeState:
     def snapshot(self) -> dict:
         with self.lock:
             calls = list(self.bootstrap_calls)
-            calls.extend(self.last_calls.values())
+            replay_calls = list(self.last_calls.values())
+            asr_call = self.last_calls.get("asrStatus")
+            subtitle_call = self.last_calls.get("subtitle")
+            speaking_call = self.last_calls.get("speaking")
+            asr_payload = asr_call["args"][0] if asr_call else {}
+            speaking = bool(speaking_call["args"][0]) if speaking_call else False
+            if (
+                asr_payload.get("status") in {"recognized", "thinking", "waiting_turn_complete"}
+                and asr_payload.get("text")
+                and subtitle_call
+                and subtitle_call["args"][0]
+                and not speaking
+            ):
+                asr_index = replay_calls.index(asr_call)
+                subtitle_index = replay_calls.index(subtitle_call)
+                if asr_index < subtitle_index:
+                    replay_calls.pop(asr_index)
+                    subtitle_index = replay_calls.index(subtitle_call)
+                    replay_calls.insert(subtitle_index + 1, asr_call)
+            calls.extend(replay_calls)
         return {"calls": calls}
 
     def canvas_snapshot(self) -> dict:

@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from typing import Any, Mapping
-from urllib.parse import urlparse
+from urllib.parse import quote_plus, urlparse
 
 
 _BARE_DOMAIN_RE = re.compile(
@@ -33,6 +33,27 @@ _SEARCH_INTENT_RE = re.compile(
     flags=re.I,
 )
 
+_VISIBLE_BROWSER_INTENT_RE = re.compile(
+    r"(?:打开|显示|弹出|启动|使用|用).{0,8}(?:可见|桌面)?浏览器|"
+    r"(?:可见|桌面)浏览器|"
+    r"\b(?:open|show|launch|use)\s+(?:a\s+|the\s+)?(?:visible\s+)?browser\b|"
+    r"ブラウザ.{0,8}(?:開|表示|起動)|(?:開|表示|起動).{0,8}ブラウザ",
+    flags=re.I,
+)
+
+_VISIBLE_BROWSER_NEGATION_RE = re.compile(
+    r"(?:不要|别|別|无需|無需|不需要).{0,8}浏览器|"
+    r"\b(?:do\s+not|don't|without)\b.{0,20}\bbrowser\b",
+    flags=re.I,
+)
+
+_VISIBLE_BROWSER_SEARCH_MARKER_RE = re.compile(
+    r"(?:搜索|搜一下|搜一搜|检索|查询|查找|查一下|查|"
+    r"\bsearch(?:\s+the\s+web)?(?:\s+for)?\b|\bfind\b|\blook\s+up\b|"
+    r"検索|調べ(?:て|る)?)",
+    flags=re.I,
+)
+
 
 @dataclass(slots=True, frozen=True)
 class BrowserDelegateNormalization:
@@ -41,6 +62,15 @@ class BrowserDelegateNormalization:
     action: str
     parameters: dict[str, Any] = field(default_factory=dict)
     audit: dict[str, Any] = field(default_factory=dict)
+
+
+def requests_visible_browser(text: str) -> bool:
+    """Return whether the exact user text requests a desktop browser window."""
+
+    source = " ".join(str(text or "").split())
+    if not source or _VISIBLE_BROWSER_NEGATION_RE.search(source):
+        return False
+    return _VISIBLE_BROWSER_INTENT_RE.search(source) is not None
 
 
 def normalize_delegate_browser_request(
@@ -79,6 +109,23 @@ def normalize_delegate_browser_request(
             },
         )
 
+    source_user_text = str(source.get("_host_source_user_text") or "").strip()
+    if requests_visible_browser(source_user_text):
+        query = _visible_browser_search_query(source_user_text)
+        if query:
+            return BrowserDelegateNormalization(
+                action="open",
+                parameters={
+                    "url": f"https://www.bing.com/search?q={quote_plus(query)}"
+                },
+                audit={
+                    "status": "canonical",
+                    "action": "open",
+                    "target_source": "visible_browser_query",
+                    "reason": "explicit_visible_browser_search",
+                },
+            )
+
     if _SEARCH_INTENT_RE.search(str(task or "")):
         return BrowserDelegateNormalization(
             action="",
@@ -91,6 +138,18 @@ def normalize_delegate_browser_request(
         )
 
     return BrowserDelegateNormalization(action="open")
+
+
+def _visible_browser_search_query(source_user_text: str) -> str:
+    """Extract the query that follows an explicit visible-browser command."""
+
+    source = re.sub(r"\s+", " ", str(source_user_text or "")).strip()
+    matches = list(_VISIBLE_BROWSER_SEARCH_MARKER_RE.finditer(source))
+    if not matches:
+        return ""
+    query = source[matches[-1].end() :]
+    query = query.strip(" \t\r\n'\"`“”‘’<>[]{}：:。.!?！？；;,，、")
+    return re.sub(r"\s+", " ", query).strip()[:220]
 
 
 def web_addresses(text: str, *, allow_bare_domain: bool = False) -> list[str]:

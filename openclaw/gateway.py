@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import shutil
 
 import aiohttp
 
@@ -43,15 +44,32 @@ async def start_openclaw_gateway() -> bool:
     except Exception:
         pass
 
-    # 2. 检查项目目录
-    if not str(OPENCLAW_PROJECT_DIR or "").strip():
-        logger.info("[OpenClaw] external Gateway is unavailable; no local project is configured")
-        return False
-    run_script = os.path.join(OPENCLAW_PROJECT_DIR, "scripts", "run-node.mjs")
-    if not os.path.exists(run_script):
-        logger.warning(f"[OpenClaw] startup script not found: {run_script}; check OPENCLAW_PROJECT_DIR")
-        return False
-
+    # 2. 解析启动命令。源码 checkout 保持原路径；官方 CLI 是本地安装的回退。
+    project_dir = str(OPENCLAW_PROJECT_DIR or "").strip()
+    run_script = os.path.join(project_dir, "scripts", "run-node.mjs")
+    if project_dir and os.path.exists(run_script):
+        command = ("node", run_script, "gateway", "run")
+        cwd = project_dir
+    else:
+        openclaw_cli = shutil.which("openclaw")
+        if not openclaw_cli:
+            logger.warning(
+                "[OpenClaw] neither a source checkout nor the OpenClaw CLI is available"
+            )
+            return False
+        cli_module = os.path.join(
+            os.path.dirname(openclaw_cli),
+            "node_modules",
+            "openclaw",
+            "openclaw.mjs",
+        )
+        if openclaw_cli.lower().endswith((".cmd", ".bat")) and os.path.exists(
+            cli_module
+        ):
+            command = ("node", cli_module, "gateway", "run")
+        else:
+            command = (openclaw_cli, "gateway", "run")
+        cwd = None
     # 3. 组装环境变量
     env = os.environ.copy()
     env["OPENCLAW_GATEWAY_TOKEN"] = OPENCLAW_TOKEN
@@ -61,17 +79,16 @@ async def start_openclaw_gateway() -> bool:
     port = OPENCLAW_BASE_URL.rsplit(":", 1)[-1]
     try:
         _openclaw_gateway_proc = await asyncio.create_subprocess_exec(
-            "node", run_script,
-            "gateway", "run",
+            *command,
             "--port", port,
             "--bind", "loopback",
-            cwd=OPENCLAW_PROJECT_DIR,
+            cwd=cwd,
             env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
     except FileNotFoundError:
-        logger.warning("[OpenClaw] node executable not found; make sure Node.js is installed and available in PATH")
+        logger.warning("[OpenClaw] Gateway executable could not be started")
         return False
 
     # 5. 等待 Gateway 就绪（轮询 healthz，最多 30 秒）
@@ -96,14 +113,22 @@ async def start_openclaw_gateway() -> bool:
     return False
 
 
-def stop_openclaw_gateway() -> None:
+async def stop_openclaw_gateway() -> None:
     """退出时关闭由本程序启动的 Gateway 子进程（外部已运行的不干预）。"""
     global _openclaw_gateway_proc
     if _openclaw_gateway_proc is None:
         return
+    process = _openclaw_gateway_proc
     try:
-        _openclaw_gateway_proc.terminate()
+        if process.returncode is None:
+            process.terminate()
+            try:
+                await asyncio.wait_for(process.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
         logger.info("[OpenClaw] Gateway subprocess terminated")
     except Exception as e:
         logger.warning(f"[OpenClaw] failed to terminate Gateway subprocess: {e}")
-    _openclaw_gateway_proc = None
+    finally:
+        _openclaw_gateway_proc = None

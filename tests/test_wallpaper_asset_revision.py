@@ -188,8 +188,89 @@ def test_shared_canvas_and_slice_host_are_javascript_syntax_valid() -> None:
         )
 
 
+def test_wallpaper_scene_can_replace_a_cached_ambient_texture_twice() -> None:
+    wallpaper_scene = (_PROJECT_ROOT / "render" / "web" / "wallpaper_scene.js").read_text(
+        encoding="utf-8"
+    )
+    node_runner = r"""
+const vm = require("node:vm");
+
+const sharedTexture = { baseTexture: { valid: true, width: 1672, height: 941 } };
+class Sprite {
+  constructor(texture) {
+    if (!texture || !texture.baseTexture || !texture.baseTexture.valid) {
+      throw new TypeError("cannot construct a sprite from a destroyed texture");
+    }
+    this.texture = texture;
+  }
+
+  destroy(options) {
+    if (options && options.texture) {
+      this.texture.baseTexture = null;
+    }
+  }
+}
+
+const ambientLayer = {
+  children: [],
+  addChildAt(sprite) { this.children.unshift(sprite); },
+  removeChild(sprite) { this.children = this.children.filter((item) => item !== sprite); },
+};
+const context = {
+  URLSearchParams,
+  app: { view: { addEventListener() {} } },
+  window: {
+    location: { search: "" },
+    addEventListener() {},
+    renderApp: {},
+    PIXI: { Sprite },
+  },
+  console: { log() {}, info() {}, warn() {}, error() {} },
+  setTimeout,
+  clearTimeout,
+};
+context.PIXI = context.window.PIXI;
+
+vm.runInNewContext(require("node:fs").readFileSync(0, "utf8"), context);
+const scene = context.window.wallpaperApp.scene;
+scene.app = { screen: { width: 1920, height: 1080 } };
+scene.ambientLayer = ambientLayer;
+scene._drawGlow = () => {};
+
+scene._replaceAmbientLowSprite(sharedTexture);
+scene._replaceAmbientLowSprite(sharedTexture);
+
+process.stdout.write(JSON.stringify({
+  hasSprite: !!scene.ambientLowSprite,
+  textureStillValid: !!(
+    scene.ambientLowSprite.texture
+    && scene.ambientLowSprite.texture.baseTexture
+    && scene.ambientLowSprite.texture.baseTexture.valid
+  ),
+  layerChildren: ambientLayer.children.length,
+}));
+"""
+
+    completed = subprocess.run(
+        ["node", "-e", node_runner],
+        input=wallpaper_scene,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=10,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout) == {
+        "hasSprite": True,
+        "textureStillValid": True,
+        "layerChildren": 1,
+    }
+
+
 def test_electron_wallpaper_start_selects_the_external_slice_host(monkeypatch) -> None:
     created: list[object] = []
+    voice_events: list[str] = []
 
     class Host:
         asset_port = 17778
@@ -234,12 +315,23 @@ def test_electron_wallpaper_start_selects_the_external_slice_host(monkeypatch) -
 
     monkeypatch.setattr(wallpaper_engine_bridge, "WallpaperEngineBridgeHost", Host)
     monkeypatch.setattr(animator_module, "SpriteForgeAnimator", Animator)
+    monkeypatch.setattr("server.handlers.wallpaper_handler.WAKE_ENABLED", True)
+    monkeypatch.setattr(
+        "server.handlers.wallpaper_handler.WAKE_AUTO_START_WITH_WALLPAPER",
+        True,
+    )
 
     handler = WallpaperHandler()
+    handler.configure(
+        project_root=_PROJECT_ROOT,
+        wake_start_fn=lambda: voice_events.append("wake"),
+        voice_prepare_fn=lambda: voice_events.append("prepare"),
+    )
     result = asyncio.run(handler._start({"slice_host": "electron"}))
     assert created and created[0].slice_host == "electron"
     assert result["sliceHost"] == "electron"
     assert result["sliceBounds"] == Host.slice_bounds
+    assert voice_events == ["wake", "prepare"]
     asyncio.run(handler._stop({}))
 
 

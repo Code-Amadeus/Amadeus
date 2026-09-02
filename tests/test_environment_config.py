@@ -57,3 +57,15 @@ def test_process_environment_precedes_dotenv(tmp_path, monkeypatch) -> None:
 
 def test_project_reader_is_shared_for_one_root(tmp_path) -> None:
     assert load_project_environment(tmp_path) is load_project_environment(tmp_path)
+
+
+def test_default_gemini_model_is_current() -> None:
+    from config import settings
+
+    gemini_model = next(
+        field
+        for field in settings.declared_environment_fields()
+        if field.key == "GEMINI_MODEL_NAME"
+    )
+
+    assert gemini_model.default == "gemini-3.6-flash"

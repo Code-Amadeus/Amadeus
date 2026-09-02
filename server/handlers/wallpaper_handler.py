@@ -21,6 +21,25 @@ from server.ws_handler import RequestHandler
 
 logger = logging.getLogger(__name__)
 
+_CANVAS_CONTENT_KEYS = frozenset(
+    {
+        "artifact",
+        "markdown",
+        "reportView",
+        "reportMarkdown",
+        "diff",
+        "diffView",
+        "html",
+        "url",
+        "screenshot",
+        "permissionRequest",
+        "title",
+        "lead",
+        "phase",
+        "signals",
+    }
+)
+
 
 class WallpaperHandler(RequestHandler):
     methods = [
@@ -38,6 +57,7 @@ class WallpaperHandler(RequestHandler):
         self._subscribed = False
         self._wake_start_fn: Callable[[], Any] | None = None
         self._wake_stop_fn: Callable[[], Any] | None = None
+        self._voice_prepare_fn: Callable[[], Any] | None = None
         self._canvas_action_fn: Callable[[dict[str, Any]], Any] | None = None
         self._canvas_projector: Callable[[dict[str, Any]], dict[str, Any]] | None = None
         self._attention_snapshot: Callable[[], list[dict[str, Any]]] | None = None
@@ -49,6 +69,7 @@ class WallpaperHandler(RequestHandler):
         render_bridge=None,
         wake_start_fn: Callable[[], Any] | None = None,
         wake_stop_fn: Callable[[], Any] | None = None,
+        voice_prepare_fn: Callable[[], Any] | None = None,
         canvas_action_fn: Callable[[dict[str, Any]], Any] | None = None,
         canvas_projector: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         attention_snapshot: Callable[[], list[dict[str, Any]]] | None = None,
@@ -57,6 +78,7 @@ class WallpaperHandler(RequestHandler):
         self._render_bridge = render_bridge
         self._wake_start_fn = wake_start_fn
         self._wake_stop_fn = wake_stop_fn
+        self._voice_prepare_fn = voice_prepare_fn
         self._canvas_action_fn = canvas_action_fn
         self._canvas_projector = canvas_projector
         self._attention_snapshot = attention_snapshot
@@ -123,6 +145,13 @@ class WallpaperHandler(RequestHandler):
                         await result
                 except Exception:
                     logger.exception("wake auto-start failed")
+                if self._voice_prepare_fn is not None:
+                    try:
+                        result = self._voice_prepare_fn()
+                        if hasattr(result, "__await__"):
+                            await result
+                    except Exception:
+                        logger.exception("conversation ASR prewarm failed")
             return payload
         except Exception as e:
             logger.exception("wallpaper start failed")
@@ -257,6 +286,7 @@ class WallpaperHandler(RequestHandler):
                     projected = candidate
             except Exception:
                 logger.exception("failed to project wallpaper canvas through work ledger")
+        projected = self._collapse_empty_canvas(projected)
         self._last_canvas_payload = dict(projected)
         host = self._wallpaper_host
         if host is None:
@@ -274,6 +304,22 @@ class WallpaperHandler(RequestHandler):
             logger.exception("failed to set wallpaper canvas")
             return False
         return True
+
+    @classmethod
+    def _collapse_empty_canvas(cls, payload: dict[str, Any]) -> dict[str, Any]:
+        output = dict(payload or {})
+        work_context = output.get("workContext")
+        has_selected_work_item = isinstance(work_context, dict) and bool(
+            work_context.get("workItemId")
+        )
+        if (
+            any(output.get(key) for key in _CANVAS_CONTENT_KEYS)
+            or has_selected_work_item
+            or output.get("visible")
+            or output.get("open")
+        ):
+            return output
+        return {"clear": True, "visible": False, "expanded": False}
 
     def _apply_asr_status(self, payload: dict[str, Any]) -> bool:
         host = self._wallpaper_host

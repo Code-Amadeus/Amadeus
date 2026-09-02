@@ -137,7 +137,7 @@ def _config_for_provider(base: SubtitleTranslatorConfig, provider: str) -> Subti
         model = model_override or getattr(settings, "OPENAI_MODEL_NAME", "gpt-5.4-mini")
         base_url = base_url_override or getattr(settings, "OPENAI_BASE_URL", "")
     elif provider == "gemini":
-        model = model_override or getattr(settings, "GEMINI_MODEL_NAME", "gemini-2.5-flash")
+        model = model_override or getattr(settings, "GEMINI_MODEL_NAME", "gemini-3.6-flash")
         base_url = base_url_override or "https://generativelanguage.googleapis.com/v1beta"
     else:
         provider = "deepseek"

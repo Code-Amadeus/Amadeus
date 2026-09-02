@@ -476,6 +476,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
 
   // load initial config + subscribe to config changes (cross-page sync)
   useEffect(() => {
+    if (!connected) return
     send('system.get_config', {}).then(res => {
       if (res?.llm_provider) setProvider(String(res.llm_provider))
       if (res?.vision_mode) setVisionVideoMode(String(res.vision_mode) === 'watching')
@@ -488,7 +489,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       if (values.vision_enabled !== undefined && !values.vision_enabled) setVisionVideoMode(false)
     })
     return unsub
-  }, [subscribe, send])
+  }, [connected, subscribe, send])
 
   useEffect(() => {
     if (!canUseMultimodal) {
@@ -666,13 +667,20 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       const turnId = crypto.randomUUID()
       interruptedTurnIdsRef.current.delete(turnId)
       activeStreamTurnIdRef.current = turnId
-      await send('chat.send', {
+      const response = await send('chat.send', {
         text,
         provider,
         turn_id: turnId,
         session_id: sessionId || '',
         ...(visual ? { visual } : {}),
       })
+      if (response.control === 'wake') {
+        activeStreamTurnIdRef.current = ''
+        setMessages(prev => {
+          const last = prev[prev.length - 1]
+          return last?.role === 'user' && last.text === text ? prev.slice(0, -1) : prev
+        })
+      }
       if (pendingVisualAttachment) setPendingVisualAttachment(null)
     } catch {
       setMessages(prev => [...prev, { role: 'system', text: 'Send failed: backend unreachable' }])
@@ -842,9 +850,17 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     }
   }, [canUseMultimodal])
 
-  const handleProviderChange = useCallback((v: string) => {
-    setProvider(v)
-    send('system.set_config', { values: { llm_provider: v } }).catch(() => {})
+  const handleProviderChange = useCallback(async (v: string) => {
+    try {
+      const res = await send('system.set_config', { values: { llm_provider: v } })
+      const values = res.values as Record<string, unknown> | undefined
+      if (values?.llm_provider) setProvider(String(values.llm_provider))
+    } catch {
+      setMessages(prev => [...prev, {
+        role: 'system',
+        text: 'Model switch failed; wait for the current reply to finish and try again.',
+      }])
+    }
   }, [send])
 
   const handleNewSession = useCallback(async () => {

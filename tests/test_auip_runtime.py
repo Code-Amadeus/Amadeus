@@ -59,8 +59,12 @@ def test_explicit_off_keeps_appsession_role_branch_product_inert() -> None:
     ) is False
 
 
-def test_appsession_role_branch_defaults_to_promoted_b2_mode() -> None:
-    runtime = AuipRuntime()
+def test_appsession_role_branch_uses_promoted_b2_setting_by_default() -> None:
+    with patch(
+        "server.auip_runtime.settings.AUIP_APPSESSION_ROLE_BRANCH_MODE",
+        "b2",
+    ):
+        runtime = AuipRuntime()
     registered = _registered(runtime, "branch-default-b2")
 
     assert runtime.role_branch_mode == "b2"

@@ -319,7 +319,6 @@ async def bootstrap(port: int = 17777) -> None:
         VTS_ENABLED, VTS_HEARTBEAT_ENABLED,
         AEC_REALTIME_BARGE_IN,
         AEC_REALTIME_ENABLED,
-        ASR_IDLE_UNLOAD_SECONDS,
         ASR_ECHO_TAIL_GUARD_MS,
         LOCAL_LLM_LAUNCH_MODE, LOCAL_LLM_TYPE, LLM_PROVIDER,
         EXP_TTS_MAX_CONCURRENCY, TTS_BACKEND,
@@ -327,6 +326,7 @@ async def bootstrap(port: int = 17777) -> None:
         WAKE_AUTO_SEND_TO_CHAT,
         WAKE_BRIDGE_AUTO_SEND,
         WAKE_ENABLED,
+        WAKE_PHRASES,
     )
 
     # wire handler registration.
@@ -917,7 +917,7 @@ async def bootstrap(port: int = 17777) -> None:
         except Exception:
             logger.exception("barge-in ASR release failed")
         try:
-            qwen_hot_window = max(float(WAKE_AWAKE_SECONDS), float(ASR_IDLE_UNLOAD_SECONDS))
+            qwen_hot_window = float(WAKE_AWAKE_SECONDS)
             await asr_h.start_listening(
                 {
                     "source": "wake",
@@ -1227,7 +1227,13 @@ async def bootstrap(port: int = 17777) -> None:
 
     async def _start_asr_from_wake(payload=None):
         payload = payload or {}
-        qwen_hot_window = max(float(WAKE_AWAKE_SECONDS), float(ASR_IDLE_UNLOAD_SECONDS))
+        command_text = str(payload.get("command_text") or "").strip()
+        from server.desktop_voice import is_desktop_voice_exit_command
+
+        if command_text and is_desktop_voice_exit_command(command_text):
+            logger.info("wake inline stop command received; remaining in passive wake")
+            return
+        qwen_hot_window = float(WAKE_AWAKE_SECONDS)
         if not await _main_voice_allowed_now("wake detected"):
             return
         logger.info("wake detected; entering Qwen ASR hot window for %.1fs", qwen_hot_window)
@@ -1237,7 +1243,6 @@ async def bootstrap(port: int = 17777) -> None:
             get_turn_coordinator().on_wake_detected()
         except Exception:
             logger.debug("turn coordinator notify failed", exc_info=True)
-        command_text = str(payload.get("command_text") or "").strip()
         if command_text and WAKE_AUTO_SEND_TO_CHAT:
             try:
                 await bus.emit(Method.ASR_RECOGNIZED, {"text": command_text, "is_final": True, "source": "wake", "wake": payload})
@@ -1292,6 +1297,10 @@ async def bootstrap(port: int = 17777) -> None:
                 return
         except Exception:
             logger.exception("failed to check ASR prompt leak")
+        await bus.emit(
+            Method.ASR_STATUS,
+            {"status": "thinking", "source": "wake", "text": text},
+        )
         # 投机决议（切片 D2）：正式文本与投机轮一致则确认放行，不再重发；
         # 不一致 / 投机轮已被作废则按原路径正常发送
         try:
@@ -1323,6 +1332,10 @@ async def bootstrap(port: int = 17777) -> None:
             await _handle_vn_player_asr_recognized(payload)
             return
         if source != "wake":
+            return
+        if payload.get("control") == "stop":
+            logger.info("desktop voice stop command received; returning to passive wake")
+            await asr_h.stop_listening("voice_stop_command")
             return
         await _send_wake_text(str(payload.get("text") or ""), source="wake ASR")
 
@@ -1405,7 +1418,20 @@ async def bootstrap(port: int = 17777) -> None:
             await asr_h.notify_turn_complete("chat_complete_timeout")
 
     async def _handle_wake_bridge_text(payload: dict) -> None:
-        await _send_wake_text(str(payload.get("text") or ""), source="wake bridge")
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            return
+        from server.desktop_voice import is_desktop_voice_exit_command
+
+        if is_desktop_voice_exit_command(text):
+            logger.info("desktop voice stop command received from wake bridge")
+            await asr_h.stop_listening("voice_stop_command")
+            return
+        await bus.emit(
+            Method.ASR_RECOGNIZED,
+            {**payload, "text": text, "is_final": True, "source": "wake"},
+        )
+        await _send_wake_text(text, source="wake bridge")
 
     async def _handle_tts_interrupt(payload: dict) -> None:
         try:
@@ -2078,6 +2104,8 @@ async def bootstrap(port: int = 17777) -> None:
         background_interaction_interrupt=(
             _interrupt_background_interaction_before_chat
         ),
+        manual_wake_handler=_start_asr_from_wake if WAKE_ENABLED else None,
+        manual_wake_phrases=WAKE_PHRASES,
     )
     from server.interrupt_flow import get_interrupt_flow
     get_interrupt_flow().configure(chat_handler=chat_h, tts_handler=tts_h)
@@ -2155,6 +2183,7 @@ async def bootstrap(port: int = 17777) -> None:
         render_bridge=_render_signal_bridge,
         wake_start_fn=lambda: wake_h.start({}),
         wake_stop_fn=lambda: wake_h.stop({}),
+        voice_prepare_fn=_get_or_create_asr_manager,
         canvas_action_fn=canvas_action_router.route,
         canvas_projector=work_ledger.project_canvas,
         attention_snapshot=lambda: attention_requests.list_pending(
@@ -2275,6 +2304,12 @@ async def bootstrap(port: int = 17777) -> None:
             await asyncio.to_thread(stop_llama_server)
         except Exception:
             logger.exception("failed to stop managed llama-server")
+        try:
+            from openclaw.gateway import stop_openclaw_gateway
+
+            await stop_openclaw_gateway()
+        except Exception:
+            logger.exception("failed to stop managed OpenClaw Gateway")
 
 
 # adapter: drives core.chat_runtime directly (no main.py attribute injection).
@@ -3876,7 +3911,10 @@ def _delegate_provider_selection(
                 )
         except Exception:
             logger.exception("failed to read bounded WorkItem routing facts")
-    from agent_host.browser_request_contract import web_addresses
+    from agent_host.browser_request_contract import (
+        requests_visible_browser,
+        web_addresses,
+    )
 
     facts = DelegateRequirementFacts.from_delegate(
         attrs,
@@ -3901,6 +3939,7 @@ def _delegate_provider_selection(
         source_has_browser_address=bool(
             web_addresses(source_user_text, allow_bare_domain=True)
         ),
+        source_requests_visible_browser=requests_visible_browser(source_user_text),
         required_workspace_access=str(
             attrs.get("_host_workspace_access") or ""
         ),

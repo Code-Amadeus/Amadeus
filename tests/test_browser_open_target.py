@@ -171,6 +171,24 @@ def test_addressless_open_with_find_intent_lowers_to_research() -> None:
     }
 
 
+def test_explicit_visible_browser_search_opens_a_search_results_page() -> None:
+    normalized = normalize_delegate_browser_request(
+        "Search the web for Beijing weather.",
+        "open",
+        {"_host_source_user_text": "打开浏览器搜索北京天气"},
+    )
+    assert normalized.action == "open"
+    assert normalized.parameters == {
+        "url": "https://www.bing.com/search?q=%E5%8C%97%E4%BA%AC%E5%A4%A9%E6%B0%94"
+    }
+    assert normalized.audit == {
+        "status": "canonical",
+        "action": "open",
+        "target_source": "visible_browser_query",
+        "reason": "explicit_visible_browser_search",
+    }
+
+
 def test_vague_addressless_open_remains_a_strict_contract_error() -> None:
     normalized = normalize_delegate_browser_request("打开那个网站", "open")
     assert normalized.action == "open"
