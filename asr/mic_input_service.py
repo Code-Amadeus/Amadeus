@@ -13,9 +13,12 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, TYPE_CHECKING
 
 import numpy as np
+
+if TYPE_CHECKING:
+    import pyaudio
 
 # pyaudio / torch are voice-tier (T2) dependencies, imported lazily so that
 # this module stays importable in audio-less installs (it is reachable from
