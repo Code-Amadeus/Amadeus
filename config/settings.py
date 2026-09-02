@@ -92,7 +92,7 @@ OPENAI_MODEL_NAME = _str("OPENAI_MODEL_NAME", "gpt-5.4-mini")
 # LLM 提供商 — Gemini
 # ===========================================================================
 GEMINI_API_KEY    = _str("GEMINI_API_KEY")
-GEMINI_MODEL_NAME = _str("GEMINI_MODEL_NAME", "gemini-2.5-flash")
+GEMINI_MODEL_NAME = _str("GEMINI_MODEL_NAME", "gemini-3.6-flash")
 
 # ===========================================================================
 # LLM 提供商 — AWS Bedrock

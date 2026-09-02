@@ -45,8 +45,11 @@ bedrock_runtime_client = None
 
 def configure(llm_provider: str = None, local_llm_type: str = None):
     """设置当前进程的 LLM 路由选项。"""
-    global LLM_PROVIDER, LOCAL_LLM_TYPE
+    global LLM_PROVIDER, LOCAL_LLM_TYPE, llm_client, gemini_model
     if llm_provider is not None:
+        if llm_provider != LLM_PROVIDER:
+            llm_client = None
+            gemini_model = None
         LLM_PROVIDER = llm_provider
     if local_llm_type is not None:
         LOCAL_LLM_TYPE = local_llm_type
@@ -199,7 +202,7 @@ def remote_llm_messages_query(
     timeout: float = 45.0,
     model: str | None = None,
 ) -> str:
-    """Query the configured OpenAI-compatible backend with an exact history.
+    """Query the configured remote backend with an exact history.
 
     ControlDecision needs the production system message and prior conversation
     as distinct roles. Flattening them into ``remote_llm_query(question)``
@@ -209,7 +212,7 @@ def remote_llm_messages_query(
     that to ``unavailable`` and never touches dispatch.
     """
 
-    global llm_client
+    global llm_client, gemini_model
     normalized = [
         {
             "role": str(message.get("role") or ""),
@@ -247,6 +250,35 @@ def remote_llm_messages_query(
             timeout=float(timeout),
             response_format={"type": "json_object"},
         )
+    elif LLM_PROVIDER == "gemini":
+        if gemini_model is None:
+            gemini_model = init_llm_client()
+        reply = generate_gemini_text(
+            gemini_model,
+            model=str(model or GEMINI_MODEL_NAME),
+            contents=[
+                {
+                    "role": "model" if message["role"] == "assistant" else "user",
+                    "parts": [{"text": message["content"]}],
+                }
+                for message in normalized[1:]
+                if message["role"] != "system"
+            ],
+            config={
+                "system_instruction": "\n\n".join(
+                    message["content"]
+                    for message in normalized
+                    if message["role"] == "system"
+                ),
+                "temperature": float(temperature),
+                "max_output_tokens": max(1, int(max_tokens)),
+                "response_mime_type": "application/json",
+                "http_options": {"timeout": max(1, round(float(timeout) * 1000))},
+            },
+        )
+        if not reply:
+            raise RuntimeError("structured control backend returned no content")
+        return reply
     else:
         raise RuntimeError(
             f"structured control message query is unavailable for {LLM_PROVIDER!r}"

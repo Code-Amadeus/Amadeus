@@ -503,6 +503,95 @@ def test_message_query_preserves_roles_for_the_control_backend() -> None:
     assert calls[0]["response_format"] == {"type": "json_object"}
 
 
+def test_provider_switch_uses_a_client_for_the_new_backend() -> None:
+    from llm import client
+
+    class StaleCompletions:
+        @staticmethod
+        def create(**_kwargs):
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="stale backend"))]
+            )
+
+    class FreshCompletions:
+        @staticmethod
+        def create(**_kwargs):
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="fresh backend"))]
+            )
+
+    stale_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=StaleCompletions())
+    )
+    fresh_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=FreshCompletions())
+    )
+    with (
+        patch.object(client, "LLM_PROVIDER", "openai"),
+        patch.object(client, "llm_client", stale_client),
+        patch.object(client, "init_llm_client", return_value=fresh_client),
+    ):
+        client.configure(llm_provider="deepseek")
+        reply = client.remote_llm_messages_query(
+            [
+                {"role": "system", "content": "control"},
+                {"role": "user", "content": "search"},
+            ]
+        )
+
+    assert reply == "fresh backend"
+
+
+def test_gemini_message_query_preserves_control_history_and_json_contract() -> None:
+    from llm import client
+
+    calls = []
+
+    class Models:
+        @staticmethod
+        def generate_content(**kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(text='{"decisions":[]}')
+
+    fake_client = SimpleNamespace(models=Models())
+    messages = [
+        {"role": "system", "content": "control"},
+        {"role": "user", "content": "old"},
+        {"role": "assistant", "content": "prior"},
+        {"role": "user", "content": "current"},
+    ]
+    with (
+        patch.object(client, "LLM_PROVIDER", "gemini"),
+        patch.object(client, "gemini_model", fake_client),
+    ):
+        reply = client.remote_llm_messages_query(
+            messages,
+            temperature=0.0,
+            max_tokens=321,
+            timeout=12.5,
+            model="gemini-test",
+        )
+
+    assert reply == '{"decisions":[]}'
+    assert calls == [
+        {
+            "model": "gemini-test",
+            "contents": [
+                {"role": "user", "parts": [{"text": "old"}]},
+                {"role": "model", "parts": [{"text": "prior"}]},
+                {"role": "user", "parts": [{"text": "current"}]},
+            ],
+            "config": {
+                "system_instruction": "control",
+                "temperature": 0.0,
+                "max_output_tokens": 321,
+                "response_mime_type": "application/json",
+                "http_options": {"timeout": 12500},
+            },
+        }
+    ]
+
+
 if __name__ == "__main__":
     test_runtime_shadow_uses_prior_history_and_never_current_role_reply()
     print("ok: runtime shadow uses only prior history and current user")
@@ -516,3 +605,7 @@ if __name__ == "__main__":
     print("ok: raw role control stays distinct from host grounding")
     test_message_query_preserves_roles_for_the_control_backend()
     print("ok: control backend preserves message roles")
+    test_provider_switch_uses_a_client_for_the_new_backend()
+    print("ok: provider switch uses a client for the new backend")
+    test_gemini_message_query_preserves_control_history_and_json_contract()
+    print("ok: Gemini control backend preserves history and JSON contract")
