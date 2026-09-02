@@ -270,7 +270,15 @@ class MicInputService:
         energy_end_chunks = max(1, int(max(1, int(energy_end_ms)) / chunk_ms))
         energy_end_rms = max(0.0, float(energy_end_rms))
         handoff_max_capture_sec = max(0.1, float(handoff_max_capture_sec))
+        max_speech_sec = max(0.1, float(max_speech_sec))
         silence_chunks = 0
+        # A handoff starts with buffered speech, so ``speech_started`` alone
+        # cannot prove that this fresh Conversation VAD iterator owns the live
+        # utterance.  Keep the short recovery watchdog until this iterator sees
+        # its own start event.  Once it does, normal VAD/energy/max-speech
+        # endpointing owns the utterance and the watchdog must not cut a user
+        # off merely because they have spoken for five seconds.
+        handoff_vad_owned = False
         # 两段式投机端点：短静音先行触发 on_probable_end(部分音频)，
         # 说话恢复则 on_probable_end_cancelled() 作废并重新武装。
         probable_end_chunks = (
@@ -303,7 +311,10 @@ class MicInputService:
         echo_dropped = False
         preroll_buf: deque[np.ndarray] = deque(maxlen=preroll_chunks)
         cursor = self.cursor()
-        deadline = time.monotonic() + float(timeout_s)
+        # ``timeout_s`` is the wait-for-speech-start deadline.  It must not
+        # shorten an utterance that started late; active speech has its own
+        # bounded ``max_speech_sec`` deadline below.
+        speech_start_deadline = time.monotonic() + max(0.0, float(timeout_s))
 
         def finish_audio(reason: str) -> np.ndarray | None:
             nonlocal echo_dropped
@@ -341,7 +352,16 @@ class MicInputService:
             return audio
 
         try:
-            while time.monotonic() < deadline and not self._stop_event.is_set():
+            while not self._stop_event.is_set():
+                now = time.monotonic()
+                if not speech_started and now >= speech_start_deadline:
+                    break
+                if (
+                    speech_started
+                    and capture_started_at > 0
+                    and now - capture_started_at >= max_speech_sec
+                ):
+                    return finish_audio("max_speech")
                 frame = cursor.read(timeout=0.25)
                 if frame is None:
                     continue
@@ -356,18 +376,22 @@ class MicInputService:
 
                 vad_out = vad_iter(torch.from_numpy(chunk_np), return_seconds=False)
                 if vad_out is not None:
-                    if "start" in vad_out and not speech_started:
-                        speech_started = True
-                        speech_chunks = list(preroll_buf)
-                        speech_raw_chunks = list(preroll_buf)
-                        speech_times = []
-                        capture_started_at = time.monotonic()
-                        silence_chunks = 0
-                        if on_speech_start is not None:
-                            try:
-                                on_speech_start()
-                            except Exception:
-                                logger.debug("[MicInput] speech-start callback failed", exc_info=True)
+                    if "start" in vad_out:
+                        if handoff_capture and not handoff_vad_owned:
+                            handoff_vad_owned = True
+                            logger.info("[MicInput] handoff Conversation VAD took ownership")
+                        if not speech_started:
+                            speech_started = True
+                            speech_chunks = list(preroll_buf)
+                            speech_raw_chunks = list(preroll_buf)
+                            speech_times = []
+                            capture_started_at = time.monotonic()
+                            silence_chunks = 0
+                            if on_speech_start is not None:
+                                try:
+                                    on_speech_start()
+                                except Exception:
+                                    logger.debug("[MicInput] speech-start callback failed", exc_info=True)
                     elif "end" in vad_out and speech_started:
                         audio = finish_audio("vad_end")
                         if echo_dropped:
@@ -419,6 +443,7 @@ class MicInputService:
                         continue
                     if (
                         handoff_capture
+                        and not handoff_vad_owned
                         and capture_started_at > 0
                         and time.monotonic() - capture_started_at >= handoff_max_capture_sec
                     ):

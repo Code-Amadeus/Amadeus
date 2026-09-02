@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -10,6 +11,7 @@ from server.handlers.system_handler import (
     SystemHandler,
     _avatar_configuration,
     _model_connections,
+    _model_role_configuration,
     _voice_configuration,
     _work_provider_configuration,
 )
@@ -46,7 +48,29 @@ def test_settings_connection_descriptors_never_return_secret_values() -> None:
         "OPENCLAW_GATEWAY_TOKEN",
         "ASR_API_KEY",
         "TTS_API_KEY",
+        "MIMO_TTS_API_KEY",
     }
+
+
+def test_settings_exposes_default_b2_as_needing_setup_without_action_model() -> None:
+    from config import settings
+
+    with (
+        patch.object(settings, "AUIP_APPSESSION_ROLE_BRANCH_MODE", "b2"),
+        patch.object(settings, "AUIP_CONTROL_DECISION_ENABLED", True),
+        patch(
+            "server.auip_b2_role_llm.has_b2_role_model_config",
+            return_value=False,
+        ),
+    ):
+        roles = {group["id"]: group for group in _model_role_configuration(settings)}
+
+    action = roles["auip_action"]
+    assert action["active"] is True
+    assert action["configured"] is False
+    assert action["status"] == "needs_setup"
+    assert action["status_ok"] is False
+    assert "Application actions remain blocked" in action["status_detail"]
 
 
 def test_deepseek_main_model_is_an_independent_editable_startup_field() -> None:
@@ -207,6 +231,32 @@ def test_voice_settings_keep_wake_and_conversation_recognition_independent() -> 
         {"value": "buffered", "label": "Buffered WAV · compatible"},
         {"value": "openai_sse", "label": "OpenAI SSE · streaming PCM"},
     ]
+    assert {field["key"] for field in groups["tts_mimo"]["fields"]} == {
+        "MIMO_TTS_BASE_URL",
+        "MIMO_TTS_API_KEY",
+        "MIMO_TTS_MODEL",
+        "MIMO_TTS_VOICE",
+    }
+
+
+def test_mimo_desktop_settings_persist_values_and_encrypt_the_key() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "electron"
+        / "src"
+        / "main"
+        / "desktopSettings.ts"
+    ).read_text(encoding="utf-8")
+    value_block = source[source.index("const VALUE_KEYS"):source.index("const SECRET_KEYS")]
+    secret_block = source[
+        source.index("const SECRET_KEYS"):source.index("const CODEX_TRANSPORT_KEYS")
+    ]
+
+    assert all(
+        f"'{key}'" in value_block
+        for key in ("MIMO_TTS_BASE_URL", "MIMO_TTS_MODEL", "MIMO_TTS_VOICE")
+    )
+    assert "'MIMO_TTS_API_KEY'" in secret_block
 
 
 def test_voice_settings_publish_microphone_choices_without_recording_audio() -> None:

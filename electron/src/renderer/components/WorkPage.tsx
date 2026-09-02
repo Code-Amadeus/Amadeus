@@ -33,6 +33,7 @@ import {
   summarizePayload,
   toolCount,
 } from './work/workState'
+import { isVisibleProviderEvent } from './work/providerEventVisibility'
 
 type DisplayNarrationItem = {
   label: string
@@ -587,6 +588,7 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
   }, [applyWorkResponse, desktopProjection, runs, send, workProjection])
 
   const appendEvent = useCallback((event: ProviderEvent) => {
+    if (!isVisibleProviderEvent(event)) return
     setRuns(prev => {
       const index = prev.findIndex(item => item.run_id === event.run_id)
       if (index < 0) {

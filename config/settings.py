@@ -270,6 +270,12 @@ TTS_API_VOICE = _str("TTS_API_VOICE", "alloy")
 TTS_API_STREAM_PROTOCOL = _str("TTS_API_STREAM_PROTOCOL", "buffered").strip().lower()
 TTS_API_TIMEOUT_SECONDS = _float("TTS_API_TIMEOUT_SECONDS", 60.0)
 
+# MiMo TTS（小米远程后端，chat-completions 音频协议，非 /audio/speech）
+MIMO_TTS_BASE_URL = _str("MIMO_TTS_BASE_URL", "https://api.xiaomimimo.com/v1")
+MIMO_TTS_API_KEY = _str("MIMO_TTS_API_KEY", "")
+MIMO_TTS_MODEL = _str("MIMO_TTS_MODEL", "mimo-v2.5-tts")
+MIMO_TTS_VOICE = _str("MIMO_TTS_VOICE", "冰糖")
+
 
 def _resolve_tts_device() -> str:
     """
@@ -355,6 +361,7 @@ VAD_ENERGY_THRESHOLD = _int("VAD_ENERGY_THRESHOLD", 600)
 # may run alongside this backend on the shared microphone service.
 ASR_BACKEND = _str("ASR_BACKEND", "qwen3_asr")
 ASR_LANGUAGE = _str("ASR_LANGUAGE", "auto")
+QWEN3_ASR_MODEL_PATH = _str("QWEN3_ASR_MODEL_PATH", "")
 QWEN3_ASR_DEVICE = _str("QWEN3_ASR_DEVICE", "auto").strip().lower()
 if QWEN3_ASR_DEVICE in {"cuda:0", "gpu"}:
     QWEN3_ASR_DEVICE = "cuda"
@@ -383,6 +390,9 @@ ASR_LISTEN_TIMEOUT_SECONDS = _float("ASR_LISTEN_TIMEOUT_SECONDS", 15.0)
 ASR_PREROLL_MS = _int("ASR_PREROLL_MS", 500)
 ASR_ENERGY_END_RMS = _float("ASR_ENERGY_END_RMS", 0.008)
 ASR_ENERGY_END_MS = _int("ASR_ENERGY_END_MS", 450)
+# Recovery watchdog while a post-barge-in capture still lacks ownership from
+# its fresh Conversation VAD iterator.  This is not the user's speech limit;
+# after VAD takeover, ASR_MAX_SPEECH_SECONDS is the absolute bound.
 ASR_HANDOFF_MAX_CAPTURE_SECONDS = _float("ASR_HANDOFF_MAX_CAPTURE_SECONDS", 5.0)
 # 两段式投机端点：短静音（下值）先把已捕获音频提交给 ASR 后端并行转写，
 # 长静音（ASR_VAD_SILENCE_MS / ASR_ENERGY_END_MS）确认端点后若说话未恢复

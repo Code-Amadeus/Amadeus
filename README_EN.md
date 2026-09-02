@@ -165,9 +165,39 @@ cd ..
 
 `npm ci` uses the project postinstall hook to fetch the pinned Electron runtime.
 The cu124 profile fixes `torch==2.5.1+cu124`, `torchaudio==2.5.1+cu124`, and the
-local-model dependency set. It follows the current working installation for
-the first release without claiming a universal one-click guarantee on every
-fresh machine.
+local-model dependency set.
+
+### Install external runtime assets
+
+The full local-voice profile needs the Qwen ASR and GPT-SoVITS v3 voice packs.
+The visual and character packs are optional:
+
+```powershell
+py -3.12 tools\external_assets.py verify C:\Downloads\amadeus-asr-qwen3-0.6b.zip
+py -3.12 tools\external_assets.py install C:\Downloads\amadeus-asr-qwen3-0.6b.zip
+py -3.12 tools\external_assets.py verify C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
+py -3.12 tools\external_assets.py install C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
+
+# Optional scene and KTX2 character animation
+py -3.12 tools\external_assets.py install C:\Downloads\amadeus-visual-runtime.zip
+py -3.12 tools\external_assets.py install C:\Downloads\amadeus-character-kurisu.zip
+py -3.12 tools\external_assets.py status
+```
+
+If a prepared Qwen pack is unavailable, download the upstream snapshot into
+the same canonical location. Runtime inference remains offline and will not
+start an implicit download when the microphone is opened:
+
+```powershell
+.\.venv_cu124\Scripts\python.exe -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-ASR-0.6B', local_dir='assets/models/asr/qwen3-asr-0.6b')"
+```
+
+The Japanese GPT-SoVITS frontend prepares an OpenJTalk dictionary on first
+use. Prewarm it once if the normal application launch must remain offline:
+
+```powershell
+.\.venv_cu124\Scripts\python.exe -c "import pyopenjtalk; print(pyopenjtalk.g2p('準備完了'))"
+```
 
 ### Configure and launch
 
@@ -175,10 +205,10 @@ fresh machine.
 Copy-Item .env.example .env
 ```
 
-Replace relevant `<...>` placeholders, then review:
+Provide the DeepSeek API key, then review:
 
 - **Models:** `deepseek`, the official endpoint, `deepseek-v4-flash`, and an API key;
-- **Voice:** Qwen3-ASR / SenseVoice paths, GPT-SoVITS **v3** checkpoints, reference audio/text, microphone, AEC, and barge-in;
+- **Voice:** Qwen model directory, GPT-SoVITS **v3** checkpoints, reference audio/text, microphone, AEC, and barge-in;
 - **General:** optional character-pack status and presentation settings.
 
 Launch Amadeus directly:
@@ -244,6 +274,11 @@ failure:
 Model weights, reference audio, character packs, and large or copyright-
 sensitive media are distributed separately. The source repository keeps the
 required icons, default wallpaper, schemas, validators, and installation tool.
+
+The current directory contracts are `asr-qwen3-0.6b`,
+`voice-kurisu-gpt-sovits-v3`, `visual-runtime`, and `character-kurisu`. The
+first two form the full local-voice profile; the latter two affect only scene
+and character presentation.
 
 ```powershell
 py -3.12 tools\external_assets.py verify C:\path\to\asset-bundle.zip

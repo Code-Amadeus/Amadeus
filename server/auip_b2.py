@@ -45,6 +45,28 @@ _PRE_ACTION_REPLAN_CODES = frozenset(
 )
 
 
+def b2_runtime_unavailable_reason(
+    *,
+    role_branch_mode: object,
+    control_decision_available: bool,
+    role_model_available: bool,
+) -> str:
+    """Return the one missing prerequisite for the selected B2 runtime.
+
+    B2 availability is a capability fact, not a process-start requirement.
+    Callers use this result to keep application actions fail-closed while the
+    rest of Chat, Settings, and the Host control plane remain available.
+    """
+
+    if str(role_branch_mode or "").strip().lower() != "b2":
+        return ""
+    if not control_decision_available:
+        return "b2_control_decision_unavailable"
+    if not role_model_available:
+        return "b2_role_model_unavailable"
+    return ""
+
+
 class AuipB2Coordinator:
     """Own candidate selection/execution, not automatic-event presentation."""
 

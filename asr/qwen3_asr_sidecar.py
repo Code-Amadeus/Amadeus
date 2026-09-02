@@ -57,6 +57,7 @@ def main():
     import numpy as np
     import torch
     from qwen_asr import Qwen3ASRModel
+    from asr.qwen_model import resolve_qwen_model_source
 
     requested_device = os.environ.get("QWEN3_ASR_DEVICE", "auto").strip().lower()
     cuda_available = bool(torch.cuda.is_available())
@@ -103,7 +104,7 @@ def main():
 
     try:
         model = Qwen3ASRModel.from_pretrained(
-            "Qwen/Qwen3-ASR-0.6B",
+            resolve_qwen_model_source(),
             dtype=dtype,
             device_map=device_map,
             max_inference_batch_size=1,

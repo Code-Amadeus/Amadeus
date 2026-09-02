@@ -28,6 +28,10 @@ async def start_openclaw_gateway() -> bool:
     """
     global _openclaw_gateway_proc
 
+    if not str(OPENCLAW_TOKEN or "").strip() and not str(OPENCLAW_PROJECT_DIR or "").strip():
+        logger.info("[OpenClaw] optional Gateway is not configured; skipping local auto-start")
+        return False
+
     healthz_url = f"{OPENCLAW_BASE_URL}/healthz"
 
     # 1. 检测是否已在运行
@@ -66,7 +70,6 @@ async def start_openclaw_gateway() -> bool:
         else:
             command = (openclaw_cli, "gateway", "run")
         cwd = None
-
     # 3. 组装环境变量
     env = os.environ.copy()
     env["OPENCLAW_GATEWAY_TOKEN"] = OPENCLAW_TOKEN

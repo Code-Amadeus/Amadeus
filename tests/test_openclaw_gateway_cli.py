@@ -34,9 +34,9 @@ class _ClientSession:
 
 
 def test_installed_openclaw_cli_starts_gateway_without_source_checkout() -> None:
-    cli = r"C:\Users\lenovo\AppData\Roaming\npm\openclaw.cmd"
+    cli = r"C:\ProgramData\npm\openclaw.cmd"
     module = (
-        r"C:\Users\lenovo\AppData\Roaming\npm\node_modules"
+        r"C:\ProgramData\npm\node_modules"
         r"\openclaw\openclaw.mjs"
     )
     process = SimpleNamespace(returncode=None)

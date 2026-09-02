@@ -21,6 +21,12 @@ from agent_host.provider_outcome import (
     ProviderOutcomeEvidence,
 )
 from agent_host.provider_progress import is_progress_only_workspace_completion
+from agent_host.provider_identity import (
+    PARENT_CONTEXT_DELIVERED_EVENT,
+    PARENT_CONTEXT_DELIVERY_METADATA_KEY,
+    SOURCE_CONTEXT_SCOPE_METADATA_KEY,
+    project_parent_context_delivery,
+)
 from agent_host.provider_types import (
     ACTIVITY_EVIDENCE_METADATA_KEY,
     ProviderAdapter,
@@ -58,8 +64,45 @@ _CONTROL_PLANE_METADATA_KEYS = frozenset(
         "cancellation",
         "provider_completion",
         "provider_recovery",
+        PARENT_CONTEXT_DELIVERY_METADATA_KEY,
+        SOURCE_CONTEXT_SCOPE_METADATA_KEY,
     }
 )
+
+_INTERNAL_CONTEXT_METADATA_KEYS = frozenset(
+    {
+        PARENT_CONTEXT_DELIVERY_METADATA_KEY,
+        SOURCE_CONTEXT_SCOPE_METADATA_KEY,
+        "source_context_cursor_turn_id",
+        "source_context_base_turn_id",
+    }
+)
+
+
+def _public_provider_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]:
+    """Remove private delivery-cursor authority from public run surfaces."""
+
+    source = metadata if isinstance(metadata, dict) else {}
+    return {
+        key: value
+        for key, value in source.items()
+        if key not in _INTERNAL_CONTEXT_METADATA_KEYS
+    }
+
+
+def _public_provider_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Project only displayable Provider events into list/result payloads."""
+
+    projected: list[dict[str, Any]] = []
+    for source in events:
+        if str(source.get("type") or "").strip().lower() == PARENT_CONTEXT_DELIVERED_EVENT:
+            continue
+        event = dict(source)
+        event["metadata"] = _public_provider_metadata(
+            source.get("metadata") if isinstance(source.get("metadata"), dict) else {}
+        )
+        projected.append(event)
+    return projected
 
 
 def _identity_from_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]:
@@ -116,6 +159,7 @@ class ProviderRunRecord:
 
     def to_dict(self) -> dict[str, Any]:
         identity = _identity_from_metadata(self.metadata)
+        public_events = _public_provider_events(self.events)
         return {
             "run_id": self.run_id,
             "provider": self.provider,
@@ -126,8 +170,8 @@ class ProviderRunRecord:
             "updated_at": self.updated_at,
             "result": self.result,
             "error": self.error,
-            "metadata": self.metadata,
-            "events": self.events[-200:],
+            "metadata": _public_provider_metadata(self.metadata),
+            "events": public_events[-200:],
             "task_id": identity["task_id"],
             "attempt_id": identity["attempt_id"],
             "attempt_epoch": identity["attempt_epoch"],
@@ -877,11 +921,17 @@ class ProviderRuntime:
         event.provider = record.provider
         event.run_id = record.run_id
         event.metadata = dict(event.metadata or {})
+        reported_metadata = dict(event.metadata)
         for key in _CONTROL_PLANE_METADATA_KEYS:
             if key in record.metadata:
                 event.metadata[key] = record.metadata[key]
-        record.event_sequence += 1
-        event.sequence = record.event_sequence
+        if event.type == PARENT_CONTEXT_DELIVERED_EVENT:
+            # The receipt is an internal control-plane fact, so it must not
+            # create a gap in the public event cursor exposed by to_dict().
+            event.sequence = 0
+        else:
+            record.event_sequence += 1
+            event.sequence = record.event_sequence
         event.observed_at = time.time()
         event_identity = _identity_from_metadata(event.metadata)
         record_identity = _identity_from_metadata(record.metadata)
@@ -902,6 +952,13 @@ class ProviderRuntime:
             event.replay
             or event.metadata.get("replay")
         )
+        if event.type == PARENT_CONTEXT_DELIVERED_EVENT:
+            projection = project_parent_context_delivery(reported_metadata)
+            if projection:
+                if "source_user_context" not in projection:
+                    record.metadata.pop("source_user_context", None)
+                record.metadata.update(projection)
+                event.metadata.update(projection)
         if event.type == "run.status":
             stage = str(event.payload.get("stage") or "").strip().lower()
             if stage in {"steer_queued", "steer_applied"}:
@@ -953,14 +1010,17 @@ class ProviderRuntime:
                         if key in event.payload
                     },
                 }
+        if event.type != PARENT_CONTEXT_DELIVERED_EVENT:
+            event.metadata = _public_provider_metadata(event.metadata)
         data = event.to_dict()
-        record.events.append(data)
-        cap = self._event_cap()
-        if cap > 0 and len(record.events) > cap:
-            dropped = len(record.events) - cap
-            del record.events[:dropped]
-            record.metadata["events_dropped"] = int(record.metadata.get("events_dropped") or 0) + dropped
-        record.updated_at = time.time()
+        if event.type != PARENT_CONTEXT_DELIVERED_EVENT:
+            record.events.append(data)
+            cap = self._event_cap()
+            if cap > 0 and len(record.events) > cap:
+                dropped = len(record.events) - cap
+                del record.events[:dropped]
+                record.metadata["events_dropped"] = int(record.metadata.get("events_dropped") or 0) + dropped
+            record.updated_at = time.time()
         await bus.emit(Method.PROVIDER_EVENT, data)
 
     @staticmethod
@@ -975,6 +1035,8 @@ class ProviderRuntime:
         request.metadata.pop(ACTIVITY_EVIDENCE_METADATA_KEY, None)
         request.metadata.pop("provider_completion", None)
         request.metadata.pop("provider_recovery", None)
+        request.metadata.pop(PARENT_CONTEXT_DELIVERY_METADATA_KEY, None)
+        request.metadata.pop("source_context_cursor_turn_id", None)
         # Callers cannot smuggle a native session through generic metadata.
         # The typed request field is populated by the host-owned ledger after
         # it validates WorkItem continuity and Provider capability.

@@ -28,10 +28,13 @@ copy continues to live below `assets/`.
 | --- | --- | --- |
 | `visual-runtime` | ambient/subtitle images, scenario runtime, keyboard SFX | Optional wallpaper effects and activities |
 | `character-kurisu` | `spriteforge/runtime/kurisu/` | Optional manifest-indexed KTX2 animation |
+| `asr-qwen3-0.6b` | `models/asr/qwen3-asr-0.6b/` | Offline Qwen3-ASR conversation model |
+| `voice-kurisu-gpt-sovits-v3` | GPT-SoVITS v3 runtime weights and reference audio | Optional embedded Kurisu voice |
 
-Both packs are optional. Without them, the built-in wallpaper, Chat, Work, and
-headless startup remain available; Settings reports the missing pack instead
-of treating it as an application failure.
+All packs are optional at application startup. Without them, the built-in
+wallpaper, text Chat, Work, and headless startup remain available; Settings
+reports the missing pack instead of treating it as an application failure.
+The full local-voice profile requires the ASR and voice packs.
 
 Install a separately supplied bundle from the repository root:
 
@@ -54,6 +57,12 @@ python tools/external_assets.py build visual-runtime `
 
 python tools/external_assets.py build character-kurisu `
   --output output\amadeus-character-kurisu.zip
+
+python tools/external_assets.py build asr-qwen3-0.6b `
+  --output output\amadeus-asr-qwen3-0.6b.zip
+
+python tools/external_assets.py build voice-kurisu-gpt-sovits-v3 `
+  --output output\amadeus-voice-kurisu-gpt-sovits-v3.zip
 
 python tools/external_assets.py build visual-runtime character-kurisu `
   --output output\amadeus-runtime-assets.zip

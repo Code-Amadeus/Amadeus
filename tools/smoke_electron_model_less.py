@@ -44,6 +44,17 @@ def model_less_backend_environment(
             "WAKE_ENABLED": "0",
             "VTS_ENABLED": "0",
             "AEC_REALTIME_ENABLED": "0",
+            # Exercise the shipping first-run boundary deterministically:
+            # B2 remains selected, no remote credential can be inherited from
+            # a developer desktop, and the backend must still expose Settings.
+            "LLM_PROVIDER": "deepseek",
+            "DEEPSEEK_API_KEY": "",
+            "OPENAI_API_KEY": "",
+            "AUIP_APPSESSION_ROLE_BRANCH_MODE": "b2",
+            "AUIP_CONTROL_DECISION_ENABLED": "1",
+            "AUIP_ACTION_PROVIDER": "",
+            "AUIP_ACTION_MODEL": "",
+            "AUIP_ACTION_REASONING_EFFORT": "none",
         }
     )
     return env
@@ -95,6 +106,21 @@ async def _exercise_renderer(page: Any, *, timeout: float) -> dict[str, bool]:
         state="visible", timeout=timeout_ms
     )
     checks["settings_and_optional_assets_rendered"] = True
+
+    await page.get_by_role("button", name="Models", exact=True).click()
+    await page.get_by_text("Advanced model roles", exact=True).click()
+    auip_action_role = page.get_by_text("AUIP action decision", exact=True).last
+    await auip_action_role.wait_for(state="visible", timeout=timeout_ms)
+    auip_action_card = auip_action_role.locator(
+        "xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' setting-card ')][1]"
+    )
+    await auip_action_card.get_by_text("Needs setup", exact=True).wait_for(
+        state="visible", timeout=timeout_ms
+    )
+    await auip_action_card.get_by_text(
+        re.compile(r"Application actions remain blocked")
+    ).wait_for(state="visible", timeout=timeout_ms)
+    checks["b2_unavailable_is_visible"] = True
 
     await page.get_by_role("button", name="Chat", exact=True).click()
     await chat_input.wait_for(state="visible", timeout=timeout_ms)

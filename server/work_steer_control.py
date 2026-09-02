@@ -6,6 +6,11 @@ import logging
 import time
 from typing import Any
 
+from agent_host.provider_identity import (
+    PARENT_CONTEXT_DELIVERY_METADATA_KEY,
+    parent_conversation_context_delivery,
+    validated_parent_context_delivery,
+)
 from agent_host.provider_types import ProviderSteerRequest
 from server.ai_os_schema import work_note_payload, work_signal
 from server.event_bus import bus
@@ -23,6 +28,9 @@ async def route_active_amendment(
     selected_provider: str,
     task_text: str,
     turn_id: str,
+    source_user_text: str = "",
+    source_user_context: str = "",
+    source_context_scope: str = "",
 ) -> dict[str, Any]:
     """Steer an active target natively or prepare a confirmed replacement.
 
@@ -67,6 +75,19 @@ async def route_active_amendment(
             else {}
         )
         revision = max(0, int(steering.get("revision") or 0)) + 1
+        previous_delivery = validated_parent_context_delivery(
+            record.metadata.get(PARENT_CONTEXT_DELIVERY_METADATA_KEY)
+        )
+        delivered_context, context_mode = parent_conversation_context_delivery(
+            source_user_context,
+            source_scope=source_context_scope,
+            previous_delivery=previous_delivery,
+            continuity_verified=True,
+        )
+        base_turn_id = str(
+            previous_delivery.get("source_turn_id")
+            or ""
+        ).strip()
         outcome = await runtime.steer(
             active.provider_run_id,
             ProviderSteerRequest(
@@ -76,6 +97,27 @@ async def route_active_amendment(
                     "turn_id": str(turn_id or ""),
                     "work_item_id": active.work_item_id,
                     "attempt_id": active.attempt_id,
+                    **(
+                        {"source_user_text": str(source_user_text)[:4000]}
+                        if str(source_user_text or "").strip()
+                        else {}
+                    ),
+                    **(
+                        {"source_user_context": delivered_context}
+                        if delivered_context
+                        else {}
+                    ),
+                    "source_context_mode": context_mode,
+                    **(
+                        {"source_context_scope": str(source_context_scope)[:800]}
+                        if str(source_context_scope or "").strip()
+                        else {}
+                    ),
+                    **(
+                        {"source_context_base_turn_id": base_turn_id[:200]}
+                        if base_turn_id
+                        else {}
+                    ),
                 },
             ),
         )

@@ -467,7 +467,13 @@ Root cause:
 Final rule:
 
 - Handoff capture must not depend only on VAD end.
-- Handoff capture needs an energy-end fallback and a short max duration cap.
+- Handoff capture needs an energy-end fallback and a short recovery watchdog.
+- The watchdog applies only until the fresh Conversation VAD iterator observes
+  its own speech start. Once that iterator owns the live utterance, normal
+  VAD/energy endpointing and `ASR_MAX_SPEECH_SECONDS` own completion; the
+  watchdog must not commit a still-speaking user after five seconds.
+- `ASR_LISTEN_TIMEOUT_SECONDS` bounds waiting for speech to start. It does not
+  shorten speech that has already started.
 - Log capture finish reason and duration, then judge latency from those logs
   before blaming the recognizer or provider.
 

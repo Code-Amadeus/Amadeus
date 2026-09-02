@@ -153,6 +153,24 @@ def test_legacy_cache_with_mismatched_identity_is_rejected(
     assert cache.path_for(text, params).exists() is False
 
 
+def test_pre_guard_synthesis_revision_is_not_reused(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    _configure_current_identity(monkeypatch)
+    cache = FirstSentenceAudioCache(tmp_path)
+    params = _current_params()
+    text = "うーん……"
+    old_payload = cache.key_payload(text, params)
+    old_payload.pop("synthesis_revision")
+    audio = np.ones(2400, dtype=np.float32) * 0.05
+    _write_entry(cache, old_payload, audio)
+
+    assert cache._path_for_payload(old_payload).exists() is True
+    assert cache.path_for(text, params).exists() is False
+    assert cache.lookup(text, params) is None
+
+
 def test_legacy_cache_with_malformed_metadata_is_rejected(
     tmp_path,
     monkeypatch,

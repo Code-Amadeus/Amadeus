@@ -156,9 +156,50 @@ def test_recovered_delegate_keeps_the_originating_chat_turn() -> None:
         attrs = record.call_args.args[0][0]["attrs"]
         assert attrs["_host_turn_id"] == state.turn_id
         assert attrs["_host_source_user_text"] == state.question
-        assert "_host_source_user_context" not in attrs
+        context = attrs["_host_source_user_context"]
+        assert 'User: "我们在讨论分布式共识。"' in context
+        assert 'Main Chat: "Paxos 是经典方向。"' in context
 
     asyncio.run(scenario())
+
+
+def test_delegate_source_context_keeps_the_multi_turn_goal_and_commitment() -> None:
+    action = {"type": "DELEGATE", "attrs": {}}
+    ChatRuntime._annotate_delegate_source(
+        action,
+        "你怎么没去？",
+        turn_id="turn-missed-handoff",
+        prior_messages=[
+            {"role": "user", "content": "更新桌面的宝可梦战斗小游戏。"},
+            {
+                "role": "assistant",
+                "content": "官方素材有版权风险，我会找可用的免费或公版像素素材。",
+            },
+            {
+                "role": "user",
+                "content": "这是学习使用，不是商业创作，你去找找看，然后更新。",
+            },
+            {
+                "role": "assistant",
+                "content": (
+                    "我现在开始找素材并更新桌面文件。 "
+                    '[DELEGATE provider="codex" task="update the game"]'
+                ),
+            },
+        ],
+    )
+
+    attrs = action["attrs"]
+    context = attrs["_host_source_user_context"]
+    assert attrs["_host_source_user_text"] == "你怎么没去？"
+    assert 'User: "更新桌面的宝可梦战斗小游戏。"' in context
+    assert "Main Chat:" in context
+    assert "免费或公版像素素材" in context
+    assert "你去找找看，然后更新" in context
+    assert "我现在开始找素材并更新桌面文件" in context
+    assert "[DELEGATE" not in context
+    assert "你怎么没去？" not in context
+    assert len(context) <= 2000
 
 
 def test_recovered_active_app_amendment_rejoins_deferred_launch_composition() -> None:

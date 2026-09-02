@@ -53,7 +53,10 @@ from agent_host.mcp_connections import (
     load_mcp_connections,
     mcp_provider_environment,
 )
-from agent_host.provider_identity import with_main_role_reference
+from agent_host.provider_identity import (
+    PARENT_CONTEXT_DELIVERED_EVENT,
+    with_parent_conversation_context,
+)
 from agent_host.provider_progress import split_progress_stream, with_progress_contract
 from agent_host.provider_types import (
     EmitProviderEvent,
@@ -487,6 +490,14 @@ class CodexAppServerAdapter:
             with self._approval_condition:
                 self._active[run_id] = active
                 self._approval_condition.notify_all()
+            await emit(
+                ProviderEvent(
+                    provider=self.provider_id,
+                    run_id=run_id,
+                    type=PARENT_CONTEXT_DELIVERED_EVENT,
+                    metadata=dict(request.metadata or {}),
+                )
+            )
             terminal_payload = await self._consume_with_deadline(
                 active,
                 state,
@@ -589,7 +600,21 @@ class CodexAppServerAdapter:
         if active is None or active.terminal.is_set():
             return {"accepted": False, "reason": "active_turn_not_found"}
         try:
-            await active.handle.steer(str(request.task or "").strip())
+            await active.handle.steer(
+                with_parent_conversation_context(
+                    str(request.task or "").strip(),
+                    metadata=request.metadata,
+                    execution_provider=self.provider_id,
+                )
+            )
+            await active.emit(
+                ProviderEvent(
+                    provider=self.provider_id,
+                    run_id=str(run_id or "").strip(),
+                    type=PARENT_CONTEXT_DELIVERED_EVENT,
+                    metadata=dict(request.metadata or {}),
+                )
+            )
         except Exception as exc:
             return {"accepted": False, "reason": str(exc) or exc.__class__.__name__}
         return {
@@ -1183,27 +1208,53 @@ class CodexAppServerAdapter:
         )
         name = self._tool_name(safe_item_type, item)
         if method == "item/started":
-            return [
-                self._event(
-                    active,
-                    "tool.call",
-                    {
-                        "name": name,
-                        "item_id": item_id,
-                        "input": self._tool_input(safe_item_type, item),
-                    },
+            tool_input = self._tool_input(safe_item_type, item)
+            call_payload: dict[str, Any] = {
+                "tool": name,
+                "name": name,
+                "item_id": item_id,
+                "input": tool_input,
+            }
+            if isinstance(tool_input, dict):
+                command = str(tool_input.get("command") or "").strip()
+                title = " ".join(str(tool_input.get("title") or "").split())[:240]
+                changes = tool_input.get("changes")
+                if command:
+                    call_payload["command"] = command[:2000]
+                if title:
+                    call_payload["title"] = title
+                if isinstance(changes, list):
+                    call_payload["changes"] = changes
+            events = []
+            direction = self._reported_tool_direction(safe_item_type, tool_input)
+            if direction:
+                events.append(
+                    self._event(
+                        active,
+                        "assistant.update",
+                        {
+                            "text": direction,
+                            "source": "codex_native_tool_title",
+                            "explicit": False,
+                            "status": "reported_direction",
+                        },
+                    )
                 )
-            ]
+            events.append(self._event(active, "tool.call", call_payload))
+            return events
         success = self._item_succeeded(item)
         if not success:
             state.tool_failures += 1
         result_payload: dict[str, Any] = {
+            "tool": name,
             "name": name,
             "item_id": item_id,
             "success": success,
             "status": str(item.get("status") or ""),
             "output": self._tool_output(item),
         }
+        if safe_item_type == "commandExecution":
+            result_payload["exit_code"] = item.get("exitCode")
         if safe_item_type == "fileChange":
             result_payload["changes"] = self._file_changes(item)
         events = [
@@ -1335,13 +1386,11 @@ class CodexAppServerAdapter:
         metadata = request.metadata or {}
         execution_contract = with_progress_contract(
             with_host_authoring_capabilities(
-                with_main_role_reference(
+                with_parent_conversation_context(
                     request.task,
                     metadata=metadata,
                     execution_provider=self.provider_id,
                 ),
-                source_user_text=str(metadata.get("source_user_text") or ""),
-                source_user_context=str(metadata.get("source_user_context") or ""),
                 require_auip_preparation=requires_auip_authoring(
                     metadata.get("source")
                 ),
@@ -1504,6 +1553,16 @@ class CodexAppServerAdapter:
         if item_type == "fileChange":
             return {"changes": CodexAppServerAdapter._file_changes(item)}
         return item.get("arguments") or item.get("query") or {}
+
+    @staticmethod
+    def _reported_tool_direction(item_type: str, tool_input: Any) -> str:
+        """Return only the native human-facing title, never code or tool output."""
+
+        if item_type in {"commandExecution", "fileChange"} or not isinstance(
+            tool_input, dict
+        ):
+            return ""
+        return " ".join(str(tool_input.get("title") or "").split())[:240]
 
     @staticmethod
     def _file_changes(item: dict[str, Any]) -> list[dict[str, str]]:

@@ -475,6 +475,66 @@ def test_preparation_targets_the_existing_generic_work_and_reserves_launch() -> 
     asyncio.run(scenario())
 
 
+def test_active_unfinished_work_is_prepared_without_creating_a_second_work_item() -> None:
+    async def scenario() -> None:
+        with tempfile.TemporaryDirectory(prefix="auip_launch_prepare_active_") as temp:
+            root = Path(temp)
+            store = WorkLedgerStore(root / "ledger.sqlite3")
+            project = store.create_or_get_project(root / "project")
+            item = store.create_work_item(
+                project.project_id,
+                title="Two-player Garden Duel",
+                workspace_path=root / "game",
+            )
+            _operation, attempt = store.create_operation_attempt(
+                item.work_item_id,
+                intent="execute",
+                instruction="Build the two-player game",
+                provider="codex",
+                task="Build the two-player game",
+                attempt_metadata={"session_id": SESSION, "turn_id": "turn-build"},
+            )
+            store.update_attempt(attempt.attempt_id, execution_status="running")
+            prepared: list[tuple[str, str, tuple[str, ...]]] = []
+
+            async def prepare_work(candidate, mode):
+                prepared.append((candidate.work_item_id, mode, candidate.files))
+
+            coordinator = AuipLaunchCoordinator(
+                artifacts=store,
+                work_roster=WorkLedgerCoordinator(store),
+                attention=AttentionRequestCoordinator(),
+            )
+            result = await coordinator.route_control(
+                {
+                    "action": "prepare",
+                    "mode": "collaborate",
+                    "_host_active_work_attempt_ids": (attempt.attempt_id,),
+                },
+                session_id=SESSION,
+                turn_id="turn-play-together",
+                prepare_work=prepare_work,
+            )
+
+            assert result == {
+                "ok": True,
+                "deferred": True,
+                "preparing": True,
+                "turn_id": "turn-play-together",
+            }
+            pending = coordinator._deferred[(SESSION, "turn-play-together")]
+            project_work_count = sum(
+                record.project_id == project.project_id
+                for record in store.list_work_items()
+            )
+            store.close()
+            assert prepared == [(item.work_item_id, "collaborate", ())]
+            assert project_work_count == 1
+            assert pending.work_item_id == item.work_item_id
+
+    asyncio.run(scenario())
+
+
 def test_failed_preparation_uses_the_work_terminal_without_a_second_launch_report() -> None:
     async def scenario() -> None:
         with tempfile.TemporaryDirectory(prefix="auip_launch_prepare_failure_") as temp:
