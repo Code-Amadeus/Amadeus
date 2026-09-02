@@ -118,3 +118,10 @@ def load_project_environment(project_root: Path) -> EnvironmentReader:
 
 _PROJECT_ENVIRONMENTS: dict[Path, EnvironmentReader] = {}
 _PROJECT_ENVIRONMENTS_LOCK = RLock()
+
+
+def venv_python(root: Path, name: str) -> Path:
+    """Platform-correct Python executable path inside a project venv directory."""
+    if os.name == "nt":
+        return root / name / "Scripts" / "python.exe"
+    return root / name / "bin" / "python3"

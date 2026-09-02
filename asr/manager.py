@@ -17,15 +17,19 @@ import time
 from typing import Optional
 
 import numpy as np
-import torch
 
 from config.log_privacy import protected_text
+
+# torch is a local-model tier (T2b) dependency. Remote ASR installs (L2) have
+# no torch: every use below is guarded so device selection degrades to CPU
+# (remote backends ignore the device hint anyway).
 from config.settings import (
     ASR_BACKEND as _CFG_ASR_BACKEND,
     ASR_CONTEXT as _CFG_ASR_CONTEXT,
     ASR_LANGUAGE as _CFG_ASR_LANGUAGE,
     ASR_ENERGY_END_MS as _CFG_ASR_ENERGY_END_MS,
     ASR_ENERGY_END_RMS as _CFG_ASR_ENERGY_END_RMS,
+    ASR_ENERGY_START_RMS as _CFG_ASR_ENERGY_START_RMS,
     ASR_HANDOFF_MAX_CAPTURE_SECONDS as _CFG_ASR_HANDOFF_MAX_CAPTURE_SECONDS,
     ASR_LISTEN_TIMEOUT_SECONDS as _CFG_ASR_LISTEN_TIMEOUT_SECONDS,
     ASR_MAX_SPEECH_SECONDS as _CFG_ASR_MAX_SPEECH_SECONDS,
@@ -38,13 +42,23 @@ from config.settings import (
     ASR_VAD_THRESHOLD as _CFG_ASR_VAD_THRESHOLD,
     QWEN3_ASR_DEVICE as _CFG_QWEN3_ASR_DEVICE,
 )
-from asr.microphone import configured_device_index
 from asr.mic_input_service import get_mic_input_service
 from asr.text_filter import is_asr_prompt_leak
 from asr.backend import ASRBackendFatalError
 from asr.registry import create_asr_backend
 
 logger = logging.getLogger(__name__)
+
+
+def _configured_mic_index() -> int | None:
+    # Lazy: asr.microphone pulls pyaudio at its module top level; manager
+    # itself must stay importable without the voice tier. No tier → no
+    # device config to read, so the documented default is None.
+    try:
+        from asr.microphone import configured_device_index
+    except ModuleNotFoundError:
+        return None
+    return configured_device_index()
 
 # ---------------------------------------------------------------------------
 # 录音 / VAD 参数
@@ -59,6 +73,7 @@ _MAX_SPEECH_SEC = float(_CFG_ASR_MAX_SPEECH_SECONDS)
 _LISTEN_TIMEOUT = float(_CFG_ASR_LISTEN_TIMEOUT_SECONDS)
 _PREROLL_MS     = int(_CFG_ASR_PREROLL_MS)
 _ENERGY_END_RMS = float(_CFG_ASR_ENERGY_END_RMS)
+_ENERGY_START_RMS = float(_CFG_ASR_ENERGY_START_RMS)
 _ENERGY_END_MS  = int(_CFG_ASR_ENERGY_END_MS)
 _HANDOFF_MAX_CAPTURE_SEC = float(_CFG_ASR_HANDOFF_MAX_CAPTURE_SECONDS)
 _PREROLL_CHUNKS = max(1, int(_PREROLL_MS / (_CHUNK_SAMPLES / _SAMPLE_RATE * 1000)))
@@ -183,14 +198,18 @@ class ASRManager:
         后端名称；未传入时使用启动配置 ASR_BACKEND。
     """
 
-    MICROPHONE_DEVICE_INDEX = configured_device_index()
-
+    # Resolved lazily on first ASRManager instantiation; set_microphone_index
+    # may overwrite it at runtime (class attribute stays the default source).
+    MICROPHONE_DEVICE_INDEX: Optional[int] = None
+    
     def __init__(self, backend: Optional[str] = None) -> None:
         backend_name = backend or _CFG_ASR_BACKEND or "qwen3_asr"
-
+        
         self.language = str(_CFG_ASR_LANGUAGE or "auto")
         self.context: str = _CFG_ASR_CONTEXT  # 热词/领域提示，Qwen3-ASR 用作 system prompt
-        self._mic_index: Optional[int] = self.MICROPHONE_DEVICE_INDEX
+        if ASRManager.MICROPHONE_DEVICE_INDEX is None:
+            ASRManager.MICROPHONE_DEVICE_INDEX = _configured_mic_index()
+        self._mic_index: Optional[int] = ASRManager.MICROPHONE_DEVICE_INDEX
         self._init_lock = threading.Lock()
         # 可选：外部注入的 TTS 播放状态查询函数，返回 True 表示 TTS 正在播放
         # 播放期间暂停 pre-roll 写入，避免将 TTS 输出混入 ASR 输入
@@ -237,7 +256,7 @@ class ASRManager:
     def _load_backend_bg(self) -> None:
         """在后台线程中加载 ASR 后端，完成后 set _backend_ready。"""
         try:
-            cuda_available = bool(torch.cuda.is_available())
+            cuda_available, torch_version = self._torch_runtime()
             requested_device = _CFG_QWEN3_ASR_DEVICE
             if requested_device in {"cuda", "cuda:0", "gpu"}:
                 device = "cuda"
@@ -245,17 +264,24 @@ class ASRManager:
                 device = "cpu"
             else:
                 device = "cuda" if cuda_available else "cpu"
-            logger.info(
-                "[ASR] torch runtime exe=%s torch=%s cuda_available=%s "
-                "cuda_version=%s visible=%s requested_device=%s selected_device=%s",
-                sys.executable,
-                getattr(torch, "__version__", "?"),
-                cuda_available,
-                getattr(torch.version, "cuda", None),
-                os.environ.get("CUDA_VISIBLE_DEVICES"),
-                requested_device or "auto",
-                device,
-            )
+            if torch_version:
+                logger.info(
+                    "[ASR] torch runtime exe=%s torch=%s cuda_available=%s "
+                    "cuda_version=%s visible=%s requested_device=%s selected_device=%s",
+                    sys.executable,
+                    torch_version,
+                    cuda_available,
+                    self._torch_cuda_version(),
+                    os.environ.get("CUDA_VISIBLE_DEVICES"),
+                    requested_device or "auto",
+                    device,
+                )
+            else:
+                logger.info(
+                    "[ASR] torch absent (remote ASR install); device=%s backend=%s",
+                    device,
+                    self._backend_name,
+                )
             self._backend.load(device)
             logger.info(f"[ASR] backend {self._backend_name} loaded (device={device})")
         except Exception as e:
@@ -264,13 +290,33 @@ class ASRManager:
         finally:
             self._backend_ready.set()
 
+    @staticmethod
+    def _torch_runtime() -> tuple[bool, str]:
+        """Return (cuda_available, torch_version); (False, "") without torch."""
+        try:
+            import torch
+
+            return bool(torch.cuda.is_available()), str(torch.__version__)
+        except ImportError:
+            return False, ""
+
+    @staticmethod
+    def _torch_cuda_version() -> str | None:
+        try:
+            import torch
+
+            return getattr(torch.version, "cuda", None)
+        except ImportError:
+            return None
+
     def _select_backend_device(self) -> str:
         requested_device = _CFG_QWEN3_ASR_DEVICE
         if requested_device in {"cuda", "cuda:0", "gpu"}:
             return "cuda"
         if requested_device == "cpu":
             return "cpu"
-        return "cuda" if torch.cuda.is_available() else "cpu"
+        cuda_available, _ = self._torch_runtime()
+        return "cuda" if cuda_available else "cpu"
 
     def _recover_backend_after_failure(self, exc: Exception) -> bool:
         """Rebuild the current backend after a fatal runtime failure."""
@@ -308,14 +354,38 @@ class ASRManager:
             return True
 
     def _init_vad(self) -> None:
-        from silero_vad import load_silero_vad
+        self._vad_degraded: str | None = None
+        try:
+            from silero_vad import load_silero_vad
+        except ModuleNotFoundError as exc:
+            if exc.name != "silero_vad":
+                # silero present but one of its dependencies (torch) is
+                # missing/broken — surface it instead of faking absence.
+                raise
+            # L2 install: the vad tier is absent; energy endpointing is the
+            # documented degradation for this tier.
+            self._vad_model = None
+            logger.info(
+                "[ASR] silero-vad not installed (L2 voice tier); "
+                "ASR capture uses energy endpointing "
+                "(install -e '.[vad]' for VAD endpointing and barge-in)"
+            )
+            return
         try:
             self._vad_model = load_silero_vad()
             self._vad_model.eval()
             logger.info("[ASR] Silero VAD loaded")
         except Exception as e:
-            logger.error(f"[ASR] Silero VAD load failed: {e}")
-            raise
+            # Installed but failed to load: that is a broken environment,
+            # not supported absence. Record it as an observable degraded
+            # state instead of silently pretending the tier is missing.
+            self._vad_model = None
+            self._vad_degraded = str(e)
+            logger.error(
+                "[ASR] Silero VAD present but failed to load "
+                "(DEGRADED to energy endpointing): %s",
+                e,
+            )
 
     # ------------------------------------------------------------------
     # 公开接口（与历史版本兼容）
@@ -325,6 +395,20 @@ class ASRManager:
     def is_ready(self) -> bool:
         """后端是否已加载完成（可用于 GUI 显示加载状态）。"""
         return self._backend_ready.is_set() and self._backend_load_err is None
+
+    def vad_status(self) -> tuple[str, str]:
+        """VAD 端点检测的公开状态，返回 (state, reason)。
+
+        - ready:    Silero VAD 已加载，barge-in/精准端点可用
+        - fallback: vad 层未安装，能量端点是该梯级的文档化降级
+        - degraded: 已安装但加载失败，reason 携带可观察的原因
+        """
+        if getattr(self, "_vad_model", None) is not None:
+            return "ready", ""
+        degraded = getattr(self, "_vad_degraded", None)
+        if degraded:
+            return "degraded", str(degraded)
+        return "fallback", ""
 
     def wait_until_ready(self, timeout: float = 120.0) -> bool:
         """阻塞等待后端就绪，返回是否成功。供需要同步等待的场景使用。"""
@@ -390,7 +474,8 @@ class ASRManager:
             elif requested_device == "cpu":
                 device = "cpu"
             else:
-                device = "cuda" if torch.cuda.is_available() else "cpu"
+                cuda_available, _ = self._torch_runtime()
+                device = "cuda" if cuda_available else "cpu"
             new_backend.load(device)
             old = self._backend
             self._backend = new_backend
@@ -450,6 +535,7 @@ class ASRManager:
             preroll_ms=_PREROLL_MS,
             energy_end_rms=_ENERGY_END_RMS,
             energy_end_ms=_ENERGY_END_MS,
+            energy_start_rms=_ENERGY_START_RMS,
             handoff_max_capture_sec=_HANDOFF_MAX_CAPTURE_SEC,
             block_mic_fn=_should_block_mic,
             on_speech_start=self._on_speech_start_fn,

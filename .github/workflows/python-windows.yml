@@ -30,9 +30,10 @@ jobs:
           cache-dependency-path: electron/package-lock.json
 
       - name: Install locked environment
-        shell: pwsh
+        shell: bash
         run: |
           python -m pip install --upgrade pip==26.2 setuptools==83.0.0 wheel==0.47.0
+          python -m pip install uv==0.12.8
           python -m pip install -r requirements-dev.txt
           python -m pip install --no-deps --no-build-isolation -e .
 
@@ -40,7 +41,9 @@ jobs:
         run: python tools/verify_python_environment.py --profile ci
 
       - name: Check source and architecture views
-        shell: pwsh
+        # bash (not pwsh): Actions runs bash with -e, so a ruff failure must
+        # fail the step instead of being masked by the next command's exit 0.
+        shell: bash
         run: |
           python -m ruff check .
           python tools/architecture/generate_views.py --check
@@ -56,6 +59,7 @@ jobs:
 
       - name: Build Electron model-less smoke target
         working-directory: electron
+        shell: bash
         run: |
           npm ci
           npm run build

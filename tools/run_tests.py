@@ -105,7 +105,11 @@ class SuiteResult:
         # Pytest exit status is authoritative for non-failing outcomes. A
         # model-less checkout may legitimately skip an optional local-asset
         # assertion, so requiring every collected node to say "passed" would
-        # turn supported absence into a false regression.
+        # turn supported absence into a false regression. A tier-gated module
+        # (module-level importorskip) exits with code 5 (no tests collected)
+        # and reports "skipped" in the summary — healthy supported absence.
+        if self.returncode == 5:
+            return self.skipped > 0
         return self.returncode == 0 and self.collected > 0
 
 
@@ -117,6 +121,47 @@ def _count_passed(output: str) -> int:
 def _count_skipped(output: str) -> int:
     matches = re.findall(r"(?:^|\s)(\d+) skipped(?:,|\s|$)", output)
     return int(matches[-1]) if matches else 0
+
+
+def _excuse_import_blocked(missing: list[str]) -> list[str]:
+    """Excuse uncollected declarations whose test module cannot even import.
+
+    Tier-gated tests (pytest.importorskip for voice / local-model deps) are
+    legitimately absent from collection in model-less environments. A module
+    that imports fine but still yields no collected node remains a violation
+    -- that is the naming-drift case the invariant exists for.
+    """
+    if not missing:
+        return missing
+    by_file: dict[str, list[str]] = {}
+    for node_id in missing:
+        by_file.setdefault(node_id.split("::", 1)[0], []).append(node_id)
+    excused: list[str] = []
+    for path, node_ids in by_file.items():
+        probe = (
+            "import importlib.util, sys;"
+            f"spec = importlib.util.spec_from_file_location('tier_probe', r'{(ROOT / path).resolve()}');"
+            "module = importlib.util.module_from_spec(spec);"
+            "spec.loader.exec_module(module)"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", probe],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            env=_suite_env(),
+        )
+        if result.returncode != 0 and (
+            "ModuleNotFoundError" in result.stderr or "Skipped" in result.stderr
+        ):
+            print(
+                f"[run_tests] {path}: skipped module (dependency missing), "
+                f"declarations excused",
+                file=sys.stderr,
+            )
+            continue
+        excused.extend(node_ids)
+    return excused
 
 
 def _collect_tests() -> tuple[dict[str, list[str]], str, int]:
@@ -238,6 +283,7 @@ def main() -> int:
     declared = declared_module_tests(TEST_DIR)
     node_ids = [node_id for values in collection.values() for node_id in values]
     missing = uncollected_declarations(declared, node_ids)
+    missing = _excuse_import_blocked(missing)
     if missing:
         print("declared tests missing from pytest collection:", file=sys.stderr)
         for node_id in missing:
