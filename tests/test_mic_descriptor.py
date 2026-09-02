@@ -10,6 +10,10 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import pytest
+
+pytest.importorskip("pyaudio", reason="voice tier (pyaudio) is not installed")
+
 from asr.microphone import classify_device, device_descriptor_from_info
 
 

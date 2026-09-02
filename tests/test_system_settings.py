@@ -260,6 +260,9 @@ def test_mimo_desktop_settings_persist_values_and_encrypt_the_key() -> None:
 
 
 def test_voice_settings_publish_microphone_choices_without_recording_audio() -> None:
+    import pytest
+
+    pytest.importorskip("pyaudio", reason="voice tier (pyaudio) is not installed")
     from asr.microphone import MicDeviceDescriptor
     from config import settings
 

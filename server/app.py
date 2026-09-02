@@ -90,7 +90,16 @@ for _cuda_ver in ("v12.1", "v12.2", "v12.4", "v12.6"):
     if os.path.isdir(_cuda_bin):
         os.add_dll_directory(_cuda_bin)
         break
-import onnxruntime  # noqa: F401  # eager before torchmetrics chain
+# Eager-load onnxruntime before the torchmetrics chain on local-model installs
+# (CUDA DLL ordering). It is a T2b (local-cu124) dependency: L1 installs skip
+# the preload. Supported absence (ModuleNotFoundError naming onnxruntime
+# itself) is skipped; a present-but-broken install surfaces instead of
+# masquerading as absence.
+try:
+    import onnxruntime  # noqa: F401  # eager before torchmetrics chain
+except ModuleNotFoundError as exc:
+    if exc.name != "onnxruntime":
+        raise
 
 def _session_log_path() -> str:
     """One log file per process start, under runtime/logs.

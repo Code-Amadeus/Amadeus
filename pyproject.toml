@@ -8,10 +8,9 @@ version = "0.1.0"
 description = "Amadeus runtime: voice, chat runtime, provider host, and work ledger."
 requires-python = ">=3.12,<3.13"
 
-# Direct dependencies for the supported Electron/headless backend. Exact
-# transitive versions live in the Windows lock files. Torch's
-# local build tag (+cpu or +cu124) is selected by the lock profile and index;
-# both builds satisfy the tested 2.5.1 API contract declared here.
+# Direct dependencies for the supported Electron/headless backend (T1 core:
+# chat, work, providers — no audio). Voice and local-model stacks live in
+# optional extras below; exact transitive versions live in the Windows locks.
 dependencies = [
     "aiohttp==3.14.3",
     "beautifulsoup4==4.14.3",
@@ -22,20 +21,16 @@ dependencies = [
     "mcp==2.0.0",
     "mss==10.2.0",
     "numpy==1.26.4",
-    "onnxruntime==1.26.0",
     "openai==2.38.0",
     "openai-codex==0.147.0",
     "Pillow==12.3.0",
     "playwright==1.60.0",
     "psutil==7.2.2",
-    "PyAudio==0.2.14",
     "pydantic==2.13.4",
     "python-dotenv==1.2.3",
     "PyYAML==6.0.3",
     "requests==2.34.2",
     "starlette==1.3.1",
-    "torch==2.5.1",
-    "torchaudio==2.5.1",
     "typing-extensions==4.15.0",
     "uvicorn==0.48.0",
     "websocket-client==1.9.0",
@@ -43,17 +38,30 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Local model stack observed in the working Windows / Python 3.12 / cu124
-# environment. flash-attn is deliberately absent: Qwen ASR already falls back
-# to Torch SDPA, while no reproducible Windows cp312 wheel exists in the
-# supported install path.
-local-cu124 = [
-    "accelerate==1.12.0",
+# L2 voice interaction layer: playback, capture, echo cancellation, remote
+# TTS/ASR. Torch-free on purpose: L2 stays a few hundred MB.
+voice = [
+    "PyAudio==0.2.14",
     "aec-audio-processing==1.0.1",
     "av==17.0.1",
-    "cn2an==0.5.24",
-    "fast-langdetect==1.0.1",
     "ffmpeg-python==0.2.0",
+    "scipy==1.17.1",
+    "soundfile==0.13.1",
+]
+# L3 realtime interruption: silero VAD for barge-in. Pulls torch transitively.
+vad = [
+    "silero-vad==6.2.1",
+]
+# T2b local model stack observed in the working Windows / Python 3.12 / cu124
+# environment. Includes the voice layer transitively (installed alongside).
+# flash-attn is deliberately absent: Qwen ASR already falls back to Torch SDPA,
+# while no reproducible Windows cp312 wheel exists in the supported install path.
+local-cu124 = [
+    "torch==2.5.1",
+    "torchaudio==2.5.1",
+    "onnxruntime==1.26.0",
+    "accelerate==1.12.0",
+    "cn2an==0.5.24",
     "funasr==1.3.7",
     "g2p-en==2.1.0",
     "g2pk2==0.0.3",
@@ -75,10 +83,7 @@ local-cu124 = [
     "pypinyin==0.55.0",
     "qwen-asr==0.0.6",
     "rotary-embedding-torch==0.8.9",
-    "scipy==1.17.1",
     "sentencepiece==0.2.1",
-    "silero-vad==6.2.1",
-    "soundfile==0.13.1",
     "split-lang==2.1.1",
     "ToJyutping==3.2.0",
     "tokenizers==0.22.1",
@@ -95,11 +100,7 @@ dev = [
     "pytest-asyncio==1.4.0",
     "ruff==0.16.3",
     "setuptools==83.0.0",
-    "torchmetrics==1.5.0",
     "wheel==0.47.0",
-]
-lock = [
-    "pip-tools==7.6.1",
 ]
 
 [tool.pytest.ini_options]

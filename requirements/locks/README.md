@@ -1,25 +1,28 @@
 # Python dependency profiles
 
 Amadeus supports CPython 3.12 on Windows. Dependency ownership is split into
-three layers:
+the four install tiers documented in README (core / voice / vad /
+local-cu124), and the lock files serve the model-less profiles:
 
 - `pyproject.toml` lists direct runtime dependencies and optional feature sets;
-- `windows-py312-cpu.txt` is the exact CPU runtime resolution used by
-  `requirements.txt`;
+- `windows-py312-cpu.txt` is the exact L1 core resolution used by
+  `requirements.txt` (no voice or model packages);
 - `windows-py312-ci.txt` adds the exact test/tooling resolution used by
   `requirements-dev.txt`.
+
+Verification profiles follow the tier ladder (`ci`/`cpu` = L1, `voice` = L2,
+`vad` = L3, `cu124` = L4); `requirements-cu124.txt` pins the L4 CUDA baseline
+and requires `.[voice,vad,local-cu124]`.
 
 These are version locks, not wheel-hash locks. Exact versions plus a clean
 install and test run are the current open-source release boundary. Per-wheel
 hashes can be added later if Amadeus ships a signed installer or needs a
 stricter supply-chain policy.
 
-Regenerate the supported locks from a Python 3.12 environment containing the
-`lock` extra:
+Regenerate the supported locks from any OS with uv installed:
 
-```powershell
-python -m pip install -e ".[lock]"
-python tools\generate_python_locks.py
+```bash
+uv run tools/generate_python_locks.py   # 或 python3 tools/generate_python_locks.py
 ```
 
 Do not edit generated lock files by hand. After regeneration, run the clean

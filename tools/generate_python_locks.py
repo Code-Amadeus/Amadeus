@@ -1,53 +1,53 @@
-"""Regenerate the supported Windows/Python 3.12 dependency locks."""
+"""Regenerate the supported Windows/Python 3.12 dependency locks.
+
+Uses `uv pip compile --python-platform windows`, so locks can be regenerated
+from any OS (pip-tools required running on Windows).
+"""
 
 from __future__ import annotations
 
 import argparse
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 LOCK_DIR = ROOT / "requirements" / "locks"
 PROFILES = {
+    # T1 core: conversation kernel, no audio, no local models.
     "cpu": {
-        "extra": None,
-        "index": "https://download.pytorch.org/whl/cpu",
+        "extras": (),
         "output": LOCK_DIR / "windows-py312-cpu.txt",
     },
+    # T1 + dev tooling for the CI/test environment.
     "ci": {
-        "extra": "dev",
-        "index": "https://download.pytorch.org/whl/cpu",
+        "extras": ("dev",),
         "output": LOCK_DIR / "windows-py312-ci.txt",
     },
 }
 
 
-def _require_python_312() -> None:
-    if sys.version_info[:2] != (3, 12):
-        raise SystemExit(
-            "locks must be generated with CPython 3.12; "
-            f"current interpreter is {sys.version.split()[0]}"
-        )
-
-
 def _compile(profile: str) -> None:
+    uv = shutil.which("uv")
+    if not uv:
+        raise SystemExit("uv is required to generate locks; see https://docs.astral.sh/uv/")
     config = PROFILES[profile]
     command = [
-        sys.executable,
-        "-m",
-        "piptools",
+        uv,
+        "pip",
         "compile",
         "pyproject.toml",
-        "--resolver=backtracking",
-        "--strip-extras",
-        "--index-url=https://pypi.org/simple",
-        f"--extra-index-url={config['index']}",
-        f"--output-file={config['output']}",
+        "--python-platform",
+        "windows",
+        "--python-version",
+        "3.12",
+        # Relative to ROOT: uv records the command line in the lock header,
+        # and an absolute path would leak the generator's home directory.
+        f"--output-file={config['output'].relative_to(ROOT)}",
     ]
-    if config["extra"]:
-        command.extend(("--extra", str(config["extra"])))
+    for extra in config["extras"]:
+        command.extend(("--extra", extra))
     subprocess.run(command, cwd=ROOT, check=True)
 
 
@@ -58,18 +58,14 @@ def main() -> int:
         nargs="?",
         choices=("all", *PROFILES),
         default="all",
-        help="lock profile to regenerate (default: all release locks)",
     )
     args = parser.parse_args()
-
-    _require_python_312()
-    LOCK_DIR.mkdir(parents=True, exist_ok=True)
-    profiles = tuple(PROFILES) if args.profile == "all" else (args.profile,)
+    profiles = list(PROFILES) if args.profile == "all" else [args.profile]
     for profile in profiles:
-        print(f"generating {profile} lock", flush=True)
+        print(f"[locks] compiling {profile} -> {PROFILES[profile]['output'].name}")
         _compile(profile)
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())
