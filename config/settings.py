@@ -41,8 +41,7 @@ def _str(key: str, default: str = "", *, aliases: tuple[str, ...] = ()) -> str:
 
 def _secret(key: str, default: str = "", *, aliases: tuple[str, ...] = ()) -> str:
     """API keys/tokens: tolerate accidental surrounding quotes/whitespace from .env edits."""
-    value = _ENV.string(key, default, aliases=aliases)
-    return value.strip().strip('"').strip("'").strip()
+    return _ENV.secret(key, default, aliases=aliases)
 
 
 def declared_environment_fields():
