@@ -3,7 +3,11 @@
 On an L2 install (silero-vad/torch absent) with barge-in config enabled, the
 startup boundary must keep the detector off with an observable degradation
 instead of spawning a thread that fails on import and emits barge_in_error on
-every sentence. The gate consumes the ASR manager's public vad_status().
+every sentence. The capability fact is owned by BargeInDetector (it loads its
+own VAD model) and must NOT be inferred from the ASRManager lifecycle: the
+manager is created lazily when ASR first listens and cleared on idle unload,
+while the detector only needs its own VAD — so keyboard-chat-then-first-
+playback and post-unload journeys must still pass the gate.
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ _L3_ONLY_MODULES = ("silero_vad", "torch", "torchaudio")
 
 _PROBE = f"""
 import sys
+import types
 
 _BLOCKED = {set(_L3_ONLY_MODULES)!r}
 
@@ -46,49 +51,83 @@ else:
     raise SystemExit("silero_vad unexpectedly importable under the L2 mask")
 
 import server.app
-from asr.manager import ASRManager
+from asr.barge_in_detector import BargeInDetector
 
 
-def _l2_manager():
-    # Skip __init__ (backend/mic construction); the vad capability probe is
-    # what the gate consumes and it runs synchronously inside _init_vad().
-    mgr = ASRManager.__new__(ASRManager)
-    mgr._init_vad()
-    return mgr
+async def _noop() -> None:
+    return None
 
 
-# Real L2 capability chain: masked imports -> manager reports fallback.
-mgr = _l2_manager()
-assert mgr.vad_status() == ("fallback", ""), mgr.vad_status()
-
-# Gate: config on + fallback tier -> stay off, state observable.
-start, detail = server.app._barge_in_start_decision(mgr, config_enabled=True)
-assert start is False, (start, detail)
-assert "fallback" in detail, detail
-
-# Degraded (installed but broken) must stay observable, not fake absence.
-mgr._vad_degraded = "boom"
-assert mgr.vad_status() == ("degraded", "boom"), mgr.vad_status()
-start, detail = server.app._barge_in_start_decision(mgr, config_enabled=True)
-assert start is False and "degraded" in detail and "boom" in detail, (start, detail)
-
-# No observed capability (manager not created yet) -> stay off.
-start, detail = server.app._barge_in_start_decision(None, config_enabled=True)
-assert start is False and detail, (start, detail)
+def _detector():
+    return BargeInDetector(tts_playing_fn=lambda: False, on_barge_in=_noop)
 
 
-class _ReadyManager:
-    def vad_status(self):
-        return "ready", ""
+# (a) L2 mask: silero_vad absent -> fallback, thread never started, and the
+# verdict is cached (later playback sentences read the cache, no re-failure).
+det = _detector()
+assert det.vad_status() == ("fallback", ""), det.vad_status()
+start, detail = server.app._barge_in_start_decision(det, config_enabled=True)
+assert start is False and "fallback" in detail, (start, detail)
+assert not det.running
+start, detail = server.app._barge_in_start_decision(det, config_enabled=True)
+assert start is False and "fallback" in detail, (start, detail)
+assert not det.running
 
+# (b) Degraded: silero_vad importable but model load fails. A broken install
+# must stay observable with its reason, and probe exactly once.
+broken = types.ModuleType("silero_vad")
+_load_calls = 0
 
-# Ready tier passes the gate (normal-path contract; stub: no torch here).
-start, detail = server.app._barge_in_start_decision(_ReadyManager(), config_enabled=True)
+def _boom():
+    global _load_calls
+    _load_calls += 1
+    raise RuntimeError("simulated model load failure")
+
+broken.load_silero_vad = _boom
+sys.modules["silero_vad"] = broken
+
+det_broken = _detector()
+state, reason = det_broken.vad_status()
+assert state == "degraded" and "RuntimeError" in reason and "simulated" in reason, (state, reason)
+start, detail = server.app._barge_in_start_decision(det_broken, config_enabled=True)
+assert start is False and "degraded" in detail and "simulated" in detail, (start, detail)
+assert not det_broken.running
+assert _load_calls == 1, _load_calls
+start, detail = server.app._barge_in_start_decision(det_broken, config_enabled=True)
+assert start is False and "degraded" in detail, (start, detail)
+assert _load_calls == 1, _load_calls
+
+# (c) L3/L4 journey regression (the reviewed scenario): voice capability is
+# ready (stubbed here — this CI process has no real deps) while asr_manager
+# is still None (bootstrap not run, or idle-unloaded). The gate must pass.
+assert server.app.asr_manager is None, "precondition: manager not created"
+
+ready = types.ModuleType("silero_vad")
+_ready_load_calls = 0
+
+class _FakeModel:
+    def eval(self):
+        return self
+
+def _fake_load():
+    global _ready_load_calls
+    _ready_load_calls += 1
+    return _FakeModel()
+
+ready.load_silero_vad = _fake_load
+sys.modules["silero_vad"] = ready
+
+det_ready = _detector()
+assert det_ready.vad_status() == ("ready", ""), det_ready.vad_status()
+start, detail = server.app._barge_in_start_decision(det_ready, config_enabled=True)
 assert start is True and detail == "", (start, detail)
+assert server.app.asr_manager is None  # the manager plays no role in the gate
 
-# Config switch off -> off, and callers must not log a capability detail.
-start, detail = server.app._barge_in_start_decision(_ReadyManager(), config_enabled=False)
+# (d) Config switch off -> off, and no capability probe/log detail at all.
+# The counter already holds (c)'s single probe; this decision must add none.
+start, detail = server.app._barge_in_start_decision(_detector(), config_enabled=False)
 assert start is False and detail == "", (start, detail)
+assert _ready_load_calls == 1, _ready_load_calls
 
 print("L2_BARGE_IN_GATE_OK")
 """

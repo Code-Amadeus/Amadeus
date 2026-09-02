@@ -55,6 +55,7 @@ class BargeInDetector:
         self._stop_event = threading.Event()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._vad_model = None
+        self._vad_capability: tuple[str, str] | None = None
         self._triggered = False
         self._lock = threading.Lock()
 
@@ -98,6 +99,50 @@ class BargeInDetector:
             self._vad_model = load_silero_vad()
             self._vad_model.eval()
         return self._vad_model
+
+    def vad_status(self) -> tuple[str, str]:
+        """Three-state VAD capability fact: ("ready" | "fallback" | "degraded", reason).
+
+        The barge-in thread depends on silero-vad/torch (the L3 voice tier),
+        so the startup boundary must consult this before spawning the thread:
+        on an L2 install a config-only gate would start a doomed thread that
+        reports barge_in_error on every sentence. Absent dependency ->
+        documented fallback; installed but broken -> degraded with the reason
+        kept observable (never disguised as absence).
+
+        Probing is lazy (never in __init__: L1/L2 bootstrap must stay
+        importable) and happens exactly once per detector instance — later
+        playback sentences re-read the cache instead of re-failing. This
+        detector owns its own VAD model (see _ensure_vad) and is
+        intentionally independent of the ASRManager lazy lifecycle, whose
+        manager is only created when ASR first listens.
+        """
+        # Called from the event-loop thread only (startup boundary); no lock.
+        if self._vad_capability is None:
+            self._vad_capability = self._probe_vad_capability()
+        return self._vad_capability
+
+    def _probe_vad_capability(self) -> tuple[str, str]:
+        try:
+            from silero_vad import load_silero_vad
+        except ModuleNotFoundError as exc:
+            if exc.name == "silero_vad":
+                # Absent dependency: documented L2 fallback.
+                return "fallback", ""
+            # silero-vad present but a dependency (e.g. torch) missing:
+            # a broken install must stay observable, not fake absence.
+            return "degraded", f"missing dependency {exc.name}"
+        except Exception as exc:  # e.g. torch DLL/ABI failure raised at import
+            return "degraded", f"{type(exc).__name__}: {exc}"
+        try:
+            model = load_silero_vad()
+            model.eval()
+        except Exception as exc:
+            return "degraded", f"{type(exc).__name__}: {exc}"
+        # Cache the loaded model so _ensure_vad() in the detector thread
+        # reuses it instead of loading a second copy.
+        self._vad_model = model
+        return "ready", ""
 
     def _emit_debug(self, **payload: Any) -> None:
         callback = self._on_debug
