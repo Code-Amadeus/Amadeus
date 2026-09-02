@@ -42,13 +42,23 @@ from config.settings import (
     ASR_VAD_THRESHOLD as _CFG_ASR_VAD_THRESHOLD,
     QWEN3_ASR_DEVICE as _CFG_QWEN3_ASR_DEVICE,
 )
-from asr.microphone import configured_device_index
 from asr.mic_input_service import get_mic_input_service
 from asr.text_filter import is_asr_prompt_leak
 from asr.backend import ASRBackendFatalError
 from asr.registry import create_asr_backend
 
 logger = logging.getLogger(__name__)
+
+
+def _configured_mic_index() -> int | None:
+    # Lazy: asr.microphone pulls pyaudio at its module top level; manager
+    # itself must stay importable without the voice tier. No tier → no
+    # device config to read, so the documented default is None.
+    try:
+        from asr.microphone import configured_device_index
+    except ModuleNotFoundError:
+        return None
+    return configured_device_index()
 
 # ---------------------------------------------------------------------------
 # 录音 / VAD 参数
@@ -188,14 +198,18 @@ class ASRManager:
         后端名称；未传入时使用启动配置 ASR_BACKEND。
     """
 
-    MICROPHONE_DEVICE_INDEX = configured_device_index()
-
+    # Resolved lazily on first ASRManager instantiation; set_microphone_index
+    # may overwrite it at runtime (class attribute stays the default source).
+    MICROPHONE_DEVICE_INDEX: Optional[int] = None
+    
     def __init__(self, backend: Optional[str] = None) -> None:
         backend_name = backend or _CFG_ASR_BACKEND or "qwen3_asr"
-
+        
         self.language = str(_CFG_ASR_LANGUAGE or "auto")
         self.context: str = _CFG_ASR_CONTEXT  # 热词/领域提示，Qwen3-ASR 用作 system prompt
-        self._mic_index: Optional[int] = self.MICROPHONE_DEVICE_INDEX
+        if ASRManager.MICROPHONE_DEVICE_INDEX is None:
+            ASRManager.MICROPHONE_DEVICE_INDEX = _configured_mic_index()
+        self._mic_index: Optional[int] = ASRManager.MICROPHONE_DEVICE_INDEX
         self._init_lock = threading.Lock()
         # 可选：外部注入的 TTS 播放状态查询函数，返回 True 表示 TTS 正在播放
         # 播放期间暂停 pre-roll 写入，避免将 TTS 输出混入 ASR 输入

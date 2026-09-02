@@ -115,6 +115,12 @@ def _capture(
     fake_silero_vad = ModuleType("silero_vad")
     fake_silero_vad.VADIterator = lambda *args, **kwargs: vad
     monkeypatch.setitem(sys.modules, "silero_vad", fake_silero_vad)
+    # torch only glues numpy chunks into the silero iterator (from_numpy);
+    # the scripted VAD ignores its input, so a shim keeps this test running
+    # on installs without the voice/vad tier.
+    fake_torch = ModuleType("torch")
+    fake_torch.from_numpy = lambda arr: arr
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
     monkeypatch.setattr(
         echo_guard,
         "should_drop_handoff_candidate",

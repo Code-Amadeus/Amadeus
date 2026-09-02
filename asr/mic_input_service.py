@@ -20,16 +20,12 @@ import numpy as np
 if TYPE_CHECKING:
     import pyaudio
 
+    from asr.microphone import MicDeviceDescriptor
+
 # pyaudio / torch are voice-tier (T2) dependencies, imported lazily so that
 # this module stays importable in audio-less installs (it is reachable from
 # backend bootstrap via barge-in / wake shutdown paths).
 
-from asr.microphone import (
-    configured_device_index,
-    device_descriptor_for_index,
-    MicDeviceDescriptor,
-    open_input_stream_with_fallback,
-)
 from tts.aec_realtime import get_realtime_aec_processor
 
 logger = logging.getLogger(__name__)
@@ -103,7 +99,7 @@ class MicInputService:
         self._stream = None
         self._ready_event = threading.Event()
         self._seq = 0
-        self._mic_index: int | None = configured_device_index()
+        self._mic_index: int | None = self._configured_mic_index()
         self._device: MicDeviceDescriptor | None = None
         self._last_error = ""
         self._handoff_seq: int | None = None
@@ -486,8 +482,24 @@ class MicInputService:
             return finish_audio("timeout")
         return None
 
+    @staticmethod
+    def _configured_mic_index() -> int | None:
+        # Lazy: asr.microphone pulls pyaudio at its module top level. Without
+        # the voice tier there is no device config to read — default to None.
+        try:
+            from asr.microphone import configured_device_index
+        except ModuleNotFoundError:
+            return None
+        return configured_device_index()
+
     def _run(self) -> None:
         import pyaudio
+
+        # Lazy: same reason as above — importable without the voice tier.
+        from asr.microphone import (
+            device_descriptor_for_index,
+            open_input_stream_with_fallback,
+        )
 
         stream = None
         pa = None

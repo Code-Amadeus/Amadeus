@@ -44,6 +44,11 @@ for mod in list(sys.modules):
         del sys.modules[mod]
 
 import server.app  # noqa: F401
+# asr manager / mic_input_service are reachable outside server.app's lazy
+# import chain (tests, config-only journeys); they must stay importable on
+# a T1 install even though asr.microphone pulls pyaudio at its module top.
+import asr.mic_input_service  # noqa: F401, E402
+import asr.manager  # noqa: F401, E402
 print("T1_BOOT_OK")
 """
 
