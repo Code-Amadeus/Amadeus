@@ -27,6 +27,8 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
+from tools.verify_python_environment import dependency_check_command
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PYTHON = (
@@ -235,13 +237,16 @@ def parse_pyproject_dependencies(
                 }
             )
             continue
+        active = (group is None or group in active_extras) and (
+            requirement.marker is None
+            or requirement.marker.evaluate({**marker_environment, "extra": group or ""})
+        )
         if group is not None:
             base = requirement.marker
             combined = (
                 f"({base}) and extra == '{group}'" if base else f"extra == '{group}'"
             )
             requirement.marker = Marker(combined)
-        active = group is None or group in active_extras
         entries.append(
             {
                 "source": source,
@@ -478,7 +483,7 @@ def build_audit(
             requirements.extend(parse_requirement_files([path], marker_environment))
     imports, parse_errors = scan_imports(ROOT)
     comparison = compare_dependencies(environment, requirements, imports)
-    pip_check = _run([str(python), "-m", "pip", "check"])
+    pip_check = _run(dependency_check_command(str(python)))
     vulnerability_audit = parse_pip_audit(
         pip_audit_path,
         tool_version=pip_audit_version,

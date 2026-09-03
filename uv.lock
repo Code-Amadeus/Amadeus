@@ -2,10 +2,16 @@ version = 1
 revision = 3
 requires-python = "==3.12.*"
 resolution-markers = [
-    "sys_platform == 'win32'",
-    "sys_platform == 'emscripten'",
-    "sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "sys_platform == 'win32' and extra != 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu'",
+    "sys_platform != 'win32' and extra != 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu'",
+    "sys_platform == 'win32' and extra == 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu'",
+    "sys_platform != 'win32' and extra == 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu'",
+    "extra != 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu'",
 ]
+conflicts = [[
+    { package = "amadeus", extra = "local-cu124" },
+    { package = "amadeus", extra = "torch-cpu" },
+]]
 
 [[package]]
 name = "accelerate"
@@ -18,8 +24,8 @@ dependencies = [
     { name = "psutil" },
     { name = "pyyaml" },
     { name = "safetensors" },
-    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
-    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "sys_platform == 'win32'" },
+    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/4a/8e/ac2a9566747a93f8be36ee08532eb0160558b07630a081a6056a9f89bf1d/accelerate-1.12.0.tar.gz", hash = "sha256:70988c352feb481887077d2ab845125024b2a137a5090d6d7a32b57d03a45df6", size = 398399, upload-time = "2025-11-21T11:27:46.973Z" }
 wheels = [
@@ -186,20 +192,24 @@ local-cu124 = [
     { name = "split-lang" },
     { name = "tojyutping" },
     { name = "tokenizers" },
-    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
-    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "sys_platform == 'win32'" },
-    { name = "torchaudio", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
-    { name = "torchaudio", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "sys_platform == 'win32'" },
+    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "torchaudio", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "torchaudio", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
     { name = "torchmetrics" },
     { name = "tqdm" },
     { name = "transformers" },
     { name = "wordsegment" },
     { name = "x-transformers" },
 ]
+torch-cpu = [
+    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "torch", version = "2.5.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "torchaudio", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "torchaudio", version = "2.5.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+]
 vad = [
     { name = "silero-vad" },
-    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
-    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "sys_platform == 'win32'" },
 ]
 voice = [
     { name = "aec-audio-processing" },
@@ -273,10 +283,13 @@ requires-dist = [
     { name = "tojyutping", marker = "extra == 'local-cu124'", specifier = "==3.2.0" },
     { name = "tokenizers", marker = "extra == 'local-cu124'", specifier = "==0.22.1" },
     { name = "torch", marker = "sys_platform == 'win32' and extra == 'local-cu124'", specifier = "==2.5.1", index = "https://download.pytorch.org/whl/cu124", conflict = { package = "amadeus", extra = "local-cu124" } },
+    { name = "torch", marker = "sys_platform == 'win32' and extra == 'torch-cpu'", specifier = "==2.5.1", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "amadeus", extra = "torch-cpu" } },
     { name = "torch", marker = "sys_platform != 'win32' and extra == 'local-cu124'", specifier = "==2.5.1" },
-    { name = "torch", marker = "extra == 'vad'", specifier = "==2.5.1" },
+    { name = "torch", marker = "sys_platform != 'win32' and extra == 'torch-cpu'", specifier = "==2.5.1" },
     { name = "torchaudio", marker = "sys_platform == 'win32' and extra == 'local-cu124'", specifier = "==2.5.1", index = "https://download.pytorch.org/whl/cu124", conflict = { package = "amadeus", extra = "local-cu124" } },
+    { name = "torchaudio", marker = "sys_platform == 'win32' and extra == 'torch-cpu'", specifier = "==2.5.1", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "amadeus", extra = "torch-cpu" } },
     { name = "torchaudio", marker = "sys_platform != 'win32' and extra == 'local-cu124'", specifier = "==2.5.1" },
+    { name = "torchaudio", marker = "sys_platform != 'win32' and extra == 'torch-cpu'", specifier = "==2.5.1" },
     { name = "torchmetrics", marker = "extra == 'local-cu124'", specifier = "==1.5.0" },
     { name = "tqdm", marker = "extra == 'local-cu124'", specifier = "==4.67.3" },
     { name = "transformers", marker = "extra == 'local-cu124'", specifier = "==4.57.6" },
@@ -288,7 +301,7 @@ requires-dist = [
     { name = "wordsegment", marker = "extra == 'local-cu124'", specifier = "==1.3.1" },
     { name = "x-transformers", marker = "extra == 'local-cu124'", specifier = "==2.19.6" },
 ]
-provides-extras = ["voice", "vad", "local-cu124", "dev"]
+provides-extras = ["voice", "vad", "torch-cpu", "local-cu124", "dev"]
 
 [[package]]
 name = "annotated-doc"
@@ -479,7 +492,7 @@ name = "cffi"
 version = "2.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pycparser", marker = "implementation_name != 'PyPy'" },
+    { name = "pycparser", marker = "implementation_name != 'PyPy' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/9e/ef/008a1939e372c06329a3fce4279c02f328488f3526744906eeec3da7ad5f/cffi-2.1.1.tar.gz", hash = "sha256:dd31f52ea1086513bb9df30f8fcee9b8918323ae067a3d5b78bc826a000712be", size = 530807, upload-time = "2026-08-03T21:21:18.939Z" }
 wheels = [
@@ -622,7 +635,7 @@ name = "cryptography"
 version = "50.0.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cffi", marker = "platform_python_implementation != 'PyPy'" },
+    { name = "cffi", marker = "platform_python_implementation != 'PyPy' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/bb/ad/5d6702db60b1e40b41ef513b6967ff5848f307d50f8449baf1634f5908f1/cryptography-50.0.1.tar.gz", hash = "sha256:5dd9bda1c12b4162f6ff568eeb5e0ff956c28d14406e875cfe8a63a2d414ff20", size = 880381, upload-time = "2026-08-25T19:45:45.499Z" }
 wheels = [
@@ -1229,11 +1242,11 @@ name = "httpx2"
 version = "2.12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "anyio", marker = "sys_platform != 'emscripten'" },
-    { name = "httpcore2", marker = "sys_platform != 'emscripten'" },
-    { name = "httpx2-jsfetch", marker = "sys_platform == 'emscripten'" },
+    { name = "anyio", marker = "sys_platform != 'emscripten' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "httpcore2", marker = "sys_platform != 'emscripten' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "httpx2-jsfetch", marker = "sys_platform == 'emscripten' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
     { name = "idna" },
-    { name = "truststore", marker = "sys_platform != 'emscripten'" },
+    { name = "truststore", marker = "sys_platform != 'emscripten' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
     { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/7f/f8/579a8b51e42e38ee32647df9f08aa25643ae788e275cc625b199829c4671/httpx2-2.12.0.tar.gz", hash = "sha256:7631fe9887a8a2275f4a2540e053aa670fcc50742864a9ae7c66e609fdcf12cf", size = 100040, upload-time = "2026-08-18T13:22:09.086Z" }
@@ -1641,12 +1654,12 @@ dependencies = [
     { name = "pydantic" },
     { name = "pyjwt", extra = ["crypto"] },
     { name = "python-multipart" },
-    { name = "pywin32", marker = "sys_platform == 'win32'" },
+    { name = "pywin32", marker = "sys_platform == 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
     { name = "sse-starlette" },
     { name = "starlette" },
     { name = "typing-extensions" },
     { name = "typing-inspection" },
-    { name = "uvicorn", marker = "sys_platform != 'emscripten'" },
+    { name = "uvicorn", marker = "sys_platform != 'emscripten' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/74/33/32d4dff2c95bb5d897c3ef4c83649a08996b17b58f0a326d2495d4c81179/mcp-2.0.0.tar.gz", hash = "sha256:0f440e735c13ece8bb19bc62cf0b86f4313448432fbb77d35e14034f4e050728", size = 1662284, upload-time = "2026-07-28T13:45:32.346Z" }
 wheels = [
@@ -1874,7 +1887,9 @@ name = "nvidia-cublas-cu12"
 version = "12.4.5.8"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
+    { url = "https://files.pythonhosted.org/packages/7f/7f/7fbae15a3982dc9595e49ce0f19332423b260045d0a6afe93cdbe2f1f624/nvidia_cublas_cu12-12.4.5.8-py3-none-manylinux2014_aarch64.whl", hash = "sha256:0f8aa1706812e00b9f19dfe0cdb3999b092ccb8ca168c0db5b8ea712456fd9b3", size = 363333771, upload-time = "2024-06-18T19:28:09.881Z" },
     { url = "https://files.pythonhosted.org/packages/ae/71/1c91302526c45ab494c23f61c7a84aa568b8c1f9d196efa5993957faf906/nvidia_cublas_cu12-12.4.5.8-py3-none-manylinux2014_x86_64.whl", hash = "sha256:2fc8da60df463fdefa81e323eef2e36489e1c94335b5358bcb38360adf75ac9b", size = 363438805, upload-time = "2024-04-03T20:57:06.025Z" },
+    { url = "https://files.pythonhosted.org/packages/e2/2a/4f27ca96232e8b5269074a72e03b4e0d43aa68c9b965058b1684d07c6ff8/nvidia_cublas_cu12-12.4.5.8-py3-none-win_amd64.whl", hash = "sha256:5a796786da89203a0657eda402bcdcec6180254a8ac22d72213abc42069522dc", size = 396895858, upload-time = "2024-04-03T21:03:31.996Z" },
 ]
 
 [[package]]
@@ -1882,7 +1897,9 @@ name = "nvidia-cuda-cupti-cu12"
 version = "12.4.127"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
+    { url = "https://files.pythonhosted.org/packages/93/b5/9fb3d00386d3361b03874246190dfec7b206fd74e6e287b26a8fcb359d95/nvidia_cuda_cupti_cu12-12.4.127-py3-none-manylinux2014_aarch64.whl", hash = "sha256:79279b35cf6f91da114182a5ce1864997fd52294a87a16179ce275773799458a", size = 12354556, upload-time = "2024-06-18T19:30:40.546Z" },
     { url = "https://files.pythonhosted.org/packages/67/42/f4f60238e8194a3106d06a058d494b18e006c10bb2b915655bd9f6ea4cb1/nvidia_cuda_cupti_cu12-12.4.127-py3-none-manylinux2014_x86_64.whl", hash = "sha256:9dec60f5ac126f7bb551c055072b69d85392b13311fcc1bcda2202d172df30fb", size = 13813957, upload-time = "2024-04-03T20:55:01.564Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/79/8cf313ec17c58ccebc965568e5bcb265cdab0a1df99c4e674bb7a3b99bfe/nvidia_cuda_cupti_cu12-12.4.127-py3-none-win_amd64.whl", hash = "sha256:5688d203301ab051449a2b1cb6690fbe90d2b372f411521c86018b950f3d7922", size = 9938035, upload-time = "2024-04-03T21:01:01.109Z" },
 ]
 
 [[package]]
@@ -1890,7 +1907,9 @@ name = "nvidia-cuda-nvrtc-cu12"
 version = "12.4.127"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
+    { url = "https://files.pythonhosted.org/packages/77/aa/083b01c427e963ad0b314040565ea396f914349914c298556484f799e61b/nvidia_cuda_nvrtc_cu12-12.4.127-py3-none-manylinux2014_aarch64.whl", hash = "sha256:0eedf14185e04b76aa05b1fea04133e59f465b6f960c0cbf4e37c3cb6b0ea198", size = 24133372, upload-time = "2024-06-18T19:32:00.576Z" },
     { url = "https://files.pythonhosted.org/packages/2c/14/91ae57cd4db3f9ef7aa99f4019cfa8d54cb4caa7e00975df6467e9725a9f/nvidia_cuda_nvrtc_cu12-12.4.127-py3-none-manylinux2014_x86_64.whl", hash = "sha256:a178759ebb095827bd30ef56598ec182b85547f1508941a3d560eb7ea1fbf338", size = 24640306, upload-time = "2024-04-03T20:56:01.463Z" },
+    { url = "https://files.pythonhosted.org/packages/7c/30/8c844bfb770f045bcd8b2c83455c5afb45983e1a8abf0c4e5297b481b6a5/nvidia_cuda_nvrtc_cu12-12.4.127-py3-none-win_amd64.whl", hash = "sha256:a961b2f1d5f17b14867c619ceb99ef6fcec12e46612711bcec78eb05068a60ec", size = 19751955, upload-time = "2024-04-03T21:01:51.133Z" },
 ]
 
 [[package]]
@@ -1898,7 +1917,9 @@ name = "nvidia-cuda-runtime-cu12"
 version = "12.4.127"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
+    { url = "https://files.pythonhosted.org/packages/a1/aa/b656d755f474e2084971e9a297def515938d56b466ab39624012070cb773/nvidia_cuda_runtime_cu12-12.4.127-py3-none-manylinux2014_aarch64.whl", hash = "sha256:961fe0e2e716a2a1d967aab7caee97512f71767f852f67432d572e36cb3a11f3", size = 894177, upload-time = "2024-06-18T19:32:52.877Z" },
     { url = "https://files.pythonhosted.org/packages/ea/27/1795d86fe88ef397885f2e580ac37628ed058a92ed2c39dc8eac3adf0619/nvidia_cuda_runtime_cu12-12.4.127-py3-none-manylinux2014_x86_64.whl", hash = "sha256:64403288fa2136ee8e467cdc9c9427e0434110899d07c779f25b5c068934faa5", size = 883737, upload-time = "2024-04-03T20:54:51.355Z" },
+    { url = "https://files.pythonhosted.org/packages/a8/8b/450e93fab75d85a69b50ea2d5fdd4ff44541e0138db16f9cd90123ef4de4/nvidia_cuda_runtime_cu12-12.4.127-py3-none-win_amd64.whl", hash = "sha256:09c2e35f48359752dfa822c09918211844a3d93c100a715d79b59591130c5e1e", size = 878808, upload-time = "2024-04-03T21:00:49.77Z" },
 ]
 
 [[package]]
@@ -1906,10 +1927,11 @@ name = "nvidia-cudnn-cu12"
 version = "9.1.0.70"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12" },
+    { name = "nvidia-cublas-cu12", marker = "sys_platform != 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra != 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9f/fd/713452cd72343f682b1c7b9321e23829f00b842ceaedcda96e742ea0b0b3/nvidia_cudnn_cu12-9.1.0.70-py3-none-manylinux2014_x86_64.whl", hash = "sha256:165764f44ef8c61fcdfdfdbe769d687e06374059fbb388b6c89ecb0e28793a6f", size = 664752741, upload-time = "2024-04-22T15:24:15.253Z" },
+    { url = "https://files.pythonhosted.org/packages/3f/d0/f90ee6956a628f9f04bf467932c0a25e5a7e706a684b896593c06c82f460/nvidia_cudnn_cu12-9.1.0.70-py3-none-win_amd64.whl", hash = "sha256:6278562929433d68365a07a4a1546c237ba2849852c0d4b2262a486e805b977a", size = 679925892, upload-time = "2024-04-22T15:24:53.333Z" },
 ]
 
 [[package]]
@@ -1917,10 +1939,12 @@ name = "nvidia-cufft-cu12"
 version = "11.2.1.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12" },
+    { name = "nvidia-nvjitlink-cu12", marker = "sys_platform != 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra != 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu')" },
 ]
 wheels = [
+    { url = "https://files.pythonhosted.org/packages/7a/8a/0e728f749baca3fbeffad762738276e5df60851958be7783af121a7221e7/nvidia_cufft_cu12-11.2.1.3-py3-none-manylinux2014_aarch64.whl", hash = "sha256:5dad8008fc7f92f5ddfa2101430917ce2ffacd86824914c82e28990ad7f00399", size = 211422548, upload-time = "2024-06-18T19:33:39.396Z" },
     { url = "https://files.pythonhosted.org/packages/27/94/3266821f65b92b3138631e9c8e7fe1fb513804ac934485a8d05776e1dd43/nvidia_cufft_cu12-11.2.1.3-py3-none-manylinux2014_x86_64.whl", hash = "sha256:f083fc24912aa410be21fa16d157fed2055dab1cc4b6934a0e03cba69eb242b9", size = 211459117, upload-time = "2024-04-03T20:57:40.402Z" },
+    { url = "https://files.pythonhosted.org/packages/f6/ee/3f3f8e9874f0be5bbba8fb4b62b3de050156d159f8b6edc42d6f1074113b/nvidia_cufft_cu12-11.2.1.3-py3-none-win_amd64.whl", hash = "sha256:d802f4954291101186078ccbe22fc285a902136f974d369540fd4a5333d1440b", size = 210576476, upload-time = "2024-04-03T21:04:06.422Z" },
 ]
 
 [[package]]
@@ -1928,7 +1952,9 @@ name = "nvidia-curand-cu12"
 version = "10.3.5.147"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
+    { url = "https://files.pythonhosted.org/packages/80/9c/a79180e4d70995fdf030c6946991d0171555c6edf95c265c6b2bf7011112/nvidia_curand_cu12-10.3.5.147-py3-none-manylinux2014_aarch64.whl", hash = "sha256:1f173f09e3e3c76ab084aba0de819c49e56614feae5c12f69883f4ae9bb5fad9", size = 56314811, upload-time = "2024-06-18T19:34:48.575Z" },
     { url = "https://files.pythonhosted.org/packages/8a/6d/44ad094874c6f1b9c654f8ed939590bdc408349f137f9b98a3a23ccec411/nvidia_curand_cu12-10.3.5.147-py3-none-manylinux2014_x86_64.whl", hash = "sha256:a88f583d4e0bb643c49743469964103aa59f7f708d862c3ddb0fc07f851e3b8b", size = 56305206, upload-time = "2024-04-03T20:58:08.722Z" },
+    { url = "https://files.pythonhosted.org/packages/1c/22/2573503d0d4e45673c263a313f79410e110eb562636b0617856fdb2ff5f6/nvidia_curand_cu12-10.3.5.147-py3-none-win_amd64.whl", hash = "sha256:f307cc191f96efe9e8f05a87096abc20d08845a841889ef78cb06924437f6771", size = 55799918, upload-time = "2024-04-03T21:04:34.45Z" },
 ]
 
 [[package]]
@@ -1936,12 +1962,14 @@ name = "nvidia-cusolver-cu12"
 version = "11.6.1.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12" },
-    { name = "nvidia-cusparse-cu12" },
-    { name = "nvidia-nvjitlink-cu12" },
+    { name = "nvidia-cublas-cu12", marker = "sys_platform != 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra != 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu')" },
+    { name = "nvidia-cusparse-cu12", marker = "sys_platform != 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra != 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu')" },
+    { name = "nvidia-nvjitlink-cu12", marker = "sys_platform != 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra != 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu')" },
 ]
 wheels = [
+    { url = "https://files.pythonhosted.org/packages/46/6b/a5c33cf16af09166845345275c34ad2190944bcc6026797a39f8e0a282e0/nvidia_cusolver_cu12-11.6.1.9-py3-none-manylinux2014_aarch64.whl", hash = "sha256:d338f155f174f90724bbde3758b7ac375a70ce8e706d70b018dd3375545fc84e", size = 127634111, upload-time = "2024-06-18T19:35:01.793Z" },
     { url = "https://files.pythonhosted.org/packages/3a/e1/5b9089a4b2a4790dfdea8b3a006052cfecff58139d5a4e34cb1a51df8d6f/nvidia_cusolver_cu12-11.6.1.9-py3-none-manylinux2014_x86_64.whl", hash = "sha256:19e33fa442bcfd085b3086c4ebf7e8debc07cfe01e11513cc6d332fd918ac260", size = 127936057, upload-time = "2024-04-03T20:58:28.735Z" },
+    { url = "https://files.pythonhosted.org/packages/f2/be/d435b7b020e854d5d5a682eb5de4328fd62f6182507406f2818280e206e2/nvidia_cusolver_cu12-11.6.1.9-py3-none-win_amd64.whl", hash = "sha256:e77314c9d7b694fcebc84f58989f3aa4fb4cb442f12ca1a9bde50f5e8f6d1b9c", size = 125224015, upload-time = "2024-04-03T21:04:53.339Z" },
 ]
 
 [[package]]
@@ -1949,10 +1977,12 @@ name = "nvidia-cusparse-cu12"
 version = "12.3.1.170"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12" },
+    { name = "nvidia-nvjitlink-cu12", marker = "sys_platform != 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra != 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu')" },
 ]
 wheels = [
+    { url = "https://files.pythonhosted.org/packages/96/a9/c0d2f83a53d40a4a41be14cea6a0bf9e668ffcf8b004bd65633f433050c0/nvidia_cusparse_cu12-12.3.1.170-py3-none-manylinux2014_aarch64.whl", hash = "sha256:9d32f62896231ebe0480efd8a7f702e143c98cfaa0e8a76df3386c1ba2b54df3", size = 207381987, upload-time = "2024-06-18T19:35:32.989Z" },
     { url = "https://files.pythonhosted.org/packages/db/f7/97a9ea26ed4bbbfc2d470994b8b4f338ef663be97b8f677519ac195e113d/nvidia_cusparse_cu12-12.3.1.170-py3-none-manylinux2014_x86_64.whl", hash = "sha256:ea4f11a2904e2a8dc4b1833cc1b5181cde564edd0d5cd33e3c168eff2d1863f1", size = 207454763, upload-time = "2024-04-03T20:58:59.995Z" },
+    { url = "https://files.pythonhosted.org/packages/a2/e0/3155ca539760a8118ec94cc279b34293309bcd14011fc724f87f31988843/nvidia_cusparse_cu12-12.3.1.170-py3-none-win_amd64.whl", hash = "sha256:9bc90fb087bc7b4c15641521f31c0371e9a612fc2ba12c338d3ae032e6b6797f", size = 204684315, upload-time = "2024-04-03T21:05:26.031Z" },
 ]
 
 [[package]]
@@ -1968,7 +1998,9 @@ name = "nvidia-nvjitlink-cu12"
 version = "12.4.127"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
+    { url = "https://files.pythonhosted.org/packages/02/45/239d52c05074898a80a900f49b1615d81c07fceadd5ad6c4f86a987c0bc4/nvidia_nvjitlink_cu12-12.4.127-py3-none-manylinux2014_aarch64.whl", hash = "sha256:4abe7fef64914ccfa909bc2ba39739670ecc9e820c83ccc7a6ed414122599b83", size = 20552510, upload-time = "2024-06-18T20:20:13.871Z" },
     { url = "https://files.pythonhosted.org/packages/ff/ff/847841bacfbefc97a00036e0fce5a0f086b640756dc38caea5e1bb002655/nvidia_nvjitlink_cu12-12.4.127-py3-none-manylinux2014_x86_64.whl", hash = "sha256:06b3b9b25bf3f8af351d664978ca26a16d2c5127dbd53c0497e28d1fb9611d57", size = 21066810, upload-time = "2024-04-03T20:59:46.957Z" },
+    { url = "https://files.pythonhosted.org/packages/81/19/0babc919031bee42620257b9a911c528f05fb2688520dcd9ca59159ffea8/nvidia_nvjitlink_cu12-12.4.127-py3-none-win_amd64.whl", hash = "sha256:fd9020c501d27d135f983c6d3e244b197a7ccad769e34df53a42e276b0e25fa1", size = 95336325, upload-time = "2024-04-03T21:06:25.073Z" },
 ]
 
 [[package]]
@@ -1976,7 +2008,9 @@ name = "nvidia-nvtx-cu12"
 version = "12.4.127"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
+    { url = "https://files.pythonhosted.org/packages/06/39/471f581edbb7804b39e8063d92fc8305bdc7a80ae5c07dbe6ea5c50d14a5/nvidia_nvtx_cu12-12.4.127-py3-none-manylinux2014_aarch64.whl", hash = "sha256:7959ad635db13edf4fc65c06a6e9f9e55fc2f92596db928d169c0bb031e88ef3", size = 100417, upload-time = "2024-06-18T20:16:22.484Z" },
     { url = "https://files.pythonhosted.org/packages/87/20/199b8713428322a2f22b722c62b8cc278cc53dffa9705d744484b5035ee9/nvidia_nvtx_cu12-12.4.127-py3-none-manylinux2014_x86_64.whl", hash = "sha256:781e950d9b9f60d8241ccea575b32f5105a5baf4c2351cab5256a24869f12a1a", size = 99144, upload-time = "2024-04-03T20:56:12.406Z" },
+    { url = "https://files.pythonhosted.org/packages/54/1b/f77674fbb73af98843be25803bbd3b9a4f0a96c75b8d33a2854a5c7d2d77/nvidia_nvtx_cu12-12.4.127-py3-none-win_amd64.whl", hash = "sha256:641dccaaa1139f3ffb0d3164b4b84f9d253397e38246a4f2f36728b48566d485", size = 66307, upload-time = "2024-04-03T21:02:01.959Z" },
 ]
 
 [[package]]
@@ -2167,8 +2201,8 @@ dependencies = [
     { name = "psutil" },
     { name = "pyyaml" },
     { name = "safetensors" },
-    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
-    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "sys_platform == 'win32'" },
+    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
     { name = "tqdm" },
     { name = "transformers" },
 ]
@@ -2575,7 +2609,7 @@ name = "pytest"
 version = "8.4.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
     { name = "iniconfig" },
     { name = "packaging" },
     { name = "pluggy" },
@@ -2634,12 +2668,12 @@ name = "pytorch-lightning"
 version = "2.6.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "fsspec", extra = ["http"] },
+    { name = "fsspec", extra = ["http"], marker = "extra == 'extra-7-amadeus-local-cu124'" },
     { name = "lightning-utilities" },
     { name = "packaging" },
     { name = "pyyaml" },
-    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
-    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "sys_platform == 'win32'" },
+    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
     { name = "torchmetrics" },
     { name = "tqdm" },
     { name = "typing-extensions" },
@@ -2810,8 +2844,8 @@ version = "0.8.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "einops" },
-    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
-    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "sys_platform == 'win32'" },
+    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/71/38/74783585b1f0282fddd3faf1abd6dd20977255c27e31737eced2d7ec05f1/rotary_embedding_torch-0.8.9.tar.gz", hash = "sha256:b213f153cad1d108064d930544fb3af678d56515893d3f869a7a146f87997e3f", size = 7497, upload-time = "2025-07-27T01:26:14.675Z" }
 wheels = [
@@ -3005,10 +3039,12 @@ version = "6.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "packaging" },
-    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
-    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "sys_platform == 'win32'" },
-    { name = "torchaudio", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
-    { name = "torchaudio", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "sys_platform == 'win32'" },
+    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra != 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu')" },
+    { name = "torch", version = "2.5.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "torchaudio", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra != 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu')" },
+    { name = "torchaudio", version = "2.5.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "torchaudio", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/32/d3/e31f526482782764aa4f70e20fd4545cf2e4a81a60b6fb0f089f6d107991/silero_vad-6.2.1.tar.gz", hash = "sha256:b23062b0e39fad17b1266fc23c1e7b4290219dbe82ce08510889e32f681f4b3b", size = 28913811, upload-time = "2026-02-24T08:41:59.329Z" }
 wheels = [
@@ -3289,35 +3325,58 @@ name = "torch"
 version = "2.5.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "sys_platform == 'emscripten'",
-    "sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "sys_platform != 'win32' and extra != 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu'",
+    "sys_platform != 'win32' and extra == 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu'",
+    "extra != 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu'",
 ]
 dependencies = [
-    { name = "filelock" },
-    { name = "fsspec" },
-    { name = "jinja2" },
-    { name = "networkx" },
-    { name = "nvidia-cublas-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-cuda-cupti-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-cuda-nvrtc-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-cuda-runtime-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-cudnn-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-cufft-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-curand-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-cusolver-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-cusparse-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-nccl-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-nvjitlink-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-nvtx-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "setuptools" },
-    { name = "sympy" },
-    { name = "triton", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions" },
+    { name = "filelock", marker = "sys_platform != 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra != 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu')" },
+    { name = "fsspec", marker = "sys_platform != 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra != 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu')" },
+    { name = "jinja2", marker = "sys_platform != 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra != 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu')" },
+    { name = "networkx", marker = "sys_platform != 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra != 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu')" },
+    { name = "nvidia-cublas-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "nvidia-cuda-cupti-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "nvidia-cuda-nvrtc-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "nvidia-cuda-runtime-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "nvidia-cudnn-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "nvidia-cufft-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "nvidia-curand-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "nvidia-cusolver-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "nvidia-cusparse-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "nvidia-nccl-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "nvidia-nvjitlink-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "nvidia-nvtx-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "setuptools", marker = "sys_platform != 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra != 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu')" },
+    { name = "sympy", marker = "sys_platform != 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra != 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu')" },
+    { name = "triton", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine != 'x86_64' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (sys_platform != 'linux' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "typing-extensions", marker = "sys_platform != 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra != 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8b/5c/36c114d120bfe10f9323ed35061bc5878cc74f3f594003854b0ea298942f/torch-2.5.1-cp312-cp312-manylinux1_x86_64.whl", hash = "sha256:ed231a4b3a5952177fafb661213d690a72caaad97d5824dd4fc17ab9e15cec03", size = 906389343, upload-time = "2024-10-29T17:37:06.758Z" },
     { url = "https://files.pythonhosted.org/packages/6d/69/d8ada8b6e0a4257556d5b4ddeb4345ea8eeaaef3c98b60d1cca197c7ad8e/torch-2.5.1-cp312-cp312-manylinux2014_aarch64.whl", hash = "sha256:3f4b7f10a247e0dcd7ea97dc2d3bfbfc90302ed36d7f3952b0008d0df264e697", size = 91811673, upload-time = "2024-10-29T17:32:42.789Z" },
+    { url = "https://files.pythonhosted.org/packages/5f/ba/607d013b55b9fd805db2a5c2662ec7551f1910b4eef39653eeaba182c5b2/torch-2.5.1-cp312-cp312-win_amd64.whl", hash = "sha256:73e58e78f7d220917c5dbfad1a40e09df9929d3b95d25e57d9f8558f84c9a11c", size = 203046841, upload-time = "2024-10-29T17:35:48.665Z" },
     { url = "https://files.pythonhosted.org/packages/57/6c/bf52ff061da33deb9f94f4121fde7ff3058812cb7d2036c97bc167793bd1/torch-2.5.1-cp312-none-macosx_11_0_arm64.whl", hash = "sha256:8c712df61101964eb11910a846514011f0b6f5920c55dbf567bff8a34163d5b1", size = 63858109, upload-time = "2024-10-29T17:36:21.973Z" },
+]
+
+[[package]]
+name = "torch"
+version = "2.5.1+cpu"
+source = { registry = "https://download.pytorch.org/whl/cpu" }
+resolution-markers = [
+    "sys_platform == 'win32'",
+]
+dependencies = [
+    { name = "filelock", marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "fsspec", marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "jinja2", marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "networkx", marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "setuptools", marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "sympy", marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "typing-extensions", marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+]
+wheels = [
+    { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.5.1%2Bcpu-cp312-cp312-linux_x86_64.whl", hash = "sha256:4856f9d6925121d13c2df07aa7580b767f449dfe71ae5acde9c27535d5da4840", upload-time = "2024-10-29T23:01:13Z" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.5.1%2Bcpu-cp312-cp312-win_amd64.whl", hash = "sha256:a6b720410350765d3d77c01a5ce098a6c45af446284e45e87a98b8a16e7d564d", upload-time = "2024-10-29T23:01:21Z" },
 ]
 
 [[package]]
@@ -3328,15 +3387,16 @@ resolution-markers = [
     "sys_platform == 'win32'",
 ]
 dependencies = [
-    { name = "filelock" },
-    { name = "fsspec" },
-    { name = "jinja2" },
-    { name = "networkx" },
-    { name = "setuptools" },
-    { name = "sympy" },
-    { name = "typing-extensions" },
+    { name = "filelock", marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "fsspec", marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "jinja2", marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "networkx", marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "setuptools", marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "sympy", marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "typing-extensions", marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
 ]
 wheels = [
+    { url = "https://download-r2.pytorch.org/whl/cu124/torch-2.5.1%2Bcu124-cp312-cp312-linux_x86_64.whl", hash = "sha256:bf6484bfe5bc4f92a4a1a1bf553041505e19a911f717065330eb061afe0e14d7", upload-time = "2024-10-29T23:34:41Z" },
     { url = "https://download-r2.pytorch.org/whl/cu124/torch-2.5.1%2Bcu124-cp312-cp312-win_amd64.whl", hash = "sha256:3c3f705fb125edbd77f9579fa11a138c56af8968a10fc95834cdd9fdf4f1f1a6", upload-time = "2024-10-29T23:35:18Z" },
 ]
 
@@ -3359,8 +3419,8 @@ version = "0.1.22"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "einops" },
-    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
-    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "sys_platform == 'win32'" },
+    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/93/03/33fa0c18ed8300f1565d39fc1dc6b076a85f5e70fddab6816ac75e3e3322/torch_einops_utils-0.1.22.tar.gz", hash = "sha256:e641120b93c098383fc6c088cd6bdcfe628a54b492773b12b4a92c79c75e03a0", size = 21033, upload-time = "2026-08-27T16:41:57.36Z" }
 wheels = [
@@ -3372,16 +3432,33 @@ name = "torchaudio"
 version = "2.5.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "sys_platform == 'emscripten'",
-    "sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "sys_platform != 'win32' and extra != 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu'",
+    "sys_platform != 'win32' and extra == 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu'",
+    "extra != 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu'",
 ]
 dependencies = [
-    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" } },
+    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra != 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/03/ab/151037a41e2cf4a5d489dfe5e7196b755e0fd83958d5ca7ad8ed85afcb1c/torchaudio-2.5.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:f1cbfdfd1bbdfbe7289d47a74f36ff6c5d87c3205606202fef5a7fb693f61cf0", size = 1798042, upload-time = "2024-10-29T17:41:27.454Z" },
     { url = "https://files.pythonhosted.org/packages/34/1c/345d11bf492a1414dced70a9572ff1eb2c73013578d24fb4d728a91a09d1/torchaudio-2.5.1-cp312-cp312-manylinux1_x86_64.whl", hash = "sha256:9c8fb06fbd8d2016e7b7caf15a3231867c792a2e3b0f2f8f9013633e9c2ce412", size = 3371851, upload-time = "2024-10-29T17:41:24.739Z" },
     { url = "https://files.pythonhosted.org/packages/1c/74/a27c6d0d4c4fad90462f08e99222d3557f118beb8fb560b87d607a727a0a/torchaudio-2.5.1-cp312-cp312-manylinux2014_aarch64.whl", hash = "sha256:6bb65416405f40e00b20701257c16e7493bfdd7188e02e87cc5b389c31c10c2c", size = 1668849, upload-time = "2024-10-29T17:41:30.51Z" },
+    { url = "https://files.pythonhosted.org/packages/99/a1/4220b73ba6e083229099892d9126e01836afe96cf7e2fbfe60b327506f49/torchaudio-2.5.1-cp312-cp312-win_amd64.whl", hash = "sha256:ec8f12d6be12aed248a0d65a76c7bb341ee5eef969fe2e9dc3154c7cfba1bdf4", size = 2435747, upload-time = "2024-10-29T17:41:39.561Z" },
+]
+
+[[package]]
+name = "torchaudio"
+version = "2.5.1+cpu"
+source = { registry = "https://download.pytorch.org/whl/cpu" }
+resolution-markers = [
+    "sys_platform == 'win32'",
+]
+dependencies = [
+    { name = "torch", version = "2.5.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+]
+wheels = [
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.5.1%2Bcpu-cp312-cp312-linux_x86_64.whl", hash = "sha256:b7fbd9c264dcbe28efb061364c76d3770eb13ae692d2982949b583edfb9ed7f5", upload-time = "2024-10-29T23:02:33Z" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.5.1%2Bcpu-cp312-cp312-win_amd64.whl", hash = "sha256:68b58c1dae7bb738df8a36f0d147d2c9c69e56a35ff40dedb84ac30aff2e59e1", upload-time = "2024-10-29T23:02:34Z" },
 ]
 
 [[package]]
@@ -3392,9 +3469,10 @@ resolution-markers = [
     "sys_platform == 'win32'",
 ]
 dependencies = [
-    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" } },
+    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
 ]
 wheels = [
+    { url = "https://download-r2.pytorch.org/whl/cu124/torchaudio-2.5.1%2Bcu124-cp312-cp312-linux_x86_64.whl", hash = "sha256:9902598e0330aeead0bc1545837804eb268549b9b4ce41ae3ca51b2384904e89", upload-time = "2024-10-29T23:47:09Z" },
     { url = "https://download-r2.pytorch.org/whl/cu124/torchaudio-2.5.1%2Bcu124-cp312-cp312-win_amd64.whl", hash = "sha256:cca2de94f232611b20d379edf28befa7a1aa482ae9ed41c3b958b08ed1bf4983", upload-time = "2024-10-29T23:47:10Z" },
 ]
 
@@ -3406,8 +3484,8 @@ dependencies = [
     { name = "lightning-utilities" },
     { name = "numpy" },
     { name = "packaging" },
-    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
-    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "sys_platform == 'win32'" },
+    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/11/3d/d14914f15b19ce971215973305d30b9a673b7fa0c6796076e149c11765a0/torchmetrics-1.5.0.tar.gz", hash = "sha256:c18e68bab4104ad7d2285af601ddc6dc04f9f3b7cafaa8ad13fa1dcc539e33b6", size = 521148, upload-time = "2024-10-18T19:42:08.781Z" }
 wheels = [
@@ -3419,7 +3497,7 @@ name = "tqdm"
 version = "4.67.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/09/a9/6ba95a270c6f1fbcd8dac228323f2777d886cb206987444e4bce66338dd4/tqdm-4.67.3.tar.gz", hash = "sha256:7d825f03f89244ef73f1d4ce193cb1774a8179fd96f31d7e1dcde62092b960bb", size = 169598, upload-time = "2026-02-03T17:35:53.048Z" }
 wheels = [
@@ -3452,7 +3530,7 @@ name = "triton"
 version = "3.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "filelock" },
+    { name = "filelock", marker = "sys_platform != 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra != 'extra-7-amadeus-local-cu124' and extra != 'extra-7-amadeus-torch-cpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/78/eb/65f5ba83c2a123f6498a3097746607e5b2f16add29e36765305e4ac7fdd8/triton-3.1.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c8182f42fd8080a7d39d666814fa36c5e30cc00ea7eeeb1a2983dbb4c99a0fdc", size = 209551444, upload-time = "2024-10-14T16:05:53.433Z" },
@@ -3641,8 +3719,8 @@ dependencies = [
     { name = "einx" },
     { name = "loguru" },
     { name = "packaging" },
-    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
-    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "sys_platform == 'win32'" },
+    { name = "torch", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "(sys_platform != 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "torch", version = "2.5.1+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "(sys_platform == 'win32' and extra == 'extra-7-amadeus-local-cu124') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu')" },
     { name = "torch-einops-utils" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/17/d4/9f1bea172e9ccc4736f8433be52d9c7ef4e1e4093ff0ca5a95a203d49aff/x_transformers-2.19.6.tar.gz", hash = "sha256:f791d5bdc7399588fdfa756b73d3f836a39f8bb703595e84e5b4b367f2fe16c3", size = 125610, upload-time = "2026-05-16T14:42:57.326Z" }

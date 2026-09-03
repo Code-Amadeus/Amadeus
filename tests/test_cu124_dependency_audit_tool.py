@@ -102,6 +102,21 @@ def test_pyproject_expansion_marks_base_active_and_tiers_by_active_extras(tmp_pa
     assert "extra == \"voice\"" in by_name["pyaudio"]["marker"]
     assert by_name["pytest"]["active"] is False
 
+def test_pyproject_expansion_respects_platform_markers(tmp_path: Path) -> None:
+    from tools.audit_cu124_dependencies import parse_pyproject_dependencies
+
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        "[project]\ndependencies = [\"pywin32; sys_platform == 'win32'\"]\n"
+        "[project.optional-dependencies]\nvoice = [\"pyaudio; sys_platform == 'win32'\"]\n",
+        encoding="utf-8",
+    )
+    rows = parse_pyproject_dependencies(pyproject, {"sys_platform": "darwin"}, active_extras=("voice",))
+    assert all(not row["active"] for row in rows)
+    rows = parse_pyproject_dependencies(pyproject, {"sys_platform": "win32"}, active_extras=("voice",))
+    assert all(row["active"] for row in rows)
+
+
 def test_pip_audit_parser_normalizes_findings(tmp_path: Path) -> None:
     source = tmp_path / "pip-audit.json"
     source.write_text(

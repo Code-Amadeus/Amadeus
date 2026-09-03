@@ -4,6 +4,9 @@ Amadeus currently verifies development on Windows with CPython 3.12.10 and
 Node.js 22. Start with the model-less CPU profile described in `README.md`; local
 CUDA ASR/TTS remains an optional profile.
 
+CI pins uv 0.12.8. See [installation profiles](docs/install_profiles.md) for
+CPU VAD, CUDA selection and migration from an existing environment.
+
 Read [ROADMAP.md](ROADMAP.md) before proposing a feature. It distinguishes the
 active product direction, candidates that are not commitments, and features the
 project does not intend to absorb.
@@ -42,6 +45,10 @@ npm audit --audit-level=high
 
 Contributors are not expected to install CUDA, local models, reference voices, or
 the character pack to validate the supported baseline.
+
+When adding development tools to a voice/model installation, append `--extra dev`
+to its complete install command. `uv sync --locked --extra dev` selects the core
+development environment and removes optional tiers; it is not an additive install.
 
 ## Pull request scope
 

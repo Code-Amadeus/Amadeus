@@ -10,7 +10,7 @@ requires-python = ">=3.12,<3.13"
 
 # Direct dependencies for the supported Electron/headless backend (T1 core:
 # chat, work, providers — no audio). Voice and local-model stacks live in
-# optional extras below; exact transitive versions live in the Windows locks.
+# optional extras below; exact transitive versions and builds live in uv.lock.
 dependencies = [
     "aiohttp==3.14.3",
     "beautifulsoup4==4.14.3",
@@ -48,12 +48,14 @@ voice = [
     "scipy==1.17.1",
     "soundfile==0.13.1",
 ]
-# L3 realtime interruption: silero VAD for barge-in. torch is pinned here at the
-# same 2.5.1 the L4 stack uses, so L3 → L4 is a same-version wheel swap
-# (PyPI CPU → cu124) instead of a version jump the resolver has to reconcile.
+# L3 realtime interruption is a capability, independent of the Torch build.
+# Select torch-cpu for the CPU VAD profile or local-cu124 for local CUDA models.
 vad = [
     "silero-vad==6.2.1",
+]
+torch-cpu = [
     "torch==2.5.1",
+    "torchaudio==2.5.1",
 ]
 # T2b local model stack observed in the working Windows / Python 3.12 / cu124
 # environment. Includes the voice layer transitively (installed alongside).
@@ -108,17 +110,28 @@ dev = [
     "wheel==0.47.0",
 ]
 
-# uv project wiring: a single layered .venv serves L1 → L4. torch/torchaudio
-# resolve from PyPI for L1–L3; selecting the local-cu124 extra on Windows
-# redirects them to the PyTorch CUDA 12.4 index, which provides the cu124
-# builds those local-model tiers run on.
+# Build selections are mutually exclusive. Optional model interpreters remain
+# configurable; this only selects the packages in the current project environment.
+[tool.uv]
+required-version = ">=0.12.8"
+conflicts = [
+    [{ extra = "torch-cpu" }, { extra = "local-cu124" }],
+]
+
 [tool.uv.sources]
 torch = [
+    { index = "pytorch-cpu", extra = "torch-cpu", marker = "sys_platform == 'win32'" },
     { index = "pytorch-cu124", extra = "local-cu124", marker = "sys_platform == 'win32'" },
 ]
 torchaudio = [
+    { index = "pytorch-cpu", extra = "torch-cpu", marker = "sys_platform == 'win32'" },
     { index = "pytorch-cu124", extra = "local-cu124", marker = "sys_platform == 'win32'" },
 ]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [[tool.uv.index]]
 name = "pytorch-cu124"

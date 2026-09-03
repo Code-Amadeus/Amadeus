@@ -57,6 +57,7 @@ PROFILE_TIER_IMPORTS: dict[str, tuple[str, ...]] = {
     "ci": (),
     "voice": VOICE_IMPORTS,
     "vad": (*VOICE_IMPORTS, *VAD_IMPORTS),
+    "vad-cpu": (*VOICE_IMPORTS, *VAD_IMPORTS),
     "cu124": (*VOICE_IMPORTS, *VAD_IMPORTS, *LOCAL_MODEL_IMPORTS, *CU124_IMPORTS),
 }
 
@@ -69,9 +70,9 @@ def _distribution_installed(name: str) -> bool:
     return True
 
 
-# L3/L4 tiers are a Windows product boundary (CUDA local stacks, Win32 audio);
-# only those profiles require Windows. L1 core / L2 voice verify on any platform.
-_WINDOWS_ONLY_PROFILES = frozenset({"vad", "cu124"})
+# The cu124 local-model profile is qualified on Windows. Capability imports
+# and CPU VAD checks do not imply a NVIDIA device or platform qualification.
+_WINDOWS_ONLY_PROFILES = frozenset({"cu124"})
 
 
 def _require(condition: bool, message: str) -> None:
@@ -79,10 +80,39 @@ def _require(condition: bool, message: str) -> None:
         raise RuntimeError(message)
 
 
+def dependency_check_command(python: str) -> list[str]:
+    """Check the selected interpreter, including existing pip-created runtimes."""
+    uv = shutil.which("uv")
+    if uv:
+        return [uv, "pip", "check", "--python", python]
+    return [python, "-m", "pip", "check"]
+
+
+def _verify_torch_build(build: str, *, require_cuda_device: bool = False) -> str:
+    import torch
+    import torchaudio
+
+    expected = "2.5.1"
+    for name, module in (("torch", torch), ("torchaudio", torchaudio)):
+        version = str(module.__version__)
+        _require(version.split("+", 1)[0] == expected, f"expected {name} {expected}, found {version}")
+        if platform.system() == "Windows":
+            _require(version.endswith(f"+{build}"), f"{name} {build} wheel is required")
+    _require(not getattr(torch.version, "hip", None), f"{build} profile cannot use a ROCm build")
+    if build == "cpu":
+        _require(torch.version.cuda is None, "CPU VAD requires a CPU-only torch build")
+    else:
+        _require(str(torch.version.cuda) == "12.4", "torch must target CUDA 12.4")
+        if require_cuda_device:
+            _require(torch.cuda.is_available(), "no usable CUDA device was detected")
+    return f" torch={torch.__version__} torchaudio={torchaudio.__version__}"
+
+
 def verify(profile: str, *, require_cuda_device: bool = False) -> None:
     _require(sys.version_info[:2] == (3, 12), "CPython 3.12 is required")
     if profile in _WINDOWS_ONLY_PROFILES:
-        _require(platform.system() == "Windows", "L3/L4 profiles target Windows")
+        _require(platform.system() == "Windows", "the cu124 local-model profile targets Windows")
+    _require(not require_cuda_device or profile == "cu124", "--require-cuda-device requires --profile cu124")
 
     if profile in {"cpu", "ci"}:
         os.environ.setdefault("TTS_DEVICE", "cpu")
@@ -98,44 +128,13 @@ def verify(profile: str, *, require_cuda_device: bool = False) -> None:
     )
 
     if profile == "cu124":
-        import torch
-        import torchaudio
-
-        _require(
-            str(torch.__version__).startswith("2.5.1"),
-            f"expected torch 2.5.1, found {torch.__version__}",
-        )
-        _require(
-            str(torchaudio.__version__).startswith("2.5.1"),
-            f"expected torchaudio 2.5.1, found {torchaudio.__version__}",
-        )
-        _require(
-            str(torch.__version__).endswith("+cu124"),
-            "cu124 torch wheel is required",
-        )
-        _require(str(torch.version.cuda) == "12.4", "torch must target CUDA 12.4")
-        if require_cuda_device:
-            _require(torch.cuda.is_available(), "no usable CUDA device was detected")
-        torch_summary = f" torch={torch.__version__} torchaudio={torchaudio.__version__}"
+        torch_summary = _verify_torch_build("cu124", require_cuda_device=require_cuda_device)
+    elif profile == "vad-cpu":
+        torch_summary = _verify_torch_build("cpu")
     else:
         torch_summary = ""
 
-    # Dependency consistency check. uv-managed venvs (uv sync) ship no pip, so
-    # prefer `uv pip check` when uv is on PATH; fall back to the classic pip
-    # check for pip-provisioned environments.
-    uv = shutil.which("uv")
-    if uv:
-        subprocess.run(
-            [uv, "pip", "check", "--python", sys.executable],
-            text=True,
-            check=True,
-        )
-    else:
-        subprocess.run(
-            [sys.executable, "-m", "pip", "check"],
-            text=True,
-            check=True,
-        )
+    subprocess.run(dependency_check_command(sys.executable), text=True, check=True)
     print(
         "environment ok: "
         f"profile={profile} python={platform.python_version()}"

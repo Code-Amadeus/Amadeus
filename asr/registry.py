@@ -93,16 +93,6 @@ def _qwen_probe() -> tuple[str, str]:
     elif configured_python and Path(configured_python).is_file():
         runtime_available = True
         runtime_detail = "configured isolated runtime"
-    else:
-        from config.environment import venv_python as _venv_python
-
-        for candidate in (
-            _venv_python(_PROJECT_ROOT, ".venv"),
-        ):
-            if candidate.is_file():
-                runtime_available = True
-                runtime_detail = f"isolated runtime at {candidate.parent.parent.name}"
-                break
     if not runtime_available:
         return "not_installed", "Qwen ASR runtime is not installed"
     model_ready, model_detail, _ = qwen_model_status()

@@ -23,6 +23,7 @@ if (Test-Path -LiteralPath $resolvedVenv) {
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # Point uv's project commands at the fresh venv instead of the repo .venv.
+$previousProjectEnvironment = $env:UV_PROJECT_ENVIRONMENT
 $env:UV_PROJECT_ENVIRONMENT = $resolvedVenv
 Push-Location $repoRoot
 try {
@@ -30,6 +31,7 @@ try {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } finally {
     Pop-Location
+    [Environment]::SetEnvironmentVariable("UV_PROJECT_ENVIRONMENT", $previousProjectEnvironment, "Process")
 }
 
 $python = Join-Path $resolvedVenv "Scripts\python.exe"

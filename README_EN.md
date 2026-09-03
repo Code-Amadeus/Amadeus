@@ -166,11 +166,17 @@ cd ..
 `npm ci` uses the project postinstall hook to fetch the pinned Electron runtime.
 The cu124 profile fixes `torch==2.5.1+cu124`, `torchaudio==2.5.1+cu124`, and the
 local-model dependency set; torch/torchaudio are routed to the PyTorch cu124
-index via `[tool.uv.sources]` (Windows + `local-cu124` extra only). All tiers
-share the same `.venv`, and upgrade commands are prefix-increasing — `uv sync`
-is exact, so carry the lower extras when stepping up a tier. L3/L4 target
-Windows + NVIDIA only (L4 requires the NVIDIA CUDA 12.4 build); AMD ROCm and
-other GPU platforms are not officially supported.
+index via `[tool.uv.sources]` (Windows + `local-cu124` extra only). All default
+tiers share `.venv`. For CPU VAD, select `--extra voice --extra vad --extra torch-cpu`
+and verify with `--profile vad-cpu`; this does not require a NVIDIA GPU. CPU and
+CUDA build extras are mutually exclusive. `uv sync` is exact: give the complete
+target selection each time, including `--extra dev` when needed.
+
+CI pins uv 0.12.8. Windows is the reference platform; macOS core/voice is being
+qualified separately. AMD ROCm integration materials and the community-reported
+RTX 50-series Torch 2.7.0/cu128 combination are separate candidates, not qualified
+replacements for this lock. See [installation profiles and migration](docs/install_profiles.md)
+for the commands, explicit model interpreters, evidence limits and rollback.
 
 ### Install external runtime assets
 

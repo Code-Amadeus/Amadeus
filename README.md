@@ -14,7 +14,7 @@
   <a href="https://www.bilibili.com/video/BV1783G6hEYY/"><img src="https://img.shields.io/badge/demo-Bilibili-2f624a?labelColor=061710&logo=bilibili&logoColor=61eeb6" alt="B 站演示"/></a>
   <a href="./assets/architecture-overview-crt.svg"><img src="https://img.shields.io/badge/architecture-current-184b36?labelColor=061710" alt="当前架构图"/></a>
   <img src="https://img.shields.io/badge/version-0.1_%CE%B1-2f624a?labelColor=061710" alt="Amadeus 0.1 alpha"/>
-  <img src="https://img.shields.io/badge/部署阶梯-L1%2FL2%20跨平台%20·%20L3%2FL4%20Windows-2f624a?labelColor=061710" alt="部署阶梯：L1/L2 跨平台，L3/L4 仅 Windows"/>
+  <img src="https://img.shields.io/badge/安装配置-core%20%2F%20voice%20%2F%20CPU%20VAD%20%2F%20cu124-2f624a?labelColor=061710" alt="安装配置：core、voice、CPU VAD、cu124"/>
   <img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-272018?labelColor=061710" alt="许可证"/>
 </p>
 
@@ -142,31 +142,30 @@ placeholder，本版本不声称已经发布独立 SDK 或 conformance suite。
 ## 快速开始
 
 依赖按能力分四级：先装最小的 L1 跑通，再按需升梯（torch 只在 L3/L4 进入
-安装）。L1/L2 在 Windows 与 macOS 上通用；**L3/L4 目前仅支持 Windows +
-NVIDIA 平台**（L4 依赖 NVIDIA CUDA 12.4 构建）——官方验证、锁文件与
-安装基线都在 Windows 11 + CUDA 12.4；**AMD ROCm 及其他 GPU 平台无官方
-支持**。所有平台统一用 [uv](https://docs.astral.sh/uv/) 提供 Python 3.12
-并安装依赖。
+安装）。Windows 是当前参考平台，macOS 的 L1/L2 安装与 CI 单独验证；实际
+桌面、麦克风和播放体验仍需设备验收。L3 可选择 CPU VAD，**无需 NVIDIA GPU**；
+L4 的当前 cu124 配置面向 Windows + NVIDIA。AMD ROCm 社区接入资料与
+RTX 50 系 cu128 配置分阶段验证，尚未成为此锁的正式安装配置。
+统一使用 [uv](https://docs.astral.sh/uv/) 与 Python 3.12，CI 固定 uv 0.12.8。
 
 | 梯级 | 能力 | 平台 | 安装方式 |
 |---|---|---|---|
 | L1 core | 文字聊天、工作、Provider、角色渲染 | Windows / macOS | `uv sync --locked` |
 | L2 voice | 说（远程 TTS、播放、口型）+ 听（麦克风、远程 ASR）| Windows / macOS | `uv sync --locked --extra voice` |
-| L3 vad | 实时打断（角色说话时可以插话）| 仅 Windows | `uv sync --locked --extra voice --extra vad` |
-| L4 local-cu124 | 本地 GPT-SoVITS / Qwen3 ASR / 唤醒词 | 仅 Windows + NVIDIA GPU | `uv sync --locked --extra voice --extra vad --extra local-cu124`（见 [L4](#windows-专属梯级l3l4)） |
+| L3 CPU VAD | 实时打断（角色说话时可以插话）| CPU，无 NVIDIA GPU 前提 | `uv sync --locked --extra voice --extra vad --extra torch-cpu` |
+| L4 local-cu124 | 本地 GPT-SoVITS / Qwen3 ASR / 唤醒词 | Windows + NVIDIA GPU | `uv sync --locked --extra voice --extra vad --extra local-cu124` |
 
-四个梯级共用**同一个 `.venv`**，命令是前缀递增的：升梯时把下层 extra 一并带上
-（`uv sync` 会精确同步，漏带会把已装层裁掉）。torch 在 L3 进入安装（CPU 版），
-升到 L4 时自动换成 CUDA 12.4 构建。
+四个默认梯级共用**同一个 `.venv`**。每次给出完整目标配置：`uv sync` 会精确同步，
+漏带会移除已装层。`torch-cpu` 与 `local-cu124` 互斥；从 CPU VAD 切到本地模型时，
+将前者替换成后者，并保留 `voice`、`vad`。详见[安装配置与迁移](docs/install_profiles.md)。
 
 - 主 Chat 默认远程 DeepSeek；llama.cpp 是可选本地 LLM profile（见
   [兼容路径](#兼容路径)），不是安装前提。
 - L2 无 vad 层时，语音端点自动降级为能量检测；安装 vad 后恢复
   silero 精准端点与打断。
 - Windows 上每装完一级可验证导入合同（`ci` 同 `cpu`）：
-  `uv run --locked --no-sync python tools/verify_python_environment.py --profile <cpu|voice|vad>`，
-  L4 用 `--profile cu124 --require-cuda-device`（L3/L4 验证器仅限 Windows，
-  macOS 以实际启动验证 L1/L2）。
+  `uv run --locked --no-sync python tools/verify_python_environment.py --profile <cpu|voice|vad-cpu>`，
+  L4 用 `--profile cu124 --require-cuda-device`。导入/构建验证不替代真实模型与音频设备测试。
 - 纯文字 / headless（CI）场景用 L1 即可：`uv run --locked --no-sync python -m server.app --port 17777`
   直接启动后端；严格文字模式设置 `TTS_BACKEND=disabled` 并关闭 Wake。
 
@@ -178,7 +177,7 @@ NVIDIA 平台**（L4 依赖 NVIDIA CUDA 12.4 构建）——官方验证、锁�
 - Node.js **22**（当前参考 `22.21.1`）
 - 无 GPU 要求
 
-**L3/L4（仅 Windows）追加**
+**L4 cu124（Windows 本地模型）追加**
 
 - CUDA 12.4-compatible NVIDIA GPU，目标 **8 GiB VRAM**
 - **16 GiB 内存起步，32 GiB 推荐**
@@ -198,7 +197,7 @@ cd Amadeus
 
 uv venv .venv --python 3.12
 uv sync --locked                              # L1 core
-uv sync --locked --extra voice                # + L2 voice（可选，前缀递增）
+uv sync --locked --extra voice                # L2 voice（可选）
 ```
 
 macOS 上 PyAudio（L2 语音采集）从源码编译，需要先 `brew install portaudio`。
@@ -218,18 +217,18 @@ cd ..
 `npm ci` 会通过项目 postinstall 安装锁定的 Electron 运行时。国内网络可为
 npm/Electron 配置镜像（如 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`）。
 
-### Windows 专属梯级（L3/L4）
+### VAD 与本地模型
 
-与 L1/L2 共用同一个 `.venv`，命令按前缀递增追加：
+与 L1/L2 共用同一个 `.venv`，选择完整的能力与构建组合：
 
 **L3 vad — 实时打断**（torch 随之以 CPU 版进入安装）：
 
 ```powershell
-uv sync --locked --extra voice --extra vad
-uv run --locked --no-sync python tools\verify_python_environment.py --profile vad
+uv sync --locked --extra voice --extra vad --extra torch-cpu
+uv run --locked --no-sync python tools\verify_python_environment.py --profile vad-cpu
 ```
 
-**L4 local-cu124 — 本地语音模型栈**：在同一 `.venv` 上追加，torch 自动换为
+**L4 local-cu124 — 本地语音模型栈**：在同一 `.venv` 上选择 CUDA 配置，torch 换为
 CUDA 12.4 构建（经 `pyproject.toml` 的 `[tool.uv.sources]` 路由到
 PyTorch cu124 index，仅 Windows + 本 extra 生效）：
 
@@ -241,7 +240,8 @@ uv run --locked --no-sync python tools\verify_python_environment.py --profile cu
 L4 profile 固定 `torch==2.5.1+cu124`、`torchaudio==2.5.1+cu124` 和本地模型
 依赖集；它以当前实际运行环境为第一版基线。
 
-L3/L4 仅支持 Windows + NVIDIA 平台；AMD ROCm 及其他 GPU 平台无官方支持。
+CPU VAD 与 NVIDIA 本地模型分别验证。AMD ROCm 社区方案正在评估，其模型
+解释器可通过显式配置接入；相关 TTS adapter 和正式安装锁尚未在本次迁移中交付。
 
 > **GeForce RTX 50 系（Blackwell，社区验证配置）**：本项目当前使用的
 > `torch==2.5.1+cu124` profile 不兼容 RTX 50 系，无法运行本地 CUDA
@@ -266,6 +266,8 @@ L3/L4 仅支持 Windows + NVIDIA 平台；AMD ROCm 及其他 GPU 平台无官方
 >   torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 `
 >   --index-url https://download.pytorch.org/whl/cu128
 > ```
+>
+> 上述仅安装社区记录的 PyTorch 组合，不是完整 Amadeus 安装步骤。
 >
 > 该组合目前尚未经过项目的完整 clean-install、ASR/TTS/VAD 与 Electron 回归；
 > 当前 `uv.lock` 与 `--profile cu124` 验证器仍以
@@ -421,7 +423,9 @@ Settings 不会回写 `.env`。普通模型、语音、麦克风、Provider/MCP�
 | 范围 | 状态 |
 |---|---|
 | L1/L2（文字 + 远程语音）| Windows 与 macOS 源码部署；macOS 为实测路径，官方 CI/锁文件仍以 Windows 为准 |
-| L3/L4（本地 CUDA 12.4 语音）| 仅 Windows；第一版产品基线，以当前实际运行环境为准 |
+| L3 CPU VAD | 不要求 NVIDIA GPU；使用明确的 CPU 构建配置 |
+| L4 cu124（本地 CUDA 12.4 语音）| Windows + NVIDIA；以当前实际运行环境为参考 |
+| AMD ROCm / RTX 50 系 cu128 | 社区实验资料或配置记录，项目完整验证待补齐 |
 | 8 GiB VRAM / 16–32 GiB RAM | 目标配置；实际占用由模型组合决定 |
 | 远程 DeepSeek Main Chat | 第一版默认 profile |
 | 远程 ASR / TTS | 显式兼容路径，不静默 fallback |
@@ -437,8 +441,8 @@ Settings 不会回写 `.env`。普通模型、语音、麦克风、Provider/MCP�
 ## 开发与贡献
 
 ```powershell
-uv sync --locked --extra dev      # 开发依赖：pytest / ruff 等（见 pyproject [dev] extra）
-# Windows 之外没有官方 L3/L4 验证器；macOS/Linux 贡献者直接跑下方 run_tests.py 即可
+uv sync --locked --extra dev      # core + 开发工具；会移除未选择的语音/模型层
+# 保留语音/模型能力时，在完整安装命令末尾追加 --extra dev
 uv run --locked --no-sync python tools\verify_python_environment.py --profile ci
 uv run --locked --no-sync python -X utf8 tools\run_tests.py
 
