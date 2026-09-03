@@ -99,6 +99,19 @@ class EnvironmentReader:
         raw = self._raw(key, aliases)
         return str(default) if raw is None else str(raw)
 
+    def secret(self, key: str, default: str = "", *, aliases: tuple[str, ...] = ()) -> str:
+        """Read one API key/token, tolerating accidental .env edits.
+
+        Single normalization contract shared by settings, browser providers
+        and provider command auth so every consumer of the same key observes
+        the same value. Inherit the standard authority order: an already-set
+        process value wins over the project .env (which load_dotenv has
+        already merged into the process environment without override).
+        """
+        self._register(key, "secret", default, aliases)
+        raw = self._raw(key, aliases)
+        return str(default) if raw is None else secret_value(raw)
+
     def fields(self) -> tuple[ConfigField, ...]:
         return tuple(self._fields[key] for key in sorted(self._fields))
 
@@ -118,6 +131,34 @@ def load_project_environment(project_root: Path) -> EnvironmentReader:
 
 _PROJECT_ENVIRONMENTS: dict[Path, EnvironmentReader] = {}
 _PROJECT_ENVIRONMENTS_LOCK = RLock()
+
+_SECRET_QUOTES = {"\"", "'"}
+
+
+def secret_value(raw: str | None) -> str:
+    """Normalize one secret/token value; the single auth-credential contract.
+
+    Accidental surrounding whitespace/quotes from .env edits must not leak
+    into auth headers. Rules, in order: strip surrounding whitespace; strip
+    at most ONE leading and ONE trailing quote character (paired or not);
+    strip whitespace again.
+
+    Deliberate trade-off: the unpaired case — e.g. ``sk-test\"``, the common
+    .env typo — is normalized away, which also rewrites a legal token that
+    genuinely ends with a quote character. That risk is accepted: real API
+    keys/tokens do not start or end with quotes, while broken auth from a
+    stray quote fails with an opaque 401. Quote characters *inside* the
+    value (e.g. ``my\"pass\"word``) are never touched. Unlike the previous
+    chained ``strip(quote)`` — which peeled every leading/trailing quote
+    character, e.g. ``\"\"sk\"\"`` → ``sk`` — this contract peels at most
+    one per side and preserves inner structure.
+    """
+    value = str(raw or "").strip()
+    if value[:1] in _SECRET_QUOTES:
+        value = value[1:]
+    if value[-1:] in _SECRET_QUOTES:
+        value = value[:-1]
+    return value.strip()
 
 
 def venv_python(root: Path, name: str) -> Path:

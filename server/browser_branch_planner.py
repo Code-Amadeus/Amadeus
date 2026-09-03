@@ -99,9 +99,9 @@ Output schema:
 def has_browser_branch_llm_config() -> bool:
     provider = _provider()
     if provider == "openai":
-        return bool(_env("OPENAI_API_KEY"))
+        return bool(_secret("OPENAI_API_KEY"))
     if provider == "deepseek":
-        return bool(_env("DEEPSEEK_API_KEY"))
+        return bool(_secret("DEEPSEEK_API_KEY"))
     return False
 
 
@@ -359,11 +359,11 @@ def _parse_json_object(text: str) -> dict[str, Any] | None:
 def _client(provider: str) -> OpenAI:
     if provider == "openai":
         return OpenAI(
-            api_key=_env("OPENAI_API_KEY"),
+            api_key=_secret("OPENAI_API_KEY"),
             base_url=_env("OPENAI_BASE_URL", "https://api.openai.com/v1"),
         )
     return OpenAI(
-        api_key=_env("DEEPSEEK_API_KEY"),
+        api_key=_secret("DEEPSEEK_API_KEY"),
         base_url=_env("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
     )
 
@@ -371,13 +371,13 @@ def _client(provider: str) -> OpenAI:
 def _provider() -> str:
     raw = _env("BROWSER_BRANCH_PROVIDER") or _env("LLM_PROVIDER", "deepseek")
     provider = raw.strip().lower()
-    if provider == "openai" and _env("OPENAI_API_KEY"):
+    if provider == "openai" and _secret("OPENAI_API_KEY"):
         return "openai"
-    if provider == "deepseek" and _env("DEEPSEEK_API_KEY"):
+    if provider == "deepseek" and _secret("DEEPSEEK_API_KEY"):
         return "deepseek"
-    if _env("DEEPSEEK_API_KEY"):
+    if _secret("DEEPSEEK_API_KEY"):
         return "deepseek"
-    if _env("OPENAI_API_KEY"):
+    if _secret("OPENAI_API_KEY"):
         return "openai"
     return provider
 
@@ -447,3 +447,8 @@ def _trim(text: str, limit: int) -> str:
 
 def _env(key: str, default: str = "") -> str:
     return _ENV.string(key, default)
+
+
+def _secret(key: str) -> str:
+    """API keys share the single auth-credential contract in config.environment."""
+    return _ENV.secret(key)
