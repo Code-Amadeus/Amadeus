@@ -168,7 +168,9 @@ The cu124 profile fixes `torch==2.5.1+cu124`, `torchaudio==2.5.1+cu124`, and the
 local-model dependency set; torch/torchaudio are routed to the PyTorch cu124
 index via `[tool.uv.sources]` (Windows + `local-cu124` extra only). All tiers
 share the same `.venv`, and upgrade commands are prefix-increasing — `uv sync`
-is exact, so carry the lower extras when stepping up a tier.
+is exact, so carry the lower extras when stepping up a tier. L3/L4 target
+Windows + NVIDIA only (L4 requires the NVIDIA CUDA 12.4 build); AMD ROCm and
+other GPU platforms are not officially supported.
 
 ### Install external runtime assets
 

@@ -142,9 +142,11 @@ placeholder，本版本不声称已经发布独立 SDK 或 conformance suite。
 ## 快速开始
 
 依赖按能力分四级：先装最小的 L1 跑通，再按需升梯（torch 只在 L3/L4 进入
-安装）。L1/L2 在 Windows 与 macOS 上通用；L3/L4 目前仅 Windows——官方
-验证、锁文件与安装基线都在 Windows 11 + CUDA 12.4。所有平台统一用
-[uv](https://docs.astral.sh/uv/) 提供 Python 3.12 并安装依赖。
+安装）。L1/L2 在 Windows 与 macOS 上通用；**L3/L4 目前仅支持 Windows +
+NVIDIA 平台**（L4 依赖 NVIDIA CUDA 12.4 构建）——官方验证、锁文件与
+安装基线都在 Windows 11 + CUDA 12.4；**AMD ROCm 及其他 GPU 平台无官方
+支持**。所有平台统一用 [uv](https://docs.astral.sh/uv/) 提供 Python 3.12
+并安装依赖。
 
 | 梯级 | 能力 | 平台 | 安装方式 |
 |---|---|---|---|
@@ -238,6 +240,8 @@ uv run --locked --no-sync python tools\verify_python_environment.py --profile cu
 
 L4 profile 固定 `torch==2.5.1+cu124`、`torchaudio==2.5.1+cu124` 和本地模型
 依赖集；它以当前实际运行环境为第一版基线。
+
+L3/L4 仅支持 Windows + NVIDIA 平台；AMD ROCm 及其他 GPU 平台无官方支持。
 
 > **GeForce RTX 50 系（Blackwell，社区验证配置）**：本项目当前使用的
 > `torch==2.5.1+cu124` profile 不兼容 RTX 50 系，无法运行本地 CUDA
