@@ -16,9 +16,9 @@ that drift because of earlier samples.
 
 Usage::
 
-    .venv_cu124\Scripts\python.exe -X utf8 \
+    .venv\Scripts\python.exe -X utf8 \
         tools/probes/probe_action_existence_abc.py --dry-run
-    .venv_cu124\Scripts\python.exe -X utf8 \
+    .venv\Scripts\python.exe -X utf8 \
         tools/probes/probe_action_existence_abc.py --from-turn 1 --to-turn 52
 
 The exit status reports infrastructure health, not which arm won: 0 means all

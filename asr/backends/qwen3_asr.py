@@ -36,8 +36,7 @@ os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _SIDECAR_SCRIPT = _PROJECT_ROOT / "asr" / "qwen3_asr_sidecar.py"
 
-_VENV_ASR_PYTHON = _venv_python(_PROJECT_ROOT, ".venv_asr")
-_VENV_CU124_PYTHON = _venv_python(_PROJECT_ROOT, ".venv_cu124")
+_VENV_PYTHON = _venv_python(_PROJECT_ROOT, ".venv")
 _TOKENS_PER_SEC = 10
 _MAX_TOKENS_CAP = 256
 _MAX_TOKENS_FLOOR = 32
@@ -160,10 +159,11 @@ class Qwen3ASRBackend(BaseASRBackend):
         if importlib.util.find_spec("qwen_asr") is not None:
             return sys.executable
 
-        if _VENV_CU124_PYTHON.exists():
-            return str(_VENV_CU124_PYTHON)
+        if _VENV_PYTHON.exists():
+            return str(_VENV_PYTHON)
 
-        return str(_VENV_ASR_PYTHON)
+        # Single-environment model: the running interpreter is the fallback.
+        return sys.executable
 
     @classmethod
     def _can_use_inprocess(cls) -> bool:

@@ -106,7 +106,6 @@ def _health_url(endpoint: str) -> str:
 def _candidate_torch_lib_dirs(server_dir: str) -> list[str]:
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     candidates = [
-        os.path.join(repo_root, ".venv_cu124", "Lib", "site-packages", "torch", "lib"),
         os.path.join(repo_root, ".venv", "Lib", "site-packages", "torch", "lib"),
         os.path.join(os.environ.get("VIRTUAL_ENV", ""), "Lib", "site-packages", "torch", "lib"),
         os.path.join(server_dir, "torch", "lib"),

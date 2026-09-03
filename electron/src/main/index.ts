@@ -203,7 +203,7 @@ function getPythonCommand(): string {
 
   // 1. Check project root and original repo for venvs
   const roots = [PROJECT_ROOT, originalRepo].filter(Boolean) as string[]
-  const venvNames = ['.venv_cu124', '.venv', '.venv_pt251']
+  const venvNames = ['.venv']
   const venvPaths: string[] = []
   for (const root of roots) {
     for (const name of venvNames) {

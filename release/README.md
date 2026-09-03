@@ -16,7 +16,7 @@ separate.
 ## 1. Validate third-party provenance
 
 ```powershell
-.venv_cu124\Scripts\python.exe tools\check_third_party_provenance.py
+.venv\Scripts\python.exe tools\check_third_party_provenance.py
 ```
 
 This validates schema, local evidence paths, and coverage for declared
@@ -26,7 +26,7 @@ exist in the inventory.
 To ask whether every included component is actually releasable:
 
 ```powershell
-.venv_cu124\Scripts\python.exe tools\check_third_party_provenance.py --release-ready
+.venv\Scripts\python.exe tools\check_third_party_provenance.py --release-ready
 ```
 
 That command is expected to fail until every included component in
@@ -37,26 +37,23 @@ That command is expected to fail until every included component in
 The base audit is offline and read-only:
 
 ```powershell
-.venv_cu124\Scripts\python.exe tools\audit_cu124_dependencies.py `
+.venv\Scripts\python.exe tools\audit_cu124_dependencies.py `
   --output-json build\audit\cu124-dependencies.json `
   --output-markdown build\audit\cu124-dependencies.md `
   --observed-output build\audit\windows-py312-cu124-observed.txt
 ```
 
-To include known-vulnerability data, install the audit tool outside the live
+To include known-vulnerability data, run pip-audit from an isolated throwaway
 environment and pass its JSON result back into the offline auditor:
 
 ```powershell
-.venv_cu124\Scripts\python.exe -m pip install `
-  --target build\_audit_tools\pip_audit pip-audit==2.10.1
-
-$env:PYTHONPATH = (Resolve-Path build\_audit_tools\pip_audit).Path
-.venv_cu124\Scripts\python.exe -m pip_audit `
-  --path .venv_cu124\Lib\site-packages `
+# Run pip-audit from an isolated throwaway env (uvx) against the live venv.
+uvx pip-audit@2.10.1 `
+  --path .venv\Lib\site-packages `
   --format json --desc off --aliases on --progress-spinner off `
   --output build\audit\pip-audit-cu124.json
 
-.venv_cu124\Scripts\python.exe tools\audit_cu124_dependencies.py `
+.venv\Scripts\python.exe tools\audit_cu124_dependencies.py `
   --pip-audit-json build\audit\pip-audit-cu124.json `
   --pip-audit-version 2.10.1 --pip-audit-service pypi `
   --output-json build\audit\cu124-dependencies.json `
@@ -73,7 +70,7 @@ a resolver lock and must not be used as an authoritative installation input.
 ## 3. Check the source archive policy
 
 ```powershell
-.venv_cu124\Scripts\python.exe tools\build_source_release.py `
+.venv\Scripts\python.exe tools\build_source_release.py `
   --manifest-output build\release\source-manifest.json
 ```
 
@@ -95,7 +92,7 @@ On a dirty development tree, a non-releasable diagnostic report can be
 generated with:
 
 ```powershell
-.venv_cu124\Scripts\python.exe tools\build_source_release.py `
+.venv\Scripts\python.exe tools\build_source_release.py `
   --allow-dirty-check `
   --manifest-output build\release\source-manifest.json
 ```
@@ -108,7 +105,7 @@ with archive creation.
 Only a clean tree with no gate error can produce an archive:
 
 ```powershell
-.venv_cu124\Scripts\python.exe tools\build_source_release.py `
+.venv\Scripts\python.exe tools\build_source_release.py `
   --manifest-output build\release\source-manifest.json `
   --output dist\amadeus-source.zip
 ```

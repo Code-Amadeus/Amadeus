@@ -147,15 +147,15 @@ memory according to its model, quantization, context, and GPU offload.
 
 ### Install
 
+Install uv first (`winget install astral-sh.uv`), then:
+
 ```powershell
 git clone https://github.com/Code-Amadeus/Amadeus.git
 cd Amadeus
 
-py -3.12 -m venv .venv_cu124
-.\.venv_cu124\Scripts\python.exe -m pip install --upgrade pip==26.2 setuptools==83.0.0 wheel==0.47.0
-.\.venv_cu124\Scripts\python.exe -m pip install -r requirements-cu124.txt
-.\.venv_cu124\Scripts\python.exe -m pip install --no-deps --no-build-isolation -e .
-.\.venv_cu124\Scripts\python.exe tools\verify_python_environment.py --profile cu124 --require-cuda-device
+uv venv .venv --python 3.12
+uv sync --locked --extra voice --extra vad --extra local-cu124
+uv run --locked --no-sync python tools\verify_python_environment.py --profile cu124 --require-cuda-device
 
 cd electron
 npm ci
@@ -165,7 +165,10 @@ cd ..
 
 `npm ci` uses the project postinstall hook to fetch the pinned Electron runtime.
 The cu124 profile fixes `torch==2.5.1+cu124`, `torchaudio==2.5.1+cu124`, and the
-local-model dependency set.
+local-model dependency set; torch/torchaudio are routed to the PyTorch cu124
+index via `[tool.uv.sources]` (Windows + `local-cu124` extra only). All tiers
+share the same `.venv`, and upgrade commands are prefix-increasing — `uv sync`
+is exact, so carry the lower extras when stepping up a tier.
 
 ### Install external runtime assets
 
@@ -173,15 +176,15 @@ The full local-voice profile needs the Qwen ASR and GPT-SoVITS v3 voice packs.
 The visual and character packs are optional:
 
 ```powershell
-py -3.12 tools\external_assets.py verify C:\Downloads\amadeus-asr-qwen3-0.6b.zip
-py -3.12 tools\external_assets.py install C:\Downloads\amadeus-asr-qwen3-0.6b.zip
-py -3.12 tools\external_assets.py verify C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
-py -3.12 tools\external_assets.py install C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
+uv run --locked --no-sync python tools\external_assets.py verify C:\Downloads\amadeus-asr-qwen3-0.6b.zip
+uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-asr-qwen3-0.6b.zip
+uv run --locked --no-sync python tools\external_assets.py verify C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
+uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
 
 # Optional scene and KTX2 character animation
-py -3.12 tools\external_assets.py install C:\Downloads\amadeus-visual-runtime.zip
-py -3.12 tools\external_assets.py install C:\Downloads\amadeus-character-kurisu.zip
-py -3.12 tools\external_assets.py status
+uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-visual-runtime.zip
+uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-character-kurisu.zip
+uv run --locked --no-sync python tools\external_assets.py status
 ```
 
 If a prepared Qwen pack is unavailable, download the upstream snapshot into
@@ -189,14 +192,14 @@ the same canonical location. Runtime inference remains offline and will not
 start an implicit download when the microphone is opened:
 
 ```powershell
-.\.venv_cu124\Scripts\python.exe -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-ASR-0.6B', local_dir='assets/models/asr/qwen3-asr-0.6b')"
+uv run --locked --no-sync python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-ASR-0.6B', local_dir='assets/models/asr/qwen3-asr-0.6b')"
 ```
 
 The Japanese GPT-SoVITS frontend prepares an OpenJTalk dictionary on first
 use. Prewarm it once if the normal application launch must remain offline:
 
 ```powershell
-.\.venv_cu124\Scripts\python.exe -c "import pyopenjtalk; print(pyopenjtalk.g2p('準備完了'))"
+uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('準備完了'))"
 ```
 
 ### Configure and launch
@@ -214,7 +217,7 @@ Provide the DeepSeek API key, then review:
 Launch Amadeus directly:
 
 ```powershell
-.\run_electron_cu124.bat
+.\run_electron_utf8.bat
 ```
 
 Use **Restart backend to apply** after changing startup settings. A
@@ -242,12 +245,9 @@ CPU/model-less remains available for CI, headless development, and text
 Chat/Work:
 
 ```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip==26.2 setuptools==83.0.0 wheel==0.47.0
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m pip install --no-deps --no-build-isolation -e .
-.\.venv\Scripts\python.exe tools\verify_python_environment.py --profile cpu
-$env:AMADEUS_PYTHON = (Resolve-Path .\.venv\Scripts\python.exe)
+uv venv .venv --python 3.12
+uv sync --locked
+uv run --locked --no-sync python tools\verify_python_environment.py --profile cpu
 .\run_electron_utf8.bat
 ```
 
@@ -281,9 +281,9 @@ first two form the full local-voice profile; the latter two affect only scene
 and character presentation.
 
 ```powershell
-py -3.12 tools\external_assets.py verify C:\path\to\asset-bundle.zip
-py -3.12 tools\external_assets.py install C:\path\to\asset-bundle.zip
-py -3.12 tools\external_assets.py status
+uv run --locked --no-sync python tools\external_assets.py verify C:\path\to\asset-bundle.zip
+uv run --locked --no-sync python tools\external_assets.py install C:\path\to\asset-bundle.zip
+uv run --locked --no-sync python tools\external_assets.py status
 ```
 
 A SpriteForge character package ultimately lands at:
@@ -316,7 +316,7 @@ http://127.0.0.1:17777/wallpaper/lively/index.html
 This stable entry discovers the actual asset and bridge ports automatically
 and waits in place while wallpaper mode is off. Do not hard-code `17778` or
 `17797`. For diagnostics, run
-`py -3.12 tools\run_wallpaper_engine_bridge.py` and use the printed `Lively URL`.
+`uv run --locked --no-sync python tools\run_wallpaper_engine_bridge.py` and use the printed `Lively URL`.
 See the [Lively entry guide](wallpaper/lively/README.md).
 
 ## Configuration ownership
@@ -356,12 +356,12 @@ advanced diagnostics, experimental thresholds, and test-only flags remain in
 ## Development and contribution
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe -m pip install --no-deps --no-build-isolation -e .
-.\.venv\Scripts\python.exe tools\verify_python_environment.py --profile ci
-.\.venv\Scripts\python.exe -X utf8 tools\run_tests.py
+uv sync --locked --extra dev
+uv run --locked --no-sync python tools\verify_python_environment.py --profile ci
+uv run --locked --no-sync python -X utf8 tools\run_tests.py
 
 cd electron
+npm ci
 npm run build
 npm audit --audit-level=high
 ```
@@ -390,8 +390,8 @@ release/        public-source selection, provenance, and deterministic archive p
 ```
 
 `main.py` is not an application entry; it prints a retirement notice. The
-Python entry is `python -m server.app --port 17777`, and the desktop launcher is
-`run_electron_cu124.bat`.
+Python entry is `uv run --locked --no-sync python -m server.app --port 17777`,
+and the desktop launcher is `run_electron_utf8.bat` (it auto-discovers `.venv`).
 
 ## Public history and license
 

@@ -6,7 +6,7 @@ exit.  It measures upstream capability; it does not change Amadeus manifests.
 
 Run with the CUDA 12.4 environment used by the product::
 
-    .venv_cu124\Scripts\python.exe -X utf8 \
+    .venv\Scripts\python.exe -X utf8 \
         tools/probes/probe_openclaw_session_control.py --live
 """
 

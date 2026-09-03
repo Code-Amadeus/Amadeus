@@ -14,7 +14,7 @@
   <a href="https://www.bilibili.com/video/BV1783G6hEYY/"><img src="https://img.shields.io/badge/demo-Bilibili-2f624a?labelColor=061710&logo=bilibili&logoColor=61eeb6" alt="B 站演示"/></a>
   <a href="./assets/architecture-overview-crt.svg"><img src="https://img.shields.io/badge/architecture-current-184b36?labelColor=061710" alt="当前架构图"/></a>
   <img src="https://img.shields.io/badge/version-0.1_%CE%B1-2f624a?labelColor=061710" alt="Amadeus 0.1 alpha"/>
-  <img src="https://img.shields.io/badge/baseline-CUDA%2012.4-c27832?labelColor=061710" alt="CUDA 12.4 本地基线"/>
+  <img src="https://img.shields.io/badge/部署阶梯-L1%2FL2%20跨平台%20·%20L3%2FL4%20Windows-2f624a?labelColor=061710" alt="部署阶梯：L1/L2 跨平台，L3/L4 仅 Windows"/>
   <img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-272018?labelColor=061710" alt="许可证"/>
 </p>
 
@@ -29,6 +29,9 @@
 > 不是带安装器的正式桌面发行版。首方代码采用
 > [PolyForm Noncommercial 1.0.0](LICENSE)：允许非商业使用、修改和再分发；
 > 商业使用需要另行取得书面许可。第三方代码与外部资产保留各自条款。
+>
+> **想先跑起来？** → [快速开始](#快速开始)。想先了解项目，从
+> [Amadeus 想解决什么](#amadeus-想解决什么) 开始。
 
 ## Amadeus 想解决什么
 
@@ -78,6 +81,26 @@ MCP 与 Skills 即使共用 Host registry，也只授予兼容 Provider；**Main
 不能直接调用 MCP 工具**。远程 DeepSeek 是主 Chat 基线；远程 ASR/TTS 是显式
 兼容路径，不会在本地语音失败后静默上传或产生第二笔计费请求。
 
+## 仓库地图
+
+```text
+electron/       Electron main、preload、React renderer 与 Settings
+server/         认证后的本地后端、Host 控制面与 AUIP
+core/           Main Chat runtime 与会话集成
+agent_host/     Provider contracts、adapters、Work identity 与 capabilities
+asr/            Conversation / Wake 识别后端
+tts/            合成后端、分句 pipeline、播放与口型信号
+render/         SpriteForge runtime adapter 与 PixiJS renderer
+wallpaper/      Electron/Lively host 与 Win32 桌面放置
+vn_player/      Experimental VN Player integration
+assets/         Git-owned UI 资产与外部 runtime 资产落点
+release/        公开源码选择、provenance 与 deterministic archive policy
+```
+
+`main.py` 不是应用入口，只输出退役提示。Python 主入口是
+`uv run --locked --no-sync python -m server.app --port 17777`，桌面入口是
+Windows `run_electron_utf8.bat` / macOS `npm run electron:dev`（自动发现 `.venv`，L1–L4 通用）。
+
 ## 系统架构
 
 [![Amadeus 当前架构：Host 权威、Work Provider、Provider-scoped MCP/Skills、AUIP AppSession、语音与 SpriteForge 呈现边界](./assets/architecture-overview-crt.svg)](./assets/architecture-overview-crt.svg)
@@ -91,7 +114,7 @@ MCP 与 Skills 即使共用 Host registry，也只授予兼容 Provider；**Main
 当前 Codex 由 App Server 或 Direct transport 接入，不依赖旧 Locus 网关。
 Claude CLI 将在后续作为独立 direct Provider 进入同一边界，而不是恢复 Locus。
 
-## AUIP application sessions
+## AUIP 应用会话（application sessions）
 
 AUIP 是 Amadeus 的 cooperative application protocol，不是 Provider、MCP 或主
 Chat 工具系统。它解决的是：当 Work 已生成一个可运行 Artifact，用户如何在
@@ -112,35 +135,49 @@ verified Work Artifact
 - 断连成为可见状态并使待确认动作失效，不会在陈旧状态上静默继续。
 
 当前 schema 是 `amadeus.auip/v0`，实现位于本仓库。详见
-[AUIP application sessions](docs/auip_application_sessions.md)。独立的
+[AUIP 应用会话文档](docs/auip_application_sessions.md)。独立的
 [Code-Amadeus/auip](https://github.com/Code-Amadeus/auip) 目前仍是公共 namespace
 placeholder，本版本不声称已经发布独立 SDK 或 conformance suite。
 
-## 快速开始 — 远程 Chat + CUDA 12.4 本地语音基线
+## 快速开始
 
-第一版以当前实际使用方式为安装基线：Windows 11、CUDA 12.4、远程
-DeepSeek 主 Chat、本地 Qwen/SenseVoice 和 GPT-SoVITS v3。llama.cpp 是可选
-本地 LLM profile，不是首发安装前提。
+依赖按能力分四级：先装最小的 L1 跑通，再按需升梯（torch 只在 L3/L4 进入
+安装）。L1/L2 在 Windows 与 macOS 上通用；L3/L4 目前仅 Windows——官方
+验证、锁文件与安装基线都在 Windows 11 + CUDA 12.4。所有平台统一用
+[uv](https://docs.astral.sh/uv/) 提供 Python 3.12 并安装依赖。
 
-依赖按能力分四级，按需选装（torch 只在 L3/L4 进入安装）：
+| 梯级 | 能力 | 平台 | 安装方式 |
+|---|---|---|---|
+| L1 core | 文字聊天、工作、Provider、角色渲染 | Windows / macOS | `uv sync --locked` |
+| L2 voice | 说（远程 TTS、播放、口型）+ 听（麦克风、远程 ASR）| Windows / macOS | `uv sync --locked --extra voice` |
+| L3 vad | 实时打断（角色说话时可以插话）| 仅 Windows | `uv sync --locked --extra voice --extra vad` |
+| L4 local-cu124 | 本地 GPT-SoVITS / Qwen3 ASR / 唤醒词 | 仅 Windows + NVIDIA GPU | `uv sync --locked --extra voice --extra vad --extra local-cu124`（见 [L4](#windows-专属梯级l3l4)） |
 
-| 梯级 | 能力 | 安装方式 |
-|---|---|---|
-| L1 core | 文字聊天、工作、Provider、角色渲染 | `pip install -e .` |
-| L2 voice | 说（远程 TTS、播放、口型）+ 听（麦克风、远程 ASR）| `pip install -e ".[voice]"` |
-| L3 vad | 实时打断（角色说话时可以插话）| `pip install -e ".[voice,vad]"` |
-| L4 local-cu124 | 本地 GPT-SoVITS / Qwen3 ASR / 唤醒词 | `pip install -e ".[voice,vad,local-cu124]"` |
+四个梯级共用**同一个 `.venv`**，命令是前缀递增的：升梯时把下层 extra 一并带上
+（`uv sync` 会精确同步，漏带会把已装层裁掉）。torch 在 L3 进入安装（CPU 版），
+升到 L4 时自动换成 CUDA 12.4 构建。
 
-L2 无 vad 层时，语音端点自动降级为能量检测；安装 vad 后恢复
-silero 精准端点与打断。
-
-各梯级安装完成后，可用 `python tools/verify_python_environment.py --profile <cpu|voice|vad|cu124>` 验证所装梯级的导入合同（`ci` 同 `cpu`）。
+- 主 Chat 默认远程 DeepSeek；llama.cpp 是可选本地 LLM profile（见
+  [兼容路径](#兼容路径)），不是安装前提。
+- L2 无 vad 层时，语音端点自动降级为能量检测；安装 vad 后恢复
+  silero 精准端点与打断。
+- Windows 上每装完一级可验证导入合同（`ci` 同 `cpu`）：
+  `uv run --locked --no-sync python tools/verify_python_environment.py --profile <cpu|voice|vad>`，
+  L4 用 `--profile cu124 --require-cuda-device`（L3/L4 验证器仅限 Windows，
+  macOS 以实际启动验证 L1/L2）。
+- 纯文字 / headless（CI）场景用 L1 即可：`uv run --locked --no-sync python -m server.app --port 17777`
+  直接启动后端；严格文字模式设置 `TTS_BACKEND=disabled` 并关闭 Wake。
 
 ### 参考硬件
 
-- Windows 11
-- CPython **3.12**（当前参考 `3.12.10`）
+**L1/L2（Windows / macOS）**
+
+- CPython **3.12**（由 uv 管理，无需系统安装）
 - Node.js **22**（当前参考 `22.21.1`）
+- 无 GPU 要求
+
+**L3/L4（仅 Windows）追加**
+
 - CUDA 12.4-compatible NVIDIA GPU，目标 **8 GiB VRAM**
 - **16 GiB 内存起步，32 GiB 推荐**
 
@@ -148,27 +185,59 @@ silero 精准端点与打断。
 描述的是远程 Chat + 本地语音配置。选用本地 LLM 时需要按模型、量化、
 context 和 GPU offload 另行评估内存。
 
-### 安装
+### 基础环境（L1/L2，Windows / macOS）
 
-```powershell
+安装 uv（Windows：`winget install astral-sh.uv`；macOS：`brew install uv`），
+然后克隆并按梯级安装——两个平台的命令完全一致：
+
+```bash
 git clone https://github.com/Code-Amadeus/Amadeus.git
 cd Amadeus
 
-py -3.12 -m venv .venv_cu124
-.\.venv_cu124\Scripts\python.exe -m pip install --upgrade pip==26.2 setuptools==83.0.0 wheel==0.47.0
-.\.venv_cu124\Scripts\python.exe -m pip install -r requirements-cu124.txt
-.\.venv_cu124\Scripts\python.exe -m pip install --no-deps --no-build-isolation -e .
-.\.venv_cu124\Scripts\python.exe tools\verify_python_environment.py --profile cu124 --require-cuda-device
+uv venv .venv --python 3.12
+uv sync --locked                              # L1 core
+uv sync --locked --extra voice                # + L2 voice（可选，前缀递增）
+```
 
+macOS 上 PyAudio（L2 语音采集）从源码编译，需要先 `brew install portaudio`。
+
+venv 固定命名为 `.venv`：Electron 启动器会自动发现它（Windows
+`Scripts\python.exe`，macOS `bin/python3`），无需手动设置 `AMADEUS_PYTHON`。
+
+Electron 前端（全平台）：
+
+```bash
 cd electron
 npm ci
 npm run build
 cd ..
 ```
 
-`npm ci` 会通过项目 postinstall 安装锁定的 Electron 运行时。cu124 profile 固定
-`torch==2.5.1+cu124`、`torchaudio==2.5.1+cu124` 和本地模型依赖集；它以当前
-实际运行环境为第一版基线。
+`npm ci` 会通过项目 postinstall 安装锁定的 Electron 运行时。国内网络可为
+npm/Electron 配置镜像（如 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`）。
+
+### Windows 专属梯级（L3/L4）
+
+与 L1/L2 共用同一个 `.venv`，命令按前缀递增追加：
+
+**L3 vad — 实时打断**（torch 随之以 CPU 版进入安装）：
+
+```powershell
+uv sync --locked --extra voice --extra vad
+uv run --locked --no-sync python tools\verify_python_environment.py --profile vad
+```
+
+**L4 local-cu124 — 本地语音模型栈**：在同一 `.venv` 上追加，torch 自动换为
+CUDA 12.4 构建（经 `pyproject.toml` 的 `[tool.uv.sources]` 路由到
+PyTorch cu124 index，仅 Windows + 本 extra 生效）：
+
+```powershell
+uv sync --locked --extra voice --extra vad --extra local-cu124
+uv run --locked --no-sync python tools\verify_python_environment.py --profile cu124 --require-cuda-device
+```
+
+L4 profile 固定 `torch==2.5.1+cu124`、`torchaudio==2.5.1+cu124` 和本地模型
+依赖集；它以当前实际运行环境为第一版基线。
 
 > **GeForce RTX 50 系（Blackwell，社区验证配置）**：本项目当前使用的
 > `torch==2.5.1+cu124` profile 不兼容 RTX 50 系，无法运行本地 CUDA
@@ -180,25 +249,27 @@ cd ..
 > GPUs and cannot run the local CUDA voice models. Update the NVIDIA driver and
 > use the community-validated PyTorch 2.7.0 CUDA 12.8 combination instead:
 >
-> 请只在单独的实验项目虚拟环境（例如 `.venv_cu128`）激活后运行以下命令，
-> 不要覆盖正式 `.venv_cu124`。
+> 请在单独的实验项目虚拟环境（例如 `.venv_cu128`）中运行以下命令，
+> 不要改动正式 `.venv`（其 `uv.lock` 固定 cu124）。
 >
-> Run this only after activating a separate experimental project venv (for
-> example `.venv_cu128`); do not overwrite the formal `.venv_cu124` environment.
+> Run this only inside a separate experimental project venv (for
+> example `.venv_cu128`); do not modify the formal `.venv` whose `uv.lock`
+> pins cu124.
 >
 > ```powershell
-> python -m pip install --upgrade --force-reinstall `
+> uv venv .venv_cu128 --python 3.12
+> uv pip install --python .venv_cu128 --reinstall `
 >   torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 `
 >   --index-url https://download.pytorch.org/whl/cu128
 > ```
 >
 > 该组合目前尚未经过项目的完整 clean-install、ASR/TTS/VAD 与 Electron 回归；
-> 当前 `requirements-cu124.txt` 和 `--profile cu124` 验证器仍以
+> 当前 `uv.lock` 与 `--profile cu124` 验证器仍以
 > `torch==2.5.1+cu124` 为准，因此不应将其视为 cu124 正式基线的替代品。
 >
 > This combination has not yet passed the project's full clean-install,
 > ASR/TTS/VAD, and Electron regression gates. The current
-> `requirements-cu124.txt` and `--profile cu124` verifier still require
+> `uv.lock` and `--profile cu124` verifier still require
 > `torch==2.5.1+cu124`, so this is not a replacement for the official cu124
 > baseline.
 
@@ -207,48 +278,44 @@ cd ..
 完整本地语音需要 Qwen ASR 与 GPT-SoVITS v3 语音包；视觉和角色包可选：
 
 ```powershell
-py -3.12 tools\external_assets.py verify C:\Downloads\amadeus-asr-qwen3-0.6b.zip
-py -3.12 tools\external_assets.py install C:\Downloads\amadeus-asr-qwen3-0.6b.zip
-py -3.12 tools\external_assets.py verify C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
-py -3.12 tools\external_assets.py install C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
+uv run --locked --no-sync python tools\external_assets.py verify C:\Downloads\amadeus-asr-qwen3-0.6b.zip
+uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-asr-qwen3-0.6b.zip
+uv run --locked --no-sync python tools\external_assets.py verify C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
+uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
 
 # 可选：场景与 KTX2 角色动画
-py -3.12 tools\external_assets.py install C:\Downloads\amadeus-visual-runtime.zip
-py -3.12 tools\external_assets.py install C:\Downloads\amadeus-character-kurisu.zip
-py -3.12 tools\external_assets.py status
+uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-visual-runtime.zip
+uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-character-kurisu.zip
+uv run --locked --no-sync python tools\external_assets.py status
 ```
 
 如果没有预制 Qwen 包，可直接把上游 snapshot 下载到同一个固定落点；运行时
 保持离线，不会在第一次录音时临时联网：
 
 ```powershell
-.\.venv_cu124\Scripts\python.exe -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-ASR-0.6B', local_dir='assets/models/asr/qwen3-asr-0.6b')"
+uv run --locked --no-sync python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-ASR-0.6B', local_dir='assets/models/asr/qwen3-asr-0.6b')"
 ```
 
 GPT-SoVITS 日文前端第一次使用会准备 OpenJTalk 字典。希望正式启动时不再下载，
 可预先运行一次：
 
 ```powershell
-.\.venv_cu124\Scripts\python.exe -c "import pyopenjtalk; print(pyopenjtalk.g2p('準備完了'))"
+uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('準備完了'))"
 ```
 
 ### 配置与启动
 
-```powershell
-Copy-Item .env.example .env
-```
-
-填写 DeepSeek API key，并在 Settings 中核对：
+复制 `.env` 并填写 DeepSeek API key（Windows：`Copy-Item .env.example .env`；
+macOS：`cp .env.example .env`），然后在 Settings 中核对：
 
 - **Models**：`deepseek`、官方 endpoint、`deepseek-v4-flash` 与 API key；
-- **Voice**：Qwen model 目录、GPT-SoVITS **v3** checkpoints、reference audio/text、麦克风、AEC 和 barge-in；
+- **Voice**：远程 TTS/ASR 端点（如 MiMo）；L4 本地栈另需 Qwen model 目录、GPT-SoVITS **v3** checkpoints、reference audio/text、麦克风、AEC 和 barge-in；
 - **General**：可选角色包状态与呈现设置。
 
-直接启动 Amadeus：
+启动：
 
-```powershell
-.\run_electron_cu124.bat
-```
+- Windows：`run_electron_utf8.bat`（单一启动器；自动发现 `.venv`，L1–L4 通用）
+- macOS：`cd electron && npm run electron:dev`
 
 启动型设置变更后按 **Restart backend to apply**。角色包显示
 **Not installed** 是健康状态，不影响 Chat、Work 或 headless 启动。
@@ -270,23 +337,6 @@ Settings 会明确显示缺少的能力。
 
 LM Studio、Ollama、llama-cli 和 hybrid profiles 仍保留，但不会在
 DeepSeek 失败后自动切换。
-
-### CPU/model-less
-
-CPU/model-less 用于 CI、headless 开发与文字 Chat/Work：
-
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip==26.2 setuptools==83.0.0 wheel==0.47.0
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m pip install --no-deps --no-build-isolation -e .
-.\.venv\Scripts\python.exe tools\verify_python_environment.py --profile cpu
-$env:AMADEUS_PYTHON = (Resolve-Path .\.venv\Scripts\python.exe)
-.\run_electron_utf8.bat
-```
-
-严格文字模式应设置 `TTS_BACKEND=disabled` 并关闭 Wake。远程 DeepSeek
-是首发主 Chat profile；OpenAI-compatible 远程 ASR/TTS 仍是显式兼容路径。
 
 ### 可选远程模型建议
 
@@ -311,10 +361,12 @@ $env:AMADEUS_PYTHON = (Resolve-Path .\.venv\Scripts\python.exe)
 后两个只影响场景和角色呈现。
 
 ```powershell
-py -3.12 tools\external_assets.py verify C:\path\to\asset-bundle.zip
-py -3.12 tools\external_assets.py install C:\path\to\asset-bundle.zip
-py -3.12 tools\external_assets.py status
+uv run --locked --no-sync python tools\external_assets.py verify C:\path\to\asset-bundle.zip
+uv run --locked --no-sync python tools\external_assets.py install C:\path\to\asset-bundle.zip
+uv run --locked --no-sync python tools\external_assets.py status
 ```
+`external_assets.py` 是纯标准库工具，在任一梯级的 `.venv` 下运行均可；本地语音包
+（`asr-qwen3` / `voice-kurisu`）需要 L4 梯级（Windows CUDA）才会被运行时加载。
 
 SpriteForge 角色包最终应落在：
 
@@ -343,7 +395,7 @@ http://127.0.0.1:17777/wallpaper/lively/index.html
 
 该稳定入口会自动发现实际 asset/bridge 端口；壁纸模式关闭时会原地等待，
 不要手工写死 `17778` 或 `17797`。诊断时可运行
-`py -3.12 tools\run_wallpaper_engine_bridge.py` 并使用它打印的 `Lively URL`。
+`uv run --locked --no-sync python tools\run_wallpaper_engine_bridge.py` 并使用它打印的 `Lively URL`。
 详见 [Lively 入口说明](wallpaper/lively/README.md)。
 
 ## 配置所有权
@@ -364,9 +416,9 @@ Settings 不会回写 `.env`。普通模型、语音、麦克风、Provider/MCP�
 
 | 范围 | 状态 |
 |---|---|
-| Windows + 远程 DeepSeek + CUDA 12.4 本地语音 | 第一版产品基线；以当前实际运行环境为准 |
+| L1/L2（文字 + 远程语音）| Windows 与 macOS 源码部署；macOS 为实测路径，官方 CI/锁文件仍以 Windows 为准 |
+| L3/L4（本地 CUDA 12.4 语音）| 仅 Windows；第一版产品基线，以当前实际运行环境为准 |
 | 8 GiB VRAM / 16–32 GiB RAM | 目标配置；实际占用由模型组合决定 |
-| CPU/model-less | CI 与兼容路径 |
 | 远程 DeepSeek Main Chat | 第一版默认 profile |
 | 远程 ASR / TTS | 显式兼容路径，不静默 fallback |
 | Electron installer | 尚未提供；当前从源码启动 |
@@ -374,17 +426,17 @@ Settings 不会回写 `.env`。普通模型、语音、麦克风、Provider/MCP�
 | SpriteForge 角色包 | 外部分发；缺包仍可启动 |
 | VTS | 默认关闭的兼容旁路 |
 | VN Player | Experimental |
+| 壁纸模式 | 仅 Windows 宿主（Lively / Wallpaper Engine）；其他平台不提供 |
 | PyQt / 旧壁纸 host | 已退出公开主线 |
 | Claude CLI Provider | 已确定的后续主线 Provider；当前没有 live caller |
-| 多平台 | 后续方向，当前不作支持承诺 |
 
 ## 开发与贡献
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe -m pip install --no-deps --no-build-isolation -e .
-.\.venv\Scripts\python.exe tools\verify_python_environment.py --profile ci
-.\.venv\Scripts\python.exe -X utf8 tools\run_tests.py
+uv sync --locked --extra dev      # 开发依赖：pytest / ruff 等（见 pyproject [dev] extra）
+# Windows 之外没有官方 L3/L4 验证器；macOS/Linux 贡献者直接跑下方 run_tests.py 即可
+uv run --locked --no-sync python tools\verify_python_environment.py --profile ci
+uv run --locked --no-sync python -X utf8 tools\run_tests.py
 
 cd electron
 npm run build
@@ -395,25 +447,6 @@ npm audit --audit-level=high
 产品语义、权限、协议、Provider/MCP/Skill、Project/Draft/Artifact 或 AUIP 边界变化
 应先开 Issue；小型修复、文档、测试和纯呈现 UI 变更可直接发 PR。安全问题请按
 [SECURITY.md](SECURITY.md) 私下报告。
-
-## 仓库地图
-
-```text
-electron/       Electron main、preload、React renderer 与 Settings
-server/         认证后的本地后端、Host 控制面与 AUIP
-core/           Main Chat runtime 与会话集成
-agent_host/     Provider contracts、adapters、Work identity 与 capabilities
-asr/            Conversation / Wake 识别后端
-tts/            合成后端、分句 pipeline、播放与口型信号
-render/         SpriteForge runtime adapter 与 PixiJS renderer
-wallpaper/      Electron/Lively host 与 Win32 桌面放置
-vn_player/      Experimental VN Player integration
-assets/         Git-owned UI 资产与外部 runtime 资产落点
-release/        公开源码选择、provenance 与 deterministic archive policy
-```
-
-`main.py` 不是应用入口，只输出退役提示。Python 主入口是
-`python -m server.app --port 17777`，桌面入口是 `run_electron_cu124.bat`。
 
 ## 公开历史与许可证
 

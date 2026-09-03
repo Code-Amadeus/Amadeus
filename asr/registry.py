@@ -97,8 +97,7 @@ def _qwen_probe() -> tuple[str, str]:
         from config.environment import venv_python as _venv_python
 
         for candidate in (
-            _venv_python(_PROJECT_ROOT, ".venv_cu124"),
-            _venv_python(_PROJECT_ROOT, ".venv_asr"),
+            _venv_python(_PROJECT_ROOT, ".venv"),
         ):
             if candidate.is_file():
                 runtime_available = True
