@@ -9,11 +9,12 @@ interface Props {
   onStreamIdle?: () => void
   userAvatar?: string
   assistantAvatar?: string
+  hasPreviousMessage?: boolean
 }
 
 const DOT_PHASES = ['●', '● ●', '● ● ●', '● ●']
 
-export default function ChatBubble({ role, text, translation = '', streaming, onStreamIdle, userAvatar = '', assistantAvatar = '' }: Props) {
+export default function ChatBubble({ role, text, translation = '', streaming, onStreamIdle, userAvatar = '', assistantAvatar = '', hasPreviousMessage }: Props) {
   const [display, setDisplay] = useState(text)
   const [dotPhase, setDotPhase] = useState(0)
   const [cursorVisible, setCursorVisible] = useState(true)
@@ -60,7 +61,10 @@ export default function ChatBubble({ role, text, translation = '', streaming, on
 
   if (role === 'system') {
     return (
-      <div className="flex justify-center px-[18px] py-[4px]">
+      <div
+        className="flex justify-center px-[18px]"
+        style={{ marginTop: hasPreviousMessage ? 10 : 0 }}
+      >
         <span className="text-[12px] text-[#C42B1C] bg-[#FFF3CD]/60 rounded-lg px-4 py-1.5 max-w-[80%] text-center">
           {text}
         </span>
@@ -73,10 +77,11 @@ export default function ChatBubble({ role, text, translation = '', streaming, on
 
   return (
     <div
-      className="flex items-start gap-[10px] py-[4px]"
+      className="flex items-start gap-[10px]"
       style={{
         flexDirection: isUser ? 'row-reverse' : 'row',
         paddingInline: 'clamp(24px, 2.5vw, 34px)',
+        marginTop: hasPreviousMessage ? 10 : 0,
       }}
     >
       {/* compact desktop avatar */}
@@ -96,8 +101,15 @@ export default function ChatBubble({ role, text, translation = '', streaming, on
           : isUser ? 'U' : 'K'}
       </div>
 
-      {/* bubble — stretch factor 7 */}
-      <div className="flex-[7] min-w-0" style={{ maxWidth: 'calc(100% - 56px)' }}>
+      {/* Keep short messages compact while long messages wrap within the chat lane. */}
+      <div
+        className="min-w-0"
+        style={{
+          flex: '0 1 auto',
+          width: 'fit-content',
+          maxWidth: '70%',
+        }}
+      >
         <div
           className="text-[12px] leading-[150%] whitespace-pre-wrap break-words select-text"
           style={{
@@ -136,8 +148,8 @@ export default function ChatBubble({ role, text, translation = '', streaming, on
         </div>
       </div>
 
-      {/* spacer — stretch factor 3 */}
-      <div className="flex-[3]" />
+      {/* Fill the remaining lane so the bubble stays beside its own avatar. */}
+      <div className="flex-1 min-w-0" />
     </div>
   )
 }
