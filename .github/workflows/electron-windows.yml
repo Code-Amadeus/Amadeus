@@ -47,3 +47,8 @@ jobs:
           fail-on-scopes: runtime, development, unknown
           license-check: false
           retry-on-snapshot-warnings: true
+          # NLTK has no patched release for this advisory. Amadeus only uses
+          # TweetTokenizer and pos_tag; it never exposes the affected model
+          # persistence APIs or caller-selected artifact paths. Remove this
+          # single-advisory exception when NLTK publishes a fixed version.
+          allow-ghsas: GHSA-8mgp-746c-j5xp
