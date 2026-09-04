@@ -346,6 +346,11 @@ http://127.0.0.1:17777/wallpaper/lively/index.html
 `py -3.12 tools\run_wallpaper_engine_bridge.py` 并使用它打印的 `Lively URL`。
 详见 [Lively 入口说明](wallpaper/lively/README.md)。
 
+macOS 没有对应的 Lively/Wallpaper Engine 桌面宿主。点击 **Wallpaper** 后，
+Electron 会直接创建桌面层的全场景窗口，并用独立透明窗口承载可交互 Canvas；
+场景本身保持鼠标穿透，不会挡住 Finder 桌面图标。这是源码运行的兼容路径，
+目前不包含签名、公证或安装器。
+
 ## 配置所有权
 
 启动值优先级固定为：
@@ -370,6 +375,7 @@ Settings 不会回写 `.env`。普通模型、语音、麦克风、Provider/MCP�
 | 远程 DeepSeek Main Chat | 第一版默认 profile |
 | 远程 ASR / TTS | 显式兼容路径，不静默 fallback |
 | Electron installer | 尚未提供；当前从源码启动 |
+| macOS Electron 壁纸宿主 | 源码运行兼容路径；尚无签名、公证或安装器 |
 | Docker | 不是支持的桌面安装路径 |
 | SpriteForge 角色包 | 外部分发；缺包仍可启动 |
 | VTS | 默认关闭的兼容旁路 |

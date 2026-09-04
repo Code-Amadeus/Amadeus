@@ -15,6 +15,8 @@ import {
   type McpConnectionUpdate,
 } from './desktopSettings.js'
 import { ChatAvatarStore, type ChatAvatarRole } from './chatAvatars.js'
+import { desktopPointHitsWindowRegions } from './wallpaperHitTesting.js'
+import { wallpaperWindowPolicy } from './wallpaperWindowPolicy.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -54,6 +56,12 @@ let mainWindow: BrowserWindow | null = null
 let workGlowWindow: BrowserWindow | null = null
 let workPanelWindow: BrowserWindow | null = null
 let electronSliceWindow: BrowserWindow | null = null
+let electronCanvasWindow: BrowserWindow | null = null
+let electronCanvasBridgeKey = ''
+let electronCanvasHitRegions: Electron.Rectangle[] = []
+let electronCanvasHitRegionSignature = ''
+let electronCanvasHitTestTimer: NodeJS.Timeout | null = null
+let electronCanvasIgnoringMouse = true
 let electronSliceBridgeKey = ''
 let electronSliceDesktopMonitor: ChildProcess | null = null
 let electronSliceMonitorRestartTimer: NodeJS.Timeout | null = null
@@ -526,6 +534,14 @@ function normalizeWallpaperBridge(raw: unknown): WallpaperBridgeDescriptor | nul
 function electronSliceBounds(): Electron.Rectangle {
   const display = screen.getPrimaryDisplay()
   const displayBounds = display.bounds
+  if (wallpaperWindowPolicy(process.platform).hostMode === 'scene') {
+    return displayBounds
+  }
+  return electronCanvasBounds()
+}
+
+function electronCanvasBounds(): Electron.Rectangle {
+  const displayBounds = screen.getPrimaryDisplay().bounds
   const left = Math.floor(displayBounds.x + displayBounds.width * electronSliceLayout.x)
   const top = Math.floor(displayBounds.y + displayBounds.height * electronSliceLayout.y)
   const right = Math.ceil(left + displayBounds.width * electronSliceLayout.width)
@@ -538,7 +554,158 @@ function electronSliceUrl(bridge: WallpaperBridgeDescriptor): string {
     bridgePort: String(bridge.bridgePort),
     assetVersion: bridge.assetVersion,
   })
+  if (wallpaperWindowPolicy(process.platform).hostMode === 'scene') {
+    query.set('host', 'electron')
+    query.set('sliceHost', 'electron')
+    return `http://127.0.0.1:${bridge.assetPort}/render/web/wallpaper_engine.html?${query.toString()}`
+  }
   return `http://127.0.0.1:${bridge.assetPort}/render/web/electron_slice.html?${query.toString()}`
+}
+
+function electronCanvasUrl(bridge: WallpaperBridgeDescriptor): string {
+  const query = new URLSearchParams({
+    bridgePort: String(bridge.bridgePort),
+    assetVersion: bridge.assetVersion,
+  })
+  return `http://127.0.0.1:${bridge.assetPort}/render/web/electron_slice.html?${query.toString()}`
+}
+
+function setElectronCanvasMousePassthrough(ignore: boolean): void {
+  const window = electronCanvasWindow
+  if (!window || window.isDestroyed() || electronCanvasIgnoringMouse === ignore) return
+  electronCanvasIgnoringMouse = ignore
+  window.setIgnoreMouseEvents(ignore, { forward: true })
+}
+
+function stopElectronCanvasHitTest(): void {
+  if (electronCanvasHitTestTimer) {
+    clearInterval(electronCanvasHitTestTimer)
+    electronCanvasHitTestTimer = null
+  }
+  if (electronCanvasWindow && !electronCanvasWindow.isDestroyed()) {
+    electronCanvasWindow.setIgnoreMouseEvents(true, { forward: true })
+  }
+  electronCanvasIgnoringMouse = true
+}
+
+function startElectronCanvasHitTest(): void {
+  if (electronCanvasHitTestTimer) return
+  electronCanvasHitTestTimer = setInterval(() => {
+    const window = electronCanvasWindow
+    if (!window || window.isDestroyed() || !window.isVisible()) return
+    const insideInteractiveRegion = desktopPointHitsWindowRegions(
+      screen.getCursorScreenPoint(),
+      window.getBounds(),
+      electronCanvasHitRegions,
+    )
+    setElectronCanvasMousePassthrough(!insideInteractiveRegion)
+  }, 40)
+}
+
+function resetElectronCanvasReadiness(window: BrowserWindow): void {
+  electronCanvasHitRegions = []
+  electronCanvasHitRegionSignature = ''
+  setElectronCanvasMousePassthrough(true)
+  if (!window.isDestroyed() && window.isVisible()) window.hide()
+}
+
+function closeElectronCanvasWindow(): void {
+  stopElectronCanvasHitTest()
+  const window = electronCanvasWindow
+  electronCanvasWindow = null
+  electronCanvasBridgeKey = ''
+  electronCanvasHitRegions = []
+  electronCanvasHitRegionSignature = ''
+  if (window && !window.isDestroyed()) window.close()
+}
+
+function createElectronCanvasWindow(bridge: WallpaperBridgeDescriptor, bridgeKey: string): void {
+  const platformPolicy = wallpaperWindowPolicy(process.platform)
+  if (platformPolicy.hostMode !== 'scene') {
+    closeElectronCanvasWindow()
+    return
+  }
+  if (electronCanvasWindow && !electronCanvasWindow.isDestroyed()) {
+    electronCanvasWindow.setBounds(electronCanvasBounds(), false)
+    if (electronCanvasBridgeKey !== bridgeKey) {
+      electronCanvasBridgeKey = bridgeKey
+      resetElectronCanvasReadiness(electronCanvasWindow)
+      void electronCanvasWindow.loadURL(electronCanvasUrl(bridge))
+    }
+    return
+  }
+
+  const window = new BrowserWindow({
+    ...electronCanvasBounds(),
+    title: '',
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    show: false,
+    paintWhenInitiallyHidden: true,
+    fullscreenable: false,
+    resizable: false,
+    movable: false,
+    hasShadow: false,
+    skipTaskbar: true,
+    alwaysOnTop: false,
+    autoHideMenuBar: true,
+    ...platformPolicy.constructorOptions,
+    focusable: true,
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'preload', 'slice.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+    },
+  })
+  electronCanvasWindow = window
+  electronCanvasBridgeKey = bridgeKey
+  electronCanvasHitRegions = []
+  electronCanvasHitRegionSignature = ''
+  electronCanvasIgnoringMouse = true
+  window.setMenuBarVisibility(false)
+  window.setIgnoreMouseEvents(true, { forward: true })
+  if (platformPolicy.joinAllWorkspaces) {
+    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false })
+  }
+  if (platformPolicy.interactiveLevel) {
+    window.setAlwaysOnTop(
+      true,
+      platformPolicy.interactiveLevel.level,
+      platformPolicy.interactiveLevel.relativeLevel,
+    )
+  }
+  const allowedUrl = new URL(electronCanvasUrl(bridge))
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.webContents.on('will-attach-webview', event => event.preventDefault())
+  window.webContents.on('will-navigate', (event, target) => {
+    try {
+      const destination = new URL(target)
+      if (destination.origin !== allowedUrl.origin || destination.pathname !== allowedUrl.pathname) {
+        event.preventDefault()
+      }
+    } catch {
+      event.preventDefault()
+    }
+  })
+  window.webContents.on('did-start-loading', () => resetElectronCanvasReadiness(window))
+  window.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
+    if (isMainFrame) console.error(`[electron-canvas] renderer load failed (${code}) ${description}: ${url}`)
+  })
+  void window.loadURL(allowedUrl.toString()).catch(error => {
+    console.error('[electron-canvas] failed to load Canvas host:', error)
+  })
+  window.on('closed', () => {
+    if (electronCanvasWindow === window) {
+      electronCanvasWindow = null
+      electronCanvasBridgeKey = ''
+      electronCanvasHitRegions = []
+      electronCanvasHitRegionSignature = ''
+      stopElectronCanvasHitTest()
+    }
+  })
 }
 
 function electronNativeHandle(window: BrowserWindow): string {
@@ -562,14 +729,19 @@ function resetElectronSliceRenderReadiness(window: BrowserWindow): void {
   electronSliceShape = null
   if (window.isDestroyed()) return
   window.setIgnoreMouseEvents(true, { forward: true })
-  window.setShape([])
+  if (wallpaperWindowPolicy(process.platform).supportsWindowShape) window.setShape([])
   if (window.isVisible()) window.hide()
 }
 
 function applyElectronSliceShape(window: BrowserWindow): void {
   if (window.isDestroyed() || electronSliceShape === null) return
-  window.setShape(electronSliceShape)
-  window.setIgnoreMouseEvents(electronSliceShape.length === 0, { forward: true })
+  const policy = wallpaperWindowPolicy(process.platform)
+  if (policy.supportsWindowShape) {
+    window.setShape(electronSliceShape)
+    window.setIgnoreMouseEvents(electronSliceShape.length === 0, { forward: true })
+  } else {
+    window.setIgnoreMouseEvents(true, { forward: true })
+  }
 }
 
 function reconcileElectronSliceReadiness(window: BrowserWindow): void {
@@ -651,12 +823,17 @@ function startElectronSliceDesktopMonitor(window: BrowserWindow): void {
 }
 
 function updateElectronSliceBounds(): void {
-  if (!electronSliceWindow || electronSliceWindow.isDestroyed()) return
-  electronSliceWindow.setBounds(electronSliceBounds(), false)
+  if (electronSliceWindow && !electronSliceWindow.isDestroyed()) {
+    electronSliceWindow.setBounds(electronSliceBounds(), false)
+  }
+  if (electronCanvasWindow && !electronCanvasWindow.isDestroyed()) {
+    electronCanvasWindow.setBounds(electronCanvasBounds(), false)
+  }
 }
 
 function closeElectronSliceWindow(): void {
   stopElectronSliceDesktopMonitor()
+  closeElectronCanvasWindow()
   electronSliceWindow?.close()
   electronSliceWindow = null
   electronSliceBridgeKey = ''
@@ -667,6 +844,7 @@ function closeElectronSliceWindow(): void {
 function createElectronSliceWindow(rawBridge: unknown): boolean {
   const bridge = normalizeWallpaperBridge(rawBridge)
   if (!bridge) return false
+  const platformPolicy = wallpaperWindowPolicy(process.platform)
   electronSliceLayout = bridge.sliceBounds
   const bridgeKey = `${bridge.assetPort}:${bridge.bridgePort}:${bridge.assetVersion}:${JSON.stringify(bridge.sliceBounds)}`
   if (electronSliceWindow && !electronSliceWindow.isDestroyed()) {
@@ -676,6 +854,7 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
       resetElectronSliceRenderReadiness(electronSliceWindow)
       void electronSliceWindow.loadURL(electronSliceUrl(bridge))
     }
+    createElectronCanvasWindow(bridge, bridgeKey)
     return true
   }
 
@@ -687,7 +866,6 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
     backgroundColor: '#00000000',
     show: false,
     paintWhenInitiallyHidden: true,
-    focusable: true,
     fullscreenable: false,
     resizable: false,
     movable: false,
@@ -696,6 +874,7 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
     skipTaskbar: true,
     alwaysOnTop: false,
     autoHideMenuBar: true,
+    ...platformPolicy.constructorOptions,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'slice.cjs'),
       contextIsolation: true,
@@ -710,6 +889,16 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
   electronSliceShape = null
   window.setMenuBarVisibility(false)
   window.setIgnoreMouseEvents(true, { forward: true })
+  if (platformPolicy.joinAllWorkspaces) {
+    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false })
+  }
+  if (platformPolicy.visibleLevel) {
+    window.setAlwaysOnTop(
+      true,
+      platformPolicy.visibleLevel.level,
+      platformPolicy.visibleLevel.relativeLevel,
+    )
+  }
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-attach-webview', event => event.preventDefault())
   const allowedUrl = new URL(electronSliceUrl(bridge))
@@ -725,6 +914,12 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
   })
   window.webContents.on('did-start-loading', () => resetElectronSliceRenderReadiness(window))
   window.webContents.on('did-finish-load', () => {
+    if (platformPolicy.hostMode === 'scene') {
+      const bounds = window.getContentBounds()
+      electronSliceShape = [{ x: 0, y: 0, width: bounds.width, height: bounds.height }]
+      reconcileElectronSliceReadiness(window)
+      return
+    }
     console.log('[electron-slice] renderer document loaded; awaiting shape commit')
   })
   window.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
@@ -737,6 +932,7 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
   })
   window.webContents.on('render-process-gone', () => resetElectronSliceRenderReadiness(window))
   window.once('ready-to-show', () => startElectronSliceDesktopMonitor(window))
+  createElectronCanvasWindow(bridge, bridgeKey)
   void window.loadURL(allowedUrl.toString()).catch(error => {
     console.error('[electron-slice] failed to load Slice host:', error)
   })
@@ -744,6 +940,7 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
     if (electronSliceWindow === window) {
       electronSliceWindow = null
       electronSliceBridgeKey = ''
+      closeElectronCanvasWindow()
     }
   })
   return true
@@ -2008,18 +2205,44 @@ ipcMain.handle('electron-slice.close', (event) => {
   return true
 })
 ipcMain.handle('electron-slice.set-shape', (event, boundsList: Electron.Rectangle[]) => {
-  const window = electronSliceWindow
+  const isCanvasSender = !!electronCanvasWindow
+    && !electronCanvasWindow.isDestroyed()
+    && event.sender === electronCanvasWindow.webContents
+  const window = isCanvasSender ? electronCanvasWindow : electronSliceWindow
   if (!window || window.isDestroyed() || event.sender !== window.webContents) return false
   if (!Array.isArray(boundsList)) return false
-  const firstCommit = electronSliceShape === null
   const bounds = window.getContentBounds()
-  electronSliceShape = boundsList.map(item => {
+  const normalizedRegions = boundsList.map(item => {
     const left = Math.max(0, Math.round(Number(item?.x || 0)))
     const top = Math.max(0, Math.round(Number(item?.y || 0)))
     const right = Math.min(bounds.width, left + Math.max(0, Math.round(Number(item?.width || 0))))
     const bottom = Math.min(bounds.height, top + Math.max(0, Math.round(Number(item?.height || 0))))
     return { x: left, y: top, width: right - left, height: bottom - top }
   }).filter(item => item.width > 0 && item.height > 0)
+  if (isCanvasSender) {
+    const firstCommit = electronCanvasHitRegions.length === 0
+    electronCanvasHitRegions = normalizedRegions
+    const nextSignature = normalizedRegions
+      .map(region => `${region.x},${region.y},${region.width},${region.height}`)
+      .join(';')
+    if (nextSignature !== electronCanvasHitRegionSignature) {
+      electronCanvasHitRegionSignature = nextSignature
+      console.log(`[electron-canvas] hit regions updated: ${normalizedRegions.length}`)
+    }
+    if (normalizedRegions.length === 0) {
+      setElectronCanvasMousePassthrough(true)
+      if (window.isVisible()) window.hide()
+      return true
+    }
+    if (!window.isVisible()) window.showInactive()
+    startElectronCanvasHitTest()
+    if (firstCommit) {
+      console.log(`[electron-canvas] renderer hit regions committed: ${normalizedRegions.length}`)
+    }
+    return true
+  }
+  const firstCommit = electronSliceShape === null
+  electronSliceShape = normalizedRegions
   if (firstCommit) console.log(`[electron-slice] renderer shape committed: ${electronSliceShape.length} region(s)`)
   reconcileElectronSliceReadiness(window)
   return true
