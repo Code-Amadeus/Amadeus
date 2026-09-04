@@ -8,13 +8,18 @@ import pytest
 torch = pytest.importorskip("torch", reason="test requires the local-model tier")
 pytest.importorskip("librosa", reason="test requires the local-model tier")
 
-from local_tts_infer import TTSInferencer
+from local_tts_infer import (
+    TTSInferencer,
+    _allows_nvidia_cuda_extensions,
+    _uses_torch_cuda_device_api,
+)
 
 
-def _inferencer(device: str, *, is_cuda: bool) -> TTSInferencer:
+def _inferencer(device: str, *, uses_torch_cuda_api: bool) -> TTSInferencer:
     inferencer = TTSInferencer.__new__(TTSInferencer)
     inferencer.device = device
-    inferencer._is_cuda = is_cuda
+    inferencer._uses_torch_cuda_api = uses_torch_cuda_api
+    inferencer._allows_nvidia_cuda_extensions = uses_torch_cuda_api
     inferencer._tts_device_idx = 0
     return inferencer
 
@@ -24,7 +29,7 @@ def test_unavailable_cuda_device_fails_before_model_loading(
 ) -> None:
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
 
-    with pytest.raises(RuntimeError, match="requires CUDA"):
+    with pytest.raises(RuntimeError, match="requires a usable PyTorch CUDA/HIP device"):
         TTSInferencer(device="cuda:0")
 
 
@@ -38,7 +43,7 @@ def test_unavailable_mps_device_fails_before_model_loading(
 
 
 def test_cpu_device_context_never_enters_cuda(monkeypatch: pytest.MonkeyPatch) -> None:
-    inferencer = _inferencer("cpu", is_cuda=False)
+    inferencer = _inferencer("cpu", uses_torch_cuda_api=False)
     monkeypatch.setattr(
         torch.cuda,
         "device",
@@ -52,7 +57,7 @@ def test_cpu_device_context_never_enters_cuda(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_cpu_synchronization_never_calls_cuda(monkeypatch: pytest.MonkeyPatch) -> None:
-    inferencer = _inferencer("cpu", is_cuda=False)
+    inferencer = _inferencer("cpu", uses_torch_cuda_api=False)
     monkeypatch.setattr(
         torch.cuda,
         "synchronize",
@@ -63,7 +68,7 @@ def test_cpu_synchronization_never_calls_cuda(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_mps_synchronization_uses_mps(monkeypatch: pytest.MonkeyPatch) -> None:
-    inferencer = _inferencer("mps", is_cuda=False)
+    inferencer = _inferencer("mps", uses_torch_cuda_api=False)
     calls: list[str] = []
     monkeypatch.setattr(torch.mps, "synchronize", lambda: calls.append("mps"))
     monkeypatch.setattr(
@@ -78,7 +83,7 @@ def test_mps_synchronization_uses_mps(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_cuda_context_preserves_selected_device(monkeypatch: pytest.MonkeyPatch) -> None:
-    inferencer = _inferencer("cuda:2", is_cuda=True)
+    inferencer = _inferencer("cuda:2", uses_torch_cuda_api=True)
     inferencer._tts_device_idx = 2
     entered: list[int] = []
 
@@ -95,3 +100,27 @@ def test_cuda_context_preserves_selected_device(monkeypatch: pytest.MonkeyPatch)
         pass
 
     assert entered == [2]
+
+
+def test_rocm_uses_torch_cuda_api_without_enabling_nvidia_extensions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.version, "hip", "6.2")
+
+    uses_torch_cuda_api = _uses_torch_cuda_device_api("cuda:0")
+
+    assert uses_torch_cuda_api is True
+    assert _allows_nvidia_cuda_extensions(uses_torch_cuda_api) is False
+
+
+def test_nvidia_cuda_device_allows_nvidia_extensions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.version, "hip", None)
+
+    uses_torch_cuda_api = _uses_torch_cuda_device_api("cuda:0")
+
+    assert uses_torch_cuda_api is True
+    assert _allows_nvidia_cuda_extensions(uses_torch_cuda_api) is True

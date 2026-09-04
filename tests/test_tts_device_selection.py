@@ -1,6 +1,20 @@
 from __future__ import annotations
 
+import os
+
+import pytest
+
 from config import settings
+
+
+@pytest.fixture(autouse=True)
+def restore_tts_device_environment():
+    previous = os.environ.get("TTS_DEVICE")
+    yield
+    if previous is None:
+        os.environ.pop("TTS_DEVICE", None)
+    else:
+        os.environ["TTS_DEVICE"] = previous
 
 
 def test_apple_silicon_auto_tts_device_defaults_to_mps(monkeypatch) -> None:

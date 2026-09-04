@@ -59,6 +59,16 @@ def _default_ref_free_prompt() -> str:
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('tts_inference')
 
+
+def _uses_torch_cuda_device_api(device_name: str) -> bool:
+    """Return whether the device is addressed through torch.cuda (CUDA or HIP)."""
+    return device_name.startswith("cuda") and torch.cuda.is_available()
+
+
+def _allows_nvidia_cuda_extensions(uses_torch_cuda_api: bool) -> bool:
+    """NVIDIA CUDA extensions are incompatible with PyTorch ROCm/HIP builds."""
+    return uses_torch_cuda_api and not bool(getattr(torch.version, "hip", None))
+
 # 获取当前项目根目录
 root_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, root_dir)
@@ -122,10 +132,13 @@ class TTSInferencer:
             base_dir = root_dir
             self.device = device
             device_name = str(device).lower()
-            self._is_cuda = torch.cuda.is_available() and device_name.startswith("cuda")
-            if device_name.startswith("cuda") and not self._is_cuda:
+            self._uses_torch_cuda_api = _uses_torch_cuda_device_api(device_name)
+            self._allows_nvidia_cuda_extensions = _allows_nvidia_cuda_extensions(
+                self._uses_torch_cuda_api
+            )
+            if device_name.startswith("cuda") and not self._uses_torch_cuda_api:
                 raise RuntimeError(
-                    f"TTS device {device!r} requires CUDA, but this PyTorch build has no usable CUDA device"
+                    f"TTS device {device!r} requires a usable PyTorch CUDA/HIP device"
                 )
             if device_name.startswith("mps") and not (
                 hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
@@ -133,7 +146,7 @@ class TTSInferencer:
                 raise RuntimeError(
                     f"TTS device {device!r} requires an available PyTorch MPS backend"
                 )
-            self.is_half = self._is_cuda
+            self.is_half = self._uses_torch_cuda_api
 
             # CUDA device index — used to set the current CUDA device before custom
             # CUDA kernel calls (BigVGAN's fused anti-alias activation), which rely on
@@ -223,12 +236,12 @@ class TTSInferencer:
         self._synchronize_device()
 
     def _device_context(self):
-        if self._is_cuda:
+        if self._uses_torch_cuda_api:
             return torch.cuda.device(self._tts_device_idx)
         return nullcontext()
 
     def _synchronize_device(self):
-        if self._is_cuda:
+        if self._uses_torch_cuda_api:
             with torch.cuda.device(self._tts_device_idx):
                 torch.cuda.synchronize()
         elif str(self.device).lower().startswith("mps"):
@@ -728,10 +741,10 @@ class TTSInferencer:
                 / "anti_alias_activation_cuda.pyd"
             )
             _use_cuda_kernel = False
-            if self._is_cuda and _cuda_pyd.exists():
+            if self._allows_nvidia_cuda_extensions and _cuda_pyd.exists():
                 _use_cuda_kernel = True
                 logger.info("[BigVGAN] compiled CUDA kernel cache found; loading directly")
-            elif self._is_cuda:
+            elif self._allows_nvidia_cuda_extensions:
                 try:
                     import subprocess as _sp
                     _nvcc = _sp.run(["nvcc", "--version"], capture_output=True, timeout=5)
@@ -740,6 +753,8 @@ class TTSInferencer:
                         logger.info("[BigVGAN] nvcc available; trying to compile the CUDA kernel")
                 except Exception:
                     logger.info("[BigVGAN] nvcc unavailable; using the PyTorch implementation")
+            elif self._uses_torch_cuda_api:
+                logger.info("[BigVGAN] ROCm/HIP device; using the PyTorch implementation")
             else:
                 logger.info("[BigVGAN] non-CUDA device; using the PyTorch implementation")
 
@@ -748,7 +763,7 @@ class TTSInferencer:
                 _use_cuda_kernel = False
                 logger.info("[BigVGAN] BIGVGAN_USE_CUDA_KERNEL=0, forcing PyTorch path")
             elif kernel_override in {"1", "true", "on", "yes"}:
-                if self._is_cuda:
+                if self._allows_nvidia_cuda_extensions:
                     _use_cuda_kernel = True
                     logger.info("[BigVGAN] BIGVGAN_USE_CUDA_KERNEL=1, forcing CUDA kernel path")
                 else:
