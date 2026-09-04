@@ -15,6 +15,7 @@ import {
   type McpConnectionUpdate,
 } from './desktopSettings.js'
 import { ChatAvatarStore, type ChatAvatarRole } from './chatAvatars.js'
+import { applicationMenuTemplate } from './applicationMenu.js'
 import { defaultMpsFallbackEnvironment } from './mpsFallbackPolicy.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -44,7 +45,8 @@ for (const dir of [USER_DATA_DIR, CACHE_DIR]) {
 
 app.setPath('userData', USER_DATA_DIR)
 app.commandLine.appendSwitch('disk-cache-dir', CACHE_DIR)
-Menu.setApplicationMenu(null)
+const menuTemplate = applicationMenuTemplate(process.platform)
+Menu.setApplicationMenu(menuTemplate ? Menu.buildFromTemplate(menuTemplate) : null)
 
 // A packaged build must never trust a process that happens to own the Vite
 // development port. NODE_ENV is not guaranteed to be set by electron-builder,
