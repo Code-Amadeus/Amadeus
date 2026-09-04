@@ -24,11 +24,10 @@ import urllib.parse
 import urllib.request
 import webbrowser
 from pathlib import Path
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 from config.asset_paths import SPRITEFORGE_RUNTIME_ROOT
 from config.settings import WALLPAPER_SFX_GATE_LOG, WALLPAPER_WHEEL_FORWARD
-from wallpaper.pointer_wheel_forwarder import PointerWheelForwarder
 from render.server import AssetServer
 from wallpaper.scene_assets import (
     _PROJECT_ROOT,
@@ -42,6 +41,9 @@ from wallpaper.scene_assets import (
     _prepare_background_asset,
     _prepare_scenario_payload,
 )
+
+if TYPE_CHECKING:
+    from wallpaper.pointer_wheel_forwarder import PointerWheelForwarder
 
 logger = logging.getLogger(__name__)
 
@@ -713,6 +715,8 @@ class WallpaperEngineBridgeHost:
         self._init_scene()
         if self._slice_host != "electron" and WALLPAPER_WHEEL_FORWARD and sys.platform == "win32":
             try:
+                from wallpaper.pointer_wheel_forwarder import PointerWheelForwarder
+
                 self._wheel_forwarder = PointerWheelForwarder(
                     lambda dx, dy: self._state.publish(
                         {"method": "pointerWheel", "args": [{"deltaX": dx, "deltaY": dy}]}
