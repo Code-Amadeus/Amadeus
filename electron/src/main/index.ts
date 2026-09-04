@@ -376,6 +376,7 @@ async function startBackend(): Promise<void> {
       PYTHONUNBUFFERED: '1',
       PYTHONUTF8: '1',
       PYTHONIOENCODING: 'utf-8',
+      ...(process.platform === 'darwin' ? { PYTORCH_ENABLE_MPS_FALLBACK: '1' } : {}),
       AMADEUS_BACKEND_AUTH_MODE: 'required',
       AMADEUS_BACKEND_TOKEN: BACKEND_TOKEN,
       AMADEUS_BACKEND_INSTANCE_NONCE: BACKEND_INSTANCE_NONCE,

@@ -11,6 +11,7 @@
 """
 
 import os
+import platform
 from pathlib import Path
 
 from config.environment import load_project_environment
@@ -285,8 +286,9 @@ MIMO_TTS_VOICE = _str("MIMO_TTS_VOICE", "冰糖")
 def _resolve_tts_device() -> str:
     """
     自动选择 TTS 设备：
-      - .env / 环境变量明确写了 cuda:0 / cuda:1 / cpu → 直接使用
-      - 未设置 / 写了 "cuda" / 写了 "auto" → 返回 "cuda:0"
+      - .env / 环境变量明确写了 cuda:0 / cuda:1 / mps / cpu → 直接使用
+      - 未设置 / 写了 "cuda" / 写了 "auto" → Apple Silicon 返回 MPS，
+        Intel macOS 返回 CPU，其他平台返回 cuda:0
 
     本地 LLM 的 endpoint 并不能证明它占用了哪张 GPU；多 GPU 分配必须由
     TTS_DEVICE 与 LOCAL_LLM_CUDA_VISIBLE_DEVICES 分别显式声明。
@@ -299,7 +301,10 @@ def _resolve_tts_device() -> str:
     if raw and raw not in ("cuda", "auto"):
         return raw
 
-    device = "cuda:0"
+    if platform.system() == "Darwin":
+        device = "mps" if platform.machine().lower() == "arm64" else "cpu"
+    else:
+        device = "cuda:0"
     # GPT-SoVITS/BigVGAN still reads TTS_DEVICE directly from the process
     # environment, so this compatibility write is part of the current contract.
     os.environ["TTS_DEVICE"] = device
