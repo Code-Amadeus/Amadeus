@@ -26,23 +26,23 @@ def _torch(
 
 
 def test_cpu_vad_requires_cpu_builds_of_both_torch_packages(monkeypatch) -> None:
-    _torch(monkeypatch, "2.5.1+cpu", "2.5.1+cpu")
+    _torch(monkeypatch, "2.6.0+cpu", "2.6.0+cpu")
     verifier._verify_torch_build("cpu")
-    _torch(monkeypatch, "2.5.1+cpu", "2.5.1+cu124")
+    _torch(monkeypatch, "2.6.0+cpu", "2.6.0+cu124")
     with pytest.raises(RuntimeError, match="torchaudio cpu"):
         verifier._verify_torch_build("cpu")
 
 
 def test_cuda_build_check_does_not_claim_device_availability(monkeypatch) -> None:
-    _torch(monkeypatch, "2.5.1+cu124", "2.5.1+cu124", cuda="12.4")
+    _torch(monkeypatch, "2.6.0+cu124", "2.6.0+cu124", cuda="12.4")
     verifier._verify_torch_build("cu124")
     with pytest.raises(RuntimeError, match="no usable CUDA device"):
         verifier._verify_torch_build("cu124", require_cuda_device=True)
 
 
 def test_build_version_match_is_exact(monkeypatch) -> None:
-    _torch(monkeypatch, "2.5.10+cu124", "2.5.1+cu124", cuda="12.4")
-    with pytest.raises(RuntimeError, match="expected torch 2.5.1"):
+    _torch(monkeypatch, "2.6.10+cu124", "2.6.0+cu124", cuda="12.4")
+    with pytest.raises(RuntimeError, match="expected torch 2.6.0"):
         verifier._verify_torch_build("cu124")
 
 

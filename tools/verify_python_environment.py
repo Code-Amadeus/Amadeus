@@ -95,7 +95,7 @@ def _verify_torch_build(build: str, *, require_cuda_device: bool = False) -> str
     import torch
     import torchaudio
 
-    expected = "2.9.1" if build == "rocm" else "2.5.1"
+    expected = "2.9.1" if build == "rocm" else "2.6.0"
     expected_suffix = "rocm7.2.1" if build == "rocm" else build
     for name, module in (("torch", torch), ("torchaudio", torchaudio)):
         version = str(module.__version__)

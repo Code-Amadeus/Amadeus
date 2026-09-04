@@ -241,7 +241,7 @@ uv sync --locked --extra voice --extra vad --extra local-cu124
 uv run --locked --no-sync python tools\verify_python_environment.py --profile cu124 --require-cuda-device
 ```
 
-L4 profile 固定 `torch==2.5.1+cu124`、`torchaudio==2.5.1+cu124` 和本地模型
+L4 profile 固定 `torch==2.6.0+cu124`、`torchaudio==2.6.0+cu124` 和本地模型
 依赖集；它以当前实际运行环境为第一版基线。
 
 **实验 local-rocm（Windows）**：同一 `.venv` 可精确选择 AMD 官方 ROCm 7.2.1、
@@ -255,12 +255,12 @@ Torch 构建互斥。安装后必须先运行环境验证与真实 FP32 GPU comp
 中崩溃；该核显不在 AMD 官方 7.2.1 Windows PyTorch 矩阵内，因此不能作为可用目标。
 
 > **GeForce RTX 50 系（Blackwell，社区验证配置）**：本项目当前使用的
-> `torch==2.5.1+cu124` profile 不兼容 RTX 50 系，无法运行本地 CUDA
+> `torch==2.6.0+cu124` profile 不兼容 RTX 50 系，无法运行本地 CUDA
 > 语音模型。50 系用户需要更新 NVIDIA 驱动，并改用社区已验证可运行的
 > PyTorch 2.7.0 CUDA 12.8 组合。
 >
 > **GeForce RTX 50 series (Blackwell, community-validated configuration):**
-> the current `torch==2.5.1+cu124` profile is incompatible with RTX 50-series
+> the current `torch==2.6.0+cu124` profile is incompatible with RTX 50-series
 > GPUs and cannot run the local CUDA voice models. Update the NVIDIA driver and
 > use the community-validated PyTorch 2.7.0 CUDA 12.8 combination instead:
 >
@@ -282,12 +282,12 @@ Torch 构建互斥。安装后必须先运行环境验证与真实 FP32 GPU comp
 >
 > 该组合目前尚未经过项目的完整 clean-install、ASR/TTS/VAD 与 Electron 回归；
 > 当前 `uv.lock` 与 `--profile cu124` 验证器仍以
-> `torch==2.5.1+cu124` 为准，因此不应将其视为 cu124 正式基线的替代品。
+> `torch==2.6.0+cu124` 为准，因此不应将其视为 cu124 正式基线的替代品。
 >
 > This combination has not yet passed the project's full clean-install,
 > ASR/TTS/VAD, and Electron regression gates. The current
 > `uv.lock` and `--profile cu124` verifier still require
-> `torch==2.5.1+cu124`, so this is not a replacement for the official cu124
+> `torch==2.6.0+cu124`, so this is not a replacement for the official cu124
 > baseline.
 
 ### 安装外部运行资产

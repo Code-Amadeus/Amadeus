@@ -54,8 +54,8 @@ vad = [
     "silero-vad==6.2.1",
 ]
 torch-cpu = [
-    "torch==2.5.1",
-    "torchaudio==2.5.1",
+    "torch==2.6.0",
+    "torchaudio==2.6.0",
 ]
 # T2b local model stack observed in the working Windows / Python 3.12 / cu124
 # environment. Includes the voice layer transitively (installed alongside).
@@ -64,8 +64,8 @@ torch-cpu = [
 # flash-attn is deliberately absent: Qwen ASR already falls back to Torch SDPA,
 # while no reproducible Windows cp312 wheel exists in the supported install path.
 local-cu124 = [
-    "torch==2.5.1",
-    "torchaudio==2.5.1",
+    "torch==2.6.0",
+    "torchaudio==2.6.0",
     "onnxruntime==1.26.0",
     "accelerate==1.12.0",
     "cn2an==0.5.24",
@@ -86,7 +86,7 @@ local-cu124 = [
     "OpenCC==1.3.1",
     "peft==0.19.1",
     "pytorch-lightning==2.6.4",
-    "pyopenjtalk==0.4.1",
+    "pyopenjtalk-plus==0.4.1.post9",
     "pypinyin==0.55.0",
     "qwen-asr==0.0.6",
     "rotary-embedding-torch==0.8.9",

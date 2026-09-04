@@ -164,7 +164,7 @@ cd ..
 ```
 
 `npm ci` uses the project postinstall hook to fetch the pinned Electron runtime.
-The cu124 profile fixes `torch==2.5.1+cu124`, `torchaudio==2.5.1+cu124`, and the
+The cu124 profile fixes `torch==2.6.0+cu124`, `torchaudio==2.6.0+cu124`, and the
 local-model dependency set; torch/torchaudio are routed to the PyTorch cu124
 index via `[tool.uv.sources]` (Windows + `local-cu124` extra only). All default
 tiers share `.venv`. For CPU VAD, select `--extra voice --extra vad --extra torch-cpu`

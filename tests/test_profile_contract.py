@@ -70,7 +70,7 @@ def test_core_and_voice_resolutions_remain_model_free(extras: tuple[str, ...]) -
 @pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
 @pytest.mark.parametrize(
     "build,version",
-    [("torch-cpu", "2.5.1+cpu"), ("local-cu124", "2.5.1+cu124")],
+    [("torch-cpu", "2.6.0+cpu"), ("local-cu124", "2.6.0+cu124")],
 )
 def test_windows_index_torch_selection_matches_the_requested_build(
     build: str, version: str
