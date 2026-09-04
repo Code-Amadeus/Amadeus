@@ -15,6 +15,12 @@ import {
   type McpConnectionUpdate,
 } from './desktopSettings.js'
 import { ChatAvatarStore, type ChatAvatarRole } from './chatAvatars.js'
+import {
+  WallpaperCanvasLifecycle,
+  wallpaperShapeSender,
+} from './wallpaperCanvasLifecycle.js'
+import { desktopPointHitsWindowRegions } from './wallpaperHitTesting.js'
+import { wallpaperWindowPolicy } from './wallpaperWindowPolicy.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -54,11 +60,16 @@ let mainWindow: BrowserWindow | null = null
 let workGlowWindow: BrowserWindow | null = null
 let workPanelWindow: BrowserWindow | null = null
 let electronSliceWindow: BrowserWindow | null = null
+const electronCanvasLifecycle = new WallpaperCanvasLifecycle<BrowserWindow>({
+  getCursorScreenPoint: () => screen.getCursorScreenPoint(),
+  pointHitsWindowRegions: desktopPointHitsWindowRegions,
+})
 let electronSliceBridgeKey = ''
 let electronSliceDesktopMonitor: ChildProcess | null = null
 let electronSliceMonitorRestartTimer: NodeJS.Timeout | null = null
 let electronSlicePlacementReady = false
 let electronSliceShape: Electron.Rectangle[] | null = null
+let electronSliceDocumentLoaded = false
 let electronSliceLayout = { x: 550 / 1672, y: 195 / 941, width: 586 / 1672, height: 443 / 941 }
 const auipAppWindows = new Set<BrowserWindow>()
 type AuipHostedSurface =
@@ -526,6 +537,14 @@ function normalizeWallpaperBridge(raw: unknown): WallpaperBridgeDescriptor | nul
 function electronSliceBounds(): Electron.Rectangle {
   const display = screen.getPrimaryDisplay()
   const displayBounds = display.bounds
+  if (wallpaperWindowPolicy(process.platform).hostMode === 'scene') {
+    return displayBounds
+  }
+  return electronCanvasBounds()
+}
+
+function electronCanvasBounds(): Electron.Rectangle {
+  const displayBounds = screen.getPrimaryDisplay().bounds
   const left = Math.floor(displayBounds.x + displayBounds.width * electronSliceLayout.x)
   const top = Math.floor(displayBounds.y + displayBounds.height * electronSliceLayout.y)
   const right = Math.ceil(left + displayBounds.width * electronSliceLayout.width)
@@ -538,7 +557,102 @@ function electronSliceUrl(bridge: WallpaperBridgeDescriptor): string {
     bridgePort: String(bridge.bridgePort),
     assetVersion: bridge.assetVersion,
   })
+  if (wallpaperWindowPolicy(process.platform).hostMode === 'scene') {
+    query.set('host', 'electron')
+    query.set('sliceHost', 'electron')
+    return `http://127.0.0.1:${bridge.assetPort}/render/web/wallpaper_engine.html?${query.toString()}`
+  }
   return `http://127.0.0.1:${bridge.assetPort}/render/web/electron_slice.html?${query.toString()}`
+}
+
+function electronCanvasUrl(bridge: WallpaperBridgeDescriptor): string {
+  const query = new URLSearchParams({
+    bridgePort: String(bridge.bridgePort),
+    assetVersion: bridge.assetVersion,
+  })
+  return `http://127.0.0.1:${bridge.assetPort}/render/web/electron_slice.html?${query.toString()}`
+}
+
+function closeElectronCanvasWindow(): void {
+  electronCanvasLifecycle.close()
+}
+
+function createElectronCanvasWindow(bridge: WallpaperBridgeDescriptor, bridgeKey: string): void {
+  const platformPolicy = wallpaperWindowPolicy(process.platform)
+  if (platformPolicy.hostMode !== 'scene') {
+    closeElectronCanvasWindow()
+    return
+  }
+  const existingWindow = electronCanvasLifecycle.window
+  if (existingWindow && !existingWindow.isDestroyed()) {
+    existingWindow.setBounds(electronCanvasBounds(), false)
+    if (electronCanvasLifecycle.bridgeKey !== bridgeKey) {
+      electronCanvasLifecycle.prepareReload(existingWindow, bridgeKey)
+      void existingWindow.loadURL(electronCanvasUrl(bridge))
+    }
+    return
+  }
+
+  const window = new BrowserWindow({
+    ...electronCanvasBounds(),
+    title: '',
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    show: false,
+    paintWhenInitiallyHidden: true,
+    fullscreenable: false,
+    resizable: false,
+    movable: false,
+    hasShadow: false,
+    skipTaskbar: true,
+    alwaysOnTop: false,
+    autoHideMenuBar: true,
+    ...platformPolicy.constructorOptions,
+    focusable: true,
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'preload', 'slice.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+    },
+  })
+  electronCanvasLifecycle.attach(window, bridgeKey)
+  window.setMenuBarVisibility(false)
+  if (platformPolicy.joinAllWorkspaces) {
+    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false })
+  }
+  if (platformPolicy.interactiveLevel) {
+    window.setAlwaysOnTop(
+      true,
+      platformPolicy.interactiveLevel.level,
+      platformPolicy.interactiveLevel.relativeLevel,
+    )
+  }
+  const allowedUrl = new URL(electronCanvasUrl(bridge))
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.webContents.on('will-attach-webview', event => event.preventDefault())
+  window.webContents.on('will-navigate', (event, target) => {
+    try {
+      const destination = new URL(target)
+      if (destination.origin !== allowedUrl.origin || destination.pathname !== allowedUrl.pathname) {
+        event.preventDefault()
+      }
+    } catch {
+      event.preventDefault()
+    }
+  })
+  window.webContents.on('did-start-loading', () => electronCanvasLifecycle.reset(window))
+  window.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
+    if (isMainFrame) console.error(`[electron-canvas] renderer load failed (${code}) ${description}: ${url}`)
+  })
+  void window.loadURL(allowedUrl.toString()).catch(error => {
+    console.error('[electron-canvas] failed to load Canvas host:', error)
+  })
+  window.on('closed', () => {
+    electronCanvasLifecycle.detach(window)
+  })
 }
 
 function electronNativeHandle(window: BrowserWindow): string {
@@ -562,14 +676,19 @@ function resetElectronSliceRenderReadiness(window: BrowserWindow): void {
   electronSliceShape = null
   if (window.isDestroyed()) return
   window.setIgnoreMouseEvents(true, { forward: true })
-  window.setShape([])
+  if (wallpaperWindowPolicy(process.platform).supportsWindowShape) window.setShape([])
   if (window.isVisible()) window.hide()
 }
 
 function applyElectronSliceShape(window: BrowserWindow): void {
   if (window.isDestroyed() || electronSliceShape === null) return
-  window.setShape(electronSliceShape)
-  window.setIgnoreMouseEvents(electronSliceShape.length === 0, { forward: true })
+  const policy = wallpaperWindowPolicy(process.platform)
+  if (policy.supportsWindowShape) {
+    window.setShape(electronSliceShape)
+    window.setIgnoreMouseEvents(electronSliceShape.length === 0, { forward: true })
+  } else {
+    window.setIgnoreMouseEvents(true, { forward: true })
+  }
 }
 
 function reconcileElectronSliceReadiness(window: BrowserWindow): void {
@@ -651,29 +770,43 @@ function startElectronSliceDesktopMonitor(window: BrowserWindow): void {
 }
 
 function updateElectronSliceBounds(): void {
-  if (!electronSliceWindow || electronSliceWindow.isDestroyed()) return
-  electronSliceWindow.setBounds(electronSliceBounds(), false)
+  if (electronSliceWindow && !electronSliceWindow.isDestroyed()) {
+    electronSliceWindow.setBounds(electronSliceBounds(), false)
+  }
+  const canvasWindow = electronCanvasLifecycle.window
+  if (canvasWindow && !canvasWindow.isDestroyed()) {
+    canvasWindow.setBounds(electronCanvasBounds(), false)
+  }
 }
 
 function closeElectronSliceWindow(): void {
   stopElectronSliceDesktopMonitor()
+  closeElectronCanvasWindow()
   electronSliceWindow?.close()
   electronSliceWindow = null
   electronSliceBridgeKey = ''
   electronSlicePlacementReady = false
   electronSliceShape = null
+  electronSliceDocumentLoaded = false
 }
 
 function createElectronSliceWindow(rawBridge: unknown): boolean {
   const bridge = normalizeWallpaperBridge(rawBridge)
   if (!bridge) return false
+  const platformPolicy = wallpaperWindowPolicy(process.platform)
   electronSliceLayout = bridge.sliceBounds
   const bridgeKey = `${bridge.assetPort}:${bridge.bridgePort}:${bridge.assetVersion}:${JSON.stringify(bridge.sliceBounds)}`
   if (electronSliceWindow && !electronSliceWindow.isDestroyed()) {
     updateElectronSliceBounds()
-    if (electronSliceBridgeKey !== bridgeKey) {
+    const bridgeChanged = electronSliceBridgeKey !== bridgeKey
+    if (bridgeChanged) {
       electronSliceBridgeKey = bridgeKey
       resetElectronSliceRenderReadiness(electronSliceWindow)
+    }
+    // Start the Canvas navigation first so Scene did-start-loading observes its
+    // pending reload instead of restarting the previous Canvas URL.
+    createElectronCanvasWindow(bridge, bridgeKey)
+    if (bridgeChanged) {
       void electronSliceWindow.loadURL(electronSliceUrl(bridge))
     }
     return true
@@ -687,7 +820,6 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
     backgroundColor: '#00000000',
     show: false,
     paintWhenInitiallyHidden: true,
-    focusable: true,
     fullscreenable: false,
     resizable: false,
     movable: false,
@@ -696,6 +828,7 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
     skipTaskbar: true,
     alwaysOnTop: false,
     autoHideMenuBar: true,
+    ...platformPolicy.constructorOptions,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'slice.cjs'),
       contextIsolation: true,
@@ -708,8 +841,19 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
   electronSliceBridgeKey = bridgeKey
   electronSlicePlacementReady = false
   electronSliceShape = null
+  electronSliceDocumentLoaded = false
   window.setMenuBarVisibility(false)
   window.setIgnoreMouseEvents(true, { forward: true })
+  if (platformPolicy.joinAllWorkspaces) {
+    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false })
+  }
+  if (platformPolicy.visibleLevel) {
+    window.setAlwaysOnTop(
+      true,
+      platformPolicy.visibleLevel.level,
+      platformPolicy.visibleLevel.relativeLevel,
+    )
+  }
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-attach-webview', event => event.preventDefault())
   const allowedUrl = new URL(electronSliceUrl(bridge))
@@ -723,8 +867,21 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
       event.preventDefault()
     }
   })
-  window.webContents.on('did-start-loading', () => resetElectronSliceRenderReadiness(window))
+  window.webContents.on('did-start-loading', () => {
+    const isSceneReload = electronSliceDocumentLoaded
+    resetElectronSliceRenderReadiness(window)
+    if (platformPolicy.hostMode === 'scene' && isSceneReload) {
+      electronCanvasLifecycle.reloadRenderer()
+    }
+  })
   window.webContents.on('did-finish-load', () => {
+    electronSliceDocumentLoaded = true
+    if (platformPolicy.hostMode === 'scene') {
+      const bounds = window.getContentBounds()
+      electronSliceShape = [{ x: 0, y: 0, width: bounds.width, height: bounds.height }]
+      reconcileElectronSliceReadiness(window)
+      return
+    }
     console.log('[electron-slice] renderer document loaded; awaiting shape commit')
   })
   window.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
@@ -735,8 +892,12 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
       console.error(`[electron-slice:renderer] ${message} (${sourceId}:${line})`)
     }
   })
-  window.webContents.on('render-process-gone', () => resetElectronSliceRenderReadiness(window))
+  window.webContents.on('render-process-gone', () => {
+    resetElectronSliceRenderReadiness(window)
+    if (platformPolicy.hostMode === 'scene') electronCanvasLifecycle.reset()
+  })
   window.once('ready-to-show', () => startElectronSliceDesktopMonitor(window))
+  createElectronCanvasWindow(bridge, bridgeKey)
   void window.loadURL(allowedUrl.toString()).catch(error => {
     console.error('[electron-slice] failed to load Slice host:', error)
   })
@@ -744,6 +905,10 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
     if (electronSliceWindow === window) {
       electronSliceWindow = null
       electronSliceBridgeKey = ''
+      electronSlicePlacementReady = false
+      electronSliceShape = null
+      electronSliceDocumentLoaded = false
+      closeElectronCanvasWindow()
     }
   })
   return true
@@ -2008,18 +2173,40 @@ ipcMain.handle('electron-slice.close', (event) => {
   return true
 })
 ipcMain.handle('electron-slice.set-shape', (event, boundsList: Electron.Rectangle[]) => {
-  const window = electronSliceWindow
-  if (!window || window.isDestroyed() || event.sender !== window.webContents) return false
+  const canvasWindow = electronCanvasLifecycle.window
+  const senderRole = wallpaperShapeSender(
+    event.sender,
+    electronSliceWindow?.webContents,
+    canvasWindow?.webContents,
+  )
+  const window = senderRole === 'canvas'
+    ? canvasWindow
+    : senderRole === 'scene'
+      ? electronSliceWindow
+      : null
+  if (!window || window.isDestroyed()) return false
   if (!Array.isArray(boundsList)) return false
-  const firstCommit = electronSliceShape === null
   const bounds = window.getContentBounds()
-  electronSliceShape = boundsList.map(item => {
+  const normalizedRegions = boundsList.map(item => {
     const left = Math.max(0, Math.round(Number(item?.x || 0)))
     const top = Math.max(0, Math.round(Number(item?.y || 0)))
     const right = Math.min(bounds.width, left + Math.max(0, Math.round(Number(item?.width || 0))))
     const bottom = Math.min(bounds.height, top + Math.max(0, Math.round(Number(item?.height || 0))))
     return { x: left, y: top, width: right - left, height: bottom - top }
   }).filter(item => item.width > 0 && item.height > 0)
+  if (senderRole === 'canvas') {
+    const result = electronCanvasLifecycle.commitRegions(window, normalizedRegions)
+    if (!result.accepted) return false
+    if (result.changed) {
+      console.log(`[electron-canvas] hit regions updated: ${result.count}`)
+    }
+    if (result.firstCommit && result.count > 0) {
+      console.log(`[electron-canvas] renderer hit regions committed: ${result.count}`)
+    }
+    return true
+  }
+  const firstCommit = electronSliceShape === null
+  electronSliceShape = normalizedRegions
   if (firstCommit) console.log(`[electron-slice] renderer shape committed: ${electronSliceShape.length} region(s)`)
   reconcileElectronSliceReadiness(window)
   return true
