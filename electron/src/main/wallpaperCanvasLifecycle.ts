@@ -9,6 +9,7 @@ export type WallpaperCanvasWindow = {
   hide: () => void
   isDestroyed: () => boolean
   isVisible: () => boolean
+  reload: () => void
   setIgnoreMouseEvents: (ignore: boolean, options: { forward: boolean }) => void
   showInactive: () => void
 }
@@ -46,6 +47,7 @@ export class WallpaperCanvasLifecycle<TWindow extends WallpaperCanvasWindow> {
   private hitRegionSignature = ''
   private hitTestTimer: unknown = null
   private ignoringMouse = true
+  private rendererLoadPending = false
   private readonly getCursorScreenPoint: () => Point
   private readonly pointHitsWindowRegions: LifecycleOptions['pointHitsWindowRegions']
   private readonly scheduler: Scheduler
@@ -71,6 +73,7 @@ export class WallpaperCanvasLifecycle<TWindow extends WallpaperCanvasWindow> {
       hitRegions: this.hitRegions.map(region => ({ ...region })),
       hitTestActive: this.hitTestTimer !== null,
       ignoringMouse: this.ignoringMouse,
+      rendererLoadPending: this.rendererLoadPending,
     }
   }
 
@@ -80,6 +83,7 @@ export class WallpaperCanvasLifecycle<TWindow extends WallpaperCanvasWindow> {
     this.currentBridgeKey = bridgeKey
     this.hitRegions = []
     this.hitRegionSignature = ''
+    this.rendererLoadPending = true
     this.stopHitTest()
     this.ignoringMouse = true
     if (!window.isDestroyed()) window.setIgnoreMouseEvents(true, { forward: true })
@@ -88,7 +92,16 @@ export class WallpaperCanvasLifecycle<TWindow extends WallpaperCanvasWindow> {
   prepareReload(window: TWindow, bridgeKey: string): boolean {
     if (this.currentWindow !== window || window.isDestroyed()) return false
     this.currentBridgeKey = bridgeKey
+    this.rendererLoadPending = true
     return this.reset(window)
+  }
+
+  reloadRenderer(window: TWindow | null = this.currentWindow): boolean {
+    if (!window || !this.reset(window)) return false
+    if (this.rendererLoadPending) return true
+    this.rendererLoadPending = true
+    window.reload()
+    return true
   }
 
   reset(window: TWindow | null = this.currentWindow): boolean {
@@ -105,6 +118,7 @@ export class WallpaperCanvasLifecycle<TWindow extends WallpaperCanvasWindow> {
       return { accepted: false, changed: false, firstCommit: false, count: 0 }
     }
     const firstCommit = this.hitRegions.length === 0
+    this.rendererLoadPending = false
     this.hitRegions = regions.map(region => ({ ...region }))
     const nextSignature = this.hitRegions
       .map(region => `${region.x},${region.y},${region.width},${region.height}`)
@@ -136,6 +150,7 @@ export class WallpaperCanvasLifecycle<TWindow extends WallpaperCanvasWindow> {
     this.hitRegions = []
     this.hitRegionSignature = ''
     this.ignoringMouse = true
+    this.rendererLoadPending = false
     if (window && !window.isDestroyed()) window.close()
   }
 
@@ -147,6 +162,7 @@ export class WallpaperCanvasLifecycle<TWindow extends WallpaperCanvasWindow> {
     this.hitRegions = []
     this.hitRegionSignature = ''
     this.ignoringMouse = true
+    this.rendererLoadPending = false
     return true
   }
 

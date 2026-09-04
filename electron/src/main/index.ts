@@ -69,6 +69,7 @@ let electronSliceDesktopMonitor: ChildProcess | null = null
 let electronSliceMonitorRestartTimer: NodeJS.Timeout | null = null
 let electronSlicePlacementReady = false
 let electronSliceShape: Electron.Rectangle[] | null = null
+let electronSliceDocumentLoaded = false
 let electronSliceLayout = { x: 550 / 1672, y: 195 / 941, width: 586 / 1672, height: 443 / 941 }
 const auipAppWindows = new Set<BrowserWindow>()
 type AuipHostedSurface =
@@ -786,6 +787,7 @@ function closeElectronSliceWindow(): void {
   electronSliceBridgeKey = ''
   electronSlicePlacementReady = false
   electronSliceShape = null
+  electronSliceDocumentLoaded = false
 }
 
 function createElectronSliceWindow(rawBridge: unknown): boolean {
@@ -796,12 +798,17 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
   const bridgeKey = `${bridge.assetPort}:${bridge.bridgePort}:${bridge.assetVersion}:${JSON.stringify(bridge.sliceBounds)}`
   if (electronSliceWindow && !electronSliceWindow.isDestroyed()) {
     updateElectronSliceBounds()
-    if (electronSliceBridgeKey !== bridgeKey) {
+    const bridgeChanged = electronSliceBridgeKey !== bridgeKey
+    if (bridgeChanged) {
       electronSliceBridgeKey = bridgeKey
       resetElectronSliceRenderReadiness(electronSliceWindow)
+    }
+    // Start the Canvas navigation first so Scene did-start-loading observes its
+    // pending reload instead of restarting the previous Canvas URL.
+    createElectronCanvasWindow(bridge, bridgeKey)
+    if (bridgeChanged) {
       void electronSliceWindow.loadURL(electronSliceUrl(bridge))
     }
-    createElectronCanvasWindow(bridge, bridgeKey)
     return true
   }
 
@@ -834,6 +841,7 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
   electronSliceBridgeKey = bridgeKey
   electronSlicePlacementReady = false
   electronSliceShape = null
+  electronSliceDocumentLoaded = false
   window.setMenuBarVisibility(false)
   window.setIgnoreMouseEvents(true, { forward: true })
   if (platformPolicy.joinAllWorkspaces) {
@@ -860,13 +868,14 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
     }
   })
   window.webContents.on('did-start-loading', () => {
-    const isSceneReload = electronSliceShape !== null
+    const isSceneReload = electronSliceDocumentLoaded
     resetElectronSliceRenderReadiness(window)
     if (platformPolicy.hostMode === 'scene' && isSceneReload) {
-      electronCanvasLifecycle.reset()
+      electronCanvasLifecycle.reloadRenderer()
     }
   })
   window.webContents.on('did-finish-load', () => {
+    electronSliceDocumentLoaded = true
     if (platformPolicy.hostMode === 'scene') {
       const bounds = window.getContentBounds()
       electronSliceShape = [{ x: 0, y: 0, width: bounds.width, height: bounds.height }]
@@ -896,6 +905,9 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
     if (electronSliceWindow === window) {
       electronSliceWindow = null
       electronSliceBridgeKey = ''
+      electronSlicePlacementReady = false
+      electronSliceShape = null
+      electronSliceDocumentLoaded = false
       closeElectronCanvasWindow()
     }
   })
