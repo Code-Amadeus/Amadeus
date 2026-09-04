@@ -12,6 +12,20 @@ type WallpaperWindowPolicy = {
   supportsWindowShape: boolean
 }
 
+// desktop, desktop-icon, and normal come from CGWindowLevelForKey on macOS
+// 26.6.2 (25G83); dockWallpaper and the two host levels were confirmed through
+// CGWindowListCopyWindowInfo with Electron 44.0.0. Electron exposes named
+// levels plus a relative offset but no CGWindowLevelForKey binding, so the
+// community candidate records the queried references and verified offsets.
+export const MACOS_WINDOW_LEVELS = Object.freeze({
+  dockWallpaper: -2147483624,
+  desktop: -2147483623,
+  scene: -2147483609,
+  finderDesktopIcons: -2147483603,
+  canvas: -2147483598,
+  normalApplication: 0,
+})
+
 export function wallpaperWindowPolicy(platform: NodeJS.Platform): WallpaperWindowPolicy {
   if (platform === 'darwin') {
     return {
@@ -22,12 +36,8 @@ export function wallpaperWindowPolicy(platform: NodeJS.Platform): WallpaperWindo
       },
       hostMode: 'scene',
       joinAllWorkspaces: true,
-      // Canvas controls sit above Finder's desktop-icon surface while remaining
-      // far below ordinary application windows.
-      interactiveLevel: { level: 'normal', relativeLevel: -2147483598 },
-      // The scene sits between the Dock wallpaper surface and Finder's
-      // desktop-icon surface. Electron's desktop type alone lands below both.
-      visibleLevel: { level: 'normal', relativeLevel: -2147483609 },
+      interactiveLevel: { level: 'normal', relativeLevel: MACOS_WINDOW_LEVELS.canvas },
+      visibleLevel: { level: 'normal', relativeLevel: MACOS_WINDOW_LEVELS.scene },
       supportsWindowShape: false,
     }
   }

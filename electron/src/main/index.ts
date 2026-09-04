@@ -15,6 +15,10 @@ import {
   type McpConnectionUpdate,
 } from './desktopSettings.js'
 import { ChatAvatarStore, type ChatAvatarRole } from './chatAvatars.js'
+import {
+  WallpaperCanvasLifecycle,
+  wallpaperShapeSender,
+} from './wallpaperCanvasLifecycle.js'
 import { desktopPointHitsWindowRegions } from './wallpaperHitTesting.js'
 import { wallpaperWindowPolicy } from './wallpaperWindowPolicy.js'
 
@@ -56,12 +60,10 @@ let mainWindow: BrowserWindow | null = null
 let workGlowWindow: BrowserWindow | null = null
 let workPanelWindow: BrowserWindow | null = null
 let electronSliceWindow: BrowserWindow | null = null
-let electronCanvasWindow: BrowserWindow | null = null
-let electronCanvasBridgeKey = ''
-let electronCanvasHitRegions: Electron.Rectangle[] = []
-let electronCanvasHitRegionSignature = ''
-let electronCanvasHitTestTimer: NodeJS.Timeout | null = null
-let electronCanvasIgnoringMouse = true
+const electronCanvasLifecycle = new WallpaperCanvasLifecycle<BrowserWindow>({
+  getCursorScreenPoint: () => screen.getCursorScreenPoint(),
+  pointHitsWindowRegions: desktopPointHitsWindowRegions,
+})
 let electronSliceBridgeKey = ''
 let electronSliceDesktopMonitor: ChildProcess | null = null
 let electronSliceMonitorRestartTimer: NodeJS.Timeout | null = null
@@ -570,53 +572,8 @@ function electronCanvasUrl(bridge: WallpaperBridgeDescriptor): string {
   return `http://127.0.0.1:${bridge.assetPort}/render/web/electron_slice.html?${query.toString()}`
 }
 
-function setElectronCanvasMousePassthrough(ignore: boolean): void {
-  const window = electronCanvasWindow
-  if (!window || window.isDestroyed() || electronCanvasIgnoringMouse === ignore) return
-  electronCanvasIgnoringMouse = ignore
-  window.setIgnoreMouseEvents(ignore, { forward: true })
-}
-
-function stopElectronCanvasHitTest(): void {
-  if (electronCanvasHitTestTimer) {
-    clearInterval(electronCanvasHitTestTimer)
-    electronCanvasHitTestTimer = null
-  }
-  if (electronCanvasWindow && !electronCanvasWindow.isDestroyed()) {
-    electronCanvasWindow.setIgnoreMouseEvents(true, { forward: true })
-  }
-  electronCanvasIgnoringMouse = true
-}
-
-function startElectronCanvasHitTest(): void {
-  if (electronCanvasHitTestTimer) return
-  electronCanvasHitTestTimer = setInterval(() => {
-    const window = electronCanvasWindow
-    if (!window || window.isDestroyed() || !window.isVisible()) return
-    const insideInteractiveRegion = desktopPointHitsWindowRegions(
-      screen.getCursorScreenPoint(),
-      window.getBounds(),
-      electronCanvasHitRegions,
-    )
-    setElectronCanvasMousePassthrough(!insideInteractiveRegion)
-  }, 40)
-}
-
-function resetElectronCanvasReadiness(window: BrowserWindow): void {
-  electronCanvasHitRegions = []
-  electronCanvasHitRegionSignature = ''
-  setElectronCanvasMousePassthrough(true)
-  if (!window.isDestroyed() && window.isVisible()) window.hide()
-}
-
 function closeElectronCanvasWindow(): void {
-  stopElectronCanvasHitTest()
-  const window = electronCanvasWindow
-  electronCanvasWindow = null
-  electronCanvasBridgeKey = ''
-  electronCanvasHitRegions = []
-  electronCanvasHitRegionSignature = ''
-  if (window && !window.isDestroyed()) window.close()
+  electronCanvasLifecycle.close()
 }
 
 function createElectronCanvasWindow(bridge: WallpaperBridgeDescriptor, bridgeKey: string): void {
@@ -625,12 +582,12 @@ function createElectronCanvasWindow(bridge: WallpaperBridgeDescriptor, bridgeKey
     closeElectronCanvasWindow()
     return
   }
-  if (electronCanvasWindow && !electronCanvasWindow.isDestroyed()) {
-    electronCanvasWindow.setBounds(electronCanvasBounds(), false)
-    if (electronCanvasBridgeKey !== bridgeKey) {
-      electronCanvasBridgeKey = bridgeKey
-      resetElectronCanvasReadiness(electronCanvasWindow)
-      void electronCanvasWindow.loadURL(electronCanvasUrl(bridge))
+  const existingWindow = electronCanvasLifecycle.window
+  if (existingWindow && !existingWindow.isDestroyed()) {
+    existingWindow.setBounds(electronCanvasBounds(), false)
+    if (electronCanvasLifecycle.bridgeKey !== bridgeKey) {
+      electronCanvasLifecycle.prepareReload(existingWindow, bridgeKey)
+      void existingWindow.loadURL(electronCanvasUrl(bridge))
     }
     return
   }
@@ -660,13 +617,8 @@ function createElectronCanvasWindow(bridge: WallpaperBridgeDescriptor, bridgeKey
       webSecurity: true,
     },
   })
-  electronCanvasWindow = window
-  electronCanvasBridgeKey = bridgeKey
-  electronCanvasHitRegions = []
-  electronCanvasHitRegionSignature = ''
-  electronCanvasIgnoringMouse = true
+  electronCanvasLifecycle.attach(window, bridgeKey)
   window.setMenuBarVisibility(false)
-  window.setIgnoreMouseEvents(true, { forward: true })
   if (platformPolicy.joinAllWorkspaces) {
     window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false })
   }
@@ -690,7 +642,7 @@ function createElectronCanvasWindow(bridge: WallpaperBridgeDescriptor, bridgeKey
       event.preventDefault()
     }
   })
-  window.webContents.on('did-start-loading', () => resetElectronCanvasReadiness(window))
+  window.webContents.on('did-start-loading', () => electronCanvasLifecycle.reset(window))
   window.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
     if (isMainFrame) console.error(`[electron-canvas] renderer load failed (${code}) ${description}: ${url}`)
   })
@@ -698,13 +650,7 @@ function createElectronCanvasWindow(bridge: WallpaperBridgeDescriptor, bridgeKey
     console.error('[electron-canvas] failed to load Canvas host:', error)
   })
   window.on('closed', () => {
-    if (electronCanvasWindow === window) {
-      electronCanvasWindow = null
-      electronCanvasBridgeKey = ''
-      electronCanvasHitRegions = []
-      electronCanvasHitRegionSignature = ''
-      stopElectronCanvasHitTest()
-    }
+    electronCanvasLifecycle.detach(window)
   })
 }
 
@@ -826,8 +772,9 @@ function updateElectronSliceBounds(): void {
   if (electronSliceWindow && !electronSliceWindow.isDestroyed()) {
     electronSliceWindow.setBounds(electronSliceBounds(), false)
   }
-  if (electronCanvasWindow && !electronCanvasWindow.isDestroyed()) {
-    electronCanvasWindow.setBounds(electronCanvasBounds(), false)
+  const canvasWindow = electronCanvasLifecycle.window
+  if (canvasWindow && !canvasWindow.isDestroyed()) {
+    canvasWindow.setBounds(electronCanvasBounds(), false)
   }
 }
 
@@ -912,7 +859,13 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
       event.preventDefault()
     }
   })
-  window.webContents.on('did-start-loading', () => resetElectronSliceRenderReadiness(window))
+  window.webContents.on('did-start-loading', () => {
+    const isSceneReload = electronSliceShape !== null
+    resetElectronSliceRenderReadiness(window)
+    if (platformPolicy.hostMode === 'scene' && isSceneReload) {
+      electronCanvasLifecycle.reset()
+    }
+  })
   window.webContents.on('did-finish-load', () => {
     if (platformPolicy.hostMode === 'scene') {
       const bounds = window.getContentBounds()
@@ -930,7 +883,10 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
       console.error(`[electron-slice:renderer] ${message} (${sourceId}:${line})`)
     }
   })
-  window.webContents.on('render-process-gone', () => resetElectronSliceRenderReadiness(window))
+  window.webContents.on('render-process-gone', () => {
+    resetElectronSliceRenderReadiness(window)
+    if (platformPolicy.hostMode === 'scene') electronCanvasLifecycle.reset()
+  })
   window.once('ready-to-show', () => startElectronSliceDesktopMonitor(window))
   createElectronCanvasWindow(bridge, bridgeKey)
   void window.loadURL(allowedUrl.toString()).catch(error => {
@@ -2205,11 +2161,18 @@ ipcMain.handle('electron-slice.close', (event) => {
   return true
 })
 ipcMain.handle('electron-slice.set-shape', (event, boundsList: Electron.Rectangle[]) => {
-  const isCanvasSender = !!electronCanvasWindow
-    && !electronCanvasWindow.isDestroyed()
-    && event.sender === electronCanvasWindow.webContents
-  const window = isCanvasSender ? electronCanvasWindow : electronSliceWindow
-  if (!window || window.isDestroyed() || event.sender !== window.webContents) return false
+  const canvasWindow = electronCanvasLifecycle.window
+  const senderRole = wallpaperShapeSender(
+    event.sender,
+    electronSliceWindow?.webContents,
+    canvasWindow?.webContents,
+  )
+  const window = senderRole === 'canvas'
+    ? canvasWindow
+    : senderRole === 'scene'
+      ? electronSliceWindow
+      : null
+  if (!window || window.isDestroyed()) return false
   if (!Array.isArray(boundsList)) return false
   const bounds = window.getContentBounds()
   const normalizedRegions = boundsList.map(item => {
@@ -2219,25 +2182,14 @@ ipcMain.handle('electron-slice.set-shape', (event, boundsList: Electron.Rectangl
     const bottom = Math.min(bounds.height, top + Math.max(0, Math.round(Number(item?.height || 0))))
     return { x: left, y: top, width: right - left, height: bottom - top }
   }).filter(item => item.width > 0 && item.height > 0)
-  if (isCanvasSender) {
-    const firstCommit = electronCanvasHitRegions.length === 0
-    electronCanvasHitRegions = normalizedRegions
-    const nextSignature = normalizedRegions
-      .map(region => `${region.x},${region.y},${region.width},${region.height}`)
-      .join(';')
-    if (nextSignature !== electronCanvasHitRegionSignature) {
-      electronCanvasHitRegionSignature = nextSignature
-      console.log(`[electron-canvas] hit regions updated: ${normalizedRegions.length}`)
+  if (senderRole === 'canvas') {
+    const result = electronCanvasLifecycle.commitRegions(window, normalizedRegions)
+    if (!result.accepted) return false
+    if (result.changed) {
+      console.log(`[electron-canvas] hit regions updated: ${result.count}`)
     }
-    if (normalizedRegions.length === 0) {
-      setElectronCanvasMousePassthrough(true)
-      if (window.isVisible()) window.hide()
-      return true
-    }
-    if (!window.isVisible()) window.showInactive()
-    startElectronCanvasHitTest()
-    if (firstCommit) {
-      console.log(`[electron-canvas] renderer hit regions committed: ${normalizedRegions.length}`)
+    if (result.firstCommit && result.count > 0) {
+      console.log(`[electron-canvas] renderer hit regions committed: ${result.count}`)
     }
     return true
   }
