@@ -237,13 +237,20 @@ class Qwen3ASRBackend(BaseASRBackend):
             extra_kwargs = {}
             attn_impl = "eager"
             if "cuda" in device_map:
-                try:
-                    import flash_attn  # noqa: F401
-                    extra_kwargs["attn_implementation"] = "flash_attention_2"
-                    attn_impl = "flash_attention_2"
-                except ImportError:
-                    extra_kwargs["attn_implementation"] = "sdpa"
-                    attn_impl = "sdpa"
+                # ROCm reuses the torch.cuda API.  The current Windows ROCm
+                # build has unreliable default SDPA kernels on RDNA 4, so use
+                # eager attention for correctness until that runtime is fixed.
+                if getattr(torch.version, "hip", None):
+                    extra_kwargs["attn_implementation"] = "eager"
+                    attn_impl = "eager"
+                else:
+                    try:
+                        import flash_attn  # noqa: F401
+                        extra_kwargs["attn_implementation"] = "flash_attention_2"
+                        attn_impl = "flash_attention_2"
+                    except ImportError:
+                        extra_kwargs["attn_implementation"] = "sdpa"
+                        attn_impl = "sdpa"
 
             logger.info(
                 "[ASR:Qwen3ASR] torch runtime exe=%s torch=%s cuda_available=%s "
@@ -279,6 +286,17 @@ class Qwen3ASRBackend(BaseASRBackend):
                 max_new_tokens=_MAX_TOKENS_CAP,
                 **extra_kwargs,
             )
+            if getattr(torch.version, "hip", None):
+                hf_model = getattr(model, "model", None)
+                set_attention = getattr(hf_model, "set_attn_implementation", None)
+                if callable(set_attention):
+                    set_attention("eager")
+                    attn_impl = "eager_recursive"
+                else:
+                    torch.backends.cuda.enable_flash_sdp(False)
+                    torch.backends.cuda.enable_mem_efficient_sdp(False)
+                    torch.backends.cuda.enable_math_sdp(True)
+                    attn_impl = "eager+math_sdp"
             dt = time.perf_counter() - t0
             Qwen3ASRBackend._shared_model = model
             Qwen3ASRBackend._shared_device = device_map
@@ -363,7 +381,8 @@ class Qwen3ASRBackend(BaseASRBackend):
                     logger.info(
                         "[ASR:Qwen3ASR] ready "
                         f"(device={msg.get('device', '?')}, "
-                        f"attn={msg.get('attn_impl', msg.get('flash_attn', '?'))})"
+                        f"attn={msg.get('attn_impl', msg.get('flash_attn', '?'))}, "
+                        f"warmup={msg.get('warmup_ms', 0)}ms)"
                     )
                     Qwen3ASRBackend._shared_proc = proc
                     self._mode = "sidecar"

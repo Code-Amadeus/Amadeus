@@ -173,10 +173,14 @@ CUDA build extras are mutually exclusive. `uv sync` is exact: give the complete
 target selection each time, including `--extra dev` when needed.
 
 CI pins uv 0.12.8. Windows is the reference platform; macOS core/voice is being
-qualified separately. AMD ROCm integration materials and the community-reported
-RTX 50-series Torch 2.7.0/cu128 combination are separate candidates, not qualified
-replacements for this lock. See [installation profiles and migration](docs/install_profiles.md)
-for the commands, explicit model interpreters, evidence limits and rollback.
+qualified separately. An opt-in `local-rocm` selection locks AMD's Windows ROCm
+7.2.1 and Torch 2.9.1 packages into the same project `.venv`; persistent ASR/TTS
+sidecars use that interpreter and remain disabled by default. It is an experimental
+candidate until a supported AMD GPU completes the clean-machine journeys. The
+community-reported RTX 50-series Torch 2.7.0/cu128 combination remains a separate
+configuration record. See [installation profiles and migration](docs/install_profiles.md)
+and the [Windows ROCm sidecar preview](tools/rocm_sidecar/README.md) for commands,
+device gates, evidence limits, and rollback.
 
 ### Install external runtime assets
 

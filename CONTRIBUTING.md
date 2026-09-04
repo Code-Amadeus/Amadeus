@@ -2,7 +2,7 @@
 
 Amadeus currently verifies development on Windows with CPython 3.12.10 and
 Node.js 22. Start with the model-less CPU profile described in `README.md`; local
-CUDA ASR/TTS remains an optional profile.
+GPU ASR/TTS remains optional, and Windows ROCm is an experimental candidate.
 
 CI pins uv 0.12.8. See [installation profiles](docs/install_profiles.md) for
 CPU VAD, CUDA selection and migration from an existing environment.

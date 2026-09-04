@@ -144,8 +144,9 @@ placeholder，本版本不声称已经发布独立 SDK 或 conformance suite。
 依赖按能力分四级：先装最小的 L1 跑通，再按需升梯（torch 只在 L3/L4 进入
 安装）。Windows 是当前参考平台，macOS 的 L1/L2 安装与 CI 单独验证；实际
 桌面、麦克风和播放体验仍需设备验收。L3 可选择 CPU VAD，**无需 NVIDIA GPU**；
-L4 的当前 cu124 配置面向 Windows + NVIDIA。AMD ROCm 社区接入资料与
-RTX 50 系 cu128 配置分阶段验证，尚未成为此锁的正式安装配置。
+L4 的当前 cu124 配置面向 Windows + NVIDIA。Windows ROCm 7.2.1 已有互斥的
+`local-rocm` 实验锁与验证入口，但尚未完成受支持 AMD GPU 的端到端验收；RTX 50 系
+cu128 仍是社区配置记录。
 统一使用 [uv](https://docs.astral.sh/uv/) 与 Python 3.12，CI 固定 uv 0.12.8。
 
 | 梯级 | 能力 | 平台 | 安装方式 |
@@ -154,10 +155,12 @@ RTX 50 系 cu128 配置分阶段验证，尚未成为此锁的正式安装配置
 | L2 voice | 说（远程 TTS、播放、口型）+ 听（麦克风、远程 ASR）| Windows / macOS | `uv sync --locked --extra voice` |
 | L3 CPU VAD | 实时打断（角色说话时可以插话）| CPU，无 NVIDIA GPU 前提 | `uv sync --locked --extra voice --extra vad --extra torch-cpu` |
 | L4 local-cu124 | 本地 GPT-SoVITS / Qwen3 ASR / 唤醒词 | Windows + NVIDIA GPU | `uv sync --locked --extra voice --extra vad --extra local-cu124` |
+| 实验 local-rocm | 本地 GPT-SoVITS / Qwen3 ASR sidecar | Windows + AMD 官方矩阵内 GPU | `uv sync --locked --extra voice --extra vad --extra local-rocm` |
 
-四个默认梯级共用**同一个 `.venv`**。每次给出完整目标配置：`uv sync` 会精确同步，
-漏带会移除已装层。`torch-cpu` 与 `local-cu124` 互斥；从 CPU VAD 切到本地模型时，
-将前者替换成后者，并保留 `voice`、`vad`。详见[安装配置与迁移](docs/install_profiles.md)。
+四个默认梯级与 ROCm 实验选项均使用**同一个 `.venv`**。每次给出完整目标配置：
+`uv sync` 会精确同步，漏带会移除已装层。`torch-cpu`、`local-cu124` 与
+`local-rocm` 两两互斥；切换构建时替换对应 extra，并保留 `voice`、`vad`。
+详见[安装配置与迁移](docs/install_profiles.md)。
 
 - 主 Chat 默认远程 DeepSeek；llama.cpp 是可选本地 LLM profile（见
   [兼容路径](#兼容路径)），不是安装前提。
@@ -165,7 +168,8 @@ RTX 50 系 cu128 配置分阶段验证，尚未成为此锁的正式安装配置
   silero 精准端点与打断。
 - Windows 上每装完一级可验证导入合同（`ci` 同 `cpu`）：
   `uv run --locked --no-sync python tools/verify_python_environment.py --profile <cpu|voice|vad-cpu>`，
-  L4 用 `--profile cu124 --require-cuda-device`。导入/构建验证不替代真实模型与音频设备测试。
+  L4 用 `--profile cu124 --require-cuda-device`；ROCm 实验入口用 `--profile rocm`
+  并继续执行 GPU compute probe。导入/构建验证不替代真实模型与音频设备测试。
 - 纯文字 / headless（CI）场景用 L1 即可：`uv run --locked --no-sync python -m server.app --port 17777`
   直接启动后端；严格文字模式设置 `TTS_BACKEND=disabled` 并关闭 Wake。
 
@@ -240,8 +244,15 @@ uv run --locked --no-sync python tools\verify_python_environment.py --profile cu
 L4 profile 固定 `torch==2.5.1+cu124`、`torchaudio==2.5.1+cu124` 和本地模型
 依赖集；它以当前实际运行环境为第一版基线。
 
-CPU VAD 与 NVIDIA 本地模型分别验证。AMD ROCm 社区方案正在评估，其模型
-解释器可通过显式配置接入；相关 TTS adapter 和正式安装锁尚未在本次迁移中交付。
+**实验 local-rocm（Windows）**：同一 `.venv` 可精确选择 AMD 官方 ROCm 7.2.1、
+Torch/Torchaudio 2.9.1 与完整本地模型依赖；Qwen ASR 和 GPT-SoVITS 在常驻 sidecar
+子进程中运行，但默认仍使用当前 `.venv` 的解释器。该入口默认关闭，且与 cu124/CPU
+Torch 构建互斥。安装后必须先运行环境验证与真实 FP32 GPU compute probe；即使
+`torch.cuda.is_available()` 返回 True，compute 失败也不得继续模型测试。完整命令、
+设备矩阵和验收边界见 [Windows ROCm 实验 sidecar](tools/rocm_sidecar/README.md)。
+
+本机 Radeon 780M（gfx1103）实测可被 ROCm 枚举，但首次 FP32 计算在 AMD HIP DLL
+中崩溃；该核显不在 AMD 官方 7.2.1 Windows PyTorch 矩阵内，因此不能作为可用目标。
 
 > **GeForce RTX 50 系（Blackwell，社区验证配置）**：本项目当前使用的
 > `torch==2.5.1+cu124` profile 不兼容 RTX 50 系，无法运行本地 CUDA
@@ -425,7 +436,8 @@ Settings 不会回写 `.env`。普通模型、语音、麦克风、Provider/MCP�
 | L1/L2（文字 + 远程语音）| Windows 与 macOS 源码部署；macOS 为实测路径，官方 CI/锁文件仍以 Windows 为准 |
 | L3 CPU VAD | 不要求 NVIDIA GPU；使用明确的 CPU 构建配置 |
 | L4 cu124（本地 CUDA 12.4 语音）| Windows + NVIDIA；以当前实际运行环境为参考 |
-| AMD ROCm / RTX 50 系 cu128 | 社区实验资料或配置记录，项目完整验证待补齐 |
+| AMD ROCm 7.2.1 | 单 `.venv` 实验锁、sidecar adapter 与失败闭环已提供；受支持 AMD GPU 实机验收待补齐 |
+| RTX 50 系 cu128 | 社区配置记录，尚无正式锁与完整回归 |
 | 8 GiB VRAM / 16–32 GiB RAM | 目标配置；实际占用由模型组合决定 |
 | 远程 DeepSeek Main Chat | 第一版默认 profile |
 | 远程 ASR / TTS | 显式兼容路径，不静默 fallback |

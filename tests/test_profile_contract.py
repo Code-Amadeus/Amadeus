@@ -29,8 +29,10 @@ def test_capability_declarations_do_not_choose_a_gpu_build() -> None:
     assert not _names(extras["voice"]) & {"torch", "torchaudio", "silero-vad"}
     assert "silero-vad" in _names(extras["vad"])
     assert "torch" not in _names(extras["vad"])
-    for build in ("torch-cpu", "local-cu124"):
+    for build in ("torch-cpu", "local-cu124", "local-rocm"):
         assert {"torch", "torchaudio"} <= _names(extras[build])
+    assert {"torchvision", "rocm", "rocm-sdk-core"} <= _names(extras["local-rocm"])
+    assert all("sys_platform == 'win32'" in item for item in extras["local-rocm"])
 
 
 def _export(*extras: str) -> subprocess.CompletedProcess[str]:
@@ -66,8 +68,13 @@ def test_core_and_voice_resolutions_remain_model_free(extras: tuple[str, ...]) -
 
 
 @pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
-@pytest.mark.parametrize("build,version", [("torch-cpu", "2.5.1+cpu"), ("local-cu124", "2.5.1+cu124")])
-def test_windows_torch_selection_matches_the_requested_build(build: str, version: str) -> None:
+@pytest.mark.parametrize(
+    "build,version",
+    [("torch-cpu", "2.5.1+cpu"), ("local-cu124", "2.5.1+cu124")],
+)
+def test_windows_index_torch_selection_matches_the_requested_build(
+    build: str, version: str
+) -> None:
     result = _export("voice", "vad", build)
     assert result.returncode == 0, result.stderr
     selected = _selected_requirements(result.stdout, "win32")
@@ -78,11 +85,37 @@ def test_windows_torch_selection_matches_the_requested_build(build: str, version
     assert "+cu124" not in str(macos["torch"].specifier)
 
 
+@pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
+def test_windows_rocm_selection_uses_only_the_fixed_amd_wheels() -> None:
+    result = _export("voice", "vad", "local-rocm")
+    assert result.returncode == 0, result.stderr
+    selected = _selected_requirements(result.stdout, "win32")
+    expected = {
+        "torch": "torch-2.9.1%2Brocm7.2.1",
+        "torchaudio": "torchaudio-2.9.1%2Brocm7.2.1",
+        "torchvision": "torchvision-0.24.1%2Brocm7.2.1",
+    }
+    for name, wheel in expected.items():
+        assert selected[name].url is not None
+        assert selected[name].url.startswith("https://repo.radeon.com/rocm/windows/")
+        assert wheel in selected[name].url
+    assert selected["rocm"].url is not None
+    assert "rocm-7.2.1" in selected["rocm"].url
+
+
 @pytest.mark.skipif(UV is None, reason="uv is required to check conflicting selections")
-def test_cpu_and_cuda_builds_cannot_be_selected_together() -> None:
-    result = _export("torch-cpu", "local-cu124")
+@pytest.mark.parametrize(
+    "left,right",
+    [
+        ("torch-cpu", "local-cu124"),
+        ("torch-cpu", "local-rocm"),
+        ("local-cu124", "local-rocm"),
+    ],
+)
+def test_torch_builds_cannot_be_selected_together(left: str, right: str) -> None:
+    result = _export(left, right)
     assert result.returncode != 0
-    assert "torch-cpu" in result.stderr and "local-cu124" in result.stderr
+    assert left in result.stderr and right in result.stderr
 
 
 def test_verify_profiles_cover_the_capability_ladder() -> None:
@@ -93,6 +126,7 @@ def test_verify_profiles_cover_the_capability_ladder() -> None:
     assert all(lower < upper for lower, upper in zip(chain, chain[1:]))
     assert ladder["vad-cpu"] == ladder["vad"]
     assert set(vpe.LOCAL_MODEL_IMPORTS) <= set(ladder["cu124"]) - set(ladder["vad"])
+    assert set(ladder["rocm"]) == set(ladder["cu124"]) | {"torchvision"}
 
 
 @pytest.mark.skipif(UV is None, reason="uv is required for lock consistency")
