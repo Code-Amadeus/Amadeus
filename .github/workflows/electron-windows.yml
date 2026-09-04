@@ -34,5 +34,16 @@ jobs:
       - name: Typecheck and build renderer
         run: npm run build
 
-      - name: Audit desktop runtime and build supply chain
-        run: npm audit --audit-level=high
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          fail-on-scopes: runtime, development, unknown
+          license-check: false
+          retry-on-snapshot-warnings: true

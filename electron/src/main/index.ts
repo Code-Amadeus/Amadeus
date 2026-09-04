@@ -16,6 +16,7 @@ import {
 } from './desktopSettings.js'
 import { ChatAvatarStore, type ChatAvatarRole } from './chatAvatars.js'
 import { applicationMenuTemplate } from './applicationMenu.js'
+import { defaultMpsFallbackEnvironment } from './mpsFallbackPolicy.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -370,11 +371,15 @@ async function startBackend(): Promise<void> {
     AEC_REALTIME_DELAY_MS: '280',
     ASR_ECHO_TAIL_GUARD_MS: '650',
   })
+  const backendProcessEnvironment = {
+    ...backendEnvironment,
+    ...process.env,
+  }
   pythonProcess = spawn(python, ['-m', 'server.app', '--port', String(BACKEND_PORT)], {
     cwd: PROJECT_ROOT,
     env: {
-      ...backendEnvironment,
-      ...process.env,
+      ...backendProcessEnvironment,
+      ...defaultMpsFallbackEnvironment(process.platform, process.arch, backendProcessEnvironment),
       PYTHONUNBUFFERED: '1',
       PYTHONUTF8: '1',
       PYTHONIOENCODING: 'utf-8',
