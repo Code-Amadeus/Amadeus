@@ -7,6 +7,7 @@ import importlib
 import importlib.metadata
 import os
 import platform
+import shutil
 import subprocess
 import sys
 
@@ -68,6 +69,11 @@ def _distribution_installed(name: str) -> bool:
     return True
 
 
+# L3/L4 tiers are a Windows product boundary (CUDA local stacks, Win32 audio);
+# only those profiles require Windows. L1 core / L2 voice verify on any platform.
+_WINDOWS_ONLY_PROFILES = frozenset({"vad", "cu124"})
+
+
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise RuntimeError(message)
@@ -75,7 +81,8 @@ def _require(condition: bool, message: str) -> None:
 
 def verify(profile: str, *, require_cuda_device: bool = False) -> None:
     _require(sys.version_info[:2] == (3, 12), "CPython 3.12 is required")
-    _require(platform.system() == "Windows", "the release profiles target Windows")
+    if profile in _WINDOWS_ONLY_PROFILES:
+        _require(platform.system() == "Windows", "L3/L4 profiles target Windows")
 
     if profile in {"cpu", "ci"}:
         os.environ.setdefault("TTS_DEVICE", "cpu")
@@ -113,11 +120,22 @@ def verify(profile: str, *, require_cuda_device: bool = False) -> None:
     else:
         torch_summary = ""
 
-    subprocess.run(
-        [sys.executable, "-m", "pip", "check"],
-        text=True,
-        check=True,
-    )
+    # Dependency consistency check. uv-managed venvs (uv sync) ship no pip, so
+    # prefer `uv pip check` when uv is on PATH; fall back to the classic pip
+    # check for pip-provisioned environments.
+    uv = shutil.which("uv")
+    if uv:
+        subprocess.run(
+            [uv, "pip", "check", "--python", sys.executable],
+            text=True,
+            check=True,
+        )
+    else:
+        subprocess.run(
+            [sys.executable, "-m", "pip", "check"],
+            text=True,
+            check=True,
+        )
     print(
         "environment ok: "
         f"profile={profile} python={platform.python_version()}"

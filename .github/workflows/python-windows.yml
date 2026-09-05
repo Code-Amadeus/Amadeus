@@ -17,11 +17,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v7
+      - uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.12.10"
-          cache: pip
-          cache-dependency-path: requirements/locks/windows-py312-ci.txt
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
       - uses: actions/setup-node@v7
         with:
@@ -29,33 +29,29 @@ jobs:
           cache: npm
           cache-dependency-path: electron/package-lock.json
 
-      - name: Install locked environment
+      - name: Install locked environment (L1 + dev tooling)
         shell: bash
-        run: |
-          python -m pip install --upgrade pip==26.2 setuptools==83.0.0 wheel==0.47.0
-          python -m pip install uv==0.12.8
-          python -m pip install -r requirements-dev.txt
-          python -m pip install --no-deps --no-build-isolation -e .
+        run: uv sync --locked --extra dev
 
       - name: Verify environment
-        run: python tools/verify_python_environment.py --profile ci
+        run: uv run --locked --no-sync python tools/verify_python_environment.py --profile ci
 
       - name: Check source and architecture views
         # bash (not pwsh): Actions runs bash with -e, so a ruff failure must
         # fail the step instead of being masked by the next command's exit 0.
         shell: bash
         run: |
-          python -m ruff check .
-          python tools/architecture/generate_views.py --check
+          uv run --locked --no-sync python -m ruff check .
+          uv run --locked --no-sync python tools/architecture/generate_views.py --check
 
       - name: Audit Python dependencies
         # Accepted until the already-green suite is qualified on pytest 9.
         run: >-
-          python -m pip_audit --local --progress-spinner off
+          uv run --locked --no-sync python -m pip_audit --local --progress-spinner off
           --ignore-vuln PYSEC-2026-1845
 
       - name: Run Python suites
-        run: python -X utf8 tools/run_tests.py
+        run: uv run --locked --no-sync python -X utf8 tools/run_tests.py
 
       - name: Build Electron model-less smoke target
         working-directory: electron
@@ -66,7 +62,7 @@ jobs:
 
       - name: Run Electron model-less smoke
         run: >-
-          python -X utf8 tools\smoke_electron_model_less.py
+          uv run --locked --no-sync python -X utf8 tools\smoke_electron_model_less.py
           --report-dir build\electron-smoke
 
       - name: Upload Electron smoke diagnostics
@@ -75,4 +71,50 @@ jobs:
         with:
           name: electron-model-less-smoke-${{ github.run_id }}
           path: build/electron-smoke/**
+          if-no-files-found: ignore
+
+  # Windows clean-install proof of the single-.venv L1 → L4 ladder: the same
+  # .venv is upgraded in place, torch flips to the +cu124 build, and no second
+  # venv (e.g. .venv_cu124) is ever created.
+  single-venv-ladder:
+    runs-on: windows-2025
+    timeout-minutes: 40
+    env:
+      AMADEUS_E2E_NO_TTS: "1"
+      TTS_DEVICE: "cpu"
+      WORK_WORKTREE_ISOLATION: "0"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: L1 core
+        run: uv sync --locked
+      - name: L2 voice
+        run: uv sync --locked --extra voice
+      - name: L3 vad
+        run: uv sync --locked --extra voice --extra vad
+      - name: L4 local-cu124
+        run: uv sync --locked --extra voice --extra vad --extra local-cu124
+
+      - name: Assert single venv and cu124 torch
+        shell: bash
+        run: |
+          test ! -d .venv_cu124 && test ! -d .venv_pt251 || { echo "second venv created"; exit 1; }
+          uv run --locked --no-sync python -c "import torch; assert torch.__version__.endswith('+cu124'), torch.__version__; print('torch', torch.__version__)"
+          # cu124 wheel presence (build target), not a CUDA device: hosted runners have no GPU.
+          uv run --locked --no-sync python tools/verify_python_environment.py --profile cu124
+
+      - name: Upload wheelhouse diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ladder-${{ github.run_id }}
+          path: |
+            uv.lock
           if-no-files-found: ignore

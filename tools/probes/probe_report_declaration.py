@@ -25,7 +25,7 @@ Three things could be behind it, and they point at different fixes:
     needs protecting.
   * **Depth.** If a long history hurts, the contract is being diluted.
 
-    .venv_cu124\\Scripts\\python.exe -X utf8 tools/probes/probe_report_declaration.py [repeats]
+    .venv\\Scripts\\python.exe -X utf8 tools/probes/probe_report_declaration.py [repeats]
 
 Outcomes are three-way, not pass/fail. Emitting no tag is the measured
 failure; emitting `intent="execute"` would be far worse, because a question

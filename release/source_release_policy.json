@@ -35,18 +35,11 @@
     "README_EN.md",
     "ROADMAP.md",
     "main.py",
-    "requirements-cu124.txt",
-    "requirements-dev.txt",
-    "requirements.txt",
-    "requirements/locks/README.md",
-    "requirements/locks/windows-py312-ci.txt",
-    "requirements/locks/windows-py312-cpu.txt",
-    "requirements/locks/windows-py312-cu124-observed.txt",
-    "run_electron_cu124.bat",
     "run_electron_utf8.bat",
     "SECURITY.md",
     "SUPPORT.md",
-    "pyproject.toml"
+    "pyproject.toml",
+    "uv.lock"
   ],
   "include_roots": [
     ".github",
@@ -64,7 +57,6 @@
     "openclaw",
     "release",
     "render",
-    "requirements",
     "sdk",
     "schemas",
     "server",
@@ -100,16 +92,13 @@
     "ROADMAP.md",
     "main.py",
     "run_electron_utf8.bat",
-    "run_electron_cu124.bat",
     "start_hybrid_llm.bat",
     "start_llm_server.bat",
     "SECURITY.md",
     "SUPPORT.md",
     "THIRD_PARTY_NOTICES.md",
     "pyproject.toml",
-    "requirements-cu124.txt",
-    "requirements.txt",
-    "requirements-dev.txt"
+    "uv.lock"
   ],
   "exclude_globs": [
     ".github/ISSUE_TEMPLATE/config.yml",

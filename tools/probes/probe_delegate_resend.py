@@ -15,7 +15,7 @@ Driving this through the routing testbed would mean waiting for the model to
 omit a tag on its own, which happens in under a tenth of runs. The ask itself
 needs no backend, no Codex and no ledger, so it is measured directly.
 
-    .venv_cu124\\Scripts\\python.exe -X utf8 tools/probes/probe_delegate_resend.py [repeats]
+    .venv\\Scripts\\python.exe -X utf8 tools/probes/probe_delegate_resend.py [repeats]
 
 Re-run after changing model or endpoint; the numbers are pinned to both.
 """

@@ -1,7 +1,7 @@
 """
 Qwen3-ASR-0.6B sidecar 子进程
 
-运行环境：.venv_asr（包含 qwen-asr / torch 2.6+cu124 / transformers 4.57.6）
+运行环境：仓库根 `.venv`（L4 local-cu124 梯级，包含 qwen-asr / torch 2.5.1+cu124 / transformers 4.57.6）
 
 IPC 协议（stdin/stdout JSON Lines）：
   父进程 → 子进程：{

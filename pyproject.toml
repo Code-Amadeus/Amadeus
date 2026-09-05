@@ -48,12 +48,17 @@ voice = [
     "scipy==1.17.1",
     "soundfile==0.13.1",
 ]
-# L3 realtime interruption: silero VAD for barge-in. Pulls torch transitively.
+# L3 realtime interruption: silero VAD for barge-in. torch is pinned here at the
+# same 2.5.1 the L4 stack uses, so L3 → L4 is a same-version wheel swap
+# (PyPI CPU → cu124) instead of a version jump the resolver has to reconcile.
 vad = [
     "silero-vad==6.2.1",
+    "torch==2.5.1",
 ]
 # T2b local model stack observed in the working Windows / Python 3.12 / cu124
 # environment. Includes the voice layer transitively (installed alongside).
+# torch/torchaudio are declared with bare versions here; when this extra is
+# active on Windows, [tool.uv.sources] below redirects them to the cu124 index.
 # flash-attn is deliberately absent: Qwen ASR already falls back to Torch SDPA,
 # while no reproducible Windows cp312 wheel exists in the supported install path.
 local-cu124 = [
@@ -103,6 +108,23 @@ dev = [
     "wheel==0.47.0",
 ]
 
+# uv project wiring: a single layered .venv serves L1 → L4. torch/torchaudio
+# resolve from PyPI for L1–L3; selecting the local-cu124 extra on Windows
+# redirects them to the PyTorch CUDA 12.4 index, which provides the cu124
+# builds those local-model tiers run on.
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu124", extra = "local-cu124", marker = "sys_platform == 'win32'" },
+]
+torchaudio = [
+    { index = "pytorch-cu124", extra = "local-cu124", marker = "sys_platform == 'win32'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
@@ -148,7 +170,9 @@ extend-exclude = [
     "GPT_SoVITS",
     "assets",
     ".venv",
-    ".venv_cu124",
+    # Trellis agent platform: session/task tooling and generated spec files are
+    # not first-party runtime code and are not lint targets.
+    ".trellis",
     # Same origin, under tools/. Everything listed here dates to the initial
     # commit; the first-party tooling beside it (probes, e2e journeys,
     # run_tests) is deliberately still linted.

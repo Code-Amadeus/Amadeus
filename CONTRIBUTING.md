@@ -30,11 +30,10 @@ mainline status merely because its implementation exists.
 Create the supported CPU/model-less environment from the repository root:
 
 ```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe -m pip install --no-deps --no-build-isolation -e .
-.\.venv\Scripts\python.exe tools\verify_python_environment.py --profile ci
-.\.venv\Scripts\python.exe -X utf8 tools\run_tests.py
+uv venv .venv --python 3.12
+uv sync --locked --extra dev
+uv run --locked --no-sync python tools\verify_python_environment.py --profile ci
+uv run --locked --no-sync python -X utf8 tools\run_tests.py
 cd electron
 npm ci
 npm run build

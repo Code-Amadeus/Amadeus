@@ -26,7 +26,7 @@ A prefilter also sits in front of the pick now, and it is measurably lossy
 `resolve()` ladder and reports *where* each question died, not just whether it
 lived.
 
-    .venv_cu124\\Scripts\\python.exe -X utf8 tools/probes/probe_task_lookup_ladder.py [repeats]
+    .venv\\Scripts\\python.exe -X utf8 tools/probes/probe_task_lookup_ladder.py [repeats]
 
 No backend, no Codex, no ledger: a fake coordinator serves the rows, and only
 the model is real. Answers are printed, not just scored -- the checks are

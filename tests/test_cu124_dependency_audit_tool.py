@@ -71,6 +71,37 @@ def test_dependency_comparison_reports_missing_mismatch_and_import_candidate() -
     assert [row["module"] for row in result["imported_undeclared_candidates"]] == ["fastapi"]
 
 
+
+
+def test_pyproject_expansion_marks_base_active_and_tiers_by_active_extras(tmp_path: Path) -> None:
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        "[project]\n"
+        "name = \"demo\"\n"
+        "version = \"0.0.1\"\n"
+        "requires-python = \">=3.12\"\n"
+        "dependencies = [\"idna==3.10\"]\n"
+        "\n"
+        "[project.optional-dependencies]\n"
+        "voice = [\"PyAudio==0.2.14\"]\n"
+        "dev = [\"pytest==8.4.2\"]\n"
+        "\n"
+        "[tool.uv.sources]\n"
+        "\n"
+        "[[tool.uv.index]]\n"
+        "name = \"unused\"\n"
+        "url = \"https://example.invalid/simple\"\n"
+        "explicit = true\n",
+        encoding="utf-8",
+    )
+    from tools.audit_cu124_dependencies import parse_pyproject_dependencies
+    rows = parse_pyproject_dependencies(pyproject, {}, active_extras=("voice",))
+    by_name = {r["canonical_name"]: r for r in rows if r["kind"] == "requirement"}
+    assert by_name["idna"]["active"] is True
+    assert by_name["pyaudio"]["active"] is True
+    assert "extra == \"voice\"" in by_name["pyaudio"]["marker"]
+    assert by_name["pytest"]["active"] is False
+
 def test_pip_audit_parser_normalizes_findings(tmp_path: Path) -> None:
     source = tmp_path / "pip-audit.json"
     source.write_text(
