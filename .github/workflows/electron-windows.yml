@@ -47,3 +47,14 @@ jobs:
           fail-on-scopes: runtime, development, unknown
           license-check: false
           retry-on-snapshot-warnings: true
+          # NLTK has no patched release for its listed API bug. qwen-asr 0.0.6
+          # requires transformers 4.57.6 exactly. Amadeus uses neither the
+          # affected NLTK persistence APIs nor Transformers LightGlue/save APIs;
+          # all Transformers model loading is local and forced offline. Keep the
+          # exceptions advisory-specific and remove each once compatible fixes
+          # are published.
+          allow-ghsas: >-
+            GHSA-8mgp-746c-j5xp,
+            GHSA-29pf-2h5f-8g72,
+            GHSA-fgcw-684q-jj6r,
+            GHSA-xrqw-3rrv-vx5w

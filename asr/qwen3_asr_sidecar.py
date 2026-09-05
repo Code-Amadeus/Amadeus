@@ -1,7 +1,7 @@
 """
 Qwen3-ASR-0.6B sidecar 子进程
 
-运行环境：.venv_asr（包含 qwen-asr / torch 2.6+cu124 / transformers 4.57.6）
+运行环境：仓库根 `.venv`（L4 local-cu124 梯级，包含 qwen-asr / torch 2.6.0+cu124 / transformers 4.57.6）
 
 IPC 协议（stdin/stdout JSON Lines）：
   父进程 → 子进程：{
@@ -18,6 +18,13 @@ import sys
 import json
 import base64
 import os
+import time
+from pathlib import Path
+
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 # PyTorch 2.1 兼容 shim（保险起见保留）
 try:
@@ -43,7 +50,9 @@ _MAX_TOKENS_FLOOR = 32
 
 
 def _emit(obj: dict) -> None:
-    sys.stdout.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    # Keep the JSONL transport ASCII-only so Windows pipe code pages cannot
+    # corrupt Chinese/Japanese transcription text before the parent decodes it.
+    sys.stdout.write(json.dumps(obj, ensure_ascii=True) + "\n")
     sys.stdout.flush()
 
 
@@ -93,14 +102,21 @@ def main():
     extra_kwargs = {}
     attn_impl = "eager"
     if "cuda" in device_map:
-        try:
-            import flash_attn  # noqa: F401
-            extra_kwargs["attn_implementation"] = "flash_attention_2"
-            attn_impl = "flash_attention_2"
-        except ImportError:
-            # sdpa：torch 2.0+ 内置，不需要额外包，加速显著
-            extra_kwargs["attn_implementation"] = "sdpa"
-            attn_impl = "sdpa"
+        # PyTorch ROCm intentionally exposes AMD GPUs through the torch.cuda API.
+        # The current Windows ROCm build can return invalid or silently incorrect
+        # results through its default SDPA kernels, so prefer the stable eager path.
+        if getattr(torch.version, "hip", None):
+            extra_kwargs["attn_implementation"] = "eager"
+            attn_impl = "eager"
+        else:
+            try:
+                import flash_attn  # noqa: F401
+                extra_kwargs["attn_implementation"] = "flash_attention_2"
+                attn_impl = "flash_attention_2"
+            except ImportError:
+                # sdpa：torch 2.0+ 内置，不需要额外包，加速显著
+                extra_kwargs["attn_implementation"] = "sdpa"
+                attn_impl = "sdpa"
 
     try:
         model = Qwen3ASRModel.from_pretrained(
@@ -111,7 +127,48 @@ def main():
             max_new_tokens=_MAX_TOKENS_CAP,   # 初始上限；运行时按音频时长动态覆盖
             **extra_kwargs,
         )
-        _emit({"type": "ready", "device": device_map, "attn_impl": attn_impl})
+        if getattr(torch.version, "hip", None):
+            # qwen-asr 0.0.6 creates its nested thinker/audio/text configs after
+            # the initial attention setter runs. Re-apply the public Transformers
+            # setter after loading so every nested model leaves the broken ROCm
+            # SDPA kernels and uses eager attention.
+            hf_model = getattr(model, "model", None)
+            set_attention = getattr(hf_model, "set_attn_implementation", None)
+            if callable(set_attention):
+                set_attention("eager")
+                attn_impl = "eager_recursive"
+            else:
+                torch.backends.cuda.enable_flash_sdp(False)
+                torch.backends.cuda.enable_mem_efficient_sdp(False)
+                torch.backends.cuda.enable_math_sdp(True)
+                attn_impl = "eager+math_sdp"
+        warmup_ms = 0
+        warmup_setting = os.environ.get("QWEN3_ASR_WARMUP")
+        warmup_enabled = bool(getattr(torch.version, "hip", None)) if warmup_setting is None else (
+            warmup_setting.strip().lower() not in {"0", "false", "no", "off"}
+        )
+        if "cuda" in device_map and warmup_enabled:
+            # Compile/initialise ROCm kernels before the first microphone request.
+            # Two seconds approximates a short utterance while keeping startup bounded.
+            warmup_started = time.perf_counter()
+            previous_tokens = model.max_new_tokens
+            model.max_new_tokens = _MAX_TOKENS_FLOOR
+            try:
+                model.transcribe(
+                    audio=(np.zeros(32000, dtype=np.float32), 16000),
+                    language="Chinese",
+                    context="",
+                )
+                torch.cuda.synchronize()
+            finally:
+                model.max_new_tokens = previous_tokens
+            warmup_ms = round((time.perf_counter() - warmup_started) * 1000)
+        _emit({
+            "type": "ready",
+            "device": device_map,
+            "attn_impl": attn_impl,
+            "warmup_ms": warmup_ms,
+        })
     except Exception as e:
         _emit({"type": "error", "msg": f"LOAD_FAIL: {e}"})
         sys.exit(1)

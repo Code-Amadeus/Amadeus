@@ -1,0 +1,75 @@
+name: Python Windows ROCm candidate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - pyproject.toml
+      - uv.lock
+      - .github/workflows/python-windows-rocm.yml
+      - asr/**
+      - tts/**
+      - local_tts_infer.py
+      - tools/verify_python_environment.py
+      - tools/rocm_sidecar/**
+      - tests/test_gpt_sovits_sidecar_backend.py
+      - tests/test_local_tts_device_context.py
+      - tests/test_profile_contract.py
+      - tests/test_python_environment_verifier.py
+      - tests/test_qwen3_asr_sidecar_bootstrap.py
+  pull_request:
+    paths:
+      - pyproject.toml
+      - uv.lock
+      - .github/workflows/python-windows-rocm.yml
+      - asr/**
+      - tts/**
+      - local_tts_infer.py
+      - tools/verify_python_environment.py
+      - tools/rocm_sidecar/**
+      - tests/test_gpt_sovits_sidecar_backend.py
+      - tests/test_local_tts_device_context.py
+      - tests/test_profile_contract.py
+      - tests/test_python_environment_verifier.py
+      - tests/test_qwen3_asr_sidecar_bootstrap.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rocm-lock:
+    runs-on: windows-2025
+    timeout-minutes: 40
+    env:
+      AMADEUS_E2E_NO_TTS: "1"
+      TTS_DEVICE: "cpu"
+      WORK_WORKTREE_ISOLATION: "0"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12.10"
+
+      - name: Install pinned uv
+        run: python -m pip install uv==0.12.8
+
+      - name: Install locked ROCm candidate
+        run: uv sync --locked --extra voice --extra vad --extra local-rocm --extra dev
+
+      - name: Verify one-environment ROCm package contract
+        shell: bash
+        run: |
+          test ! -d .venv_rocm && test ! -d .venv_asr_rocm && test ! -d .venv_tts_rocm
+          uv run --locked --no-sync python tools/verify_python_environment.py --profile rocm
+
+      - name: Run ROCm and sidecar contract tests
+        run: >-
+          uv run --locked --no-sync python -m pytest -q
+          tests/test_gpt_sovits_sidecar_backend.py
+          tests/test_local_tts_device_context.py
+          tests/test_profile_contract.py
+          tests/test_python_environment_verifier.py
+          tests/test_qwen3_asr_sidecar_bootstrap.py

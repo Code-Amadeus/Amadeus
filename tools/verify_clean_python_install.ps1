@@ -1,9 +1,12 @@
 param(
-    [string]$PythonExecutable = "python",
+    [string]$UvExecutable = "uv",
     [string]$VenvPath = "runtime\ci-venv",
     [switch]$RunFullTests
 )
 
+# Clean-install verification for the L1 + dev tooling profile. Creates a
+# fresh venv below runtime/ and installs it from the single dependency
+# declaration (pyproject.toml) via its uv.lock, exactly as CI does.
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $resolvedVenv = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $VenvPath))
@@ -16,17 +19,22 @@ if (Test-Path -LiteralPath $resolvedVenv) {
     throw "Refusing to replace existing environment: $resolvedVenv"
 }
 
-& $PythonExecutable -m venv $resolvedVenv
+& $UvExecutable venv $resolvedVenv --python 3.12
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+# Point uv's project commands at the fresh venv instead of the repo .venv.
+$previousProjectEnvironment = $env:UV_PROJECT_ENVIRONMENT
+$env:UV_PROJECT_ENVIRONMENT = $resolvedVenv
+Push-Location $repoRoot
+try {
+    & $UvExecutable sync --locked --extra dev
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+} finally {
+    Pop-Location
+    [Environment]::SetEnvironmentVariable("UV_PROJECT_ENVIRONMENT", $previousProjectEnvironment, "Process")
+}
 
 $python = Join-Path $resolvedVenv "Scripts\python.exe"
-& $python -m pip install --upgrade "pip==26.2" "setuptools==83.0.0" "wheel==0.47.0"
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $python -m pip install -r (Join-Path $repoRoot "requirements-dev.txt")
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $python -m pip install --no-deps --no-build-isolation -e $repoRoot
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
 $env:AMADEUS_E2E_NO_TTS = "1"
 $env:TTS_DEVICE = "cpu"
 $env:WORK_WORKTREE_ISOLATION = "0"

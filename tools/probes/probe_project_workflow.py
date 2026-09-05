@@ -18,7 +18,7 @@ appear across turns:
   * **Noise.** Do the working turns in between stay quiet, or does the model
     re-announce the project every time?
 
-    .venv_cu124\\Scripts\\python.exe -X utf8 tools/probes/probe_project_workflow.py [repeats]
+    .venv\\Scripts\\python.exe -X utf8 tools/probes/probe_project_workflow.py [repeats]
 
 The working turns deliberately accept silence. The host carries the chosen
 project, so an instruction in the middle of a session has nothing to declare --

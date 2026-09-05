@@ -3,7 +3,7 @@ r"""Opt-in real Direct Codex conformance probe.
 This file intentionally does not match ``test_*.py``.  It spends a real Codex
 turn and must be invoked explicitly:
 
-    .venv_cu124\Scripts\python.exe -X utf8 tests\probe_direct_codex_real.py
+    uv run --locked --no-sync python -X utf8 tests\probe_direct_codex_real.py
 """
 
 from __future__ import annotations

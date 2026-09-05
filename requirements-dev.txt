@@ -1,3 +1,0 @@
-# Windows 11 / CPython 3.12 CPU/model-less test environment.
-# Generated from pyproject.toml[dev]; do not edit the lock by hand.
--r requirements/locks/windows-py312-ci.txt

@@ -1,0 +1,69 @@
+name: Python macOS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  voice-tier:
+    # macOS product path is T1 core + T2a remote voice: install L1+L2, verify
+    # the voice import contract (brew portaudio → PyAudio source build), lint,
+    # run platform-safe contract tests, and compile the Electron renderer.
+    runs-on: macos-14
+    timeout-minutes: 40
+    env:
+      AMADEUS_E2E_NO_TTS: "1"
+      TTS_DEVICE: "cpu"
+      WORK_WORKTREE_ISOLATION: "0"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install PortAudio (PyAudio source-build prerequisite)
+        run: brew install portaudio
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12.10"
+
+      - name: Install pinned uv
+        run: python -m pip install uv==0.12.8
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.21.1"
+          cache: npm
+          cache-dependency-path: electron/package-lock.json
+
+      - name: Install locked environment (L1 + L2 voice)
+        run: uv sync --locked --extra voice --extra dev
+
+      - name: Verify environment (voice profile)
+        run: uv run --locked --no-sync python tools/verify_python_environment.py --profile voice
+
+      - name: Check source and architecture views
+        shell: bash
+        run: |
+          uv run --locked --no-sync python -m ruff check .
+          uv run --locked --no-sync python tools/architecture/generate_views.py --check
+
+      - name: Run platform-safe contract suites
+        # Whitelist: pure contract tests with no Windows-specific behavior or
+        # browser/Electron spawning. Grown deliberately from the platform-safe
+        # set; mac-wide full-suite qualification is a separate effort.
+        run: >-
+          uv run --locked --no-sync python -m pytest -q
+          tests/test_profile_contract.py
+          tests/test_python_environment_verifier.py
+          tests/test_cu124_dependency_audit_tool.py
+          tests/test_core_install_tiers.py
+          tests/test_asset_paths.py
+          tests/test_system_settings.py
+          tests/test_voice_backend_registry.py
+
+      - name: Build Electron renderer (macOS)
+        working-directory: electron
+        run: |
+          npm ci
+          npm run build

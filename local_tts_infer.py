@@ -13,6 +13,12 @@ from pathlib import Path
 import string
 from string import punctuation
 
+# Product TTS loads only operator-installed local asset packs. Keep
+# Transformers offline so a crafted local config cannot fetch executable model
+# code through an internal remote repository reference.
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
 from tts.optional_ap_bwe import APBWEUnavailable, create_ap_bwe
 from tts.semantic_stability import (
     SemanticGenerationError,

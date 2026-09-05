@@ -10,7 +10,7 @@ requires-python = ">=3.12,<3.13"
 
 # Direct dependencies for the supported Electron/headless backend (T1 core:
 # chat, work, providers — no audio). Voice and local-model stacks live in
-# optional extras below; exact transitive versions live in the Windows locks.
+# optional extras below; exact transitive versions and builds live in uv.lock.
 dependencies = [
     "aiohttp==3.14.3",
     "beautifulsoup4==4.14.3",
@@ -48,17 +48,24 @@ voice = [
     "scipy==1.17.1",
     "soundfile==0.13.1",
 ]
-# L3 realtime interruption: silero VAD for barge-in. Pulls torch transitively.
+# L3 realtime interruption is a capability, independent of the Torch build.
+# Select torch-cpu for the CPU VAD profile or local-cu124 for local CUDA models.
 vad = [
     "silero-vad==6.2.1",
 ]
+torch-cpu = [
+    "torch==2.6.0",
+    "torchaudio==2.6.0",
+]
 # T2b local model stack observed in the working Windows / Python 3.12 / cu124
 # environment. Includes the voice layer transitively (installed alongside).
+# torch/torchaudio are declared with bare versions here; when this extra is
+# active on Windows, [tool.uv.sources] below redirects them to the cu124 index.
 # flash-attn is deliberately absent: Qwen ASR already falls back to Torch SDPA,
 # while no reproducible Windows cp312 wheel exists in the supported install path.
 local-cu124 = [
-    "torch==2.5.1",
-    "torchaudio==2.5.1",
+    "torch==2.6.0",
+    "torchaudio==2.6.0",
     "onnxruntime==1.26.0",
     "accelerate==1.12.0",
     "cn2an==0.5.24",
@@ -79,7 +86,7 @@ local-cu124 = [
     "OpenCC==1.3.1",
     "peft==0.19.1",
     "pytorch-lightning==2.6.4",
-    "pyopenjtalk==0.4.1",
+    "pyopenjtalk-plus==0.4.1.post9",
     "pypinyin==0.55.0",
     "qwen-asr==0.0.6",
     "rotary-embedding-torch==0.8.9",
@@ -93,6 +100,51 @@ local-cu124 = [
     "wordsegment==1.3.1",
     "x-transformers==2.19.6",
 ]
+# Experimental Windows ROCm build. It intentionally mirrors the qualified
+# local-model capability set while selecting AMD's fixed 7.2.1 PyTorch wheels.
+# ASR and TTS run as separate processes but share this project's single .venv.
+local-rocm = [
+    "torch==2.9.1; sys_platform == 'win32'",
+    "torchaudio==2.9.1; sys_platform == 'win32'",
+    "torchvision==0.24.1; sys_platform == 'win32'",
+    "rocm-sdk-core==7.2.1; sys_platform == 'win32'",
+    "rocm-sdk-devel==7.2.1; sys_platform == 'win32'",
+    "rocm-sdk-libraries-custom==7.2.1; sys_platform == 'win32'",
+    "rocm==7.2.1; sys_platform == 'win32'",
+    "onnxruntime==1.26.0; sys_platform == 'win32'",
+    "accelerate==1.12.0; sys_platform == 'win32'",
+    "cn2an==0.5.24; sys_platform == 'win32'",
+    "funasr==1.3.7; sys_platform == 'win32'",
+    "g2p-en==2.1.0; sys_platform == 'win32'",
+    "g2pk2==0.0.3; sys_platform == 'win32'",
+    "gradio>=6.16.0,<7; sys_platform == 'win32'",
+    "huggingface-hub==0.36.2; sys_platform == 'win32'",
+    "hydra-core>=1.3.4,<2; sys_platform == 'win32'",
+    "jieba==0.42.1; sys_platform == 'win32'",
+    "jieba-fast==0.53; sys_platform == 'win32'",
+    "ko-pron==1.3; sys_platform == 'win32'",
+    "librosa==0.11.0; sys_platform == 'win32'",
+    "matplotlib==3.10.9; sys_platform == 'win32'",
+    "msgpack>=1.2.1,<2; sys_platform == 'win32'",
+    "nltk>=3.10.0,<4; sys_platform == 'win32'",
+    "numba==0.65.1; sys_platform == 'win32'",
+    "OpenCC==1.3.1; sys_platform == 'win32'",
+    "peft==0.19.1; sys_platform == 'win32'",
+    "pytorch-lightning==2.6.4; sys_platform == 'win32'",
+    "pyopenjtalk-plus==0.4.1.post9; sys_platform == 'win32'",
+    "pypinyin==0.55.0; sys_platform == 'win32'",
+    "qwen-asr==0.0.6; sys_platform == 'win32'",
+    "rotary-embedding-torch==0.8.9; sys_platform == 'win32'",
+    "sentencepiece==0.2.1; sys_platform == 'win32'",
+    "split-lang==2.1.1; sys_platform == 'win32'",
+    "ToJyutping==3.2.0; sys_platform == 'win32'",
+    "tokenizers==0.22.1; sys_platform == 'win32'",
+    "torchmetrics==1.5.0; sys_platform == 'win32'",
+    "tqdm==4.67.3; sys_platform == 'win32'",
+    "transformers==4.57.6; sys_platform == 'win32'",
+    "wordsegment==1.3.1; sys_platform == 'win32'",
+    "x-transformers==2.19.6; sys_platform == 'win32'",
+]
 dev = [
     "packaging==26.2",
     "pip-audit==2.10.1",
@@ -102,6 +154,53 @@ dev = [
     "setuptools==83.0.0",
     "wheel==0.47.0",
 ]
+
+# Build selections are mutually exclusive. Optional model interpreters remain
+# configurable; this only selects the packages in the current project environment.
+[tool.uv]
+required-version = ">=0.12.8"
+conflicts = [
+    [{ extra = "torch-cpu" }, { extra = "local-cu124" }],
+    [{ extra = "torch-cpu" }, { extra = "local-rocm" }],
+    [{ extra = "local-cu124" }, { extra = "local-rocm" }],
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "torch-cpu", marker = "sys_platform == 'win32'" },
+    { index = "pytorch-cu124", extra = "local-cu124", marker = "sys_platform == 'win32'" },
+    { url = "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/torch-2.9.1%2Brocm7.2.1-cp312-cp312-win_amd64.whl", extra = "local-rocm", marker = "sys_platform == 'win32'" },
+]
+torchaudio = [
+    { index = "pytorch-cpu", extra = "torch-cpu", marker = "sys_platform == 'win32'" },
+    { index = "pytorch-cu124", extra = "local-cu124", marker = "sys_platform == 'win32'" },
+    { url = "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/torchaudio-2.9.1%2Brocm7.2.1-cp312-cp312-win_amd64.whl", extra = "local-rocm", marker = "sys_platform == 'win32'" },
+]
+torchvision = [
+    { url = "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/torchvision-0.24.1%2Brocm7.2.1-cp312-cp312-win_amd64.whl", extra = "local-rocm", marker = "sys_platform == 'win32'" },
+]
+rocm-sdk-core = [
+    { url = "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_core-7.2.1-py3-none-win_amd64.whl", extra = "local-rocm", marker = "sys_platform == 'win32'" },
+]
+rocm-sdk-devel = [
+    { url = "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_devel-7.2.1-py3-none-win_amd64.whl", extra = "local-rocm", marker = "sys_platform == 'win32'" },
+]
+rocm-sdk-libraries-custom = [
+    { url = "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_libraries_custom-7.2.1-py3-none-win_amd64.whl", extra = "local-rocm", marker = "sys_platform == 'win32'" },
+]
+rocm = [
+    { url = "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm-7.2.1.tar.gz", extra = "local-rocm", marker = "sys_platform == 'win32'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -148,7 +247,9 @@ extend-exclude = [
     "GPT_SoVITS",
     "assets",
     ".venv",
-    ".venv_cu124",
+    # Trellis agent platform: session/task tooling and generated spec files are
+    # not first-party runtime code and are not lint targets.
+    ".trellis",
     # Same origin, under tools/. Everything listed here dates to the initial
     # commit; the first-party tooling beside it (probes, e2e journeys,
     # run_tests) is deliberately still linted.
