@@ -1,9 +1,9 @@
 {
   "schema": "amadeus.source-release-policy.v1",
-  "distribution_model": "source-available-noncommercial",
+  "distribution_model": "open-source",
   "first_party_license": {
     "status": "selected",
-    "identifier": "PolyForm-Noncommercial-1.0.0",
+    "identifier": "AGPL-3.0",
     "license_file": "LICENSE",
     "scope": "Amadeus first-party code, documentation, modifications, and recorded original brand assets; third-party paths retain their recorded licenses"
   },

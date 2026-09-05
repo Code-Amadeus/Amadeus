@@ -117,8 +117,8 @@ Issue containing exploitable details.
 ## License
 
 Unless agreed otherwise before submission, contributions intentionally submitted for
-inclusion are offered under the same PolyForm Noncommercial 1.0.0 terms as Amadeus
-first-party code. Do not submit material that you cannot license on those terms, and
+inclusion are offered under the same GNU Affero General Public License v3.0
+(AGPL-3.0) terms as Amadeus first-party code. Do not submit material that you cannot license on those terms, and
 retain the original notices for third-party code.
 
 The source-release gate is a required release invariant. Any newly included

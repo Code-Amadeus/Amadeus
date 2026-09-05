@@ -15,7 +15,7 @@
   <a href="./assets/architecture-overview-crt.svg"><img src="https://img.shields.io/badge/architecture-current-184b36?labelColor=061710" alt="Current architecture"/></a>
   <img src="https://img.shields.io/badge/version-0.1_%CE%B1-2f624a?labelColor=061710" alt="Amadeus 0.1 alpha"/>
   <img src="https://img.shields.io/badge/baseline-CUDA%2012.4-c27832?labelColor=061710" alt="CUDA 12.4 local baseline"/>
-  <img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-272018?labelColor=061710" alt="License"/>
+  <img src="https://img.shields.io/badge/license-AGPL--3.0-272018?labelColor=061710" alt="License"/>
 </p>
 
 [![The Provider workspace in Amadeus, with task state, streaming results, and the embodied scene visible together](./assets/demo/provider-runtime.jpg)](https://www.bilibili.com/video/BV1783G6hEYY/)
@@ -27,10 +27,9 @@
 > [!IMPORTANT]
 > This repository contains buildable, runnable source. The current version is
 > **0.1 α**, not a packaged desktop release.
-> First-party code is licensed under
-> [PolyForm Noncommercial 1.0.0](LICENSE): noncommercial use, modification, and
-> redistribution are permitted; commercial use requires separate written
-> permission. Third-party code and external assets retain their own terms.
+> Amadeus first-party code is open-source under the
+> [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
+> Third-party code and external assets retain their own terms.
 
 ## What Amadeus is trying to solve
 
@@ -400,10 +399,9 @@ commits, experimental branches, deleted character media, models, credentials,
 sessions, personal paths, and original co-author metadata were not migrated.
 The source itself remains included according to the reviewed release boundary.
 
-Amadeus first-party source and modifications use
-[PolyForm Noncommercial 1.0.0](LICENSE). This is a public-source,
-noncommercial license, not an OSI open-source license. Third-party components
-are recorded under [LICENSES](LICENSES/README.md) and
+Amadeus first-party source and modifications are open-source under the
+[GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE). Third-party
+components retain their own licenses, recorded under [LICENSES](LICENSES/README.md) and
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The code license grants no
 automatic rights to character, model, reference-audio, or external asset packs.
 

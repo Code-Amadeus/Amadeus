@@ -57,7 +57,7 @@
       "modified": true,
       "release_action": "exclude",
       "gate_status": "ready",
-      "notes": "The local file retains the Space source reference and has 164 aligned identical lines against the closest source revision after removing the local comment, so it is treated as a substantive AGPL derivative. It remains in the private checkout for compatibility but is excluded from the PolyForm public source archive pending a clean replacement or separate permission."
+      "notes": "The local file retains the Space source reference and has 164 aligned identical lines against the closest source revision after removing the local comment, so it is treated as a substantive AGPL derivative. It remains in the private checkout for compatibility but is excluded from the Amadeus public source archive pending a clean replacement or separate permission."
     },
     {
       "id": "gpt-sovits-local-dictionaries-and-caches",
@@ -243,7 +243,7 @@
       ],
       "source_url": null,
       "source_revision": "first-party original; maintainer authorship confirmed 2026-08-29",
-      "license_expression": "PolyForm-Noncommercial-1.0.0",
+      "license_expression": "AGPL-3.0",
       "license_evidence": [
         "LICENSE",
         "LICENSES/FIRST-PARTY-BRAND-ASSETS.md"
@@ -306,7 +306,7 @@
       ],
       "source_url": null,
       "source_revision": "first-party original; maintainer authorship confirmed 2026-08-29",
-      "license_expression": "PolyForm-Noncommercial-1.0.0",
+      "license_expression": "AGPL-3.0",
       "license_evidence": [
         "LICENSE",
         "LICENSES/FIRST-PARTY-BRAND-ASSETS.md"
