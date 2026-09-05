@@ -247,6 +247,13 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     })
   }, [])
 
+  const upsertUserMessage = useCallback((turnId: string, text: string) => {
+    setMessages(prev => {
+      if (turnId && prev.some(m => m.role === 'user' && m.turnId === turnId)) return prev
+      return [...prev, { role: 'user', text, turnId: turnId || undefined }]
+    })
+  }, [])
+
   const refreshSessions = useCallback(async () => {
     const res = await send('session.list', {})
     const list = Array.isArray(res.sessions) ? res.sessions as unknown as ChatSessionSummary[] : []
@@ -506,6 +513,13 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   // subscribe to backend events
   useEffect(() => {
     const unsubs: Array<() => void> = []
+    unsubs.push(subscribe('chat.user', (p) => {
+      const sessionId = String(p.session_id ?? '')
+      if (sessionId && activeSessionRef.current && sessionId !== activeSessionRef.current) return
+      const text = String(p.text ?? '').trim()
+      if (!text) return
+      upsertUserMessage(String(p.turn_id ?? ''), text)
+    }))
     unsubs.push(subscribe('chat.token', (p) => {
       const turnId = String(p.turn_id ?? '')
       if (turnId && interruptedTurnIdsRef.current.has(turnId)) return
@@ -605,7 +619,6 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
           return
         }
         if (p.source === 'wake') {
-          setMessages(prev => [...prev, { role: 'user', text }])
           setAsrListening(false)
           return
         }
@@ -617,7 +630,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       if (p.status === 'idle') setAsrListening(false)
     }))
     return () => unsubs.forEach(fn => fn())
-  }, [subscribe, refreshSessions, upsertAssistantMessage, applySessionPayload, hydrateWorkActivities])
+  }, [subscribe, refreshSessions, upsertAssistantMessage, upsertUserMessage, applySessionPayload, hydrateWorkActivities])
 
   const handleSend = useCallback(async () => {
     const typedText = input.trim()
@@ -658,7 +671,6 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       }
     }
     setInput('')
-    setMessages(prev => [...prev, { role: 'user', text }])
     setStreamingText('')
     streamingTextRef.current = ''
     setStreaming(false)

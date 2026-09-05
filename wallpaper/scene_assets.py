@@ -102,6 +102,67 @@ def _crt_bounds_norm(config: dict | None = None) -> dict[str, float]:
     }
 
 
+def _keyboard_input_toggle_bounds_norm(config: dict | None = None) -> dict[str, float]:
+    """Return the authored text-input toggle rectangle in screen space."""
+    value = config if isinstance(config, dict) else _load_crt_config()
+    image_size = value.get("img_size") or [1672, 941]
+    source_width = max(1.0, float(image_size[0] or 1672))
+    source_height = max(1.0, float(image_size[1] or 941))
+    raw = (
+        value.get("keyboard_input_toggle_rect")
+        or value.get("keyboard_input_rect")
+        or [1204, 788, 202, 26]
+    )
+    if not isinstance(raw, (list, tuple)) or len(raw) != 4:
+        raw = [1204, 788, 202, 26]
+    x, y, width, height = (float(item) for item in raw)
+    return {
+        "x": max(0.0, x / source_width),
+        "y": max(0.0, y / source_height),
+        "width": max(0.0, width / source_width),
+        "height": max(0.0, height / source_height),
+    }
+
+
+def _keyboard_composer_bounds_norm(config: dict | None = None) -> dict[str, float]:
+    """Return the independent, lower-centre composer footprint."""
+    value = config if isinstance(config, dict) else _load_crt_config()
+    image_size = value.get("img_size") or [1672, 941]
+    source_width = max(1.0, float(image_size[0] or 1672))
+    source_height = max(1.0, float(image_size[1] or 941))
+    raw = value.get("keyboard_composer_rect") or [576, 714, 520, 106]
+    if not isinstance(raw, (list, tuple)) or len(raw) != 4:
+        raw = [576, 714, 520, 106]
+    x, y, width, height = (float(item) for item in raw)
+    return {
+        "x": max(0.0, x / source_width),
+        "y": max(0.0, y / source_height),
+        "width": max(0.0, width / source_width),
+        "height": max(0.0, height / source_height),
+    }
+
+
+def _desktop_slice_bounds_norm(config: dict | None = None) -> dict[str, float]:
+    """Cover the CRT canvas, input toggle, and lower-centre composer."""
+    value = config if isinstance(config, dict) else _load_crt_config()
+    canvas = _crt_bounds_norm(value)
+    toggle = _keyboard_input_toggle_bounds_norm(value)
+    composer = _keyboard_composer_bounds_norm(value)
+    left = min(canvas["x"], toggle["x"], composer["x"])
+    top = min(canvas["y"], toggle["y"], composer["y"])
+    right = max(
+        canvas["x"] + canvas["width"],
+        toggle["x"] + toggle["width"],
+        composer["x"] + composer["width"],
+    )
+    bottom = max(
+        canvas["y"] + canvas["height"],
+        toggle["y"] + toggle["height"],
+        composer["y"] + composer["height"],
+    )
+    return {"x": left, "y": top, "width": right - left, "height": bottom - top}
+
+
 def _load_wallpaper_ui_config() -> dict:
     try:
         data = json.loads(_BRIDGE_CFG_PATH.read_text(encoding="utf-8"))

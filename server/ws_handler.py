@@ -91,7 +91,7 @@ class ConnectionManager:
         # subscribe to all server→client events
         event_methods = [
             Method.SESSION_CHANGED,
-            Method.CHAT_TOKEN, Method.CHAT_COMPLETE, Method.CHAT_ERROR, Method.CHAT_INTERRUPTED,
+            Method.CHAT_USER, Method.CHAT_TOKEN, Method.CHAT_COMPLETE, Method.CHAT_ERROR, Method.CHAT_INTERRUPTED,
             Method.CHAT_WORK_NOTE, Method.CHAT_OBSERVER_DECISION,
             Method.TTS_STATUS, Method.TTS_SENTENCE_START, Method.TTS_SENTENCE_END, Method.TTS_TURN_COMPLETE,
             Method.ASR_RECOGNIZED, Method.ASR_STATUS,

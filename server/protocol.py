@@ -41,6 +41,7 @@ class Method(StrEnum):
     CHAT_SEND          = "chat.send"
     CHAT_ABORT         = "chat.abort"
     CHAT_TRANSLATE     = "chat.translate"
+    CHAT_USER          = "chat.user"
     CHAT_TOKEN         = "chat.token"
     CHAT_COMPLETE      = "chat.complete"
     CHAT_ERROR         = "chat.error"

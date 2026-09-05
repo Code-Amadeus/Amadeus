@@ -249,6 +249,45 @@ def test_pending_chat_visible_only_after_confirmed():
     asyncio.run(run())
 
 
+def test_confirmed_chat_turn_emits_the_authoritative_user_message():
+    async def run():
+        _fresh_coordinator()
+        from server.event_bus import bus
+        from server.handlers.chat_handler import ChatHandler
+        from server.protocol import Method
+
+        events: list[dict] = []
+
+        async def capture(_method, params):
+            events.append(dict(params))
+
+        async def stream(_text, **_kwargs):
+            return ""
+
+        bus.on(Method.CHAT_USER, capture)
+        try:
+            handler = ChatHandler()
+            handler.configure(stream_llm_query=stream, pending_sentence_items=None)
+            await handler.send_text(
+                "type on the desk",
+                turn_id="wallpaper-turn",
+                session_id="wallpaper-session",
+                source="wallpaper_keyboard",
+            )
+            assert events == [{
+                "turn_id": "wallpaper-turn",
+                "text": "type on the desk",
+                "session_id": "wallpaper-session",
+                "source": "wallpaper_keyboard",
+            }]
+            assert handler._stream_task is not None
+            await asyncio.wait_for(handler._stream_task, timeout=5)
+        finally:
+            bus.off(Method.CHAT_USER, capture)
+
+    asyncio.run(run())
+
+
 def test_history_guard():
     async def run():
         coord = _fresh_coordinator()
