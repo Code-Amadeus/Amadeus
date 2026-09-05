@@ -150,6 +150,20 @@ class ChatHandler(RequestHandler):
         chat_epoch = self._chat_epoch
         self._active_turn_id = turn_id
         self._active_accumulated_text = ""
+        # Every confirmed turn has one authoritative user-message event.  The
+        # desktop chat consumes it alongside turns submitted by other input
+        # surfaces (for example, the wallpaper keyboard), instead of each
+        # surface maintaining its own partial chat transcript.
+        if not pending:
+            await bus.emit(
+                Method.CHAT_USER,
+                {
+                    "turn_id": turn_id,
+                    "text": str(text or ""),
+                    "session_id": session_id,
+                    "source": str(params.get("source") or ""),
+                },
+            )
 
         def token_callback(accumulated: str) -> None:
             if chat_epoch != self._chat_epoch or turn_id != self._active_turn_id:
