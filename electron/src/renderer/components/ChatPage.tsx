@@ -1365,6 +1365,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
                   streaming={msg.streaming}
                   userAvatar={chatAvatars.user}
                   assistantAvatar={chatAvatars.assistant}
+                  hasPreviousMessage={i > 0}
                 />
                 {attached.map(activity => (
                   <ChatWorkActivityCard key={activity.runId} activity={activity} />
