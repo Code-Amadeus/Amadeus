@@ -52,6 +52,8 @@ class BargeInDetector:
         self._on_barge_in = on_barge_in
         self._on_debug = on_debug
         self._thread: threading.Thread | None = None
+        self._preparation_thread: threading.Thread | None = None
+        self._start_requested = False
         self._stop_event = threading.Event()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._vad_model = None
@@ -66,25 +68,47 @@ class BargeInDetector:
 
     def start(self, loop: asyncio.AbstractEventLoop | None = None) -> None:
         with self._lock:
-            if self.running:
-                return
             self._loop = loop or asyncio.get_event_loop()
-            self._triggered = False
-            self._stop_event.clear()
-            self._thread = threading.Thread(
-                target=self._run,
-                name="barge-in-detector",
-                daemon=True,
-            )
-            self._thread.start()
+            self._start_requested = True
+            if self._vad_capability is None:
+                if self._preparation_thread is None:
+                    self._preparation_thread = threading.Thread(
+                        target=self._prepare_vad,
+                        name="barge-in-vad-prepare",
+                        daemon=True,
+                    )
+                    self._preparation_thread.start()
+                return
+            self._start_ready_locked()
+
+    def _start_ready_locked(self) -> None:
+        # Called with _lock held. Only a successful preparation can open the
+        # microphone, and a completed preparation cannot undo stop().
+        if not self._start_requested or self._vad_capability != ("ready", "") or self.running:
+            return
+        self._triggered = False
+        self._stop_event.clear()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="barge-in-detector",
+            daemon=True,
+        )
+        self._thread.start()
 
     def stop(self) -> None:
-        self._stop_event.set()
-        thread = self._thread
+        with self._lock:
+            self._start_requested = False
+            self._stop_event.set()
+            thread = self._thread
+        # Cold model loading has no microphone resource to drain. Let it finish
+        # and cache its result without blocking playback/interrupt callbacks.
         if thread and thread.is_alive() and thread is not threading.current_thread():
             thread.join(timeout=1.0)
-        if thread is None or not thread.is_alive() or thread is threading.current_thread():
-            self._thread = None
+        with self._lock:
+            if self._thread is thread and (
+                thread is None or not thread.is_alive() or thread is threading.current_thread()
+            ):
+                self._thread = None
 
     def _is_tts_playing(self) -> bool:
         try:
@@ -92,35 +116,22 @@ class BargeInDetector:
         except Exception:
             return False
 
-    def _ensure_vad(self):
-        if self._vad_model is None:
-            from silero_vad import load_silero_vad
+    def _prepare_vad(self) -> None:
+        """Probe once off the playback loop, independently of ASRManager.
 
-            self._vad_model = load_silero_vad()
-            self._vad_model.eval()
-        return self._vad_model
-
-    def vad_status(self) -> tuple[str, str]:
-        """Three-state VAD capability fact: ("ready" | "fallback" | "degraded", reason).
-
-        The barge-in thread depends on silero-vad/torch (the L3 voice tier),
-        so the startup boundary must consult this before spawning the thread:
-        on an L2 install a config-only gate would start a doomed thread that
-        reports barge_in_error on every sentence. Absent dependency ->
-        documented fallback; installed but broken -> degraded with the reason
-        kept observable (never disguised as absence).
-
-        Probing is lazy (never in __init__: L1/L2 bootstrap must stay
-        importable) and happens exactly once per detector instance — later
-        playback sentences re-read the cache instead of re-failing. This
-        detector owns its own VAD model (see _ensure_vad) and is
-        intentionally independent of the ASRManager lazy lifecycle, whose
-        manager is only created when ASR first listens.
+        Cache missing/broken dependencies before any listening thread starts.
+        The request under _lock is authoritative: stop cancels a pending start,
+        while a later sentence may request listening using the same preparation.
         """
-        # Called from the event-loop thread only (startup boundary); no lock.
-        if self._vad_capability is None:
-            self._vad_capability = self._probe_vad_capability()
-        return self._vad_capability
+        capability = self._probe_vad_capability()
+        with self._lock:
+            self._vad_capability = capability
+            self._preparation_thread = None
+            if capability[0] != "ready":
+                state, reason = capability
+                logger.info("[BargeIn] detector disabled: vad %s%s", state, f": {reason}" if reason else "")
+                return
+            self._start_ready_locked()
 
     def _probe_vad_capability(self) -> tuple[str, str]:
         try:
@@ -139,8 +150,7 @@ class BargeInDetector:
             model.eval()
         except Exception as exc:
             return "degraded", f"{type(exc).__name__}: {exc}"
-        # Cache the loaded model so _ensure_vad() in the detector thread
-        # reuses it instead of loading a second copy.
+        # The listening thread reuses this model; it never performs a cold load.
         self._vad_model = model
         return "ready", ""
 
@@ -202,9 +212,7 @@ class BargeInDetector:
     def _run(self) -> None:
         try:
             delay = max(0.0, float(BARGE_IN_START_DELAY_MS) / 1000.0)
-            if delay:
-                time.sleep(delay)
-            if self._stop_event.is_set() or not self._is_tts_playing():
+            if self._stop_event.wait(delay) or not self._is_tts_playing():
                 return
 
             from silero_vad import VADIterator
@@ -215,7 +223,7 @@ class BargeInDetector:
             from asr.mic_input_service import get_mic_input_service
 
             vad_iter = VADIterator(
-                self._ensure_vad(),
+                self._vad_model,
                 threshold=float(BARGE_IN_VAD_THRESHOLD),
                 sampling_rate=_SAMPLE_RATE,
                 min_silence_duration_ms=180,

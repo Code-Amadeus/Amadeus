@@ -290,33 +290,6 @@ def _http_request_authenticated(headers, auth_policy: LocalAuthPolicy) -> bool:
 
 # bootstrap.
 
-def _barge_in_start_decision(detector, *, config_enabled: bool) -> tuple[bool, str]:
-    """barge-in 检测线程的启动边界判定，返回 (是否启动, 不可用原因)。
-
-    配置开关只是必要条件：检测线程依赖 silero-vad/torch（L3 能力层）。
-    若只看配置，L2 安装上每个播放句都会拉起一个必败线程并反复上报
-    barge_in_error。能力判定委托给 BargeInDetector.vad_status()——
-    detector 独立拥有自己的 VAD 模型加载（_ensure_vad），不依赖
-    ASRManager 的惰性生命周期（那个 manager 只在 ASR 首次监听时才
-    创建、空闲时卸载），因此键盘聊天后首次播放、空闲卸载后的播放
-    等旅程都能被正确判定。三态：
-
-    - ready:    能力真实存在，允许启动
-    - fallback: vad 层未安装（L2 文档化降级）→ 拒绝启动
-    - degraded: 已安装但加载失败 → 拒绝启动，reason 保持可观察，不得伪装成缺席
-
-    探测在 detector 内只发生一次并缓存，确认不可用后后续播放句直接读
-    缓存，不再拉起线程、不再反复报错。不可用事实由调用方记一条日志；
-    不新增公开字段。
-    """
-    if not config_enabled:
-        return False, ""
-    state, reason = detector.vad_status()
-    if state == "ready":
-        return True, ""
-    return False, f"vad {state}" + (f": {reason}" if reason else "")
-
-
 async def bootstrap(port: int = 17777) -> None:
     """Mirrors main.py's main() init sequence, minus GUI."""
     global vts_manager, player, playback_manager, tts_runtime, asr_manager, wake_service
@@ -881,6 +854,9 @@ async def bootstrap(port: int = 17777) -> None:
             return True
         return False
 
+    def _barge_in_enabled() -> bool:
+        return bool(AEC_REALTIME_ENABLED and AEC_REALTIME_BARGE_IN)
+
     logger.info(
         "aec realtime enabled=%s barge_in=%s delay_ms=%s tail_guard_ms=%s",
         AEC_REALTIME_ENABLED,
@@ -895,8 +871,6 @@ async def bootstrap(port: int = 17777) -> None:
     _expr_ctrl.configure(vts_manager=vts_manager)
     server_loop = asyncio.get_running_loop()
     _last_barge_in_interrupt_at = 0.0
-    # 能力不可用只记一次日志：避免每个播放句刷屏，禁用事实仍可观察。
-    _barge_in_unavailable_logged = False
 
     def _env_truthy(name: str, default: bool = False) -> bool:
         value = os.environ.get(name)
@@ -967,16 +941,7 @@ async def bootstrap(port: int = 17777) -> None:
     )
 
     def _start_barge_in_detector() -> None:
-        nonlocal _barge_in_unavailable_logged
-        start, unavailable = _barge_in_start_decision(
-            barge_in_detector,
-            config_enabled=bool(AEC_REALTIME_ENABLED and AEC_REALTIME_BARGE_IN),
-        )
-        if not start:
-            # 配置关闭是既定的关闭态（启动日志已覆盖），不另记日志。
-            if unavailable and not _barge_in_unavailable_logged:
-                _barge_in_unavailable_logged = True
-                logger.info("[BargeIn] detector disabled: %s", unavailable)
+        if not _barge_in_enabled():
             return
         if barge_in_detector.running:
             return
