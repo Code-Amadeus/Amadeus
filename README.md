@@ -15,7 +15,7 @@
   <a href="./assets/architecture-overview-crt.svg"><img src="https://img.shields.io/badge/architecture-current-184b36?labelColor=061710" alt="当前架构图"/></a>
   <img src="https://img.shields.io/badge/version-0.1_%CE%B1-2f624a?labelColor=061710" alt="Amadeus 0.1 alpha"/>
   <img src="https://img.shields.io/badge/baseline-CUDA%2012.4-c27832?labelColor=061710" alt="CUDA 12.4 本地基线"/>
-  <img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-272018?labelColor=061710" alt="许可证"/>
+  <img src="https://img.shields.io/badge/license-AGPL--3.0-272018?labelColor=061710" alt="许可证"/>
 </p>
 
 [![Amadeus 中的 Provider 工作界面：任务状态、流式结果与角色场景同时可见](./assets/demo/provider-runtime.jpg)](https://www.bilibili.com/video/BV1783G6hEYY/)
@@ -26,9 +26,9 @@
 
 > [!IMPORTANT]
 > 本仓库包含可构建、可运行的公开源码，当前版本为 **0.1 α**，
-> 不是带安装器的正式桌面发行版。首方代码采用
-> [PolyForm Noncommercial 1.0.0](LICENSE)：允许非商业使用、修改和再分发；
-> 商业使用需要另行取得书面许可。第三方代码与外部资产保留各自条款。
+> 不是带安装器的正式桌面发行版。Amadeus 第一方代码依据
+> [GNU Affero General Public License v3.0（AGPL-3.0）](LICENSE) 开源。
+> 第三方代码与外部资产保留各自条款。
 
 ## Amadeus 想解决什么
 
@@ -421,9 +421,9 @@ release/        公开源码选择、provenance 与 deterministic archive policy
 素材、模型、密钥、会话、本地路径及原始共作者元数据没有迁入公开 Git 历史。
 代码本身按当前发行边界保留。
 
-Amadeus 首方源码和修改采用
-[PolyForm Noncommercial 1.0.0](LICENSE)。它是公开源码、非商业许可，而不是 OSI
-定义的开源许可证。第三方组件见 [LICENSES](LICENSES/README.md) 与
+Amadeus 第一方源码和修改依据
+[GNU Affero General Public License v3.0（AGPL-3.0）](LICENSE) 开源。
+第三方组件保留各自许可证，见 [LICENSES](LICENSES/README.md) 与
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。代码许可证不会自动授予角色、
 模型、参考音频或外部资产包的权利。
 
