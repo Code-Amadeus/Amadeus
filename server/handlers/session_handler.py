@@ -113,6 +113,24 @@ class SessionHandler(RequestHandler):
             "projects": self._projects(),
         }
 
+    async def ensure_current_session(self, *, source: str) -> dict[str, Any]:
+        """Return the current chat session, creating one only when absent.
+
+        Non-Electron input surfaces use this owner-level entry point before
+        opening a chat turn.  They therefore share the session authority and
+        projection that Electron uses, rather than inventing session IDs.
+        """
+        current_session_id = str(sm.get_current_session_id() or "").strip()
+        if current_session_id and current_session_id in sm.list_sessions():
+            return self._session_payload(current_session_id)
+
+        if current_session_id:
+            sm.set_current_session_id(None)
+        result = self._create({})
+        result["source"] = source
+        await bus.emit(Method.SESSION_CHANGED, result)
+        return result
+
     def _create(self, params: dict[str, Any]) -> dict[str, Any]:
         sid = str(
             params.get("session_id")

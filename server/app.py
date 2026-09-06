@@ -2156,6 +2156,15 @@ async def bootstrap(port: int = 17777) -> None:
         wake_start_fn=lambda: wake_h.start({}),
         wake_stop_fn=lambda: wake_h.stop({}),
         canvas_action_fn=canvas_action_router.route,
+        chat_send_fn=lambda text, session_id: chat_h.send_text(
+            text,
+            provider=_current_llm_provider(),
+            session_id=session_id,
+            source="wallpaper_keyboard",
+        ),
+        ensure_chat_session_fn=lambda: session_h.ensure_current_session(
+            source="wallpaper_keyboard"
+        ),
         canvas_projector=work_ledger.project_canvas,
         attention_snapshot=lambda: attention_requests.list_pending(
             _attention_session_manager.get_current_session_id() or ""

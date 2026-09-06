@@ -157,6 +157,40 @@ def test_wallpaper_bridge_requires_exact_asset_origin() -> None:
         assert status == 400
         assert json.loads(body) == {"ok": False, "error": "unsupported_action"}
 
+        state.chat_submit_handler = lambda payload: {
+            "ok": True,
+            "turn_id": "wallpaper-turn",
+            "text": payload["text"],
+        }
+        chat_payload = json.dumps({"text": "hello from keyboard"}).encode("utf-8")
+        blocked_chat, _, blocked_chat_body = _request(
+            port,
+            "POST",
+            "/wallpaper/chat-action",
+            headers={"Origin": allowed_origin, "Content-Type": "application/json"},
+            body=chat_payload,
+        )
+        assert blocked_chat == 403
+        assert json.loads(blocked_chat_body) == {"ok": False, "error": "unauthorized"}
+
+        chat_status, _, chat_body = _request(
+            port,
+            "POST",
+            "/wallpaper/chat-action",
+            headers={
+                "Origin": allowed_origin,
+                "Content-Type": "application/json",
+                "X-Amadeus-Bridge-Token": state.action_token,
+            },
+            body=chat_payload,
+        )
+        assert chat_status == 200
+        assert json.loads(chat_body) == {
+            "ok": True,
+            "turn_id": "wallpaper-turn",
+            "text": "hello from keyboard",
+        }
+
         native_status, _, _ = _request(port, "GET", "/wallpaper/health")
         assert native_status == 200
     finally:

@@ -36,6 +36,9 @@ from wallpaper.scene_assets import (
     _PROJECT_SUBTITLE_FRAME,
     _asset_url,
     _crt_bounds_norm,
+    _desktop_slice_bounds_norm,
+    _keyboard_composer_bounds_norm,
+    _keyboard_input_toggle_bounds_norm,
     _load_crt_config,
     _load_wallpaper_ui_config,
     _prepare_background_asset,
@@ -66,6 +69,7 @@ _WALLPAPER_CLIENT_ASSETS = (
     _PROJECT_ROOT / "render" / "web" / "electron_slice.html",
     _PROJECT_ROOT / "render" / "web" / "electron_slice_host.js",
     _PROJECT_ROOT / "render" / "web" / "crt_canvas_surface.js",
+    _PROJECT_ROOT / "render" / "web" / "electron_keyboard_composer.js",
     _PROJECT_ROOT / "render" / "web" / "wallpaper_scene.js",
     _PROJECT_ROOT / "render" / "web" / "renderer.js",
 )
@@ -114,6 +118,7 @@ class _BridgeState:
         self.last_calls: dict[str, dict] = {}
         self.action_token = secrets.token_urlsafe(24)
         self.canvas_action_handler: Callable[[dict], dict] | None = None
+        self.chat_submit_handler: Callable[[dict], dict] | None = None
         self.browser_action_handler: Callable[[dict], dict] | None = None
 
     def snapshot(self) -> dict:
@@ -489,6 +494,22 @@ def _make_bridge_handler(
             finally:
                 remove_client(client)
 
+        def _route_chat_submit(self, payload: dict) -> dict:
+            text = str(payload.get("text") or "").strip()
+            if not text:
+                return {"ok": False, "error": "empty_message"}
+            if len(text) > 8000:
+                return {"ok": False, "error": "message_too_long"}
+            handler = state.chat_submit_handler
+            if handler is None:
+                return {"ok": False, "error": "wallpaper_chat_unavailable"}
+            try:
+                result = handler({"text": text})
+            except Exception as exc:
+                logger.warning("[WallpaperBridge] wallpaper chat submit failed: %s", exc)
+                return {"ok": False, "error": "wallpaper_chat_failed"}
+            return result if isinstance(result, dict) else {"ok": True, "result": result}
+
         def do_OPTIONS(self):
             auth_error = self._request_authorization_error()
             if auth_error:
@@ -538,6 +559,18 @@ def _make_bridge_handler(
             auth_error = self._request_authorization_error()
             if auth_error:
                 self._json_response({"ok": False, "error": auth_error}, 403)
+                return
+            if self.path.startswith("/wallpaper-engine/chat-action") or self.path.startswith("/wallpaper/chat-action"):
+                if not self._action_authorized():
+                    logger.warning("[WallpaperBridge] unauthorized wallpaper chat action from=%s", self.client_address)
+                    self._json_response({"ok": False, "error": "unauthorized"}, 403)
+                    return
+                try:
+                    result = self._route_chat_submit(self._read_json())
+                except Exception as exc:
+                    logger.warning("[WallpaperBridge] failed to parse wallpaper chat action: %s", exc)
+                    result = {"ok": False, "error": "bad_request"}
+                self._json_response(result, 200 if result.get("ok") else 400)
                 return
             if self.path.startswith("/wallpaper-engine/canvas-action") or self.path.startswith("/wallpaper/canvas-action"):
                 if not self._action_authorized():
@@ -648,7 +681,10 @@ class WallpaperEngineBridgeHost:
         self._bridge_thread: threading.Thread | None = None
         self._state = _BridgeState()
         self._slice_host = "electron" if str(slice_host).strip().lower() == "electron" else "wallpaper"
-        self._slice_bounds = _crt_bounds_norm()
+        self._canvas_bounds = _crt_bounds_norm()
+        self._keyboard_input_toggle_bounds = _keyboard_input_toggle_bounds_norm()
+        self._keyboard_composer_bounds = _keyboard_composer_bounds_norm()
+        self._slice_bounds = _desktop_slice_bounds_norm()
         self._ready = False
         self.on_ready: Optional[Callable[[], None]] = None
         self._background_asset = _prepare_background_asset()
@@ -683,6 +719,18 @@ class WallpaperEngineBridgeHost:
         return dict(self._slice_bounds)
 
     @property
+    def canvas_bounds(self) -> dict[str, float]:
+        return dict(self._canvas_bounds)
+
+    @property
+    def keyboard_input_toggle_bounds(self) -> dict[str, float]:
+        return dict(self._keyboard_input_toggle_bounds)
+
+    @property
+    def keyboard_composer_bounds(self) -> dict[str, float]:
+        return dict(self._keyboard_composer_bounds)
+
+    @property
     def asset_version(self) -> str:
         return _wallpaper_asset_revision()
 
@@ -710,6 +758,9 @@ class WallpaperEngineBridgeHost:
                 "assetVersion": _wallpaper_asset_revision(),
                 "sliceHost": self._slice_host,
                 "sliceBounds": self._slice_bounds,
+                "canvasBounds": self._canvas_bounds,
+                "keyboardInputToggleBounds": self._keyboard_input_toggle_bounds,
+                "keyboardComposerBounds": self._keyboard_composer_bounds,
             },
         )
         self._init_scene()
@@ -943,6 +994,9 @@ class WallpaperEngineBridgeHost:
 
     def set_canvas_action_handler(self, handler: Callable[[dict], dict] | None) -> None:
         self._state.canvas_action_handler = handler
+
+    def set_chat_submit_handler(self, handler: Callable[[dict], dict] | None) -> None:
+        self._state.chat_submit_handler = handler
 
     def set_browser_action_handler(self, handler: Callable[[dict], dict] | None) -> None:
         self._state.browser_action_handler = handler

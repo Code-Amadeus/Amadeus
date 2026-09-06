@@ -91,6 +91,18 @@
     220,
     480
   ],
+  "keyboard_input_toggle_rect": [
+    1024,
+    797,
+    202,
+    26
+  ],
+  "keyboard_composer_rect": [
+    576,
+    780,
+    520,
+    106
+  ],
   "ambient_low_alpha_idle": 0.3,
   "ambient_low_alpha_min": 0.04,
   "ambient_alpha_idle": 0.0,

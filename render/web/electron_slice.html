@@ -14,11 +14,203 @@
       overflow: hidden;
       background: transparent;
     }
+    #wallpaper-keyboard-toggle,
+    #wallpaper-keyboard-composer {
+      position: absolute;
+      z-index: 20;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    }
+    #wallpaper-keyboard-toggle {
+      left: var(--keyboard-toggle-left, -9999px);
+      top: var(--keyboard-toggle-top, -9999px);
+      width: var(--keyboard-toggle-width, 160px);
+      height: var(--keyboard-toggle-height, 26px);
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.42em;
+    }
+    #wallpaper-keyboard-composer {
+      left: var(--keyboard-composer-left, -9999px);
+      top: var(--keyboard-composer-top, -9999px);
+      width: var(--keyboard-composer-width, 480px);
+      max-height: var(--keyboard-composer-max-height, 92px);
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.34em;
+      padding: 0.34em 0.65em;
+      border: 1px solid rgba(91, 239, 215, 0.42);
+      border-radius: 1.05em;
+      background:
+        linear-gradient(135deg, rgba(3, 26, 30, 0.88), rgba(5, 20, 28, 0.74)),
+        repeating-linear-gradient(0deg, rgba(148, 255, 230, 0.055) 0 1px, transparent 1px 5px);
+      box-shadow: 0 16px 48px rgba(0, 12, 18, 0.34), 0 0 46px rgba(50, 238, 207, 0.13);
+      backdrop-filter: blur(10px) saturate(1.08);
+    }
+    #wallpaper-keyboard-toggle[hidden],
+    #wallpaper-keyboard-composer[hidden] { display: none; }
+    .wallpaper-keyboard-composer-form {
+      display: grid;
+      min-width: 0;
+      gap: 0.34em;
+      flex: 0 0 auto;
+    }
+    .wallpaper-keyboard-composer-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.7em;
+      min-width: 0;
+    }
+    .wallpaper-keyboard-composer-header {
+      display: flex;
+      align-items: center;
+      gap: 0.42em;
+      min-width: 0;
+      min-height: 1.8em;
+      padding: 0 0.2em;
+      color: rgba(190, 255, 239, 0.72);
+      font-size: clamp(10px, 0.66vw, 12px);
+      line-height: 1;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+    .wallpaper-keyboard-composer-header-icon {
+      width: 0.95em;
+      height: 0.95em;
+      flex: 0 0 auto;
+      color: rgba(114, 245, 221, 0.86);
+      filter: drop-shadow(0 0 3px rgba(73, 244, 218, 0.36));
+    }
+    .wallpaper-keyboard-composer-header strong {
+      color: rgba(207, 255, 241, 0.94);
+      font-size: 1.12em;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: 0.045em;
+    }
+    .wallpaper-keyboard-composer-close {
+      position: static;
+      width: 1.8em;
+      height: 1.8em;
+      flex: 0 0 auto;
+      display: inline-grid;
+      place-items: center;
+      margin: 0;
+      padding: 0;
+      border: 1px solid rgba(94, 242, 216, 0.48);
+      border-radius: 999px;
+      background: rgba(4, 27, 30, 0.34);
+      box-shadow: 0 0 8px rgba(84, 255, 221, 0.20);
+      color: rgba(198, 255, 239, 0.80);
+      cursor: pointer;
+      font: inherit;
+      font-size: clamp(10px, 0.7vw, 12px);
+      line-height: 1;
+    }
+    .wallpaper-keyboard-composer-close:hover,
+    .wallpaper-keyboard-composer-close:focus-visible {
+      outline: none;
+      border-color: rgba(137, 255, 225, 0.80);
+      color: rgba(210, 255, 242, 0.96);
+      box-shadow: 0 0 10px rgba(84, 255, 221, 0.34);
+      transform: translateY(-1px) scale(1.04);
+    }
+    .wallpaper-keyboard-composer-input,
+    .wallpaper-keyboard-composer-send {
+      border: 1px solid rgba(105, 230, 214, 0.42);
+      background: rgba(3, 23, 29, 0.36);
+      color: #d5fff8;
+      box-shadow: inset 0 1px 0 rgba(205, 255, 248, 0.04);
+      font: inherit;
+      font-size: clamp(11px, 0.74vw, 13px);
+      letter-spacing: 0.025em;
+    }
+    .wallpaper-keyboard-composer-toggle,
+    .wallpaper-keyboard-composer-toggle-indicator {
+      position: static;
+      top: auto;
+      right: auto;
+      flex: 0 0 auto;
+      margin: 0;
+      cursor: pointer;
+    }
+    .wallpaper-keyboard-composer-toggle.crt-canvas-surface-status {
+      display: block;
+      min-width: 0;
+      white-space: nowrap;
+    }
+    .wallpaper-keyboard-composer-toggle-indicator.crt-canvas-surface-dot {
+      padding: 0;
+    }
+    .wallpaper-keyboard-composer-send:hover,
+    .wallpaper-keyboard-composer-send:focus-visible {
+      outline: none;
+      background: rgba(14, 81, 82, 0.92);
+    }
+    .wallpaper-keyboard-composer-input {
+      width: 100%;
+      min-width: 0;
+      min-height: 4.95em;
+      max-height: 4.95em;
+      padding: 0.48em 0.78em;
+      border-radius: 0.72em;
+      resize: none;
+      overflow-y: auto;
+      scrollbar-width: none;
+      outline: none;
+      font-size: clamp(12px, 0.82vw, 14px);
+      line-height: 1.32;
+    }
+    .wallpaper-keyboard-composer-input::-webkit-scrollbar { display: none; }
+    .wallpaper-keyboard-composer-input:focus {
+      border-color: rgba(124, 255, 238, 0.90);
+      box-shadow: 0 0 0 2px rgba(64, 240, 216, 0.12), inset 0 1px 0 rgba(205, 255, 248, 0.08);
+    }
+    .wallpaper-keyboard-composer-input::placeholder { color: rgba(200, 255, 245, 0.56); }
+    .wallpaper-keyboard-composer-send {
+      min-width: 4.25em;
+      min-height: 0;
+      height: 1.9em;
+      padding: 0 0.78em;
+      border-radius: 0.72em;
+      background: rgba(3, 23, 29, 0.36);
+      color: rgba(213, 255, 248, 0.88);
+      cursor: pointer;
+    }
+    .wallpaper-keyboard-composer-send:disabled,
+    .wallpaper-keyboard-composer-input:disabled { opacity: 0.42; cursor: not-allowed; }
+    .wallpaper-keyboard-composer-send:disabled {
+      border-color: rgba(159, 183, 180, 0.24);
+      background: rgba(18, 30, 33, 0.38);
+      box-shadow: none;
+      color: rgba(205, 225, 222, 0.38);
+      filter: grayscale(0.8);
+    }
+    .wallpaper-keyboard-composer-status {
+      margin-left: auto;
+      min-height: 1em;
+      color: #91fff1;
+      font-size: clamp(11px, 0.72vw, 13px);
+      letter-spacing: 0.05em;
+      text-shadow: 0 0 6px #2ff2d3;
+      pointer-events: none;
+    }
+    .wallpaper-keyboard-composer-hints {
+      flex: 0 0 auto;
+      margin-left: calc(0.2em + 0.95em + 0.42em);
+      color: rgba(200, 255, 245, 0.62);
+      font-size: clamp(11px, 0.72vw, 13px);
+      letter-spacing: 0.025em;
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body>
   <div id="canvas-container"></div>
   <script src="/render/web/crt_canvas_surface.js"></script>
+  <script src="/render/web/electron_keyboard_composer.js"></script>
   <script src="/render/web/electron_slice_host.js"></script>
 </body>
 </html>
