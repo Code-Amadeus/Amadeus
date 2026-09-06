@@ -4,10 +4,9 @@ This directory is the machine-readable source of truth for code, model, and
 asset provenance that affects an Amadeus release.
 
 Amadeus first-party source code, documentation, modifications, and the original
-brand assets recorded in `FIRST-PARTY-BRAND-ASSETS.md` are published under the
-PolyForm Noncommercial License 1.0.0 in the root `LICENSE`. It permits
-noncommercial use, modification, and redistribution; commercial use requires
-separate written permission. It governs only material whose copyright is owned
+brand assets recorded in `FIRST-PARTY-BRAND-ASSETS.md` are open-source under the
+GNU Affero General Public License v3.0 (AGPL-3.0) in the root `LICENSE`.
+It governs only material whose copyright is owned
 by its Amadeus licensor and does not replace or narrow the MIT, Apache-2.0,
 CC0, GPL, or other rights that apply to third-party portions.
 
@@ -34,7 +33,7 @@ CC0, GPL, or other rights that apply to third-party portions.
 - `Bert-VITS2-Cantonese-Yue-AGPL-3.0.txt` preserves the license of the
   Cantonese frontend source. The associated implementation is deliberately
   excluded from the public source archive; retaining its notice does not make
-  it part of the PolyForm-licensed first-party scope.
+  it part of the AGPL-3.0-licensed first-party scope.
 - `pixi-basis-ktx2-MIT.txt` and `pixi-live2d-display-MIT.txt` preserve the
   licenses for the checked-in browser vendor bundles.
 - `AP-BWE-MIT.txt` preserves the upstream license while the optional
@@ -42,7 +41,7 @@ CC0, GPL, or other rights that apply to third-party portions.
   proprietary runtime exclusion without redistributing Cubism Core.
 
 `release/source_release_policy.json` records the selected publication model and
-its first-party scope. The standard PolyForm text is used without modification;
+its first-party scope. The standard GNU AGPL v3.0 text is used without modification;
 third-party and external asset boundaries are recorded separately here and in
 `provenance.json`.
 

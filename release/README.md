@@ -8,7 +8,7 @@ Separately distributed runtime media uses `tools/external_assets.py`; it is not
 part of the public source-archive workflow. See
 `docs/external_asset_bundles.md`.
 
-The public archive uses the source-available, noncommercial model recorded in
+The public archive uses the open-source model recorded in
 `source_release_policy.json`. Its root `LICENSE` applies only to Amadeus
 first-party code and modifications; third-party and external asset terms remain
 separate.

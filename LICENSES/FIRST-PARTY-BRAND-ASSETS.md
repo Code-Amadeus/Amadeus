@@ -9,7 +9,7 @@ following checked-in assets are their original works:
 - `assets/images/amadeus_desktop_wallpaper.png`
 
 They are included in the Amadeus source release as first-party brand assets
-under the repository root `LICENSE` (PolyForm Noncommercial License 1.0.0).
+under the repository root `LICENSE` (GNU Affero General Public License v3.0 / AGPL-3.0).
 This record does not cover character art, SpriteForge packages, Live2D models,
 reference voices, model weights, or any other separately inventoried external
 asset.
