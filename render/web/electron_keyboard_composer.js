@@ -160,6 +160,12 @@
       updateSendState();
     });
     input.addEventListener("keydown", function (event) {
+      // Do not take keyboard shortcuts away from an IME while it is choosing
+      // or committing a candidate.  keyCode 229 keeps the same behavior for
+      // Chromium composition events that do not report isComposing reliably.
+      if (event.isComposing || event.keyCode === 229) {
+        return;
+      }
       if (event.key === "Escape") {
         event.preventDefault();
         input.value = "";
