@@ -382,8 +382,9 @@ uv run --locked --no-sync python tools\external_assets.py verify C:\path\to\asse
 uv run --locked --no-sync python tools\external_assets.py install C:\path\to\asset-bundle.zip
 uv run --locked --no-sync python tools\external_assets.py status
 ```
-`external_assets.py` 是纯标准库工具，在任一梯级的 `.venv` 下运行均可；本地语音包
-（`asr-qwen3` / `voice-kurisu`）需要 L4 梯级（Windows CUDA）才会被运行时加载。
+`external_assets.py` 是纯标准库工具，在任一梯级的 `.venv` 下运行均可。运行本地语音
+模型还需匹配的模型依赖与硬件，安装资产包本身不会补齐这些依赖。cu124 正式配置和
+ROCm 实验边界见[安装配置](docs/install_profiles.md)。
 
 SpriteForge 角色包最终应落在：
 
@@ -433,7 +434,7 @@ Settings 不会回写 `.env`。普通模型、语音、麦克风、Provider/MCP�
 
 | 范围 | 状态 |
 |---|---|
-| L1/L2（文字 + 远程语音）| Windows 与 macOS 源码部署；macOS 为实测路径，官方 CI/锁文件仍以 Windows 为准 |
+| L1/L2（文字 + 远程语音）| Windows 与 macOS 源码部署；Windows 为参考平台，macOS L1/L2 有独立 CI，桌面与音频体验仍需实机验收 |
 | L3 CPU VAD | 不要求 NVIDIA GPU；使用明确的 CPU 构建配置 |
 | L4 cu124（本地 CUDA 12.4 语音）| Windows + NVIDIA；以当前实际运行环境为参考 |
 | AMD ROCm 7.2.1 | 单 `.venv` 实验锁、sidecar adapter 与失败闭环已提供；受支持 AMD GPU 实机验收待补齐 |
@@ -459,6 +460,7 @@ uv run --locked --no-sync python tools\verify_python_environment.py --profile ci
 uv run --locked --no-sync python -X utf8 tools\run_tests.py
 
 cd electron
+npm ci
 npm run build
 npm audit --audit-level=high
 ```
