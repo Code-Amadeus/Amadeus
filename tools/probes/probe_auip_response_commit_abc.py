@@ -30,9 +30,9 @@ but never invokes an application action, starts a Provider, or writes a ledger.
 
 Usage::
 
-    .venv_cu124\Scripts\python.exe -X utf8 \
+    .venv\Scripts\python.exe -X utf8 \
         tools\probes\probe_auip_response_commit_abc.py --dry-run
-    .venv_cu124\Scripts\python.exe -X utf8 \
+    .venv\Scripts\python.exe -X utf8 \
         tools\probes\probe_auip_response_commit_abc.py --repeats 1
 """
 

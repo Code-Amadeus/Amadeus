@@ -2,7 +2,10 @@
 
 Amadeus currently verifies development on Windows with CPython 3.12.10 and
 Node.js 22. Start with the model-less CPU profile described in `README.md`; local
-CUDA ASR/TTS remains an optional profile.
+GPU ASR/TTS remains optional, and Windows ROCm is an experimental candidate.
+
+CI pins uv 0.12.8. See [installation profiles](docs/install_profiles.md) for
+CPU VAD, CUDA selection and migration from an existing environment.
 
 Read [ROADMAP.md](ROADMAP.md) before proposing a feature. It distinguishes the
 active product direction, candidates that are not commitments, and features the
@@ -30,11 +33,10 @@ mainline status merely because its implementation exists.
 Create the supported CPU/model-less environment from the repository root:
 
 ```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe -m pip install --no-deps --no-build-isolation -e .
-.\.venv\Scripts\python.exe tools\verify_python_environment.py --profile ci
-.\.venv\Scripts\python.exe -X utf8 tools\run_tests.py
+uv venv .venv --python 3.12
+uv sync --locked --extra dev
+uv run --locked --no-sync python tools\verify_python_environment.py --profile ci
+uv run --locked --no-sync python -X utf8 tools\run_tests.py
 cd electron
 npm ci
 npm run build
@@ -43,6 +45,10 @@ npm audit --audit-level=high
 
 Contributors are not expected to install CUDA, local models, reference voices, or
 the character pack to validate the supported baseline.
+
+When adding development tools to a voice/model installation, append `--extra dev`
+to its complete install command. `uv sync --locked --extra dev` selects the core
+development environment and removes optional tiers; it is not an additive install.
 
 ## Pull request scope
 
@@ -117,8 +123,8 @@ Issue containing exploitable details.
 ## License
 
 Unless agreed otherwise before submission, contributions intentionally submitted for
-inclusion are offered under the same PolyForm Noncommercial 1.0.0 terms as Amadeus
-first-party code. Do not submit material that you cannot license on those terms, and
+inclusion are offered under the same GNU Affero General Public License v3.0
+(AGPL-3.0) terms as Amadeus first-party code. Do not submit material that you cannot license on those terms, and
 retain the original notices for third-party code.
 
 The source-release gate is a required release invariant. Any newly included

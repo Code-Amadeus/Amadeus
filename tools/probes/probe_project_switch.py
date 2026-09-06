@@ -12,7 +12,7 @@ moves every project decision into the one regime the model handles well -- the
 user said the name out loud, ~75% -- and asks for it once per topic instead of
 once per instruction, where a miss is visible and simply repeated.
 
-    .venv_cu124\\Scripts\\python.exe -X utf8 tools/probes/probe_project_switch.py [repeats]
+    .venv\\Scripts\\python.exe -X utf8 tools/probes/probe_project_switch.py [repeats]
 
 Two projects are registered, one of them a kept draft carrying the title its
 task was created with, because that is what a promoted draft's name looks like.

@@ -1,120 +1,135 @@
-"""Four-tier install contract: extras, profiles, locks, and resolver behavior.
-
-Freezes the L1–L4 install contract so future edits cannot silently drift:
-which packages live in which extra, which modules each verify profile
-requires, and which tier each lock file serves.
-"""
+"""Selected install capabilities and Torch builds must agree with the uv lock."""
 
 from __future__ import annotations
 
-import re
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
-import tomllib
+from packaging.markers import default_environment
+from packaging.requirements import Requirement
 
 ROOT = Path(__file__).resolve().parents[1]
+UV = shutil.which("uv")
 
 
-def _pyproject_extras() -> dict[str, list[str]]:
-    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    return data["project"]["optional-dependencies"]
+def _names(requirements: list[str]) -> set[str]:
+    return {Requirement(value).name.lower() for value in requirements}
 
 
-def _dist_name(requirement: str) -> str:
-    return re.split(r"[=<>!\[]", requirement.strip(), maxsplit=1)[0].strip().lower()
+def test_capability_declarations_do_not_choose_a_gpu_build() -> None:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    extras = project["optional-dependencies"]
+    assert not _names(project["dependencies"]) & {
+        "torch", "torchaudio", "pyaudio", "silero-vad", "onnxruntime",
+    }
+    assert "pyaudio" in _names(extras["voice"])
+    assert not _names(extras["voice"]) & {"torch", "torchaudio", "silero-vad"}
+    assert "silero-vad" in _names(extras["vad"])
+    assert "torch" not in _names(extras["vad"])
+    for build in ("torch-cpu", "local-cu124", "local-rocm"):
+        assert {"torch", "torchaudio"} <= _names(extras[build])
+    assert {"torchvision", "rocm", "rocm-sdk-core"} <= _names(extras["local-rocm"])
+    assert all("sys_platform == 'win32'" in item for item in extras["local-rocm"])
 
 
-def test_voice_extra_is_torch_free_and_vad_extra_pulls_silero() -> None:
-    extras = _pyproject_extras()
-    voice = {_dist_name(d) for d in extras["voice"]}
-    assert "pyaudio" in voice
-    assert "scipy" in voice
-    assert not voice & {"torch", "torchaudio", "silero-vad", "onnxruntime"}
-    assert {_dist_name(d) for d in extras["vad"]} == {"silero-vad"}
-    local = {_dist_name(d) for d in extras["local-cu124"]}
-    assert "torch" in local and "onnxruntime" in local
+def _export(*extras: str) -> subprocess.CompletedProcess[str]:
+    command = [UV, "export", "--locked", "--no-hashes", "--no-emit-project"]
+    for extra in extras:
+        command.extend(("--extra", extra))
+    return subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=120)
 
 
-def test_cu124_profile_requires_voice_vad_and_local_extras() -> None:
-    text = (ROOT / "requirements-cu124.txt").read_text(encoding="utf-8")
-    assert ".[voice,vad,local-cu124]" in text
+def _selected_requirements(output: str, platform: str) -> dict[str, Requirement]:
+    environment = {**default_environment(), "sys_platform": platform}
+    requirements = {}
+    for line in output.splitlines():
+        line = line.strip()
+        if not line or line.startswith(("#", "--")):
+            continue
+        requirement = Requirement(line)
+        if requirement.marker is None or requirement.marker.evaluate(environment):
+            requirements[requirement.name] = requirement
+    return requirements
 
 
-def test_core_locks_serve_l1_only() -> None:
-    for lock in ("windows-py312-cpu.txt", "windows-py312-ci.txt"):
-        text = (ROOT / "requirements" / "locks" / lock).read_text(encoding="utf-8")
-        for banned in ("torch", "pyaudio", "silero-vad", "onnxruntime"):
-            assert not re.search(rf"^{banned}==", text, flags=re.IGNORECASE | re.MULTILINE), (
-                f"{lock} must not contain {banned} (it belongs to L2+ tiers)"
-            )
+@pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
+@pytest.mark.parametrize("extras", [(), ("voice",), ("dev",), ("voice", "dev")])
+def test_core_and_voice_resolutions_remain_model_free(extras: tuple[str, ...]) -> None:
+    result = _export(*extras)
+    assert result.returncode == 0, result.stderr
+    for platform in ("win32", "darwin"):
+        selected = _selected_requirements(result.stdout, platform)
+        assert "aiohttp" in selected
+        assert not selected.keys() & {"torch", "torchaudio", "silero-vad", "onnxruntime"}
+        assert ("pyaudio" in selected) == ("voice" in extras)
 
 
-def test_verify_profiles_match_tier_imports() -> None:
+@pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
+@pytest.mark.parametrize(
+    "build,version",
+    [("torch-cpu", "2.6.0+cpu"), ("local-cu124", "2.6.0+cu124")],
+)
+def test_windows_index_torch_selection_matches_the_requested_build(
+    build: str, version: str
+) -> None:
+    result = _export("voice", "vad", build)
+    assert result.returncode == 0, result.stderr
+    selected = _selected_requirements(result.stdout, "win32")
+    assert "silero-vad" in selected
+    for name in ("torch", "torchaudio"):
+        assert str(selected[name].specifier) == f"=={version}"
+    macos = _selected_requirements(result.stdout, "darwin")
+    assert "+cu124" not in str(macos["torch"].specifier)
+
+
+@pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
+def test_windows_rocm_selection_uses_only_the_fixed_amd_wheels() -> None:
+    result = _export("voice", "vad", "local-rocm")
+    assert result.returncode == 0, result.stderr
+    selected = _selected_requirements(result.stdout, "win32")
+    expected = {
+        "torch": "torch-2.9.1%2Brocm7.2.1",
+        "torchaudio": "torchaudio-2.9.1%2Brocm7.2.1",
+        "torchvision": "torchvision-0.24.1%2Brocm7.2.1",
+    }
+    for name, wheel in expected.items():
+        assert selected[name].url is not None
+        assert selected[name].url.startswith("https://repo.radeon.com/rocm/windows/")
+        assert wheel in selected[name].url
+    assert selected["rocm"].url is not None
+    assert "rocm-7.2.1" in selected["rocm"].url
+
+
+@pytest.mark.skipif(UV is None, reason="uv is required to check conflicting selections")
+@pytest.mark.parametrize(
+    "left,right",
+    [
+        ("torch-cpu", "local-cu124"),
+        ("torch-cpu", "local-rocm"),
+        ("local-cu124", "local-rocm"),
+    ],
+)
+def test_torch_builds_cannot_be_selected_together(left: str, right: str) -> None:
+    result = _export(left, right)
+    assert result.returncode != 0
+    assert left in result.stderr and right in result.stderr
+
+
+def test_verify_profiles_cover_the_capability_ladder() -> None:
     from tools import verify_python_environment as vpe
 
-    # Tier import sets must stay aligned with the extras they verify.
-    voice = {_dist_name(d) for d in _pyproject_extras()["voice"]}
-    for module in vpe.VOICE_IMPORTS:
-        assert module.replace("_", "-") in voice, f"VOICE_IMPORTS module {module} is not in the voice extra"
-    vad = {_dist_name(d) for d in _pyproject_extras()["vad"]}
-    for module in vpe.VAD_IMPORTS:
-        assert module.replace("_", "-") in vad, f"VAD_IMPORTS module {module} is not in the vad extra"
-    base = {_dist_name(d) for d in tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["dependencies"]}
-    # Import name → distribution name aliases for modules whose PyPI dist
-    # differs from the import path.
-    aliases = {"pil": "pillow", "google.genai": "google-genai"}
-    for module in vpe.BASE_IMPORTS:
-        expected = aliases.get(module.lower(), module.replace("_", "-").lower())
-        assert expected in base, f"BASE_IMPORTS module {module} is not a base dependency"
-
-
-def test_verify_profile_ladder_is_a_strict_prefix_chain() -> None:
-    from tools import verify_python_environment as vpe
-
-    # L1 ⊂ L2 ⊂ L3 ⊂ L4: each release profile verifies a strict superset of
-    # the tier below it, mirroring the install extras base → voice → vad → local-cu124.
     ladder = vpe.PROFILE_TIER_IMPORTS
-    assert tuple(ladder) == ("cpu", "ci", "voice", "vad", "cu124")
     chain = [set(ladder[name]) for name in ("cpu", "voice", "vad", "cu124")]
-    for lower, upper in zip(chain, chain[1:]):
-        assert lower < upper
-    assert set(vpe.VAD_IMPORTS) <= set(ladder["vad"]) - set(ladder["voice"])
+    assert all(lower < upper for lower, upper in zip(chain, chain[1:]))
+    assert ladder["vad-cpu"] == ladder["vad"]
     assert set(vpe.LOCAL_MODEL_IMPORTS) <= set(ladder["cu124"]) - set(ladder["vad"])
+    assert set(ladder["rocm"]) == set(ladder["cu124"]) | {"torchvision"}
 
 
-@pytest.mark.skipif(shutil.which("uv") is None, reason="uv is required for the resolver smoke")
-def test_resolver_smoke_torch_enters_only_at_vad_tier() -> None:
-    """L1/L2 resolution must stay torch-free; the vad tier is where torch enters."""
-
-    def _resolve(extra_args: tuple[str, ...], out: Path) -> str:
-        out.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(
-            [
-                shutil.which("uv"),
-                "pip",
-                "compile",
-                "pyproject.toml",
-                "--python-platform",
-                "windows",
-                "--python-version",
-                "3.12",
-                *extra_args,
-                f"--output-file={out.relative_to(ROOT)}",
-            ],
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        return out.read_text(encoding="utf-8")
-
-    l2 = _resolve(("--extra", "voice"), ROOT / "build" / "contract-l2.txt")
-    assert not re.search(r"^torch==", l2, flags=re.MULTILINE)
-    assert re.search(r"^pyaudio==", l2, flags=re.MULTILINE)
-
-    l3 = _resolve(("--extra", "voice", "--extra", "vad"), ROOT / "build" / "contract-l3.txt")
-    assert re.search(r"^torch==", l3, flags=re.MULTILINE)
-    assert re.search(r"^silero-vad==", l3, flags=re.MULTILINE)
+@pytest.mark.skipif(UV is None, reason="uv is required for lock consistency")
+def test_uv_lock_is_consistent_with_pyproject() -> None:
+    result = subprocess.run([UV, "lock", "--check"], cwd=ROOT, capture_output=True, text=True, timeout=120)
+    assert result.returncode == 0, result.stderr

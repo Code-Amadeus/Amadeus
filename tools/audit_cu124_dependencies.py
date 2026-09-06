@@ -16,24 +16,29 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from packaging.markers import default_environment
+from packaging.markers import Marker, default_environment
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
+from tools.verify_python_environment import dependency_check_command
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PYTHON = (
-    ROOT / ".venv_cu124" / "Scripts" / "python.exe"
+    ROOT / ".venv" / "Scripts" / "python.exe"
     if os.name == "nt"
-    else ROOT / ".venv_cu124" / "bin" / "python"
+    else ROOT / ".venv" / "bin" / "python"
 )
-DEFAULT_REQUIREMENT_FILES = (ROOT / "requirements.txt", ROOT / "requirements-dev.txt")
+# Single source of dependency truth: pyproject.toml declares base + every
+# optional tier (voice / vad / local-cu124 / dev); uv.lock is the lockfile.
+DEFAULT_DECLARATION_FILE = ROOT / "pyproject.toml"
 SCAN_ROOTS = (
     "agent_host",
     "asr",
@@ -191,6 +196,73 @@ def parse_requirement_files(paths: Iterable[Path], marker_environment: dict[str,
     return entries
 
 
+def parse_pyproject_dependencies(
+    pyproject_path: Path,
+    marker_environment: dict[str, str],
+    *,
+    active_extras: tuple[str, ...] = ("voice", "vad", "local-cu124"),
+) -> list[dict[str, Any]]:
+    """Expand a pyproject.toml into the same declared-requirement entries as
+    parse_requirement_files, so the comparison pipeline has one shape.
+
+    Base `[project].dependencies` are always active; optional tiers are
+    active only when named in `active_extras` (this audit targets the cu124
+    full-stack profile, mirroring the former `.[voice,vad,local-cu124]`).
+    The `extra == '<group>'` marker is preserved for reporting but is not
+    evaluated against the environment: an installed env cannot reconstruct
+    which extras were selected at install time.
+    """
+    data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    project = data.get("project", {})
+    groups: list[tuple[str | None, str]] = [
+        (None, line) for line in project.get("dependencies", [])
+    ]
+    for group, entries in project.get("optional-dependencies", {}).items():
+        groups.extend((group, line) for line in entries)
+
+    entries: list[dict[str, Any]] = []
+    source = _display_path(pyproject_path)
+    for line_number, (group, original) in enumerate(groups, 1):
+        requirement_text = re.split(r"\s+#", original, maxsplit=1)[0].strip()
+        try:
+            requirement = Requirement(requirement_text)
+        except InvalidRequirement as exc:
+            entries.append(
+                {
+                    "source": source,
+                    "line": line_number,
+                    "raw": original,
+                    "kind": "invalid",
+                    "error": str(exc),
+                }
+            )
+            continue
+        active = (group is None or group in active_extras) and (
+            requirement.marker is None
+            or requirement.marker.evaluate({**marker_environment, "extra": group or ""})
+        )
+        if group is not None:
+            base = requirement.marker
+            combined = (
+                f"({base}) and extra == '{group}'" if base else f"extra == '{group}'"
+            )
+            requirement.marker = Marker(combined)
+        entries.append(
+            {
+                "source": source,
+                "line": line_number,
+                "raw": str(requirement),
+                "kind": "requirement",
+                "name": requirement.name,
+                "canonical_name": canonicalize_name(requirement.name),
+                "specifier": str(requirement.specifier),
+                "marker": str(requirement.marker or ""),
+                "active": bool(active),
+            }
+        )
+    return entries
+
+
 def _internal_module_names(root: Path) -> set[str]:
     names = {
         path.name
@@ -215,7 +287,7 @@ def scan_imports(root: Path) -> tuple[dict[str, list[dict[str, Any]]], list[dict
             candidates.append(candidate)
 
     for path in sorted(set(candidates)):
-        if any(part in {"__pycache__", ".venv", ".venv_cu124"} for part in path.parts):
+        if any(part in {"__pycache__", ".venv"} for part in path.parts):
             continue
         relative = path.relative_to(root).as_posix()
         try:
@@ -302,7 +374,7 @@ def compare_dependencies(
                 "name": package["name"] if package else name,
                 "version": str(package["version"]) if package else "not-installed",
                 "license": str(package.get("license") or "NOASSERTION") if package else "NOASSERTION",
-                "declaration": "external-cu124" if name in EXTERNALLY_MANAGED_REQUIREMENTS else "requirements",
+                "declaration": "external-cu124" if name in EXTERNALLY_MANAGED_REQUIREMENTS else "pyproject",
             }
         )
     license_review_flags: list[dict[str, str]] = []
@@ -392,7 +464,7 @@ def _git_facts() -> dict[str, Any]:
 def build_audit(
     *,
     python: Path,
-    requirement_files: list[Path],
+    declaration_files: list[Path],
     pip_audit_path: Path | None,
     pip_audit_version: str = "",
     pip_audit_service: str = "",
@@ -403,10 +475,15 @@ def build_audit(
     if python_version:
         marker_environment["python_full_version"] = python_version
         marker_environment["python_version"] = ".".join(python_version.split(".")[:2])
-    requirements = parse_requirement_files(requirement_files, marker_environment)
+    requirements: list[dict[str, Any]] = []
+    for path in declaration_files:
+        if path.name == "pyproject.toml":
+            requirements.extend(parse_pyproject_dependencies(path, marker_environment))
+        else:
+            requirements.extend(parse_requirement_files([path], marker_environment))
     imports, parse_errors = scan_imports(ROOT)
     comparison = compare_dependencies(environment, requirements, imports)
-    pip_check = _run([str(python), "-m", "pip", "check"])
+    pip_check = _run(dependency_check_command(str(python)))
     vulnerability_audit = parse_pip_audit(
         pip_audit_path,
         tool_version=pip_audit_version,
@@ -425,7 +502,7 @@ def build_audit(
         "git": _git_facts(),
         "scope": {
             "profile": "windows-py312-cu124-observed",
-            "requirement_files": [_display_path(path) for path in requirement_files],
+            "requirement_files": [_display_path(path) for path in declaration_files],
             "scan_roots": list(SCAN_ROOTS),
             "scan_files": list(SCAN_FILES),
             "limitations": [
@@ -479,8 +556,8 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"| Installed distributions | `{len(environment.get('packages', []))}` |",
         f"| pip check | `{'passed' if report['pip_check']['returncode'] == 0 else 'failed'}` |",
         "",
-        "`pip check` only validates installed distribution metadata. It does not prove that the external",
-        "`requirements.txt` declaration is complete, and `pyproject.toml` intentionally declares no runtime dependencies.",
+        "`pip check` only validates installed distribution metadata. It does not prove that the",
+        "`pyproject.toml` declaration is complete or that the lockfile matches the environment.",
         "",
         "## Declaration drift",
         "",
@@ -520,7 +597,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "These are candidates for profile declarations, not an instruction to put every optional backend into one base requirements file.",
+            "These are candidates for profile declarations, not an instruction to put every optional backend into one base dependency group.",
             "",
             "## Vulnerability snapshot",
             "",
@@ -596,14 +673,12 @@ def render_markdown(report: dict[str, Any]) -> str:
             "## Reproduction",
             "",
             "```powershell",
-            "# Install the audit tool into an ignored directory; do not mutate .venv_cu124.",
-            ".venv_cu124\\Scripts\\python.exe -m pip install --target build\\_audit_tools\\pip_audit pip-audit==2.10.1",
-            "$env:PYTHONPATH = (Resolve-Path build\\_audit_tools\\pip_audit).Path",
-            ".venv_cu124\\Scripts\\python.exe -m pip_audit `",
-            "  --path .venv_cu124\\Lib\\site-packages --format json --desc off --aliases on `",
+            "# Run pip-audit from an isolated throwaway env (uvx); do not mutate .venv.",
+            "uvx pip-audit@2.10.1 `",
+            "  --path .venv\\Lib\\site-packages --format json --desc off --aliases on `",
             "  --progress-spinner off --output build\\audit\\pip-audit-cu124.json",
             "",
-            ".venv_cu124\\Scripts\\python.exe tools\\audit_cu124_dependencies.py `",
+            ".venv\\Scripts\\python.exe tools\\audit_cu124_dependencies.py `",
             "  --pip-audit-json build\\audit\\pip-audit-cu124.json `",
             "  --pip-audit-version 2.10.1 --pip-audit-service pypi `",
             "  --output-json build\\audit\\cu124-dependencies.json `",
@@ -644,7 +719,13 @@ def _write(path: Path, text: str, *, overwrite: bool) -> None:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--python", default=str(DEFAULT_PYTHON))
-    parser.add_argument("--requirements", action="append", default=[])
+    parser.add_argument(
+        "--requirements",
+        action="append",
+        default=[],
+        help="declaration input(s): a pyproject.toml (expanded) or classic "
+        "requirements file; defaults to the repo pyproject.toml",
+    )
     parser.add_argument("--pip-audit-json", default="")
     parser.add_argument("--pip-audit-version", default="")
     parser.add_argument("--pip-audit-service", default="")
@@ -661,18 +742,18 @@ def main() -> int:
     python = Path(args.python).resolve()
     if not python.is_file():
         raise SystemExit(f"target Python does not exist: {python}")
-    requirement_files = (
+    declaration_files = (
         [Path(value).resolve() for value in args.requirements]
         if args.requirements
-        else list(DEFAULT_REQUIREMENT_FILES)
+        else [DEFAULT_DECLARATION_FILE]
     )
-    for path in requirement_files:
+    for path in declaration_files:
         if not path.is_file():
-            raise SystemExit(f"requirements file does not exist: {path}")
+            raise SystemExit(f"declaration file does not exist: {path}")
     pip_audit_path = Path(args.pip_audit_json).resolve() if args.pip_audit_json else None
     report = build_audit(
         python=python,
-        requirement_files=requirement_files,
+        declaration_files=declaration_files,
         pip_audit_path=pip_audit_path,
         pip_audit_version=str(args.pip_audit_version),
         pip_audit_service=str(args.pip_audit_service),

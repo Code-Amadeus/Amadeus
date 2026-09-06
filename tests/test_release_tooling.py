@@ -305,5 +305,5 @@ def test_first_party_brand_assets_are_release_ready() -> None:
         component = components[component_id]
         assert component["release_action"] == "include"
         assert component["gate_status"] == "ready"
-        assert component["license_expression"] == "PolyForm-Noncommercial-1.0.0"
+        assert component["license_expression"] == "AGPL-3.0"
         assert "LICENSES/FIRST-PARTY-BRAND-ASSETS.md" in component["license_evidence"]

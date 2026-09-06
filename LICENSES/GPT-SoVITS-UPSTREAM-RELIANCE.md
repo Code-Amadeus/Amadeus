@@ -23,7 +23,7 @@ This reliance has two explicit limits:
   utilities, model weights, and reference voices retain their separately
   recorded dispositions.
 
-The root Amadeus PolyForm Noncommercial license applies to Amadeus-owned code
+The root Amadeus AGPL-3.0 license applies to Amadeus-owned code
 and modifications. It does not replace or narrow the MIT, Apache-2.0, BSD, or
 other terms that continue to govern third-party portions. This is a documented
 engineering release policy, not a claim that Amadeus can relicense upstream

@@ -20,7 +20,7 @@ answerable from the code:
     the 28/28 `readonly_ref` result only ever asserted that no work was
     created — never that the answer was true.
 
-    .venv_cu124\\Scripts\\python.exe -X utf8 tools/probes/probe_task_lookup.py [repeats]
+    .venv\\Scripts\\python.exe -X utf8 tools/probes/probe_task_lookup.py [repeats]
 
 Answers are printed, not just scored: the checks below are substring
 approximations and the prose is the real evidence.

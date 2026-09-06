@@ -14,8 +14,8 @@
   <a href="https://www.bilibili.com/video/BV1783G6hEYY/"><img src="https://img.shields.io/badge/demo-Bilibili-2f624a?labelColor=061710&logo=bilibili&logoColor=61eeb6" alt="Bilibili demo"/></a>
   <a href="./assets/architecture-overview-crt.svg"><img src="https://img.shields.io/badge/architecture-current-184b36?labelColor=061710" alt="Current architecture"/></a>
   <img src="https://img.shields.io/badge/version-0.1_%CE%B1-2f624a?labelColor=061710" alt="Amadeus 0.1 alpha"/>
-  <img src="https://img.shields.io/badge/baseline-CUDA%2012.4-c27832?labelColor=061710" alt="CUDA 12.4 local baseline"/>
-  <img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-272018?labelColor=061710" alt="License"/>
+  <img src="https://img.shields.io/badge/profiles-core%20%2F%20voice%20%2F%20CPU%20VAD%20%2F%20cu124-2f624a?labelColor=061710" alt="Installation profiles: core, voice, CPU VAD, cu124"/>
+  <img src="https://img.shields.io/badge/license-AGPL--3.0-272018?labelColor=061710" alt="License"/>
 </p>
 
 [![The Provider workspace in Amadeus, with task state, streaming results, and the embodied scene visible together](./assets/demo/provider-runtime.jpg)](https://www.bilibili.com/video/BV1783G6hEYY/)
@@ -27,10 +27,12 @@
 > [!IMPORTANT]
 > This repository contains buildable, runnable source. The current version is
 > **0.1 α**, not a packaged desktop release.
-> First-party code is licensed under
-> [PolyForm Noncommercial 1.0.0](LICENSE): noncommercial use, modification, and
-> redistribution are permitted; commercial use requires separate written
-> permission. Third-party code and external assets retain their own terms.
+> Amadeus first-party code is open-source under the
+> [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
+> Third-party code and external assets retain their own terms.
+>
+> **Want to run it first?** See [Quick start](#quick-start). For an introduction,
+> start with [What Amadeus is trying to solve](#what-amadeus-is-trying-to-solve).
 
 ## What Amadeus is trying to solve
 
@@ -85,6 +87,28 @@ Host registry; **Main Chat cannot invoke MCP tools directly**. Remote DeepSeek
 is the Main Chat baseline; remote ASR/TTS remain explicit compatibility routes.
 A local voice failure never silently uploads data or creates a second billable request.
 
+## Repository map
+
+```text
+electron/       Electron main, preload, React renderer, and Settings
+server/         authenticated local backend, Host control plane, and AUIP
+core/           Main Chat runtime and session integration
+agent_host/     Provider contracts, adapters, Work identity, and capabilities
+asr/            Conversation / Wake recognition backends
+tts/            synthesis backends, sentence pipeline, playback, and mouth signal
+render/         SpriteForge runtime adapter and PixiJS renderer
+wallpaper/      Electron/Lively hosts and Win32 desktop placement
+vn_player/      experimental VN Player integration
+assets/         Git-owned UI assets and external runtime-asset destinations
+release/        public-source selection, provenance, and deterministic archive policy
+```
+
+`main.py` is not an application entry; it prints a retirement notice. The
+Python entry is `uv run --locked --no-sync python -m server.app --port 17777`,
+and the desktop entry is `run_electron_utf8.bat` on Windows or
+`npm run electron:dev` from `electron/` on macOS. Both discover `.venv`
+automatically; choose an installation profile supported on your platform.
+
 ## Architecture
 
 [![Current Amadeus architecture: Host authority, Work Providers, Provider-scoped MCP/Skills, AUIP AppSessions, voice, and SpriteForge presentation](./assets/architecture-overview-crt.svg)](./assets/architecture-overview-crt.svg)
@@ -126,18 +150,57 @@ The current schema is `amadeus.auip/v0` and is implemented here. See
 public namespace placeholder; this release does not claim a standalone SDK or
 conformance suite.
 
-## Quick start — remote Chat + CUDA 12.4 local voice baseline
+## Quick start
 
-The first release follows the configuration used by the current Amadeus
-runtime: Windows 11, CUDA 12.4, remote DeepSeek Main Chat, local
-Qwen/SenseVoice, and GPT-SoVITS v3. llama.cpp remains an optional local LLM
-profile rather than an installation requirement.
+Dependencies are grouped into four capability tiers. Start with the minimal L1
+installation, then add the tiers you need; Torch enters only at L3/L4. Windows is
+the reference platform, and macOS L1/L2 installation and CI are validated
+separately. Desktop, microphone, and playback behavior still need real-device
+acceptance. L3 offers CPU VAD with **no NVIDIA GPU requirement**. The current L4
+cu124 profile targets Windows + NVIDIA. Windows ROCm 7.2.1 has a mutually exclusive
+`local-rocm` experimental lock and validation tools, but end-to-end acceptance on
+supported AMD hardware remains incomplete. RTX 50-series cu128 remains a community
+configuration record.
+
+All profiles use [uv](https://docs.astral.sh/uv/) and Python 3.12; CI pins uv 0.12.8.
+
+| Tier | Capability | Platform | Installation |
+|---|---|---|---|
+| L1 core | Text Chat, Work, Providers, and character rendering | Windows / macOS | `uv sync --locked` |
+| L2 voice | Remote TTS, playback, lip-sync, microphone, and remote ASR | Windows / macOS | `uv sync --locked --extra voice` |
+| L3 CPU VAD | Real-time interruption while the character is speaking | CPU; no NVIDIA GPU required | `uv sync --locked --extra voice --extra vad --extra torch-cpu` |
+| L4 local-cu124 | Local GPT-SoVITS, Qwen3 ASR, and wake word | Windows + NVIDIA GPU | `uv sync --locked --extra voice --extra vad --extra local-cu124` |
+| Experimental local-rocm | Local GPT-SoVITS / Qwen3 ASR sidecars | Windows + GPU in AMD's official support matrix | `uv sync --locked --extra voice --extra vad --extra local-rocm` |
+
+The four default tiers and the ROCm experiment use **the same `.venv`**. Give the
+complete target configuration each time: `uv sync` is exact and removes packages
+from omitted tiers. `torch-cpu`, `local-cu124`, and `local-rocm` are pairwise
+incompatible. To switch builds, replace the build extra while keeping `voice`
+and `vad`. See [installation profiles and migration](docs/install_profiles.md).
+
+- Main Chat defaults to remote DeepSeek. llama.cpp is an optional local LLM
+  profile under [Compatibility routes](#compatibility-routes), not an installation prerequisite.
+- L2 without VAD uses energy-based endpoint detection. Adding VAD enables
+  Silero endpointing and interruption.
+- On Windows, check each tier with
+  `uv run --locked --no-sync python tools/verify_python_environment.py --profile <cpu|voice|vad-cpu>`
+  (`ci` shares the core import checks). For L4, use `--profile cu124 --require-cuda-device`.
+  For ROCm, use `--profile rocm`, then run the GPU compute probe. Import/build
+  checks do not replace real model and audio-device tests.
+- L1 is sufficient for text-only/headless use. Start the backend with
+  `uv run --locked --no-sync python -m server.app --port 17777`.
+  Set `TTS_BACKEND=disabled` and disable Wake for a strict text-only profile.
 
 ### Reference hardware
 
-- Windows 11
-- CPython **3.12** (`3.12.10` is the current reference)
+**L1/L2 (Windows / macOS)**
+
+- CPython **3.12**, managed by uv; no system Python installation required
 - Node.js **22** (`22.21.1` is the current reference)
+- No GPU required
+
+**Additional requirements for L4 cu124 (Windows local models)**
+
 - CUDA 12.4-compatible NVIDIA GPU, targeting **8 GiB VRAM**
 - **16 GiB system RAM minimum; 32 GiB recommended**
 
@@ -145,18 +208,29 @@ Peak memory depends on local ASR/TTS models and concurrency. The target describe
 the remote-Chat/local-voice profile. An optional local LLM needs additional
 memory according to its model, quantization, context, and GPU offload.
 
-### Install
+### Base environment (L1/L2, Windows / macOS)
 
-```powershell
+Install uv with `winget install astral-sh.uv` on Windows or `brew install uv` on
+macOS. For L2 on macOS, install PortAudio first with `brew install portaudio`;
+PyAudio builds from source there. Then clone and choose a tier with the same
+commands on both platforms:
+
+```bash
 git clone https://github.com/Code-Amadeus/Amadeus.git
 cd Amadeus
 
-py -3.12 -m venv .venv_cu124
-.\.venv_cu124\Scripts\python.exe -m pip install --upgrade pip==26.2 setuptools==83.0.0 wheel==0.47.0
-.\.venv_cu124\Scripts\python.exe -m pip install -r requirements-cu124.txt
-.\.venv_cu124\Scripts\python.exe -m pip install --no-deps --no-build-isolation -e .
-.\.venv_cu124\Scripts\python.exe tools\verify_python_environment.py --profile cu124 --require-cuda-device
+uv venv .venv --python 3.12
+uv sync --locked                              # L1 core
+uv sync --locked --extra voice                # L2 voice (optional)
+```
 
+Keep the environment named `.venv`. Electron discovers its interpreter
+automatically (`Scripts/python.exe` on Windows, `bin/python3` on macOS), without
+requiring an `AMADEUS_PYTHON` override.
+
+Build the Electron frontend on either platform:
+
+```bash
 cd electron
 npm ci
 npm run build
@@ -164,8 +238,64 @@ cd ..
 ```
 
 `npm ci` uses the project postinstall hook to fetch the pinned Electron runtime.
-The cu124 profile fixes `torch==2.5.1+cu124`, `torchaudio==2.5.1+cu124`, and the
-local-model dependency set.
+Where network access requires it, configure npm/Electron mirrors, such as
+`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`.
+
+### VAD and local models
+
+Use the same `.venv` as L1/L2 and select the complete capability/build combination.
+
+**L3 CPU VAD — real-time interruption:** Torch enters as a CPU build.
+
+```powershell
+uv sync --locked --extra voice --extra vad --extra torch-cpu
+uv run --locked --no-sync python tools\verify_python_environment.py --profile vad-cpu
+```
+
+**L4 local-cu124 — local voice models:** select the CUDA profile in that same
+environment. On Windows, `[tool.uv.sources]` routes this extra's Torch/Torchaudio
+packages to the PyTorch cu124 index.
+
+```powershell
+uv sync --locked --extra voice --extra vad --extra local-cu124
+uv run --locked --no-sync python tools\verify_python_environment.py --profile cu124 --require-cuda-device
+```
+
+The L4 profile pins `torch==2.6.0+cu124`, `torchaudio==2.6.0+cu124`, and the local
+model dependencies. This is the current qualified local-model profile.
+
+**Experimental local-rocm (Windows):** the same `.venv` can select AMD's official
+ROCm 7.2.1, Torch/Torchaudio 2.9.1, and the local-model dependencies. Persistent
+Qwen ASR and GPT-SoVITS sidecars still use that environment's interpreter by
+default. This option is disabled by default and conflicts with cu124/CPU Torch
+builds. After installation, run the environment check and an actual FP32 GPU
+compute probe before model tests. Do not proceed after a compute failure, even
+if `torch.cuda.is_available()` returns True. Commands, hardware-matrix references,
+and acceptance limits are in the [Windows ROCm sidecar guide](tools/rocm_sidecar/README.md).
+
+The maintainer's Radeon 780M (gfx1103) was detected by ROCm but crashed in an AMD
+HIP DLL on the first FP32 operation. It is absent from AMD's official ROCm 7.2.1
+Windows PyTorch support matrix and is not treated as a usable target.
+
+> **GeForce RTX 50 series (Blackwell, community-validated configuration):**
+> the current `torch==2.6.0+cu124` profile is incompatible with RTX 50-series
+> GPUs and cannot run the local CUDA voice models. Update the NVIDIA driver and
+> use the community-validated PyTorch 2.7.0 CUDA 12.8 combination instead.
+>
+> Run these commands only in a separate experimental project environment, such
+> as `.venv_cu128`; keep the qualified `.venv` and its cu124 lock intact.
+>
+> ```powershell
+> uv venv .venv_cu128 --python 3.12
+> uv pip install --python .venv_cu128 --reinstall `
+>   torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 `
+>   --index-url https://download.pytorch.org/whl/cu128
+> ```
+>
+> This installs only the reported PyTorch combination, not the complete Amadeus
+> environment. It has not passed the project's full clean-install, ASR/TTS/VAD,
+> and Electron regression gates. `uv.lock` and the `--profile cu124` verifier
+> still require `torch==2.6.0+cu124`; this is not a replacement for that baseline.
 
 ### Install external runtime assets
 
@@ -173,15 +303,15 @@ The full local-voice profile needs the Qwen ASR and GPT-SoVITS v3 voice packs.
 The visual and character packs are optional:
 
 ```powershell
-py -3.12 tools\external_assets.py verify C:\Downloads\amadeus-asr-qwen3-0.6b.zip
-py -3.12 tools\external_assets.py install C:\Downloads\amadeus-asr-qwen3-0.6b.zip
-py -3.12 tools\external_assets.py verify C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
-py -3.12 tools\external_assets.py install C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
+uv run --locked --no-sync python tools\external_assets.py verify C:\Downloads\amadeus-asr-qwen3-0.6b.zip
+uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-asr-qwen3-0.6b.zip
+uv run --locked --no-sync python tools\external_assets.py verify C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
+uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
 
 # Optional scene and KTX2 character animation
-py -3.12 tools\external_assets.py install C:\Downloads\amadeus-visual-runtime.zip
-py -3.12 tools\external_assets.py install C:\Downloads\amadeus-character-kurisu.zip
-py -3.12 tools\external_assets.py status
+uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-visual-runtime.zip
+uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-character-kurisu.zip
+uv run --locked --no-sync python tools\external_assets.py status
 ```
 
 If a prepared Qwen pack is unavailable, download the upstream snapshot into
@@ -189,37 +319,37 @@ the same canonical location. Runtime inference remains offline and will not
 start an implicit download when the microphone is opened:
 
 ```powershell
-.\.venv_cu124\Scripts\python.exe -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-ASR-0.6B', local_dir='assets/models/asr/qwen3-asr-0.6b')"
+uv run --locked --no-sync python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-ASR-0.6B', local_dir='assets/models/asr/qwen3-asr-0.6b')"
 ```
 
 The Japanese GPT-SoVITS frontend prepares an OpenJTalk dictionary on first
 use. Prewarm it once if the normal application launch must remain offline:
 
 ```powershell
-.\.venv_cu124\Scripts\python.exe -c "import pyopenjtalk; print(pyopenjtalk.g2p('準備完了'))"
+uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('準備完了'))"
 ```
 
 ### Configure and launch
 
-```powershell
-Copy-Item .env.example .env
-```
-
-Provide the DeepSeek API key, then review:
+Copy `.env.example` to `.env` (`Copy-Item .env.example .env` on Windows;
+`cp .env.example .env` on macOS), provide the DeepSeek API key, then review Settings:
 
 - **Models:** `deepseek`, the official endpoint, `deepseek-v4-flash`, and an API key;
-- **Voice:** Qwen model directory, GPT-SoVITS **v3** checkpoints, reference audio/text, microphone, AEC, and barge-in;
+- **Voice:** remote TTS/ASR endpoints, such as MiMo; the L4 local stack also needs a Qwen model directory, GPT-SoVITS **v3** checkpoints, reference audio/text, microphone, AEC, and barge-in;
 - **General:** optional character-pack status and presentation settings.
 
-Launch Amadeus directly:
+Launch Amadeus:
 
-```powershell
-.\run_electron_cu124.bat
-```
+- Windows: `run_electron_utf8.bat`, the shared launcher for L1–L4; it discovers `.venv` automatically.
+- macOS: `cd electron && npm run electron:dev`.
 
 Use **Restart backend to apply** after changing startup settings. A
 **Not installed** character pack is healthy and does not disable Chat, Work,
 or headless startup.
+
+The default B2 AppSession action path does not block first-time setup. Chat and
+Settings still start without supported AUIP action-model credentials; application
+actions remain blocked, and Settings displays the missing capability.
 
 ## Compatibility routes
 
@@ -235,25 +365,6 @@ OpenAI-compatible endpoint, and start it when needed:
 
 LM Studio, Ollama, llama-cli, and hybrid profiles remain available, but none is
 an automatic fallback after a DeepSeek failure.
-
-### CPU/model-less
-
-CPU/model-less remains available for CI, headless development, and text
-Chat/Work:
-
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip==26.2 setuptools==83.0.0 wheel==0.47.0
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m pip install --no-deps --no-build-isolation -e .
-.\.venv\Scripts\python.exe tools\verify_python_environment.py --profile cpu
-$env:AMADEUS_PYTHON = (Resolve-Path .\.venv\Scripts\python.exe)
-.\run_electron_utf8.bat
-```
-
-Set `TTS_BACKEND=disabled` and disable Wake for a strict text-only profile.
-Remote DeepSeek is the first-release Main Chat profile. OpenAI-compatible remote
-ASR/TTS remain explicit compatibility routes.
 
 ### Optional remote model recommendations
 
@@ -281,10 +392,16 @@ first two form the full local-voice profile; the latter two affect only scene
 and character presentation.
 
 ```powershell
-py -3.12 tools\external_assets.py verify C:\path\to\asset-bundle.zip
-py -3.12 tools\external_assets.py install C:\path\to\asset-bundle.zip
-py -3.12 tools\external_assets.py status
+uv run --locked --no-sync python tools\external_assets.py verify C:\path\to\asset-bundle.zip
+uv run --locked --no-sync python tools\external_assets.py install C:\path\to\asset-bundle.zip
+uv run --locked --no-sync python tools\external_assets.py status
 ```
+
+A bundle can be installed from any tier: `external_assets.py` uses only the
+Python standard library. Running local voice models additionally requires the
+matching model dependencies and hardware; installing a bundle alone does not
+add them. See [installation profiles](docs/install_profiles.md) for the qualified
+cu124 profile and the ROCm experimental boundary.
 
 A SpriteForge character package ultimately lands at:
 
@@ -316,7 +433,7 @@ http://127.0.0.1:17777/wallpaper/lively/index.html
 This stable entry discovers the actual asset and bridge ports automatically
 and waits in place while wallpaper mode is off. Do not hard-code `17778` or
 `17797`. For diagnostics, run
-`py -3.12 tools\run_wallpaper_engine_bridge.py` and use the printed `Lively URL`.
+`uv run --locked --no-sync python tools\run_wallpaper_engine_bridge.py` and use the printed `Lively URL`.
 See the [Lively entry guide](wallpaper/lively/README.md).
 
 ## Configuration ownership
@@ -339,9 +456,12 @@ advanced diagnostics, experimental thresholds, and test-only flags remain in
 
 | Scope | Status |
 |---|---|
-| Windows + remote DeepSeek + CUDA 12.4 local voice | First-release product baseline, following the current working installation |
+| L1/L2 (text + remote voice) | Source deployment on Windows and macOS; Windows is the reference platform, macOS L1/L2 has separate CI, and desktop/audio behavior still needs real-device acceptance |
+| L3 CPU VAD | No NVIDIA GPU required; uses an explicit CPU build selection |
+| L4 cu124 (local CUDA 12.4 voice) | Windows + NVIDIA; follows the qualified local-model configuration |
+| AMD ROCm 7.2.1 | Single-`.venv` experimental lock, sidecar adapters and failure reporting; acceptance on supported AMD hardware remains incomplete |
+| RTX 50-series cu128 | Community configuration record without a formal lock or full regression qualification |
 | 8 GiB VRAM / 16–32 GiB RAM | Target configuration; actual use depends on model selection |
-| CPU/model-less | CI and compatibility path |
 | Remote DeepSeek Main Chat | First-release default profile |
 | Remote ASR / TTS | Explicit compatibility path, never a silent fallback |
 | Electron installer | Not provided yet; launch from source |
@@ -349,19 +469,20 @@ advanced diagnostics, experimental thresholds, and test-only flags remain in
 | SpriteForge character pack | Externally distributed; source starts without it |
 | VTS | Disabled-by-default compatibility route |
 | VN Player | Experimental |
+| Wallpaper mode | Windows hosts only (Lively / Wallpaper Engine); unavailable on other platforms |
 | PyQt / old wallpaper hosts | Retired from public mainline |
 | Claude CLI Provider | Committed future mainline Provider; no live caller yet |
-| Multi-platform support | Future direction, not a current support promise |
 
 ## Development and contribution
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe -m pip install --no-deps --no-build-isolation -e .
-.\.venv\Scripts\python.exe tools\verify_python_environment.py --profile ci
-.\.venv\Scripts\python.exe -X utf8 tools\run_tests.py
+uv sync --locked --extra dev      # Core + dev tools; removes unselected voice/model tiers
+# To retain voice/models, append --extra dev to the complete installation command
+uv run --locked --no-sync python tools\verify_python_environment.py --profile ci
+uv run --locked --no-sync python -X utf8 tools\run_tests.py
 
 cd electron
+npm ci
 npm run build
 npm audit --audit-level=high
 ```
@@ -373,26 +494,6 @@ with an Issue. Small fixes, documentation, tests, and presentation-only UI
 changes may open a PR directly. Report security issues privately under
 [SECURITY.md](SECURITY.md).
 
-## Repository map
-
-```text
-electron/       Electron main, preload, React renderer, and Settings
-server/         authenticated local backend, Host control plane, and AUIP
-core/           Main Chat runtime and session integration
-agent_host/     Provider contracts, adapters, Work identity, and capabilities
-asr/            Conversation / Wake recognition backends
-tts/            synthesis backends, sentence pipeline, playback, and mouth signal
-render/         SpriteForge runtime adapter and PixiJS renderer
-wallpaper/      Electron/Lively hosts and Win32 desktop placement
-vn_player/      experimental VN Player integration
-assets/         Git-owned UI assets and external runtime-asset destinations
-release/        public-source selection, provenance, and deterministic archive policy
-```
-
-`main.py` is not an application entry; it prints a retirement notice. The
-Python entry is `python -m server.app --port 17777`, and the desktop launcher is
-`run_electron_cu124.bat`.
-
 ## Public history and license
 
 The public repository begins with one prepared root commit. Internal development
@@ -400,10 +501,9 @@ commits, experimental branches, deleted character media, models, credentials,
 sessions, personal paths, and original co-author metadata were not migrated.
 The source itself remains included according to the reviewed release boundary.
 
-Amadeus first-party source and modifications use
-[PolyForm Noncommercial 1.0.0](LICENSE). This is a public-source,
-noncommercial license, not an OSI open-source license. Third-party components
-are recorded under [LICENSES](LICENSES/README.md) and
+Amadeus first-party source and modifications are open-source under the
+[GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE). Third-party
+components retain their own licenses, recorded under [LICENSES](LICENSES/README.md) and
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The code license grants no
 automatic rights to character, model, reference-audio, or external asset packs.
 

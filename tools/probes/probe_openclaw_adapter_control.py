@@ -6,7 +6,7 @@ whose opaque id was returned by this adapter invocation.
 
 Run::
 
-    .venv_cu124\Scripts\python.exe -X utf8 \
+    .venv\Scripts\python.exe -X utf8 \
         tools/probes/probe_openclaw_adapter_control.py --live
 """
 

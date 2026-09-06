@@ -4,8 +4,8 @@ A is the shipping one-proposal ControlDecision. B is the shadow-only exact
 source-clause plan. Neither arm dispatches Provider work or mutates a ledger.
 
 Usage:
-    .venv_cu124\Scripts\python.exe -X utf8 tools/probes/probe_compound_control_ab.py
-    .venv_cu124\Scripts\python.exe -X utf8 tools/probes/probe_compound_control_ab.py --repeat 3
+    .venv\Scripts\python.exe -X utf8 tools/probes/probe_compound_control_ab.py
+    .venv\Scripts\python.exe -X utf8 tools/probes/probe_compound_control_ab.py --repeat 3
 """
 
 from __future__ import annotations

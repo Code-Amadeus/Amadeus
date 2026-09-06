@@ -14,7 +14,7 @@ It deliberately separates two questions that are easy to conflate:
 
 Usage::
 
-    .venv_cu124\Scripts\python.exe -X utf8 \
+    .venv\Scripts\python.exe -X utf8 \
         tools/probes/probe_delegate_identity_handoff_abcd.py --repeats 1
 """
 
