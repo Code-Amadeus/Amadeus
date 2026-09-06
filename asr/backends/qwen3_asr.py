@@ -26,18 +26,17 @@ from asr.backend import ASRBackendFatalError, BaseASRBackend
 from asr.qwen_model import resolve_qwen_model_source
 from config.environment import venv_python as _venv_python
 from config.settings import QWEN3_ASR_REQUIRE_CUDA
+from config.local_model_loading import enforce_local_model_loading
 
 logger = logging.getLogger(__name__)
 
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
-os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+enforce_local_model_loading()
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _SIDECAR_SCRIPT = _PROJECT_ROOT / "asr" / "qwen3_asr_sidecar.py"
 
-_VENV_ASR_PYTHON = _venv_python(_PROJECT_ROOT, ".venv_asr")
-_VENV_CU124_PYTHON = _venv_python(_PROJECT_ROOT, ".venv_cu124")
+_VENV_PYTHON = _venv_python(_PROJECT_ROOT, ".venv")
 _TOKENS_PER_SEC = 10
 _MAX_TOKENS_CAP = 256
 _MAX_TOKENS_FLOOR = 32
@@ -160,10 +159,11 @@ class Qwen3ASRBackend(BaseASRBackend):
         if importlib.util.find_spec("qwen_asr") is not None:
             return sys.executable
 
-        if _VENV_CU124_PYTHON.exists():
-            return str(_VENV_CU124_PYTHON)
+        if _VENV_PYTHON.exists():
+            return str(_VENV_PYTHON)
 
-        return str(_VENV_ASR_PYTHON)
+        # Single-environment model: the running interpreter is the fallback.
+        return sys.executable
 
     @classmethod
     def _can_use_inprocess(cls) -> bool:
@@ -237,13 +237,20 @@ class Qwen3ASRBackend(BaseASRBackend):
             extra_kwargs = {}
             attn_impl = "eager"
             if "cuda" in device_map:
-                try:
-                    import flash_attn  # noqa: F401
-                    extra_kwargs["attn_implementation"] = "flash_attention_2"
-                    attn_impl = "flash_attention_2"
-                except ImportError:
-                    extra_kwargs["attn_implementation"] = "sdpa"
-                    attn_impl = "sdpa"
+                # ROCm reuses the torch.cuda API.  The current Windows ROCm
+                # build has unreliable default SDPA kernels on RDNA 4, so use
+                # eager attention for correctness until that runtime is fixed.
+                if getattr(torch.version, "hip", None):
+                    extra_kwargs["attn_implementation"] = "eager"
+                    attn_impl = "eager"
+                else:
+                    try:
+                        import flash_attn  # noqa: F401
+                        extra_kwargs["attn_implementation"] = "flash_attention_2"
+                        attn_impl = "flash_attention_2"
+                    except ImportError:
+                        extra_kwargs["attn_implementation"] = "sdpa"
+                        attn_impl = "sdpa"
 
             logger.info(
                 "[ASR:Qwen3ASR] torch runtime exe=%s torch=%s cuda_available=%s "
@@ -273,12 +280,24 @@ class Qwen3ASRBackend(BaseASRBackend):
             t0 = time.perf_counter()
             model = Qwen3ASRModel.from_pretrained(
                 resolve_qwen_model_source(),
+                local_files_only=True,
                 dtype=dtype,
                 device_map=device_map,
                 max_inference_batch_size=1,
                 max_new_tokens=_MAX_TOKENS_CAP,
                 **extra_kwargs,
             )
+            if getattr(torch.version, "hip", None):
+                hf_model = getattr(model, "model", None)
+                set_attention = getattr(hf_model, "set_attn_implementation", None)
+                if callable(set_attention):
+                    set_attention("eager")
+                    attn_impl = "eager_recursive"
+                else:
+                    torch.backends.cuda.enable_flash_sdp(False)
+                    torch.backends.cuda.enable_mem_efficient_sdp(False)
+                    torch.backends.cuda.enable_math_sdp(True)
+                    attn_impl = "eager+math_sdp"
             dt = time.perf_counter() - t0
             Qwen3ASRBackend._shared_model = model
             Qwen3ASRBackend._shared_device = device_map
@@ -363,7 +382,8 @@ class Qwen3ASRBackend(BaseASRBackend):
                     logger.info(
                         "[ASR:Qwen3ASR] ready "
                         f"(device={msg.get('device', '?')}, "
-                        f"attn={msg.get('attn_impl', msg.get('flash_attn', '?'))})"
+                        f"attn={msg.get('attn_impl', msg.get('flash_attn', '?'))}, "
+                        f"warmup={msg.get('warmup_ms', 0)}ms)"
                     )
                     Qwen3ASRBackend._shared_proc = proc
                     self._mode = "sidecar"

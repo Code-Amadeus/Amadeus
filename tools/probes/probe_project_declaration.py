@@ -12,7 +12,7 @@ registered project was auto-resolved, so the model had no reason to fill
 `project_id` at all -- which means existing logs predict nothing about how it
 behaves under the new prompt. Hence a probe rather than a query.
 
-    .venv_cu124\\Scripts\\python.exe -X utf8 tools/probes/probe_project_declaration.py [repeats]
+    .venv\\Scripts\\python.exe -X utf8 tools/probes/probe_project_declaration.py [repeats]
 
 Two rates, and they are not symmetric:
 

@@ -7,7 +7,7 @@ write state or dispatch Provider work.
 
 Usage::
 
-    .venv_cu124\Scripts\python.exe -u -X utf8 tools/probes/probe_project_candidate_set.py [repeats]
+    .venv\Scripts\python.exe -u -X utf8 tools/probes/probe_project_candidate_set.py [repeats]
 """
 
 from __future__ import annotations

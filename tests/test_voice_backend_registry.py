@@ -79,6 +79,23 @@ def test_qwen_conversation_language_maps_iso_codes_and_auto_detection() -> None:
     assert backend._language is None
 
 
+def test_qwen_probe_does_not_treat_a_core_venv_as_an_installed_model_runtime(tmp_path, monkeypatch) -> None:
+    from asr import qwen_model, registry
+    from config import environment
+
+    python = tmp_path / "python.exe"
+    python.touch()
+    monkeypatch.delenv("QWEN3_ASR_PYTHON", raising=False)
+    monkeypatch.setattr(registry.importlib.util, "find_spec", lambda _: None)
+    monkeypatch.setattr(environment, "venv_python", lambda *_: python)
+    monkeypatch.setattr(qwen_model, "qwen_model_status", lambda: (True, "retained model", tmp_path))
+    assert registry._qwen_probe()[0] == "not_installed"
+
+    # An explicitly selected model interpreter remains a supported sidecar entry.
+    monkeypatch.setenv("QWEN3_ASR_PYTHON", str(python))
+    assert registry._qwen_probe()[0] == "installed"
+
+
 def test_qwen_model_prefers_the_canonical_asset_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

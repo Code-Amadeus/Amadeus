@@ -11,8 +11,8 @@ from __future__ import annotations
 _DEPRECATION_MESSAGE = """\
 [DEPRECATED] main.py 的 PyQt 桌面 GUI 入口已退役。
   - 桌面端：启动 Electron 应用（run_electron_utf8.bat）
-  - 本地 CUDA 语音 profile：run_electron_cu124.bat
-  - 后端：  python -m server.app [--port 17777]
+  - 本地 CUDA 语音 profile：run_electron_utf8.bat
+  - 后端：  uv run --locked --no-sync python -m server.app [--port 17777]
 旧 PyQt 代码已隔离至 legacy/pyqt（见 DEPRECATED_FILES.md）。"""
 
 
