@@ -51,6 +51,22 @@
     }
   }
 
+  // Keep the foreground character closer to the muted CRT background without
+  // changing any wallpaper layout or the original character assets.
+  const WALLPAPER_CHARACTER_BRIGHTNESS = 0.95;
+  const WALLPAPER_CHARACTER_SATURATION = -0.10;
+
+  function applyWallpaperCharacterColorGrade(layer) {
+    if (!layer || layer.__amadeusWallpaperCharacterGrade || !window.PIXI || typeof PIXI.ColorMatrixFilter !== "function") {
+      return;
+    }
+    const grade = new PIXI.ColorMatrixFilter();
+    grade.brightness(WALLPAPER_CHARACTER_BRIGHTNESS, false);
+    grade.saturate(WALLPAPER_CHARACTER_SATURATION, true);
+    layer.filters = (layer.filters || []).concat(grade);
+    layer.__amadeusWallpaperCharacterGrade = grade;
+  }
+
   const characterRuntime = {
     setMode(mode) { callRender("setMode", [mode]); },
     loadSpriteFrames(emotion, urls) { callRender("loadSpriteFrames", [emotion, urls]); },
@@ -1765,6 +1781,7 @@
         this.canvasSurface = window.createCrtCanvasSurface();
       }
       scenarioRuntime.init(this.app, (payload && payload.scenario) || {});
+      this._applyCharacterColorGrade();
       if (!this._defaultSubtitleEnabled) characterRuntime.setSubtitle("");
       this.layout();
       console.log("[WallpaperScene] initialized with separated scene/character controllers");
@@ -1775,6 +1792,12 @@
         scenarioEnabled: !!(payload && payload.scenario && payload.scenario.enabled),
         stageChildren: this.app && this.app.stage ? this.app.stage.children.length : 0,
       });
+    },
+
+    _applyCharacterColorGrade() {
+      const renderApp = window.renderApp || {};
+      applyWallpaperCharacterColorGrade(renderApp._sprite && renderApp._sprite.container);
+      applyWallpaperCharacterColorGrade(renderApp._live2d && renderApp._live2d.container);
     },
 
     setBackground(url) {
