@@ -205,9 +205,13 @@ def test_pending_chat_visible_only_after_confirmed():
         first_token_sent = asyncio.Event()
         confirmed = asyncio.Event()
         events: list[tuple[str, dict]] = []
+        user_events: list[dict] = []
 
         async def on_event(method, params):
             events.append((method, dict(params)))
+
+        async def on_user(_method, params):
+            user_events.append(dict(params))
 
         async def stream(text, gui_callback=None, provider=None,
                          visual_context=None, turn_id="", **kw):
@@ -219,12 +223,14 @@ def test_pending_chat_visible_only_after_confirmed():
 
         bus.on(Method.CHAT_TOKEN, on_event)
         bus.on(Method.CHAT_COMPLETE, on_event)
+        bus.on(Method.CHAT_USER, on_user)
         try:
             h = ChatHandler()
             h.configure(stream_llm_query=stream, pending_sentence_items=None)
             await h._handle_send({
                 "text": "テスト",
                 "turn_id": "spec_visible",
+                "session_id": "spec-visible-session",
                 "source": "asr_spec",
                 "pending": True,
             })
@@ -233,6 +239,12 @@ def test_pending_chat_visible_only_after_confirmed():
             assert events == []
 
             assert await h.confirm_pending_turn("spec_visible") is True
+            assert user_events == [{
+                "turn_id": "spec_visible",
+                "text": "テスト",
+                "session_id": "spec-visible-session",
+                "source": "asr_spec",
+            }]
             confirmed.set()
             await asyncio.wait_for(h._stream_task, timeout=5)
 
@@ -245,6 +257,7 @@ def test_pending_chat_visible_only_after_confirmed():
         finally:
             bus.off(Method.CHAT_TOKEN, on_event)
             bus.off(Method.CHAT_COMPLETE, on_event)
+            bus.off(Method.CHAT_USER, on_user)
 
     asyncio.run(run())
 
@@ -283,6 +296,103 @@ def test_confirmed_chat_turn_emits_the_authoritative_user_message():
             assert handler._stream_task is not None
             await asyncio.wait_for(handler._stream_task, timeout=5)
         finally:
+            bus.off(Method.CHAT_USER, capture)
+
+    asyncio.run(run())
+
+
+def test_pending_chat_emits_the_authoritative_user_message_only_after_confirmation():
+    async def run():
+        _fresh_coordinator()
+        from server.event_bus import bus
+        from server.handlers.chat_handler import ChatHandler
+        from server.protocol import Method
+
+        events: list[dict] = []
+        stream_started = asyncio.Event()
+
+        async def capture(_method, params):
+            events.append(dict(params))
+
+        async def stream(_text, **_kwargs):
+            stream_started.set()
+            await asyncio.Event().wait()
+
+        bus.on(Method.CHAT_USER, capture)
+        try:
+            handler = ChatHandler()
+            handler.configure(stream_llm_query=stream, pending_sentence_items=None)
+            expected = {
+                "turn_id": "spec-user-visible",
+                "text": "wake request",
+                "session_id": "wake-session",
+                "source": "wake",
+            }
+            await handler.send_text(
+                "wake request",
+                turn_id="spec-user-visible",
+                session_id="wake-session",
+                source="wake",
+                pending=True,
+            )
+            await asyncio.wait_for(stream_started.wait(), timeout=5)
+            assert events == []
+
+            assert await handler.confirm_pending_turn("spec-user-visible") is True
+            assert events == [expected]
+            # The coordinator rejects a repeated decision, so the Chat handler
+            # must not emit the same user message twice.
+            assert await handler.confirm_pending_turn("spec-user-visible") is False
+            assert events == [expected]
+        finally:
+            if handler._stream_task and not handler._stream_task.done():
+                handler._stream_task.cancel()
+                try:
+                    await handler._stream_task
+                except asyncio.CancelledError:
+                    pass
+            bus.off(Method.CHAT_USER, capture)
+
+    asyncio.run(run())
+
+
+def test_discarded_pending_chat_never_emits_a_user_message():
+    async def run():
+        _fresh_coordinator()
+        from server.event_bus import bus
+        from server.handlers.chat_handler import ChatHandler
+        from server.protocol import Method
+
+        events: list[dict] = []
+        stream_started = asyncio.Event()
+
+        async def capture(_method, params):
+            events.append(dict(params))
+
+        async def stream(_text, **_kwargs):
+            stream_started.set()
+            await asyncio.Event().wait()
+
+        bus.on(Method.CHAT_USER, capture)
+        try:
+            handler = ChatHandler()
+            handler.configure(stream_llm_query=stream, pending_sentence_items=None)
+            await handler.send_text(
+                "discard this",
+                turn_id="spec-discarded",
+                source="wake",
+                pending=True,
+            )
+            await asyncio.wait_for(stream_started.wait(), timeout=5)
+            assert await handler.discard_pending_turn("spec-discarded") is True
+            assert events == []
+        finally:
+            if handler._stream_task and not handler._stream_task.done():
+                handler._stream_task.cancel()
+                try:
+                    await handler._stream_task
+                except asyncio.CancelledError:
+                    pass
             bus.off(Method.CHAT_USER, capture)
 
     asyncio.run(run())

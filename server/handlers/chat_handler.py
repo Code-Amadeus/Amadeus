@@ -33,6 +33,7 @@ class ChatHandler(RequestHandler):
         self._active_accumulated_text = ""
         self._last_assistant_turn_id = ""
         self._last_assistant_text = ""
+        self._pending_user_events: dict[str, dict[str, str]] = {}
 
     def configure(
         self,
@@ -150,20 +151,22 @@ class ChatHandler(RequestHandler):
         chat_epoch = self._chat_epoch
         self._active_turn_id = turn_id
         self._active_accumulated_text = ""
+        user_event = {
+            "turn_id": turn_id,
+            "text": str(text or ""),
+            "session_id": session_id,
+            "source": str(params.get("source") or ""),
+        }
         # Every confirmed turn has one authoritative user-message event.  The
         # desktop chat consumes it alongside turns submitted by other input
         # surfaces (for example, the wallpaper keyboard), instead of each
-        # surface maintaining its own partial chat transcript.
+        # surface maintaining its own partial chat transcript.  A pending turn
+        # must wait for its ledger decision so discarded speculation never
+        # appears in the transcript.
         if not pending:
-            await bus.emit(
-                Method.CHAT_USER,
-                {
-                    "turn_id": turn_id,
-                    "text": str(text or ""),
-                    "session_id": session_id,
-                    "source": str(params.get("source") or ""),
-                },
-            )
+            await bus.emit(Method.CHAT_USER, user_event)
+        else:
+            self._pending_user_events[turn_id] = user_event
 
         def token_callback(accumulated: str) -> None:
             if chat_epoch != self._chat_epoch or turn_id != self._active_turn_id:
@@ -592,10 +595,17 @@ class ChatHandler(RequestHandler):
         try:
             from core.turn_coordinator import get_turn_coordinator
 
-            return get_turn_coordinator().confirm_turn(turn_id, reason=reason or "caller_confirm")
+            confirmed = get_turn_coordinator().confirm_turn(
+                turn_id, reason=reason or "caller_confirm"
+            )
         except Exception:
             logger.exception("confirm_pending_turn failed turn=%s", turn_id)
             return False
+        user_event = self._pending_user_events.pop(turn_id, None)
+        if confirmed:
+            if user_event is not None:
+                await bus.emit(Method.CHAT_USER, user_event)
+        return confirmed
 
     async def discard_pending_turn(self, turn_id: str, *, reason: str = "") -> bool:
         """作废投机轮（静默，无打断标注、无历史写入）。
@@ -616,6 +626,7 @@ class ChatHandler(RequestHandler):
             self._active_accumulated_text = ""
             if self._stream_task and not self._stream_task.done():
                 self._stream_task.cancel()
+        self._pending_user_events.pop(turn_id, None)
         return ok
 
     async def _handle_abort(self, params: dict[str, Any]) -> dict[str, Any]:
