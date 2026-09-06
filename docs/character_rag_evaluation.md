@@ -1,5 +1,8 @@
 # Character RAG evaluation — 2026-09-06
 
+This records the original 30-entry integration evaluation. For the subsequent
+52-entry corpus and legacy-data audit, see [curation and comparison](character_rag_curation.md).
+
 Optional retrieval improves several missing character facts in this sample. It
 does **not** establish reliable persona behavior or eliminate irrelevant retrieval.
 The feature remains default-off; `llm/prompts.py` is unchanged. Knowledge and
