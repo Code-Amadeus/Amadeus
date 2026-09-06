@@ -38,6 +38,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Optional character retrieval; select the existing torch-cpu build for CPU-only
+# use, or add rag to a complete local-cu124/local-rocm command. No voice required.
+rag = [
+    "faiss-cpu==1.14.2",
+    "sentence-transformers==5.5.1",
+    # Share the qualified offline-loading API contract and Qwen-compatible stack.
+    "huggingface-hub==0.36.2",
+    "transformers==4.57.6",
+]
 # L2 voice interaction layer: playback, capture, echo cancellation, remote
 # TTS/ASR. Torch-free on purpose: L2 stays a few hundred MB.
 voice = [

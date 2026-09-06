@@ -153,7 +153,8 @@ conformance suite.
 ## Quick start
 
 Dependencies are grouped into four capability tiers. Start with the minimal L1
-installation, then add the tiers you need; Torch enters only at L3/L4. Windows is
+installation, then add the tiers you need. Torch enters at L3/L4 in the default
+ladder; optional RAG also adds local embedding/Torch dependencies. Windows is
 the reference platform, and macOS L1/L2 installation and CI are validated
 separately. Desktop, microphone, and playback behavior still need real-device
 acceptance. L3 offers CPU VAD with **no NVIDIA GPU requirement**. The current L4
@@ -298,6 +299,12 @@ Windows PyTorch support matrix and is not treated as a usable target.
 > still require `torch==2.6.0+cu124`; this is not a replacement for that baseline.
 
 ### Install external runtime assets
+
+[Optional character RAG](docs/character_rag.md) is off by default and works with
+remote and local Main Chat. It includes a buildable Chinese/Japanese starter
+corpus and supports personal knowledge directories. Settings shows applied
+thresholds and loading state. RAG adds local embedding/Torch dependencies;
+the guide covers setup, diagnostics and evaluation limits.
 
 The full local-voice profile needs the Qwen ASR and GPT-SoVITS v3 voice packs.
 The visual and character packs are optional:

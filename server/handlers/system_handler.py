@@ -1,4 +1,4 @@
-﻿"""Adapter for system config, status, and lifecycle."""
+"""Adapter for system config, status, and lifecycle."""
 
 from __future__ import annotations
 
@@ -420,8 +420,25 @@ def _model_connections(
     *,
     local_status: dict[str, Any] | None = None,
     hybrid_status: dict[str, Any] | None = None,
+    rag_status: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     active = str(active_provider or "deepseek").strip().lower()
+    from core.character_rag import CharacterRAG
+
+    rag_status = rag_status if rag_status is not None else CharacterRAG().status()
+    rag_detail = (
+        f"{rag_status['detail']} Directory: {rag_status['index_dir']}. "
+        f"Applied threshold: {rag_status['max_distance']}; top-k: {rag_status['top_k']}."
+    )
+    if rag_status.get("model"):
+        rag_detail += f" Model: {rag_status['model']}; entries: {rag_status['entries']}."
+    last_retrieval = rag_status.get("last_retrieval")
+    if last_retrieval:
+        rag_detail += (
+            f" Last retrieval: {last_retrieval['matched_count']} matches; "
+            f"nearest distance: {last_retrieval['nearest_distance']}; "
+            f"reference selected: {last_retrieval['reference_selected']}."
+        )
     active_connections = {
         "hybrid": {"hybrid_local", "bedrock"},
         "hybrid2": {"hybrid_local", "deepseek"},
@@ -434,19 +451,6 @@ def _model_connections(
             field_type="select", options=("llama_server", "lmstudio", "ollama", "cli"),
         ),
         _startup_field("LOCAL_LLM_MODEL", "Model", settings.LOCAL_LLM_MODEL),
-        _startup_field(
-            "RAG_ENABLED_FOR_LOCAL", "Local knowledge retrieval",
-            bool(settings.RAG_ENABLED_FOR_LOCAL), field_type="boolean",
-        ),
-        _startup_field(
-            "RAG_TOP_K", "Knowledge results", settings.RAG_TOP_K,
-            field_type="number", minimum=1, maximum=20, step=1,
-        ),
-        _startup_field(
-            "RAG_MAX_DISTANCE", "Knowledge distance threshold",
-            settings.RAG_MAX_DISTANCE, field_type="number",
-            minimum=0, maximum=2, step=0.01,
-        ),
     ]
     if local_type == "llama_server":
         local_fields.extend(
@@ -540,6 +544,22 @@ def _model_connections(
                     field_type="select",
                     options=("deepseek", "openai", "gemini", "bedrock", "local", "hybrid", "hybrid2", "hybrid3"),
                 ),
+            ],
+        },
+        {
+            "id": "character_rag",
+            "label": "Character knowledge (optional RAG)",
+            "description": "Local retrieval for all chat models. Build an index first; retrieved excerpts are sent to the selected model, including remote APIs. Restart after changes.",
+            "active": bool(settings.RAG_ENABLED),
+            "configured": bool(rag_status["index_present"]),
+            "status": rag_status["state"],
+            "status_ok": rag_status["state"] in {"ready", "disabled"},
+            "status_detail": rag_detail,
+            "fields": [
+                _startup_field("RAG_ENABLED", "Enable character knowledge", bool(settings.RAG_ENABLED), field_type="boolean"),
+                _startup_field("RAG_INDEX_DIR", "Built index directory", settings.RAG_INDEX_DIR, field_type="path"),
+                _startup_field("RAG_TOP_K", "Maximum results", settings.RAG_TOP_K, field_type="number", minimum=1, maximum=20, step=1),
+                _startup_field("RAG_MAX_DISTANCE", "Maximum squared L2 distance", settings.RAG_MAX_DISTANCE, field_type="number", minimum=0, maximum=4, step=0.01),
             ],
         },
         {
@@ -911,6 +931,7 @@ class SystemHandler(RequestHandler):
                 active_provider,
                 local_status=local_status,
                 hybrid_status=hybrid_status,
+                rag_status=chat_runtime.character_rag.status(),
             ),
             "model_roles": _model_role_configuration(settings),
             "work_provider_configuration": _work_provider_configuration(settings),
