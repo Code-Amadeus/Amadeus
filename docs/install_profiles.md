@@ -28,6 +28,11 @@ Core and voice remain Torch-free. CPU VAD needs no NVIDIA GPU. `torch-cpu`,
 Switching builds replaces the previous build extra while preserving `voice` and
 `vad` in the complete command.
 
+Optional [character RAG](character_rag.md) adds local embedding dependencies.
+For core plus retrieval use `uv sync --locked --extra rag --extra torch-cpu`;
+for an existing local-voice profile, append `--extra rag` to its complete command
+without changing its Torch build selection. This does not add a new GPU baseline.
+
 `uv sync` removes packages outside the selected configuration. To add development
 tools, append `--extra dev` to the complete command for your intended capability.
 Running only `uv sync --locked --extra dev` selects core plus development tools

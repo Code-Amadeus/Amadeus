@@ -141,8 +141,8 @@ placeholder，本版本不声称已经发布独立 SDK 或 conformance suite。
 
 ## 快速开始
 
-依赖按能力分四级：先装最小的 L1 跑通，再按需升梯（torch 只在 L3/L4 进入
-安装）。Windows 是当前参考平台，macOS 的 L1/L2 安装与 CI 单独验证；实际
+依赖按能力分四级：先装最小的 L1 跑通，再按需升梯（默认阶梯中 torch 在 L3/L4 进入安装；可选 RAG 也会引入
+本地 embedding/Torch 依赖）。Windows 是当前参考平台，macOS 的 L1/L2 安装与 CI 单独验证；实际
 桌面、麦克风和播放体验仍需设备验收。L3 可选择 CPU VAD，**无需 NVIDIA GPU**；
 L4 的当前 cu124 配置面向 Windows + NVIDIA。Windows ROCm 7.2.1 已有互斥的
 `local-rocm` 实验锁与验证入口，但尚未完成受支持 AMD GPU 的端到端验收；RTX 50 系
@@ -291,6 +291,10 @@ Torch 构建互斥。安装后必须先运行环境验证与真实 FP32 GPU comp
 > baseline.
 
 ### 安装外部运行资产
+
+另提供默认关闭的[角色知识 RAG 选项](docs/character_rag.md)，支持远程和本地 Main Chat。
+它包含可直接构建的中日文基础资料，也支持自己的知识目录；Settings 可查看实际阈值和加载状态。
+RAG 会额外安装本地 embedding/Torch 依赖。资料、索引构建、诊断与验证范围见说明。
 
 完整本地语音需要 Qwen ASR 与 GPT-SoVITS v3 语音包；视觉和角色包可选：
 

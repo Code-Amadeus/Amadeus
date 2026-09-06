@@ -250,11 +250,15 @@ FIRST_SENTENCE_AUDIO_CACHE_DIR = _str(
 FIRST_SENTENCE_AUDIO_CACHE_MAX_SECONDS = _float("FIRST_SENTENCE_AUDIO_CACHE_MAX_SECONDS", 1.5)
 
 # ===========================================================================
-# RAG（本地 Kurisu 知识库）
+# Optional local retrieval for all Main Chat models (restart required).
+# The retired local-only flag does not authorize sending references remotely.
 # ===========================================================================
-RAG_ENABLED_FOR_LOCAL = _bool("RAG_ENABLED_FOR_LOCAL", False)
-RAG_TOP_K             = _int("RAG_TOP_K", 1)
-RAG_MAX_DISTANCE      = _float("RAG_MAX_DISTANCE", 0.25)
+RAG_ENABLED = _bool("RAG_ENABLED", False)
+RAG_INDEX_DIR = _str("RAG_INDEX_DIR", ".amadeus/character-rag")
+RAG_TOP_K             = _int("RAG_TOP_K", 3)
+RAG_MAX_DISTANCE      = _float("RAG_MAX_DISTANCE", 0.33)
+if RAG_ENABLED and (not 1 <= RAG_TOP_K <= 20 or not 0 <= RAG_MAX_DISTANCE <= 4):
+    raise ValueError("RAG_TOP_K must be 1..20 and RAG_MAX_DISTANCE must be 0..4")
 
 # ===========================================================================
 # VTS（VTube Studio WebSocket）

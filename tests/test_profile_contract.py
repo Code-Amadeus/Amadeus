@@ -63,7 +63,9 @@ def test_core_and_voice_resolutions_remain_model_free(extras: tuple[str, ...]) -
     for platform in ("win32", "darwin"):
         selected = _selected_requirements(result.stdout, platform)
         assert "aiohttp" in selected
-        assert not selected.keys() & {"torch", "torchaudio", "silero-vad", "onnxruntime"}
+        assert not selected.keys() & {
+            "torch", "torchaudio", "silero-vad", "onnxruntime", "faiss-cpu", "sentence-transformers",
+        }
         assert ("pyaudio" in selected) == ("voice" in extras)
 
 
@@ -72,13 +74,16 @@ def test_core_and_voice_resolutions_remain_model_free(extras: tuple[str, ...]) -
     "build,version",
     [("torch-cpu", "2.6.0+cpu"), ("local-cu124", "2.6.0+cu124")],
 )
+@pytest.mark.parametrize("rag", [False, True])
 def test_windows_index_torch_selection_matches_the_requested_build(
-    build: str, version: str
+    build: str, version: str, rag: bool
 ) -> None:
-    result = _export("voice", "vad", build)
+    result = _export("voice", "vad", build, *(("rag",) if rag else ()))
     assert result.returncode == 0, result.stderr
     selected = _selected_requirements(result.stdout, "win32")
     assert "silero-vad" in selected
+    assert ("sentence-transformers" in selected) == rag
+    assert ("faiss-cpu" in selected) == rag
     for name in ("torch", "torchaudio"):
         assert str(selected[name].specifier) == f"=={version}"
     macos = _selected_requirements(result.stdout, "darwin")
@@ -86,10 +91,13 @@ def test_windows_index_torch_selection_matches_the_requested_build(
 
 
 @pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
-def test_windows_rocm_selection_uses_only_the_fixed_amd_wheels() -> None:
-    result = _export("voice", "vad", "local-rocm")
+@pytest.mark.parametrize("rag", [False, True])
+def test_windows_rocm_selection_uses_only_the_fixed_amd_wheels(rag: bool) -> None:
+    result = _export("voice", "vad", "local-rocm", *(("rag",) if rag else ()))
     assert result.returncode == 0, result.stderr
     selected = _selected_requirements(result.stdout, "win32")
+    assert ("sentence-transformers" in selected) == rag
+    assert ("faiss-cpu" in selected) == rag
     expected = {
         "torch": "torch-2.9.1%2Brocm7.2.1",
         "torchaudio": "torchaudio-2.9.1%2Brocm7.2.1",
