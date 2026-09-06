@@ -1,4 +1,4 @@
-﻿"""Adapter for system config, status, and lifecycle."""
+"""Adapter for system config, status, and lifecycle."""
 
 from __future__ import annotations
 
@@ -422,6 +422,9 @@ def _model_connections(
     hybrid_status: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     active = str(active_provider or "deepseek").strip().lower()
+    from core.character_rag import resolve_directory
+
+    rag_directory = resolve_directory(settings.RAG_INDEX_DIR)
     active_connections = {
         "hybrid": {"hybrid_local", "bedrock"},
         "hybrid2": {"hybrid_local", "deepseek"},
@@ -434,19 +437,6 @@ def _model_connections(
             field_type="select", options=("llama_server", "lmstudio", "ollama", "cli"),
         ),
         _startup_field("LOCAL_LLM_MODEL", "Model", settings.LOCAL_LLM_MODEL),
-        _startup_field(
-            "RAG_ENABLED_FOR_LOCAL", "Local knowledge retrieval",
-            bool(settings.RAG_ENABLED_FOR_LOCAL), field_type="boolean",
-        ),
-        _startup_field(
-            "RAG_TOP_K", "Knowledge results", settings.RAG_TOP_K,
-            field_type="number", minimum=1, maximum=20, step=1,
-        ),
-        _startup_field(
-            "RAG_MAX_DISTANCE", "Knowledge distance threshold",
-            settings.RAG_MAX_DISTANCE, field_type="number",
-            minimum=0, maximum=2, step=0.01,
-        ),
     ]
     if local_type == "llama_server":
         local_fields.extend(
@@ -540,6 +530,21 @@ def _model_connections(
                     field_type="select",
                     options=("deepseek", "openai", "gemini", "bedrock", "local", "hybrid", "hybrid2", "hybrid3"),
                 ),
+            ],
+        },
+        {
+            "id": "character_rag",
+            "label": "Character knowledge (experiment)",
+            "description": "Local retrieval for all chat models. Build an index first; retrieved excerpts are sent to the selected model, including remote APIs. Restart after changes.",
+            "active": bool(settings.RAG_ENABLED),
+            "configured": all(
+                (rag_directory / name).is_file() for name in ("knowledge.json", "index.faiss")
+            ),
+            "fields": [
+                _startup_field("RAG_ENABLED", "Enable character knowledge", bool(settings.RAG_ENABLED), field_type="boolean"),
+                _startup_field("RAG_INDEX_DIR", "Built index directory", settings.RAG_INDEX_DIR, field_type="path"),
+                _startup_field("RAG_TOP_K", "Maximum results", settings.RAG_TOP_K, field_type="number", minimum=1, maximum=20, step=1),
+                _startup_field("RAG_MAX_DISTANCE", "Maximum squared L2 distance", settings.RAG_MAX_DISTANCE, field_type="number", minimum=0, maximum=4, step=0.01),
             ],
         },
         {

@@ -204,6 +204,10 @@ cd ..
 
 ### 安装外部运行资产
 
+本实验分支另提供默认关闭的[角色知识 RAG 选项](docs/character_rag_experiment.md)：
+复用本地 FAISS/E5 检索，支持远程和本地 Main Chat，可在 `.env` 或 Settings 开关。
+说明包含索引构建、旧 JSON 库复用和“原模型／更强模型／原模型加 RAG”三组对照步骤。
+
 完整本地语音需要 Qwen ASR 与 GPT-SoVITS v3 语音包；视觉和角色包可选：
 
 ```powershell

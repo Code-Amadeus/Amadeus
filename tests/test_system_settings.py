@@ -421,9 +421,6 @@ def test_local_model_settings_show_only_the_selected_compatibility_profile() -> 
         "LOCAL_LLM_TYPE",
         "LOCAL_LLM_MODEL",
         "LOCAL_LLM_OLLAMA_URL",
-        "RAG_ENABLED_FOR_LOCAL",
-        "RAG_TOP_K",
-        "RAG_MAX_DISTANCE",
     }
     assert groups["local"]["active"] is True
     assert groups["hybrid_local"]["active"] is False

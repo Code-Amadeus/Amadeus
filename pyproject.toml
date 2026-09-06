@@ -38,6 +38,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Experimental character retrieval; separate from the CPU/model-less baseline.
+# Sentence Transformers brings a CPU-capable torch stack; no voice models needed.
+rag = [
+    "faiss-cpu==1.14.2",
+    "sentence-transformers==5.5.1",
+]
 # L2 voice interaction layer: playback, capture, echo cancellation, remote
 # TTS/ASR. Torch-free on purpose: L2 stays a few hundred MB.
 voice = [
