@@ -15,6 +15,7 @@ class Qwen3ASRSidecarBootstrapTest(unittest.TestCase):
         probe = textwrap.dedent(
             """
             import runpy
+            import os
             import sys
             from pathlib import Path
 
@@ -27,8 +28,14 @@ class Qwen3ASRSidecarBootstrapTest(unittest.TestCase):
             ]
             sys.path.insert(0, str(sidecar.parent))
 
+            os.environ["HF_HUB_OFFLINE"] = "0"
+            os.environ["TRANSFORMERS_OFFLINE"] = "0"
+
             runpy.run_path(str(sidecar), run_name="amadeus_sidecar_import_probe")
             import asr.qwen_model
+
+            assert os.environ["HF_HUB_OFFLINE"] == "1"
+            assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
 
             print("sidecar-project-import-ok")
             """

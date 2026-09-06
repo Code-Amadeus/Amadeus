@@ -26,12 +26,12 @@ from asr.backend import ASRBackendFatalError, BaseASRBackend
 from asr.qwen_model import resolve_qwen_model_source
 from config.environment import venv_python as _venv_python
 from config.settings import QWEN3_ASR_REQUIRE_CUDA
+from config.local_model_loading import enforce_local_model_loading
 
 logger = logging.getLogger(__name__)
 
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
-os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+enforce_local_model_loading()
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _SIDECAR_SCRIPT = _PROJECT_ROOT / "asr" / "qwen3_asr_sidecar.py"
@@ -280,6 +280,7 @@ class Qwen3ASRBackend(BaseASRBackend):
             t0 = time.perf_counter()
             model = Qwen3ASRModel.from_pretrained(
                 resolve_qwen_model_source(),
+                local_files_only=True,
                 dtype=dtype,
                 device_map=device_map,
                 max_inference_batch_size=1,

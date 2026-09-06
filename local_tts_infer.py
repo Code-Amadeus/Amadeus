@@ -13,11 +13,11 @@ from pathlib import Path
 import string
 from string import punctuation
 
-# Product TTS loads only operator-installed local asset packs. Keep
-# Transformers offline so a crafted local config cannot fetch executable model
-# code through an internal remote repository reference.
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
-os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+from config.local_model_loading import enforce_local_model_loading
+
+# Apply before importing model code, including when Hub/Transformers were
+# already imported by another optional component in the same process.
+enforce_local_model_loading()
 
 from tts.optional_ap_bwe import APBWEUnavailable, create_ap_bwe
 from tts.semantic_stability import (
@@ -498,8 +498,8 @@ class TTSInferencer:
         from transformers import AutoModelForMaskedLM, AutoTokenizer
 
         logger.info(f"Loading BERT model: {self.bert_path}")
-        self.tokenizer = AutoTokenizer.from_pretrained(self.bert_path)
-        self.bert_model = AutoModelForMaskedLM.from_pretrained(self.bert_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(self.bert_path, local_files_only=True)
+        self.bert_model = AutoModelForMaskedLM.from_pretrained(self.bert_path, local_files_only=True)
 
         if self.is_half:
             self.bert_model = self.bert_model.half().to(self.device)
@@ -782,12 +782,16 @@ class TTSInferencer:
             # 用 torch.cuda.device() 确保 kernel 初始化在正确设备上进行。
             try:
                 with self._device_context():
-                    self.bigvgan_model = bigvgan.BigVGAN.from_pretrained(bigvgan_path, use_cuda_kernel=_use_cuda_kernel)
+                    self.bigvgan_model = bigvgan.BigVGAN.from_pretrained(
+                        bigvgan_path, use_cuda_kernel=_use_cuda_kernel, local_files_only=True
+                    )
             except Exception as _kernel_err:
                 if _use_cuda_kernel:
                     logger.warning(f"[BigVGAN] CUDA kernel compilation failed; falling back to PyTorch implementation: {_kernel_err}")
                     with self._device_context():
-                        self.bigvgan_model = bigvgan.BigVGAN.from_pretrained(bigvgan_path, use_cuda_kernel=False)
+                        self.bigvgan_model = bigvgan.BigVGAN.from_pretrained(
+                            bigvgan_path, use_cuda_kernel=False, local_files_only=True
+                        )
                 else:
                     raise
             self.bigvgan_model.remove_weight_norm()

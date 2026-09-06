@@ -123,6 +123,11 @@ jobs:
           # cu124 wheel presence (build target), not a CUDA device: hosted runners have no GPU.
           uv run --locked --no-sync python tools/verify_python_environment.py --profile cu124
 
+      - name: Verify local-model offline boundary with qualified libraries
+        run: >-
+          uv run --locked --no-sync python -m unittest discover
+          -s tests -p test_local_model_loading.py -v
+
       - name: Return to CPU VAD and core
         shell: bash
         run: |

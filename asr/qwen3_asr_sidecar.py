@@ -38,8 +38,9 @@ except Exception:
     pass
 
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
-os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+from config.local_model_loading import enforce_local_model_loading
+
+enforce_local_model_loading()
 
 # 每秒语音对应的预期最大 token 数（中文约 4-6 字/秒 × 1.5× 余量）
 _TOKENS_PER_SEC = 10
@@ -121,6 +122,7 @@ def main():
     try:
         model = Qwen3ASRModel.from_pretrained(
             resolve_qwen_model_source(),
+            local_files_only=True,
             dtype=dtype,
             device_map=device_map,
             max_inference_batch_size=1,

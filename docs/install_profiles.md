@@ -40,6 +40,16 @@ or Electron build does not replace microphone, playback and desktop acceptance.
 The CUDA local-model profile is Windows-only. Local model weights, reference audio
 and dictionaries are external assets and are not downloaded by this installer.
 
+Local ASR/TTS model loading enforces Hugging Face offline mode even when the
+parent process sets `HF_HUB_OFFLINE=0` or Transformers/Hub have already been
+imported. The shared boundary updates their cached flags and replaces cached Hub
+HTTP sessions with the standard offline transport. Model loaders also request
+local files explicitly. This boundary targets the pinned Hub 0.36.2 / Transformers
+4.57.6 APIs; the cu124 ladder and ROCm CI exercise it with the real libraries,
+including blocked remote requests and successful loading of a tiny local model.
+Explicit asset acquisition runs separately; remote Chat/ASR/TTS API clients are
+unchanged. The advisory exceptions remain temporary, not claims of patched packages.
+
 ## Optional model interpreters and community configurations
 
 A single default environment does not prohibit isolated model processes. Qwen ASR

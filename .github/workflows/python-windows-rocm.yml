@@ -17,6 +17,8 @@ on:
       - tests/test_profile_contract.py
       - tests/test_python_environment_verifier.py
       - tests/test_qwen3_asr_sidecar_bootstrap.py
+      - tests/test_local_model_loading.py
+      - config/local_model_loading.py
   pull_request:
     paths:
       - pyproject.toml
@@ -32,6 +34,8 @@ on:
       - tests/test_profile_contract.py
       - tests/test_python_environment_verifier.py
       - tests/test_qwen3_asr_sidecar_bootstrap.py
+      - tests/test_local_model_loading.py
+      - config/local_model_loading.py
   workflow_dispatch:
 
 permissions:
@@ -73,3 +77,4 @@ jobs:
           tests/test_profile_contract.py
           tests/test_python_environment_verifier.py
           tests/test_qwen3_asr_sidecar_bootstrap.py
+          tests/test_local_model_loading.py
