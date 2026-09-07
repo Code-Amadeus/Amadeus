@@ -595,7 +595,9 @@ function createElectronCanvasWindow(bridge: WallpaperBridgeDescriptor, bridgeKey
     existingWindow.setBounds(electronCanvasBounds(), false)
     if (electronCanvasLifecycle.bridgeKey !== bridgeKey) {
       electronCanvasLifecycle.prepareReload(existingWindow, bridgeKey)
-      void existingWindow.loadURL(electronCanvasUrl(bridge))
+      void existingWindow.loadURL(electronCanvasUrl(bridge)).catch(error => {
+        console.error('[electron-canvas] failed to reload Canvas host:', error)
+      })
     }
     return
   }
@@ -652,7 +654,11 @@ function createElectronCanvasWindow(bridge: WallpaperBridgeDescriptor, bridgeKey
   })
   window.webContents.on('did-start-loading', () => electronCanvasLifecycle.reset(window))
   window.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
-    if (isMainFrame) console.error(`[electron-canvas] renderer load failed (${code}) ${description}: ${url}`)
+    // This event owns failure settlement, including rejected loadURL calls.
+    // An aborted navigation may have been superseded by a new bridge URL.
+    if (!isMainFrame || code === -3) return
+    electronCanvasLifecycle.failRendererLoad(window)
+    console.error(`[electron-canvas] renderer load failed (${code}) ${description}: ${url}`)
   })
   void window.loadURL(allowedUrl.toString()).catch(error => {
     console.error('[electron-canvas] failed to load Canvas host:', error)

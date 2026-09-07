@@ -130,6 +130,54 @@ test('a bridge reload already in flight is not restarted by a scene reload', () 
   assert.equal(lifecycle.snapshot().rendererLoadPending, true)
 })
 
+for (const navigation of ['initial', 'bridge change']) {
+  test(`failed ${navigation} navigation permits a later scene reload and fresh Canvas regions`, () => {
+    const { lifecycle, scheduler } = createLifecycle()
+    const window = new FakeWindow()
+    lifecycle.attach(window, 'bridge-a')
+    if (navigation === 'bridge change') {
+      lifecycle.commitRegions(window, [{ x: 20, y: 40, width: 360, height: 380 }])
+      scheduler.tick()
+      lifecycle.prepareReload(window, 'bridge-b')
+    }
+
+    assert.equal(lifecycle.failRendererLoad(window), true)
+    assert.equal(lifecycle.snapshot().rendererLoadPending, false)
+    assert.equal(lifecycle.snapshot().hitTestActive, false)
+    assert.deepEqual(lifecycle.snapshot().hitRegions, [])
+    assert.equal(window.ignoreCalls.at(-1), true)
+    assert.equal(window.visible, false)
+    assert.equal(window.reloadCount, 0)
+
+    assert.equal(lifecycle.reloadRenderer(window), true)
+    assert.equal(window.reloadCount, 1)
+    assert.equal(lifecycle.snapshot().rendererLoadPending, true)
+    // A second Scene notification must still preserve the in-flight load.
+    lifecycle.reloadRenderer(window)
+    assert.equal(window.reloadCount, 1)
+
+    lifecycle.commitRegions(window, [{ x: 20, y: 40, width: 360, height: 380 }])
+    scheduler.tick()
+    assert.equal(window.visible, true)
+    assert.equal(window.ignoreCalls.at(-1), false)
+    assert.equal(lifecycle.snapshot().hitTestActive, true)
+    assert.equal(lifecycle.snapshot().rendererLoadPending, false)
+  })
+}
+
+test('a failed load from a replaced Canvas cannot settle the current navigation', () => {
+  const { lifecycle } = createLifecycle()
+  const oldWindow = new FakeWindow()
+  const currentWindow = new FakeWindow()
+  lifecycle.attach(oldWindow, 'bridge-a')
+  lifecycle.attach(currentWindow, 'bridge-b')
+
+  assert.equal(lifecycle.failRendererLoad(oldWindow), false)
+  assert.equal(lifecycle.snapshot().rendererLoadPending, true)
+  lifecycle.reloadRenderer(currentWindow)
+  assert.equal(currentWindow.reloadCount, 0)
+})
+
 test('scene close closes Canvas and clears all lifecycle state', () => {
   const { lifecycle, scheduler } = createLifecycle()
   const window = new FakeWindow()

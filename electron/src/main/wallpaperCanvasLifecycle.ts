@@ -96,6 +96,12 @@ export class WallpaperCanvasLifecycle<TWindow extends WallpaperCanvasWindow> {
     return this.reset(window)
   }
 
+  failRendererLoad(window: TWindow): boolean {
+    if (!this.reset(window)) return false
+    this.rendererLoadPending = false
+    return true
+  }
+
   reloadRenderer(window: TWindow | null = this.currentWindow): boolean {
     if (!window || !this.reset(window)) return false
     if (this.rendererLoadPending) return true
