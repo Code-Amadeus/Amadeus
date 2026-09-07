@@ -2,13 +2,13 @@
  * Electron main process - spawns Python backend and creates the app window.
  */
 
-import { app, BrowserWindow, Menu, WebContentsView, dialog, ipcMain, screen } from 'electron'
+import { app, BrowserWindow, Menu, WebContentsView, dialog, ipcMain, screen, shell } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import { randomBytes } from 'crypto'
 import http from 'http'
 import path from 'path'
 import fs from 'fs'
-import { fileURLToPath } from 'url'
+import { fileURLToPath, pathToFileURL } from 'url'
 import {
   DesktopSettingsStore,
   type DesktopSettingsUpdate,
@@ -21,6 +21,8 @@ import {
 } from './wallpaperCanvasLifecycle.js'
 import { desktopPointHitsWindowRegions } from './wallpaperHitTesting.js'
 import { wallpaperWindowPolicy } from './wallpaperWindowPolicy.js'
+import { resolveFloatingCompanionPlacement, resolveMainWindowPlacement, wantsFloatingCompanion } from './windowPlacement.js'
+import { resolvePythonCommand } from './pythonRuntime.js'
 import { applicationMenuTemplate } from './applicationMenu.js'
 import { defaultMpsFallbackEnvironment } from './mpsFallbackPolicy.js'
 
@@ -62,6 +64,10 @@ const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production'
 let mainWindow: BrowserWindow | null = null
 let workGlowWindow: BrowserWindow | null = null
 let workPanelWindow: BrowserWindow | null = null
+let floatingCompanionWindow: BrowserWindow | null = null
+let floatingCompanionHitTestTimer: NodeJS.Timeout | null = null
+let floatingCompanionHitRegions: Electron.Rectangle[] = []
+let floatingCompanionIgnoringMouse = false
 let electronSliceWindow: BrowserWindow | null = null
 const electronCanvasLifecycle = new WallpaperCanvasLifecycle<BrowserWindow>({
   getCursorScreenPoint: () => screen.getCursorScreenPoint(),
@@ -197,51 +203,7 @@ function wantsWorkOverlay(args = process.argv): boolean {
 // Python backend management.
 
 function getPythonCommand(): string {
-  const envPython = process.env.AMADEUS_PYTHON || process.env.AMADUES_PYTHON
-  if (envPython && fs.existsSync(envPython)) return envPython
-
-  // Resolve original git repo from worktree .git file
-  function resolveOriginalRepo(): string | null {
-    try {
-      const gitFile = path.join(PROJECT_ROOT, '.git')
-      if (!fs.existsSync(gitFile)) return null
-      const content = fs.readFileSync(gitFile, 'utf-8').trim()
-      // gitdir: F:/path/to/repo/.git/worktrees/name
-      const match = content.match(/^gitdir:\s*(.+?)[/\\]\.git[/\\]worktrees[/\\]/)
-      if (match) return match[1]
-    } catch { /* ignore */ }
-    return null
-  }
-
-  const originalRepo = resolveOriginalRepo()
-
-  // 1. Check project root and original repo for venvs
-  const roots = [PROJECT_ROOT, originalRepo].filter(Boolean) as string[]
-  const venvNames = ['.venv']
-  const venvPaths: string[] = []
-  for (const root of roots) {
-    for (const name of venvNames) {
-      venvPaths.push(path.join(root, name, 'Scripts', 'python.exe'))  // Windows
-      venvPaths.push(path.join(root, name, 'bin', 'python3'))          // Unix
-    }
-  }
-  for (const p of venvPaths) {
-    if (fs.existsSync(p)) return p
-  }
-
-  // 2. Common Python 3.x install locations on Windows
-  if (process.platform === 'win32') {
-    const localAppData = process.env.LOCALAPPDATA ?? 'C:/Users/' + (process.env.USERNAME ?? '') + '/AppData/Local'
-    for (const ver of ['312', '311', '310', '39', '38']) {
-      const p = path.join(localAppData, 'Programs', 'Python', 'Python' + ver, 'python.exe')
-      if (fs.existsSync(p)) return p
-    }
-    const storePy3 = path.join(localAppData, 'Microsoft', 'WindowsApps', 'python3.exe')
-    if (fs.existsSync(storePy3)) return storePy3
-  }
-
-  // 3. PATH fallback
-  return 'python3'
+  return resolvePythonCommand({ projectRoot: PROJECT_ROOT })
 }
 
 type BackendHealth = 'ready' | 'starting' | 'foreign' | 'unavailable'
@@ -469,11 +431,18 @@ function guardTrustedRendererShell(window: BrowserWindow): void {
 }
 
 function createWindow(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) return
+  const placement = resolveMainWindowPlacement(
+    screen.getAllDisplays(),
+    screen.getPrimaryDisplay(),
+    process.env.AMADEUS_MAIN_DISPLAY || 'primary',
+    process.env.AMADEUS_MAIN_FULLSCREEN === '1',
+  )
   mainWindow = new BrowserWindow({
-    width: 1100,
-    height: 800,
-    minWidth: 600,
-    minHeight: 400,
+    ...placement.bounds,
+    minWidth: Math.min(600, placement.bounds.width),
+    minHeight: Math.min(400, placement.bounds.height),
+    fullscreen: placement.fullscreen,
     icon: getAppIconPath(),
     title: '',
     frame: true,
@@ -507,6 +476,169 @@ function createWindow(): void {
   }
 
   mainWindow.on('closed', () => { mainWindow = null })
+}
+
+function showMainWindow(): boolean {
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+  if (!mainWindow) return false
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+  return true
+}
+
+function reconcileMainWindowPlacement(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  const placement = resolveMainWindowPlacement(
+    screen.getAllDisplays(),
+    screen.getPrimaryDisplay(),
+    process.env.AMADEUS_MAIN_DISPLAY || 'primary',
+    process.env.AMADEUS_MAIN_FULLSCREEN === '1',
+  )
+  mainWindow.setFullScreen(false)
+  mainWindow.setMinimumSize(Math.min(600, placement.bounds.width), Math.min(400, placement.bounds.height))
+  mainWindow.setBounds(placement.bounds, false)
+  if (placement.fullscreen) mainWindow.setFullScreen(true)
+}
+
+function floatingCompanionUrl(): string {
+  const query = 'companionWindow=1'
+  if (isDev) return `http://localhost:5173?${query}`
+  const target = pathToFileURL(RENDERER_ENTRY_PATH)
+  target.search = query
+  return target.toString()
+}
+
+function floatingCompanionBounds(): Electron.Rectangle {
+  return resolveFloatingCompanionPlacement(
+    screen.getAllDisplays(),
+    screen.getPrimaryDisplay(),
+    process.env.AMADEUS_COMPANION_DISPLAY || 'secondary',
+  ).bounds
+}
+
+function emitFloatingCompanionChanged(active: boolean): void {
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send('floating-companion.changed', { active })
+  }
+}
+
+function setFloatingCompanionMousePassthrough(ignore: boolean): void {
+  const window = floatingCompanionWindow
+  if (!window || window.isDestroyed() || floatingCompanionIgnoringMouse === ignore) return
+  floatingCompanionIgnoringMouse = ignore
+  window.setIgnoreMouseEvents(ignore, { forward: true })
+}
+
+function stopFloatingCompanionHitTest(): void {
+  if (floatingCompanionHitTestTimer) clearInterval(floatingCompanionHitTestTimer)
+  floatingCompanionHitTestTimer = null
+  floatingCompanionHitRegions = []
+  floatingCompanionIgnoringMouse = false
+}
+
+function startFloatingCompanionHitTest(): void {
+  stopFloatingCompanionHitTest()
+  // Native desktop drivers may activate by clicking the window centre before
+  // checking the requested point. Opt in only for an unpackaged acceptance run;
+  // normal companion launches keep their region-based desktop click-through.
+  const interactiveCheck = !app.isPackaged && process.argv.includes('--companion-interactive-check')
+  if (interactiveCheck) console.info('[floating-companion] Interactive check: desktop click-through paused for this launch')
+  floatingCompanionHitTestTimer = setInterval(() => {
+    const window = floatingCompanionWindow
+    if (!window || window.isDestroyed()) return
+    const cursor = screen.getCursorScreenPoint()
+    const bounds = window.getContentBounds()
+    const inside = interactiveCheck || floatingCompanionHitRegions.some(region => (
+      cursor.x >= bounds.x + region.x
+      && cursor.x <= bounds.x + region.x + region.width
+      && cursor.y >= bounds.y + region.y
+      && cursor.y <= bounds.y + region.y + region.height
+    ))
+    setFloatingCompanionMousePassthrough(!inside)
+  }, 40)
+}
+
+function closeFloatingCompanionWindow(): void {
+  stopFloatingCompanionHitTest()
+  const window = floatingCompanionWindow
+  floatingCompanionWindow = null
+  if (window && !window.isDestroyed()) window.close()
+  emitFloatingCompanionChanged(false)
+}
+
+function createFloatingCompanionWindow(): boolean {
+  if (floatingCompanionWindow && !floatingCompanionWindow.isDestroyed()) {
+    floatingCompanionWindow.showInactive()
+    emitFloatingCompanionChanged(true)
+    return true
+  }
+
+  const bounds = floatingCompanionBounds()
+  const window = new BrowserWindow({
+    ...bounds,
+    minWidth: Math.min(280, bounds.width),
+    minHeight: Math.min(420, bounds.height),
+    title: '',
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    show: false,
+    paintWhenInitiallyHidden: true,
+    focusable: true,
+    fullscreenable: false,
+    resizable: true,
+    movable: true,
+    icon: getAppIconPath(),
+    hasShadow: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'preload', 'companion.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: false,
+    },
+  })
+  floatingCompanionWindow = window
+  window.setMenuBarVisibility(false)
+  window.setAlwaysOnTop(true, 'floating')
+  window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  guardTrustedRendererShell(window)
+  window.once('ready-to-show', () => {
+    if (floatingCompanionWindow !== window) return
+    window.showInactive()
+    startFloatingCompanionHitTest()
+    emitFloatingCompanionChanged(true)
+  })
+  window.on('closed', () => {
+    if (floatingCompanionWindow !== window) return
+    floatingCompanionWindow = null
+    stopFloatingCompanionHitTest()
+    emitFloatingCompanionChanged(false)
+  })
+  window.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    if (level < 2) return
+    console.error(`[floating-companion:renderer] ${message} (${sourceId}:${line})`)
+  })
+  window.webContents.on('render-process-gone', (_event, details) => {
+    console.error(`[floating-companion] renderer exited: ${details.reason}`)
+  })
+  void window.loadURL(floatingCompanionUrl()).catch(error => {
+    console.error('[floating-companion] failed to load:', error)
+  })
+  return true
+}
+
+function reconcileFloatingCompanionPlacement(): void {
+  const window = floatingCompanionWindow
+  if (!window || window.isDestroyed()) return
+  const bounds = floatingCompanionBounds()
+  // Release an old display's size floor before moving to a smaller work area.
+  window.setMinimumSize(Math.min(280, bounds.width), Math.min(420, bounds.height))
+  window.setBounds(bounds, false)
 }
 
 function normalizeLocalPort(value: unknown): number {
@@ -1952,6 +2084,7 @@ function isTrustedBackendRenderer(sender: Electron.WebContents): boolean {
   // its sandboxed project WebContentsView is deliberately absent here.
   return isTrustedAmadeusRenderer(sender)
     || sender === workGlowWindow?.webContents
+    || sender === floatingCompanionWindow?.webContents
 }
 
 ipcMain.handle('get-backend-connection', (event) => {
@@ -2066,10 +2199,40 @@ ipcMain.handle('chat-avatars.clear', (event, role: ChatAvatarRole) => {
 })
 ipcMain.handle('main-window.focus', (event) => {
   if (!isTrustedBackendRenderer(event.sender)) return false
-  if (!mainWindow) return false
-  if (mainWindow.isMinimized()) mainWindow.restore()
-  mainWindow.show()
-  mainWindow.focus()
+  return showMainWindow()
+})
+ipcMain.handle('floating-companion.open', (event) => {
+  if (!isMainRenderer(event.sender)) return false
+  return createFloatingCompanionWindow()
+})
+ipcMain.handle('floating-companion.open-codex', async (event, threadId: string) => {
+  if (event.sender !== floatingCompanionWindow?.webContents) return false
+  const observed = (process.env.AMADEUS_COMPANION_CODEX_THREADS ?? '').split(',').map(value => value.trim())
+  if (typeof threadId !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(threadId) || !(observed.includes('*') || observed.includes(threadId))) return false
+  await shell.openExternal(`codex://threads/${threadId}`)
+  return true
+})
+ipcMain.handle('floating-companion.close', (event) => {
+  if (!isMainRenderer(event.sender) && event.sender !== floatingCompanionWindow?.webContents) return false
+  closeFloatingCompanionWindow()
+  return true
+})
+ipcMain.handle('floating-companion.status', (event) => {
+  if (!isMainRenderer(event.sender)) return { active: false }
+  return { active: Boolean(floatingCompanionWindow && !floatingCompanionWindow.isDestroyed()) }
+})
+ipcMain.handle('floating-companion.set-hit-regions', (event, boundsList: Electron.Rectangle[]) => {
+  const window = floatingCompanionWindow
+  if (!window || window.isDestroyed() || event.sender !== window.webContents) return false
+  if (!Array.isArray(boundsList)) return false
+  const content = window.getContentBounds()
+  floatingCompanionHitRegions = boundsList.map(item => {
+    const left = Math.max(0, Math.round(Number(item?.x || 0)))
+    const top = Math.max(0, Math.round(Number(item?.y || 0)))
+    const right = Math.min(content.width, left + Math.max(0, Math.round(Number(item?.width || 0))))
+    const bottom = Math.min(content.height, top + Math.max(0, Math.round(Number(item?.height || 0))))
+    return { x: left, y: top, width: right - left, height: bottom - top }
+  }).filter(item => item.width > 0 && item.height > 0)
   return true
 })
 ipcMain.handle('project-directory.select', async (event) => {
@@ -2453,13 +2616,15 @@ if (!gotSingleInstanceLock) {
 }
 
 app.on('second-instance', (_event, commandLine) => {
+  if (commandLine.includes('--floating-companion')) {
+    createFloatingCompanionWindow()
+    return
+  }
   if (wantsWorkOverlay(commandLine)) {
     createWorkOverlayWindow()
     return
   }
-  if (!mainWindow) return
-  if (mainWindow.isMinimized()) mainWindow.restore()
-  mainWindow.focus()
+  showMainWindow()
 })
 
 app.whenReady().then(async () => {
@@ -2468,14 +2633,28 @@ app.whenReady().then(async () => {
   } catch (error) {
     console.error('[electron] backend failed to become ready', error)
   }
-  createWindow()
+  showMainWindow()
+  if (wantsFloatingCompanion()) createFloatingCompanionWindow()
   if (wantsWorkOverlay()) createWorkOverlayWindow()
-  screen.on('display-metrics-changed', updateElectronSliceBounds)
-  screen.on('display-added', updateElectronSliceBounds)
-  screen.on('display-removed', updateElectronSliceBounds)
+  screen.on('display-metrics-changed', () => {
+    updateElectronSliceBounds()
+    reconcileMainWindowPlacement()
+    reconcileFloatingCompanionPlacement()
+  })
+  screen.on('display-added', () => {
+    updateElectronSliceBounds()
+    reconcileMainWindowPlacement()
+    reconcileFloatingCompanionPlacement()
+  })
+  screen.on('display-removed', () => {
+    updateElectronSliceBounds()
+    reconcileMainWindowPlacement()
+    reconcileFloatingCompanionPlacement()
+  })
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    showMainWindow()
+    if (wantsFloatingCompanion() && !floatingCompanionWindow) createFloatingCompanionWindow()
   })
 })
 
@@ -2484,6 +2663,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', (event) => {
+  closeFloatingCompanionWindow()
   closeElectronSliceWindow()
   closeWorkOverlayWindow()
   closeAllWorkPreviewSurfaces()

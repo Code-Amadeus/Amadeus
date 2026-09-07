@@ -383,6 +383,15 @@ async def bootstrap(port: int = 17777) -> None:
     chat_h = ChatHandler()
     session_h = SessionHandler()
     tts_h = TtsHandler()
+    from server.handlers.companion_handler import CompanionHandler
+    companion_h = CompanionHandler()
+    from server.handlers.codex_observer_handler import CodexObserverHandler
+    codex_scope = os.environ.get("AMADEUS_COMPANION_CODEX_THREADS", "").strip()
+    codex_observer_h = CodexObserverHandler(
+        None if codex_scope == "*" else [value.strip() for value in codex_scope.split(",") if value.strip()],
+        Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex"),
+    )
+    _mgr.register_handler(codex_observer_h)
     asr_h = AsrHandler()
     wake_h = WakeHandler()
     vts_h = VtsHandler()
@@ -499,7 +508,7 @@ async def bootstrap(port: int = 17777) -> None:
     vn_h = VNPlayerHandler()
     vn_launch_h = VNLaunchHandler()
 
-    for h in (chat_h, session_h, tts_h, asr_h, wake_h, vts_h, expr_h, sys_h, render_h, wallpaper_h, provider_h, capability_h, mcp_connection_h, provider_activity_h, work_h, work_preview_h, attention_h, auip_h, vn_h, vn_launch_h):
+    for h in (chat_h, session_h, tts_h, companion_h, asr_h, wake_h, vts_h, expr_h, sys_h, render_h, wallpaper_h, provider_h, capability_h, mcp_connection_h, provider_activity_h, work_h, work_preview_h, attention_h, auip_h, vn_h, vn_launch_h):
         _mgr.register_handler(h)
 
     # create FastAPI app.
@@ -1719,6 +1728,7 @@ async def bootstrap(port: int = 17777) -> None:
                     "voice_text_ja": voice_text,
                 },
                 pending_sentence_items=pending_sentence_items,
+                voice_stream=payload.get("_voice_stream"),
             )
             if payload.get("complete_turn") is True and result.get("status") == "queued":
                 last_sentence_id = str(result.get("last_sentence_id") or "").strip()
@@ -2053,6 +2063,7 @@ async def bootstrap(port: int = 17777) -> None:
         return None
 
     async def _interrupt_presentation_before_chat() -> None:
+        await companion_h.preempt()
         await tts_h.handle(
             Method.TTS_INTERRUPT,
             {
@@ -2123,6 +2134,18 @@ async def bootstrap(port: int = 17777) -> None:
         player=player,
         on_interrupt=_handle_tts_interrupt,
     )
+    from server.vn_tts_bridge import stream_notification
+
+    async def _stop_companion_audio() -> None:
+        await tts_h.handle(Method.TTS_INTERRUPT, {"annotate_history": False, "source": "companion_muted"})
+
+    companion_h.configure(
+        speak=_speak_vn_reaction, translate=stream_notification,
+        interrupt=_stop_companion_audio,
+        busy=_tts_is_observer_output_busy, chat_busy=chat_h.is_busy,
+    )
+    from server.companion_audio_activity import CompanionAudioActivity
+    companion_h.audio_activity = CompanionAudioActivity(companion_h.defer_for_external_audio)
     asr_h.configure(
         asr_manager_factory=_get_or_create_asr_manager,
         on_unload=_clear_asr_manager,
@@ -2239,10 +2262,14 @@ async def bootstrap(port: int = 17777) -> None:
     )
 
     backend_ready = True
+    codex_observer_h.start()
     logger.info(f"backend server ready on ws://127.0.0.1:{port}/ws")
     try:
         await server_task  # wait for server to finish
     finally:
+        await codex_observer_h.close()
+        await companion_h.audio_activity.close()
+        await companion_h.cancel("cancelled", stop_audio=True)
         work_status_narrator = None
         bus.off(Method.WORK_UPDATED, auip_launch_callback)
         bus.off(Method.AUIP_UPDATED, work_preview_auip_callback)

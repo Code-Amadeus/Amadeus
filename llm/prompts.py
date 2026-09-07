@@ -623,6 +623,11 @@ _EN_LANGUAGE_LOCK = (
 )
 
 
+def get_character_prompt(language: str = "ja") -> str:
+    """Share the chat character voice without chat's execution/routing rules."""
+    return _EN_BASE if language == "en" else _JA_BASE
+
+
 def get_system_prompt(
     variant: str = "with_delegate",
     *,

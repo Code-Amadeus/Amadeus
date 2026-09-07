@@ -32,6 +32,7 @@ class UtteranceSegment:
     source: str = "legacy"
     turn_id: str = ""
     tts_epoch: int | None = None
+    speed: float | None = None
 
     @property
     def seq(self) -> int:
@@ -49,6 +50,7 @@ class UtteranceJob:
     source: str = "legacy"
     turn_id: str = ""
     tts_epoch: int | None = None
+    speed: float | None = None
 
     @property
     def consumed_count(self) -> int:
@@ -205,6 +207,7 @@ class TTSUtteranceScheduler:
             source=request.source,
             turn_id=request.turn_id,
             tts_epoch=request.tts_epoch,
+            speed=request.speed,
         )
 
     def _make_job(self, segments: list[UtteranceSegment]) -> UtteranceJob:
@@ -219,6 +222,7 @@ class TTSUtteranceScheduler:
             source=first.source,
             turn_id=first.turn_id,
             tts_epoch=first.tts_epoch,
+            speed=first.speed,
         )
 
     def _can_start_merge(self, segment: UtteranceSegment) -> bool:
@@ -242,6 +246,7 @@ class TTSUtteranceScheduler:
             segment.turn_id != current[-1].turn_id
             or segment.source != current[-1].source
             or segment.tts_epoch != current[-1].tts_epoch
+            or segment.speed != current[-1].speed
         ):
             return False
         if not self._is_consecutive(current[-1], segment):

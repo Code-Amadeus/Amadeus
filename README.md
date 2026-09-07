@@ -338,6 +338,14 @@ macOS：`cp .env.example .env`），然后在 Settings 中核对：
 - Windows：`run_electron_utf8.bat`（单一启动器；自动发现 `.venv`，L1–L4 通用）
 - macOS：`cd electron && npm run electron:dev`
 
+### 实验性 Companion 原型
+
+本分支提供默认关闭的悬浮任务概览、结果阅读与可选语音提醒，供
+[Issue #61](https://github.com/Code-Amadeus/Amadeus/issues/61) 讨论。
+运行方式、数据读取范围及验证边界见
+[Companion 原型说明](docs/companion_prototype.md)，其中包含从拉取分支到启用本机
+Codex 任务读取的逐步命令、任务 UUID 查询、语音配置和排查表。
+
 启动型设置变更后按 **Restart backend to apply**。角色包显示
 **Not installed** 是健康状态，不影响 Chat、Work 或 headless 启动。
 

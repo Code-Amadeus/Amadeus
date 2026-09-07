@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from server.handlers.tts_handler import TtsHandler
 from server.protocol import Method
@@ -68,4 +68,24 @@ def test_tts_mode_method_applies_real_pipeline_mode() -> None:
         finally:
             pipeline.reconfigure_tts_mode_name(old_mode)
 
+    asyncio.run(run())
+
+
+def test_physical_sentence_start_carries_the_actual_tts_text_not_the_card_original() -> None:
+    async def run():
+        sequence = SentenceStateManager()
+        sentence_id = sequence.create_sentence("コーデックスの結果を見て。")
+        playback = _Playback()
+        handler = TtsHandler(sentence_sequence_manager=sequence)
+        handler.configure(playback, _Player())
+        emit = AsyncMock()
+        with patch("server.handlers.tts_handler.bus.emit", emit), patch("server.vn_tts_bridge.get_vn_sentence_metadata", return_value={"line_id": "notice-1", "display_text": "原始中文"}):
+            emit.assert_not_awaited()
+            playback.on_sentence_start(sentence_id)
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+        method, payload = emit.call_args.args
+        assert method == Method.TTS_SENTENCE_START
+        assert payload["text"] == "コーデックスの結果を見て。"
+        assert payload["turn_id"] == "notice-1"
     asyncio.run(run())

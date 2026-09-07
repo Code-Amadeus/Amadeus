@@ -785,5 +785,19 @@ def _main() -> None:
     print("all tts contract tests passed")
 
 
+def test_speed_is_preserved_without_merging_different_speeds():
+    async def run():
+        with patch.dict(os.environ, {"ENABLE_TTS_UTTERANCE_SCHEDULER": "1", "TTS_UTTERANCE_MIN_START_SEQ": "2"}):
+            queue = asyncio.Queue()
+            for seq, speed in [(2, .95), (3, None)]:
+                queue.put_nowait(TTSRequest(sentence_id=f"sentence_{seq}_speed", text="確認、", speed=speed))
+            scheduler = TTSUtteranceScheduler()
+            slow = await scheduler.next_job(queue)
+            normal = await scheduler.next_job(queue)
+            assert slow.speed == .95 and slow.consumed_count == 1
+            assert normal.speed is None and normal.consumed_count == 1
+    asyncio.run(run())
+
+
 if __name__ == "__main__":
     _main()

@@ -8,6 +8,7 @@ import SettingsPage from './components/SettingsPage'
 import BackendPage from './components/BackendPage'
 import VNPage from './components/VNPage'
 import WorkPreviewPage from './components/WorkPreviewPage'
+import FloatingCompanion from './components/FloatingCompanion'
 import { ELECTRON_SLICE_START_PARAMS, syncElectronSliceHost } from './wallpaperSlice'
 
 export type Page = 'chat' | 'vn' | 'backend' | 'expressions' | 'settings'
@@ -34,6 +35,7 @@ function AmadeusApp() {
   const [page, setPage] = useState<Page>(() => initialPage())
   const [renderActive, setRenderActive] = useState(false)  // false=VTS, true=PixiJS
   const [wallpaperActive, setWallpaperActive] = useState(false)
+  const [companionActive, setCompanionActive] = useState(false)
   const [renderAssetUrl, setRenderAssetUrl] = useState('')
 
   useEffect(() => {
@@ -93,12 +95,15 @@ function AmadeusApp() {
         if (res?.url) setRenderAssetUrl(String(res.url))
       } catch { /* AssetServer might already be running */ }
     } else {
-      // Switch back to VTS
-      send('expression.set_backend', { backend: 'vts' }).catch(() => {})
-      send('render.stop', {}).catch(() => {})
+      // The floating companion owns the same graph renderer while it is open.
+      // Hiding only the main-page projection must not tear that runtime down.
+      if (!companionActive) {
+        send('expression.set_backend', { backend: 'vts' }).catch(() => {})
+        send('render.stop', {}).catch(() => {})
+      }
       setRenderAssetUrl('')
     }
-  }, [send, renderActive, wallpaperActive])
+  }, [send, renderActive, wallpaperActive, companionActive])
 
   // Toggle the Electron Slice wallpaper projection.
   const handleToggleWallpaper = useCallback(async () => {
@@ -107,7 +112,11 @@ function AmadeusApp() {
     setWallpaperActive(next)
 
     if (next) {
-      if (renderActive) {
+      if (companionActive) {
+        await window.amadeus?.closeFloatingCompanion()
+        setCompanionActive(false)
+      }
+      if (renderActive || companionActive) {
         send('expression.set_backend', { backend: 'vts' }).catch(() => {})
         try { await send('render.stop', {}) } catch {}
         setRenderActive(false)
@@ -125,7 +134,32 @@ function AmadeusApp() {
       await window.amadeus?.closeElectronSlice()
       setWallpaperActive(false)
     }
-  }, [wallpaperActive, renderActive, send])
+  }, [wallpaperActive, renderActive, companionActive, send])
+
+  const handleToggleCompanion = useCallback(async () => {
+    if (companionActive) {
+      const closed = await window.amadeus?.closeFloatingCompanion()
+      if (closed) setCompanionActive(false)
+      return
+    }
+    if (wallpaperActive) {
+      try { await send('wallpaper.stop', {}) } catch {}
+      await window.amadeus?.closeElectronSlice()
+      setWallpaperActive(false)
+    }
+    const opened = await window.amadeus?.openFloatingCompanion()
+    if (opened) setCompanionActive(true)
+  }, [companionActive, wallpaperActive, send])
+
+  useEffect(() => {
+    if (desktopProjection) return
+    void window.amadeus?.getFloatingCompanionStatus().then(status => {
+      setCompanionActive(Boolean(status?.active))
+    })
+    return window.amadeus?.onFloatingCompanionChanged(status => {
+      setCompanionActive(Boolean(status.active))
+    })
+  }, [desktopProjection])
 
   // listen for render mode back-to-vts from model bar
   useEffect(() => {
@@ -264,7 +298,9 @@ function AmadeusApp() {
       <Sidebar
         page={page} onNavigate={handleNavigate}
         renderActive={renderActive} wallpaperActive={wallpaperActive}
+        companionActive={companionActive}
         onToggleRender={handleToggleRender} onToggleWallpaper={handleToggleWallpaper}
+        onToggleCompanion={handleToggleCompanion}
       />
       <div className="flex-1 flex flex-col min-w-0" style={{ backgroundColor: 'var(--bg)' }}>
         {page === 'chat' && <ChatPage send={send} subscribe={subscribe} connected={connected} renderActive={renderActive} renderAssetUrl={renderAssetUrl} />}
@@ -278,6 +314,9 @@ function AmadeusApp() {
 }
 
 export default function App() {
-  const previewWindow = new URLSearchParams(window.location.search).get('previewWindow') === '1'
+  const searchParams = new URLSearchParams(window.location.search)
+  const companionWindow = searchParams.get('companionWindow') === '1'
+  if (companionWindow) return <FloatingCompanion />
+  const previewWindow = searchParams.get('previewWindow') === '1'
   return previewWindow ? <WorkPreviewPage /> : <AmadeusApp />
 }

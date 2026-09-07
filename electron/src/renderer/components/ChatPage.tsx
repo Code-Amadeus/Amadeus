@@ -28,6 +28,10 @@ import {
   chatTranslationCandidates,
   chatTranslationKey,
 } from './chatTranslationState'
+import {
+  postRenderEvent as postRenderEventToFrame,
+  RENDER_EVENT_METHODS,
+} from '../renderBridge'
 
 interface Props {
   send: (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
@@ -90,24 +94,6 @@ const VISION_LONG_PRESS_MS = 560
 const DRAFT_APPS_VIEW_ID = '__draft_apps__'
 const VISUAL_ATTACHMENT_MAX_LONG_SIDE = 1280
 const VISUAL_ATTACHMENT_JPEG_QUALITY = 0.82
-const RENDER_BRIDGE_MESSAGE = 'amadeus.render.event'
-const RENDER_EVENT_METHODS = [
-  'render.emotion',
-  'render.speaking',
-  'render.mouth',
-  'render.subtitle',
-  'render.sprite_frames',
-  'render.mode',
-  'render.idle_animation',
-  'render.idle_frame_interval',
-  'render.sprite_clip_config',
-  'render.mouth_config',
-  'render.spriteforge_graph',
-  'render.spriteforge_intent',
-  'render.spriteforge_release',
-  'render.hold_frame',
-  'render.clear_hold',
-] as const
 const CRT_WORK_WIDGET_DEMO_ENABLED = (
   import.meta.env.DEV
   && new URLSearchParams(window.location.search).get('workDemo') === '1'
@@ -382,11 +368,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   }, [chatWidth])
 
   const postRenderEvent = useCallback((method: string, params: Record<string, unknown>) => {
-    renderFrameRef.current?.contentWindow?.postMessage({
-      type: RENDER_BRIDGE_MESSAGE,
-      method,
-      params,
-    }, '*')
+    postRenderEventToFrame(renderFrameRef.current, method, params)
   }, [])
 
   const handleRenderFrameLoad = useCallback(() => {

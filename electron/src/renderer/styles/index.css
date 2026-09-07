@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./companion.css";
 
 /* ── Desktop light palette ── */
 :root {
@@ -52,6 +53,14 @@ body.desktop-work-slice-window,
 html.desktop-work-slice-window #root {
   width: 100%;
   height: 100%;
+}
+
+html.floating-companion-window,
+body.floating-companion-window,
+html.floating-companion-window #root {
+  width: 100%;
+  height: 100%;
+  background: transparent !important;
 }
 
 /* ── Scrollbar (matches QScrollBar stylesheet) ── */

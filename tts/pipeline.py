@@ -603,6 +603,7 @@ async def speak_stream_graph_serial(
     segments=None,
     interrupt_epoch: int | None = None,
     task_semaphore=None,
+    speed: float | None = None,
 ):
     """Graph 模式专用：全局锁确保串行推理，合成完即释放锁让下一句并行合成。
     stream_tts: 若显式传入 bool，覆盖 is_first_sentence 对 stream_to_player 的默认推断。
@@ -650,6 +651,7 @@ async def speak_stream_graph_serial(
             segments=segments,
             interrupt_epoch=interrupt_epoch,
             task_semaphore=task_semaphore,
+            speed=speed,
         )
     finally:
         _release_lock()  # 兜底：异常时也确保锁被释放
@@ -663,6 +665,7 @@ async def speak_stream_enhanced(
     segments=None,
     interrupt_epoch: int | None = None,
     task_semaphore=None,
+    speed: float | None = None,
 ):
     """增强的流式语音处理，支持状态管理和首句优化，第一句使用真正的流式播放。"""
     interrupt_epoch = _tts_interrupt_epoch if interrupt_epoch is None else interrupt_epoch
@@ -695,6 +698,8 @@ async def speak_stream_enhanced(
         is_first_sentence,
     )
     params = get_sovits_params(tts_text, is_first_sentence)
+    if speed is not None:
+        params["speed"] = speed
     params['ref_audio_path'] = _get_ref_audio(tts_text)
     params['prompt_text'] = _get_ref_text(tts_text)
 
@@ -783,6 +788,7 @@ async def speak_stream_enhanced_asyncio_queue(
     segments=None,
     interrupt_epoch: int | None = None,
     task_semaphore=None,
+    speed: float | None = None,
 ):
     """增强版异步队列 TTS，支持首句流式播放和 Graph 串行释放。"""
     interrupt_epoch = _tts_interrupt_epoch if interrupt_epoch is None else interrupt_epoch
@@ -843,6 +849,8 @@ async def speak_stream_enhanced_asyncio_queue(
     if tts_text != text:
         logger.info(f"[TTS-TEXT-FILTER] removed full-width parentheses: {sentence_id}")
     params = get_sovits_params(tts_text, is_first_sentence)
+    if speed is not None:
+        params["speed"] = speed
     if force_graph:
         params["enable_cuda_graph"] = True
         params["enable_static_kv"] = True
@@ -1125,6 +1133,7 @@ async def _synthesize_cuda_graph(
     segments,
     interrupt_epoch,
     task_semaphore,
+    speed=None,
 ):
     await speak_stream_graph_serial(
         text,
@@ -1134,6 +1143,7 @@ async def _synthesize_cuda_graph(
         segments=segments,
         interrupt_epoch=interrupt_epoch,
         task_semaphore=task_semaphore,
+        speed=speed,
     )
 
 
@@ -1146,6 +1156,7 @@ async def _synthesize_experimental(
     segments,
     interrupt_epoch,
     task_semaphore,
+    speed=None,
 ):
     runtime = _tts_runtime
     # Embedded synthesis modes retain their established playback policy. A
@@ -1165,6 +1176,7 @@ async def _synthesize_experimental(
         segments=segments,
         interrupt_epoch=interrupt_epoch,
         task_semaphore=task_semaphore,
+        speed=speed,
     )
 
 
@@ -1177,6 +1189,7 @@ async def _synthesize_enhanced(
     segments,
     interrupt_epoch,
     task_semaphore,
+    speed=None,
 ):
     del stream_tts
     await speak_stream_enhanced(
@@ -1186,6 +1199,7 @@ async def _synthesize_enhanced(
         segments=segments,
         interrupt_epoch=interrupt_epoch,
         task_semaphore=task_semaphore,
+        speed=speed,
     )
 
 
@@ -1308,6 +1322,7 @@ async def play_sentence_worker():
                 segments=playback_segments,
                 interrupt_epoch=job_epoch,
                 task_semaphore=task_semaphore,
+                speed=job.speed,
             )
 
             if task_semaphore is not None:

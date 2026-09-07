@@ -42,6 +42,8 @@ class TTSRequest:
     # 预留：语音风格/情绪
     emotion: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    # None preserves the pipeline's existing first/following sentence policy.
+    speed: float | None = None
 
     @classmethod
     def from_queue_item(cls, item: Any) -> "TTSRequest":

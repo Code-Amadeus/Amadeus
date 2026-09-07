@@ -59,13 +59,26 @@ def test_embedded_render_surface_reuses_the_authenticated_parent_socket() -> Non
     chat = (
         ROOT / "electron" / "src" / "renderer" / "components" / "ChatPage.tsx"
     ).read_text(encoding="utf-8")
+    companion = (
+        ROOT
+        / "electron"
+        / "src"
+        / "renderer"
+        / "components"
+        / "FloatingCompanion.tsx"
+    ).read_text(encoding="utf-8")
+    render_bridge = (
+        ROOT / "electron" / "src" / "renderer" / "renderBridge.ts"
+    ).read_text(encoding="utf-8")
     renderer = (ROOT / "render" / "web" / "renderer.js").read_text(
         encoding="utf-8"
     )
 
     assert "RENDER_EVENT_METHODS" in chat
     assert "send('render.ready', {})" in chat
-    assert "amadeus.render.event" in chat
+    assert "RENDER_EVENT_METHODS" in companion
+    assert "send('render.ready', {})" in companion
+    assert "amadeus.render.event" in render_bridge
     assert "window.parent !== window" in renderer
     assert "event.source !== window.parent" in renderer
     assert "using authenticated parent event channel" in renderer

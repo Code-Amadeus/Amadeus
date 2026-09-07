@@ -50,7 +50,14 @@ class TtsHandler(RequestHandler):
         def on_sentence_start(sentence_id: str) -> None:
             if previous_sentence_start is not None:
                 previous_sentence_start(sentence_id)
-            emit_async(Method.TTS_SENTENCE_START, {"sentence_id": sentence_id, "index": -1})
+            sentence = self._sentence_sequence_manager.get_sentence(sentence_id)
+            from server.vn_tts_bridge import get_vn_sentence_metadata
+            metadata = get_vn_sentence_metadata(sentence_id) or {}
+            emit_async(Method.TTS_SENTENCE_START, {
+                "sentence_id": sentence_id, "index": -1,
+                "text": sentence.japanese_text if sentence else "",
+                "turn_id": metadata.get("line_id", ""),
+            })
 
         def on_sentence_complete(sentence_id: str, text: str) -> None:
             if previous_sentence_complete is not None:

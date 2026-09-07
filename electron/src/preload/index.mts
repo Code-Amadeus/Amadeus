@@ -6,6 +6,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 type WorkPreviewBounds = { x: number; y: number; width: number; height: number }
 type WorkPreviewListener = (payload: Record<string, unknown>) => void
+type FloatingCompanionListener = (payload: { active: boolean }) => void
 
 contextBridge.exposeInMainWorld('amadeus', {
   getBackendConnection: (): Promise<{
@@ -41,6 +42,14 @@ contextBridge.exposeInMainWorld('amadeus', {
   selectChatAvatar: (role: 'user' | 'assistant'): Promise<{ ok: boolean; cancelled: boolean; error?: string; avatars?: { user: string; assistant: string } }> => ipcRenderer.invoke('chat-avatars.select', role),
   clearChatAvatar: (role: 'user' | 'assistant'): Promise<{ ok: boolean; error?: string; avatars?: { user: string; assistant: string } }> => ipcRenderer.invoke('chat-avatars.clear', role),
   focusMainWindow: (): Promise<boolean> => ipcRenderer.invoke('main-window.focus'),
+  openFloatingCompanion: (): Promise<boolean> => ipcRenderer.invoke('floating-companion.open'),
+  closeFloatingCompanion: (): Promise<boolean> => ipcRenderer.invoke('floating-companion.close'),
+  getFloatingCompanionStatus: (): Promise<{ active: boolean }> => ipcRenderer.invoke('floating-companion.status'),
+  onFloatingCompanionChanged: (listener: FloatingCompanionListener) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: { active: boolean }) => listener(payload)
+    ipcRenderer.on('floating-companion.changed', handler)
+    return () => ipcRenderer.removeListener('floating-companion.changed', handler)
+  },
   selectProjectDirectory: (): Promise<{ ok: boolean; cancelled: boolean; path: string; detail: string }> => ipcRenderer.invoke('project-directory.select'),
   openElectronSlice: (bridge: { assetPort: number; bridgePort: number; assetVersion?: string; sliceBounds?: { x: number; y: number; width: number; height: number } }): Promise<boolean> => ipcRenderer.invoke('electron-slice.open', bridge),
   closeElectronSlice: (): Promise<boolean> => ipcRenderer.invoke('electron-slice.close'),

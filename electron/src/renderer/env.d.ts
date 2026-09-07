@@ -69,6 +69,12 @@ export declare global {
       avatars?: { user: string; assistant: string }
     }>
     focusMainWindow: () => Promise<boolean>
+    openCodexThread?: (threadId: string) => Promise<boolean>
+    openFloatingCompanion: () => Promise<boolean>
+    closeFloatingCompanion: () => Promise<boolean>
+    getFloatingCompanionStatus: () => Promise<{ active: boolean }>
+    onFloatingCompanionChanged: (listener: (status: { active: boolean }) => void) => () => void
+    setFloatingCompanionHitRegions: (bounds: Array<{ x: number; y: number; width: number; height: number }>) => Promise<boolean>
     selectProjectDirectory: () => Promise<{
       ok: boolean
       cancelled: boolean

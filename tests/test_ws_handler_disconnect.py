@@ -201,10 +201,33 @@ def test_auip_surface_close_request_reaches_the_trusted_desktop_client() -> None
     asyncio.run(run())
 
 
+def test_companion_audio_busy_and_clear_updates_reach_the_client() -> None:
+    async def run() -> None:
+        manager = ConnectionManager()
+        ws = _ConcurrentWriteGuard()
+        task = asyncio.create_task(manager.handle_connection(ws))
+        try:
+            for _ in range(20):
+                if manager._connections:
+                    break
+                await asyncio.sleep(0)
+            states = [{"blocked": True, "note": "Audio busy"}, {"blocked": False, "note": ""}]
+            for state in states:
+                await bus.emit("companion.audio-activity", state)
+            assert [(event["method"], event["params"]) for event in ws.payloads] == [
+                ("companion.audio-activity", state) for state in states
+            ]
+        finally:
+            ws.release.set()
+            await task
+    asyncio.run(run())
+
+
 if __name__ == "__main__":
     test_failed_forward_is_removed_once()
     test_outbound_events_are_serialized_per_connection()
     test_parent_context_delivery_receipt_stays_off_the_client_event_stream()
     test_auip_launch_request_reaches_the_trusted_desktop_client()
     test_auip_surface_close_request_reaches_the_trusted_desktop_client()
+    test_companion_audio_busy_and_clear_updates_reach_the_client()
     print("all websocket disconnect tests passed")
