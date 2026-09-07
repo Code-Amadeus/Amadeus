@@ -2069,6 +2069,17 @@
       }
     },
 
+    setAttention(payload) {
+      if (this._externalCanvasHost) return;
+      if (!this.canvasSurface && typeof window.createCrtCanvasSurface === "function") {
+        this.canvasSurface = window.createCrtCanvasSurface();
+        if (this._crtBounds) this.canvasSurface.layout(this._crtBounds);
+      }
+      if (this.canvasSurface && typeof this.canvasSurface.setAttention === "function") {
+        this.canvasSurface.setAttention(payload || {});
+      }
+    },
+
     toggleCanvas() {
       if (this._externalCanvasHost) return;
       if (!this.canvasSurface && typeof window.createCrtCanvasSurface === "function") {
@@ -2355,12 +2366,14 @@
   };
 
   try {
-    app.view.addEventListener("webglcontextlost", function (event) {
+    const pixiApp = callRender("getPixiApp", []);
+    if (!pixiApp || !pixiApp.view) throw new Error("Pixi view is unavailable");
+    pixiApp.view.addEventListener("webglcontextlost", function (event) {
       console.error("[WallpaperScene] WebGL context lost; preventing default restore path", event);
       diag("webgl.context_lost", {}, "error");
       if (event && typeof event.preventDefault === "function") event.preventDefault();
     }, false);
-    app.view.addEventListener("webglcontextrestored", function () {
+    pixiApp.view.addEventListener("webglcontextrestored", function () {
       console.info("[WallpaperScene] WebGL context restored");
       diag("webgl.context_restored");
       if (window.wallpaperApp && window.wallpaperApp.scene) {
@@ -2377,6 +2390,8 @@
 
     initDesktopScene(payload) { desktopScene.init(payload || {}); },
     setCanvas(payload) { desktopScene.setCanvas(payload || {}); },
+    setCanvasPresentation(profile) { desktopScene.setCanvasPresentation(profile || {}); },
+    setAttention(payload) { desktopScene.setAttention(payload || {}); },
     toggleCanvas() { desktopScene.toggleCanvas(); },
     setDefaultSubtitleEnabled(enabled) { desktopScene.setDefaultSubtitleEnabled(enabled); },
 
