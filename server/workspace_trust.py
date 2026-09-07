@@ -40,7 +40,7 @@ def cwd_matches_workspace_roots(
         target = Path(cwd).resolve()
     except (OSError, RuntimeError, ValueError):
         return False
-    target_repository = _git_repository_identity(target)
+    resolved_roots: list[Path] = []
     for item in roots:
         try:
             root = Path(item).resolve()
@@ -48,10 +48,18 @@ def cwd_matches_workspace_roots(
             continue
         if _same_or_child(target, root):
             return True
+        resolved_roots.append(root)
+    # Containment is already sufficient authority. Git identity is needed only
+    # for a linked worktree outside every configured root, never an empty list.
+    if not resolved_roots:
+        return False
+    target_repository = _git_repository_identity(target)
+    if target_repository is None:
+        return False
+    for root in resolved_roots:
         root_repository = _git_repository_identity(root)
         if (
-            target_repository is not None
-            and root_repository is not None
+            root_repository is not None
             and _same_path(
                 target_repository["common_dir"],
                 root_repository["common_dir"],
