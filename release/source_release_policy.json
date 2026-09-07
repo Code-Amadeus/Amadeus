@@ -84,6 +84,7 @@
     "docs/character_pack_authoring.md",
     "docs/character_rag.md",
     "docs/character_rag_evaluation.md",
+    "docs/character_rag_curation.md",
     "docs/character_rag_experiment.md",
     "docs/external_asset_bundles.md",
     "docs/local_instance_authentication.md",

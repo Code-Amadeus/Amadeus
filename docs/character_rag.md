@@ -46,7 +46,7 @@ uv run --locked --no-sync python -m tools.character_rag build --source examples/
 ```
 
 The [starter corpus](../examples/character-rag/README.md) has separate Chinese and
-Japanese files covering 15 topics in 30 entries, with sources and limitations.
+Japanese files covering 26 topics in 52 entries, with sources and limitations.
 It is deliberately smaller than a complete character encyclopedia.
 
 This explicit setup command may download/cache `intfloat/multilingual-e5-small`.
@@ -124,7 +124,8 @@ review output before sharing it from a personal corpus.
 
 `0.33` is a starting value for this corpus, not a universal relevance guarantee.
 Larger values admit more candidates and more unrelated facts. Evaluate ordinary
-technical questions and greetings too. See [evaluation](character_rag_evaluation.md).
+technical questions and greetings too. See the [current corpus comparison](character_rag_curation.md)
+and the [initial integration evaluation](character_rag_evaluation.md).
 
 ## Scope
 

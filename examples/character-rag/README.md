@@ -1,15 +1,20 @@
 # Kurisu starter knowledge
 
-This optional corpus covers 15 topics in separate Japanese and Chinese files
-(30 short entries): the BBS handle, lab number, research field, birthday, Okabe's
+This optional corpus covers 26 topics in separate Japanese and Chinese files
+(52 short entries): the BBS handle, lab number, research field, birthday, Okabe's
 alias, university, personality, nicknames, Mayuri, Daru, food/drink, D-mail,
-time leap, the fictional Amadeus system, and Maho.
+time leap, the fictional Amadeus system, Maho, the Science paper, chopsticks,
+cooking, Kurisu's father, PhoneWave, El Psy Kongroo, Moeka, Ruka, Faris, Suzuha
+and the lab building. Member numbers 001–008 are included in their character entries.
 
 It is a small, reviewed starter corpus, not a complete character encyclopedia.
 Texts are original short paraphrases. They describe fictional characters and
 setting facts; they do not establish the current user's identity, shared memories,
 real-world capabilities, or a mandatory response. No dialogue scripts, voice clips,
-model weights, or the maintainer's old personal corpus are included.
+model weights, or an unreviewed copy of the old local corpus are included.
+The [148-entry audit and comparison](../../docs/character_rag_curation.md) records
+which legacy facts were reused, corrected or deferred. The two language files
+cover corresponding topics; some supporting details differ to keep entries concise.
 
 The two files have corresponding topic order. The directory loader reads JSON
 files in sorted filename order; edit the source texts and rebuild the index when
@@ -25,6 +30,10 @@ private directory, separate from the generated index.
 | Memory transfer / time leap | [Official Kurisu story introduction](https://steinsgate.jp/phenogram/story/makise.html) |
 | Fictional Amadeus memory system | [STEINS;GATE 0 official story](https://steinsgate0.jp/story/) |
 | Maho's institution and seniority | [Official Altair character introduction](https://steinsgate.jp/altair/character/) |
+| Member numbers, Moeka/Ruka/Faris/Suzuha profiles, Nakabachi's time-machine research | [Official character profiles](https://steinsgate.jp/reboot/ja-jp/) |
+| Science publication, PhoneWave's original purpose, lab building/ground-floor shop | [Original game introduction](https://steinsgate.jp/sgflash.html) |
+| Chopsticks, cooking, father/daughter relationship, gel banana | [Kurisu community reference](https://w.atwiki.jp/aniwotawiki/pages/6694.html) |
+| Okabe's El Psy Kongroo phrase | [Licensed character merchandise description](https://backsideoftokyo.com/?pid=146113388) |
 
 The technical concepts are descriptions of the fiction, not claims that the
 software can transfer memories or send messages into the past. Ending-specific
@@ -36,7 +45,8 @@ See [setup and diagnostics](../../docs/character_rag.md) and the recorded
 
 ## 中文说明
 
-本目录提供中日文分开的 30 条简短资料，覆盖 15 个常用主题。它是一份经过校订的
-入门知识库，不是完整人物百科；内容为简短转述，不包含台词脚本、音频、模型或旧个人库。
+本目录提供中日文分开的 52 条简短资料，覆盖 26 个常用主题。它是一份经过校订的
+入门知识库，不是完整人物百科；内容为简短转述。旧本地 148 条已逐条分流，有依据的
+事实经过去重和修正后融入，不原样整库导入；审校及实验结果见上方链接。
 人物设定不能用来推断当前用户就是某位角色，也不能当作真实共同经历或执行能力。
 修改资料后重新生成索引；个人资料和生成物应分目录保存。
