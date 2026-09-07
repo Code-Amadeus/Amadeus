@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -16,6 +17,19 @@ from server.project_registry import (
 )
 from server.scratch_workspace import ensure_scratch_root
 from server.work_ledger_coordinator import WorkLedgerCoordinator
+from server.workspace_trust import cwd_matches_workspace_roots
+
+
+def test_containment_and_empty_registry_do_not_require_git(tmp_path: Path) -> None:
+    trusted = tmp_path / "trusted"
+    child = trusted / "child"
+    unrelated = tmp_path / "unrelated"
+    child.mkdir(parents=True)
+    unrelated.mkdir()
+    with patch("server.workspace_trust._git_repository_identity", side_effect=AssertionError("Git is unnecessary")):
+        assert cwd_matches_workspace_roots(str(child), []) is False
+        assert cwd_matches_workspace_roots(str(trusted), [str(trusted)]) is True
+        assert cwd_matches_workspace_roots(str(child), [str(unrelated), str(trusted)]) is True
 
 
 def _git(cwd: Path, *args: str) -> None:

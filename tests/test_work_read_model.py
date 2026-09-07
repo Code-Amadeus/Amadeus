@@ -118,6 +118,27 @@ def test_latest_attempt_never_inherits_an_older_completion() -> None:
             assert row["completionRationale"] == ""
 
 
+def test_batch_projection_matches_single_items_and_rechecks_workspace(tmp_path: Path) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    with WorkLedgerStore(tmp_path / "ledger.sqlite3", clock=lambda: 10.0) as store:
+        project = store.create_or_get_project(workspace)
+        items = [store.create_work_item(project.project_id, title=f"Task {i}") for i in range(2)]
+        items.append(store.create_work_item(project.project_id, title="No workspace", workspace_mode="none"))
+        model = _model(store)
+        before = [_durable_facts(store, item.work_item_id) for item in items]
+        assert model.project_items(items) == [model.project_item(item) for item in items]
+        assert [_durable_facts(store, item.work_item_id) for item in items] == before
+
+        workspace.rmdir()
+        missing = model.project_items(items)
+        assert all(row["workspaceExists"] is False for row in missing)
+        assert [row["attention"] for row in missing] == ["error", "error", "none"]
+        workspace.mkdir()
+        restored = model.project_items(items)
+        assert [row["workspaceExists"] for row in restored] == [True, True, False]
+
+
 def test_projection_exposes_existing_attempt_session_identity() -> None:
     with tempfile.TemporaryDirectory(prefix="work_read_session_") as temp:
         root = Path(temp)

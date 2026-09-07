@@ -67,10 +67,9 @@ class WorkReadModel:
         project = self.store.get_project(str(project_id or "").strip())
         if project is None:
             return None
-        projected = [
-            self.project_item(item)
-            for item in self.store.list_work_items(project_id=project.project_id, limit=200)
-        ]
+        projected = self.project_items(
+            self.store.list_work_items(project_id=project.project_id, limit=200)
+        )
         current = [
             item for item in projected if item.get("state") not in {"accepted", "archived"}
         ]
@@ -226,6 +225,34 @@ class WorkReadModel:
         return str(min(candidates, key=rank).get("id") or "")
 
     def project_item(self, item: WorkItemRecord) -> dict[str, Any]:
+        return self._project_item(item, self._workspace_facts(item))
+
+    def project_items(self, items: list[WorkItemRecord]) -> list[dict[str, Any]]:
+        # A synchronous projection reads shared workspace facts once. Nothing
+        # survives this call: later projections recheck deletion, moves and Draft
+        # retention. Per-attempt permissions and completion remain per-item reads.
+        workspaces: dict[str, tuple[bool, bool, bool]] = {}
+        projected: list[dict[str, Any]] = []
+        for item in items:
+            key = item.workspace_path if item.workspace_mode != "none" else ""
+            if key not in workspaces:
+                workspaces[key] = self._workspace_facts(item)
+            projected.append(self._project_item(item, workspaces[key]))
+        return projected
+
+    def _workspace_facts(self, item: WorkItemRecord) -> tuple[bool, bool, bool]:
+        if item.workspace_mode == "none":
+            return False, False, False
+        return (
+            Path(item.workspace_path).is_dir(),
+            is_scratch_path(item.workspace_path),
+            bool(self._is_unkept_draft(item.workspace_path)),
+        )
+
+    def _project_item(
+        self, item: WorkItemRecord, workspace_facts: tuple[bool, bool, bool]
+    ) -> dict[str, Any]:
+        workspace_exists, is_scratch, unkept_draft = workspace_facts
         operations = self.store.list_operations(item.work_item_id)
         attempts = self.store.list_attempts(item.work_item_id)
         latest_attempt = attempts[-1] if attempts else None
@@ -288,7 +315,6 @@ class WorkReadModel:
         )
         recoverable_export = recoverable_exports[-1] if recoverable_exports else None
         has_workspace = item.workspace_mode != "none"
-        workspace_exists = bool(has_workspace and Path(item.workspace_path).is_dir())
         if execution == "orphaned" or (has_workspace and not workspace_exists):
             attention = "error"
         elif pending_permissions:
@@ -400,8 +426,6 @@ class WorkReadModel:
             Path(item.workspace_path).name or item.workspace_mode if has_workspace else ""
         )
         metadata = dict(item.metadata or {})
-        is_scratch = bool(has_workspace and is_scratch_path(item.workspace_path))
-        unkept_draft = bool(has_workspace and self._is_unkept_draft(item.workspace_path))
         project = self.store.get_project(item.project_id)
         project_name = (
             "" if unkept_draft or not has_workspace else str(project.name if project else "")

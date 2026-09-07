@@ -5428,7 +5428,7 @@ class WorkLedgerCoordinator:
         target_surface = str(surface or self.default_surface)
         current_session_id = str(self._current_session_id() or "").strip()
         records = self.store.list_work_items(limit=limit)
-        items = [self._project_item(item) for item in records]
+        items = self.read_model.project_items(records)
         focus = self.store.get_focus(target_surface)
         if (
             target_surface != WORKSPACE_ROUTING_SURFACE
