@@ -107,9 +107,11 @@ These are not pending mechanical migrations:
 
 ## Compatibility notes
 
-- `TTS_DEVICE=auto` (or `cuda`) still performs the existing local-LLM port
-  probe. The resolved device is copied to `os.environ` because the bundled
-  BigVGAN loader directly consumes that variable.
+- `TTS_DEVICE=auto` resolves to `mps` on Apple Silicon, `cpu` on Intel macOS,
+  and the existing `cuda:0` default elsewhere. The resolved device is copied
+  to `os.environ` because the bundled BigVGAN loader directly consumes that
+  variable. An explicit indexed CUDA device or explicit `mps`/`cpu` value is
+  preserved.
 - `AMADUES_PRE_TRANSLATION_ENABLED` remains accepted as a deprecated spelling
   of `AMADEUS_PRE_TRANSLATION_ENABLED` at the pre-translation boundary.
 - The legacy root GPT-SoVITS WebUI/API entry points and their conflicting

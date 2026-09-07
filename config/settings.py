@@ -11,6 +11,7 @@
 """
 
 import os
+import platform
 from pathlib import Path
 
 from config.environment import load_project_environment
@@ -249,11 +250,15 @@ FIRST_SENTENCE_AUDIO_CACHE_DIR = _str(
 FIRST_SENTENCE_AUDIO_CACHE_MAX_SECONDS = _float("FIRST_SENTENCE_AUDIO_CACHE_MAX_SECONDS", 1.5)
 
 # ===========================================================================
-# RAG（本地 Kurisu 知识库）
+# Optional local retrieval for all Main Chat models (restart required).
+# The retired local-only flag does not authorize sending references remotely.
 # ===========================================================================
-RAG_ENABLED_FOR_LOCAL = _bool("RAG_ENABLED_FOR_LOCAL", False)
-RAG_TOP_K             = _int("RAG_TOP_K", 1)
-RAG_MAX_DISTANCE      = _float("RAG_MAX_DISTANCE", 0.25)
+RAG_ENABLED = _bool("RAG_ENABLED", False)
+RAG_INDEX_DIR = _str("RAG_INDEX_DIR", ".amadeus/character-rag")
+RAG_TOP_K             = _int("RAG_TOP_K", 3)
+RAG_MAX_DISTANCE      = _float("RAG_MAX_DISTANCE", 0.33)
+if RAG_ENABLED and (not 1 <= RAG_TOP_K <= 20 or not 0 <= RAG_MAX_DISTANCE <= 4):
+    raise ValueError("RAG_TOP_K must be 1..20 and RAG_MAX_DISTANCE must be 0..4")
 
 # ===========================================================================
 # VTS（VTube Studio WebSocket）
@@ -285,8 +290,9 @@ MIMO_TTS_VOICE = _str("MIMO_TTS_VOICE", "冰糖")
 def _resolve_tts_device() -> str:
     """
     自动选择 TTS 设备：
-      - .env / 环境变量明确写了 cuda:0 / cuda:1 / cpu → 直接使用
-      - 未设置 / 写了 "cuda" / 写了 "auto" → 返回 "cuda:0"
+      - .env / 环境变量明确写了 cuda:0 / cuda:1 / mps / cpu → 直接使用
+      - 未设置 / 写了 "cuda" / 写了 "auto" → Apple Silicon 返回 MPS，
+        Intel macOS 返回 CPU，其他平台返回 cuda:0
 
     本地 LLM 的 endpoint 并不能证明它占用了哪张 GPU；多 GPU 分配必须由
     TTS_DEVICE 与 LOCAL_LLM_CUDA_VISIBLE_DEVICES 分别显式声明。
@@ -299,7 +305,10 @@ def _resolve_tts_device() -> str:
     if raw and raw not in ("cuda", "auto"):
         return raw
 
-    device = "cuda:0"
+    if platform.system() == "Darwin":
+        device = "mps" if platform.machine().lower() == "arm64" else "cpu"
+    else:
+        device = "cuda:0"
     # GPT-SoVITS/BigVGAN still reads TTS_DEVICE directly from the process
     # environment, so this compatibility write is part of the current contract.
     os.environ["TTS_DEVICE"] = device

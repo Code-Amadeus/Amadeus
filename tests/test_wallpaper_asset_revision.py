@@ -5,12 +5,21 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock, patch as mock_patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from server.handlers import session_handler as session_handler_module
+from server.handlers.session_handler import SessionHandler
 from server.handlers.wallpaper_handler import WallpaperHandler
+from server.protocol import Method
 from wallpaper import wallpaper_engine_bridge
-from wallpaper.scene_assets import _crt_bounds_norm
+from wallpaper.scene_assets import (
+    _crt_bounds_norm,
+    _desktop_slice_bounds_norm,
+    _keyboard_composer_bounds_norm,
+    _keyboard_input_toggle_bounds_norm,
+)
 
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -103,10 +112,33 @@ def test_electron_slice_uses_normalized_crt_geometry_and_shared_canvas_channel()
     assert host.lively_url.endswith("&bridgePort=17797&sliceHost=electron")
 
 
+def test_electron_slice_encloses_the_separate_input_toggle_and_composer() -> None:
+    config = {
+        "img_size": [1000, 500],
+        "crt_polygon": [[100, 100], [500, 100], [500, 300], [100, 300]],
+        "keyboard_input_toggle_rect": [700, 420, 120, 20],
+        "keyboard_composer_rect": [200, 390, 600, 80],
+    }
+    toggle = _keyboard_input_toggle_bounds_norm(config)
+    composer = _keyboard_composer_bounds_norm(config)
+    slice_bounds = _desktop_slice_bounds_norm(config)
+
+    assert {key: round(value, 6) for key, value in toggle.items()} == {
+        "x": 0.7, "y": 0.84, "width": 0.12, "height": 0.04,
+    }
+    assert {key: round(value, 6) for key, value in composer.items()} == {
+        "x": 0.2, "y": 0.78, "width": 0.6, "height": 0.16,
+    }
+    assert {key: round(value, 6) for key, value in slice_bounds.items()} == {
+        "x": 0.1, "y": 0.2, "width": 0.72, "height": 0.74,
+    }
+
+
 def test_electron_slice_assets_reuse_the_wallpaper_surface_without_a_second_ui() -> None:
     html = (_PROJECT_ROOT / "render" / "web" / "electron_slice.html").read_text(encoding="utf-8")
     host = (_PROJECT_ROOT / "render" / "web" / "electron_slice_host.js").read_text(encoding="utf-8")
     surface = (_PROJECT_ROOT / "render" / "web" / "crt_canvas_surface.js").read_text(encoding="utf-8")
+    composer = (_PROJECT_ROOT / "render" / "web" / "electron_keyboard_composer.js").read_text(encoding="utf-8")
     main = (_PROJECT_ROOT / "electron" / "src" / "main" / "index.ts").read_text(encoding="utf-8")
     main_preload = (_PROJECT_ROOT / "electron" / "src" / "preload" / "index.mts").read_text(encoding="utf-8")
     slice_preload = (_PROJECT_ROOT / "electron" / "src" / "preload" / "slice.cts").read_text(encoding="utf-8")
@@ -117,6 +149,7 @@ def test_electron_slice_assets_reuse_the_wallpaper_surface_without_a_second_ui()
 
     assert '<html lang="en">' in html
     assert '<script src="/render/web/crt_canvas_surface.js"></script>' in html
+    assert '<script src="/render/web/electron_keyboard_composer.js"></script>' in html
     assert "createCrtCanvasSurface()" in host
     assert 'bridgeEndpoint("canvas-state")' in host
     assert 'bridgeEndpoint("canvas-events")' in host
@@ -127,6 +160,13 @@ def test_electron_slice_assets_reuse_the_wallpaper_surface_without_a_second_ui()
     assert "accepted === true" in host
     assert "setCanvasPresentation" in host
     assert "setAttention" in host
+    assert "keyboardInputToggleBounds" in host
+    assert "keyboardComposerBounds" in host
+    assert "wallpaper-keyboard-toggle" in host
+    assert "wallpaper-keyboard-composer" in host
+    assert "createWallpaperKeyboardComposer" in composer
+    assert "event.shiftKey" in composer
+    assert "Escape" in composer
     assert "surface.setAttention" in host
     assert "setPresentation(profile)" in surface
     assert "setAttention(payload)" in surface
@@ -177,6 +217,7 @@ def test_shared_canvas_and_slice_host_are_javascript_syntax_valid() -> None:
     for relative_path in (
         "render/web/crt_canvas_surface.js",
         "render/web/electron_slice_host.js",
+        "render/web/electron_keyboard_composer.js",
     ):
         subprocess.run(
             ["node", "--check", str(_PROJECT_ROOT / relative_path)],
@@ -186,6 +227,57 @@ def test_shared_canvas_and_slice_host_are_javascript_syntax_valid() -> None:
             check=True,
             timeout=10,
         )
+
+
+def test_wallpaper_keyboard_submit_reuses_the_chat_transport() -> None:
+    submitted: list[tuple[str, str]] = []
+
+    async def ensure_session() -> dict:
+        return {"ok": True, "current_session_id": "wallpaper-session"}
+
+    async def send_chat(text: str, session_id: str) -> dict:
+        submitted.append((text, session_id))
+        return {"status": "ok", "turn_id": "turn-1"}
+
+    handler = WallpaperHandler()
+    handler.configure(
+        project_root=_PROJECT_ROOT,
+        chat_send_fn=send_chat,
+        ensure_chat_session_fn=ensure_session,
+    )
+
+    result = asyncio.run(handler._route_chat_submit({"text": "  type on the desk  "}))
+
+    assert submitted == [("type on the desk", "wallpaper-session")]
+    assert result == {"ok": True, "status": "ok", "turn_id": "turn-1"}
+
+
+def test_wallpaper_keyboard_creates_a_session_only_when_one_is_absent() -> None:
+    existing = SessionHandler()
+    existing_payload = {"ok": True, "current_session_id": "current-session"}
+    with (
+        mock_patch.object(session_handler_module.sm, "get_current_session_id", return_value="current-session"),
+        mock_patch.object(session_handler_module.sm, "list_sessions", return_value=["current-session"]),
+        mock_patch.object(existing, "_session_payload", return_value=existing_payload) as payload,
+        mock_patch.object(existing, "_create") as create,
+    ):
+        result = asyncio.run(existing.ensure_current_session(source="wallpaper_keyboard"))
+        assert result == existing_payload
+        payload.assert_called_once_with("current-session")
+        create.assert_not_called()
+
+    missing = SessionHandler()
+    created_payload = {"ok": True, "current_session_id": "new-session"}
+    with (
+        mock_patch.object(session_handler_module.sm, "get_current_session_id", return_value=""),
+        mock_patch.object(session_handler_module.sm, "list_sessions", return_value=[]),
+        mock_patch.object(missing, "_create", return_value=created_payload) as create,
+        mock_patch.object(session_handler_module.bus, "emit", new_callable=AsyncMock) as emit,
+    ):
+        result = asyncio.run(missing.ensure_current_session(source="wallpaper_keyboard"))
+        assert result == {**created_payload, "source": "wallpaper_keyboard"}
+        create.assert_called_once_with({})
+        emit.assert_awaited_once_with(Method.SESSION_CHANGED, result)
 
 
 def test_electron_wallpaper_start_selects_the_external_slice_host(monkeypatch) -> None:
@@ -594,6 +686,15 @@ if __name__ == "__main__":
 
     test_electron_slice_uses_normalized_crt_geometry_and_shared_canvas_channel()
     print("ok: Electron Slice uses normalized CRT geometry and a canvas-only channel")
+
+    test_electron_slice_encloses_the_separate_input_toggle_and_composer()
+    print("ok: Electron Slice encloses the separate input toggle and composer")
+
+    test_wallpaper_keyboard_submit_reuses_the_chat_transport()
+    print("ok: keyboard submit reuses the primary chat transport")
+
+    test_wallpaper_keyboard_creates_a_session_only_when_one_is_absent()
+    print("ok: keyboard creates a session only when none is active")
 
     test_electron_slice_assets_reuse_the_wallpaper_surface_without_a_second_ui()
     print("ok: Electron Slice reuses the shared surface behind a minimal preload")

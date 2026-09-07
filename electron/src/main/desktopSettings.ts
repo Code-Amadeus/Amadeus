@@ -59,7 +59,8 @@ const VALUE_KEYS = new Set([
   'AWS_BEDROCK_MODEL_ID',
   'AWS_BEDROCK_USE_INFERENCE_PROFILE',
   'AWS_BEDROCK_INFERENCE_PROFILE_ID',
-  'RAG_ENABLED_FOR_LOCAL',
+  'RAG_ENABLED',
+  'RAG_INDEX_DIR',
   'RAG_TOP_K',
   'RAG_MAX_DISTANCE',
   'LOCAL_LLM_TYPE',
@@ -157,7 +158,7 @@ const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
   LLM_PROVIDER: new Set(['deepseek', 'openai', 'gemini', 'bedrock', 'local', 'hybrid', 'hybrid2', 'hybrid3']),
   BEDROCK_AUTH_MODE: new Set(['auto', 'boto3', 'bearer']),
   AWS_BEDROCK_USE_INFERENCE_PROFILE: new Set(['true', 'false']),
-  RAG_ENABLED_FOR_LOCAL: new Set(['true', 'false']),
+  RAG_ENABLED: new Set(['true', 'false']),
   LOCAL_LLM_TYPE: new Set(['llama_server', 'lmstudio', 'ollama', 'cli']),
   LOCAL_LLM_LAUNCH_MODE: new Set(['external', 'managed']),
   AUIP_ACTION_REASONING_EFFORT: new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']),
@@ -198,7 +199,7 @@ const WEBSOCKET_URL_KEYS = new Set(['VTS_WS_URL'])
 
 const NUMBER_RANGES: Record<string, readonly [number, number]> = {
   RAG_TOP_K: [1, 20],
-  RAG_MAX_DISTANCE: [0, 2],
+  RAG_MAX_DISTANCE: [0, 4],
   ASR_LISTEN_TIMEOUT_SECONDS: [1, 120],
   ASR_VAD_SILENCE_MS: [100, 3000],
   AEC_REALTIME_DELAY_MS: [0, 2000],

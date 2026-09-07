@@ -34,5 +34,29 @@ jobs:
       - name: Typecheck and build renderer
         run: npm run build
 
-      - name: Audit desktop runtime and build supply chain
-        run: npm audit --audit-level=high
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          fail-on-scopes: runtime, development, unknown
+          license-check: false
+          retry-on-snapshot-warnings: true
+          # NLTK has no patched release for its listed API bug. qwen-asr 0.0.6
+          # requires transformers 4.57.6 exactly. Amadeus uses neither the
+          # affected NLTK persistence APIs nor Transformers LightGlue/save APIs;
+          # all Transformers model loading is local and forced offline. See
+          # the runtime enforcement and cached-session regression in
+          # config/local_model_loading.py and tests/test_local_model_loading.py.
+          # Keep exceptions advisory-specific and remove each once compatible fixes
+          # are published.
+          allow-ghsas: >-
+            GHSA-8mgp-746c-j5xp,
+            GHSA-29pf-2h5f-8g72,
+            GHSA-fgcw-684q-jj6r,
+            GHSA-xrqw-3rrv-vx5w

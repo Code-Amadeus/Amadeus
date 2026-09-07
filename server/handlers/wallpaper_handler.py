@@ -39,6 +39,8 @@ class WallpaperHandler(RequestHandler):
         self._wake_start_fn: Callable[[], Any] | None = None
         self._wake_stop_fn: Callable[[], Any] | None = None
         self._canvas_action_fn: Callable[[dict[str, Any]], Any] | None = None
+        self._chat_send_fn: Callable[[str, str], Any] | None = None
+        self._ensure_chat_session_fn: Callable[[], Any] | None = None
         self._canvas_projector: Callable[[dict[str, Any]], dict[str, Any]] | None = None
         self._attention_snapshot: Callable[[], list[dict[str, Any]]] | None = None
         self._last_canvas_payload: dict[str, Any] | None = None
@@ -50,6 +52,8 @@ class WallpaperHandler(RequestHandler):
         wake_start_fn: Callable[[], Any] | None = None,
         wake_stop_fn: Callable[[], Any] | None = None,
         canvas_action_fn: Callable[[dict[str, Any]], Any] | None = None,
+        chat_send_fn: Callable[[str, str], Any] | None = None,
+        ensure_chat_session_fn: Callable[[], Any] | None = None,
         canvas_projector: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         attention_snapshot: Callable[[], list[dict[str, Any]]] | None = None,
     ) -> None:
@@ -58,6 +62,8 @@ class WallpaperHandler(RequestHandler):
         self._wake_start_fn = wake_start_fn
         self._wake_stop_fn = wake_stop_fn
         self._canvas_action_fn = canvas_action_fn
+        self._chat_send_fn = chat_send_fn
+        self._ensure_chat_session_fn = ensure_chat_session_fn
         self._canvas_projector = canvas_projector
         self._attention_snapshot = attention_snapshot
         if not self._subscribed:
@@ -101,6 +107,7 @@ class WallpaperHandler(RequestHandler):
             slice_host = "electron" if requested_slice_host == "electron" else "wallpaper"
             self._wallpaper_host = WallpaperEngineBridgeHost(slice_host=slice_host)
             self._install_canvas_action_handler(self._wallpaper_host)
+            self._install_chat_submit_handler(self._wallpaper_host)
             self._wallpaper_host.start()
             from server import presentation_runtime
 
@@ -149,6 +156,48 @@ class WallpaperHandler(RequestHandler):
         if hasattr(result, "__await__"):
             result = await result
         if isinstance(result, dict):
+            return result
+        return {"ok": True, "result": result}
+
+    def _install_chat_submit_handler(self, host) -> None:
+        if not hasattr(host, "set_chat_submit_handler"):
+            return
+        loop = asyncio.get_running_loop()
+
+        def _handler(payload: dict) -> dict:
+            future = asyncio.run_coroutine_threadsafe(
+                self._route_chat_submit(payload or {}), loop
+            )
+            return future.result(timeout=10)
+
+        host.set_chat_submit_handler(_handler)
+
+    async def _route_chat_submit(self, payload: dict[str, Any]) -> dict[str, Any]:
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            return {"ok": False, "error": "empty_message"}
+        send_chat = self._chat_send_fn
+        if send_chat is None:
+            return {"ok": False, "error": "wallpaper_chat_unavailable"}
+        ensure_session = self._ensure_chat_session_fn
+        if ensure_session is None:
+            return {"ok": False, "error": "wallpaper_session_unavailable"}
+        session = ensure_session()
+        if hasattr(session, "__await__"):
+            session = await session
+        if not isinstance(session, dict) or session.get("ok") is not True:
+            return {"ok": False, "error": "wallpaper_session_unavailable"}
+        session_id = str(session.get("current_session_id") or "").strip()
+        if not session_id:
+            return {"ok": False, "error": "wallpaper_session_unavailable"}
+        result = send_chat(text, session_id)
+        if hasattr(result, "__await__"):
+            result = await result
+        if isinstance(result, dict):
+            # ChatHandler returns {status: "ok", turn_id: ...}; bridge action
+            # endpoints use an explicit ok flag for their HTTP status.
+            if result.get("status") == "ok" and result.get("ok") is not True:
+                return {"ok": True, **result}
             return result
         return {"ok": True, "result": result}
 
@@ -298,6 +347,9 @@ class WallpaperHandler(RequestHandler):
             "assetVersion": getattr(host, "asset_version", ""),
             "sliceHost": getattr(host, "slice_host", "wallpaper"),
             "sliceBounds": getattr(host, "slice_bounds", {}),
+            "canvasBounds": getattr(host, "canvas_bounds", {}),
+            "keyboardInputToggleBounds": getattr(host, "keyboard_input_toggle_bounds", {}),
+            "keyboardComposerBounds": getattr(host, "keyboard_composer_bounds", {}),
         }
 
     def bridge_info(self) -> dict[str, Any]:
@@ -320,6 +372,9 @@ class WallpaperHandler(RequestHandler):
             "assetVersion": getattr(host, "asset_version", ""),
             "sliceHost": getattr(host, "slice_host", "wallpaper"),
             "sliceBounds": getattr(host, "slice_bounds", {}),
+            "canvasBounds": getattr(host, "canvas_bounds", {}),
+            "keyboardInputToggleBounds": getattr(host, "keyboard_input_toggle_bounds", {}),
+            "keyboardComposerBounds": getattr(host, "keyboard_composer_bounds", {}),
             "url": getattr(host, "url", ""),
             "lively_url": getattr(host, "lively_url", ""),
         }

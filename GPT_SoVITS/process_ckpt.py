@@ -1,8 +1,16 @@
 import traceback
 from collections import OrderedDict
 from time import time as ttime
-import shutil,os
+import os
+import shutil
+import sys
 import torch
+
+_PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
+if _PACKAGE_DIR not in sys.path:
+    sys.path.insert(0, _PACKAGE_DIR)
+
+from utils import HParams
 from tools.i18n.i18n import I18nAuto
 
 i18n = I18nAuto()
@@ -95,12 +103,8 @@ def get_sovits_version_from_path_fast(sovits_path):
     return version,model_version,if_lora_v3
 
 def load_sovits_new(sovits_path):
-    f=open(sovits_path,"rb")
-    meta=f.read(2)
-    if meta!="PK":
-        data = b'PK' + f.read()
-        bio = BytesIO()
-        bio.write(data)
-        bio.seek(0)
-        return torch.load(bio, map_location="cpu", weights_only=False)
-    return torch.load(sovits_path,map_location="cpu", weights_only=False)
+    with open(sovits_path, "rb") as f:
+        meta = f.read(2)
+        data = b"PK" + f.read() if meta != b"PK" else meta + f.read()
+    with torch.serialization.safe_globals([HParams]):
+        return torch.load(BytesIO(data), map_location="cpu", weights_only=True)

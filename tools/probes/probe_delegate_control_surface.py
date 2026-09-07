@@ -7,7 +7,7 @@ The current role reply is never part of that decision.
 
 Usage::
 
-    .venv_cu124\Scripts\python.exe -X utf8 tools/probes/probe_delegate_control_surface.py [repeats]
+    .venv\Scripts\python.exe -X utf8 tools/probes/probe_delegate_control_surface.py [repeats]
 
 Exit codes: 0 all completed decisions matched; 1 semantic mismatch; 2 no
 usable evidence because infrastructure failed.

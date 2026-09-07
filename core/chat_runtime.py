@@ -4,7 +4,7 @@ Extracted from main.py's stream_llm_query (runtime convergence plan, phase 3).
 
 Ownership model:
 - ChatRuntime instance fields replace main.py module globals
-  (llm_client / gemini_model / rag_system / LLM_PROVIDER / ENABLE_CONVERSATION /
+  (llm_client / gemini_model / LLM_PROVIDER / ENABLE_CONVERSATION /
   _current_gui_callback / LOCAL_LLM_*).
 - Per-turn mutable state lives in _TurnState; tag parsing state lives in a
   per-turn StreamTagParser instance.
@@ -29,9 +29,8 @@ import unicodedata
 import aiohttp
 
 from config.settings import (
+    RAG_ENABLED,
     PENDING_TURN_GATE_TIMEOUT_S,  # noqa: F401  # re-exported for tests
-    # RAG
-    RAG_ENABLED_FOR_LOCAL, RAG_TOP_K, RAG_MAX_DISTANCE,
     # 本地 LLM
     LOCAL_LLM_TYPE, LOCAL_LLM_MODEL,
     LOCAL_LLM_URL, LOCAL_LLM_LM_STUDIO_URL, LOCAL_LLM_OLLAMA_URL,
@@ -89,11 +88,7 @@ from server.host_action_dispatcher import record_actions
 from vts.action import reset_all_expressions
 from vts.expression_controller import get_controller as _get_expr_ctrl
 
-# 本地 Kurisu 专用 RAG 知识库。Electron/headless 路径允许缺少 faiss。
-try:
-    from rag_system import RAGSystem
-except Exception:
-    RAGSystem = None
+from core.character_rag import CharacterRAG
 
 logger = logging.getLogger("chat_runtime")
 
@@ -746,11 +741,12 @@ def _turn_system_prompt(st: "_TurnState", default_variant: str) -> str:
 
 
 def _turn_role_grounding(st: "_TurnState") -> str:
-    """Serialize one Host-owned current-turn fact after conversation history."""
+    """Compose ephemeral reference data and Host grounding after history."""
 
     if getattr(st, "prompt_variant", ""):
         return ""
-    parts: list[str] = []
+    reference = str(getattr(st, "character_reference", "") or "")
+    parts: list[str] = [reference] if reference else []
     try:
         from server.auip_control_decision import render_auip_role_grounding
 
@@ -968,7 +964,7 @@ class _TurnState:
         "parser", "gui_callback", "api_call_start",
         "turn_id", "branch_continue_seen", "delegate_seen", "work_delegate_seen",
         "focus_delegate_attrs", "focus_delegate_batches", "sentence_count",
-        "question", "session_id", "prompt_variant", "control_proposal_batches",
+        "question", "character_reference", "session_id", "prompt_variant", "control_proposal_batches",
         "control_prior_messages", "control_authority_tasks",
         "control_authority_resolved", "control_effective_actions",
         "control_outcome_seen", "control_outcome_valid",
@@ -1014,6 +1010,7 @@ class _TurnState:
         self.api_call_start = 0.0
         self.turn_id = str(turn_id or "")
         self.question = str(question or "")
+        self.character_reference = ""
         self.session_id = str(session_id or "")
         self.sentence_count = 0
         # 本轮是否发出了 branch="continue" 委托——操作性轮次的历史条目
@@ -1091,7 +1088,7 @@ class ChatRuntime:
         # 懒初始化的客户端/知识库
         self.llm_client = None
         self.gemini_model = None
-        self.rag_system = None
+        self.character_rag = CharacterRAG()
         # 当前对话 GUI callback，供 delegate 第二轮复用
         self.current_gui_callback = None
         # 运行时单例（configure 注入）
@@ -1362,6 +1359,11 @@ class ChatRuntime:
                                 or ()
                             ),
                         )
+
+            if RAG_ENABLED and not preserve_emotion and not st.prompt_variant:
+                st.character_reference = await asyncio.to_thread(
+                    self.character_rag.reference, _original_question
+                )
 
             early_return = False
             logger.info(f"Sending streaming API request to {llm_provider}...")
@@ -4229,49 +4231,23 @@ class ChatRuntime:
     async def _run_local(self, st, question, visual_context, enable_conv, llm_provider) -> None:
         logger.info(f"using local LLM: {self.local_llm_model} (type: {self.local_llm_type})")
 
-        # ── RAG 检索（仅本地链路） ──
-        rag_aug_question = question
-        if RAG_ENABLED_FOR_LOCAL:
-            try:
-                if self.rag_system is None:
-                    logger.info("initializing local RAG knowledge base (Kurisu)...")
-                    if RAGSystem is None:
-                        raise RuntimeError("RAGSystem unavailable")
-                    self.rag_system = RAGSystem()
-                context, dist, t_ms = self.rag_system.search(question, k=RAG_TOP_K)
-                logger.info(f"RAG retrieval time: {t_ms:.2f} ms, distance: {dist:.4f}")
-                if context and dist <= RAG_MAX_DISTANCE:
-                    rag_aug_question = (
-                        f"{question}\n\n"
-                        "【補足知識（牧瀬紅莉栖 / Future Gadget Lab 関連）】\n"
-                        f"{context}\n\n"
-                        "※上記は参考情報です。ユーザーの質問に日本語で自然に回答し、"
-                        "必要な場合のみ知識を引用してください。"
-                    )
-                    logger.info("RAG hit; injected Kurisu knowledge")
-                else:
-                    logger.info("RAG miss or low relevance; no knowledge injected this turn")
-            except Exception as e:
-                logger.error(f"RAG retrieval failed; skipping augmentation for this turn: {e}")
-                rag_aug_question = question
-
         system_prompt = _turn_system_prompt(st, "with_delegate")
         current_turn_system = _turn_role_grounding(st)
-        visible_rag_question = _wrap_user_message_for_language_lock(
-            rag_aug_question
+        visible_question = _wrap_user_message_for_language_lock(
+            question
         )
 
         if _turn_uses_conversation_history(st, enable_conv):
             messages = conversation_history.build_deepseek_messages(
                 system_prompt,
-                visible_rag_question,
+                visible_question,
                 current_turn_system=current_turn_system,
             )
         else:
             messages = [{"role": "system", "content": system_prompt}]
             if current_turn_system:
                 messages.append({"role": "system", "content": current_turn_system})
-            messages.append({"role": "user", "content": visible_rag_question})
+            messages.append({"role": "user", "content": visible_question})
         if visual_context:
             from llm.visual_context import attach_openai_chat_image, visual_notice_text
 
@@ -4293,11 +4269,11 @@ class ChatRuntime:
                 logger.info("[First Sentence Sprint] starting fast first-sentence fetch...")
                 logger.info(
                     "[CLI] sending full prompt: %s",
-                    protected_text(rag_aug_question, limit=50),
+                    protected_text(question, limit=50),
                 )
 
                 async for content in local_llm_query_cli_stream(
-                    visible_rag_question,
+                    visible_question,
                     system_prompt=system_prompt + current_turn_system,
                 ):
                     if not content:
@@ -4316,7 +4292,7 @@ class ChatRuntime:
             except Exception as e:
                 logger.error(f"CLI streaming request failed: {e}")
                 fallback_response = await local_llm_query_cli(
-                    visible_rag_question,
+                    visible_question,
                     stream=False,
                     system_prompt=system_prompt + current_turn_system,
                 )
@@ -4467,7 +4443,11 @@ class ChatRuntime:
 
         except Exception as e:
             logger.error(f"local LLM streaming request failed: {e}")
-            fallback_response = local_llm_query(visible_rag_question)
+            fallback_response = local_llm_query(
+                visible_question,
+                **({"system_prompt": system_prompt + "\n\n" + current_turn_system}
+                   if st.character_reference else {}),
+            )
             if fallback_response:
                 st.full_response = fallback_response
                 st.history_response = fallback_response
@@ -4877,7 +4857,9 @@ class ChatRuntime:
             logger.error(f"Bedrock streaming request failed: {e}")
             logger.error(f"   error details: {traceback.format_exc()}")
             fallback_response = remote_llm_query(
-                _wrap_user_message_for_language_lock(question)
+                _wrap_user_message_for_language_lock(question),
+                **({"system_prompt": system_prompt + "\n\n" + current_turn_system}
+                   if st.character_reference else {}),
             )
             if fallback_response:
                 st.full_response = fallback_response
@@ -5044,7 +5026,11 @@ class ChatRuntime:
                 await self._accept_role_stream_text(st, _chunk)
         except Exception as e:
             logger.error(f"[Hybrid] dual stream request failed: {e}")
-            fallback_response = remote_llm_query(_hybrid_user_question)
+            fallback_response = remote_llm_query(
+                _hybrid_user_question,
+                **({"system_prompt": _system_bedrock + "\n\n" + _turn_role_grounding(st)}
+                   if st.character_reference else {}),
+            )
             if fallback_response:
                 st.full_response = fallback_response
                 st.history_response = fallback_response

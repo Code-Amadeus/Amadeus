@@ -77,7 +77,7 @@ unexpected overwrites before committing files.
 
 - `assets/` is read-only application input. Generated output belongs in
   `runtime/`, `output/`, or another explicitly writable state directory.
-- The root PolyForm license covers Amadeus first-party code and modifications,
+- The root AGPL-3.0 license covers Amadeus first-party code and modifications,
   not character, voice, model, reference-audio, or other external media packs.
 - The external bundle mechanism is a transport and integrity boundary, not a
   copyright grant. Only distribute packs whose rights have been reviewed.

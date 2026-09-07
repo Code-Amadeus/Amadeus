@@ -457,10 +457,10 @@ def remote_llm_query(
 # 本地模型查询（同步，非流式）
 # =============================================================================
 
-def local_llm_query(question: str) -> str:
+def local_llm_query(question: str, *, system_prompt: str | None = None) -> str:
     """调用本地模型(Ollama / LM Studio / llama-server / CLI) - 非流式版本"""
     try:
-        _system = _get_system_prompt("local_fallback")
+        _system = system_prompt or _get_system_prompt("local_fallback")
 
         if LOCAL_LLM_TYPE == "ollama":
             payload = {
@@ -515,7 +515,12 @@ def local_llm_query(question: str) -> str:
             except RuntimeError:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-            reply = loop.run_until_complete(local_llm_query_cli(question, stream=False))
+            reply = loop.run_until_complete(
+                local_llm_query_cli(
+                    question, stream=False,
+                    **({"system_prompt": system_prompt} if system_prompt else {}),
+                )
+            )
 
         elif LOCAL_LLM_TYPE == "llama_server":
             payload = {

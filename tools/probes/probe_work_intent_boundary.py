@@ -6,7 +6,7 @@ classify by the required source of truth, not by the word itself.
 
 Usage::
 
-    .venv_cu124\Scripts\python.exe -X utf8 tools/probes/probe_work_intent_boundary.py [repeats]
+    .venv\Scripts\python.exe -X utf8 tools/probes/probe_work_intent_boundary.py [repeats]
 
 Exit codes: 0 every completed model turn matched; 1 semantic mismatch; 2 no
 usable model evidence because infrastructure failed.
