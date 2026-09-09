@@ -149,6 +149,8 @@ L4 的当前 cu124 配置面向 Windows + NVIDIA。Windows ROCm 7.2.1 已有互�
 cu128 仍是社区配置记录。
 统一使用 [uv](https://docs.astral.sh/uv/) 与 Python 3.12，CI 固定 uv 0.12.8。
 
+Linux 用户请从下方的 [Linux（实验性）](#linux实验性) 章节开始。
+
 | 梯级 | 能力 | 平台 | 安装方式 |
 |---|---|---|---|
 | L1 core | 文字聊天、工作、Provider、角色渲染 | Windows / macOS | `uv sync --locked` |
@@ -220,6 +222,61 @@ cd ..
 
 `npm ci` 会通过项目 postinstall 安装锁定的 Electron 运行时。国内网络可为
 npm/Electron 配置镜像（如 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`）。
+
+### Linux（实验性）
+
+**Linux 目前属于实验性源码运行路径，尚未纳入完整支持的平台范围。**
+[第一阶段 Linux CI（#63）](https://github.com/Code-Amadeus/Amadeus/pull/63) 已通过
+Ubuntu 24.04 上的 L1 + dev 锁定安装、环境导入与无模型依赖检查、基础契约测试、
+Ruff、架构视图检查及 Electron 构建。CI 不覆盖 Electron GUI、音频设备、
+VAD、本地模型推理、Wayland 会话或壁纸集成。
+
+社区已报告 Arch Linux / Wayland 下的桌面与角色渲染等实机结果；这些结果不代表
+所有发行版或桌面环境均已验证。环境记录、已知问题和后续进展见
+[Linux 跟踪 issue #64](https://github.com/Code-Amadeus/Amadeus/issues/64)。
+
+先安装 Git、[uv](https://docs.astral.sh/uv/)（CI 使用 `0.12.8`）和 Node.js 22
+（CI 使用 `22.21.1`），从无需 GPU 或语音包的 L1 开始：
+
+```bash
+git clone https://github.com/Code-Amadeus/Amadeus.git
+cd Amadeus
+uv venv .venv --python 3.12.10
+uv sync --locked
+cp .env.example .env
+```
+
+编辑 `.env`，填写 `DEEPSEEK_API_KEY`，设置 `TTS_BACKEND=disabled`，并保持
+`WAKE_ENABLED=false`，先验证文字路径。然后在项目根目录检查环境：
+
+```bash
+uv run --locked --no-sync python tools/verify_python_environment.py --profile cpu
+```
+
+在 Linux 图形桌面会话中构建并启动 Electron；启动器会自动发现
+`.venv/bin/python3` 并启动后端：
+
+```bash
+cd electron
+npm ci
+npm run build
+npm run electron:dev
+```
+
+如只需 headless 后端，可改为在项目根目录运行：
+
+```bash
+uv run --locked --no-sync python -m server.app --port 17777
+```
+
+升级到语音或本地模型前，请留意以下实验边界：
+
+- **Voice / AEC**：社区报告 `aec-audio-processing==1.0.1` 在 Arch 的较新工具链上
+  编译失败，会阻塞 `--extra voice` 安装；尚不能将该问题推广到所有 Linux 发行版。
+- **VAD / NVIDIA**：已有社区实机推理报告，但未纳入 Linux CI；当前 CPU/cu124
+  PyTorch 索引选择仅对 Windows 生效，Linux 的可复现构建配置仍待完善。
+- **桌面 / 壁纸**：GUI 与 Wayland compositor 集成仍需分别验收；GNOME 的社区结果
+  不代表 niri、KDE 或其他桌面也可用。
 
 ### VAD 与本地模型
 
@@ -445,6 +502,7 @@ Settings 不会回写 `.env`。普通模型、语音、麦克风、Provider/MCP�
 | 范围 | 状态 |
 |---|---|
 | L1/L2（文字 + 远程语音）| Windows 与 macOS 源码部署；Windows 为参考平台，macOS L1/L2 有独立 CI，桌面与音频体验仍需实机验收 |
+| Linux（实验性）| Ubuntu 24.04 的 L1 基础检查与 Electron 构建有 CI；GUI、语音、GPU 与壁纸尚未完成正式验收，见 [Linux 章节](#linux实验性) |
 | L3 CPU VAD | 不要求 NVIDIA GPU；使用明确的 CPU 构建配置 |
 | L4 cu124（本地 CUDA 12.4 语音）| Windows + NVIDIA；以当前实际运行环境为参考 |
 | AMD ROCm 7.2.1 | 单 `.venv` 实验锁、sidecar adapter 与失败闭环已提供；受支持 AMD GPU 实机验收待补齐 |
