@@ -164,7 +164,7 @@
       const width = Math.max(180, Math.min(b.width * 0.72, b.width - 24));
       const height = Math.max(34, Math.min(width / this._aspect, b.height * 0.16));
       const x = b.x + (b.width - width) / 2;
-      const y = b.y + b.height - height - Math.max(3, b.height * 0.012);
+      const y = b.y + b.height - height;
       this.frame.x = x;
       this.frame.y = y;
       if (this.frame.texture && this.frame.texture.valid) {
@@ -1710,6 +1710,7 @@
     ambientLayer: null,
     glowLayer: null,
     scanlineLayer: null,
+    bottomVignette: null,
     canvasSurface: null,
     ambientLowSprite: null,
     ambientSprite: null,
@@ -1761,6 +1762,8 @@
         this.app.stage.addChild(this.ambientLayer);
         this.app.stage.addChild(this.glowLayer);
         this.app.stage.addChild(this.scanlineLayer);
+        this.bottomVignette = this._createBottomVignette();
+        this.app.stage.addChild(this.bottomVignette);
         this.scanlineLayer.mask = this.mask;
         callRender("setSpriteViewportMask", [this.mask]);
         this._resizeBound = () => this.layout();
@@ -1792,6 +1795,23 @@
         scenarioEnabled: !!(payload && payload.scenario && payload.scenario.enabled),
         stageChildren: this.app && this.app.stage ? this.app.stage.children.length : 0,
       });
+    },
+
+    _createBottomVignette() {
+      // A soft shadow across the inner lower bezel, strongest below the character.
+      // Keep it separate from the subtitle layer so the text stays crisp.
+      const canvas = document.createElement("canvas");
+      canvas.width = 1024;
+      canvas.height = 128;
+      const ctx = canvas.getContext("2d");
+      ctx.scale(8, 1);
+      const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+      gradient.addColorStop(0, "rgba(0,0,0,0.62)");
+      gradient.addColorStop(0.45, "rgba(0,0,0,0.38)");
+      gradient.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 128, 128);
+      return new PIXI.Sprite(PIXI.Texture.from(canvas));
     },
 
     _applyCharacterColorGrade() {
@@ -2063,6 +2083,11 @@
       callRender("setSpriteViewportBounds", [bounds]);
       scenarioRuntime.layout(bounds, this.mask);
       wallpaperSubtitle.layout(bounds);
+      this.bottomVignette.width = bounds.width * 0.76;
+      this.bottomVignette.height = bounds.height * 0.085;
+      this.bottomVignette.x = bounds.x + bounds.width * 0.52 - this.bottomVignette.width / 2;
+      this.bottomVignette.y = bounds.bottom - this.bottomVignette.height / 2;
+      wallpaperSubtitle.updateVisibility();
       if (this.canvasSurface && typeof this.canvasSurface.layout === "function") {
         this.canvasSurface.layout(bounds);
       }
