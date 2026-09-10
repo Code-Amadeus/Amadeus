@@ -1,0 +1,72 @@
+name: Python Linux
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  core-tier:
+    # Phase 1 Linux regression baseline: L1 core + dev tooling, platform-safe
+    # contract tests, and Electron build. Full Linux support is a separate effort.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      AMADEUS_E2E_NO_TTS: "1"
+      TTS_DEVICE: "cpu"
+      WORK_WORKTREE_ISOLATION: "0"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12.10"
+
+      - name: Install pinned uv
+        run: python -m pip install uv==0.12.8
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.21.1"
+          cache: npm
+          cache-dependency-path: electron/package-lock.json
+
+      - name: Install locked environment (L1 + dev tooling)
+        run: uv sync --locked --extra dev
+
+      - name: Verify environment (ci profile)
+        run: uv run --locked --no-sync python tools/verify_python_environment.py --profile ci
+
+      - name: Assert L1 stays model-less
+        run: >-
+          uv run --locked --no-sync python -c
+          "import importlib.util as u;
+          assert all(u.find_spec(n) is None
+          for n in ('torch', 'torchaudio', 'pyaudio', 'silero_vad', 'onnxruntime'))"
+
+      - name: Check source and architecture views
+        shell: bash
+        run: |
+          uv run --locked --no-sync python -m ruff check .
+          uv run --locked --no-sync python tools/architecture/generate_views.py --check
+
+      - name: Run platform-safe contract suites
+        shell: bash
+        # Same whitelist as macOS: contract tests without platform-specific
+        # runtime execution or browser/Electron spawning.
+        run: >-
+          uv run --locked --no-sync python -m pytest -q
+          tests/test_profile_contract.py
+          tests/test_python_environment_verifier.py
+          tests/test_cu124_dependency_audit_tool.py
+          tests/test_core_install_tiers.py
+          tests/test_asset_paths.py
+          tests/test_system_settings.py
+          tests/test_voice_backend_registry.py
+
+      - name: Build Electron renderer (Linux)
+        working-directory: electron
+        run: |
+          npm ci
+          npm run build

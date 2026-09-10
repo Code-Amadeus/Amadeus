@@ -134,6 +134,13 @@ def test_canvas_route_binds_selection_focus_and_execution_to_canonical_task() ->
                 def current_revision() -> str:
                     return str(coordinator.snapshot()["revision"])
 
+                before_missing = coordinator.snapshot()
+                missing_select_revision = await handler.route_action(
+                    {"action": "select", "workItemId": item_b}
+                )
+                assert missing_select_revision["error"] == "missing_revision"
+                assert missing_select_revision["work"]["selectedWorkItemId"] == before_missing["selectedWorkItemId"]
+
                 selected = await handler.route_action(
                     {
                         "action": "select",

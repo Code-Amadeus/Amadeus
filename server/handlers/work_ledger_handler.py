@@ -386,8 +386,8 @@ class WorkLedgerHandler(RequestHandler):
                 **result,
             }
         if action == "select":
-            current = self.coordinator.snapshot(surface=DEFAULT_WORK_SURFACE)
             if not revision:
+                current = self.coordinator.snapshot(surface=DEFAULT_WORK_SURFACE)
                 return {
                     "ok": False,
                     "error": "missing_revision",

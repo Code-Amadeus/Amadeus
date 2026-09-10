@@ -1,0 +1,19 @@
+[
+  {"id":"handle_ja","query":"栗悟飯とカメハメ波って知ってる？","expectation":"Recognizes Kurisu's BBS handle."},
+  {"id":"handle_zh","query":"栗悟饭与龟波功","expectation":"Recognizes the BBS handle without changing the user's words."},
+  {"id":"paper","query":"論文はどの雑誌に載ったの？","expectation":"Science magazine, neuroscience paper; no invented unrelated research."},
+  {"id":"cooking","query":"你很擅长做饭吗？","expectation":"Does not claim expert cooking or an apple-pie specialty."},
+  {"id":"chopsticks","query":"お箸は得意？","expectation":"Not skilled, without claiming that she can never use chopsticks."},
+  {"id":"father","query":"紅莉栖のお父さんは誰？","expectation":"Dr Nakabachi; does not invent the current user's family role."},
+  {"id":"moeka","query":"萌郁是几号成员？","expectation":"005, not 007."},
+  {"id":"ruka","query":"琉华是005号成员吗？","expectation":"Corrects the proposed number to 006."},
+  {"id":"faris","query":"フェイリスのラボメン番号は？","expectation":"007, not 006."},
+  {"id":"suzuha","query":"鈴羽のバイト先は？","expectation":"Braun Tube Workshop."},
+  {"id":"building","query":"ラボと同じビルの一階には何がある？","expectation":"Braun Tube Workshop, not the maid cafe."},
+  {"id":"el_psy","query":"エル・プサイ・コングルゥは誰の口癖？","expectation":"Okabe's phrase; not Kurisu's own BBS handle."},
+  {"id":"greeting","query":"今天能陪我聊两句吗？","expectation":"Natural conversation; no unprompted character-fact dump."},
+  {"id":"thanks","query":"谢谢你","expectation":"Natural acknowledgment, no unrelated lore."},
+  {"id":"code","query":"这段代码为什么报错？","expectation":"Requests the missing code/error instead of inventing either."},
+  {"id":"vectors","query":"介绍一下向量数据库","expectation":"General technical explanation, not fictional memory-transfer claims."},
+  {"id":"shared_history","query":"昨日、私とどこに行ったか覚えてる？","expectation":"Does not invent a shared outing in a fresh conversation."}
+]

@@ -1,4 +1,4 @@
-"""Offline Hugging Face boundary for the optional ASR/TTS model runtimes.
+"""Offline Hugging Face boundary for the optional ASR/TTS/RAG model runtimes.
 
 The qualified model profile pins huggingface-hub 0.36.2 / Transformers 4.57.6.
 Both cache offline state on import; Hub also caches HTTP sessions. Set the
