@@ -684,7 +684,8 @@
         const scale = Math.min(maxW / texture.width, maxH / texture.height);
         this.sprite.scale.set(scale);
         this.sprite.x = b.x + b.width * 0.52;
-        this.sprite.y = b.y + b.height * 1.01;
+        // Match wallpaperSubtitle.layout's bottom inset, including on resize.
+        this.sprite.y = b.y + b.height - Math.max(3, b.height * 0.012);
         return;
       }
       const h = app.screen.height;
