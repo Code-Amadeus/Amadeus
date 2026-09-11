@@ -16,6 +16,16 @@ the cu124 dependency audit and future SBOM rather than duplicated here.
 
 ## Verified for the stated disposition
 
+### aec-audio-processing (Linux source build)
+
+- Baseline: official PyPI `aec-audio-processing` 1.0.1 sdist.
+- Local change: one Meson argument forces bundled Abseil for this build.
+- Provenance and removal: `vendor/aec-audio-processing.PROVENANCE.md`.
+- Complete bundled license/attribution texts are preserved in the source tree
+  and in `vendor/aec-audio-processing/src/files/THIRD_PARTY_NOTICES.txt`, which
+  is included by the existing wheel package-data rule.
+- Disposition: included; Windows/macOS retain the PyPI source selection.
+
 ### GPT-SoVITS upstream license
 
 - Source: <https://github.com/RVC-Boss/GPT-SoVITS>

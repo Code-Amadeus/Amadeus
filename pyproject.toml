@@ -175,6 +175,8 @@ conflicts = [
 ]
 
 [tool.uv.sources]
+# Temporary AEC source-build fix; other platforms retain the PyPI artifacts.
+aec-audio-processing = { path = "vendor/aec-audio-processing", marker = "sys_platform == 'linux'" }
 torch = [
     { index = "pytorch-cpu", extra = "torch-cpu", marker = "sys_platform == 'win32'" },
     { index = "pytorch-cu124", extra = "local-cu124", marker = "sys_platform == 'win32'" },
@@ -253,6 +255,8 @@ packages = [
 line-length = 100
 target-version = "py312"
 extend-exclude = [
+    # Preserve upstream sources; the build-only delta is reviewed separately.
+    "vendor/aec-audio-processing",
     "GPT_SoVITS",
     "assets",
     ".venv",

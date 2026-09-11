@@ -250,8 +250,10 @@ Where network access requires it, configure npm/Electron mirrors, such as
 support still pending.** [Phase 1 Linux CI (#63)](https://github.com/Code-Amadeus/Amadeus/pull/63)
 has passed locked L1 + dev installation, environment imports and model-less
 dependency checks, basic contract tests, Ruff, architecture-view checks, and the
-Electron build on Ubuntu 24.04. CI does not cover the Electron GUI, audio devices,
-VAD, local model inference, Wayland sessions, or wallpaper integration.
+Electron build on Ubuntu 24.04. A separate Voice source-build job checks locked
+installation, AEC import, bundled Abseil selection and related contracts. CI does
+not cover the Electron GUI, real audio devices, VAD/local model inference,
+Wayland sessions, or wallpaper integration.
 
 The community has reported desktop and character-rendering results on Arch Linux /
 Wayland. These reports do not establish compatibility across all distributions or
@@ -293,11 +295,25 @@ For a headless backend instead, run this from the project root:
 uv run --locked --no-sync python -m server.app --port 17777
 ```
 
+For remote voice, recording and playback, install L2 in the same `.venv`.
+On Ubuntu 24.04, install the native prerequisites used by CI first; other Linux
+distributions need their corresponding package names:
+
+```bash
+sudo apt-get update
+sudo apt-get install --no-install-recommends -y build-essential pkg-config portaudio19-dev
+uv sync --locked --extra voice
+uv run --locked --no-sync python tools/verify_python_environment.py --profile voice
+```
+
 Before adding voice or local models, consider these experimental boundaries:
 
-- **Voice / AEC:** the community reports that `aec-audio-processing==1.0.1` fails
-  to compile with a newer Arch toolchain, blocking `--extra voice` installation.
-  This has not been established as a problem on all Linux distributions.
+- **Voice / AEC:** Linux uses vendored source based on the official
+  `aec-audio-processing==1.0.1` sdist and forces bundled Abseil 20240722.0 to avoid
+  selecting an incompatible modern system Abseil. The system installation is
+  unchanged; Windows/macOS retain their registry artifacts. Source identity,
+  the isolated patch and removal conditions are in [AEC provenance](vendor/aec-audio-processing.PROVENANCE.md).
+  Build/import success does not qualify real-device echo cancellation or full voice interaction.
 - **VAD / NVIDIA:** community inference results exist, but Linux CI does not cover
   them. The current CPU/cu124 PyTorch index selection only applies on Windows;
   reproducible Linux build profiles still need work.
@@ -536,7 +552,7 @@ advanced diagnostics, experimental thresholds, and test-only flags remain in
 | Scope | Status |
 |---|---|
 | L1/L2 (text + remote voice) | Source deployment on Windows and macOS; Windows is the reference platform, macOS L1/L2 has separate CI, and desktop/audio behavior still needs real-device acceptance |
-| Linux (experimental) | Ubuntu 24.04 CI covers basic L1 checks and the Electron build; GUI, voice, GPU, and wallpaper acceptance remains incomplete. See [Linux setup](#linux-experimental) |
+| Linux (experimental) | Ubuntu 24.04 CI covers L1, L2 Voice source builds and the Electron build; GUI, real audio devices, GPU and wallpaper still need acceptance. See [Linux setup](#linux-experimental) |
 | L3 CPU VAD | No NVIDIA GPU required; uses an explicit CPU build selection |
 | L4 cu124 (local CUDA 12.4 voice) | Windows + NVIDIA; follows the qualified local-model configuration |
 | AMD ROCm 7.2.1 | Single-`.venv` experimental lock, sidecar adapters and failure reporting; acceptance on supported AMD hardware remains incomplete |
