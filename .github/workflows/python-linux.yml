@@ -99,4 +99,5 @@ jobs:
         run: >-
           uv run --locked --no-sync python -m pytest -q
           tests/test_mic_descriptor.py tests/test_tts_contract.py
+          tests/test_aec_native_smoke.py
           tests/test_voice_backend_registry.py tests/test_core_install_tiers.py

@@ -65,6 +65,7 @@ jobs:
           tests/test_t2s_static_kv_mask.py
           tests/test_local_model_loading.py
           tests/test_mic_descriptor.py
+          tests/test_aec_native_smoke.py
           tests/test_qwen3_asr_sidecar_bootstrap.py
           tests/test_profile_contract.py
           tests/test_python_environment_verifier.py

@@ -62,6 +62,7 @@ jobs:
           tests/test_system_settings.py
           tests/test_voice_backend_registry.py
           tests/test_mic_descriptor.py
+          tests/test_aec_native_smoke.py
           tests/test_tts_contract.py
 
       - name: Build Electron renderer (macOS)

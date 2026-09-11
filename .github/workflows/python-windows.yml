@@ -107,7 +107,7 @@ jobs:
           uv sync --locked --extra voice --extra dev
           uv run --locked --no-sync python tools/verify_python_environment.py --profile voice
           uv run --locked --no-sync python -c "import importlib.util as u; assert u.find_spec('torch') is None"
-          uv run --locked --no-sync python -m pytest -q tests/test_mic_descriptor.py tests/test_tts_contract.py
+          uv run --locked --no-sync python -m pytest -q tests/test_mic_descriptor.py tests/test_tts_contract.py tests/test_aec_native_smoke.py
       - name: L3 CPU VAD
         shell: bash
         run: |

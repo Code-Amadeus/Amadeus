@@ -64,6 +64,10 @@ uv pip install --python .venv --no-deps "https://github.com/Dao-AILab/flash-atte
 
 uv pip check --python .venv
 uv run --locked --no-sync python -c "import torch, flash_attn, flash_attn_2_cuda; print(torch.__version__, torch.version.cuda, torch._C._GLIBCXX_USE_CXX11_ABI, flash_attn.__version__)"
+
+# Native import only, then an explicitly requested GPU comparison (no model assets)
+uv run --locked --no-sync python tools/verify_flash_attention.py
+uv run --locked --no-sync python tools/verify_flash_attention.py --compute --device cuda:0
 ```
 
 These binaries are deliberately outside the default lock. A subsequent
@@ -71,6 +75,23 @@ These binaries are deliberately outside the default lock. A subsequent
 or silently changing the tested Torch version. To qualify a GPU, compare forward
 and KV-cache results against Torch's math SDPA before testing the real Qwen model;
 native extension import alone does not test CUDA kernels.
+
+### Windows kernel evidence, 2026-09-11
+
+The Windows artifact above was downloaded and its SHA-256 verified. In a fresh
+candidate environment, Python 3.12.10, Torch/Torchaudio 2.7.0+cu128 and driver
+581.57 passed native import, `uv pip check`, and the checked-in probe on both
+RTX 4070 Ti SUPER and RTX 4070 Laptop (compute capability 8.9).
+
+Each GPU passed eight comparisons: FP16/BF16, head dimensions 64/128, causal
+GQA forward (128 tokens, eight query heads/two KV heads), and a one-token
+KV-cache append with 32 prefix tokens. Cache writes were also checked. Against
+Torch math SDPA, the largest absolute error was 0.0009765625 for FP16 and
+0.0078125 for BF16, within the probe's respective 0.003 and 0.03 tolerances.
+
+These results qualify this small kernel probe on these two devices. No real
+Qwen/GPT-SoVITS inference, latency benchmark, audio-device journey, Linux GPU,
+MPS device, or RTX 50-series kernel test was performed in this check.
 
 ## Evidence needed before default promotion
 
