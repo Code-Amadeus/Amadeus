@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { constellationLayout } from '../src/renderer/components/companionConstellationLayout.ts'
+import { constellationLayout, taskBranchPath } from '../src/renderer/components/companionConstellationLayout.ts'
+import { groupCompanionTasks } from '../src/renderer/components/floatingCompanionState.ts'
+import { CompanionNotificationQueue, TASK_INACTIVITY_MS } from '../src/renderer/components/companionNotificationQueue.ts'
 
 const group = (id, count) => ({ id, title: id, tasks: Array.from({length:count}, (_,i) => ({
   id:id+'-'+i, phase:i===count-1?'attention':'ready', title:'Task '+i, detail:'Original result', key:id+'-'+i
@@ -9,6 +11,27 @@ const groups = Array.from({length:5},(_,i)=>group('project-'+i, i+2))
 const layout = (items=groups,p='',t='',page=0) => constellationLayout(items,1032,1820,750,p,t,page)
 const rect = p => ({left:p.x,top:p.y,right:p.x+p.width*p.scale,bottom:p.y+p.height*p.scale})
 const overlap = (a,b) => a.left<b.right && b.left<a.right && a.top<b.bottom && b.top<a.bottom
+
+test('an active side card remains visible in its project after its parent expires or never ran', () => {
+  const now = TASK_INACTIVITY_MS * 2
+  const parent = { id:'parent', title:'Parent', key:'parent:old', phase:'ready', announce:false,
+    lastActivityAt: now-TASK_INACTIVITY_MS-1, projectId:'project', projectName:'Project' }
+  const side = { id:'side', title:'Side', key:'side:new', phase:'attention', announce:true,
+    lastActivityAt:now, parentTaskId:'parent', sourceKind:'sidechat', projectId:'project', projectName:'Project' }
+  const other = { ...parent, id:'other', key:'other:new', lastActivityAt:now }
+  for (const sources of [[side,other], [parent,side,other]]) {
+    const queue = new CompanionNotificationQueue()
+    queue.update(sources,now)
+    const visible = [...queue.visible.values()], groups = groupCompanionTasks(visible)
+    assert.equal(groups.length,1)
+    assert.equal(groups[0].id,'project:project')
+    assert.equal(visible.some(task=>task.id==='parent'),false)
+    const view = constellationLayout(groups,1032,1820,750)
+    const pose = view.cards.find(card=>card.id==='side')
+    assert.ok(pose && !pose.hidden && !pose.depth)
+    assert.equal(queue.take().id,'side')
+  }
+})
 
 test('one to five projects pack varied footprints with no collisions or character obstruction', () => {
   for(let seed=0;seed<40;seed++) {
@@ -74,8 +97,7 @@ test('five projects remain visible without scrolling, with clear character centr
   }
   for(let i=0;i<nodes.length;i++) for(let j=i+1;j<nodes.length;j++) assert.equal(overlap(nodes[i],nodes[j]),false)
   for(const project of view.projects) {
-    if (project.stacked) assert.equal(project.frontId,groups.find(g=>g.id===project.id).tasks.at(-1).id)
-    assert.equal(view.cards.filter(c=>c.projectId===project.id&&!c.hidden).length,project.stacked ? Math.min(3,project.count) : project.count)
+    assert.equal(view.cards.filter(c=>c.projectId===project.id&&!c.hidden).length,project.stacked ? Math.min(7,project.count) : project.count)
   }
 })
 
@@ -151,4 +173,87 @@ test('small display fallback preserves access with readable cards and bounded wi
     assert.ok(c.width>=240)
     assert.ok(rect(c).right<=408)
   }
+})
+
+test('side conversation has its own overview card beside its actual parent, and no duplicate when focused', () => {
+  const project = group('design', 1)
+  project.tasks.push({ id: 'side', parentTaskId: 'design-0', sourceKind: 'sidechat', phase: 'ready' })
+  const before = layout([project])
+  assert.equal(before.projects[0].count, 2, 'Task count includes the side card, preserving its parent relationship')
+  assert.equal(before.cards.filter(c => !c.hidden && !c.depth).length, 2)
+  const after = layout([project], 'design', 'side')
+  assert.equal(after.cards.filter(c => c.id === 'side').length, 1)
+  assert.equal(after.cards.find(c => c.id === 'side').focused, true)
+  assert.equal(after.cards.find(c => c.id === 'design-0').hidden, false)
+})
+
+test('parent-child connections stay outside card interiors in overview and focused arrangements', () => {
+  const parent = { left: 50, top: 220, right: 350, bottom: 404 }
+  for (const child of [
+    { left: 376, top: 236, right: 676, bottom: 420 },
+    { left: 50, top: 430, right: 350, bottom: 614 },
+    { left: -100, top: 40, right: 20, bottom: 120 },
+  ]) {
+    const values = taskBranchPath(parent, child).match(/-?\d+(?:\.\d+)?/g).map(Number)
+    const points = Array.from({length: 4}, (_, i) => ({x: values[i * 2], y: values[i * 2 + 1]}))
+    for (let i = 1; i < 20; i++) {
+      const t = i / 20, s = 1 - t
+      const p = ['x', 'y'].map(axis => s**3*points[0][axis] + 3*s*s*t*points[1][axis] + 3*s*t*t*points[2][axis] + t**3*points[3][axis])
+      for (const box of [parent, child]) assert.equal(p[0] > box.left && p[0] < box.right && p[1] > box.top && p[1] < box.bottom, false)
+    }
+  }
+  assert.equal(taskBranchPath(parent, parent), '', 'overlapping animated cards have no misleading interior line')
+})
+
+test('the second root owns the lane below it in overview and expanded project', () => {
+  const project = group('design', 2)
+  project.tasks.push({ id: 'side', parentTaskId: 'design-1', sourceKind: 'sidechat', phase: 'ready' })
+  for (const mode of ['ordered', 'natural', 'scattered']) for (const expanded of [false, true]) {
+    const view = constellationLayout([project],1032,1820,750,expanded?'design':'','',0,112,[],{mode,seed:4})
+    const parent = view.cards.find(c=>c.id==='design-1'), other = view.cards.find(c=>c.id==='design-0'), side=view.cards.find(c=>c.id==='side')
+    assert.equal(side.hidden,false)
+    assert.equal(side.depth,0)
+    assert.ok(side.y >= parent.y + parent.height)
+    assert.ok(Math.abs(side.x-parent.x) < parent.width*.26)
+    assert.ok(Math.abs(side.x-parent.x) < Math.abs(side.x-other.x))
+    assert.equal(overlap(rect(parent),rect(side)),false)
+    assert.equal(overlap(rect(other),rect(side)),false)
+  }
+})
+
+test('each mode fits five projects and changes only on explicit reseed or changed membership', () => {
+  for (const mode of ['ordered', 'natural', 'scattered']) {
+    for (let n=1;n<=5;n++) {
+      const items=groups.slice(0,n)
+      const before=constellationLayout(items,1032,1820,750,'','',0,112,[],{mode,seed:2})
+      assert.equal(before.compact,false,mode)
+      assert.equal(before.height,1820)
+      const boxes=before.slots.map(s=>rect({...s,scale:1}))
+      for(let i=0;i<boxes.length;i++) for(let j=i+1;j<boxes.length;j++) assert.equal(overlap(boxes[i],boxes[j]),false)
+      const again=constellationLayout(items,1032,1820,750,'','',0,112,before.slots,{mode,seed:2})
+      assert.deepEqual(again.slots,before.slots)
+    }
+  }
+  const a=constellationLayout(groups,1032,1820,750,'','',0,112,[],{mode:'scattered',seed:2})
+  const b=constellationLayout(groups,1032,1820,750,'','',0,112,[],{mode:'scattered',seed:3})
+  assert.notDeepEqual(a.slots,b.slots)
+})
+
+test('miniature families keep their parent relationship while another project is read', () => {
+  const project = group('design', 2), other = group('other', 1)
+  project.tasks.push({ id: 'side', parentTaskId: 'design-1', sourceKind: 'sidechat', phase: 'ready' })
+  const view = layout([other, project], 'other', 'other-0')
+  const parent = view.cards.find(c => c.id === 'design-1'), side = view.cards.find(c => c.id === 'side')
+  assert.equal(side.hidden, false)
+  assert.ok(side.y >= parent.y + parent.height * parent.scale)
+  assert.ok(Math.abs(side.x - parent.x) < parent.width * parent.scale * .26)
+  assert.equal(view.cards.filter(c => c.id === 'other-0').length, 1)
+})
+
+test('reading follows the actual character clearance without changing overview anchors', () => {
+  const before = constellationLayout(groups,1032,1820,750)
+  const moved = constellationLayout(groups,1032,1820,750,groups[0].id,groups[0].tasks[0].id,0,112,before.slots,{readingBottom:960})
+  assert.deepEqual(moved.slots,before.slots)
+  assert.ok(moved.readingTop + moved.readingHeight <= 960)
+  assert.equal(moved.cards.find(c => c.focused).scale,1)
 })

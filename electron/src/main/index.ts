@@ -2,7 +2,7 @@
  * Electron main process - spawns Python backend and creates the app window.
  */
 
-import { app, BrowserWindow, Menu, WebContentsView, dialog, ipcMain, screen, shell } from 'electron'
+import { app, BrowserWindow, Menu, WebContentsView, dialog, globalShortcut, ipcMain, screen, shell } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import { randomBytes } from 'crypto'
 import http from 'http'
@@ -21,7 +21,7 @@ import {
 } from './wallpaperCanvasLifecycle.js'
 import { desktopPointHitsWindowRegions } from './wallpaperHitTesting.js'
 import { wallpaperWindowPolicy } from './wallpaperWindowPolicy.js'
-import { resolveFloatingCompanionPlacement, resolveMainWindowPlacement, wantsFloatingCompanion } from './windowPlacement.js'
+import { resolveCompanionDesktop, resolveMainWindowPlacement, wantsFloatingCompanion } from './windowPlacement.js'
 import { resolvePythonCommand } from './pythonRuntime.js'
 import { applicationMenuTemplate } from './applicationMenu.js'
 import { defaultMpsFallbackEnvironment } from './mpsFallbackPolicy.js'
@@ -509,12 +509,12 @@ function floatingCompanionUrl(): string {
   return target.toString()
 }
 
-function floatingCompanionBounds(): Electron.Rectangle {
-  return resolveFloatingCompanionPlacement(
+function floatingCompanionDesktop() {
+  return resolveCompanionDesktop(
     screen.getAllDisplays(),
     screen.getPrimaryDisplay(),
     process.env.AMADEUS_COMPANION_DISPLAY || 'secondary',
-  ).bounds
+  )
 }
 
 function emitFloatingCompanionChanged(active: boolean): void {
@@ -560,11 +560,33 @@ function startFloatingCompanionHitTest(): void {
 }
 
 function closeFloatingCompanionWindow(): void {
+  stopCompanionWindowLayer()
   stopFloatingCompanionHitTest()
   const window = floatingCompanionWindow
   floatingCompanionWindow = null
   if (window && !window.isDestroyed()) window.close()
   emitFloatingCompanionChanged(false)
+}
+
+let companionWindowLayer: ChildProcess | null = null
+function stopCompanionWindowLayer(): void {
+  companionWindowLayer?.kill()
+  companionWindowLayer = null
+}
+function startCompanionWindowLayer(window: BrowserWindow): void {
+  stopCompanionWindowLayer()
+  if (process.platform !== 'win32') return
+  const helper = spawn(getPythonCommand(), [path.join(ELECTRON_ROOT, 'tools', 'companion_window_layer.py'),
+    '--window', electronNativeHandle(window)], { cwd: PROJECT_ROOT, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+  companionWindowLayer = helper
+  helper.stdout?.on('data', data => console.info(`[companion-layer] ${String(data).trim()}`))
+  helper.stderr?.on('data', data => console.error(`[companion-layer] ${String(data).trim()}`))
+  helper.on('error', error => console.error('[companion-layer] follow unavailable', error))
+  helper.on('exit', code => {
+    if (companionWindowLayer !== helper) return
+    companionWindowLayer = null
+    if (!window.isDestroyed()) console.error(`[companion-layer] follow stopped: ${code}`)
+  })
 }
 
 function createFloatingCompanionWindow(): boolean {
@@ -574,7 +596,7 @@ function createFloatingCompanionWindow(): boolean {
     return true
   }
 
-  const bounds = floatingCompanionBounds()
+  const bounds = floatingCompanionDesktop().bounds
   const window = new BrowserWindow({
     ...bounds,
     minWidth: Math.min(280, bounds.width),
@@ -585,14 +607,16 @@ function createFloatingCompanionWindow(): boolean {
     backgroundColor: '#00000000',
     show: false,
     paintWhenInitiallyHidden: true,
-    focusable: true,
+    // Pointer interaction is a floating palette, not an application switch.
+    // In particular it must not blur a voice composer on another display.
+    focusable: process.platform !== 'win32',
     fullscreenable: false,
     resizable: true,
     movable: true,
     icon: getAppIconPath(),
     hasShadow: false,
     skipTaskbar: true,
-    alwaysOnTop: true,
+    alwaysOnTop: process.platform !== 'win32',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'companion.cjs'),
@@ -604,17 +628,22 @@ function createFloatingCompanionWindow(): boolean {
   })
   floatingCompanionWindow = window
   window.setMenuBarVisibility(false)
-  window.setAlwaysOnTop(true, 'floating')
+  window.setAlwaysOnTop(process.platform !== 'win32', 'floating')
   window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   guardTrustedRendererShell(window)
   window.once('ready-to-show', () => {
     if (floatingCompanionWindow !== window) return
     window.showInactive()
+    // Windows constrains the initial native window to one work area. Apply the
+    // virtual desktop bounds after it is shown so both displays can receive input.
+    window.setBounds(floatingCompanionDesktop().bounds, false)
+    startCompanionWindowLayer(window)
     startFloatingCompanionHitTest()
     emitFloatingCompanionChanged(true)
   })
   window.on('closed', () => {
     if (floatingCompanionWindow !== window) return
+    stopCompanionWindowLayer()
     floatingCompanionWindow = null
     stopFloatingCompanionHitTest()
     emitFloatingCompanionChanged(false)
@@ -635,10 +664,10 @@ function createFloatingCompanionWindow(): boolean {
 function reconcileFloatingCompanionPlacement(): void {
   const window = floatingCompanionWindow
   if (!window || window.isDestroyed()) return
-  const bounds = floatingCompanionBounds()
-  // Release an old display's size floor before moving to a smaller work area.
+  const bounds = floatingCompanionDesktop().bounds
   window.setMinimumSize(Math.min(280, bounds.width), Math.min(420, bounds.height))
   window.setBounds(bounds, false)
+  window.webContents.send('floating-companion.display-changed')
 }
 
 function normalizeLocalPort(value: unknown): number {
@@ -2235,6 +2264,11 @@ ipcMain.handle('floating-companion.set-hit-regions', (event, boundsList: Electro
   }).filter(item => item.width > 0 && item.height > 0)
   return true
 })
+ipcMain.handle('floating-companion.display', (event) => {
+  const window = floatingCompanionWindow
+  if (!window || window.isDestroyed() || event.sender !== window.webContents) return null
+  return floatingCompanionDesktop()
+})
 ipcMain.handle('project-directory.select', async (event) => {
   if (!isTrustedAmadeusRenderer(event.sender)) {
     return { ok: false, cancelled: false, path: '', detail: 'Untrusted Project directory requester.' }
@@ -2628,6 +2662,11 @@ app.on('second-instance', (_event, commandLine) => {
 })
 
 app.whenReady().then(async () => {
+  if (!globalShortcut.register('CommandOrControl+Alt+A', () => {
+    createFloatingCompanionWindow()
+    floatingCompanionWindow?.showInactive()
+    floatingCompanionWindow?.moveTop()
+  })) console.error('[companion-layer] Ctrl+Alt+A is already in use')
   try {
     await startBackend()
   } catch (error) {
@@ -2663,6 +2702,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', (event) => {
+  globalShortcut.unregisterAll()
   closeFloatingCompanionWindow()
   closeElectronSliceWindow()
   closeWorkOverlayWindow()

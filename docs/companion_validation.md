@@ -1,5 +1,24 @@
 # Companion prototype validation
 
+## September 11 incremental multi-display update
+
+The [multi-display milestone](companion_multidisplay_update.md) was integrated into the public prototype branch independently of the daily development checkout. Results below were rerun on this integration, on Windows:
+
+| Check | Result |
+| --- | --- |
+| Electron production build | Passed |
+| Complete Electron unit suite | 116 passed, including the existing startup opt-in, small-display and Wallpaper tests |
+| Targeted Python tests | 21 passed: window following, disabled observer, existing desktop observer and local bridge security |
+| Ruff on changed Python source/tests | Passed |
+| Compiled-renderer dual-display fixture | Four reports passed: cross-display dragging and reload, independent readers, family dragging, editing and return menus; primary 2560×1440 and secondary 1080×1920 |
+| Default settings | Existing opt-in source/startup, muted reminder default and source-navigation allowlist retained; no audio backend changes |
+
+The fixture finished at 2026-09-11 15:38 UTC. Its own profile and reports stay under ignored `runtime/companion-preview/`. Its pointer input is injected through Chromium; this is not a claim that every OS interaction, external side-chat source, audio device or mixed-DPI layout was exercised. Actual user confirmation of uninterrupted Codex voice input belongs to the related daily version, as described in the milestone notes.
+
+The full Python suite, dependency audit and model-less startup smoke below are historical September 7 results; they were not all rerun for this UI-scoped update. No default-branch merge or release tag is part of this milestone.
+
+## September 7 initial prototype qualification
+
 Validated on Windows on 2026-09-07, after integrating the prototype with upstream `afe0e74552be5faf9041d6f488d9e87b329cf8e3`. This records local, CPU/model-less qualification of the experimental source in Issue #61. It is not a GitHub Actions result or qualification of every optional model tier.
 
 The isolated environment used CPython 3.12.10, uv 0.12.8 and Node.js 24.19.0. The upstream Windows workflow pins Node.js 22.21.1; that exact Node version was not exercised locally.

@@ -26,6 +26,7 @@ clients = set()
 runs = []
 observer = None
 retention_tasks = []
+retention_contexts = []
 
 
 async def observe_codex(ws):
@@ -57,7 +58,7 @@ async def websocket(ws: WebSocket):
             elif method == "provider.list":
                 result = {"runs": runs}
             elif method == "companion.tasks":
-                result = await asyncio.to_thread(observer.poll) if observer else {"tasks": retention_tasks}
+                result = await asyncio.to_thread(observer.poll) if observer else {"tasks": retention_tasks, "contexts": retention_contexts}
             elif method == "render.ready":
                 manifest = json.loads((CHARACTER / "runtime_manifest.json").read_text())
                 for name in ("idle", "speaking_short"):
@@ -90,8 +91,8 @@ async def scene(count: int):
          "detail":"这份结果需要导出为 CSV，还是保留为 Excel 工作簿？"},
         {"id":"preview-end", "title":"调整人物交互", "phase":"ready", "projectId":"preview-amadeus", "projectName":"Amadeus · 示例",
          "detail":"已调整卡片的展开与收起。点击空白可以回到概览，同项目的任务仍然聚在一起。"},
-        {"id":"preview-progress", "title":"核对示例记录", "phase":"running", "projectId":"preview-report", "projectName":"示例报表 · 示例",
-         "detail":"正在核对示例报表的记录与验证结果。"},
+        {"id":"preview-progress", "title":"核对实验记录", "phase":"running", "projectId":"preview-kernel", "projectName":"示例实验室",
+         "detail":"正在核对本次实验的记录与验证结果。"},
         {"id":"preview-agent", "title":"检查副屏布局", "phase":"ready", "parentTaskId":"preview-question", "sourceKind":"subagent", "projectId":"preview-amadeus", "projectName":"Amadeus · 示例",
          "detail":"三种卡片状态都在工作区内，文字和角色没有重叠。"},
     ]
@@ -102,9 +103,9 @@ async def scene(count: int):
         samples.extend({"id":f"preview-project-{i}-task-{j}","title":f"{title} · {j + 1}","phase":"running",
                         "projectId":f"preview-project-{i}","projectName":f"{name} · 示例","detail":detail}
                        for i, name, title, detail in [
-                           (0, "演示网站", "检查页面布局", "正在检查导航、按钮与正文的布局。"),
-                           (1, "示例笔记", "整理今日练习", "已整理今天的复习内容，下一步核对例句。"),
-                           (2, "素材整理", "检查运行状态", "正在检查后台任务的最新状态与记录。")]
+                           (0, "示例分析", "核对分析结果", "正在核对示例数据的时间对应关系。"),
+                           (1, "日语学习", "整理今日练习", "已整理今天的复习内容，下一步核对例句。"),
+                           (2, "Codex 监测", "检查运行状态", "正在检查后台任务的最新状态与记录。")]
                        for j in range(2))
     elif count == 9:
         samples.extend({"id":f"preview-extra-amadeus-{i}","title":f"同项目任务 {i}","phase":"running",
@@ -138,7 +139,7 @@ async def organic_fixture(count: int):
     if count not in range(1, 6):
         return {"error": "项目数量应为 1 到 5"}
     now = int(time.time() * 1000)
-    names = ["示例报表", "Amadeus", "素材整理", "示例笔记", "演示网站"]
+    names = ["示例实验室", "示例设计", "示例监测", "示例学习", "示例分析"]
     counts = [1, 2, 1, 2, 4]
     retention_tasks = [{"id": f"organic-{i}-{j}", "key": f"organic-{i}-{j}", "projectId": f"organic-{i}",
                         "projectName": name + " · 示例", "title": ["核对当前结果", "确认下一步安排"][j % 2],
@@ -174,6 +175,22 @@ async def retention_fixture(action: str):
     return {"fixture": True, "action": action}
 
 
+@app.post("/families/{count}")
+async def family_fixture(count: int):
+    if observer:
+        return {"error": "真实观察模式不能混入示例任务"}
+    await organic_fixture(count)
+    # Reproduce the reported defect: the SECOND root owns a side conversation.
+    if count > 1:
+        parent = next(task for task in retention_tasks if task["id"] == "organic-1-1")
+        retention_tasks.append({**parent, "id": "family-side", "key": "family-side",
+                                "parentTaskId": parent["id"], "sourceKind": "sidechat",
+                                "title": "属于第二张主卡的侧边任务", "phase": "ready"})
+    for ws in list(clients):
+        await event(ws, "companion.tasks", {"tasks": retention_tasks})
+    return {"fixture": True, "projects": count}
+
+
 @app.post("/reading/{kind}")
 async def reading_fixture(kind: str):
     if observer:
@@ -207,6 +224,52 @@ async def caption_fixture():
                     "text": "コーデックスの結果、確認できたわ。元の文章と私の言い方を、ここで見比べられるわね。"})
         await event(ws, "tts.turn_complete", {})
     return {"fixture": True, "audio_played": False}
+
+
+@app.post("/stack-fixture/{count}")
+async def stack_fixture(count: int):
+    global retention_tasks, retention_contexts
+    if observer or count < 1 or count > 100:
+        return {"error": "Only bounded visual fixtures are allowed"}
+    now = int(time.time() * 1000)
+    retention_contexts = []
+    retention_tasks = [{"id": f"stack-{project}-{i}", "title": f"任务 {i + 1} · 层叠检查", "phase": "attention" if i == 0 else "ready",
+                        "projectId": f"stack-{project}", "projectName": f"示例项目 {project + 1}", "provider": "Codex",
+                        "codexThreadId": f"stack-{project}-{i}", "key": f"stack-{project}-{i}:{now}", "repeatable": True,
+                        "announce": False, "lastActivityAt": now, "detail": "这张任务卡保留完整内容。层叠时只露出磨砂边层，点击卡组可以散开。"}
+                       for project in range(5) for i in range(count)]
+    for ws in list(clients):
+        await event(ws, "companion.tasks", {"tasks": retention_tasks, "contexts": [], "note": "层叠验收 · 示例内容"})
+    return {"projects": 5, "tasks_per_project": count}
+
+
+@app.post("/context-fixture")
+async def context_fixture():
+    global retention_contexts
+    if observer:
+        return {"error": "Real observation cannot receive fixture data"}
+    await stack_fixture(2)
+    retention_contexts = [{"id": "inactive-parent", "title": "没有启动本轮的主对话", "projectId": "stack-0", "projectName": "示例项目 1"}]
+    retention_tasks[0].update({"parentTaskId": "inactive-parent", "sourceKind": "sidechat"})
+    for ws in list(clients):
+        await event(ws, "companion.tasks", {"tasks": retention_tasks, "contexts": retention_contexts})
+    return {"inactive_parent": True}
+
+
+@app.post("/active-parent-fixture")
+async def active_parent_fixture():
+    if observer:
+        return {"error": "Real observation cannot receive fixture data"}
+    await stack_fixture(4)
+    for project in range(5):
+        parent, child, sibling, peer = retention_tasks[project * 4:project * 4 + 4]
+        parent.update({"title": "主对话 · 布局优化", "phase": "running", "repeatable": False})
+        child.update({"title": "侧边 · 等待确认", "parentTaskId": parent["id"], "sourceKind": "sidechat", "phase": "attention"})
+        sibling.update({"title": "侧边 · 核查结果", "parentTaskId": parent["id"], "sourceKind": "sidechat"})
+        peer.update({"title": "另一个主对话"})
+    for ws in list(clients):
+        await event(ws, "companion.tasks", {"tasks": retention_tasks, "contexts": []})
+    return {"active_parent": True}
 
 
 if __name__ == "__main__":

@@ -47,6 +47,18 @@ test('cards prefer actual project names and keep titles for projectless tasks', 
   assert.equal(companionTaskHeading({ projectName: '', title: '独立对话' }), '独立对话')
 })
 
+test('projectless side tasks keep their parent conversation group when its card is absent', () => {
+  const parent = { id: 'parent', title: 'Parent conversation' }
+  const first = { id: 'first', title: 'Side A', parentTaskId: parent.id, sourceKind: 'sidechat' }
+  const second = { id: 'second', title: 'Side B', parentTaskId: parent.id, sourceKind: 'sidechat' }
+  const absent = groupCompanionTasks([first, second])
+  const present = groupCompanionTasks([parent, first, second])
+  assert.equal(absent.length, 1)
+  assert.equal(absent[0].id, present[0].id)
+  assert.deepEqual(absent[0].tasks, [first, second])
+  assert.equal(groupCompanionTasks([first, {...second, parentTaskId: 'another-parent'}]).length, 2)
+})
+
 test('active provider work becomes a compact running presence', () => {
   const presence = deriveFloatingCompanionPresence([running])
   assert.equal(presence.phase, 'running')

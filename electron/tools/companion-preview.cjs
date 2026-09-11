@@ -12,13 +12,18 @@ const codexThread = threadArg >= 0 ? process.argv[threadArg + 1] : null;
 if (threadArg >= 0 && !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(codexThread || '')) throw new Error('Invalid Codex task ID');
 fs.mkdirSync(output, { recursive: true });
 app.setPath('userData', path.join(output, 'user-data'));
-let server, win, hitTimer;
+let server, win, hitTimer, layer;
 const log = text => fs.appendFileSync(path.join(output, 'preview.log'), text + '\n');
 app.whenReady().then(async () => {
   const target = screen.getAllDisplays().find(item => item.id !== screen.getPrimaryDisplay().id);
   if (!target) { log('No secondary display'); app.quit(); return; }
+  const { resolveCompanionDesktop } = await import(pathToFileURL(path.join(root, 'electron/dist/main/windowPlacement.js')).href);
+  const desktop = () => resolveCompanionDesktop(screen.getAllDisplays(), screen.getPrimaryDisplay());
   const probe = net.createServer();
-  await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
+  const portIndex = process.argv.indexOf('--port');
+  const requestedPort = portIndex >= 0 ? Number(process.argv[portIndex + 1]) : 0;
+  if (!Number.isInteger(requestedPort) || requestedPort < 0 || requestedPort > 65535) throw new Error('Invalid preview port');
+  await new Promise((resolve, reject) => { probe.once('error', reject); probe.listen(requestedPort, '127.0.0.1', resolve); });
   const port = probe.address().port;
   await new Promise(resolve => probe.close(resolve));
   const origin = `http://127.0.0.1:${port}`;
@@ -34,15 +39,17 @@ app.whenReady().then(async () => {
     await new Promise(resolve => setTimeout(resolve, 250));
   }
   if (!ready) { log('Preview server did not start'); app.quit(); return; }
-  win = new BrowserWindow({ ...target.workArea, frame: false, transparent: true, backgroundColor: '#00000000',
-    hasShadow: false, alwaysOnTop: true, fullscreenable: false, skipTaskbar: false,
+  win = new BrowserWindow({ ...desktop().bounds, frame: false, transparent: true, backgroundColor: '#00000000',
+    focusable: process.platform !== 'win32', show: false,
+    hasShadow: false, alwaysOnTop: !process.argv.includes('--follow-active-window'), fullscreenable: false, skipTaskbar: false,
     title: codexThread ? 'Amadeus · Codex 真实任务联调' : 'Amadeus 悬浮预览 · 示例事件', webPreferences: { preload: path.join(__dirname, 'companion-preview-preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   win.setMenu(null);
-  win.setAlwaysOnTop(true, 'screen-saver');
+  win.setAlwaysOnTop(!process.argv.includes('--follow-active-window'), 'screen-saver');
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   let regions = [];
   ipcMain.handle('preview.connection', () => ({ url: `ws://127.0.0.1:${port}/ws`, protocols: [] }));
   ipcMain.handle('preview.close', () => app.quit());
+  ipcMain.handle('preview.display', () => desktop());
   ipcMain.handle('preview.explain', () => dialog.showMessageBox(win, { message: '这是示例任务。预览没有连接 Codex，不会提交任何回答。', buttons: ['知道了'] }));
   ipcMain.handle('preview.codex', async (_event, threadId) => {
     if (!codexThread) { log(`Fixture open source: ${threadId}`); return false; }
@@ -62,18 +69,71 @@ app.whenReady().then(async () => {
   win.webContents.on('before-input-event', async (_event, input) => {
     if (input.type !== 'keyDown') return;
     if (input.key === 'Escape' && input.control) return app.quit();
+    if (input.key.toLowerCase() === 'r' && input.control) { win.webContents.reload(); return; }
     // Automation hit-tests coordinates before moving the pointer; pause only
     // preview passthrough with P for that check, then restore it with P.
     if (input.key.toLowerCase() === 'p') passthrough = !passthrough;
     if (['0', '1', '2', '3'].includes(input.key)) await fetch(origin + '/scene/' + input.key, { method: 'POST' });
     if (input.key.toLowerCase() === 's') {
       const image = await win.webContents.capturePage();
-      fs.writeFileSync(path.join(output, `preview-${Date.now()}.png`), image.toPNG());
+      const stamp = Date.now();
+      fs.writeFileSync(path.join(output, `preview-${stamp}.png`), image.toPNG());
+      for (const display of desktop().displays) {
+        const region = { x: display.workArea.x - desktop().bounds.x, y: display.workArea.y - desktop().bounds.y,
+          width: display.workArea.width, height: display.workArea.height };
+        const captured = await win.webContents.capturePage(region);
+        fs.writeFileSync(path.join(output, `preview-${stamp}-display-${display.id}.png`), captured.toPNG());
+      }
+      const geometry = await win.webContents.executeJavaScript(`({
+        preferences:JSON.parse(localStorage.getItem('amadeus.companion.layout.v1') || 'null'),
+        editing:document.querySelector('.floating-companion').classList.contains('is-layout-editing'),
+        cards:[...document.querySelectorAll('[data-task-id]')].filter(e=>getComputedStyle(e).visibility==='visible').map(e=>({id:e.dataset.taskId,...e.getBoundingClientRect().toJSON()})),
+        projects:[...document.querySelectorAll('[data-project-id]')].map(e=>({id:e.dataset.projectId,...e.getBoundingClientRect().toJSON()})),
+        character:document.querySelector('.floating-companion-render').getBoundingClientRect().toJSON(),
+        edges:[...document.querySelectorAll('[data-edge-task]')].map(e=>({id:e.dataset.edgeTask,path:e.querySelector('path').getAttribute('d')}))
+      })`);
+      fs.writeFileSync(path.join(output, `preview-${stamp}.json`), JSON.stringify({ ...geometry, nativeBounds:win.getBounds(), contentBounds:win.getContentBounds(), passthrough, regions }, null, 2));
     }
   });
   win.webContents.on('console-message', (_event, level, message) => { if (level >= 2) log(message); });
   await win.loadURL(origin + '/ui/index.html?companionWindow=1');
-  fs.writeFileSync(path.join(output, 'running.json'), JSON.stringify({ pid: process.pid, origin, display: target.workArea, codexThread }, null, 2));
+  win.showInactive();
+  win.setBounds(desktop().bounds, false);
+  if (process.argv.includes('--follow-active-window')) {
+    const handle = win.getNativeWindowHandle();
+    const hwnd = String(handle.length >= 8 ? handle.readBigUInt64LE() : handle.readUInt32LE());
+    layer = spawn(interpreter, [path.join(__dirname, 'companion_window_layer.py'), '--window', hwnd],
+      { cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    layer.stdout.on('data', data => log('[layer] ' + String(data).trim()));
+    layer.stderr.on('data', data => log('[layer-error] ' + String(data).trim()));
+    win.on('closed', () => layer?.kill());
+  }
+  log(JSON.stringify({requested:desktop().bounds, native:win.getBounds(), content:win.getContentBounds()}));
+  fs.writeFileSync(path.join(output, 'running.json'), JSON.stringify({ pid: process.pid, origin, display: target.workArea, desktop:desktop(), codexThread }, null, 2));
+  if (process.argv.includes('--focus-probe')) {
+    await fetch(origin+'/families/2',{method:'POST'});
+    await new Promise(resolve=>setTimeout(resolve,1400));
+    // Preview-only placement on the primary screen permits native mouse checks
+    // even when the automation driver's capture is restricted to that screen.
+    const saved=await win.webContents.executeJavaScript(`(() => {
+      const key='amadeus.companion.layout.v1',saved=JSON.parse(localStorage.getItem(key));
+      const display=Object.keys(saved.displays)[0],profile=saved.displays[display][saved.mode];
+      profile.placements={projects:{},tasks:{'organic-0-0':{x:-1740,y:160,scale:1}}};
+      return JSON.stringify(saved);
+    })()`);
+    // Unmount before setting the final fixture preference so pagehide cannot
+    // overwrite a new placement with the still-mounted scene's old state.
+    await win.loadURL(origin+'/openapi.json');
+    await win.webContents.executeJavaScript(`localStorage.setItem('amadeus.companion.layout.v1',${JSON.stringify(saved)})`);
+    await win.loadURL(origin+'/ui/index.html?companionWindow=1');
+    await new Promise(resolve=>setTimeout(resolve,1800));
+    await require('./companion-focus-probe.cjs')(win,output);
+  }
+  if (process.argv.includes('--verify-cross-display') && !codexThread) {
+    await require('./verify-companion-cross-display.cjs')({win,desktop:desktop(),origin,output});
+    log('Verified cross-display Chromium pointer integration');
+    if(process.argv.includes('--exit-after-verify')) app.quit();
+  }
   if (process.argv.includes('--verify-organic') && !codexThread) {
     const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
     const evidence = [];

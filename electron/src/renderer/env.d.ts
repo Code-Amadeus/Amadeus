@@ -75,6 +75,8 @@ export declare global {
     getFloatingCompanionStatus: () => Promise<{ active: boolean }>
     onFloatingCompanionChanged: (listener: (status: { active: boolean }) => void) => () => void
     setFloatingCompanionHitRegions: (bounds: Array<{ x: number; y: number; width: number; height: number }>) => Promise<boolean>
+    getFloatingCompanionDisplay: () => Promise<import('./components/companionLayoutPreferences').CompanionDesktop | null>
+    onFloatingCompanionDisplayChanged: (listener: () => void) => () => void
     selectProjectDirectory: () => Promise<{
       ok: boolean
       cancelled: boolean

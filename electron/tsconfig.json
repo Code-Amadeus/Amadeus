@@ -3,6 +3,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "rewriteRelativeImportExtensions": true,
     "jsx": "react-jsx",
     "strict": true,
     "esModuleInterop": true,

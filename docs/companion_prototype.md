@@ -2,6 +2,8 @@
 
 This branch is a source snapshot for [Issue #61](https://github.com/Code-Amadeus/Amadeus/issues/61), intended for inspection and further design discussion. It is not a request to merge the entire prototype into the supported product. The branch starts from upstream `afe0e74552be5faf9041d6f488d9e87b329cf8e3`; it does not include the contributor's earlier local development commits.
 
+The [September 11 multi-display update](companion_multidisplay_update.md) adds independent per-display reading, cross-display dragging, persistent layout modes and clearer parent/child stacks. It is an incremental update to this prototype, not a merge of the contributor's full daily development branch.
+
 ## Windows quick start: connect local Codex tasks
 
 The experimental connection is **read-only observation of local Codex records**. Use the same Windows user that runs Codex, with at least one local task already created. No Companion plugin, Codex API key or Codex SDK service needs to be configured for observation. Amadeus model/voice credentials are a separate requirement for optional narration.
@@ -67,7 +69,7 @@ PowerShell `$env:` changes above apply to processes launched from that session. 
 
 | Symptom | Check |
 | --- | --- |
-| Companion window does not open | Use the sidebar Companion button or `--floating-companion`; startup is intentionally off by default. With no secondary display it uses a compact primary-screen window |
+| Companion window does not open | Use the sidebar Companion button or `--floating-companion`; startup is intentionally off by default. The transparent surface spans connected displays, with a compact composition on a single primary display. Ctrl+Alt+A brings the Companion forward |
 | Window is visible but has no tasks | Confirm a nonempty scope in the launch session, a valid UUID, the same Windows user/data directory, and a full application/backend restart. Continue a selected task; old inactive cards expire after eight hours |
 | Database missing, task absent or schema error | The current adapter expects `state_5.sqlite`, `threads` and readable rollout JSONL paths. Check the chosen existing Codex data directory. The adapter uses internal formats, so another Codex version may require adaptation; do not rename databases to force compatibility |
 | `打开 Codex` does nothing | Confirm the local Codex application is installed and its `codex://` URL handler works; the selected task must also be within Electron's launch-time scope |
@@ -76,7 +78,7 @@ PowerShell `$env:` changes above apply to processes launched from that session. 
 
 ## Purpose and interaction
 
-The Companion keeps background tasks visible beside the character while the user works elsewhere. Projects group their tasks; selecting a project spreads its cards, and selecting a task opens a reading surface with Markdown results, public progress, and explicitly identified child tasks. Other projects remain visible in miniature.
+The Companion keeps background tasks visible beside the character while the user works elsewhere. Projects group their tasks; selecting a project spreads its cards, and selecting a task opens a reading surface with Markdown results, public progress, and explicitly identified child tasks. Other nodes on that display remain visible in miniature; nodes on other displays keep their positions. Right-click provides return/collapse actions. Layout editing is an explicit mode: drag the whole card, then finish to save automatically.
 
 Cards distinguish running, attention needed, and a result available for the current turn. “知道了” acknowledges only the local reminder. It does not answer a question, grant approval, change the source's read state, or dismiss the result. Closing a card hides it until new activity. Cards expire after eight hours without source activity; reading does not manufacture activity. The queue supports at most one reminder after ten minutes, but the experimental Codex source currently sets `repeatable=false` because it lacks reliable read and approval lifecycle information.
 

@@ -28,6 +28,36 @@
   --ready: #a8d9b5;
   --attention: #ffcd89;
 }
+.companion-character-scene,.companion-caption-scene { position:absolute; inset:0; transform-origin:50% 100%; pointer-events:none; }
+.companion-layout-frame,.companion-controls-surface { position:absolute; pointer-events:none; }
+.companion-controls-surface { z-index:10; }
+.is-desktop-spanning .companion-constellation:not(.is-compact),.companion-constellation.has-display-reading { overflow:visible; }
+.is-multi-display .companion-constellation { overflow:visible; }
+.is-desktop-spanning .companion-drag-capture { position:fixed; }
+.companion-caption-scene { z-index:5; }
+.companion-drag-capture { position:absolute; inset:0; pointer-events:auto; z-index:30; cursor:grabbing; }
+.floating-companion-character-hit.is-draggable { cursor:grab; touch-action:none; outline:1px dashed var(--card-border); border-radius:24px; }
+.companion-layout-controls { position:absolute; right:20px; bottom:78px; z-index:20; width:min(350px,calc(100% - 40px)); padding:16px; border:1px solid var(--card-border); border-radius:18px; background:var(--card-bg); box-shadow:0 8px 30px #0003; pointer-events:auto; font-size:13px; }
+.companion-layout-controls header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+.companion-layout-controls fieldset { border:0; padding:0; min-width:0; }
+.companion-layout-controls legend { color:var(--muted); margin-bottom:8px; }
+.companion-layout-controls button { border:1px solid var(--card-border); border-radius:10px; padding:7px 9px; background:transparent; color:inherit; font:inherit; cursor:pointer; }
+.companion-layout-controls button:hover,.companion-layout-controls button[aria-pressed=true] { background:color-mix(in srgb,var(--accent) 15%,transparent); border-color:var(--accent); }
+.companion-layout-modes,.companion-layout-actions { display:flex; flex-wrap:wrap; gap:7px; }
+.companion-layout-entry-actions { display:grid; gap:8px; margin-top:18px; }
+.companion-layout-entry-actions button { display:flex; justify-content:space-between; text-align:left; padding:11px 12px; }
+.companion-layout-entry-actions span { color:var(--muted); }
+.companion-layout-controls p { font-size:12px; line-height:1.7; margin:12px 0 0; color:var(--muted); }
+.companion-layout-zoom { display:flex; flex-wrap:wrap; justify-content:space-between; margin-top:14px; gap:10px; }
+.companion-layout-zoom input { flex:1 0 100%; accent-color:var(--accent); }
+.companion-layout-actions { margin-top:14px; }
+.companion-layout-actions button { font-size:12px; }
+.companion-card-drag { position:absolute; right:31px; top:6px; background:var(--card-solid); border:1px solid var(--card-border); border-radius:8px; padding:1px 7px; color:var(--muted); cursor:grab; touch-action:none; font-size:18px; }
+.is-editing .companion-node-position { transition:none; }
+.is-editing-cards .companion-project-badge,.is-editing-cards .companion-thought-card { cursor:grab; touch-action:none; }
+.is-editing .companion-thought-card>* { pointer-events:none; }
+.is-editing .companion-thought-dismiss { visibility:hidden; }
+.is-editing .companion-thought-state { padding-right:46px; }
 .floating-companion-render {
   position: absolute;
   bottom: calc(var(--character-height) * -.015);
@@ -99,7 +129,6 @@
 }
 /* Projects share space around the character; every task has its own motion. */
 .companion-constellation { position:absolute; inset:28px 24px 24px; overflow:hidden; z-index:3; }
-.companion-constellation.is-focused { z-index:4; }
 .companion-constellation.is-compact { overflow:auto; scrollbar-width:thin; }
 .companion-constellation,.companion-focus-panel { scrollbar-color:color-mix(in srgb,var(--muted) 40%,transparent) transparent; }
 .companion-constellation-canvas { position:relative; width:100%; min-height:100%; }
@@ -114,15 +143,35 @@
 .companion-project-badge.is-rail-badge small { font-size:10px; }
 .companion-thought-links,.companion-reading-links { position:absolute; inset:0; width:100%; height:100%; overflow:visible; pointer-events:none; z-index:1; }
 .companion-link-shadow,.companion-link-base,.companion-link-signal { fill:none; stroke-linecap:round; }
-.companion-link-shadow { stroke:#191b27; stroke-width:4; opacity:.21; }
-.companion-link-base { stroke:var(--accent); stroke-width:1.65; opacity:.72; }
-.companion-link-signal { stroke:var(--ink); stroke-width:2.4; opacity:.8; stroke-dasharray:5 95; animation:companion-signal-flow 5.8s linear infinite; }
+.companion-link-shadow { stroke:#191b27; stroke-width:calc(4px * var(--link-scale,1)); opacity:.21; }
+.companion-link-base { stroke:var(--accent); stroke-width:calc(1.65px * var(--link-scale,1)); opacity:.72; }
+.companion-link-signal { stroke:var(--ink); stroke-width:calc(2.4px * var(--link-scale,1)); opacity:.8; stroke-dasharray:5 95; animation:companion-signal-flow 5.8s linear infinite; }
 @keyframes companion-signal-flow { from { stroke-dashoffset:100; opacity:0; } 12%,72% { opacity:.75; } to { stroke-dashoffset:0; opacity:0; } }
 .companion-thought-card { position:relative; width:100%; height:100%; min-width:0; display:flex; flex-direction:column; border:1px solid var(--card-border); border-radius:18px 8px 18px 18px; background:var(--card-bg); color:var(--ink); box-shadow:0 7px 23px #0002; pointer-events:auto; overflow:hidden; transition:opacity .4s,border-color .3s; }
 .companion-thought-card.is-fading { opacity:0; }
 .companion-thought-card { background-color:var(--card-solid); }
-.companion-thought-card.is-stack-back { cursor:pointer; box-shadow:0 5px 12px #0002; }
+.companion-thought-card.is-stack-back { cursor:pointer; background:linear-gradient(125deg,color-mix(in srgb,var(--card-solid) 76%,#fff),color-mix(in srgb,var(--card-solid) 93%,var(--accent))); border:1px solid color-mix(in srgb,var(--accent) 56%,var(--card-solid)); box-shadow:inset 0 1px 0 #ffffff35,0 2px 5px #0004; }
 .companion-thought-card.is-stack-back>* { visibility:hidden; }
+.companion-thought-card.is-stack-back.phase-attention,.companion-thought-card.is-stack-back.phase-blocked { border-bottom-color:var(--attention); }
+.companion-stack-controls { display:flex; align-items:center; gap:7px; padding:0 13px 4px; color:var(--muted); font-size:11px; }
+.companion-stack-controls button { border:0; border-radius:8px; background:transparent; color:inherit; padding:1px 7px; min-width:24px; font:inherit; cursor:pointer; }
+.companion-stack-controls button:first-child,.companion-stack-controls button:nth-child(3) { font-size:20px; line-height:20px; }
+.companion-stack-controls button:hover { background:color-mix(in srgb,var(--accent) 18%,transparent); color:var(--ink); }
+.companion-stack-controls i { width:5px; height:5px; border-radius:50%; background:var(--attention); margin-left:auto; }
+.companion-thought-card.is-context-node:not(.is-stack-back) { border-radius:16px 8px 16px 16px; }
+.companion-context-title { display:flex; align-items:center; gap:9px; height:100%; padding:8px 12px; min-width:0; }
+.companion-context-title span { font-size:10px; color:var(--muted); flex-shrink:0; }
+.companion-context-title strong { font-size:13px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.companion-context-title button { margin-left:auto; border:0; padding:3px 6px; color:var(--muted); background:transparent; cursor:pointer; }
+.companion-project-menu { position:absolute; display:flex; flex-direction:column; width:240px; gap:4px; padding:8px; background:var(--card-solid); border:1px solid var(--card-border); border-radius:12px; pointer-events:auto; z-index:9; box-shadow:0 5px 18px #0003; }
+.companion-project-menu button { background:transparent; border:0; padding:5px; color:var(--ink); font:inherit; font-size:12px; cursor:pointer; }
+.companion-project-menu button { text-align:left; border-radius:7px; padding:8px 10px; }
+.companion-project-menu button:hover { background:color-mix(in srgb,var(--accent) 14%,transparent); }
+.companion-project-menu small { font-size:11px; color:var(--muted); padding:0 10px 5px; }
+.companion-project-menu button:disabled { opacity:.45; cursor:default; }
+.companion-project-badge { z-index:60; }
+.companion-return-overview,.companion-project-pages,.companion-project-task-pages { z-index:70; }
+.companion-project-menu { z-index:90; }
 .companion-thought-open { display:block; flex:1; min-height:0; width:100%; padding:12px 14px 7px; border:0; color:inherit; background:transparent; text-align:left; cursor:pointer; font:inherit; }
 .companion-thought-state { display:block; color:var(--muted); font-size:11px; padding-right:16px; }
 .phase-attention .companion-thought-state { color:var(--attention); }
@@ -139,7 +188,10 @@
 .companion-card-actions .companion-acknowledge { margin-right:auto; color:var(--ready); }
 .companion-card-actions .companion-open-source { color:var(--muted); }
 .is-miniature .companion-miniature-actions { opacity:.45; pointer-events:none; }
-.companion-focus-dismiss { position:absolute; inset:0; border:0; background:transparent; pointer-events:auto; z-index:2; cursor:default; }
+/* A transparent layered Windows window does not hit-test zero-alpha pixels.
+   One alpha level makes the active display's blank return area clickable. */
+.companion-focus-dismiss { position:absolute; border:0; background:rgba(0,0,0,.004); pointer-events:auto; z-index:0; cursor:default; }
+.companion-display-reading { position:absolute; pointer-events:none; }
 .companion-return-overview,.companion-project-pages,.companion-project-task-pages { position:absolute; right:8px; top:10px; border:1px solid var(--card-border); color:var(--muted); background:var(--card-bg); border-radius:18px; padding:8px 13px; font-size:12px; cursor:pointer; pointer-events:auto; z-index:7; }
 .companion-project-task-pages { right:auto; left:16px; }
 .companion-focus-panel { position:absolute; left:8px; top:var(--reading-top); width:var(--reading-width); max-height:var(--reading-height); overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; padding:0 12px 24px 0; pointer-events:auto; z-index:3; }
@@ -228,7 +280,7 @@
   pointer-events: auto;
   animation: companion-arrive .25s ease-out;
 }
-.floating-companion-toolbar ~ .companion-spoken-caption {
+.companion-caption-scene.has-controls .companion-spoken-caption {
   bottom: 90px;
 }
 .companion-spoken-caption header {

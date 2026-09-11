@@ -6,5 +6,7 @@ contextBridge.exposeInMainWorld('amadeus', {
   focusMainWindow: () => ipcRenderer.invoke('preview.explain'),
   openCodexThread: threadId => ipcRenderer.invoke('preview.codex', threadId),
   closeFloatingCompanion: () => ipcRenderer.invoke('preview.close'),
+  getFloatingCompanionDisplay: () => ipcRenderer.invoke('preview.display'),
+  onFloatingCompanionDisplayChanged: () => () => {},
   setFloatingCompanionHitRegions: regions => ipcRenderer.invoke('preview.hit', regions),
 });

@@ -17,6 +17,27 @@ export type DisplayLike = {
   id: number
   bounds: DisplayBounds
   workArea?: DisplayBounds
+  scaleFactor?: number
+}
+
+/** One transparent surface spans the desktop; its layout frame retains the
+ * original display coordinates so crossing a seam never changes pointer space. */
+export function resolveCompanionDesktop(displays: readonly DisplayLike[], primary: DisplayLike, preference = 'secondary') {
+  const placement = resolveFloatingCompanionPlacement(displays, primary, preference)
+  const all = displays.length ? displays : [primary]
+  const x = Math.min(...all.map(display => display.bounds.x)), y = Math.min(...all.map(display => display.bounds.y))
+  const bounds = { x, y, width: Math.max(...all.map(display => display.bounds.x + display.bounds.width)) - x,
+    height: Math.max(...all.map(display => display.bounds.y + display.bounds.height)) - y }
+  const selected = all.find(display => display.id === placement.displayId) || primary
+  const work = selected.workArea || selected.bounds
+  const home = placement.dedicatedDisplay ? work : placement.bounds
+  const legacyKey = `${selected.id}:${home.width}x${home.height}:${work.width}x${work.height}@${selected.scaleFactor || 1}`
+  const topology = [...all].sort((a,b) => a.id-b.id).map(display => {
+    const b = display.bounds, w = display.workArea || b
+    return `${display.id}:${b.x},${b.y},${b.width},${b.height}:${w.x},${w.y},${w.width},${w.height}@${display.scaleFactor || 1}`
+  }).join('|')
+  return { key: `desktop:${placement.displayId}:${topology}`, legacyKey, bounds, home,
+    displays: all.map(display => ({ id: display.id, bounds: display.bounds, workArea: display.workArea || display.bounds })) }
 }
 
 export type MainWindowPlacement = {

@@ -16,10 +16,35 @@ export type FloatingCompanionTask = {
   projectName?: string
   projectId?: string
   parentTaskId?: string
-  sourceKind?: 'task' | 'subagent'
+  sourceKind?: 'task' | 'subagent' | 'sidechat'
   activities?: Array<{ id: string; kind: 'progress' | 'tool' | 'result'; text: string; at: number; status?: string }>
   /** Epoch milliseconds from the source's latest actual task activity. */
   lastActivityAt?: number
+  /** View-only ancestor anchor. Never enters the notification queue. */
+  contextOnly?: boolean
+}
+
+export type CompanionTaskContext = Pick<FloatingCompanionTask, 'id' | 'title' | 'parentTaskId' | 'projectId' | 'projectName'>
+
+/** Project the identities required by visible branches AFTER retention/ack policy. */
+export function withCompanionContexts(visible: FloatingCompanionTask[], contexts: CompanionTaskContext[]): FloatingCompanionTask[] {
+  const result = new Map(visible.map(task => [task.id, task]))
+  const identities = new Map(contexts.map(task => [task.id, task]))
+  for (const task of visible) {
+    let parent = task.parentTaskId
+    const seen = new Set([task.id])
+    while (parent && !seen.has(parent)) {
+      seen.add(parent)
+      const identity = identities.get(parent)
+      if (!identity) break
+      if (!result.has(parent)) result.set(parent, { id: identity.id, title: identity.title, parentTaskId: identity.parentTaskId,
+        projectId: identity.projectId, projectName: identity.projectName, provider: task.provider, detail: '',
+        phase: 'idle', key: `context:${parent}`, repeatable: false, announce: false, contextOnly: true,
+        codexThreadId: task.codexThreadId ? parent : undefined, sourceKind: identity.parentTaskId ? 'sidechat' : 'task' })
+      parent = identity.parentTaskId
+    }
+  }
+  return [...result.values()]
 }
 
 export type FloatingCompanionPresence = {
@@ -56,7 +81,9 @@ export function groupCompanionTasks(tasks: FloatingCompanionTask[]): CompanionTa
       seen.add(root.id)
     }
     const projectId = task.projectId || root.projectId
-    const id = projectId ? `project:${projectId}` : `task:${root.id}`
+    // An inactive/expired parent need not have a visible card. Its side tasks
+    // still share that conversation's group, including for projectless work.
+    const id = projectId ? `project:${projectId}` : `task:${root.parentTaskId || root.id}`
     const group = groups.get(id) || { id, title: task.projectName || root.projectName || root.title, tasks: [] }
     group.tasks.push(task)
     groups.set(id, group)
