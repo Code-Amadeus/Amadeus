@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 from packaging.markers import default_environment
-from packaging.requirements import Requirement
+from packaging.requirements import InvalidRequirement, Requirement
 
 ROOT = Path(__file__).resolve().parents[1]
 UV = shutil.which("uv")
@@ -42,17 +42,76 @@ def _export(*extras: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=120)
 
 
-def _selected_requirements(output: str, platform: str) -> dict[str, Requirement]:
+def _selected_requirements(
+    output: str, platform: str, *, root: Path = ROOT
+) -> dict[str, Requirement]:
     environment = {**default_environment(), "sys_platform": platform}
     requirements = {}
     for line in output.splitlines():
         line = line.strip()
         if not line or line.startswith(("#", "--")):
             continue
+        if line.startswith(("./", "../", "/")):
+            # uv exports directory sources as requirements-file paths, not
+            # PEP 508 strings. Read the declared name rather than guessing it
+            # from the directory, then retain the source URL and marker.
+            path, separator, marker = line.partition(" ; ")
+            project_dir = (root / path).resolve()
+            project = tomllib.loads(
+                (project_dir / "pyproject.toml").read_text(encoding="utf-8")
+            )["project"]
+            line = f"{project['name']} @ {project_dir.as_uri()}"
+            if separator:
+                line += f" ; {marker}"
         requirement = Requirement(line)
         if requirement.marker is None or requirement.marker.evaluate(environment):
             requirements[requirement.name] = requirement
     return requirements
+
+
+@pytest.mark.parametrize("platform", ["linux", "win32", "darwin"])
+def test_exported_local_source_keeps_package_identity_and_marker(tmp_path: Path, platform: str) -> None:
+    project_dir = tmp_path / "third party" / "echo"
+    project_dir.mkdir(parents=True)
+    (project_dir / "pyproject.toml").write_text(
+        '[project]\nname = "aec-audio-processing"\nversion = "1.0.1"\n', encoding="utf-8"
+    )
+    output = "\n".join([
+        "./third party/echo ; sys_platform == 'linux'",
+        "aec-audio-processing==1.0.1 ; sys_platform != 'linux'",
+        "aiohttp==3.14.3",
+    ])
+    selected = _selected_requirements(output, platform, root=tmp_path)
+    assert set(selected) == {"aec-audio-processing", "aiohttp"}
+    assert str(selected["aiohttp"].specifier) == "==3.14.3"
+    aec = selected["aec-audio-processing"]
+    if platform == "linux":
+        assert aec.url == project_dir.as_uri()
+    else:
+        assert aec.url is None
+        assert str(aec.specifier) == "==1.0.1"
+
+
+def test_exported_local_source_without_marker(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "local-package"\nversion = "1.0"\n', encoding="utf-8"
+    )
+    selected = _selected_requirements("./", "linux", root=tmp_path)
+    assert selected["local-package"].url == tmp_path.as_uri()
+
+
+@pytest.mark.parametrize("line", ["not a requirement", "aiohttp==3.14.3 ; invalid_marker"])
+def test_invalid_exported_registry_requirement_is_not_ignored(line: str) -> None:
+    with pytest.raises(InvalidRequirement):
+        _selected_requirements(line, "linux")
+
+
+def test_invalid_exported_local_marker_is_not_ignored(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "local-package"\nversion = "1.0"\n', encoding="utf-8"
+    )
+    with pytest.raises(InvalidRequirement):
+        _selected_requirements("./ ; invalid_marker", "linux", root=tmp_path)
 
 
 @pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
@@ -60,13 +119,14 @@ def _selected_requirements(output: str, platform: str) -> dict[str, Requirement]
 def test_core_and_voice_resolutions_remain_model_free(extras: tuple[str, ...]) -> None:
     result = _export(*extras)
     assert result.returncode == 0, result.stderr
-    for platform in ("win32", "darwin"):
+    for platform in ("win32", "darwin", "linux"):
         selected = _selected_requirements(result.stdout, platform)
         assert "aiohttp" in selected
         assert not selected.keys() & {
             "torch", "torchaudio", "silero-vad", "onnxruntime", "faiss-cpu", "sentence-transformers",
         }
         assert ("pyaudio" in selected) == ("voice" in extras)
+        assert ("aec-audio-processing" in selected) == ("voice" in extras)
 
 
 @pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
