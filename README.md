@@ -229,7 +229,8 @@ npm/Electron 配置镜像（如 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/e
 [第一阶段 Linux CI（#63）](https://github.com/Code-Amadeus/Amadeus/pull/63) 已通过
 Ubuntu 24.04 上的 L1 + dev 锁定安装、环境导入与无模型依赖检查、基础契约测试、
 Ruff、架构视图检查及 Electron 构建。CI 不覆盖 Electron GUI、音频设备、
-VAD、本地模型推理、Wayland 会话或壁纸集成。
+真实 VAD/本地模型推理、Wayland 会话或壁纸集成。另有 Voice 安装与 CPU 契约检查，
+以及 cu128 候选安装、依赖和 CPU VAD 回切检查。
 
 社区已报告 Arch Linux / Wayland 下的桌面与角色渲染等实机结果；这些结果不代表
 所有发行版或桌面环境均已验证。环境记录、已知问题和后续进展见
@@ -273,8 +274,9 @@ uv run --locked --no-sync python -m server.app --port 17777
 
 - **Voice / AEC**：社区报告 `aec-audio-processing==1.0.1` 在 Arch 的较新工具链上
   编译失败，会阻塞 `--extra voice` 安装；尚不能将该问题推广到所有 Linux 发行版。
-- **VAD / NVIDIA**：已有社区实机推理报告，但未纳入 Linux CI；当前 CPU/cu124
-  PyTorch 索引选择仅对 Windows 生效，Linux 的可复现构建配置仍待完善。
+- **VAD / NVIDIA**：Linux CPU VAD 与 `local-cu128` 候选已有明确的 Torch 构建选择
+  和安装/契约 CI；cu124 参考配置仍面向 Windows。真实 GPU 模型推理及完整语音
+  交互继续按设备验收，见下方候选配置说明。
 - **桌面 / 壁纸**：GUI 与 Wayland compositor 集成仍需分别验收；GNOME 的社区结果
   不代表 niri、KDE 或其他桌面也可用。
 

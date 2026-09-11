@@ -251,7 +251,9 @@ support still pending.** [Phase 1 Linux CI (#63)](https://github.com/Code-Amadeu
 has passed locked L1 + dev installation, environment imports and model-less
 dependency checks, basic contract tests, Ruff, architecture-view checks, and the
 Electron build on Ubuntu 24.04. CI does not cover the Electron GUI, audio devices,
-VAD, local model inference, Wayland sessions, or wallpaper integration.
+real VAD/local model inference, Wayland sessions, or wallpaper integration.
+Additional jobs check Voice installation and CPU contracts, plus cu128 candidate
+installation, dependencies and transitions back to CPU VAD.
 
 The community has reported desktop and character-rendering results on Arch Linux /
 Wayland. These reports do not establish compatibility across all distributions or
@@ -298,9 +300,10 @@ Before adding voice or local models, consider these experimental boundaries:
 - **Voice / AEC:** the community reports that `aec-audio-processing==1.0.1` fails
   to compile with a newer Arch toolchain, blocking `--extra voice` installation.
   This has not been established as a problem on all Linux distributions.
-- **VAD / NVIDIA:** community inference results exist, but Linux CI does not cover
-  them. The current CPU/cu124 PyTorch index selection only applies on Windows;
-  reproducible Linux build profiles still need work.
+- **VAD / NVIDIA:** Linux CPU VAD and the `local-cu128` candidate have explicit
+  Torch build selections and installation/contract CI. The cu124 reference
+  remains Windows-specific; real GPU inference and full voice interaction
+  require device acceptance. See the candidate profiles below.
 - **Desktop / wallpaper:** GUI and Wayland compositor integration need separate
   acceptance. Community GNOME results do not establish support for niri, KDE, or
   other desktops.
