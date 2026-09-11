@@ -60,6 +60,19 @@ including blocked remote requests and successful loading of a tiny local model.
 Explicit asset acquisition runs separately; remote Chat/ASR/TTS API clients are
 unchanged. The advisory exceptions remain temporary, not claims of patched packages.
 
+## Experimental Linux Voice source build
+
+On Ubuntu 24.04, install `build-essential`, `pkg-config` and `portaudio19-dev`,
+then run `uv sync --locked --extra voice` and the `--profile voice` verifier.
+The Linux-only AEC source override uses the official 1.0.1 sdist with one Meson
+argument forcing bundled Abseil 20240722.0. It does not modify system Abseil or
+change the Windows/macOS registry source. See [AEC provenance](../vendor/aec-audio-processing.PROVENANCE.md)
+for the artifact hash, patch, notices and removal conditions.
+
+The Linux Voice CI uses a fresh uv cache, builds the path dependency and checks
+the actual Meson options/subproject version. It qualifies this source-build
+path on Ubuntu 24.04, not every Linux toolchain or real audio-device behavior.
+
 ## Optional model interpreters and community configurations
 
 A single default environment does not prohibit isolated model processes. Qwen ASR

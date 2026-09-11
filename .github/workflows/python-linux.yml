@@ -73,31 +73,91 @@ jobs:
           npm run build
 
   voice-tier:
-    # Build/import coverage only. Modern-system-Abseil regression belongs to #68.
+    # Linux Voice source-build qualification, not audio runtime coverage.
+    # Ubuntu's Abseil does not reproduce the modern-system-Abseil failure.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       AMADEUS_E2E_NO_TTS: "1"
-      TTS_DEVICE: cpu
+      TTS_DEVICE: "cpu"
       WORK_WORKTREE_ISOLATION: "0"
+
     steps:
       - uses: actions/checkout@v7
+
+      - name: Use a fresh cache for Voice source-build qualification
+        # Runner paths are available in steps, not in job-level env expressions.
+        # Do not restore an AEC wheel cache: each run must expose its source build.
+        run: echo "UV_CACHE_DIR=$RUNNER_TEMP/uv-linux-voice" >> "$GITHUB_ENV"
+
+      - name: Install native build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential pkg-config portaudio19-dev
+
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12.10"
-      - name: Install native audio build prerequisites
-        run: sudo apt-get update && sudo apt-get install -y portaudio19-dev pkg-config swig meson ninja-build
+
       - name: Install pinned uv
         run: python -m pip install uv==0.12.8
-      - name: Build locked voice environment
-        run: uv sync --locked --extra voice --extra dev
-      - name: Verify voice imports and model-less boundary
+
+      - name: Record system Abseil availability
         run: |
-          uv run --locked --no-sync python tools/verify_python_environment.py --profile voice
-          uv run --locked --no-sync python -c "import importlib.util as u; assert u.find_spec('torch') is None"
-      - name: Run audio contracts without opening devices
+          apt-cache policy libabsl-dev
+          if pkg-config --exists absl_base; then
+            pkg-config --modversion absl_base
+          else
+            echo "No pkg-config-visible system Abseil"
+          fi
+
+      - name: Install locked environment (L1 + L2 voice)
+        run: uv sync --locked --extra voice --extra dev
+
+      - name: Verify environment (voice profile)
+        run: uv run --locked --no-sync python tools/verify_python_environment.py --profile voice
+
+      - name: Check AEC import and model-free Voice
+        run: >-
+          uv run --locked --no-sync python -c
+          "import aec_audio_processing; import importlib.util as u;
+          from importlib.metadata import version;
+          assert version('aec-audio-processing') == '1.0.1';
+          assert all(u.find_spec(n) is None
+          for n in ('torch', 'torchaudio', 'silero_vad', 'onnxruntime'));
+          print('AEC 1.0.1 import and model-free Voice: PASS')"
+
+      - name: Assert bundled Abseil build
+        shell: bash
+        run: |
+          uv run --locked --no-sync python - <<'PYTHON'
+          import json
+          from pathlib import Path
+
+          info = Path("vendor/aec-audio-processing/webrtc-audio-processing/build/meson-info")
+          options = {
+              item["name"]: item["value"]
+              for item in json.loads((info / "intro-buildoptions.json").read_text())
+          }
+          assert "abseil-cpp" in options["force_fallback_for"], options["force_fallback_for"]
+          project = json.loads((info / "intro-projectinfo.json").read_text())
+          subprojects = {item["name"]: item["version"] for item in project["subprojects"]}
+          assert subprojects.get("abseil-cpp") == "20240722.0", subprojects
+          print("AEC build: forced bundled Abseil 20240722.0")
+          PYTHON
+
+      - name: Check third-party provenance
+        run: uv run --locked --no-sync python tools/check_third_party_provenance.py --release-ready
+
+      - name: Run Voice and source-release contract suites
+        shell: bash
         run: >-
           uv run --locked --no-sync python -m pytest -q
-          tests/test_mic_descriptor.py tests/test_tts_contract.py
+          tests/test_profile_contract.py
+          tests/test_python_environment_verifier.py
+          tests/test_core_install_tiers.py
+          tests/test_voice_backend_registry.py
+          tests/test_mic_descriptor.py
           tests/test_aec_native_smoke.py
-          tests/test_voice_backend_registry.py tests/test_core_install_tiers.py
+          tests/test_tts_contract.py
+          tests/test_release_tooling.py

@@ -228,9 +228,10 @@ npm/Electron 配置镜像（如 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/e
 **Linux 目前属于实验性源码运行路径，尚未纳入完整支持的平台范围。**
 [第一阶段 Linux CI（#63）](https://github.com/Code-Amadeus/Amadeus/pull/63) 已通过
 Ubuntu 24.04 上的 L1 + dev 锁定安装、环境导入与无模型依赖检查、基础契约测试、
-Ruff、架构视图检查及 Electron 构建。CI 不覆盖 Electron GUI、音频设备、
-真实 VAD/本地模型推理、Wayland 会话或壁纸集成。另有 Voice 安装与 CPU 契约检查，
-以及 cu128 候选安装、依赖和 CPU VAD 回切检查。
+Ruff、架构视图检查及 Electron 构建。另有独立 Voice source-build CI，验证锁定安装、
+AEC 导入、bundled Abseil 选择及相关契约。CI 不覆盖 Electron GUI、真实音频设备、
+VAD/本地模型推理、Wayland 会话或壁纸集成。
+另有 cu128 候选安装、依赖和 CPU VAD 回切检查，均不替代真实 GPU 模型验收。
 
 社区已报告 Arch Linux / Wayland 下的桌面与角色渲染等实机结果；这些结果不代表
 所有发行版或桌面环境均已验证。环境记录、已知问题和后续进展见
@@ -270,10 +271,23 @@ npm run electron:dev
 uv run --locked --no-sync python -m server.app --port 17777
 ```
 
+需要远程语音、录音和播放时，可在同一 `.venv` 安装 L2。Ubuntu 24.04 先安装
+CI 使用的源码构建前置包；其他发行版请使用对应的软件包名称：
+
+```bash
+sudo apt-get update
+sudo apt-get install --no-install-recommends -y build-essential pkg-config portaudio19-dev
+uv sync --locked --extra voice
+uv run --locked --no-sync python tools/verify_python_environment.py --profile voice
+```
+
 升级到语音或本地模型前，请留意以下实验边界：
 
-- **Voice / AEC**：社区报告 `aec-audio-processing==1.0.1` 在 Arch 的较新工具链上
-  编译失败，会阻塞 `--extra voice` 安装；尚不能将该问题推广到所有 Linux 发行版。
+- **Voice / AEC**：Linux 使用基于官方 `aec-audio-processing==1.0.1` sdist 的仓库内
+  源码，强制选择 bundled Abseil 20240722.0，避免选中新版 system Abseil 导致的构建
+  失败。该修改不更改系统 Abseil；Windows/macOS 继续使用 registry 包。来源、独立
+  补丁与移除条件见 [AEC provenance](vendor/aec-audio-processing.PROVENANCE.md)。
+  构建/导入通过不代表真实设备上的回声消除或完整语音交互已验收。
 - **VAD / NVIDIA**：Linux CPU VAD 与 `local-cu128` 候选已有明确的 Torch 构建选择
   和安装/契约 CI；cu124 参考配置仍面向 Windows。真实 GPU 模型推理及完整语音
   交互继续按设备验收，见下方候选配置说明。
@@ -492,7 +506,7 @@ Settings 不会回写 `.env`。普通模型、语音、麦克风、Provider/MCP�
 | 范围 | 状态 |
 |---|---|
 | L1/L2（文字 + 远程语音）| Windows 与 macOS 源码部署；Windows 为参考平台，macOS L1/L2 有独立 CI，桌面与音频体验仍需实机验收 |
-| Linux（实验性）| Ubuntu 24.04 的 L1 基础检查与 Electron 构建有 CI；GUI、语音、GPU 与壁纸尚未完成正式验收，见 [Linux 章节](#linux实验性) |
+| Linux（实验性）| Ubuntu 24.04 的 L1、L2 Voice 源码构建与 Electron 构建有 CI；GUI、真实音频设备、GPU 与壁纸仍需验收，见 [Linux 章节](#linux实验性) |
 | L3 CPU VAD | 不要求 NVIDIA GPU；使用明确的 CPU 构建配置 |
 | L4 cu124（本地 CUDA 12.4 语音）| Windows + NVIDIA；以当前实际运行环境为参考 |
 | AMD ROCm 7.2.1 | 单 `.venv` 实验锁、sidecar adapter 与失败闭环已提供；受支持 AMD GPU 实机验收待补齐 |

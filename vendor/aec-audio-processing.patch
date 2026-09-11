@@ -1,0 +1,10 @@
+--- a/setup.py
++++ b/setup.py
+@@ -65,6 +65,7 @@
+         'meson', 'setup',
+         '--buildtype=release',
+         '--default-library=shared',
++        '--force-fallback-for=abseil-cpp',
+         f'--prefix={install_dir}',
+         build_dir
+     ]
