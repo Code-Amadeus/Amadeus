@@ -214,10 +214,31 @@ def parse_pyproject_dependencies(
     """
     data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     project = data.get("project", {})
+    optional = project.get("optional-dependencies", {})
+    project_name = canonicalize_name(project.get("name", ""))
+    selected_extras = set(active_extras)
+    pending = list(active_extras)
+    while pending:
+        group = pending.pop()
+        for original in optional.get(group, []):
+            try:
+                requirement = Requirement(original)
+            except InvalidRequirement:
+                # The reporting pass below records invalid declarations.
+                continue
+            if canonicalize_name(requirement.name) != project_name:
+                continue
+            if requirement.marker is not None and not requirement.marker.evaluate(
+                {**marker_environment, "extra": group}
+            ):
+                continue
+            for inherited in requirement.extras - selected_extras:
+                selected_extras.add(inherited)
+                pending.append(inherited)
     groups: list[tuple[str | None, str]] = [
         (None, line) for line in project.get("dependencies", [])
     ]
-    for group, entries in project.get("optional-dependencies", {}).items():
+    for group, entries in optional.items():
         groups.extend((group, line) for line in entries)
 
     entries: list[dict[str, Any]] = []
@@ -237,7 +258,10 @@ def parse_pyproject_dependencies(
                 }
             )
             continue
-        active = (group is None or group in active_extras) and (
+        # Self-references select shared capability extras, not external packages.
+        if canonicalize_name(requirement.name) == project_name:
+            continue
+        active = (group is None or group in selected_extras) and (
             requirement.marker is None
             or requirement.marker.evaluate({**marker_environment, "extra": group or ""})
         )

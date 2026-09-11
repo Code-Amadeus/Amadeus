@@ -13,6 +13,8 @@ Run one complete command for the environment you want:
 | Core Chat/Work | `uv sync --locked` | `--profile cpu` |
 | Remote voice and audio I/O | `uv sync --locked --extra voice` | `--profile voice` |
 | CPU VAD | `uv sync --locked --extra voice --extra vad --extra torch-cpu` | `--profile vad-cpu` |
+| Experimental NVIDIA cu128 (Windows/Linux x86_64) | `uv sync --locked --extra voice --extra vad --extra local-cu128` | `--profile cu128` |
+| Experimental Apple Silicon models | `uv sync --locked --extra voice --extra vad --extra local-mps` | `--profile mps` |
 | Windows cu124 local models | `uv sync --locked --extra voice --extra vad --extra local-cu124` | `--profile cu124` |
 | Experimental Windows ROCm local models | `uv sync --locked --extra voice --extra vad --extra local-rocm` | `--profile rocm`, then `tools/rocm_sidecar/verify_gpu.py --compute` |
 
@@ -24,7 +26,9 @@ The cu124 and ROCm profiles can additionally use `--require-cuda-device` on a GP
 An import or build check does not establish model inference or audio-device support.
 
 Core and voice remain Torch-free. CPU VAD needs no NVIDIA GPU. `torch-cpu`,
-`local-cu124`, and `local-rocm` are pairwise incompatible build selections.
+`local-cu124`, `local-cu128`, `local-mps`, and `local-rocm` are mutually exclusive
+build selections. CPU VAD/RAG now select Torch/Torchaudio 2.7.0, using the
+explicit CPU index on Windows and Linux and the macOS registry wheel.
 Switching builds replaces the previous build extra while preserving `voice` and
 `vad` in the complete command.
 
@@ -42,7 +46,8 @@ installed environment, without synchronizing or changing its selected extras.
 Windows is the current reference platform. macOS core/voice has a separate CI
 qualification path and needs PortAudio for PyAudio. A successful install, import
 or Electron build does not replace microphone, playback and desktop acceptance.
-The CUDA local-model profile is Windows-only. Local model weights, reference audio
+The reference cu124 profile is Windows-only. The cu128 candidate targets
+Windows/Linux x86_64; the MPS candidate targets Apple Silicon macOS. Local model weights, reference audio
 and dictionaries are external assets and are not downloaded by this installer.
 
 Local ASR/TTS model loading enforces Hugging Face offline mode even when the
@@ -70,11 +75,24 @@ still needs real ASR/TTS and lifecycle validation on a GPU in AMD's support matr
 A Radeon 780M probe enumerated gfx1103 but crashed during its first FP32 operation;
 device visibility alone is not acceptance. See `tools/rocm_sidecar/README.md`.
 
-The README records a community RTX 50-series configuration using Torch 2.7.0,
-Torchaudio 2.7.0 and torchvision 0.22.0 from the cu128 index. It has no accompanying
-full project regression report. It is a candidate for a separate, mutually
-exclusive NVIDIA build selection, not a replacement for the cu124 lock. Framework
-wheel installation alone does not install the complete Amadeus model stack.
+The `local-cu128` and `local-mps` candidates pin Torch/Torchaudio 2.7.0 and
+reuse the shared `local-models` capability dependencies. Select a documented
+build profile, not the shared capability extra on its own. All local profiles
+continue using the existing offline model-loading boundary.
+
+`--profile cu128` verifies the CUDA 12.8 package build without requiring a GPU;
+add `--require-cuda-device` on NVIDIA hardware. `--profile mps` checks an Apple
+Silicon environment and a Torch build with MPS support; add
+`--require-mps-device` on a machine with accessible MPS. Availability checks do
+not execute models. Hosted CI runs package/import and CPU/fake-device contracts,
+then switches back through CPU VAD to model-less core in the same environment.
+
+The application Qwen ASR configuration currently accepts `auto`, `cpu`, and
+`cuda`, not `mps`. Issue #67's standalone MPS inference evidence must not be
+presented as application-level ASR qualification. See
+[Torch 2.7 candidates](torch27_candidates.md) for the device acceptance checklist
+and optional FlashAttention wheel evidence. The cu124 reference and AMD's fixed
+ROCm 2.9.1 build are retained until their respective replacements have evidence.
 
 ## Migrating an existing installation
 

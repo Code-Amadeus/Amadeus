@@ -1,0 +1,79 @@
+name: Local model installation candidates
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  model-contracts:
+    name: ${{ matrix.profile }} / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            extra: local-cu128
+            profile: cu128
+          - os: ubuntu-24.04
+            extra: local-cu128
+            profile: cu128
+          - os: macos-14
+            extra: local-mps
+            profile: mps
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      TTS_DEVICE: cpu
+      # These suites use CPU tensors/fake devices, not external TTS assets.
+      # Enable their execution instead of inheriting the model-less skip flag.
+      AMADEUS_E2E_NO_TTS: "0"
+      WORK_WORKTREE_ISOLATION: "0"
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12.10"
+      - name: Install Linux native build prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y portaudio19-dev pkg-config swig meson ninja-build
+      - name: Install macOS audio prerequisite
+        if: runner.os == 'macOS'
+        run: brew install portaudio
+      - name: Install pinned uv
+        run: python -m pip install uv==0.12.8
+      - name: Install locked candidate
+        run: uv sync --locked --extra voice --extra vad --extra ${{ matrix.extra }} --extra dev
+      - name: Verify imports, package pair and build target
+        # A hosted runner's install/import success is not GPU/model qualification.
+        run: uv run --locked --no-sync python tools/verify_python_environment.py --profile ${{ matrix.profile }}
+      - name: Exercise model contracts with their real dependencies installed
+        run: >-
+          uv run --locked --no-sync python -m pytest -q -rs
+          tests/test_gpt_sovits_checkpoint_loading.py
+          tests/test_local_tts_device_context.py
+          tests/test_local_tts_semantic_guard.py
+          tests/test_t2s_cuda_graph_sync_policy.py
+          tests/test_t2s_static_kv_mask.py
+          tests/test_local_model_loading.py
+          tests/test_mic_descriptor.py
+          tests/test_qwen3_asr_sidecar_bootstrap.py
+          tests/test_profile_contract.py
+          tests/test_python_environment_verifier.py
+      - name: Switch the same environment to CPU VAD
+        run: |
+          uv sync --locked --extra voice --extra vad --extra torch-cpu
+          uv run --locked --no-sync python tools/verify_python_environment.py --profile vad-cpu
+      - name: Return to model-less core
+        run: |
+          uv sync --locked
+          uv run --locked --no-sync python tools/verify_python_environment.py --profile cpu
+          uv run --locked --no-sync python -c "import importlib.util as u; assert all(u.find_spec(n) is None for n in ('torch', 'torchaudio', 'qwen_asr', 'pyaudio', 'silero_vad'))"

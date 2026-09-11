@@ -146,7 +146,7 @@ placeholder，本版本不声称已经发布独立 SDK 或 conformance suite。
 桌面、麦克风和播放体验仍需设备验收。L3 可选择 CPU VAD，**无需 NVIDIA GPU**；
 L4 的当前 cu124 配置面向 Windows + NVIDIA。Windows ROCm 7.2.1 已有互斥的
 `local-rocm` 实验锁与验证入口，但尚未完成受支持 AMD GPU 的端到端验收；RTX 50 系
-cu128 仍是社区配置记录。
+cu128 与 Apple Silicon MPS 已提供实验安装配置。
 统一使用 [uv](https://docs.astral.sh/uv/) 与 Python 3.12，CI 固定 uv 0.12.8。
 
 Linux 用户请从下方的 [Linux（实验性）](#linux实验性) 章节开始。
@@ -159,8 +159,8 @@ Linux 用户请从下方的 [Linux（实验性）](#linux实验性) 章节开始
 | L4 local-cu124 | 本地 GPT-SoVITS / Qwen3 ASR / 唤醒词 | Windows + NVIDIA GPU | `uv sync --locked --extra voice --extra vad --extra local-cu124` |
 | 实验 local-rocm | 本地 GPT-SoVITS / Qwen3 ASR sidecar | Windows + AMD 官方矩阵内 GPU | `uv sync --locked --extra voice --extra vad --extra local-rocm` |
 
-四个默认梯级与 ROCm 实验选项均使用**同一个 `.venv`**。每次给出完整目标配置：
-`uv sync` 会精确同步，漏带会移除已装层。`torch-cpu`、`local-cu124` 与
+各安装配置均使用**同一个 `.venv`**。每次给出完整目标配置：
+`uv sync` 会精确同步，漏带会移除已装层。`torch-cpu`、`local-cu124`、`local-cu128`、`local-mps` 与
 `local-rocm` 两两互斥；切换构建时替换对应 extra，并保留 `voice`、`vad`。
 详见[安装配置与迁移](docs/install_profiles.md)。
 
@@ -311,41 +311,29 @@ Torch 构建互斥。安装后必须先运行环境验证与真实 FP32 GPU comp
 本机 Radeon 780M（gfx1103）实测可被 ROCm 枚举，但首次 FP32 计算在 AMD HIP DLL
 中崩溃；该核显不在 AMD 官方 7.2.1 Windows PyTorch 矩阵内，因此不能作为可用目标。
 
-> **GeForce RTX 50 系（Blackwell，社区验证配置）**：本项目当前使用的
-> `torch==2.6.0+cu124` profile 不兼容 RTX 50 系，无法运行本地 CUDA
-> 语音模型。50 系用户需要更新 NVIDIA 驱动，并改用社区已验证可运行的
-> PyTorch 2.7.0 CUDA 12.8 组合。
->
-> **GeForce RTX 50 series (Blackwell, community-validated configuration):**
-> the current `torch==2.6.0+cu124` profile is incompatible with RTX 50-series
-> GPUs and cannot run the local CUDA voice models. Update the NVIDIA driver and
-> use the community-validated PyTorch 2.7.0 CUDA 12.8 combination instead:
->
-> 请在单独的实验项目虚拟环境（例如 `.venv_cu128`）中运行以下命令，
-> 不要改动正式 `.venv`（其 `uv.lock` 固定 cu124）。
->
-> Run this only inside a separate experimental project venv (for
-> example `.venv_cu128`); do not modify the formal `.venv` whose `uv.lock`
-> pins cu124.
->
-> ```powershell
-> uv venv .venv_cu128 --python 3.12
-> uv pip install --python .venv_cu128 --reinstall `
->   torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 `
->   --index-url https://download.pytorch.org/whl/cu128
-> ```
->
-> 上述仅安装社区记录的 PyTorch 组合，不是完整 Amadeus 安装步骤。
->
-> 该组合目前尚未经过项目的完整 clean-install、ASR/TTS/VAD 与 Electron 回归；
-> 当前 `uv.lock` 与 `--profile cu124` 验证器仍以
-> `torch==2.6.0+cu124` 为准，因此不应将其视为 cu124 正式基线的替代品。
->
-> This combination has not yet passed the project's full clean-install,
-> ASR/TTS/VAD, and Electron regression gates. The current
-> `uv.lock` and `--profile cu124` verifier still require
-> `torch==2.6.0+cu124`, so this is not a replacement for the official cu124
-> baseline.
+**实验 Torch 2.7 配置**：`local-cu128`（Windows/Linux x86_64）与
+`local-mps`（Apple Silicon）提供锁定的 Torch/Torchaudio 2.7.0 安装入口。
+现有 Windows cu124 仍保留为参考配置，Windows ROCm 继续使用 AMD 配套的 2.9.1。
+
+```bash
+# Windows/Linux NVIDIA 候选，包含完整模型依赖
+uv sync --locked --extra voice --extra vad --extra local-cu128
+uv run --locked --no-sync python tools/verify_python_environment.py --profile cu128
+
+# Apple Silicon 安装候选
+uv sync --locked --extra voice --extra vad --extra local-mps
+uv run --locked --no-sync python tools/verify_python_environment.py --profile mps
+```
+
+以上为互斥选择，按当前平台只执行一组。安装检查与 CPU 契约 CI 不代表 GPU 推理、
+麦克风、连续播放和打断已验收。#67 报告了 M4 Max 上独立 Qwen-ASR MPS 实测；
+当前应用内 Qwen 仍只支持 CPU/CUDA 设备选择，安装此配置不会自动接通 ASR MPS。
+现有 GPT-SoVITS MPS 路径可使用该候选环境，2.7.0 上的模型回归仍需实测。
+
+RTX 50 系应评估 cu128 候选，不能使用旧 cu124 作为 Blackwell 运行依据。
+FlashAttention 保持可选；已找到匹配 cp312/Torch 2.7/cu128 的 Windows 社区 wheel
+和 Linux 上游 wheel，来源、哈希与验证范围见
+[Torch 2.7 与 FlashAttention 候选](docs/torch27_candidates.md)。
 
 ### 安装外部运行资产
 
@@ -506,7 +494,7 @@ Settings 不会回写 `.env`。普通模型、语音、麦克风、Provider/MCP�
 | L3 CPU VAD | 不要求 NVIDIA GPU；使用明确的 CPU 构建配置 |
 | L4 cu124（本地 CUDA 12.4 语音）| Windows + NVIDIA；以当前实际运行环境为参考 |
 | AMD ROCm 7.2.1 | 单 `.venv` 实验锁、sidecar adapter 与失败闭环已提供；受支持 AMD GPU 实机验收待补齐 |
-| RTX 50 系 cu128 | 社区配置记录，尚无正式锁与完整回归 |
+| cu128 / Apple Silicon MPS | Torch 2.7.0 实验锁与安装 CI；完整设备和模型回归待完成 |
 | 8 GiB VRAM / 16–32 GiB RAM | 目标配置；实际占用由模型组合决定 |
 | 远程 DeepSeek Main Chat | 第一版默认 profile |
 | 远程 ASR / TTS | 显式兼容路径，不静默 fallback |
