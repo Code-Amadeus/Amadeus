@@ -165,6 +165,8 @@ configuration record.
 
 All profiles use [uv](https://docs.astral.sh/uv/) and Python 3.12; CI pins uv 0.12.8.
 
+Linux users should start with [Linux (experimental)](#linux-experimental) below.
+
 | Tier | Capability | Platform | Installation |
 |---|---|---|---|
 | L1 core | Text Chat, Work, Providers, and character rendering | Windows / macOS | `uv sync --locked` |
@@ -241,6 +243,67 @@ cd ..
 `npm ci` uses the project postinstall hook to fetch the pinned Electron runtime.
 Where network access requires it, configure npm/Electron mirrors, such as
 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`.
+
+### Linux (experimental)
+
+**Linux is currently an experimental source deployment path, with full platform
+support still pending.** [Phase 1 Linux CI (#63)](https://github.com/Code-Amadeus/Amadeus/pull/63)
+has passed locked L1 + dev installation, environment imports and model-less
+dependency checks, basic contract tests, Ruff, architecture-view checks, and the
+Electron build on Ubuntu 24.04. CI does not cover the Electron GUI, audio devices,
+VAD, local model inference, Wayland sessions, or wallpaper integration.
+
+The community has reported desktop and character-rendering results on Arch Linux /
+Wayland. These reports do not establish compatibility across all distributions or
+desktop environments. See [Linux tracking issue #64](https://github.com/Code-Amadeus/Amadeus/issues/64)
+for environment records, known issues, and follow-up work.
+
+Install Git, [uv](https://docs.astral.sh/uv/) (`0.12.8` in CI), and Node.js 22
+(`22.21.1` in CI), then start with L1, which needs no GPU or voice packages:
+
+```bash
+git clone https://github.com/Code-Amadeus/Amadeus.git
+cd Amadeus
+uv venv .venv --python 3.12.10
+uv sync --locked
+cp .env.example .env
+```
+
+Edit `.env`, provide `DEEPSEEK_API_KEY`, set `TTS_BACKEND=disabled`, and keep
+`WAKE_ENABLED=false` to try the text-only path first. Verify the environment from
+the project root:
+
+```bash
+uv run --locked --no-sync python tools/verify_python_environment.py --profile cpu
+```
+
+Build and launch Electron from a Linux graphical desktop session. The launcher
+automatically discovers `.venv/bin/python3` and starts the backend:
+
+```bash
+cd electron
+npm ci
+npm run build
+npm run electron:dev
+```
+
+For a headless backend instead, run this from the project root:
+
+```bash
+uv run --locked --no-sync python -m server.app --port 17777
+```
+
+Before adding voice or local models, consider these experimental boundaries:
+
+- **Voice / AEC:** the community reports that `aec-audio-processing==1.0.1` fails
+  to compile with a newer Arch toolchain, blocking `--extra voice` installation.
+  This has not been established as a problem on all Linux distributions.
+- **VAD / NVIDIA:** community inference results exist, but Linux CI does not cover
+  them. The current CPU/cu124 PyTorch index selection only applies on Windows;
+  reproducible Linux build profiles still need work.
+- **Desktop / wallpaper:** GUI and Wayland compositor integration need separate
+  acceptance. Community GNOME results do not establish support for niri, KDE, or
+  other desktops.
 
 ### VAD and local models
 
@@ -473,6 +536,7 @@ advanced diagnostics, experimental thresholds, and test-only flags remain in
 | Scope | Status |
 |---|---|
 | L1/L2 (text + remote voice) | Source deployment on Windows and macOS; Windows is the reference platform, macOS L1/L2 has separate CI, and desktop/audio behavior still needs real-device acceptance |
+| Linux (experimental) | Ubuntu 24.04 CI covers basic L1 checks and the Electron build; GUI, voice, GPU, and wallpaper acceptance remains incomplete. See [Linux setup](#linux-experimental) |
 | L3 CPU VAD | No NVIDIA GPU required; uses an explicit CPU build selection |
 | L4 cu124 (local CUDA 12.4 voice) | Windows + NVIDIA; follows the qualified local-model configuration |
 | AMD ROCm 7.2.1 | Single-`.venv` experimental lock, sidecar adapters and failure reporting; acceptance on supported AMD hardware remains incomplete |
