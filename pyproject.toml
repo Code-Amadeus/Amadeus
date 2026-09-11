@@ -63,18 +63,11 @@ vad = [
     "silero-vad==6.2.1",
 ]
 torch-cpu = [
-    "torch==2.6.0",
-    "torchaudio==2.6.0",
+    "torch==2.7.0",
+    "torchaudio==2.7.0",
 ]
-# T2b local model stack observed in the working Windows / Python 3.12 / cu124
-# environment. Includes the voice layer transitively (installed alongside).
-# torch/torchaudio are declared with bare versions here; when this extra is
-# active on Windows, [tool.uv.sources] below redirects them to the cu124 index.
-# flash-attn is deliberately absent: Qwen ASR already falls back to Torch SDPA,
-# while no reproducible Windows cp312 wheel exists in the supported install path.
-local-cu124 = [
-    "torch==2.6.0",
-    "torchaudio==2.6.0",
+# Shared local-model capability set. Build extras below select Torch separately.
+local-models = [
     "onnxruntime==1.26.0",
     "accelerate==1.12.0",
     "cn2an==0.5.24",
@@ -109,10 +102,27 @@ local-cu124 = [
     "wordsegment==1.3.1",
     "x-transformers==2.19.6",
 ]
-# Experimental Windows ROCm build. It intentionally mirrors the qualified
-# local-model capability set while selecting AMD's fixed 7.2.1 PyTorch wheels.
-# ASR and TTS run as separate processes but share this project's single .venv.
+# Existing Windows NVIDIA reference; retain until cu128 device qualification.
+local-cu124 = [
+    "amadeus[local-models]",
+    "torch==2.6.0",
+    "torchaudio==2.6.0",
+]
+# Candidate Windows/Linux x86_64 NVIDIA build. No automatic device selection.
+local-cu128 = [
+    "amadeus[local-models]; sys_platform == 'win32' or sys_platform == 'linux'",
+    "torch==2.7.0; sys_platform == 'win32' or sys_platform == 'linux'",
+    "torchaudio==2.7.0; sys_platform == 'win32' or sys_platform == 'linux'",
+]
+# Candidate Apple Silicon installation; GPU/model journeys remain separate.
+local-mps = [
+    "amadeus[local-models]; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "torch==2.7.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "torchaudio==2.7.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
+# AMD's fixed Windows ROCm 7.2.1 package set remains unchanged.
 local-rocm = [
+    "amadeus[local-models]; sys_platform == 'win32'",
     "torch==2.9.1; sys_platform == 'win32'",
     "torchaudio==2.9.1; sys_platform == 'win32'",
     "torchvision==0.24.1; sys_platform == 'win32'",
@@ -120,39 +130,6 @@ local-rocm = [
     "rocm-sdk-devel==7.2.1; sys_platform == 'win32'",
     "rocm-sdk-libraries-custom==7.2.1; sys_platform == 'win32'",
     "rocm==7.2.1; sys_platform == 'win32'",
-    "onnxruntime==1.26.0; sys_platform == 'win32'",
-    "accelerate==1.12.0; sys_platform == 'win32'",
-    "cn2an==0.5.24; sys_platform == 'win32'",
-    "funasr==1.3.7; sys_platform == 'win32'",
-    "g2p-en==2.1.0; sys_platform == 'win32'",
-    "g2pk2==0.0.3; sys_platform == 'win32'",
-    "gradio>=6.16.0,<7; sys_platform == 'win32'",
-    "huggingface-hub==0.36.2; sys_platform == 'win32'",
-    "hydra-core>=1.3.4,<2; sys_platform == 'win32'",
-    "jieba==0.42.1; sys_platform == 'win32'",
-    "jieba-fast==0.53; sys_platform == 'win32'",
-    "ko-pron==1.3; sys_platform == 'win32'",
-    "librosa==0.11.0; sys_platform == 'win32'",
-    "matplotlib==3.10.9; sys_platform == 'win32'",
-    "msgpack>=1.2.1,<2; sys_platform == 'win32'",
-    "nltk>=3.10.0,<4; sys_platform == 'win32'",
-    "numba==0.65.1; sys_platform == 'win32'",
-    "OpenCC==1.3.1; sys_platform == 'win32'",
-    "peft==0.19.1; sys_platform == 'win32'",
-    "pytorch-lightning==2.6.4; sys_platform == 'win32'",
-    "pyopenjtalk-plus==0.4.1.post9; sys_platform == 'win32'",
-    "pypinyin==0.55.0; sys_platform == 'win32'",
-    "qwen-asr==0.0.6; sys_platform == 'win32'",
-    "rotary-embedding-torch==0.8.9; sys_platform == 'win32'",
-    "sentencepiece==0.2.1; sys_platform == 'win32'",
-    "split-lang==2.1.1; sys_platform == 'win32'",
-    "ToJyutping==3.2.0; sys_platform == 'win32'",
-    "tokenizers==0.22.1; sys_platform == 'win32'",
-    "torchmetrics==1.5.0; sys_platform == 'win32'",
-    "tqdm==4.67.3; sys_platform == 'win32'",
-    "transformers==4.57.6; sys_platform == 'win32'",
-    "wordsegment==1.3.1; sys_platform == 'win32'",
-    "x-transformers==2.19.6; sys_platform == 'win32'",
 ]
 dev = [
     "packaging==26.2",
@@ -169,21 +146,27 @@ dev = [
 [tool.uv]
 required-version = ">=0.12.8"
 conflicts = [
-    [{ extra = "torch-cpu" }, { extra = "local-cu124" }],
-    [{ extra = "torch-cpu" }, { extra = "local-rocm" }],
-    [{ extra = "local-cu124" }, { extra = "local-rocm" }],
+    [
+        { extra = "torch-cpu" },
+        { extra = "local-cu124" },
+        { extra = "local-cu128" },
+        { extra = "local-mps" },
+        { extra = "local-rocm" },
+    ],
 ]
 
 [tool.uv.sources]
 # Temporary AEC source-build fix; other platforms retain the PyPI artifacts.
 aec-audio-processing = { path = "vendor/aec-audio-processing", marker = "sys_platform == 'linux'" }
 torch = [
-    { index = "pytorch-cpu", extra = "torch-cpu", marker = "sys_platform == 'win32'" },
+    { index = "pytorch-cpu", extra = "torch-cpu", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+    { index = "pytorch-cu128", extra = "local-cu128", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
     { index = "pytorch-cu124", extra = "local-cu124", marker = "sys_platform == 'win32'" },
     { url = "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/torch-2.9.1%2Brocm7.2.1-cp312-cp312-win_amd64.whl", extra = "local-rocm", marker = "sys_platform == 'win32'" },
 ]
 torchaudio = [
-    { index = "pytorch-cpu", extra = "torch-cpu", marker = "sys_platform == 'win32'" },
+    { index = "pytorch-cpu", extra = "torch-cpu", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+    { index = "pytorch-cu128", extra = "local-cu128", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
     { index = "pytorch-cu124", extra = "local-cu124", marker = "sys_platform == 'win32'" },
     { url = "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/torchaudio-2.9.1%2Brocm7.2.1-cp312-cp312-win_amd64.whl", extra = "local-rocm", marker = "sys_platform == 'win32'" },
 ]
@@ -211,6 +194,11 @@ explicit = true
 [[tool.uv.index]]
 name = "pytorch-cu124"
 url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
 explicit = true
 
 [tool.pytest.ini_options]

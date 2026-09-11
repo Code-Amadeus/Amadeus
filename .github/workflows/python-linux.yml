@@ -69,6 +69,7 @@ jobs:
         working-directory: electron
         run: |
           npm ci
+          npm test
           npm run build
 
   voice-tier:
@@ -157,5 +158,6 @@ jobs:
           tests/test_core_install_tiers.py
           tests/test_voice_backend_registry.py
           tests/test_mic_descriptor.py
+          tests/test_aec_native_smoke.py
           tests/test_tts_contract.py
           tests/test_release_tooling.py
