@@ -80,11 +80,14 @@ jobs:
       AMADEUS_E2E_NO_TTS: "1"
       TTS_DEVICE: "cpu"
       WORK_WORKTREE_ISOLATION: "0"
-      # Do not restore an AEC wheel cache: each run must expose its source build.
-      UV_CACHE_DIR: ${{ runner.temp }}/uv-linux-voice
 
     steps:
       - uses: actions/checkout@v7
+
+      - name: Use a fresh cache for Voice source-build qualification
+        # Runner paths are available in steps, not in job-level env expressions.
+        # Do not restore an AEC wheel cache: each run must expose its source build.
+        run: echo "UV_CACHE_DIR=$RUNNER_TEMP/uv-linux-voice" >> "$GITHUB_ENV"
 
       - name: Install native build prerequisites
         run: |
