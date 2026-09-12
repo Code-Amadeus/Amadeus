@@ -206,3 +206,9 @@ class TTSRuntimeAdapter:
         )
         for chunk in self.backend.synthesize_stream(request):
             yield chunk.sample_rate, chunk.audio, chunk.text
+
+    def close(self) -> None:
+        close_fn = getattr(self.backend, "close", None)
+        if callable(close_fn):
+            close_fn()
+

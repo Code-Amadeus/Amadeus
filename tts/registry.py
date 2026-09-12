@@ -127,8 +127,8 @@ def _local_probe() -> tuple[str, str]:
         model_root / "weights" / "sovits" / "v3" / "xxx_e2_s174_l32.pth",
     )
     if gpt.is_file() and sovits.is_file():
-        return "installed", "Embedded GPT-SoVITS v3 checkpoint pair found"
-    return "not_installed", "Embedded GPT-SoVITS v3 checkpoint pair is not installed"
+        return "installed", "Embedded GPT-SoVITS checkpoint pair found"
+    return "not_installed", "Embedded GPT-SoVITS checkpoint pair is not installed"
 
 
 def _remote_probe() -> tuple[str, str]:

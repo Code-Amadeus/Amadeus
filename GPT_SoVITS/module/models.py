@@ -843,6 +843,9 @@ class CodePredictor(nn.Module):
             return pred_codes.transpose(0, 1)
 
 
+v2pro_set = {"v2Pro", "v2ProPlus"}
+
+
 class SynthesizerTrn(nn.Module):
     """
     Synthesizer for Training
@@ -944,7 +947,13 @@ class SynthesizerTrn(nn.Module):
         self.quantizer = ResidualVectorQuantizer(dimension=ssl_dim, n_q=1, bins=1024)
         self.freeze_quantizer = freeze_quantizer
 
-    def forward(self, ssl, y, y_lengths, text, text_lengths):
+        self.is_v2pro = self.version in v2pro_set or self.gin_channels == 1024
+        if self.is_v2pro:
+            self.sv_emb = nn.Linear(20480, gin_channels)
+            self.ge_to512 = nn.Linear(gin_channels, 512)
+            self.prelu = nn.PReLU(num_parameters=gin_channels)
+
+    def forward(self, ssl, y, y_lengths, text, text_lengths, sv_emb=None):
         y_mask = torch.unsqueeze(commons.sequence_mask(y_lengths, y.size(2)), 1).to(
             y.dtype
         )
@@ -952,6 +961,12 @@ class SynthesizerTrn(nn.Module):
             ge = self.ref_enc(y * y_mask, y_mask)
         else:
             ge = self.ref_enc(y[:,:704] * y_mask, y_mask)
+        if self.is_v2pro:
+            if sv_emb is not None:
+                sv_emb = self.sv_emb(sv_emb)
+                ge = ge + sv_emb.unsqueeze(-1)
+            ge = self.prelu(ge)
+            ge512 = self.ge_to512(ge.transpose(2, 1)).transpose(2, 1)
         with autocast(enabled=False):
             maybe_no_grad = torch.no_grad() if self.freeze_quantizer else contextlib.nullcontext()
             with maybe_no_grad:
@@ -969,7 +984,7 @@ class SynthesizerTrn(nn.Module):
             )
 
         x, m_p, logs_p, y_mask = self.enc_p(
-            quantized, y_lengths, text, text_lengths, ge
+            quantized, y_lengths, text, text_lengths, ge512 if self.is_v2pro else ge
         )
         z, m_q, logs_q, y_mask = self.enc_q(y, y_lengths, g=ge)
         z_p = self.flow(z, y_mask, g=ge)
@@ -988,7 +1003,7 @@ class SynthesizerTrn(nn.Module):
             quantized,
         )
 
-    def infer(self, ssl, y, y_lengths, text, text_lengths, test=None, noise_scale=0.5):
+    def infer(self, ssl, y, y_lengths, text, text_lengths, test=None, noise_scale=0.5, sv_emb=None):
         y_mask = torch.unsqueeze(commons.sequence_mask(y_lengths, y.size(2)), 1).to(
             y.dtype
         )
@@ -996,6 +1011,12 @@ class SynthesizerTrn(nn.Module):
             ge = self.ref_enc(y * y_mask, y_mask)
         else:
             ge = self.ref_enc(y[:,:704] * y_mask, y_mask)
+        if self.is_v2pro:
+            if sv_emb is not None:
+                sv_emb = self.sv_emb(sv_emb)
+                ge = ge + sv_emb.unsqueeze(-1)
+            ge = self.prelu(ge)
+            ge512 = self.ge_to512(ge.transpose(2, 1)).transpose(2, 1)
 
         ssl = self.ssl_proj(ssl)
         quantized, codes, commit_loss, _ = self.quantizer(ssl, layers=[0])
@@ -1005,7 +1026,7 @@ class SynthesizerTrn(nn.Module):
             )
 
         x, m_p, logs_p, y_mask = self.enc_p(
-            quantized, y_lengths, text, text_lengths, ge, test=test
+            quantized, y_lengths, text, text_lengths, ge512 if self.is_v2pro else ge, test=test
         )
         z_p = m_p + torch.randn_like(m_p) * torch.exp(logs_p) * noise_scale
 
@@ -1015,8 +1036,8 @@ class SynthesizerTrn(nn.Module):
         return o, y_mask, (z, z_p, m_p, logs_p)
 
     @torch.no_grad()
-    def decode(self, codes, text, refer, noise_scale=0.5,speed=1):
-        def get_ge(refer):
+    def decode(self, codes, text, refer, noise_scale=0.5, speed=1, sv_emb=None):
+        def get_ge(refer, sv_emb):
             ge = None
             if refer is not None:
                 refer_lengths = torch.LongTensor([refer.size(2)]).to(refer.device)
@@ -1027,15 +1048,29 @@ class SynthesizerTrn(nn.Module):
                     ge = self.ref_enc(refer * refer_mask, refer_mask)
                 else:
                     ge = self.ref_enc(refer[:, :704] * refer_mask, refer_mask)
+                if self.is_v2pro:
+                    if sv_emb is not None:
+                        if isinstance(sv_emb, (list, tuple)) and len(sv_emb) > 0:
+                            sv_emb = sv_emb[0]
+                        sv_emb = self.sv_emb(sv_emb)
+                        ge = ge + sv_emb.unsqueeze(-1)
+                    ge = self.prelu(ge)
             return ge
-        if(type(refer)==list):
-            ges=[]
-            for _refer in refer:
-                ge=get_ge(_refer)
+        if type(refer) == list:
+            ges = []
+            for idx, _refer in enumerate(refer):
+                _sv = None
+                if self.is_v2pro and sv_emb is not None:
+                    if isinstance(sv_emb, (list, tuple)):
+                        _sv = sv_emb[idx] if idx < len(sv_emb) else sv_emb[0]
+                    else:
+                        _sv = sv_emb
+                ge = get_ge(_refer, _sv)
                 ges.append(ge)
-            ge=torch.stack(ges,0).mean(0)
+            ge = torch.stack(ges, 0).mean(0)
         else:
-            ge=get_ge(refer)
+            _sv = sv_emb[0] if (isinstance(sv_emb, (list, tuple)) and len(sv_emb) > 0) else sv_emb
+            ge = get_ge(refer, _sv)
 
         y_lengths = torch.LongTensor([codes.size(2) * 2]).to(codes.device)
         text_lengths = torch.LongTensor([text.size(-1)]).to(text.device)
@@ -1045,8 +1080,9 @@ class SynthesizerTrn(nn.Module):
             quantized = F.interpolate(
                 quantized, size=int(quantized.shape[-1] * 2), mode="nearest"
             )
+        ge_enc = self.ge_to512(ge.transpose(2, 1)).transpose(2, 1) if self.is_v2pro else ge
         x, m_p, logs_p, y_mask = self.enc_p(
-            quantized, y_lengths, text, text_lengths, ge,speed
+            quantized, y_lengths, text, text_lengths, ge_enc, speed
         )
         z_p = m_p + torch.randn_like(m_p) * torch.exp(logs_p) * noise_scale
 

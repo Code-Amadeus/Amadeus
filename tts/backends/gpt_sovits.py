@@ -300,6 +300,8 @@ class GPTSoVITSBackend(BaseTTSBackend):
                 text = ""
             else:
                 sample_rate, audio, text = item
+            if audio is None:
+                continue
             yield TTSAudioChunk(int(sample_rate), audio, str(text or ""))
 
     def close(self) -> None:

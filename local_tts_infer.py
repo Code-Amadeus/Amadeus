@@ -178,15 +178,18 @@ class TTSInferencer:
             self.bert_path = bert_path or default_bert_path
             self.cnhubert_path = cnhubert_path or default_cnhubert_path
             self.sovits_pretrain_path = default_sovits_pretrain_path
+            self.model_version = self._detect_model_version()
 
             # 检查必要文件是否存在
-            for path, desc in [
+            required_files = [
                 (self.gpt_path, "GPT权重"),
                 (self.sovits_path, "SoVITS权重"),
-                (self.sovits_pretrain_path, "SoVITS pretrained weights"),
                 (self.bert_path, "BERT model"),
-                (self.cnhubert_path, "CNHuBERT model")
-            ]:
+                (self.cnhubert_path, "CNHuBERT model"),
+            ]
+            if self.model_version == "v3":
+                required_files.append((self.sovits_pretrain_path, "SoVITS pretrained weights"))
+            for path, desc in required_files:
                 if not os.path.exists(path):
                     logger.warning(f"Required file is missing: {path} ({desc}); please check the configured path")
 
@@ -480,14 +483,20 @@ class TTSInferencer:
             self.i18n("多语种混合(粤语)"): "auto_yue",
         }
 
-        self.dict_language = dict_language_v2 if self.model_version in ["v2", "v3"] else dict_language_v1
+        self.dict_language = dict_language_v2 if self.model_version in ["v2", "v3", "v2Pro", "v2ProPlus"] else dict_language_v1
         self.splits = {"，", "。", "？", "！", ",", ".", "?", "!", "~", ":", "：", "—", "…"}
 
     def _detect_model_version(self):
         """检测模型版本"""
         # 简单版本检测，可根据文件名或其他特征判断
+        sovits_lower = self.sovits_path.lower()
+        gpt_lower = self.gpt_path.lower()
         if "v3" in self.sovits_path or "v3" in self.gpt_path:
             return "v3"
+        elif "v2proplus" in sovits_lower or "v2proplus" in gpt_lower:
+            return "v2ProPlus"
+        elif "v2pro" in sovits_lower or "v2pro" in gpt_lower:
+            return "v2Pro"
         elif "v2" in self.sovits_path or "v2" in self.gpt_path:
             return "v2"
         else:
@@ -530,6 +539,20 @@ class TTSInferencer:
         # 如果是v3模型，还需加载BigVGAN
         if self.model_version == "v3":
             self._load_bigvgan_model()
+
+        # 如果是v2Pro/v2ProPlus模型，加载Speaker Verification模型 (ERes2NetV2)
+        if self.model_version in {"v2Pro", "v2ProPlus"} or getattr(self, "sovits_version", None) in {"v2Pro", "v2ProPlus"}:
+            self._load_sv_model()
+
+    def _load_sv_model(self):
+        """加载 Speaker Verification (SV) 模型（v2Pro / v2ProPlus 需要）"""
+        try:
+            from sv import SV
+            self.sv_model = SV(self.device, self.is_half)
+            logger.info("Loaded SV (ERes2NetV2) model for v2Pro/v2ProPlus")
+        except Exception as e:
+            logger.warning(f"Failed to load SV model for v2Pro/v2ProPlus: {e}")
+            self.sv_model = None
 
     def _load_gpt_model(self):
         """加载GPT模型"""
@@ -613,7 +636,10 @@ class TTSInferencer:
         self.hps.model.semantic_frame_rate = "25hz"
 
         # 确定SoVITS版本
-        if 'enc_p.text_embedding.weight' not in dict_s2['weight']:
+        cfg_model_ver = dict_s2.get("config", {}).get("model", {}).get("version")
+        if cfg_model_ver in {"v2Pro", "v2ProPlus"}:
+            self.hps.model.version = cfg_model_ver
+        elif 'enc_p.text_embedding.weight' not in dict_s2['weight']:
             self.hps.model.version = "v2"  # v3model,v2symbols
         elif dict_s2['weight']['enc_p.text_embedding.weight'].shape[0] == 322:
             self.hps.model.version = "v1"
@@ -883,6 +909,25 @@ class TTSInferencer:
                     )
                 cache_item["prompt_fea_ref"] = prompt_fea_ref
                 cache_item["prompt_ge"] = prompt_ge
+
+            # 6) v2Pro / v2ProPlus: 缓存 sv_emb
+            is_v2pro = self.model_version in {"v2Pro", "v2ProPlus"} or getattr(self, "sovits_version", None) in {"v2Pro", "v2ProPlus"}
+            if is_v2pro:
+                if getattr(self, "sv_model", None) is None:
+                    self._load_sv_model()
+                if self.sv_model is not None:
+                    import torchaudio
+                    ref_audio_16k, ref_sr = torchaudio.load(ref_audio_path)
+                    if ref_sr != 16000:
+                        ref_audio_16k = torchaudio.transforms.Resample(ref_sr, 16000)(ref_audio_16k)
+                    if ref_audio_16k.shape[0] == 2:
+                        ref_audio_16k = ref_audio_16k.mean(0).unsqueeze(0)
+                    ref_audio_16k = ref_audio_16k.to(self.device)
+                    if self.is_half:
+                        ref_audio_16k = ref_audio_16k.half()
+                    else:
+                        ref_audio_16k = ref_audio_16k.float()
+                    cache_item["sv_emb"] = self.sv_model.compute_embedding3(ref_audio_16k)
 
             self._session_cache[key] = cache_item
             return cache_item
@@ -1240,6 +1285,8 @@ class TTSInferencer:
                     # v1/v2模型解码
                     # 处理多个参考音频
                     refers = []
+                    sv_embs = []
+                    is_v2pro = self.model_version in {"v2Pro", "v2ProPlus"} or getattr(self, "sovits_version", None) in {"v2Pro", "v2ProPlus"}
                     if inp_refs:
                         for ref_path in inp_refs:
                             try:
@@ -1251,6 +1298,19 @@ class TTSInferencer:
                                 else:
                                     refer = refer.float()
                                 refers.append(refer)
+                                if is_v2pro:
+                                    if getattr(self, "sv_model", None) is None:
+                                        self._load_sv_model()
+                                    if self.sv_model is not None:
+                                        import torchaudio
+                                        ref_audio_16k, ref_sr = torchaudio.load(ref_path)
+                                        if ref_sr != 16000:
+                                            ref_audio_16k = torchaudio.transforms.Resample(ref_sr, 16000)(ref_audio_16k)
+                                        if ref_audio_16k.shape[0] == 2:
+                                            ref_audio_16k = ref_audio_16k.mean(0).unsqueeze(0)
+                                        ref_audio_16k = ref_audio_16k.to(self.device)
+                                        ref_audio_16k = ref_audio_16k.half() if self.is_half else ref_audio_16k.float()
+                                        sv_embs.append(self.sv_model.compute_embedding3(ref_audio_16k))
                                 logger.info(f"loading extra reference audio: {ref_path}")
                             except Exception as e:
                                 logger.warning(f"failed to load extra reference audio: {e}")
@@ -1262,13 +1322,33 @@ class TTSInferencer:
                             refer = self.get_spepc(ref_audio_path).to(self.device)
                             refer = refer.half() if self.is_half else refer.float()
                         refers = [refer]
+                        if is_v2pro:
+                            cached_sv = sess.get("sv_emb")
+                            if cached_sv is None:
+                                if getattr(self, "sv_model", None) is None:
+                                    self._load_sv_model()
+                                if self.sv_model is not None:
+                                    import torchaudio
+                                    ref_audio_16k, ref_sr = torchaudio.load(ref_audio_path)
+                                    if ref_sr != 16000:
+                                        ref_audio_16k = torchaudio.transforms.Resample(ref_sr, 16000)(ref_audio_16k)
+                                    if ref_audio_16k.shape[0] == 2:
+                                        ref_audio_16k = ref_audio_16k.mean(0).unsqueeze(0)
+                                    ref_audio_16k = ref_audio_16k.to(self.device)
+                                    ref_audio_16k = ref_audio_16k.half() if self.is_half else ref_audio_16k.float()
+                                    cached_sv = self.sv_model.compute_embedding3(ref_audio_16k)
+                            if cached_sv is not None:
+                                sv_embs = [cached_sv]
 
                     # 解码
+                    decode_kwargs = {"speed": speed}
+                    if is_v2pro and sv_embs:
+                        decode_kwargs["sv_emb"] = sv_embs
                     audio = self.vq_model.decode(
                         pred_semantic,
                         torch.LongTensor(phones2).to(self.device).unsqueeze(0),
                         refers,
-                        speed=speed
+                        **decode_kwargs
                     )[0][0]
 
                     # 防止爆音
@@ -1676,6 +1756,8 @@ class TTSInferencer:
                     # v1/v2模型解码
                     # 处理多个参考音频
                     refers = []
+                    sv_embs = []
+                    is_v2pro = self.model_version in {"v2Pro", "v2ProPlus"} or getattr(self, "sovits_version", None) in {"v2Pro", "v2ProPlus"}
                     if inp_refs:
                         for ref_path in inp_refs:
                             try:
@@ -1687,6 +1769,19 @@ class TTSInferencer:
                                 else:
                                     refer = refer.float()
                                 refers.append(refer)
+                                if is_v2pro:
+                                    if getattr(self, "sv_model", None) is None:
+                                        self._load_sv_model()
+                                    if self.sv_model is not None:
+                                        import torchaudio
+                                        ref_audio_16k, ref_sr = torchaudio.load(ref_path)
+                                        if ref_sr != 16000:
+                                            ref_audio_16k = torchaudio.transforms.Resample(ref_sr, 16000)(ref_audio_16k)
+                                        if ref_audio_16k.shape[0] == 2:
+                                            ref_audio_16k = ref_audio_16k.mean(0).unsqueeze(0)
+                                        ref_audio_16k = ref_audio_16k.to(self.device)
+                                        ref_audio_16k = ref_audio_16k.half() if self.is_half else ref_audio_16k.float()
+                                        sv_embs.append(self.sv_model.compute_embedding3(ref_audio_16k))
                                 logger.info(f"loading extra reference audio: {ref_path}")
                             except Exception as e:
                                 logger.warning(f"failed to load extra reference audio: {e}")
@@ -1698,13 +1793,33 @@ class TTSInferencer:
                             refer = self.get_spepc(ref_audio_path).to(self.device)
                             refer = refer.half() if self.is_half else refer.float()
                         refers = [refer]
+                        if is_v2pro:
+                            cached_sv = sess.get("sv_emb")
+                            if cached_sv is None:
+                                if getattr(self, "sv_model", None) is None:
+                                    self._load_sv_model()
+                                if self.sv_model is not None:
+                                    import torchaudio
+                                    ref_audio_16k, ref_sr = torchaudio.load(ref_audio_path)
+                                    if ref_sr != 16000:
+                                        ref_audio_16k = torchaudio.transforms.Resample(ref_sr, 16000)(ref_audio_16k)
+                                    if ref_audio_16k.shape[0] == 2:
+                                        ref_audio_16k = ref_audio_16k.mean(0).unsqueeze(0)
+                                    ref_audio_16k = ref_audio_16k.to(self.device)
+                                    ref_audio_16k = ref_audio_16k.half() if self.is_half else ref_audio_16k.float()
+                                    cached_sv = self.sv_model.compute_embedding3(ref_audio_16k)
+                            if cached_sv is not None:
+                                sv_embs = [cached_sv]
 
                     # 解码
+                    decode_kwargs = {"speed": speed}
+                    if is_v2pro and sv_embs:
+                        decode_kwargs["sv_emb"] = sv_embs
                     audio = self.vq_model.decode(
                         pred_semantic,
                         torch.LongTensor(phones2).to(self.device).unsqueeze(0),
                         refers,
-                        speed=speed
+                        **decode_kwargs
                     )[0][0]
 
                     # 防止爆音

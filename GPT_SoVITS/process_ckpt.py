@@ -63,6 +63,9 @@ head2version={
     b'01':["v2","v2",False],
     b'02':["v2","v3",False],
     b'03':["v2","v3",True],
+    b'04':["v2","v4",True],
+    b'05':["v2","v2Pro",False],
+    b'06':["v2","v2ProPlus",False],
 }
 hash_pretrained_dict={
     "dc3c97e17592963677a4a1681f30c653":["v2","v2",False],#s2G488k.pth#sovits_v1_pretrained
