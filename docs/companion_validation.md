@@ -1,5 +1,22 @@
 # Companion prototype validation
 
+## September 12 complete project overview update
+
+The [project overview update](companion_project_overview.md) was integrated incrementally into `codex/companion-prototype`. These checks were rerun on that public-branch integration on Windows:
+
+| Check | Result |
+| --- | --- |
+| Complete Electron unit suite | 121 passed, including complete family maps, original content, rail membership and existing startup, Wallpaper and display-isolation contracts |
+| Electron production build | Passed; existing bundle-size advisory remains |
+| Changed Python fixture | Ruff and Python compilation passed |
+| Compiled-renderer project map fixture | 9, 15 and 25 tasks all represented without project-internal pagination; original text and Markdown table retained; entering and returning restored the project and saved overview |
+| Compiled-renderer dual-display regression | Four reports passed: cross-display dragging and reload, independent readers, family dragging, editing and return menus |
+| Visual inspection | The nine-task capture retained parent/side relationships, a clear central character area and the narrower rail with all ten tasks from four other projects |
+
+The project-map fixture completed at 2026-09-12 04:36 UTC and the last cross-display report at 04:37 UTC. Both used isolated preview settings and fictional tasks on 2560×1440 and 1080×1920 displays at scale 1. Reports and captures stay in ignored `runtime/companion-preview/`; pointer events are injected through Chromium. The 25-task case is a fitted relationship map, not a claim of comfortable full-body reading at that density.
+
+No voice backend, source authority or startup defaults changed. The full Python suite, dependency audit, real microphone/meeting behavior and mixed-DPI interaction were not rerun for this presentation update. This is a feature-branch update, not a default-branch merge or release tag.
+
 ## September 11 incremental multi-display update
 
 The [multi-display milestone](companion_multidisplay_update.md) was integrated into the public prototype branch independently of the daily development checkout. Results below were rerun on this integration, on Windows:

@@ -191,6 +191,36 @@ async def family_fixture(count: int):
     return {"fixture": True, "projects": count}
 
 
+@app.post("/project-map/{count}")
+async def project_map_fixture(count: int):
+    global retention_tasks, retention_contexts
+    if observer or count < 5 or count > 100:
+        return {"error": "Only bounded visual fixtures are allowed"}
+    now = int(time.time() * 1000)
+    retention_contexts = []
+    titles = ["调整桌面布局", "整理设计规范", "检查语音提醒", "核对多屏交互", "汇总验证结果"]
+    detail = ("已完成当前检查，保留了原始内容和任务之间的对应关系。\n\n"
+              "**本次结果**\n\n- 项目展开后，可以同时查看主对话与侧边任务。\n"
+              "- 点击任务可以阅读完整结果，返回时恢复项目全貌。\n\n"
+              "| 检查 | 结果 |\n| --- | --- |\n| 父子关系 | 保留 |\n| 原文 | 保留 |\n\n"
+              "全文末尾标记：这里是完整原文，不是模型生成的一句话摘要。")
+    retention_tasks = [{"id": f"map-{i}", "key": f"map-{i}:{now}", "title": titles[i] if i < 5 else f"侧边核查 {i - 4}",
+                        "projectId": "map", "projectName": "桌面交互 · 示例", "phase": "running" if i % 3 == 0 else "ready",
+                        "provider": "Codex", "codexThreadId": f"map-{i}", "repeatable": False, "announce": False,
+                        "lastActivityAt": now, "detail": detail,
+                        **({"parentTaskId": f"map-{(i-5)%5}", "sourceKind": "sidechat"} if i >= 5 else {})}
+                       for i in range(count)]
+    for project in range(4):
+        retention_tasks.extend({"id": f"map-other-{project}-{i}", "key": f"map-other-{project}-{i}:{now}",
+                                "title": f"记录检查 {i+1}", "projectId": f"map-other-{project}",
+                                "projectName": ["实验记录", "日语学习", "数据处理", "素材整理"][project],
+                                "phase": "running", "provider": "Codex", "announce": False, "repeatable": False,
+                                "lastActivityAt": now, "detail": detail} for i in range(project+1))
+    for ws in list(clients):
+        await event(ws, "companion.tasks", {"tasks": retention_tasks, "contexts": []})
+    return {"fixture": True, "expanded_project_tasks": count, "other_projects": 4}
+
+
 @app.post("/reading/{kind}")
 async def reading_fixture(kind: str):
     if observer:

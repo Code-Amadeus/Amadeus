@@ -1,9 +1,10 @@
 import type { CompanionTaskGroup } from './floatingCompanionState'
 import type { LayoutMode } from './companionLayoutPreferences'
+import { projectOverviewMap, projectMiniature, type MapBox } from './companionProjectMap.ts'
 import { stackMetrics, STACK_LAYER_LIMIT, STACK_STEP } from './companionStack.ts'
 
 export type NodePose = { x: number; y: number; width: number; height: number; scale: number }
-export type TaskPose = NodePose & { id: string; projectId: string; depth: number; hidden: boolean; mini: boolean; focused: boolean; compactParent?: boolean; stackId?: string }
+export type TaskPose = NodePose & { id: string; projectId: string; depth: number; hidden: boolean; mini: boolean; focused: boolean; compactParent?: boolean; stackId?: string; projectOverview?: boolean }
 export type ProjectPose = NodePose & { id: string; stacked: boolean; count: number; mini: boolean }
 /** Project footprints, independent of task wording, status and reading navigation. */
 export type OverviewSlot = {
@@ -17,6 +18,7 @@ type Size = { id: string; count: number; members: Member[] }
 export type LayoutOptions = {
   mode?: LayoutMode; seed?: number; pinned?: Set<string>
   readingBottom?: number
+  character?: MapBox | null
   reserveRail?: boolean
   occupied?: (slot: OverviewSlot) => { x: number; y: number; width: number; height: number }
 }
@@ -197,7 +199,7 @@ export function projectBranchPath(a: { left: number; top: number; right: number;
 
 /** Use facing card edges so a branch connection stays in the visible gap. */
 export function taskBranchPath(a: { left: number; top: number; right: number; bottom: number },
-  b: { left: number; top: number; right: number; bottom: number }) {
+  b: { left: number; top: number; right: number; bottom: number }, obstacles: typeof a[] = []) {
   if (b.left >= a.right || b.right <= a.left) {
     const x = b.left >= a.right ? a.right : a.left, tx = b.left >= a.right ? b.left : b.right
     const y = (a.top + a.bottom) / 2, ty = (b.top + b.bottom) / 2, bend = (tx - x) * .5
@@ -206,6 +208,18 @@ export function taskBranchPath(a: { left: number; top: number; right: number; bo
   if (b.top >= a.bottom || b.bottom <= a.top) {
     const y = b.top >= a.bottom ? a.bottom : a.top, ty = b.top >= a.bottom ? b.top : b.bottom
     const x = (a.left + a.right) / 2, tx = (b.left + b.right) / 2, bend = (ty - y) * .5
+    let blocked = false, gutter = Math.max(a.right, b.right) + 12
+    for (const box of obstacles) if (box !== a && box !== b && box.top < Math.max(y, ty) && box.bottom > Math.min(y, ty)
+      && box.left < Math.max(x, tx) && box.right > Math.min(x, tx)) {
+      blocked = true; gutter = Math.max(gutter, box.right + 12)
+    }
+    if (blocked) {
+      // Siblings share a parent, not a chain through the sibling in between.
+      // Use the family's right gutter, separate from the project trunk.
+      const ay = (a.top + a.bottom) / 2, by = (b.top + b.bottom) / 2, sign = Math.sign(by - ay)
+      const radius = Math.min(10, Math.abs(by - ay) / 3)
+      return `M ${a.right} ${ay} C ${gutter} ${ay}, ${gutter} ${ay}, ${gutter} ${ay + radius * sign} L ${gutter} ${by - radius * sign} C ${gutter} ${by}, ${gutter} ${by}, ${b.right} ${by}`
+    }
     return `M ${x} ${y} C ${x} ${y + bend}, ${tx} ${ty - bend}, ${tx} ${ty}`
   }
   return '' // Cards can briefly overlap while moving; do not draw through them.
@@ -244,56 +258,29 @@ export function familyTasks(group: CompanionTaskGroup) {
   return ordered
 }
 
-/** Project expansion uses the same family lanes. A large family may span pages,
- * but never wraps underneath another root as a flat two-column list would. */
-function spreadFamilies(group: CompanionTaskGroup, width: number, height: number, mode: LayoutMode) {
-  const family = familyTasks(group), roots = rootTasks(group)
-  const result = new Map<string, { x: number; y: number; width: number; page: number }>()
-  const columns = width >= 570 ? 2 : 1, laneWidth = (width - 24 - (columns - 1) * 38) / columns
-  let page = 0, x = 12, y = 128, rowHeight = 0, column = 0
-  const availableHeight = Math.max(CARD_HEIGHT, height - 128)
-  for (const root of roots) {
-    const members: Member[] = []
-    const collect = (id: string) => {
-      const member = family.find(task => task.id === id)
-      if (!member || members.some(task => task.id === id)) return
-      members.push(member)
-      family.filter(task => task.parentTaskId === id).forEach(task => collect(task.id))
-    }
-    collect(root.id)
-    const natural = familyShape(members, 300, mode, false, 1)
-    const cw = Math.min(300, 300 * laneWidth / natural.width)
-    // Deep branches use a full-width lane instead of shrinking text indefinitely.
-    const wide = cw < 240
-    const shape = familyShape(members, wide ? Math.min(300, width - 64) : cw, mode, false, 1)
-    const h = shape.height - 62
-    if (column && (wide || h > availableHeight)) { y += rowHeight + 30; x = 12; rowHeight = 0; column = 0 }
-    if (y + Math.min(h, availableHeight) > height && y > 128) { page++; y = 128; x = 12; rowHeight = 0; column = 0 }
-    if (h > availableHeight) {
-      const rows = Math.max(1, Math.floor((availableHeight + 24) / (CARD_HEIGHT + 24)))
-      shape.nodes.forEach((node, index) => result.set(node.id, { x: 12 + node.x, y: 128 + index % rows * (CARD_HEIGHT + 24), width: shape.cardWidth, page: page + Math.floor(index / rows) }))
-      page += Math.ceil(shape.nodes.length / rows); y = 128; x = 12; rowHeight = 0; column = 0
-    } else {
-      shape.nodes.forEach(node => result.set(node.id, { x: x + node.x, y: y + node.y, width: shape.cardWidth, page }))
-      rowHeight = Math.max(rowHeight, h)
-      column += wide ? columns : 1
-      x += laneWidth + 38
-      if (column >= columns) { y += rowHeight + 30; x = 12; rowHeight = 0; column = 0 }
-    }
-  }
-  return { nodes: result, pages: Math.max(1, ...[...result.values()].map(node => node.page + 1)) }
-}
-
 /** One pose per real task. The selected card moves to reading; it has no rail copy. */
 export function constellationLayout(groups: CompanionTaskGroup[], width: number, height: number, characterTop: number,
-  projectId = '', taskId = '', taskPage = 0, focusHeight = 112, previous: OverviewSlot[] = [], options: LayoutOptions = {}) {
+  projectId = '', taskId = '', focusHeight = 112, previous: OverviewSlot[] = [], options: LayoutOptions = {}) {
   let compact = width < 700 || height < 900
-  const top = Math.max(300, (options.readingBottom ?? characterTop) - 24)
   const cardWidth = Math.min(300, (width - 64) / (compact ? 1 : 3))
-  const railWidth = options.reserveRail === false ? 0 : Math.min(244, width * .29)
+  const railWidth = options.reserveRail === false ? 0 : Math.min(156, width * .19)
   const readingWidth = Math.min(760, width - railWidth - 46)
   const projects: ProjectPose[] = [], cards: TaskPose[] = []
-  let railY = 78, pages = 1, activePage = 0
+  let railY = 78
+  const railGroups = groups.filter(group => projectId && (taskId || group.id !== projectId))
+  const railBudget = Math.max(40, (height - 120) / Math.max(1, railGroups.length) - 80)
+  const miniatures = new Map(railGroups.map(group => {
+    const shape = projectMiniature(familyTasks(group).filter(task => task.id !== taskId), Math.max(50, railWidth - 16))
+    const scale = Math.min(1, railBudget / Math.max(1, shape.height))
+    const result = { ...shape, scale, y: railY }; railY += 80 + shape.height * scale
+    return [group.id, result]
+  }))
+  const character = options.character === undefined
+    ? { x: width * .25, y: characterTop, width: width * .5, height: height - characterTop } : options.character
+  const selected = groups.find(group => group.id === projectId)
+  const spread = selected && !taskId ? projectOverviewMap(familyTasks(selected), width, height,
+    railGroups.length && railWidth ? [{ x: width - railWidth - 8, y: 66, width: railWidth + 8, height: railY - 66 }] : [], character || undefined) : null
+  const spreadNodes = new Map(spread?.nodes.map(node => [node.id, node]))
   let slots = compact ? [] : overviewLayout(groups.map(group => ({ id: group.id, count: familyTasks(group).length,
     members: familyTasks(group).map(task => ({ id: task.id, parentTaskId: task.parentTaskId, contextOnly: task.contextOnly })) })), width, height, characterTop, previous, options)
   if (groups.length && !slots.length) {
@@ -307,15 +294,10 @@ export function constellationLayout(groups: CompanionTaskGroup[], width: number,
     const selectedProject = group.id === projectId
     const mini = Boolean(projectId && (taskId || !selectedProject))
     const stacked = !projectId && Boolean(slot.nodes?.some(node => node.stackId))
-    const selectedChild = group.tasks.find(task => task.id === taskId && task.parentTaskId)
-    const visibleRoots = mini && selectedChild
-      ? [...family].sort((a, b) => Number(b.id === selectedChild.parentTaskId) - Number(a.id === selectedChild.parentTaskId)) : family
-    const miniMembers = mini ? visibleRoots.filter(task => task.id !== taskId).slice(0, 4) : []
-    const miniShape = familyShape(miniMembers, cardWidth, options.mode || 'natural')
-    const miniScale = Math.min(.5, (railWidth - 20) / Math.max(1, miniShape.width), 190 / Math.max(1, miniShape.height - 62))
+    const miniature = miniatures.get(group.id)
     let badge: NodePose
     if (mini) {
-      badge = { x: width - railWidth - 8, y: railY, width: railWidth, height: 34, scale: 1 }
+      badge = { x: width - railWidth - 8, y: miniature!.y, width: railWidth, height: 52, scale: 1 }
     } else if (selectedProject) {
       badge = { x: 18, y: 66, width: Math.min(300, readingWidth), height: 36, scale: 1 }
     } else {
@@ -323,22 +305,18 @@ export function constellationLayout(groups: CompanionTaskGroup[], width: number,
       badge = { x: slot.x + (slot.width - badgeWidth) / 2, y: slot.y, width: badgeWidth, height: 36, scale: 1 }
     }
     projects.push({ ...badge, id: group.id, count: family.filter(task => !task.contextOnly).length, stacked, mini })
-    const spread = selectedProject && !taskId ? spreadFamilies(group, readingWidth, top, options.mode || 'natural') : null
-    if (selectedProject && !taskId) {
-      pages = spread!.pages
-      activePage = Math.min(Math.max(0, taskPage), pages - 1)
-    }
-    for (const task of visibleRoots) {
+    for (const task of family) {
       let pose: TaskPose = { id: task.id, projectId: group.id, x: 0, y: 0, width: cardWidth, height: memberHeight(task),
         scale: 1, depth: 0, hidden: false, mini, focused: task.id === taskId }
       if (task.id === taskId) {
         pose = { ...pose, x: 8, y: 66, width: readingWidth, height: focusHeight, mini: false }
       } else if (mini) {
-        const node = miniShape.nodes.find(node => node.id === task.id)
-        pose = { ...pose, x: badge.x + (node?.x || 0) * miniScale, y: badge.y + 52 + (node?.y || 0) * miniScale, scale: miniScale, hidden: !node }
+        const node = miniature!.nodes.find(node => node.id === task.id)
+        pose = { ...pose, x: badge.x + (node?.x || 0) * miniature!.scale, y: badge.y + 66 + (node?.y || 0) * miniature!.scale,
+          width: (node?.width || 42) * miniature!.scale, height: (node?.height || 22) * miniature!.scale, scale: 1, hidden: !node }
       } else if (selectedProject) {
-        const node = spread!.nodes.get(task.id)!
-        pose = { ...pose, x: node.x, y: node.y, width: node.width, hidden: node.page !== activePage }
+        const node = spreadNodes.get(task.id)!
+        pose = { ...pose, ...node, scale: spread!.scale, projectOverview: true }
       } else {
         const node = slot.nodes?.find(node => node.id === task.id)
         pose = { ...pose, width: slot.cardWidth,
@@ -352,7 +330,6 @@ export function constellationLayout(groups: CompanionTaskGroup[], width: number,
     const child = group.tasks.find(task => task.id === taskId && !family.some(root => root.id === task.id))
     if (child) cards.push({ id: child.id, projectId: group.id, x: 8, y: 66, width: readingWidth, height: focusHeight,
       scale: 1, depth: 0, hidden: false, mini: false, focused: true })
-    if (mini) railY += 80 + Math.max(0, miniShape.height - 62) * miniScale
   })
   // Small primary fallback prioritises access. Five projects without scrolling is
   // guaranteed on the full portrait secondary display, not a 420px overlay.
@@ -366,5 +343,5 @@ export function constellationLayout(groups: CompanionTaskGroup[], width: number,
   const bottom = Math.max(height, ...cards.filter(card => !card.hidden).map(card => card.y + card.height * card.scale + 30))
   const readingTop = 66 + focusHeight + 16
   return { slots, projects, cards, readingWidth, readingTop, readingHeight: Math.max(200, (options.readingBottom ?? characterTop) - readingTop - 8),
-    height: bottom, taskPages: pages, taskPage: activePage, compact }
+    height: bottom, compact }
 }

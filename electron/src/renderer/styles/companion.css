@@ -170,7 +170,7 @@
 .companion-project-menu small { font-size:11px; color:var(--muted); padding:0 10px 5px; }
 .companion-project-menu button:disabled { opacity:.45; cursor:default; }
 .companion-project-badge { z-index:60; }
-.companion-return-overview,.companion-project-pages,.companion-project-task-pages { z-index:70; }
+.companion-return-overview,.companion-project-pages { z-index:70; }
 .companion-project-menu { z-index:90; }
 .companion-thought-open { display:block; flex:1; min-height:0; width:100%; padding:12px 14px 7px; border:0; color:inherit; background:transparent; text-align:left; cursor:pointer; font:inherit; }
 .companion-thought-state { display:block; color:var(--muted); font-size:11px; padding-right:16px; }
@@ -192,8 +192,7 @@
    One alpha level makes the active display's blank return area clickable. */
 .companion-focus-dismiss { position:absolute; border:0; background:rgba(0,0,0,.004); pointer-events:auto; z-index:0; cursor:default; }
 .companion-display-reading { position:absolute; pointer-events:none; }
-.companion-return-overview,.companion-project-pages,.companion-project-task-pages { position:absolute; right:8px; top:10px; border:1px solid var(--card-border); color:var(--muted); background:var(--card-bg); border-radius:18px; padding:8px 13px; font-size:12px; cursor:pointer; pointer-events:auto; z-index:7; }
-.companion-project-task-pages { right:auto; left:16px; }
+.companion-return-overview,.companion-project-pages { position:absolute; right:8px; top:10px; border:1px solid var(--card-border); color:var(--muted); background:var(--card-bg); border-radius:18px; padding:8px 13px; font-size:12px; cursor:pointer; pointer-events:auto; z-index:7; }
 .companion-focus-panel { position:absolute; left:8px; top:var(--reading-top); width:var(--reading-width); max-height:var(--reading-height); overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; padding:0 12px 24px 0; pointer-events:auto; z-index:3; }
 .companion-focus-panel { animation:companion-reading-arrive .35s ease-out .24s both; }
 @keyframes companion-reading-arrive { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
@@ -338,3 +337,21 @@
   }
   .companion-link-signal { display:none; }
 }
+
+/* Project maps keep the full Markdown document; only the preview viewport clips. */
+.is-project-overview .companion-thought-open { display:flex; flex-direction:column; padding:10px 12px 4px; }
+.is-project-overview .companion-thought-open>strong { flex:none; margin:4px 0 6px; }
+.is-project-overview .companion-thought-excerpt { flex:1; min-height:0; max-height:none; }
+.is-project-overview .companion-card-actions { min-height:30px; margin:0 12px; padding:4px 0; }
+.companion-thought-card.is-miniature { border-radius:5px; box-shadow:0 2px 6px #0002; }
+.companion-miniature-tile { display:flex; flex-direction:column; align-items:flex-start; gap:3px; padding:4px; width:100%; height:100%; border:0; background:transparent; color:inherit; cursor:pointer; overflow:hidden; }
+.companion-miniature-tile i { width:4px; height:4px; min-height:2px; border-radius:50%; background:var(--accent); }
+.phase-attention .companion-miniature-tile i,.phase-blocked .companion-miniature-tile i { background:var(--attention); }
+.companion-miniature-tile span { height:1px; min-height:1px; width:85%; background:currentColor; opacity:.4; }
+.companion-miniature-tile span:last-child { width:55%; opacity:.25; }
+.companion-project-badge.is-rail-badge { padding:5px 9px; gap:5px; }
+.companion-project-badge.is-rail-badge small { font-size:10px; }
+
+.companion-project-badge.is-rail-badge { height:52px; display:grid; grid-template-columns:5px 1fr; align-content:center; gap:2px 5px; text-align:left; }
+.companion-project-badge.is-rail-badge span { white-space:normal; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; line-height:1.15; }
+.companion-project-badge.is-rail-badge small { grid-column:2; margin-left:0; }

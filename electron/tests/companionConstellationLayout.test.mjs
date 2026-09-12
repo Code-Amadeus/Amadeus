@@ -8,7 +8,7 @@ const group = (id, count) => ({ id, title: id, tasks: Array.from({length:count},
   id:id+'-'+i, phase:i===count-1?'attention':'ready', title:'Task '+i, detail:'Original result', key:id+'-'+i
 })) })
 const groups = Array.from({length:5},(_,i)=>group('project-'+i, i+2))
-const layout = (items=groups,p='',t='',page=0) => constellationLayout(items,1032,1820,750,p,t,page)
+const layout = (items=groups,p='',t='') => constellationLayout(items,1032,1820,750,p,t)
 const rect = p => ({left:p.x,top:p.y,right:p.x+p.width*p.scale,bottom:p.y+p.height*p.scale})
 const overlap = (a,b) => a.left<b.right && b.left<a.right && a.top<b.bottom && b.top<a.bottom
 
@@ -38,7 +38,7 @@ test('one to five projects pack varied footprints with no collisions or characte
     let previous=[]
     for(let n=1;n<=5;n++) {
       const items=Array.from({length:n},(_,i)=>group(`set-${seed}-${i}`,1+(seed+i)%5))
-      const view=constellationLayout(items,1032,1820,750,'','',0,112,previous)
+      const view=constellationLayout(items,1032,1820,750,'','',112,previous)
       assert.equal(view.compact,false)
       assert.equal(view.height,1820)
       const boxes=view.slots.map(s=>rect({...s,scale:1}))
@@ -62,15 +62,15 @@ test('wording, status, order, navigation and removal preserve valid existing anc
   const items=[group('one',1),group('pair',2),group('three',5)]
   const before=layout(items)
   const changed=items.toReversed().map(g=>({...g,tasks:g.tasks.map(t=>({...t,phase:'running',detail:'New progress'}))}))
-  const updated=constellationLayout(changed,1032,1820,750,'pair','pair-0',0,92,before.slots)
+  const updated=constellationLayout(changed,1032,1820,750,'pair','pair-0',92,before.slots)
   for(const s of updated.slots) assert.deepEqual(s,before.slots.find(p=>p.id===s.id))
-  const removed=constellationLayout(changed.slice(1),1032,1820,750,'','',0,112,before.slots)
+  const removed=constellationLayout(changed.slice(1),1032,1820,750,'','',112,before.slots)
   for(const s of removed.slots) assert.deepEqual(s,before.slots.find(p=>p.id===s.id))
 })
 
 test('addition uses free space without moving existing anchors when it fits', () => {
   const before=layout([group('one',1)])
-  const after=constellationLayout([group('one',1),group('two',1)],1032,1820,750,'','',0,112,before.slots)
+  const after=constellationLayout([group('one',1),group('two',1)],1032,1820,750,'','',112,before.slots)
   assert.equal(after.slots[0].x,before.slots[0].x)
   assert.equal(after.slots[0].y,before.slots[0].y)
 })
@@ -117,7 +117,7 @@ test('each real task has one pose and one project identity during task focus; se
   assert.equal(selected.mini,false)
   for(const item of after.cards.filter(c=>!c.focused&&!c.hidden)) {
     assert.equal(item.mini,true)
-    assert.ok(item.scale<1)
+    assert.ok(item.width<100)
     assert.ok(item.x>selected.x+selected.width)
     assert.notDeepEqual(rect(item),rect(before.cards.find(c=>c.id===item.id)))
   }
@@ -126,24 +126,14 @@ test('each real task has one pose and one project identity during task focus; se
   assert.equal(layout(pair,'pair','pair-0').cards.filter(c=>!c.hidden&&!c.depth).length,2)
 })
 
-test('project expansion preserves all tasks across bounded pages and returning restores overview positions', () => {
-  const many=[group('many',11),group('other',2)]
-  const before=layout(many)
-  const first=layout(many,'many')
-  assert.equal(first.projects.find(p=>p.id==='many').mini,false)
-  assert.ok(first.taskPages>1)
-  const seen=new Set()
-  for(let page=0;page<first.taskPages;page++) {
-    const expanded=layout(many,'many','',page)
-    for(const card of expanded.cards.filter(c=>c.projectId==='many'&&!c.hidden)) {
-      assert.equal(card.scale,1)
-      assert.ok(rect(card).bottom<750)
-      seen.add(card.id)
-    }
-  }
-  assert.equal(seen.size,11)
+test('opening a project shows every task together and returning restores overview positions', () => {
+  const many=[group('many',11),group('other',2)], before=layout(many), expanded=layout(many,'many')
+  const cards=expanded.cards.filter(card=>card.projectId==='many')
+  assert.equal(cards.length,11)
+  assert.ok(cards.every(card=>!card.hidden && !card.depth && !card.mini))
+  assert.ok(cards.every(card=>rect(card).bottom<=1820 && rect(card).right<=1032))
+  assert.equal(expanded.projects.find(p=>p.id==='many').mini,false)
   assert.deepEqual(layout(many),before)
-  assert.equal(layout(many,'many','',99).taskPage,first.taskPages-1)
 })
 
 test('many tasks do not overflow the five-project rail; badges retain total task counts', () => {
@@ -209,7 +199,7 @@ test('the second root owns the lane below it in overview and expanded project', 
   const project = group('design', 2)
   project.tasks.push({ id: 'side', parentTaskId: 'design-1', sourceKind: 'sidechat', phase: 'ready' })
   for (const mode of ['ordered', 'natural', 'scattered']) for (const expanded of [false, true]) {
-    const view = constellationLayout([project],1032,1820,750,expanded?'design':'','',0,112,[],{mode,seed:4})
+    const view = constellationLayout([project],1032,1820,750,expanded?'design':'','',112,[],{mode,seed:4})
     const parent = view.cards.find(c=>c.id==='design-1'), other = view.cards.find(c=>c.id==='design-0'), side=view.cards.find(c=>c.id==='side')
     assert.equal(side.hidden,false)
     assert.equal(side.depth,0)
@@ -225,17 +215,17 @@ test('each mode fits five projects and changes only on explicit reseed or change
   for (const mode of ['ordered', 'natural', 'scattered']) {
     for (let n=1;n<=5;n++) {
       const items=groups.slice(0,n)
-      const before=constellationLayout(items,1032,1820,750,'','',0,112,[],{mode,seed:2})
+      const before=constellationLayout(items,1032,1820,750,'','',112,[],{mode,seed:2})
       assert.equal(before.compact,false,mode)
       assert.equal(before.height,1820)
       const boxes=before.slots.map(s=>rect({...s,scale:1}))
       for(let i=0;i<boxes.length;i++) for(let j=i+1;j<boxes.length;j++) assert.equal(overlap(boxes[i],boxes[j]),false)
-      const again=constellationLayout(items,1032,1820,750,'','',0,112,before.slots,{mode,seed:2})
+      const again=constellationLayout(items,1032,1820,750,'','',112,before.slots,{mode,seed:2})
       assert.deepEqual(again.slots,before.slots)
     }
   }
-  const a=constellationLayout(groups,1032,1820,750,'','',0,112,[],{mode:'scattered',seed:2})
-  const b=constellationLayout(groups,1032,1820,750,'','',0,112,[],{mode:'scattered',seed:3})
+  const a=constellationLayout(groups,1032,1820,750,'','',112,[],{mode:'scattered',seed:2})
+  const b=constellationLayout(groups,1032,1820,750,'','',112,[],{mode:'scattered',seed:3})
   assert.notDeepEqual(a.slots,b.slots)
 })
 
@@ -246,13 +236,13 @@ test('miniature families keep their parent relationship while another project is
   const parent = view.cards.find(c => c.id === 'design-1'), side = view.cards.find(c => c.id === 'side')
   assert.equal(side.hidden, false)
   assert.ok(side.y >= parent.y + parent.height * parent.scale)
-  assert.ok(Math.abs(side.x - parent.x) < parent.width * parent.scale * .26)
+  assert.ok(side.x >= parent.x && side.x < parent.x + parent.width * parent.scale)
   assert.equal(view.cards.filter(c => c.id === 'other-0').length, 1)
 })
 
 test('reading follows the actual character clearance without changing overview anchors', () => {
   const before = constellationLayout(groups,1032,1820,750)
-  const moved = constellationLayout(groups,1032,1820,750,groups[0].id,groups[0].tasks[0].id,0,112,before.slots,{readingBottom:960})
+  const moved = constellationLayout(groups,1032,1820,750,groups[0].id,groups[0].tasks[0].id,112,before.slots,{readingBottom:960})
   assert.deepEqual(moved.slots,before.slots)
   assert.ok(moved.readingTop + moved.readingHeight <= 960)
   assert.equal(moved.cards.find(c => c.focused).scale,1)

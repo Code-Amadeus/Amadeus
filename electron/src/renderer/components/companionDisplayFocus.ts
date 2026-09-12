@@ -5,7 +5,7 @@ import type { CompanionTaskGroup } from './floatingCompanionState'
 import { stackOrder, STACK_LAYER_LIMIT, STACK_STEP, type StackSelection } from './companionStack.ts'
 
 export type Selection = { projectId: string; taskId: string }
-export type DisplayFocus = { trail: Selection[]; taskPage: number }
+export type DisplayFocus = { trail: Selection[] }
 export type DisplayFocuses = Record<number, DisplayFocus>
 export type OverviewGeometry = ReturnType<typeof constellationLayout>
 type Box = { x: number; y: number; width: number; height: number }
@@ -144,13 +144,13 @@ export function companionGatherPlacements(base: OverviewGeometry, overview: Over
 }
 
 export function selectDisplayTask(focuses: DisplayFocuses, displayId: number, selection: Selection, parentTaskId?: string): DisplayFocuses {
-  const before = focuses[displayId] || { trail: [], taskPage: 0 }, trail = before.trail, latest = trail.at(-1)
+  const before = focuses[displayId] || { trail: [] }, trail = before.trail, latest = trail.at(-1)
   const next = !selection.taskId ? [selection]
     : latest?.projectId === selection.projectId && !latest.taskId ? [...trail, selection]
     : latest?.taskId && parentTaskId === latest.taskId ? [...trail, selection]
     : trail.length > 1 && trail.at(-2)?.taskId === selection.taskId ? trail.slice(0,-1)
     : latest?.taskId ? [...trail.slice(0,-1), selection] : [selection]
-  return { ...focuses, [displayId]: { trail: next, taskPage: 0 } }
+  return { ...focuses, [displayId]: { trail: next } }
 }
 export function backDisplay(focuses: DisplayFocuses, displayId: number): DisplayFocuses {
   const before = focuses[displayId]
@@ -164,7 +164,7 @@ export function backDisplay(focuses: DisplayFocuses, displayId: number): Display
 /** Project identity does not grant a reader authority to reposition cards on
  * another display, including cards belonging to the very same project. */
 export function displayFocusLayout(overview: OverviewGeometry, groups: CompanionTaskGroup[], desktop: CompanionDesktop,
-  displayId: number, focus: DisplayFocus, mode: LayoutMode, focusHeight: number, readingBottom: number) {
+  displayId: number, focus: DisplayFocus, mode: LayoutMode, focusHeight: number, readingBottom: number, character?: Box | null) {
   const display = desktop.displays.find(display => display.id === displayId)
   const selection = focus.trail.at(-1), group = groups.find(group => group.id === selection?.projectId)
   if (!display || !selection || !group) return null
@@ -179,7 +179,8 @@ export function displayFocusLayout(overview: OverviewGeometry, groups: Companion
     .filter(group => group.tasks.length || projectIds.has(group.id))
   const area = localWorkArea(display, desktop)
   const geometry = constellationLayout(localGroups, area.width - 48, area.height - 52, readingBottom,
-    group.id, task?.id || '', focus.taskPage, focusHeight, [], { mode, readingBottom,
+    group.id, task?.id || '', focusHeight, [], { mode, readingBottom,
+      character: character ? { ...character, x: character.x - area.x - 24, y: character.y - area.y - 28 } : character,
       reserveRail: [...taskIds].some(id => id !== task?.id) || projectIds.size > 0 })
   const projects = geometry.projects.filter(pose => projectIds.has(pose.id)).map(pose => ({ ...pose,
     count: overview.projects.find(project => project.id === pose.id)!.count, x: pose.x + area.x, y: pose.y + area.y }))

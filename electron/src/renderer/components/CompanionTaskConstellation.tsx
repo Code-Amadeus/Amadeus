@@ -69,10 +69,11 @@ function TaskCard({ task, group, pose, stacked, pile, cycle, automatic, selectPr
     aria-label={pose.depth ? `卡组第 ${pose.depth + 1} 层，共 ${pile.length} 项，点击散开` : undefined}
     role={pose.depth ? 'button' : undefined} tabIndex={pose.depth ? 0 : undefined}
     onKeyDown={pose.depth ? event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectProject() } } : undefined}
-    className={`companion-thought-card phase-${task.phase} ${task.contextOnly || pose.compactParent ? 'is-context-node' : ''} ${pose.focused ? 'companion-focus-anchor' : ''} ${pose.mini ? 'is-miniature' : ''} ${pose.depth ? 'is-stack-back' : ''} ${props.fading.has(task.key) ? 'is-fading' : ''}`}
+    className={`companion-thought-card phase-${task.phase} ${task.contextOnly || pose.compactParent ? 'is-context-node' : ''} ${pose.focused ? 'companion-focus-anchor' : ''} ${pose.mini ? 'is-miniature' : ''} ${pose.projectOverview ? 'is-project-overview' : ''} ${pose.depth ? 'is-stack-back' : ''} ${props.fading.has(task.key) ? 'is-fading' : ''}`}
     onClick={pose.depth ? selectProject : undefined}
     onMouseEnter={() => props.holdCard(task.id, true)} onMouseLeave={() => props.holdCard(task.id, false)}>
-    {(task.contextOnly || pose.compactParent) && !pose.depth && !pose.focused ? <div className="companion-context-title" role={task.contextOnly ? undefined : 'button'} tabIndex={task.contextOnly ? undefined : 0}
+    {pose.mini ? <button className="companion-miniature-tile" title={`${task.title} · ${labels[task.phase]}${props.faults.has(task.key) ? ' · 语音不可用' : ''}`}
+      aria-label={`展开任务：${task.title}`} onClick={open}><i /><span /><span /></button> : (task.contextOnly || pose.compactParent) && !pose.depth && !pose.focused ? <div className="companion-context-title" role={task.contextOnly ? undefined : 'button'} tabIndex={task.contextOnly ? undefined : 0}
       onClick={task.contextOnly ? undefined : open} onKeyDown={event => { if (!task.contextOnly && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); open() } }}>
       <span>{task.contextOnly ? '主对话' : labels[task.phase]}</span><strong title={task.title}>{task.title}</strong>
       <button aria-label={`打开主对话：${task.title}`} onClick={event => { event.stopPropagation(); void props.openTask(task) }}>↗</button></div> : pose.focused ? <div className="companion-focus-heading">
@@ -88,7 +89,7 @@ function TaskCard({ task, group, pose, stacked, pile, cycle, automatic, selectPr
       <span className="companion-thought-state">{labels[task.phase]}{branchLabel(task) ? ` · ${branchLabel(task)}` : ''}</span>
       <strong title={task.title}>{task.title}</strong>
         <div className="companion-thought-excerpt" inert><Markdown text={task.detail} /></div>
-        {(!stacked || props.faults.has(task.key)) && <small>{props.faults.has(task.key) ? '语音不可用 · ' : ''}{children.length ? `${children.length} 个关联分支${children.some(child => child.phase === 'attention') ? ' · 需要你' : ' · 展开查看'}` : '展开查看'}</small>}
+        {(!stacked && !pose.projectOverview || props.faults.has(task.key)) && <small>{props.faults.has(task.key) ? '语音不可用 · ' : ''}{children.length ? `${children.length} 个关联分支${children.some(child => child.phase === 'attention') ? ' · 需要你' : ' · 展开查看'}` : '展开查看'}</small>}
     </div>
     {stacked && !pose.depth && <nav className="companion-stack-controls" aria-label="切换置顶卡片">
       <button aria-label="上一张置顶卡片" onClick={() => cycle(-1)}>‹</button><span>{pile.findIndex(item => item.id === task.id) + 1} / {pile.length}</span>
@@ -224,7 +225,7 @@ export default function CompanionTaskConstellation(props: Props) {
       return { x: slot.x + projectOffset.x + left, y: slot.y + projectOffset.y + top,
         width: Math.max(...boxes.map(box => box.x + box.width)) - left, height: Math.max(...boxes.map(box => box.y + box.height)) - top }
     }
-    return constellationLayout(pageGroups, size.width, size.height, size.characterTop, '', '', 0, 112, profile.slots,
+    return constellationLayout(pageGroups, size.width, size.height, size.characterTop, '', '', 112, profile.slots,
       { mode, seed: profile.seed, pinned, occupied })
   }, [props.tasks, projectPage, size, profile, mode])
   const slotsKey = JSON.stringify(baseGeometry.slots)
@@ -288,10 +289,10 @@ export default function CompanionTaskConstellation(props: Props) {
       if (!focus) return []
       const area = localWorkArea(display, desktop)
       const bottom = characterDisplay.id === display.id ? characterTop - area.y : area.height - 52
-      const view = displayFocusLayout(overview, pageGroups, desktop, display.id, focus, mode, focusHeights[display.id] || 112, bottom)
+      const view = displayFocusLayout(overview, pageGroups, desktop, display.id, focus, mode, focusHeights[display.id] || 112, bottom, characterBounds || null)
       return view ? [view] : []
     })
-  }, [overview, props.tasks, focuses, focusHeights, desktop, profile.scene, size.characterTop, mode])
+  }, [overview, props.tasks, focuses, focusHeights, desktop, profile.scene, size.characterTop, mode, characterBounds])
   const geometry = useMemo(() => composeDisplayFocus(overview, views), [overview, views])
   useEffect(() => {
     updateProfile(before => {
@@ -456,7 +457,7 @@ export default function CompanionTaskConstellation(props: Props) {
         if (a && b) {
           const y = (a.top + a.bottom) / 2, ty = b.top + 30
           d = edge.cross ? crossDisplayBranchPath(a, b, edge.cross[0], edge.cross[1])
-            : edge.parent ? taskBranchPath(a, b)
+            : edge.parent ? taskBranchPath(a, b, obstacles)
             : edge.reading ? `M ${a.left} ${y} C ${a.left - 42} ${y}, ${b.right + 48} ${ty}, ${b.right} ${ty}`
             : projectBranchPath(a, b, obstacles)
         }
@@ -487,10 +488,6 @@ export default function CompanionTaskConstellation(props: Props) {
             '--reading-width': `${view.geometry.readingWidth}px`, '--reading-top': `${view.geometry.readingTop}px`,
             '--reading-height': `${view.geometry.readingHeight}px` } as CSSProperties}>
           <button className="companion-return-overview" data-companion-hit onClick={() => back(view.displayId)}>{view.focus.trail.length > 1 ? '‹ 返回上一层' : '‹ 返回概览'}</button>
-          {!view.task && view.geometry.taskPages > 1 && <button className="companion-project-task-pages" data-companion-hit
-            style={{ top: view.geometry.readingTop + view.geometry.readingHeight - 46 }}
-            onClick={() => setFocuses(before => ({ ...before, [view.displayId]: { ...before[view.displayId], taskPage: (view.geometry.taskPage + 1) % view.geometry.taskPages } }))}>
-            任务 {view.geometry.taskPage + 1} / {view.geometry.taskPages} · 下一组 →</button>}
           {view.task && <TaskReading key={view.task.id} {...props} task={view.task} group={view.group} onSelectTask={id => selectTask(view.group.id, id, view.displayId)} />}
         </div>)}
         {!views.some(view => view.displayId === (desktop && displayForPoint({ x: 0, y: 0 }, desktop).id)) && groups.length > 5 && <button className="companion-project-pages" data-companion-hit onClick={() => setProjectPage(page => (page + 1) % Math.ceil(groups.length / 5))}>项目 {projectPage + 1} / {Math.ceil(groups.length / 5)} · 换一组 →</button>}

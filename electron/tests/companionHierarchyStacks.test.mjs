@@ -40,7 +40,7 @@ test('inactive parent is one silent context node while its visible child exists;
   assert.ok(next.y>=first.y+58,'A parent must remain visible above its own child')
 })
 
-test('two through seven layers stay visually distinct, with larger piles fully reachable through spread pages', () => {
+test('two through seven layers stay visually distinct, with every task visible together when the project opens', () => {
   for (const count of [2,3,4,5,6,7,8,25]) {
     const groups=[{id:'p',title:'P',tasks:Array.from({length:count},(_,i)=>task('task-'+i))}]
     const small=constellationLayout(groups,440,800,420)
@@ -48,10 +48,8 @@ test('two through seven layers stay visually distinct, with larger piles fully r
     assert.equal(pile.length,Math.min(7,count))
     const bottoms=pile.map(c=>c.y+c.height*c.scale).sort((a,b)=>a-b)
     for(let i=1;i<bottoms.length;i++) assert.ok(bottoms[i]-bottoms[i-1]>=12)
-    const first=constellationLayout(groups,1032,1820,750,'p'), ids=new Set()
-    for(let page=0;page<first.taskPages;page++) {
-      for(const card of constellationLayout(groups,1032,1820,750,'p','',page).cards.filter(c=>!c.hidden)) ids.add(card.id)
-    }
+    const expanded=constellationLayout(groups,1032,1820,750,'p')
+    const ids=new Set(expanded.cards.filter(card=>!card.hidden&&!card.depth).map(card=>card.id))
     assert.equal(ids.size,count)
   }
 })
@@ -99,7 +97,7 @@ test('detached reader shrinks the other local project while the remote parent an
   const auto=constellationLayout(groups,1032,1820,750)
   const split={...auto,projects:auto.projects.map(p=>p.id==='b'?{...p,x:-900,y:100}:p),
     cards:auto.cards.map(c=>c.id==='child'?{...c,x:-1800,y:120}:c.id==='other'?{...c,x:-900,y:200}:c)}
-  const view=displayFocusLayout(split,groups,desktop,1,{trail:[{projectId:'a',taskId:'child'}],taskPage:0},'natural',112,1340)
+  const view=displayFocusLayout(split,groups,desktop,1,{trail:[{projectId:'a',taskId:'child'}]},'natural',112,1340)
   const result=composeDisplayFocus(split,[view])
   assert.equal(result.cards.find(c=>c.id==='other').mini,true)
   assert.deepEqual(result.cards.find(c=>c.id==='parent'),split.cards.find(c=>c.id==='parent'))

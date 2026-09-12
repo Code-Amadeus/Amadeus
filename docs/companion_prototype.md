@@ -2,7 +2,7 @@
 
 This branch is a source snapshot for [Issue #61](https://github.com/Code-Amadeus/Amadeus/issues/61), intended for inspection and further design discussion. It is not a request to merge the entire prototype into the supported product. The branch starts from upstream `afe0e74552be5faf9041d6f488d9e87b329cf8e3`; it does not include the contributor's earlier local development commits.
 
-The [September 11 multi-display update](companion_multidisplay_update.md) adds independent per-display reading, cross-display dragging, persistent layout modes and clearer parent/child stacks. It is an incremental update to this prototype, not a merge of the contributor's full daily development branch.
+The [September 11 multi-display update](companion_multidisplay_update.md) adds independent per-display reading, cross-display dragging, persistent layout modes and clearer parent/child stacks. The [September 12 project overview update](companion_project_overview.md) removes project-internal pagination, preserves original card bodies and narrows the relationship rail. These are incremental updates to this prototype, not a merge of the contributor's full daily development branch.
 
 ## Windows quick start: connect local Codex tasks
 

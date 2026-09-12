@@ -129,6 +129,11 @@ app.whenReady().then(async () => {
     await new Promise(resolve=>setTimeout(resolve,1800));
     await require('./companion-focus-probe.cjs')(win,output);
   }
+  if (process.argv.includes('--verify-project-map') && !codexThread) {
+    await require('./verify-companion-project-map.cjs')({win,desktop:desktop(),origin,output});
+    log('Verified project overview map in production Electron renderer');
+    if(process.argv.includes('--exit-after-verify')) app.quit();
+  }
   if (process.argv.includes('--verify-cross-display') && !codexThread) {
     await require('./verify-companion-cross-display.cjs')({win,desktop:desktop(),origin,output});
     log('Verified cross-display Chromium pointer integration');

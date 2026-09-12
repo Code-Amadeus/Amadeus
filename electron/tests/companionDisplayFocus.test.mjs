@@ -11,7 +11,7 @@ const group = (id, count) => ({ id, title: id, tasks: Array.from({length:count},
 const groups = [group('one',2),group('two',2)]
 const auto = constellationLayout(groups,1032,1820,750)
 const overview = {...auto,cards:auto.cards.map(pose=>pose.id==='one-0'?{...pose,x:-1600,y:240}:pose)}
-const focus = (projectId,taskId='') => ({trail:[{projectId,taskId}],taskPage:0})
+const focus = (projectId,taskId='') => ({trail:[{projectId,taskId}]})
 const view = (displayId,selected) => displayFocusLayout(overview,groups,desktop,displayId,selected,'natural',112,displayId===1?1340:750)
 
 test('reading a detached card does not relocate or miniaturize remote cards, even its own project', () => {
