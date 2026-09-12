@@ -32,19 +32,19 @@ __pycache__/
 *.pyd
 
 # ── 模型权重（体积巨大，用 .env 指向本地路径） ───────────────────────────────────
-assets/models/gpt-sovits/weights/gpt/v1/
-assets/models/gpt-sovits/weights/gpt/v2/
-assets/models/gpt-sovits/weights/gpt/v3/
-assets/models/gpt-sovits/weights/sovits/v1/
-assets/models/gpt-sovits/weights/sovits/v2/
-assets/models/gpt-sovits/weights/sovits/v3/
+assets/models/gpt-sovits/weights/gpt/
+assets/models/gpt-sovits/weights/sovits/
 assets/models/gpt-sovits/pretrained/
+assets/models/gpt-sovits/Kurisu-GPT-SoVITS*/
 assets/models/asr/
 weight.json
 *.ckpt
 *.pth
 *.gguf
 *.bin
+*.app/
+scratch/
+GPT_SoVITS/pretrained_models/
 
 # ── 运行时生成数据 ──────────────────────────────────────────────────────────
 sessions/

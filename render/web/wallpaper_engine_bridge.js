@@ -594,7 +594,6 @@
         state: document.visibilityState,
         tickerStarted: !!(getPixiApp() && getPixiApp().ticker && getPixiApp().ticker.started),
       }, "warning");
-      if (!document.hidden) return;
       restartTicker();
       if (typeof queueMicrotask === "function") queueMicrotask(restartTicker);
       setTimeout(restartTicker, 0);

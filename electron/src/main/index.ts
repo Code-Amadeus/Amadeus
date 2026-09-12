@@ -3,7 +3,7 @@
  */
 
 import { app, BrowserWindow, Menu, WebContentsView, dialog, ipcMain, screen } from 'electron'
-import { spawn, ChildProcess } from 'child_process'
+import { spawn, execSync, ChildProcess } from 'child_process'
 import { randomBytes } from 'crypto'
 import http from 'http'
 import path from 'path'
@@ -51,6 +51,9 @@ for (const dir of [USER_DATA_DIR, CACHE_DIR]) {
 
 app.setPath('userData', USER_DATA_DIR)
 app.commandLine.appendSwitch('disk-cache-dir', CACHE_DIR)
+app.commandLine.appendSwitch('disable-renderer-backgrounding')
+app.commandLine.appendSwitch('disable-background-timer-throttling')
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 const menuTemplate = applicationMenuTemplate(process.platform)
 Menu.setApplicationMenu(menuTemplate ? Menu.buildFromTemplate(menuTemplate) : null)
 
@@ -192,6 +195,10 @@ function getAppIconPath(): string | undefined {
 
 function wantsWorkOverlay(args = process.argv): boolean {
   return args.includes('--work-overlay') || process.env.AMADEUS_WORK_OVERLAY === '1'
+}
+
+function wantsWallpaper(args = process.argv): boolean {
+  return args.includes('--wallpaper') || process.env.AMADEUS_WALLPAPER === '1'
 }
 
 // Python backend management.
@@ -367,8 +374,27 @@ async function startBackend(): Promise<void> {
     return
   }
   if (health === 'foreign') {
-    backendOwned = false
-    throw new Error(`port ${BACKEND_PORT} is owned by another backend instance`)
+    console.warn(`[electron] port ${BACKEND_PORT} is occupied by an orphaned backend; reclaiming port`)
+    try {
+      if (process.platform === 'win32') {
+        const out = execSync(`netstat -ano | findstr :${BACKEND_PORT}`).toString()
+        const match = out.match(/LISTENING\s+(\d+)/)
+        if (match) process.kill(Number(match[1]), 'SIGKILL')
+      } else {
+        const pids = execSync(`lsof -nP -ti :${BACKEND_PORT}`, { encoding: 'utf8' }).trim()
+        if (pids) {
+          for (const p of pids.split('\n')) {
+            const num = Number(p.trim())
+            if (num > 0) {
+              try { process.kill(num, 'SIGKILL') } catch { /* ignore */ }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[electron] failed to clean orphaned listener:', e)
+    }
+    await new Promise(resolve => setTimeout(resolve, 600))
   }
 
   const python = getPythonCommand()
@@ -469,6 +495,7 @@ function guardTrustedRendererShell(window: BrowserWindow): void {
 }
 
 function createWindow(): void {
+  const isWallpaperOnly = wantsWallpaper()
   mainWindow = new BrowserWindow({
     width: 1100,
     height: 800,
@@ -477,6 +504,7 @@ function createWindow(): void {
     icon: getAppIconPath(),
     title: '',
     frame: true,
+    show: !isWallpaperOnly,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.mjs'),
@@ -495,17 +523,27 @@ function createWindow(): void {
   })
 
   // load from vite dev server or built files
+  const queryParam = wantsWallpaper() ? '?wallpaper=1' : ''
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173')
+    mainWindow.loadURL(`http://localhost:5173${queryParam}`)
       .catch(() => {
         // fallback: try built files
         const p = path.join(__dirname, '..', 'renderer', 'index.html')
-        if (fs.existsSync(p)) mainWindow?.loadFile(p)
+        if (fs.existsSync(p)) mainWindow?.loadFile(p, wantsWallpaper() ? { query: { wallpaper: '1' } } : undefined)
       })
   } else {
-    mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'))
+    mainWindow.loadFile(
+      path.join(__dirname, '..', 'renderer', 'index.html'),
+      wantsWallpaper() ? { query: { wallpaper: '1' } } : undefined
+    )
   }
 
+  mainWindow.on('close', (event) => {
+    if (wantsWallpaper() && !quittingAfterBackendStop) {
+      event.preventDefault()
+      mainWindow?.hide()
+    }
+  })
   mainWindow.on('closed', () => { mainWindow = null })
 }
 
@@ -617,14 +655,16 @@ function createElectronCanvasWindow(bridge: WallpaperBridgeDescriptor, bridgeKey
     skipTaskbar: true,
     alwaysOnTop: false,
     autoHideMenuBar: true,
-    ...platformPolicy.constructorOptions,
+    type: 'normal',
     focusable: true,
+    hiddenInMissionControl: false,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'slice.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
+      backgroundThrottling: false,
     },
   })
   electronCanvasLifecycle.attach(window, bridgeKey)
@@ -848,6 +888,7 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
+      backgroundThrottling: false,
     },
   })
   electronSliceWindow = window
@@ -2457,7 +2498,11 @@ app.on('second-instance', (_event, commandLine) => {
     createWorkOverlayWindow()
     return
   }
-  if (!mainWindow) return
+  if (!mainWindow) {
+    createWindow()
+    return
+  }
+  mainWindow.show()
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.focus()
 })
@@ -2475,7 +2520,15 @@ app.whenReady().then(async () => {
   screen.on('display-removed', updateElectronSliceBounds)
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show()
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+    } else {
+      createWindow()
+      mainWindow?.show()
+      mainWindow?.focus()
+    }
   })
 })
 

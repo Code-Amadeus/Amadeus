@@ -1,4 +1,4 @@
-﻿/**
+/**
  * renderer.js — PixiJS render engine core
  *
  * Exposes window.renderApp for Python-side runJavaScript() calls:
@@ -521,8 +521,20 @@
       this._applyFrame(texture);
     }
 
+    _normalizeAssetUrl(url) {
+      const raw = String(url || "").trim();
+      if (!raw) return "";
+      try {
+        if (/^https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//i.test(raw) && window.location && window.location.origin && window.location.origin.indexOf("http") === 0) {
+          const parsed = new URL(raw);
+          return window.location.origin + parsed.pathname + parsed.search;
+        }
+      } catch (_) {}
+      return raw;
+    }
+
     _loadTextureFromImage(url) {
-      const key = String(url || "");
+      const key = this._normalizeAssetUrl(url);
       if (!key) return Promise.resolve(null);
 
       const cached = this._texturePromisesByUrl.get(key);
