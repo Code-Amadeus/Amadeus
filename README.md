@@ -399,6 +399,9 @@ macOS：`cp .env.example .env`），然后在 Settings 中核对：
 - Windows：`run_electron_utf8.bat`（单一启动器；自动发现 `.venv`，L1–L4 通用）
 - macOS：`cd electron && npm run electron:dev`
 
+macOS 登录后自动启动壁纸可使用原生 `Amadeus Wallpaper.app`；构建、验证和
+LaunchAgent 安装步骤见 [macOS 壁纸自启动](docs/macos_wallpaper_startup.md)。
+
 启动型设置变更后按 **Restart backend to apply**。角色包显示
 **Not installed** 是健康状态，不影响 Chat、Work 或 headless 启动。
 
