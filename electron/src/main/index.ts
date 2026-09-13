@@ -21,6 +21,8 @@ import {
 } from './wallpaperCanvasLifecycle.js'
 import { desktopPointHitsWindowRegions } from './wallpaperHitTesting.js'
 import { wallpaperWindowPolicy } from './wallpaperWindowPolicy.js'
+import { isWallpaperStartup } from './startupMode.js'
+import { ApplicationLifecycle } from './appLifecycle.js'
 import { applicationMenuTemplate } from './applicationMenu.js'
 import { defaultMpsFallbackEnvironment } from './mpsFallbackPolicy.js'
 
@@ -155,7 +157,7 @@ let workOverlayPanelBounds: Electron.Rectangle | null = null
 let workOverlayHitRegions: Electron.Rectangle[] = []
 let pythonProcess: ChildProcess | null = null
 let backendStopping: Promise<void> | null = null
-let quittingAfterBackendStop = false
+const applicationLifecycle = new ApplicationLifecycle()
 let backendOwned = false
 
 const BACKEND_PORT = 17777
@@ -192,6 +194,10 @@ function getAppIconPath(): string | undefined {
 
 function wantsWorkOverlay(args = process.argv): boolean {
   return args.includes('--work-overlay') || process.env.AMADEUS_WORK_OVERLAY === '1'
+}
+
+function wantsWallpaper(args = process.argv): boolean {
+  return isWallpaperStartup(args, process.env)
 }
 
 // Python backend management.
@@ -469,6 +475,7 @@ function guardTrustedRendererShell(window: BrowserWindow): void {
 }
 
 function createWindow(): void {
+  const isWallpaperOnly = wantsWallpaper()
   mainWindow = new BrowserWindow({
     width: 1100,
     height: 800,
@@ -477,6 +484,7 @@ function createWindow(): void {
     icon: getAppIconPath(),
     title: '',
     frame: true,
+    show: !isWallpaperOnly,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.mjs'),
@@ -495,17 +503,27 @@ function createWindow(): void {
   })
 
   // load from vite dev server or built files
+  const queryParam = wantsWallpaper() ? '?wallpaper=1' : ''
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173')
+    mainWindow.loadURL(`http://localhost:5173${queryParam}`)
       .catch(() => {
         // fallback: try built files
         const p = path.join(__dirname, '..', 'renderer', 'index.html')
-        if (fs.existsSync(p)) mainWindow?.loadFile(p)
+        if (fs.existsSync(p)) mainWindow?.loadFile(p, wantsWallpaper() ? { query: { wallpaper: '1' } } : undefined)
       })
   } else {
-    mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'))
+    mainWindow.loadFile(
+      path.join(__dirname, '..', 'renderer', 'index.html'),
+      wantsWallpaper() ? { query: { wallpaper: '1' } } : undefined
+    )
   }
 
+  mainWindow.on('close', (event) => {
+    if (applicationLifecycle.shouldHideWallpaperWindow(wantsWallpaper())) {
+      event.preventDefault()
+      mainWindow?.hide()
+    }
+  })
   mainWindow.on('closed', () => { mainWindow = null })
 }
 
@@ -617,8 +635,7 @@ function createElectronCanvasWindow(bridge: WallpaperBridgeDescriptor, bridgeKey
     skipTaskbar: true,
     alwaysOnTop: false,
     autoHideMenuBar: true,
-    ...platformPolicy.constructorOptions,
-    focusable: true,
+    ...platformPolicy.canvasConstructorOptions,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'slice.cjs'),
       contextIsolation: true,
@@ -2457,7 +2474,13 @@ app.on('second-instance', (_event, commandLine) => {
     createWorkOverlayWindow()
     return
   }
+  const request = applicationLifecycle.requestMainWindow(Boolean(mainWindow && !mainWindow.isDestroyed()))
+  if (request === 'defer') return
+  if (request === 'create') {
+    createWindow()
+  }
   if (!mainWindow) return
+  mainWindow.show()
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.focus()
 })
@@ -2469,13 +2492,25 @@ app.whenReady().then(async () => {
     console.error('[electron] backend failed to become ready', error)
   }
   createWindow()
+  if (applicationLifecycle.completeStartup()) {
+    mainWindow?.show()
+    mainWindow?.focus()
+  }
   if (wantsWorkOverlay()) createWorkOverlayWindow()
   screen.on('display-metrics-changed', updateElectronSliceBounds)
   screen.on('display-added', updateElectronSliceBounds)
   screen.on('display-removed', updateElectronSliceBounds)
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show()
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+    } else {
+      createWindow()
+      mainWindow?.show()
+      mainWindow?.focus()
+    }
   })
 })
 
@@ -2490,9 +2525,8 @@ app.on('before-quit', (event) => {
   for (const appWindow of auipAppWindows) appWindow.close()
   auipAppWindows.clear()
   auipAppSurfacesById.clear()
-  if (quittingAfterBackendStop || !pythonProcess) return
+  if (!applicationLifecycle.beginQuit(Boolean(pythonProcess))) return
   event.preventDefault()
-  quittingAfterBackendStop = true
   void stopBackend().finally(() => {
     app.quit()
   })

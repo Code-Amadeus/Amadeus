@@ -45,6 +45,7 @@ weight.json
 *.pth
 *.gguf
 *.bin
+/Amadeus Wallpaper.app/
 
 # ── 运行时生成数据 ──────────────────────────────────────────────────────────
 sessions/
