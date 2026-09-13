@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 OUTPUT="$PROJECT_ROOT/Amadeus Wallpaper.app"
 FORCE=0
+EXPECTED_BUNDLE_NAME="Amadeus Wallpaper.app"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -13,6 +14,11 @@ while [[ $# -gt 0 ]]; do
     *) echo "Usage: $0 [--output /path/to/Amadeus Wallpaper.app] [--force]" >&2; exit 2 ;;
   esac
 done
+
+if [[ "$(basename "$OUTPUT")" != "$EXPECTED_BUNDLE_NAME" ]]; then
+  echo "Refusing output path that is not named '$EXPECTED_BUNDLE_NAME': $OUTPUT" >&2
+  exit 1
+fi
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "This app bundle can only be built on macOS." >&2
@@ -29,10 +35,29 @@ if [[ ! -d "$PROJECT_ROOT/electron/node_modules/electron" ]]; then
   echo "Missing Electron dependencies; run npm install in electron/." >&2
   exit 1
 fi
-if [[ -e "$OUTPUT" && "$FORCE" != 1 ]]; then
-  echo "$OUTPUT already exists; pass --force to replace this generated bundle." >&2
-  exit 1
-fi
+is_generated_bundle() {
+  local target="$1"
+  local plist="$target/Contents/Info.plist"
+  local executable="$target/Contents/MacOS/Amadeus Wallpaper"
+  local project_root_file="$target/Contents/Resources/project-root"
+  [[ -d "$target" && ! -L "$target" && -f "$plist" && -x "$executable" && -f "$project_root_file" ]] || return 1
+  [[ "$(plutil -extract CFBundleIdentifier raw -o - "$plist" 2>/dev/null || true)" == "com.amadeus.wallpaper" ]] || return 1
+  [[ "$(plutil -extract CFBundleExecutable raw -o - "$plist" 2>/dev/null || true)" == "Amadeus Wallpaper" ]]
+}
+
+validate_replacement() {
+  [[ -e "$OUTPUT" || -L "$OUTPUT" ]] || return 0
+  if [[ "$FORCE" != 1 ]]; then
+    echo "$OUTPUT already exists; pass --force to replace this generated bundle." >&2
+    exit 1
+  fi
+  if ! is_generated_bundle "$OUTPUT"; then
+    echo "Refusing to replace an existing path that is not a generated Amadeus Wallpaper.app bundle: $OUTPUT" >&2
+    exit 1
+  fi
+}
+
+validate_replacement
 
 echo "Building Electron production files..."
 npm --prefix "$PROJECT_ROOT/electron" run build
@@ -67,7 +92,8 @@ PLIST
 plutil -lint "$STAGING/Contents/Info.plist"
 codesign --force --sign - "$STAGING"
 mkdir -p "$(dirname "$OUTPUT")"
-if [[ -e "$OUTPUT" ]]; then rm -rf "$OUTPUT"; fi
+validate_replacement
+if [[ -e "$OUTPUT" || -L "$OUTPUT" ]]; then rm -rf "$OUTPUT"; fi
 mv "$STAGING" "$OUTPUT"
 trap - EXIT
 rm -rf "$STAGING_ROOT"

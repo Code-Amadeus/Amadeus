@@ -22,6 +22,7 @@ import {
 import { desktopPointHitsWindowRegions } from './wallpaperHitTesting.js'
 import { wallpaperWindowPolicy } from './wallpaperWindowPolicy.js'
 import { isWallpaperStartup } from './startupMode.js'
+import { ApplicationLifecycle } from './appLifecycle.js'
 import { applicationMenuTemplate } from './applicationMenu.js'
 import { defaultMpsFallbackEnvironment } from './mpsFallbackPolicy.js'
 
@@ -156,7 +157,7 @@ let workOverlayPanelBounds: Electron.Rectangle | null = null
 let workOverlayHitRegions: Electron.Rectangle[] = []
 let pythonProcess: ChildProcess | null = null
 let backendStopping: Promise<void> | null = null
-let quittingAfterBackendStop = false
+const applicationLifecycle = new ApplicationLifecycle()
 let backendOwned = false
 
 const BACKEND_PORT = 17777
@@ -518,7 +519,7 @@ function createWindow(): void {
   }
 
   mainWindow.on('close', (event) => {
-    if (wantsWallpaper() && !quittingAfterBackendStop) {
+    if (applicationLifecycle.shouldHideWallpaperWindow(wantsWallpaper())) {
       event.preventDefault()
       mainWindow?.hide()
     }
@@ -2473,10 +2474,12 @@ app.on('second-instance', (_event, commandLine) => {
     createWorkOverlayWindow()
     return
   }
-  if (!mainWindow) {
+  const request = applicationLifecycle.requestMainWindow(Boolean(mainWindow && !mainWindow.isDestroyed()))
+  if (request === 'defer') return
+  if (request === 'create') {
     createWindow()
-    return
   }
+  if (!mainWindow) return
   mainWindow.show()
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.focus()
@@ -2489,6 +2492,10 @@ app.whenReady().then(async () => {
     console.error('[electron] backend failed to become ready', error)
   }
   createWindow()
+  if (applicationLifecycle.completeStartup()) {
+    mainWindow?.show()
+    mainWindow?.focus()
+  }
   if (wantsWorkOverlay()) createWorkOverlayWindow()
   screen.on('display-metrics-changed', updateElectronSliceBounds)
   screen.on('display-added', updateElectronSliceBounds)
@@ -2518,9 +2525,8 @@ app.on('before-quit', (event) => {
   for (const appWindow of auipAppWindows) appWindow.close()
   auipAppWindows.clear()
   auipAppSurfacesById.clear()
-  if (quittingAfterBackendStop || !pythonProcess) return
+  if (!applicationLifecycle.beginQuit(Boolean(pythonProcess))) return
   event.preventDefault()
-  quittingAfterBackendStop = true
   void stopBackend().finally(() => {
     app.quit()
   })
