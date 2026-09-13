@@ -41,6 +41,7 @@ def test_launchagent_writer_preserves_app_path_with_spaces(tmp_path: Path) -> No
     assert payload["KeepAlive"] is False
 
 
+@pytest.mark.skipif(platform.system() == "Windows", reason="Windows cannot directly execute POSIX shell scripts")
 def test_force_rejects_unrelated_directory_without_removing_contents(tmp_path: Path) -> None:
     unrelated = tmp_path / "Applications"
     unrelated.mkdir()
