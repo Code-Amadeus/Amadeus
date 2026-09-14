@@ -31,6 +31,7 @@
     "docs/character_rag.md",
     "docs/external_asset_bundles.md",
     "docs/install_profiles.md",
+    "docs/slice-export-review.md",
     "docs/torch27_candidates.md",
     "docs/wake_word_setup.md",
     "THIRD_PARTY_NOTICES.md",
@@ -47,8 +48,7 @@
     "docs/alpha-0.15.md",
     "docs/routing-accuracy-baseline.md",
     "docs/evidence/routing-accuracy-2026-09-12.json",
-    "docs/alpha-0.15-impact.md",
-    "docs/slice-export-review.md"
+    "docs/alpha-0.15-impact.md"
   ],
   "include_roots": [
     ".github",
@@ -97,6 +97,7 @@
     "docs/external_asset_bundles.md",
     "docs/local_instance_authentication.md",
     "docs/install_profiles.md",
+    "docs/slice-export-review.md",
     "docs/torch27_candidates.md",
     "docs/mouth_sync_system_notes.md",
     "docs/render_vendor_compatibility.md",
@@ -119,8 +120,7 @@
     "docs/alpha-0.15.md",
     "docs/routing-accuracy-baseline.md",
     "docs/evidence/routing-accuracy-2026-09-12.json",
-    "docs/alpha-0.15-impact.md",
-    "docs/slice-export-review.md"
+    "docs/alpha-0.15-impact.md"
   ],
   "exclude_globs": [
     ".github/ISSUE_TEMPLATE/config.yml",
