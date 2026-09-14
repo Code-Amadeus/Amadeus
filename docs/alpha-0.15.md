@@ -53,7 +53,7 @@ professional acceptance result does not establish parity for that configuration.
 ## Other integrated surfaces
 
 The routing branch includes bounded AUIP after-Work entry and authoring validation/recovery
-and the associated artifact appearance preference. Optional ACP v1 agents, complete-file
+and the associated artifact appearance preference. Experimental, opt-in ACP v1 agents, complete-file
 review for truncated Slice export previews, and the compact VN-style companion panel
 are separate Draft PRs within the same 0.15 Alpha release scope.
 The public mainline's uv installation profiles, Linux AEC source build, macOS wallpaper
@@ -63,6 +63,7 @@ in [PR #75](https://github.com/Code-Amadeus/Amadeus/pull/75);
 [ACP #76](https://github.com/Code-Amadeus/Amadeus/pull/76) and
 [Slice export review #77](https://github.com/Code-Amadeus/Amadeus/pull/77)
 are stacked on the routing candidate because they consume its shared Host contracts.
+ACP's Claude/dsh examples are local integration probes, with no real production use.
 
 ## Voice acceptance evidence
 
