@@ -96,6 +96,7 @@ const VALUE_KEYS = new Set([
   'CODEX_APP_SERVER_REASONING_EFFORT',
   'CODEX_APP_SERVER_SERVICE_TIER',
   'DIRECT_CODEX_CLI_PATH',
+  'AMADEUS_ACP_PROVIDERS',
   'ASR_BACKEND',
   'ASR_LANGUAGE',
   'ASR_CONTEXT',
@@ -140,6 +141,7 @@ const VALUE_KEYS = new Set([
 ])
 
 const SECRET_KEYS = new Set([
+  'ANTHROPIC_API_KEY',
   'DEEPSEEK_API_KEY',
   'OPENAI_API_KEY',
   'GEMINI_API_KEY',
@@ -212,7 +214,48 @@ const INTEGER_KEYS = new Set(['RAG_TOP_K', 'ASR_VAD_SILENCE_MS'])
 const MCP_CONNECTIONS_ENV = 'AMADEUS_MCP_CONNECTIONS'
 const MCP_ID_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/
 const MCP_ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/
-const MCP_PROVIDER_IDS = new Set(['codex'])
+
+export function validateAcpProviders(raw: string): Array<Record<string, unknown>> {
+  if (Buffer.byteLength(raw, 'utf8') > 65536) throw new Error('ACP configuration exceeds 64 KiB')
+  const profiles: unknown = JSON.parse(raw)
+  if (!Array.isArray(profiles) || profiles.length > 32) throw new Error('Expected at most 32 ACP agents')
+  const ids = new Set<string>()
+  for (const profile of profiles) {
+    if (!profile || typeof profile !== 'object' || Array.isArray(profile)) throw new Error('Invalid ACP agent')
+    const allowed = new Set(['id', 'name', 'command', 'args', 'enabled', 'environment', 'config_options', 'resume'])
+    if (Object.keys(profile).some(key => !allowed.has(key))) throw new Error('Unknown ACP configuration field')
+    const id = profile.id
+    if (typeof id !== 'string' || !MCP_ID_PATTERN.test(id) || ['codex', 'browser', 'openclaw'].includes(id) || ids.has(id)) {
+      throw new Error('ACP agents require unique ids distinct from built-in Providers')
+    }
+    ids.add(id)
+    for (const [key, limit] of [['name', 80], ['command', 4096]] as const) {
+      const value = profile[key] ?? (key === 'name' ? id : '')
+      if (typeof value !== 'string' || !value.trim() || value.includes('\0') || value.length > limit) throw new Error(`Invalid ACP ${key}`)
+    }
+    for (const key of ['enabled', 'resume']) {
+      if (profile[key] !== undefined && typeof profile[key] !== 'boolean') throw new Error(`Invalid ACP ${key}`)
+    }
+    const args = profile.args ?? []
+    if (!Array.isArray(args) || args.length > 64 || args.some(arg => typeof arg !== 'string' || arg.includes('\0') || arg.length > 4096)) {
+      throw new Error('ACP arguments must be a string array')
+    }
+    for (const key of ['environment', 'config_options']) {
+      const value = profile[key] ?? {}
+      if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length > (key === 'environment' ? 64 : 32)) {
+        throw new Error(`Invalid ACP ${key}`)
+      }
+      for (const [name, entry] of Object.entries(value)) {
+        if (typeof entry !== 'string' || !name || !entry || name.includes('\0') || entry.includes('\0')
+          || name.length > 128 || entry.length > 512) throw new Error(`Invalid ACP ${key} entry`)
+        if (key === 'environment' && (!MCP_ENV_KEY_PATTERN.test(name) || !MCP_ENV_KEY_PATTERN.test(entry))) {
+          throw new Error('ACP environment entries reference Host variable names; save secrets in the credential store')
+        }
+      }
+    }
+  }
+  return profiles
+}
 
 function emptyStore(): StoredDesktopSettings {
   return { version: 2, values: {}, encryptedSecrets: {}, mcpConnections: {} }
@@ -239,7 +282,7 @@ function cleanStoredMcpConnection(value: unknown): StoredMcpConnection | null {
     const transport = source.transport === 'http' ? 'http' : source.transport === 'stdio' ? 'stdio' : ''
     if (!MCP_ID_PATTERN.test(id) || !name || !transport) return null
     const providerIds = Array.isArray(source.providerIds)
-      ? [...new Set(source.providerIds.map(value => String(value || '').trim().toLowerCase()).filter(value => MCP_PROVIDER_IDS.has(value)))]
+      ? [...new Set(source.providerIds.map(value => String(value || '').trim().toLowerCase()).filter(value => MCP_ID_PATTERN.test(value)))]
       : []
     const argumentsValue = Array.isArray(source.arguments)
       ? source.arguments.slice(0, 64).map(value => boundedText(value, 'MCP argument', 4096))
@@ -439,7 +482,10 @@ export class DesktopSettingsStore {
     const transport = input.transport
     if (!['stdio', 'http'].includes(transport)) throw new Error('Unsupported MCP transport')
     const providerIds = [...new Set((input.providerIds || []).map(value => String(value || '').trim().toLowerCase()))]
-    if (providerIds.some(value => !MCP_PROVIDER_IDS.has(value))) throw new Error('Unsupported MCP Provider binding')
+    // Persist explicit target identity, not a second Provider catalog. The UI
+    // offers live compatible manifests; Runtime/adapter projection enforces
+    // availability. This also supports agents configured through backend .env.
+    if (providerIds.some(value => !MCP_ID_PATTERN.test(value))) throw new Error('Invalid MCP Provider binding')
     const enabled = Boolean(input.enabled)
     if (enabled && providerIds.length === 0) throw new Error('Select a compatible Work Provider before enabling this connection')
     const command = boundedText(input.command, 'MCP command', 4096)
@@ -519,7 +565,8 @@ export class DesktopSettingsStore {
         continue
       }
       const value = typeof rawValue === 'boolean' ? (rawValue ? 'true' : 'false') : String(rawValue)
-      if (value.includes('\0') || value.length > 4096) throw new Error(`Invalid value for ${key}`)
+      if (value.includes('\0') || value.length > (key === 'AMADEUS_ACP_PROVIDERS' ? 65536 : 4096)) throw new Error(`Invalid value for ${key}`)
+      if (key === 'AMADEUS_ACP_PROVIDERS') validateAcpProviders(value)
       const choices = VALUE_CHOICES[key]
       if (choices && !choices.has(value)) throw new Error(`Invalid value for ${key}: ${value}`)
       if (IDENTIFIER_KEYS.has(key) && !/^[a-z][a-z0-9_-]{0,63}$/.test(value)) {
