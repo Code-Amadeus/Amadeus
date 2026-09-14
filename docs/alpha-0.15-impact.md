@@ -31,10 +31,15 @@ build alone cannot establish the absence of side effects.
 - Follow-up transport/microphone/shared-presentation selection: **135 passed** in the
   existing voice environment. Recovery/RAG/turn-origin selection: **100 passed** in the
   clean core environment. These selections overlap other checks; counts are not additive.
-- A broader isolated-per-file core regression was started to look beyond the initial
-  selection. Its first recovery-fixture failures were retained in the audit log and the
-  affected selection rerun after explicit test-directory registration. The PR check list
-  should report final CI rather than claiming that this initial candidate is fully green.
+- The broader isolated-per-file core sweep reported **3,872 passed and 51 skipped**,
+  with 12 failed checks across five suites. All failures rejected continuation into
+  test workspaces that had not been explicitly trusted under the current intake contract.
+  After registering those test directories (without relaxing production checks), all
+  five affected suites were rerun in isolation: **77 passed**. The original failed
+  sweep remains recorded; it is not relabeled as a clean all-suite run.
+- ACP, companion/reconnect and Slice export review have been separated from the main
+  routing delta. Their own tests and hosted checks belong to those PRs. The final routing
+  head still needs its own hosted CI, including clean core and optional RAG jobs.
 
 Initial hosted Electron build/dependency review, source archive, Linux core/voice,
 macOS voice, Windows installation ladder, and local-model installation candidates
