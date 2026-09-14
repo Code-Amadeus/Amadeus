@@ -44,9 +44,23 @@ The planner uses the selected Main Chat model transport. An optional
 `COOPERATIVE_WORK_PLANNER_MODEL` overrides only the planner model. A role model is
 independent from the Provider that executes a task.
 
-This draft preserves the existing selectors: cooperative defaults on, while the
-professional planner remains opt-in. Setting cooperative off retains the original
-Chat strategy over the shared execution and presentation facilities. The basic
+Both cooperative routing and the professional planner default on in 0.15 Alpha.
+These are startup selectors; changing them requires a backend restart:
+
+| Cooperative | Professional planner | Active route |
+| --- | --- | --- |
+| `true` | `true` | Professional cooperative (default) |
+| `true` | `false` | Basic cooperative |
+| `false` | either | Original Chat authority; cooperative and planner are not installed |
+
+To restore the established public-main routing behavior, set
+`COOPERATIVE_CHAT_ENABLED=false` and restart. The existing
+`CONTROL_DECISION_AUTHORITY_ENABLED=true` and
+`COMPOUND_CONTROL_AUTHORITY_ENABLED=true` defaults retain the original authority
+path; preserve any deliberate pre-existing overrides of those original flags.
+This selects the original implementation over shared execution and presentation
+facilities. It does not run both routes or silently retry a failed professional
+decision through the original route. The basic
 cooperative route still has a known explicit-Provider-constraint limitation; the
 professional acceptance result does not establish parity for that configuration.
 

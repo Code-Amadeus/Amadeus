@@ -46,6 +46,33 @@ macOS voice, Windows installation ladder, and local-model installation candidate
 passed. These are named job scopes; for example, Linux's selected core gate is not the
 complete Windows suite. New commits must receive their own CI results.
 
+## Routing defaults and rollback review (2026-09-15)
+
+The selected 0.15 default enables both cooperative routing and the professional
+planner. Disabling only the planner selects basic cooperative routing. Disabling
+`COOPERATIVE_CHAT_ENABLED` and restarting restores the original Chat/ControlDecision/
+Compound entry; it does not install the cooperative planner even if that planner's
+flag remains true. Startup assembly checks cover those combinations (**6 passed**).
+
+The rollback contract preserves normal original-route functionality while retaining
+shared fixes. It is not byte-for-byte behavior equivalence with public `main`:
+target grounding, verified resume checkpoints, Session-bound events and fail-closed
+turn admission have changed in shared owners. Frozen old tests exposed both renamed
+internal interfaces and these deliberate differences; their failed run is retained
+locally and is not represented as a passing baseline. With rollback explicitly
+selected, the current corresponding **21 suites passed, 264 tests**, covering original
+control, compound dispatch, delegation, pending turns, history and workspace routing.
+Professional planning and accepted-effect boundaries separately passed **131 tests**;
+these selections overlap and must not be added as unique coverage.
+
+The professional planner returns a plan through shared interpretation contracts;
+`WorkEffectExecutor` enters the existing ProviderRuntime and WorkLedgerCoordinator.
+Replay/concurrent-dispatch tests verify that the accepted effect does not create a
+second native run. Cooperative conversation coordination is an additional routing
+strategy, not a second Provider execution engine. Its sizeable ingress/composition
+module remains a maintenance concern; this evidence does not certify every changed
+line or eliminate the need for focused review.
+
 ## Separate evidence types
 
 The [historical real-model routing baseline](routing-accuracy-baseline.md) measures
