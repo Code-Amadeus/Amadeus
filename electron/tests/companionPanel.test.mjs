@@ -56,7 +56,9 @@ test('companion projects the shared current display without acting on Work or AU
   state = apply(state, { method: 'setSpeaking', args: [false] })
   assert.equal(state.text, '按笔记上的线索想一想。')
   assert.equal(state.speaking, false)
-  assert.equal(apply(state, { method: 'setSubtitle', args: [''] }).text, '')
+  assert.strictEqual(apply(state, { method: 'setSubtitle', args: [''] }), state)
+  assert.strictEqual(apply(state, { method: 'setSubtitle', args: ['   '] }), state)
+  assert.equal(apply(state, { method: 'setSubtitle', args: ['下一句。'] }).text, '下一句。')
 })
 test('suppression restores the exact renderable state and leaves scenario visibility alone', async () => {
   const sprite = { renderable: true, visible: false }

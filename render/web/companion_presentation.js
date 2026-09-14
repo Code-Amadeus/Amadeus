@@ -4,7 +4,7 @@
   function apply(state, call) {
     const value = call && call.args && call.args[0];
     switch (call && call.method) {
-      case "setSubtitle": return { ...state, text: String(value || "") };
+      case "setSubtitle": return String(value || "").trim() ? { ...state, text: String(value) } : state;
       case "setEmotion": return { ...state, emotion: aliases[value] || String(value || "normal") };
       case "triggerSpriteForgeIntent": return aliases[value] ? { ...state, emotion: aliases[value] } : state;
       case "setSpeaking": return { ...state, speaking: value === true };

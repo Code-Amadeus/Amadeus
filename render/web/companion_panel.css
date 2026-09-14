@@ -18,7 +18,13 @@ button:hover, button:focus-visible { border-color: #397c73; background: #123c40;
 #caption { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #397c73 transparent; font-size: 14px; line-height: 1.7; padding-right: 4px; }
 #caption:focus-visible { outline: 1px solid #397c73; }
 footer { min-height: 28px; display: flex; align-items: center; gap: 10px; color: #6d9f96; font: 9px Consolas, monospace; }
-.signal { color: #528e83; letter-spacing: 2px; }
+.signal { color: #477a70; display: flex; align-items: center; gap: 3px; height: 12px; }
+.signal i { width: 2px; height: 10px; background: currentColor; transform: scaleY(.1); }
 body.speaking .signal { color: #91dfcc; }
+body.speaking .signal i { animation: voice-signal .68s steps(4) infinite alternate; }
+body.speaking .signal i:nth-child(3n+2) { animation-delay: -.34s; }
+body.speaking .signal i:nth-child(3n) { animation-delay: -.17s; }
+@keyframes voice-signal { from { transform: scaleY(.2); } to { transform: scaleY(1); } }
+@media (prefers-reduced-motion: reduce) { body.speaking .signal i { animation: none; transform: scaleY(.6); } }
 .drag-hint { margin-left: auto; font-family: "Microsoft YaHei UI", sans-serif; }
 @media (max-width: 380px) { .companion-card { padding: 0 14px; } .portrait { width: 88px; height: 112px; } .dialogue { gap: 13px; } .link-label { display: none; } .brand { margin-right: auto; } }

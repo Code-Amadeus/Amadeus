@@ -120,6 +120,9 @@ class _BridgeState:
         self.bootstrap_calls: list[dict] = []
         self.bootstrap_keys: dict[str, int] = {}
         self.last_calls: dict[str, dict] = {}
+        # Compact cards retain the last spoken line for this bridge lifetime;
+        # wallpaper subtitles still clear normally when speech finishes.
+        self.last_caption: dict | None = None
         self.action_token = secrets.token_urlsafe(24)
         self.canvas_action_handler: Callable[[dict], dict] | None = None
         self.chat_submit_handler: Callable[[dict], dict] | None = None
@@ -140,12 +143,14 @@ class _BridgeState:
             "calls": [item for item in (presentation, canvas, attention) if item]
         }
 
-    def add_client(self) -> queue.Queue[dict]:
+    def add_client(self, *, retain_subtitle: bool = False) -> queue.Queue[dict]:
         q: queue.Queue[dict] = queue.Queue()
         with self.lock:
             # Seed and subscribe under the same lock: reconnecting renderers
             # must see current Host state before subsequent live updates.
             for event in (*self.bootstrap_calls, *self.last_calls.values()):
+                if retain_subtitle and event.get("method") == "setSubtitle":
+                    event = self.last_caption or event
                 q.put_nowait(event)
             self.clients.append(q)
         return q
@@ -178,6 +183,8 @@ class _BridgeState:
         with self.lock:
             if replay:
                 self.last_calls[replay] = event
+            if event.get("method") == "setSubtitle" and str(event["args"][0] or "").strip():
+                self.last_caption = event
             clients = list(self.clients)
             canvas_clients = (
                 list(self.canvas_clients)
@@ -554,7 +561,11 @@ def _make_bridge_handler(
                 self._stream_events(state.add_canvas_client, state.remove_canvas_client)
                 return
             if self.path.startswith("/wallpaper-engine/events") or self.path.startswith("/wallpaper/events"):
-                self._stream_events(state.add_client, state.remove_client)
+                query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+                self._stream_events(
+                    lambda: state.add_client(retain_subtitle=query.get("retainSubtitle") == ["true"]),
+                    state.remove_client,
+                )
                 return
             if self.path.startswith("/wallpaper-engine/health") or self.path.startswith("/wallpaper/health"):
                 body = b'{"ok":true}'

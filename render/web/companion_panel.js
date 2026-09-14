@@ -13,7 +13,7 @@
   function paint() {
     const text = connected ? (state.text || "我在这里，继续吧。") : "连接已断开，正在重连…";
     if (caption.textContent !== text) { caption.textContent = text; caption.scrollTop = 0; }
-    status.textContent = connected ? (state.speaking ? "SPEAKING" : "STANDBY") : "RECONNECTING";
+    status.textContent = connected ? (state.speaking ? "VOICE" : "STANDBY") : "RECONNECTING";
     document.body.classList.toggle("speaking", connected && state.speaking);
   }
   document.getElementById("close").onclick = () => { void api?.close(); };
@@ -30,12 +30,12 @@
     portrait.src = sequence[frameIndex++ % sequence.length];
     portrait.hidden = false;
     fallback.hidden = true;
-  }, 180);
+  }, 170);
   async function start() {
     frames = await api?.portraits() || {};
     const port = Number(new URLSearchParams(location.search).get("bridgePort"));
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Missing presentation bridge");
-    source = new EventSource(`http://127.0.0.1:${port}/wallpaper/events`);
+    source = new EventSource(`http://127.0.0.1:${port}/wallpaper/events?retainSubtitle=true`);
     source.onopen = () => {
       connected = true;
       paint();
@@ -50,7 +50,11 @@
     source.onmessage = event => {
       try {
         const next = window.CompanionPresentation.apply(state, JSON.parse(event.data));
-        if (next !== state) { state = next; paint(); }
+        if (next !== state) {
+          if (next.emotion !== state.emotion || next.speaking !== state.speaking) frameIndex = 0;
+          state = next;
+          paint();
+        }
       } catch (error) { console.warn("[companion] invalid presentation event", error); }
     };
   }
