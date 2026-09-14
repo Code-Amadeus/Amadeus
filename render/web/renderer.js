@@ -25,11 +25,12 @@
   // PixiJS Application
   // ---------------------------------------------------------------------------
   const GLOBAL_MAX_FPS = 30;
+  const GLOBAL_MAX_RESOLUTION = 1.5;
   const app = new PIXI.Application({
     resizeTo: document.getElementById("canvas-container"),
     backgroundAlpha: 0,          // Transparent background
     autoDensity: true,
-    resolution: window.devicePixelRatio || 1,
+    resolution: Math.min(window.devicePixelRatio || 1, GLOBAL_MAX_RESOLUTION),
     antialias: true,
   });
   app.ticker.maxFPS = GLOBAL_MAX_FPS;
