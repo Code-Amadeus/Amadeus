@@ -71,11 +71,6 @@ The owner-selected gate is warm ordinary Chat reaching its first audio-device wr
 within 1.5 seconds, with professional planning enabled. Cold startup and task-response
 latency are separate measurements. The integration-workspace samples passed that gate.
 
-本次测试从新西兰发起，请求中国大陆的 DeepSeek 服务，首声耗时包含这段跨境网络通信。
-这里的首声是 E2E 延迟：从文字请求提交，到音频设备首次成功写入声音，包含模型请求、
-网络通信、首句生成和播放链路。在通信延迟更低的环境下，预热后的 E2E 首声有机会进入
-1 秒内。开启专业路由后，角色首句仍可先行回应，不必等待专业规划完成。
-
 The test client was in New Zealand, calling the DeepSeek service in mainland China.
 First-audio latency includes that cross-border network communication. With lower
 communication latency, warm end-to-end first audio may fall below one second.
