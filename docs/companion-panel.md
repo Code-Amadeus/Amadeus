@@ -4,6 +4,11 @@ The optional panel brings the existing VN-style portrait and speaking card besid
 selected Work preview. It reuses the existing portrait cache and Host presentation
 signals; it does not start another VN session, TTS pipeline, Work, or AUIP authority.
 
+![Companion panel showing a portrait, dialogue caption and VOICE indicator](images/companion-panel-speaking.png)
+
+Local UI preview in the speaking state, using the optional VN portrait cache and
+test presentation events. The still image shows the signal bars during animation.
+
 Speech completion must leave the just-spoken line on an already open card. Empty
 subtitle cleanup and the transition to standby must not replace it with a welcome
 line; only the next non-empty subtitle replaces it. The card also restores the
