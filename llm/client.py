@@ -10,8 +10,13 @@
   - local_llm_type : str，覆盖纯本地链路的 backend 类型
 """
 
+import asyncio
+import base64
 import json
 import logging
+import re
+from contextlib import ExitStack, closing
+from typing import Any, Callable, Mapping
 
 import requests
 from openai import OpenAI
@@ -42,14 +47,29 @@ gemini_model = None
 bedrock_http_client = None
 bedrock_runtime_client = None
 
-
 def configure(llm_provider: str = None, local_llm_type: str = None):
     """设置当前进程的 LLM 路由选项。"""
-    global LLM_PROVIDER, LOCAL_LLM_TYPE
+    global LLM_PROVIDER, LOCAL_LLM_TYPE, llm_client
     if llm_provider is not None:
-        LLM_PROVIDER = llm_provider
+        previous_family = _openai_client_family(LLM_PROVIDER)
+        next_provider = str(llm_provider).strip().lower()
+        LLM_PROVIDER = next_provider
+        if _openai_client_family(next_provider) != previous_family:
+            # DeepSeek and OpenAI use the same SDK type but different endpoints.
+            # Keeping the old object silently sends a newly selected model to the
+            # previous service.
+            llm_client = None
     if local_llm_type is not None:
         LOCAL_LLM_TYPE = local_llm_type
+
+
+def _openai_client_family(provider: str) -> str:
+    selected = str(provider or "").strip().lower()
+    if selected in {"deepseek", "hybrid2"}:
+        return "deepseek"
+    if selected in {"openai", "hybrid3"}:
+        return "openai"
+    return ""
 
 
 # =============================================================================
@@ -198,18 +218,25 @@ def remote_llm_messages_query(
     max_tokens: int = 900,
     timeout: float = 45.0,
     model: str | None = None,
+    response_observer: Callable[[Mapping[str, Any]], None] | None = None,
+    visual_context: dict[str, Any] | None = None,
+    on_text: Callable[[str], None] | None = None,
+    json_output: bool = True,
 ) -> str:
-    """Query the configured OpenAI-compatible backend with an exact history.
+    """Query the selected Chat backend with the supplied role messages.
 
     ControlDecision needs the production system message and prior conversation
     as distinct roles. Flattening them into ``remote_llm_query(question)``
     silently removes the very history that resolves follow-ups and Project
-    references, so this narrow port preserves the supplied message topology.
-    Unsupported backends fail visibly; the caller's shadow contract converts
-    that to ``unavailable`` and never touches dispatch.
+    references. This narrow port therefore adapts the same message list to each
+    existing Chat backend instead of restricting which model the user may pick.
+
+    ``on_text`` consumes deltas from that same request. Exceptions propagate and
+    close its stream. CLI retains its existing complete-only query because its
+    shared process has no per-query cancellation owner.
     """
 
-    global llm_client
+    global llm_client, gemini_model
     normalized = [
         {
             "role": str(message.get("role") or ""),
@@ -222,38 +249,438 @@ def remote_llm_messages_query(
         raise ValueError("message query requires a leading system message")
     if not any(message["role"] == "user" for message in normalized[1:]):
         raise ValueError("message query requires a user message")
-    if LLM_PROVIDER in ("deepseek", "hybrid2"):
+
+    selected_provider = str(LLM_PROVIDER or "").strip().lower()
+    if visual_context:
+        from llm.visual_context import attach_openai_chat_image, visual_notice_text
+
+        if selected_provider in {"openai", "hybrid3"} and not visual_context.get("error"):
+            normalized = attach_openai_chat_image(normalized, visual_context)
+        elif selected_provider != "gemini" or visual_context.get("error"):
+            # Match ChatRuntime's text-only backends, including local. A visual
+            # input does not change the selected model or add another model pass.
+            for message in reversed(normalized):
+                if message["role"] == "user":
+                    message["content"] = visual_notice_text(
+                        message["content"], visual_context, supported=False,
+                    )
+                    break
+    requested_model = ""
+    response_model = None
+    response_id = None
+    finish_reason = None
+
+    if selected_provider in ("deepseek", "hybrid2"):
         if llm_client is None:
             llm_client = init_llm_client()
+        requested_model = str(model or DEEPSEEK_MODEL_NAME)
         response = llm_client.chat.completions.create(
-            model=str(model or DEEPSEEK_MODEL_NAME),
+            model=requested_model,
             messages=normalized,
             temperature=float(temperature),
             max_tokens=max(1, int(max_tokens)),
-            stream=False,
+            stream=on_text is not None,
             timeout=float(timeout),
-            response_format={"type": "json_object"},
+            **({"response_format": {"type": "json_object"}} if json_output else {}),
             extra_body={"thinking": {"type": "disabled"}},
         )
-    elif LLM_PROVIDER in ("openai", "hybrid3"):
+        content, response_model, response_id, finish_reason = (
+            _openai_response_details(response, on_text=on_text)
+        )
+    elif selected_provider in ("openai", "hybrid3"):
         if llm_client is None:
             llm_client = init_llm_client()
+        requested_model = str(model or OPENAI_MODEL_NAME)
         response = llm_client.chat.completions.create(
-            model=str(model or OPENAI_MODEL_NAME),
+            model=requested_model,
             messages=normalized,
             max_completion_tokens=max(1, int(max_tokens)),
             reasoning_effort="low",
-            stream=False,
+            stream=on_text is not None,
             timeout=float(timeout),
-            response_format={"type": "json_object"},
+            **({"response_format": {"type": "json_object"}} if json_output else {}),
         )
+        content, response_model, response_id, finish_reason = (
+            _openai_response_details(response, on_text=on_text)
+        )
+    elif selected_provider == "gemini":
+        if gemini_model is None:
+            gemini_model = init_llm_client()
+        requested_model = str(model or GEMINI_MODEL_NAME)
+        contents = [
+            {
+                "role": "model" if message["role"] == "assistant" else "user",
+                "parts": [{"text": message["content"]}],
+            }
+            for message in normalized[1:]
+        ]
+        if visual_context and not visual_context.get("error"):
+            from google.genai import types
+            from llm.visual_context import gemini_contents
+
+            for index in range(len(contents) - 1, -1, -1):
+                if normalized[index + 1]["role"] == "user":
+                    # The public SDK content adapter encodes the helper's PIL
+                    # image while keeping this turn separate from prior roles.
+                    contents[index] = types.UserContent(parts=gemini_contents(
+                        normalized[index + 1]["content"], visual_context,
+                    ))
+                    break
+        generation_config = {
+            "system_instruction": normalized[0]["content"],
+            "temperature": float(temperature),
+            "max_output_tokens": max(1, int(max_tokens)),
+            **({"response_mime_type": "application/json"} if json_output else {}),
+        }
+        if on_text is None:
+            content = generate_gemini_text(
+                gemini_model, model=requested_model, contents=contents, config=generation_config,
+            )
+        else:
+            stream = gemini_model.models.generate_content_stream(
+                model=requested_model, contents=contents, config=generation_config,
+            )
+            content = _collect_text_stream(stream, lambda chunk: chunk.text or "", on_text)
+        response_model = requested_model
+    elif selected_provider in {"bedrock", "hybrid"}:
+        requested_model = str(model or _bedrock_model_id())
+        content = _bedrock_messages_query(
+            normalized,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout=timeout,
+            model=requested_model,
+            **({"on_text": on_text} if on_text is not None else {}),
+        )
+        response_model = requested_model
+    elif selected_provider == "local":
+        requested_model = str(model or LOCAL_LLM_MODEL)
+        content = _local_messages_query(
+            normalized,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout=timeout,
+            model=requested_model,
+            **({"on_text": on_text} if on_text is not None else {}),
+            **({"json_output": False} if not json_output else {}),
+        )
+        response_model = requested_model
     else:
-        raise RuntimeError(
-            f"structured control message query is unavailable for {LLM_PROVIDER!r}"
-        )
+        raise RuntimeError(f"message query is unavailable for {selected_provider!r}")
+
+    if response_observer is not None:
+        # Explicit diagnostic probes may inspect the native response boundary.
+        # No routine logging, new model call, or change to the text contract.
+        try:
+            response_observer({
+                "provider": selected_provider,
+                "requested_model": requested_model,
+                "response_model": response_model,
+                "response_id": response_id,
+                "finish_reason": finish_reason,
+                "content_type": type(content).__name__,
+                "content": content,
+            })
+        except Exception:
+            logger.debug("structured response observation failed", exc_info=True)
+    return str(content or "")
+
+
+def _collect_text_stream(stream, extract, on_text: Callable[[str], None]) -> str:
+    pieces = []
+    with closing(stream):
+        for chunk in stream:
+            text = extract(chunk)
+            if text:
+                pieces.append(text)
+                on_text(text)
+    return "".join(pieces)
+
+
+def _openai_response_details(response: Any, *, on_text=None) -> tuple[Any, Any, Any, Any]:
+    if on_text is not None:
+        model = response_id = finish_reason = None
+
+        def extract(chunk):
+            nonlocal model, response_id, finish_reason
+            model = getattr(chunk, "model", None) or model
+            response_id = getattr(chunk, "id", None) or response_id
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                return ""
+            finish_reason = getattr(choices[0], "finish_reason", None) or finish_reason
+            return getattr(getattr(choices[0], "delta", None), "content", "") or ""
+
+        content = _collect_text_stream(response, extract, on_text)
+        return content, model, response_id, finish_reason
     if not response or not getattr(response, "choices", None):
         raise RuntimeError("structured control backend returned no choices")
-    return str(response.choices[0].message.content or "")
+    choice = response.choices[0]
+    return (
+        getattr(getattr(choice, "message", None), "content", "") or "",
+        getattr(response, "model", None),
+        getattr(response, "id", None),
+        getattr(choice, "finish_reason", None),
+    )
+
+
+def _bedrock_model_id() -> str:
+    if AWS_BEDROCK_USE_INFERENCE_PROFILE and AWS_BEDROCK_INFERENCE_PROFILE_ID:
+        return str(AWS_BEDROCK_INFERENCE_PROFILE_ID)
+    return str(AWS_BEDROCK_MODEL_ID)
+
+
+def _bedrock_messages_query(
+    messages: list[dict[str, str]],
+    *,
+    temperature: float,
+    max_tokens: int,
+    timeout: float,
+    model: str,
+    on_text: Callable[[str], None] | None = None,
+) -> str:
+    global bedrock_http_client, bedrock_runtime_client
+
+    init_llm_client()
+    payload = {
+        "max_tokens": max(1, int(max_tokens)),
+        "temperature": float(temperature),
+        "messages": messages,
+    }
+    if on_text is not None:
+        return _bedrock_messages_stream(payload, model=model, timeout=timeout, on_text=on_text)
+    boto3_error: Exception | None = None
+    if AWS_BEDROCK_AUTH_MODE != "bearer":
+        try:
+            if bedrock_runtime_client is None:
+                import boto3
+
+                bedrock_runtime_client = boto3.client(
+                    "bedrock-runtime", region_name=AWS_BEDROCK_REGION
+                )
+            response = bedrock_runtime_client.invoke_model(
+                modelId=model,
+                body=json.dumps(payload),
+            )
+            return _bedrock_response_text(json.loads(response["body"].read()))
+        except Exception as exc:
+            boto3_error = exc
+            if AWS_BEDROCK_AUTH_MODE == "boto3":
+                raise RuntimeError(f"Bedrock boto3 request failed: {exc}") from exc
+
+    if not AWS_BEDROCK_BEARER_TOKEN:
+        detail = f": {boto3_error}" if boto3_error else ""
+        raise RuntimeError("Bedrock bearer token is unavailable" + detail)
+    url = f"{AWS_BEDROCK_ENDPOINT}/model/{model}/invoke"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {AWS_BEDROCK_BEARER_TOKEN}",
+    }
+    client = bedrock_http_client
+    if client is not None:
+        response = client.post(url, headers=headers, json=payload, timeout=float(timeout))
+    else:
+        response = requests.post(
+            url, headers=headers, json=payload, timeout=float(timeout)
+        )
+    response.raise_for_status()
+    return _bedrock_response_text(response.json())
+
+
+def _bedrock_messages_stream(payload, *, model, timeout, on_text) -> str:
+    """Use the existing Bedrock stream protocol; never retry after submission."""
+    from llm.hybrid_stream import _extract_token, _SENTINEL
+
+    payload = {**payload, "model": model, "stream": True}
+    pieces = []
+
+    def accept(data):
+        if data.get("type") == "error" or data.get("error"):
+            raise RuntimeError(f"Bedrock stream error: {data}")
+        token = _extract_token(data)
+        if token is _SENTINEL:
+            return False
+        if token:
+            pieces.append(token)
+            on_text(token)
+        return True
+
+    if AWS_BEDROCK_AUTH_MODE != "bearer" and bedrock_runtime_client is not None:
+        response = bedrock_runtime_client.invoke_model_with_response_stream(
+            modelId=model, body=json.dumps(payload),
+        )
+        with closing(response["body"]) as stream:
+            for event in stream:
+                if "chunk" not in event:
+                    raise RuntimeError(f"Bedrock stream error: {event}")
+                if not accept(json.loads(event["chunk"]["bytes"])):
+                    break
+    else:
+        if AWS_BEDROCK_AUTH_MODE == "boto3" or not AWS_BEDROCK_BEARER_TOKEN:
+            raise RuntimeError("Bedrock streaming authentication is unavailable")
+        from botocore.eventstream import EventStreamBuffer
+
+        url = f"{AWS_BEDROCK_ENDPOINT}/model/{model}/invoke-with-response-stream"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {AWS_BEDROCK_BEARER_TOKEN}",
+        }
+        with ExitStack() as stack:
+            if bedrock_http_client is not None:
+                response = stack.enter_context(bedrock_http_client.stream(
+                    "POST", url, headers=headers, json=payload, timeout=float(timeout),
+                ))
+                chunks = response.iter_bytes()
+            else:
+                response = stack.enter_context(closing(requests.post(
+                    url, headers=headers, json=payload, timeout=float(timeout), stream=True,
+                )))
+                chunks = response.iter_content(chunk_size=8192)
+            response.raise_for_status()
+            buffer = EventStreamBuffer()
+            for chunk in chunks:
+                buffer.add_data(chunk)
+                for event in buffer:
+                    if event.headers.get(":message-type") in {"exception", "error"}:
+                        raise RuntimeError(f"Bedrock stream error: {event.payload!r}")
+                    data = json.loads(event.payload)
+                    if "bytes" in data:
+                        data = json.loads(base64.b64decode(data["bytes"]))
+                    if not accept(data):
+                        return "".join(pieces)
+    return "".join(pieces)
+
+
+def _bedrock_response_text(result: Mapping[str, Any]) -> str:
+    content = result.get("content")
+    if isinstance(content, list):
+        text = "".join(
+            str(item.get("text") or "")
+            for item in content
+            if isinstance(item, Mapping)
+        )
+        if text:
+            return text
+    output = result.get("output")
+    if isinstance(output, Mapping):
+        message = output.get("message")
+        if isinstance(message, Mapping):
+            return _bedrock_response_text(message)
+    raise RuntimeError("Bedrock structured message query returned no text")
+
+
+def _local_messages_query(
+    messages: list[dict[str, str]],
+    *,
+    temperature: float,
+    max_tokens: int,
+    timeout: float,
+    model: str,
+    on_text: Callable[[str], None] | None = None,
+    json_output: bool = True,
+) -> str:
+    backend = str(LOCAL_LLM_TYPE or "").strip().lower()
+    if backend == "cli":
+        transcript = "\n".join(
+            f"{message['role'].capitalize()}: {message['content']}"
+            for message in messages[1:]
+        )
+        content = asyncio.run(
+            local_llm_query_cli(
+                transcript,
+                stream=False,
+                system_prompt=messages[0]["content"],
+            )
+        )
+        # The reusable CLI process has no per-query cancellation owner. Keep its
+        # existing single complete query; do not claim native token streaming.
+        if on_text is not None:
+            on_text(content)
+        return content
+
+    url = local_chat_url(
+        backend,
+        llama_server_url=LOCAL_LLM_URL,
+        lmstudio_url=LOCAL_LLM_LM_STUDIO_URL,
+        ollama_url=LOCAL_LLM_OLLAMA_URL,
+    )
+    if backend == "ollama":
+        payload = {
+            "model": model,
+            "messages": messages,
+            "stream": on_text is not None,
+            **({"format": "json"} if json_output else {}),
+            "options": {
+                "temperature": float(temperature),
+                "num_predict": max(1, int(max_tokens)),
+            },
+        }
+        if on_text is not None:
+            return _local_messages_stream(url, payload, timeout=timeout, on_text=on_text, ollama=True)
+        response = requests.post(url, json=payload, timeout=float(timeout))
+        response.raise_for_status()
+        result = response.json()
+        message = result.get("message") if isinstance(result, Mapping) else None
+        if not isinstance(message, Mapping):
+            raise RuntimeError("Ollama message query returned no message")
+        return str(message.get("content") or "")
+
+    if backend not in {"llama_server", "lmstudio"}:
+        raise RuntimeError(f"unsupported local LLM type: {backend!r}")
+    payload = {
+        "model": model,
+        "messages": messages,
+        "stream": on_text is not None,
+        "temperature": float(temperature),
+        "max_tokens": max(1, int(max_tokens)),
+    }
+    if backend == "llama_server":
+        payload["cache_prompt"] = True
+    if on_text is not None:
+        return _local_messages_stream(url, payload, timeout=timeout, on_text=on_text)
+    response = requests.post(url, json=payload, timeout=float(timeout))
+    response.raise_for_status()
+    result = response.json()
+    choices = result.get("choices") if isinstance(result, Mapping) else None
+    if not isinstance(choices, list) or not choices:
+        raise RuntimeError("local message query returned no choices")
+    message = choices[0].get("message") if isinstance(choices[0], Mapping) else None
+    if not isinstance(message, Mapping):
+        raise RuntimeError("local message query returned no message")
+    content = str(message.get("content") or "")
+    return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+
+
+def _local_messages_stream(url, payload, *, timeout, on_text, ollama=False) -> str:
+    pieces = []
+    with closing(requests.post(
+        url, json=payload, timeout=float(timeout), stream=True,
+    )) as response:
+        response.raise_for_status()
+        for line in response.iter_lines():
+            line = line.decode("utf-8") if isinstance(line, bytes) else line
+            if not line:
+                continue
+            if not ollama:
+                if not line.startswith("data:"):
+                    continue
+                line = line[5:].strip()
+                if line == "[DONE]":
+                    break
+            data = json.loads(line)
+            if data.get("error"):
+                raise RuntimeError(f"local stream error: {data['error']}")
+            if ollama:
+                text = (data.get("message") or {}).get("content") or ""
+            else:
+                choices = data.get("choices") or []
+                text = ((choices[0].get("delta") or {}).get("content") or "") if choices else ""
+            if text:
+                pieces.append(text)
+                on_text(text)
+            if ollama and data.get("done"):
+                break
+    return "".join(pieces)
 
 from llm.prompts import get_system_prompt as _get_system_prompt
 

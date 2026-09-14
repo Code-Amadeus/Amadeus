@@ -22,8 +22,11 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Awaitable, Callable, Protocol
+
+from agent_host.work_ledger_store import WorkLedgerError
+from server.reference_catalog import TypedReferenceCandidate
 
 from server.attention_request import (
     AttentionOption,
@@ -35,6 +38,7 @@ from server.auip_app_source import (
     discover_launchable_auip_app,
     list_current_runnable_artifacts,
 )
+from server.auip_contract import available_engagement_modes
 from server.event_bus import bus
 from server.protocol import Method
 from server.work_permission_service import WorkPermissionService
@@ -46,6 +50,12 @@ DEFERRED_LAUNCH_TTL_S = 30 * 60.0
 
 
 class WorkRoster(Protocol):
+    destination: Any
+
+    def workspace_routing_context(self, *, limit: int = 8) -> dict[str, Any]: ...
+
+    def project_apps(self, project_id: str, *, limit: int = 100) -> dict[str, Any]: ...
+
     def conversation_work_items_for_resolution(
         self,
         session_id: str,
@@ -66,19 +76,14 @@ class AuipLaunchCandidate:
     work_title: str
     stances: tuple[str, ...]
     contributing_attempt_ids: tuple[str, ...]
+    project_id: str = ""
+    project_title: str = ""
 
     def prompt_dict(self) -> dict[str, Any]:
         return {
             "app": self.title,
             "work": self.work_title,
-            "modes": [
-                "observe",
-                *(
-                    ["collaborate", "delegate"]
-                    if "participant" in self.stances
-                    else []
-                ),
-            ],
+            "modes": available_engagement_modes(self.stances),
         }
 
 
@@ -108,6 +113,8 @@ class _DeferredLaunch:
     expires_at: float
     work_item_id: str = ""
     operation_id: str = ""
+    input_id: str = ""
+    source_app_session_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,8 +128,9 @@ class _LaunchRequest:
 Emitter = Callable[[str, dict[str, Any]], Awaitable[None]]
 PreparationDispatcher = Callable[
     [AuipPreparationCandidate, str],
-    Awaitable[None],
+    Awaitable[dict[str, Any] | None],
 ]
+BeforeResultEntry = Callable[[str, AuipLaunchCandidate], Awaitable[bool]]
 
 
 class AuipLaunchCoordinator:
@@ -136,50 +144,46 @@ class AuipLaunchCoordinator:
         attention: AttentionRequestCoordinator,
         emit: Emitter | None = None,
         clock: Callable[[], float] = time.time,
+        before_result_entry: BeforeResultEntry | None = None,
     ) -> None:
         self.artifacts = artifacts
         self.work_roster = work_roster
         self.attention = attention
         self.emit = emit or bus.emit
         self.clock = clock
+        self.before_result_entry = before_result_entry
         self._deferred: dict[tuple[str, str], _DeferredLaunch] = {}
         self._launch_requests: dict[str, _LaunchRequest] = {}
 
-    def candidates(self, session_id: str, *, limit: int = 8) -> list[AuipLaunchCandidate]:
+    def _complete_roster_rows(self, session_id: str) -> list[dict[str, Any]] | None:
         roster = self.work_roster.conversation_work_items_for_resolution(
             str(session_id or ""),
             limit=200,
         )
-        rows = roster.get("items") if isinstance(roster, dict) else []
-        candidates: list[AuipLaunchCandidate] = []
-        for row in rows if isinstance(rows, list) else []:
-            if not isinstance(row, dict):
-                continue
-            work_item_id = str(row.get("work_item_id") or "")
-            app = discover_launchable_auip_app(self.artifacts, work_item_id)
-            if app is None:
-                continue
-            app_meta = app.get("app") if isinstance(app.get("app"), dict) else {}
-            artifact_id = str(app.get("artifact_id") or "")
-            candidates.append(
-                AuipLaunchCandidate(
-                    token=f"auip:{artifact_id}",
-                    artifact_id=artifact_id,
-                    artifact_ref=str(app.get("artifact_ref") or ""),
-                    app_id=str(app_meta.get("id") or artifact_id),
-                    app_version=str(app_meta.get("version") or "0"),
-                    work_item_id=work_item_id,
-                    title=str(app_meta.get("title") or app.get("title") or "AUIP app"),
-                    work_title=str(row.get("title") or "WorkItem"),
-                    stances=tuple(str(value) for value in app.get("stances") or []),
-                    contributing_attempt_ids=tuple(
-                        str(value) for value in app.get("contributing_attempt_ids") or []
-                    ),
-                )
+        if not isinstance(roster, dict) or roster.get("complete") is not True:
+            logger.warning(
+                "AUIP candidate resolution refused an incomplete Work roster "
+                "session_id=%s",
+                session_id,
             )
-            if len(candidates) >= max(1, min(int(limit), 8)):
-                break
-        return candidates
+            return None
+        rows = roster.get("items")
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            logger.warning(
+                "AUIP candidate resolution refused a malformed Work roster "
+                "session_id=%s",
+                session_id,
+            )
+            return None
+        return rows
+
+    def candidates(self, session_id: str, *, limit: int = 8) -> list[AuipLaunchCandidate]:
+        return self.entry_candidates(session_id, limit=limit)[0]
+
+    def entry_candidates(self, session_id: str, *, limit: int = 8
+            ) -> tuple[list[AuipLaunchCandidate], list[AuipPreparationCandidate]]:
+        """Capture launch and preparation capabilities in one discovery."""
+        return self._entry_candidates(session_id, limit=limit)
 
     def preparation_candidates(
         self,
@@ -195,44 +199,157 @@ class AuipLaunchCoordinator:
         every ordinary response.
         """
 
-        roster = self.work_roster.conversation_work_items_for_resolution(
-            str(session_id or ""),
-            limit=200,
-        )
-        rows = roster.get("items") if isinstance(roster, dict) else []
-        candidates: list[AuipPreparationCandidate] = []
-        for row in rows if isinstance(rows, list) else []:
-            if not isinstance(row, dict):
-                continue
+        return self.entry_candidates(session_id, limit=limit)[1]
+
+    def has_project_history(self) -> bool:
+        return bool(self.work_roster.workspace_routing_context(limit=1).get("candidateCount"))
+
+    def project_references(self, session_id: str) -> tuple[tuple[TypedReferenceCandidate, ...], bool]:
+        routing = self.work_roster.workspace_routing_context(limit=200)
+        current = self.work_roster.destination.session_project(session_id)
+        return tuple(TypedReferenceCandidate(kind="project", entity_id=row["projectId"],
+            label=row["projectName"], scope="persistent", aliases=tuple(row.get("projectAliases") or ()),
+            session_current=row["projectId"] == current)
+            for row in routing.get("candidates") or []), routing.get("candidatesComplete") is True
+
+    def project_candidates(self, session_id: str, *, current_only: bool,
+            project_ids: tuple[str, ...] | None = None) -> tuple[tuple[AuipLaunchCandidate, ...], bool]:
+        """Read the existing durable Project app indexes only on a cold lookup."""
+        routing = self.work_roster.workspace_routing_context(limit=200)
+        if routing.get("candidatesComplete") is not True:
+            return (), False
+        current = self.work_roster.destination.session_project(session_id)
+        projects = [row for row in routing.get("candidates") or []
+            if (row.get("projectId") in project_ids if project_ids is not None
+                else (row.get("projectId") == current) == current_only)]
+        if project_ids is not None and {row["projectId"] for row in projects} != set(project_ids):
+            return (), False
+        candidates = []
+        for project in projects:
+            catalog = self.work_roster.project_apps(project["projectId"], limit=200)
+            if catalog.get("complete") is not True:
+                return (), False
+            for app in catalog.get("apps") or []:
+                candidates.append(AuipLaunchCandidate(
+                    token="auip:" + app["artifactId"], artifact_id=app["artifactId"],
+                    artifact_ref=app["artifactRef"], app_id=app["appId"], app_version=app["version"],
+                    work_item_id=app["workItemId"], title=app["title"], work_title=app["workTitle"],
+                    stances=("spectator", "participant") if "collaborate" in app["modes"] else ("spectator",),
+                    contributing_attempt_ids=(), project_id=project["projectId"],
+                    project_title=project["projectName"]))
+        return tuple(candidates), True
+
+    def entry_references(self, candidates) -> tuple[tuple[TypedReferenceCandidate, ...], bool]:
+        """Describe the exact Work/Project owners of one frozen app set."""
+        references = []
+        for index, candidate in enumerate(candidates):
+            item = self.artifacts.get_work_item(candidate.work_item_id)
+            if item is None:
+                return (), False
+            draft = self.work_roster.destination.is_unkept_draft(item.workspace_path)
+            project = self.artifacts.get_project(item.project_id)
+            if not draft and project is None:
+                return (), False
+            references.append(TypedReferenceCandidate(kind="work_item",
+                entity_id=item.work_item_id, label=candidate.title,
+                scope="session_draft" if draft else "project",
+                parent_project_id="" if draft else project.project_id,
+                parent_project_label="" if draft else project.name,
+                aliases=(candidate.work_title,), recency_rank=index,
+                delegated_goal=item.goal))
+        return tuple(references), True
+
+    def _entry_candidates(
+        self, session_id: str, *, limit: int,
+    ) -> tuple[list[AuipLaunchCandidate], list[AuipPreparationCandidate]]:
+        """Both entry kinds share one completeness boundary per discovery.
+
+        An overflow in either kind invalidates the whole view. Otherwise an
+        unrepresented kind could make the remaining kind appear uniquely bound.
+        Preserve the existing per-kind bound; do not truncate either list.
+        """
+        rows = self._complete_roster_rows(session_id)
+        if rows is None:
+            return [], []
+        recent_drafts = None
+        draft_reader = getattr(self.work_roster, "draft_apps", None)
+        draft_check = getattr(getattr(self.work_roster, "destination", None), "is_unkept_draft", None)
+        if callable(draft_reader):
+            # Share the visible Draft shelf across conversations. Keeping one
+            # active Work pointer is not an application-history index.
+            shelf = draft_reader(limit=5)
+            apps = list(shelf.get("apps") or [])
+            if shelf.get("complete") is not True and len(apps) < 5:
+                return [], []
+            recent_drafts = {str(app["workItemId"]) for app in apps}
+            seen = {str(row.get("work_item_id") or "") for row in rows}
+            rows = [*rows, *({"work_item_id":app["workItemId"], "title":app["workTitle"]}
+                for app in apps if str(app["workItemId"]) not in seen)]
+        candidate_limit = max(1, min(int(limit), 8))
+        launch: list[AuipLaunchCandidate] = []
+        prepare: list[AuipPreparationCandidate] = []
+        for row in rows:
             work_item_id = str(row.get("work_item_id") or "").strip()
-            if not work_item_id or discover_launchable_auip_app(
-                self.artifacts,
-                work_item_id,
-            ) is not None:
+            if not work_item_id:
                 continue
-            runnable = list_current_runnable_artifacts(
-                self.artifacts,
-                work_item_id,
-            )
-            if not runnable:
-                continue
-            file_names = tuple(
-                dict.fromkeys(
-                    str(getattr(record, "path", "")).replace("\\", "/").rsplit("/", 1)[-1]
-                    for record in runnable
-                    if str(getattr(record, "path", "")).strip()
+            app = discover_launchable_auip_app(self.artifacts, work_item_id)
+            if app is not None:
+                project_title = ""
+                if recent_drafts is not None and callable(draft_check):
+                    item = self.artifacts.get_work_item(work_item_id)
+                    if item is not None:
+                        if draft_check(item.workspace_path):
+                            if work_item_id not in recent_drafts:
+                                continue
+                        else:
+                            project = self.artifacts.get_project(item.project_id)
+                            project_title = str(project.name if project is not None else "")
+                app_meta = app.get("app") if isinstance(app.get("app"), dict) else {}
+                artifact_id = str(app.get("artifact_id") or "")
+                launch.append(
+                    AuipLaunchCandidate(
+                        token=f"auip:{artifact_id}",
+                        artifact_id=artifact_id,
+                        artifact_ref=str(app.get("artifact_ref") or ""),
+                        app_id=str(app_meta.get("id") or artifact_id),
+                        app_version=str(app_meta.get("version") or "0"),
+                        work_item_id=work_item_id,
+                        title=str(app_meta.get("title") or app.get("title") or "AUIP app"),
+                        work_title=str(row.get("title") or "WorkItem"),
+                        stances=tuple(str(value) for value in app.get("stances") or []),
+                        contributing_attempt_ids=tuple(
+                            str(value) for value in app.get("contributing_attempt_ids") or []
+                        ),
+                        project_title=project_title,
+                    )
                 )
-            )
-            candidates.append(
-                AuipPreparationCandidate(
-                    work_item_id=work_item_id,
-                    work_title=str(row.get("title") or "WorkItem"),
-                    files=file_names[:3],
+            else:
+                runnable = list_current_runnable_artifacts(self.artifacts, work_item_id)
+                if not runnable:
+                    continue
+                file_names = tuple(
+                    dict.fromkeys(
+                        str(getattr(record, "path", "")).replace("\\", "/").rsplit("/", 1)[-1]
+                        for record in runnable
+                        if str(getattr(record, "path", "")).strip()
+                    )
                 )
-            )
-            if len(candidates) >= max(1, min(int(limit), 8)):
-                break
-        return candidates
+                prepare.append(
+                    AuipPreparationCandidate(
+                        work_item_id=work_item_id,
+                        work_title=str(row.get("title") or "WorkItem"),
+                        files=file_names[:3],
+                    )
+                )
+            if len(launch) > candidate_limit or len(prepare) > candidate_limit:
+                logger.warning(
+                    "AUIP entry candidate resolution exceeded its complete per-kind "
+                    "bound session_id=%s limit=%d",
+                    session_id,
+                    candidate_limit,
+                )
+                return [], []
+        return launch, prepare
 
     def render_prompt_context(
         self,
@@ -324,7 +441,19 @@ class AuipLaunchCoordinator:
         session_id: str,
         turn_id: str,
         prepare_work: PreparationDispatcher | None = None,
+        source_app_session_id: str = "",
     ) -> dict[str, Any]:
+        frozen = attrs.get("_host_launch_candidates")
+        if frozen is not None:
+            # Only Host candidate objects can cross this seam. Model JSON
+            # cannot turn an id/name into a captured artifact identity.
+            if (attrs.get("action") != "launch" or attrs.get("after")
+                    or not isinstance(frozen, tuple) or not frozen
+                    or any(not isinstance(item, AuipLaunchCandidate) for item in frozen)):
+                return {"ok": False, "error": "invalid_launch_binding"}
+            if len(frozen) == 1:
+                return await self._emit_launch(session_id, frozen[0], _mode(attrs.get("mode")))
+            return await self._request_selection(session_id, list(frozen), _mode(attrs.get("mode")))
         if str(attrs.get("action") or "").strip().lower() == "prepare":
             return await self._route_preparation(
                 attrs,
@@ -341,11 +470,24 @@ class AuipLaunchCoordinator:
             await self._announce_failure(session_id, "invalid_launch_timing")
             return {"ok": False, "error": "invalid_launch_timing"}
         if delivery_target:
+            source_app_session_id = str(source_app_session_id or "").strip()
             clean_turn = str(turn_id or "").strip()
             if not clean_turn:
                 await self._announce_failure(session_id, "launch_turn_unavailable")
                 return {"ok": False, "error": "launch_turn_unavailable"}
-            binding = str(attrs.get("_host_work_binding") or "turn").strip().lower()
+            binding = str(attrs.get("_host_work_binding") or "").strip().lower()
+            raw_input_id = attrs.get("_host_work_input_id")
+            if raw_input_id is None:
+                work_input_id = ""
+            elif (not isinstance(raw_input_id, str) or not raw_input_id
+                    or raw_input_id != raw_input_id.strip()):
+                await self._announce_failure(session_id, "invalid_work_input_binding")
+                return {"ok": False, "error": "invalid_work_input_binding"}
+            else:
+                work_input_id = raw_input_id
+            if work_input_id and binding != "active":
+                await self._announce_failure(session_id, "invalid_work_input_binding")
+                return {"ok": False, "error": "invalid_work_input_binding"}
             if binding == "active":
                 attempt_ids = tuple(
                     dict.fromkeys(
@@ -369,12 +511,16 @@ class AuipLaunchCoordinator:
                         clean_turn,
                         rows,
                         mode,
+                        work_input_id,
+                        source_app_session_id,
                     )
                 return await self._bind_deferred_work(
                     session_id,
                     clean_turn,
                     rows[0],
                     mode,
+                    work_input_id,
+                    source_app_session_id,
                 )
             if binding != "turn":
                 await self._announce_failure(session_id, "invalid_work_binding")
@@ -387,6 +533,7 @@ class AuipLaunchCoordinator:
                 requested_at=now,
                 expires_at=now + DEFERRED_LAUNCH_TTL_S,
                 work_item_id=str(attrs.get("_host_work_item_id") or "").strip(),
+                source_app_session_id=source_app_session_id,
             )
             self._deferred[(pending.session_id, pending.turn_id)] = pending
             return {"ok": True, "deferred": True, "turn_id": pending.turn_id}
@@ -400,7 +547,7 @@ class AuipLaunchCoordinator:
         if not candidates:
             await self._announce_failure(session_id, "no_launchable_auip_app")
             return {"ok": False, "error": "no_launchable_auip_app"}
-        if len(candidates) == 1:
+        if target and not matches:
             await self._announce_failure(session_id, "launch_target_not_found")
             return {"ok": False, "error": "launch_target_not_found"}
         ambiguous = matches if len(matches) > 1 else candidates
@@ -492,6 +639,9 @@ class AuipLaunchCoordinator:
         if not candidates:
             await self._announce_failure(session_id, "no_preparable_auip_app")
             return {"ok": False, "error": "no_preparable_auip_app"}
+        if (target or frozen_work_item_id) and not matches:
+            await self._announce_failure(session_id, "preparation_target_not_found")
+            return {"ok": False, "error": "preparation_target_not_found"}
         ambiguous = matches if len(matches) > 1 else candidates
         return await self._request_preparation_selection(
             session_id,
@@ -525,21 +675,31 @@ class AuipLaunchCoordinator:
             work_item_id=candidate.work_item_id,
         )
         try:
-            await prepare_work(candidate, mode)
+            work = await prepare_work(candidate, mode)
         except Exception:
-            self._deferred.pop(key, None)
             logger.exception(
                 "[AUIP-LAUNCH] preparation dispatch failed session=%s turn=%s",
                 clean_session,
                 clean_turn,
             )
-            await self._announce_failure(session_id, "preparation_start_failed")
-            return {"ok": False, "error": "preparation_start_failed"}
+            return {"ok": False, "uncertain": True, "error": "preparation_handoff_unknown"}
+        if isinstance(work, dict):
+            if work.get("state") != "work_started":
+                rejected = work.get("state") == "rejected"
+                if rejected:
+                    self._deferred.pop(key, None)
+                return {"ok":False, "uncertain":not rejected,
+                    "error":str(work.get("reason") or "preparation_not_started"), "work":work}
+            attempt = self.artifacts.get_attempt(str(work.get("attempt_id") or ""))
+            pending = self._deferred.get(key)
+            if attempt is not None and pending is not None:
+                self._deferred[key] = replace(pending, operation_id=attempt.operation_id)
         return {
             "ok": True,
             "deferred": True,
             "preparing": True,
             "turn_id": clean_turn,
+            **({"work":work} if isinstance(work, dict) else {}),
         }
 
     async def _request_preparation_selection(
@@ -584,11 +744,125 @@ class AuipLaunchCoordinator:
         )
         return {"ok": True, "deferred": True, "attention": request}
 
-    async def on_work_updated(self, _method: str, payload: dict[str, Any]) -> None:
+    def _deferred_input_state(
+        self,
+        pending: _DeferredLaunch,
+        matching_attempts: list[Any],
+    ) -> tuple[str, str]:
+        """Re-read one optional input receipt from its Work/Operation owner."""
+
+        if not pending.input_id:
+            return "not_required", ""
+        list_inputs = getattr(self.artifacts, "list_provider_inputs", None)
+        if not callable(list_inputs):
+            return "waiting", ""
+        try:
+            matches = [
+                row
+                for row in list_inputs(pending.work_item_id)
+                if isinstance(row, dict) and row.get("input_id") == pending.input_id
+            ]
+        except (WorkLedgerError, OSError, TypeError, ValueError):
+            return "waiting", ""
+        if len(matches) != 1:
+            return "waiting", ""
+        receipt = matches[0]
+        if not any(
+            str(getattr(attempt, "attempt_id", ""))
+            == str(receipt.get("attempt_id") or "")
+            and str(getattr(attempt, "provider_run_id", ""))
+            == str(receipt.get("provider_run_id") or "")
+            for attempt in matching_attempts
+        ):
+            return "waiting", ""
+        state = str(receipt.get("state") or "")
+        return (
+            state if state in {"delivered", "rejected"} else "waiting",
+            str(receipt.get("attempt_id") or ""),
+        )
+
+    async def _result_entry_ready(
+        self,
+        key: tuple[str, str],
+        pending: _DeferredLaunch,
+        candidate: AuipLaunchCandidate,
+    ) -> bool:
+        source_app_session_id = pending.source_app_session_id
+        if not source_app_session_id:
+            return True
+        callback = self.before_result_entry
+        if callback is None:
+            if self._deferred.get(key) is pending:
+                self._deferred.pop(key, None)
+                await self._announce_failure(
+                    pending.session_id,
+                    "result_entry_unavailable",
+                )
+            return False
+        try:
+            ready = await callback(source_app_session_id, candidate)
+        except Exception:
+            if self._deferred.get(key) is not pending:
+                return False
+            self._deferred.pop(key, None)
+            logger.exception(
+                "[AUIP-LAUNCH] result entry failed session=%s turn=%s source=%s",
+                pending.session_id,
+                pending.turn_id,
+                source_app_session_id,
+            )
+            await self._announce_failure(
+                pending.session_id,
+                "result_entry_failed",
+            )
+            return False
+        return ready is True
+
+    async def on_app_updated(self, _method: str, payload: dict[str, Any]) -> None:
+        if not self._deferred or not isinstance(payload, dict):
+            return
+        source_app_session_id = str(payload.get("app_session_id") or "").strip()
+        if not source_app_session_id:
+            return
+        status = str(payload.get("status") or "").strip().lower()
+        surface_close_status = str(
+            payload.get("surface_close_status") or ""
+        ).strip().lower()
+        if (
+            status not in {"closed", "disconnected"}
+            and surface_close_status not in {"closed", "failed"}
+        ):
+            return
+        if not any(
+            pending.source_app_session_id == source_app_session_id
+            for pending in self._deferred.values()
+        ):
+            return
+        await self.on_work_updated(
+            _method,
+            payload,
+            source_app_session_id=source_app_session_id,
+        )
+
+    async def on_work_updated(
+        self,
+        _method: str,
+        payload: dict[str, Any],
+        *,
+        source_app_session_id: str = "",
+        pending_key: tuple[str, str] | None = None,
+    ) -> None:
         if not self._deferred:
             return
         now = float(self.clock())
         for key, pending in list(self._deferred.items()):
+            if pending_key is not None and key != pending_key:
+                continue
+            if (
+                source_app_session_id
+                and pending.source_app_session_id != source_app_session_id
+            ):
+                continue
             if pending.expires_at <= now:
                 self._deferred.pop(key, None)
                 logger.warning(
@@ -625,9 +899,17 @@ class AuipLaunchCoordinator:
                         if str(getattr(attempt, "work_item_id", ""))
                         == pending.work_item_id
                     ]
+            input_state, input_attempt_id = self._deferred_input_state(
+                pending, matching_attempts
+            )
+            if input_state == "rejected":
+                self._deferred.pop(key, None)
+                continue
+            if input_state == "waiting":
+                continue
             if any(
                 str(getattr(attempt, "execution_status", ""))
-                in {"queued", "running"}
+                in {"queued", "running", "orphaned"}
                 for attempt in matching_attempts
             ):
                 continue
@@ -635,20 +917,30 @@ class AuipLaunchCoordinator:
                 attempt
                 for attempt in matching_attempts
                 if str(getattr(attempt, "execution_status", ""))
-                in {"succeeded", "failed", "cancelled", "orphaned"}
+                in {"succeeded", "failed", "cancelled"}
             ]
             if not terminal:
                 continue
+            input_result_attempt_ids = {input_attempt_id} if input_attempt_id else set()
+            predecessor_for = getattr(self.artifacts, "get_recovery_predecessor", None)
+            if input_attempt_id and callable(predecessor_for):
+                for attempt in terminal:
+                    predecessor = predecessor_for(attempt)
+                    if predecessor is not None and predecessor.attempt_id == input_attempt_id:
+                        input_result_attempt_ids.add(attempt.attempt_id)
             succeeded_ids = {
                 str(attempt.attempt_id)
                 for attempt in terminal
                 if str(attempt.execution_status) == "succeeded"
+                and (not input_attempt_id
+                    or str(attempt.attempt_id) in input_result_attempt_ids)
             }
             candidate = next(
                 (
                     item
                     for item in self.candidates(pending.session_id)
-                    if succeeded_ids.intersection(item.contributing_attempt_ids)
+                    if self._candidate_matches_attempts(item, succeeded_ids)
+                    and _candidate_supports_mode(item, pending.mode)
                 ),
                 None,
             )
@@ -672,6 +964,15 @@ class AuipLaunchCoordinator:
                 if str(getattr(attempt, "attempt_id", ""))
                 in relevant_attempt_ids
             ]
+            if candidate is None and any(
+                self._attempt_has_rejected_auip_outcome(attempt)
+                for attempt in relevant_attempts
+            ):
+                # A completed Host verdict is no longer an artifact/export
+                # race. Rejected delivery will not create export permission;
+                # the Work terminal already owns its user-visible failure.
+                self._deferred.pop(key, None)
+                continue
             requires_desktop_delivery = any(
                 self._attempt_requires_desktop_delivery(attempt)
                 for attempt in relevant_attempts
@@ -707,17 +1008,6 @@ class AuipLaunchCoordinator:
                 continue
             if candidate is None:
                 if succeeded_ids:
-                    if any(
-                        self._attempt_has_rejected_auip_outcome(attempt)
-                        for attempt in relevant_attempts
-                    ):
-                        # Artifact reconciliation can briefly lag a successful
-                        # Provider terminal, but a completed Host outcome
-                        # verdict is no longer a race. The Work terminal owns
-                        # the user-visible error; retire the one-shot launch
-                        # without adding a duplicate synthetic failure.
-                        self._deferred.pop(key, None)
-                        continue
                     # Attempt terminal can be projected before its immutable
                     # artifact rows are reconciled.  Keep the one-shot launch
                     # alive so the following Work update can discover the
@@ -729,6 +1019,12 @@ class AuipLaunchCoordinator:
                 # explains why no launch followed; emitting a second synthetic
                 # AUIP terminal here makes one user action speak twice.
                 self._deferred.pop(key, None)
+                continue
+            if not await self._result_entry_ready(key, pending, candidate):
+                continue
+            # AUIP_UPDATED can re-enter during the readiness callback. Only
+            # the exact pending continuation may consume this launch.
+            if self._deferred.get(key) is not pending:
                 continue
             self._deferred.pop(key, None)
             await self._emit_launch(pending.session_id, candidate, pending.mode)
@@ -767,6 +1063,16 @@ class AuipLaunchCoordinator:
         )
         return str(plan.get("kind") or "").strip().lower() == "desktop"
 
+    def _candidate_matches_attempts(self, candidate, attempt_ids: set[str]) -> bool:
+        """The newest contributing revision must belong to the awaited work."""
+        contributors = [self.artifacts.get_attempt(attempt_id)
+            for attempt_id in candidate.contributing_attempt_ids]
+        if not contributors or any(attempt is None
+                or attempt.work_item_id != candidate.work_item_id for attempt in contributors):
+            return False
+        newest = max(contributors, key=lambda attempt:attempt.attempt_number)
+        return newest.attempt_id in attempt_ids
+
     @staticmethod
     def _attempt_has_rejected_auip_outcome(attempt: Any) -> bool:
         metadata = (
@@ -779,6 +1085,10 @@ class AuipLaunchCoordinator:
             if isinstance(metadata.get("outcome_verdict"), dict)
             else {}
         )
+        validation = metadata.get("host_auip_bundle_validation")
+        if (isinstance(validation, dict)
+                and validation.get("recovery_state") == "cancelled"):
+            return True
         return bool(
             str(verdict.get("facet") or "").strip().lower()
             == "auip.application"
@@ -802,6 +1112,9 @@ class AuipLaunchCoordinator:
         self._launch_requests.pop(clean_request_id, None)
         clean_status = str(status or "").strip().lower()
         if clean_status != "opened":
+            logging.getLogger(__name__).warning(
+                "[AUIP-LAUNCH-FAILED] request=%s artifact=%s detail=%s",
+                clean_request_id, request.artifact_id, str(detail or "")[:1000])
             await self._announce_failure(
                 request.session_id,
                 "desktop_open_failed",
@@ -809,6 +1122,12 @@ class AuipLaunchCoordinator:
             )
             return {"ok": False, "error": "desktop_open_failed"}
         return {"ok": True, "status": "opened", "artifact_id": request.artifact_id}
+
+    def cancel_deferred(self, *, session_id: str, turn_id: str) -> bool:
+        """Retire one not-yet-launched turn continuation after Work admission fails."""
+
+        key = (str(session_id or "").strip(), str(turn_id or "").strip())
+        return self._deferred.pop(key, None) is not None
 
     def authorize_prepare(
         self,
@@ -841,7 +1160,7 @@ class AuipLaunchCoordinator:
                     label=candidate.title,
                     entity_kind="work_item",
                     description="Open this verified AUIP application",
-                    parent_label=candidate.work_title,
+                    parent_label=candidate.project_title or candidate.work_title,
                     metadata={"scope": "auip_launch", "relation": "experience"},
                 )
             )
@@ -865,6 +1184,8 @@ class AuipLaunchCoordinator:
         turn_id: str,
         rows: list[dict[str, Any]],
         mode: str,
+        input_id: str = "",
+        source_app_session_id: str = "",
     ) -> dict[str, Any]:
         """Reuse Attention when more than one active Work can own `after`."""
 
@@ -889,6 +1210,8 @@ class AuipLaunchCoordinator:
                 turn_id,
                 by_option[option_id],
                 mode,
+                input_id,
+                source_app_session_id,
             )
 
         request = await self.attention.create_selection(
@@ -907,6 +1230,8 @@ class AuipLaunchCoordinator:
         turn_id: str,
         row: dict[str, Any],
         mode: str,
+        input_id: str = "",
+        source_app_session_id: str = "",
     ) -> dict[str, Any]:
         """Freeze one Operation so steer replacement keeps the continuation."""
 
@@ -919,9 +1244,13 @@ class AuipLaunchCoordinator:
         active = [
             item
             for item in attempts
-            if str(getattr(item, "execution_status", "")) in {"queued", "running"}
+            if str(getattr(item, "execution_status", ""))
+            in {"queued", "running", "orphaned"}
         ]
-        if active:
+        if active or input_id or source_app_session_id:
+            if not attempts:
+                await self._announce_failure(session_id, "deferred_work_unavailable")
+                return {"ok": False, "error": "deferred_work_unavailable"}
             now = float(self.clock())
             pending = _DeferredLaunch(
                 session_id=str(session_id or ""),
@@ -931,8 +1260,21 @@ class AuipLaunchCoordinator:
                 expires_at=now + DEFERRED_LAUNCH_TTL_S,
                 work_item_id=work_item_id,
                 operation_id=operation_id,
+                input_id=input_id,
+                source_app_session_id=source_app_session_id,
             )
-            self._deferred[(pending.session_id, pending.turn_id)] = pending
+            key = (pending.session_id, pending.turn_id)
+            self._deferred[key] = pending
+            if source_app_session_id and not active and not input_id:
+                # A terminal active-Work binding still needs the exact same
+                # candidate, delivery and result-entry readiness checks as an
+                # update-driven continuation. Preserve the immediate legacy
+                # path when there is no captured source.
+                await self.on_work_updated(
+                    Method.WORK_UPDATED,
+                    {},
+                    pending_key=key,
+                )
             return {
                 "ok": True,
                 "deferred": True,
@@ -942,7 +1284,7 @@ class AuipLaunchCoordinator:
             item
             for item in attempts
             if str(getattr(item, "execution_status", ""))
-            in {"succeeded", "failed", "cancelled", "orphaned"}
+            in {"succeeded", "failed", "cancelled"}
         ]
         succeeded_ids = {
             str(item.attempt_id)
@@ -954,11 +1296,17 @@ class AuipLaunchCoordinator:
                 item
                 for item in self.candidates(session_id)
                 if item.work_item_id == work_item_id
-                and succeeded_ids.intersection(item.contributing_attempt_ids)
+                and self._candidate_matches_attempts(item, succeeded_ids)
+                and _candidate_supports_mode(item, mode)
             ),
             None,
         )
         if candidate is None:
+            if any(
+                self._attempt_has_rejected_auip_outcome(attempt)
+                for attempt in terminal
+            ):
+                return {"ok": False, "error": "deferred_delivery_not_launchable"}
             await self._announce_failure(session_id, "deferred_delivery_not_launchable")
             return {"ok": False, "error": "deferred_delivery_not_launchable"}
         return await self._emit_launch(session_id, candidate, mode)
@@ -969,14 +1317,22 @@ class AuipLaunchCoordinator:
         candidate: AuipLaunchCandidate,
         mode: str,
     ) -> dict[str, Any]:
+        if candidate.project_id:
+            try:
+                self.work_roster.destination.available_project(candidate.project_id)
+                item = self.artifacts.get_work_item(candidate.work_item_id)
+                if item is None or item.project_id != candidate.project_id:
+                    raise ValueError("application Project changed")
+            except (WorkLedgerError, OSError, ValueError):
+                await self._announce_failure(session_id, "app_project_unavailable")
+                return {"ok": False, "error": "app_project_unavailable"}
         # Re-discovery prevents an Attention card or a delayed Work callback
         # from opening bytes that changed after the candidate tuple froze.
         current = discover_launchable_auip_app(self.artifacts, candidate.work_item_id)
         if current is None or str(current.get("artifact_id") or "") != candidate.artifact_id:
             await self._announce_failure(session_id, "app_revision_changed")
             return {"ok": False, "error": "app_revision_changed"}
-        current_stances = {str(value) for value in current.get("stances") or []}
-        if mode != "observe" and "participant" not in current_stances:
+        if mode not in available_engagement_modes(current.get("stances") or ()):
             await self._announce_failure(session_id, "unsupported_launch_mode")
             return {"ok": False, "error": "unsupported_launch_mode"}
         request_id = f"auip_launch_{uuid.uuid4().hex}"
@@ -1000,11 +1356,12 @@ class AuipLaunchCoordinator:
         return {"ok": True, "requested": True, "request_id": request_id}
 
     def _attempts_for_turn(self, session_id: str, turn_id: str) -> list[Any]:
-        roster = self.work_roster.conversation_work_items_for_resolution(session_id, limit=200)
-        rows = roster.get("items") if isinstance(roster, dict) else []
+        rows = self._complete_roster_rows(session_id)
+        if rows is None:
+            return []
         attempts: list[Any] = []
-        for row in rows if isinstance(rows, list) else []:
-            attempt_id = str(row.get("attempt_id") or "") if isinstance(row, dict) else ""
+        for row in rows:
+            attempt_id = str(row.get("attempt_id") or "")
             attempt = self.artifacts.get_attempt(attempt_id) if attempt_id else None
             if attempt is None:
                 continue
@@ -1018,21 +1375,42 @@ class AuipLaunchCoordinator:
         session_id: str,
         attempt_ids: tuple[str, ...],
     ) -> list[dict[str, Any]]:
-        expected = set(attempt_ids)
+        expected = tuple(
+            dict.fromkeys(
+                str(value).strip()
+                for value in attempt_ids
+                if str(value).strip()
+            )
+        )
         if not expected:
             return []
-        roster = self.work_roster.conversation_work_items_for_resolution(
-            session_id,
-            limit=200,
-        )
-        rows = roster.get("items") if isinstance(roster, dict) else []
-        return [
-            dict(row)
-            for row in (rows if isinstance(rows, list) else [])
-            if isinstance(row, dict)
-            and str(row.get("attempt_id") or "") in expected
-            and str(row.get("execution") or "") in {"queued", "running"}
-        ]
+        roster_rows = self._complete_roster_rows(session_id)
+        if roster_rows is None:
+            return []
+        visible_work_items = {
+            str(row.get("work_item_id") or ""): row
+            for row in roster_rows
+            if str(row.get("work_item_id") or "")
+        }
+        frozen_rows: list[dict[str, Any]] = []
+        for attempt_id in expected:
+            attempt = self.artifacts.get_attempt(attempt_id)
+            work_item_id = str(getattr(attempt, "work_item_id", "") or "").strip()
+            operation_id = str(getattr(attempt, "operation_id", "") or "").strip()
+            visible = visible_work_items.get(work_item_id)
+            if attempt is None or not work_item_id or not operation_id or visible is None:
+                # Never reduce a frozen many-set to one just because a member
+                # disappeared or the current roster became unable to prove it.
+                return []
+            frozen_rows.append(
+                {
+                    **dict(visible),
+                    "attempt_id": attempt_id,
+                    "operation_id": operation_id,
+                    "execution": str(getattr(attempt, "execution_status", "") or ""),
+                }
+            )
+        return frozen_rows
 
     def _attempts_for_operation(
         self,
@@ -1102,6 +1480,10 @@ class AuipLaunchCoordinator:
 def _mode(value: Any) -> str:
     clean = str(value or "observe").strip().lower()
     return clean if clean in LAUNCH_MODES else "observe"
+
+
+def _candidate_supports_mode(candidate: AuipLaunchCandidate, mode: str) -> bool:
+    return str(mode or "observe") in available_engagement_modes(candidate.stances)
 
 
 def _matches(

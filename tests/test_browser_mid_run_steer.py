@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import server.interaction_branch as interaction_branch_module
 from agent_host.adapters.browser_branch import BrowserBranchAdapter
 from agent_host.provider_contract import ProviderCapabilities, ProviderManifest
+from agent_host.provider_catalog import BROWSER_MANIFEST
 from agent_host.provider_identity import (
     PARENT_CONTEXT_DELIVERED_EVENT,
     PARENT_CONTEXT_DELIVERY_METADATA_KEY,
@@ -28,6 +33,7 @@ from agent_host.provider_types import (
 )
 from server.event_bus import bus
 from server.handlers.chat_handler import ChatHandler
+from server.handlers.provider_handler import ProviderHandler
 from server.handlers.work_activity_handler import WorkActivityCoordinator
 from server.interaction_branch import InteractionBranchCoordinator, InteractionBranchState
 from server.protocol import Method
@@ -556,7 +562,8 @@ def test_run_created_branch_steers_same_run_before_terminal_result() -> None:
                 task="use the new instruction",
                 turn_id="turn-2",
             )
-            assert current is not None and current["run_id"] == "browser_active"
+            assert current is not None and current.accepted
+            assert current.run["run_id"] == "browser_active"
             assert provider_runs == []
             assert steer_calls[0]["run_id"] == "browser_active"
             assert steer_calls[0]["revision"] == 1
@@ -565,6 +572,1105 @@ def test_run_created_branch_steers_same_run_before_terminal_result() -> None:
                 == "use the new instruction"
             )
             assert steer_calls[0]["metadata"]["branch_instruction_revision"] == 1
+
+    asyncio.run(run())
+
+
+def test_rejected_live_steer_returns_deferred_not_accepted() -> None:
+    async def run() -> None:
+        provider_runs: list[dict[str, Any]] = []
+
+        async def provider_run(params):
+            provider_runs.append(params)
+            return {"run": {"run_id": "must-not-start", "status": "running"}}
+
+        async def provider_steer(params):
+            return {
+                "accepted": False,
+                "reason": "unsafe_boundary",
+                "run": {
+                    "run_id": params["run_id"],
+                    "provider": "browser",
+                    "status": "running",
+                },
+            }
+
+        with tempfile.TemporaryDirectory(prefix="branch_deferred_steer_") as root:
+            coordinator = InteractionBranchCoordinator(
+                provider_run=provider_run,
+                provider_steer=provider_steer,
+                root=root,
+            )
+            branch = InteractionBranchState(
+                branch_id="branch-active",
+                parent_session_id="session-active",
+                provider="browser",
+                status="active",
+                goal="operate current page",
+                browser_session_id="browser-active",
+                active_run_id="run-active",
+                expires_at=time.time() + 900,
+            )
+            coordinator._active_by_session["session-active"] = branch
+
+            receipt = await coordinator.continue_from_delegate(
+                session_id="session-active",
+                task="apply the next change",
+                turn_id="turn-deferred",
+            )
+
+            assert receipt is not None
+            assert receipt.accepted is False
+            assert receipt.disposition == "deferred"
+            assert receipt.reason == "unsafe_boundary"
+            assert receipt.run["run_id"] == "run-active"
+            assert provider_runs == []
+            assert branch.metadata["steering"]["state"] == "deferred"
+
+    asyncio.run(run())
+
+
+def test_handoff_cancels_queued_run_before_provider_adapter_is_scheduled() -> None:
+    class Adapter:
+        provider_id = "browser"
+        manifest = BROWSER_MANIFEST
+
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+
+        async def run(self, _request, _run_id, _emit) -> ProviderRunResult:
+            self.started.set()
+            return ProviderRunResult(status="done", result="must not run")
+
+        async def cancel(self, _run_id: str) -> None:
+            return None
+
+    async def run() -> None:
+        runtime = ProviderRuntime()
+        adapter = Adapter()
+        runtime.register(adapter)
+        accepted_by_coordinator = asyncio.Event()
+        release_created = asyncio.Event()
+
+        async def provider_run(params):
+            record = await runtime.start(
+                ProviderRunRequest(
+                    provider="browser",
+                    task=params["task"],
+                    mode="observe",
+                    metadata=dict(params["metadata"]),
+                )
+            )
+            return {"run": record.to_dict()}
+
+        with tempfile.TemporaryDirectory(prefix="branch_queued_cancel_") as root:
+            coordinator = InteractionBranchCoordinator(
+                provider_run=provider_run,
+                provider_cancel=runtime.cancel,
+                root=root,
+            )
+            branch = InteractionBranchState(
+                branch_id="queued-branch",
+                parent_session_id="queued-session",
+                provider="browser",
+                status="active",
+                goal="current page",
+                browser_session_id="browser-session",
+                expires_at=time.time() + 900,
+            )
+            coordinator._active_by_session["queued-session"] = branch
+            coordinator.configure()
+
+            async def hold_run_created(_method, params):
+                if params.get("type") != "run.created":
+                    return
+                run_id = str(params.get("run_id") or "")
+                while True:
+                    current = coordinator._active_by_session.get("queued-session")
+                    if current is not None and current.active_run_id == run_id:
+                        break
+                    await asyncio.sleep(0)
+                accepted_by_coordinator.set()
+                await release_created.wait()
+
+            bus.on(Method.PROVIDER_EVENT, hold_run_created)
+            try:
+                lease = coordinator.capture_routing_lease("queued-session")
+                assert lease is not None
+                continuation = asyncio.create_task(
+                    coordinator.continue_from_delegate(
+                        session_id="queued-session",
+                        task="continue while queued",
+                        turn_id="queued-turn",
+                        routing_lease=lease,
+                    )
+                )
+                await asyncio.wait_for(accepted_by_coordinator.wait(), timeout=2.0)
+                assert await coordinator.close_for_provider_handoff(
+                    "queued-session",
+                    next_provider="openclaw",
+                ) is True
+                release_created.set()
+                receipt = await asyncio.wait_for(continuation, timeout=2.0)
+            finally:
+                release_created.set()
+                bus.off(Method.PROVIDER_EVENT, hold_run_created)
+                bus.off(Method.PROVIDER_EVENT, coordinator._on_provider_event)
+                bus.off(Method.PROVIDER_RESULT, coordinator._on_provider_result)
+                interaction_branch_module._current_coordinator = None
+
+        assert receipt is not None and receipt.disposition == "superseded"
+        assert adapter.started.is_set() is False
+        records = runtime.list_runs()
+        assert len(records) == 1
+        assert records[0]["status"] == "cancelled"
+        assert coordinator.active_branch_for_session("queued-session") is None
+
+    asyncio.run(run())
+
+
+def test_cancelled_start_cleans_queued_run_and_cannot_resurrect_branch() -> None:
+    class Adapter:
+        provider_id = "browser"
+        manifest = BROWSER_MANIFEST
+
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+
+        async def run(self, _request, _run_id, _emit) -> ProviderRunResult:
+            self.started.set()
+            return ProviderRunResult(status="done", result="must not run")
+
+        async def cancel(self, _run_id: str) -> None:
+            return None
+
+    async def run() -> None:
+        runtime = ProviderRuntime()
+        adapter = Adapter()
+        runtime.register(adapter)
+        created_blocked = asyncio.Event()
+
+        async def block_first_created(_method, params):
+            if params.get("type") == "run.created":
+                created_blocked.set()
+                await asyncio.Event().wait()
+
+        with tempfile.TemporaryDirectory(prefix="cancelled_provider_start_") as root:
+            coordinator = InteractionBranchCoordinator(
+                provider_run=lambda _params: None,  # type: ignore[arg-type]
+                provider_cancel=runtime.cancel,
+                root=root,
+            )
+            bus.on(Method.PROVIDER_EVENT, block_first_created)
+            coordinator.configure()
+            branch_lock = coordinator._branch_locks.setdefault(
+                "cancelled-start-session",
+                asyncio.Lock(),
+            )
+            await branch_lock.acquire()
+            try:
+                start_task = asyncio.create_task(
+                    runtime.start(
+                        ProviderRunRequest(
+                            provider="browser",
+                            task="never reach adapter",
+                            mode="observe",
+                            metadata={
+                                "source": "llm_delegate",
+                                "provider_branch": True,
+                                "session_id": "cancelled-start-session",
+                                "interaction_branch_id": "cancelled-start-branch",
+                            },
+                        )
+                    )
+                )
+                await asyncio.wait_for(created_blocked.wait(), timeout=2.0)
+                start_task.cancel()
+                await asyncio.sleep(0)
+                branch_lock.release()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await asyncio.wait_for(start_task, timeout=2.0)
+            finally:
+                if branch_lock.locked():
+                    branch_lock.release()
+                bus.off(Method.PROVIDER_EVENT, block_first_created)
+                bus.off(Method.PROVIDER_EVENT, coordinator._on_provider_event)
+                bus.off(Method.PROVIDER_RESULT, coordinator._on_provider_result)
+                interaction_branch_module._current_coordinator = None
+
+        records = runtime.list_runs()
+        assert len(records) == 1
+        assert records[0]["status"] == "cancelled"
+        assert runtime.get_run(records[0]["run_id"]).task_handle is None
+        assert adapter.started.is_set() is False
+        assert coordinator.active_branch_for_session("cancelled-start-session") is None
+
+    asyncio.run(run())
+
+
+def test_reserved_absent_scope_admits_its_own_browser_run() -> None:
+    class Adapter:
+        provider_id = "browser"
+        manifest = BROWSER_MANIFEST
+
+        def __init__(self) -> None:
+            self.started = False
+
+        async def run(self, _request, _run_id, _emit) -> ProviderRunResult:
+            self.started = True
+            return ProviderRunResult(
+                status="done",
+                result="opened",
+                metadata={
+                    "browser": {
+                        "browser_session_id": "admitted-browser-session",
+                        "chat_session_id": "admitted-chat-session",
+                        "current_url": "https://example.test/admitted",
+                    },
+                    "provider_branch": {
+                        "branch_id": "admitted-branch",
+                        "actions": [],
+                    },
+                },
+            )
+
+        async def cancel(self, _run_id: str) -> None:
+            return None
+
+    async def run() -> None:
+        runtime = ProviderRuntime()
+        adapter = Adapter()
+        runtime.register(adapter)
+        with tempfile.TemporaryDirectory(prefix="provider_admission_") as root:
+            coordinator = InteractionBranchCoordinator(
+                provider_run=lambda _params: None,  # type: ignore[arg-type]
+                provider_cancel=runtime.cancel,
+                root=root,
+            )
+            coordinator.configure()
+
+            async def validate(request, run_id: str, phase: str):
+                accepted, reason = await coordinator.provider_start_admission(
+                    request.metadata["interaction_branch_routing_scope"],
+                    session_id=request.metadata["session_id"],
+                    provider=request.provider,
+                    reservation_id=request.metadata[
+                        "interaction_branch_admission_id"
+                    ],
+                    run_id=run_id,
+                    phase=phase,
+                )
+                return {"accepted": accepted, "reason": reason}
+
+            runtime.set_start_admission_validator(validate)
+            try:
+                record = await runtime.start(
+                    ProviderRunRequest(
+                        provider="browser",
+                        task="open admitted page",
+                        mode="observe",
+                        metadata={
+                            "source": "llm_delegate",
+                            "provider_branch": True,
+                            "session_id": "admitted-chat-session",
+                            "interaction_branch_id": "admitted-branch",
+                            "interaction_branch_routing_scope": {
+                                "state": "absent",
+                                "parent_session_id": "admitted-chat-session",
+                                "captured_at": time.time(),
+                            },
+                            "interaction_branch_admission_id": "admission-own",
+                        },
+                    )
+                )
+                assert record.task_handle is not None
+                await asyncio.wait_for(record.task_handle, timeout=2.0)
+            finally:
+                runtime.set_start_admission_validator(None)
+                bus.off(Method.PROVIDER_EVENT, coordinator._on_provider_event)
+                bus.off(Method.PROVIDER_RESULT, coordinator._on_provider_result)
+                interaction_branch_module._current_coordinator = None
+
+        assert adapter.started is True
+        assert record.status == "done"
+        branch = coordinator.active_branch_for_session("admitted-chat-session")
+        assert branch is not None
+        assert branch.branch_id == "admitted-branch"
+        assert branch.active_run_id == ""
+        assert coordinator.provider_admission_for_session("admitted-chat-session") is None
+
+    asyncio.run(run())
+
+
+def test_admission_reservation_blocks_concurrent_unscoped_intake() -> None:
+    class Adapter:
+        provider_id = "browser"
+        manifest = BROWSER_MANIFEST
+
+        async def run(self, _request, _run_id, _emit) -> ProviderRunResult:
+            raise AssertionError("cancelled admission must not reach adapter")
+
+        async def cancel(self, _run_id: str) -> None:
+            return None
+
+    async def run() -> None:
+        runtime = ProviderRuntime()
+        runtime.register(Adapter())
+        preparer_entered = asyncio.Event()
+        release_preparer = asyncio.Event()
+        preparer_calls = 0
+        coordinator = InteractionBranchCoordinator(
+            provider_run=lambda _params: None,  # type: ignore[arg-type]
+            root=tempfile.mkdtemp(prefix="admission_intake_reservation_"),
+        )
+
+        async def prepare(request, _run_id):
+            nonlocal preparer_calls
+            preparer_calls += 1
+            preparer_entered.set()
+            await release_preparer.wait()
+            return request
+
+        async def validate(request, run_id: str, phase: str):
+            metadata = request.metadata
+            scope = metadata.get("interaction_branch_routing_scope")
+            session_id = str(metadata.get("session_id") or "")
+            if phase == "release" and not isinstance(scope, dict):
+                return {"accepted": True}
+            if not isinstance(scope, dict):
+                accepted = not bool(
+                    coordinator.termination_pending_for_session(session_id)
+                    or coordinator.provider_admission_for_session(session_id)
+                )
+                return {"accepted": accepted, "reason": "unscoped_conflict"}
+            accepted, reason = await coordinator.provider_start_admission(
+                scope,
+                session_id=session_id,
+                provider=request.provider,
+                reservation_id=metadata["interaction_branch_admission_id"],
+                run_id=run_id,
+                phase=phase,
+            )
+            return {"accepted": accepted, "reason": reason}
+
+        runtime.set_request_preparer(prepare)
+        runtime.set_start_admission_validator(validate)
+        first = asyncio.create_task(
+            runtime.start(
+                ProviderRunRequest(
+                    provider="browser",
+                    task="reserved",
+                    metadata={
+                        "session_id": "reservation-session",
+                        "interaction_branch_routing_scope": {
+                            "state": "absent",
+                            "parent_session_id": "reservation-session",
+                        },
+                        "interaction_branch_admission_id": "reservation-first",
+                    },
+                )
+            )
+        )
+        await asyncio.wait_for(preparer_entered.wait(), timeout=2.0)
+        try:
+            await runtime.start(
+                ProviderRunRequest(
+                    provider="browser",
+                    task="must fail before intake",
+                    metadata={"session_id": "reservation-session"},
+                )
+            )
+        except Exception as exc:
+            assert type(exc).__name__ == "ProviderStartAdmissionRejected"
+        else:
+            raise AssertionError("concurrent unscoped intake escaped reservation")
+        assert preparer_calls == 1
+
+        first.cancel()
+        release_preparer.set()
+        with contextlib.suppress(asyncio.CancelledError):
+            await first
+        for _ in range(100):
+            if coordinator.provider_admission_for_session("reservation-session") is None:
+                break
+            await asyncio.sleep(0.01)
+        assert coordinator.provider_admission_for_session("reservation-session") is None
+        records = runtime.list_runs()
+        assert len(records) == 1
+        assert records[0]["status"] == "cancelled"
+
+    asyncio.run(run())
+
+
+def test_cancelled_sync_intake_keeps_lock_and_emits_terminal_receipt() -> None:
+    class Adapter:
+        provider_id = "browser"
+        manifest = BROWSER_MANIFEST
+
+        async def run(self, _request, _run_id, _emit) -> ProviderRunResult:
+            raise AssertionError("cancelled intake must not schedule adapter")
+
+        async def cancel(self, _run_id: str) -> None:
+            return None
+
+    async def run() -> None:
+        runtime = ProviderRuntime()
+        runtime.register(Adapter())
+        coordinator = InteractionBranchCoordinator(
+            provider_run=lambda _params: None,  # type: ignore[arg-type]
+            provider_cancel=runtime.cancel,
+            root=tempfile.mkdtemp(prefix="sync_intake_cancel_"),
+        )
+        coordinator.configure()
+        entered = threading.Event()
+        release = threading.Event()
+        preparer_calls = 0
+
+        def prepare(request, _run_id):
+            nonlocal preparer_calls
+            preparer_calls += 1
+            entered.set()
+            if not release.wait(timeout=5.0):
+                raise TimeoutError("test did not release sync preparer")
+            request.metadata["work"] = {
+                "work_item_id": "work-intake-cancelled",
+                "attempt_id": "attempt-intake-cancelled",
+            }
+            return request
+
+        async def validate(request, run_id: str, phase: str):
+            accepted, reason = await coordinator.provider_start_admission(
+                request.metadata["interaction_branch_routing_scope"],
+                session_id=request.metadata["session_id"],
+                provider=request.provider,
+                reservation_id=request.metadata[
+                    "interaction_branch_admission_id"
+                ],
+                run_id=run_id,
+                phase=phase,
+            )
+            return {"accepted": accepted, "reason": reason}
+
+        runtime.set_request_preparer(prepare)
+        runtime.set_start_admission_validator(validate)
+        request = ProviderRunRequest(
+            provider="browser",
+            task="cancel during sync intake",
+            metadata={
+                "source": "llm_delegate",
+                "provider_branch": True,
+                "session_id": "sync-intake-session",
+                "interaction_branch_routing_scope": {
+                    "state": "absent",
+                    "parent_session_id": "sync-intake-session",
+                },
+                "interaction_branch_admission_id": "sync-intake-admission",
+            },
+        )
+        first = asyncio.create_task(runtime.start(request))
+        assert await asyncio.to_thread(entered.wait, 2.0)
+        first.cancel()
+        await asyncio.sleep(0.05)
+        assert first.done() is False
+        assert runtime._intake_lock.locked() is True
+        assert coordinator.provider_admission_for_session(
+            "sync-intake-session"
+        ) is not None
+
+        release.set()
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(first, timeout=3.0)
+        records = runtime.list_runs()
+        try:
+            assert len(records) == 1
+            assert records[0]["status"] == "cancelled"
+            assert records[0]["metadata"]["work"]["attempt_id"] == (
+                "attempt-intake-cancelled"
+            )
+            assert runtime.get_run(records[0]["run_id"]).task_handle is None
+            assert preparer_calls == 1
+            assert coordinator.provider_admission_for_session(
+                "sync-intake-session"
+            ) is None
+        finally:
+            bus.off(Method.PROVIDER_EVENT, coordinator._on_provider_event)
+            bus.off(Method.PROVIDER_RESULT, coordinator._on_provider_result)
+            interaction_branch_module._current_coordinator = None
+
+    asyncio.run(run())
+
+
+def test_inner_cancelled_preparer_releases_admission_without_spinning() -> None:
+    class Adapter:
+        provider_id = "browser"
+        manifest = BROWSER_MANIFEST
+
+        async def run(self, _request, _run_id, _emit) -> ProviderRunResult:
+            raise AssertionError("cancelled preparer must not start adapter")
+
+        async def cancel(self, _run_id: str) -> None:
+            return None
+
+    async def run() -> None:
+        runtime = ProviderRuntime()
+        runtime.register(Adapter())
+        coordinator = InteractionBranchCoordinator(
+            provider_run=lambda _params: None,  # type: ignore[arg-type]
+            root=tempfile.mkdtemp(prefix="inner_cancelled_preparer_"),
+        )
+
+        async def prepare(_request, _run_id):
+            raise asyncio.CancelledError
+
+        async def validate(request, run_id: str, phase: str):
+            accepted, reason = await coordinator.provider_start_admission(
+                request.metadata["interaction_branch_routing_scope"],
+                session_id=request.metadata["session_id"],
+                provider=request.provider,
+                reservation_id=request.metadata[
+                    "interaction_branch_admission_id"
+                ],
+                run_id=run_id,
+                phase=phase,
+            )
+            return {"accepted": accepted, "reason": reason}
+
+        runtime.set_request_preparer(prepare)
+        runtime.set_start_admission_validator(validate)
+        try:
+            await asyncio.wait_for(
+                runtime.start(
+                    ProviderRunRequest(
+                        provider="browser",
+                        task="cancel inside preparer",
+                        metadata={
+                            "session_id": "inner-cancel-session",
+                            "interaction_branch_routing_scope": {
+                                "state": "absent",
+                                "parent_session_id": "inner-cancel-session",
+                            },
+                            "interaction_branch_admission_id": "inner-cancel-token",
+                        },
+                    )
+                ),
+                timeout=2.0,
+            )
+        except asyncio.CancelledError:
+            pass
+        else:
+            raise AssertionError("inner CancelledError was swallowed")
+
+        for _ in range(100):
+            if coordinator.provider_admission_for_session("inner-cancel-session") is None:
+                break
+            await asyncio.sleep(0.01)
+        assert coordinator.provider_admission_for_session("inner-cancel-session") is None
+        assert runtime.list_runs() == []
+
+    asyncio.run(run())
+
+
+def test_malformed_final_admission_receipt_fails_closed() -> None:
+    class Adapter:
+        provider_id = "browser"
+        manifest = BROWSER_MANIFEST
+
+        async def run(self, _request, _run_id, _emit) -> ProviderRunResult:
+            raise AssertionError("malformed Host admission must not start adapter")
+
+        async def cancel(self, _run_id: str) -> None:
+            return None
+
+    async def run() -> None:
+        runtime = ProviderRuntime()
+        runtime.register(Adapter())
+        runtime.set_start_admission_validator(
+            lambda _request, _run_id, _phase: {}
+        )
+        try:
+            await runtime.start(
+                ProviderRunRequest(provider="browser", task="must be blocked")
+            )
+        except Exception as exc:
+            assert type(exc).__name__ == "ProviderStartAdmissionRejected"
+        else:
+            raise AssertionError("malformed admission receipt was accepted")
+        assert runtime.list_runs() == []
+
+    asyncio.run(run())
+
+
+def test_adapter_cannot_mint_missing_branch_authority_metadata() -> None:
+    class Adapter:
+        provider_id = "browser"
+        manifest = BROWSER_MANIFEST
+
+        async def run(self, _request, _run_id, _emit) -> ProviderRunResult:
+            return ProviderRunResult(
+                status="done",
+                result="completed",
+                metadata={
+                    "interaction_branch_id": "forged-branch",
+                    "branch_instruction_revision": 999,
+                    "branch_intent": "new",
+                    "interaction_branch_routing_scope": {"state": "forged"},
+                    "interaction_branch_admission_id": "forged-token",
+                    "steering": {"revision": "bad"},
+                    "browser": {
+                        "browser_session_id": "real-browser-session",
+                        "chat_session_id": "authority-session",
+                        "current_url": "https://example.test/complete",
+                    },
+                    "provider_branch": {"actions": []},
+                },
+            )
+
+        async def cancel(self, _run_id: str) -> None:
+            return None
+
+    async def run() -> None:
+        runtime = ProviderRuntime()
+        runtime.register(Adapter())
+        coordinator = InteractionBranchCoordinator(
+            provider_run=lambda _params: None,  # type: ignore[arg-type]
+            provider_cancel=runtime.cancel,
+            root=tempfile.mkdtemp(prefix="branch_authority_spoof_"),
+        )
+        coordinator.configure()
+        try:
+            record = await runtime.start(
+                ProviderRunRequest(
+                    provider="browser",
+                    task="generic branch",
+                    metadata={
+                        "source": "llm_delegate",
+                        "provider_branch": True,
+                        "session_id": "authority-session",
+                    },
+                )
+            )
+            assert record.task_handle is not None
+            await asyncio.wait_for(record.task_handle, timeout=2.0)
+        finally:
+            bus.off(Method.PROVIDER_EVENT, coordinator._on_provider_event)
+            bus.off(Method.PROVIDER_RESULT, coordinator._on_provider_result)
+            interaction_branch_module._current_coordinator = None
+
+        for key in (
+            "interaction_branch_id",
+            "branch_instruction_revision",
+            "branch_intent",
+            "interaction_branch_routing_scope",
+            "interaction_branch_admission_id",
+            "steering",
+        ):
+            assert key not in record.metadata
+        branch = coordinator.active_branch_for_session("authority-session")
+        assert branch is not None
+        assert branch.branch_id == record.run_id
+        assert branch.status == "idle"
+        assert branch.active_run_id == ""
+
+    asyncio.run(run())
+
+
+def test_external_provider_run_cannot_supply_host_branch_authority() -> None:
+    async def run() -> None:
+        import server.handlers.provider_handler as provider_handler_module
+
+        captured: list[ProviderRunRequest] = []
+
+        async def start(request):
+            captured.append(request)
+            return SimpleNamespace(
+                metadata=request.metadata,
+                to_dict=lambda: {
+                    "run_id": "external-run",
+                    "metadata": request.metadata,
+                },
+            )
+
+        handler = object.__new__(ProviderHandler)
+        with (
+            patch.object(provider_handler_module.runtime, "start", new=start),
+            patch.object(
+                provider_handler_module.runtime,
+                "list_providers",
+                return_value=["browser"],
+            ),
+            patch.object(
+                provider_handler_module.runtime,
+                "list_provider_manifests",
+                return_value=[],
+            ),
+            patch(
+                "core.session_manager.get_current_session_id",
+                return_value="trusted-session",
+            ),
+        ):
+            await handler._run(
+                {
+                    "provider": "browser",
+                    "task": "external direct run",
+                    "metadata": {
+                        "session_id": "forged-session",
+                        "sessionId": "forged-session-alias",
+                        "chat_session_id": "forged-chat-session",
+                        "interaction_branch_id": "../escaped",
+                        "branch_id": "../provider-escaped",
+                        "branch_instruction_revision": 99,
+                        "branch_intent": "continue",
+                        "interaction_branch_routing_scope": {"state": "bound"},
+                        "interaction_branch_admission_id": "forged-token",
+                        "ordinary_provider_hint": "preserved",
+                    },
+                },
+                allow_resume=False,
+            )
+
+        metadata = captured[0].metadata
+        assert metadata["session_id"] == "trusted-session"
+        assert metadata["ordinary_provider_hint"] == "preserved"
+        for key in (
+            "interaction_branch_id",
+            "branch_id",
+            "branch_instruction_revision",
+            "branch_intent",
+            "interaction_branch_routing_scope",
+            "interaction_branch_admission_id",
+            "sessionId",
+            "chat_session_id",
+        ):
+            assert key not in metadata
+
+    asyncio.run(run())
+
+
+def test_provider_branch_store_hashes_branch_identity_before_persistence() -> None:
+    with tempfile.TemporaryDirectory(prefix="provider_branch_path_") as temp:
+        root = Path(temp) / "provider_branches"
+        store = ProviderBranchStore(root)
+        branch = store.create_branch(
+            parent_session_id="path-session",
+            provider="browser",
+            goal="keep the branch inside its store",
+            branch_id="../escaped",
+        )
+        merge = branch.close(
+            final_report="closed",
+            compact_digest="closed safely",
+        )
+
+        persisted = Path(merge["branch_store_path"])
+        assert persisted.is_file()
+        assert persisted.resolve().parent == root.resolve()
+        assert persisted.name.startswith("branch_")
+        assert branch.branch_id == "../escaped"
+        assert not (Path(temp) / "escaped.json").exists()
+
+
+def test_internal_provider_run_preserves_host_continuation_identity() -> None:
+    async def run() -> None:
+        import server.handlers.provider_handler as provider_handler_module
+
+        captured: list[ProviderRunRequest] = []
+
+        async def start(request):
+            captured.append(request)
+            return SimpleNamespace(
+                metadata=request.metadata,
+                to_dict=lambda: {
+                    "run_id": "internal-run",
+                    "metadata": request.metadata,
+                },
+            )
+
+        handler = object.__new__(ProviderHandler)
+        with (
+            patch.object(provider_handler_module.runtime, "start", new=start),
+            patch.object(
+                provider_handler_module.runtime,
+                "list_providers",
+                return_value=["browser"],
+            ),
+            patch.object(
+                provider_handler_module.runtime,
+                "list_provider_manifests",
+                return_value=[],
+            ),
+            patch(
+                "core.session_manager.get_current_session_id",
+                return_value="ambient-session",
+            ),
+        ):
+            await handler.run_provider(
+                {
+                    "provider": "browser",
+                    "task": "continue exact branch",
+                    "metadata": {
+                        "session_id": "origin-session",
+                        "work": {"work_item_id": "work-browser"},
+                        "continuation": "amend",
+                        "interaction_branch_id": "branch-browser",
+                        "branch_instruction_revision": 2,
+                        "branch_intent": "continue",
+                        "provider_branch": True,
+                    },
+                }
+            )
+
+        metadata = captured[0].metadata
+        assert metadata["session_id"] == "origin-session"
+        assert metadata["work"] == {"work_item_id": "work-browser"}
+        assert metadata["continuation"] == "amend"
+        assert metadata["interaction_branch_id"] == "branch-browser"
+        assert metadata["branch_instruction_revision"] == 2
+        assert metadata["branch_intent"] == "continue"
+
+    asyncio.run(run())
+
+
+def test_terminal_before_browser_session_removes_unusable_branch() -> None:
+    class Adapter:
+        provider_id = "browser"
+        manifest = BROWSER_MANIFEST
+
+        async def run(self, _request, _run_id, _emit) -> ProviderRunResult:
+            return ProviderRunResult(
+                status="error",
+                error="playwright unavailable",
+            )
+
+        async def cancel(self, _run_id: str) -> None:
+            return None
+
+    async def run() -> None:
+        runtime = ProviderRuntime()
+        runtime.register(Adapter())
+        coordinator = InteractionBranchCoordinator(
+            provider_run=lambda _params: None,  # type: ignore[arg-type]
+            provider_cancel=runtime.cancel,
+            root=tempfile.mkdtemp(prefix="browser_terminal_without_session_"),
+        )
+        coordinator.configure()
+        try:
+            record = await runtime.start(
+                ProviderRunRequest(
+                    provider="browser",
+                    task="fail before page exists",
+                    metadata={
+                        "source": "llm_delegate",
+                        "provider_branch": True,
+                        "session_id": "no-browser-session",
+                    },
+                )
+            )
+            assert record.task_handle is not None
+            await asyncio.wait_for(record.task_handle, timeout=2.0)
+        finally:
+            bus.off(Method.PROVIDER_EVENT, coordinator._on_provider_event)
+            bus.off(Method.PROVIDER_RESULT, coordinator._on_provider_result)
+            interaction_branch_module._current_coordinator = None
+
+        assert record.status == "error"
+        assert coordinator.active_branch_for_session("no-browser-session") is None
+
+    asyncio.run(run())
+
+
+def test_same_branch_id_cannot_run_two_browser_adapters_concurrently() -> None:
+    class Adapter:
+        provider_id = "browser"
+        manifest = BROWSER_MANIFEST
+
+        def __init__(self) -> None:
+            self.started: list[str] = []
+            self.first_started = asyncio.Event()
+            self.release_first = asyncio.Event()
+
+        async def run(self, _request, run_id, _emit) -> ProviderRunResult:
+            self.started.append(run_id)
+            self.first_started.set()
+            await self.release_first.wait()
+            return ProviderRunResult(
+                status="done",
+                result="done",
+                metadata={
+                    "browser": {
+                        "browser_session_id": "same-branch-browser",
+                        "chat_session_id": "same-branch-session",
+                    },
+                    "provider_branch": {"actions": []},
+                },
+            )
+
+        async def cancel(self, _run_id: str) -> None:
+            return None
+
+    async def run() -> None:
+        runtime = ProviderRuntime()
+        adapter = Adapter()
+        runtime.register(adapter)
+        coordinator = InteractionBranchCoordinator(
+            provider_run=lambda _params: None,  # type: ignore[arg-type]
+            provider_cancel=runtime.cancel,
+            root=tempfile.mkdtemp(prefix="same_branch_concurrency_"),
+        )
+        coordinator.configure()
+        metadata = {
+            "source": "llm_delegate",
+            "provider_branch": True,
+            "session_id": "same-branch-session",
+            "interaction_branch_id": "same-branch",
+        }
+        try:
+            first = await runtime.start(
+                ProviderRunRequest(
+                    provider="browser",
+                    task="first",
+                    metadata=dict(metadata),
+                )
+            )
+            await asyncio.wait_for(adapter.first_started.wait(), timeout=2.0)
+            second = await runtime.start(
+                ProviderRunRequest(
+                    provider="browser",
+                    task="second",
+                    metadata=dict(metadata),
+                )
+            )
+            assert second.status == "cancelled"
+            assert adapter.started == [first.run_id]
+            active = coordinator.active_branch_for_session("same-branch-session")
+            assert active is not None
+            assert active.active_run_id == first.run_id
+            adapter.release_first.set()
+            assert first.task_handle is not None
+            await asyncio.wait_for(first.task_handle, timeout=2.0)
+        finally:
+            adapter.release_first.set()
+            bus.off(Method.PROVIDER_EVENT, coordinator._on_provider_event)
+            bus.off(Method.PROVIDER_RESULT, coordinator._on_provider_result)
+            interaction_branch_module._current_coordinator = None
+
+    asyncio.run(run())
+
+
+def test_adapter_steer_receipts_cannot_mint_or_advance_host_revision() -> None:
+    class Adapter:
+        provider_id = "browser"
+        manifest = BROWSER_MANIFEST
+
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def run(self, _request, _run_id, _emit) -> ProviderRunResult:
+            self.started.set()
+            await self.release.wait()
+            return ProviderRunResult(status="done", result="done")
+
+        async def steer(
+            self,
+            _run_id: str,
+            _request: ProviderSteerRequest,
+        ) -> dict[str, Any]:
+            return {
+                "accepted": True,
+                "safe_boundary": "after_atomic_action",
+            }
+
+        async def cancel(self, _run_id: str) -> None:
+            self.release.set()
+
+    async def run() -> None:
+        runtime = ProviderRuntime()
+        adapter = Adapter()
+        runtime.register(adapter)
+        record = await runtime.start(
+            ProviderRunRequest(
+                provider="browser",
+                task="keep the Host steering revision authoritative",
+                mode="observe",
+                metadata={"source": "llm_delegate"},
+            )
+        )
+        await asyncio.wait_for(adapter.started.wait(), timeout=2.0)
+        try:
+            await runtime._emit(
+                record,
+                ProviderEvent(
+                    provider="browser",
+                    run_id=record.run_id,
+                    type="run.status",
+                    payload={
+                        "stage": "steer_applied",
+                        "revision": 999,
+                        "safe_boundary": "adapter_claimed_boundary",
+                    },
+                    metadata={
+                        "steering": {
+                            "state": "applied",
+                            "revision": 999,
+                        }
+                    },
+                ),
+            )
+            assert "steering" not in record.metadata
+            rejected_without_host = record.events[-1]
+            assert rejected_without_host["payload"] == {
+                "stage": "steer_receipt_rejected",
+                "reason": "unmatched_host_steering_revision",
+            }
+            assert "steering" not in rejected_without_host["metadata"]
+
+            outcome = await runtime.steer(
+                record.run_id,
+                ProviderSteerRequest(task="use the new target", revision=1),
+            )
+            assert outcome["accepted"] is True
+            assert record.metadata["steering"]["state"] == "queued"
+            assert record.metadata["steering"]["revision"] == 1
+
+            await runtime._emit(
+                record,
+                ProviderEvent(
+                    provider="browser",
+                    run_id=record.run_id,
+                    type="run.status",
+                    payload={
+                        "stage": "steer_applied",
+                        "revision": 2,
+                        "safe_boundary": "future_boundary",
+                    },
+                ),
+            )
+            assert record.metadata["steering"]["state"] == "queued"
+            assert record.metadata["steering"]["revision"] == 1
+            rejected_future = record.events[-1]
+            assert rejected_future["payload"]["stage"] == "steer_receipt_rejected"
+            assert "revision" not in rejected_future["payload"]
+
+            await runtime._emit(
+                record,
+                ProviderEvent(
+                    provider="browser",
+                    run_id=record.run_id,
+                    type="run.status",
+                    payload={
+                        "stage": "steer_applied",
+                        "revision": 1,
+                        "safe_boundary": "after_atomic_action",
+                    },
+                ),
+            )
+            assert record.metadata["steering"]["state"] == "applied"
+            assert record.metadata["steering"]["revision"] == 1
+            assert record.events[-1]["payload"]["stage"] == "steer_applied"
+        finally:
+            adapter.release.set()
+            assert record.task_handle is not None
+            await asyncio.wait_for(record.task_handle, timeout=2.0)
 
     asyncio.run(run())
 
@@ -639,6 +1745,7 @@ def test_chat_overlap_emits_only_latest_steered_turn() -> None:
             coordinator = InteractionBranchCoordinator(
                 provider_run=provider_run,
                 provider_steer=provider_steer,
+                provider_cancel=runtime.cancel,
                 root=Path(root) / "interaction",
             )
             branch = InteractionBranchState(
@@ -653,8 +1760,10 @@ def test_chat_overlap_emits_only_latest_steered_turn() -> None:
                 title="Home",
                 url="https://example.test/home",
                 active_run_id=record.run_id,
+                expires_at=time.time() + 900,
             )
             coordinator._active_by_session[branch.parent_session_id] = branch
+            interaction_branch_module._current_coordinator = coordinator
 
             unexpected_llm_calls: list[str] = []
 
@@ -752,6 +1861,7 @@ def test_chat_overlap_emits_only_latest_steered_turn() -> None:
             finally:
                 bus.off(Method.CHAT_COMPLETE, capture_complete)
                 bus.off(Method.CHAT_TOKEN, capture_token)
+                interaction_branch_module._current_coordinator = None
                 await adapter.shutdown()
 
         assert provider_runs == []
@@ -822,6 +1932,7 @@ def test_retarget_stops_remaining_plan_and_tombstones_old_result() -> None:
             coordinator = InteractionBranchCoordinator(
                 provider_run=provider_run,
                 provider_steer=provider_steer,
+                provider_cancel=runtime.cancel,
                 root=Path(root) / "interaction",
             )
             branch = InteractionBranchState(
@@ -834,6 +1945,7 @@ def test_retarget_stops_remaining_plan_and_tombstones_old_result() -> None:
                 title="Home",
                 url="https://example.test/home",
                 active_run_id=record.run_id,
+                expires_at=time.time() + 900,
             )
             coordinator._active_by_session[branch.parent_session_id] = branch
 
@@ -842,16 +1954,19 @@ def test_retarget_stops_remaining_plan_and_tombstones_old_result() -> None:
                 session_id="retarget-session",
                 turn_id="retarget-turn",
             )
-            assert routed is None
+            assert routed is not None
+            assert routed["handled"] is False
+            assert routed["routing_scope_transition"]["state"] == "absent"
             assert coordinator.active_branch_for_session("retarget-session") is None
-            await _wait_for_steer_revision(record, 1)
             engine.release_first_action.set()
             assert record.task_handle is not None
-            await asyncio.wait_for(record.task_handle, timeout=3.0)
+            await asyncio.wait_for(
+                asyncio.gather(record.task_handle, return_exceptions=True),
+                timeout=3.0,
+            )
 
             assert engine.executed == ["old_1"]
-            assert record.metadata["steering"]["applied_revisions"] == [1]
-            assert record.metadata["browser"]["browser_session_id"] == engine.session_id
+            assert record.status == "cancelled"
             assert coordinator._update_from_run(record.to_dict()) is None
             assert coordinator._update_from_run(record.to_dict()) is None
             assert coordinator.active_branch_for_session("retarget-session") is None
@@ -981,6 +2096,90 @@ def test_steer_progress_is_visible_but_silent_and_buttonless() -> None:
         assert len(closed_notes) == 1
         assert closed_notes[0].get("observer_policy") == "silent"
         assert closed_notes[0].get("speak") is False
+
+    asyncio.run(run())
+
+
+def test_direct_branch_history_never_switches_the_loaded_session() -> None:
+    history = SimpleNamespace(add_user=Mock(), add_assistant=Mock(), dialog=[])
+    set_current = Mock()
+    with (
+        patch(
+            "core.session_manager.get_current_session_id",
+            return_value="session-b",
+        ),
+        patch("core.session_manager.set_current_session_id", new=set_current),
+        patch("core.session_manager.conversation_history", history),
+        patch("core.session_manager.save_session") as save_session,
+    ):
+        ChatHandler._save_direct_turn(
+            session_id="session-a",
+            user_text="continue in a",
+            assistant_text="done in a",
+            turn_id="turn-a",
+            branch_id="branch-a",
+        )
+
+    set_current.assert_not_called()
+    history.add_user.assert_not_called()
+    history.add_assistant.assert_not_called()
+    save_session.assert_not_called()
+
+
+def test_direct_route_exception_after_side_effect_never_falls_back_to_llm() -> None:
+    async def run() -> None:
+        route_calls = 0
+        llm_calls: list[str] = []
+
+        async def route(**_kwargs):
+            nonlocal route_calls
+            route_calls += 1
+            raise ValueError("projection failed after provider action")
+
+        async def llm(text, **_kwargs):
+            llm_calls.append(str(text))
+            return "must not run"
+
+        handler = ChatHandler()
+        handler.configure(
+            llm,
+            asyncio.Queue(),
+            interaction_branch_router=route,
+        )
+        handler._chat_epoch = 1
+        handler._active_turn_id = "failed-route-turn"
+        visible: list[str] = []
+        with (
+            patch.object(
+                ChatHandler,
+                "_turn_allows_visible_emit",
+                new=staticmethod(lambda _turn_id: _true_async()),
+            ),
+            patch.object(
+                ChatHandler,
+                "_notify_coordinator_finished",
+                new=staticmethod(lambda *_args, **_kwargs: None),
+            ),
+        ):
+            await handler._run_stream(
+                text="perform one action",
+                callback=visible.append,
+                turn_id="failed-route-turn",
+                session_id="",
+                chat_epoch=1,
+                interaction_branch_routing_lease={
+                    "state": "bound",
+                    "parent_session_id": "route-session",
+                    "branch_id": "route-branch",
+                },
+            )
+
+        assert route_calls == 1
+        assert llm_calls == []
+        assert visible and "did not submit the same request again" in visible[-1]
+
+    async def _true_async() -> bool:
+        return True
 
     asyncio.run(run())
 

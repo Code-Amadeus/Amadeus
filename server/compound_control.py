@@ -93,8 +93,8 @@ class CompoundControlPlan:
 
 
 @dataclass(frozen=True, slots=True)
-class CompoundControlShadowEvidence:
-    """Payload-free runtime telemetry for one non-authoritative B arm."""
+class CompoundControlEvidence:
+    """Decision evidence consumed by authority or optional observation."""
 
     turn_id: str
     session_id: str
@@ -107,6 +107,9 @@ class CompoundControlShadowEvidence:
     decision_queries: int
     candidate_verdict_queries: int
     candidate_protocol_retries: int
+    # Explicit diagnostic sinks may inspect malformed output, as for the
+    # single-control evidence. Never include it in payload-free routine logs.
+    decomposition_reply: str = ""
 
     @property
     def decision_status(self) -> CompoundPlanStatus:
@@ -153,6 +156,10 @@ class CompoundControlShadowEvidence:
             "decisionQueries": self.decision_queries,
             "candidateVerdictQueries": self.candidate_verdict_queries,
             "candidateProtocolRetries": self.candidate_protocol_retries,
+            "decompositionReplyChars": len(self.decomposition_reply),
+            "decompositionReplySha256": hashlib.sha256(
+                self.decomposition_reply.encode("utf-8", errors="surrogatepass")
+            ).hexdigest(),
         }
 
 

@@ -10,10 +10,12 @@ import os
 import sys
 from unittest.mock import patch
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import core.turn_coordinator as tc_mod
-from core.turn_coordinator import OUT_LLM_STREAMING, TurnCoordinator
+from core.turn_coordinator import OUT_LLM_STREAMING, TurnAuthorityError, TurnCoordinator
 
 
 def _fresh_coordinator() -> TurnCoordinator:
@@ -100,6 +102,86 @@ def test_chat_handler_send_claims_turn_from_ledger():
     asyncio.run(run())
 
 
+def test_chat_handler_freezes_browser_lease_at_turn_admission() -> None:
+    async def run() -> None:
+        import tempfile
+        import time
+        from types import SimpleNamespace
+
+        import server.interaction_branch as branch_module
+        from server.handlers.chat_handler import ChatHandler
+        from server.interaction_branch import (
+            InteractionBranchCoordinator,
+            InteractionBranchState,
+        )
+
+        async def provider_run(_params):
+            raise AssertionError("lease capture must not execute Provider work")
+
+        coordinator = InteractionBranchCoordinator(
+            provider_run=provider_run,
+            root=tempfile.mkdtemp(prefix="turn_admission_lease_"),
+        )
+        now = time.time()
+        original = InteractionBranchState(
+            branch_id="branch-at-admission",
+            parent_session_id="lease-session",
+            provider="browser",
+            status="active",
+            goal="original",
+            browser_session_id="browser-original",
+            expires_at=now + 900,
+        )
+        coordinator._active_by_session["lease-session"] = original
+        branch_module._current_coordinator = coordinator
+        captured: list[dict] = []
+
+        async def stream(_text, **kwargs):
+            captured.append(dict(kwargs["interaction_branch_routing_lease"]))
+            return "done"
+
+        handler = ChatHandler()
+        handler.configure(stream_llm_query=stream, pending_sentence_items=None)
+        try:
+            with (
+                patch("core.session_manager.set_current_session_id"),
+                patch("core.session_manager.save_session"),
+                patch(
+                    "core.session_manager.get_session_title",
+                    return_value="existing title",
+                ),
+                patch(
+                    "core.chat_runtime.get_chat_runtime",
+                    return_value=SimpleNamespace(enable_conversation=False),
+                ),
+            ):
+                await handler._handle_send(
+                    {
+                        "text": "continue it",
+                        "turn_id": "lease-turn",
+                        "session_id": "lease-session",
+                    }
+                )
+                replacement = InteractionBranchState(
+                    branch_id="branch-after-admission",
+                    parent_session_id="lease-session",
+                    provider="browser",
+                    status="active",
+                    goal="replacement",
+                    browser_session_id="browser-replacement",
+                    expires_at=now + 900,
+                )
+                coordinator._active_by_session["lease-session"] = replacement
+                assert handler._stream_task is not None
+                await asyncio.wait_for(handler._stream_task, timeout=2.0)
+        finally:
+            branch_module._current_coordinator = None
+
+        assert captured[0]["branch_id"] == "branch-at-admission"
+
+    asyncio.run(run())
+
+
 def test_new_confirmed_chat_turn_interrupts_the_previous_turn_before_opening() -> None:
     async def run() -> None:
         coord = _fresh_coordinator()
@@ -174,8 +256,8 @@ def test_new_idle_chat_turn_quiesces_background_presentation_before_opening() ->
             background_interaction_interrupt=interrupt_interaction,
         )
         await handler._handle_send({"text": "next", "turn_id": "turn_next"})
-        assert coord.snapshot()["active_turn_id"] == "turn_next"
         await asyncio.wait_for(handler._stream_task, timeout=2)
+        assert coord.snapshot()["counters"]["turns_started"] == 1
         assert events == [
             "presentation_interrupted",
             "interaction_interrupted",
@@ -185,7 +267,7 @@ def test_new_idle_chat_turn_quiesces_background_presentation_before_opening() ->
     asyncio.run(run())
 
 
-def test_open_turn_ledger_failure_fallback():
+def test_open_turn_ledger_failure_is_not_a_local_grant():
     async def run():
         from server.handlers.chat_handler import ChatHandler
 
@@ -198,8 +280,9 @@ def test_open_turn_ledger_failure_fallback():
             tc_mod.get_turn_coordinator = _boom
             h = ChatHandler()
             h._chat_epoch = 4
-            grant = h._open_turn(turn_id="tx", session_id="", source="test")
-            assert grant["chat_epoch"] == 5  # 本地回退
+            with pytest.raises(TurnAuthorityError):
+                h._open_turn(turn_id="tx", session_id="", source="test")
+            assert h._chat_epoch == 4
         finally:
             tc_mod.get_turn_coordinator = saved
 

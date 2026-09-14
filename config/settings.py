@@ -501,6 +501,32 @@ PROVIDER_RUN_EVENT_CAP = _int("PROVIDER_RUN_EVENT_CAP", 500)
 PROVIDER_WORK_HEARTBEAT_S = _int("PROVIDER_WORK_HEARTBEAT_S", 45)
 PROVIDER_WORK_QUIET_NOTICE_S = _int("PROVIDER_WORK_QUIET_NOTICE_S", 90)
 PROVIDER_WORK_QUIET_REPEAT_S = _int("PROVIDER_WORK_QUIET_REPEAT_S", 300)
+# Whole-instance routing selector. Keep both routing strategies and share their
+# execution/presentation facilities; false selects the original Chat authority
+# at restart. The JSON is a Host-authored ProviderRequirements contract, not a
+# capability inference.
+COOPERATIVE_CHAT_ENABLED = _bool("COOPERATIVE_CHAT_ENABLED", True)
+# Temporary rollout selector while the professional planner's supported journeys
+# are compared with the current cooperative Work path. No automatic fallback.
+COOPERATIVE_WORK_PLANNER_ENABLED = _bool("COOPERATIVE_WORK_PLANNER_ENABLED", False)
+# Optional model on the existing LLM backend; empty inherits the role model.
+COOPERATIVE_WORK_PLANNER_MODEL = _str("COOPERATIVE_WORK_PLANNER_MODEL", "").strip()
+COOPERATIVE_CHAT_PROVIDER = _str("COOPERATIVE_CHAT_PROVIDER", "codex").strip().lower()
+COOPERATIVE_CHAT_REQUIREMENTS_JSON = _str(
+    "COOPERATIVE_CHAT_REQUIREMENTS_JSON",
+    '{"task_kind":"general","workspace_access":"write",'
+    '"workspace_ownership":"caller","ownership":"managed","resume":"attach"}',
+)
+COOPERATIVE_CHAT_ADDITIONAL_REQUIREMENTS_JSON = _str(
+    "COOPERATIVE_CHAT_ADDITIONAL_REQUIREMENTS_JSON", "{}",
+)
+COOPERATIVE_CHAT_QUERY_TIMEOUT_S = _float("COOPERATIVE_CHAT_QUERY_TIMEOUT_S", 45.0)
+COOPERATIVE_CHAT_QUERY_MAX_TOKENS = _int("COOPERATIVE_CHAT_QUERY_MAX_TOKENS", 900)
+COOPERATIVE_CHAT_PERMISSION_POLICY = _str(
+    "COOPERATIVE_CHAT_PERMISSION_POLICY", "ask",
+).strip().lower()
+if COOPERATIVE_CHAT_PERMISSION_POLICY not in {"deny", "ask"}:
+    raise ValueError("COOPERATIVE_CHAT_PERMISSION_POLICY supports deny or ask")
 # Host-owned Project trust roots. Project/Scratch/focus routing and Host diff
 # inspection read only this setting; retired Provider settings cannot widen it.
 WORK_PROJECT_ALLOWLIST = _str("WORK_PROJECT_ALLOWLIST", "")
@@ -685,6 +711,12 @@ COMPOUND_CONTROL_SHADOW_ENABLED = _bool(
     "COMPOUND_CONTROL_SHADOW_ENABLED", False
 )
 
+# Observe how the existing Work/AUIP/Browser witnesses converge for one origin
+# turn.  This adds no planner call and owns no dispatch: it records immutable
+# provenance plus a read-only ShadowTurnDecision so cardinality and cross-axis
+# relations can be replayed before any production authority migration.
+TURN_DECISION_SHADOW_ENABLED = _bool("TURN_DECISION_SHADOW_ENABLED", True)
+
 # AUIP action existence has a source-local decision axis because an AppSession
 # is neither Provider Work nor a Project/WorkItem.  When enabled, the role
 # prompt no longer carries a duplicate AUIP tag contract: the role speaks
@@ -695,6 +727,9 @@ COMPOUND_CONTROL_SHADOW_ENABLED = _bool(
 # authority; setting the flag false restores the legacy inline-role proposal
 # for bounded rollback.
 AUIP_CONTROL_DECISION_ENABLED = _bool("AUIP_CONTROL_DECISION_ENABLED", True)
+
+# Generation preference; never restyles existing artifacts or overrides user design.
+AUIP_ARTIFACT_STYLE_ENABLED = _bool("AUIP_ARTIFACT_STYLE_ENABLED", True)
 
 # Resolve the entity of an already-proposed Project focus against complete
 # host catalogs.  Genuine ambiguity becomes a one-shot Slice selection before

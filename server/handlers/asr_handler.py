@@ -114,6 +114,17 @@ class AsrHandler(RequestHandler):
 
     async def start_listening(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
         params = params or {}
+        if not self._active:
+            try:
+                asr_manager = await self._ensure_asr_manager()
+            except Exception as exc:
+                logger.exception("asr lazy init failed")
+                await bus.emit(Method.ASR_STATUS, {"status": "error", "error": str(exc)})
+                return {"status": "error", "error": str(exc)}
+            if asr_manager is None:
+                return {"status": "error", "error": "ASR manager unavailable"}
+        # Lazy initialization can suspend two start callers. Rejoin the current
+        # lifecycle after that wait before either caller creates a listener.
         if self._active:
             requested_source = str(params.get("source") or "")
             if requested_source and requested_source == self._source:
@@ -133,14 +144,6 @@ class AsrHandler(RequestHandler):
                 await self._emit_listening_status()
                 return {"status": "awake", "awake_seconds": self._awake_seconds}
             return {"status": "already_listening"}
-        try:
-            asr_manager = await self._ensure_asr_manager()
-        except Exception as exc:
-            logger.exception("asr lazy init failed")
-            await bus.emit(Method.ASR_STATUS, {"status": "error", "error": str(exc)})
-            return {"status": "error", "error": str(exc)}
-        if asr_manager is None:
-            return {"status": "error", "error": "ASR manager unavailable"}
         self._active = True
         self._one_shot = bool(params.get("one_shot", False))
         self._source = str(params.get("source") or "")

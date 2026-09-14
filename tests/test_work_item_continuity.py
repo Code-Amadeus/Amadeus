@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import tempfile
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -302,6 +303,7 @@ def test_browser_next_turn_reuses_work_item_but_mid_run_steer_reuses_attempt() -
             browser_session_id="browser-session",
             work_item_id="work-browser",
             operation_id="operation-browser-1",
+            expires_at=time.time() + 900,
         )
         coordinator._active_by_session["voice-session"] = branch
 

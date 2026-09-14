@@ -8,6 +8,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_main_chat_work_activity_has_no_permission_decision_mount() -> None:
+    source = (ROOT / "electron" / "src" / "renderer" / "components"
+        / "ChatPage.tsx").read_text(encoding="utf-8")
+    assert "onPermissionDecision=" not in source
+    assert "chat.permission.resolve" not in source
+
+
 def test_canvas_header_preview_button_sends_only_work_identity() -> None:
     source = (ROOT / "render" / "web" / "crt_canvas_surface.js").read_text(
         encoding="utf-8"
@@ -21,6 +28,9 @@ def test_canvas_header_preview_button_sends_only_work_identity() -> None:
         "getAttribute(name) { if (name === 'data-work-preview-item-id') return id; "
         "if (name === 'data-work-preview-attempt-id') return attemptId; return ''; }, "
         "classList: { remove() {}, add() {} } }); },\n"
+        "      __testPermission(action, relativePath = '') { return handlePermissionAction({ "
+        "getAttribute(name) { return name === 'data-permission-action' ? action : "
+        "name === 'data-export-relative-path' ? relativePath : ''; } }); },\n"
     )
     assert marker in source
     source = source.replace(marker, hook + marker, 1)
@@ -203,6 +213,104 @@ function assert(condition, message) {
   assert(html.includes(binarySha), "Binary preview lost its full SHA-256");
   assert(!html.includes("C:\\private\\workspace"), "Binary preview leaked its staging source");
   assert(!html.includes(".portrait.tmp"), "Binary preview leaked its transaction path");
+
+  surface.setPayload({
+    open: true, permissionVisible: true, taskDock,
+    permissionRequest: {
+      id: "permission-large", workItemId: "work-preview", attemptId: "attempt-preview",
+      capability: "filesystem.export", action: "copy_to_desktop",
+      scope: ["C:\\Users\\person\\Desktop\\profile.html"],
+      options: ["allow_once", "deny"], previewComplete: false, previewVersion: 3,
+      previews: [{path: "Desktop/profile.html", status: "truncated_text",
+        mediaType: "text/html", sizeBytes: 2617367, sha256: binarySha}],
+    },
+  });
+  html = surface.__testHtml();
+  assert(html.includes("Text preview truncated"), "Incomplete preview was not disclosed");
+  assert(html.includes("Approval covers the complete files"), "Approval scope is unclear");
+  assert(html.includes("2617367 bytes"), "Large file lost its full size");
+  assert(html.includes(binarySha), "Large file lost its full hash");
+  assert(html.includes('data-permission-action="allow_once"'), "Large file cannot be approved");
+  assert(html.includes('data-permission-action="review_file"'), "Full file review is unavailable");
+  await surface.__testPermission("review_file", "profile.html");
+  const reviewBody = JSON.parse(requests[requests.length - 1].options.body);
+  assert(reviewBody.action === "review_file" && reviewBody.relative_path === "profile.html", "Review lost its file selector");
+  assert(reviewBody.permission_request_id === "permission-large", "Review lost its permission owner");
+  assert(!("path" in reviewBody), "Renderer supplied a source path");
+  assert(surface.__testHtml().includes('data-permission-action="allow_once"'), "Review consumed the pending approval");
+
+  surface.setPayload({
+    open: true,
+    mode: "permission",
+    permissionVisible: true,
+    permissionRequest: {
+      id: "permission-cooperative",
+      ownerKind: "cooperative_run",
+      sessionId: "session-current",
+      runId: "run-cooperative",
+      providerRequestId: "native-permission",
+      capability: "shell.execute",
+      action: "execute_command",
+      scope: ["C:\\workspace\\target.txt"],
+      reason: "Approve the exact provider action.",
+      reversibility: "Writes one listed target.",
+      options: ["allow_once", "deny"],
+    },
+    taskDock,
+  });
+  surface.setPayload({ taskDock: { ...taskDock, revision: "ledger-refresh" } });
+  surface.setPayload({ permissionVisible: false, taskDock });
+  html = surface.__testHtml();
+  assert(html.includes("Approve the exact provider action."), "Work refresh hid cooperative permission");
+  await surface.__testPermission("allow_once");
+  const cooperativeBody = JSON.parse(requests[requests.length - 1].options.body);
+  assert(cooperativeBody.target === "permission" && cooperativeBody.action === "allow_once", "Cooperative permission escaped permission routing");
+  assert(cooperativeBody.owner_kind === "cooperative_run", "Cooperative owner identity missing");
+  assert(cooperativeBody.permission_request_id === "permission-cooperative", "Host permission identity missing");
+  assert(cooperativeBody.session_id === "session-current", "Session identity missing");
+  assert(cooperativeBody.run_id === "run-cooperative", "Run identity missing");
+  assert(cooperativeBody.provider_request_id === "native-permission", "Provider request identity missing");
+  assert(!("work_item_id" in cooperativeBody) && !("attempt_id" in cooperativeBody), "Renderer fabricated Work identity");
+
+  surface.setPayload({
+    permissionVisible: true,
+    permissionRequest: {
+      id: "permission-newer",
+      ownerKind: "cooperative_run",
+      sessionId: "session-current",
+      runId: "run-newer",
+      providerRequestId: "native-newer",
+      reason: "Newer cooperative permission.",
+      options: ["deny"],
+    },
+  });
+  surface.setPayload({
+    permissionVisible: false,
+    permissionRequest: {
+      id: "permission-cooperative",
+      ownerKind: "cooperative_run",
+      sessionId: "session-current",
+      runId: "run-cooperative",
+      providerRequestId: "native-permission",
+      options: ["deny"],
+    },
+  });
+  html = surface.__testHtml();
+  assert(html.includes("Newer cooperative permission."), "Stale resolution cleared a newer cooperative card");
+  surface.setPayload({
+    permissionVisible: false,
+    permissionRequest: {
+      id: "permission-newer",
+      ownerKind: "cooperative_run",
+      sessionId: "session-current",
+      runId: "run-newer",
+      providerRequestId: "native-newer",
+      options: ["deny"],
+    },
+  });
+  html = surface.__testHtml();
+  assert(!html.includes("Newer cooperative permission."), "Matching resolution left cooperative permission visible");
+  assert(html.includes('class="crt-canvas-task-striprow"') || html.includes('class="crt-canvas-task-dock"'), "Permission cleanup erased the underlying task projection");
 
   surface.setPayload({
     open: true,

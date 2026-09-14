@@ -151,7 +151,6 @@ def test_electron_slice_assets_reuse_the_wallpaper_surface_without_a_second_ui()
     assert '<script src="/render/web/crt_canvas_surface.js"></script>' in html
     assert '<script src="/render/web/electron_keyboard_composer.js"></script>' in html
     assert "createCrtCanvasSurface()" in host
-    assert 'bridgeEndpoint("canvas-state")' in host
     assert 'bridgeEndpoint("canvas-events")' in host
     assert "setElectronSliceShape" in host
     assert "shapeFlushTimer" in host
@@ -159,6 +158,7 @@ def test_electron_slice_assets_reuse_the_wallpaper_surface_without_a_second_ui()
     assert "shapeRetryTimer" in host
     assert "accepted === true" in host
     assert "setCanvasPresentation" in host
+    assert "setCanvasPresentation(profile) { desktopScene.setCanvasPresentation(profile || {}); }" in wallpaper_scene
     assert "setAttention" in host
     assert "keyboardInputToggleBounds" in host
     assert "keyboardComposerBounds" in host

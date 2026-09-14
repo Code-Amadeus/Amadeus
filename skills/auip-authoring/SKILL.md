@@ -25,9 +25,10 @@ Amadeus is absent.
 4. Reference Host-materialized `sdk/...` runtime assets in place. Do not open,
    copy, edit, regenerate, alias, or duplicate them, and never ship
    `.amadeus/runtime/authoring_inputs` or Attempt-private paths.
-5. Keep `auip.manifest.json` as the only hand-edited schema source. Run the two
-   Host-supplied opaque preflights—manifest validation, then manifest-to-entry
-   synchronization—without reading or duplicating their implementations.
+5. Keep `auip.manifest.json` as the only hand-edited schema source. Run the Host
+   preflights: validate, sync, then real entry boot with Host Python. Do not read
+   them. Fix `app_error` here and rerun all. Report environment/Host blockers
+   without altering the SDK; never ask Main Chat/user for a separate repair.
 
 Use visible Provider progress at truthful transitions: chosen AUIP shape,
 integration underway, validation underway, and completion or a concrete
@@ -190,9 +191,9 @@ the active Host lease.
 
 Verify the application/Managed-Core boundary, not only manifest shape:
 
-- execute the completed entry top-to-bottom both without AUIP and with the
-  exact Host-materialized runtime scripts; a capture stub that only records
-  `createManagedApp(...)` options is not a boot test;
+- boot the completed entry without AUIP, then run the supplied isolated real
+  entry preflight with exact Host-materialized scripts; it cannot replace
+  primary-loop/Controller tests, and an options-capture stub is not a boot test;
 - standalone behavior remains intact, including initial render and primary
   input binding. AUIP construction/start must not be the only path to original
   application initialization, so an adapter bootstrap error cannot blank or

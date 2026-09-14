@@ -1,0 +1,8 @@
+# Registered protocols and test instruments hash exact source bytes.
+# Keep these text inputs stable across Windows checkouts with autocrlf enabled.
+/docs/**/*.md text eol=lf
+/tests/*.py text eol=lf
+/archive/auip_d8/tests/*.py text eol=lf
+/tools/probes/**/*.py text eol=lf
+/tools/probes/fixtures/**/*.json text eol=lf
+/tools/probes/fixtures/**/*.zip binary

@@ -126,6 +126,7 @@ function SessionRow({
     >
       <button
         type="button"
+        data-chat-session-id={session.id}
         onClick={onSelect}
         onDoubleClick={onRename}
         className="flex-1 min-w-0 text-left border-none bg-transparent cursor-pointer"

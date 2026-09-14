@@ -51,6 +51,36 @@ def test_accepted_controls_are_ordered_and_return_a_task_receipt() -> None:
     asyncio.run(run())
 
 
+def test_authority_block_stops_remaining_delegate_batch() -> None:
+    async def run() -> None:
+        seen: list[str] = []
+
+        async def handle(task: str, _attrs: dict):
+            seen.append(task)
+            if task == "blocked":
+                return dispatcher.HostDispatchBlocked("routing lease rejected")
+            return "unexpected"
+
+        receipt = dispatcher.record_actions(
+            [
+                {
+                    "type": "DELEGATE",
+                    "attrs": {"intent": "execute", "task": "blocked"},
+                },
+                {
+                    "type": "DELEGATE",
+                    "attrs": {"intent": "execute", "task": "must not run"},
+                },
+            ],
+            delegate_handler=handle,
+        )
+        assert isinstance(receipt, asyncio.Task)
+        await receipt
+        assert seen == ["blocked"]
+
+    asyncio.run(run())
+
+
 def test_grounded_attrs_do_not_revive_fields_deleted_from_stale_raw() -> None:
     action = {
         "type": "DELEGATE",

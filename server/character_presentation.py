@@ -303,6 +303,10 @@ class CharacterPresentationCoordinator:
         self._emit_transition_now(transition)
         return transition
 
+    def current_activity(self) -> str:
+        """Read the shared scene without adding or replaying a source claim."""
+        return "work" if self._computer_use.active else ""
+
     @property
     def effective_owner(self) -> PresentationOwner | None:
         return self._claims.effective_owner

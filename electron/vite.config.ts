@@ -7,11 +7,11 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   root: '.',
   base: './',
-  publicDir: path.resolve(__dirname, '../assets/icons/app'),
+  publicDir: path.resolve(import.meta.dirname, '../assets/icons/app'),
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, 'src/renderer'),
-      '@assets': path.resolve(__dirname, '../assets'),
+      '@': path.resolve(import.meta.dirname, 'src/renderer'),
+      '@assets': path.resolve(import.meta.dirname, '../assets'),
     },
   },
   build: {

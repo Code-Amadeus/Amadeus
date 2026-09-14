@@ -7,6 +7,47 @@ export interface Message {
 
 export const INTERRUPTED_MARKER = '[interrupted by user]'
 
+export async function runSessionSelection(
+  state: { pending: number },
+  changed: (pending: boolean) => void,
+  request: () => Promise<Record<string, unknown>>,
+  apply: (payload: Record<string, unknown>) => void,
+): Promise<Record<string, unknown>> {
+  state.pending += 1
+  changed(true)
+  try {
+    const payload = await request()
+    if (payload.ok !== false) apply(payload)
+    return payload
+  } finally {
+    state.pending -= 1
+    changed(state.pending > 0)
+  }
+}
+
+export function chatEventMatchesSession(
+  payload: Record<string, unknown>, sessionId: string, interrupted: Set<string>,
+): boolean {
+  const turnId = typeof payload.turn_id === 'string' ? payload.turn_id : ''
+  return Boolean(sessionId && payload.session_id === sessionId && turnId && !interrupted.has(turnId))
+}
+
+export function chatAsrDestination(source: unknown): 'composer' | 'direct' | 'ignore' {
+  if (source === 'vn_player') return 'ignore'
+  if (source === 'wake') return 'direct'
+  return 'composer'
+}
+
+export function acceptedRoleMessage(
+  payload: Record<string, unknown>, sessionId: string, interrupted: Set<string>,
+): { messageId: string; text: string } | null {
+  const messageId = typeof payload.message_id === 'string' ? payload.message_id : ''
+  const text = typeof payload.text === 'string' ? payload.text : ''
+  if (!sessionId || payload.session_id !== sessionId || !messageId || !text.trim()
+    || interrupted.has(messageId)) return null
+  return { messageId, text }
+}
+
 export function interruptedDisplayText(
   existingText: string,
   eventText: string,

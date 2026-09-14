@@ -7,6 +7,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent_host.work_ledger_store import WorkLedgerStore
@@ -14,14 +16,72 @@ from agent_host.work_ledger_types import CompletionDecision
 from server.work_read_model import WorkReadModel
 
 
-def _model(store: WorkLedgerStore, *, now: float = 1000.0) -> WorkReadModel:
+def _model(
+    store: WorkLedgerStore,
+    *,
+    now: float = 1000.0,
+    unkept_draft: bool = False,
+) -> WorkReadModel:
     return WorkReadModel(
         store,
         clock=lambda: now,
-        is_unkept_draft=lambda _path: False,
+        is_unkept_draft=lambda _path: unkept_draft,
         is_desktop_export_permission=lambda _request: False,
         can_resume_authorized_export=lambda _request: False,
     )
+
+
+@pytest.mark.parametrize(("session_metadata", "expected_session"), [
+    ({"session_id":"direct", "provider_result":{"session_id":"fallback"}}, "direct"),
+    ({"provider_result":{"session_id":"snake"}}, "snake"),
+    ({"provider_result":{"sessionId":"camel"}}, "camel"),
+])
+def test_light_projection_matches_full_reads_and_refreshes_latest_facts(
+        tmp_path, monkeypatch, session_metadata, expected_session):
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    with WorkLedgerStore(tmp_path / "projection.sqlite3", clock=lambda:10.0) as store:
+        project = store.create_or_get_project(workspace)
+        item = store.create_work_item(project.project_id, title="Current task",
+            metadata={"presentation":{"image":"large" * 50_000}, "provider":"native"})
+        _, first = store.create_operation_attempt(item.work_item_id, intent="execute",
+            instruction="First", task="First", provider="native")
+        store.update_attempt(first.attempt_id, execution_status="succeeded")
+        _, second = store.create_operation_attempt(item.work_item_id, intent="amend",
+            instruction="Second", task="Second", provider="native",
+            attempt_metadata={**session_metadata, "provider_result":{
+                **session_metadata.get("provider_result", {}),
+                "provider_branch":{"screenshot":"large" * 50_000}}})
+        for kind in ("business.export", "Business.export", "provider_payload"):
+            store.register_artifact(item.work_item_id, kind=kind,
+                metadata={"screenshot":"large" * 50_000})
+        model = _model(store)
+        with monkeypatch.context() as full:
+            full.setattr(store, "latest_attempt", lambda work_id, **_kwargs:store.list_attempts(work_id)[-1])
+            full.setattr(store, "artifact_counts", lambda work_id:{
+                "business":sum(row.kind.startswith("business.") for row in store.list_artifacts(work_id)),
+                "runtime":sum(not row.kind.startswith("business.") for row in store.list_artifacts(work_id))})
+            expected = model.project_items(store.list_work_items())
+        with monkeypatch.context() as light:
+            def full_read_forbidden(*_args, **_kwargs):
+                raise AssertionError("list projection must not hydrate all attempts or artifact payloads")
+            light.setattr(store, "list_attempts", full_read_forbidden)
+            light.setattr(store, "list_artifacts", full_read_forbidden)
+            projected = model.project_items(store.list_work_items(include_presentation=False))
+            assert projected == expected
+            assert projected[0]["attemptId"] == second.attempt_id
+            assert projected[0]["sessionId"] == expected_session
+            store.update_attempt(first.attempt_id, metadata={"later_observation":True})
+            store.update_attempt(second.attempt_id, execution_status="running")
+            request = store.create_permission_request(item.work_item_id, attempt_id=second.attempt_id,
+                capability="filesystem.write", action="write", scope_paths=[str(workspace)])
+            current = model.project_items(store.list_work_items(include_presentation=False))[0]
+            assert current["attemptId"] == second.attempt_id and current["execution"] == "running"
+            assert current["pendingPermissionRequestId"] == request.request_id
+            assert current["businessArtifactCount"] == 1 and current["runtimeArtifactCount"] == 2
+        detail = model.detail(item.work_item_id)
+        assert detail["attempts"][-1]["metadata"]["provider_result"]["provider_branch"]
+        assert all(row["metadata"]["screenshot"] for row in detail["artifacts"])
 
 
 def _durable_facts(store: WorkLedgerStore, work_item_id: str) -> dict:
@@ -242,6 +302,57 @@ def test_projection_keeps_reported_direction_distinct_from_semantic_results() ->
             assert activity["directionSource"] == "codex_native_agent_message"
             assert activity["semanticSummary"] == ""
             assert activity["silentSeconds"] == 10.0
+
+
+def test_orphaned_projection_is_unknown_not_terminal_or_retryable() -> None:
+    with tempfile.TemporaryDirectory(prefix="work_read_orphaned_") as temp:
+        root = Path(temp)
+        workspace = root / "project"
+        workspace.mkdir()
+        with WorkLedgerStore(root / "ledger.sqlite3") as store:
+            project = store.create_or_get_project(workspace, name="Unknown outcome")
+            item = store.create_work_item(
+                project.project_id,
+                title="Reconcile native submission",
+                workspace_path=workspace,
+            )
+            _, attempt = store.create_operation_attempt(
+                item.work_item_id,
+                intent="execute",
+                instruction="Apply the requested change.",
+                provider="codex_app_server",
+                task="Apply the requested change.",
+            )
+            store.update_attempt(
+                attempt.attempt_id,
+                execution_status="orphaned",
+                metadata={"runtime_resumable": False},
+            )
+
+            row = _model(store, unkept_draft=True).project_item(store.get_work_item(item.work_item_id))  # type: ignore[arg-type]
+
+            assert row["execution"] == "orphaned"
+            assert row["liveness"] == "orphaned"
+            assert row["activity"]["phase"] == "orphaned"
+            assert row["activity"]["uncertainty"] == "native_outcome_unknown"
+            assert row["attention"] == "error"
+            assert row["canRetry"] is False
+            assert row["canResume"] is False
+            assert row["canPromoteToProject"] is False
+
+            store.update_attempt(
+                attempt.attempt_id,
+                metadata={
+                    "runtime_resumable": True,
+                    "provider_liveness": {"state": "cancel_pending"},
+                },
+            )
+            cancelling = _model(store).project_item(store.get_work_item(item.work_item_id))  # type: ignore[arg-type]
+            assert cancelling["canResume"] is False
+
+            store.set_work_item_state(item.work_item_id, "archived")
+            archived = _model(store).project_item(store.get_work_item(item.work_item_id))  # type: ignore[arg-type]
+            assert archived["canReopen"] is False
 
 
 def _main() -> None:

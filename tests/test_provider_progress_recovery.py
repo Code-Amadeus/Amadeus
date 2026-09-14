@@ -479,6 +479,7 @@ def test_startup_reconciles_claimed_recovery_without_replaying_execution() -> No
                     "recovery_state": "claimed",
                     "recovery_root_attempt_id": "attempt-predecessor",
                     "recovery_ordinal": 1,
+                    "recovery_claimed_at": 1.0,
                 }
             },
             attempt_id="attempt-predecessor",

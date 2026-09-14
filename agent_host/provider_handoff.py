@@ -93,6 +93,27 @@ _RECOVERY_MESSAGES = {
     ),
 }
 
+_AUIP_RECOVERY_MESSAGES = {
+    "en-US": (
+        "Amadeus application validation continuation\n\n"
+        "The preceding attempt produced an application, but Amadeus could not yet verify it "
+        "through the existing application preflight. Continue the same already-authorized Work "
+        "in the prepared workspace, correct the application, and run that validation again "
+        "without broadening the goal or permissions."
+    ),
+    "zh-CN": (
+        "Amadeus 应用验证续接\n\n"
+        "上一轮已经产出应用，但 Amadeus 尚未通过现有应用预检完成验证。请在准备好的工作区内"
+        "继续同一个已授权 Work，修正应用并再次运行该验证，不要扩大目标或权限。"
+    ),
+    "ja-JP": (
+        "Amadeus アプリ検証継続\n\n"
+        "直前の試行ではアプリが生成されましたが、Amadeus は既存のアプリ事前検証をまだ完了できませんでした。"
+        "準備済みのワークスペースで承認済みの同じ Work を続け、目標や権限を広げずにアプリを修正し、"
+        "その検証をもう一度実行してください。"
+    ),
+}
+
 
 def codex_handoff_presentation(
     task: str,
@@ -127,10 +148,20 @@ def codex_handoff_presentation(
     )
 
 
-def provider_recovery_user_message(*, presentation_locale: object = None) -> str:
+def provider_recovery_user_message(
+    *,
+    presentation_locale: object = None,
+    reason: object = "progress_only_completion",
+) -> str:
     """Describe a Host-owned same-authority continuation without replaying the user."""
 
-    return _RECOVERY_MESSAGES[_normalize_locale(presentation_locale)]
+    recovery_reason = str(reason or "progress_only_completion").strip().lower()
+    locale = _normalize_locale(presentation_locale)
+    if recovery_reason == "progress_only_completion":
+        return _RECOVERY_MESSAGES[locale]
+    if recovery_reason == "auip_validation_failed":
+        return _AUIP_RECOVERY_MESSAGES[locale]
+    raise ValueError(f"unsupported provider recovery reason: {recovery_reason}")
 
 
 def _normalize_locale(value: object) -> str:

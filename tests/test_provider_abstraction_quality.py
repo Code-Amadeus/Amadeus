@@ -33,7 +33,9 @@ from agent_host.provider_workspace import (
     workspace_route_authority,
 )
 from server.app import _delegate_provider_selection
+from server.event_bus import bus
 from server.handlers.provider_handler import ProviderHandler
+from server.protocol import Method
 
 
 def _manifest(
@@ -212,6 +214,125 @@ def test_cancellation_becomes_visible_immediately_and_duplicate_requests_coalesc
         assert confirmed["cancelled"] is True
         assert record.task_handle is not None
         await asyncio.gather(record.task_handle, return_exceptions=True)
+
+    asyncio.run(scenario())
+
+
+def test_terminal_race_preserves_only_a_confirmed_native_cancellation() -> None:
+    async def one(status, cancel_outcome, expected_cancelled, expected_reason):
+        class Adapter:
+            provider_id = "terminal_cancel_race"
+            manifest = _manifest(provider_id)
+
+            def __init__(self):
+                self.started = asyncio.Event()
+                self.cancel_started = asyncio.Event()
+                self.finish_run = asyncio.Event()
+                self.release_cancel = asyncio.Event()
+
+            async def run(self, request, run_id, emit):
+                self.started.set()
+                await self.finish_run.wait()
+                return ProviderRunResult(status=status,
+                    result="done" if status == "done" else "",
+                    error="failed" if status == "error" else "")
+
+            async def cancel(self, run_id):
+                self.cancel_started.set()
+                self.finish_run.set()
+                await self.release_cancel.wait()
+                return dict(cancel_outcome)
+
+        runtime = ProviderRuntime()
+        adapter = Adapter()
+        runtime.register(adapter)
+        record = await runtime.start(ProviderRunRequest(
+            provider=adapter.provider_id, task="race one terminal result"))
+        await asyncio.wait_for(adapter.started.wait(), 2)
+        cancellation = asyncio.create_task(runtime.cancel(record.run_id))
+        await asyncio.wait_for(adapter.cancel_started.wait(), 2)
+        await asyncio.wait_for(record.task_handle, 2)
+        assert record.status == status
+        adapter.release_cancel.set()
+        outcome = await asyncio.wait_for(cancellation, 2)
+        assert outcome["cancelled"] is expected_cancelled
+        assert outcome["reason"] == expected_reason
+        await runtime.close()
+
+    async def scenario():
+        confirmed = {"confirmed":True, "cancelled":True, "reason":"interrupted"}
+        await one("cancelled", confirmed, True, "interrupted")
+        await one("done", confirmed, False, "terminal_while_cancelling")
+        await one("error", confirmed, False, "terminal_while_cancelling")
+        await one("cancelled", {"confirmed":False, "cancelled":False,
+            "reason":"interrupt_not_terminal"}, False, "terminal_while_cancelling")
+
+    asyncio.run(scenario())
+
+
+def test_running_cancel_transaction_survives_caller_cancellation_once() -> None:
+    async def scenario() -> None:
+        runtime = ProviderRuntime()
+        adapter = _SlowCancellationAdapter()
+        runtime.register(adapter)
+        terminal_entered = asyncio.Event()
+        release_terminal = asyncio.Event()
+        results: list[dict] = []
+
+        async def slow_terminal(_method: str, params: dict) -> None:
+            if params.get("provider") != adapter.provider_id:
+                return
+            if params.get("type") != "run.cancelled":
+                return
+            terminal_entered.set()
+            await release_terminal.wait()
+
+        async def capture_result(_method: str, params: dict) -> None:
+            if params.get("provider") == adapter.provider_id:
+                results.append(dict(params))
+
+        bus.on(Method.PROVIDER_EVENT, slow_terminal)
+        bus.on(Method.PROVIDER_RESULT, capture_result)
+        try:
+            record = await runtime.start(
+                ProviderRunRequest(
+                    provider=adapter.provider_id,
+                    task="cancel the active provider exactly once",
+                )
+            )
+            await asyncio.wait_for(adapter.started.wait(), timeout=2.0)
+            caller = asyncio.create_task(runtime.cancel(record.run_id))
+            await asyncio.wait_for(adapter.cancel_started.wait(), timeout=2.0)
+            adapter.confirm_cancel.set()
+            await asyncio.wait_for(terminal_entered.wait(), timeout=2.0)
+
+            caller.cancel()
+            try:
+                await caller
+            except asyncio.CancelledError:
+                pass
+            else:
+                raise AssertionError("the cancelled caller must observe cancellation")
+            assert results == []
+
+            release_terminal.set()
+            publication = record.terminal_publication_task
+            assert publication is not None
+            await asyncio.wait_for(asyncio.shield(publication), timeout=2.0)
+            assert record.task_handle is not None
+            await asyncio.gather(record.task_handle, return_exceptions=True)
+
+            assert adapter.cancel_calls == 1
+            assert record.status == "cancelled"
+            assert [event["type"] for event in record.events].count("run.cancelled") == 1
+            assert len(results) == 1
+            assert results[0]["run_id"] == record.run_id
+            assert results[0]["status"] == "cancelled"
+        finally:
+            adapter.confirm_cancel.set()
+            release_terminal.set()
+            bus.off(Method.PROVIDER_EVENT, slow_terminal)
+            bus.off(Method.PROVIDER_RESULT, capture_result)
 
     asyncio.run(scenario())
 
@@ -404,6 +525,10 @@ class _SpoofingWorkspaceAdapter:
                     "scope": "work_item",
                     "version": 1,
                 },
+                "provider_terminal_pipeline": {
+                    "state": "completed",
+                    "receipt_sha256": "spoofed",
+                },
             },
         )
 
@@ -505,6 +630,7 @@ def test_runtime_owns_and_protects_workspace_binding() -> None:
             "facet": "host.verified_result",
         }
         assert "provider_session" not in record.metadata
+        assert "provider_terminal_pipeline" not in record.metadata
 
     with tempfile.TemporaryDirectory(prefix="amadeus-runtime-workspace-") as temp_dir:
         asyncio.run(scenario(Path(temp_dir)))
@@ -621,9 +747,106 @@ def test_runtime_preserves_an_orphaned_typed_session_as_nonterminal() -> None:
     asyncio.run(scenario())
 
 
+def test_orphaned_publication_does_not_consume_resumed_terminal_receipt() -> None:
+    class Adapter:
+        provider_id = "orphan_resume_test"
+        manifest = ProviderManifest(
+            provider_id=provider_id,
+            display_name="orphan resume test",
+            capabilities=ProviderCapabilities(
+                task_kinds=("general",),
+                workspace_access="none",
+                workspace_ownership="none",
+                resume="same_attempt",
+            ),
+        )
+
+        def __init__(self) -> None:
+            self.run_calls = 0
+
+        async def run(self, request, run_id, emit):
+            self.run_calls += 1
+            if self.run_calls == 1:
+                return ProviderRunResult(
+                    status="orphaned",
+                    error="native outcome is unknown",
+                )
+            return ProviderRunResult(status="done", result="resumed completion")
+
+        async def cancel(self, run_id):
+            return {"confirmed": False, "cancelled": False}
+
+    async def scenario() -> None:
+        runtime = ProviderRuntime()
+        adapter = Adapter()
+        runtime.register(adapter)
+        events: list[dict] = []
+        results: list[dict] = []
+
+        async def capture_event(_method: str, params: dict) -> None:
+            if params.get("provider") == adapter.provider_id:
+                events.append(dict(params))
+
+        async def capture_result(_method: str, params: dict) -> None:
+            if params.get("provider") == adapter.provider_id:
+                results.append(dict(params))
+
+        bus.on(Method.PROVIDER_EVENT, capture_event)
+        bus.on(Method.PROVIDER_RESULT, capture_result)
+        try:
+            record = await runtime.start(
+                ProviderRunRequest(provider=adapter.provider_id, task="resume me")
+            )
+            assert record.task_handle is not None
+            await record.task_handle
+            assert record.status == "orphaned"
+            assert record.terminal_publication_task is None
+
+            try:
+                await runtime.resume(
+                    record.run_id,
+                    ProviderRunRequest(provider=adapter.provider_id, task="resume me"),
+                )
+            except ValueError as exc:
+                assert "Host-verified" in str(exc)
+            else:
+                raise AssertionError("adapter-authored orphan must not grant Resume")
+
+            # This assignment stands in for the future Host reconciliation
+            # checkpoint; the adapter result above was explicitly unable to
+            # grant the flag itself.
+            record.metadata["runtime_resumable"] = True
+
+            resumed = await runtime.resume(
+                record.run_id,
+                ProviderRunRequest(provider=adapter.provider_id, task="resume me"),
+            )
+            assert resumed is record
+            assert resumed.task_handle is not None
+            await resumed.task_handle
+        finally:
+            bus.off(Method.PROVIDER_EVENT, capture_event)
+            bus.off(Method.PROVIDER_RESULT, capture_result)
+
+        assert adapter.run_calls == 2
+        assert record.status == "done"
+        assert record.terminal_publication_task is not None
+        assert record.terminal_publication_task.done()
+        assert [item["status"] for item in results] == ["orphaned", "done"]
+        assert sum(item["type"] == "run.finished" for item in events) == 1
+        assert sum(
+            item["type"] == "run.status"
+            and item.get("payload", {}).get("status") == "orphaned"
+            for item in events
+        ) == 1
+
+    asyncio.run(scenario())
+
+
 def _main() -> None:
     test_provider_runtime_closes_adapter_owned_resources_without_provider_branching()
     test_runtime_routes_permissions_by_capability_not_provider_identity()
+    test_running_cancel_transaction_survives_caller_cancellation_once()
     test_runtime_binds_chat_origin_to_provider_neutral_activity_events()
     test_non_linear_capabilities_are_not_treated_as_strength_ranks()
     test_workspace_ownership_is_an_operational_requirement()
@@ -637,6 +860,7 @@ def _main() -> None:
     test_provider_session_handle_is_typed_and_provider_bound()
     test_runtime_serializes_only_the_typed_provider_session()
     test_runtime_preserves_an_orphaned_typed_session_as_nonterminal()
+    test_orphaned_publication_does_not_consume_resumed_terminal_receipt()
     print("ok: provider abstraction quality boundaries are enforced")
 
 

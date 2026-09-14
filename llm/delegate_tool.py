@@ -21,7 +21,7 @@ character speaks to whether the work dispatches at all. The win came from
 applying schema where the constraint actually is: a required `intent`
 attribute, which took that same step to 8/8 clean. So the flag above is a
 reproducible comparison, not a rollout awaiting its flip; read
-docs/delegate_transport_toolcall_probe_2026-07-31.md before changing it.
+docs/archive/delegate_transport_toolcall_probe_2026-07-31.md before changing it.
 """
 
 from __future__ import annotations

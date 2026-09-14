@@ -27,7 +27,7 @@ def test_slice_context_switch_is_explicit_and_separate_from_view_selection() -> 
 def test_electron_owns_history_and_receives_cross_surface_session_changes() -> None:
     source = CHAT.read_text(encoding="utf-8")
     app_source = APP.read_text(encoding="utf-8")
-    assert "send('session.create'" in source
+    assert "selectSession('session.create'" in source
     assert "project_id: projectId" in source
     assert "subscribe('session.changed'" in source
     assert "subscribe('session.changed'" in app_source
@@ -75,6 +75,14 @@ def test_permission_terminal_events_and_stale_actions_cannot_leave_attention_car
     assert 'state.permissionVisible = false;' in surface
 
 
+def test_electron_disables_disposition_while_native_outcome_is_unknown() -> None:
+    source = (ROOT / "electron" / "src" / "renderer" / "components" / "WorkPage.tsx").read_text(
+        encoding="utf-8"
+    )
+    assert "|| activeWorkItem?.execution === 'orphaned'" in source
+    assert "Outcome unknown / reconciliation required" in source
+
+
 def test_host_readonly_answer_has_session_and_renderer_message_identity() -> None:
     async def scenario() -> None:
         import server.app as server_app
@@ -103,6 +111,35 @@ def test_host_readonly_answer_has_session_and_renderer_message_identity() -> Non
             "host-answer:work_ledger_status:"
         )
         assert payload["append_to_main_chat"] is True
+
+    asyncio.run(scenario())
+
+
+def test_nonblocking_host_readonly_answer_skips_the_shared_output_floor() -> None:
+    async def scenario() -> None:
+        import server.app as server_app
+        from server.event_bus import bus
+
+        wait = AsyncMock(return_value=True)
+        emitted = []
+
+        async def capture(method: str, params: dict) -> None:
+            emitted.append((method, dict(params)))
+
+        with (
+            patch.object(server_app, "_wait_for_output_idle", new=wait),
+            patch("core.session_manager.get_current_session_id",
+                return_value="session-batch"),
+            patch("core.session_manager.conversation_history.add_assistant"),
+            patch.object(bus, "emit", new=capture),
+        ):
+            assert await server_app._speak_task_lookup_answer(
+                "ベータの状態。", source="work_status_narrator",
+                wait_for_idle=False)
+
+        wait.assert_not_awaited()
+        assert emitted[0][1]["speech_status"] == "text_only_nonblocking"
+        assert emitted[0][1]["speak"] is False
 
     asyncio.run(scenario())
 

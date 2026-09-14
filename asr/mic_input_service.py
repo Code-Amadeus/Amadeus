@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 # this module stays importable in audio-less installs (it is reachable from
 # backend bootstrap via barge-in / wake shutdown paths).
 
+from core.pyaudio_lifecycle import initialize_pyaudio, terminate_pyaudio
 from tts.aec_realtime import get_realtime_aec_processor
 
 logger = logging.getLogger(__name__)
@@ -120,8 +121,6 @@ class MicInputService:
 
     def start(self, preferred_index: int | None = None, *, wait_timeout: float | None = None) -> None:
         timeout = _startup_timeout_seconds() if wait_timeout is None else max(0.0, wait_timeout)
-        if preferred_index is not None:
-            self._mic_index = preferred_index
         if self.running:
             if self._stream is None:
                 if not self._wait_until_ready(timeout):
@@ -132,6 +131,8 @@ class MicInputService:
             if self._stream is None:
                 raise RuntimeError("[MicInput] microphone service is running without an input stream")
             return
+        if preferred_index is not None:
+            self._mic_index = preferred_index
         self._last_error = ""
         self._ready_event.clear()
         self._stop_event.clear()
@@ -504,7 +505,7 @@ class MicInputService:
         stream = None
         pa = None
         try:
-            pa = pyaudio.PyAudio()
+            pa = initialize_pyaudio(pyaudio.PyAudio)
             logger.info("[MicInput] opening microphone stream index=%s", self._mic_index)
             stream, self._mic_index = open_input_stream_with_fallback(
                 pa,
@@ -559,7 +560,7 @@ class MicInputService:
                 pass
             try:
                 if pa is not None:
-                    pa.terminate()
+                    terminate_pyaudio(pa)
             except Exception:
                 pass
             self._stream = None

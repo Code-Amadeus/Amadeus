@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import RichCard from './RichCard'
-import type { AuipExperienceProjection, ProviderInspectionDetails, OverlayMode, ProviderEvent, ProviderRun, WorkDockItem } from './types'
+import ProviderInputComposer from './ProviderInputComposer'
+import type { AuipExperienceProjection, ProviderInspectionDetails, OverlayMode, ProviderEvent, ProviderRun, WorkDockItem, WorkPageProps } from './types'
 import { eventNarrative } from './workState'
 
 interface Props {
@@ -30,6 +31,9 @@ interface Props {
   retryBusy: boolean
   setOverlay: (overlay: OverlayMode) => void
   workItemDetail: Record<string, unknown> | null
+  send: WorkPageProps['send']
+  subscribe: WorkPageProps['subscribe']
+  connected: boolean
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -77,6 +81,9 @@ export default function WorkDetailDrawer({
   retryBusy,
   setOverlay,
   workItemDetail,
+  send,
+  subscribe,
+  connected,
 }: Props) {
   const [retryAmendment, setRetryAmendment] = useState('')
 
@@ -137,6 +144,20 @@ export default function WorkDetailDrawer({
             <h2>{turnTitle}</h2>
             <p>{goal}</p>
           </div>
+
+          {activeWorkItem && (
+            <ProviderInputComposer
+              key={`${activeWorkItem.id}:${activeRun?.run_id || ''}`}
+              workItemId={activeWorkItem.id}
+              runId={activeRun?.run_id || ''}
+              recipient={`${effectiveProvider}: ${turnTitle}`}
+              enabled={connected && activeRun?.status === 'running'
+                && record(record(activeRun.metadata?.provider_manifest).capabilities).append_input === true}
+              inputs={detail.id === activeWorkItem.id ? rows(detail.providerInputs) : []}
+              send={send}
+              subscribe={subscribe}
+            />
+          )}
 
           <RichCard
             type="workspace"

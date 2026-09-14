@@ -37,6 +37,16 @@ def _display_text(value: Any) -> Any:
     return re.sub(r"[ \t]{2,}", " ", _ACTION_TAG_RE.sub("", visible)).strip()
 
 
+def _display_interruption(text: str, completed_text: str, marker: str) -> dict[str, str]:
+    """Project a live interruption without rewriting its stored raw history."""
+
+    return {
+        "text": str(_display_text(text) or marker),
+        "completed_text": str(_display_text(completed_text) or ""),
+        "marker": marker,
+    }
+
+
 def _display_dialog(dialog: Any) -> list[dict[str, Any]]:
     if not isinstance(dialog, list):
         return []
@@ -141,23 +151,30 @@ class SessionHandler(RequestHandler):
         if project_id and self._work_coordinator is None:
             return {"ok": False, "error": "work_context_unavailable"}
         previous_sid = str(sm.get_current_session_id() or "").strip()
-        if previous_sid:
-            sm.save_session(previous_sid, enable_conversation=True)
-        sm.create_session(sid)
-        if project_id:
-            try:
+        if previous_sid and not sm.save_session(previous_sid, enable_conversation=True):
+            return {"ok": False, "error": "could not save the active Session"}
+        prepared = False
+        bound = False
+        try:
+            sm.create_session(sid, activate=False)
+            prepared = True
+            if project_id:
                 context = self._work_coordinator.bind_session_context(
                     sid,
                     project_id,
                     source="electron.create",
                 )
-            except Exception as exc:
+                bound = True
+                if not title:
+                    title = str(context.get("projectName") or "Project")
+            if not sm.load_session(sid)[0]:
+                raise RuntimeError("could not activate the prepared Session")
+        except Exception as exc:
+            if bound:
+                self._work_coordinator.clear_session_project(sid)
+            if prepared:
                 sm.delete_session(sid)
-                if previous_sid:
-                    sm.load_session(previous_sid)
-                return {"ok": False, "error": str(exc)}
-            if not title:
-                title = str(context.get("projectName") or "Project")
+            return {"ok": False, "error": str(exc)}
         self._enable_conversation()
         sm.save_session(sid, enable_conversation=True)
         if title:
@@ -168,6 +185,10 @@ class SessionHandler(RequestHandler):
 
     def _load(self, params: dict[str, Any]) -> dict[str, Any]:
         sid = str(params.get("session_id") or "")
+        previous_sid = str(sm.get_current_session_id() or "").strip()
+        if previous_sid and previous_sid != sid:
+            if not sm.save_session(previous_sid, enable_conversation=True):
+                return {"ok": False, "error": "could not save the active Session"}
         ok, _enable = sm.load_session(sid)
         if not ok:
             return {"ok": False, "error": "session not found"}
@@ -182,10 +203,9 @@ class SessionHandler(RequestHandler):
         ok = sm.delete_session(sid)
         if ok and self._work_coordinator is not None:
             self._work_coordinator.clear_session_project(sid)
-        if sm.get_current_session_id() == sid:
-            sm.set_current_session_id(None)
         result = {"ok": ok, **self._list()}
-        self._publish_context_projection_now("session.deleted")
+        if ok:
+            self._publish_context_projection_now("session.deleted")
         return result
 
     def _rename(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -357,6 +377,8 @@ class SessionHandler(RequestHandler):
         existing_sid = self._matching_session(project_id, work_item_id)
         if existing_sid:
             result = self._load({"session_id": existing_sid})
+            if result.get("ok") is not True:
+                return result
             result["openedContext"] = True
             result["source"] = source
             await bus.emit(Method.SESSION_CHANGED, result)
@@ -364,10 +386,11 @@ class SessionHandler(RequestHandler):
             return result
 
         previous_sid = str(sm.get_current_session_id() or "").strip()
-        if previous_sid:
-            sm.save_session(previous_sid, enable_conversation=True)
+        if previous_sid and not sm.save_session(previous_sid, enable_conversation=True):
+            return {"ok": False, "error": "could not save the active Session"}
         sid = f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
-        sm.create_session(sid)
+        sm.create_session(sid, activate=False)
+        bound = False
         try:
             context = self._work_coordinator.bind_session_context(
                 sid,
@@ -375,10 +398,13 @@ class SessionHandler(RequestHandler):
                 work_item_id=work_item_id,
                 source=source,
             )
+            bound = True
+            if not sm.load_session(sid)[0]:
+                raise RuntimeError("could not activate the prepared Session")
         except Exception as exc:
+            if bound:
+                self._work_coordinator.clear_session_project(sid)
             sm.delete_session(sid)
-            if previous_sid:
-                sm.load_session(previous_sid)
             return {"ok": False, "error": str(exc)}
         title = str(context.get("projectName") or "Project")
         if work_item_id:
@@ -428,10 +454,10 @@ class SessionHandler(RequestHandler):
         bus.emit_now(Method.WORK_UPDATED, {"work": snapshot, "reason": reason})
 
     def _read_data(self, sid: str) -> dict[str, Any]:
-        path = Path(sm._session_path(sid))  # legacy helper; keeps filename sanitization identical.
-        if not path.exists():
-            return {}
         try:
+            path = Path(sm._session_path(sid))
+            if not path.exists():
+                return {}
             return json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             return {}

@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from core.chat_runtime import ChatRuntime, _TurnState
 from server.control_proposal import seal_control_proposals
-from server.control_shadow import RuntimeControlDecisionShadow
+from server.control_adjudication import RuntimeControlDecisionResolver
 
 
 class _Coordinator:
@@ -118,7 +118,7 @@ def test_runtime_shadow_uses_prior_history_and_never_current_role_reply() -> Non
                 '"reference_mode":"candidates"}]}'
             )
 
-        observer = RuntimeControlDecisionShadow(
+        observer = RuntimeControlDecisionResolver(
             coordinator=_Coordinator(),
             query=query,
             sink=evidence.append,
@@ -225,7 +225,7 @@ def test_runtime_correction_binds_multiplayer_followup_to_unique_active_work() -
                     if "work_item:work_true" in joined
                     else '{"evidence":"none"}'
                 )
-            assert "Unique active goal text" in joined
+            assert "Unique active Work context excerpts" in joined
             assert "植物大战僵尸" in joined
             assert "双人对战" in joined
             return (
@@ -236,7 +236,7 @@ def test_runtime_correction_binds_multiplayer_followup_to_unique_active_work() -
                 '"reference_mode":"candidates"}]}'
             )
 
-        observer = RuntimeControlDecisionShadow(
+        observer = RuntimeControlDecisionResolver(
             coordinator=_Coordinator(),
             query=query,
         )
@@ -290,7 +290,7 @@ def test_runtime_correction_binds_multiplayer_followup_to_unique_active_work() -
                 "session-shadow",
                 include_candidates=False,
             )
-            assert "Unique active goal text" in active_context, active_context
+            assert "Unique active Work context excerpts" in active_context, active_context
             result = await observer.capture(batch)
 
         assert result.decision_status == "ok", (
@@ -320,7 +320,7 @@ def test_incomplete_project_catalog_fails_closed_without_querying() -> None:
             calls += 1
             return "{}"
 
-        observer = RuntimeControlDecisionShadow(
+        observer = RuntimeControlDecisionResolver(
             coordinator=_Coordinator(complete=False),
             query=query,
             sink=evidence.append,
@@ -339,7 +339,7 @@ def test_incomplete_project_catalog_fails_closed_without_querying() -> None:
         assert result.canonical_controls == ()
         assert evidence == [result]
 
-        bounded = RuntimeControlDecisionShadow(
+        bounded = RuntimeControlDecisionResolver(
             coordinator=_Coordinator(complete=True),
             query=query,
             sink=evidence.append,
@@ -382,17 +382,17 @@ def test_compound_runtime_shadow_is_opt_in_payload_free_and_non_authoritative() 
                 '"reference_mode":"candidates"}]}'
             )
 
-        disabled = RuntimeControlDecisionShadow(
+        disabled = RuntimeControlDecisionResolver(
             coordinator=_Coordinator(),
             query=query,
         )
-        assert disabled.capture_compound_shadow(_batch()) is None
+        assert disabled.capture_compound(_batch()) is None
         assert calls == 0
 
-        observer = RuntimeControlDecisionShadow(
+        observer = RuntimeControlDecisionResolver(
             coordinator=_Coordinator(),
             query=query,
-            compound_shadow=True,
+            compound_enabled=True,
             compound_sink=evidence.append,
         )
         with (
@@ -402,7 +402,7 @@ def test_compound_runtime_shadow_is_opt_in_payload_free_and_non_authoritative() 
             ),
             patch("llm.prompts.registered_provider_ids", return_value=("locus",)),
         ):
-            result = await observer.capture_compound_shadow(_batch())
+            result = await observer.capture_compound(_batch())
 
         assert result.status == "ok"
         assert len(result.operations) == 1

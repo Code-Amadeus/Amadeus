@@ -1,20 +1,12 @@
-"""Turn lifecycle coordinator — runtime convergence plan Phase 2 (observation).
+"""Foreground turn/epoch owner with bounded runtime observations.
 
-一个小状态账本，不是 kernel：
+Chat ingress consumes open_turn/advance_chat_epoch grants; its local counter is
+a cache, not a fallback authority. Failed Chat grants raise TurnAuthorityError.
+Observational on_* notifications and the existing TTS/playback fallback policy
+remain separate. This in-memory owner is not a durable Control Ledger.
 
-- 记录 会话/轮次/ASR 模式/输出模式 的状态转换，镜像各子系统上报的 epoch；
-- 校验一组具体的不变量，违规只告警和计数，**从不抛异常、从不阻塞热路径**；
-- 提供 snapshot() 给 runtime.status 和调试取证（含最近转换环形缓冲）。
-
-Phase 2 边界（重要）：
-- 本模块**不拥有**任何 epoch 或状态——chat_epoch 仍属 chat_handler，
-  TTS interrupt epoch 仍属 tts.pipeline，playback epoch 仍属 PlaybackManager。
-  各所有者在状态变化点调用 on_* 上报；账本只记录与校验。
-- 所有 on_* 方法是同步、线程安全、O(1) 的，可以从任意线程（playback 线程、
-  asyncio 事件循环、ASR 监听线程）直接调用。
-- 位置在 core/ 而非 server/：tts/、asr/ 模块需要上报，不能反向依赖 server 层。
-
-所有权迁移（epoch 由账本发放）是后续阶段的工作。
+Methods use the coordinator lock, while audio evidence has its own short lock.
+The module lives in core so ASR/TTS can report without depending on server.
 """
 
 from __future__ import annotations
@@ -54,6 +46,18 @@ GATE_DROP = "drop"
 _TURN_STATE_CAP = 64
 
 
+class TurnAuthorityError(RuntimeError):
+    """A required Host turn grant/fence failed; never convert it into permission."""
+
+
+def require_legacy_turn_authority(admission: Any) -> None:
+    """Keep an explicitly new-mode turn out of an unconverted execution entry."""
+    if admission is not None and getattr(admission, "authority_mode", None) not in {
+        "source_witness_v1", "legacy",
+    }:
+        raise TurnAuthorityError("this execution entry does not accept TurnDecision authority")
+
+
 class TurnCoordinator:
     def __init__(self) -> None:
         self._lock = Lock()
@@ -61,7 +65,7 @@ class TurnCoordinator:
         self._session_id = ""
         self._active_turn_id = ""
         self._turn_source = ""
-        # 镜像 epoch（所有者上报，账本不发放）
+        # Granted epochs; downstream counters retain their hot-path caches.
         self._chat_epoch = -1
         self._tts_epoch = -1
         self._playback_epoch = -1
@@ -80,6 +84,12 @@ class TurnCoordinator:
         self._turn_events: dict[str, Event] = {}
         # per-turn 播放完成事件：最后一句播完、打断、作废或淘汰时置位。
         self._playback_events: OrderedDict[str, Event] = OrderedDict()
+        # Join presentation arrival events back to the originating user turn.
+        # This is observational only; sentence identity never authorizes a turn.
+        # Audio writers must never wait on the coordinator's logging mutex.
+        self._audio_evidence_lock = Lock()
+        self._turn_id_by_first_sentence: OrderedDict[str, str] = OrderedDict()
+        self._first_audio_write_at: OrderedDict[str, float] = OrderedDict()
         # provider
         self._provider_run_id = ""
         # 取证
@@ -133,6 +143,7 @@ class TurnCoordinator:
         session_id: str = "",
         source: str = "",
         pending: bool = False,
+        granted_epoch: int | None = None,
     ) -> dict[str, Any]:
         """申领一个 chat 轮次（所有权迁移·切片 C / D1）。
 
@@ -141,7 +152,7 @@ class TurnCoordinator:
 
         pending=True 开出投机轮次：LLM 流照常运行、句子照常入队，但该轮的
         TTS 条目会被出队门控（turn_gate）扣住，直到 confirm_turn / discard_turn
-        决议。绝不抛异常；账本不可用时调用方回退本地自增（旧行为）。
+        决议。申领失败抛 TurnAuthorityError；调用方不得本地发放或放行 pending。
         """
         try:
             with self._lock:
@@ -155,7 +166,14 @@ class TurnCoordinator:
                         "new chat turn opened while previous turn still active",
                         prev_turn=self._active_turn_id, new_turn=turn_id,
                     )
-                issued = self._issue_epoch("chat", self._chat_epoch, local_next_epoch, source)
+                if granted_epoch is None:
+                    issued = self._issue_epoch("chat", self._chat_epoch, local_next_epoch, source)
+                else:
+                    self._validate_adopted_chat_epoch(granted_epoch)
+                    if granted_epoch <= self._chat_epoch:
+                        raise TurnAuthorityError("committed Chat grant is no longer fresh")
+                    issued = granted_epoch
+                    self._record("chat_epoch_adopted", value=issued, source=source)
                 self._chat_epoch = issued
                 self._active_turn_id = str(turn_id or "")
                 self._turn_source = str(source or "")
@@ -173,9 +191,8 @@ class TurnCoordinator:
                     chat_epoch=issued, pending=pending or None,
                 )
                 return {"turn_id": str(turn_id or ""), "chat_epoch": issued, "pending": bool(pending)}
-        except Exception:
-            logger.debug("open_turn failed; caller falls back to local epoch", exc_info=True)
-            return {"turn_id": str(turn_id or ""), "chat_epoch": int(local_next_epoch), "pending": False}
+        except Exception as exc:
+            raise TurnAuthorityError("Chat turn admission failed") from exc
 
     # ── 轮次决议（pending-turn 语义，切片 D1）────────────────────────────────
 
@@ -397,7 +414,7 @@ class TurnCoordinator:
     # - local_next == mirror+1 → 正常发放；
     # - 分歧 → 记违规并发放 max(两者)。取大是安全方向：更大的 epoch 只会
     #   多失效旧作业，绝不会让已打断的作业复活。
-    # 发放方法绝不抛异常；调用方在账本不可用时回退本地自增（旧行为）。
+    # Chat 申领失败必须传播；TTS/playback 保留其既有本地清理回退。
 
     def _issue_epoch(self, kind: str, mirror: int, local_next: int, source: str) -> int:
         local_next = int(local_next)
@@ -423,9 +440,23 @@ class TurnCoordinator:
                 issued = self._issue_epoch("chat", self._chat_epoch, local_next, source)
                 self._chat_epoch = issued
                 return issued
-        except Exception:
-            logger.debug("epoch issuance failed; falling back to local", exc_info=True)
-            return int(local_next)
+        except Exception as exc:
+            raise TurnAuthorityError("Chat epoch advancement failed") from exc
+
+    @staticmethod
+    def _validate_adopted_chat_epoch(epoch: int) -> None:
+        if isinstance(epoch, bool) or not isinstance(epoch, int) or epoch < 0:
+            raise TurnAuthorityError("a committed nonnegative Chat epoch is required")
+
+    def synchronize_chat_epoch(self, epoch: int, *, source: str = "") -> int:
+        """Restore a Host watermark/cache without issuing another turn or grant."""
+        self._validate_adopted_chat_epoch(epoch)
+        with self._lock:
+            if epoch < self._chat_epoch:
+                raise TurnAuthorityError("Chat watermark is stale")
+            self._chat_epoch = epoch
+            self._record("chat_epoch_synchronized", value=epoch, source=source)
+            return epoch
 
     def advance_tts_epoch(self, *, local_next: int, source: str = "") -> int:
         try:
@@ -503,6 +534,8 @@ class TurnCoordinator:
 
     def on_sentence_playback_started(self, *, sentence_id: str = "") -> None:
         try:
+            with self._audio_evidence_lock:
+                turn_id = self._turn_id_by_first_sentence.get(str(sentence_id or ""), "")
             with self._lock:
                 if self._output_mode == OUT_INTERRUPTED:
                     # 打断后没有新轮开始，却有音频开始播——旧 epoch 泄漏。
@@ -515,9 +548,56 @@ class TurnCoordinator:
                     )
                 else:
                     self._output_mode = OUT_PLAYING
-                self._record("sentence_playback_started", sentence_id=sentence_id)
+                self._record(
+                    "sentence_playback_started",
+                    sentence_id=sentence_id,
+                    turn_id=turn_id,
+                    first_sentence=bool(turn_id) or None,
+                )
         except Exception:
             logger.debug("coordinator notify failed", exc_info=True)
+
+    def on_first_sentence_enqueued(self, *, turn_id: str, sentence_id: str) -> None:
+        """Record the presentation identity join used by latency diagnostics."""
+
+        try:
+            clean_turn = str(turn_id or "")
+            clean_sentence = str(sentence_id or "")
+            if not clean_turn or not clean_sentence:
+                return
+            with self._audio_evidence_lock:
+                self._turn_id_by_first_sentence[clean_sentence] = clean_turn
+                self._turn_id_by_first_sentence.move_to_end(clean_sentence)
+                while len(self._turn_id_by_first_sentence) > _TURN_STATE_CAP * 2:
+                    self._turn_id_by_first_sentence.popitem(last=False)
+            with self._lock:
+                self._record(
+                    "first_sentence_enqueued",
+                    turn_id=clean_turn,
+                    sentence_id=clean_sentence,
+                )
+        except Exception:
+            logger.debug("coordinator notify failed", exc_info=True)
+
+    def on_sentence_audio_written(self, *, sentence_id: str) -> None:
+        """Observe a successful first device write; never guess the active turn.
+
+        Called on the audio writer thread: bounded memory only, no logging/I/O.
+        This is device-buffer submission, not proof of acoustic playback.
+        """
+        observed_at = time.monotonic()
+        with self._audio_evidence_lock:
+            turn_id = self._turn_id_by_first_sentence.get(sentence_id)
+            if not turn_id or turn_id in self._first_audio_write_at:
+                return
+            self._first_audio_write_at[turn_id] = observed_at
+            while len(self._first_audio_write_at) > _TURN_STATE_CAP:
+                self._first_audio_write_at.popitem(last=False)
+
+    def first_audio_write_times(self) -> dict[str, float]:
+        """Bounded monotonic evidence for diagnostic consumers, not authority."""
+        with self._audio_evidence_lock:
+            return dict(self._first_audio_write_at)
 
     def on_sentence_playback_complete(self, *, sentence_id: str = "") -> None:
         """Release sentence-scoped playback, including Observer narration.

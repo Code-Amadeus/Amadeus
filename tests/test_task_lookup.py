@@ -54,6 +54,22 @@ def test_cancel_pending_status_is_not_rendered_as_stopped_or_plain_running() -> 
     assert status.startswith("cancel_pending")
     assert "not yet confirmed" in status
 
+
+def test_assignment_context_keeps_orphaned_outcome_explicitly_unknown() -> None:
+    status = _status_phrase(
+        {
+            "execution": "orphaned",
+            "activity_phase": "orphaned",
+            "activity_liveness": {"state": "orphaned"},
+            "attention": "error",
+            "completion": "unknown",
+        }
+    )
+
+    assert "native outcome unknown" in status
+    assert "reconciliation required" in status
+    assert "needs error" not in status
+
 # The oldest task is the target, and its title is a harness preamble rather
 # than anything containing the filename -- the shape a repaired first delegate
 # actually produced on 2026-08-01. Only what the task *produced* can find it.
@@ -767,6 +783,37 @@ def test_running_status_reports_direction_without_promoting_it_to_a_result() -> 
     assert terminal["fact_source"] == "none"
 
 
+def test_orphaned_status_is_unknown_not_terminal_or_retryable() -> None:
+    row = {
+        "work_item_id": "w-unknown",
+        "title": "接入现有小游戏",
+        "execution": "orphaned",
+        "activity_phase": "orphaned",
+        "activity_uncertainty": "native_outcome_unknown",
+        "completion": "unknown",
+        "attention": "error",
+        "terminal_summary": "MUST_NOT_BECOME_A_TERMINAL_RESULT",
+    }
+
+    facts = task_lookup.current_status_facts(row)
+    display, voice = task_lookup.render_current_status_facts(facts)
+    note = task_lookup.status_query_narration_note(row, session_id="session-unknown")
+    serialized_note = str(note)
+
+    assert facts["stage_key"] == "orphaned"
+    assert facts["fact_kind"] != "terminal_result"
+    assert facts["fact_source"] != "terminal_outcome"
+    assert "尚未确认" in facts["blocker_zh"]
+    assert "对账" in facts["next_zh"]
+    assert "重试" not in facts["next_zh"]
+    assert "已经结束" not in display
+    assert "执行失败" not in display
+    assert "終わっている" not in voice
+    assert note["metadata"]["status_facts"]["fact_kind"] != "terminal_result"
+    assert note["metadata"]["status_facts"]["fact_source"] != "provider_terminal"
+    assert "MUST_NOT_BECOME_A_TERMINAL_RESULT" not in serialized_note
+
+
 def test_the_answer_waits_for_the_floor_and_keeps_a_text_fallback() -> None:
     """Both halves of the wait, neither of which had ever run.
 
@@ -825,6 +872,10 @@ def test_the_answer_waits_for_the_floor_and_keeps_a_text_fallback() -> None:
             patch.object(server_app, "_ANSWER_IDLE_TIMEOUT_S", timeout_s),
             patch.object(server_app, "_announce_report_unanswered", capture),
             patch("core.session_manager.conversation_history", FakeHistory),
+            patch(
+                "core.session_manager.get_current_session_id",
+                return_value=SESSION,
+            ),
             patch.object(
                 task_lookup,
                 "resolve",

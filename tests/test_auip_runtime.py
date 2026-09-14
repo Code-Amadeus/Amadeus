@@ -45,6 +45,30 @@ def _registered(runtime: AuipRuntime, conversation: str = "conversation-a") -> d
     return runtime.register(manifest=_manifest(), conversation_id=conversation)
 
 
+def test_control_capabilities_are_opt_in_bounded_and_keep_state_private() -> None:
+    runtime = AuipRuntime()
+    registered = _registered(runtime)
+    sid = registered["app_session_id"]
+    runtime.publish_state(app_session_id=sid, bridge_token=registered["bridge_token"],
+        revision=1, state={"private_test_marker": "do not expose saved application data"})
+    default = runtime.render_control_context("conversation-a")
+    expanded = runtime.render_control_context("conversation-a", max_chars=4000,
+        include_capabilities=True)
+    assert "game.place_stone" not in default
+    assert "interaction_summary" not in default
+    assert "game.place_stone" in expanded and "Place one stone." in expanded
+    assert "interaction_summary=" in expanded and "projection_revision=1" in expanded
+    assert sid in expanded
+    assert "private_test_marker" not in expanded
+    assert "do not expose saved application data" not in expanded
+    assert len(runtime.render_control_context("conversation-a", max_chars=180,
+        include_capabilities=True)) <= 180
+    assert runtime.render_control_context("conversation-a") == default
+    assert runtime.render_control_context("another-session", include_capabilities=True) == ""
+    runtime.host_leave(app_session_id=sid, reason="test_complete")
+    assert runtime.render_control_context("conversation-a", include_capabilities=True) == ""
+
+
 def test_explicit_off_keeps_appsession_role_branch_product_inert() -> None:
     runtime = AuipRuntime(role_branch_mode="off")
     registered = _registered(runtime, "branch-off")
@@ -1059,6 +1083,10 @@ def test_choice_projection_is_exact_for_its_actions_and_composes_with_others() -
         "game.place_stone",
         "game.reset",
     }
+    control = runtime.render_control_context("choice-contract", max_chars=4000,
+        include_capabilities=True)
+    assert "game.place_stone" in control and "game.reset" in control
+    assert "game.resign" not in control
 
     reset = runtime.invoke_action(
         app_session_id=sid,
@@ -1225,7 +1253,8 @@ def test_compact_choice_projection_inherits_action_and_availability() -> None:
         facets=("state",),
         language="en",
     )
-    assert "Available actions are Center" in answer
+    assert "The app's action candidates for me are Center" in answer
+    assert "not a complete list of your direct UI controls" in answer
 
 
 def test_static_objective_reaches_role_and_participant_without_state_repetition() -> None:
@@ -1334,7 +1363,8 @@ def test_host_renders_standard_situation_receipt_and_capability_facts() -> None:
     assert "受理された記録はまだない" in before
     assert "全 2 段階中 1 段階" in before
     assert "次は「燃料加圧」" in before
-    assert "今選べる操作は「燃料加圧」" in before
+    assert "私向けに示している操作候補は「燃料加圧」" in before
+    assert "あなたの画面操作全体の一覧ではない" in before
     assert "アプリのルールに沿った共同参加" in before
 
     runtime.set_stance(app_session_id=sid, stance="participant")
@@ -1378,6 +1408,8 @@ def test_host_renders_standard_situation_receipt_and_capability_facts() -> None:
     assert "盤面は 2×2" in after
     assert "埋まっているマスは 1 個" in after
     assert "現在の手番はあなた" in after
+    assert "私向けに示している操作候補は今はない" in after
+    assert "あなたの画面操作全体の一覧ではない" in after
 
 
 def test_host_renders_scalar_safety_without_app_specific_rules() -> None:

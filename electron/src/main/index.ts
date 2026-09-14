@@ -25,6 +25,8 @@ import { isWallpaperStartup } from './startupMode.js'
 import { ApplicationLifecycle } from './appLifecycle.js'
 import { applicationMenuTemplate } from './applicationMenu.js'
 import { defaultMpsFallbackEnvironment } from './mpsFallbackPolicy.js'
+import { auipStoragePartition } from './auipStorage.js'
+import { CompanionPanel } from './companionPanel.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -151,6 +153,19 @@ type WorkPreviewSurface = {
 }
 const workPreviewSurfaces = new Map<string, WorkPreviewSurface>()
 const workPreviewIdsByWorkItem = new Map<string, string>()
+let companionBridge: WallpaperBridgeDescriptor | null = null
+const companionPanel = new CompanionPanel({
+  userDataDir: USER_DATA_DIR,
+  preload: path.join(__dirname, '..', 'preload', 'companion.cjs'),
+  portraitCacheDir: process.env.AMADEUS_COMPANION_PORTRAIT_CACHE
+    || path.join(PROJECT_ROOT, '..', 'visual novel player', 'out', 'vn_portrait_cache'),
+  bridge: () => companionBridge,
+  slice: () => electronSliceWindow?.webContents,
+  target: workItemId => {
+    const id = workPreviewIdsByWorkItem.get(workItemId)
+    return (id ? workPreviewSurfaces.get(id)?.window : null) || null
+  },
+})
 let workOverlayHitTestTimer: NodeJS.Timeout | null = null
 let workOverlayIgnoringMouse = false
 let workOverlayPanelBounds: Electron.Rectangle | null = null
@@ -810,6 +825,8 @@ function updateElectronSliceBounds(): void {
 }
 
 function closeElectronSliceWindow(): void {
+  void companionPanel.close()
+  companionBridge = null
   stopElectronSliceDesktopMonitor()
   closeElectronCanvasWindow()
   electronSliceWindow?.close()
@@ -824,6 +841,10 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
   const bridge = normalizeWallpaperBridge(rawBridge)
   if (!bridge) return false
   const platformPolicy = wallpaperWindowPolicy(process.platform)
+  if (companionBridge && (companionBridge.bridgePort !== bridge.bridgePort || companionBridge.assetPort !== bridge.assetPort)) {
+    void companionPanel.close()
+  }
+  companionBridge = bridge
   electronSliceLayout = bridge.sliceBounds
   const bridgeKey = `${bridge.assetPort}:${bridge.bridgePort}:${bridge.assetVersion}:${JSON.stringify(bridge.sliceBounds)}`
   if (electronSliceWindow && !electronSliceWindow.isDestroyed()) {
@@ -1648,6 +1669,7 @@ function createWorkPreviewSurface(descriptor: WorkPreviewDescriptor): {
     destroyWorkPreviewSurface(descriptor.previewId)
   })
   loadWorkPreviewContent(surface)
+  companionPanel.attachPreview(window, descriptor.workItemId)
   return { ok: true, detail: '', descriptor: projectedWorkPreviewDescriptor(surface) }
 }
 
@@ -1906,14 +1928,13 @@ async function openAuipInWorkPreview(
     return { ok: false, detail: error instanceof Error ? error.message : String(error) }
   }
 
-  const partitionToken = workPreviewPartitionToken(`${surface.descriptor.previewId}-auip`)
   const appView = new WebContentsView({
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
-      partition: `auip-work-preview-${partitionToken}`,
+      partition: auipStoragePartition(surface.descriptor.workItemId, policy.entryPath),
     },
   })
   appView.setBackgroundColor('#050708')
@@ -1927,6 +1948,13 @@ async function openAuipInWorkPreview(
   })
   configureWorkPreviewSession(appView.webContents.session)
   restrictAuipContentNetwork(appView.webContents.session, policy)
+
+  const diagnostics: string[] = []
+  appView.webContents.on('console-message', (_event, level, message) => {
+    if (level < 2 || !message || diagnostics.includes(message.slice(0, 300))) return
+    diagnostics.push(message.slice(0, 300))
+    if (diagnostics.length > 3) diagnostics.shift()
+  })
 
   return await new Promise(resolve => {
     const pending: PendingAuipHandoff = {
@@ -1943,7 +1971,10 @@ async function openAuipInWorkPreview(
           detail: 'Host did not commit AUIP Attach before the handoff deadline.',
         })
       }, 65_000),
-      resolve,
+      resolve: result => resolve(result.ok || diagnostics.length === 0 ? result : {
+        ...result,
+        detail: `${result.detail} Application diagnostic: ${diagnostics.join(' | ')}`,
+      }),
     }
     surface.pendingAuip = pending
     publishWorkPreviewPresentation(surface, 'auip-preloading')

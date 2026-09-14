@@ -21,6 +21,7 @@ import {
   workItemCapsuleTone,
   workItemBelongsToCurrentSession,
   workItemBelongsToHistory,
+  workItemAttentionActionLabel,
   workItemIsClosed,
   workItemNeedsAttention,
 } from './work/workProjection'
@@ -128,7 +129,7 @@ function workItemContextLabel(item: WorkDockItem, selected: boolean, history: bo
   else if (item.activity?.phase === 'cancelling') labels.push('Stopping')
   else if (item.activity?.phase === 'queued') labels.push('Queued')
   else if (['queued', 'running'].includes(item.execution)) labels.push('Working')
-  if (workItemNeedsAttention(item)) labels.push(attentionActionLabel(item.attention))
+  if (workItemNeedsAttention(item)) labels.push(workItemAttentionActionLabel(item))
   if (history) labels.push('History')
   else if (workItemIsClosed(item)) labels.push(item.state === 'archived' ? 'Archived' : 'Accepted')
   if (labels.length === 0) labels.push('Current')
@@ -249,6 +250,8 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
     ? {
         label: workItemIsClosed(activeWorkItem)
           ? activeWorkItem.state === 'archived' ? 'Archived' : 'Accepted'
+          : activeWorkItem.execution === 'orphaned'
+            ? 'Outcome unknown / reconciliation required'
           : activeLiveness === 'stalled'
             ? `Stalled / ${formatQuietSeconds(activeSilentForSeconds)} quiet`
             : activeLiveness === 'cancel_pending'
@@ -258,7 +261,7 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
               ? `${activeWorkItem.activity.phase} / ${formatQuietSeconds(activeWorkItem.activity.elapsedSeconds)} elapsed`
               : `Running / ${activeWorkItem.completion}`
             : workItemNeedsAttention(activeWorkItem)
-              ? `${attentionActionLabel(activeWorkItem.attention)} / ${activeWorkItem.completion}`
+              ? `${workItemAttentionActionLabel(activeWorkItem)} / ${activeWorkItem.completion}`
               : `${activeWorkItem.execution} / ${activeWorkItem.completion}`,
         tone: workItemNeedsAttention(activeWorkItem)
           ? 'risk'
@@ -1073,7 +1076,8 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
     activeRun?.status === 'queued'
     || activeRun?.status === 'running'
     || activeWorkItem?.execution === 'queued'
-    || activeWorkItem?.execution === 'running',
+    || activeWorkItem?.execution === 'orphaned'
+    || activeWorkItem?.execution === 'running'
   )
   const completionHistory = Array.isArray(workItemDetail?.completionHistory) ? workItemDetail.completionHistory : []
   const canAcceptWork = Boolean(
@@ -1112,8 +1116,12 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
         activeWorkItem.selectionReason ? `Reason: ${activeWorkItem.selectionReason}` : '',
         activeWorkItem.artifactCount !== undefined ? `Artifacts: ${activeWorkItem.artifactCount}` : '',
         '',
-        activeWorkItem.canResume
-          ? 'An interrupted provider run can be resumed from its checkpoint.'
+        activeWorkItem.execution === 'orphaned'
+          ? activeWorkItem.canResume
+            ? 'Provider outcome is unknown. Reconcile it before using the verified resume checkpoint.'
+            : 'Provider outcome is unknown. Reconcile it before retrying or starting replacement work.'
+          : activeWorkItem.canResume
+            ? 'An interrupted provider run can be resumed from its checkpoint.'
           : activeWorkItem.canRetry
             ? 'The failed provider run can be retried with the same instruction.'
             : 'New instructions start a separate WorkItem.',
@@ -1455,7 +1463,7 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
                       disabled={workAction === 'focus'}
                       title={[item.workspacePath || item.workspaceLabel, item.branch ? `Git branch ${item.branch}` : '', item.isolation, item.selectionReason].filter(Boolean).join(' / ') || item.updatedAt}
                     >
-                      {item.title} - {item.state ? `${item.state} / ` : ''}{item.execution} / {item.completion}{item.attention !== 'none' ? ` / ${item.attention}` : ''}{item.canResume ? ' / resume interrupted run' : item.canRetry ? ' / retry failed run' : ''}
+                      {item.title} - {item.state ? `${item.state} / ` : ''}{item.execution} / {item.completion}{item.execution === 'orphaned' ? ' / outcome unknown' : item.attention !== 'none' ? ` / ${item.attention}` : ''}{item.canResume ? ' / resume after reconciliation' : item.canRetry ? ' / retry failed run' : ''}
                     </button>
                   ))}
                 </div>
@@ -1680,6 +1688,9 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
             retryBusy={workAction === 'retry'}
             setOverlay={setOverlay}
             workItemDetail={workItemDetail}
+            send={send}
+            subscribe={subscribe}
+            connected={connected}
           />
           {renderOverlay()}
         </section>

@@ -1,4 +1,4 @@
-"""Characterize the two existing narration payloads before extraction."""
+"""Current narration payload contracts at the shared delivery boundary."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from vn_player.schemas import VNProfile
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_work_observer_payload_shape_is_stable_before_delivery_extraction() -> None:
+def test_work_observer_payload_preserves_run_identity_and_delivery_fields() -> None:
     async def run() -> dict:
         observer = WorkObserverCoordinator()
         observer.configure(display_language=lambda: "japanese")
@@ -50,6 +50,7 @@ def test_work_observer_payload_shape_is_stable_before_delivery_extraction() -> N
         "turn_id": "work-observer-run-1-final_report-4",
         "complete_turn": True,
         "source": "work_observer",
+        "run_id": "run-1",
         "action": "final_report",
         "terminal": True,
         "work_item_id": "work-1",
@@ -104,6 +105,6 @@ def test_vn_director_payload_shape_is_stable_before_delivery_extraction() -> Non
 
 
 if __name__ == "__main__":
-    test_work_observer_payload_shape_is_stable_before_delivery_extraction()
+    test_work_observer_payload_preserves_run_identity_and_delivery_fields()
     test_vn_director_payload_shape_is_stable_before_delivery_extraction()
     print("ok: Work and VN narration payload baselines are explicit")

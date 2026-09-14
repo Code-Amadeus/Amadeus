@@ -12,6 +12,7 @@ from core.chat_control_envelope import parse_inline_control_chunk
 from core.chat_history_projection import (
     project_completed_turn,
     project_inline_role_history,
+    stamp_branch_entries,
 )
 from core.chat_stream_consumption import consume_role_stream_text, iter_sync_stream
 from llm.stream_parser import StreamTagParser
@@ -44,6 +45,18 @@ def test_inline_no_control_is_history_evidence_not_an_action() -> None:
     assert parsed.delegate_actions == ()
     assert parsed.explicit_no_control is True
     assert parsed.history_control_text == '[CONTROL delegate="false"]'
+
+
+def test_live_stream_keeps_its_single_control_gate_when_history_can_read_many() -> None:
+    first = '[DELEGATE provider="codex" intent="amend" task="Change Game"]'
+    second = '[DELEGATE provider="codex" intent="amend" task="Change Page"]'
+    parser = StreamTagParser()
+    cleaned, actions = parser.process_chunk("Before." + first + "After." + second)
+    assert cleaned == "Before."
+    assert [action["raw"] for action in actions] == [first]
+    assert parser.process_chunk(second) == ("", [])
+    parser.reset()
+    assert [action["raw"] for action in parser.process_chunk(first + second)[1]] == [first]
 
 
 def test_inline_parser_preserves_exact_text_action_order_for_history() -> None:
@@ -99,7 +112,7 @@ def test_history_projection_keeps_session_and_turn_guards_in_one_owner() -> None
                 "core.chat_history_projection.turn_allows_history",
                 new=AsyncMock(return_value=True),
             ),
-            patch("core.chat_history_projection.stamp_active_branch_entries") as stamp,
+            patch("core.chat_history_projection.stamp_branch_entries") as stamp,
         ):
             projected = await project_completed_turn(
                 session_id="session_a",
@@ -107,7 +120,7 @@ def test_history_projection_keeps_session_and_turn_guards_in_one_owner() -> None
                 history_response="reply[DELEGATE ...]",
                 visible_response="reply",
                 turn_id="turn_a",
-                branch_continue_seen=True,
+                interaction_branch_id="branch-a",
             )
 
         assert projected is True
@@ -116,7 +129,7 @@ def test_history_projection_keeps_session_and_turn_guards_in_one_owner() -> None
             "reply[DELEGATE ...]",
             turn_id="turn_a",
         )
-        stamp.assert_called_once_with(2)
+        stamp.assert_called_once_with("branch-a", 2)
 
     asyncio.run(run())
 
@@ -137,7 +150,7 @@ def test_history_projection_rejects_a_late_turn_from_an_old_session() -> None:
                 history_response="late reply",
                 visible_response="late reply",
                 turn_id="turn_old",
-                branch_continue_seen=False,
+                interaction_branch_id="",
             )
 
         assert projected is False
@@ -145,6 +158,62 @@ def test_history_projection_rejects_a_late_turn_from_an_old_session() -> None:
         assert not history.add_assistant.called
 
     asyncio.run(run())
+
+
+def test_history_projection_rechecks_session_after_pending_gate_wait() -> None:
+    async def run() -> None:
+        history = SimpleNamespace(add_user=Mock(), add_assistant=Mock())
+        with (
+            patch(
+                "core.chat_history_projection.get_current_session_id",
+                side_effect=["session_a", "session_b"],
+            ),
+            patch("core.chat_history_projection.conversation_history", history),
+            patch(
+                "core.chat_history_projection.turn_allows_history",
+                new=AsyncMock(return_value=True),
+            ),
+        ):
+            projected = await project_completed_turn(
+                session_id="session_a",
+                question="late after gate",
+                history_response="must stay out of session b",
+                visible_response="must stay out of session b",
+                turn_id="turn_gate_switch",
+            )
+
+        assert projected is False
+        history.add_user.assert_not_called()
+        history.add_assistant.assert_not_called()
+
+    asyncio.run(run())
+
+
+def test_history_stamp_never_rebinds_a_stale_turn_to_replacement_branch() -> None:
+    history = SimpleNamespace(
+        dialog=[
+            {"role": "user", "content": "continue old branch"},
+            {"role": "assistant", "content": "acknowledged"},
+        ]
+    )
+    replacement = SimpleNamespace(branch_id="branch-b")
+    coordinator = SimpleNamespace(
+        active_branch_for_session=Mock(return_value=replacement)
+    )
+    with (
+        patch(
+            "server.interaction_branch.get_interaction_branch_coordinator",
+            return_value=coordinator,
+        ),
+        patch(
+            "core.chat_history_projection.get_current_session_id",
+            return_value="session-a",
+        ),
+        patch("core.chat_history_projection.conversation_history", history),
+    ):
+        stamp_branch_entries("branch-a", 2)
+
+    assert all("branch_id" not in entry for entry in history.dialog)
 
 
 def test_stream_consumer_preserves_parse_projection_dispatch_order() -> None:

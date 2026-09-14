@@ -123,7 +123,7 @@
               previous: previousPort,
               current: nextPort,
             }, "warning");
-            loadStateWithRetry(2).then(connectEvents);
+            connectEvents();
           }
         }
       } catch (err) {
@@ -790,23 +790,17 @@
       return;
     }
 
-    // 3. Fetch initial state with the resolved port, then establish the SSE stream.
-    loadStateWithRetry(5)
-      .then(function () {
-        if (flagEnabled("noEvents")) {
-          clientLog("bridge.events_skipped_by_flag", { flag: "noEvents" }, "warning");
-          return;
-        }
-        connectEvents();
-      })
-      .then(function () {
-        console.info("[WEBridge] connected, bridgePort=" + bridgePort());
-        clientLog("bridge.connected", { bridgePort: bridgePort() });
-      })
-      .catch(function (err) {
-        console.error("[WEBridge] unexpected error:", err);
-        clientLog("bridge.unexpected_error", { error: String(err) }, "error");
-      });
+    // 3. One subscription supplies the current Host state before live events,
+    // including after EventSource reconnects. The diagnostic no-events mode
+    // remains a single read without a live subscription.
+    if (flagEnabled("noEvents")) {
+      clientLog("bridge.events_skipped_by_flag", { flag: "noEvents" }, "warning");
+      await loadStateWithRetry(5);
+      return;
+    }
+    connectEvents();
+    console.info("[WEBridge] connected, bridgePort=" + bridgePort());
+    clientLog("bridge.connected", { bridgePort: bridgePort() });
   }
 
   waitForWallpaperApp(function () {

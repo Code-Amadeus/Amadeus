@@ -37,6 +37,13 @@ _BROWSER_STATE_ACTIONS = frozenset(
 )
 
 
+def normalize_requested_provider(value: Any) -> str:
+    """Normalize only declared Provider aliases used by control routing."""
+
+    requested = str(value or "").strip().lower()
+    return "browser" if requested in _BROWSER_PROVIDER_ALIASES else requested
+
+
 @dataclass(frozen=True, slots=True)
 class DelegateRequirementFacts:
     """Normalized execution facts used to compile ProviderRequirements.
@@ -76,9 +83,7 @@ class DelegateRequirementFacts:
         required_workspace_access: str = "",
     ) -> "DelegateRequirementFacts":
         values = attrs if isinstance(attrs, Mapping) else {}
-        requested_provider = str(values.get("provider") or "").strip().lower()
-        if requested_provider in _BROWSER_PROVIDER_ALIASES:
-            requested_provider = "browser"
+        requested_provider = normalize_requested_provider(values.get("provider"))
         normalized_workspace_access = (
             str(required_workspace_access or "").strip().lower()
         )

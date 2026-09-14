@@ -384,6 +384,22 @@ def _voice_configuration(settings: Any) -> list[dict[str, Any]]:
     ]
 
 
+def _artifact_configuration(settings: Any) -> list[dict[str, Any]]:
+    return [{
+        "id": "auip_artifact_style",
+        "label": "Artifact appearance",
+        "configured": True,
+        "status_ok": True,
+        "status": "enabled" if settings.AUIP_ARTIFACT_STYLE_ENABLED else "disabled",
+        "description": "A shared visual language for newly authored AUIP apps; each app keeps its own content and layout.",
+        "fields": [_startup_field(
+            "AUIP_ARTIFACT_STYLE_ENABLED", "Use Amadeus style",
+            settings.AUIP_ARTIFACT_STYLE_ENABLED, field_type="boolean",
+            description="After a backend restart, provide the style guide and CSS for future AUIP creation. Existing apps keep their design; explicit user design requests take priority.",
+        )],
+    }]
+
+
 def _avatar_configuration(settings: Any) -> list[dict[str, Any]]:
     enabled = bool(settings.VTS_ENABLED)
     return [
@@ -752,6 +768,17 @@ def _model_role_configuration(settings: Any) -> list[dict[str, Any]]:
     ]
 
 
+def _acp_credentials() -> list[dict[str, Any]]:
+    import os
+
+    return [
+        _startup_field("ANTHROPIC_API_KEY", "Anthropic API key", field_type="secret",
+                       secret_configured=bool(os.environ.get("ANTHROPIC_API_KEY"))),
+        _startup_field("DEEPSEEK_API_KEY", "DeepSeek API key", field_type="secret",
+                       secret_configured=bool(os.environ.get("DEEPSEEK_API_KEY"))),
+    ]
+
+
 def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
     codex_transport = (
         "app_server" if settings.CODEX_APP_SERVER_PROVIDER_ENABLED
@@ -935,6 +962,8 @@ class SystemHandler(RequestHandler):
             ),
             "model_roles": _model_role_configuration(settings),
             "work_provider_configuration": _work_provider_configuration(settings),
+            "acp_credentials": _acp_credentials(),
+            "artifact_configuration": _artifact_configuration(settings),
             "voice_configuration": voice_configuration,
             "avatar_configuration": _avatar_configuration(settings),
             "asr_backends": asr_backend_statuses(asr_backend),
@@ -958,6 +987,31 @@ class SystemHandler(RequestHandler):
                 if getattr(chat_runtime, "_control_proposal_observer", None) is not None
                 else "disabled"
             ),
+            "cooperative_chat_enabled": bool(
+                getattr(settings, "COOPERATIVE_CHAT_ENABLED", False)
+            ),
+            "cooperative_work_planner_enabled": bool(
+                getattr(settings, "COOPERATIVE_CHAT_ENABLED", False)
+                and getattr(settings, "COOPERATIVE_WORK_PLANNER_ENABLED", False)
+            ),
+            "cooperative_work_planner_model": str(
+                getattr(settings, "COOPERATIVE_WORK_PLANNER_MODEL", "") or ""
+            ),
+            "cooperative_chat_input_capabilities": {
+                "typed_text": True,
+                "confirmed_transcript_text": True,
+                "visual_attachment": True,
+                "speculative_voice": False,
+                "physical_voice_validated": False,
+            },
+            "cooperative_chat_provider": str(
+                getattr(settings, "COOPERATIVE_CHAT_PROVIDER", "") or ""
+            ),
+            "cooperative_permission_policy": (
+                str(getattr(settings, "COOPERATIVE_CHAT_PERMISSION_POLICY", "") or "")
+                if bool(getattr(settings, "COOPERATIVE_CHAT_ENABLED", False))
+                else "disabled"
+            ),
         }
 
     async def _set_config(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -965,6 +1019,7 @@ class SystemHandler(RequestHandler):
         if not isinstance(values, dict) or not values:
             raise ValueError("system.set_config requires a non-empty values object")
 
+        from config import settings
         from server import presentation_runtime
         from server import chat_translation_runtime
         from server import visual_runtime

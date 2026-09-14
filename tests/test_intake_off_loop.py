@@ -23,7 +23,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent_host.provider_runtime import ProviderRuntime
 from agent_host.provider_types import ProviderRunRequest, ProviderRunResult
-from server.event_bus import EventBus
+from server.event_bus import EventBus, bus
+from server.protocol import Method
 
 
 class IdleAdapter:
@@ -81,7 +82,7 @@ def test_blocking_intake_does_not_stall_the_event_loop() -> None:
         runtime.register(IdleAdapter())
         block_s = 0.3
 
-        def prepare(request: ProviderRunRequest) -> ProviderRunRequest:
+        def prepare(request: ProviderRunRequest, _run_id: str) -> ProviderRunRequest:
             # Stands in for `locus api workspaces ensure` + `git worktree add`.
             time.sleep(block_s)
             return request
@@ -120,7 +121,7 @@ def test_concurrent_intakes_do_not_interleave() -> None:
         runtime.register(IdleAdapter())
         trace: list[str] = []
 
-        def prepare(request: ProviderRunRequest) -> ProviderRunRequest:
+        def prepare(request: ProviderRunRequest, _run_id: str) -> ProviderRunRequest:
             # A check-then-write critical section: the guard reads state, then
             # the commit writes it. An interleaved reader would see stale state.
             trace.append(f"enter:{request.task}")
@@ -150,7 +151,7 @@ def test_async_preparer_and_sync_failures_keep_their_contract() -> None:
         runtime = ProviderRuntime()
         runtime.register(IdleAdapter())
 
-        async def prepare_async(request: ProviderRunRequest) -> ProviderRunRequest:
+        async def prepare_async(request: ProviderRunRequest, _run_id: str) -> ProviderRunRequest:
             request.metadata["display_task"] = "awaited"
             return request
 
@@ -165,7 +166,7 @@ def test_async_preparer_and_sync_failures_keep_their_contract() -> None:
         class Refused(RuntimeError):
             pass
 
-        def prepare_refusing(request: ProviderRunRequest) -> ProviderRunRequest:
+        def prepare_refusing(request: ProviderRunRequest, _run_id: str) -> ProviderRunRequest:
             # R11: ensure failure refuses the run; the caller must still see it.
             raise Refused("workspace ensure failed (worktree_failed)")
 
@@ -184,12 +185,111 @@ def test_async_preparer_and_sync_failures_keep_their_contract() -> None:
     asyncio.run(run())
 
 
+def test_repeated_start_cancellation_cannot_interrupt_terminal_publication() -> None:
+    class NeverStartedAdapter(IdleAdapter):
+        def __init__(self) -> None:
+            self.run_calls = 0
+
+        async def run(self, request, run_id, emit):
+            self.run_calls += 1
+            return await super().run(request, run_id, emit)
+
+    async def run() -> None:
+        runtime = ProviderRuntime()
+        adapter = NeverStartedAdapter()
+        runtime.register(adapter)
+        intake_entered = threading.Event()
+        release_intake = threading.Event()
+        terminal_entered = asyncio.Event()
+        release_terminal = asyncio.Event()
+        results: list[dict] = []
+
+        def prepare(request: ProviderRunRequest, _run_id: str) -> ProviderRunRequest:
+            intake_entered.set()
+            assert release_intake.wait(timeout=2.0)
+            return request
+
+        async def slow_terminal_event(_method: str, params: dict) -> None:
+            if params.get("provider") != adapter.provider_id:
+                return
+            if params.get("type") != "run.cancelled":
+                return
+            terminal_entered.set()
+            await release_terminal.wait()
+
+        async def capture_result(_method: str, params: dict) -> None:
+            if params.get("provider") == adapter.provider_id:
+                results.append(dict(params))
+
+        runtime.set_request_preparer(prepare)
+        bus.on(Method.PROVIDER_EVENT, slow_terminal_event)
+        bus.on(Method.PROVIDER_RESULT, capture_result)
+        try:
+            start_task = asyncio.create_task(
+                runtime.start(
+                    ProviderRunRequest(
+                        provider=adapter.provider_id,
+                        task="cancel while synchronous intake is retained",
+                    )
+                )
+            )
+            for _ in range(200):
+                if intake_entered.is_set():
+                    break
+                await asyncio.sleep(0.005)
+            assert intake_entered.is_set()
+
+            start_task.cancel()
+            release_intake.set()
+            await asyncio.wait_for(terminal_entered.wait(), timeout=2.0)
+            record = next(iter(runtime._runs.values()))
+
+            # Repeated caller cancellation may stop waiting, but must not cancel
+            # the retained Host terminal event/result transaction.
+            start_task.cancel()
+            await asyncio.sleep(0)
+            start_task.cancel()
+            await asyncio.sleep(0)
+            assert record.status == "cancelled"
+            assert results == []
+
+            close_task = asyncio.create_task(runtime.close())
+            await asyncio.sleep(0)
+            assert not close_task.done()
+
+            release_terminal.set()
+            try:
+                await asyncio.wait_for(start_task, timeout=2.0)
+            except asyncio.CancelledError:
+                pass
+            else:
+                raise AssertionError("the interrupted start must remain cancelled")
+
+            assert adapter.run_calls == 0
+            assert [event["type"] for event in record.events].count("run.cancelled") == 1
+            assert len(results) == 1
+            assert results[0]["run_id"] == record.run_id
+            assert results[0]["status"] == "cancelled"
+            assert record.terminal_publication_task is not None
+            assert record.terminal_publication_task.done()
+            await asyncio.wait_for(close_task, timeout=2.0)
+        finally:
+            release_intake.set()
+            release_terminal.set()
+            bus.off(Method.PROVIDER_EVENT, slow_terminal_event)
+            bus.off(Method.PROVIDER_RESULT, capture_result)
+            runtime.set_request_preparer(None)
+
+    asyncio.run(run())
+
+
 def _main() -> None:
     test_emit_now_reaches_subscribers_from_a_worker_thread()
     test_emit_now_without_a_bound_loop_drops_instead_of_raising()
     test_blocking_intake_does_not_stall_the_event_loop()
     test_concurrent_intakes_do_not_interleave()
     test_async_preparer_and_sync_failures_keep_their_contract()
+    test_repeated_start_cancellation_cannot_interrupt_terminal_publication()
     print("ok: control-plane intake runs off-loop, serialized, and still emits")
 
 

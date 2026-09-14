@@ -13,7 +13,7 @@
 <p>
   <a href="https://www.bilibili.com/video/BV1783G6hEYY/"><img src="https://img.shields.io/badge/demo-Bilibili-2f624a?labelColor=061710&logo=bilibili&logoColor=61eeb6" alt="Bilibili demo"/></a>
   <a href="./assets/architecture-overview-crt.svg"><img src="https://img.shields.io/badge/architecture-current-184b36?labelColor=061710" alt="Current architecture"/></a>
-  <img src="https://img.shields.io/badge/version-0.1_%CE%B1-2f624a?labelColor=061710" alt="Amadeus 0.1 alpha"/>
+  <img src="https://img.shields.io/badge/version-0.15_Alpha-2f624a?labelColor=061710" alt="Amadeus 0.15 Alpha candidate"/>
   <img src="https://img.shields.io/badge/profiles-core%20%2F%20voice%20%2F%20CPU%20VAD%20%2F%20cu124-2f624a?labelColor=061710" alt="Installation profiles: core, voice, CPU VAD, cu124"/>
   <img src="https://img.shields.io/badge/license-AGPL--3.0-272018?labelColor=061710" alt="License"/>
 </p>
@@ -24,9 +24,11 @@
 
 </div>
 
+> [0.15 Alpha: routing authority, configuration, and acceptance scope](docs/alpha-0.15.md)
+
 > [!IMPORTANT]
-> This repository contains buildable, runnable source. The current version is
-> **0.1 α**, not a packaged desktop release.
+> This repository contains buildable, runnable source. This branch targets
+> **0.15 Alpha**, not a packaged desktop release.
 > Amadeus first-party code is open-source under the
 > [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
 > Third-party code and external assets retain their own terms.

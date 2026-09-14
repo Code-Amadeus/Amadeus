@@ -30,7 +30,7 @@ from server.scratch_workspace import (
 logger = logging.getLogger(__name__)
 
 WORKSPACE_ROUTING_SURFACE = "runtime.routing"
-ACTIVE_EXECUTION = frozenset({"queued", "running"})
+UNRESOLVED_EXECUTION = frozenset({"queued", "running", "orphaned"})
 _MAX_SESSION_PROJECTS = 32
 _MAX_PROJECT_ALIASES = 8
 
@@ -58,7 +58,6 @@ class WorkDestinationService:
         self.store = store
         self._registry_check = registry_check or cwd_in_project_registry
         self._scratch_root_provider = scratch_root_provider or ensure_scratch_root
-        self._session_projects: dict[str, str] = {}
         self._session_project_feedback: dict[str, dict[str, str]] = {}
 
     @staticmethod
@@ -215,6 +214,7 @@ class WorkDestinationService:
                             project_id=project_id,
                             limit=1000,
                         )
+                        if candidate.workspace_mode != "none"
                     ),
                 }
                 explicit_identity = canonicalize_path(explicit_workspace).identity_key
@@ -307,22 +307,14 @@ class WorkDestinationService:
             project = self.available_project(
                 item.project_id if item is not None else project_id
             )
-            self.store.bind_conversation(
-                clean_session,
-                project.project_id,
-                anchor_work_item_id=clean_work_item,
-                metadata={"source": str(source or "").strip()} if source else None,
-            )
-            self._remember_session_project(clean_session, project.project_id)
-        if item is not None:
-            active = self.store.set_session_active_work_item(
-                clean_session,
-                item.work_item_id,
-                metadata={"source": str(source or "context_binding")},
-            )
-        else:
-            self.store.clear_session_active_work_item(clean_session)
-            active = None
+        self.store.update_session_context(
+            clean_session,
+            project_id=project.project_id if project is not None else None,
+            work_item_id=clean_work_item,
+            binding_metadata={"source": str(source or "").strip()} if source else None,
+            work_metadata={"source": str(source or "context_binding"),
+                "explicit_context_binding":True},
+        )
         self._session_project_feedback.pop(clean_session, None)
         binding_kind = "work_item" if item is not None else "project"
         project_name = (
@@ -336,7 +328,7 @@ class WorkDestinationService:
             clean_session,
             binding_kind,
             exposed_project_id,
-            active.active_work_item_id if active is not None else "",
+            clean_work_item,
         )
         return {
             "sessionId": clean_session,
@@ -438,32 +430,36 @@ class WorkDestinationService:
             "projectName": chosen["projectName"],
         }
 
-    def _remember_session_project(self, session_id: str, project_id: str) -> None:
-        if len(self._session_projects) >= _MAX_SESSION_PROJECTS:
-            self._session_projects.pop(next(iter(self._session_projects)))
-        self._session_projects.pop(session_id, None)
-        self._session_projects[session_id] = project_id
-
     def session_project(self, session_id: str) -> str:
         clean_session = str(session_id or "").strip()
         if not clean_session:
             return ""
-        project_id = self._session_projects.get(clean_session, "")
-        if not project_id:
+        # This pointer is already durable and may be changed by another local
+        # transaction owner. A private id cache can outlive that binding and
+        # even delete its replacement when the cached Project becomes invalid.
+        while True:
             binding = self.store.get_conversation_binding(clean_session)
             project_id = binding.project_id if binding is not None else ""
             if not project_id:
                 return ""
-            self._remember_session_project(clean_session, project_id)
-        project = self.store.get_project(project_id)
-        project_available = bool(
-            project is not None
-            and Path(project.canonical_path).is_dir()
-            and self._registry_check(project.canonical_path)
-        )
-        if not project_available:
-            self._session_projects.pop(clean_session, None)
-            self.store.clear_conversation_binding(clean_session)
+            project = self.store.get_project(project_id)
+            project_available = bool(
+                project is not None
+                and Path(project.canonical_path).is_dir()
+                and self._registry_check(project.canonical_path)
+            )
+            if project_available:
+                return project_id
+            if not self.store.clear_conversation_binding(
+                clean_session, expected_project_id=project_id
+            ):
+                # A replacement won while availability was checked. Refresh
+                # the read; this never retries a model decision or execution.
+                logger.debug(
+                    "[WORK-DESTINATION] binding changed during availability check: session=%s",
+                    clean_session,
+                )
+                continue
             self.set_session_project_feedback(
                 clean_session,
                 status="rejected",
@@ -473,14 +469,13 @@ class WorkDestinationService:
                 ),
             )
             return ""
-        return project_id
 
     def clear_session_project(self, session_id: str) -> None:
         clean_session = str(session_id or "").strip()
-        self._session_projects.pop(clean_session, None)
+        if not clean_session:
+            return
+        self.store.update_session_context(clean_session, project_id="")
         self._session_project_feedback.pop(clean_session, None)
-        self.store.clear_conversation_binding(clean_session)
-        self.store.clear_session_active_work_item(clean_session)
 
     def set_session_project_feedback(
         self,
@@ -541,12 +536,12 @@ class WorkDestinationService:
         if is_scratch_root(project.canonical_path):
             raise WorkLedgerConflict("the scratch container is not a project")
         if retired and any(
-            attempt.execution_status in ACTIVE_EXECUTION
+            attempt.execution_status in UNRESOLVED_EXECUTION
             for item in self.store.list_work_items(project_id=project_id, limit=1000)
             for attempt in self.store.list_attempts(item.work_item_id)
         ):
             raise WorkLedgerConflict(
-                f"project {project_id} still has work running; retire it once that finishes"
+                f"project {project_id} still has unresolved work; retire it after reconciliation"
             )
         updated = self.store.set_project_state(
             project_id,
