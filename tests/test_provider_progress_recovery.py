@@ -173,6 +173,8 @@ async def _run_scenario(
     )
     runtime.set_request_preparer(coordinator.prepare_request)
     coordinator.configure()
+    previous_allowlist = settings.WORK_PROJECT_ALLOWLIST
+    settings.WORK_PROJECT_ALLOWLIST = str(root)
     previous_isolation = settings.WORK_WORKTREE_ISOLATION
     settings.WORK_WORKTREE_ISOLATION = False
     try:
@@ -216,6 +218,7 @@ async def _run_scenario(
         raise
     finally:
         settings.WORK_WORKTREE_ISOLATION = previous_isolation
+        settings.WORK_PROJECT_ALLOWLIST = previous_allowlist
 
 
 def test_progress_only_write_continues_once_on_same_operation_and_session() -> None:

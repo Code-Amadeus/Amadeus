@@ -64,7 +64,8 @@ def test_gemini_message_query_keeps_system_and_user_roles_separate() -> None:
     })]
 
 
-def test_bedrock_message_query_uses_the_existing_native_transport() -> None:
+@pytest.mark.parametrize("response_shape", ["content", "choices"])
+def test_bedrock_message_query_uses_the_existing_native_transport(response_shape) -> None:
     from llm import client
 
     calls = []
@@ -72,6 +73,10 @@ def test_bedrock_message_query_uses_the_existing_native_transport() -> None:
     class Body:
         @staticmethod
         def read():
+            if response_shape == "choices":
+                return json.dumps({"choices": [{"message": {
+                    "content": '{"say":"ok","action":null}',
+                    "role": "assistant", "refusal": None}, "finish_reason": "stop"}]}).encode()
             return b'{"content":[{"text":"{\\"say\\":\\"ok\\",\\"action\\":null}"}]}'
 
     class Runtime:

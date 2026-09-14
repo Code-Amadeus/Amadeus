@@ -45,7 +45,10 @@
     "uv.lock",
     ".gitattributes",
     "docs/alpha-0.15.md",
-    "docs/acp_provider.md"
+    "docs/acp_provider.md",
+    "docs/routing-accuracy-baseline.md",
+    "docs/evidence/routing-accuracy-2026-09-12.json",
+    "docs/alpha-0.15-impact.md"
   ],
   "include_roots": [
     ".github",
@@ -114,7 +117,10 @@
     "uv.lock",
     ".gitattributes",
     "docs/alpha-0.15.md",
-    "docs/acp_provider.md"
+    "docs/acp_provider.md",
+    "docs/routing-accuracy-baseline.md",
+    "docs/evidence/routing-accuracy-2026-09-12.json",
+    "docs/alpha-0.15-impact.md"
   ],
   "exclude_globs": [
     ".github/ISSUE_TEMPLATE/config.yml",

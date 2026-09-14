@@ -552,6 +552,15 @@ def _bedrock_messages_stream(payload, *, model, timeout, on_text) -> str:
 
 
 def _bedrock_response_text(result: Mapping[str, Any]) -> str:
+    # Bedrock's Qwen native InvokeModel response uses the OpenAI chat shape;
+    # Anthropic and Converse responses retain their existing content blocks.
+    choices = result.get("choices")
+    if isinstance(choices, list) and choices and isinstance(choices[0], Mapping):
+        message = choices[0].get("message")
+        if isinstance(message, Mapping):
+            text = message.get("content")
+            if isinstance(text, str) and text:
+                return text
     content = result.get("content")
     if isinstance(content, list):
         text = "".join(

@@ -4,6 +4,8 @@ from unittest.mock import Mock
 
 import pytest
 
+pytest.importorskip("pyaudio", reason="voice tier (pyaudio) is not installed")
+
 from asr import microphone as mic
 
 

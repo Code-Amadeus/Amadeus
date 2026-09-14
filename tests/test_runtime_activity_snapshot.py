@@ -772,7 +772,8 @@ def test_confirmed_cancel_restarts_same_work_item_with_lineage() -> None:
 
             bus.on(Method.CHAT_WORK_NOTE, capture)
             try:
-                with patch.object(settings, "WORK_LEDGER_OWNS_TERMINAL_NARRATION", True):
+                with (patch.object(settings, "WORK_LEDGER_OWNS_TERMINAL_NARRATION", True),
+                      patch.object(settings, "WORK_PROJECT_ALLOWLIST", str(workspace))):
                     first = await runtime.start(_replacement_request(workspace))
                     await asyncio.wait_for(adapter.started_event.wait(), timeout=2.0)
                     binding = dict(first.metadata["work"])

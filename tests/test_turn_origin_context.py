@@ -285,7 +285,7 @@ def test_each_provider_builds_messages_from_the_same_turn_snapshot(session_files
             patch("core.chat_runtime._turn_system_prompt", return_value="system"),
             patch("core.chat_runtime._turn_role_grounding", return_value="facts"),
             patch("core.chat_runtime._turn_uses_conversation_history", return_value=True),
-            patch("core.chat_runtime.RAG_ENABLED_FOR_LOCAL", False),
+            patch("core.chat_runtime.RAG_ENABLED", False),
             pytest.raises(PromptCaptured),
         ):
             if provider == "local":

@@ -28,6 +28,11 @@ Provider runtime. They do not become a second writable task system.
 
 ## Configuration
 
+The [three-strategy comparison and accuracy baseline](routing-accuracy-baseline.md)
+explains original Chat, cooperative basic, and professional cooperative separately.
+The historical same-model comparison scored 17/26, 21/26, and 23/26 respectively;
+it is distinct from deterministic contract tests and current-candidate acceptance.
+
 The following explicitly selects the professional route used in the acceptance sample:
 
 ```dotenv
@@ -56,25 +61,44 @@ See [ACP providers](acp_provider.md) and [installation profiles](install_profile
 
 ## Voice acceptance evidence
 
-On Windows, with the existing Python 3.12/cu124 environment, real ChatPage,
-professional planning enabled, local GPT-SoVITS Japanese speech, and the default
-Realtek output device, the following warm ordinary Chat samples were observed:
+The owner-selected gate is warm ordinary Chat reaching its first audio-device write
+within 1.5 seconds, with professional planning enabled. Cold startup and task-response
+latency are separate measurements. The integration-workspace samples passed that gate.
 
-| Sample | First device-buffer write |
-| --- | ---: |
-| Ordinary conversation after the initial turn | 1.125 s |
-| Ordinary conversation after a completed planner task | 1.078 s |
+本次测试从新西兰发起，请求中国大陆的 DeepSeek 服务，首声耗时包含这段跨境网络通信。
+这里的首声是 E2E 延迟：从文字请求提交，到音频设备首次成功写入声音，包含模型请求、
+网络通信、首句生成和播放链路。在通信延迟更低的环境下，预热后的 E2E 首声有机会进入
+1 秒内。开启专业路由后，角色首句仍可先行回应，不必等待专业规划完成。
 
-Both meet the owner-selected **1.5 s warm ordinary Chat** gate. The metric joins the
-exact turn/sentence identities and measures Host admission to the first successful
-nonempty PortAudio write. It is not a microphone loopback measurement or a long-run
-percentile claim. Cold first-turn latency was 5.250 s; three task acknowledgements
-were 1.953, 1.469, and 1.484 s. The owner excluded cold startup and task responses from
-this particular gate; those observations are retained rather than scored as passes.
+The test client was in New Zealand, calling the DeepSeek service in mainland China.
+First-audio latency includes that cross-border network communication. With lower
+communication latency, warm end-to-end first audio may fall below one second.
+This means typed-request submission through the first successful audio-device write,
+including remote model/network work, first-sentence generation and the playback path.
+With professional routing enabled, the role's first response can begin before the
+planner completes; more specialized routing need not serialize the first spoken reply.
+This does not claim zero planner overhead, and typed input excludes microphone/ASR.
+Network transit,
+model-service wait and generation were not measured independently, so no estimated
+network duration is subtracted and this is not a fixed latency guarantee.
 
-These physical samples were collected in the integration workspace before resolving
-public-main overlaps. The public candidate receives separate deterministic and build
-checks. A physical measurement of the final merge revision remains a separate check.
+A separate AWS comparison used the configured Bedrock endpoint in Sydney
+(`ap-southeast-2`) and Qwen3-235B. It had a different model as well as a different
+network destination; its variation cannot be attributed to network distance alone.
+It demonstrated that sub-second warm first audio is possible, with variability across
+turns. Individual timings remain in the complete local measurement record.
+
+Both measurements used real ChatPage, the existing Python 3.12/cu124 environment,
+local GPT-SoVITS Japanese speech, and the default Realtek output device. Ordinary
+runtime warmup and the short-opening audio cache remained enabled, matching daily use.
+The metric joins exact turn/sentence identities from Host admission to the first
+successful nonempty PortAudio write. It is not microphone-loopback latency or a
+long-run percentile measurement.
+
+Physical samples were collected in the integration workspace; public-main adaptation
+has separate deterministic/build checks. These are not newly collected physical
+measurements of every subsequent public commit. The [impact and validation map](alpha-0.15-impact.md)
+separates those evidence boundaries.
 
 ## Draft boundaries
 

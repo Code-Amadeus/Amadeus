@@ -33,6 +33,13 @@ from test_work_effect_executor import _admission, _host, _payload
 from tools.sync_auip_manifest import sync_manifest
 
 
+@pytest.fixture(autouse=True)
+def trusted_recovery_workspace(tmp_path, monkeypatch):
+    # These recovery journeys deliberately reuse a persistent test workspace.
+    # A previous Attempt is not trust: configure the real registry for each case.
+    monkeypatch.setattr(settings, "WORK_PROJECT_ALLOWLIST", str(tmp_path))
+
+
 APP_ERROR = {
     "verified": False,
     "kind": "app_error",

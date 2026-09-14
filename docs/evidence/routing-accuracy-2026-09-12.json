@@ -1,0 +1,1641 @@
+{
+  "schema": "amadeus.routing-baseline-public.v1",
+  "date": "2026-09-12",
+  "source_revision": "e182052f",
+  "scope": "Historical single-turn Work-only real-model routing; seeded Host ledger and inert Provider effects; not rerun on the current public candidate",
+  "scenarios_sha256": "c5dede7cce944a48c3215297eabee6d29e297a3c5f1b419162b442399f65bd9a",
+  "arms": [
+    {
+      "name": "original-flash",
+      "scored": 26,
+      "passed": 17,
+      "percent": 65.4,
+      "cases": [
+        {
+          "case": "active_amend",
+          "group": "A",
+          "round": 1,
+          "source": "再加个头像吧，简单点就行。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "029594021f4d9928b58affd3cb91f3931effbcf47553ca94cfcf71b55f7bdf07"
+        },
+        {
+          "case": "active_query",
+          "group": "A",
+          "round": 1,
+          "source": "问问写这个的，现在还差哪些？",
+          "expected": "message",
+          "scored": true,
+          "observed": [
+            "report"
+          ],
+          "match": false,
+          "capture_sha256": "ce5e8e24ca95134d13ca8d541a3283b1cd180b76d3e93d529ad5b24de53ce5df"
+        },
+        {
+          "case": "active_stop",
+          "group": "A",
+          "round": 1,
+          "source": "菜谱那个先别做了。",
+          "expected": "retract",
+          "scored": true,
+          "observed": [
+            "none"
+          ],
+          "match": false,
+          "capture_sha256": "d96f0169c7420feba334b7cd5a4e38845ee292bd3e0b95e09a8dea4edb9f0698"
+        },
+        {
+          "case": "b_comment",
+          "group": "B2",
+          "round": 1,
+          "source": "刚才那个数独工具是不是有点难？",
+          "expected": "none",
+          "scored": true,
+          "observed": [
+            "none"
+          ],
+          "match": true,
+          "capture_sha256": "bec2ba46f7ee683099e9ac2936f95db51706c548d366a2fff4f705f43833ec75"
+        },
+        {
+          "case": "b_hearsay",
+          "group": "B2",
+          "round": 1,
+          "source": "别人都说 Paxos 很难。",
+          "expected": "none",
+          "scored": true,
+          "observed": [
+            "none"
+          ],
+          "match": true,
+          "capture_sha256": "4cee81994b68fd264fd6aaaddd2097fb01d65905d2e83f5e4fc4ad70ddad07b9"
+        },
+        {
+          "case": "b_howto_amend",
+          "group": "B1b",
+          "round": 1,
+          "source": "有没有办法让它刷新之后还在？",
+          "expected": null,
+          "scored": false,
+          "observed": [
+            "amend"
+          ],
+          "match": null,
+          "capture_sha256": "a6225f72e7883b0272e9f36272b87394e67b1e591c51f21cd10b5526dcb7cd06"
+        },
+        {
+          "case": "b_indirect_new",
+          "group": "B1b",
+          "round": 1,
+          "source": "我还缺个能记账的东西。",
+          "expected": null,
+          "scored": false,
+          "observed": [
+            "execute"
+          ],
+          "match": null,
+          "capture_sha256": "4c55c40cddab5dd35ec957b937f197c477a8c99af6e9a058dbc1c2454f9aa782"
+        },
+        {
+          "case": "b_meta_question",
+          "group": "B2",
+          "round": 1,
+          "source": "你觉得做这种页面一般要多久？",
+          "expected": "none",
+          "scored": true,
+          "observed": [
+            "none"
+          ],
+          "match": true,
+          "capture_sha256": "2880a35a765ed65883ddf2c121eba5ba169c690420fb0e18871c02c40bb57ad7"
+        },
+        {
+          "case": "b_multi_amend_exec",
+          "group": "B4",
+          "round": 1,
+          "source": "把便签页加个清空按钮，另外再帮我查下 Raft 的论文。",
+          "expected": [
+            "amend",
+            "execute"
+          ],
+          "scored": true,
+          "observed": [
+            "amend",
+            "execute"
+          ],
+          "match": true,
+          "capture_sha256": "b042023c48154525c10a21b960ceeb8de5b20eb435021c0163604917500db874"
+        },
+        {
+          "case": "b_multi_msg_amend",
+          "group": "B4",
+          "round": 1,
+          "source": "问问 Codex 这个怎么实现的，顺便把标题改成「我的清单」。",
+          "expected": [
+            "message",
+            "amend"
+          ],
+          "scored": true,
+          "observed": [
+            "clarify"
+          ],
+          "match": false,
+          "capture_sha256": "9f53b0e58523fa1becd773e85db426b9eaff51ec6e4a24599ff24b63137bb895"
+        },
+        {
+          "case": "b_multi_stop_exec",
+          "group": "B4",
+          "round": 1,
+          "source": "先停掉数独那个，然后做个计时器。",
+          "expected": [
+            "retract",
+            "execute"
+          ],
+          "scored": true,
+          "observed": [
+            "execute"
+          ],
+          "match": false,
+          "capture_sha256": "c2ce644aa1a6ffb555460e72d9f2f332bdae0a92bebaee5bda7d57de8b5b1d31"
+        },
+        {
+          "case": "b_musing",
+          "group": "B2",
+          "round": 1,
+          "source": "我在想要不要再做一个记账的。",
+          "expected": "none",
+          "scored": true,
+          "observed": [
+            "none"
+          ],
+          "match": true,
+          "capture_sha256": "79fef4f1d2a60a22ae8ef9884030e074fdf8eae8506973efcc2549563539c963"
+        },
+        {
+          "case": "b_question_amend",
+          "group": "B1a",
+          "round": 1,
+          "source": "你能不能帮我把刚才那个清单页做得好看点？",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "b595ad332ca03becdda57a9e66c1a429455a0d5c91bdaa53cc57e6c6daf867aa"
+        },
+        {
+          "case": "b_tentative_amend",
+          "group": "B1b",
+          "round": 1,
+          "source": "要不你研究一下怎么让它跑得更快？",
+          "expected": null,
+          "scored": false,
+          "observed": [
+            "amend"
+          ],
+          "match": null,
+          "capture_sha256": "63ce7630bed981d9a4d6d28802d57ea2f37d5499b11f073e5782b5b58cba8fd2"
+        },
+        {
+          "case": "b_terse_amend",
+          "group": "B3",
+          "round": 1,
+          "source": "改一下，加个清空按钮。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "2d6654f3faa72309e5d479eda56d7ad23dc98374bf082299faffe2a2a0079ff7"
+        },
+        {
+          "case": "b_terse_stop",
+          "group": "B3",
+          "round": 1,
+          "source": "停一下。",
+          "expected": "retract",
+          "scored": true,
+          "observed": [
+            "retract"
+          ],
+          "match": true,
+          "capture_sha256": "5ae673b8337d9a165bcc75ea4705460bcd5ae3dbc171c7419f12e41fb36ceff3"
+        },
+        {
+          "case": "b_two_named",
+          "group": "B5",
+          "round": 1,
+          "source": "把菜谱那个加个打印按钮。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "168d8e89ac5d0de7f7bc1a22fd9d13ec2b3d802c2ef29425954af59dfb320fae"
+        },
+        {
+          "case": "b_two_recent",
+          "group": "B5",
+          "round": 1,
+          "source": "刚才那个先停一下。",
+          "expected": "clarify",
+          "scored": true,
+          "observed": [
+            "clarify"
+          ],
+          "match": true,
+          "capture_sha256": "17e8a6b04454162793273e54537028e1d49070433d47f2d2cd2d03397c0111ef"
+        },
+        {
+          "case": "b_wish_export",
+          "group": "B1b",
+          "round": 1,
+          "source": "这个便签页要是能导出就好了。",
+          "expected": null,
+          "scored": false,
+          "observed": [
+            "amend"
+          ],
+          "match": null,
+          "capture_sha256": "0bc634798e7eb7e11052b2ce61620f7acc4bf10195e1a0c12992a23d80cfb649"
+        },
+        {
+          "case": "b_wish_research",
+          "group": "B1a",
+          "round": 1,
+          "source": "Paxos 那篇论文我一直没看懂，你帮我弄明白吧。",
+          "expected": "execute",
+          "scored": true,
+          "observed": [
+            "none"
+          ],
+          "match": false,
+          "capture_sha256": "7849fec5a5d3c58802f9f0c5131acbd21195740b8e3a215fb213c21807f47391"
+        },
+        {
+          "case": "budget_question",
+          "group": "A",
+          "round": 1,
+          "source": "问问 Codex，这个清单页的预算怎么设比较合适？",
+          "expected": "message",
+          "scored": true,
+          "observed": [
+            "execute"
+          ],
+          "match": false,
+          "capture_sha256": "233e6b7b388568abb6200a3a2c40e8a2040adef0f93ddc3d15e791f2efbae9bd"
+        },
+        {
+          "case": "budget_reply",
+          "group": "A",
+          "round": 1,
+          "source": "一百块左右吧。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "none"
+          ],
+          "match": false,
+          "capture_sha256": "c45b3959cabd4ec538913f20df1afa75c02aefd61826a5ac812611136dff6199"
+        },
+        {
+          "case": "continue_delivery",
+          "group": "A",
+          "round": 1,
+          "source": "那就接着做吧。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "f1134d69137c47d88bb49218979f12d7f696f34b35c4d3fa2ddb2c2ad02acaaf"
+        },
+        {
+          "case": "continue_explanation",
+          "group": "A",
+          "round": 1,
+          "source": "让它接着讲吧。",
+          "expected": "message",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": false,
+          "capture_sha256": "fd0684f1bc60c13897e9f7bd08c69abb83ac8b7e93bfe53a85f767d55f72ba1e"
+        },
+        {
+          "case": "emotion",
+          "group": "A",
+          "round": 1,
+          "source": "今天累死了。",
+          "expected": "none",
+          "scored": true,
+          "observed": [
+            "none"
+          ],
+          "match": true,
+          "capture_sha256": "fe0f9d9c0a9f084b6ee4b2994ae57969d92b91e5e956ab8179966fb7cc627eaa"
+        },
+        {
+          "case": "fresh_draft",
+          "group": "A",
+          "round": 1,
+          "source": "帮我做个简单的计时器页面。",
+          "expected": "execute",
+          "scored": true,
+          "observed": [
+            "execute"
+          ],
+          "match": true,
+          "capture_sha256": "fee977a53b0a50ddebdd84117a402569713461ab2eeb5f8bd3c0812bf8aea3b2"
+        },
+        {
+          "case": "new_goal_keep_old",
+          "group": "A",
+          "round": 1,
+          "source": "再做个记账的小工具，刚才那个别动。",
+          "expected": "execute",
+          "scored": true,
+          "observed": [
+            "execute"
+          ],
+          "match": true,
+          "capture_sha256": "a0d79f025555991744595de885643235b01c7f2e218ba1b6ad1a7b5f2c9cc890"
+        },
+        {
+          "case": "new_research",
+          "group": "A",
+          "round": 1,
+          "source": "那你帮我查下 Paxos 的论文呢？",
+          "expected": "execute",
+          "scored": true,
+          "observed": [
+            "execute"
+          ],
+          "match": true,
+          "capture_sha256": "56346040a3e74350d4c4cb995115c5b2a6a060bdd0b6823e2e79157382be765e"
+        },
+        {
+          "case": "terminal_amend",
+          "group": "A",
+          "round": 1,
+          "source": "再加个清空按钮吧。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "2aa3bf6e42b4f8d2411f8aba707de38a8295804d2f8a2bb10fa5a4b0e30c1d6a"
+        },
+        {
+          "case": "terminal_question",
+          "group": "A",
+          "round": 1,
+          "source": "问问 Codex，这个搜索具体是怎么做的？",
+          "expected": "message",
+          "scored": true,
+          "observed": [
+            "execute"
+          ],
+          "match": false,
+          "capture_sha256": "f372e2f540c75cedbabe7ecd070d2062ad00a557cdf7976aa611fd2f767bb864"
+        }
+      ]
+    },
+    {
+      "name": "cooperative-basic-flash",
+      "scored": 26,
+      "passed": 21,
+      "percent": 80.8,
+      "cases": [
+        {
+          "case": "active_amend",
+          "group": "A",
+          "round": 1,
+          "source": "再加个头像吧，简单点就行。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "5f2dcf5ee21c59fa6abd6bf9f14a0417b44108c79169c7d1efc2427796978683"
+        },
+        {
+          "case": "active_query",
+          "group": "A",
+          "round": 1,
+          "source": "问问写这个的，现在还差哪些？",
+          "expected": "message",
+          "scored": true,
+          "observed": [
+            "message"
+          ],
+          "match": true,
+          "capture_sha256": "77bd8b7664450cdcddb12255b68620bff643ec76c8fb5628fd65e1d95a352b80"
+        },
+        {
+          "case": "active_stop",
+          "group": "A",
+          "round": 1,
+          "source": "菜谱那个先别做了。",
+          "expected": "retract",
+          "scored": true,
+          "observed": [
+            "retract"
+          ],
+          "match": true,
+          "capture_sha256": "fefd4474e1f3fb918233fc53bf19b280b98ea7b4f54f6c0e02305751d31dc0d1"
+        },
+        {
+          "case": "b_comment",
+          "group": "B2",
+          "round": 1,
+          "source": "刚才那个数独工具是不是有点难？",
+          "expected": "none",
+          "scored": true,
+          "observed": [
+            "none"
+          ],
+          "match": true,
+          "capture_sha256": "3ab3eb1fa9f6299a30619536833bd5d065480f5a89cef56ac7c4ec63eb27fdb1"
+        },
+        {
+          "case": "b_hearsay",
+          "group": "B2",
+          "round": 1,
+          "source": "别人都说 Paxos 很难。",
+          "expected": "none",
+          "scored": true,
+          "observed": [
+            "none"
+          ],
+          "match": true,
+          "capture_sha256": "ba07951a717a52566a36c57124f1ac50bf674910adac3afacf49ed9906e254e4"
+        },
+        {
+          "case": "b_howto_amend",
+          "group": "B1b",
+          "round": 1,
+          "source": "有没有办法让它刷新之后还在？",
+          "expected": null,
+          "scored": false,
+          "observed": [
+            "amend"
+          ],
+          "match": null,
+          "capture_sha256": "783fe32623cae182abc0aec9467d4be742544f2215a884002f96751f4479f1b3"
+        },
+        {
+          "case": "b_indirect_new",
+          "group": "B1b",
+          "round": 1,
+          "source": "我还缺个能记账的东西。",
+          "expected": null,
+          "scored": false,
+          "observed": [
+            "execute"
+          ],
+          "match": null,
+          "capture_sha256": "3098eebcf8d02dcb5840cf57d084e54d4d99100be87009c9e65551eb71a7ac42"
+        },
+        {
+          "case": "b_meta_question",
+          "group": "B2",
+          "round": 1,
+          "source": "你觉得做这种页面一般要多久？",
+          "expected": "none",
+          "scored": true,
+          "observed": [
+            "none"
+          ],
+          "match": true,
+          "capture_sha256": "4bc2480089c073fb3b3bd98e7cd9dfbb88e399dd2f6b06a433bec25a91c65578"
+        },
+        {
+          "case": "b_multi_amend_exec",
+          "group": "B4",
+          "round": 1,
+          "source": "把便签页加个清空按钮，另外再帮我查下 Raft 的论文。",
+          "expected": [
+            "amend",
+            "execute"
+          ],
+          "scored": true,
+          "observed": [
+            "refused"
+          ],
+          "match": false,
+          "capture_sha256": "d52e3a3cf72c61becca5560320a88e64de16ce3852db066840e910c226a6a6b6"
+        },
+        {
+          "case": "b_multi_msg_amend",
+          "group": "B4",
+          "round": 1,
+          "source": "问问 Codex 这个怎么实现的，顺便把标题改成「我的清单」。",
+          "expected": [
+            "message",
+            "amend"
+          ],
+          "scored": true,
+          "observed": [
+            "refused"
+          ],
+          "match": false,
+          "capture_sha256": "b493d837608c499baf3a7ffd331ee40dd3a5fe9b20c0e5c454b04b652a50be1b"
+        },
+        {
+          "case": "b_multi_stop_exec",
+          "group": "B4",
+          "round": 1,
+          "source": "先停掉数独那个，然后做个计时器。",
+          "expected": [
+            "retract",
+            "execute"
+          ],
+          "scored": true,
+          "observed": [
+            "refused"
+          ],
+          "match": false,
+          "capture_sha256": "6a9cf969b8fe36d37f925c89156de830363b35c23c8c1c740c6194bf71435751"
+        },
+        {
+          "case": "b_musing",
+          "group": "B2",
+          "round": 1,
+          "source": "我在想要不要再做一个记账的。",
+          "expected": "none",
+          "scored": true,
+          "observed": [
+            "none"
+          ],
+          "match": true,
+          "capture_sha256": "8c8f8753cad899111ce28fc11cddd0e5c6aa71ab9b8ee19f255b5c13b12a1bd2"
+        },
+        {
+          "case": "b_question_amend",
+          "group": "B1a",
+          "round": 1,
+          "source": "你能不能帮我把刚才那个清单页做得好看点？",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "c1531e149fd61df3352527daec046c2a536e27e63b8f8fb6d30ab399fa908ab7"
+        },
+        {
+          "case": "b_tentative_amend",
+          "group": "B1b",
+          "round": 1,
+          "source": "要不你研究一下怎么让它跑得更快？",
+          "expected": null,
+          "scored": false,
+          "observed": [
+            "amend"
+          ],
+          "match": null,
+          "capture_sha256": "87d21423d17e3d469f511f68b1e709fd85f9d1deb8687aee8d1e40313af9c438"
+        },
+        {
+          "case": "b_terse_amend",
+          "group": "B3",
+          "round": 1,
+          "source": "改一下，加个清空按钮。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "4c8e0cc271ed3822954985bc4ceca330bbe81084f2f249b58c2bdd6da2259615"
+        },
+        {
+          "case": "b_terse_stop",
+          "group": "B3",
+          "round": 1,
+          "source": "停一下。",
+          "expected": "retract",
+          "scored": true,
+          "observed": [
+            "retract"
+          ],
+          "match": true,
+          "capture_sha256": "69168a29a6cbae43ce5ad6152417aa74fb8a6bf41808c3a02032c6291d1b551d"
+        },
+        {
+          "case": "b_two_named",
+          "group": "B5",
+          "round": 1,
+          "source": "把菜谱那个加个打印按钮。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "0787afe01f10555356521456564d30c803b80a8245d71233be045fc6069ce58e"
+        },
+        {
+          "case": "b_two_recent",
+          "group": "B5",
+          "round": 1,
+          "source": "刚才那个先停一下。",
+          "expected": "clarify",
+          "scored": true,
+          "observed": [
+            "retract"
+          ],
+          "match": false,
+          "capture_sha256": "833c0ceec6324de53ca4fb5ac0df8689168dfc4638e77683d48fcd13113247f2"
+        },
+        {
+          "case": "b_wish_export",
+          "group": "B1b",
+          "round": 1,
+          "source": "这个便签页要是能导出就好了。",
+          "expected": null,
+          "scored": false,
+          "observed": [
+            "amend"
+          ],
+          "match": null,
+          "capture_sha256": "bdd85d8f375ff7ec6562af0daa591e30e69089d678eb79b55458156371a4da58"
+        },
+        {
+          "case": "b_wish_research",
+          "group": "B1a",
+          "round": 1,
+          "source": "Paxos 那篇论文我一直没看懂，你帮我弄明白吧。",
+          "expected": "execute",
+          "scored": true,
+          "observed": [
+            "execute"
+          ],
+          "match": true,
+          "capture_sha256": "f024a755a2b4d49f0271a2c244bd9158e774470b9e305d6cc1f5709728ecbd8b"
+        },
+        {
+          "case": "budget_question",
+          "group": "A",
+          "round": 1,
+          "source": "问问 Codex，这个清单页的预算怎么设比较合适？",
+          "expected": "message",
+          "scored": true,
+          "observed": [
+            "message"
+          ],
+          "match": true,
+          "capture_sha256": "97932c2ff4395550035499f88baac4363d7acd245303405075915c34f72342c3"
+        },
+        {
+          "case": "budget_reply",
+          "group": "A",
+          "round": 1,
+          "source": "一百块左右吧。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "message"
+          ],
+          "match": false,
+          "capture_sha256": "06111f0a8636d3a6006c40d70a2f3ed2e0d0858fbe77f0f1803583ba9b669707"
+        },
+        {
+          "case": "continue_delivery",
+          "group": "A",
+          "round": 1,
+          "source": "那就接着做吧。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "8c38aed234fd5fe5443035292c0868d1b440e1377a5e7384342acbbf8a0dd23b"
+        },
+        {
+          "case": "continue_explanation",
+          "group": "A",
+          "round": 1,
+          "source": "让它接着讲吧。",
+          "expected": "message",
+          "scored": true,
+          "observed": [
+            "message"
+          ],
+          "match": true,
+          "capture_sha256": "5d65789f231c7757bd36b50796d553a2de97994854203a93d82b5474cb9827d0"
+        },
+        {
+          "case": "emotion",
+          "group": "A",
+          "round": 1,
+          "source": "今天累死了。",
+          "expected": "none",
+          "scored": true,
+          "observed": [
+            "none"
+          ],
+          "match": true,
+          "capture_sha256": "d534ad4e0684907cb322408999f4c9d86db6daeb017c43006b156d8b644c46cc"
+        },
+        {
+          "case": "fresh_draft",
+          "group": "A",
+          "round": 1,
+          "source": "帮我做个简单的计时器页面。",
+          "expected": "execute",
+          "scored": true,
+          "observed": [
+            "execute"
+          ],
+          "match": true,
+          "capture_sha256": "0827f502a0fccf0a92e3fc0d20bb8fd0d1c0df71400bcc3ea4046ccd96c1b28f"
+        },
+        {
+          "case": "new_goal_keep_old",
+          "group": "A",
+          "round": 1,
+          "source": "再做个记账的小工具，刚才那个别动。",
+          "expected": "execute",
+          "scored": true,
+          "observed": [
+            "execute"
+          ],
+          "match": true,
+          "capture_sha256": "6088fee08265c7e2533856c3a3143a659ad62427aa263b5eff021c42c6538599"
+        },
+        {
+          "case": "new_research",
+          "group": "A",
+          "round": 1,
+          "source": "那你帮我查下 Paxos 的论文呢？",
+          "expected": "execute",
+          "scored": true,
+          "observed": [
+            "execute"
+          ],
+          "match": true,
+          "capture_sha256": "42367b4b9746934f6c45643a2ef911227fc7b937a42954e831f745a324d6c839"
+        },
+        {
+          "case": "terminal_amend",
+          "group": "A",
+          "round": 1,
+          "source": "再加个清空按钮吧。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "b196f3aa277c21ad26ec986d08fd7093a282e5c1aa91501b86183308ba9ffc1f"
+        },
+        {
+          "case": "terminal_question",
+          "group": "A",
+          "round": 1,
+          "source": "问问 Codex，这个搜索具体是怎么做的？",
+          "expected": "message",
+          "scored": true,
+          "observed": [
+            "message"
+          ],
+          "match": true,
+          "capture_sha256": "a62cae046e33e2d2f829abb4e28cce23de1605353a8648851a63eee06f5796e2"
+        }
+      ]
+    },
+    {
+      "name": "professional-pro",
+      "scored": 26,
+      "passed": 21,
+      "percent": 80.8,
+      "cases": [
+        {
+          "case": "active_amend",
+          "group": "A",
+          "round": 1,
+          "source": "再加个头像吧，简单点就行。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "bcb6fec7707345ea5dbccf070640bef960a24b5f3668289ee75e9a337d8d04c6"
+        },
+        {
+          "case": "active_query",
+          "group": "A",
+          "round": 1,
+          "source": "问问写这个的，现在还差哪些？",
+          "expected": "message",
+          "scored": true,
+          "observed": [
+            "message"
+          ],
+          "match": true,
+          "capture_sha256": "2a2c7e74167a17867d15c1fbd5614fa2a29d469c3335e895558f674000eb4d36"
+        },
+        {
+          "case": "active_stop",
+          "group": "A",
+          "round": 1,
+          "source": "菜谱那个先别做了。",
+          "expected": "retract",
+          "scored": true,
+          "observed": [
+            "retract"
+          ],
+          "match": true,
+          "capture_sha256": "1ac4925054cd14fd7fd994fd302f335fdf5cd72f30045fc201f69f531aa7599c"
+        },
+        {
+          "case": "b_comment",
+          "group": "B2",
+          "round": 1,
+          "source": "刚才那个数独工具是不是有点难？",
+          "expected": "none",
+          "scored": true,
+          "observed": [
+            "message"
+          ],
+          "match": false,
+          "capture_sha256": "41d1164b56c25c39e0241da1a08f8f6aa92b6f5a1a591a6030aa1ceddb28a350"
+        },
+        {
+          "case": "b_hearsay",
+          "group": "B2",
+          "round": 1,
+          "source": "别人都说 Paxos 很难。",
+          "expected": "none",
+          "scored": true,
+          "observed": [
+            "none"
+          ],
+          "match": true,
+          "capture_sha256": "d524448d43d39afe9ef9d19042ba98ff4710e2207de71d8476e6b06b918d08a5"
+        },
+        {
+          "case": "b_howto_amend",
+          "group": "B1b",
+          "round": 1,
+          "source": "有没有办法让它刷新之后还在？",
+          "expected": null,
+          "scored": false,
+          "observed": [
+            "amend"
+          ],
+          "match": null,
+          "capture_sha256": "8fe0761495e6e32d98b9dff52375edbdbefa9a17e3b24028331624b96571c6b4"
+        },
+        {
+          "case": "b_indirect_new",
+          "group": "B1b",
+          "round": 1,
+          "source": "我还缺个能记账的东西。",
+          "expected": null,
+          "scored": false,
+          "observed": [
+            "execute"
+          ],
+          "match": null,
+          "capture_sha256": "141111a48512461e9c4b43b50779fc9c68dd56ee95f45538841b9c24b88e9597"
+        },
+        {
+          "case": "b_meta_question",
+          "group": "B2",
+          "round": 1,
+          "source": "你觉得做这种页面一般要多久？",
+          "expected": "none",
+          "scored": true,
+          "observed": [
+            "none"
+          ],
+          "match": true,
+          "capture_sha256": "65eaf9b9f323ae345b83aeb6288cacbb8af597155131ea7c31abc07c496219af"
+        },
+        {
+          "case": "b_multi_amend_exec",
+          "group": "B4",
+          "round": 1,
+          "source": "把便签页加个清空按钮，另外再帮我查下 Raft 的论文。",
+          "expected": [
+            "amend",
+            "execute"
+          ],
+          "scored": true,
+          "observed": [
+            "amend",
+            "execute"
+          ],
+          "match": true,
+          "capture_sha256": "9bcf833ece1d7e584c9b07ed1aacb4150c1d7a3d5906e68dbe2cfc9fa34e8027"
+        },
+        {
+          "case": "b_multi_msg_amend",
+          "group": "B4",
+          "round": 1,
+          "source": "问问 Codex 这个怎么实现的，顺便把标题改成「我的清单」。",
+          "expected": [
+            "message",
+            "amend"
+          ],
+          "scored": true,
+          "observed": [
+            "message"
+          ],
+          "match": false,
+          "capture_sha256": "408249103f876639fa4263f8be0efebb6b74b6385d2dde6a575b148c7fb06c2f"
+        },
+        {
+          "case": "b_multi_stop_exec",
+          "group": "B4",
+          "round": 1,
+          "source": "先停掉数独那个，然后做个计时器。",
+          "expected": [
+            "retract",
+            "execute"
+          ],
+          "scored": true,
+          "observed": [
+            "retract"
+          ],
+          "match": false,
+          "capture_sha256": "7353b7b2568edd1de16aacafb6e57792f23552f7e9576c7ee536a6b70e11bcfe"
+        },
+        {
+          "case": "b_musing",
+          "group": "B2",
+          "round": 1,
+          "source": "我在想要不要再做一个记账的。",
+          "expected": "none",
+          "scored": true,
+          "observed": [
+            "none"
+          ],
+          "match": true,
+          "capture_sha256": "dce5cdbc30e3228fe301f81ab713405253f439f5a24fd22ee688bb1df518dab2"
+        },
+        {
+          "case": "b_question_amend",
+          "group": "B1a",
+          "round": 1,
+          "source": "你能不能帮我把刚才那个清单页做得好看点？",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "5ec136e32907c003988566845bbf0c17a1ed9aee15278a9939ef48d96bdaf132"
+        },
+        {
+          "case": "b_tentative_amend",
+          "group": "B1b",
+          "round": 1,
+          "source": "要不你研究一下怎么让它跑得更快？",
+          "expected": null,
+          "scored": false,
+          "observed": [
+            "amend"
+          ],
+          "match": null,
+          "capture_sha256": "f7232b42cc34b74149c30b05a37dbf55124aba88584bbae3163776ad8db70271"
+        },
+        {
+          "case": "b_terse_amend",
+          "group": "B3",
+          "round": 1,
+          "source": "改一下，加个清空按钮。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "9c62e76beacaac6d2c4f042b0d058dcf0f3d2db02606da166e57f276a5be32b6"
+        },
+        {
+          "case": "b_terse_stop",
+          "group": "B3",
+          "round": 1,
+          "source": "停一下。",
+          "expected": "retract",
+          "scored": true,
+          "observed": [
+            "retract"
+          ],
+          "match": true,
+          "capture_sha256": "c09c7836c5e8bc8d2e909bee150ec9a3f225a2df9a179f9dc448d7a404d1cdf0"
+        },
+        {
+          "case": "b_two_named",
+          "group": "B5",
+          "round": 1,
+          "source": "把菜谱那个加个打印按钮。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "af05ed507b95f6b646d0c4630aba243ad0fab1ae77321d3bac1682f836e5bf4a"
+        },
+        {
+          "case": "b_two_recent",
+          "group": "B5",
+          "round": 1,
+          "source": "刚才那个先停一下。",
+          "expected": "clarify",
+          "scored": true,
+          "observed": [
+            "retract"
+          ],
+          "match": false,
+          "capture_sha256": "9e8444796d0855afc6b089c239c091065767c72faceff1b6be57ef3cb6498f93"
+        },
+        {
+          "case": "b_wish_export",
+          "group": "B1b",
+          "round": 1,
+          "source": "这个便签页要是能导出就好了。",
+          "expected": null,
+          "scored": false,
+          "observed": [
+            "amend"
+          ],
+          "match": null,
+          "capture_sha256": "75e7d46f42aaf45f1dbc8508b2c05c1d789c19b266d94910ba57dabb5a3b46ca"
+        },
+        {
+          "case": "b_wish_research",
+          "group": "B1a",
+          "round": 1,
+          "source": "Paxos 那篇论文我一直没看懂，你帮我弄明白吧。",
+          "expected": "execute",
+          "scored": true,
+          "observed": [
+            "execute"
+          ],
+          "match": true,
+          "capture_sha256": "937071d6344e856f70cc2efec6781b53b74e05749c70c5ce3642b12e609f56f5"
+        },
+        {
+          "case": "budget_question",
+          "group": "A",
+          "round": 1,
+          "source": "问问 Codex，这个清单页的预算怎么设比较合适？",
+          "expected": "message",
+          "scored": true,
+          "observed": [
+            "message"
+          ],
+          "match": true,
+          "capture_sha256": "7c6a61d6ce875327c2adbd1163626db6fb27b490b3fd77d976a278745b6e08b4"
+        },
+        {
+          "case": "budget_reply",
+          "group": "A",
+          "round": 1,
+          "source": "一百块左右吧。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "message"
+          ],
+          "match": false,
+          "capture_sha256": "7907ab8870e82af40dbeb8f3a1aace0cb87415238ca44d1468a9fd1cf90e0805"
+        },
+        {
+          "case": "continue_delivery",
+          "group": "A",
+          "round": 1,
+          "source": "那就接着做吧。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "6b1b2a5e4f88aac799d161d1f2ca08135a3f9d6ba516d51349f5623f219409c1"
+        },
+        {
+          "case": "continue_explanation",
+          "group": "A",
+          "round": 1,
+          "source": "让它接着讲吧。",
+          "expected": "message",
+          "scored": true,
+          "observed": [
+            "message"
+          ],
+          "match": true,
+          "capture_sha256": "60aee8105e0dc2047a8150cdcd10055dbad43a41fb3a7bd1fe39a0295d60938f"
+        },
+        {
+          "case": "emotion",
+          "group": "A",
+          "round": 1,
+          "source": "今天累死了。",
+          "expected": "none",
+          "scored": true,
+          "observed": [
+            "none"
+          ],
+          "match": true,
+          "capture_sha256": "9af0508d29cb2bd85d6e8d9991df871a6e196867b3faa3c22919f4872400e8f4"
+        },
+        {
+          "case": "fresh_draft",
+          "group": "A",
+          "round": 1,
+          "source": "帮我做个简单的计时器页面。",
+          "expected": "execute",
+          "scored": true,
+          "observed": [
+            "execute"
+          ],
+          "match": true,
+          "capture_sha256": "8c2ebc3df43e0f6035c4aa184b6a5faf03949f4655a344c98935d9762cb2b008"
+        },
+        {
+          "case": "new_goal_keep_old",
+          "group": "A",
+          "round": 1,
+          "source": "再做个记账的小工具，刚才那个别动。",
+          "expected": "execute",
+          "scored": true,
+          "observed": [
+            "execute"
+          ],
+          "match": true,
+          "capture_sha256": "46847daf7e9782385db4028e74f2dc32b784c5cee067a6b0671c60f08accad27"
+        },
+        {
+          "case": "new_research",
+          "group": "A",
+          "round": 1,
+          "source": "那你帮我查下 Paxos 的论文呢？",
+          "expected": "execute",
+          "scored": true,
+          "observed": [
+            "execute"
+          ],
+          "match": true,
+          "capture_sha256": "990ed04012458d6d73dab4f22331f2782f2513887aea3952e5114b1adcdc7944"
+        },
+        {
+          "case": "terminal_amend",
+          "group": "A",
+          "round": 1,
+          "source": "再加个清空按钮吧。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "82db5d0bf5eb1b23ed51c181bdae07d216e1552a50dd273a80c256fb42e5ea35"
+        },
+        {
+          "case": "terminal_question",
+          "group": "A",
+          "round": 1,
+          "source": "问问 Codex，这个搜索具体是怎么做的？",
+          "expected": "message",
+          "scored": true,
+          "observed": [
+            "message"
+          ],
+          "match": true,
+          "capture_sha256": "ed2908c8c1d821926d6285ba13d4f1340731f639832d7d51df4999f44f19fbd9"
+        }
+      ]
+    },
+    {
+      "name": "professional-flash",
+      "scored": 26,
+      "passed": 23,
+      "percent": 88.5,
+      "cases": [
+        {
+          "case": "active_amend",
+          "group": "A",
+          "round": 1,
+          "source": "再加个头像吧，简单点就行。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "e13bc0a69e8ce72db66dce697c5445babd4c768a39259604bc715d65a1620575"
+        },
+        {
+          "case": "active_query",
+          "group": "A",
+          "round": 1,
+          "source": "问问写这个的，现在还差哪些？",
+          "expected": "message",
+          "scored": true,
+          "observed": [
+            "message"
+          ],
+          "match": true,
+          "capture_sha256": "17e6fd04ce16083bea04d8f27c8bd9d35be9c8b427483da1124c2ca8c9f8a93f"
+        },
+        {
+          "case": "active_stop",
+          "group": "A",
+          "round": 1,
+          "source": "菜谱那个先别做了。",
+          "expected": "retract",
+          "scored": true,
+          "observed": [
+            "retract"
+          ],
+          "match": true,
+          "capture_sha256": "8b2709b7c1bbbec74ea991a7f974a2fda39efcc981a34c6cae9a26c93839f536"
+        },
+        {
+          "case": "b_comment",
+          "group": "B2",
+          "round": 1,
+          "source": "刚才那个数独工具是不是有点难？",
+          "expected": "none",
+          "scored": true,
+          "observed": [
+            "message"
+          ],
+          "match": false,
+          "capture_sha256": "1ff25b00f0b7cce3052250f0ffe2527bb55978380b85e95c75e1626be2d255ba"
+        },
+        {
+          "case": "b_hearsay",
+          "group": "B2",
+          "round": 1,
+          "source": "别人都说 Paxos 很难。",
+          "expected": "none",
+          "scored": true,
+          "observed": [
+            "none"
+          ],
+          "match": true,
+          "capture_sha256": "d51b2acfe731a42d164be6d38309b61cb4c6f24b1a83878e48209c27fcc5ee81"
+        },
+        {
+          "case": "b_howto_amend",
+          "group": "B1b",
+          "round": 1,
+          "source": "有没有办法让它刷新之后还在？",
+          "expected": null,
+          "scored": false,
+          "observed": [
+            "amend"
+          ],
+          "match": null,
+          "capture_sha256": "7f45539b11099691d2d152ac95e6982b1485d89bbf5b83e0868a68bc4214e23e"
+        },
+        {
+          "case": "b_indirect_new",
+          "group": "B1b",
+          "round": 1,
+          "source": "我还缺个能记账的东西。",
+          "expected": null,
+          "scored": false,
+          "observed": [
+            "execute"
+          ],
+          "match": null,
+          "capture_sha256": "ee9f5af75a46b642c281a8029d38a13b73a89ce63405bb838ca96ffc59f92fa4"
+        },
+        {
+          "case": "b_meta_question",
+          "group": "B2",
+          "round": 1,
+          "source": "你觉得做这种页面一般要多久？",
+          "expected": "none",
+          "scored": true,
+          "observed": [
+            "none"
+          ],
+          "match": true,
+          "capture_sha256": "01ce5dbb0d84033da5198105d8db3bd1e53826b4632b832358b44068fd5e5737"
+        },
+        {
+          "case": "b_multi_amend_exec",
+          "group": "B4",
+          "round": 1,
+          "source": "把便签页加个清空按钮，另外再帮我查下 Raft 的论文。",
+          "expected": [
+            "amend",
+            "execute"
+          ],
+          "scored": true,
+          "observed": [
+            "amend",
+            "execute"
+          ],
+          "match": true,
+          "capture_sha256": "165d2d93999b98f0b1bc21be5eca83a1bbbadc395571fe9e9ad9dc1fd96f515e"
+        },
+        {
+          "case": "b_multi_msg_amend",
+          "group": "B4",
+          "round": 1,
+          "source": "问问 Codex 这个怎么实现的，顺便把标题改成「我的清单」。",
+          "expected": [
+            "message",
+            "amend"
+          ],
+          "scored": true,
+          "observed": [
+            "message"
+          ],
+          "match": false,
+          "capture_sha256": "f148b7540d2164aacb534dc913a155a5fd8c8591748046f0b5d3d03b2f2eb1d7"
+        },
+        {
+          "case": "b_multi_stop_exec",
+          "group": "B4",
+          "round": 1,
+          "source": "先停掉数独那个，然后做个计时器。",
+          "expected": [
+            "retract",
+            "execute"
+          ],
+          "scored": true,
+          "observed": [
+            "retract",
+            "execute"
+          ],
+          "match": true,
+          "capture_sha256": "0abe07e275289c4095e8b79c9d6b8aef2f62ea665371af47f74a331cee8a0d3a"
+        },
+        {
+          "case": "b_musing",
+          "group": "B2",
+          "round": 1,
+          "source": "我在想要不要再做一个记账的。",
+          "expected": "none",
+          "scored": true,
+          "observed": [
+            "none"
+          ],
+          "match": true,
+          "capture_sha256": "dbc8abcf4c0cedd6dc368a04a1513b974cc78de296ca9a1852ab15d3aa70e72a"
+        },
+        {
+          "case": "b_question_amend",
+          "group": "B1a",
+          "round": 1,
+          "source": "你能不能帮我把刚才那个清单页做得好看点？",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "34dc5a150403dacb6e23ab1063d892cfbee3cbc08079861ecfc3043eb8c9730b"
+        },
+        {
+          "case": "b_tentative_amend",
+          "group": "B1b",
+          "round": 1,
+          "source": "要不你研究一下怎么让它跑得更快？",
+          "expected": null,
+          "scored": false,
+          "observed": [
+            "amend"
+          ],
+          "match": null,
+          "capture_sha256": "a147e02e05ad478b6f345214ede3745b4a594c7a9c95226d1a3822ccb945f8d6"
+        },
+        {
+          "case": "b_terse_amend",
+          "group": "B3",
+          "round": 1,
+          "source": "改一下，加个清空按钮。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "2993a3e481369103f67a7ae674241cf8931b3c5bc4379e5ac6014bb1b8352931"
+        },
+        {
+          "case": "b_terse_stop",
+          "group": "B3",
+          "round": 1,
+          "source": "停一下。",
+          "expected": "retract",
+          "scored": true,
+          "observed": [
+            "retract"
+          ],
+          "match": true,
+          "capture_sha256": "18b51d72305a5cca1144b228b40bf3ab53a08db7a8146b57171dc6c19fe712bf"
+        },
+        {
+          "case": "b_two_named",
+          "group": "B5",
+          "round": 1,
+          "source": "把菜谱那个加个打印按钮。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "5bc7a698e7f0aa23262cc5c1df84bafbd73a78e72623afe9844cd0951bb983f4"
+        },
+        {
+          "case": "b_two_recent",
+          "group": "B5",
+          "round": 1,
+          "source": "刚才那个先停一下。",
+          "expected": "clarify",
+          "scored": true,
+          "observed": [
+            "retract"
+          ],
+          "match": false,
+          "capture_sha256": "ae4b9c06b3b4fa15d437810e33d1ea70024607127c9fecc64f78e82c933b343f"
+        },
+        {
+          "case": "b_wish_export",
+          "group": "B1b",
+          "round": 1,
+          "source": "这个便签页要是能导出就好了。",
+          "expected": null,
+          "scored": false,
+          "observed": [
+            "amend"
+          ],
+          "match": null,
+          "capture_sha256": "ea88d83a5c7becafb6802feb309ce501ea0a64146636421e751778b7099c05e3"
+        },
+        {
+          "case": "b_wish_research",
+          "group": "B1a",
+          "round": 1,
+          "source": "Paxos 那篇论文我一直没看懂，你帮我弄明白吧。",
+          "expected": "execute",
+          "scored": true,
+          "observed": [
+            "execute"
+          ],
+          "match": true,
+          "capture_sha256": "ebd01b863cc94e58a19690905d21fcfcc70b94765fb76cc809bb1d3806582142"
+        },
+        {
+          "case": "budget_question",
+          "group": "A",
+          "round": 1,
+          "source": "问问 Codex，这个清单页的预算怎么设比较合适？",
+          "expected": "message",
+          "scored": true,
+          "observed": [
+            "message"
+          ],
+          "match": true,
+          "capture_sha256": "1491075dac76b29dce6b3084884209588f12f4a3bdc486d67890eb909df151bd"
+        },
+        {
+          "case": "budget_reply",
+          "group": "A",
+          "round": 1,
+          "source": "一百块左右吧。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "4fa4ba83864a3002cbc8ea6f303e532488906121e7500678a7126ea0cc460a12"
+        },
+        {
+          "case": "continue_delivery",
+          "group": "A",
+          "round": 1,
+          "source": "那就接着做吧。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "ddf84ab5004a177d0a44fdd99c708e22baaa02075c02bb7a518590df266136a9"
+        },
+        {
+          "case": "continue_explanation",
+          "group": "A",
+          "round": 1,
+          "source": "让它接着讲吧。",
+          "expected": "message",
+          "scored": true,
+          "observed": [
+            "message"
+          ],
+          "match": true,
+          "capture_sha256": "e0fcd96e573657ae71c23949bfa31ed652240325d413dd988dc50ae915651522"
+        },
+        {
+          "case": "emotion",
+          "group": "A",
+          "round": 1,
+          "source": "今天累死了。",
+          "expected": "none",
+          "scored": true,
+          "observed": [
+            "none"
+          ],
+          "match": true,
+          "capture_sha256": "0ded89f3088ba4b1c425cd504f20f2af206fd62c18ab441c837ea23a41315a4d"
+        },
+        {
+          "case": "fresh_draft",
+          "group": "A",
+          "round": 1,
+          "source": "帮我做个简单的计时器页面。",
+          "expected": "execute",
+          "scored": true,
+          "observed": [
+            "execute"
+          ],
+          "match": true,
+          "capture_sha256": "a3dc452d528aef3d4bc6ebd63f9c6387a91ea0949e8e1d40e61121d696a68975"
+        },
+        {
+          "case": "new_goal_keep_old",
+          "group": "A",
+          "round": 1,
+          "source": "再做个记账的小工具，刚才那个别动。",
+          "expected": "execute",
+          "scored": true,
+          "observed": [
+            "execute"
+          ],
+          "match": true,
+          "capture_sha256": "f8dbf3404667289dd23d5b37f3299d731368f6d5c1df3778f93e8a37b687f14c"
+        },
+        {
+          "case": "new_research",
+          "group": "A",
+          "round": 1,
+          "source": "那你帮我查下 Paxos 的论文呢？",
+          "expected": "execute",
+          "scored": true,
+          "observed": [
+            "execute"
+          ],
+          "match": true,
+          "capture_sha256": "dfc007b4e89cc361aad83ac3c5a2b999fba5177d73ba10e59cb79a4b126c4c9d"
+        },
+        {
+          "case": "terminal_amend",
+          "group": "A",
+          "round": 1,
+          "source": "再加个清空按钮吧。",
+          "expected": "amend",
+          "scored": true,
+          "observed": [
+            "amend"
+          ],
+          "match": true,
+          "capture_sha256": "72e9727a7514e3a81ab27869155db48cde2d25ca4a2fb2f879c3503dd92b2c08"
+        },
+        {
+          "case": "terminal_question",
+          "group": "A",
+          "round": 1,
+          "source": "问问 Codex，这个搜索具体是怎么做的？",
+          "expected": "message",
+          "scored": true,
+          "observed": [
+            "message"
+          ],
+          "match": true,
+          "capture_sha256": "953dd7f835f03abbda49de924c835720c5f5c87f7761e8e3e2661ef3a97c21fd"
+        }
+      ]
+    }
+  ]
+}
