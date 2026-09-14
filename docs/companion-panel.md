@@ -4,8 +4,10 @@ The optional panel brings the existing VN-style portrait and speaking card besid
 selected Work preview. It reuses the existing portrait cache and Host presentation
 signals; it does not start another VN session, TTS pipeline, Work, or AUIP authority.
 
-The card keeps the latest non-empty subtitle when speech ends and restores it on
-reopening or reconnecting, including speech received while the card was closed.
+Speech completion must leave the just-spoken line on an already open card. Empty
+subtitle cleanup and the transition to standby must not replace it with a welcome
+line; only the next non-empty subtitle replaces it. The card also restores the
+latest line on reopening or reconnecting, including speech received while closed.
 This is a presentation snapshot held in memory for the current bridge lifetime;
 it is not saved conversation history. A fresh bridge starts without a retained line.
 Wallpaper subtitles continue to clear normally. The VN-style `VOICE` indicator and

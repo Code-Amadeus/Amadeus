@@ -60,6 +60,24 @@ test('companion projects the shared current display without acting on Work or AU
   assert.strictEqual(apply(state, { method: 'setSubtitle', args: ['   '] }), state)
   assert.equal(apply(state, { method: 'setSubtitle', args: ['下一句。'] }).text, '下一句。')
 })
+test('speech completion keeps the last line in an open card regardless of clear/stop order', async () => {
+  const scope = vm.createContext({})
+  vm.runInContext(await fs.readFile(new URL('../../render/web/companion_presentation.js', import.meta.url), 'utf8'), scope)
+  const apply = scope.CompanionPresentation.apply
+  const stop = { method: 'setSpeaking', args: [false] }
+  const clear = { method: 'setSubtitle', args: [''] }
+  for (const ending of [[stop, clear], [clear, stop]]) {
+    let state = { text: '', speaking: false, emotion: 'normal' }
+    for (const line of ['第一句说完后留在这里。', '下一句说完也不跳回欢迎语。']) {
+      state = apply(state, { method: 'setSubtitle', args: [line] })
+      state = apply(state, { method: 'setSpeaking', args: [true] })
+      for (const event of ending) state = apply(state, event)
+      state = apply(state, { method: 'setEmotion', args: ['normal'] })
+      assert.equal(state.text, line)
+      assert.equal(state.speaking, false)
+    }
+  }
+})
 test('suppression restores the exact renderable state and leaves scenario visibility alone', async () => {
   const sprite = { renderable: true, visible: false }
   const live2d = { renderable: false, visible: true }
