@@ -271,7 +271,7 @@ def test_retry_reuses_the_worktree_without_a_second_ensure() -> None:
         with WorkLedgerStore(root / "ledger.sqlite3") as store:
             stub = StubProvisioner(root)
             coordinator = WorkLedgerCoordinator(store, workspace_provisioner=stub)
-            with _with_flag(True):
+            with _with_flag(True), patch.object(settings, "WORK_PROJECT_ALLOWLIST", str(root)):
                 _prepared, item_id, attempt_id = _prepare(
                     coordinator, cwd=project, task="Write a feature"
                 )

@@ -31,15 +31,55 @@ build alone cannot establish the absence of side effects.
 - Follow-up transport/microphone/shared-presentation selection: **135 passed** in the
   existing voice environment. Recovery/RAG/turn-origin selection: **100 passed** in the
   clean core environment. These selections overlap other checks; counts are not additive.
-- A broader isolated-per-file core regression was started to look beyond the initial
-  selection. Its first recovery-fixture failures were retained in the audit log and the
-  affected selection rerun after explicit test-directory registration. The PR check list
-  should report final CI rather than claiming that this initial candidate is fully green.
+- The broader isolated-per-file core sweep reported **3,872 passed and 51 skipped**,
+  with 12 failed checks across five suites. All failures rejected continuation into
+  test workspaces that had not been explicitly trusted under the current intake contract.
+  After registering those test directories (without relaxing production checks), all
+  five affected suites were rerun in isolation: **77 passed**. The original failed
+  sweep remains recorded; it is not relabeled as a clean all-suite run.
+- ACP, companion/reconnect and Slice export review have been separated from the main
+  routing delta. Their own tests and hosted checks belong to those PRs. The final routing
+  head still needs its own hosted CI, including clean core and optional RAG jobs.
 
 Initial hosted Electron build/dependency review, source archive, Linux core/voice,
 macOS voice, Windows installation ladder, and local-model installation candidates
 passed. These are named job scopes; for example, Linux's selected core gate is not the
 complete Windows suite. New commits must receive their own CI results.
+
+## Routing defaults and rollback review (2026-09-15)
+
+The selected 0.15 default enables both cooperative routing and the professional
+planner. Disabling only the planner selects basic cooperative routing. Disabling
+`COOPERATIVE_CHAT_ENABLED` and restarting restores the original Chat/ControlDecision/
+Compound entry; it does not install the cooperative planner even if that planner's
+flag remains true. Startup assembly checks cover those combinations (**6 passed**).
+
+The rollback contract preserves normal original-route functionality while retaining
+shared fixes. It is not byte-for-byte behavior equivalence with public `main`:
+target grounding, verified resume checkpoints, Session-bound events and fail-closed
+turn admission have changed in shared owners. Frozen old tests exposed both renamed
+internal interfaces and these deliberate differences; their failed run is retained
+locally and is not represented as a passing baseline. With rollback explicitly
+selected, the current corresponding **21 suites passed, 264 tests**, covering original
+control, compound dispatch, delegation, pending turns, history and workspace routing.
+Professional planning and accepted-effect boundaries separately passed **131 tests**;
+these selections overlap and must not be added as unique coverage.
+
+The professional planner returns a plan through shared interpretation contracts;
+`WorkEffectExecutor` enters the existing ProviderRuntime and WorkLedgerCoordinator.
+Replay/concurrent-dispatch tests verify that the accepted effect does not create a
+second native run. Cooperative conversation coordination is an additional routing
+strategy, not a second Provider execution engine. Its sizeable ingress/composition
+module remains a maintenance concern; this evidence does not certify every changed
+line or eliminate the need for focused review.
+
+The four feature heads were also composed into a detached local review worktree:
+routing `78846aed`, companion `8998379e`, ACP `ca9fb28f`, and Slice export `3c5bc6d2`.
+Shared import/list insertion conflicts were removed without changing file membership
+or feature ownership; all three merges then completed automatically. That combined
+tree passed **191 Python tests**, **60 Electron tests**, TypeScript/Vite build and a
+clean source-release scan. This is local integration evidence, not a public merge or
+new physical voice measurement. Hosted checks on published heads remain separate.
 
 ## Separate evidence types
 
