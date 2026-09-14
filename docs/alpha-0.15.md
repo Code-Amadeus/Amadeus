@@ -7,6 +7,24 @@ owns requested deliverables, execution identity, accepted requirements, and resu
 Interaction contexts provide addressing and continuation through the existing
 Provider runtime. They do not become a second writable task system.
 
+## 0.15 Alpha acceptance constraints
+
+All three constraints must hold together:
+
+1. **Accurate intent routing:** correctly interpret the requested action, source and
+   target across ordinary Chat, Provider messages, Work changes and application actions.
+2. **Efficient Provider interaction:** preserve the correct native context and Work
+   identity. Ordinary questions do not create extra requirements or execution attempts;
+   replay does not duplicate execution.
+3. **Low-latency character response:** professional planning must preserve a fast
+   initial character reply. The warm ordinary-Chat gate is ≤1.5 seconds from typed
+   request submission to the first audio-device write, excluding cold startup. The
+   opening response can begin before planning completes.
+
+Accuracy gains must preserve Provider continuity and character responsiveness.
+Historical routing scores, interaction-contract tests and physical voice samples
+provide distinct evidence; no one category alone establishes release readiness.
+
 ## Routing and ownership
 
 - Main Chat interprets the user and can stream its first spoken response before a
