@@ -36,6 +36,7 @@
       var assetPort = normalizePort(params.get("assetPort"));
       var bridgePort = normalizePort(params.get("bridgePort"));
       var renderMaxFps = Number(params.get("renderMaxFps"));
+      var renderMaxResolution = Number(params.get("renderMaxResolution"));
       var sliceHost = params.get("sliceHost") === "electron" ? "electron" : "";
 
       // This wrapper can be served either by the backend (normally 17777) or
@@ -45,7 +46,12 @@
       // intended local origins.  Falling back to window.location.port here
       // made the backend wrapper silently load assets from the wrong server.
       var discoveryWarningLogged = false;
-      while (!assetPort || !bridgePort) {
+      while (
+        !assetPort ||
+        !bridgePort ||
+        !(renderMaxFps > 0) ||
+        !(renderMaxResolution > 0)
+      ) {
         try {
           var response = await fetch(
             window.location.origin + "/wallpaper/bridge-info",
@@ -56,6 +62,9 @@
             assetPort = assetPort || normalizePort(info.assetPort);
             bridgePort = bridgePort || normalizePort(info.bridgePort);
             renderMaxFps = renderMaxFps > 0 ? renderMaxFps : Number(info.renderMaxFps);
+            renderMaxResolution = renderMaxResolution > 0
+              ? renderMaxResolution
+              : Number(info.renderMaxResolution);
             if (info.sliceHost === "electron") sliceHost = "electron";
           }
         } catch (error) {
@@ -76,7 +85,8 @@
 
       var url = "http://127.0.0.1:" + assetPort +
         "/render/web/wallpaper_engine.html?bridgePort=" + bridgePort +
-        "&host=lively&renderMaxFps=" + encodeURIComponent(renderMaxFps);
+        "&host=lively&renderMaxFps=" + encodeURIComponent(renderMaxFps) +
+        "&renderMaxResolution=" + encodeURIComponent(renderMaxResolution);
       if (sliceHost) url += "&sliceHost=" + encodeURIComponent(sliceHost);
       document.getElementById("amadeus-wallpaper").src = url;
     })();

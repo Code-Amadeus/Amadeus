@@ -8,7 +8,7 @@ from typing import Any, Callable
 from pathlib import Path
 from urllib.parse import urlencode
 
-from config.settings import RENDER_MAX_FPS
+from config.settings import RENDER_MAX_FPS, RENDER_MAX_RESOLUTION
 from server.protocol import Method
 from server.ws_handler import RequestHandler
 
@@ -61,6 +61,7 @@ class RenderHandler(RequestHandler):
             "ws": f"ws://127.0.0.1:{self._backend_port}/ws",
             "v": str(int(html_path.stat().st_mtime)),
             "renderMaxFps": RENDER_MAX_FPS,
+            "renderMaxResolution": RENDER_MAX_RESOLUTION,
         })
         url = f"{html_path.resolve().as_uri()}?{query}"
 

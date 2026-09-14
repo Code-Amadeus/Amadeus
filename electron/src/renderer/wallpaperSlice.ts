@@ -10,6 +10,7 @@ export async function syncElectronSliceHost(payload: Record<string, unknown>): P
     bridgePort,
     assetVersion: String(payload.assetVersion || ''),
     renderMaxFps: Number(payload.renderMaxFps),
+    renderMaxResolution: Number(payload.renderMaxResolution),
     sliceBounds: payload.sliceBounds && typeof payload.sliceBounds === 'object'
       ? payload.sliceBounds as { x: number; y: number; width: number; height: number }
       : undefined,

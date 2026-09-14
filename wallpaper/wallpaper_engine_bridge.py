@@ -27,7 +27,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional
 
 from config.asset_paths import SPRITEFORGE_RUNTIME_ROOT
-from config.settings import RENDER_MAX_FPS, WALLPAPER_SFX_GATE_LOG, WALLPAPER_WHEEL_FORWARD
+from config.settings import (
+    RENDER_MAX_FPS,
+    RENDER_MAX_RESOLUTION,
+    WALLPAPER_SFX_GATE_LOG,
+    WALLPAPER_WHEEL_FORWARD,
+)
 from render.server import AssetServer
 from wallpaper.scene_assets import (
     _PROJECT_ROOT,
@@ -695,7 +700,8 @@ class WallpaperEngineBridgeHost:
         slice_param = "&sliceHost=electron" if self._slice_host == "electron" else ""
         return (
             f"http://127.0.0.1:{self._asset_port}/render/web/wallpaper_engine.html"
-            f"?renderMaxFps={RENDER_MAX_FPS}&bridgePort={self._bridge_port}"
+            f"?renderMaxFps={RENDER_MAX_FPS}&renderMaxResolution={RENDER_MAX_RESOLUTION}"
+            f"&bridgePort={self._bridge_port}"
             f"&host=webwallpaper{slice_param}"
         )
 
@@ -740,11 +746,16 @@ class WallpaperEngineBridgeHost:
         return RENDER_MAX_FPS
 
     @property
+    def render_max_resolution(self) -> float:
+        return RENDER_MAX_RESOLUTION
+
+    @property
     def lively_url(self) -> str:
         slice_param = "&sliceHost=electron" if self._slice_host == "electron" else ""
         return (
             f"http://127.0.0.1:{self._asset_port}/wallpaper/lively/index.html"
-            f"?renderMaxFps={RENDER_MAX_FPS}&assetPort={self._asset_port}"
+            f"?renderMaxFps={RENDER_MAX_FPS}&renderMaxResolution={RENDER_MAX_RESOLUTION}"
+            f"&assetPort={self._asset_port}"
             f"&bridgePort={self._bridge_port}{slice_param}"
         )
 
@@ -763,6 +774,7 @@ class WallpaperEngineBridgeHost:
                 "bridgeToken": self._state.action_token,
                 "assetVersion": _wallpaper_asset_revision(),
                 "renderMaxFps": RENDER_MAX_FPS,
+                "renderMaxResolution": RENDER_MAX_RESOLUTION,
                 "sliceHost": self._slice_host,
                 "sliceBounds": self._slice_bounds,
                 "canvasBounds": self._canvas_bounds,

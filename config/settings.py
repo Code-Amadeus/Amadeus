@@ -424,6 +424,9 @@ ASR_SPECULATIVE_LLM_START = _bool("ASR_SPECULATIVE_LLM_START", True)
 RENDER_MAX_FPS = _int("RENDER_MAX_FPS", 30)
 if not 1 <= RENDER_MAX_FPS <= 240:
     raise ValueError("RENDER_MAX_FPS must be between 1 and 240")
+RENDER_MAX_RESOLUTION = _float("RENDER_MAX_RESOLUTION", 1.5)
+if not 0.25 <= RENDER_MAX_RESOLUTION <= 4.0:
+    raise ValueError("RENDER_MAX_RESOLUTION must be between 0.25 and 4.0")
 
 # Wallpaper diagnostics. keyboard_sfx.gate is a high-frequency client-side
 # gate snapshot; keep it out of WARNING unless explicitly diagnosing SFX.

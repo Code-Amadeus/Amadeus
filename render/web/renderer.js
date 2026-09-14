@@ -24,14 +24,17 @@
   // ---------------------------------------------------------------------------
   // PixiJS Application
   // ---------------------------------------------------------------------------
-  const GLOBAL_MAX_RESOLUTION = 1.5;
   const renderParams = new URLSearchParams(window.location.search || "");
   const configuredMaxFps = Number(renderParams.get("renderMaxFps"));
+  const configuredMaxResolution = Number(renderParams.get("renderMaxResolution"));
+  const deviceResolution = window.devicePixelRatio || 1;
   const app = new PIXI.Application({
     resizeTo: document.getElementById("canvas-container"),
     backgroundAlpha: 0,          // Transparent background
     autoDensity: true,
-    resolution: Math.min(window.devicePixelRatio || 1, GLOBAL_MAX_RESOLUTION),
+    resolution: Number.isFinite(configuredMaxResolution) && configuredMaxResolution > 0
+      ? Math.min(deviceResolution, configuredMaxResolution)
+      : deviceResolution,
     antialias: true,
   });
   if (Number.isFinite(configuredMaxFps) && configuredMaxFps > 0) {
