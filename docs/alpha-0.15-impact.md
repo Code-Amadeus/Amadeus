@@ -73,6 +73,14 @@ strategy, not a second Provider execution engine. Its sizeable ingress/compositi
 module remains a maintenance concern; this evidence does not certify every changed
 line or eliminate the need for focused review.
 
+The four feature heads were also composed into a detached local review worktree:
+routing `78846aed`, companion `8998379e`, ACP `ca9fb28f`, and Slice export `3c5bc6d2`.
+Shared import/list insertion conflicts were removed without changing file membership
+or feature ownership; all three merges then completed automatically. That combined
+tree passed **191 Python tests**, **60 Electron tests**, TypeScript/Vite build and a
+clean source-release scan. This is local integration evidence, not a public merge or
+new physical voice measurement. Hosted checks on published heads remain separate.
+
 ## Separate evidence types
 
 The [historical real-model routing baseline](routing-accuracy-baseline.md) measures
