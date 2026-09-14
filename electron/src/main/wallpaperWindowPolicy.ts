@@ -5,6 +5,10 @@ type WallpaperWindowPolicy = {
     BrowserWindowConstructorOptions,
     'focusable' | 'hiddenInMissionControl' | 'type'
   >
+  canvasConstructorOptions: Pick<
+    BrowserWindowConstructorOptions,
+    'focusable' | 'hiddenInMissionControl' | 'type'
+  >
   hostMode: 'scene' | 'slice'
   joinAllWorkspaces: boolean
   interactiveLevel: { level: 'normal'; relativeLevel: number } | null
@@ -34,6 +38,11 @@ export function wallpaperWindowPolicy(platform: NodeJS.Platform): WallpaperWindo
         focusable: false,
         hiddenInMissionControl: true,
       },
+      canvasConstructorOptions: {
+        type: 'normal',
+        focusable: true,
+        hiddenInMissionControl: false,
+      },
       hostMode: 'scene',
       joinAllWorkspaces: true,
       interactiveLevel: { level: 'normal', relativeLevel: MACOS_WINDOW_LEVELS.canvas },
@@ -44,6 +53,7 @@ export function wallpaperWindowPolicy(platform: NodeJS.Platform): WallpaperWindo
 
   return {
     constructorOptions: { focusable: true },
+    canvasConstructorOptions: { focusable: true },
     hostMode: 'slice',
     joinAllWorkspaces: false,
     interactiveLevel: null,

@@ -1,0 +1,48 @@
+[build-system]
+requires = [
+    "setuptools>=42",
+    "wheel",
+    "swig>=4.0.0",
+    "meson>=0.63.0",
+    "ninja",
+    "build",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aec-audio-processing"
+dynamic = ["version"]
+description = "AEC(Acoustic Echo Cancellation) Audio Processing Module"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "BSD-3-Clause"
+keywords = [
+    "acoustic echo cancellation",
+    "webrtc audioprocessing",
+    "voice activity detection",
+    "noise suppression",
+    "automatic gain control"
+]
+authors = [
+    {name = "TheDeveloper", email = "yourappleintelligence@gmail.com"}
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: C++",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+
+[tool.setuptools]
+packages = ["aec_audio_processing", "aec_audio_processing.files"]
+package-dir = {"aec_audio_processing" = "src"}
+
+[tool.setuptools.dynamic]
+version = {attr = "aec_audio_processing._version.__version__"}
+
+[tool.setuptools.package-data]
+aec_audio_processing = ["*.py", "*.cpp", "*.h", "*.i", "files/*"]

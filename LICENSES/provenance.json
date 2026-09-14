@@ -8,7 +8,8 @@
     "tools/i18n",
     "tools/uvr5",
     "render/web/vendor",
-    "assets/audio/sfx"
+    "assets/audio/sfx",
+    "vendor/aec-audio-processing"
   ],
   "components": [
     {
@@ -346,6 +347,26 @@
       "release_action": "user-supplied",
       "gate_status": "ready",
       "notes": "The public source archive never includes these files. Every separately distributed model or voice pack needs its own model card, source revision, hash, license, and consent record."
+    },
+    {
+      "id": "aec-audio-processing",
+      "name": "aec-audio-processing 1.0.1 with bundled WebRTC and Abseil",
+      "category": "vendored-source",
+      "paths": [
+        "vendor/aec-audio-processing/**"
+      ],
+      "source_url": "https://files.pythonhosted.org/packages/9e/f1/d4c91eeaed6a2d91b448eb3eb17c150a505973aa7c5495d8772325918e38/aec_audio_processing-1.0.1.tar.gz",
+      "source_revision": "PyPI 1.0.1 sdist sha256:f03a3ce3f45bf15a04a8504d0f692a651180ca2d3171bd9f3de0516e5f2b8360",
+      "license_expression": "BSD-3-Clause AND Apache-2.0 AND MIT AND LicenseRef-AEC-Nested-Notices",
+      "license_evidence": [
+        "vendor/aec-audio-processing/LICENSE",
+        "vendor/aec-audio-processing/src/files/THIRD_PARTY_NOTICES.txt",
+        "vendor/aec-audio-processing.PROVENANCE.md"
+      ],
+      "modified": true,
+      "release_action": "include",
+      "gate_status": "ready",
+      "notes": "Linux-only path source. The sole upstream source patch forces bundled Abseil in Meson setup. Original nested notices are retained and copied into wheel package data. See the adjacent provenance and patch files for verification and removal conditions."
     }
   ]
 }

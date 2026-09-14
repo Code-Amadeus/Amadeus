@@ -134,10 +134,11 @@ verified Work Artifact
 - AUIP 不授予 `work.*`、`provider.*`、`tts.*`、任意文件系统或其他 Session 权限。
 - 断连成为可见状态并使待确认动作失效，不会在陈旧状态上静默继续。
 
-当前 schema 是 `amadeus.auip/v0`，实现位于本仓库。详见
-[AUIP 应用会话文档](docs/auip_application_sessions.md)。独立的
-[Code-Amadeus/auip](https://github.com/Code-Amadeus/auip) 目前仍是公共 namespace
-placeholder，本版本不声称已经发布独立 SDK 或 conformance suite。
+当前 schema 是实验性的 `amadeus.auip/v0`；协议实现、[Web SDK](sdk/auip-web/)、
+[Managed Core](sdk/auip-core/)、应用示例和集成测试均位于本仓库。详见
+[AUIP 应用会话文档](docs/auip_application_sessions.md)。
+[Code-Amadeus/AUIP](https://github.com/Code-Amadeus/AUIP) 维护协议现状、实现入口与
+后续 SDK 发布条件；目前尚未发布独立版本的 SDK 或独立 conformance suite。
 
 ## 快速开始
 
@@ -146,8 +147,10 @@ placeholder，本版本不声称已经发布独立 SDK 或 conformance suite。
 桌面、麦克风和播放体验仍需设备验收。L3 可选择 CPU VAD，**无需 NVIDIA GPU**；
 L4 的当前 cu124 配置面向 Windows + NVIDIA。Windows ROCm 7.2.1 已有互斥的
 `local-rocm` 实验锁与验证入口，但尚未完成受支持 AMD GPU 的端到端验收；RTX 50 系
-cu128 仍是社区配置记录。
+cu128 与 Apple Silicon MPS 已提供实验安装配置。
 统一使用 [uv](https://docs.astral.sh/uv/) 与 Python 3.12，CI 固定 uv 0.12.8。
+
+Linux 用户请从下方的 [Linux（实验性）](#linux实验性) 章节开始。
 
 | 梯级 | 能力 | 平台 | 安装方式 |
 |---|---|---|---|
@@ -157,8 +160,8 @@ cu128 仍是社区配置记录。
 | L4 local-cu124 | 本地 GPT-SoVITS / Qwen3 ASR / 唤醒词 | Windows + NVIDIA GPU | `uv sync --locked --extra voice --extra vad --extra local-cu124` |
 | 实验 local-rocm | 本地 GPT-SoVITS / Qwen3 ASR sidecar | Windows + AMD 官方矩阵内 GPU | `uv sync --locked --extra voice --extra vad --extra local-rocm` |
 
-四个默认梯级与 ROCm 实验选项均使用**同一个 `.venv`**。每次给出完整目标配置：
-`uv sync` 会精确同步，漏带会移除已装层。`torch-cpu`、`local-cu124` 与
+各安装配置均使用**同一个 `.venv`**。每次给出完整目标配置：
+`uv sync` 会精确同步，漏带会移除已装层。`torch-cpu`、`local-cu124`、`local-cu128`、`local-mps` 与
 `local-rocm` 两两互斥；切换构建时替换对应 extra，并保留 `voice`、`vad`。
 详见[安装配置与迁移](docs/install_profiles.md)。
 
@@ -221,6 +224,77 @@ cd ..
 `npm ci` 会通过项目 postinstall 安装锁定的 Electron 运行时。国内网络可为
 npm/Electron 配置镜像（如 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`）。
 
+### Linux（实验性）
+
+**Linux 目前属于实验性源码运行路径，尚未纳入完整支持的平台范围。**
+[第一阶段 Linux CI（#63）](https://github.com/Code-Amadeus/Amadeus/pull/63) 已通过
+Ubuntu 24.04 上的 L1 + dev 锁定安装、环境导入与无模型依赖检查、基础契约测试、
+Ruff、架构视图检查及 Electron 构建。另有独立 Voice source-build CI，验证锁定安装、
+AEC 导入、bundled Abseil 选择及相关契约。CI 不覆盖 Electron GUI、真实音频设备、
+VAD/本地模型推理、Wayland 会话或壁纸集成。
+另有 cu128 候选安装、依赖和 CPU VAD 回切检查，均不替代真实 GPU 模型验收。
+
+社区已报告 Arch Linux / Wayland 下的桌面与角色渲染等实机结果；这些结果不代表
+所有发行版或桌面环境均已验证。环境记录、已知问题和后续进展见
+[Linux 跟踪 issue #64](https://github.com/Code-Amadeus/Amadeus/issues/64)。
+
+先安装 Git、[uv](https://docs.astral.sh/uv/)（CI 使用 `0.12.8`）和 Node.js 22
+（CI 使用 `22.21.1`），从无需 GPU 或语音包的 L1 开始：
+
+```bash
+git clone https://github.com/Code-Amadeus/Amadeus.git
+cd Amadeus
+uv venv .venv --python 3.12.10
+uv sync --locked
+cp .env.example .env
+```
+
+编辑 `.env`，填写 `DEEPSEEK_API_KEY`，设置 `TTS_BACKEND=disabled`，并保持
+`WAKE_ENABLED=false`，先验证文字路径。然后在项目根目录检查环境：
+
+```bash
+uv run --locked --no-sync python tools/verify_python_environment.py --profile cpu
+```
+
+在 Linux 图形桌面会话中构建并启动 Electron；启动器会自动发现
+`.venv/bin/python3` 并启动后端：
+
+```bash
+cd electron
+npm ci
+npm run build
+npm run electron:dev
+```
+
+如只需 headless 后端，可改为在项目根目录运行：
+
+```bash
+uv run --locked --no-sync python -m server.app --port 17777
+```
+
+需要远程语音、录音和播放时，可在同一 `.venv` 安装 L2。Ubuntu 24.04 先安装
+CI 使用的源码构建前置包；其他发行版请使用对应的软件包名称：
+
+```bash
+sudo apt-get update
+sudo apt-get install --no-install-recommends -y build-essential pkg-config portaudio19-dev
+uv sync --locked --extra voice
+uv run --locked --no-sync python tools/verify_python_environment.py --profile voice
+```
+
+升级到语音或本地模型前，请留意以下实验边界：
+
+- **Voice / AEC**：Linux 使用基于官方 `aec-audio-processing==1.0.1` sdist 的仓库内
+  源码，强制选择 bundled Abseil 20240722.0，避免选中新版 system Abseil 导致的构建
+  失败。该修改不更改系统 Abseil；Windows/macOS 继续使用 registry 包。来源、独立
+  补丁与移除条件见 [AEC provenance](vendor/aec-audio-processing.PROVENANCE.md)。
+  构建/导入通过不代表真实设备上的回声消除或完整语音交互已验收。
+- **VAD / NVIDIA**：Linux CPU VAD 与 `local-cu128` 候选已有明确的 Torch 构建选择
+  和安装/契约 CI；cu124 参考配置仍面向 Windows。真实 GPU 模型推理及完整语音
+  交互继续按设备验收，见下方候选配置说明。
+- **桌面 / 壁纸**：GUI 与 Wayland compositor 集成仍需分别验收；GNOME 的社区结果
+  不代表 niri、KDE 或其他桌面也可用。
+
 ### VAD 与本地模型
 
 与 L1/L2 共用同一个 `.venv`，选择完整的能力与构建组合：
@@ -254,41 +328,29 @@ Torch 构建互斥。安装后必须先运行环境验证与真实 FP32 GPU comp
 本机 Radeon 780M（gfx1103）实测可被 ROCm 枚举，但首次 FP32 计算在 AMD HIP DLL
 中崩溃；该核显不在 AMD 官方 7.2.1 Windows PyTorch 矩阵内，因此不能作为可用目标。
 
-> **GeForce RTX 50 系（Blackwell，社区验证配置）**：本项目当前使用的
-> `torch==2.6.0+cu124` profile 不兼容 RTX 50 系，无法运行本地 CUDA
-> 语音模型。50 系用户需要更新 NVIDIA 驱动，并改用社区已验证可运行的
-> PyTorch 2.7.0 CUDA 12.8 组合。
->
-> **GeForce RTX 50 series (Blackwell, community-validated configuration):**
-> the current `torch==2.6.0+cu124` profile is incompatible with RTX 50-series
-> GPUs and cannot run the local CUDA voice models. Update the NVIDIA driver and
-> use the community-validated PyTorch 2.7.0 CUDA 12.8 combination instead:
->
-> 请在单独的实验项目虚拟环境（例如 `.venv_cu128`）中运行以下命令，
-> 不要改动正式 `.venv`（其 `uv.lock` 固定 cu124）。
->
-> Run this only inside a separate experimental project venv (for
-> example `.venv_cu128`); do not modify the formal `.venv` whose `uv.lock`
-> pins cu124.
->
-> ```powershell
-> uv venv .venv_cu128 --python 3.12
-> uv pip install --python .venv_cu128 --reinstall `
->   torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 `
->   --index-url https://download.pytorch.org/whl/cu128
-> ```
->
-> 上述仅安装社区记录的 PyTorch 组合，不是完整 Amadeus 安装步骤。
->
-> 该组合目前尚未经过项目的完整 clean-install、ASR/TTS/VAD 与 Electron 回归；
-> 当前 `uv.lock` 与 `--profile cu124` 验证器仍以
-> `torch==2.6.0+cu124` 为准，因此不应将其视为 cu124 正式基线的替代品。
->
-> This combination has not yet passed the project's full clean-install,
-> ASR/TTS/VAD, and Electron regression gates. The current
-> `uv.lock` and `--profile cu124` verifier still require
-> `torch==2.6.0+cu124`, so this is not a replacement for the official cu124
-> baseline.
+**实验 Torch 2.7 配置**：`local-cu128`（Windows/Linux x86_64）与
+`local-mps`（Apple Silicon）提供锁定的 Torch/Torchaudio 2.7.0 安装入口。
+现有 Windows cu124 仍保留为参考配置，Windows ROCm 继续使用 AMD 配套的 2.9.1。
+
+```bash
+# Windows/Linux NVIDIA 候选，包含完整模型依赖
+uv sync --locked --extra voice --extra vad --extra local-cu128
+uv run --locked --no-sync python tools/verify_python_environment.py --profile cu128
+
+# Apple Silicon 安装候选
+uv sync --locked --extra voice --extra vad --extra local-mps
+uv run --locked --no-sync python tools/verify_python_environment.py --profile mps
+```
+
+以上为互斥选择，按当前平台只执行一组。安装检查与 CPU 契约 CI 不代表 GPU 推理、
+麦克风、连续播放和打断已验收。#67 报告了 M4 Max 上独立 Qwen-ASR MPS 实测；
+当前应用内 Qwen 仍只支持 CPU/CUDA 设备选择，安装此配置不会自动接通 ASR MPS。
+现有 GPT-SoVITS MPS 路径可使用该候选环境，2.7.0 上的模型回归仍需实测。
+
+RTX 50 系应评估 cu128 候选，不能使用旧 cu124 作为 Blackwell 运行依据。
+FlashAttention 保持可选；已找到匹配 cp312/Torch 2.7/cu128 的 Windows 社区 wheel
+和 Linux 上游 wheel，来源、哈希与验证范围见
+[Torch 2.7 与 FlashAttention 候选](docs/torch27_candidates.md)。
 
 ### 安装外部运行资产
 
@@ -337,6 +399,9 @@ macOS：`cp .env.example .env`），然后在 Settings 中核对：
 
 - Windows：`run_electron_utf8.bat`（单一启动器；自动发现 `.venv`，L1–L4 通用）
 - macOS：`cd electron && npm run electron:dev`
+
+macOS 登录后自动启动壁纸可使用原生 `Amadeus Wallpaper.app`；构建、验证和
+LaunchAgent 安装步骤见 [macOS 壁纸自启动](docs/macos_wallpaper_startup.md)。
 
 启动型设置变更后按 **Restart backend to apply**。角色包显示
 **Not installed** 是健康状态，不影响 Chat、Work 或 headless 启动。
@@ -445,10 +510,11 @@ Settings 不会回写 `.env`。普通模型、语音、麦克风、Provider/MCP�
 | 范围 | 状态 |
 |---|---|
 | L1/L2（文字 + 远程语音）| Windows 与 macOS 源码部署；Windows 为参考平台，macOS L1/L2 有独立 CI，桌面与音频体验仍需实机验收 |
+| Linux（实验性）| Ubuntu 24.04 的 L1、L2 Voice 源码构建与 Electron 构建有 CI；GUI、真实音频设备、GPU 与壁纸仍需验收，见 [Linux 章节](#linux实验性) |
 | L3 CPU VAD | 不要求 NVIDIA GPU；使用明确的 CPU 构建配置 |
 | L4 cu124（本地 CUDA 12.4 语音）| Windows + NVIDIA；以当前实际运行环境为参考 |
 | AMD ROCm 7.2.1 | 单 `.venv` 实验锁、sidecar adapter 与失败闭环已提供；受支持 AMD GPU 实机验收待补齐 |
-| RTX 50 系 cu128 | 社区配置记录，尚无正式锁与完整回归 |
+| cu128 / Apple Silicon MPS | Torch 2.7.0 实验锁与安装 CI；完整设备和模型回归待完成 |
 | 8 GiB VRAM / 16–32 GiB RAM | 目标配置；实际占用由模型组合决定 |
 | 远程 DeepSeek Main Chat | 第一版默认 profile |
 | 远程 ASR / TTS | 显式兼容路径，不静默 fallback |
@@ -496,8 +562,8 @@ Amadeus 第一方源码和修改依据
 ## 相关项目
 
 - [Aqua-TTS](https://github.com/Lucas1479/Aqua-TTS)：MIT 的低延迟 GPT-SoVITS v3 推理运行时；Amadeus 当前不要求安装 Aqua 才能启动。
-- [Amadeus SpriteForge](https://github.com/Code-Amadeus/amadeus-spriteforge)：角色 authoring 与 graph/KTX2 工具链的公共 namespace；当前仍是待发布占位仓库。
-- [AUIP](https://github.com/Code-Amadeus/auip)：application-session / typed-action 协议的公共 namespace；当前仍是待发布占位仓库。
+- [Amadeus SpriteForge](https://github.com/Code-Amadeus/Amadeus-SpriteForge)：已公开源码的 **0.1.0 Source Alpha**，提供本地 sprite 资产检查、行为图编辑与 KTX2 角色包预览/导出；项目代码采用 AGPL-3.0-only，生成服务与 Amadeus 运行时独立。
+- [AUIP](https://github.com/Code-Amadeus/AUIP)：已在 Amadeus 中实现的实验性 application-session / typed-action 协议；独立仓库维护现状与公开实现入口，独立版本 SDK 和 conformance suite 尚未发布。
 - [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)：内嵌语音合成推理基础。
 - [OpenClaw](https://github.com/openclaw/openclaw)：可选外部 Work gateway。
 

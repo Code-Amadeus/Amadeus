@@ -1,6 +1,18 @@
 name: Source Release
 
 on:
+  pull_request:
+    paths:
+      - release/**
+      - LICENSES/**
+      - vendor/**
+      - THIRD_PARTY_NOTICES.md
+      - pyproject.toml
+      - uv.lock
+      - tools/build_source_release.py
+      - tools/check_third_party_provenance.py
+      - tests/test_release_tooling.py
+      - .github/workflows/source-release.yml
   workflow_dispatch:
   push:
     tags:
@@ -40,7 +52,7 @@ jobs:
 
       - uses: actions/upload-artifact@v6
         with:
-          name: amadeus-source-${{ github.ref_name }}
+          name: amadeus-source-${{ github.sha }}
           path: |
             dist/amadeus-source.zip
             dist/SHA256SUMS.txt

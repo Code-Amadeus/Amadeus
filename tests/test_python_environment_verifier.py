@@ -26,9 +26,9 @@ def _torch(
 
 
 def test_cpu_vad_requires_cpu_builds_of_both_torch_packages(monkeypatch) -> None:
-    _torch(monkeypatch, "2.6.0+cpu", "2.6.0+cpu")
+    _torch(monkeypatch, "2.7.0+cpu", "2.7.0+cpu")
     verifier._verify_torch_build("cpu")
-    _torch(monkeypatch, "2.6.0+cpu", "2.6.0+cu124")
+    _torch(monkeypatch, "2.7.0+cpu", "2.7.0+cu128")
     with pytest.raises(RuntimeError, match="torchaudio cpu"):
         verifier._verify_torch_build("cpu")
 
@@ -44,6 +44,50 @@ def test_build_version_match_is_exact(monkeypatch) -> None:
     _torch(monkeypatch, "2.6.10+cu124", "2.6.0+cu124", cuda="12.4")
     with pytest.raises(RuntimeError, match="expected torch 2.6.0"):
         verifier._verify_torch_build("cu124")
+
+
+@pytest.mark.parametrize("system", ["Windows", "Linux"])
+def test_cu128_candidate_checks_pair_and_cuda_runtime(monkeypatch, system) -> None:
+    _torch(monkeypatch, "2.7.0+cu128", "2.7.0+cu128", cuda="12.8")
+    monkeypatch.setattr(verifier.platform, "system", lambda: system)
+    verifier._verify_torch_build("cu128")
+    with pytest.raises(RuntimeError, match="no usable CUDA device"):
+        verifier._verify_torch_build("cu128", require_cuda_device=True)
+    sys.modules["torch"].version.cuda = "12.6"
+    with pytest.raises(RuntimeError, match="CUDA 12.8"):
+        verifier._verify_torch_build("cu128")
+
+
+def test_mps_build_and_device_are_separate_evidence(monkeypatch) -> None:
+    _torch(monkeypatch, "2.7.0", "2.7.0")
+    monkeypatch.setattr(verifier.platform, "system", lambda: "Darwin")
+    sys.modules["torch"].backends = SimpleNamespace(mps=SimpleNamespace(
+        is_built=lambda: True, is_available=lambda: False,
+    ))
+    verifier._verify_torch_build("mps")
+    with pytest.raises(RuntimeError, match="no usable MPS device"):
+        verifier._verify_torch_build("mps", require_mps_device=True)
+    sys.modules["torch"].backends.mps.is_built = lambda: False
+    with pytest.raises(RuntimeError, match="include MPS support"):
+        verifier._verify_torch_build("mps")
+
+
+@pytest.mark.parametrize("profile,system,machine", [
+    ("mps", "Windows", "AMD64"), ("mps", "Darwin", "x86_64"),
+    ("cu128", "Darwin", "arm64"), ("cu128", "Linux", "aarch64"),
+])
+def test_candidate_rejects_wrong_platform_before_imports(monkeypatch, profile, system, machine):
+    monkeypatch.setattr(verifier.platform, "system", lambda: system)
+    monkeypatch.setattr(verifier.platform, "machine", lambda: machine)
+    with pytest.raises(RuntimeError, match="candidate targets"):
+        verifier.verify(profile)
+
+
+def test_device_check_flags_cannot_be_used_with_unrelated_profile():
+    with pytest.raises(RuntimeError, match="--require-mps-device requires"):
+        verifier.verify("cpu", require_mps_device=True)
+    with pytest.raises(RuntimeError, match="--require-cuda-device requires"):
+        verifier.verify("voice", require_cuda_device=True)
 
 
 def test_rocm_build_requires_the_fixed_hip_pair(monkeypatch) -> None:
