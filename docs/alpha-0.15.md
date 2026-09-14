@@ -81,39 +81,22 @@ ACP's Claude/dsh examples are local integration probes, with no real production 
 
 ## Voice acceptance evidence
 
-The owner-selected gate is warm ordinary Chat reaching its first audio-device write
-within 1.5 seconds, with professional planning enabled. Cold startup and task-response
-latency are separate measurements. The integration-workspace samples passed that gate.
+**Result: both measured warm ordinary-chat samples passed the ≤1.5-second E2E first-audio acceptance gate with cooperative routing and the professional planner enabled.** The second sample followed a completed planner task. Cold startup and task-response latency were recorded separately and are outside this warm-chat gate.
 
-The test client was in New Zealand, calling the DeepSeek service in mainland China.
-First-audio latency includes that cross-border network communication. With lower
-communication latency, warm end-to-end first audio may fall below one second.
-This means typed-request submission through the first successful audio-device write,
-including remote model/network work, first-sentence generation and the playback path.
-With professional routing enabled, the role's first response can begin before the
-planner completes; more specialized routing need not serialize the first spoken reply.
-This does not claim zero planner overhead, and typed input excludes microphone/ASR.
-Network transit,
-model-service wait and generation were not measured independently, so no estimated
-network duration is subtracted and this is not a fixed latency guarantee.
+| Test case | Acceptance criterion | Result |
+| --- | --- | --- |
+| Warm ordinary character conversation | First audio-device write within 1.5 seconds | Passed |
+| Ordinary conversation after a professional-planner task | First audio-device write within 1.5 seconds | Passed |
 
-A separate AWS comparison used the configured Bedrock endpoint in Sydney
-(`ap-southeast-2`) and Qwen3-235B. It had a different model as well as a different
-network destination; its variation cannot be attributed to network distance alone.
-It demonstrated that sub-second warm first audio is possible, with variability across
-turns. Individual timings remain in the complete local measurement record.
+**Test setup (2026-09-14):** `.venv_cu124`, Python 3.12.10, real `server.app` and ChatPage, DeepSeek role model, local GPT-SoVITS **Japanese speech**, and the default Realtek audio output. Both routing flags were enabled. Normal runtime warmup and the short-opening audio cache remained enabled, matching daily use. The semantic model, TTS, playback and Provider paths were not replaced with mocks.
 
-Both measurements used real ChatPage, the existing Python 3.12/cu124 environment,
-local GPT-SoVITS Japanese speech, and the default Realtek output device. Ordinary
-runtime warmup and the short-opening audio cache remained enabled, matching daily use.
-The metric joins exact turn/sentence identities from Host admission to the first
-successful nonempty PortAudio write. It is not microphone-loopback latency or a
-long-run percentile measurement.
+**E2E measurement:** typed-request submission through the first successful non-empty PortAudio write to the audio device, correlated by the same turn/sentence identity. This includes the model request, network communication, first-sentence generation and playback path. It measures delivery to the audio device, not microphone/ASR latency or acoustic loopback.
 
-Physical samples were collected in the integration workspace; public-main adaptation
-has separate deterministic/build checks. These are not newly collected physical
-measurements of every subsequent public commit. The [impact and validation map](alpha-0.15-impact.md)
-separates those evidence boundaries.
+**Network context and responsiveness:** the test was initiated from **New Zealand**, calling the DeepSeek service in **mainland China**, so first-audio latency includes that cross-border communication. With lower communication latency, **warm E2E first audio may fall below one second**. With professional routing enabled, the character's first spoken response can begin without waiting for professional planning to complete.
+
+A separate comparison used AWS Bedrock in Sydney (`ap-southeast-2`) with Qwen3-235B. It showed variability across warm turns and used a different model, so it is supporting context rather than a network-only A/B test or an all-turn pass claim. Individual timings remain in the local measurement record.
+
+These are two physical warm-chat samples collected in the integration workspace, not a long-run percentile guarantee or a new physical measurement of every later public commit. Network transit and model-service time were not isolated, and the result does not claim zero planner overhead. Deterministic regression and build checks are reported separately.
 
 ## Draft boundaries
 
