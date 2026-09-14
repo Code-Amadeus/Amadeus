@@ -487,7 +487,8 @@ def test_cancelled_auip_preparation_keeps_cancellation_as_terminal_truth() -> No
             root = Path(temp)
             workspace = root / "project"
             workspace.mkdir()
-            with WorkLedgerStore(root / "ledger.sqlite3") as store:
+            with (WorkLedgerStore(root / "ledger.sqlite3") as store,
+                  patch("config.settings.WORK_PROJECT_ALLOWLIST", str(workspace))):
                 coordinator = WorkLedgerCoordinator(store)
                 original = coordinator.prepare_request(
                     ProviderRunRequest(
@@ -882,7 +883,8 @@ def test_progressive_auip_prepare_uses_current_attempt_despite_role_rename() -> 
             desktop = root / "Desktop"
             workspace.mkdir()
             desktop.mkdir()
-            with WorkLedgerStore(root / "ledger.sqlite3") as store:
+            with (WorkLedgerStore(root / "ledger.sqlite3") as store,
+                  patch("config.settings.WORK_PROJECT_ALLOWLIST", str(workspace))):
                 coordinator = WorkLedgerCoordinator(
                     store,
                     export_service=WorkExportService(store, desktop_path=desktop),

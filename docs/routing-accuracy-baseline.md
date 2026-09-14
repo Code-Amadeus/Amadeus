@@ -10,8 +10,8 @@ including hashes of the original captures. Private execution traces are not incl
 | Strategy | Cooperative | Work planner | Responsibility and intended use |
 | --- | --- | --- | --- |
 | Original Chat authority | off | ignored | ChatRuntime emits detailed delegation proposals. The existing control authority, including compound decomposition when enabled, grounds them before shared dispatch. Retained for the established route and comparison. |
-| Cooperative basic | on | off | The role's coordination contract handles conversation addressing, continuation, and detailed Work proposals without a separate professional planner. It offers the context-based conversation flow with fewer decision stages, but has a narrower supported batch boundary. This is the current default configuration. |
-| Professional cooperative | on | on | The role can acknowledge and make a coarse Work proposal; a separate role-free planner decides Work/message relationships, targets, and supported multiple operations. Host acceptance and shared domain owners still decide whether an effect may execute. This is the route used for the 0.15 voice acceptance sample. |
+| Cooperative basic | on | off | The role's coordination contract handles conversation addressing, continuation, and detailed Work proposals without a separate professional planner. It offers the context-based conversation flow with fewer decision stages, but has a narrower supported batch boundary. Retained as an explicit configuration. |
+| Professional cooperative | on | on | The role can acknowledge and make a coarse Work proposal; a separate role-free planner decides Work/message relationships, targets, and supported multiple operations. Host acceptance and shared domain owners still decide whether an effect may execute. This is the 0.15 default and the route used for the voice acceptance sample. |
 
 The flags are `COOPERATIVE_CHAT_ENABLED` and `COOPERATIVE_WORK_PLANNER_ENABLED`.
 These are alternative assemblies, not three routers run on every user turn. Ordinary

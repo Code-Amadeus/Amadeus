@@ -7,6 +7,24 @@ owns requested deliverables, execution identity, accepted requirements, and resu
 Interaction contexts provide addressing and continuation through the existing
 Provider runtime. They do not become a second writable task system.
 
+## 0.15 Alpha acceptance constraints
+
+All three constraints must hold together:
+
+1. **Accurate intent routing:** correctly interpret the requested action, source and
+   target across ordinary Chat, Provider messages, Work changes and application actions.
+2. **Efficient Provider interaction:** preserve the correct native context and Work
+   identity. Ordinary questions do not create extra requirements or execution attempts;
+   replay does not duplicate execution.
+3. **Low-latency character response:** professional planning must preserve a fast
+   initial character reply. The warm ordinary-Chat gate is ≤1.5 seconds from typed
+   request submission to the first audio-device write, excluding cold startup. The
+   opening response can begin before planning completes.
+
+Accuracy gains must preserve Provider continuity and character responsiveness.
+Historical routing scores, interaction-contract tests and physical voice samples
+provide distinct evidence; no one category alone establishes release readiness.
+
 ## Routing and ownership
 
 - Main Chat interprets the user and can stream its first spoken response before a
@@ -44,64 +62,59 @@ The planner uses the selected Main Chat model transport. An optional
 `COOPERATIVE_WORK_PLANNER_MODEL` overrides only the planner model. A role model is
 independent from the Provider that executes a task.
 
-This draft preserves the existing selectors: cooperative defaults on, while the
-professional planner remains opt-in. Setting cooperative off retains the original
-Chat strategy over the shared execution and presentation facilities. The basic
+Both cooperative routing and the professional planner default on in 0.15 Alpha.
+These are startup selectors; changing them requires a backend restart:
+
+| Cooperative | Professional planner | Active route |
+| --- | --- | --- |
+| `true` | `true` | Professional cooperative (default) |
+| `true` | `false` | Basic cooperative |
+| `false` | either | Original Chat authority; cooperative and planner are not installed |
+
+To restore the established public-main routing behavior, set
+`COOPERATIVE_CHAT_ENABLED=false` and restart. The existing
+`CONTROL_DECISION_AUTHORITY_ENABLED=true` and
+`COMPOUND_CONTROL_AUTHORITY_ENABLED=true` defaults retain the original authority
+path; preserve any deliberate pre-existing overrides of those original flags.
+This selects the original implementation over shared execution and presentation
+facilities. It does not run both routes or silently retry a failed professional
+decision through the original route. The basic
 cooperative route still has a known explicit-Provider-constraint limitation; the
 professional acceptance result does not establish parity for that configuration.
 
 ## Other integrated surfaces
 
 The routing branch includes bounded AUIP after-Work entry and authoring validation/recovery
-and the associated artifact appearance preference. Optional ACP v1 agents, complete-file
+and the associated artifact appearance preference. Experimental, opt-in ACP v1 agents, complete-file
 review for truncated Slice export previews, and the compact VN-style companion panel
 are separate Draft PRs within the same 0.15 Alpha release scope.
 The public mainline's uv installation profiles, Linux AEC source build, macOS wallpaper
 lifecycle, keyboard chat entry, and optional character retrieval remain in place.
 See [installation profiles](install_profiles.md). The standalone companion is reviewed
-in [PR #75](https://github.com/Code-Amadeus/Amadeus/pull/75); ACP and Slice export review
+in [PR #75](https://github.com/Code-Amadeus/Amadeus/pull/75);
+[ACP #76](https://github.com/Code-Amadeus/Amadeus/pull/76) and
+[Slice export review #77](https://github.com/Code-Amadeus/Amadeus/pull/77)
 are stacked on the routing candidate because they consume its shared Host contracts.
+ACP's Claude/dsh examples are local integration probes, with no real production use.
 
 ## Voice acceptance evidence
 
-The owner-selected gate is warm ordinary Chat reaching its first audio-device write
-within 1.5 seconds, with professional planning enabled. Cold startup and task-response
-latency are separate measurements. The integration-workspace samples passed that gate.
+**Result: both measured warm ordinary-chat samples passed the ≤1.5-second E2E first-audio acceptance gate with cooperative routing and the professional planner enabled.** The second sample followed a completed planner task. Cold startup and task-response latency were recorded separately and are outside this warm-chat gate.
 
-本次测试从新西兰发起，请求中国大陆的 DeepSeek 服务，首声耗时包含这段跨境网络通信。
-这里的首声是 E2E 延迟：从文字请求提交，到音频设备首次成功写入声音，包含模型请求、
-网络通信、首句生成和播放链路。在通信延迟更低的环境下，预热后的 E2E 首声有机会进入
-1 秒内。开启专业路由后，角色首句仍可先行回应，不必等待专业规划完成。
+| Test case | Measured E2E first audio | Acceptance criterion | Result |
+| --- | --- | --- | --- |
+| Warm ordinary character conversation | **1.125 s** | First audio-device write within 1.5 seconds | Passed |
+| Ordinary conversation after a professional-planner task | **1.078 s** | First audio-device write within 1.5 seconds | Passed |
 
-The test client was in New Zealand, calling the DeepSeek service in mainland China.
-First-audio latency includes that cross-border network communication. With lower
-communication latency, warm end-to-end first audio may fall below one second.
-This means typed-request submission through the first successful audio-device write,
-including remote model/network work, first-sentence generation and the playback path.
-With professional routing enabled, the role's first response can begin before the
-planner completes; more specialized routing need not serialize the first spoken reply.
-This does not claim zero planner overhead, and typed input excludes microphone/ASR.
-Network transit,
-model-service wait and generation were not measured independently, so no estimated
-network duration is subtracted and this is not a fixed latency guarantee.
+**Test setup (2026-09-14):** `.venv_cu124`, Python 3.12.10, real `server.app` and ChatPage, DeepSeek role model, local GPT-SoVITS **Japanese speech**, and the default Realtek audio output. Both routing flags were enabled. Normal runtime warmup and the short-opening audio cache remained enabled, matching daily use. The semantic model, TTS, playback and Provider paths were not replaced with mocks.
 
-A separate AWS comparison used the configured Bedrock endpoint in Sydney
-(`ap-southeast-2`) and Qwen3-235B. It had a different model as well as a different
-network destination; its variation cannot be attributed to network distance alone.
-It demonstrated that sub-second warm first audio is possible, with variability across
-turns. Individual timings remain in the complete local measurement record.
+**E2E measurement:** typed-request submission through the first successful non-empty PortAudio write to the audio device, correlated by the same turn/sentence identity. This includes the model request, network communication, first-sentence generation and playback path. It measures delivery to the audio device, not microphone/ASR latency or acoustic loopback.
 
-Both measurements used real ChatPage, the existing Python 3.12/cu124 environment,
-local GPT-SoVITS Japanese speech, and the default Realtek output device. Ordinary
-runtime warmup and the short-opening audio cache remained enabled, matching daily use.
-The metric joins exact turn/sentence identities from Host admission to the first
-successful nonempty PortAudio write. It is not microphone-loopback latency or a
-long-run percentile measurement.
+**Network context and responsiveness:** the test was initiated from **New Zealand**, calling the DeepSeek service in **mainland China**, so first-audio latency includes that cross-border communication. With lower communication latency, **warm E2E first audio may fall below one second**. With professional routing enabled, the character's first spoken response can begin without waiting for professional planning to complete.
 
-Physical samples were collected in the integration workspace; public-main adaptation
-has separate deterministic/build checks. These are not newly collected physical
-measurements of every subsequent public commit. The [impact and validation map](alpha-0.15-impact.md)
-separates those evidence boundaries.
+A separate comparison used AWS Bedrock in Sydney (`ap-southeast-2`) with Qwen3-235B. It showed variability across warm turns and used a different model, so it is supporting context rather than a network-only A/B test or an all-turn pass claim. Individual timings remain in the local measurement record.
+
+These are two physical warm-chat samples collected in the integration workspace, not a long-run percentile guarantee or a new physical measurement of every later public commit. Network transit and model-service time were not isolated, and the result does not claim zero planner overhead. Deterministic regression and build checks are reported separately.
 
 ## Draft boundaries
 

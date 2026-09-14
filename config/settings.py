@@ -506,9 +506,10 @@ PROVIDER_WORK_QUIET_REPEAT_S = _int("PROVIDER_WORK_QUIET_REPEAT_S", 300)
 # at restart. The JSON is a Host-authored ProviderRequirements contract, not a
 # capability inference.
 COOPERATIVE_CHAT_ENABLED = _bool("COOPERATIVE_CHAT_ENABLED", True)
-# Temporary rollout selector while the professional planner's supported journeys
-# are compared with the current cooperative Work path. No automatic fallback.
-COOPERATIVE_WORK_PLANNER_ENABLED = _bool("COOPERATIVE_WORK_PLANNER_ENABLED", False)
+# Professional cooperative routing is the default. False selects basic cooperative
+# routing; the whole-instance selector above restores original Chat at restart.
+# A failed professional decision never falls back to a different route.
+COOPERATIVE_WORK_PLANNER_ENABLED = _bool("COOPERATIVE_WORK_PLANNER_ENABLED", True)
 # Optional model on the existing LLM backend; empty inherits the role model.
 COOPERATIVE_WORK_PLANNER_MODEL = _str("COOPERATIVE_WORK_PLANNER_MODEL", "").strip()
 COOPERATIVE_CHAT_PROVIDER = _str("COOPERATIVE_CHAT_PROVIDER", "codex").strip().lower()
