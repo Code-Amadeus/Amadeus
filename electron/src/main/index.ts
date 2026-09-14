@@ -25,6 +25,7 @@ import { isWallpaperStartup } from './startupMode.js'
 import { ApplicationLifecycle } from './appLifecycle.js'
 import { applicationMenuTemplate } from './applicationMenu.js'
 import { defaultMpsFallbackEnvironment } from './mpsFallbackPolicy.js'
+import { CompanionPanel } from './companionPanel.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -151,6 +152,19 @@ type WorkPreviewSurface = {
 }
 const workPreviewSurfaces = new Map<string, WorkPreviewSurface>()
 const workPreviewIdsByWorkItem = new Map<string, string>()
+let companionBridge: WallpaperBridgeDescriptor | null = null
+const companionPanel = new CompanionPanel({
+  userDataDir: USER_DATA_DIR,
+  preload: path.join(__dirname, '..', 'preload', 'companion.cjs'),
+  portraitCacheDir: process.env.AMADEUS_COMPANION_PORTRAIT_CACHE
+    || path.join(PROJECT_ROOT, '..', 'visual novel player', 'out', 'vn_portrait_cache'),
+  bridge: () => companionBridge,
+  slice: () => electronSliceWindow?.webContents,
+  target: workItemId => {
+    const id = workPreviewIdsByWorkItem.get(workItemId)
+    return (id ? workPreviewSurfaces.get(id)?.window : null) || null
+  },
+})
 let workOverlayHitTestTimer: NodeJS.Timeout | null = null
 let workOverlayIgnoringMouse = false
 let workOverlayPanelBounds: Electron.Rectangle | null = null
@@ -810,6 +824,8 @@ function updateElectronSliceBounds(): void {
 }
 
 function closeElectronSliceWindow(): void {
+  void companionPanel.close()
+  companionBridge = null
   stopElectronSliceDesktopMonitor()
   closeElectronCanvasWindow()
   electronSliceWindow?.close()
@@ -824,6 +840,10 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
   const bridge = normalizeWallpaperBridge(rawBridge)
   if (!bridge) return false
   const platformPolicy = wallpaperWindowPolicy(process.platform)
+  if (companionBridge && (companionBridge.bridgePort !== bridge.bridgePort || companionBridge.assetPort !== bridge.assetPort)) {
+    void companionPanel.close()
+  }
+  companionBridge = bridge
   electronSliceLayout = bridge.sliceBounds
   const bridgeKey = `${bridge.assetPort}:${bridge.bridgePort}:${bridge.assetVersion}:${JSON.stringify(bridge.sliceBounds)}`
   if (electronSliceWindow && !electronSliceWindow.isDestroyed()) {
@@ -1648,6 +1668,7 @@ function createWorkPreviewSurface(descriptor: WorkPreviewDescriptor): {
     destroyWorkPreviewSurface(descriptor.previewId)
   })
   loadWorkPreviewContent(surface)
+  companionPanel.attachPreview(window, descriptor.workItemId)
   return { ok: true, detail: '', descriptor: projectedWorkPreviewDescriptor(surface) }
 }
 
