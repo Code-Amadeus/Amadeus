@@ -3429,7 +3429,7 @@
           sizeBytes: nonNegativeCount(item.sizeBytes == null ? item.size_bytes : item.sizeBytes),
           sha256: compactText(item.sha256, 128),
         }))
-        .filter((item) => item.path && item.status === "binary_identity" && item.sha256)
+        .filter((item) => item.path && ["binary_identity", "truncated_text"].includes(item.status) && item.sha256)
         .slice(0, 128);
       return {
         id: compactText(value.id || value.requestId || value.request_id, 240),
@@ -4384,17 +4384,26 @@
             : "<p class=\"crt-canvas-permission-scope-note\">This request covers all " + targetCount + " listed target" + (targetCount === 1 ? "" : "s") + ".</p>")
           + "<ul aria-label=\"Exact permission targets\">" + request.scope.map((path) => "<li><code>" + escapeHtml(path) + "</code></li>").join("") + "</ul>"
         : "<p class=\"crt-canvas-permission-scope-note\">The provider did not report exact path targets. No path scope can be verified from this request.</p>";
-      const binaryPreviews = request.previewComplete === true && Array.isArray(request.previews)
+      const filePreviews = (request.previewComplete === true || request.previewVersion === 3) && Array.isArray(request.previews)
         ? request.previews
         : [];
-      const previewRows = binaryPreviews.length
-        ? "<p>Binary files are approved by immutable identity; their bytes are rechecked before publication.</p>"
-          + "<ul aria-label=\"Binary export identities\">"
-          + binaryPreviews.map((preview) => [
+      const truncated = filePreviews.some((preview) => preview.status === "truncated_text");
+      const previewRows = filePreviews.length
+        ? (truncated
+            ? "<p><strong>Text preview truncated.</strong> Approval covers the complete files. Show a file in its folder to inspect it before approving.</p>"
+            : "<p>Binary files are approved by immutable identity; their bytes are rechecked before publication.</p>")
+          + "<ul aria-label=\"Export file identities\">"
+          + filePreviews.map((preview) => [
             "<li><code>", escapeHtml(preview.path), "</code><br>",
             escapeHtml(preview.mediaType || "application/octet-stream"), " · ",
             escapeHtml(String(preview.sizeBytes || 0)), " bytes · SHA-256 <code>",
-            escapeHtml(preview.sha256), "</code></li>",
+            escapeHtml(preview.sha256), "</code>",
+            preview.status === "truncated_text"
+              ? "<br><button type=\"button\" data-permission-action=\"review_file\" data-export-relative-path=\""
+                + escapeAttr(preview.path.replace(/^Desktop\//, "")) + "\""
+                + (state.permissionSubmitting ? " disabled" : "") + ">Show complete file in folder</button>"
+              : "",
+            "</li>",
           ].join("")).join("")
           + "</ul>"
         : "";
@@ -4428,12 +4437,13 @@
     async function handlePermissionAction(button) {
       const action = String(button && button.getAttribute("data-permission-action") || "");
       const request = state.permissionRequest;
-      if (!request || !request.id || !["allow_once", "deny", "retry_export", "abandon_export"].includes(action)) {
+      if (!request || !request.id || !["allow_once", "deny", "retry_export", "abandon_export", "review_file"].includes(action)) {
         state.permissionError = "Permission request is incomplete. Refresh the task card and try again.";
         render();
         return;
       }
-      if (!Array.isArray(request.options) || !request.options.includes(action)) return;
+      const reviewing = action === "review_file";
+      if (!reviewing && (!Array.isArray(request.options) || !request.options.includes(action))) return;
       state.permissionSubmitting = true;
       state.permissionError = "";
       render();
@@ -4452,7 +4462,13 @@
             work_item_id: request.workItemId || String(state.workContext && state.workContext.workItemId || ""),
             attempt_id: request.attemptId || String(state.workContext && state.workContext.attemptId || ""),
           });
+        if (reviewing) actionPayload.relative_path = String(button.getAttribute("data-export-relative-path") || "");
         await postCanvasAction("permission", action, actionPayload);
+        if (reviewing) {
+          state.permissionSubmitting = false;
+          render();
+          return;
+        }
         if (state.permissionRequest && state.permissionRequest.id === request.id
             && state.permissionRequest.ownerKind === request.ownerKind) {
           state.permissionVisible = false;

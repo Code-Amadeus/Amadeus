@@ -380,6 +380,70 @@ def test_empty_provider_artifacts_still_create_diff_permission_and_exact_export(
     asyncio.run(run())
 
 
+def test_large_export_preview_review_and_approval_survive_restart() -> None:
+    async def run(root):
+        workspace, desktop = root / "workspace", root / "Desktop"
+        workspace.mkdir()
+        desktop.mkdir()
+        database = root / "ledger.sqlite3"
+        store = WorkLedgerStore(database)
+        coordinator = WorkLedgerCoordinator(store,
+            export_service=WorkExportService(store, desktop_path=desktop))
+        prepared = coordinator.prepare_request(_request(workspace, "Create profile.html on Desktop"))
+        binding = prepared.metadata["work"]
+        item = store.get_work_item(binding["work_item_id"])
+        attempt = store.get_attempt(binding["attempt_id"])
+        plan = prepared.metadata["export_plan"]
+        source = Path(plan["staging_root"]) / "profile.html"
+        payload = b"<html>" + b"x" * (2600 * 1024) + b"</html>"
+        source.write_bytes(payload)
+        permission = coordinator.export_service.discover_staged_exports(attempt, item, plan)["permission"]
+        canvas = coordinator.selected_canvas()
+        projection = canvas["permissionRequest"]
+        assert projection["previewComplete"] is False
+        assert projection["previewVersion"] == 3
+        assert projection["previews"][0]["status"] == "truncated_text"
+        assert projection["previews"][0]["sizeBytes"] == len(payload)
+        assert str(source) not in str(projection)
+        coordinator.close()
+
+        reopened_store = WorkLedgerStore(database)
+        reopened = WorkLedgerCoordinator(reopened_store,
+            export_service=WorkExportService(reopened_store, desktop_path=desktop))
+        try:
+            assert reopened.selected_canvas()["permissionRequest"]["previews"] == projection["previews"]
+            handler = WorkLedgerHandler(reopened)
+            router = CanvasActionRouter(work_action=handler.route_action)
+            snapshot = reopened.snapshot()
+            action = {"target":"permission", "action":"review_file",
+                "permission_request_id":permission.request_id,
+                "work_item_id":item.work_item_id, "attempt_id":attempt.attempt_id,
+                "revision":snapshot["revision"], "relative_path":"profile.html",
+                "path":str(root / "untrusted.txt")}
+            with patch.object(router, "_show_path_in_folder") as reveal:
+                result = await router.route(action)
+                assert result["ok"] is True, result
+                reveal.assert_called_once_with(source)
+                assert reopened_store.get_permission_request(permission.request_id).status == "pending"
+                assert not (desktop / "profile.html").exists()
+                reveal.reset_mock()
+                invalid = await router.route({**action, "relative_path":"../private.txt"})
+                assert invalid["ok"] is False
+                stale = await router.route({**action, "revision":"stale"})
+                assert stale["ok"] is False
+                wrong_attempt = await router.route({**action, "attempt_id":"other"})
+                assert wrong_attempt["ok"] is False
+                reveal.assert_not_called()
+            result = await router.route({**action, "action":"allow_once"})
+            assert result["ok"] is True, result
+            assert (desktop / "profile.html").read_bytes() == payload
+        finally:
+            reopened.close()
+
+    with tempfile.TemporaryDirectory(prefix="work_export_large_preview_") as temp:
+        asyncio.run(run(Path(temp)))
+
+
 def test_binary_export_identity_survives_permission_projection_and_restart() -> None:
     with tempfile.TemporaryDirectory(prefix="work_export_binary_projection_") as temp:
         root = Path(temp)
