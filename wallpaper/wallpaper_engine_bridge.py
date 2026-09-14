@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional
 
 from config.asset_paths import SPRITEFORGE_RUNTIME_ROOT
-from config.settings import WALLPAPER_SFX_GATE_LOG, WALLPAPER_WHEEL_FORWARD
+from config.settings import RENDER_MAX_FPS, WALLPAPER_SFX_GATE_LOG, WALLPAPER_WHEEL_FORWARD
 from render.server import AssetServer
 from wallpaper.scene_assets import (
     _PROJECT_ROOT,
@@ -695,7 +695,8 @@ class WallpaperEngineBridgeHost:
         slice_param = "&sliceHost=electron" if self._slice_host == "electron" else ""
         return (
             f"http://127.0.0.1:{self._asset_port}/render/web/wallpaper_engine.html"
-            f"?bridgePort={self._bridge_port}&host=webwallpaper{slice_param}"
+            f"?renderMaxFps={RENDER_MAX_FPS}&bridgePort={self._bridge_port}"
+            f"&host=webwallpaper{slice_param}"
         )
 
     @property
@@ -735,11 +736,16 @@ class WallpaperEngineBridgeHost:
         return _wallpaper_asset_revision()
 
     @property
+    def render_max_fps(self) -> int:
+        return RENDER_MAX_FPS
+
+    @property
     def lively_url(self) -> str:
         slice_param = "&sliceHost=electron" if self._slice_host == "electron" else ""
         return (
             f"http://127.0.0.1:{self._asset_port}/wallpaper/lively/index.html"
-            f"?assetPort={self._asset_port}&bridgePort={self._bridge_port}{slice_param}"
+            f"?renderMaxFps={RENDER_MAX_FPS}&assetPort={self._asset_port}"
+            f"&bridgePort={self._bridge_port}{slice_param}"
         )
 
     def start(self) -> "WallpaperEngineBridgeHost":
@@ -756,6 +762,7 @@ class WallpaperEngineBridgeHost:
                 "assetPort": self._asset_port,
                 "bridgeToken": self._state.action_token,
                 "assetVersion": _wallpaper_asset_revision(),
+                "renderMaxFps": RENDER_MAX_FPS,
                 "sliceHost": self._slice_host,
                 "sliceBounds": self._slice_bounds,
                 "canvasBounds": self._canvas_bounds,

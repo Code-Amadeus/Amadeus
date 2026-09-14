@@ -184,6 +184,7 @@ type WallpaperBridgeDescriptor = {
   assetPort: number
   bridgePort: number
   assetVersion: string
+  renderMaxFps: number
   sliceBounds: { x: number; y: number; width: number; height: number }
 }
 
@@ -536,7 +537,8 @@ function normalizeWallpaperBridge(raw: unknown): WallpaperBridgeDescriptor | nul
   const value = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
   const assetPort = normalizeLocalPort(value.assetPort)
   const bridgePort = normalizeLocalPort(value.bridgePort)
-  if (assetPort < 0 || bridgePort < 0) return null
+  const renderMaxFps = Number(value.renderMaxFps)
+  if (assetPort < 0 || bridgePort < 0 || !Number.isFinite(renderMaxFps) || renderMaxFps <= 0) return null
   const rawBounds = value.sliceBounds && typeof value.sliceBounds === 'object'
     ? value.sliceBounds as Record<string, unknown>
     : {}
@@ -555,6 +557,7 @@ function normalizeWallpaperBridge(raw: unknown): WallpaperBridgeDescriptor | nul
     assetPort,
     bridgePort,
     assetVersion: String(value.assetVersion || ''),
+    renderMaxFps,
     sliceBounds,
   }
 }
@@ -581,6 +584,7 @@ function electronSliceUrl(bridge: WallpaperBridgeDescriptor): string {
   const query = new URLSearchParams({
     bridgePort: String(bridge.bridgePort),
     assetVersion: bridge.assetVersion,
+    renderMaxFps: String(bridge.renderMaxFps),
   })
   if (wallpaperWindowPolicy(process.platform).hostMode === 'scene') {
     query.set('host', 'electron')

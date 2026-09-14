@@ -24,8 +24,9 @@
   // ---------------------------------------------------------------------------
   // PixiJS Application
   // ---------------------------------------------------------------------------
-  const GLOBAL_MAX_FPS = 30;
   const GLOBAL_MAX_RESOLUTION = 1.5;
+  const renderParams = new URLSearchParams(window.location.search || "");
+  const configuredMaxFps = Number(renderParams.get("renderMaxFps"));
   const app = new PIXI.Application({
     resizeTo: document.getElementById("canvas-container"),
     backgroundAlpha: 0,          // Transparent background
@@ -33,7 +34,9 @@
     resolution: Math.min(window.devicePixelRatio || 1, GLOBAL_MAX_RESOLUTION),
     antialias: true,
   });
-  app.ticker.maxFPS = GLOBAL_MAX_FPS;
+  if (Number.isFinite(configuredMaxFps) && configuredMaxFps > 0) {
+    app.ticker.maxFPS = configuredMaxFps;
+  }
   document.getElementById("canvas-container").appendChild(app.view);
 
   // ---------------------------------------------------------------------------

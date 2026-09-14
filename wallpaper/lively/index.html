@@ -35,6 +35,7 @@
 
       var assetPort = normalizePort(params.get("assetPort"));
       var bridgePort = normalizePort(params.get("bridgePort"));
+      var renderMaxFps = Number(params.get("renderMaxFps"));
       var sliceHost = params.get("sliceHost") === "electron" ? "electron" : "";
 
       // This wrapper can be served either by the backend (normally 17777) or
@@ -54,6 +55,7 @@
             var info = await response.json();
             assetPort = assetPort || normalizePort(info.assetPort);
             bridgePort = bridgePort || normalizePort(info.bridgePort);
+            renderMaxFps = renderMaxFps > 0 ? renderMaxFps : Number(info.renderMaxFps);
             if (info.sliceHost === "electron") sliceHost = "electron";
           }
         } catch (error) {
@@ -74,7 +76,7 @@
 
       var url = "http://127.0.0.1:" + assetPort +
         "/render/web/wallpaper_engine.html?bridgePort=" + bridgePort +
-        "&host=lively";
+        "&host=lively&renderMaxFps=" + encodeURIComponent(renderMaxFps);
       if (sliceHost) url += "&sliceHost=" + encodeURIComponent(sliceHost);
       document.getElementById("amadeus-wallpaper").src = url;
     })();

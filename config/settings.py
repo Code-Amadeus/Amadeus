@@ -420,6 +420,11 @@ ASR_SPECULATIVE_END_MS = _int("ASR_SPECULATIVE_END_MS", 160)
 # 仅对本地首句链路（hybrid/hybrid2/hybrid3）生效——远程单链有计费与幂等成本。
 ASR_SPECULATIVE_LLM_START = _bool("ASR_SPECULATIVE_LLM_START", True)
 
+# Global PixiJS render budget shared by the chat and wallpaper surfaces.
+RENDER_MAX_FPS = _int("RENDER_MAX_FPS", 30)
+if not 1 <= RENDER_MAX_FPS <= 240:
+    raise ValueError("RENDER_MAX_FPS must be between 1 and 240")
+
 # Wallpaper diagnostics. keyboard_sfx.gate is a high-frequency client-side
 # gate snapshot; keep it out of WARNING unless explicitly diagnosing SFX.
 WALLPAPER_SFX_GATE_LOG = _bool("WALLPAPER_SFX_GATE_LOG", False)
