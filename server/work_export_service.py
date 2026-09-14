@@ -727,9 +727,6 @@ class WorkExportService:
         binary_preview_count = sum(
             entry.get("preview_status") == "binary_identity" for entry in entries
         )
-        truncated_preview_count = sum(
-            entry.get("preview_status") == "truncated_text" for entry in entries
-        )
 
         entries_hash = hashlib.sha256(
             "\n".join(
@@ -770,12 +767,6 @@ class WorkExportService:
                     if binary_preview_count
                     else ""
                 )
-                + (
-                    f" Text preview truncated for {truncated_preview_count} file(s); "
-                    "approval covers the complete files identified by path, size, and SHA-256."
-                    if truncated_preview_count
-                    else ""
-                )
             ),
             reversibility=(
                 (
@@ -794,8 +785,8 @@ class WorkExportService:
                 "entries": entries,
                 "directory_paths": [str(path) for path in directory_paths],
                 "entries_hash": entries_hash,
-                "preview_version": 3 if truncated_preview_count else 2 if binary_preview_count else 1,
-                "preview_complete": not truncated_preview_count,
+                "preview_version": 2 if binary_preview_count else 1,
+                "preview_complete": True,
                 "preview_patch": patch,
                 "preview_changed_files": changed_files,
                 "preview_opaque_files": opaque_preview_files,
@@ -824,31 +815,6 @@ class WorkExportService:
 
         staging_root = self._validated_staging_root(item, attempt, plan)
         return staging_root, tuple(self._bounded_files(staging_root))
-
-    def review_file(self, request_id: str, relative_path: str) -> Path:
-        """Resolve a pending export's complete file for explicit local review."""
-        request = self.store.get_permission_request(request_id)
-        if request is None or request.metadata.get("kind") != "desktop_export":
-            raise WorkLedgerConflict("not a Desktop export permission")
-        if request.status != "pending":
-            raise WorkLedgerConflict("permission_request_not_pending")
-        entries = request.metadata.get("entries") or []
-        entry = next((entry for entry in entries if isinstance(entry, dict)
-            and entry.get("relative_path") == relative_path), None)
-        if entry is None:
-            raise WorkLedgerConflict("file is not part of this export permission")
-        item = self.store.get_work_item(request.work_item_id)
-        attempt = self.store.get_attempt(request.attempt_id)
-        if item is None or attempt is None:
-            raise WorkLedgerConflict("permission request lost its WorkItem attempt")
-        root = self._validated_staging_root(item, attempt, request.metadata)
-        source = self._checked_relative_path(root,
-            str(entry.get("staging_relative_path") or entry["relative_path"]))
-        if source != Path(str(entry.get("source_path") or "")).resolve():
-            raise WorkLedgerConflict("staged export source escaped its immutable relative path")
-        if not source.is_file() or self._sha256(source) != entry.get("sha256"):
-            raise WorkLedgerConflict("staged export changed after approval was requested")
-        return source
 
     def observe_staged_files(
         self,
@@ -1000,10 +966,7 @@ class WorkExportService:
         patch = str(metadata.get("preview_patch") or "")
         changed_files = [str(path) for path in metadata.get("preview_changed_files") or []]
         return {
-            "available": bool(
-                metadata.get("preview_complete") is True
-                or metadata.get("preview_version") == 3
-            ),
+            "available": bool(metadata.get("preview_complete") is True),
             "reason": reason,
             "pending_export": permission.status == "pending",
             "recovery_required": (
@@ -1080,7 +1043,7 @@ class WorkExportService:
         entries = metadata.get("entries") if isinstance(metadata.get("entries"), list) else []
         preview_version = int(metadata.get("preview_version") or 1)
         if preview_version >= 2:
-            if preview_version != 3 and metadata.get("preview_complete") is not True:
+            if metadata.get("preview_complete") is not True:
                 raise WorkLedgerConflict(
                     "Desktop export permission lacks a complete approval preview"
                 )
@@ -1089,8 +1052,6 @@ class WorkExportService:
                 "binary_identity",
                 "host_verified_opaque",
             }
-            if preview_version == 3:
-                supported_preview_statuses.add("truncated_text")
             for raw in entries:
                 status = str(raw.get("preview_status") or "") if isinstance(raw, dict) else ""
                 if status not in supported_preview_statuses:
@@ -2174,110 +2135,126 @@ class WorkExportService:
     def _proposed_patch(
         previews: Iterable[tuple[dict[str, Any], bytes]],
     ) -> tuple[str, list[str]]:
-        """Bound presentation, independently of the complete export manifest.
+        """Build one explicit approval representation for every Provider file.
 
-        Every file keeps its full snapshot identity. Small text gets a complete
-        diff; larger text gets an explicitly incomplete excerpt. Binary files
-        retain their identity preview. No preview budget authorizes different
-        bytes or changes the export's path, count, or total-size boundaries.
+        UTF-8 text remains a complete diff. Binary or undecodable bytes are
+        represented by their exact path, size, media-type hint, and SHA-256;
+        they are never silently omitted or decoded lossy. Over-budget UTF-8
+        text still fails closed rather than changing from reviewable text into
+        an opaque identity merely because it is large.
+
+        Host-materialized runtime assets are excluded before this function only
+        after their exact Host-recorded hash and size are reverified; permission
+        metadata still lists them as ``host_verified_opaque``. The bytes passed
+        here are the exact provider-controlled snapshot bytes used for the
+        permission hashes.
         """
-        previews = list(previews)
+
         parts: list[str] = []
         changed_files: list[str] = []
-        # Reserve a fair share for every file so later entries never disappear
-        # from the review when an earlier file exhausts the display budget.
-        byte_budget = _MAX_DIFF_BYTES // max(1, len(previews)) - 1
-        line_budget = _MAX_DIFF_LINES // max(1, len(previews)) - 1
+        total_source_bytes = 0
+        total_source_lines = 0
         for entry, raw in previews:
             source = Path(str(entry.get("source_path") or ""))
             relative = str(entry.get("relative_path") or source.name).replace("\\", "/")
             display = f"Desktop/{relative}"
             changed_files.append(display)
-            header = f"diff --git a/{display} b/{display}"
+            text: str | None = None
             try:
+                if b"\x00" in raw:
+                    raise UnicodeDecodeError("utf-8", raw, 0, 1, "NUL byte")
                 text = raw.decode("utf-8")
-                if any(ord(c) < 32 and c not in "\t\r\n\f" for c in text):
+                if any(
+                    ord(character) < 32 and character not in "\t\r\n\f"
+                    for character in text
+                ):
                     text = None
             except UnicodeDecodeError:
                 text = None
             if text is None:
+                media_type = mimetypes.guess_type(relative, strict=False)[0]
                 entry["preview_status"] = "binary_identity"
-                entry["media_type_hint"] = (
-                    mimetypes.guess_type(relative, strict=False)[0] or "application/octet-stream"
-                )
-                file_parts = [header]
+                entry["media_type_hint"] = media_type or "application/octet-stream"
+                parts.append(f"diff --git a/{display} b/{display}")
                 if entry.get("replace_existing") is not True:
-                    file_parts.append("new file mode 100644")
-                file_parts.extend([
-                    f"Binary file identity: {display}",
-                    f"Media-Type: {entry['media_type_hint']}",
-                    f"Size: {len(raw)} bytes",
-                    f"SHA-256: {entry['sha256']}",
-                ])
-                parts.append("\n".join(file_parts))
+                    parts.append("new file mode 100644")
+                parts.extend(
+                    [
+                        f"Binary file identity: {display}",
+                        f"Media-Type: {entry['media_type_hint']}",
+                        f"Size: {len(raw)} bytes",
+                        f"SHA-256: {entry['sha256']}",
+                    ]
+                )
                 continue
-
-            old_raw = b""
-            old_text = ""
+            lines = text.splitlines()
+            total_source_bytes += len(raw)
+            total_source_lines += len(lines)
             if entry.get("replace_existing") is True:
                 target = Path(str(entry.get("target_path") or ""))
-                expected_old_hash = str(entry.get("expected_target_sha256") or "").strip()
-                if not expected_old_hash or not WorkExportService._target_matches(target, expected_old_hash):
+                expected_old_hash = str(
+                    entry.get("expected_target_sha256") or ""
+                ).strip()
+                if not expected_old_hash or not WorkExportService._target_matches(
+                    target,
+                    expected_old_hash,
+                ):
                     raise WorkLedgerConflict(
                         f"Desktop target changed while building its approval preview: {source.name}"
                     )
                 old_raw = target.read_bytes()
                 try:
+                    if b"\x00" in old_raw:
+                        raise UnicodeDecodeError("utf-8", old_raw, 0, 1, "NUL byte")
                     old_text = old_raw.decode("utf-8")
                 except UnicodeDecodeError as exc:
                     raise WorkLedgerConflict(
                         f"existing Desktop export cannot be fully previewed as UTF-8 text: {source.name}"
                     ) from exc
-                if any(ord(c) < 32 and c not in "\t\r\n\f" for c in old_text):
+                if any(
+                    ord(character) < 32 and character not in "\t\r\n\f"
+                    for character in old_text
+                ):
                     raise WorkLedgerConflict(
                         f"existing Desktop export contains binary control bytes: {source.name}"
                     )
-
-            candidate = ""
-            # Bound diff computation as well as its output. Oversized source
-            # text need not be split into millions of lines to approve a file.
-            if len(raw) + len(old_raw) <= _MAX_DIFF_BYTES:
-                lines, old_lines = text.splitlines(), old_text.splitlines()
-                if len(lines) + len(old_lines) <= _MAX_DIFF_LINES:
-                    if entry.get("replace_existing") is True:
-                        file_parts = [header, *difflib.unified_diff(
-                            old_lines, lines, fromfile=f"a/{display}",
-                            tofile=f"b/{display}", lineterm="",
-                        )]
-                    else:
-                        file_parts = [header, "new file mode 100644", "--- /dev/null",
-                            f"+++ b/{display}", f"@@ -0,0 +1,{len(lines)} @@",
-                            *(f"+{line}" for line in lines)]
-                        if text and not text.endswith(("\n", "\r")):
-                            file_parts.append("\\ No newline at end of file")
-                    candidate = "\n".join(file_parts)
-                    if (len(candidate.encode("utf-8")) > byte_budget
-                            or len(file_parts) > line_budget):
-                        candidate = ""
-            if candidate:
-                entry["preview_status"] = "complete_text"
-                parts.append(candidate)
+                old_lines = old_text.splitlines()
+                total_source_bytes += len(old_raw)
+                total_source_lines += len(old_lines)
+                if total_source_bytes > _MAX_DIFF_BYTES or total_source_lines > _MAX_DIFF_LINES:
+                    raise WorkLedgerConflict(
+                        "staged export is too large for a complete approval preview"
+                    )
+                parts.append(f"diff --git a/{display} b/{display}")
+                parts.extend(
+                    difflib.unified_diff(
+                        old_lines,
+                        lines,
+                        fromfile=f"a/{display}",
+                        tofile=f"b/{display}",
+                        lineterm="",
+                    )
+                )
                 continue
-
-            entry["preview_status"] = "truncated_text"
-            entry["media_type_hint"] = (
-                mimetypes.guess_type(relative, strict=False)[0] or "text/plain"
+            if total_source_bytes > _MAX_DIFF_BYTES or total_source_lines > _MAX_DIFF_LINES:
+                raise WorkLedgerConflict(
+                    "staged export is too large for a complete approval preview"
+                )
+            parts.extend(
+                [
+                    f"diff --git a/{display} b/{display}",
+                    "new file mode 100644",
+                    "--- /dev/null",
+                    f"+++ b/{display}",
+                    f"@@ -0,0 +1,{len(lines)} @@",
+                    *(f"+{line}" for line in lines),
+                ]
             )
-            summary = [header, "Text preview truncated; this is not a complete diff.",
-                f"Size: {len(raw)} bytes", f"SHA-256: {entry['sha256']}"]
-            if entry.get("replace_existing") is True:
-                summary.append(f"Previous SHA-256: {entry['expected_target_sha256']}")
-            summary.append("Beginning of the proposed file (excerpt):")
-            footer = "[Preview truncated. Approval covers the complete file.]"
-            remaining = max(0, byte_budget - len(("\n".join(summary) + "\n" + footer).encode("utf-8")) - 2)
-            # A short excerpt stays useful even for a single multi-megabyte
-            # base64 line. The manifest and registered artifact own full bytes.
-            excerpt = raw[:min(remaining, 4096)].decode("utf-8", errors="ignore")
-            excerpt = "\n".join(excerpt.splitlines()[:max(0, line_budget - len(summary) - 1)])
-            parts.append("\n".join([*summary, excerpt, footer]))
-        return "\n".join(parts), changed_files
+            if text and not text.endswith(("\n", "\r")):
+                parts.append("\\ No newline at end of file")
+        patch = "\n".join(parts)
+        if len(patch.encode("utf-8")) > _MAX_DIFF_BYTES:
+            raise WorkLedgerConflict(
+                "staged export diff is too large for a complete approval preview"
+            )
+        return patch, changed_files

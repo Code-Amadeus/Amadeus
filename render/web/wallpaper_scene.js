@@ -2433,24 +2433,6 @@
   }
 
   window.wallpaperApp = {
-    // Preserve the animation/visibility owners while moving only presentation
-    // to the compact companion. Scenario transitions can continue underneath.
-    setCompanionActive(active) {
-      const app = window.renderApp;
-      const layers = [app && app._sprite && app._sprite.container,
-        app && app._live2d && app._live2d.container,
-        app && app._subtitle && app._subtitle.container, wallpaperSubtitle.container];
-      for (const layer of layers) {
-        if (!layer) continue;
-        if (active) {
-          if (layer._companionRenderable === undefined) layer._companionRenderable = layer.renderable;
-          layer.renderable = false;
-        } else if (layer._companionRenderable !== undefined) {
-          layer.renderable = layer._companionRenderable;
-          delete layer._companionRenderable;
-        }
-      }
-    },
     scene: desktopScene,
     character: characterRuntime,
 

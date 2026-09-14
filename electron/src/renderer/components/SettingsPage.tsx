@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react
 import FluentIcon, { type FluentIconName } from './FluentIcon'
 import McpConnections, { type McpConnectionSummary } from './McpConnections'
 import ChatAvatarSettings from './ChatAvatarSettings'
-import AcpProviders, { type AcpConfiguration } from './AcpProviders'
 
 interface Props {
   send: (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
@@ -493,8 +492,6 @@ export default function SettingsPage({ send, subscribe }: Props) {
   const [config, setConfig] = useState<Record<string, unknown>>({})
   const [providerAvailability, setProviderAvailability] = useState<ProviderAvailability[]>([])
   const [providerManifests, setProviderManifests] = useState<ProviderManifest[]>([])
-  const [acpAgents, setAcpAgents] = useState('[]')
-  const [acpConfigurations, setAcpConfigurations] = useState<AcpConfiguration[]>([])
   const [capabilityPackages, setCapabilityPackages] = useState<CapabilityPackage[]>([])
   const [desktop, setDesktop] = useState<DesktopSettingsSnapshot | null>(null)
   const [saving, setSaving] = useState<string | null>(null)
@@ -514,8 +511,6 @@ export default function SettingsPage({ send, subscribe }: Props) {
     Promise.all([
       send('system.get_config', {}).then(response => setConfig((response.values as Record<string, unknown>) ?? response)),
       send('provider.list', {}).then(response => {
-        setAcpAgents(JSON.stringify(response.acp_agents || []))
-        setAcpConfigurations((response.provider_configurations || []) as AcpConfiguration[])
         setProviderAvailability(Array.isArray(response.provider_availability) ? response.provider_availability as unknown as ProviderAvailability[] : [])
         setProviderManifests(Array.isArray(response.provider_manifests) ? response.provider_manifests as unknown as ProviderManifest[] : [])
       }),
@@ -751,24 +746,6 @@ export default function SettingsPage({ send, subscribe }: Props) {
                 </BoundaryNote>
                 <SettingsGroup title="Work Provider connections" detail="Registered means the adapter passed its startup boundary. Remote availability is verified when that Provider connects.">
                   {providerConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} availability={providerAvailability.find(item => item.provider_id === group.id)} onSave={handleStartupSave} />)}
-                </SettingsGroup>
-                <SettingsGroup title="ACP agents" detail="Use DeepSeek Harness, Claude or another ACP v1 agent as a Work Provider.">
-                  <AcpProviders
-                    encoded={desktop?.sources?.AMADEUS_ACP_PROVIDERS === 'user' ? desktop.values.AMADEUS_ACP_PROVIDERS : acpAgents}
-                    locked={Boolean(desktop?.locked?.AMADEUS_ACP_PROVIDERS)}
-                    configurations={acpConfigurations}
-                    onSave={async value => {
-                      await handleStartupSave({ key: 'AMADEUS_ACP_PROVIDERS', label: 'ACP agents', type: 'text', editable: true, restart_required: true }, value, false)
-                    }}
-                    onRefresh={async () => {
-                      const response = await send('provider.list', {})
-                      setAcpConfigurations((response.provider_configurations || []) as AcpConfiguration[])
-                    }}
-                  />
-                  {providerAvailability.filter(item => !['browser', 'codex', 'openclaw'].includes(item.provider_id)).map(item =>
-                    <p key={item.provider_id} className="text-xs mt-2">{item.provider_id}: {item.registered ? 'Registered' : item.reason}</p>)}
-                  {(Array.isArray(config.acp_credentials) ? config.acp_credentials as StartupField[] : []).map(field =>
-                    <StartupFieldRow key={field.key} field={field} desktop={desktop} onSave={handleStartupSave}/>)}
                 </SettingsGroup>
                 <SettingsGroup title="Artifact appearance" detail="Generation preferences for new interactive apps. Save and restart the backend to apply.">
                   {artifactConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} />)}

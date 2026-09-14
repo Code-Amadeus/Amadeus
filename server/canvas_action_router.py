@@ -247,7 +247,7 @@ class CanvasActionRouter:
             "approve_once": "allow_once",
             "reject": "deny",
         }.get(action, action)
-        if normalized not in {"allow_once", "deny", "retry_export", "abandon_export", "review_file"}:
+        if normalized not in {"allow_once", "deny", "retry_export", "abandon_export"}:
             return {"ok": False, "error": "unsupported_action"}
         owner_kind = str(
             data.get("owner_kind")
@@ -318,15 +318,9 @@ class CanvasActionRouter:
             "attempt_id": attempt_id,
             "revision": revision,
         }
-        if normalized == "review_file":
-            payload["relative_path"] = str(data.get("relative_path") or "")
         result = self._work_action(payload)
         if inspect.isawaitable(result):
             result = await result
-        if normalized == "review_file" and isinstance(result, dict) and result.get("ok") is True:
-            # Only the Host-resolved manifest path reaches the existing local
-            # file surface. Revealing it does not execute the file or approve it.
-            return self._file_action("folder", {"path": result.get("review_path")})
         return result if isinstance(result, dict) else {"ok": True, "result": result}
 
     def _file_action(self, action: str, data: dict[str, Any]) -> dict[str, Any]:

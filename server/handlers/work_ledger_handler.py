@@ -177,7 +177,6 @@ class WorkLedgerHandler(RequestHandler):
             "reject",
             "retry_export",
             "abandon_export",
-            "review_file",
         }:
             return await self._resolve_permission(data, canvas_action=action)
         if target == "work_item" and action == "open_preview":
@@ -500,7 +499,6 @@ class WorkLedgerHandler(RequestHandler):
             "reject",
             "retry_export",
             "abandon_export",
-            "review_file",
         }:
             return reject("invalid_permission_decision")
         current_request_field = (
@@ -522,14 +520,6 @@ class WorkLedgerHandler(RequestHandler):
             return reject("permission_work_item_mismatch")
         if request.attempt_id != attempt_id:
             return reject("permission_attempt_mismatch")
-
-        if action == "review_file":
-            try:
-                source = self.coordinator.export_service.review_file(
-                    request_id, str(params.get("relative_path") or ""))
-            except (OSError, ValueError, WorkLedgerConflict) as exc:
-                return reject(str(exc))
-            return {"ok": True, "review_path": str(source)}
 
         # The immutable ledger request is the authority contract.  Renderer
         # input may select only an option that contract actually offered;

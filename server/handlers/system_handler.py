@@ -768,17 +768,6 @@ def _model_role_configuration(settings: Any) -> list[dict[str, Any]]:
     ]
 
 
-def _acp_credentials() -> list[dict[str, Any]]:
-    import os
-
-    return [
-        _startup_field("ANTHROPIC_API_KEY", "Anthropic API key", field_type="secret",
-                       secret_configured=bool(os.environ.get("ANTHROPIC_API_KEY"))),
-        _startup_field("DEEPSEEK_API_KEY", "DeepSeek API key", field_type="secret",
-                       secret_configured=bool(os.environ.get("DEEPSEEK_API_KEY"))),
-    ]
-
-
 def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
     codex_transport = (
         "app_server" if settings.CODEX_APP_SERVER_PROVIDER_ENABLED
@@ -962,7 +951,6 @@ class SystemHandler(RequestHandler):
             ),
             "model_roles": _model_role_configuration(settings),
             "work_provider_configuration": _work_provider_configuration(settings),
-            "acp_credentials": _acp_credentials(),
             "artifact_configuration": _artifact_configuration(settings),
             "voice_configuration": voice_configuration,
             "avatar_configuration": _avatar_configuration(settings),

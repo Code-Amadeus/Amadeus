@@ -148,17 +148,16 @@
     layoutSurface();
   }
 
+  async function loadCanvasState() {
+    const response = await fetch(bridgeEndpoint("canvas-state"), { cache: "no-store" });
+    if (!response.ok) throw new Error("canvas state failed: HTTP " + response.status);
+    const state = await response.json();
+    (Array.isArray(state.calls) ? state.calls : []).forEach(applyCall);
+  }
+
   function connectCanvasEvents() {
     if (eventSource) eventSource.close();
     eventSource = new EventSource(bridgeEndpoint("canvas-events"));
-    eventSource.onerror = () => { window.__amadeusBridgeToken = ""; };
-    eventSource.onopen = async () => {
-      // A reopened backend may have a new action credential at the same port.
-      if (!window.__amadeusBridgeToken) {
-        try { await resolveBridge(); }
-        catch (error) { console.warn("[ElectronSlice] bridge rediscovery failed", error); }
-      }
-    };
     eventSource.onmessage = (event) => {
       try {
         applyCall(JSON.parse(event.data));
@@ -183,7 +182,7 @@
     }
     window.addEventListener("resize", layoutSurface, { passive: true });
     await resolveBridge();
-    // The subscription starts with current Canvas state, including reconnects.
+    await loadCanvasState();
     connectCanvasEvents();
     scheduleShapeUpdate();
   }

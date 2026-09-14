@@ -52,12 +52,15 @@ professional acceptance result does not establish parity for that configuration.
 
 ## Other integrated surfaces
 
-The branch includes bounded AUIP after-Work entry and authoring validation/recovery,
-optional ACP v1 agents, an artifact appearance preference, complete-file identity for
-truncated export previews, and the optional compact companion presentation panel.
+The routing branch includes bounded AUIP after-Work entry and authoring validation/recovery
+and the associated artifact appearance preference. Optional ACP v1 agents, complete-file
+review for truncated Slice export previews, and the compact VN-style companion panel
+are separate Draft PRs within the same 0.15 Alpha release scope.
 The public mainline's uv installation profiles, Linux AEC source build, macOS wallpaper
 lifecycle, keyboard chat entry, and optional character retrieval remain in place.
-See [ACP providers](acp_provider.md) and [installation profiles](install_profiles.md).
+See [installation profiles](install_profiles.md). The standalone companion is reviewed
+in [PR #75](https://github.com/Code-Amadeus/Amadeus/pull/75); ACP and Slice export review
+are stacked on the routing candidate because they consume its shared Host contracts.
 
 ## Voice acceptance evidence
 
