@@ -29,6 +29,7 @@
     "docs/capability_catalog_v0.md",
     "docs/character_pack_authoring.md",
     "docs/character_rag.md",
+    "docs/companion-panel.md",
     "docs/external_asset_bundles.md",
     "docs/install_profiles.md",
     "docs/torch27_candidates.md",
@@ -42,8 +43,7 @@
     "SECURITY.md",
     "SUPPORT.md",
     "pyproject.toml",
-    "uv.lock",
-    "docs/companion-panel.md"
+    "uv.lock"
   ],
   "include_roots": [
     ".github",
@@ -86,6 +86,7 @@
     "docs/capability_catalog_v0.md",
     "docs/character_pack_authoring.md",
     "docs/character_rag.md",
+    "docs/companion-panel.md",
     "docs/character_rag_evaluation.md",
     "docs/character_rag_curation.md",
     "docs/character_rag_experiment.md",
@@ -109,8 +110,7 @@
     "SUPPORT.md",
     "THIRD_PARTY_NOTICES.md",
     "pyproject.toml",
-    "uv.lock",
-    "docs/companion-panel.md"
+    "uv.lock"
   ],
   "exclude_globs": [
     ".github/ISSUE_TEMPLATE/config.yml",

@@ -9,6 +9,7 @@ import http from 'http'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
+import { CompanionPanel } from './companionPanel.js'
 import {
   DesktopSettingsStore,
   type DesktopSettingsUpdate,
@@ -25,7 +26,6 @@ import { isWallpaperStartup } from './startupMode.js'
 import { ApplicationLifecycle } from './appLifecycle.js'
 import { applicationMenuTemplate } from './applicationMenu.js'
 import { defaultMpsFallbackEnvironment } from './mpsFallbackPolicy.js'
-import { CompanionPanel } from './companionPanel.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
