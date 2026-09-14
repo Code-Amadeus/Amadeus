@@ -83,10 +83,10 @@ ACP's Claude/dsh examples are local integration probes, with no real production 
 
 **Result: both measured warm ordinary-chat samples passed the ≤1.5-second E2E first-audio acceptance gate with cooperative routing and the professional planner enabled.** The second sample followed a completed planner task. Cold startup and task-response latency were recorded separately and are outside this warm-chat gate.
 
-| Test case | Acceptance criterion | Result |
-| --- | --- | --- |
-| Warm ordinary character conversation | First audio-device write within 1.5 seconds | Passed |
-| Ordinary conversation after a professional-planner task | First audio-device write within 1.5 seconds | Passed |
+| Test case | Measured E2E first audio | Acceptance criterion | Result |
+| --- | --- | --- | --- |
+| Warm ordinary character conversation | **1.125 s** | First audio-device write within 1.5 seconds | Passed |
+| Ordinary conversation after a professional-planner task | **1.078 s** | First audio-device write within 1.5 seconds | Passed |
 
 **Test setup (2026-09-14):** `.venv_cu124`, Python 3.12.10, real `server.app` and ChatPage, DeepSeek role model, local GPT-SoVITS **Japanese speech**, and the default Realtek audio output. Both routing flags were enabled. Normal runtime warmup and the short-opening audio cache remained enabled, matching daily use. The semantic model, TTS, playback and Provider paths were not replaced with mocks.
 
