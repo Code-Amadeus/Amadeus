@@ -752,7 +752,7 @@ export default function SettingsPage({ send, subscribe }: Props) {
                 <SettingsGroup title="Work Provider connections" detail="Registered means the adapter passed its startup boundary. Remote availability is verified when that Provider connects.">
                   {providerConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} availability={providerAvailability.find(item => item.provider_id === group.id)} onSave={handleStartupSave} />)}
                 </SettingsGroup>
-                <SettingsGroup title="ACP agents" detail="Use DeepSeek Harness, Claude or another ACP v1 agent as a Work Provider.">
+                <SettingsGroup title="ACP agents — Experimental" detail="Try DeepSeek Harness, Claude or another ACP v1 agent. This integration has not been used in production.">
                   <AcpProviders
                     encoded={desktop?.sources?.AMADEUS_ACP_PROVIDERS === 'user' ? desktop.values.AMADEUS_ACP_PROVIDERS : acpAgents}
                     locked={Boolean(desktop?.locked?.AMADEUS_ACP_PROVIDERS)}

@@ -1,6 +1,12 @@
-# ACP Work Providers
+# ACP Work Providers — experimental
 
-Status: opt-in ACP v1 integration; Codex remains the existing default coding Provider.
+Status: experimental, opt-in ACP v1 integration for 0.15 Alpha. It has not been
+integrated into real production use. Codex remains the existing default coding Provider.
+
+Claude and DeepSeek Harness (dsh) below are historical local integration examples,
+not production-qualified Providers. Native probes and deterministic protocol tests
+establish bounded behavior; they do not establish daily-use reliability or a complete
+Amadeus-to-agent production workflow.
 
 Amadeus reuses `agent-client-protocol==0.12.1` for stdio framing, typed
 messages, notification draining, and subprocess lifetime. `AcpProviderAdapter`
@@ -34,7 +40,8 @@ The dev extra/CI lock includes it so deterministic ACP tests run in CI. The
 default CPU runtime does not require the SDK or any external agent installation.
 
 Install an Agent separately, following its upstream instructions. The initial
-native probes used these npm packages in an isolated directory:
+native probes on 2026-09-13 used these npm packages in an isolated directory.
+These are the historical example versions, not a claim about current releases:
 
 - `@deepseek-ai/dsh@0.1.5-rc.1`
 - `@agentclientprotocol/claude-agent-acp@0.76.0`
@@ -171,12 +178,15 @@ By default it only initializes the Agent. Add `--task "Reply briefly without
 tools"` to exercise the adapter with a real model; this mode rejects native
 permission requests and does not create or complete a Host WorkItem.
 
-2026-09-13 local evidence: both named npm versions negotiated ACP v1 on Windows.
-DeepSeek completed a real model turn and returned a native session. Claude first
-returned the explicit authentication-required response. After the user completed
-the official Claude Code CLI login, the same ACP/Agent SDK path completed a real
-model turn using that login, without an API-key override. These are integration
-observations, not complete release or human UI acceptance.
+### Historical local examples (2026-09-13, Windows)
+
+| Agent | Example setup | Bounded observation |
+| --- | --- | --- |
+| DeepSeek Harness (dsh), `@deepseek-ai/dsh@0.1.5-rc.1` | `node` with `lib/bin.js --profile acp`; Host environment references supply the Agent's credentials | Negotiated ACP v1, completed a real model reply and returned a native session. |
+| Claude, `@agentclientprotocol/claude-agent-acp@0.76.0` | `node` with `dist/index.js`; existing official Claude Code CLI login, without an API-key override | First returned authentication-required; after login, negotiated ACP v1 and completed a real model reply through the ACP/Agent SDK path. |
+
+These were disposable local integration probes. Neither example has been integrated
+into real production use, and neither is a complete release or human UI acceptance.
 
 Both Agents also passed a two-process continuity probe (the resumed session
 recalled a marker from the preceding process), application of an advertised
