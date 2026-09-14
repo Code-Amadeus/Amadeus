@@ -8,6 +8,7 @@ mouth amplitude, SpriteForge intents, and semantic wallpaper activities.
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 from typing import Any
 from collections.abc import Callable
@@ -43,6 +44,7 @@ class WallpaperHandler(RequestHandler):
         self._ensure_chat_session_fn: Callable[[], Any] | None = None
         self._canvas_projector: Callable[[dict[str, Any]], dict[str, Any]] | None = None
         self._attention_snapshot: Callable[[], list[dict[str, Any]]] | None = None
+        self._current_activity: Callable[[], str] | None = None
         self._last_canvas_payload: dict[str, Any] | None = None
 
     def configure(
@@ -56,6 +58,7 @@ class WallpaperHandler(RequestHandler):
         ensure_chat_session_fn: Callable[[], Any] | None = None,
         canvas_projector: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         attention_snapshot: Callable[[], list[dict[str, Any]]] | None = None,
+        current_activity: Callable[[], str] | None = None,
     ) -> None:
         self._project_root = project_root
         self._render_bridge = render_bridge
@@ -66,6 +69,7 @@ class WallpaperHandler(RequestHandler):
         self._ensure_chat_session_fn = ensure_chat_session_fn
         self._canvas_projector = canvas_projector
         self._attention_snapshot = attention_snapshot
+        self._current_activity = current_activity
         if not self._subscribed:
             for method in self._render_event_methods():
                 bus.on(method, self._forward_render_event)
@@ -109,6 +113,8 @@ class WallpaperHandler(RequestHandler):
             self._install_canvas_action_handler(self._wallpaper_host)
             self._install_chat_submit_handler(self._wallpaper_host)
             self._wallpaper_host.start()
+            if self._current_activity is not None:
+                self._apply_activity(self._current_activity())
             from server import presentation_runtime
 
             self._wallpaper_host.set_canvas_presentation(
@@ -297,7 +303,9 @@ class WallpaperHandler(RequestHandler):
         return True
 
     def _apply_canvas(self, payload: dict[str, Any]) -> bool:
-        projected = dict(payload or {})
+        # Preserve the existing owner's in-process projection provenance until
+        # its projector consumes it; the retained/rendered payload is plain data.
+        projected = copy.copy(payload or {})
         projector = self._canvas_projector
         if projector is not None:
             try:

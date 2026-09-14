@@ -70,14 +70,15 @@ def test_cooperative_chat_is_the_declared_default_with_explicit_rollback() -> No
         "COOPERATIVE_CHAT_ENABLED", True) is False
 
 
-def test_professional_work_planner_requires_explicit_rollout_selection() -> None:
+def test_professional_work_planner_defaults_on_with_explicit_rollback() -> None:
     from config import settings
 
     field = next(field for field in settings.declared_environment_fields()
         if field.key == "COOPERATIVE_WORK_PLANNER_ENABLED")
-    assert field.default is False
+    assert field.default is True
     model = next(field for field in settings.declared_environment_fields()
         if field.key == "COOPERATIVE_WORK_PLANNER_MODEL")
     assert model.default == ""
-    assert EnvironmentReader({"COOPERATIVE_WORK_PLANNER_ENABLED":"true"}).boolean(
-        "COOPERATIVE_WORK_PLANNER_ENABLED", False) is True
+    assert EnvironmentReader({}).boolean("COOPERATIVE_WORK_PLANNER_ENABLED", field.default) is True
+    assert EnvironmentReader({"COOPERATIVE_WORK_PLANNER_ENABLED":"false"}).boolean(
+        "COOPERATIVE_WORK_PLANNER_ENABLED", field.default) is False
