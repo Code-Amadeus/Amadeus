@@ -875,44 +875,110 @@ def test_allowed_receipt_recovers_if_process_stops_before_attempt_journal() -> N
             )
 
 
-def test_discovery_rejects_over_budget_text_without_permission() -> None:
-    with tempfile.TemporaryDirectory(prefix="work_export_preview_guard_") as temp:
-        root = Path(temp)
-        desktop = root / "Desktop"
-        desktop.mkdir()
-        with WorkLedgerStore(root / "ledger.sqlite3") as store:
-            service = WorkExportService(store, desktop_path=desktop)
-            invalid_payloads = (
-                ("too_many_lines.txt", ("line\n" * 2401).encode("utf-8")),
-            )
-            for index, (filename, payload) in enumerate(invalid_payloads):
-                workspace = root / f"workspace-{index}"
-                task = f"Create {filename} on the Desktop"
-                item, attempt = _records(store, workspace, task)
-                plan = service.prepare_plan(
-                    provider="locus",
-                    mode="agent",
-                    task=task,
-                    item=item,
-                    attempt=attempt,
-                    metadata={
-                        "external_export": {
-                            "target": "desktop",
-                            "filename": filename,
-                        }
-                    },
-                )
-                assert plan is not None
-                (Path(plan["staging_root"]) / filename).write_bytes(payload)
-                try:
-                    service.discover_staged_exports(attempt, item, plan)
-                except WorkLedgerConflict as exc:
-                    assert "preview" in str(exc).lower() or "utf-8" in str(exc).lower()
-                else:
-                    raise AssertionError(
-                        f"{filename} must fail closed when its complete preview is unavailable"
-                    )
-                assert store.list_permission_requests(item.work_item_id) == []
+@pytest.mark.parametrize("payload", [
+    b"line\n" * 2401,
+    b'<html><img src="data:image/png;base64,' + b"A" * (2600 * 1024) + b'"></html>',
+], ids=["many-lines", "embedded-image"])
+@pytest.mark.parametrize("decision", ["allow", "deny", "source_drift"])
+def test_large_text_preview_does_not_limit_exact_delivery(tmp_path, payload, decision):
+    desktop = tmp_path / "Desktop"
+    desktop.mkdir()
+    with WorkLedgerStore(tmp_path / "ledger.sqlite3") as store:
+        service = WorkExportService(store, desktop_path=desktop)
+        item, attempt = _records(store, tmp_path / "workspace", "Create profile.html on Desktop")
+        plan = service.prepare_plan(provider="locus", mode="agent", task=attempt.task,
+            item=item, attempt=attempt, metadata={"external_export":{"target":"desktop", "filename":"profile.html"}})
+        source = Path(plan["staging_root"]) / "profile.html"
+        source.write_bytes(payload)
+        outcome = service.discover_staged_exports(attempt, item, plan)
+        permission = outcome["permission"]
+        assert outcome["available"] is True
+        assert outcome["pending_export"] is True
+        assert permission.metadata["preview_complete"] is False
+        assert permission.metadata["preview_version"] == 3
+        entry = permission.metadata["entries"][0]
+        assert entry["preview_status"] == "truncated_text"
+        assert entry["sha256"] == hashlib.sha256(payload).hexdigest()
+        assert entry["size_bytes"] == len(payload)
+        assert "Text preview truncated" in outcome["patch"]
+        assert len(outcome["patch"].encode("utf-8")) <= 512 * 1024
+        assert len(outcome["patch"].splitlines()) <= 2400
+        assert service.review_file(permission.request_id, "profile.html") == source
+        with pytest.raises(WorkLedgerConflict, match="not part"):
+            service.review_file(permission.request_id, "../private.txt")
+        assert not (desktop / "profile.html").exists()
+        if decision == "source_drift":
+            source.write_bytes(payload + b"changed")
+            with pytest.raises(WorkLedgerConflict, match="changed after approval"):
+                service.review_file(permission.request_id, "profile.html")
+            with pytest.raises(WorkLedgerConflict, match="changed after approval"):
+                service.resolve(permission.request_id, allow=True)
+            assert store.get_permission_request(permission.request_id).status == "pending"
+            assert not (desktop / "profile.html").exists()
+        else:
+            service.resolve(permission.request_id, allow=decision == "allow")
+            if decision == "allow":
+                assert (desktop / "profile.html").read_bytes() == payload
+            else:
+                assert not (desktop / "profile.html").exists()
+            with pytest.raises(WorkLedgerConflict, match="not_pending"):
+                service.review_file(permission.request_id, "profile.html")
+
+
+@pytest.mark.parametrize("drift", [False, True])
+def test_large_text_amendment_preserves_previous_version_check(tmp_path, drift):
+    with _approved_nested_export(tmp_path) as host:
+        amendment = host.store.create_attempt(host.item.work_item_id, provider="locus", task="Embed the portrait")
+        plan = host.service.prepare_plan(provider="locus", mode="agent", task=amendment.task,
+            item=host.item, attempt=amendment, metadata={"intent":"amend"})
+        source = Path(plan["staging_root"]) / host.relative
+        payload = b"<html>" + b"x" * (3 * 1024 * 1024) + b"</html>"
+        source.write_bytes(payload)
+        permission = host.service.discover_staged_exports(amendment, host.item, plan)["permission"]
+        assert permission.metadata["preview_complete"] is False
+        assert host.target.read_text(encoding="utf-8") == host.original
+        if drift:
+            host.target.write_text("User changed the target", encoding="utf-8")
+            with pytest.raises(WorkLedgerConflict, match="changed since"):
+                host.service.resolve(permission.request_id, allow=True)
+            assert host.target.read_text(encoding="utf-8") == "User changed the target"
+        else:
+            host.service.resolve(permission.request_id, allow=True)
+            assert host.target.read_bytes() == payload
+
+
+def test_preview_budget_covers_every_file_and_diff_output_expansion():
+    previews = []
+    for index in range(128):
+        raw = ("多行文本\n" * 2400).encode("utf-8")
+        previews.append(({"relative_path":f"files/{index}.txt", "sha256":hashlib.sha256(raw).hexdigest()}, raw))
+    patch_text, paths = WorkExportService._proposed_patch(previews)
+    assert len(paths) == 128
+    assert len(patch_text.encode("utf-8")) <= 512 * 1024
+    assert len(patch_text.splitlines()) <= 2400
+    assert all(entry["preview_status"] == "truncated_text" for entry, _raw in previews)
+    assert all(path in patch_text for path in paths)
+
+
+@pytest.mark.parametrize("limit,value,payloads", [
+    ("_MAX_EXPORT_BYTES", 8, [b"ninebytes"]),
+    ("_MAX_EXPORT_FILES", 1, [b"a", b"b"]),
+])
+def test_preview_change_keeps_delivery_limits(tmp_path, limit, value, payloads):
+    desktop = tmp_path / "Desktop"
+    desktop.mkdir()
+    with WorkLedgerStore(tmp_path / "ledger.sqlite3") as store:
+        service = WorkExportService(store, desktop_path=desktop)
+        item, attempt = _records(store, tmp_path / "workspace", "Create files on Desktop")
+        plan = service.prepare_plan(provider="locus", mode="agent", task=attempt.task,
+            item=item, attempt=attempt, metadata={"external_export":{"target":"desktop"}})
+        for index, payload in enumerate(payloads):
+            (Path(plan["staging_root"]) / f"{index}.txt").write_bytes(payload)
+        with patch(f"server.work_export_service.{limit}", value):
+            with pytest.raises(WorkLedgerConflict, match="bounded"):
+                service.discover_staged_exports(attempt, item, plan)
+        assert store.list_permission_requests(item.work_item_id) == []
+        assert list(desktop.iterdir()) == []
 
 
 def test_binary_bundle_uses_immutable_identity_preview_and_exports_exact_bytes() -> None:
@@ -1591,7 +1657,6 @@ def _main() -> None:
     test_target_created_during_resolution_is_never_overwritten()
     test_allowed_publish_interruption_is_verified_and_recoverable()
     test_allowed_receipt_recovers_if_process_stops_before_attempt_journal()
-    test_discovery_rejects_over_budget_text_without_permission()
     test_binary_bundle_uses_immutable_identity_preview_and_exports_exact_bytes()
     test_binary_export_rechecks_the_approved_hash_before_publication()
     test_requested_file_excludes_neighboring_runtime_byproducts()
