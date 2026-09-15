@@ -149,6 +149,15 @@ class WallpaperHandler(RequestHandler):
         host.set_canvas_action_handler(_handler)
 
     async def _route_canvas_action(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if payload.get("target") == "presentation" and payload.get("action") == "companion":
+            active = payload.get("active")
+            if not isinstance(active, bool):
+                return {"ok": False, "error": "invalid_companion_visibility"}
+            host = self._wallpaper_host
+            if host is None:
+                return {"ok": False, "error": "wallpaper_not_running"}
+            host.set_companion_active(active)
+            return {"ok": True, "active": active}
         canvas_action = self._canvas_action_fn
         if canvas_action is None:
             return {"ok": False, "error": "canvas_action_router_unavailable"}
