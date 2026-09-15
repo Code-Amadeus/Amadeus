@@ -24,6 +24,7 @@ EventModel = Literal["canonical", "canonical+native"]
 ProviderOwnershipMode = Literal["managed", "attached"]
 PreferencePolicy = Literal["prefer", "require", "force"]
 OperationExecution = Literal["direct", "observe_then_plan"]
+SubmissionReconciliationMode = Literal["none", "query"]
 
 
 _WORKSPACE_ACCESS_RANK: dict[str, int] = {"none": 0, "read": 1, "write": 2}
@@ -32,6 +33,7 @@ _STEERING_VALUES = {"none", "next_turn", "immediate"}
 _RESUME_VALUES = {"none", "same_attempt", "attach"}
 _INTERACTION_VALUES = {"none", "diagnostic", "bidirectional"}
 _WORKSPACE_OWNERSHIP_VALUES = {"none", "caller", "provider", "negotiated"}
+_SUBMISSION_RECONCILIATION_VALUES = {"none", "query"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,12 +73,28 @@ class ProviderCapabilities:
     cancellation: CancellationMode = "best_effort"
     interaction: InteractionMode = "none"
     event_model: EventModel = "canonical"
+    # Optional read-only recovery of a submission whose acknowledgement was
+    # lost. Native query mechanisms remain adapter-local; routing never
+    # interprets them. It is deliberately absent from ProviderRequirements:
+    # current evidence supports recovery, not preferring one Provider during
+    # ordinary semantic routing.
+    submission_reconciliation: SubmissionReconciliationMode = "none"
     operations: tuple[ProviderOperation, ...] = ()
     # Host-installed Skills and MCP connections stay outside the main role.
     # A Work Provider must explicitly name each catalog projection it can use.
     capability_projections: tuple[str, ...] = ()
+    # Every successful call appends one input to the exact active execution.
+    # Immediate replacement steering does not imply this capability.
+    append_input: bool = False
 
     def __post_init__(self) -> None:
+        if not isinstance(self.append_input, bool):
+            raise TypeError("provider append_input capability must be boolean")
+        if self.submission_reconciliation not in _SUBMISSION_RECONCILIATION_VALUES:
+            raise ValueError(
+                "invalid provider submission reconciliation mode: "
+                f"{self.submission_reconciliation}"
+            )
         projections = tuple(
             dict.fromkeys(
                 str(value or "").strip().lower()
@@ -138,8 +156,10 @@ class ProviderCapabilities:
             "cancellation": self.cancellation,
             "interaction": self.interaction,
             "event_model": self.event_model,
+            "submission_reconciliation": self.submission_reconciliation,
             "operations": [item.to_dict() for item in self.operations],
             "capability_projections": list(self.capability_projections),
+            "append_input": self.append_input,
         }
 
 

@@ -34,6 +34,44 @@ def _request(workspace: Path, task: str) -> ProviderRunRequest:
     )
 
 
+def test_work_canvas_preserves_only_explicit_cooperative_permission_owner() -> None:
+    with tempfile.TemporaryDirectory(prefix="cooperative_permission_canvas_") as temp:
+        root = Path(temp)
+        workspace = root / "workspace"
+        workspace.mkdir()
+        store = WorkLedgerStore(root / "work.sqlite3")
+        coordinator = WorkLedgerCoordinator(store)
+        try:
+            project = store.create_or_get_project(workspace)
+            item = store.create_work_item(project.project_id, title="Selected Work")
+            store.create_attempt(item.work_item_id, provider="codex", task="work")
+            coordinator.select(item.work_item_id)
+            request = {"id":"cooperative-permission",
+                "ownerKind":"cooperative_run", "sessionId":"session-a",
+                "runId":"run-a", "providerRequestId":"native-a",
+                "options":["allow_once", "deny"]}
+            pending = coordinator.project_canvas({
+                "permissionVisible":True, "permissionRequest":request})
+            assert pending["permissionVisible"] is True
+            assert pending["permissionRequest"] == request
+            assert pending["taskDock"]["selectedWorkItemId"] == item.work_item_id
+
+            cleared = coordinator.project_canvas({
+                "permissionVisible":False, "permissionRequest":request})
+            assert cleared["permissionVisible"] is False
+            assert cleared["permissionRequest"] == request
+            assert cleared["taskDock"]["selectedWorkItemId"] == item.work_item_id
+
+            unknown = coordinator.project_canvas({
+                "permissionVisible":True,
+                "permissionRequest":{**request, "ownerKind":"unknown"}})
+            assert unknown.get("permissionVisible") is not True
+            assert "permissionRequest" not in unknown
+        finally:
+            coordinator.close()
+            store.close()
+
+
 async def _finish(
     coordinator: WorkLedgerCoordinator,
     request: ProviderRunRequest,

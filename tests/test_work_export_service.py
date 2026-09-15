@@ -7,8 +7,12 @@ import os
 import subprocess
 import sys
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -22,6 +26,148 @@ def _records(store: WorkLedgerStore, workspace: Path, task: str):
     item = store.create_work_item(project.project_id, title="Desktop export", goal=task)
     attempt = store.create_attempt(item.work_item_id, provider="locus", task=task)
     return item, attempt
+
+
+@contextmanager
+def _approved_nested_export(tmp_path, relative="amadeus-repair-ja-20260907/index.html"):
+    desktop = tmp_path / "Desktop"
+    desktop.mkdir()
+    with WorkLedgerStore(tmp_path / "nested.sqlite3") as store:
+        item, first = _records(store, tmp_path / "workspace", "Build a page on Desktop")
+        service = WorkExportService(store, desktop_path=desktop)
+        plan = service.prepare_plan(provider="locus", mode="agent", task=first.task,
+            item=item, attempt=first, metadata={"external_export":{"target":"desktop"}})
+        original = "<html><h1>Kurisu</h1></html>"
+        staged = Path(plan["staging_root"]) / relative
+        staged.parent.mkdir(parents=True)
+        staged.write_text(original, encoding="utf-8")
+        permission = service.discover_staged_exports(first, item, plan)["permission"]
+        target = desktop / relative
+        assert not target.exists()
+        assert service.resolve(permission.request_id, allow=True).exported_paths == (str(target),)
+        store.update_attempt(first.attempt_id, execution_status="succeeded")
+        yield SimpleNamespace(store=store, service=service, item=item, first=first,
+            desktop=desktop, target=target, relative=relative, original=original, permission=permission)
+
+
+@pytest.mark.parametrize("relative", ["amadeus-repair-ja-20260907/index.html", "日本語のページ/紹介/index.html"])
+@pytest.mark.parametrize("decision", ["allow", "deny", "drift_before_amend", "drift_before_allow"])
+def test_nested_single_file_amend_preserves_identity_and_exact_approval(tmp_path, relative, decision):
+    with _approved_nested_export(tmp_path, relative) as host:
+        sibling = host.target.parent / "user-notes.txt"
+        sibling.write_text("User-owned notes", encoding="utf-8")
+        amendment = host.store.create_attempt(host.item.work_item_id, provider="locus", task="Add an avatar")
+        if decision == "drift_before_amend":
+            host.target.write_text("User revision", encoding="utf-8")
+            with pytest.raises(WorkLedgerConflict, match="changed since"):
+                host.service.prepare_plan(provider="locus", mode="agent", task=amendment.task,
+                    item=host.item, attempt=amendment, metadata={"intent":"amend"})
+            assert host.target.read_text(encoding="utf-8") == "User revision"
+            assert len(host.store.list_permission_requests(host.item.work_item_id)) == 1
+            return
+        plan = host.service.prepare_plan(provider="locus", mode="agent", task=amendment.task,
+            item=host.item, attempt=amendment, metadata={"intent":"amend"})
+        assert plan["requested_filename"] == relative
+        assert plan["inherited_target_path"] == str(host.target)
+        assert plan["replace_existing"] is True
+        inherited = Path(plan["staging_root"]) / relative
+        assert inherited.read_text(encoding="utf-8") == host.original
+        assert host.service.observe_staged_files(amendment, host.item, plan)["changed_files"] == [relative]
+        revised = "<html><h1>Kurisu</h1><p>avatar</p></html>"
+        inherited.write_text(revised, encoding="utf-8")
+        (Path(plan["staging_root"]) / "unrequested.txt").write_text("not approved", encoding="utf-8")
+        outcome = host.service.discover_staged_exports(amendment, host.item, plan)
+        assert f"--- a/Desktop/{relative}" in outcome["patch"]
+        assert "new file mode" not in outcome["patch"]
+        permission = outcome["permission"]
+        assert permission.status == "pending" and permission.request_id != host.permission.request_id
+        assert permission.metadata["directory_paths"] == []
+        assert len(permission.metadata["entries"]) == 1
+        entry = permission.metadata["entries"][0]
+        assert entry["relative_path"] == entry["staging_relative_path"] == relative
+        assert entry["target_path"] == str(host.target) and entry["replace_existing"] is True
+        assert entry["expected_target_sha256"] == hashlib.sha256(host.original.encode()).hexdigest()
+        assert permission.scope_paths == [str(host.target), entry["temporary_path"]]
+        assert host.target.read_text(encoding="utf-8") == host.original
+        if decision == "drift_before_allow":
+            host.target.write_text("User revision", encoding="utf-8")
+            with pytest.raises(WorkLedgerConflict, match="changed since"):
+                host.service.resolve(permission.request_id, allow=True)
+            expected = "User revision"
+            assert host.store.get_permission_request(permission.request_id).status == "pending"
+        else:
+            allowed = decision == "allow"
+            result = host.service.resolve(permission.request_id, allow=allowed)
+            assert result.permission.status == ("allowed" if allowed else "denied")
+            assert result.exported_paths == ((str(host.target),) if allowed else ())
+            expected = revised if allowed else host.original
+        assert host.target.read_text(encoding="utf-8") == expected
+        assert sibling.read_text(encoding="utf-8") == "User-owned notes"
+        assert not (host.desktop / "unrequested.txt").exists()
+        assert host.store.get_permission_request(host.permission.request_id).status == "allowed"
+
+
+@pytest.mark.parametrize("boundary", ["source_parent", "staging_parent_before_copy", "staging_parent", "target_parent_after_permission"])
+def test_nested_amend_rejects_parent_links_at_each_export_boundary(tmp_path, boundary):
+    with _approved_nested_export(tmp_path) as host:
+        amendment = host.store.create_attempt(host.item.work_item_id, provider="locus", task="Add an avatar")
+        original_check = host.service._is_link_or_junction
+        if boundary in {"source_parent", "staging_parent_before_copy"}:
+            unsafe_parent = host.target.parent
+            if boundary == "staging_parent_before_copy":
+                staging_root = host.service.ensure_private_workspace_child(Path(host.item.workspace_path),
+                    "proposed_exports", amendment.attempt_id)
+                unsafe_parent = (staging_root / host.relative).parent
+                unsafe_parent.mkdir(parents=True)
+            # Override only the existing OS fact reader: validation must inspect
+            # every lexical parent, even if resolve() would hide the junction.
+            with patch.object(WorkExportService, "_is_link_or_junction",
+                    side_effect=lambda path:Path(path) == unsafe_parent or original_check(path)):
+                with pytest.raises(WorkLedgerConflict, match="link or junction"):
+                    host.service.prepare_plan(provider="locus", mode="agent", task=amendment.task,
+                        item=host.item, attempt=amendment, metadata={"intent":"amend"})
+        else:
+            plan = host.service.prepare_plan(provider="locus", mode="agent", task=amendment.task,
+                item=host.item, attempt=amendment, metadata={"intent":"amend"})
+            staged = Path(plan["staging_root"]) / host.relative
+            staged.write_text("revised", encoding="utf-8")
+            permission = (host.service.discover_staged_exports(amendment, host.item, plan)["permission"]
+                if boundary == "target_parent_after_permission" else None)
+            unsafe_parent = host.target.parent if permission else staged.parent
+            with patch.object(WorkExportService, "_is_link_or_junction",
+                    side_effect=lambda path:Path(path) == unsafe_parent or original_check(path)):
+                with pytest.raises(WorkLedgerConflict, match="link or junction"):
+                    if permission:
+                        host.service.resolve(permission.request_id, allow=True)
+                    else:
+                        host.service.discover_staged_exports(amendment, host.item, plan)
+            if permission:
+                assert host.store.get_permission_request(permission.request_id).status == "pending"
+        assert host.target.read_text(encoding="utf-8") == host.original
+
+
+def test_same_filename_in_two_approved_directories_is_ambiguous(tmp_path):
+    desktop = tmp_path / "Desktop"
+    desktop.mkdir()
+    with WorkLedgerStore(tmp_path / "ambiguous.sqlite3") as store:
+        item, attempt = _records(store, tmp_path / "workspace", "Build two pages on Desktop")
+        service = WorkExportService(store, desktop_path=desktop)
+        plan = service.prepare_plan(provider="locus", mode="agent", task=attempt.task,
+            item=item, attempt=attempt, metadata={"external_export":{"target":"desktop"}})
+        for directory in ("one", "two"):
+            staged = Path(plan["staging_root"]) / directory / "index.html"
+            staged.parent.mkdir()
+            staged.write_text(directory, encoding="utf-8")
+        permission = service.discover_staged_exports(attempt, item, plan)["permission"]
+        service.resolve(permission.request_id, allow=True)
+        store.update_attempt(attempt.attempt_id, execution_status="succeeded")
+        next_attempt = store.create_attempt(item.work_item_id, provider="locus", task="Modify index.html")
+        with pytest.raises(WorkLedgerConflict, match="multiple targets"):
+            service.prepare_plan(provider="locus", mode="agent", task=next_attempt.task,
+                item=item, attempt=next_attempt,
+                metadata={"intent":"amend", "external_export":{"target":"desktop", "filename":"index.html"}})
+        assert (desktop / "one" / "index.html").read_text(encoding="utf-8") == "one"
+        assert (desktop / "two" / "index.html").read_text(encoding="utf-8") == "two"
 
 
 def test_default_desktop_path_prefers_environment_override() -> None:

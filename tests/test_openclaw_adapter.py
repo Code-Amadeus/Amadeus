@@ -11,7 +11,9 @@ from agent_host.provider_identity import (
     MAIN_ROLE_NAME_METADATA_KEY,
     PARENT_CONTEXT_DELIVERED_EVENT,
 )
+from agent_host.provider_runtime import ProviderRuntime
 from agent_host.provider_types import (
+    COOPERATIVE_CONTEXT_ACCEPTED_METADATA_KEY,
     ProviderEvent,
     ProviderRunRequest,
     ProviderSessionHandle,
@@ -106,6 +108,17 @@ class _FakeGatewayClient:
                 await self.events.put(
                     {
                         "type": "event",
+                        "event": "agent",
+                        "payload": {
+                            "runId": run_id,
+                            "stream": "assistant",
+                            "data": {"text": response, "delta": response},
+                        },
+                    }
+                )
+                await self.events.put(
+                    {
+                        "type": "event",
                         "event": "chat",
                         "payload": {
                             "runId": run_id,
@@ -172,6 +185,105 @@ class _FakeGatewayClient:
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+def test_native_assistant_snapshot_survives_lossy_chat_projection_and_progress_boundary():
+    expected = "ADAPTER_FOLLOWUP_OK\nURL: http://127.0.0.1:4693/index.html\nTitle: Steer Home"
+    prefix = "[PROGRESS:DESIGN] I will inspect the page."
+    projection = prefix + expected.replace("Steer Home", "Ster Home")
+
+    class Gateway(_FakeGatewayClient):
+        async def request(self, method, params, *, timeout=None):
+            result = await super().request(method, params, timeout=timeout)
+            if method == "sessions.send":
+                while not self.events.empty():
+                    self.events.get_nowait()
+                run = result["runId"]
+                frames = [
+                    {"event": "agent", "payload": {"runId": "foreign", "stream": "assistant", "data": {"text": "wrong run"}}},
+                    {"event": "agent", "payload": {"runId": run, "stream": "assistant", "data": {"text": prefix, "delta": prefix}}},
+                    {"event": "chat", "payload": {"runId": run, "state": "delta", "message": {"content": [{"type": "text", "text": prefix}]}}},
+                ]
+                # Captured C2 shape: the next native message starts afresh;
+                # its complete text preserves the legitimate e/er overlap.
+                for text, delta in [(expected[:-7], expected[:-7]), (expected[:-5], "er"), (expected, " Home")]:
+                    frames.append({"event": "agent", "payload": {"runId": run, "stream": "assistant", "data": {"text": text, "delta": delta}}})
+                frames.append({"event": "chat", "payload": {"runId": run, "state": "final", "message": {"content": [{"type": "text", "text": projection}]}}})
+                for frame in frames:
+                    await self.events.put(frame)
+            return result
+
+    Gateway.configure(expected)
+
+    async def scenario():
+        events = []
+
+        async def emit(event):
+            events.append(event)
+
+        result = await OpenClawAdapter(gateway_client_factory=Gateway).run(
+            ProviderRunRequest(provider="openclaw", task="Read the page.", metadata={"timeout": 3.0}),
+            "native-snapshot", emit,
+        )
+        return result, events
+
+    result, events = _run(scenario())
+    assert result.result == expected
+    visible = "".join(str(event.payload.get("text") or "") for event in events if event.type == "assistant.delta")
+    assert expected in visible
+    assert "wrong run" not in visible and "Ster Home" not in visible and "[PROGRESS:" not in visible
+    assert [event.payload.get("milestone") for event in events if event.type == "semantic.progress"] == ["design"]
+    assert not any(method == "chat.history" for method, _params in Gateway.instances[-1].requests)
+
+
+def test_missing_native_text_uses_existing_history_not_chat_display():
+    class Gateway(_FakeGatewayClient):
+        async def request(self, method, params, *, timeout=None):
+            result = await super().request(method, params, timeout=timeout)
+            if method == "sessions.send":
+                self.events.get_nowait()  # Remove the native assistant frame.
+                frame = self.events.get_nowait()
+                frame["payload"]["message"]["content"][0]["text"] = "lossy display only"
+                await self.events.put(frame)
+            return result
+
+    Gateway.configure("Exact final history.")
+
+    async def scenario():
+        return await OpenClawAdapter(gateway_client_factory=Gateway).run(
+            ProviderRunRequest(provider="openclaw", task="Read state.", metadata={"timeout": 3.0}),
+            "history-not-projection", lambda _event: asyncio.sleep(0),
+        )
+
+    result = _run(scenario())
+    assert result.result == "Exact final history."
+    assert sum(method == "chat.history" for method, _params in Gateway.instances[-1].requests) == 1
+
+
+def test_complete_native_snapshot_without_delta_preserves_literal_repetitions():
+    expected = "bookkeeper / Steer / いい / 🚀🚀"
+
+    class Gateway(_FakeGatewayClient):
+        async def request(self, method, params, *, timeout=None):
+            result = await super().request(method, params, timeout=timeout)
+            if method == "sessions.send":
+                native = self.events.get_nowait()
+                display = self.events.get_nowait()
+                native["payload"]["data"].pop("delta")
+                display["payload"]["message"]["content"][0]["text"] = "bokeper / Ster / い / 🚀"
+                await self.events.put(native)
+                await self.events.put(display)
+            return result
+
+    Gateway.configure(expected)
+
+    async def scenario():
+        return await OpenClawAdapter(gateway_client_factory=Gateway).run(
+            ProviderRunRequest(provider="openclaw", task="Read state.", metadata={"timeout": 3.0}),
+            "literal-native-text", lambda _event: asyncio.sleep(0),
+        )
+
+    assert _run(scenario()).result == expected
 
 
 def test_openclaw_uses_the_shared_progress_contract_without_leaking_markers() -> None:
@@ -592,6 +704,27 @@ def test_openclaw_cancel_reports_only_exact_native_confirmation() -> None:
     assert outcome["native_run_id"] == "native-turn-1"
 
 
+def test_openclaw_raw_context_metadata_cannot_upgrade_a_session_scope() -> None:
+    _FakeGatewayClient.configure("Finished without a cooperative Host intake.")
+
+    async def scenario():
+        runtime = ProviderRuntime()
+        runtime.register(OpenClawAdapter(gateway_client_factory=_FakeGatewayClient))
+        try:
+            record = await runtime.start(ProviderRunRequest(provider="openclaw", task="Inspect.",
+                metadata={"cooperative_context_id":"spoofed-context",
+                    COOPERATIVE_CONTEXT_ACCEPTED_METADATA_KEY:True}))
+            await record.task_handle
+            return record
+        finally:
+            await runtime.close()
+
+    record = _run(scenario())
+    assert record.status == "done"
+    assert record.metadata["provider_session"]["scope"] == "attempt"
+    assert COOPERATIVE_CONTEXT_ACCEPTED_METADATA_KEY not in record.metadata
+
+
 if __name__ == "__main__":
     for test in (
         test_openclaw_uses_the_shared_progress_contract_without_leaking_markers,
@@ -602,6 +735,7 @@ if __name__ == "__main__":
         test_openclaw_preserves_unknown_accepted_run_without_replay,
         test_openclaw_does_not_replay_when_send_acknowledgement_is_lost,
         test_openclaw_cancel_reports_only_exact_native_confirmation,
+        test_openclaw_raw_context_metadata_cannot_upgrade_a_session_scope,
     ):
         test()
         print(f"ok: {test.__name__}")

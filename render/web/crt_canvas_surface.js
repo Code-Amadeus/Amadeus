@@ -3404,7 +3404,8 @@
       const selected = projection && projection.selected && typeof projection.selected === "object"
         ? projection.selected
         : null;
-      if (selected && state.permissionRequest && state.permissionRequest.id) {
+      if (selected && state.permissionRequest && state.permissionRequest.id
+          && state.permissionRequest.ownerKind !== "cooperative_run") {
         const recovery = Array.isArray(state.permissionRequest.options)
           && state.permissionRequest.options.some((option) => option === "retry_export" || option === "abandon_export");
         const currentId = String(
@@ -3447,8 +3448,12 @@
         .slice(0, 128);
       return {
         id: compactText(value.id || value.requestId || value.request_id, 240),
+        ownerKind: compactText(value.ownerKind || value.owner_kind, 40).toLowerCase(),
         workItemId: compactText(value.workItemId || value.work_item_id, 160),
         attemptId: compactText(value.attemptId || value.attempt_id, 160),
+        sessionId: compactText(value.sessionId || value.session_id, 160),
+        runId: compactText(value.runId || value.run_id || value.providerRunId || value.provider_run_id, 200),
+        providerRequestId: compactText(value.providerRequestId || value.provider_request_id, 240),
         capability: compactText(value.capability || "permission", 120),
         action: compactText(value.action || "scoped_action", 120),
         scope,
@@ -4448,12 +4453,23 @@
       state.permissionError = "";
       render();
       try {
-        await postCanvasAction("permission", action, workItemActionPayload({
-          permission_request_id: request.id,
-          work_item_id: request.workItemId || String(state.workContext && state.workContext.workItemId || ""),
-          attempt_id: request.attemptId || String(state.workContext && state.workContext.attemptId || ""),
-        }));
-        if (state.permissionRequest && state.permissionRequest.id === request.id) {
+        const actionPayload = request.ownerKind === "cooperative_run"
+          ? {
+            owner_kind: request.ownerKind,
+            permission_request_id: request.id,
+            session_id: request.sessionId,
+            run_id: request.runId,
+            provider_request_id: request.providerRequestId,
+          }
+          : workItemActionPayload({
+            owner_kind: request.ownerKind,
+            permission_request_id: request.id,
+            work_item_id: request.workItemId || String(state.workContext && state.workContext.workItemId || ""),
+            attempt_id: request.attemptId || String(state.workContext && state.workContext.attemptId || ""),
+          });
+        await postCanvasAction("permission", action, actionPayload);
+        if (state.permissionRequest && state.permissionRequest.id === request.id
+            && state.permissionRequest.ownerKind === request.ownerKind) {
           state.permissionVisible = false;
           state.permissionRequest = null;
         }
@@ -5115,18 +5131,28 @@
         else if (typeof data.open === "boolean") state.expanded = data.open;
         else if (data.visible !== false) state.expanded = true;
         if (data.visible === false || data.action === "fold") state.expanded = false;
-        if (own(data, "permissionRequest")) {
-          state.permissionRequest = normalizePermissionRequest(data.permissionRequest);
-          state.permissionSubmitting = false;
-          state.permissionError = "";
-        }
-        if (typeof data.permissionVisible === "boolean") {
-          state.permissionVisible = data.permissionVisible;
-          if (!state.permissionVisible) {
+        const incomingPermission = own(data, "permissionRequest")
+          ? normalizePermissionRequest(data.permissionRequest)
+          : undefined;
+        if (data.permissionVisible === false) {
+          const currentPermission = state.permissionRequest;
+          const samePermission = !currentPermission || (incomingPermission
+            ? incomingPermission.id === currentPermission.id
+              && incomingPermission.ownerKind === currentPermission.ownerKind
+            : currentPermission.ownerKind !== "cooperative_run");
+          if (samePermission) {
+            state.permissionVisible = false;
             state.permissionRequest = null;
             state.permissionSubmitting = false;
             state.permissionError = "";
           }
+        } else {
+          if (incomingPermission !== undefined) {
+            state.permissionRequest = incomingPermission;
+            state.permissionSubmitting = false;
+            state.permissionError = "";
+          }
+          if (data.permissionVisible === true) state.permissionVisible = true;
         }
         if (preservedView) {
           state.mode = preservedView.mode;

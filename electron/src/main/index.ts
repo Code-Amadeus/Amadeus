@@ -26,6 +26,7 @@ import { isWallpaperStartup } from './startupMode.js'
 import { ApplicationLifecycle } from './appLifecycle.js'
 import { applicationMenuTemplate } from './applicationMenu.js'
 import { defaultMpsFallbackEnvironment } from './mpsFallbackPolicy.js'
+import { auipStoragePartition } from './auipStorage.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -1952,14 +1953,13 @@ async function openAuipInWorkPreview(
     return { ok: false, detail: error instanceof Error ? error.message : String(error) }
   }
 
-  const partitionToken = workPreviewPartitionToken(`${surface.descriptor.previewId}-auip`)
   const appView = new WebContentsView({
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
-      partition: `auip-work-preview-${partitionToken}`,
+      partition: auipStoragePartition(surface.descriptor.workItemId, policy.entryPath),
     },
   })
   appView.setBackgroundColor('#050708')
@@ -1973,6 +1973,13 @@ async function openAuipInWorkPreview(
   })
   configureWorkPreviewSession(appView.webContents.session)
   restrictAuipContentNetwork(appView.webContents.session, policy)
+
+  const diagnostics: string[] = []
+  appView.webContents.on('console-message', (_event, level, message) => {
+    if (level < 2 || !message || diagnostics.includes(message.slice(0, 300))) return
+    diagnostics.push(message.slice(0, 300))
+    if (diagnostics.length > 3) diagnostics.shift()
+  })
 
   return await new Promise(resolve => {
     const pending: PendingAuipHandoff = {
@@ -1989,7 +1996,10 @@ async function openAuipInWorkPreview(
           detail: 'Host did not commit AUIP Attach before the handoff deadline.',
         })
       }, 65_000),
-      resolve,
+      resolve: result => resolve(result.ok || diagnostics.length === 0 ? result : {
+        ...result,
+        detail: `${result.detail} Application diagnostic: ${diagnostics.join(' | ')}`,
+      }),
     }
     surface.pendingAuip = pending
     publishWorkPreviewPresentation(surface, 'auip-preloading')

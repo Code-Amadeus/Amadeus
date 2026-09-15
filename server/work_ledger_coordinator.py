@@ -2,8 +2,8 @@
 
 This module is the integration boundary around :class:`ProviderRuntime`:
 
-* every new provider run becomes a durable RunAttempt;
-* provider events update execution/artifact/completion facts;
+* Work intake binds its provider runs to durable RunAttempts;
+* provider events update facts only for already accepted Work ownership;
 * focus is persisted per UI surface;
 * wallpaper canvases are projected through the selected WorkItem so a
   background run cannot steal or contaminate a pinned task view.
@@ -21,15 +21,19 @@ import json
 import logging
 import shutil
 import time
-from dataclasses import asdict, replace
+from dataclasses import asdict, fields, replace
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
-from typing import Any, Awaitable, Callable, Iterable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Iterable
+
+if TYPE_CHECKING:
+    from server.work_control import WorkControl
 
 from config import settings as app_settings
 from agent_host.provider_authoring import (
     auip_authoring_bundle_metrics,
     materialize_auip_runtime_assets,
+    required_auip_engagement_mode,
     stage_auip_authoring_bundle,
 )
 from agent_host.provider_contract import ProviderRequirements
@@ -42,12 +46,17 @@ from agent_host.provider_identity import (
     validated_parent_context_delivery,
 )
 from agent_host.provider_types import (
+    PreparedProviderRun,
     ProviderRecoveryContext,
+    ProviderRunIntakeAuthority,
+    ProviderRunIntakeReceipt,
     ProviderRunRequest,
     ProviderSessionHandle,
+    ProviderTerminalResultProjection,
 )
 from agent_host.provider_workspace import workspace_route_authority
 from agent_host.work_ledger_store import (
+    PROVIDER_RECOVERY_METADATA_KEYS,
     WorkLedgerConflict,
     WorkLedgerNotFound,
     WorkLedgerStore,
@@ -73,7 +82,12 @@ from server.project_registry import (
     project_registry_entries,
 )
 from server.provider_session_binding import resolve_provider_session_attachment
-from server.provider_event_ingestion import ProviderEventIngestor
+from server.provider_event_ingestion import (
+    IngestedProviderResult,
+    OrphanedProviderResultPrecondition,
+    PROVIDER_TERMINAL_PIPELINE_METADATA_KEY,
+    ProviderEventIngestor,
+)
 from server.work_intake import (
     EXISTING_ITEM_CONTINUATIONS,
     persist_work_intake,
@@ -116,12 +130,37 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_WORK_SURFACE = "wallpaper.slice"
 _ACTIVE_EXECUTION = frozenset({"queued", "running"})
+_UNRESOLVED_EXECUTION = frozenset({*_ACTIVE_EXECUTION, "orphaned"})
 _TERMINAL_EXECUTION = frozenset({"succeeded", "failed", "cancelled"})
 _MAX_AMENDMENT_TEXT = 2000
 _TERMINAL_NOTICE_OUTBOX_KEY = "terminal_work_notice_outbox"
 _MAX_TERMINAL_NOTICE_RECORDS = 16
 _PROJECT_IDENTITY_VERSION = 1
+_ACTIVE_PROVIDER_RECOVERY_STATES = frozenset(
+    {"claimed", "started", "cancelled", "cancel_pending"}
+)
 _current_coordinator: WorkLedgerCoordinator | None = None
+
+
+def _pending_auip_bundle_validation() -> dict[str, Any]:
+    return {
+        "verified": False,
+        "kind": "pending",
+        "code": "auip_validation_pending",
+        "detail": "",
+        "checks": [],
+        "boot": None,
+    }
+
+
+class _ProjectedWorkCanvas(dict[str, Any]):
+    """An in-process result from one Work projection owner, never wire authority."""
+
+    __slots__ = ("_owner",)
+
+    def __init__(self, payload: dict[str, Any], *, owner: WorkLedgerCoordinator):
+        super().__init__(payload)
+        self._owner = owner
 
 
 def _ledger_owns_terminal_narration() -> bool:
@@ -217,6 +256,7 @@ class WorkLedgerCoordinator:
         provider_start: Callable[[ProviderRunRequest], Awaitable[Any]] | None = None,
         provider_cancel: Callable[[str], Awaitable[dict[str, Any]]] | None = None,
         current_session_id: Callable[[], str | None] | None = None,
+        work_control: WorkControl | None = None,
     ) -> None:
         self.store = store
         self.default_surface = str(default_surface or DEFAULT_WORK_SURFACE)
@@ -258,6 +298,7 @@ class WorkLedgerCoordinator:
         self._provider_start = provider_start
         self._provider_cancel = provider_cancel
         self._current_session_id = current_session_id or (lambda: "")
+        self._work_control = work_control
         self._pending_provider_recoveries: dict[str, dict[str, Any]] = {}
         self._subscribed = False
         self._provider_snapshot_min_interval_s = max(
@@ -275,6 +316,18 @@ class WorkLedgerCoordinator:
         self._provider_snapshot_reason = ""
         self._provider_fact_queue: asyncio.Queue[tuple[str, dict[str, Any]]] | None = None
         self._provider_fact_task: asyncio.Task | None = None
+        self._provider_result_locks: dict[str, asyncio.Lock] = {}
+
+    def configure_work_control(self, work_control: WorkControl) -> None:
+        """Install the one Work acceptance owner before effect execution."""
+
+        from server.work_control import WorkControl
+
+        if not isinstance(work_control, WorkControl):
+            raise TypeError("work_control must be WorkControl")
+        if self._work_control is not None and self._work_control is not work_control:
+            raise WorkLedgerConflict("WorkControl already has another owner")
+        self._work_control = work_control
 
     def configure(self) -> None:
         global _current_coordinator
@@ -347,41 +400,22 @@ class WorkLedgerCoordinator:
         for item in self.store.list_work_items(limit=1000):
             attempts = self.store.list_attempts(item.work_item_id)
             for index, attempt in enumerate(attempts):
-                completion = (
-                    attempt.metadata.get("provider_completion")
-                    if isinstance(attempt.metadata.get("provider_completion"), dict)
-                    else {}
-                )
-                if (
-                    completion.get("classification")
-                    != "progress_only_completion"
-                    or completion.get("recovery_state") != "claimed"
-                ):
+                reason = self._provider_recovery_reason(attempt)
+                marker_key = PROVIDER_RECOVERY_METADATA_KEYS.get(reason, "")
+                marker = self._provider_recovery_marker(attempt, reason)
+                if not marker_key or marker.get("recovery_state") != "claimed":
                     continue
                 successor = next(
                     (
                         candidate
                         for candidate in attempts[index + 1 :]
-                        if isinstance(
-                            candidate.metadata.get("provider_recovery"), dict
-                        )
-                        and candidate.metadata["provider_recovery"].get(
-                            "predecessor_attempt_id"
-                        )
-                        == attempt.attempt_id
-                        and candidate.metadata["provider_recovery"].get("root_attempt_id")
-                        == attempt.attempt_id
-                        and candidate.metadata["provider_recovery"].get("reason")
-                        == "progress_only_completion"
-                        and candidate.metadata["provider_recovery"].get("ordinal") == 1
-                        and candidate.provider == attempt.provider
-                        and candidate.operation_id == attempt.operation_id
-                        and candidate.attempt_number == attempt.attempt_number + 1
+                        if self.store.get_recovery_predecessor(candidate)
+                        == attempt
                         and bool(candidate.provider_run_id)
                     ),
                     None,
                 )
-                reconciled = dict(completion)
+                reconciled = dict(marker)
                 if successor is not None:
                     reconciled.update(
                         {
@@ -401,18 +435,109 @@ class WorkLedgerCoordinator:
                     )
                 _updated, swapped = self.store.compare_and_set_attempt_metadata(
                     attempt.attempt_id,
-                    key="provider_completion",
+                    key=marker_key,
                     expected_present=True,
-                    expected_value=completion,
+                    expected_value=marker,
                     value=reconciled,
                 )
                 if swapped:
                     logger.info(
-                        "reconciled progress-only recovery predecessor=%s state=%s successor=%s",
+                        "reconciled provider recovery reason=%s predecessor=%s state=%s successor=%s",
+                        reason,
                         attempt.attempt_id,
                         reconciled["recovery_state"],
                         reconciled.get("successor_attempt_id") or "",
                     )
+
+    @staticmethod
+    def _provider_recovery_marker(
+        attempt: RunAttemptRecord,
+        reason: str,
+    ) -> dict[str, Any]:
+        marker_key = PROVIDER_RECOVERY_METADATA_KEYS.get(
+            str(reason or "").strip().lower(), ""
+        )
+        marker = attempt.metadata.get(marker_key) if marker_key else None
+        return dict(marker) if isinstance(marker, dict) else {}
+
+    @staticmethod
+    def _provider_recovery_reason(attempt: RunAttemptRecord) -> str:
+        completion = attempt.metadata.get("provider_completion")
+        if (
+            isinstance(completion, dict)
+            and completion.get("classification") == "progress_only_completion"
+            and completion.get("recovery_state")
+        ):
+            return "progress_only_completion"
+        validation = attempt.metadata.get("host_auip_bundle_validation")
+        if (
+            isinstance(validation, dict)
+            and validation.get("recovery_state")
+            and (
+                (
+                    validation.get("verified") is False
+                    and validation.get("kind") == "app_error"
+                )
+                or (
+                    validation.get("code") == "auip_validation_pending"
+                    and validation.get("recovery_state")
+                    in {"validation_pending", "cancelled"}
+                )
+            )
+        ):
+            return "auip_validation_failed"
+        return ""
+
+    def _begin_auip_bundle_validation(
+        self,
+        attempt: RunAttemptRecord,
+    ) -> tuple[RunAttemptRecord, bool]:
+        """Expose one cancellable Host continuation while real boot is pending."""
+
+        current = self.store.get_attempt(attempt.attempt_id) or attempt
+        existing = (
+            current.metadata.get("host_auip_bundle_validation")
+            if isinstance(
+                current.metadata.get("host_auip_bundle_validation"), dict
+            )
+            else None
+        )
+        if isinstance(existing, dict) and existing.get("recovery_state") == "cancelled":
+            return current, False
+        pending_marker = dict(existing or _pending_auip_bundle_validation())
+        pending_marker.update(
+            {
+                "verified": False,
+                "kind": "pending",
+                "code": "auip_validation_pending",
+                "recovery_state": "validation_pending",
+                "validation_started_at": float(self._clock()),
+            }
+        )
+        updated, swapped = self.store.compare_and_set_attempt_metadata(
+            current.attempt_id,
+            key="host_auip_bundle_validation",
+            expected_present=existing is not None,
+            expected_value=existing,
+            value=pending_marker,
+        )
+        if not swapped:
+            latest = self.store.get_attempt(current.attempt_id) or updated
+            marker = self._provider_recovery_marker(
+                latest, "auip_validation_failed"
+            )
+            return latest, marker.get("recovery_state") == "validation_pending"
+        self._pending_provider_recoveries[current.attempt_id] = {
+            "attempt_id": current.attempt_id,
+            "work_item_id": current.work_item_id,
+            "provider": current.provider,
+            "claimed_at": pending_marker["validation_started_at"],
+            "cancelled": False,
+        }
+        return updated, True
+
+    def _end_auip_bundle_validation(self, attempt_id: str) -> None:
+        self._pending_provider_recoveries.pop(str(attempt_id or "").strip(), None)
 
     def pending_provider_recoveries(self) -> list[dict[str, Any]]:
         """Return Host recovery reservations that can still be retracted."""
@@ -424,22 +549,26 @@ class WorkLedgerCoordinator:
         ]
 
     def cancel_pending_provider_recovery(self, attempt_id: str) -> bool:
-        """Cancel one Host-owned recovery before its successor becomes visible."""
+        """Cancel one Host-owned validation/recovery continuation by Attempt."""
 
         clean_attempt_id = str(attempt_id or "").strip()
         pending = self._pending_provider_recoveries.get(clean_attempt_id)
         if pending is None or pending.get("cancelled"):
             return False
         attempt = self.store.get_attempt(clean_attempt_id)
-        completion = (
-            attempt.metadata.get("provider_completion")
+        reason = self._provider_recovery_reason(attempt) if attempt is not None else ""
+        marker_key = PROVIDER_RECOVERY_METADATA_KEYS.get(reason, "")
+        marker = (
+            self._provider_recovery_marker(attempt, reason)
             if attempt is not None
-            and isinstance(attempt.metadata.get("provider_completion"), dict)
             else {}
         )
-        if completion.get("recovery_state") != "claimed":
+        if not marker_key or marker.get("recovery_state") not in {
+            "claimed",
+            "validation_pending",
+        }:
             return False
-        cancelled = dict(completion)
+        cancelled = dict(marker)
         cancelled.update(
             {
                 "recovery_state": "cancelled",
@@ -449,9 +578,9 @@ class WorkLedgerCoordinator:
         )
         _updated, swapped = self.store.compare_and_set_attempt_metadata(
             clean_attempt_id,
-            key="provider_completion",
+            key=marker_key,
             expected_present=True,
-            expected_value=completion,
+            expected_value=marker,
             value=cancelled,
         )
         if not swapped:
@@ -763,14 +892,104 @@ class WorkLedgerCoordinator:
                 return receipt
         return {}
 
-    def prepare_request(self, request: ProviderRunRequest) -> ProviderRunRequest:
+    def accept_work_input(self, cursor, *, values, amendment: bool, admission):
+        """Receive a message and, when interpreted as amendment, its Work requirement."""
+        receipt, created = self.store.accept_provider_input(**values, cursor=cursor)
+        if created and amendment:
+            self.store.create_operation(receipt["work_item_id"], intent="amend",
+                instruction=receipt["text"], cursor=cursor,
+                metadata={"work_input_id":receipt["input_id"], "attempt_id":receipt["attempt_id"],
+                    "control_root_id":admission.root_id, "session_id":admission.session_id,
+                    "source_utterance_id":admission.utterance_id})
+        return receipt, created
+
+    def refresh_input_completion(self, receipt) -> bool:
+        """Refresh a successful terminal assessment when delivery settles later."""
+        attempt = self.store.latest_attempt(receipt["work_item_id"])
+        completion = self.store.latest_completion(receipt["work_item_id"])
+        if (attempt is None or completion is None or attempt.attempt_id != receipt["attempt_id"]
+                or completion.attempt_id != attempt.attempt_id
+                or completion.source != "host"
+                or "input_requirements" not in completion.evidence
+                or attempt.execution_status != "succeeded"):
+            return False
+        before = completion.evidence.get("input_requirements") or []
+        current = self.read_model.input_requirements(attempt.work_item_id, attempt_id=attempt.attempt_id)
+        if current == before:
+            return False
+        values = {field.name:completion.evidence[field.name] for field in fields(CompletionEvidence)
+            if field.name in completion.evidence}
+        previous_gaps = set(self._input_requirement_gaps(before))
+        values["missing_requirements"] = tuple(
+            gap for gap in values.get("missing_requirements", ()) if gap not in previous_gaps
+        ) + self._input_requirement_gaps(current)
+        item = self.store.get_work_item(attempt.work_item_id)
+        values.update(current_state=item.state,
+            pending_inputs=max(0, int(values.get("pending_inputs") or 0)
+                - sum(row["delivery_state"] == "unknown" for row in before))
+                + sum(row["delivery_state"] == "unknown" for row in current))
+        evidence = CompletionEvidence(**values)
+        self.store.record_completion(attempt.work_item_id, self._assess_input_completion(evidence, current),
+            attempt_id=attempt.attempt_id, source="host",
+            evidence={**completion.evidence, **asdict(evidence), "input_requirements":current})
+        return True
+
+    @staticmethod
+    def _input_requirement_gaps(requirements):
+        return tuple("Additional accepted requirement was not delivered: " + row["text"]
+            for row in requirements if row["delivery_state"] == "rejected")
+
+    @staticmethod
+    def _assess_input_completion(evidence, requirements):
+        decision = assess_completion(evidence)
+        unknown = sum(row["delivery_state"] == "unknown" for row in requirements)
+        if decision.attention == "input" and unknown and evidence.pending_inputs == unknown:
+            return replace(decision, rationale=("The run finished, but delivery of an accepted "
+                "additional requirement is still unconfirmed; fulfillment is not verified."))
+        return decision
+
+    def prepare_request(
+        self,
+        request: ProviderRunRequest,
+        provider_run_id: str = "",
+        intake_authority: ProviderRunIntakeAuthority | None = None,
+    ) -> ProviderRunRequest | PreparedProviderRun:
         """Bind a new provider run to a WorkItem and a fresh RunAttempt.
 
-        ``ProviderRuntime.start`` calls this hook for *all* start paths, not
-        only WebSocket requests. A new user goal creates a WorkItem. A later
+        A Runtime configured with this Work intake calls it for *all* start
+        paths, not only WebSocket requests. A new user goal creates a WorkItem. A later
         instruction for that goal creates a WorkOperation; Retry and steer
         replacement create another Attempt for the same Operation.
+        Runtime supplies its own run ID before preparation. Persist it with
+        the Attempt, not through a best-effort run.created subscription.
+        Empty remains supported for standalone preparation/adoption, not as
+        a claim that Runtime or native execution has accepted this request.
         """
+
+        if intake_authority is not None:
+            if not isinstance(intake_authority, ProviderRunIntakeAuthority):
+                raise TypeError("Work intake authority must use the typed contract")
+            if self._work_control is None:
+                raise WorkLedgerConflict("accepted Work effect intake owner is unavailable")
+            if not str(provider_run_id or "").strip():
+                raise WorkLedgerConflict("accepted Work effect requires Runtime run identity")
+            self._work_control.validate_runtime_request(intake_authority, request)
+            if (
+                request.requirements is not None
+                and request.requirements.workspace_access == "write"
+                and bool(app_settings.WORK_WORKTREE_ISOLATION)
+            ):
+                raise WorkLedgerConflict(
+                    "C2 accepted Work effect currently requires local workspace isolation"
+                )
+        elif self._work_control is not None:
+            # A bounded recovery starts after its original Control effect has
+            # already settled. It has no fresh intake authority; the durable
+            # predecessor marker is validated below before any new Attempt is
+            # created. Ordinary control_work_effect replays still require the
+            # original accepted-effect authority.
+            if request.recovery is None:
+                self._work_control.assert_start_allowed_without_authority(request)
 
         original_task = str(request.task or "")
         # Provider Session attachment is a host/ledger decision.  Even a
@@ -980,6 +1199,12 @@ class WorkLedgerCoordinator:
         previous_attempt: RunAttemptRecord | None = None
         previous_attempts: list[RunAttemptRecord] = []
         if existing_item is not None:
+            # A prior Attempt identifies the receiving workspace; it does not
+            # preserve permission to start new execution after Project trust
+            # has been withdrawn. Unplaced Drafts retain their scratch owner.
+            if (host_routes_workspace and existing_item.workspace_mode != "none"
+                    and not self.destination.is_unkept_draft(existing_item.workspace_path)):
+                self.destination.available_project(existing_item.project_id)
             previous_attempts = self.store.list_attempts(existing_item.work_item_id)
             previous_attempt = previous_attempts[-1] if previous_attempts else None
             if (
@@ -1009,24 +1234,42 @@ class WorkLedgerCoordinator:
                 raise WorkLedgerConflict(
                     "provider recovery must reference the latest predecessor Attempt"
                 )
-            predecessor_completion = (
-                previous_attempt.metadata.get("provider_completion")
-                if isinstance(previous_attempt.metadata.get("provider_completion"), dict)
-                else {}
+            predecessor_marker = self._provider_recovery_marker(
+                previous_attempt, recovery.reason
             )
             if (
                 recovery.root_attempt_id != previous_attempt.attempt_id
-                or recovery.reason != "progress_only_completion"
-                or predecessor_completion.get("classification")
-                != "progress_only_completion"
-                or predecessor_completion.get("recovery_state") != "claimed"
-                or predecessor_completion.get("recovery_root_attempt_id")
+                or predecessor_marker.get("recovery_state") != "claimed"
+                or predecessor_marker.get("recovery_root_attempt_id")
                 != previous_attempt.attempt_id
-                or predecessor_completion.get("recovery_ordinal") != 1
+                or predecessor_marker.get("recovery_ordinal") != 1
             ):
                 raise WorkLedgerConflict(
                     "provider recovery lineage is not authorized by the predecessor Attempt"
                 )
+            if recovery.reason == "progress_only_completion" and (
+                predecessor_marker.get("classification")
+                != "progress_only_completion"
+            ):
+                raise WorkLedgerConflict(
+                    "provider recovery lineage is not authorized by the predecessor Attempt"
+                )
+            if recovery.reason == "auip_validation_failed":
+                expected_feedback = self._auip_recovery_feedback(
+                    predecessor_marker,
+                    self.read_model.input_requirements(
+                        previous_attempt.work_item_id,
+                        attempt_id=previous_attempt.attempt_id,
+                    ),
+                )
+                if (
+                    predecessor_marker.get("verified") is not False
+                    or predecessor_marker.get("kind") != "app_error"
+                    or recovery.feedback != expected_feedback
+                ):
+                    raise WorkLedgerConflict(
+                        "AUIP recovery feedback does not match Host validation evidence"
+                    )
         predecessor_key = (
             "retry_of" if continuation == "retry" else "replaces_attempt_id"
         )
@@ -1043,6 +1286,7 @@ class WorkLedgerCoordinator:
             request_provider=request.provider,
             request_mode=request.mode,
             predecessor_attempt_id=predecessor_id,
+            recovery=recovery,
         )
         if intake_plan.previous_operation_id:
             metadata["previous_operation_id"] = intake_plan.previous_operation_id
@@ -1058,7 +1302,7 @@ class WorkLedgerCoordinator:
                 label=intake_plan.lineage_label,
             )
             metadata.update(continuation_lineage)
-        if existing_item is not None and continuation == "amend":
+        if existing_item is not None and continuation == "amend" and intake_authority is None:
             self._supersede_pending_export_for_amend(existing_item, metadata)
         if existing_item is not None and self.store.list_permission_requests(
             existing_item.work_item_id,
@@ -1079,11 +1323,11 @@ class WorkLedgerCoordinator:
                 f"work item {existing_item.work_item_id} has an interrupted authorized export; recover it before starting another attempt"
             )
         if existing_item is not None and any(
-            attempt.execution_status in _ACTIVE_EXECUTION
+            attempt.execution_status in _UNRESOLVED_EXECUTION
             for attempt in self.store.list_attempts(existing_item.work_item_id)
         ):
             raise WorkLedgerConflict(
-                f"work item {existing_item.work_item_id} already has an active attempt; use Resume or wait"
+                f"work item {existing_item.work_item_id} already has an unresolved attempt; reconcile it or use verified Resume"
             )
         provider_session = resolve_provider_session_attachment(
             has_existing_item=existing_item is not None,
@@ -1092,7 +1336,14 @@ class WorkLedgerCoordinator:
             provider_capabilities=provider_capabilities,
             request_provider=request_provider,
             recovery_reason=(recovery.reason if recovery is not None else ""),
+            recovery=recovery,
         )
+        if intake_authority is not None:
+            addressed = self._work_control.addressed_context(intake_authority)
+            if addressed is not None:
+                if provider_capabilities.get("resume") != "attach":
+                    raise WorkLedgerConflict("selected Provider does not support context attachment")
+                provider_session = addressed
         request.session = provider_session.session
         provider_session_attach = provider_session.audit
         source_context = str(metadata.get("source_user_context") or "")
@@ -1126,11 +1377,16 @@ class WorkLedgerCoordinator:
             str(metadata.get("workspace_routing_source") or "") == "scratch_default"
             or is_scratch_root(workspace_path)
         )
-        if existing_item is None and workspace_write_intent and routed_to_scratch:
+        if existing_item is None and workspace_mode != "none" and routed_to_scratch:
             # Give this task its own repository under the scratch root. Sharing
             # one directory would let two unrelated one-offs overwrite each
             # other, and would leave nothing separable to promote later.
-            work_item_id_for_create = new_ledger_id("work")
+            # A read-only goal also has its own Draft identity; filesystem
+            # permission does not turn the shared container into its workspace.
+            work_item_id_for_create = (
+                self._work_control.initial_work_item_id(intake_authority.effect_id)
+                if intake_authority is not None else new_ledger_id("work")
+            )
             try:
                 scratch_cwd = create_scratch_workspace(
                     self._task_title(request.task),
@@ -1202,6 +1458,7 @@ class WorkLedgerCoordinator:
             existing_item.workspace_path if existing_item is not None else workspace_path,
             write_intent=workspace_write_intent,
         )
+        new_item_kwargs: dict[str, Any] | None = None
         if existing_item is not None:
             if existing_item.state == "archived" or (
                 existing_item.state == "accepted" and continuation != "amend"
@@ -1214,7 +1471,14 @@ class WorkLedgerCoordinator:
             if project is None:  # pragma: no cover - protected by FK
                 raise WorkLedgerNotFound(f"unknown project: {item.project_id}")
         else:
-            if workspace_mode == "none":
+            if intake_authority is not None and project_id:
+                # The accepted Work owns its Project/Draft container even when
+                # its Provider has no filesystem workspace. Do not reparent it
+                # into the legacy workspace-less activity container.
+                project = self.store.get_project(project_id)
+                if project is None:
+                    raise WorkLedgerNotFound(f"unknown project: {project_id}")
+            elif workspace_mode == "none":
                 project = self._workspace_less_project()
             elif project_id:
                 project = self.store.get_project(project_id)
@@ -1224,9 +1488,12 @@ class WorkLedgerCoordinator:
                 project = self.store.create_or_get_project(
                     self._project_root_for(project_path)
                 )
-            item = self.store.create_work_item(
-                project.project_id,
-                title=self._task_title(request.task),
+            new_item_kwargs = dict(
+                project_id=project.project_id,
+                title=self._task_title(
+                    str(incoming_work.get("title") or request.task)
+                    if intake_authority is not None else request.task
+                ),
                 goal=request.task,
                 workspace_mode=workspace_mode,
                 workspace_path=workspace_path,
@@ -1277,21 +1544,6 @@ class WorkLedgerCoordinator:
                         else {}
                     ),
                 },
-            )
-            # One line per new task saying where it went and why. Naming a
-            # project is now the only thing keeping work out of the scratch
-            # area, so the ratio between these two branches is what says
-            # whether the model names one when it means one.
-            logger.info(
-                "[WORK-DESTINATION] branch=%s provider=%s named_project=%s work_item=%s",
-                (
-                    "none"
-                    if workspace_mode == "none"
-                    else "scratch" if is_scratch_path(workspace_path) else "project"
-                ),
-                request.provider.strip().lower(),
-                bool(project_id),
-                item.work_item_id,
             )
 
         attempt_metadata = {
@@ -1437,17 +1689,90 @@ class WorkLedgerCoordinator:
                     else {}
                 ),
             }
-        operation, attempt = persist_work_intake(
-            self.store,
-            item_id=item.work_item_id,
-            plan=intake_plan,
-            original_task=original_task,
-            provider_task=request.task,
-            provider=request.provider,
-            mode=request.mode,
-            operation_metadata=operation_metadata,
-            attempt_metadata=attempt_metadata,
-        )
+        if new_item_kwargs is not None:
+            # A new goal's initial rows form one local write set. Workspace
+            # allocation above and Provider submission later are separate.
+            assert intake_plan.creates_operation
+            if intake_authority is not None:
+                assert self._work_control is not None
+                controlled = self._work_control.bind_runtime_dispatch_intent(
+                    intake_authority,
+                    request,
+                    provider_run_id=provider_run_id,
+                    project_id=str(new_item_kwargs["project_id"]),
+                    title=str(new_item_kwargs["title"]),
+                    goal=str(new_item_kwargs["goal"]),
+                    workspace_mode=str(new_item_kwargs["workspace_mode"]),
+                    workspace_path=str(new_item_kwargs["workspace_path"]),
+                    branch=str(new_item_kwargs["branch"]),
+                    base_revision=str(new_item_kwargs["base_revision"]),
+                    work_metadata=dict(new_item_kwargs["metadata"]),
+                    operation_metadata=operation_metadata,
+                    attempt_metadata=attempt_metadata,
+                )
+                binding = controlled["binding"]
+                item = self.store.get_work_item(str(binding["work_item_id"]))
+                operation = self.store.get_operation(str(binding["operation_id"]))
+                attempt = self.store.get_attempt(str(binding["attempt_id"]))
+                if item is None or operation is None or attempt is None:
+                    raise WorkLedgerConflict(
+                        "accepted Work effect committed an incomplete domain binding"
+                    )
+            else:
+                item, operation, attempt = self.store.create_work_item_with_attempt(
+                    **new_item_kwargs,
+                    intent=intake_plan.operation_intent,
+                    instruction=original_task,
+                    provider=request.provider,
+                    task=request.task,
+                    mode=request.mode,
+                    provider_run_id=provider_run_id,
+                    operation_metadata=operation_metadata,
+                    attempt_metadata=attempt_metadata,
+                )
+            # One line per new task saying where it went and why. Naming a
+            # project is now the only thing keeping work out of the scratch
+            # area, so the ratio between these two branches is what says
+            # whether the model names one when it means one.
+            logger.info(
+                "[WORK-DESTINATION] branch=%s provider=%s named_project=%s work_item=%s",
+                (
+                    "none"
+                    if workspace_mode == "none"
+                    else "scratch" if is_scratch_path(workspace_path) else "project"
+                ),
+                request.provider.strip().lower(),
+                bool(project_id),
+                item.work_item_id,
+            )
+        else:
+            if intake_authority is not None:
+                assert self._work_control is not None
+                controlled = self._work_control.bind_runtime_dispatch_intent(
+                    intake_authority, request, provider_run_id=provider_run_id,
+                    project_id=item.project_id, title=item.title, goal=item.goal,
+                    workspace_mode=item.workspace_mode, workspace_path=item.workspace_path,
+                    branch=item.branch, base_revision=item.base_revision, work_metadata={},
+                    operation_metadata=operation_metadata, attempt_metadata=attempt_metadata,
+                )
+                binding = controlled["binding"]
+                operation = self.store.get_operation(binding["operation_id"])
+                attempt = self.store.get_attempt(binding["attempt_id"])
+                if operation is None or attempt is None:
+                    raise WorkLedgerConflict("accepted amendment committed an incomplete binding")
+            else:
+                operation, attempt = persist_work_intake(
+                    self.store,
+                    item_id=item.work_item_id,
+                    plan=intake_plan,
+                    original_task=original_task,
+                    provider_task=request.task,
+                    provider=request.provider,
+                    mode=request.mode,
+                    provider_run_id=provider_run_id,
+                    operation_metadata=operation_metadata,
+                    attempt_metadata=attempt_metadata,
+                )
         if existing_item is not None and continuation == "steer_replacement":
             successor_control = {
                 **(
@@ -1601,6 +1926,7 @@ class WorkLedgerCoordinator:
                 metadata={
                     "source": "provider_intake",
                     "operation_id": operation.operation_id,
+                    "explicit_context_binding": False,
                 },
             )
         try:
@@ -1613,13 +1939,13 @@ class WorkLedgerCoordinator:
                 metadata=metadata,
                 provider_capabilities=provider_capabilities or None,
             )
-        except Exception:
+        except Exception as exc:
             if lease is not None:
                 self.store.release_writer_lease(attempt.attempt_id, status="released")
             self.store.update_attempt(
                 attempt.attempt_id,
                 execution_status="cancelled",
-                error="failed to prepare the bounded external export",
+                error=f"failed to prepare the bounded external export: {exc}",
                 metadata={"start_rejected": "export_plan_error"},
             )
             raise
@@ -1661,12 +1987,25 @@ class WorkLedgerCoordinator:
                 export_plan["host_validates_auip_bundle"] = True
             metadata["display_task"] = original_task
             metadata["export_plan"] = export_plan
+            if export_plan.get("host_validates_auip_bundle") is True:
+                metadata["host_auip_bundle_validation"] = (
+                    _pending_auip_bundle_validation()
+                )
             request.task = self.export_service.provider_prompt(original_task, export_plan)
             self.store.update_attempt(
                 attempt.attempt_id,
                 metadata={
                     "original_task": original_task,
                     "export_plan": export_plan,
+                    **(
+                        {
+                            "host_auip_bundle_validation": (
+                                _pending_auip_bundle_validation()
+                            )
+                        }
+                        if export_plan.get("host_validates_auip_bundle") is True
+                        else {}
+                    ),
                 },
             )
         provider_task_kinds = {
@@ -1694,9 +2033,18 @@ class WorkLedgerCoordinator:
                     and export_plan.get("host_validates_auip_bundle") is True
                 )
                 if not host_manages_runtime_assets:
+                    prior_runtime_assets = {}
+                    for prior_attempt in self.store.list_attempts(item.work_item_id):
+                        prior = prior_attempt.metadata
+                        if (prior.get("auip_host_validates_bundle") is True
+                                and prior.get("auip_bundle_root")
+                                and Path(str(prior["auip_bundle_root"])).resolve() == workspace_root.resolve()
+                                and isinstance(prior.get("auip_host_materialized_assets"), dict)):
+                            prior_runtime_assets = prior["auip_host_materialized_assets"]
                     runtime_assets = materialize_auip_runtime_assets(
                         workspace_root,
                         replace_existing=False,
+                        previously_materialized=prior_runtime_assets,
                     )
                     metadata["auip_bundle_root"] = str(workspace_root)
                     metadata["auip_host_validates_bundle"] = True
@@ -1708,6 +2056,9 @@ class WorkLedgerCoordinator:
                         }
                         for filename, identity in runtime_assets.items()
                     }
+                    metadata["host_auip_bundle_validation"] = (
+                        _pending_auip_bundle_validation()
+                    )
                     host_manages_runtime_assets = True
                     self.store.update_attempt(
                         attempt.attempt_id,
@@ -1720,6 +2071,9 @@ class WorkLedgerCoordinator:
                             "auip_host_materialized_assets": metadata[
                                 "auip_host_materialized_assets"
                             ],
+                            "host_auip_bundle_validation": (
+                                _pending_auip_bundle_validation()
+                            ),
                         },
                     )
                 authoring_root = self.export_service.ensure_private_workspace_child(
@@ -1731,6 +2085,7 @@ class WorkLedgerCoordinator:
                 skill_path = stage_auip_authoring_bundle(
                     authoring_root,
                     include_opaque_dependencies=not host_manages_runtime_assets,
+                    include_artifact_style=app_settings.AUIP_ARTIFACT_STYLE_ENABLED,
                 )
                 metadata["auip_authoring_skill_path"] = str(skill_path)
                 metadata["auip_authoring_inputs"] = auip_authoring_bundle_metrics(
@@ -1790,6 +2145,41 @@ class WorkLedgerCoordinator:
             if focus is None or focus.mode == "auto" or not focus.work_item_id:
                 self.store.set_focus(surface, item.work_item_id, mode="auto")
         self._emit_snapshot_now(self.default_surface, reason="attempt.created")
+        try:
+            from server.turn_decision_shadow import (
+                get_enabled_turn_decision_shadow_observer,
+            )
+
+            shadow = get_enabled_turn_decision_shadow_observer()
+            if shadow is not None:
+                shadow.record_event(
+                    str(metadata.get("turn_id") or ""),
+                    stage="work_attempt_admitted",
+                    origin_kind="work_ledger",
+                    origin_id=attempt.attempt_id,
+                    payload={
+                        "work_item_id": item.work_item_id,
+                        "operation_id": operation.operation_id,
+                        "operation_number": operation.operation_number,
+                        "attempt_id": attempt.attempt_id,
+                        "attempt_number": attempt.attempt_number,
+                        "continuation": continuation,
+                        "provider": request.provider,
+                    },
+                )
+        except Exception:
+            logger.debug("turn decision Work lineage observation failed", exc_info=True)
+        if intake_authority is not None:
+            return PreparedProviderRun(
+                request=request,
+                intake_receipt=ProviderRunIntakeReceipt(
+                    effect_id=intake_authority.effect_id,
+                    run_id=provider_run_id,
+                    work_item_id=item.work_item_id,
+                    operation_id=operation.operation_id,
+                    attempt_id=attempt.attempt_id,
+                ),
+            )
         return request
 
     @staticmethod
@@ -2349,6 +2739,11 @@ class WorkLedgerCoordinator:
         for lease in self.store.list_writer_leases(active_only=True):
             if lease.workspace_identity != identity:
                 continue
+            if lease.owner_kind == "cooperative_run":
+                raise WorkLedgerConflict(
+                    "workspace already has an active cooperative writer; "
+                    "wait for that execution to finish"
+                )
             attempt = self.store.get_attempt(lease.attempt_id)
             if attempt is None or attempt.execution_status in _TERMINAL_EXECUTION:
                 self.store.release_writer_lease(lease.attempt_id, status="released")
@@ -2633,26 +3028,6 @@ class WorkLedgerCoordinator:
                 self._event_fact(run_id)["pending_permissions"] = len(pending)
             elif event_type in {"input.requested", "question", "user.input.required"}:
                 self._event_fact(run_id)["pending_inputs"] = 1
-            elif event_type in {"run.failed", "run.cancelled"}:
-                if event_type == "run.cancelled":
-                    for permission in self.store.list_permission_requests(
-                        attempt.work_item_id,
-                        attempt_id=attempt.attempt_id,
-                        status="pending",
-                    ):
-                        try:
-                            self.store.resolve_permission_request(
-                                permission.request_id,
-                                "expired",
-                                metadata={
-                                    "resolution": "attempt_cancelled",
-                                    "cancel_reason": str(payload.get("reason") or ""),
-                                },
-                            )
-                        except WorkLedgerConflict:
-                            # A concurrent user decision is immutable and wins.
-                            pass
-                self.store.release_writer_lease(attempt.attempt_id, status="released")
         except WorkLedgerConflict:
             # ProviderRuntime emits both a terminal event and provider.result;
             # identical terminal facts are idempotent, stale contradictory
@@ -2662,10 +3037,64 @@ class WorkLedgerCoordinator:
         if ingested.material:
             await self._publish_provider_snapshot(reason=f"provider.event:{event_type}")
 
-    async def _on_provider_result(self, _method: str, params: dict[str, Any]) -> None:
-        ingested = await asyncio.to_thread(self.event_ingestor.ingest_result, params)
+    async def _on_provider_result(
+        self,
+        _method: str,
+        params: dict[str, Any],
+        *,
+        defer_terminal_notice: bool = False,
+        allow_provider_recovery: bool = True,
+        precondition: OrphanedProviderResultPrecondition | None = None,
+    ) -> bool:
+        run_id = str(params.get("run_id") or "").strip()
+        lock = self._provider_result_locks.setdefault(run_id, asyncio.Lock())
+        async with lock:
+            return await self._on_provider_result_locked(
+                _method,
+                params,
+                defer_terminal_notice=defer_terminal_notice,
+                allow_provider_recovery=allow_provider_recovery,
+                precondition=precondition,
+            )
+
+    async def _accept_reconciled_terminal_result(
+        self,
+        projection: ProviderTerminalResultProjection,
+        *,
+        precondition: OrphanedProviderResultPrecondition,
+    ) -> bool:
+        """Enter one reconciled result through the ordinary terminal pipeline."""
+
+        if not isinstance(projection, ProviderTerminalResultProjection):
+            raise TypeError(
+                "reconciled Provider result must use the Runtime projection"
+            )
+        if not isinstance(precondition, OrphanedProviderResultPrecondition):
+            raise TypeError(
+                "reconciled Provider result precondition must use the typed contract"
+            )
+        return await self._on_provider_result(
+            Method.PROVIDER_RESULT,
+            projection.to_event_params(),
+            precondition=precondition,
+        )
+
+    async def _on_provider_result_locked(
+        self,
+        _method: str,
+        params: dict[str, Any],
+        *,
+        defer_terminal_notice: bool = False,
+        allow_provider_recovery: bool = True,
+        precondition: OrphanedProviderResultPrecondition | None = None,
+    ) -> bool:
+        ingested = await asyncio.to_thread(
+            self.event_ingestor.ingest_result,
+            params,
+            precondition=precondition,
+        )
         if ingested is None:
-            return
+            return False
         run_id = ingested.run_id
         attempt = ingested.attempt
         status = ingested.status
@@ -2673,6 +3102,19 @@ class WorkLedgerCoordinator:
         error = ingested.error
         metadata = ingested.metadata
         facts = ingested.evidence
+        if status == "orphaned":
+            # The native operation may still own side effects.  Persisted
+            # liveness and reconciliation evidence were committed by the
+            # ingestor above; completion, artifact finalization and writer-lease
+            # release are terminal-only operations and must wait for a definite
+            # result or an explicit recovery decision.
+            await self._publish_provider_snapshot(reason="provider.result:orphaned")
+            return False
+        if not ingested.pipeline_required:
+            # Exact completed replay and contradictory/malformed receipts are
+            # both no-ops. The ingestor has already retained the durable
+            # winner; downstream effects must not run a second time.
+            return False
         provider_completion = (
             metadata.get("provider_completion")
             if isinstance(metadata.get("provider_completion"), dict)
@@ -2724,6 +3166,25 @@ class WorkLedgerCoordinator:
                     "ignored contradictory provider completion replay attempt=%s",
                     attempt.attempt_id,
                 )
+        current_for_recovery = self.store.get_attempt(attempt.attempt_id) or attempt
+        current_recovery_reason = self._provider_recovery_reason(
+            current_for_recovery
+        )
+        current_recovery_marker = self._provider_recovery_marker(
+            current_for_recovery, current_recovery_reason
+        )
+        if current_recovery_marker.get("recovery_state") in {
+            "claimed",
+            "started",
+            "cancelled",
+            "cancel_pending",
+        }:
+            # A crash may leave the predecessor pipeline pending after the
+            # bounded successor was accepted. Finish that durable receipt
+            # before observing the shared workspace, which may now contain the
+            # successor's bytes.
+            self._complete_terminal_pipeline(ingested)
+            return True
         # Provider-native approvals are scoped to the live Attempt.  Expire
         # any unresolved checkpoint before completion assessment and UI
         # projection so a late/missing adapter callback cannot leave a dead
@@ -2768,43 +3229,64 @@ class WorkLedgerCoordinator:
             )
             if status == "succeeded" and workspace_bundle_validation_required:
                 from server.auip_bundle_validation import (
-                    validate_staged_auip_web_bundle,
+                    validate_auip_web_bundle_execution,
                 )
 
-                try:
-                    bundle_validation = validate_staged_auip_web_bundle(
-                        Path(
-                            str(
-                                current_attempt.metadata.get("auip_bundle_root")
-                                or item.workspace_path
-                            )
-                        ),
-                        materialized_files=tuple(
-                            str(value)
-                            for value in (
-                                current_attempt.metadata.get(
-                                    "auip_host_materialized_files"
-                                )
-                                or []
-                            )
-                        ),
+                current_attempt, validation_active = (
+                    self._begin_auip_bundle_validation(current_attempt)
+                )
+                if not validation_active:
+                    await self._finish_cancelled_auip_validation(
+                        ingested, current_attempt
                     )
-                except Exception as exc:
-                    bundle_validation = {
-                        "verified": False,
-                        "code": str(
-                            getattr(exc, "code", exc.__class__.__name__)
-                        ),
-                        "detail": str(getattr(exc, "detail", "") or exc)[:600],
-                    }
-                self.store.update_attempt(
-                    current_attempt.attempt_id,
-                    metadata={"host_auip_bundle_validation": bundle_validation},
+                    return True
+                try:
+                    try:
+                        bundle_validation = await validate_auip_web_bundle_execution(
+                            Path(
+                                str(
+                                    current_attempt.metadata.get("auip_bundle_root")
+                                    or item.workspace_path
+                                )
+                            ),
+                            materialized_files=tuple(
+                                str(value)
+                                for value in (
+                                    current_attempt.metadata.get(
+                                        "auip_host_materialized_files"
+                                    )
+                                    or []
+                                )
+                            ),
+                            expected_assets=current_attempt.metadata.get(
+                                "auip_host_materialized_assets"
+                            ),
+                            required_mode=required_auip_engagement_mode(
+                                current_attempt.metadata
+                            ),
+                        )
+                    except Exception as exc:
+                        bundle_validation = {
+                            "verified": False,
+                            "kind": "tool_error",
+                            "code": str(
+                                getattr(exc, "code", exc.__class__.__name__)
+                            ),
+                            "detail": str(getattr(exc, "detail", "") or exc)[:600],
+                            "checks": [],
+                            "boot": None,
+                        }
+                finally:
+                    self._end_auip_bundle_validation(current_attempt.attempt_id)
+                current_attempt = self._record_auip_bundle_validation(
+                    current_attempt,
+                    bundle_validation,
                 )
-                current_attempt = (
-                    self.store.get_attempt(current_attempt.attempt_id)
-                    or current_attempt
-                )
+                if self._auip_validation_was_cancelled(current_attempt):
+                    await self._finish_cancelled_auip_validation(
+                        ingested, current_attempt
+                    )
+                    return True
             if export_plan is not None:
                 if status != "succeeded":
                     export_delta = {
@@ -2829,7 +3311,7 @@ class WorkLedgerCoordinator:
                     try:
                         if export_plan.get("host_validates_auip_bundle") is True:
                             from server.auip_bundle_validation import (
-                                finalize_staged_auip_web_bundle,
+                                validate_auip_web_bundle_execution,
                             )
 
                             staging_root, _staged_files = (
@@ -2839,50 +3321,75 @@ class WorkLedgerCoordinator:
                                     export_plan,
                                 )
                             )
-                            try:
-                                bundle_validation = finalize_staged_auip_web_bundle(
-                                    staging_root,
-                                    entry_filename=str(
-                                        export_plan.get("entry_filename") or ""
-                                    ),
-                                    materialized_files=tuple(
-                                        str(value)
-                                        for value in (
-                                            export_plan.get("host_materialized_files")
-                                            or []
-                                        )
-                                    ),
+                            current_attempt, validation_active = (
+                                self._begin_auip_bundle_validation(current_attempt)
+                            )
+                            if not validation_active:
+                                await self._finish_cancelled_auip_validation(
+                                    ingested, current_attempt
                                 )
-                            except Exception as exc:
-                                self.store.update_attempt(
-                                    current_attempt.attempt_id,
-                                    metadata={
-                                        "host_auip_bundle_validation": {
-                                            "verified": False,
-                                            "code": str(
-                                                getattr(
-                                                    exc,
-                                                    "code",
-                                                    exc.__class__.__name__,
+                                return True
+                            try:
+                                try:
+                                    bundle_validation = (
+                                        await validate_auip_web_bundle_execution(
+                                            staging_root,
+                                            entry_filename=str(
+                                                export_plan.get("entry_filename") or ""
+                                            ),
+                                            materialized_files=tuple(
+                                                str(value)
+                                                for value in (
+                                                    export_plan.get(
+                                                        "host_materialized_files"
+                                                    )
+                                                    or []
                                                 )
                                             ),
-                                            "detail": str(
-                                                getattr(exc, "detail", "") or exc
-                                            )[:600],
-                                        }
-                                    },
+                                            expected_assets=export_plan.get(
+                                                "host_materialized_assets"
+                                            ),
+                                            finalize=True,
+                                            required_mode=required_auip_engagement_mode(
+                                                current_attempt.metadata
+                                            ),
+                                        )
+                                    )
+                                except Exception as exc:
+                                    bundle_validation = {
+                                        "verified": False,
+                                        "kind": "tool_error",
+                                        "code": str(
+                                            getattr(
+                                                exc,
+                                                "code",
+                                                exc.__class__.__name__,
+                                            )
+                                        ),
+                                        "detail": str(
+                                            getattr(exc, "detail", "") or exc
+                                        )[:600],
+                                        "checks": [],
+                                        "boot": None,
+                                    }
+                            finally:
+                                self._end_auip_bundle_validation(
+                                    current_attempt.attempt_id
                                 )
-                                raise
-                            self.store.update_attempt(
-                                current_attempt.attempt_id,
-                                metadata={
-                                    "host_auip_bundle_validation": bundle_validation
-                                },
+                            current_attempt = self._record_auip_bundle_validation(
+                                current_attempt,
+                                bundle_validation,
                             )
-                            current_attempt = (
-                                self.store.get_attempt(current_attempt.attempt_id)
-                                or current_attempt
-                            )
+                            if self._auip_validation_was_cancelled(current_attempt):
+                                await self._finish_cancelled_auip_validation(
+                                    ingested, current_attempt
+                                )
+                                return True
+                            if bundle_validation.get("verified") is not True:
+                                raise WorkLedgerConflict(
+                                    "Host AUIP validation failed "
+                                    f"({bundle_validation.get('code') or 'unknown'})"
+                                )
                         outcome = self.export_service.discover_staged_exports(
                             current_attempt,
                             item,
@@ -3084,6 +3591,9 @@ class WorkLedgerCoordinator:
                 uncovered_external.append(artifact)
         if uncovered_external:
             conflicts += ("external artifact has no matching explicit approval",)
+        input_requirements = self.read_model.input_requirements(
+            attempt.work_item_id, attempt_id=attempt.attempt_id)
+        missing_requirements.extend(self._input_requirement_gaps(input_requirements))
         evidence = CompletionEvidence(
             execution_status=status,
             current_state=(self.store.get_work_item(attempt.work_item_id) or self._missing_item()).state,
@@ -3105,7 +3615,7 @@ class WorkLedgerCoordinator:
                 if export_delta or permission_records
                 else int(compatibility.get("pending_permissions") or 0),
             ),
-            pending_inputs=max(
+            pending_inputs=sum(row["delivery_state"] == "unknown" for row in input_requirements) + max(
                 int(facts.get("pending_inputs") or 0),
                 int(compatibility.get("pending_inputs") or 0),
                 1
@@ -3115,7 +3625,7 @@ class WorkLedgerCoordinator:
             blocking_errors=outcome_blocking_errors,
             conflicts=conflicts,
         )
-        decision = assess_completion(evidence)
+        decision = self._assess_input_completion(evidence, input_requirements)
         completion_history = self.store.list_completions(attempt.work_item_id)
         previous_completion = completion_history[-1] if completion_history else None
         if (
@@ -3146,6 +3656,7 @@ class WorkLedgerCoordinator:
                 source="host",
                 evidence={
                     **asdict(evidence),
+                    "input_requirements":input_requirements,
                     "compatibility_fallback": compatibility,
                     "git_delta": {
                         "available": git_delta.get("available"),
@@ -3156,8 +3667,9 @@ class WorkLedgerCoordinator:
                 },
             )
         recovery_started = False
-        if self._progress_only_recovery_admitted(
-            attempt=self.store.get_attempt(attempt.attempt_id) or attempt,
+        current_attempt = self.store.get_attempt(attempt.attempt_id) or attempt
+        if allow_provider_recovery and self._progress_only_recovery_admitted(
+            attempt=current_attempt,
             status=status,
             result=result,
             metadata=metadata,
@@ -3169,33 +3681,56 @@ class WorkLedgerCoordinator:
             export_delta=export_delta,
             cancellation=cancellation,
         ):
-            recovery_started = await self._start_progress_only_recovery(
-                attempt=self.store.get_attempt(attempt.attempt_id) or attempt,
+            recovery_started = await self._start_provider_recovery(
+                reason="progress_only_completion",
+                attempt=current_attempt,
                 item=item,
                 metadata=metadata,
+            )
+        elif allow_provider_recovery and self._auip_validation_recovery_admitted(
+            attempt=current_attempt,
+            item=item,
+            status=status,
+            metadata=metadata,
+            facts=facts,
+            git_delta=git_delta,
+            permission_records=permission_records,
+            export_permission=export_permission,
+            export_delta=export_delta,
+            cancellation=cancellation,
+            input_requirements=input_requirements,
+        ):
+            validation = self._provider_recovery_marker(
+                current_attempt, "auip_validation_failed"
+            )
+            recovery_started = await self._start_provider_recovery(
+                reason="auip_validation_failed",
+                attempt=current_attempt,
+                item=item,
+                metadata=metadata,
+                feedback=self._auip_recovery_feedback(
+                    validation, input_requirements
+                ),
             )
         if recovery_started:
             # The predecessor Attempt is terminal, but the same Operation is
             # already continuing under one visible, bounded successor. Do not
             # narrate the predecessor as the task's final outcome.
-            return
+            self._complete_terminal_pipeline(ingested)
+            return True
         latest_attempt = self.store.get_attempt(attempt.attempt_id) or attempt
-        latest_completion = (
-            latest_attempt.metadata.get("provider_completion")
-            if isinstance(
-                latest_attempt.metadata.get("provider_completion"), dict
-            )
-            else {}
+        latest_recovery_reason = self._provider_recovery_reason(latest_attempt)
+        latest_recovery_marker = self._provider_recovery_marker(
+            latest_attempt, latest_recovery_reason
         )
         if (
-            latest_completion.get("classification")
-            == "progress_only_completion"
-            and latest_completion.get("recovery_state")
-            in {"claimed", "started", "cancelled", "cancel_pending"}
+            latest_recovery_marker.get("recovery_state")
+            in _ACTIVE_PROVIDER_RECOVERY_STATES
         ):
             # A replayed Provider result cannot turn a continuing or retracted
             # recovery predecessor back into a terminal user-facing failure.
-            return
+            self._complete_terminal_pipeline(ingested)
+            return True
         permission_note = self._claim_export_permission_notice(
             attempt,
             export_permission,
@@ -3203,7 +3738,13 @@ class WorkLedgerCoordinator:
             provider_metadata=metadata,
         )
         terminal_note = None
-        owns_terminal = export_plan is not None or _ledger_owns_terminal_narration()
+        owns_terminal = (
+            export_plan is not None
+            or isinstance(
+                latest_attempt.metadata.get("host_auip_bundle_validation"), dict
+            )
+            or _ledger_owns_terminal_narration()
+        )
         if owns_terminal and not steer_replacement_transition:
             # One assessment, one narration. WorkActivity defers to this note so
             # the character never announces an outcome from the process exit
@@ -3271,9 +3812,198 @@ class WorkLedgerCoordinator:
         if permission_note is not None:
             add_work_note(permission_note)
             await bus.emit(Method.CHAT_WORK_NOTE, permission_note)
-        if terminal_note is not None:
+        if terminal_note is not None and not defer_terminal_notice:
             add_work_note(terminal_note)
             await bus.emit(Method.CHAT_WORK_NOTE, terminal_note)
+        self._complete_terminal_pipeline(ingested)
+        return True
+
+    def _complete_terminal_pipeline(
+        self,
+        ingested: IngestedProviderResult,
+    ) -> None:
+        if not self.event_ingestor.complete_terminal_pipeline(
+            ingested.attempt.attempt_id,
+            ingested.pipeline_receipt,
+        ):
+            raise WorkLedgerConflict(
+                "provider terminal pipeline receipt changed before completion"
+            )
+
+    @staticmethod
+    def _auip_validation_was_cancelled(attempt: RunAttemptRecord) -> bool:
+        validation = attempt.metadata.get("host_auip_bundle_validation")
+        return bool(
+            isinstance(validation, dict)
+            and validation.get("code") == "auip_validation_pending"
+            and validation.get("recovery_state") == "cancelled"
+        )
+
+    async def _finish_cancelled_auip_validation(
+        self,
+        ingested: IngestedProviderResult,
+        attempt: RunAttemptRecord,
+    ) -> None:
+        """Retire a stopped Host probe without rewriting native success."""
+
+        self._end_auip_bundle_validation(attempt.attempt_id)
+        self.store.release_writer_lease(attempt.attempt_id, status="released")
+        await self.publish_snapshot(reason="provider.auip_validation_cancelled")
+        self._complete_terminal_pipeline(ingested)
+
+    async def recover_pending_terminal_results(self, *, limit: int = 2000) -> int:
+        """Resume Host terminal processing from exact durable receipts.
+
+        This method never queries or starts a Provider. Each replay is rebuilt
+        only from the Attempt's Host-created pending receipt and re-enters the
+        same result handler used by live ProviderRuntime publication.
+        """
+
+        recovered = 0
+        for attempt in self.store.list_pending_terminal_provider_attempts(limit=limit):
+            payload = self.event_ingestor.terminal_replay_payload(attempt)
+            if payload is None:
+                logger.error(
+                    "ignored malformed pending provider terminal receipt attempt=%s",
+                    attempt.attempt_id,
+                )
+                continue
+            try:
+                await self._on_provider_result(
+                    Method.PROVIDER_RESULT,
+                    payload,
+                    defer_terminal_notice=True,
+                    allow_provider_recovery=False,
+                )
+            except Exception:
+                # Pending remains durable. A later explicit recovery pass can
+                # retry the same Host pipeline without rerunning Provider work.
+                logger.exception(
+                    "provider terminal pipeline recovery failed attempt=%s",
+                    attempt.attempt_id,
+                )
+                continue
+            current = self.store.get_attempt(attempt.attempt_id)
+            receipt = (
+                current.metadata.get(PROVIDER_TERMINAL_PIPELINE_METADATA_KEY)
+                if current is not None
+                and isinstance(
+                    current.metadata.get(PROVIDER_TERMINAL_PIPELINE_METADATA_KEY),
+                    dict,
+                )
+                else {}
+            )
+            if receipt.get("state") == "completed":
+                recovered += 1
+        return recovered
+
+    def _record_auip_bundle_validation(
+        self,
+        attempt: RunAttemptRecord,
+        validation: dict[str, Any],
+    ) -> RunAttemptRecord:
+        """Persist one Host validation without rolling recovery state backward."""
+
+        marker = dict(validation)
+        if marker.get("verified") is False and marker.get("kind") == "app_error":
+            prior_recovery = (
+                attempt.metadata.get("provider_recovery")
+                if isinstance(attempt.metadata.get("provider_recovery"), dict)
+                else {}
+            )
+            try:
+                recovery_ordinal = int(prior_recovery.get("ordinal") or 0)
+            except (TypeError, ValueError):
+                recovery_ordinal = 1
+            if recovery_ordinal >= 1:
+                marker.update(
+                    {
+                        "recovery_state": "failed",
+                        "recovery_error": "recovery_budget_exhausted",
+                    }
+                )
+            else:
+                marker["recovery_state"] = "unclaimed"
+        current = self.store.get_attempt(attempt.attempt_id) or attempt
+        existing = (
+            current.metadata.get("host_auip_bundle_validation")
+            if isinstance(
+                current.metadata.get("host_auip_bundle_validation"), dict
+            )
+            else None
+        )
+        if isinstance(existing, dict) and existing.get("recovery_state") in {
+            "claimed",
+            "started",
+            "cancelled",
+            "cancel_pending",
+            "failed",
+        }:
+            return current
+        updated, _created = self.store.compare_and_set_attempt_metadata(
+            attempt.attempt_id,
+            key="host_auip_bundle_validation",
+            expected_present=existing is not None,
+            expected_value=existing,
+            value=marker,
+        )
+        return updated
+
+    @staticmethod
+    def _auip_recovery_feedback(
+        validation: dict[str, Any],
+        input_requirements: list[dict[str, Any]],
+    ) -> str:
+        """Render bounded Host-owned repair evidence for the attached Provider."""
+
+        required_lines = [
+            "Host AUIP validation failed after the Provider reported success.",
+            f"code: {str(validation.get('code') or 'auip_entry_boot_failed')}",
+        ]
+        delivered = [
+            str(row.get("text") or "").strip()
+            for row in input_requirements
+            if isinstance(row, dict)
+            and row.get("delivery_state") == "delivered"
+            and str(row.get("text") or "").strip()
+        ]
+        if delivered:
+            required_lines.append(
+                "Accepted additional requirements that remain in force:"
+            )
+            required_lines.extend(
+                f"requirement {index}:\n{text}"
+                for index, text in enumerate(delivered, start=1)
+            )
+        rendered = "\n".join(required_lines)
+        if len(rendered) > 4096:
+            return ""
+
+        optional_lines: list[str] = []
+        detail = str(validation.get("detail") or "").strip()
+        if detail:
+            optional_lines.append(f"detail: {detail}")
+        boot = validation.get("boot")
+        diagnostics = (
+            boot.get("diagnostics")
+            if isinstance(boot, dict) and isinstance(boot.get("diagnostics"), list)
+            else []
+        )
+        for diagnostic in diagnostics[:12]:
+            if not isinstance(diagnostic, dict):
+                continue
+            kind = str(diagnostic.get("kind") or "error").strip()
+            code = str(diagnostic.get("code") or "").strip()
+            message = str(diagnostic.get("message") or "").strip()
+            label = "/".join(value for value in (kind, code) if value)
+            if message:
+                optional_lines.append(f"boot {label or 'error'}: {message}")
+        for line in optional_lines:
+            available = 4096 - len(rendered) - 1
+            if available <= 0:
+                break
+            rendered += "\n" + line[:available]
+        return rendered.rstrip()
 
     def _progress_only_recovery_admitted(
         self,
@@ -3355,7 +4085,7 @@ class WorkLedgerCoordinator:
             str(capabilities.get("resume") or "").strip().lower() != "attach"
             or str(session.get("provider") or "").strip().lower()
             != attempt.provider.strip().lower()
-            or str(session.get("scope") or "").strip().lower() != "work_item"
+            or str(session.get("scope") or "").strip().lower() not in {"work_item", "interaction"}
             or not str(session.get("session_id") or "").strip()
         ):
             return False
@@ -3385,22 +4115,160 @@ class WorkLedgerCoordinator:
             for artifact in registered_artifacts
         )
 
-    async def _start_progress_only_recovery(
+    def _auip_validation_recovery_admitted(
         self,
         *,
         attempt: RunAttemptRecord,
         item: WorkItemRecord | None,
+        status: str,
         metadata: dict[str, Any],
+        facts: dict[str, Any],
+        git_delta: dict[str, Any],
+        permission_records: list[PermissionRequestRecord],
+        export_permission: PermissionRequestRecord | None,
+        export_delta: dict[str, Any],
+        cancellation: dict[str, Any],
+        input_requirements: list[dict[str, Any]],
+    ) -> bool:
+        """Admit one attached repair for a Host-proven AUIP app defect."""
+
+        if self._provider_start is None or item is None or status != "succeeded":
+            return False
+        latest = self.store.latest_attempt(item.work_item_id)
+        if latest is None or latest.attempt_id != attempt.attempt_id:
+            return False
+        validation = self._provider_recovery_marker(
+            attempt, "auip_validation_failed"
+        )
+        if (
+            validation.get("verified") is not False
+            or validation.get("kind") != "app_error"
+            or validation.get("recovery_state") != "unclaimed"
+        ):
+            return False
+        prior_recovery = (
+            attempt.metadata.get("provider_recovery")
+            if isinstance(attempt.metadata.get("provider_recovery"), dict)
+            else {}
+        )
+        try:
+            if int(prior_recovery.get("ordinal") or 0) >= 1:
+                return False
+        except (TypeError, ValueError):
+            return False
+        requirement = (
+            attempt.metadata.get("host_outcome_requirement")
+            if isinstance(attempt.metadata.get("host_outcome_requirement"), dict)
+            else {}
+        )
+        requirements = (
+            attempt.metadata.get("provider_requirements")
+            if isinstance(attempt.metadata.get("provider_requirements"), dict)
+            else metadata.get("provider_requirements")
+            if isinstance(metadata.get("provider_requirements"), dict)
+            else {}
+        )
+        if (
+            str(requirement.get("facet") or "").strip().lower()
+            != "auip.application"
+            or str(requirements.get("workspace_access") or "").strip().lower()
+            != "write"
+            or item.workspace_mode == "none"
+        ):
+            return False
+        try:
+            if not Path(item.workspace_path).resolve().is_dir():
+                return False
+        except OSError:
+            return False
+        manifest = (
+            attempt.metadata.get("provider_manifest")
+            if isinstance(attempt.metadata.get("provider_manifest"), dict)
+            else metadata.get("provider_manifest")
+            if isinstance(metadata.get("provider_manifest"), dict)
+            else {}
+        )
+        capabilities = (
+            manifest.get("capabilities")
+            if isinstance(manifest.get("capabilities"), dict)
+            else {}
+        )
+        session = attempt.metadata.get("provider_session")
+        if not isinstance(session, dict):
+            session = (
+                metadata.get("provider_session")
+                if isinstance(metadata.get("provider_session"), dict)
+                else {}
+            )
+        if (
+            str(capabilities.get("resume") or "").strip().lower() != "attach"
+            or str(session.get("provider") or "").strip().lower()
+            != attempt.provider.strip().lower()
+            or str(session.get("scope") or "").strip().lower()
+            not in {"work_item", "interaction"}
+            or not str(session.get("session_id") or "").strip()
+        ):
+            return False
+        if any(
+            str(row.get("delivery_state") or "") != "delivered"
+            for row in input_requirements
+        ):
+            return False
+        bounded_feedback = self._auip_recovery_feedback(
+            validation, input_requirements
+        )
+        if not bounded_feedback:
+            unavailable = dict(validation)
+            unavailable.update(
+                {
+                    "recovery_state": "failed",
+                    "recovery_error": "recovery_feedback_capacity_exceeded",
+                }
+            )
+            self.store.compare_and_set_attempt_metadata(
+                attempt.attempt_id,
+                key="host_auip_bundle_validation",
+                expected_present=True,
+                expected_value=validation,
+                value=unavailable,
+            )
+            return False
+        if (
+            int(facts.get("pending_inputs") or 0) > 0
+            or int(facts.get("pending_permissions") or 0) > 0
+            or facts.get("conflicts")
+            or git_delta.get("ambiguous_paths")
+            or git_delta.get("conflicts")
+            or any(permission.status == "pending" for permission in permission_records)
+            or export_permission is not None
+            or export_delta.get("pending_export") is True
+            or export_delta.get("external_export_pending") is True
+            or export_delta.get("recovery_required") is True
+            or cancellation
+        ):
+            return False
+        return True
+
+    async def _start_provider_recovery(
+        self,
+        *,
+        reason: str,
+        attempt: RunAttemptRecord,
+        item: WorkItemRecord | None,
+        metadata: dict[str, Any],
+        feedback: str = "",
     ) -> bool:
         """Start one cancellable same-Operation Retry with typed Host lineage."""
 
         if self._provider_start is None or item is None:
             return False
-        original_completion = dict(attempt.metadata.get("provider_completion") or {})
-        if original_completion.get("recovery_state") != "unclaimed":
+        clean_reason = str(reason or "").strip().lower()
+        marker_key = PROVIDER_RECOVERY_METADATA_KEYS.get(clean_reason, "")
+        original_marker = self._provider_recovery_marker(attempt, clean_reason)
+        if not marker_key or original_marker.get("recovery_state") != "unclaimed":
             return False
-        claimed_completion = dict(original_completion)
-        claimed_completion.update(
+        claimed_marker = dict(original_marker)
+        claimed_marker.update(
             {
                 "recovery_state": "claimed",
                 "recovery_root_attempt_id": attempt.attempt_id,
@@ -3410,20 +4278,16 @@ class WorkLedgerCoordinator:
         )
         claimed_attempt, claimed = self.store.compare_and_set_attempt_metadata(
             attempt.attempt_id,
-            key="provider_completion",
+            key=marker_key,
             expected_present=True,
-            expected_value=original_completion,
-            value=claimed_completion,
+            expected_value=original_marker,
+            value=claimed_marker,
         )
         if not claimed:
-            current_completion = (
-                claimed_attempt.metadata.get("provider_completion")
-                if isinstance(
-                    claimed_attempt.metadata.get("provider_completion"), dict
-                )
-                else {}
+            current_marker = self._provider_recovery_marker(
+                claimed_attempt, clean_reason
             )
-            return current_completion.get("recovery_state") in {
+            return current_marker.get("recovery_state") in {
                 "claimed",
                 "started",
                 "cancelled",
@@ -3432,16 +4296,17 @@ class WorkLedgerCoordinator:
             "attempt_id": attempt.attempt_id,
             "work_item_id": attempt.work_item_id,
             "provider": attempt.provider,
-            "claimed_at": claimed_completion["recovery_claimed_at"],
+            "claimed_at": claimed_marker["recovery_claimed_at"],
             "cancelled": False,
         }
 
         instruction, lineage = self.retry_instruction(item, attempt)
         recovery = ProviderRecoveryContext(
-            reason="progress_only_completion",
+            reason=clean_reason,
             root_attempt_id=attempt.attempt_id,
             predecessor_attempt_id=attempt.attempt_id,
             ordinal=1,
+            feedback=feedback,
         )
         carry_keys = (
             "source",
@@ -3470,6 +4335,20 @@ class WorkLedgerCoordinator:
                 **lineage,
             }
         )
+        original_export = (
+            attempt.metadata.get("export_plan")
+            if isinstance(attempt.metadata.get("export_plan"), dict)
+            else {}
+        )
+        if clean_reason == "auip_validation_failed" and original_export:
+            retry_metadata["external_export"] = {
+                "target": "desktop",
+                "filename": str(
+                    original_export.get("entry_filename")
+                    or original_export.get("requested_filename")
+                    or ""
+                ),
+            }
         requirements_source = (
             attempt.metadata.get("provider_requirements")
             if isinstance(attempt.metadata.get("provider_requirements"), dict)
@@ -3527,22 +4406,19 @@ class WorkLedgerCoordinator:
                 )
         except Exception as exc:
             current_attempt = self.store.get_attempt(attempt.attempt_id) or attempt
-            current_completion = (
-                current_attempt.metadata.get("provider_completion")
-                if isinstance(
-                    current_attempt.metadata.get("provider_completion"), dict
-                )
-                else {}
+            current_marker = self._provider_recovery_marker(
+                current_attempt, clean_reason
             )
-            if current_completion.get("recovery_state") == "cancelled":
+            if current_marker.get("recovery_state") == "cancelled":
                 self._pending_provider_recoveries.pop(attempt.attempt_id, None)
                 return True
             logger.exception(
-                "failed to start progress-only provider recovery for %s",
+                "failed to start provider recovery reason=%s attempt=%s",
+                clean_reason,
                 attempt.attempt_id,
             )
-            failed_completion = dict(current_completion or claimed_completion)
-            failed_completion.update(
+            failed_marker = dict(current_marker or claimed_marker)
+            failed_marker.update(
                 {
                     "recovery_state": "failed",
                     "recovery_failed_at": float(self._clock()),
@@ -3551,23 +4427,21 @@ class WorkLedgerCoordinator:
             )
             self.store.compare_and_set_attempt_metadata(
                 attempt.attempt_id,
-                key="provider_completion",
+                key=marker_key,
                 expected_present=True,
-                expected_value=current_completion,
-                value=failed_completion,
+                expected_value=current_marker,
+                value=failed_marker,
             )
             self._pending_provider_recoveries.pop(attempt.attempt_id, None)
             return False
 
         current_attempt = self.store.get_attempt(attempt.attempt_id) or attempt
-        current_completion = (
-            current_attempt.metadata.get("provider_completion")
-            if isinstance(current_attempt.metadata.get("provider_completion"), dict)
-            else {}
+        current_marker = self._provider_recovery_marker(
+            current_attempt, clean_reason
         )
-        if current_completion.get("recovery_state") == "cancelled":
-            cancelled_completion = dict(current_completion)
-            cancelled_completion.update(
+        if current_marker.get("recovery_state") == "cancelled":
+            cancelled_marker = dict(current_marker)
+            cancelled_marker.update(
                 {
                     "successor_attempt_id": successor_attempt_id,
                     "successor_run_id": successor_run_id,
@@ -3575,10 +4449,10 @@ class WorkLedgerCoordinator:
             )
             self.store.compare_and_set_attempt_metadata(
                 attempt.attempt_id,
-                key="provider_completion",
+                key=marker_key,
                 expected_present=True,
-                expected_value=current_completion,
-                value=cancelled_completion,
+                expected_value=current_marker,
+                value=cancelled_marker,
             )
             cancel_confirmed = False
             cancel_reason = "provider_cancel_unavailable"
@@ -3609,14 +4483,10 @@ class WorkLedgerCoordinator:
                 cancel_confirmed = True
             if not cancel_confirmed:
                 latest_attempt = self.store.get_attempt(attempt.attempt_id) or attempt
-                latest_completion = (
-                    latest_attempt.metadata.get("provider_completion")
-                    if isinstance(
-                        latest_attempt.metadata.get("provider_completion"), dict
-                    )
-                    else cancelled_completion
-                )
-                cancel_failed = dict(latest_completion)
+                latest_marker = self._provider_recovery_marker(
+                    latest_attempt, clean_reason
+                ) or cancelled_marker
+                cancel_failed = dict(latest_marker)
                 cancel_failed.update(
                     {
                         "recovery_state": "cancel_pending",
@@ -3625,16 +4495,16 @@ class WorkLedgerCoordinator:
                 )
                 self.store.compare_and_set_attempt_metadata(
                     attempt.attempt_id,
-                    key="provider_completion",
+                    key=marker_key,
                     expected_present=True,
-                    expected_value=latest_completion,
+                    expected_value=latest_marker,
                     value=cancel_failed,
                 )
             self._pending_provider_recoveries.pop(attempt.attempt_id, None)
             return True
 
-        started_completion = dict(claimed_completion)
-        started_completion.update(
+        started_marker = dict(claimed_marker)
+        started_marker.update(
             {
                 "recovery_state": "started",
                 "recovery_started_at": float(self._clock()),
@@ -3644,10 +4514,10 @@ class WorkLedgerCoordinator:
         )
         _started_attempt, started = self.store.compare_and_set_attempt_metadata(
             attempt.attempt_id,
-            key="provider_completion",
+            key=marker_key,
             expected_present=True,
-            expected_value=claimed_completion,
-            value=started_completion,
+            expected_value=claimed_marker,
+            value=started_marker,
         )
         self._pending_provider_recoveries.pop(attempt.attempt_id, None)
         if not started:
@@ -3663,9 +4533,21 @@ class WorkLedgerCoordinator:
 
         # Speak only after a durable, cancellable successor exists. A note
         # delivery failure cannot undo or reclassify that successor.
+        progress_only = clean_reason == "progress_only_completion"
         summary = (
             "The execution turn stopped after a progress update before changing the "
             "workspace, so Amadeus is continuing the same authorized task once."
+            if progress_only
+            else "Host validation found an application requirement was not met, so Amadeus is "
+            "continuing the same authorized task once to repair it."
+        )
+        work_event = (
+            "work.provider_progress_only_recovery"
+            if progress_only
+            else "work.auip_validation_recovery"
+        )
+        delivery_suffix = (
+            "progress_only_recovery" if progress_only else clean_reason
         )
         note = work_note_payload(
             source="work_ledger",
@@ -3679,7 +4561,7 @@ class WorkLedgerCoordinator:
                 work_signal(
                     label="recovery",
                     text=summary,
-                    detail="work.provider_progress_only_recovery",
+                    detail=work_event,
                     kind="status",
                     importance="important",
                     ref=attempt.work_item_id,
@@ -3688,22 +4570,28 @@ class WorkLedgerCoordinator:
             importance="important",
             observer_policy="auto",
             metadata={
-                "work_event": "work.provider_progress_only_recovery",
+                "work_event": work_event,
                 "work_item_id": attempt.work_item_id,
                 "attempt_id": successor_attempt_id,
                 "predecessor_attempt_id": attempt.attempt_id,
-                "delivery_id": f"attempt:{attempt.attempt_id}:progress_only_recovery",
+                "delivery_id": f"attempt:{attempt.attempt_id}:{delivery_suffix}",
                 "narration_keypoint": "semantic_progress",
             },
             speak=True,
         )
         try:
-            await self.publish_snapshot(reason="provider.progress_only_recovery")
+            await self.publish_snapshot(
+                reason=(
+                    "provider.progress_only_recovery"
+                    if progress_only
+                    else f"provider.{clean_reason}"
+                )
+            )
             add_work_note(note)
             await bus.emit(Method.CHAT_WORK_NOTE, note)
         except Exception:
             logger.exception(
-                "failed to publish progress-only recovery note for %s",
+                "failed to publish provider recovery note for %s",
                 successor_run_id,
             )
         return True
@@ -4163,14 +5051,6 @@ class WorkLedgerCoordinator:
     @staticmethod
     def _missing_item() -> WorkItemRecord:  # pragma: no cover - FK guard
         raise WorkLedgerNotFound("attempt references a missing work item")
-
-    def _attempt_for_event(
-        self,
-        params: dict[str, Any],
-        *,
-        adopt: bool,
-    ) -> RunAttemptRecord | None:
-        return self.event_ingestor.attempt_for_event(params, adopt=adopt)
 
     def _adopt_runtime_run(self, params: dict[str, Any]) -> RunAttemptRecord | None:
         return self.event_ingestor.adopt_runtime_run(params)
@@ -5273,6 +6153,13 @@ class WorkLedgerCoordinator:
         item = self.store.get_work_item(work_item_id)
         if item is None:
             raise WorkLedgerNotFound(f"unknown work item: {work_item_id}")
+        if any(
+            attempt.execution_status == "orphaned"
+            for attempt in self.store.list_attempts(item.work_item_id)
+        ):
+            raise WorkLedgerConflict(
+                f"work item {work_item_id} still has an unresolved attempt"
+            )
         if not is_scratch_path(item.workspace_path):
             raise WorkLedgerConflict(
                 f"work item {work_item_id} is not a scratch task; "
@@ -5427,8 +6314,12 @@ class WorkLedgerCoordinator:
     def snapshot(self, *, surface: str | None = None, limit: int = 200) -> dict[str, Any]:
         target_surface = str(surface or self.default_surface)
         current_session_id = str(self._current_session_id() or "").strip()
-        records = self.store.list_work_items(limit=limit)
+        records = self.store.list_work_items(limit=limit, include_presentation=False)
         items = self.read_model.project_items(records)
+        return self._snapshot_from_projection(target_surface, current_session_id, records, items)
+
+    def _snapshot_from_projection(self, target_surface, current_session_id, records, items) -> dict[str, Any]:
+        """Apply each view's selection to one freshly read Work projection."""
         focus = self.store.get_focus(target_surface)
         if (
             target_surface != WORKSPACE_ROUTING_SURFACE
@@ -5591,28 +6482,26 @@ class WorkLedgerCoordinator:
         *,
         limit: int = 200,
     ) -> dict[str, Any]:
-        """Return an execution-side roster for exhaustive exact-handle checks.
+        """Return the indexed Session roster, including its explicit anchor.
 
-        Unlike prompt context, this view may scan the bounded ledger window.
-        It still excludes paths and provider output. ``complete`` is false
-        whenever either the global scan or the conversation result saturates
-        its bound, so execution callers can fail closed.
+        Unrelated Sessions do not limit this roster or require deserializing
+        their execution history. Overfetch one row to establish completeness.
         """
 
         clean_session_id = str(session_id or "").strip()
         if not clean_session_id:
             return {"items": [], "complete": True}
         row_limit = max(1, min(int(limit), 200))
-        scan_limit = 2000
-        candidates = self.store.list_work_items(limit=scan_limit)
+        candidates = self.store.list_work_items(session_id=clean_session_id,
+            limit=row_limit + 1, include_presentation=False)
         rows = self._conversation_work_item_rows(
             clean_session_id,
-            row_limit,
+            row_limit + 1,
             candidates=candidates,
         )
         return {
-            "items": rows,
-            "complete": len(candidates) < scan_limit and len(rows) < row_limit,
+            "items": rows[:row_limit],
+            "complete": len(rows) <= row_limit,
         }
 
     def _conversation_work_item_rows(
@@ -5654,6 +6543,17 @@ class WorkLedgerCoordinator:
                 break
         return rows
 
+    def project_work_items_for_resolution(self, session_id: str, project_id: str,
+                                          *, limit: int = 200) -> dict[str, Any]:
+        """Read one explicitly indexed, retained Project without changing its scope."""
+        project = self.destination.available_project(project_id)
+        row_limit = max(1, min(int(limit), 200))
+        items = self.store.list_work_items(project_id=project.project_id,
+            limit=row_limit + 1, include_presentation=False)
+        rows = [row for item in items if (row := self._conversation_row_for_item(
+            item, session_id, include_kept_projects=True)) is not None]
+        return {"items":rows[:row_limit], "complete":len(items) <= row_limit}
+
     def _conversation_row_for_item(
         self,
         item: Any,
@@ -5673,7 +6573,8 @@ class WorkLedgerCoordinator:
         between the two kinds of place: a draft reaches only as far as the
         conversation that made it, and a project is a place someone chose to
         keep, so its past is still answerable later. Only exact-index callers
-        may set it -- see conversation_work_items_by_file.
+        may set it -- see conversation_work_items_by_file and
+        project_work_items_for_resolution.
         """
 
         attempts = self.store.list_attempts(item.work_item_id)
@@ -5705,6 +6606,9 @@ class WorkLedgerCoordinator:
             "attempt_id": latest_attempt.attempt_id,
             "operation_id": latest_attempt.operation_id,
             "title": item.title,
+            # This is the original delegated task, not necessarily verbatim
+            # user wording. Keep it distinct from the latest recorded source.
+            "goal": item.goal,
             "files": self._business_file_names(item.work_item_id),
             "source_user_text": str(
                 latest_attempt.metadata.get("source_user_text")
@@ -5718,6 +6622,7 @@ class WorkLedgerCoordinator:
             "relation": relation,
             "updated_at": str(projected.get("updatedAt") or ""),
             "completion_rationale": str(projected.get("completionRationale") or ""),
+            "input_requirements":projected.get("inputRequirements", []),
             **_activity_row_facts(activity),
         }
 
@@ -6146,8 +7051,13 @@ class WorkLedgerCoordinator:
         if item is None:
             raise WorkLedgerNotFound(f"unknown work item: {work_item_id}")
         attempts = self.store.list_attempts(work_item_id)
-        if any(attempt.execution_status in _ACTIVE_EXECUTION for attempt in attempts):
-            raise WorkLedgerConflict(f"work item {work_item_id} still has an active attempt")
+        if any(
+            attempt.execution_status in _UNRESOLVED_EXECUTION
+            for attempt in attempts
+        ):
+            raise WorkLedgerConflict(
+                f"work item {work_item_id} still has an unresolved attempt"
+            )
 
         desired_state = "accepted" if clean_action == "accept" else "archived"
         if item.state == desired_state:
@@ -6364,6 +7274,14 @@ class WorkLedgerCoordinator:
                 ),
             )
 
+        if attempt.execution_status in _UNRESOLVED_EXECUTION:
+            snapshot = await self.publish_snapshot(reason=f"permission.{resolved.status}")
+            return {
+                "permission": resolved.to_dict(),
+                "exportedPaths": list(exported_paths),
+                "work": snapshot,
+            }
+
         auto_accepted = bool(
             allow
             and desktop_export
@@ -6374,14 +7292,6 @@ class WorkLedgerCoordinator:
                 exported_paths=exported_paths,
             )
         )
-
-        if attempt.execution_status in _ACTIVE_EXECUTION:
-            snapshot = await self.publish_snapshot(reason=f"permission.{resolved.status}")
-            return {
-                "permission": resolved.to_dict(),
-                "exportedPaths": list(exported_paths),
-                "work": snapshot,
-            }
 
         if auto_accepted:
             terminal_note = self._claim_export_resolution_notice(
@@ -6587,6 +7497,11 @@ class WorkLedgerCoordinator:
         attempt: RunAttemptRecord,
         exported_paths: Iterable[str],
     ) -> bool:
+        # Approving the copy cannot settle an accepted feature request whose
+        # input is still unknown or was rejected by the executor.
+        if any(row["delivery_state"] != "delivered" for row in self.read_model.input_requirements(
+                attempt.work_item_id, attempt_id=attempt.attempt_id)):
+            return False
         return self.permission_service.auto_accept_approved_export(
             request=request,
             resolved=resolved,
@@ -7083,6 +7998,8 @@ class WorkLedgerCoordinator:
 
     def project_canvas(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Return one complete canonical payload for the selected Slice task."""
+        if isinstance(payload, _ProjectedWorkCanvas) and payload._owner is self:
+            return dict(payload)
         incoming = dict(payload or {})
         context = self._context_from_canvas(incoming)
         if context and context.get("workItemId"):
@@ -7127,6 +8044,9 @@ class WorkLedgerCoordinator:
     def selected_canvas(self, *, surface: str | None = None) -> dict[str, Any] | None:
         target_surface = str(surface or self.default_surface)
         snapshot = self.snapshot(surface=target_surface)
+        return self._selected_canvas_from_snapshot(snapshot)
+
+    def _selected_canvas_from_snapshot(self, snapshot: dict[str, Any]) -> dict[str, Any] | None:
         selected_id = str(snapshot.get("selectedWorkItemId") or "")
         if not selected_id:
             return None
@@ -7139,7 +8059,7 @@ class WorkLedgerCoordinator:
         payload = dict(presentation) if isinstance(presentation, dict) else self._placeholder_canvas(snapshot.get("selected") or {})
         payload["workContext"] = self._context_for_selected(snapshot)
         payload["taskDock"] = self._task_dock(snapshot)
-        return self._with_pending_permission(payload, selected_id)
+        return _ProjectedWorkCanvas(self._with_pending_permission(payload, selected_id), owner=self)
 
     def _with_pending_permission(
         self,
@@ -7147,6 +8067,19 @@ class WorkLedgerCoordinator:
         work_item_id: str,
     ) -> dict[str, Any]:
         output = dict(payload or {})
+        incoming_permission = (
+            output.get("permissionRequest")
+            if isinstance(output.get("permissionRequest"), dict)
+            else {}
+        )
+        if str(incoming_permission.get("ownerKind")
+                or incoming_permission.get("owner_kind") or "").strip().lower() == (
+                    "cooperative_run"):
+            # Cooperative permissions have no Work/Attempt identity. Their
+            # exact owner validates them after Canvas submission; this Work
+            # projector may append taskDock but must not clear or replace the
+            # other owner's permission pane.
+            return output
         item = self.store.get_work_item(work_item_id) if work_item_id else None
         attempts = self.store.list_attempts(work_item_id) if item is not None else []
         attempt = attempts[-1] if attempts else None
@@ -7279,7 +8212,7 @@ class WorkLedgerCoordinator:
             "options": list(request.options),
             "retryRequired": retry_required,
             "diagnosticOnly": provider_diagnostic,
-            **self._binary_export_preview_projection(request),
+            **self._export_preview_projection(request),
         }
         current_signals = output.get("signals") if isinstance(output.get("signals"), list) else []
         scope_detail = ", ".join(Path(path).name or path for path in request.scope_paths[:3])
@@ -7334,21 +8267,24 @@ class WorkLedgerCoordinator:
         return output
 
     @staticmethod
-    def _binary_export_preview_projection(
+    def _export_preview_projection(
         request: PermissionRequestRecord,
     ) -> dict[str, Any]:
-        """Expose binary identity evidence without leaking staging authority."""
+        """Expose incomplete content previews without leaking staging authority."""
 
         metadata = request.metadata if isinstance(request.metadata, dict) else {}
         if (
             metadata.get("kind") != "desktop_export"
-            or metadata.get("preview_complete") is not True
+            or (metadata.get("preview_complete") is not True
+                and metadata.get("preview_version") != 3)
         ):
             return {}
         entries = metadata.get("entries") if isinstance(metadata.get("entries"), list) else []
         previews = []
         for entry in entries:
-            if not isinstance(entry, dict) or entry.get("preview_status") != "binary_identity":
+            if not isinstance(entry, dict) or entry.get("preview_status") not in {
+                "binary_identity", "truncated_text"
+            }:
                 continue
             relative = str(entry.get("relative_path") or "").replace("\\", "/").strip("/")
             if not relative:
@@ -7356,7 +8292,7 @@ class WorkLedgerCoordinator:
             previews.append(
                 {
                     "path": f"Desktop/{relative}",
-                    "status": "binary_identity",
+                    "status": entry["preview_status"],
                     "mediaType": str(
                         entry.get("media_type_hint") or "application/octet-stream"
                     ),
@@ -7367,7 +8303,7 @@ class WorkLedgerCoordinator:
         if not previews:
             return {}
         return {
-            "previewComplete": True,
+            "previewComplete": metadata.get("preview_complete") is True,
             "previewVersion": int(metadata.get("preview_version") or 1),
             "previews": previews,
         }
@@ -7438,6 +8374,14 @@ class WorkLedgerCoordinator:
             name="work-provider-snapshot",
         )
 
+    def _snapshots_for_surfaces(self, surfaces: list[str]) -> list[dict[str, Any]]:
+        """Read one publication's Work facts, then apply each surface's selection."""
+        current_session_id = str(self._current_session_id() or "").strip()
+        records = self.store.list_work_items(limit=200, include_presentation=False)
+        items = self.read_model.project_items(records)
+        return [self._snapshot_from_projection(
+            target_surface, current_session_id, records, items) for target_surface in surfaces]
+
     async def publish_snapshot(self, *, reason: str, surface: str | None = None) -> dict[str, Any]:
         # Any explicit control/result publication supersedes a delayed activity
         # projection.  The latest state is included in this snapshot already.
@@ -7463,17 +8407,18 @@ class WorkLedgerCoordinator:
                     and focus.surface not in surfaces
                 )
             )
+        snapshots = self._snapshots_for_surfaces(surfaces)
         default_snapshot: dict[str, Any] | None = None
-        for target_surface in surfaces:
-            snapshot = self.snapshot(surface=target_surface)
+        for snapshot in snapshots:
+            target_surface = snapshot["surface"]
             if target_surface == self.default_surface:
                 default_snapshot = snapshot
             await bus.emit(Method.WORK_UPDATED, {"work": snapshot, "reason": reason})
-        if self.default_surface in surfaces:
-            canvas = self.selected_canvas(surface=self.default_surface)
+        if default_snapshot is not None:
+            canvas = self._selected_canvas_from_snapshot(default_snapshot)
             if canvas is not None:
                 await bus.emit(Method.WALLPAPER_CANVAS, canvas)
-        return default_snapshot or self.snapshot(surface=surfaces[0])
+        return default_snapshot or snapshots[0]
 
     def _emit_snapshot_now(self, surface: str, *, reason: str) -> None:
         surfaces = [surface]
@@ -7486,8 +8431,7 @@ class WorkLedgerCoordinator:
                 and focus.surface not in surfaces
             )
         )
-        for target_surface in surfaces:
-            snapshot = self.snapshot(surface=target_surface)
+        for snapshot in self._snapshots_for_surfaces(surfaces):
             bus.emit_now(Method.WORK_UPDATED, {"work": snapshot, "reason": reason})
 
     @staticmethod
@@ -7598,9 +8542,18 @@ class WorkLedgerCoordinator:
                 self._event_execution_status(str(record.get("status") or "orphaned"))
                 or "orphaned"
             )
+            record_metadata = (
+                record.get("metadata")
+                if isinstance(record.get("metadata"), dict)
+                else {}
+            )
+            runtime_resumable = bool(
+                mapped == "orphaned"
+                and record_metadata.get("runtime_resumable") is True
+            )
             # Only records backed by a task in this process are live. A
-            # recovered runtime snapshot may be orphaned and must use the
-            # bounded Resume path instead of keeping its old writer lease.
+            # Host-verified resumable orphan may later reacquire its lease via
+            # the bounded Resume path; a non-resumable unknown stays fenced.
             if mapped in _ACTIVE_EXECUTION:
                 live_ids.add(run_id)
             existing = self.store.get_attempt_by_provider_run(run_id)
@@ -7617,35 +8570,50 @@ class WorkLedgerCoordinator:
                             else None
                         ),
                         metadata={
-                            "runtime_resumable": True,
+                            "runtime_resumable": runtime_resumable,
                             "startup_reconciliation": "runtime_record_orphaned",
                         },
                     )
                 elif (
                     mapped in _TERMINAL_EXECUTION
-                    and existing.execution_status in (_ACTIVE_EXECUTION | {"orphaned"})
+                    and existing.execution_status
+                    in (_ACTIVE_EXECUTION | {"orphaned", mapped})
                 ):
-                    self.store.update_attempt(
-                        existing.attempt_id,
-                        execution_status=mapped,
-                        result=str(record.get("result") or ""),
-                        error=str(record.get("error") or ""),
-                        metadata={
-                            "runtime_resumable": False,
-                            "startup_reconciliation": "runtime_record_terminal",
-                        },
+                    ingested = self.event_ingestor.ingest_result(
+                        {**record, "status": mapped}
                     )
+                    if ingested is not None:
+                        self.store.merge_attempt_control_metadata(
+                            ingested.attempt.attempt_id,
+                            {
+                                "runtime_resumable": False,
+                                "startup_reconciliation": "runtime_record_terminal",
+                            },
+                        )
                 continue
             attempt = self._adopt_runtime_run(record)
             if attempt is None:
                 continue
-            self.store.update_attempt(
-                attempt.attempt_id,
-                execution_status=mapped,
-                result=str(record.get("result") or ""),
-                error=str(record.get("error") or ""),
-                metadata={"runtime_resumable": mapped == "orphaned"},
-            )
+            if mapped in _TERMINAL_EXECUTION:
+                ingested = self.event_ingestor.ingest_result(
+                    {**record, "status": mapped}
+                )
+                if ingested is not None:
+                    self.store.merge_attempt_control_metadata(
+                        ingested.attempt.attempt_id,
+                        {
+                            "runtime_resumable": False,
+                            "startup_reconciliation": "runtime_record_terminal",
+                        },
+                    )
+            else:
+                self.store.update_attempt(
+                    attempt.attempt_id,
+                    execution_status=mapped,
+                    result=str(record.get("result") or ""),
+                    error=str(record.get("error") or ""),
+                    metadata={"runtime_resumable": runtime_resumable},
+                )
         for item in self.store.list_work_items(limit=2000):
             for attempt in self.store.list_attempts(item.work_item_id):
                 if (
@@ -7664,10 +8632,26 @@ class WorkLedgerCoordinator:
                         },
                     )
         for lease in self.store.list_writer_leases(active_only=True):
+            if lease.owner_kind == "cooperative_run":
+                # Cooperative context recovery owns this exact effect/run.
+                # Work startup must not infer terminality from a missing Attempt.
+                continue
             attempt = self.store.get_attempt(lease.attempt_id)
             if attempt is None or attempt.execution_status in _TERMINAL_EXECUTION:
                 self.store.release_writer_lease(lease.attempt_id, status="released")
-            elif not attempt.provider_run_id or attempt.provider_run_id not in live_ids:
+            elif (
+                attempt.execution_status == "orphaned"
+                and attempt.metadata.get("runtime_resumable") is not True
+            ):
+                # Durable uncertainty is the fact that needs the fence. It
+                # must survive even when the in-memory Runtime record was the
+                # thing lost in the restart. Reconciliation or an explicit
+                # abandonment decision owns eventual release.
+                continue
+            elif (
+                not attempt.provider_run_id
+                or attempt.provider_run_id not in live_ids
+            ):
                 self.store.release_writer_lease(
                     lease.attempt_id,
                     status="stale",

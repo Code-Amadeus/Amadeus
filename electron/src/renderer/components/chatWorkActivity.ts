@@ -1,4 +1,4 @@
-export type ChatWorkActivityStatus = 'running' | 'succeeded' | 'failed' | 'cancelled' | 'stalled'
+export type ChatWorkActivityStatus = 'running' | 'succeeded' | 'failed' | 'cancelled' | 'stalled' | 'orphaned'
 export type ChatWorkActivityEntryState = 'running' | 'succeeded' | 'failed' | 'attention' | 'info'
 export type ChatWorkActivityEntryKind = 'command' | 'file' | 'validation' | 'permission' | 'artifact' | 'milestone' | 'status'
 
@@ -9,6 +9,10 @@ export interface ChatWorkActivityEntry {
   title: string
   detail?: string
   observedAt: number
+  permission?: {
+    requestId: string
+    options: string[]
+  }
 }
 
 export interface ChatWorkActivityRun {
@@ -26,6 +30,7 @@ export interface ChatWorkActivityRun {
 }
 
 const TERMINAL_STATUSES = new Set(['done', 'succeeded', 'success', 'failed', 'error', 'cancelled', 'canceled'])
+const ORPHANED_STATUS = 'orphaned'
 const TERMINAL_PERMISSION_EVENTS = new Set([
   'permission.allowed',
   'permission.approved',
@@ -75,6 +80,7 @@ function normalizedStatus(value: unknown): ChatWorkActivityStatus {
   if (status === 'failed' || status === 'error') return 'failed'
   if (status === 'cancelled' || status === 'canceled') return 'cancelled'
   if (status === 'done' || status === 'succeeded' || status === 'success') return 'succeeded'
+  if (status === ORPHANED_STATUS) return 'orphaned'
   if (status === 'stalled') return 'stalled'
   return 'running'
 }
@@ -169,13 +175,27 @@ function entryForEvent(event: Record<string, unknown>): ChatWorkActivityEntry | 
     }
   }
   if (type === 'permission.requested' || type === 'permission.required') {
+    const permission = record(
+      payload.permissionRequest
+      || payload.permission_request
+      || payload.request
+      || payload.permission,
+    )
+    const contract = Object.keys(permission).length > 0 ? permission : payload
+    const rawOptions = Array.isArray(contract.options) ? contract.options : []
+    const options = rawOptions
+      .map(value => String(record(value).kind || value || '').toLowerCase())
+      .map(value => value === 'allow' || value === 'approve_once' ? 'allow_once' : value === 'reject' ? 'deny' : value)
+      .filter((value, index, values) => ['allow_once', 'deny'].includes(value) && values.indexOf(value) === index)
+    const requestId = String(contract.request_id || contract.requestId || itemId)
     return {
-      id: `permission:${String(payload.request_id || payload.requestId || itemId)}`,
+      id: `permission:${requestId}`,
       kind: 'permission',
       state: 'attention',
-      title: cleanText(payload.reason || payload.action || 'Provider needs permission', 500),
-      detail: cleanText(payload.scope, 1200),
+      title: cleanText(contract.reason || contract.action || 'Provider needs permission', 500),
+      detail: cleanText(contract.scope, 1200),
       observedAt,
+      permission: { requestId, options },
     }
   }
   if (TERMINAL_PERMISSION_EVENTS.has(type)) {
@@ -213,6 +233,16 @@ function entryForEvent(event: Record<string, unknown>): ChatWorkActivityEntry | 
   if (type === 'run.status') {
     const stage = String(payload.stage || payload.liveness || payload.status || '').trim()
     if (!stage || stage === 'running' || stage === 'active') return null
+    if (stage.toLowerCase() === ORPHANED_STATUS) {
+      return {
+        id: 'recovery',
+        kind: 'status',
+        state: 'attention',
+        title: 'Outcome unknown — recovery required',
+        detail: cleanText(payload.error || payload.result, 3200),
+        observedAt,
+      }
+    }
     return {
       id: `status:${stage}:${event.sequence || observedAt}`,
       kind: 'status',
@@ -227,6 +257,7 @@ function entryForEvent(event: Record<string, unknown>): ChatWorkActivityEntry | 
 function upsertEntry(entries: ChatWorkActivityEntry[], entry: ChatWorkActivityEntry): ChatWorkActivityEntry[] {
   const index = entries.findIndex(item => item.id === entry.id)
   const existing = index >= 0 ? entries[index] : undefined
+  if (existing && existing.observedAt > entry.observedAt) return entries
   const merged = existing && entry.id.startsWith('tool:')
     ? {
         ...existing,
@@ -312,7 +343,9 @@ export function applyProviderResult(
   const runId = String(result.run_id || result.runId || '')
   const provider = String(result.provider || '')
   if (!runId || !provider || !valueOrigin.sessionId || !valueOrigin.turnId) return runs
-  const status = normalizedStatus(result.status)
+  const resultStatus = String(result.status || '').toLowerCase()
+  const status = normalizedStatus(resultStatus)
+  const isOrphaned = resultStatus === ORPHANED_STATUS
   const at = Number(result.updated_at || 0) > 0 ? Number(result.updated_at) * 1000 : Date.now()
   const index = runs.findIndex(item => item.runId === runId)
   const current = index >= 0 ? runs[index] : {
@@ -329,11 +362,23 @@ export function applyProviderResult(
     entries: [],
   }
   const detail = cleanText(result.error || result.result, 3200)
-  const terminal: ChatWorkActivityEntry = {
-    id: 'terminal',
+  const statusEntry: ChatWorkActivityEntry = {
+    id: isOrphaned ? 'recovery' : 'terminal',
     kind: 'status',
-    state: status === 'succeeded' ? 'succeeded' : status === 'cancelled' ? 'attention' : 'failed',
-    title: status === 'succeeded' ? 'Work completed' : status === 'cancelled' ? 'Work cancelled' : 'Work failed',
+    state: isOrphaned
+      ? 'attention'
+      : status === 'succeeded'
+        ? 'succeeded'
+        : status === 'cancelled'
+          ? 'attention'
+          : 'failed',
+    title: isOrphaned
+      ? 'Outcome unknown — recovery required'
+      : status === 'succeeded'
+        ? 'Work completed'
+        : status === 'cancelled'
+          ? 'Work cancelled'
+          : 'Work failed',
     detail,
     observedAt: at,
   }
@@ -347,7 +392,10 @@ export function applyProviderResult(
     task: cleanText(result.task, 800) || current.task,
     status,
     updatedAt: at,
-    entries: upsertEntry(current.entries, terminal),
+    entries: upsertEntry(
+      current.entries.filter(entry => entry.id !== (isOrphaned ? 'terminal' : 'recovery')),
+      statusEntry,
+    ),
   }
   return index >= 0
     ? runs.map((item, offset) => offset === index ? updated : item)
@@ -373,7 +421,8 @@ export function activitiesFromProviderRuns(rawRuns: unknown, sessionId: string):
         metadata: { ...metadata, ...record(event.metadata) },
       })
     }
-    if (TERMINAL_STATUSES.has(String(run.status || '').toLowerCase())) {
+    const status = String(run.status || '').toLowerCase()
+    if (TERMINAL_STATUSES.has(status) || status === ORPHANED_STATUS) {
       result = applyProviderResult(result, run)
     }
   }

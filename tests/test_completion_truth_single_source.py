@@ -140,6 +140,18 @@ def test_only_a_run_the_ledger_assesses_hands_over_its_narration() -> None:
             }
         }
         assert WorkActivityCoordinator._ledger_owns_terminal_note(recovering) is True
+        validating_auip = {
+            "metadata": {
+                **tracked["metadata"],
+                "host_auip_bundle_validation": {
+                    "verified": False,
+                    "kind": "pending",
+                    "code": "auip_validation_pending",
+                    "boot": None,
+                },
+            }
+        }
+        assert WorkActivityCoordinator._ledger_owns_terminal_note(validating_auip) is True
         # The Desktop export hand-off predates the flag and does not depend on it.
         export = {
             "provider": "locus",

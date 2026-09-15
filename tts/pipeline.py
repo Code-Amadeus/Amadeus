@@ -387,6 +387,7 @@ def discard_pending_tts(
     *,
     source: str,
     work_item_id: str = "",
+    run_id: str = "",
     nonterminal_only: bool = False,
 ) -> int:
     """Drop queued, not-yet-playing speech made stale by a newer user read.
@@ -397,12 +398,15 @@ def discard_pending_tts(
 
     target_source = str(source or "").strip()
     target_work_item = str(work_item_id or "").strip()
+    target_run = str(run_id or "").strip()
 
     def matches(request) -> bool:
         if target_source and str(request.source or "") != target_source:
             return False
         metadata = request.metadata if isinstance(request.metadata, dict) else {}
         if target_work_item and str(metadata.get("work_item_id") or "") != target_work_item:
+            return False
+        if target_run and str(metadata.get("run_id") or "") != target_run:
             return False
         if nonterminal_only and metadata.get("terminal") is True:
             return False

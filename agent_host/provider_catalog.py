@@ -124,6 +124,8 @@ CODEX_APP_SERVER_MANIFEST = ProviderManifest(
         cancellation="confirmed",
         interaction="bidirectional",
         event_model="canonical+native",
+        submission_reconciliation="query",
+        append_input=True,
         capability_projections=("agent_skill", "mcp_connection"),
     ),
 )

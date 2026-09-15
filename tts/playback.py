@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Callable, Coroutine, Iterable
 
 import numpy as np
+from core.pyaudio_lifecycle import initialize_pyaudio, terminate_pyaudio
 
 from config.log_privacy import protected_text
 
@@ -36,6 +37,16 @@ from tts.latency_clock import log_latency_marker
 from tts.mouth_signal import MouthSignalSink
 
 logger = logging.getLogger(__name__)
+
+
+def _observe_audio_write_completed(sentence_id: str) -> None:
+    try:
+        from core.turn_coordinator import get_turn_coordinator
+
+        get_turn_coordinator().on_sentence_audio_written(sentence_id=sentence_id)
+    except Exception:
+        # Observability must not fail or perform logging on the writer thread.
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +110,10 @@ class StreamPlayer:
                 break
 
             mouth_segments = None
-            if len(job) == 7:
+            after_first_write = None
+            if len(job) == 8:
+                data, loop, future, before_write, after_write, is_current, mouth_segments, after_first_write = job
+            elif len(job) == 7:
                 data, loop, future, before_write, after_write, is_current, mouth_segments = job
             elif len(job) == 6:
                 data, loop, future, before_write, after_write, is_current = job
@@ -125,6 +139,9 @@ class StreamPlayer:
                         if self.stream is None or not self.is_playing:
                             raise RuntimeError("audio stream is not initialized")
                         self.stream.write(segment_data)
+                    if segment_data and after_first_write is not None:
+                        after_first_write()
+                        after_first_write = None
                 if is_current is None or is_current():
                     if after_write is not None:
                         after_write()
@@ -151,6 +168,7 @@ class StreamPlayer:
         mouth_envelope: bool = False,
         sample_rate: int | None = None,
         first_mouth_minimum: float | None = None,
+        after_first_write: Callable[[], None] | None = None,
     ) -> None:
         if loop is None:
             loop = asyncio.get_running_loop()
@@ -182,6 +200,7 @@ class StreamPlayer:
                 after_write,
                 is_current,
                 mouth_segments,
+                after_first_write,
             )
         )
         await future
@@ -220,7 +239,7 @@ class StreamPlayer:
         import pyaudio
 
         if self.pyaudio_instance is None:
-            self.pyaudio_instance = pyaudio.PyAudio()
+            self.pyaudio_instance = initialize_pyaudio(pyaudio.PyAudio)
 
         current_rate = getattr(self, "_current_rate", None)
         if self.stream is not None and self.is_playing and current_rate == sample_rate:
@@ -329,7 +348,7 @@ class StreamPlayer:
         self._stop_audio_writer()
         self.stop()
         if self.pyaudio_instance is not None:
-            self.pyaudio_instance.terminate()
+            terminate_pyaudio(self.pyaudio_instance)
             self.pyaudio_instance = None
 
 
@@ -885,6 +904,7 @@ class PlaybackManager:
             player.last_send_time = time.time()
             loop = asyncio.get_running_loop()
             first_sound_logged = [False]
+            first_audio_written = [False]
             current_sample_rate = None
             aec_capture = get_aec_debug_capture()
             aec_capture.start(sentence_id)
@@ -910,7 +930,7 @@ class PlaybackManager:
                         sample_rate, audio_chunk = 24000, item
 
                     if current_sample_rate != sample_rate:
-                        self.player.initialize(sample_rate)
+                        await asyncio.to_thread(self.player.initialize, sample_rate)
                         current_sample_rate = sample_rate
 
                     if audio_chunk.dtype != np.float32:
@@ -978,6 +998,11 @@ class PlaybackManager:
                                 f"(first_frame={len(chunk)} samples){_lat_part}"
                             )
 
+                    def _after_first_write():
+                        if not first_audio_written[0]:
+                            first_audio_written[0] = True
+                            _observe_audio_write_completed(sentence_id)
+
                     if not player.is_playing:
                         break
                     if not self.is_epoch_current(epoch):
@@ -999,6 +1024,7 @@ class PlaybackManager:
                         mouth_envelope=True,
                         sample_rate=_sample_rate,
                         first_mouth_minimum=_first_mouth_minimum,
+                        after_first_write=_after_first_write if not first_audio_written[0] else None,
                     )
                     self.logger.debug(
                         f"[Streaming] chunk playback completed seq={sentence_seq}: {len(merged)} samples "
@@ -1415,6 +1441,8 @@ class StreamPlayerWithBuffer(StreamPlayer):
                         if is_current is not None and not is_current():
                             break
                         player_instance.stream.write(chunk.tobytes())
+                    if first_mouth_prime:
+                        _observe_audio_write_completed(sentence_id)
                     current_time = time.time()
                     if current_time - player_instance.last_send_time >= player_instance.send_interval:
                         rms = np.sqrt(np.mean(chunk ** 2))
@@ -1491,6 +1519,7 @@ class StreamPlayerWithBuffer(StreamPlayer):
                         break
                     if not player_instance.is_playing or player_instance.stream is None:
                         break
+                    first_chunk_write = first_mouth_prime
                     if first_mouth_prime:
                         first_mouth_prime = False
                         player_instance._emit_mouth_value_for_audio(chunk, minimum=0.12)
@@ -1502,6 +1531,8 @@ class StreamPlayerWithBuffer(StreamPlayer):
                         if is_current is not None and not is_current():
                             break
                         player_instance.stream.write(chunk.tobytes())
+                    if first_chunk_write:
+                        _observe_audio_write_completed(sentence_id)
                     current_time = time.time()
                     if current_time - player_instance.last_send_time >= player_instance.send_interval:
                         rms = np.sqrt(np.mean(chunk ** 2))

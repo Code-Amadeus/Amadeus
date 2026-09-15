@@ -616,6 +616,7 @@ export default function SettingsPage({ send, subscribe }: Props) {
   const modelConnections = asConfigurationGroups(config.model_connections)
   const modelRoles = asConfigurationGroups(config.model_roles)
   const providerConfiguration = asConfigurationGroups(config.work_provider_configuration)
+  const artifactConfiguration = asConfigurationGroups(config.artifact_configuration)
   const voiceConfiguration = asConfigurationGroups(config.voice_configuration)
   const avatarConfiguration = asConfigurationGroups(config.avatar_configuration)
   const sharedCapabilities = useMemo(() => capabilityPackages.flatMap(packageInfo =>
@@ -745,6 +746,9 @@ export default function SettingsPage({ send, subscribe }: Props) {
                 </BoundaryNote>
                 <SettingsGroup title="Work Provider connections" detail="Registered means the adapter passed its startup boundary. Remote availability is verified when that Provider connects.">
                   {providerConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} availability={providerAvailability.find(item => item.provider_id === group.id)} onSave={handleStartupSave} />)}
+                </SettingsGroup>
+                <SettingsGroup title="Artifact appearance" detail="Generation preferences for new interactive apps. Save and restart the backend to apply.">
+                  {artifactConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} />)}
                 </SettingsGroup>
                 <SettingsGroup title="MCP connections" detail="Host-managed connections are projected only into explicitly compatible Work Providers.">
                   <McpConnections

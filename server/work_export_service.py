@@ -256,22 +256,11 @@ class WorkExportService:
                 filename = str(inherited.get("entry_filename") or filename)
             else:
                 filename = str(inherited["filename"])
-                staged = (staging_root / filename).resolve()
-                if staged.parent != staging_root:
-                    raise WorkLedgerConflict("inherited export filename escaped staging")
-                expected_hash = str(inherited["sha256"])
-                source = Path(str(inherited["target_path"])).resolve()
-                if staged.exists():
-                    if staged.is_symlink() or not self._target_matches(staged, expected_hash):
-                        raise WorkLedgerConflict(
-                            "amendment staging already exists and differs from the approved export"
-                        )
-                else:
-                    shutil.copy2(source, staged)
-                if not self._target_matches(staged, expected_hash):
-                    raise WorkLedgerConflict(
-                        "approved Desktop export could not be inherited safely"
-                    )
+                self._copy_inherited_bundle(staging_root, ({
+                    "staging_relative_path":filename,
+                    "target_path":str(inherited["target_path"]),
+                    "sha256":str(inherited["sha256"]),
+                },))
         plan = {
             "version": 1,
             "kind": "desktop",
@@ -443,21 +432,16 @@ class WorkExportService:
     ) -> None:
         for entry in files:
             relative = self._safe_relative_path(entry["staging_relative_path"])
-            staged = (staging_root / relative).resolve()
-            if not self._same_or_child(staged, staging_root):
-                raise WorkLedgerConflict("inherited bundle path escaped staging")
-            source = Path(entry["target_path"]).resolve()
+            staged = self._checked_relative_path(staging_root, relative.as_posix())
+            source = Path(entry["target_path"])
+            try:
+                source_relative = source.relative_to(self.desktop_path)
+            except ValueError as exc:
+                raise WorkLedgerConflict("inherited source escaped Desktop scope") from exc
+            source = self._checked_relative_path(self.desktop_path, source_relative.as_posix())
             expected_hash = str(entry["sha256"])
             staged.parent.mkdir(parents=True, exist_ok=True)
-            cursor = staging_root
-            for part in relative.parts[:-1]:
-                cursor = cursor / part
-                if self._is_link_or_junction(cursor):
-                    raise WorkLedgerConflict(
-                        "inherited bundle staging contains a link"
-                    )
-            if staged.exists() and self._is_link_or_junction(staged):
-                raise WorkLedgerConflict("inherited bundle staging contains a link")
+            staged = self._checked_relative_path(staging_root, relative.as_posix())
             if staged.exists():
                 if not self._target_matches(staged, expected_hash):
                     raise WorkLedgerConflict(
@@ -509,21 +493,24 @@ class WorkExportService:
                 if Path(str(artifact.path)).name.casefold() == clean_filename
             ]
         else:
-            distinct_names = {
-                Path(str(artifact.path)).name.casefold() for artifact in approved
+            distinct_targets = {
+                str(Path(artifact.path)).casefold() for artifact in approved
             }
-            if len(distinct_names) != 1:
+            if len(distinct_targets) != 1:
                 return None
         if not approved:
             return None
+        if len({str(Path(artifact.path)).casefold() for artifact in approved}) != 1:
+            raise WorkLedgerConflict("approved Desktop filename names multiple targets")
 
         artifact = approved[0]
-        target = Path(str(artifact.path)).resolve()
-        if (
-            target.parent != self.desktop_path
-            or self._is_link_or_junction(target)
-            or not target.is_file()
-        ):
+        target = Path(str(artifact.path))
+        try:
+            relative = self._safe_relative_path(target.relative_to(self.desktop_path).as_posix())
+        except ValueError as exc:
+            raise WorkLedgerConflict("approved target escaped Desktop scope") from exc
+        target = self._checked_relative_path(self.desktop_path, relative.as_posix())
+        if not target.is_file():
             raise WorkLedgerConflict(
                 f"approved Desktop target is missing or unsafe: {target.name}"
             )
@@ -535,7 +522,7 @@ class WorkExportService:
         return {
             "artifact_id": artifact.artifact_id,
             "work_item_id": related_id,
-            "filename": target.name,
+            "filename": relative.as_posix(),
             "target_path": str(target),
             "sha256": expected_hash,
         }
@@ -637,18 +624,7 @@ class WorkExportService:
             # hidden request with a different preview/scope.
             return self._outcome_for_permission(item, attempt, existing_exports[-1])
 
-        requested_filename = self._requested_filename(str(plan.get("requested_filename") or ""))
-        if requested_filename:
-            requested_source = staging_root / requested_filename
-            files = (
-                [requested_source.resolve()]
-                if requested_source.is_file()
-                and not requested_source.is_symlink()
-                and requested_source.parent.resolve() == staging_root
-                else []
-            )
-        else:
-            files = self._bounded_files(staging_root)
+        files = self._selected_staged_files(staging_root, plan)
         if not files:
             return {
                 "available": False,
@@ -675,9 +651,7 @@ class WorkExportService:
         for source in files:
             relative = source.relative_to(staging_root)
             published_relative = target_relative_root / relative
-            target = (target_root / published_relative).resolve()
-            if not self._same_or_child(target, target_root):
-                raise WorkLedgerConflict("proposed export target escaped the Desktop scope")
+            target = self._checked_relative_path(target_root, published_relative.as_posix())
             try:
                 raw = source.read_bytes()
                 modified_at = source.stat().st_mtime
@@ -876,18 +850,7 @@ class WorkExportService:
                 "reason": "staged_export_missing",
                 "changed_files": [],
             }
-        requested_filename = self._requested_filename(str(plan.get("requested_filename") or ""))
-        if requested_filename:
-            requested = (staging_root / requested_filename).resolve()
-            files = (
-                [requested]
-                if requested.is_file()
-                and not requested.is_symlink()
-                and requested.parent == staging_root
-                else []
-            )
-        else:
-            files = self._bounded_files(staging_root)
+        files = self._selected_staged_files(staging_root, plan)
         return {
             "available": bool(files),
             "reason": "observed" if files else "staged_export_missing",
@@ -1159,8 +1122,8 @@ class WorkExportService:
             staging_relative = self._safe_relative_path(
                 str(raw.get("staging_relative_path") or raw.get("relative_path") or "")
             )
-            expected_source = (staging_root / staging_relative).resolve()
-            expected_target = (target_root / relative).resolve()
+            expected_source = self._checked_relative_path(staging_root, staging_relative.as_posix())
+            expected_target = self._checked_relative_path(target_root, relative.as_posix())
             if source != expected_source or not self._same_or_child(source, staging_root):
                 raise WorkLedgerConflict("staged export source escaped its immutable relative path")
             if target != expected_target or not self._same_or_child(target, target_root):
@@ -1798,6 +1761,27 @@ class WorkExportService:
         return relative
 
     @classmethod
+    def _checked_relative_path(cls, root: Path, value: str) -> Path:
+        """Keep an export's relative identity without following substituted links."""
+        relative = cls._safe_relative_path(value)
+        current = root
+        for part in relative.parts:
+            current = current / part
+            if cls._is_link_or_junction(current):
+                raise WorkLedgerConflict("export relative path contains a link or junction")
+        resolved = current.resolve()
+        if not cls._same_or_child(resolved, root):
+            raise WorkLedgerConflict("export relative path escaped its root")
+        return resolved
+
+    def _selected_staged_files(self, staging_root: Path, plan: dict[str, Any]) -> list[Path]:
+        filename = str(plan.get("requested_filename") or "")
+        if filename:
+            selected = self._checked_relative_path(staging_root, filename)
+            return [selected] if selected.is_file() else []
+        return self._bounded_files(staging_root)
+
+    @classmethod
     def _directory_paths_for_entries(
         cls,
         target_root: Path,
@@ -1811,6 +1795,11 @@ class WorkExportService:
             if not isinstance(raw, dict):
                 raise WorkLedgerConflict("permission export entry is malformed")
             relative = cls._safe_relative_path(str(raw.get("relative_path") or ""))
+            if raw.get("replace_existing") is True:
+                # An amendment replaces an existing file and its temporary sibling;
+                # it neither creates nor merges the already-owned parent directory.
+                cls._checked_relative_path(resolved_root, relative.as_posix())
+                continue
             current = (resolved_root / relative).parent.resolve()
             while current != resolved_root:
                 if not cls._same_or_child(current, resolved_root):

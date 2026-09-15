@@ -205,9 +205,12 @@ def test_reference_reaches_actual_provider_payload_only_for_current_turn(monkeyp
     history.add_user("previous question")
     history.add_assistant("previous answer")
     before = list(history.dialog)
-    state = chat._TurnState(gui_callback=None, question="current question")
+    state = chat._TurnState(gui_callback=None, question="current question",
+        history_snapshot=history.snapshot())
     state.character_reference = rag.render_reference([{"id": 0, "text": "UNIQUE_KNOWLEDGE"}])
-    monkeypatch.setattr(chat, "conversation_history", history)
+    later_history = ConversationHistory()
+    later_history.add_user("LATE_OTHER_SESSION")
+    monkeypatch.setattr(chat, "conversation_history", later_history)
     monkeypatch.setattr(chat, "_turn_system_prompt", lambda *args: "UNCHANGED_PERSONA")
     monkeypatch.setattr(chat, "_wrap_user_message_for_language_lock", lambda text: text)
     monkeypatch.setattr(chat, "AWS_BEDROCK_AUTH_MODE", "bearer")
@@ -270,6 +273,7 @@ def test_reference_reaches_actual_provider_payload_only_for_current_turn(monkeyp
     assert "UNCHANGED_PERSONA" in payload
     assert "current question" in payload
     assert ("previous question" in payload) is history_enabled
+    assert "LATE_OTHER_SESSION" not in payload
     assert state.question == "current question"
     assert list(history.dialog) == before
     next_state = chat._TurnState(gui_callback=None, question="unrelated next question")

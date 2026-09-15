@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "amadeus"
-version = "0.1.0"
+version = "0.15.0a0"
 description = "Amadeus runtime: voice, chat runtime, provider host, and work ledger."
 requires-python = ">=3.12,<3.13"
 
@@ -22,7 +22,7 @@ dependencies = [
     "mss==10.2.0",
     "numpy==1.26.4",
     "openai==2.38.0",
-    "openai-codex==0.147.0",
+    "openai-codex==0.154.0",
     "Pillow==12.3.0",
     "playwright==1.60.0",
     "psutil==7.2.2",

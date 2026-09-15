@@ -79,6 +79,76 @@ def _request_event() -> dict[str, Any]:
     }
 
 
+async def test_cooperative_provider_execution_keeps_scene_and_slice_without_work_narration(monkeypatch) -> None:
+    from server.character_presentation import CharacterPresentationCoordinator
+
+    coordinator = WorkActivityCoordinator()
+    canvases, notes, scene_events = [], [], []
+    monkeypatch.setattr(settings, "PROVIDER_WORK_HEARTBEAT_S", 0)
+
+    async def capture_scene(method, payload):
+        scene_events.append((method, payload))
+
+    monkeypatch.setattr("server.handlers.work_activity_handler.character_presentation",
+        CharacterPresentationCoordinator(capture_scene))
+
+    async def capture_canvas(_method, params):
+        canvases.append(params)
+
+    async def capture_note(_method, params):
+        notes.append(params)
+
+    bus.on(Method.WALLPAPER_CANVAS, capture_canvas)
+    bus.on(Method.CHAT_WORK_NOTE, capture_note)
+    metadata = {"cooperative_context_id":"context-chat", "session_id":"session-chat",
+        "turn_id":"turn-chat"}
+    try:
+        await coordinator._on_provider_event(Method.PROVIDER_EVENT, {
+            "provider":"codex", "run_id":"run-chat", "type":"run.created",
+            "payload":{"task":"Read the directory"}, "metadata":metadata})
+        assert "run-chat" in coordinator._active_runs
+        assert canvases[-1]["phase"] == "Intake"
+        await coordinator._on_provider_event(Method.PROVIDER_EVENT, {
+            "provider":"codex", "run_id":"run-chat", "type":"semantic.progress",
+            "payload":{"milestone":"validation", "summary":"The game passed its structural check."},
+            "metadata":metadata})
+        await coordinator._on_provider_result(Method.PROVIDER_RESULT, {
+            "provider":"codex", "run_id":"run-chat", "status":"done",
+            "result":"No files", "metadata":metadata})
+    finally:
+        bus.off(Method.WALLPAPER_CANVAS, capture_canvas)
+        bus.off(Method.CHAT_WORK_NOTE, capture_note)
+    assert canvases[-1]["phase"] == "Result"
+    assert notes  # Native progress uses the original broadcaster again.
+    assert any(note.get("metadata", {}).get("narration_keypoint") == "semantic_progress"
+        for note in notes)
+    assert all(note.get("phase", "").lower() != "result" for note in notes)
+    assert all(not canvas.get("metadata", {}).get("work") for canvas in canvases)
+    assert "run-chat" not in coordinator._active_runs
+    assert [payload["activity"] for method, payload in scene_events
+        if method == Method.WALLPAPER_ACTIVITY] == ["work"]
+    assert coordinator._runs["run-chat"]["release_owned_by_observer"] is True
+    await coordinator.release_work_presentation("run-chat", reason="native_role_finished")
+    assert [payload["activity"] for method, payload in scene_events
+        if method == Method.WALLPAPER_ACTIVITY] == ["work", ""]
+
+
+async def test_native_permission_owner_is_not_overwritten_by_work_activity(monkeypatch):
+    from unittest.mock import AsyncMock
+    coordinator = WorkActivityCoordinator()
+    emit = AsyncMock()
+    monkeypatch.setattr(bus, "emit", emit)
+    state = {"provider":"codex", "run_id":"native-run", "last_progress":24,
+        "metadata":{"cooperative_context_id":"context-a", "session_id":"session-a"}}
+    permission = {"id":"native-request", "reason":"Copy the game to Desktop",
+        "options":["allow_once", "deny"], "action":"execute_command"}
+    await coordinator._emit_permission_canvas(state, permission)
+    assert not any(call.args[0] == Method.WALLPAPER_CANVAS for call in emit.await_args_list)
+    assert any(call.args[0] == Method.CHAT_WORK_NOTE for call in emit.await_args_list)
+    await coordinator._emit_permission_canvas({**state, "metadata":{}}, permission)
+    assert any(call.args[0] == Method.WALLPAPER_CANVAS for call in emit.await_args_list)
+
+
 async def test_provider_permission_request_is_bounded_nonblocking_diagnostic() -> None:
     old_interval = getattr(settings, "PROVIDER_WORK_HEARTBEAT_S", 45)
     settings.PROVIDER_WORK_HEARTBEAT_S = 0

@@ -179,6 +179,7 @@ class RuntimeStatusCollector:
             "aec": self._section(self._aec),
             "provider": self._section(self._provider),
             "coordinator": self._section(self._coordinator),
+            "turn_decision_shadow": self._section(self._turn_decision_shadow),
         }
         snapshot["ready"] = self._ready(snapshot)
         snapshot["derived"] = self._section(lambda: self._derived(snapshot))
@@ -189,6 +190,12 @@ class RuntimeStatusCollector:
         from core.turn_coordinator import get_turn_coordinator
 
         return get_turn_coordinator().snapshot()
+
+    @staticmethod
+    def _turn_decision_shadow() -> dict[str, Any]:
+        from server.turn_decision_shadow import get_turn_decision_shadow_observer
+
+        return get_turn_decision_shadow_observer().snapshot()
 
     @staticmethod
     def _section(fn: Callable[[], Any]) -> Any:

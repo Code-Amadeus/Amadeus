@@ -134,6 +134,7 @@ const VALUE_KEYS = new Set([
   'MIMO_TTS_MODEL',
   'MIMO_TTS_VOICE',
   'VTS_ENABLED',
+  'AUIP_ARTIFACT_STYLE_ENABLED',
   'VTS_WS_URL',
   'VTS_TOKEN_FILE',
 ])
@@ -176,6 +177,7 @@ const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
   AEC_REALTIME_BARGE_IN: new Set(['true', 'false']),
   TTS_API_STREAM_PROTOCOL: new Set(['buffered', 'openai_sse']),
   VTS_ENABLED: new Set(['true', 'false']),
+  AUIP_ARTIFACT_STYLE_ENABLED: new Set(['true', 'false']),
 }
 
 const IDENTIFIER_KEYS = new Set(['ASR_BACKEND', 'TTS_BACKEND'])

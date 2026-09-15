@@ -1417,7 +1417,11 @@ class BrowserAdapter:
             urls.extend(str(item) for item in raw_urls)
         if metadata.get("url"):
             urls.append(str(metadata.get("url")))
-        urls.extend(self._extract_urls(request.task))
+        # A typed Host target is the complete navigation authority. Re-reading
+        # free-form task prose can manufacture a second URL by swallowing
+        # punctuation or instructions that follow the accepted address.
+        if not urls:
+            urls.extend(self._extract_urls(request.task))
         normalized: list[str] = []
         for url in urls:
             fixed = self._normalize_url(url, allow_bare_domain=allow_bare_domain)

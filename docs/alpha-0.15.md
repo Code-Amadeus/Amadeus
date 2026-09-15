@@ -1,0 +1,135 @@
+# 0.15 Alpha: routing authority and continuous interaction
+
+Status: draft integration candidate, not a published release.
+
+This candidate keeps the foreground character conversation responsive while Work
+owns requested deliverables, execution identity, accepted requirements, and results.
+Interaction contexts provide addressing and continuation through the existing
+Provider runtime. They do not become a second writable task system.
+
+## 0.15 Alpha acceptance constraints
+
+All three constraints must hold together:
+
+1. **Accurate intent routing:** correctly interpret the requested action, source and
+   target across ordinary Chat, Provider messages, Work changes and application actions.
+2. **Efficient Provider interaction:** preserve the correct native context and Work
+   identity. Ordinary questions do not create extra requirements or execution attempts;
+   replay does not duplicate execution.
+3. **Low-latency character response:** professional planning must preserve a fast
+   initial character reply. The warm ordinary-Chat gate is ≤1.5 seconds from typed
+   request submission to the first audio-device write, excluding cold startup. The
+   opening response can begin before planning completes.
+
+Accuracy gains must preserve Provider continuity and character responsiveness.
+Historical routing scores, interaction-contract tests and physical voice samples
+provide distinct evidence; no one category alone establishes release readiness.
+
+## Routing and ownership
+
+- Main Chat interprets the user and can stream its first spoken response before a
+  professional Work decision finishes. Acknowledgement is not execution acceptance.
+- The optional professional planner interprets new work, amendments, reports,
+  cancellations, and messages using the original request and frozen shared history.
+- The Host rechecks source, identity, target, permissions, and current execution state
+  before shared Work admission. Accepted requirements and ordinary questions remain
+  distinct: questions do not create another requirement or execution attempt.
+- Interaction contexts preserve a conversation address and compatible native session.
+  Work, Project, Draft, Attempt, and Provider session identities remain separate.
+- New unplaced deliverables remain Drafts until explicit Project creation/promotion.
+- AUIP owns application actions and receipts. A capability-blocked application request
+  remains an application refusal and cannot be redirected to an unrelated task.
+- Ambiguous App/Work stops do not authorize either stop. Independent requests retain
+  their own handling. Speech interruption is separate from Work cancellation.
+- Missing or untrusted selected directories block execution at their owning boundary;
+  they do not disable ordinary Chat or an independently placed new Draft.
+
+## Configuration
+
+The [three-strategy comparison and accuracy baseline](routing-accuracy-baseline.md)
+explains original Chat, cooperative basic, and professional cooperative separately.
+The historical same-model comparison scored 17/26, 21/26, and 23/26 respectively;
+it is distinct from deterministic contract tests and current-candidate acceptance.
+
+The following explicitly selects the professional route used in the acceptance sample:
+
+```dotenv
+COOPERATIVE_CHAT_ENABLED=true
+COOPERATIVE_WORK_PLANNER_ENABLED=true
+```
+
+The planner uses the selected Main Chat model transport. An optional
+`COOPERATIVE_WORK_PLANNER_MODEL` overrides only the planner model. A role model is
+independent from the Provider that executes a task.
+
+Both cooperative routing and the professional planner default on in 0.15 Alpha.
+These are startup selectors; changing them requires a backend restart:
+
+| Cooperative | Professional planner | Active route |
+| --- | --- | --- |
+| `true` | `true` | Professional cooperative (default) |
+| `true` | `false` | Basic cooperative |
+| `false` | either | Original Chat authority; cooperative and planner are not installed |
+
+To restore the established public-main routing behavior, set
+`COOPERATIVE_CHAT_ENABLED=false` and restart. The existing
+`CONTROL_DECISION_AUTHORITY_ENABLED=true` and
+`COMPOUND_CONTROL_AUTHORITY_ENABLED=true` defaults retain the original authority
+path; preserve any deliberate pre-existing overrides of those original flags.
+This selects the original implementation over shared execution and presentation
+facilities. It does not run both routes or silently retry a failed professional
+decision through the original route. The basic
+cooperative route still has a known explicit-Provider-constraint limitation; the
+professional acceptance result does not establish parity for that configuration.
+
+## Other integrated surfaces
+
+The routing branch includes bounded AUIP after-Work entry and authoring validation/recovery
+and the associated artifact appearance preference. Experimental, opt-in ACP v1 agents, complete-file
+review for truncated Slice export previews, and the compact VN-style companion panel
+are separate Draft PRs within the same 0.15 Alpha release scope.
+The public mainline's uv installation profiles, Linux AEC source build, macOS wallpaper
+lifecycle, keyboard chat entry, and optional character retrieval remain in place.
+See [installation profiles](install_profiles.md). The standalone companion is reviewed
+in [PR #75](https://github.com/Code-Amadeus/Amadeus/pull/75);
+[ACP #76](https://github.com/Code-Amadeus/Amadeus/pull/76) and
+[Slice export review #77](https://github.com/Code-Amadeus/Amadeus/pull/77)
+are stacked on the routing candidate because they consume its shared Host contracts.
+ACP's Claude/dsh examples are local integration probes, with no real production use.
+
+## Voice acceptance evidence
+
+**Result: both measured warm ordinary-chat samples passed the ≤1.5-second E2E first-audio acceptance gate with cooperative routing and the professional planner enabled.** The second sample followed a completed planner task. Cold startup and task-response latency were recorded separately and are outside this warm-chat gate.
+
+| Test case | Measured E2E first audio | Acceptance criterion | Result |
+| --- | --- | --- | --- |
+| Warm ordinary character conversation | **1.125 s** | First audio-device write within 1.5 seconds | Passed |
+| Ordinary conversation after a professional-planner task | **1.078 s** | First audio-device write within 1.5 seconds | Passed |
+
+**Test setup (2026-09-14):** `.venv_cu124`, Python 3.12.10, real `server.app` and ChatPage, DeepSeek role model, local GPT-SoVITS **Japanese speech**, and the default Realtek audio output. Both routing flags were enabled. Normal runtime warmup and the short-opening audio cache remained enabled, matching daily use. The semantic model, TTS, playback and Provider paths were not replaced with mocks.
+
+**E2E measurement:** typed-request submission through the first successful non-empty PortAudio write to the audio device, correlated by the same turn/sentence identity. This includes the model request, network communication, first-sentence generation and playback path. It measures delivery to the audio device, not microphone/ASR latency or acoustic loopback.
+
+**Network context and responsiveness:** the test was initiated from **New Zealand**, calling the DeepSeek service in **mainland China**, so first-audio latency includes that cross-border communication. With lower communication latency, **warm E2E first audio may fall below one second**. With professional routing enabled, the character's first spoken response can begin without waiting for professional planning to complete.
+
+A separate comparison used AWS Bedrock in Sydney (`ap-southeast-2`) with Qwen3-235B. It showed variability across warm turns and used a different model, so it is supporting context rather than a network-only A/B test or an all-turn pass claim. Individual timings remain in the local measurement record.
+
+These are two physical warm-chat samples collected in the integration workspace, not a long-run percentile guarantee or a new physical measurement of every later public commit. Network transit and model-service time were not isolated, and the result does not claim zero planner overhead. Deterministic regression and build checks are reported separately.
+
+## Draft boundaries
+
+After-Work automatic entry retains in-process continuation limits. This candidate
+does not promise restart persistence for every pending application launch, arbitrary
+cross-Provider batches, or exhaustive natural-language routing accuracy. Microphone,
+ASR/Wake, packaged platform UI, long-running device behavior, and clean full CI are
+separate evidence from the warm typed-Chat sample.
+
+Only current runtime contract tests and their required helpers are added here.
+Internal chronological journals, hash-frozen experiment campaigns, recorded sessions,
+model weights, personal paths, and unrelated local demonstration assets are not part
+of this public delta.
+
+Further structural simplification should follow a demonstrated duplicate owner or
+unused live path. This draft does not retire a working routing strategy solely to
+reduce line count. Merge cleanup should concentrate on integration defects, public
+documentation, and green candidate checks.

@@ -198,6 +198,37 @@ def test_system_settings_report_optional_visual_asset_pack_status() -> None:
     asyncio.run(run())
 
 
+def test_cooperative_settings_preserve_all_existing_role_backend_choices() -> None:
+    async def run() -> None:
+        from config import settings
+        import llm.client as llm_client
+        from core.chat_runtime import get_chat_runtime
+
+        handler = SystemHandler()
+        runtime = get_chat_runtime()
+        old_provider = runtime.provider
+        with (
+            patch.object(settings, "COOPERATIVE_CHAT_ENABLED", True),
+            patch.object(llm_client, "LLM_PROVIDER", "deepseek"),
+            patch("server.handlers.system_handler.bus.emit", new=AsyncMock()),
+        ):
+            try:
+                result = await handler._get_config({})
+                assert result["llm_provider"] == "deepseek"
+                assert result["cooperative_chat_input_capabilities"] == {
+                    "typed_text":True, "confirmed_transcript_text":True,
+                    "visual_attachment":True, "speculative_voice":False,
+                    "physical_voice_validated":False}
+                changed = await handler._set_config(
+                    {"values":{"llm_provider":"gemini"}})
+                assert changed["values"]["llm_provider"] == "gemini"
+                assert runtime.provider == "gemini"
+            finally:
+                runtime.set_provider(old_provider)
+
+    asyncio.run(run())
+
+
 def test_voice_settings_keep_wake_and_conversation_recognition_independent() -> None:
     from config import settings
 
@@ -346,7 +377,7 @@ def test_system_settings_reject_llm_routing_change_during_active_chat() -> None:
         handler = SystemHandler()
         handler.configure(is_chat_busy=lambda: True)
         with pytest.raises(RuntimeError, match="active chat turn"):
-            await handler._set_config({"values": {"llm_provider": "local"}})
+            await handler._set_config({"values": {"llm_provider": "openai"}})
 
     asyncio.run(run())
 
@@ -460,6 +491,7 @@ def test_runtime_provider_switch_keeps_managed_llama_server_lifecycle_aligned() 
             settings.LOCAL_LLM_LAUNCH_MODE = "managed"
             runtime.set_local_llm_type("llama_server")
             with (
+                patch.object(settings, "COOPERATIVE_CHAT_ENABLED", False),
                 patch("server.handlers.system_handler.bus.emit", new=AsyncMock()),
                 patch("llm.llama_server.start_llama_server", new=start),
                 patch("llm.llama_server.warmup_local_llm_cache", new=warmup),

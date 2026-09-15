@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Literal, Mapping, Sequence
 
 
-ReferenceKind = Literal["project", "work_item"]
+ReferenceKind = Literal["project", "work_item", "execution"]
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
@@ -37,6 +37,9 @@ class TypedReferenceCandidate:
     # ``session_current`` names the WorkItem/Project the current conversation
     # most recently attached.
     session_current: bool = False
+    # Original WorkItem.goal, distinct from a name/alias or the current request.
+    # It remains descriptive evidence after later amendments replace source text.
+    delegated_goal: str = ""
 
     @property
     def token(self) -> str:
@@ -48,12 +51,14 @@ def validate_candidate_catalog(candidates: Sequence[TypedReferenceCandidate]) ->
 
     tokens: list[str] = []
     for candidate in candidates:
-        if candidate.kind not in {"project", "work_item"}:
+        if candidate.kind not in {"project", "work_item", "execution"}:
             return "candidate catalog contains an invalid kind"
         if _ID_RE.fullmatch(str(candidate.entity_id or "")) is None:
             return "candidate catalog contains an invalid id"
         if candidate.kind == "project" and candidate.scope != "persistent":
             return "Project candidates must be persistent"
+        if candidate.kind == "execution" and candidate.scope != "session_draft":
+            return "Execution candidates require their current Session scope"
         if candidate.kind == "work_item" and candidate.scope not in {
             "project",
             "session_draft",
@@ -73,6 +78,7 @@ def candidate_catalog_from_coordinator(
     *,
     project_limit: int = 200,
     work_item_limit: int = 200,
+    indexed_project_ids: tuple[str, ...] = (),
 ) -> tuple[tuple[TypedReferenceCandidate, ...], bool, str]:
     """Freeze durable Projects and current-Session WorkItems for one decision."""
 
@@ -143,6 +149,16 @@ def candidate_catalog_from_coordinator(
         work_complete = bool(
             isinstance(work_payload, dict) and work_payload.get("complete")
         )
+        indexed_rows = {str(row.get("work_item_id") or ""):row for row in work_rows or []}
+        for project_id in dict.fromkeys(indexed_project_ids):
+            if project_id not in project_labels:
+                return (), False, "indexed_project_unavailable"
+            indexed = coordinator.project_work_items_for_resolution(
+                session_id, project_id, limit=work_item_limit)
+            work_complete = work_complete and bool(indexed.get("complete"))
+            for row in indexed.get("items") or []:
+                indexed_rows.setdefault(str(row.get("work_item_id") or ""), row)
+        work_rows = list(indexed_rows.values())
         work_items: list[TypedReferenceCandidate] = []
         for index, row in enumerate(work_rows or [], start=1):
             if not isinstance(row, Mapping):
@@ -193,6 +209,7 @@ def candidate_catalog_from_coordinator(
                         bool(session_work_item_id)
                         and work_item_id == session_work_item_id
                     ),
+                    delegated_goal=str(row.get("goal") or ""),
                 )
             )
         candidates = (*work_items, *projects)
@@ -249,6 +266,7 @@ def amend_candidates_from_host_rows(
                 state=str(row.get("state") or ""),
                 execution=str(row.get("execution") or ""),
                 relation=str(row.get("relation") or ""),
+                delegated_goal=str(row.get("goal") or ""),
             )
         )
     error = validate_candidate_catalog(candidates)
@@ -265,7 +283,14 @@ def _safe_text(value: Any, *, limit: int = 160) -> str:
     )
 
 
-def render_candidate_rows(candidates: Sequence[TypedReferenceCandidate]) -> str:
+def reference_goal_text(candidate: TypedReferenceCandidate) -> str:
+    """Use one bounded original-goal projection across reference surfaces."""
+    return _safe_text(candidate.delegated_goal, limit=400)
+
+
+def render_candidate_rows(
+    candidates: Sequence[TypedReferenceCandidate], *, include_ordinals: bool = True,
+) -> str:
     """Render typed semantic data without allowing new prompt sections."""
 
     rows: list[str] = []
@@ -282,6 +307,12 @@ def render_candidate_rows(candidates: Sequence[TypedReferenceCandidate]) -> str:
                     _safe_text(alias, limit=200) for alias in candidate.aliases[:6]
                 )
             )
+        goal = reference_goal_text(candidate)
+        visible_text = {_safe_text(candidate.label), *(
+            _safe_text(alias, limit=200) for alias in candidate.aliases[:6]
+        )}
+        if goal and goal not in visible_text:
+            parts.append(f"delegated_goal={goal}")
         if candidate.session_focus:
             parts.append("session_focus=true")
         if candidate.session_current:
@@ -295,5 +326,6 @@ def render_candidate_rows(candidates: Sequence[TypedReferenceCandidate]) -> str:
         if candidate.relation:
             parts.append(f"relation={_safe_text(candidate.relation, limit=48)}")
         parts.append(f"recency_rank={candidate.recency_rank or index}")
-        rows.append(f"- {index} | " + " | ".join(parts))
+        prefix = f"- {index} | " if include_ordinals else "- "
+        rows.append(prefix + " | ".join(parts))
     return "\n".join(rows)

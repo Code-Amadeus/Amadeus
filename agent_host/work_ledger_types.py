@@ -2,7 +2,10 @@
 
 The ledger deliberately models user-visible work rather than provider internals:
 
-``Project -> WorkItem -> WorkOperation -> RunAttempt -> Artifact / PermissionRequest``
+``Project -> WorkItem -> WorkOperation -> RunAttempt -> Artifact``
+
+PermissionRequest is a shared Host intervention record owned either by one
+Work Attempt or by one cooperative Provider run. It does not manufacture Work.
 
 Provider-specific identifiers remain optional bindings on a run attempt.  The
 types in this module have no dependency on the event bus, a provider adapter,
@@ -47,7 +50,9 @@ ArtifactStatus = Literal[
     "rejected",
 ]
 WorkspaceLeaseStatus = Literal["active", "released", "stale"]
+WorkspaceLeaseOwnerKind = Literal["work_attempt", "cooperative_run"]
 PermissionRequestStatus = Literal["pending", "allowed", "denied", "expired"]
+PermissionOwnerKind = Literal["work_attempt", "cooperative_run"]
 
 
 WORK_ITEM_STATES: frozenset[str] = frozenset({"open", "review_ready", "accepted", "archived"})
@@ -64,8 +69,14 @@ ARTIFACT_STATUSES: frozenset[str] = frozenset(
     {"registered", "pending", "missing", "approved", "rejected"}
 )
 WORKSPACE_LEASE_STATUSES: frozenset[str] = frozenset({"active", "released", "stale"})
+WORKSPACE_LEASE_OWNER_KINDS: frozenset[str] = frozenset(
+    {"work_attempt", "cooperative_run"}
+)
 PERMISSION_REQUEST_STATUSES: frozenset[str] = frozenset(
     {"pending", "allowed", "denied", "expired"}
+)
+PERMISSION_OWNER_KINDS: frozenset[str] = frozenset(
+    {"work_attempt", "cooperative_run"}
 )
 
 
@@ -238,9 +249,10 @@ class WorkItemRecord:
     updated_at: float
     last_activity_at: float
     metadata: dict[str, Any] = field(default_factory=dict)
+    origin_effect_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "work_item_id": self.work_item_id,
             "project_id": self.project_id,
             "title": self.title,
@@ -256,6 +268,9 @@ class WorkItemRecord:
             "last_activity_at": self.last_activity_at,
             "metadata": dict(self.metadata),
         }
+        if self.origin_effect_id:
+            data["origin_effect_id"] = self.origin_effect_id
+        return data
 
 
 @dataclass(slots=True)
@@ -270,9 +285,10 @@ class WorkOperationRecord:
     created_at: float
     updated_at: float
     metadata: dict[str, Any] = field(default_factory=dict)
+    origin_effect_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "operation_id": self.operation_id,
             "work_item_id": self.work_item_id,
             "operation_number": self.operation_number,
@@ -282,6 +298,9 @@ class WorkOperationRecord:
             "updated_at": self.updated_at,
             "metadata": dict(self.metadata),
         }
+        if self.origin_effect_id:
+            data["origin_effect_id"] = self.origin_effect_id
+        return data
 
 
 @dataclass(slots=True)
@@ -302,9 +321,10 @@ class RunAttemptRecord:
     started_at: float | None
     finished_at: float | None
     metadata: dict[str, Any] = field(default_factory=dict)
+    origin_effect_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "attempt_id": self.attempt_id,
             "work_item_id": self.work_item_id,
             "operation_id": self.operation_id,
@@ -322,6 +342,9 @@ class RunAttemptRecord:
             "finished_at": self.finished_at,
             "metadata": dict(self.metadata),
         }
+        if self.origin_effect_id:
+            data["origin_effect_id"] = self.origin_effect_id
+        return data
 
 
 @dataclass(slots=True)
@@ -374,8 +397,12 @@ class PermissionRequestRecord:
     """
 
     request_id: str
+    owner_kind: PermissionOwnerKind
     work_item_id: str
     attempt_id: str
+    session_id: str
+    context_id: str
+    provider_run_id: str
     idempotency_key: str
     capability: str
     action: str
@@ -399,8 +426,12 @@ class PermissionRequestRecord:
         return {
             "request_id": self.request_id,
             "id": self.request_id,
+            "owner_kind": self.owner_kind,
             "work_item_id": self.work_item_id,
             "attempt_id": self.attempt_id,
+            "session_id": self.session_id,
+            "context_id": self.context_id,
+            "provider_run_id": self.provider_run_id,
             "idempotency_key": self.idempotency_key,
             "capability": self.capability,
             "action": self.action,
@@ -492,8 +523,13 @@ class WorkspaceLeaseRecord:
     lease_id: str
     workspace_path: str
     workspace_identity: str
+    owner_kind: WorkspaceLeaseOwnerKind
     work_item_id: str
     attempt_id: str
+    session_id: str
+    context_id: str
+    provider_effect_id: str
+    provider_run_id: str
     status: WorkspaceLeaseStatus
     acquired_at: float
     heartbeat_at: float
@@ -505,8 +541,13 @@ class WorkspaceLeaseRecord:
             "lease_id": self.lease_id,
             "workspace_path": self.workspace_path,
             "workspace_identity": self.workspace_identity,
+            "owner_kind": self.owner_kind,
             "work_item_id": self.work_item_id,
             "attempt_id": self.attempt_id,
+            "session_id": self.session_id,
+            "context_id": self.context_id,
+            "provider_effect_id": self.provider_effect_id,
+            "provider_run_id": self.provider_run_id,
             "status": self.status,
             "acquired_at": self.acquired_at,
             "heartbeat_at": self.heartbeat_at,

@@ -57,7 +57,6 @@ ControlDecisionQueryPort = Callable[[list[dict[str, str]]], Awaitable[str]]
 ReferenceKind = Literal["project", "work_item", "open", "none"]
 DEFAULT_EXHAUSTIVE_CANDIDATE_LIMIT = 64
 MAX_PARALLEL_CANDIDATE_VERDICTS = 8
-ACTIVE_RETRACT_EXECUTIONS = frozenset({"queued", "running"})
 ACTIVE_AMEND_EXECUTIONS = frozenset({"queued", "running"})
 
 # This value can only be installed by reconciliation as a tuple of host-owned
@@ -107,6 +106,9 @@ class ControlDecisionEntry:
     payload_continuity: Literal[
         "current_turn", "confirmed_prior_request"
     ] = "current_turn"
+    # Optional presentation evidence from a context-aware semantic caller.
+    # It is never part of Provider payload, target identity, or execution authority.
+    display_title: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -392,6 +394,12 @@ def _normalized_handle_text(value: Any) -> str:
     return re.sub(r"\s+", " ", normalized).strip()
 
 
+# ASCII identifiers may contain internal dots/hyphens; their substrings are
+# not entity handles. Do not use Unicode \b: CJK prose commonly adjoins a name
+# without spaces (including CJK-owned labels and English names in Chinese).
+_IDENTIFIER_TOKEN = re.compile(r"[a-z0-9_]+(?:[.-][a-z0-9_]+)*")
+
+
 def _candidate_has_exact_handle(
     text: str,
     candidate: TypedReferenceCandidate,
@@ -406,17 +414,26 @@ def _candidate_has_exact_handle(
     haystack = _normalized_handle_text(text)
     if not haystack:
         return False
+    identifier_spans = tuple(
+        (match.start(), match.end()) for match in _IDENTIFIER_TOKEN.finditer(haystack)
+    )
     handles = (
         candidate.token,
         candidate.entity_id,
         candidate.label,
         *candidate.aliases,
     )
-    return any(
-        len(handle) >= 2 and handle in haystack
-        for raw_handle in handles
-        if (handle := _normalized_handle_text(raw_handle))
-    )
+    for raw_handle in handles:
+        handle = _normalized_handle_text(raw_handle)
+        if len(handle) < 2:
+            continue
+        for match in re.finditer(re.escape(handle), haystack):
+            if not any(
+                start < match.start() < end or start < match.end() < end
+                for start, end in identifier_spans
+            ):
+                return True
+    return False
 
 
 def _safe_same_turn_reference_data(value: str) -> str:
@@ -650,6 +667,7 @@ def parse_control_decision_reply(
     reply: str,
     *,
     proposal_count: int,
+    allow_display_title: bool = False,
 ) -> ControlDecision:
     """Strictly parse one structured decision; malformed output fails closed."""
 
@@ -679,6 +697,8 @@ def parse_control_decision_reply(
             "workspace_effect",
             "payload_continuity",
         }
+        if allow_display_title:
+            allowed_fields.add("display_title")
         if not required_fields.issubset(row) or any(
             key not in allowed_fields for key in row
         ):
@@ -710,11 +730,22 @@ def parse_control_decision_reply(
                 raw,
                 f"decision {row_number} has invalid payload_continuity",
             )
+        raw_display_title = row.get("display_title", "")
+        display_title = (
+            " ".join(raw_display_title.split())
+            if isinstance(raw_display_title, str) else ""
+        )
+        try:
+            display_title.encode("utf-8")
+        except UnicodeEncodeError:
+            display_title = ""
+        if len(display_title) > 240:
+            display_title = ""
         control = {
             key: value
             for key, value in row.items()
             if key not in required_fields
-            and key not in {"workspace_effect", "payload_continuity"}
+            and key not in {"workspace_effect", "payload_continuity", "display_title"}
         }
         if not control:
             return _invalid(raw, f"decision {row_number} has no control fields")
@@ -774,11 +805,15 @@ def parse_control_decision_reply(
                     "work_item, or open for an existing-entity reference"
                 ),
             )
-        if references is None and subject == "open":
+        if references is None and (subject == "open" or (
+                intent == "execute" and work_placement == "draft"
+                and subject in {"project", "work_item"})):
             # `open` carries meaning only while an existing typed entity is
             # being evaluated. Treat it as a redundant no-op on Draft clear,
             # Browser, and other no-reference controls rather than turning a
-            # correct action into a protocol failure.
+            # correct action into a protocol failure. A fresh Draft likewise
+            # has no existing target kind; its placement already owns the
+            # destination. Collection reports keep their Project subject.
             normalized_control.pop("subject", None)
             subject = ""
         if work_placement == "project" or subject == "project":
@@ -804,6 +839,7 @@ def parse_control_decision_reply(
                 reference_kind=reference_kind,
                 workspace_effect=workspace_effect,
                 payload_continuity=payload_continuity,
+                display_title=display_title,
             )
         )
     return ControlDecision(
@@ -811,6 +847,26 @@ def parse_control_decision_reply(
         entries=tuple(sorted(entries, key=lambda entry: entry.proposal_index)),
         raw_reply=raw,
     )
+
+
+def _reference_scope_failure(candidates, *, complete: bool, safe_limit: int):
+    if not complete:
+        return ControlDecision(
+            status="incomplete",
+            reason="host could not prove the typed reference catalog was complete",
+        )
+    catalog_error = validate_candidate_catalog(candidates)
+    if catalog_error:
+        return ControlDecision(status="invalid", reason=catalog_error)
+    if len(candidates) > safe_limit:
+        return ControlDecision(
+            status="incomplete",
+            reason=(
+                "typed reference catalog exceeds exhaustive decision limit: "
+                f"{len(candidates)}>{safe_limit}"
+            ),
+        )
+    return None
 
 
 async def resolve_control_decision(
@@ -828,23 +884,10 @@ async def resolve_control_decision(
 
     if not proposals:
         return ControlDecision(status="ok")
-    if not complete:
-        return ControlDecision(
-            status="incomplete",
-            reason="host could not prove the typed reference catalog was complete",
-        )
-    catalog_error = validate_candidate_catalog(candidates)
-    if catalog_error:
-        return ControlDecision(status="invalid", reason=catalog_error)
     safe_limit = max(1, int(candidate_limit))
-    if len(candidates) > safe_limit:
-        return ControlDecision(
-            status="incomplete",
-            reason=(
-                "typed reference catalog exceeds exhaustive decision limit: "
-                f"{len(candidates)}>{safe_limit}"
-            ),
-        )
+    failure = _reference_scope_failure(candidates, complete=complete, safe_limit=safe_limit)
+    if failure is not None:
+        return failure
     try:
         reply = await query(build_control_decision_messages(messages, proposals))
     except Exception as exc:
@@ -957,6 +1000,39 @@ async def resolve_control_decision(
                         ),
                     ),
                 )
+    return await resolve_control_references(
+        decision, messages, proposals, candidates, complete=complete, query=query,
+        candidate_limit=safe_limit, proposal_controls=proposal_controls,
+        same_turn_reference_context=same_turn_reference_context)
+
+
+async def resolve_control_references(
+    decision: ControlDecision,
+    messages: Sequence[Mapping[str, str]],
+    proposals: Sequence[Mapping[str, Any]],
+    candidates: Sequence[TypedReferenceCandidate],
+    *,
+    complete: bool,
+    query: ControlDecisionQueryPort,
+    candidate_limit: int = DEFAULT_EXHAUSTIVE_CANDIDATE_LIMIT,
+    proposal_controls: Sequence[Mapping[str, Any]] = (),
+    same_turn_reference_context: str = "",
+    recover_zero_matches: bool = True,
+) -> ControlDecision:
+    """Resolve references for canonical operations without judging them again.
+
+    The original candidate-blind route retains relational zero-match recovery.
+    A caller that already interpreted the full catalog can disable that recovery
+    and preserve the independently empty set, including when only a sibling
+    clause names a candidate. Positive evidence calibration,
+    bounded parallelism, protocol repair and scope validation remain shared.
+    """
+    if decision.status != "ok":
+        return decision
+    safe_limit = max(1, int(candidate_limit))
+    failure = _reference_scope_failure(candidates, complete=complete, safe_limit=safe_limit)
+    if failure is not None:
+        return failure
     candidate_entries = tuple(
         entry
         for entry in decision.entries
@@ -1178,12 +1254,15 @@ async def resolve_control_decision(
             if (
                 unique_same_turn_grounding is not None
                 and candidate.token == unique_same_turn_grounding.token
+                and (recover_zero_matches or evidence != "none")
             ):
                 # The identity-only phase may use an exact handle from a
                 # sibling clause when the exact clause itself is anaphoric.
                 # This is Host-verifiable same-turn grounding, not action
                 # authority. Require uniqueness across the eligible typed
                 # catalog; otherwise preserve the model's ambiguity.
+                # With zero recovery disabled, a sibling's name can strengthen
+                # a positive link but cannot manufacture one for this clause.
                 evidence = "exact"
             calibrated_evidence.append(evidence)
         strongest_evidence = next(
@@ -1194,31 +1273,17 @@ async def resolve_control_decision(
             ),
             "none",
         )
-        if (
-            str(entry.control.get("intent") or "").strip().lower() == "retract"
-            and strongest_evidence != "exact"
-        ):
-            # Eligibility for a destructive retract is a host-state question,
-            # not a fuzzy-reference score. Without a literal exact identity,
-            # preserve every queued/running WorkItem: one is deterministic,
-            # many require Attention, and zero remains a visible no-target
-            # result. Model partial/contextual grades may not silently pick
-            # one active task over another.
-            selected_candidates = tuple(
-                candidate
-                for candidate in candidates
-                if candidate.kind == "work_item"
-                and str(candidate.execution or "").strip().lower()
-                in ACTIVE_RETRACT_EXECUTIONS
-            )
-        else:
-            selected_candidates = tuple(
-                candidate
-                for candidate, evidence in zip(candidates, calibrated_evidence)
-                if evidence == strongest_evidence
-                and strongest_evidence != "none"
-            )
-            if not selected_candidates and len(proposal_controls) == 1:
+        selected_candidates = tuple(
+            candidate
+            for candidate, evidence in zip(candidates, calibrated_evidence)
+            if evidence == strongest_evidence
+            and strongest_evidence != "none"
+        )
+        # Retract retains the evidence-selected identity, including terminal Work.
+        # The stop owner checks liveness; missing/ambiguous identity is not retried
+        # or replaced by unrelated active work.
+        if str(entry.control.get("intent") or "").strip().lower() != "retract":
+            if recover_zero_matches and not selected_candidates and len(proposal_controls) == 1:
                 # Isolated per-candidate verdicts guarantee exhaustive
                 # consideration, but a lone row intentionally cannot compare a
                 # translated/paraphrased name with the rest of the catalog. A
@@ -1283,8 +1348,6 @@ async def resolve_control_decision(
             if (
                 strongest_evidence == "contextual"
                 and len(selected_candidates) > 1
-                and str(entry.control.get("intent") or "").strip().lower()
-                != "retract"
                 and verdict_query_count + 1 <= safe_limit
             ):
                 # Independent verdicts guarantee that no candidate can be
@@ -1547,7 +1610,10 @@ def reconcile_control_decision(
                         "replace the Project report subject"
                     )
 
-        if placement == "draft" and session_context == "unchanged":
+        # Current placement is independent of a persistent focus change. In
+        # particular, preparing a complete plan must not need CLEAR to run
+        # first just to discover this operation's already-decided Draft scope.
+        if placement == "draft":
             control["one_off"] = True
         if session_context == "clear":
             control["focus"] = "clear"

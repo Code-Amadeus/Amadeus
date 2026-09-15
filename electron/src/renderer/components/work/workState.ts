@@ -7,7 +7,7 @@ export const STATUS_META: Record<ProviderRun['status'], { label: string; tone: s
   done: { label: 'Run ended', tone: 'done' },
   error: { label: 'Error', tone: 'risk' },
   cancelled: { label: 'Cancelled', tone: 'idle' },
-  orphaned: { label: 'Interrupted', tone: 'risk' },
+  orphaned: { label: 'Outcome unknown', tone: 'risk' },
 }
 
 export const PHASE_META: Record<TurnPhase, { label: string; summary: string }> = {

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 from agent_host.provider_bootstrap import builtin_provider_specs
 from agent_host.mcp_connections import McpConnectionSpec, load_mcp_connections
 from agent_host.provider_contract import ProviderRequirements
-from agent_host.provider_runtime import runtime
+from agent_host.provider_runtime import runtime, scrub_untrusted_provider_metadata
 from agent_host.provider_types import ProviderRunRequest, ProviderSteerRequest
 from server.local_git import collect_diff, run_git
 from server.protocol import Method
@@ -137,7 +137,11 @@ class ProviderHandler(RequestHandler):
         if method == Method.PROVIDER_RUN:
             # Generic provider.run is a new-run API. Resume is deliberately
             # available only to the Work Ledger's bounded work.resume path.
-            return await self._run(params, allow_resume=False)
+            return await self._run(
+                params,
+                allow_resume=False,
+                trusted_metadata=False,
+            )
         if method == Method.PROVIDER_CANCEL:
             return await self._cancel(params)
         if method == Method.PROVIDER_LIST:
@@ -153,6 +157,7 @@ class ProviderHandler(RequestHandler):
         params: dict[str, Any],
         *,
         allow_resume: bool,
+        trusted_metadata: bool = False,
     ) -> dict[str, Any]:
         provider = str(params.get("provider") or "").strip()
         task = str(params.get("task") or "").strip()
@@ -162,7 +167,13 @@ class ProviderHandler(RequestHandler):
             raise ValueError("task is required")
 
         metadata_raw = params.get("metadata")
-        metadata = dict(metadata_raw) if isinstance(metadata_raw, dict) else {}
+        metadata = (
+            dict(metadata_raw)
+            if trusted_metadata and isinstance(metadata_raw, dict)
+            else scrub_untrusted_provider_metadata(
+                metadata_raw if isinstance(metadata_raw, dict) else {}
+            )
+        )
         requested_work_item_id = str(
             params.get("work_item_id") or params.get("workItemId") or ""
         ).strip()
@@ -226,7 +237,11 @@ class ProviderHandler(RequestHandler):
     async def run_provider(self, params: dict[str, Any]) -> dict[str, Any]:
         """Internal provider entrypoint used by host-owned control planes."""
 
-        return await self._run(params, allow_resume=True)
+        return await self._run(
+            params,
+            allow_resume=True,
+            trusted_metadata=True,
+        )
 
     async def steer_provider(self, params: dict[str, Any]) -> dict[str, Any]:
         """Internal immediate-steer entrypoint for host-owned coordinators."""

@@ -46,12 +46,20 @@ class CanvasActionRouter:
         provider_inspect: Callable[[dict[str, Any]], Any] | None = None,
         context_action: Callable[[dict[str, Any]], Any] | None = None,
         attention_action: Callable[[dict[str, Any]], Any] | None = None,
+        cooperative_permission_action: Callable[[dict[str, Any]], Any] | None = None,
     ) -> None:
         self._provider_run = provider_run
         self._work_action = work_action
         self._provider_inspect = provider_inspect
         self._context_action = context_action
         self._attention_action = attention_action
+        self._cooperative_permission_action = cooperative_permission_action
+
+    def configure_cooperative_permission_action(
+        self,
+        action: Callable[[dict[str, Any]], Any],
+    ) -> None:
+        self._cooperative_permission_action = action
 
     async def route(self, payload: dict[str, Any] | None) -> dict[str, Any]:
         data = payload or {}
@@ -241,6 +249,46 @@ class CanvasActionRouter:
         }.get(action, action)
         if normalized not in {"allow_once", "deny", "retry_export", "abandon_export"}:
             return {"ok": False, "error": "unsupported_action"}
+        owner_kind = str(
+            data.get("owner_kind")
+            or data.get("ownerKind")
+            or ""
+        ).strip().lower()
+        if owner_kind not in {"", "work_attempt", "cooperative_run"}:
+            return {"ok": False, "error": "unsupported_permission_owner"}
+        if owner_kind == "cooperative_run":
+            if normalized not in {"allow_once", "deny"}:
+                return {"ok": False, "error": "unsupported_action"}
+            if self._cooperative_permission_action is None:
+                return {"ok": False,
+                    "error": "cooperative_permission_control_plane_unavailable"}
+            payload = {
+                "permission_request_id": str(
+                    data.get("permission_request_id")
+                    or data.get("permissionRequestId") or ""
+                ).strip(),
+                "session_id": str(
+                    data.get("session_id") or data.get("sessionId") or ""
+                ).strip(),
+                "run_id": str(
+                    data.get("run_id") or data.get("runId") or ""
+                ).strip(),
+                "provider_request_id": str(
+                    data.get("provider_request_id")
+                    or data.get("providerRequestId") or ""
+                ).strip(),
+                "allow": normalized == "allow_once",
+            }
+            if not all(payload[key] for key in (
+                    "permission_request_id", "session_id", "run_id",
+                    "provider_request_id")):
+                return {"ok": False,
+                    "error": "cooperative_permission_identity_incomplete"}
+            result = self._cooperative_permission_action(payload)
+            if inspect.isawaitable(result):
+                result = await result
+            return (result if isinstance(result, dict)
+                else {"ok": True, "result": result})
         if self._work_action is None:
             return {"ok": False, "error": "work_control_plane_unavailable"}
         request_id = str(

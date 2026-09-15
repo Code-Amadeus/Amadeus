@@ -21,6 +21,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+from core.pyaudio_lifecycle import initialize_pyaudio, terminate_pyaudio
 
 logger = logging.getLogger(__name__)
 
@@ -174,7 +175,7 @@ class AecDebugCapture:
             pass
         try:
             if pa is not None:
-                pa.terminate()
+                terminate_pyaudio(pa)
         except Exception:
             pass
 
@@ -182,7 +183,7 @@ class AecDebugCapture:
         try:
             import pyaudio
 
-            self._pa = pyaudio.PyAudio()
+            self._pa = initialize_pyaudio(pyaudio.PyAudio)
             self._stream = self._pa.open(
                 format=pyaudio.paInt16,
                 channels=1,
@@ -196,7 +197,7 @@ class AecDebugCapture:
             self._stream = None
             if self._pa is not None:
                 try:
-                    self._pa.terminate()
+                    terminate_pyaudio(self._pa)
                 except Exception:
                     pass
                 self._pa = None
