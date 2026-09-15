@@ -9,6 +9,7 @@ import http from 'http'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
+import { CompanionPanel } from './companionPanel.js'
 import {
   DesktopSettingsStore,
   type DesktopSettingsUpdate,
@@ -152,6 +153,19 @@ type WorkPreviewSurface = {
 }
 const workPreviewSurfaces = new Map<string, WorkPreviewSurface>()
 const workPreviewIdsByWorkItem = new Map<string, string>()
+let companionBridge: WallpaperBridgeDescriptor | null = null
+const companionPanel = new CompanionPanel({
+  userDataDir: USER_DATA_DIR,
+  preload: path.join(__dirname, '..', 'preload', 'companion.cjs'),
+  portraitCacheDir: process.env.AMADEUS_COMPANION_PORTRAIT_CACHE
+    || path.join(PROJECT_ROOT, '..', 'visual novel player', 'out', 'vn_portrait_cache'),
+  bridge: () => companionBridge,
+  slice: () => electronSliceWindow?.webContents,
+  target: workItemId => {
+    const id = workPreviewIdsByWorkItem.get(workItemId)
+    return (id ? workPreviewSurfaces.get(id)?.window : null) || null
+  },
+})
 let workOverlayHitTestTimer: NodeJS.Timeout | null = null
 let workOverlayIgnoringMouse = false
 let workOverlayPanelBounds: Electron.Rectangle | null = null
@@ -185,6 +199,9 @@ type WallpaperBridgeDescriptor = {
   assetPort: number
   bridgePort: number
   assetVersion: string
+  graphicsProfile: 'standard' | 'power_saving' | 'custom'
+  renderMaxFps: number
+  renderMaxResolution: number | null
   sliceBounds: { x: number; y: number; width: number; height: number }
 }
 
@@ -537,7 +554,21 @@ function normalizeWallpaperBridge(raw: unknown): WallpaperBridgeDescriptor | nul
   const value = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
   const assetPort = normalizeLocalPort(value.assetPort)
   const bridgePort = normalizeLocalPort(value.bridgePort)
-  if (assetPort < 0 || bridgePort < 0) return null
+  const graphicsProfile = String(value.graphicsProfile || '')
+  const renderMaxFps = Number(value.renderMaxFps)
+  const renderMaxResolution = value.renderMaxResolution == null
+    ? null
+    : Number(value.renderMaxResolution)
+  if (
+    assetPort < 0
+    || bridgePort < 0
+    || !['standard', 'power_saving', 'custom'].includes(graphicsProfile)
+    || !Number.isFinite(renderMaxFps)
+    || renderMaxFps <= 0
+    || (renderMaxResolution !== null && (
+      !Number.isFinite(renderMaxResolution) || renderMaxResolution <= 0
+    ))
+  ) return null
   const rawBounds = value.sliceBounds && typeof value.sliceBounds === 'object'
     ? value.sliceBounds as Record<string, unknown>
     : {}
@@ -556,6 +587,9 @@ function normalizeWallpaperBridge(raw: unknown): WallpaperBridgeDescriptor | nul
     assetPort,
     bridgePort,
     assetVersion: String(value.assetVersion || ''),
+    graphicsProfile: graphicsProfile as WallpaperBridgeDescriptor['graphicsProfile'],
+    renderMaxFps,
+    renderMaxResolution,
     sliceBounds,
   }
 }
@@ -582,7 +616,12 @@ function electronSliceUrl(bridge: WallpaperBridgeDescriptor): string {
   const query = new URLSearchParams({
     bridgePort: String(bridge.bridgePort),
     assetVersion: bridge.assetVersion,
+    graphicsProfile: bridge.graphicsProfile,
+    renderMaxFps: String(bridge.renderMaxFps),
   })
+  if (bridge.renderMaxResolution !== null) {
+    query.set('renderMaxResolution', String(bridge.renderMaxResolution))
+  }
   if (wallpaperWindowPolicy(process.platform).hostMode === 'scene') {
     query.set('host', 'electron')
     query.set('sliceHost', 'electron')
@@ -811,6 +850,8 @@ function updateElectronSliceBounds(): void {
 }
 
 function closeElectronSliceWindow(): void {
+  void companionPanel.close()
+  companionBridge = null
   stopElectronSliceDesktopMonitor()
   closeElectronCanvasWindow()
   electronSliceWindow?.close()
@@ -825,6 +866,10 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
   const bridge = normalizeWallpaperBridge(rawBridge)
   if (!bridge) return false
   const platformPolicy = wallpaperWindowPolicy(process.platform)
+  if (companionBridge && (companionBridge.bridgePort !== bridge.bridgePort || companionBridge.assetPort !== bridge.assetPort)) {
+    void companionPanel.close()
+  }
+  companionBridge = bridge
   electronSliceLayout = bridge.sliceBounds
   const bridgeKey = `${bridge.assetPort}:${bridge.bridgePort}:${bridge.assetVersion}:${JSON.stringify(bridge.sliceBounds)}`
   if (electronSliceWindow && !electronSliceWindow.isDestroyed()) {
@@ -1649,6 +1694,7 @@ function createWorkPreviewSurface(descriptor: WorkPreviewDescriptor): {
     destroyWorkPreviewSurface(descriptor.previewId)
   })
   loadWorkPreviewContent(surface)
+  companionPanel.attachPreview(window, descriptor.workItemId)
   return { ok: true, detail: '', descriptor: projectedWorkPreviewDescriptor(surface) }
 }
 

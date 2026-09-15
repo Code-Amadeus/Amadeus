@@ -1618,7 +1618,8 @@ def test_sdk_runtime_config_isolated_from_codex_desktop_defaults() -> None:
     assert adapter.reasoning_effort == ReasoningEffort("max")
 
 
-def test_sdk_adapter_forwards_sol_medium_fast_without_changing_global_codex() -> None:
+@pytest.mark.parametrize("effort", ["medium", "ultra"])
+def test_sdk_adapter_forwards_sol_effort_and_fast_without_changing_global_codex(effort) -> None:
     async def scenario(root: Path) -> None:
         turn = _FakeTurn("turn-fast", _success_events("turn-fast"))
         thread = _FakeThread("thread-fast", turn)
@@ -1627,7 +1628,7 @@ def test_sdk_adapter_forwards_sol_medium_fast_without_changing_global_codex() ->
             codex=codex,
             model="gpt-5.6-sol",
             model_provider="openai",
-            reasoning_effort="medium",
+            reasoning_effort=effort,
             service_tier="fast",
             provider_base_url="",
             provider_api_key_env="",
@@ -1649,12 +1650,12 @@ def test_sdk_adapter_forwards_sol_medium_fast_without_changing_global_codex() ->
         assert codex.starts[0]["service_tier"] == "fast"
         _task, turn_options = thread.turn_calls[0]
         assert turn_options["model"] == "gpt-5.6-sol"
-        assert turn_options["effort"] == ReasoningEffort.medium
+        assert turn_options["effort"] == ReasoningEffort(effort)
         assert turn_options["service_tier"] == "fast"
         expected_metadata = {
             "model": "gpt-5.6-sol",
             "model_provider": "openai",
-            "reasoning_effort": "medium",
+            "reasoning_effort": effort,
             "service_tier": "fast",
         }
         assert {
@@ -1670,7 +1671,7 @@ def test_sdk_adapter_forwards_sol_medium_fast_without_changing_global_codex() ->
         codex_factory=lambda config: captured.append(config) or object(),
         model="gpt-5.6-sol",
         model_provider="openai",
-        reasoning_effort="medium",
+        reasoning_effort=effort,
         service_tier="fast",
         provider_base_url="",
         provider_api_key_env="",
@@ -2559,7 +2560,8 @@ def _main() -> None:
     test_unknown_and_collaboration_items_fail_closed_as_execution()
     test_windows_runtime_path_prefers_a_real_powershell_binary()
     test_sdk_runtime_config_isolated_from_codex_desktop_defaults()
-    test_sdk_adapter_forwards_sol_medium_fast_without_changing_global_codex()
+    for effort in ("medium", "ultra"):
+        test_sdk_adapter_forwards_sol_effort_and_fast_without_changing_global_codex(effort)
     test_sdk_adapter_rejects_unknown_service_tier()
     test_sdk_adapter_resumes_only_the_host_attached_thread()
     test_sdk_recovery_turn_is_honest_and_does_not_replay_the_user_request()

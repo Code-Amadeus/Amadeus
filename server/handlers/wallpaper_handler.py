@@ -155,6 +155,15 @@ class WallpaperHandler(RequestHandler):
         host.set_canvas_action_handler(_handler)
 
     async def _route_canvas_action(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if payload.get("target") == "presentation" and payload.get("action") == "companion":
+            active = payload.get("active")
+            if not isinstance(active, bool):
+                return {"ok": False, "error": "invalid_companion_visibility"}
+            host = self._wallpaper_host
+            if host is None:
+                return {"ok": False, "error": "wallpaper_not_running"}
+            host.set_companion_active(active)
+            return {"ok": True, "active": active}
         canvas_action = self._canvas_action_fn
         if canvas_action is None:
             return {"ok": False, "error": "canvas_action_router_unavailable"}
@@ -353,6 +362,9 @@ class WallpaperHandler(RequestHandler):
             "assetPort": getattr(host, "asset_port", -1),
             "bridgePort": getattr(host, "bridge_port", -1),
             "assetVersion": getattr(host, "asset_version", ""),
+            "graphicsProfile": getattr(host, "graphics_profile", "standard"),
+            "renderMaxFps": getattr(host, "render_max_fps", None),
+            "renderMaxResolution": getattr(host, "render_max_resolution", None),
             "sliceHost": getattr(host, "slice_host", "wallpaper"),
             "sliceBounds": getattr(host, "slice_bounds", {}),
             "canvasBounds": getattr(host, "canvas_bounds", {}),
@@ -378,6 +390,9 @@ class WallpaperHandler(RequestHandler):
             "bridgePort": getattr(host, "bridge_port", -1),
             "bridgeToken": getattr(host, "action_token", ""),
             "assetVersion": getattr(host, "asset_version", ""),
+            "graphicsProfile": getattr(host, "graphics_profile", "standard"),
+            "renderMaxFps": getattr(host, "render_max_fps", None),
+            "renderMaxResolution": getattr(host, "render_max_resolution", None),
             "sliceHost": getattr(host, "slice_host", "wallpaper"),
             "sliceBounds": getattr(host, "slice_bounds", {}),
             "canvasBounds": getattr(host, "canvas_bounds", {}),
