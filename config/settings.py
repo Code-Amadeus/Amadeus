@@ -420,6 +420,41 @@ ASR_SPECULATIVE_END_MS = _int("ASR_SPECULATIVE_END_MS", 160)
 # 仅对本地首句链路（hybrid/hybrid2/hybrid3）生效——远程单链有计费与幂等成本。
 ASR_SPECULATIVE_LLM_START = _bool("ASR_SPECULATIVE_LLM_START", True)
 
+# Global PixiJS render budget shared by the chat and wallpaper surfaces.
+GRAPHICS_PROFILES = frozenset({"standard", "power_saving", "custom"})
+GRAPHICS_PROFILE = _str("GRAPHICS_PROFILE", "standard").strip().lower()
+RENDER_MAX_FPS = _int("RENDER_MAX_FPS", 30)
+RENDER_MAX_RESOLUTION = _float("RENDER_MAX_RESOLUTION", 1.5)
+
+
+def _resolve_graphics_profile(
+    profile: str,
+    custom_max_fps: int,
+    custom_max_resolution: float,
+) -> tuple[int, float | None]:
+    if profile not in GRAPHICS_PROFILES:
+        raise ValueError(
+            "GRAPHICS_PROFILE must be one of "
+            + ", ".join(sorted(GRAPHICS_PROFILES))
+            + f"; observed {profile!r}"
+        )
+    if not 10 <= custom_max_fps <= 240:
+        raise ValueError("RENDER_MAX_FPS must be between 10 and 240")
+    if not 0.25 <= custom_max_resolution <= 4.0:
+        raise ValueError("RENDER_MAX_RESOLUTION must be between 0.25 and 4.0")
+    if profile == "standard":
+        return 60, None
+    if profile == "power_saving":
+        return 30, 1.5
+    return custom_max_fps, custom_max_resolution
+
+
+RENDER_EFFECTIVE_MAX_FPS, RENDER_EFFECTIVE_MAX_RESOLUTION = _resolve_graphics_profile(
+    GRAPHICS_PROFILE,
+    RENDER_MAX_FPS,
+    RENDER_MAX_RESOLUTION,
+)
+
 # Wallpaper diagnostics. keyboard_sfx.gate is a high-frequency client-side
 # gate snapshot; keep it out of WARNING unless explicitly diagnosing SFX.
 WALLPAPER_SFX_GATE_LOG = _bool("WALLPAPER_SFX_GATE_LOG", False)
