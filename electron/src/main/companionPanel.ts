@@ -9,7 +9,7 @@ type Options = {
   userDataDir: string; preload: string; portraitCacheDir: string
   bridge: () => Bridge | null
   target: (workItemId: string) => BrowserWindow | null
-  slice: () => WebContents | undefined
+  slice: () => (WebContents | null | undefined)[] | WebContents | null | undefined
 }
 const sameRect = (a: Rect, b: Rect) => ['x', 'y', 'width', 'height'].every(k => a[k as keyof Rect] === b[k as keyof Rect])
 
@@ -32,11 +32,12 @@ export class CompanionPanel {
 
   constructor(private options: Options) {
     const owns = (sender: WebContents) => sender === this.window?.webContents
+    const isSliceSender = (sender: WebContents) => this.slices().some(slice => slice === sender)
     ipcMain.handle('companion.toggle', (event, id: unknown) => {
-      if (event.sender !== options.slice() || event.senderFrame !== event.sender.mainFrame) return false
+      if (!isSliceSender(event.sender) || event.senderFrame !== event.sender.mainFrame) return false
       return this.toggle(typeof id === 'string' ? id : '')
     })
-    ipcMain.handle('companion.state', event => event.sender === options.slice() ? Boolean(this.window) : false)
+    ipcMain.handle('companion.state', event => isSliceSender(event.sender) ? Boolean(this.window) : false)
     ipcMain.handle('companion.portraits', event => owns(event.sender)
       ? readCompanionPortraits(options.portraitCacheDir) : {})
     ipcMain.handle('companion.close', event => owns(event.sender) ? this.close() : false)
@@ -52,9 +53,17 @@ export class CompanionPanel {
     })
   }
 
+  private slices(): WebContents[] {
+    const raw = this.options.slice()
+    const list = Array.isArray(raw) ? raw : [raw]
+    return list.filter((item): item is WebContents => Boolean(item && !item.isDestroyed()))
+  }
+
   private publish() {
-    const slice = this.options.slice()
-    if (slice && !slice.isDestroyed()) slice.send('companion.state', Boolean(this.window))
+    const open = Boolean(this.window)
+    for (const slice of this.slices()) {
+      slice.send('companion.state', open)
+    }
   }
 
   private setSuppressed(active: boolean): Promise<boolean> {

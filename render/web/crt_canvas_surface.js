@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   "use strict";
 
   function escapeHtml(value) {
@@ -1168,6 +1168,13 @@
         border-color: rgba(127, 245, 224, 0.24);
         background: rgba(4, 24, 29, 0.68);
         font-size: 9px;
+        cursor: pointer;
+      }
+
+      .crt-canvas-actions button:hover:not(:disabled) {
+        border-color: rgba(145, 223, 204, 0.7);
+        background: rgba(10, 42, 50, 0.85);
+        color: #c5fff0;
       }
 
       .crt-canvas-actions [data-action="companion"][aria-pressed="true"] {
