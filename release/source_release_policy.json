@@ -126,7 +126,9 @@
     "docs/alpha-0.15.md",
     "docs/routing-accuracy-baseline.md",
     "docs/evidence/routing-accuracy-2026-09-12.json",
-    "docs/alpha-0.15-impact.md"
+    "docs/alpha-0.15-impact.md",
+    "docs/fps_texture_sampling_experiment_2026-09-16.md",
+    "docs/evidence/fps-texture-sampling-2026-09-16.json"
   ],
   "exclude_globs": [
     ".github/ISSUE_TEMPLATE/config.yml",

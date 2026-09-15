@@ -38,6 +38,8 @@
     const maxResolution = supportedResolution(options && options.maxResolution);
     return {
       maxFps: supportedFps(options && options.maxFps) || STANDARD_MAX_FPS,
+      textureSampling: options?.textureSampling === true
+        || options?.textureSampling === "1" || options?.textureSampling === "true",
       resolution: maxResolution === null
         ? nativeResolution
         : Math.min(nativeResolution, maxResolution),

@@ -23,7 +23,7 @@ let host,window,bridge,seq=0,paintCount=0
 const pending=new Map(),samples=[]
 async function startHost(){
   host=spawn(path.join(root,'.venv/Scripts/python.exe'),['-u','tools/probes/wallpaper_memory_host.py'],{
-    cwd:root,windowsHide:true,env:{...process.env,GRAPHICS_PROFILE:'custom',RENDER_MAX_FPS:String(fps),RENDER_MAX_RESOLUTION:'1.5'},stdio:['pipe','pipe','pipe']})
+    cwd:root,windowsHide:true,env:{...process.env,GRAPHICS_PROFILE:'custom',RENDER_MAX_FPS:String(fps),RENDER_MAX_RESOLUTION:'1.5',RENDER_TEXTURE_SAMPLING:mode==='sampled'?'true':'false'},stdio:['pipe','pipe','pipe']})
   host.stderr.on('data',d=>{void fs.appendFile(path.join(output,'host.log'),d)})
   return new Promise((resolve,reject)=>{
     const timer=setTimeout(()=>reject(Error('Host startup timed out')),90000)

@@ -425,6 +425,7 @@ GRAPHICS_PROFILES = frozenset({"standard", "power_saving", "custom"})
 GRAPHICS_PROFILE = _str("GRAPHICS_PROFILE", "standard").strip().lower()
 RENDER_MAX_FPS = _int("RENDER_MAX_FPS", 30)
 RENDER_MAX_RESOLUTION = _float("RENDER_MAX_RESOLUTION", 1.5)
+RENDER_TEXTURE_SAMPLING = _bool("RENDER_TEXTURE_SAMPLING", False)
 
 
 def _resolve_graphics_profile(

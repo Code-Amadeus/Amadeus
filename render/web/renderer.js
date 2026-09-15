@@ -29,6 +29,7 @@
   const renderBudget = window.RenderBudget.resolveRenderBudget({
     maxFps: renderParams.get("renderMaxFps"),
     maxResolution: renderParams.get("renderMaxResolution"),
+    textureSampling: renderParams.get("renderTextureSampling"),
     devicePixelRatio: window.devicePixelRatio,
   });
   const app = new PIXI.Application({
@@ -63,6 +64,7 @@
       this._frames = {};
       this._frameUrls = {};
       this._texturePromisesByUrl = new Map();
+      this._textureSamplingEnabled = renderBudget.textureSampling;
       this._frameSamplingPlans = new Map();
       this._requiredFrameIndices = new Map();
       this._textureSampleFps = null;
@@ -283,6 +285,7 @@
     }
 
     _sampleFrameIndex(emotion, idx, timeMs = null) {
+      if (!this._textureSamplingEnabled) return idx;
       const count = (this._frameUrls[emotion] || []).length;
       const interval = this._frameIntervals[emotion];
       if (!count || !(interval > 0)) return idx;
@@ -489,7 +492,7 @@
 
     holdFrame(which) {
       if (which === undefined || which === null) {
-        this._heldFrameIdx = this._activeFrameIdx; // hold the image actually displayed
+        this._heldFrameIdx = this._textureSamplingEnabled ? this._activeFrameIdx : this._frameIdx;
       } else if (which === -1) {
         const frames = this._getEmotionFrames();
         this._heldFrameIdx = frames ? frames.length - 1 : this._frameIdx; // hold last
@@ -497,7 +500,7 @@
         this._heldFrameIdx = which;
       }
       const emotion = this._currentEmotion;
-      const validHold = Number.isInteger(this._heldFrameIdx) && this._heldFrameIdx >= 0
+      const validHold = this._textureSamplingEnabled && Number.isInteger(this._heldFrameIdx) && this._heldFrameIdx >= 0
         && this._heldFrameIdx < (this._frameUrls[emotion] || []).length;
       if (validHold && this._sampleFrameIndex(emotion, this._heldFrameIdx) !== this._heldFrameIdx) {
         if (!this._requiredFrameIndices.has(emotion)) this._requiredFrameIndices.set(emotion, new Set());
@@ -511,6 +514,10 @@
         });
       }
       this._held = true;
+      if (!this._textureSamplingEnabled) {
+        this._activeFramePhase = "frames";
+        this._activeFrameIdx = this._heldFrameIdx;
+      }
       this._showFrame(this._heldFrameIdx);
     }
 
@@ -585,8 +592,12 @@
         // frame until the requested texture is ready.
         const hasCurrentTexture = this.sprite.texture && this.sprite.texture.height > 1;
         if (hasCurrentTexture) return;
-        targetIdx = frames.findIndex(Boolean);
-        texture = frames[targetIdx];
+        if (this._textureSamplingEnabled) {
+          targetIdx = frames.findIndex(Boolean);
+          texture = frames[targetIdx];
+        } else {
+          texture = frames.find(Boolean);
+        }
       }
       if (!texture) return;
       this._frameIdx = logicalIdx;
@@ -969,7 +980,8 @@
 
         elapsed += Math.min(app.ticker.deltaMS, 100);
         if (elapsed < interval) return;
-        const steps = Math.floor(elapsed / interval);
+        const steps = this._textureSamplingEnabled
+          ? Math.floor(elapsed / interval) : Math.min(4, Math.floor(elapsed / interval));
         elapsed -= steps * interval;
 
         let advanced = false;
@@ -997,12 +1009,12 @@
           return;
         }
 
-        this._sampleTimeMs = this._frameIdx * interval + elapsed;
+        if (this._textureSamplingEnabled) this._sampleTimeMs = this._frameIdx * interval + elapsed;
         this._showFrame(this._frameIdx);
         if (onceThenHold && this._frameIdx >= frames.length - 1) {
           this._notifyCycleComplete(emotion);
-        } else if (!onceThenHold && crossedCycle) {
-          this._cycleCompletedForEmotion = "";
+        } else if (!onceThenHold && (this._textureSamplingEnabled ? crossedCycle : this._frameIdx === 0)) {
+          if (this._textureSamplingEnabled) this._cycleCompletedForEmotion = "";
           this._notifyCycleComplete(emotion);
         } else {
           this._cycleCompletedForEmotion = "";

@@ -36,6 +36,8 @@
       var assetPort = normalizePort(params.get("assetPort"));
       var bridgePort = normalizePort(params.get("bridgePort"));
       var graphicsProfile = params.get("graphicsProfile") || "";
+      var samplingValue = params.get("renderTextureSampling");
+      var renderTextureSampling = samplingValue === null ? null : samplingValue === "1" || samplingValue === "true";
       var renderMaxFps = Number(params.get("renderMaxFps"));
       var renderMaxResolutionValue = params.get("renderMaxResolution");
       var renderMaxResolution = renderMaxResolutionValue === null
@@ -54,7 +56,8 @@
         !assetPort ||
         !bridgePort ||
         !graphicsProfile ||
-        !(renderMaxFps > 0)
+        !(renderMaxFps > 0) ||
+        renderTextureSampling === null
       ) {
         try {
           var response = await fetch(
@@ -66,6 +69,7 @@
             assetPort = assetPort || normalizePort(info.assetPort);
             bridgePort = bridgePort || normalizePort(info.bridgePort);
             graphicsProfile = graphicsProfile || String(info.graphicsProfile || "");
+            if (renderTextureSampling === null) renderTextureSampling = info.renderTextureSampling === true;
             renderMaxFps = renderMaxFps > 0 ? renderMaxFps : Number(info.renderMaxFps);
             renderMaxResolution = renderMaxResolution !== null && renderMaxResolution > 0
               ? renderMaxResolution
@@ -92,6 +96,7 @@
         "/render/web/wallpaper_engine.html?bridgePort=" + bridgePort +
         "&host=lively&renderMaxFps=" + encodeURIComponent(renderMaxFps) +
         "&graphicsProfile=" + encodeURIComponent(graphicsProfile);
+      url += "&renderTextureSampling=" + (renderTextureSampling ? "1" : "0");
       if (renderMaxResolution !== null && renderMaxResolution > 0) {
         url += "&renderMaxResolution=" + encodeURIComponent(renderMaxResolution);
       }

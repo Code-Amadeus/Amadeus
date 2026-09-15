@@ -543,6 +543,28 @@ dependency and CI work is tracked by
 [#46](https://github.com/Code-Amadeus/Amadeus/pull/46), and signing,
 notarization, and an installer are not included yet.
 
+### Experimental texture sampling (off by default)
+
+`RENDER_TEXTURE_SAMPLING=false` preserves the existing full-frame loading and
+playback rules. On **16GB systems or other memory-constrained setups**, consider
+trying the experimental option with the 30 FPS power-saving profile in `.env`:
+
+```dotenv
+GRAPHICS_PROFILE=power_saving
+RENDER_TEXTURE_SAMPLING=true
+```
+
+When enabled, character frames are sampled against the effective FPS budget,
+preserving required hold frames, animation duration and mouth-anchor indices.
+One local 30 FPS offscreen experiment reduced CPU texture buffers by about 50%
+with similar frame pacing. This is not a claim of halving total RAM or VRAM;
+16GB hardware and long-running sessions still need validation.
+See the [experiment and limitations](docs/fps_texture_sampling_experiment_2026-09-16.md).
+
+Restart Amadeus/the backend and reopen the wallpaper after changing this option.
+Changing the draw FPS alone does not rebuild the texture cache. To restore the
+existing behavior, set `RENDER_TEXTURE_SAMPLING=false` and restart in the same way.
+
 ## Configuration ownership
 
 Startup values use one precedence order:

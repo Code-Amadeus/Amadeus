@@ -204,6 +204,7 @@ type WallpaperBridgeDescriptor = {
   assetVersion: string
   graphicsProfile: 'standard' | 'power_saving' | 'custom'
   renderMaxFps: number
+  renderTextureSampling: boolean
   renderMaxResolution: number | null
   sliceBounds: { x: number; y: number; width: number; height: number }
 }
@@ -592,6 +593,7 @@ function normalizeWallpaperBridge(raw: unknown): WallpaperBridgeDescriptor | nul
     assetVersion: String(value.assetVersion || ''),
     graphicsProfile: graphicsProfile as WallpaperBridgeDescriptor['graphicsProfile'],
     renderMaxFps,
+    renderTextureSampling: value.renderTextureSampling === true,
     renderMaxResolution,
     sliceBounds,
   }
@@ -621,6 +623,7 @@ function electronSliceUrl(bridge: WallpaperBridgeDescriptor): string {
     assetVersion: bridge.assetVersion,
     graphicsProfile: bridge.graphicsProfile,
     renderMaxFps: String(bridge.renderMaxFps),
+    renderTextureSampling: bridge.renderTextureSampling ? '1' : '0',
   })
   if (bridge.renderMaxResolution !== null) {
     query.set('renderMaxResolution', String(bridge.renderMaxResolution))

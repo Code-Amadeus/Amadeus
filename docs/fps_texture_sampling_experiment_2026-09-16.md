@@ -2,6 +2,10 @@
 
 日期：2026-09-16（本地时区 Pacific/Auckland；产物目录使用 UTC）。
 
+后续发布开关：`RENDER_TEXTURE_SAMPLING=false`（默认）。下述 A/B 是开启采样时的实验结果；
+默认关闭保留原版全帧加载、每 tick 最多推进 4 个源帧、按第 0 帧通知循环结束，以及原有 hold 行为。
+启用后才应用本文的采样和时钟修正。省电档本身不会自动启用实验。
+
 ## 结论
 
 **30 FPS 下可以把本机真实角色包的 CPU 纹理数据减少约一半，同时保持与原版接近的换帧频率。** 可行方案需要按动画时间选择采样帧；只将原始帧索引映射到最近保留帧，会产生额外重复画面，第一版实验因此被淘汰。
@@ -106,9 +110,11 @@ foreach ($probeMode in @('baseline', 'sampled')) {
 
 ## 试用设置与发布范围
 
-实验分支沿用现有图形预算，不新增一个独立的纹理抽帧开关。试用 30 FPS 可在 `.env` 选择 `GRAPHICS_PROFILE=power_saving`；标准档为 `GRAPHICS_PROFILE=standard`（60 FPS）。修改 `.env` 后需要重启应用/后端，再打开壁纸；仅重开壁纸不会重新读取 Python 已导入的启动常量。运行期间改变 Wallpaper Engine 上限时，绘制上限会更新，纹理采样档位仍需要重载。
+试用需显式设置 `RENDER_TEXTURE_SAMPLING=true`；该实验开关不重复定义 FPS。30 FPS 可选择 `GRAPHICS_PROFILE=power_saving`；标准档为 `GRAPHICS_PROFILE=standard`（60 FPS）。修改 `.env` 后需要重启应用/后端，再打开壁纸；仅重开壁纸不会重新读取 Python 已导入的启动常量。运行期间改变 Wallpaper Engine 上限时，绘制上限会更新，纹理采样档位仍需要重载。关闭开关并重启即可恢复原版路径。
 
-该版本适合独立实验分支试用，尚不作为主线默认发布。GUI 图形分组不在本次变更内；后续应复用现有桌面配置存储和同一组配置键，避免 GUI 与 `.env` 各自维护一套图形状态。
+采样不作为默认行为发布。GUI 图形分组不在本次变更内；后续应复用现有桌面配置存储和同一组配置键，避免 GUI 与 `.env` 各自维护一套图形状态。
+
+默认关闭机制新增了开关两侧的加载/时钟回归，并验证 chat URL、web wallpaper URL、bridge-info、Lively iframe 与 macOS Electron 场景的传递；测试包含旧描述符缺少开关时保持关闭。诊断脚本会仅为 sampled 组设置 `RENDER_TEXTURE_SAMPLING=true`。
 
 ## 本机最终证据
 

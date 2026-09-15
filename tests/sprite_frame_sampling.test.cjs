@@ -10,9 +10,9 @@ class Display {
   constructor() { this.anchor = {set(){}}; this.texture = {}; }
   addChild() {}
 }
-function setup(fps = 30) {
+function setup(fps = 30, textureSampling = true) {
   const ticker = {maxFPS:fps,deltaMS:1000/fps,add(fn){this.tick=fn}};
-  const context = { app:{ticker}, PIXI:{Container:Display,Sprite:Display,Graphics:Display},
+  const context = { app:{ticker}, renderBudget:budget.resolveRenderBudget({maxFps:fps,textureSampling}), PIXI:{Container:Display,Sprite:Display,Graphics:Display},
     window:{RenderBudget:budget},console:{log(){},warn(){},error(){}},setTimeout,clearTimeout };
   vm.createContext(context);
   vm.runInContext(source.slice(start,end)+'\nglobalThis.SpriteRenderer=SpriteRenderer;',context);
@@ -27,8 +27,8 @@ function setup(fps = 30) {
   sprite._applyFrame=texture=>{sprite.sprite.texture=texture};
   return {sprite,ticker,loads};
 }
-async function clip(fps=30,count=120,interval=17,closed=undefined) {
-  const state=setup(fps), s=state.sprite;
+async function clip(fps=30,count=120,interval=17,closed=undefined,enabled=true) {
+  const state=setup(fps,enabled), s=state.sprite;
   s.loadFrames('normal',Array.from({length:count},(_,i)=>'frame-'+i));
   s.setIdleFrameIntervalMs('normal',interval);
   if(closed!==undefined) {
@@ -143,4 +143,23 @@ test('initial fallback reports the source index of the image actually displayed'
   assert.equal(s._frameIdx,50);
   assert.equal(s._activeFrameIdx,0);
   assert.equal(s.sprite.texture.url,'frame-0');
+});
+test('disabled sampling loads all frames and preserves original source selection',async()=>{
+  const {sprite:s,loads}=await clip(30,120,17,undefined,false);
+  assert.equal(loads.length,120);
+  assert.equal(s._frameSamplingPlans.size,0);
+  assert.equal(s._textureSampleFps,null);
+  for(let i=0;i<120;i++){s._showFrame(i);assert.equal(s._activeFrameIdx,i);}
+});
+test('disabled sampling preserves the old four-source-frame limit and cycle trigger',async()=>{
+  const {sprite:s,ticker}=await clip(30,120,5,undefined,false);
+  s.setClipConfig('normal',{loopMode:'once_then_hold'});
+  let cycles=0;s.setCycleCompleteHandler(()=>cycles++);
+  let ticks=0;while(!cycles&&ticks<60){ticker.tick(1);ticks++;}
+  assert.equal(ticks,30,'off mode retains the pre-experiment one-second playback');
+  assert.equal(s._sampleTimeMs,null);
+  const loop=await clip(30,5,10,undefined,false);
+  let notifications=0;loop.sprite.setCycleCompleteHandler(()=>notifications++);
+  for(let i=0;i<30;i++)loop.ticker.tick(1);
+  assert.equal(notifications,10,'off mode retains the old index-zero notification rule');
 });

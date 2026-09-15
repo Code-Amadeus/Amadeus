@@ -11,6 +11,7 @@ export async function syncElectronSliceHost(payload: Record<string, unknown>): P
     assetVersion: String(payload.assetVersion || ''),
     graphicsProfile: String(payload.graphicsProfile || 'standard'),
     renderMaxFps: Number(payload.renderMaxFps),
+    renderTextureSampling: payload.renderTextureSampling === true,
     renderMaxResolution: payload.renderMaxResolution == null
       ? null
       : Number(payload.renderMaxResolution),
