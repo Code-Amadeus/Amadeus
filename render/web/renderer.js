@@ -26,26 +26,21 @@
   // ---------------------------------------------------------------------------
   const renderParams = new URLSearchParams(window.location.search || "");
   const graphicsProfile = renderParams.get("graphicsProfile") || "standard";
-  const configuredMaxFps = renderParams.get("renderMaxFps");
-  const configuredResolutionValue = renderParams.get("renderMaxResolution");
-  const configuredMaxResolution = configuredResolutionValue === null
-    ? null
-    : Number(configuredResolutionValue);
-  const deviceResolution = window.devicePixelRatio || 1;
+  const renderBudget = window.RenderBudget.resolveRenderBudget({
+    maxFps: renderParams.get("renderMaxFps"),
+    maxResolution: renderParams.get("renderMaxResolution"),
+    devicePixelRatio: window.devicePixelRatio,
+  });
   const app = new PIXI.Application({
     resizeTo: document.getElementById("canvas-container"),
     backgroundAlpha: 0,          // Transparent background
     autoDensity: true,
-    resolution: configuredMaxResolution !== null
-      && Number.isFinite(configuredMaxResolution)
-      && configuredMaxResolution > 0
-      ? Math.min(deviceResolution, configuredMaxResolution)
-      : deviceResolution,
+    resolution: renderBudget.resolution,
     antialias: true,
   });
   const frameRateController = window.RenderBudget.createFrameRateController(
     app.ticker,
-    configuredMaxFps,
+    renderBudget.maxFps,
   );
   frameRateController.apply();
   window.RenderBudget.installWallpaperEngineListener(window, frameRateController);

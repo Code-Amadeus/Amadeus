@@ -4,6 +4,10 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
+from config.settings import _resolve_graphics_profile
+
 
 ROOT = Path(__file__).resolve().parents[1]
 RENDER_BUDGET = ROOT / "render" / "web" / "render_budget.js"
@@ -29,6 +33,56 @@ def test_every_renderer_host_loads_budget_before_renderer() -> None:
     ):
         source = (ROOT / relative).read_text(encoding="utf-8")
         assert source.index("render_budget.js") < source.rindex("renderer.js")
+
+
+@pytest.mark.parametrize(
+    ("profile", "custom_fps", "custom_resolution", "expected"),
+    [
+        ("standard", 30, 1.5, (60, None)),
+        ("power_saving", 60, 2.0, (30, 1.5)),
+        ("custom", 10, 0.25, (10, 0.25)),
+        ("custom", 240, 4.0, (240, 4.0)),
+    ],
+)
+def test_graphics_profile_selection(
+    profile: str,
+    custom_fps: int,
+    custom_resolution: float,
+    expected: tuple[int, float | None],
+) -> None:
+    assert _resolve_graphics_profile(profile, custom_fps, custom_resolution) == expected
+
+
+@pytest.mark.parametrize("fps", [1, 5, 9, 241])
+def test_graphics_profile_rejects_unsupported_custom_fps(fps: int) -> None:
+    with pytest.raises(ValueError, match="RENDER_MAX_FPS must be between 10 and 240"):
+        _resolve_graphics_profile("custom", fps, 1.5)
+
+
+def test_graphics_profile_rejects_unknown_profile() -> None:
+    with pytest.raises(ValueError, match="GRAPHICS_PROFILE must be one of"):
+        _resolve_graphics_profile("battery", 30, 1.5)
+
+
+def test_render_budget_resolves_frame_rate_and_resolution_together() -> None:
+    result = _run_node(
+        f"""
+const budget = require({json.dumps(str(RENDER_BUDGET))});
+const cases = [
+  {{ maxFps: 60, maxResolution: null, devicePixelRatio: 2.5 }},
+  {{ maxFps: 30, maxResolution: 1.5, devicePixelRatio: 2.5 }},
+  {{ maxFps: 45, maxResolution: 1.5, devicePixelRatio: 1 }},
+  {{ maxFps: 0, maxResolution: 0, devicePixelRatio: 2 }},
+].map(value => budget.resolveRenderBudget(value));
+process.stdout.write(JSON.stringify(cases));
+"""
+    )
+    assert result == [
+        {"maxFps": 60, "resolution": 2.5},
+        {"maxFps": 30, "resolution": 1.5},
+        {"maxFps": 45, "resolution": 1},
+        {"maxFps": 60, "resolution": 2},
+    ]
 
 
 def test_project_and_wallpaper_engine_limits_use_lower_supported_value() -> None:
