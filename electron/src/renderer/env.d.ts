@@ -75,7 +75,7 @@ export declare global {
       path: string
       detail: string
     }>
-    openElectronSlice: (bridge: { assetPort: number; bridgePort: number; assetVersion?: string; renderMaxFps: number; renderMaxResolution: number; sliceBounds?: { x: number; y: number; width: number; height: number } }) => Promise<boolean>
+    openElectronSlice: (bridge: { assetPort: number; bridgePort: number; assetVersion?: string; graphicsProfile: string; renderMaxFps: number; renderMaxResolution: number | null; sliceBounds?: { x: number; y: number; width: number; height: number } }) => Promise<boolean>
     closeElectronSlice: () => Promise<boolean>
     openAuipApp: (launchUrl: string, hostSurfaceId?: string, workItemId?: string) => Promise<{ ok: boolean; detail: string }>
     closeAuipApp: (hostSurfaceId: string, appSessionId?: string) => Promise<{ ok: boolean; status: string; detail: string }>

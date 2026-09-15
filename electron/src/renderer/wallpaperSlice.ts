@@ -9,8 +9,11 @@ export async function syncElectronSliceHost(payload: Record<string, unknown>): P
     assetPort,
     bridgePort,
     assetVersion: String(payload.assetVersion || ''),
+    graphicsProfile: String(payload.graphicsProfile || 'standard'),
     renderMaxFps: Number(payload.renderMaxFps),
-    renderMaxResolution: Number(payload.renderMaxResolution),
+    renderMaxResolution: payload.renderMaxResolution == null
+      ? null
+      : Number(payload.renderMaxResolution),
     sliceBounds: payload.sliceBounds && typeof payload.sliceBounds === 'object'
       ? payload.sliceBounds as { x: number; y: number; width: number; height: number }
       : undefined,

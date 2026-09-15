@@ -184,8 +184,9 @@ type WallpaperBridgeDescriptor = {
   assetPort: number
   bridgePort: number
   assetVersion: string
+  graphicsProfile: 'standard' | 'power_saving' | 'custom'
   renderMaxFps: number
-  renderMaxResolution: number
+  renderMaxResolution: number | null
   sliceBounds: { x: number; y: number; width: number; height: number }
 }
 
@@ -538,15 +539,20 @@ function normalizeWallpaperBridge(raw: unknown): WallpaperBridgeDescriptor | nul
   const value = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
   const assetPort = normalizeLocalPort(value.assetPort)
   const bridgePort = normalizeLocalPort(value.bridgePort)
+  const graphicsProfile = String(value.graphicsProfile || '')
   const renderMaxFps = Number(value.renderMaxFps)
-  const renderMaxResolution = Number(value.renderMaxResolution)
+  const renderMaxResolution = value.renderMaxResolution == null
+    ? null
+    : Number(value.renderMaxResolution)
   if (
     assetPort < 0
     || bridgePort < 0
+    || !['standard', 'power_saving', 'custom'].includes(graphicsProfile)
     || !Number.isFinite(renderMaxFps)
     || renderMaxFps <= 0
-    || !Number.isFinite(renderMaxResolution)
-    || renderMaxResolution <= 0
+    || (renderMaxResolution !== null && (
+      !Number.isFinite(renderMaxResolution) || renderMaxResolution <= 0
+    ))
   ) return null
   const rawBounds = value.sliceBounds && typeof value.sliceBounds === 'object'
     ? value.sliceBounds as Record<string, unknown>
@@ -566,6 +572,7 @@ function normalizeWallpaperBridge(raw: unknown): WallpaperBridgeDescriptor | nul
     assetPort,
     bridgePort,
     assetVersion: String(value.assetVersion || ''),
+    graphicsProfile: graphicsProfile as WallpaperBridgeDescriptor['graphicsProfile'],
     renderMaxFps,
     renderMaxResolution,
     sliceBounds,
@@ -594,9 +601,12 @@ function electronSliceUrl(bridge: WallpaperBridgeDescriptor): string {
   const query = new URLSearchParams({
     bridgePort: String(bridge.bridgePort),
     assetVersion: bridge.assetVersion,
+    graphicsProfile: bridge.graphicsProfile,
     renderMaxFps: String(bridge.renderMaxFps),
-    renderMaxResolution: String(bridge.renderMaxResolution),
   })
+  if (bridge.renderMaxResolution !== null) {
+    query.set('renderMaxResolution', String(bridge.renderMaxResolution))
+  }
   if (wallpaperWindowPolicy(process.platform).hostMode === 'scene') {
     query.set('host', 'electron')
     query.set('sliceHost', 'electron')

@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import AsyncMock, patch as mock_patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -108,12 +109,20 @@ def test_electron_slice_uses_normalized_crt_geometry_and_shared_canvas_channel()
     host._asset_port = 17778
     host._bridge_port = 17797
     host._slice_host = "electron"
-    assert f"?renderMaxFps={wallpaper_engine_bridge.RENDER_MAX_FPS}&" in host.url
-    assert f"renderMaxResolution={wallpaper_engine_bridge.RENDER_MAX_RESOLUTION}&" in host.url
-    assert host.url.endswith("&host=webwallpaper&sliceHost=electron")
-    assert f"?renderMaxFps={wallpaper_engine_bridge.RENDER_MAX_FPS}&" in host.lively_url
-    assert f"renderMaxResolution={wallpaper_engine_bridge.RENDER_MAX_RESOLUTION}&" in host.lively_url
-    assert host.lively_url.endswith("&bridgePort=17797&sliceHost=electron")
+    render_query = parse_qs(urlparse(host.url).query)
+    lively_query = parse_qs(urlparse(host.lively_url).query)
+    expected = {
+        "graphicsProfile": [wallpaper_engine_bridge.GRAPHICS_PROFILE],
+        "renderMaxFps": [str(wallpaper_engine_bridge.RENDER_EFFECTIVE_MAX_FPS)],
+        "bridgePort": ["17797"],
+        "sliceHost": ["electron"],
+    }
+    if wallpaper_engine_bridge.RENDER_EFFECTIVE_MAX_RESOLUTION is not None:
+        expected["renderMaxResolution"] = [
+            str(wallpaper_engine_bridge.RENDER_EFFECTIVE_MAX_RESOLUTION)
+        ]
+    assert render_query == {**expected, "host": ["webwallpaper"]}
+    assert lively_query == {**expected, "assetPort": ["17778"]}
 
 
 def test_electron_slice_encloses_the_separate_input_toggle_and_composer() -> None:
@@ -429,7 +438,7 @@ const context = {
     fetchCalls.push({ url, options });
     return {
       ok: true,
-      json: async () => ({ assetPort: 17778, bridgePort: 17797, renderMaxFps: 30, renderMaxResolution: 1.5 }),
+      json: async () => ({ assetPort: 17778, bridgePort: 17797, graphicsProfile: "standard", renderMaxFps: 60, renderMaxResolution: null }),
     };
   },
   document: {
@@ -472,7 +481,7 @@ const context = {
     assert result["events"] == ["bridge-info", "iframe-src"]
     assert result["iframeSrc"] == (
         "http://127.0.0.1:17778/render/web/wallpaper_engine.html"
-        "?bridgePort=17797&host=lively&renderMaxFps=30&renderMaxResolution=1.5"
+        "?bridgePort=17797&host=lively&renderMaxFps=60&graphicsProfile=standard"
     )
 
 
@@ -492,7 +501,7 @@ if (!scriptMatch) {
 
 const bridgeResponses = [
   { running: false },
-  { running: true, assetPort: 17778, bridgePort: 17797, renderMaxFps: 30, renderMaxResolution: 1.5 },
+  { running: true, assetPort: 17778, bridgePort: 17797, graphicsProfile: "standard", renderMaxFps: 60, renderMaxResolution: null },
 ];
 const events = [];
 const fetchCalls = [];
@@ -625,7 +634,7 @@ const context = {
     ]
     assert result["iframeAssignments"] == [
         "http://127.0.0.1:17778/render/web/wallpaper_engine.html"
-        "?bridgePort=17797&host=lively&renderMaxFps=30&renderMaxResolution=1.5"
+        "?bridgePort=17797&host=lively&renderMaxFps=60&graphicsProfile=standard"
     ]
     assert result["iframeSrc"] == result["iframeAssignments"][0]
 

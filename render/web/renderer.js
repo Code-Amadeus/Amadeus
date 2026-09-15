@@ -25,14 +25,20 @@
   // PixiJS Application
   // ---------------------------------------------------------------------------
   const renderParams = new URLSearchParams(window.location.search || "");
+  const graphicsProfile = renderParams.get("graphicsProfile") || "standard";
   const configuredMaxFps = Number(renderParams.get("renderMaxFps"));
-  const configuredMaxResolution = Number(renderParams.get("renderMaxResolution"));
+  const configuredResolutionValue = renderParams.get("renderMaxResolution");
+  const configuredMaxResolution = configuredResolutionValue === null
+    ? null
+    : Number(configuredResolutionValue);
   const deviceResolution = window.devicePixelRatio || 1;
   const app = new PIXI.Application({
     resizeTo: document.getElementById("canvas-container"),
     backgroundAlpha: 0,          // Transparent background
     autoDensity: true,
-    resolution: Number.isFinite(configuredMaxResolution) && configuredMaxResolution > 0
+    resolution: configuredMaxResolution !== null
+      && Number.isFinite(configuredMaxResolution)
+      && configuredMaxResolution > 0
       ? Math.min(deviceResolution, configuredMaxResolution)
       : deviceResolution,
     antialias: true,
@@ -1541,6 +1547,7 @@
   // ---------------------------------------------------------------------------
   class RenderApp {
     constructor() {
+      this.graphicsProfile = graphicsProfile;
       this._sprite = new SpriteRenderer(app.stage);
       this._live2d = new Live2DRenderer(app.stage);
       this._subtitle = new SubtitleOverlay(app.stage);
