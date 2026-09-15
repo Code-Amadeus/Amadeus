@@ -65,7 +65,9 @@ async def send(context, text, turn_id):
     accepted = await context.handler.send_text(text, session_id=context.session_id,
         turn_id=turn_id)
     assert accepted["status"] == "ok"
-    await asyncio.wait_for(context.handler._stream_task, 3)
+    # Receipt creation includes real Host intake and disk IO. This bound catches
+    # hangs; these tests assert control semantics, not a three-second latency SLA.
+    await asyncio.wait_for(context.handler._stream_task, 10)
     return context.manager.ingresses[context.session_id].receipts[turn_id]
 
 
