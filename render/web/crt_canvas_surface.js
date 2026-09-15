@@ -1170,6 +1170,12 @@
         font-size: 9px;
       }
 
+      .crt-canvas-actions [data-action="companion"][aria-pressed="true"] {
+        color: #c5fff0;
+        background: rgba(80, 185, 156, 0.25);
+        border-color: rgba(145, 223, 204, 0.8);
+      }
+
       .crt-canvas-pane {
         flex: 1 1 auto;
         min-height: 0;
@@ -3028,6 +3034,15 @@
       };
     }
 
+    let companionPanelOpen = false;
+    let companionPanelPending = false;
+    function companionPanelButton() {
+      if (!window.amadeus || !window.amadeus.toggleCompanionPanel) return "";
+      const title = companionPanelOpen ? "收起头像面板" : "打开头像与说话卡片";
+      return '<button type="button" data-action="companion" title="' + title + '" aria-label="' + title + '" aria-pressed="' + companionPanelOpen + '"' + (companionPanelPending ? ' disabled' : '') + '>'
+        + '<svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="10" cy="6" r="3"/><path d="M4 17v-2a6 6 0 0 1 12 0v2"/></svg></button>';
+    }
+
     function workPreviewLaunchButton() {
       const target = selectedWorkPreviewTarget();
       const title = target.ready
@@ -4668,6 +4683,7 @@
         "<div class=\"crt-canvas-semantic-header\"><span>" + escapeHtml(surfaceKicker()) + "</span><strong>" + escapeHtml(surfaceTitle()) + "</strong></div>",
         "<div class=\"crt-canvas-actions crt-canvas-overlay-controls\">",
         workPreviewLaunchButton(),
+        companionPanelButton(),
         "<button type=\"button\" data-action=\"preset\" aria-label=\"Toggle canvas size\">[]</button>",
         "<button type=\"button\" data-action=\"fold\" aria-label=\"Fold canvas\">&times;</button>",
         "</div>",
@@ -4741,6 +4757,18 @@
       card.querySelectorAll("[data-work-preview-item-id]").forEach((button) => {
         button.addEventListener("click", () => {
           handleWorkItemPreview(button);
+        });
+      });
+      card.querySelectorAll('[data-action="companion"]').forEach((button) => {
+        button.addEventListener("click", async () => {
+          if (companionPanelPending) return;
+          companionPanelPending = true;
+          render();
+          try {
+            companionPanelOpen = await window.amadeus.toggleCompanionPanel(selectedWorkPreviewTarget().workItemId);
+          } catch (error) {
+            state.workActionError = String(error && error.message || error);
+          } finally { companionPanelPending = false; render(); }
         });
       });
       card.querySelectorAll("[data-work-disposition-toggle]").forEach((button) => {
@@ -4855,6 +4883,10 @@
     root.appendChild(status);
     root.appendChild(card);
     host.appendChild(root);
+    if (window.amadeus && window.amadeus.onCompanionPanelState) {
+      window.amadeus.onCompanionPanelState((open) => { companionPanelOpen = open; render(); });
+      window.amadeus.getCompanionPanelState().then((open) => { companionPanelOpen = open; render(); });
+    }
     if (typeof ResizeObserver === "function") {
       resizeObserver = new ResizeObserver(() => {
         if (!state.expanded) return;
