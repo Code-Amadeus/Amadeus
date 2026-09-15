@@ -26,7 +26,7 @@
   // ---------------------------------------------------------------------------
   const renderParams = new URLSearchParams(window.location.search || "");
   const graphicsProfile = renderParams.get("graphicsProfile") || "standard";
-  const configuredMaxFps = Number(renderParams.get("renderMaxFps"));
+  const configuredMaxFps = renderParams.get("renderMaxFps");
   const configuredResolutionValue = renderParams.get("renderMaxResolution");
   const configuredMaxResolution = configuredResolutionValue === null
     ? null
@@ -43,9 +43,12 @@
       : deviceResolution,
     antialias: true,
   });
-  if (Number.isFinite(configuredMaxFps) && configuredMaxFps > 0) {
-    app.ticker.maxFPS = configuredMaxFps;
-  }
+  const frameRateController = window.RenderBudget.createFrameRateController(
+    app.ticker,
+    configuredMaxFps,
+  );
+  frameRateController.apply();
+  window.RenderBudget.installWallpaperEngineListener(window, frameRateController);
   document.getElementById("canvas-container").appendChild(app.view);
 
   // ---------------------------------------------------------------------------
