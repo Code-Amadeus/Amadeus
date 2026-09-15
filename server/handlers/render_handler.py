@@ -12,6 +12,7 @@ from config.settings import (
     GRAPHICS_PROFILE,
     RENDER_EFFECTIVE_MAX_FPS,
     RENDER_EFFECTIVE_MAX_RESOLUTION,
+    RENDER_TEXTURE_SAMPLING,
 )
 from server.protocol import Method
 from server.ws_handler import RequestHandler
@@ -66,6 +67,7 @@ class RenderHandler(RequestHandler):
             "v": str(int(html_path.stat().st_mtime)),
             "graphicsProfile": GRAPHICS_PROFILE,
             "renderMaxFps": RENDER_EFFECTIVE_MAX_FPS,
+            "renderTextureSampling": int(RENDER_TEXTURE_SAMPLING),
         }
         if RENDER_EFFECTIVE_MAX_RESOLUTION is not None:
             query_params["renderMaxResolution"] = RENDER_EFFECTIVE_MAX_RESOLUTION

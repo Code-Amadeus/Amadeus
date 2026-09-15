@@ -31,6 +31,7 @@ from config.settings import (
     GRAPHICS_PROFILE,
     RENDER_EFFECTIVE_MAX_FPS,
     RENDER_EFFECTIVE_MAX_RESOLUTION,
+    RENDER_TEXTURE_SAMPLING,
     WALLPAPER_SFX_GATE_LOG,
     WALLPAPER_WHEEL_FORWARD,
 )
@@ -733,6 +734,7 @@ class WallpaperEngineBridgeHost:
         render_params: dict[str, object] = {
             "graphicsProfile": GRAPHICS_PROFILE,
             "renderMaxFps": RENDER_EFFECTIVE_MAX_FPS,
+            "renderTextureSampling": int(RENDER_TEXTURE_SAMPLING),
             **params,
         }
         if RENDER_EFFECTIVE_MAX_RESOLUTION is not None:
@@ -784,6 +786,10 @@ class WallpaperEngineBridgeHost:
         return RENDER_EFFECTIVE_MAX_RESOLUTION
 
     @property
+    def render_texture_sampling(self) -> bool:
+        return RENDER_TEXTURE_SAMPLING
+
+    @property
     def graphics_profile(self) -> str:
         return GRAPHICS_PROFILE
 
@@ -815,6 +821,7 @@ class WallpaperEngineBridgeHost:
                 "graphicsProfile": GRAPHICS_PROFILE,
                 "renderMaxFps": RENDER_EFFECTIVE_MAX_FPS,
                 "renderMaxResolution": RENDER_EFFECTIVE_MAX_RESOLUTION,
+                "renderTextureSampling": RENDER_TEXTURE_SAMPLING,
                 "sliceHost": self._slice_host,
                 "sliceBounds": self._slice_bounds,
                 "canvasBounds": self._canvas_bounds,

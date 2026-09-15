@@ -78,10 +78,10 @@ process.stdout.write(JSON.stringify(cases));
 """
     )
     assert result == [
-        {"maxFps": 60, "resolution": 2.5},
-        {"maxFps": 30, "resolution": 1.5},
-        {"maxFps": 45, "resolution": 1},
-        {"maxFps": 60, "resolution": 2},
+        {"maxFps": 60, "resolution": 2.5, "textureSampling": False},
+        {"maxFps": 30, "resolution": 1.5, "textureSampling": False},
+        {"maxFps": 45, "resolution": 1, "textureSampling": False},
+        {"maxFps": 60, "resolution": 2, "textureSampling": False},
     ]
 
 
@@ -137,3 +137,78 @@ process.stdout.write(JSON.stringify({{
 """
     )
     assert result == {"calls": [24], "ticker": 24, "keptUserListener": True}
+
+
+def test_texture_sampling_is_an_explicit_opt_in_independent_of_fps() -> None:
+    from config.settings import declared_environment_fields
+    from config.environment import EnvironmentReader
+
+    field = next(f for f in declared_environment_fields() if f.key == "RENDER_TEXTURE_SAMPLING")
+    assert field.default is False
+    assert EnvironmentReader({}).boolean(field.key, field.default) is False
+    result = _run_node(f"""
+const budget = require({json.dumps(str(RENDER_BUDGET))});
+const cases = [undefined, null, false, 'false', '0', '', 'yes', true, 'true', '1'];
+process.stdout.write(JSON.stringify(cases.map(textureSampling =>
+  budget.resolveRenderBudget({{maxFps:30,textureSampling}}).textureSampling)));
+""")
+    assert result == [False] * 7 + [True] * 3
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_sampling_flag_reaches_chat_wallpaper_and_bridge_discovery(tmp_path, monkeypatch, enabled) -> None:
+    import asyncio
+    from urllib.parse import parse_qs, urlparse
+    from server.handlers import render_handler
+    from server.handlers.wallpaper_handler import WallpaperHandler
+    from wallpaper import wallpaper_engine_bridge as bridge_module
+
+    monkeypatch.setattr(render_handler, "RENDER_TEXTURE_SAMPLING", enabled)
+    handler = render_handler.RenderHandler()
+    handler.configure(ROOT)
+    query = parse_qs(urlparse(asyncio.run(handler._start({}))["url"]).query)
+    assert query["renderTextureSampling"] == [str(int(enabled))]
+
+    monkeypatch.setattr(bridge_module, "RENDER_TEXTURE_SAMPLING", enabled)
+    host = object.__new__(bridge_module.WallpaperEngineBridgeHost)
+    host._asset_port, host._bridge_port, host._slice_host = 17778, 17797, "electron"
+    for url in [host.url, host.lively_url]:
+        assert parse_qs(urlparse(url).query)["renderTextureSampling"] == [str(int(enabled))]
+    assert host.render_texture_sampling is enabled
+    # The backend discovery endpoint used by the generic Lively URL.
+    wall = WallpaperHandler()
+    from types import SimpleNamespace
+    wall._wallpaper_host = SimpleNamespace(render_texture_sampling=enabled)
+    assert wall.bridge_info()["renderTextureSampling"] is enabled
+    assert wall._status("started")["renderTextureSampling"] is enabled
+
+
+@pytest.mark.parametrize(("query_flag", "bridge_flag", "expected", "fetches"), [
+    (None, True, True, 1),
+    (None, None, False, 1),
+    ("0", True, False, 0),
+    ("1", False, True, 0),
+])
+def test_lively_forwards_opt_in_and_defaults_older_descriptors_off(query_flag, bridge_flag, expected, fetches):
+    query = "?assetPort=17778&bridgePort=17797&graphicsProfile=standard&renderMaxFps=30"
+    if query_flag is not None:
+        query += "&renderTextureSampling=" + query_flag
+    info = {"assetPort": 17778, "bridgePort": 17797, "graphicsProfile": "standard", "renderMaxFps": 30}
+    if bridge_flag is not None:
+        info["renderTextureSampling"] = bridge_flag
+    result = _run_node(f"""
+const fs=require('node:fs'),vm=require('node:vm');
+const html=fs.readFileSync({json.dumps(str(ROOT / 'wallpaper/lively/index.html'))},'utf8');
+const script=html.match(/<script\\b[^>]*>([\\s\\S]*?)<\\/script>/i)[1];
+const iframe={{src:''}};let fetches=0;
+const context={{URLSearchParams,console,
+  window:{{location:{{search:{json.dumps(query)},origin:'http://127.0.0.1:17777'}}}},
+  document:{{getElementById:()=>iframe}},
+  fetch:async()=>{{fetches++;return {{ok:true,json:async()=>({json.dumps(info)})}};}}
+}};
+vm.runInNewContext(script,context);
+setImmediate(()=>process.stdout.write(JSON.stringify({{url:iframe.src,fetches}})));
+""")
+    from urllib.parse import parse_qs, urlparse
+    assert parse_qs(urlparse(result["url"]).query)["renderTextureSampling"] == [str(int(expected))]
+    assert result["fetches"] == fetches

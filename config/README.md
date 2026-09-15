@@ -44,6 +44,15 @@ so the renderer uses the lower of it and the project profile. Unsupported host
 values restore the project limit. This runtime constraint does not mutate the
 startup environment.
 
+`RENDER_TEXTURE_SAMPLING` is a separate experimental startup opt-in, defaulting
+to `false`. Off preserves full-frame loading and the pre-experiment playback
+clock/hold behavior, regardless of the selected graphics profile. On enables
+time-based texture sampling and its associated clock corrections against that
+same effective FPS budget. It reaches chat, web wallpaper, Lively and the macOS
+Electron scene through the existing render descriptors/URLs. It does not add
+another FPS setting. Restart the backend and recreate the render surface after
+changing it; texture selection is fixed for that surface lifetime.
+
 ## What belongs where
 
 - Credentials, model paths, ports, startup feature flags: `.env` ->

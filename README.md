@@ -517,6 +517,24 @@ Wallpaper Engine 通过
 Lively 及普通角色表面没有该宿主设置，直接使用项目 Profile。
 暂不提供对应 GUI，修改 `.env` 后需重启 Amadeus。
 
+#### 实验性纹理采样（默认关闭）
+
+`RENDER_TEXTURE_SAMPLING=false` 为默认值，保持现有的全帧加载与播放规则。
+**16GB 或其他内存压力较大的设备**，可考虑在 `.env` 中开启并选择 30 FPS 省电档：
+
+```dotenv
+GRAPHICS_PROFILE=power_saving
+RENDER_TEXTURE_SAMPLING=true
+```
+
+开启后，角色动画按有效帧率选择要加载的源帧，保留关键停留帧、动作时长与嘴型索引。
+本机 30 FPS 离屏实验中，CPU 纹理缓冲约减少 50%，播放帧间隔与原版接近；
+这不代表整机 RAM 或显存减半，16GB 实机及长期运行仍待验证。
+详见[实验数据与限制](docs/fps_texture_sampling_experiment_2026-09-16.md)。
+
+修改后需重启 Amadeus/后端并重开壁纸。仅切换绘制 FPS 不会立即重建纹理缓存。
+如需恢复原行为，将 `RENDER_TEXTURE_SAMPLING=false` 后按同样步骤重启。
+
 ## 配置所有权
 
 启动值优先级固定为：

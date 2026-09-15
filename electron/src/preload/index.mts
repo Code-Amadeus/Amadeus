@@ -42,7 +42,7 @@ contextBridge.exposeInMainWorld('amadeus', {
   clearChatAvatar: (role: 'user' | 'assistant'): Promise<{ ok: boolean; error?: string; avatars?: { user: string; assistant: string } }> => ipcRenderer.invoke('chat-avatars.clear', role),
   focusMainWindow: (): Promise<boolean> => ipcRenderer.invoke('main-window.focus'),
   selectProjectDirectory: (): Promise<{ ok: boolean; cancelled: boolean; path: string; detail: string }> => ipcRenderer.invoke('project-directory.select'),
-  openElectronSlice: (bridge: { assetPort: number; bridgePort: number; assetVersion?: string; graphicsProfile: string; renderMaxFps: number; renderMaxResolution: number | null; sliceBounds?: { x: number; y: number; width: number; height: number } }): Promise<boolean> => ipcRenderer.invoke('electron-slice.open', bridge),
+  openElectronSlice: (bridge: { assetPort: number; bridgePort: number; assetVersion?: string; graphicsProfile: string; renderMaxFps: number; renderTextureSampling?: boolean; renderMaxResolution: number | null; sliceBounds?: { x: number; y: number; width: number; height: number } }): Promise<boolean> => ipcRenderer.invoke('electron-slice.open', bridge),
   closeElectronSlice: (): Promise<boolean> => ipcRenderer.invoke('electron-slice.close'),
   openAuipApp: (launchUrl: string, hostSurfaceId?: string, workItemId?: string): Promise<{ ok: boolean; detail: string }> => ipcRenderer.invoke('auip-app.open', launchUrl, hostSurfaceId, workItemId),
   closeAuipApp: (hostSurfaceId: string, appSessionId?: string): Promise<{ ok: boolean; status: string; detail: string }> => ipcRenderer.invoke('auip-app.close', hostSurfaceId, appSessionId),

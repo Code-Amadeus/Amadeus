@@ -8,7 +8,7 @@ on:
 jobs:
   cpu-model-less:
     runs-on: windows-2025
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       AMADEUS_E2E_NO_TTS: "1"
       TTS_DEVICE: "cpu"

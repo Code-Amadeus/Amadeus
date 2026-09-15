@@ -114,6 +114,7 @@ def test_electron_slice_uses_normalized_crt_geometry_and_shared_canvas_channel()
     expected = {
         "graphicsProfile": [wallpaper_engine_bridge.GRAPHICS_PROFILE],
         "renderMaxFps": [str(wallpaper_engine_bridge.RENDER_EFFECTIVE_MAX_FPS)],
+        "renderTextureSampling": [str(int(wallpaper_engine_bridge.RENDER_TEXTURE_SAMPLING))],
         "bridgePort": ["17797"],
         "sliceHost": ["electron"],
     }
@@ -481,7 +482,7 @@ const context = {
     assert result["events"] == ["bridge-info", "iframe-src"]
     assert result["iframeSrc"] == (
         "http://127.0.0.1:17778/render/web/wallpaper_engine.html"
-        "?bridgePort=17797&host=lively&renderMaxFps=60&graphicsProfile=standard"
+        "?bridgePort=17797&host=lively&renderMaxFps=60&graphicsProfile=standard&renderTextureSampling=0"
     )
 
 
@@ -501,7 +502,7 @@ if (!scriptMatch) {
 
 const bridgeResponses = [
   { running: false },
-  { running: true, assetPort: 17778, bridgePort: 17797, graphicsProfile: "standard", renderMaxFps: 60, renderMaxResolution: null },
+  { running: true, assetPort: 17778, bridgePort: 17797, graphicsProfile: "standard", renderMaxFps: 60, renderMaxResolution: null, renderTextureSampling: true },
 ];
 const events = [];
 const fetchCalls = [];
@@ -634,7 +635,7 @@ const context = {
     ]
     assert result["iframeAssignments"] == [
         "http://127.0.0.1:17778/render/web/wallpaper_engine.html"
-        "?bridgePort=17797&host=lively&renderMaxFps=60&graphicsProfile=standard"
+        "?bridgePort=17797&host=lively&renderMaxFps=60&graphicsProfile=standard&renderTextureSampling=1"
     ]
     assert result["iframeSrc"] == result["iframeAssignments"][0]
 

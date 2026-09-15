@@ -38,6 +38,8 @@
     const maxResolution = supportedResolution(options && options.maxResolution);
     return {
       maxFps: supportedFps(options && options.maxFps) || STANDARD_MAX_FPS,
+      textureSampling: options?.textureSampling === true
+        || options?.textureSampling === "1" || options?.textureSampling === "true",
       resolution: maxResolution === null
         ? nativeResolution
         : Math.min(nativeResolution, maxResolution),
@@ -66,6 +68,31 @@
     };
   }
 
+  // Keep source indices and duration intact; only choose which images need decoding.
+  function createFrameSamplingPlan(frameCount, intervalMs, maxFps, requiredIndices = []) {
+    const count = Math.max(0, Math.floor(frameCount));
+    const samples = Math.min(count, Math.max(1, Math.ceil(count * intervalMs * maxFps / 1000)));
+    const retained = new Set();
+    const timelineIndices = [];
+    for (let i = 0; i < samples; i++) {
+      const index = Math.floor(i * count / samples);
+      retained.add(index);
+      timelineIndices.push(index);
+    }
+    if (count) { retained.add(0); retained.add(count - 1); }
+    for (const index of requiredIndices) {
+      if (Number.isInteger(index) && index >= 0 && index < count) retained.add(index);
+    }
+    const indices = Array.from(retained).sort((a, b) => a - b);
+    const sourceIndex = new Uint32Array(count);
+    let cursor = 0;
+    for (let i = 0; i < count; i++) {
+      while (cursor + 1 < indices.length && Math.abs(indices[cursor + 1] - i) < Math.abs(indices[cursor] - i)) cursor++;
+      sourceIndex[i] = indices[cursor];
+    }
+    return { indices, sourceIndex, timelineIndices, sampleIntervalMs: samples ? count * intervalMs / samples : 0 };
+  }
+
   function installWallpaperEngineListener(target, controller) {
     const listener = target.wallpaperPropertyListener || {};
     const previous = listener.applyGeneralProperties;
@@ -89,6 +116,7 @@
     supportedResolution,
     resolveRenderBudget,
     createFrameRateController,
+    createFrameSamplingPlan,
     installWallpaperEngineListener,
   };
 });
