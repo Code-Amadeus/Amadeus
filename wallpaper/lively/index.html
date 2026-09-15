@@ -69,7 +69,7 @@
             assetPort = assetPort || normalizePort(info.assetPort);
             bridgePort = bridgePort || normalizePort(info.bridgePort);
             graphicsProfile = graphicsProfile || String(info.graphicsProfile || "");
-            if (renderTextureSampling === null) renderTextureSampling = info.renderTextureSampling === true;
+            if (samplingValue === null) renderTextureSampling = info.renderTextureSampling === true;
             renderMaxFps = renderMaxFps > 0 ? renderMaxFps : Number(info.renderMaxFps);
             renderMaxResolution = renderMaxResolution !== null && renderMaxResolution > 0
               ? renderMaxResolution

@@ -502,7 +502,7 @@ if (!scriptMatch) {
 
 const bridgeResponses = [
   { running: false },
-  { running: true, assetPort: 17778, bridgePort: 17797, graphicsProfile: "standard", renderMaxFps: 60, renderMaxResolution: null },
+  { running: true, assetPort: 17778, bridgePort: 17797, graphicsProfile: "standard", renderMaxFps: 60, renderMaxResolution: null, renderTextureSampling: true },
 ];
 const events = [];
 const fetchCalls = [];
@@ -635,7 +635,7 @@ const context = {
     ]
     assert result["iframeAssignments"] == [
         "http://127.0.0.1:17778/render/web/wallpaper_engine.html"
-        "?bridgePort=17797&host=lively&renderMaxFps=60&graphicsProfile=standard&renderTextureSampling=0"
+        "?bridgePort=17797&host=lively&renderMaxFps=60&graphicsProfile=standard&renderTextureSampling=1"
     ]
     assert result["iframeSrc"] == result["iframeAssignments"][0]
 
