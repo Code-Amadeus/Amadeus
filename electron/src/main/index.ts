@@ -160,7 +160,10 @@ const companionPanel = new CompanionPanel({
   portraitCacheDir: process.env.AMADEUS_COMPANION_PORTRAIT_CACHE
     || path.join(PROJECT_ROOT, '..', 'visual novel player', 'out', 'vn_portrait_cache'),
   bridge: () => companionBridge,
-  slice: () => electronSliceWindow?.webContents,
+  slice: () => [
+    electronCanvasLifecycle.window?.webContents,
+    electronSliceWindow?.webContents,
+  ],
   target: workItemId => {
     const id = workPreviewIdsByWorkItem.get(workItemId)
     return (id ? workPreviewSurfaces.get(id)?.window : null) || null
