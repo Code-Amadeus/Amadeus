@@ -491,6 +491,30 @@ Electron 会直接创建桌面层的全场景窗口，并用独立透明窗口�
 不构成正式 macOS 支持；依赖与 CI 由 [#46](https://github.com/Code-Amadeus/Amadeus/pull/46)
 承接，目前也不包含签名、公证或安装器。
 
+### 图形性能配置
+
+所有 PixiJS 角色与壁纸表面共享一个 `.env` 图形 Profile：
+
+| `GRAPHICS_PROFILE` | 最大帧率 | resolution | 用途 |
+|---|---:|---:|---|
+| `standard`（默认） | 60 FPS | 原生 device-pixel ratio | 保持动画设计质量 |
+| `power_saving` | 30 FPS | 最高 1.5× | 降低 GPU、功耗与发热 |
+| `custom` | `RENDER_MAX_FPS` | `RENDER_MAX_RESOLUTION` | 自定义性能预算 |
+
+自定义帧率支持 10–240 FPS，resolution 支持 0.25–4.0。示例：
+
+```dotenv
+GRAPHICS_PROFILE=custom
+RENDER_MAX_FPS=45
+RENDER_MAX_RESOLUTION=1.25
+```
+
+Wallpaper Engine 通过
+[`applyGeneralProperties().fps`](https://docs.wallpaperengine.io/en/web/performance/fps.html)
+提供用户 FPS 设置时，运行时采用该设置与项目 Profile 中较低的有效值；Electron、
+Lively 及普通角色表面没有该宿主设置，直接使用项目 Profile。
+暂不提供对应 GUI，修改 `.env` 后需重启 Amadeus。
+
 ## 配置所有权
 
 启动值优先级固定为：
