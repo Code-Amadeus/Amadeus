@@ -134,10 +134,11 @@ verified Work Artifact
 - AUIP 不授予 `work.*`、`provider.*`、`tts.*`、任意文件系统或其他 Session 权限。
 - 断连成为可见状态并使待确认动作失效，不会在陈旧状态上静默继续。
 
-当前 schema 是 `amadeus.auip/v0`，实现位于本仓库。详见
-[AUIP 应用会话文档](docs/auip_application_sessions.md)。独立的
-[Code-Amadeus/auip](https://github.com/Code-Amadeus/auip) 目前仍是公共 namespace
-placeholder，本版本不声称已经发布独立 SDK 或 conformance suite。
+当前 schema 是实验性的 `amadeus.auip/v0`；协议实现、[Web SDK](sdk/auip-web/)、
+[Managed Core](sdk/auip-core/)、应用示例和集成测试均位于本仓库。详见
+[AUIP 应用会话文档](docs/auip_application_sessions.md)。
+[Code-Amadeus/AUIP](https://github.com/Code-Amadeus/AUIP) 维护协议现状、实现入口与
+后续 SDK 发布条件；目前尚未发布独立版本的 SDK 或独立 conformance suite。
 
 ## 快速开始
 
@@ -490,6 +491,30 @@ Electron 会直接创建桌面层的全场景窗口，并用独立透明窗口�
 不构成正式 macOS 支持；依赖与 CI 由 [#46](https://github.com/Code-Amadeus/Amadeus/pull/46)
 承接，目前也不包含签名、公证或安装器。
 
+### 图形性能配置
+
+所有 PixiJS 角色与壁纸表面共享一个 `.env` 图形 Profile：
+
+| `GRAPHICS_PROFILE` | 最大帧率 | resolution | 用途 |
+|---|---:|---:|---|
+| `standard`（默认） | 60 FPS | 原生 device-pixel ratio | 保持动画设计质量 |
+| `power_saving` | 30 FPS | 最高 1.5× | 降低 GPU、功耗与发热 |
+| `custom` | `RENDER_MAX_FPS` | `RENDER_MAX_RESOLUTION` | 自定义性能预算 |
+
+自定义帧率支持 10–240 FPS，resolution 支持 0.25–4.0。示例：
+
+```dotenv
+GRAPHICS_PROFILE=custom
+RENDER_MAX_FPS=45
+RENDER_MAX_RESOLUTION=1.25
+```
+
+Wallpaper Engine 通过
+[`applyGeneralProperties().fps`](https://docs.wallpaperengine.io/en/web/performance/fps.html)
+提供用户 FPS 设置时，运行时采用该设置与项目 Profile 中较低的有效值；Electron、
+Lively 及普通角色表面没有该宿主设置，直接使用项目 Profile。
+暂不提供对应 GUI，修改 `.env` 后需重启 Amadeus。
+
 ## 配置所有权
 
 启动值优先级固定为：
@@ -561,8 +586,8 @@ Amadeus 第一方源码和修改依据
 ## 相关项目
 
 - [Aqua-TTS](https://github.com/Lucas1479/Aqua-TTS)：MIT 的低延迟 GPT-SoVITS v3 推理运行时；Amadeus 当前不要求安装 Aqua 才能启动。
-- [Amadeus SpriteForge](https://github.com/Code-Amadeus/amadeus-spriteforge)：角色 authoring 与 graph/KTX2 工具链的公共 namespace；当前仍是待发布占位仓库。
-- [AUIP](https://github.com/Code-Amadeus/auip)：application-session / typed-action 协议的公共 namespace；当前仍是待发布占位仓库。
+- [Amadeus SpriteForge](https://github.com/Code-Amadeus/Amadeus-SpriteForge)：已公开源码的 **0.1.0 Source Alpha**，提供本地 sprite 资产检查、行为图编辑与 KTX2 角色包预览/导出；项目代码采用 AGPL-3.0-only，生成服务与 Amadeus 运行时独立。
+- [AUIP](https://github.com/Code-Amadeus/AUIP)：已在 Amadeus 中实现的实验性 application-session / typed-action 协议；独立仓库维护现状与公开实现入口，独立版本 SDK 和 conformance suite 尚未发布。
 - [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)：内嵌语音合成推理基础。
 - [OpenClaw](https://github.com/openclaw/openclaw)：可选外部 Work gateway。
 

@@ -27,7 +27,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional
 
 from config.asset_paths import SPRITEFORGE_RUNTIME_ROOT
-from config.settings import WALLPAPER_SFX_GATE_LOG, WALLPAPER_WHEEL_FORWARD
+from config.settings import (
+    GRAPHICS_PROFILE,
+    RENDER_EFFECTIVE_MAX_FPS,
+    RENDER_EFFECTIVE_MAX_RESOLUTION,
+    WALLPAPER_SFX_GATE_LOG,
+    WALLPAPER_WHEEL_FORWARD,
+)
 from render.server import AssetServer
 from wallpaper.scene_assets import (
     _PROJECT_ROOT,
@@ -715,11 +721,23 @@ class WallpaperEngineBridgeHost:
 
     @property
     def url(self) -> str:
-        slice_param = "&sliceHost=electron" if self._slice_host == "electron" else ""
-        return (
-            f"http://127.0.0.1:{self._asset_port}/render/web/wallpaper_engine.html"
-            f"?bridgePort={self._bridge_port}&host=webwallpaper{slice_param}"
-        )
+        query = self._render_query({
+            "bridgePort": self._bridge_port,
+            "host": "webwallpaper",
+            **({"sliceHost": "electron"} if self._slice_host == "electron" else {}),
+        })
+        return f"http://127.0.0.1:{self._asset_port}/render/web/wallpaper_engine.html?{query}"
+
+    @staticmethod
+    def _render_query(params: dict[str, object]) -> str:
+        render_params: dict[str, object] = {
+            "graphicsProfile": GRAPHICS_PROFILE,
+            "renderMaxFps": RENDER_EFFECTIVE_MAX_FPS,
+            **params,
+        }
+        if RENDER_EFFECTIVE_MAX_RESOLUTION is not None:
+            render_params["renderMaxResolution"] = RENDER_EFFECTIVE_MAX_RESOLUTION
+        return urllib.parse.urlencode(render_params)
 
     @property
     def asset_port(self) -> int:
@@ -758,12 +776,25 @@ class WallpaperEngineBridgeHost:
         return _wallpaper_asset_revision()
 
     @property
+    def render_max_fps(self) -> int:
+        return RENDER_EFFECTIVE_MAX_FPS
+
+    @property
+    def render_max_resolution(self) -> float | None:
+        return RENDER_EFFECTIVE_MAX_RESOLUTION
+
+    @property
+    def graphics_profile(self) -> str:
+        return GRAPHICS_PROFILE
+
+    @property
     def lively_url(self) -> str:
-        slice_param = "&sliceHost=electron" if self._slice_host == "electron" else ""
-        return (
-            f"http://127.0.0.1:{self._asset_port}/wallpaper/lively/index.html"
-            f"?assetPort={self._asset_port}&bridgePort={self._bridge_port}{slice_param}"
-        )
+        query = self._render_query({
+            "assetPort": self._asset_port,
+            "bridgePort": self._bridge_port,
+            **({"sliceHost": "electron"} if self._slice_host == "electron" else {}),
+        })
+        return f"http://127.0.0.1:{self._asset_port}/wallpaper/lively/index.html?{query}"
 
     def start(self) -> "WallpaperEngineBridgeHost":
         # A new display lifetime cannot inherit suppression from a closed card.
@@ -781,6 +812,9 @@ class WallpaperEngineBridgeHost:
                 "assetPort": self._asset_port,
                 "bridgeToken": self._state.action_token,
                 "assetVersion": _wallpaper_asset_revision(),
+                "graphicsProfile": GRAPHICS_PROFILE,
+                "renderMaxFps": RENDER_EFFECTIVE_MAX_FPS,
+                "renderMaxResolution": RENDER_EFFECTIVE_MAX_RESOLUTION,
                 "sliceHost": self._slice_host,
                 "sliceBounds": self._slice_bounds,
                 "canvasBounds": self._canvas_bounds,
