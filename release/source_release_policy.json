@@ -11,6 +11,7 @@
   "required_files": [
     "ARCHITECTURE.md",
     "CONTRIBUTING.md",
+    "docs/acp_provider.md",
     "LICENSE",
     "LICENSES/AP-BWE-MIT.txt",
     "local_tts_infer.py",
@@ -86,6 +87,7 @@
     "AGENTS.md",
     "ARCHITECTURE.md",
     "CONTRIBUTING.md",
+    "docs/acp_provider.md",
     "docs/asr_speculative_endpointing.md",
     "docs/auip_application_sessions.md",
     "docs/barge_in_aec_interrupt_notes.md",

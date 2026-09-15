@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from agent_host.provider_bootstrap import builtin_provider_specs
+from agent_host.provider_bootstrap import builtin_provider_specs, acp_provider_specs
 from agent_host.mcp_connections import McpConnectionSpec, load_mcp_connections
 from agent_host.provider_contract import ProviderRequirements
 from agent_host.provider_runtime import runtime, scrub_untrusted_provider_metadata
@@ -47,7 +47,17 @@ class ProviderHandler(RequestHandler):
     def _ensure_registered(self) -> None:
         if self._registered:
             return
-        for spec in builtin_provider_specs():
+        specs = builtin_provider_specs()
+        try:
+            specs += acp_provider_specs()
+        except ValueError:
+            # Invalid external configuration cannot prevent the model-less Host
+            # or unrelated Providers from starting. Never echo credential data.
+            self._provider_availability["acp"] = {
+                "provider_id": "acp", "configured": True, "ready": False,
+                "registered": False, "reason": "invalid_acp_configuration",
+            }
+        for spec in specs:
             availability: dict[str, Any] = {
                 "provider_id": spec.provider_id,
                 "configured": bool(spec.runtime_enabled),
@@ -269,10 +279,21 @@ class ProviderHandler(RequestHandler):
         return await runtime.cancel(run_id)
 
     async def _list(self, params: dict[str, Any]) -> dict[str, Any]:
+        from agent_host.acp_configuration import load_acp_agents
+
+        try:
+            acp_agents = [spec.public_dict() for spec in load_acp_agents()]
+        except ValueError:
+            acp_agents = []
         return {
             "providers": runtime.list_providers(),
             "provider_manifests": runtime.list_provider_manifests(),
             "provider_availability": self.provider_availability(),
+            "provider_configurations": [
+                adapter.configuration() for adapter in self._host_adapters.values()
+                if callable(getattr(adapter, "configuration", None))
+            ],
+            "acp_agents": acp_agents,
             "runs": runtime.list_runs(),
         }
 
