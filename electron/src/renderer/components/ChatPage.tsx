@@ -91,7 +91,6 @@ const CHAT_PANEL_DEFAULT_W = 560
 const CHAT_PANEL_MIN_W = 420
 const CHARACTER_MIN_W = 360
 const SPLIT_WIDTH_STORAGE_KEY = 'amadeus.render.chatWidth'
-const MULTIMODAL_CHAT_PROVIDERS = new Set(['openai', 'gemini', 'hybrid3'])
 const VISION_LONG_PRESS_MS = 560
 const DRAFT_APPS_VIEW_ID = '__draft_apps__'
 const VISUAL_ATTACHMENT_MAX_LONG_SIDE = 1280
@@ -184,6 +183,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   const [streaming, setStreaming] = useState(false)
   const [input, setInput] = useState('')
   const [provider, setProvider] = useState('deepseek')
+  const [canUseMultimodal, setCanUseMultimodal] = useState(false)
   const [chatAvatars, setChatAvatars] = useState({ user: '', assistant: '' })
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
   const [projects, setProjects] = useState<ChatProjectSummary[]>([])
@@ -231,7 +231,6 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   const activeSessionRef = useRef('')
   const visionPressTimerRef = useRef<number | null>(null)
   const visionLongPressRef = useRef(false)
-  const canUseMultimodal = MULTIMODAL_CHAT_PROVIDERS.has(provider)
 
   const toMessages = useCallback((items: unknown): Message[] => {
     if (!Array.isArray(items)) return []
@@ -552,12 +551,14 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     if (!connected) return
     send('system.get_config', {}).then(res => {
       if (res?.llm_provider) setProvider(String(res.llm_provider))
+      setCanUseMultimodal(res?.chat_supports_images === true)
       if (res?.vision_mode) setVisionVideoMode(String(res.vision_mode) === 'watching')
     }).catch(() => {})
 
     const unsub = subscribe('system.config', (p) => {
       const values = (p.values ?? p) as Record<string, unknown>
       if (values.llm_provider !== undefined) setProvider(String(values.llm_provider))
+      if (values.chat_supports_images !== undefined) setCanUseMultimodal(values.chat_supports_images === true)
       if (values.vision_mode !== undefined) setVisionVideoMode(String(values.vision_mode) === 'watching')
       if (values.vision_enabled !== undefined && !values.vision_enabled) setVisionVideoMode(false)
     })
@@ -929,6 +930,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       const res = await send('system.set_config', { values: { llm_provider: v } })
       const values = res.values as Record<string, unknown> | undefined
       if (values?.llm_provider) setProvider(String(values.llm_provider))
+      if (values?.chat_supports_images !== undefined) setCanUseMultimodal(values.chat_supports_images === true)
     } catch {
       setMessages(prev => [...prev, {
         role: 'system',
@@ -1252,7 +1254,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
 
   const visualButtonDisabled = !connected || !canUseMultimodal
   const visualButtonTitle = !canUseMultimodal
-    ? 'Select OpenAI, Gemini, or hybrid3 to use visual input'
+    ? 'Select an image-capable model, such as DeepSeek Flash, OpenAI, or Gemini'
     : visionVideoMode
       ? 'Global vision watching is on. Hold to turn it off. Right-click to choose a window.'
       : pendingVisualAttachment

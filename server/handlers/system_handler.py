@@ -935,6 +935,7 @@ class SystemHandler(RequestHandler):
         # read from existing config/settings.py constants
         from config import settings
         import llm.client as llm_client
+        from llm.visual_context import provider_supports_direct_image
         from server import visual_runtime
         from server import presentation_runtime
         from server import chat_translation_runtime
@@ -962,6 +963,9 @@ class SystemHandler(RequestHandler):
         )
         return {
             "vts_ws_url": getattr(settings, 'VTS_WS_URL', ''),
+            "chat_supports_images": provider_supports_direct_image(
+                active_provider, llm_client.DEEPSEEK_MODEL_NAME,
+            ),
             "llm_provider": active_provider,
             "tts_device": getattr(settings, 'TTS_DEVICE', ''),
             "tts_mode": tts_pipeline.current_tts_mode(),
