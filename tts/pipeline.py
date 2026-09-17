@@ -19,6 +19,7 @@ import logging
 import os
 import re
 import sys
+import threading
 import time
 import traceback
 
@@ -39,7 +40,6 @@ from config.settings import (
 from tools.text_utils import (
     _compute_text_sha1,
     _parse_sentence_seq,
-    async_generator_from_sync,
 )
 from tools.tts_text_processor import correct_pronunciation_for_tts
 from tts.contract import TTSRequest
@@ -659,6 +659,42 @@ async def speak_stream_graph_serial(
         _release_lock()  # 兜底：异常时也确保锁被释放
 
 
+def _start_tts_producer(stream_factory, sentence_id, interrupt_epoch):
+    """Consume and close a synchronous stream entirely on the TTS executor."""
+    loop = asyncio.get_running_loop()
+    queue = asyncio.Queue()
+    stop = threading.Event()
+
+    def stopped():
+        return stop.is_set() or _is_interrupted(interrupt_epoch)
+
+    def produce():
+        stream = None
+        try:
+            if stopped():
+                return
+            logger.info("[WorkerThread] TTS producer started: %s", sentence_id)
+            stream = stream_factory()
+            for item in stream:
+                if stopped():
+                    break
+                loop.call_soon_threadsafe(queue.put_nowait, item)
+            logger.info("[WorkerThread] TTS producer completed: %s", sentence_id)
+        except Exception as exc:
+            logger.exception("[WorkerThread] TTS producer failed (%s)", sentence_id)
+            loop.call_soon_threadsafe(queue.put_nowait, ("__ERROR__", exc))
+        finally:
+            close = getattr(stream, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    logger.debug("[WorkerThread] TTS stream close failed: %s", sentence_id, exc_info=True)
+            loop.call_soon_threadsafe(queue.put_nowait, ("__DONE__", None))
+
+    return queue, loop.run_in_executor(_tts_executor, produce), stop
+
+
 async def speak_stream_enhanced(
     text,
     sentence_id,
@@ -682,6 +718,7 @@ async def speak_stream_enhanced(
 
     if _tts_runtime is None:
         logger.error("TTS backend is not initialized; cannot generate speech")
+        _release_task_semaphore(task_semaphore, sentence_id)
         return
 
     overall_start = time.time()
@@ -702,6 +739,7 @@ async def speak_stream_enhanced(
     params['ref_audio_path'] = _get_ref_audio(tts_text)
     params['prompt_text'] = _get_ref_text(tts_text)
 
+    producer_stop = None
     try:
         first_chunk = True
         audio_chunks = []
@@ -730,10 +768,21 @@ async def speak_stream_enhanced(
                 max_sec_override=params.get("max_sec_override"),
             )
 
-        async for sr, audio_chunk, text_item in async_generator_from_sync(create_stream_generator):
+        queue, _producer_future, producer_stop = _start_tts_producer(
+            create_stream_generator, sentence_id, interrupt_epoch,
+        )
+        while True:
+            item = await queue.get()
             if _is_interrupted(interrupt_epoch):
                 logger.info("[TTS-INTERRUPT] drop streaming synthesis result: %s", sentence_id)
                 return
+            if isinstance(item[0], str):
+                signal, data = item
+                if signal == "__DONE__":
+                    break
+                if signal == "__ERROR__":
+                    raise data
+            sr, audio_chunk, text_item = item
             if first_chunk:
                 first_chunk = False
                 logger.info(f"[StreamingPlayback] starting streaming synthesis for first sentence: {sentence_id}")
@@ -777,6 +826,10 @@ async def speak_stream_enhanced(
         logger.info("[StreamingPlayback] first-sentence streaming synthesis completed; playback handled by PlaybackManager")
     except Exception as e:
         logger.error(f"streaming processing failed: {e}\n{traceback.format_exc()}")
+    finally:
+        if producer_stop is not None:
+            producer_stop.set()
+        _release_task_semaphore(task_semaphore, sentence_id)
     logger.info(f"streaming processing completed, total time: {time.time() - overall_start:.2f}s")
 
 
@@ -809,39 +862,6 @@ async def speak_stream_enhanced_asyncio_queue(
         logger.error("TTS backend is not initialized; cannot generate speech")
         return
 
-    def tts_producer(loop, queue, producer_text, producer_params, producer_epoch):
-        stream = None
-        try:
-            if _is_interrupted(producer_epoch):
-                logger.info("[TTS-INTERRUPT] producer skipped before infer_stream: %s", sentence_id)
-                return
-            logger.info(f"[WorkerThread] TTS producer started: {sentence_id}")
-            stream = _tts_runtime.infer_stream(text=producer_text, **producer_params)
-            for item in stream:
-                if _is_interrupted(producer_epoch):
-                    logger.info("[TTS-INTERRUPT] producer stopped after interrupt: %s", sentence_id)
-                    break
-                loop.call_soon_threadsafe(queue.put_nowait, item)
-            logger.info(f"[WorkerThread] TTS producer completed: {sentence_id}")
-        except Exception as e:
-            logger.error(f"[WorkerThread] TTS producer failed ({sentence_id}): {e}")
-            logger.error(f"--- worker thread traceback ---\n{traceback.format_exc()}")
-            loop.call_soon_threadsafe(queue.put_nowait, ("__ERROR__", e))
-        finally:
-            close = getattr(stream, "close", None)
-            if callable(close):
-                try:
-                    close()
-                except Exception:
-                    logger.debug(
-                        "[WorkerThread] TTS stream close failed: %s",
-                        sentence_id,
-                        exc_info=True,
-                    )
-            loop.call_soon_threadsafe(queue.put_nowait, ("__DONE__", None))
-
-    loop = asyncio.get_running_loop()
-    queue: asyncio.Queue = asyncio.Queue()
     synthesis_start = time.time()
     tts_text = _strip_tts_fullwidth_parentheses(text)
     if tts_text != text:
@@ -935,13 +955,9 @@ async def speak_stream_enhanced_asyncio_queue(
         logger.info("[TTS-INTERRUPT] skip stale job before producer submit: %s", sentence_id)
         _release_now()
         return
-    producer_future = loop.run_in_executor(
-        _tts_executor,
-        tts_producer,
-        loop,
-        queue,
-        processed_text,
-        params,
+    queue, producer_future, _producer_stop = _start_tts_producer(
+        lambda: _tts_runtime.infer_stream(text=processed_text, **params),
+        sentence_id,
         interrupt_epoch,
     )
     logger.info(f"[Monitor] TTS producer task submitted: {sentence_id}")

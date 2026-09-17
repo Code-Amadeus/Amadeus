@@ -148,6 +148,14 @@ These are not pending mechanical migrations:
   to `os.environ` because the bundled BigVGAN loader directly consumes that
   variable. An explicit indexed CUDA device or explicit `mps`/`cpu` value is
   preserved.
+- Local GPT-SoVITS CPU synthesis automatically uses the existing persistent
+  TTS sidecar (the current Python interpreter unless `TTS_PYTHON` is set).
+  This isolates its PyTorch thread settings from ASR/VAD dependencies. CUDA
+  and MPS keep their embedded default; explicit sidecar/interpreter
+  settings still select a subprocess. The sidecar serializes synthesis and
+  drains interrupted requests before accepting the next one; CPU compute is
+  still shared with the host. All synthesis modes consume blocking model/IPC
+  streams on the TTS executor, keeping the event loop available to ASR.
 - `AMADUES_PRE_TRANSLATION_ENABLED` remains accepted as a deprecated spelling
   of `AMADEUS_PRE_TRANSLATION_ENABLED` at the pre-translation boundary.
 - The legacy root GPT-SoVITS WebUI/API entry points and their conflicting
