@@ -874,7 +874,12 @@ async def speak_stream_enhanced_asyncio_queue(
             task_semaphore.release()
             logger.debug(f"[Semaphore] released experimental TTS permit: {sentence_id}")
 
-    if is_first_sentence and _playback_manager is not None:
+    # This cache fingerprints GPT/SoVITS weights and reference files only. Remote
+    # model/voice identities are absent, so their audio must not read or write it.
+    cache_first_sentence = (
+        is_first_sentence and getattr(_tts_runtime, "backend_id", None) == "gpt_sovits"
+    )
+    if cache_first_sentence and _playback_manager is not None:
         try:
             cached = get_first_sentence_audio_cache().lookup(processed_text, params)
         except Exception as exc:
@@ -986,7 +991,7 @@ async def speak_stream_enhanced_asyncio_queue(
                 if audio_chunk is not None and len(audio_chunk) > 0:
                     stream_total_samples += len(audio_chunk)
                     stream_sample_rate = sr
-                    if is_first_sentence:
+                    if cache_first_sentence:
                         cache_chunks.append(audio_chunk)
                         cache_sr = sr
                     chunk_count += 1
@@ -1082,7 +1087,7 @@ async def speak_stream_enhanced_asyncio_queue(
                 sample_rate or 24000,
                 sentence_id,
             )
-            if is_first_sentence:
+            if cache_first_sentence:
                 get_first_sentence_audio_cache().store(
                     processed_text,
                     params,

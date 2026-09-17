@@ -433,7 +433,7 @@ Copy `.env.example` to `.env` (`Copy-Item .env.example .env` on Windows;
 `cp .env.example .env` on macOS), provide the DeepSeek API key, then review Settings:
 
 - **Models:** `deepseek`, the official endpoint, `deepseek-v4-flash`, and an API key;
-- **Voice:** remote TTS/ASR endpoints, such as MiMo; the L4 local stack also needs a Qwen model directory, GPT-SoVITS **v3** checkpoints, reference audio/text, microphone, AEC, and barge-in;
+- **Voice:** Fish Audio S2.1 + Kurisu is the recommended remote TTS profile; MiMo and OpenAI-compatible endpoints are also supported. The L4 local stack also needs a Qwen model directory, GPT-SoVITS **v3** checkpoints, reference audio/text, microphone, AEC, and barge-in;
 - **General:** optional character-pack status and presentation settings.
 
 Launch Amadeus:
@@ -473,10 +473,41 @@ failure:
 | Responsibility | Recommended profile | Current boundary |
 |---|---|---|
 | Main Chat API | DeepSeek-V4-Flash-0731: `DEEPSEEK_BASE_URL=https://api.deepseek.com` and `DEEPSEEK_MODEL_NAME=deepseek-v4-flash` | `deepseek-v4-flash` is the stable API alias currently pointing to the 0731 release; the dated version is not used as the runtime model id. |
+| Remote speech synthesis | **Fish Audio S2.1**: `TTS_BACKEND=fish_audio`, `FISH_TTS_MODEL=s2.1-pro-free`; Kurisu voice: `FISH_TTS_REFERENCE_ID=b450b19370434173b121446057622e9b` | Bidirectional WebSocket streaming; locally committed sentence chunks use `text → flush`, with incremental audio output. Existing Chat sentence scheduling is preserved. |
 | Multimodal / Vision | Prefer `gemini-3.7-flash`; use `gemini-3.5-flash` as a more conservative compatibility profile | Host-owned visual context performs capture in-process, while image delivery still follows the Main Chat Provider. Independent Gemini Vision API routing is not implemented and does not imply restoring the retired Gemini Live sidecar. |
 | Work execution Provider | Prefer Codex App Server; use the optional OpenClaw Gateway second | This is a recommendation order, not an automatic failure fallback. Browser remains the specialized Provider for web tasks. |
 | Work execution model | Codex App Server may explicitly select a GPT-5.6-family model or `deepseek-v4-flash` | The execution model belongs to the Work Provider and does not share Main Chat routing or credentials. |
 | AUIP runtime action decisions | `AUIP_ACTION_PROVIDER=openai`, `AUIP_ACTION_MODEL=gpt-5.6-terra`, `AUIP_ACTION_REASONING_EFFORT=low`, and `AUIP_ACTION_SERVICE_TIER=fast` | This model decides AppSession actions and participation; it is not the execution Provider that authors an AUIP Artifact. `fast` requires availability for the API project. |
+
+### Recommended remote TTS: Fish Audio + Kurisu
+
+After installing L2 voice, select **Fish Audio** under **Settings → Voice →
+Speech synthesis**, enter the API key, and restart the backend. Use:
+
+| Setting | Recommended value |
+|---|---|
+| Fish inference model ID (S2.1 free model) | `s2.1-pro-free` |
+| Kurisu voice / reference ID | `b450b19370434173b121446057622e9b` |
+| Voice page | [Makise kurisu / 牧濑红莉栖](https://fish.audio/zh-CN/app/text-to-speech/?modelId=b450b19370434173b121446057622e9b) |
+| WebSocket endpoint | `wss://api.fish.audio/v1/tts/live` |
+| Latency mode | `balanced` |
+
+The equivalent local `.env` configuration is:
+
+```dotenv
+TTS_BACKEND=fish_audio
+FISH_TTS_API_KEY=<your-fish-api-key>
+FISH_TTS_MODEL=s2.1-pro-free
+FISH_TTS_REFERENCE_ID=b450b19370434173b121446057622e9b
+FISH_TTS_LATENCY=balanced
+```
+
+The Japanese voice ID is separate from the inference model ID. GUI credentials
+use the existing encrypted store. This remote recommendation does not change the
+default embedded GPT-SoVITS backend. A three-trial Windows baseline with DeepSeek
+measured a **3.70 s** median from `chat.send` to the first non-silent device write,
+plus roughly 91 ms reported output latency; other networks and cold starts vary.
+See [Fish Audio setup, chunk probes, and audio checks](docs/fish_audio_websocket.md).
 
 ## External models and runtime assets
 

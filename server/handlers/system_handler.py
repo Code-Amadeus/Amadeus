@@ -71,6 +71,10 @@ def _voice_configuration(settings: Any) -> list[dict[str, Any]]:
         (item for item in tts_statuses if item["id"] == "mimo"),
         {},
     )
+    fish_tts_status = next(
+        (item for item in tts_statuses if item["id"] == "fish_audio"),
+        {},
+    )
     reference_consumers = [
         str(item.get("label") or item.get("id") or "")
         for item in tts_statuses
@@ -379,6 +383,27 @@ def _voice_configuration(settings: Any) -> list[dict[str, Any]]:
                 _startup_field("MIMO_TTS_API_KEY", "API key", field_type="secret", secret_configured=bool(settings.MIMO_TTS_API_KEY)),
                 _startup_field("MIMO_TTS_MODEL", "Model", settings.MIMO_TTS_MODEL),
                 _startup_field("MIMO_TTS_VOICE", "Voice", settings.MIMO_TTS_VOICE),
+            ],
+        },
+        {
+            "id": "tts_fish_audio",
+            "label": "Fish Audio speech API",
+            "description": "WebSocket streaming speech with a hosted voice. Voice reference ID selects the voice; model selects the inference engine.",
+            "active": tts_selected == "fish_audio",
+            "configured": bool(fish_tts_status.get("available")),
+            "status": str(fish_tts_status.get("state") or "unavailable"),
+            "status_ok": bool(fish_tts_status.get("available")),
+            "status_detail": str(fish_tts_status.get("detail") or ""),
+            "fields": [
+                _startup_field("FISH_TTS_WS_URL", "WebSocket URL", settings.FISH_TTS_WS_URL, field_type="url"),
+                _startup_field("FISH_TTS_API_KEY", "API key", field_type="secret", secret_configured=bool(settings.FISH_TTS_API_KEY)),
+                _startup_field("FISH_TTS_MODEL", "Inference model", settings.FISH_TTS_MODEL),
+                _startup_field("FISH_TTS_REFERENCE_ID", "Voice reference ID", settings.FISH_TTS_REFERENCE_ID),
+                _startup_field(
+                    "FISH_TTS_LATENCY", "Latency mode", settings.FISH_TTS_LATENCY,
+                    field_type="select",
+                    options=tuple({"value": mode, "label": mode} for mode in ("normal", "balanced", "low")),
+                ),
             ],
         },
     ]

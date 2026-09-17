@@ -55,7 +55,7 @@ _REGISTRY: dict[str, TTSBackendDescriptor] = {}
 _LOCK = threading.Lock()
 _BUILTINS_READY = False
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
-_BUILTIN_IDS = frozenset({"gpt_sovits", "openai_compatible", "mimo"})
+_BUILTIN_IDS = frozenset({"gpt_sovits", "openai_compatible", "mimo", "fish_audio"})
 
 
 def register_tts_backend(
@@ -89,6 +89,24 @@ def _mimo_factory() -> BaseTTSBackend:
     from tts.backends.mimo import MiMoTTSBackend
 
     return MiMoTTSBackend()
+
+
+def _fish_factory() -> BaseTTSBackend:
+    from tts.backends.fish_audio import FishAudioTTSBackend
+
+    return FishAudioTTSBackend()
+
+
+def _fish_probe() -> tuple[str, str]:
+    from tts.backend import TTSBackendError
+
+    if importlib.util.find_spec("msgpack") is None:
+        return "not_installed", "Fish Audio requires the voice extra (msgpack)"
+    try:
+        _fish_factory().load()
+    except (TTSBackendError, ValueError) as exc:
+        return "unavailable", str(exc)
+    return "remote", "Fish Audio WebSocket configured for streaming PCM16"
 
 
 def _mimo_probe() -> tuple[str, str]:
@@ -189,6 +207,15 @@ def _ensure_builtins() -> None:
                     _mimo_factory,
                     _mimo_probe,
                     "MiMo chat-completions speech synthesis; PCM16 SSE streaming on mimo-v2.5-tts.",
+                    supports_streaming=True,
+                ),
+                "fish_audio": TTSBackendDescriptor(
+                    "fish_audio",
+                    "Fish Audio",
+                    "remote",
+                    _fish_factory,
+                    _fish_probe,
+                    "WebSocket text/audio streaming with a hosted voice reference.",
                     supports_streaming=True,
                 ),
             }
