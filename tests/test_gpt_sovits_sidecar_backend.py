@@ -4,13 +4,39 @@ import sys
 from types import ModuleType
 
 import numpy as np
+import pytest
 
 from tts.backend import TTSSynthesisRequest
 from tts.backends import gpt_sovits as backend_module
 from tts.backends.gpt_sovits import GPTSoVITSBackend
 
 
-def test_embedded_backend_remains_the_default(monkeypatch):
+@pytest.mark.parametrize("device,isolated", [("cpu", True), ("cpu:0", True), ("cuda:0", False), ("cuda:1", False), ("mps", False)])
+def test_device_selects_cpu_isolation_without_changing_gpu_defaults(monkeypatch, device, isolated):
+    from config import environment, settings
+
+    monkeypatch.setattr(environment, "load_project_environment", lambda *_: None)
+    for name in ("TTS_MODE", "TTS_PYTHON", "TTS_CUDA_VISIBLE_DEVICES"):
+        monkeypatch.setenv(name, "")
+    # Use the resolved startup device, not the raw 'auto' environment value.
+    monkeypatch.setenv("TTS_DEVICE", "auto")
+    monkeypatch.setattr(settings, "TTS_DEVICE", device)
+    assert GPTSoVITSBackend._sidecar_enabled() is isolated
+
+
+@pytest.mark.parametrize("switch,value", [("TTS_MODE", "sidecar"), ("TTS_PYTHON", sys.executable)])
+def test_explicit_gpu_isolation_remains_supported(monkeypatch, switch, value):
+    from config import environment, settings
+
+    monkeypatch.setattr(environment, "load_project_environment", lambda *_: None)
+    for name in ("TTS_MODE", "TTS_PYTHON", "TTS_CUDA_VISIBLE_DEVICES"):
+        monkeypatch.setenv(name, "")
+    monkeypatch.setattr(settings, "TTS_DEVICE", "cuda:0")
+    monkeypatch.setenv(switch, value)
+    assert GPTSoVITSBackend._sidecar_enabled()
+
+
+def test_embedded_backend_preserves_synthesis_request(monkeypatch):
     observed = {}
 
     class FakeInferencer:
@@ -138,12 +164,20 @@ def test_sidecar_round_trip_preserves_request_and_float32_audio(tmp_path, monkey
     assert backend._proc is None
 
 
-def test_closing_stream_drains_to_done_before_the_next_request(tmp_path, monkeypatch):
+@pytest.mark.parametrize("automatic_cpu", [False, True])
+def test_closing_stream_drains_to_done_before_the_next_request(tmp_path, monkeypatch, automatic_cpu):
     script = tmp_path / "fake_tts_sidecar.py"
     _write_fake_sidecar(script)
     monkeypatch.setattr(backend_module, "_SIDECAR_SCRIPT", script)
     monkeypatch.setenv("TTS_MODE", "sidecar")
     monkeypatch.setenv("TTS_PYTHON", sys.executable)
+    if automatic_cpu:
+        from config import environment, settings
+
+        monkeypatch.setattr(environment, "load_project_environment", lambda *_: None)
+        monkeypatch.setattr(settings, "TTS_DEVICE", "cpu")
+        for name in ("TTS_MODE", "TTS_PYTHON", "TTS_CUDA_VISIBLE_DEVICES"):
+            monkeypatch.setenv(name, "")
 
     backend = GPTSoVITSBackend()
     stream_request = TTSSynthesisRequest(text="stream", options={"marker": "stream"})

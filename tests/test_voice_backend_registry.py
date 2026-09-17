@@ -418,7 +418,9 @@ def test_runtime_adapter_preserves_existing_pipeline_tuple_contract() -> None:
     assert streamed[0][2] == "hello"
 
 
-def test_embedded_tts_adapter_preserves_local_inference_options() -> None:
+def test_embedded_tts_adapter_preserves_local_inference_options(monkeypatch) -> None:
+    # This test injects an embedded inferencer; local sidecar preferences are unrelated.
+    monkeypatch.setattr(GPTSoVITSBackend, "_sidecar_enabled", staticmethod(lambda: False))
     calls: list[tuple[str, dict]] = []
 
     class FakeInferencer:
