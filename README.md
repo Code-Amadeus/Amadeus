@@ -394,7 +394,7 @@ uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('
 macOS：`cp .env.example .env`），然后在 Settings 中核对：
 
 - **Models**：`deepseek`、官方 endpoint、`deepseek-v4-flash` 与 API key；
-- **Voice**：远程 TTS/ASR 端点（如 MiMo）；L4 本地栈另需 Qwen model 目录、GPT-SoVITS **v3** checkpoints、reference audio/text、麦克风、AEC 和 barge-in；
+- **Voice**：远程 TTS 推荐 Fish Audio S2.1 + Kurisu，也支持 MiMo / OpenAI-compatible；L4 本地栈另需 Qwen model 目录、GPT-SoVITS **v3** checkpoints、reference audio/text、麦克风、AEC 和 barge-in；
 - **General**：可选角色包状态与呈现设置。
 
 启动：
@@ -434,10 +434,41 @@ DeepSeek 失败后自动切换。
 | 职责 | 推荐 profile | 当前边界 |
 |---|---|---|
 | 主 Chat API | DeepSeek-V4-Flash-0731：`DEEPSEEK_BASE_URL=https://api.deepseek.com`，`DEEPSEEK_MODEL_NAME=deepseek-v4-flash` | `deepseek-v4-flash` 是稳定 API alias，当前指向 0731 版本；不把日期写进运行时 model id。 |
+| 远程语音合成 TTS | 推荐 **Fish Audio S2.1**：`TTS_BACKEND=fish_audio`、`FISH_TTS_MODEL=s2.1-pro-free`；Kurisu 音色：`FISH_TTS_REFERENCE_ID=b450b19370434173b121446057622e9b` | WebSocket 双向流式 API；本地分句片段按 `text → flush` 发送，音频逐块接收。主 Chat 保留现有分句调度；不直接发送原始 LLM token。 |
 | 多模态 / Vision | 优先 `gemini-3.7-flash`；需要较保守的兼容 profile 时可用 `gemini-3.5-flash` | 当前由 Host 内部 visual-context 链负责图像采集，图像发送仍跟随主 Chat provider；独立 Gemini Vision API 路由尚未实现，也不代表恢复旧 Gemini Live sidecar。 |
 | Work 执行 Provider | 首选 Codex App Server；其次是可选 OpenClaw Gateway | 这是推荐优先级，不是失败后自动 fallback。Browser 仍是网页任务的专用 Provider。 |
 | Work 执行模型 | Codex App Server 可显式选择 GPT-5.6 family 或 `deepseek-v4-flash` | 执行模型属于 Work Provider，不与主 Chat 共用路由或密钥。 |
 | AUIP 运行时动作判定 | `AUIP_ACTION_PROVIDER=openai`、`AUIP_ACTION_MODEL=gpt-5.6-terra`、`AUIP_ACTION_REASONING_EFFORT=low`、`AUIP_ACTION_SERVICE_TIER=fast` | 这是 AppSession 的动作 / 参与判定模型，不是 AUIP Artifact 的执行 Provider；`fast` 需要对应 API 项目可用。 |
+
+### 推荐远程 TTS：Fish Audio + Kurisu
+
+安装 L2 voice 后，在 **Settings → Voice** 的 Speech synthesis 中选择
+**Fish Audio**，填写 API key，确认以下两个不同的 ID，再重启后端：
+
+| 设置 | 推荐值 |
+|---|---|
+| Fish 推理模型 ID（S2.1 免费模型） | `s2.1-pro-free` |
+| Kurisu 音色 / reference ID | `b450b19370434173b121446057622e9b` |
+| 音色页面 | [牧濑红莉栖 / Makise kurisu](https://fish.audio/zh-CN/app/text-to-speech/?modelId=b450b19370434173b121446057622e9b) |
+| WebSocket endpoint | `wss://api.fish.audio/v1/tts/live` |
+| 延迟模式 | `balanced` |
+
+也可在本机 `.env` 中配置：
+
+```dotenv
+TTS_BACKEND=fish_audio
+FISH_TTS_API_KEY=<your-fish-api-key>
+FISH_TTS_MODEL=s2.1-pro-free
+FISH_TTS_REFERENCE_ID=b450b19370434173b121446057622e9b
+FISH_TTS_LATENCY=balanced
+```
+
+这是日语 Kurisu 音色；推理模型 ID 和音色 ID 不能互换。GUI 中的 API key
+进入现有加密凭据存储。推荐远程配置不改变默认的本地 GPT-SoVITS 后端。
+在一台 Windows 主机上，DeepSeek + 此 Fish 配置的三次基线测试中，
+从发送 `chat.send` 到首个非静音音频写入声卡的中位数为 **3.70 秒**
+（另有约 91 ms 声卡输出延迟；不代表所有网络或冷启动表现）。
+配置、增量 chunk 试验与音频检查见 [Fish Audio 接入说明](docs/fish_audio_websocket.md)。
 
 ## 外部模型与运行资产
 

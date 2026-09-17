@@ -49,6 +49,7 @@ def test_settings_connection_descriptors_never_return_secret_values() -> None:
         "ASR_API_KEY",
         "TTS_API_KEY",
         "MIMO_TTS_API_KEY",
+        "FISH_TTS_API_KEY",
     }
 
 
@@ -267,6 +268,10 @@ def test_voice_settings_keep_wake_and_conversation_recognition_independent() -> 
         "MIMO_TTS_API_KEY",
         "MIMO_TTS_MODEL",
         "MIMO_TTS_VOICE",
+    }
+    assert {field["key"] for field in groups["tts_fish_audio"]["fields"]} == {
+        "FISH_TTS_WS_URL", "FISH_TTS_API_KEY", "FISH_TTS_MODEL",
+        "FISH_TTS_REFERENCE_ID", "FISH_TTS_LATENCY",
     }
 
 

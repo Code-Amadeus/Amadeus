@@ -51,6 +51,7 @@ rag = [
 # L2 voice interaction layer: playback, capture, echo cancellation, remote
 # TTS/ASR. Torch-free on purpose: L2 stays a few hundred MB.
 voice = [
+    "msgpack>=1.2.1,<2",
     "PyAudio==0.2.14",
     "aec-audio-processing==1.0.1",
     "av==17.0.1",

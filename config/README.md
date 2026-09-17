@@ -90,6 +90,16 @@ explicitly configured speech endpoint. Remote TTS defaults to broadly compatible
 buffered WAV responses; `TTS_API_STREAM_PROTOCOL=openai_sse` explicitly enables
 PCM first-packet playback for endpoints that implement OpenAI speech SSE events.
 There is no automatic retry from a partial stream to a second billable request.
+`TTS_BACKEND=fish_audio` selects Fish Audio's MessagePack WebSocket transport.
+Set `FISH_TTS_API_KEY`, `FISH_TTS_MODEL` (for example `s2.1-pro-free`), and
+`FISH_TTS_REFERENCE_ID` (the hosted voice ID, not the inference model).
+The default reference is the public Japanese Makise Kurisu voice
+`b450b19370434173b121446057622e9b`. `FISH_TTS_LATENCY=balanced` is the default;
+`FISH_TTS_WS_URL` defaults to `wss://api.fish.audio/v1/tts/live`.
+Install the `voice` extra for MessagePack support. Chat/VN keep their existing
+sentence scheduling; audio streams into the existing playback pipeline.
+The adapter also accepts asynchronously arriving text chunks for duplex
+experiments. See [Fish Audio setup and probe](../docs/fish_audio_websocket.md).
 `ASR_BACKEND` selects only
 the full Conversation recognizer and defaults to Qwen3-ASR, preserving context
 prompting and speculative endpoint optimization. `WAKE_ASR_BACKEND` is an
@@ -98,7 +108,7 @@ remote Conversation ASR intentionally disables partial speculative API calls
 to avoid hidden duplicate network requests and metered usage.
 
 The Electron Voice settings use the same precedence and encrypted-secret store
-as model connections. `ASR_API_KEY` and `TTS_API_KEY` are never returned to the
+as model connections. `ASR_API_KEY`, `TTS_API_KEY`, and `FISH_TTS_API_KEY` are never returned to the
 renderer. Remote voice backends are selected explicitly; local failures never
 silently upload microphone audio or synthesis text.
 The first-release Main Chat default is remote DeepSeek; local model settings
