@@ -64,6 +64,8 @@ jobs:
           tests/test_mic_descriptor.py
           tests/test_aec_native_smoke.py
           tests/test_tts_contract.py
+          tests/test_tts_fish_audio_backend.py
+          tests/test_tts_cache_backend_boundary.py
 
       - name: Build Electron renderer (macOS)
         working-directory: electron

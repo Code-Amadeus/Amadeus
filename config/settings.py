@@ -286,6 +286,13 @@ MIMO_TTS_API_KEY = _secret("MIMO_TTS_API_KEY", "")
 MIMO_TTS_MODEL = _str("MIMO_TTS_MODEL", "mimo-v2.5-tts")
 MIMO_TTS_VOICE = _str("MIMO_TTS_VOICE", "冰糖")
 
+# Fish Audio: the voice reference ID is distinct from the inference model header.
+FISH_TTS_WS_URL = _str("FISH_TTS_WS_URL", "wss://api.fish.audio/v1/tts/live")
+FISH_TTS_API_KEY = _secret("FISH_TTS_API_KEY", "")
+FISH_TTS_MODEL = _str("FISH_TTS_MODEL", "s2.1-pro-free")
+FISH_TTS_REFERENCE_ID = _str("FISH_TTS_REFERENCE_ID", "b450b19370434173b121446057622e9b")
+FISH_TTS_LATENCY = _str("FISH_TTS_LATENCY", "balanced")
+
 
 def _resolve_tts_device() -> str:
     """

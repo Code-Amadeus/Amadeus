@@ -134,6 +134,10 @@ const VALUE_KEYS = new Set([
   'MIMO_TTS_BASE_URL',
   'MIMO_TTS_MODEL',
   'MIMO_TTS_VOICE',
+  'FISH_TTS_WS_URL',
+  'FISH_TTS_MODEL',
+  'FISH_TTS_REFERENCE_ID',
+  'FISH_TTS_LATENCY',
   'VTS_ENABLED',
   'AUIP_ARTIFACT_STYLE_ENABLED',
   'VTS_WS_URL',
@@ -150,6 +154,7 @@ const SECRET_KEYS = new Set([
   'ASR_API_KEY',
   'TTS_API_KEY',
   'MIMO_TTS_API_KEY',
+  'FISH_TTS_API_KEY',
 ])
 
 const CODEX_TRANSPORT_KEYS = [
@@ -178,6 +183,7 @@ const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
   AEC_REALTIME_ENABLED: new Set(['true', 'false']),
   AEC_REALTIME_BARGE_IN: new Set(['true', 'false']),
   TTS_API_STREAM_PROTOCOL: new Set(['buffered', 'openai_sse']),
+  FISH_TTS_LATENCY: new Set(['normal', 'balanced', 'low']),
   VTS_ENABLED: new Set(['true', 'false']),
   AUIP_ARTIFACT_STYLE_ENABLED: new Set(['true', 'false']),
 }
@@ -199,7 +205,7 @@ const URL_KEYS = new Set([
   'MIMO_TTS_BASE_URL',
 ])
 
-const WEBSOCKET_URL_KEYS = new Set(['VTS_WS_URL'])
+const WEBSOCKET_URL_KEYS = new Set(['VTS_WS_URL', 'FISH_TTS_WS_URL'])
 
 const NUMBER_RANGES: Record<string, readonly [number, number]> = {
   RAG_TOP_K: [1, 20],
