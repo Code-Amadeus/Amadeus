@@ -252,9 +252,15 @@ def remote_llm_messages_query(
 
     selected_provider = str(LLM_PROVIDER or "").strip().lower()
     if visual_context:
-        from llm.visual_context import attach_openai_chat_image, visual_notice_text
+        from llm.visual_context import (
+            attach_openai_chat_image, provider_supports_direct_image, visual_notice_text,
+        )
 
-        if selected_provider in {"openai", "hybrid3"} and not visual_context.get("error"):
+        if (
+            selected_provider != "gemini"
+            and provider_supports_direct_image(selected_provider, model or DEEPSEEK_MODEL_NAME)
+            and not visual_context.get("error")
+        ):
             normalized = attach_openai_chat_image(normalized, visual_context)
         elif selected_provider != "gemini" or visual_context.get("error"):
             # Match ChatRuntime's text-only backends, including local. A visual

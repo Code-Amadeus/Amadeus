@@ -184,7 +184,11 @@ def test_sdk_message_query_preserves_visual_payload_and_json_contract(provider, 
         )])
 
     sdk = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
-    with patch.object(client, "LLM_PROVIDER", provider), patch.object(client, "llm_client", sdk):
+    with (
+        patch.object(client, "LLM_PROVIDER", provider),
+        patch.object(client, "DEEPSEEK_MODEL_NAME", "deepseek-flash"),
+        patch.object(client, "llm_client", sdk),
+    ):
         reply = client.remote_llm_messages_query(messages, visual_context=visual)
 
     assert reply == '{"say":"ok","action":null}'
@@ -194,7 +198,7 @@ def test_sdk_message_query_preserves_visual_payload_and_json_contract(provider, 
     assert calls[0]["response_format"] == {"type": "json_object"}
     if not with_image:
         assert sent == original
-    elif provider in {"openai", "hybrid3"}:
+    else:
         assert sent[-1]["role"] == "user"
         assert sent[-1]["content"] == [
             {"type": "text", "text": visual_notice_text("Current fact", visual, supported=True)},
@@ -203,8 +207,40 @@ def test_sdk_message_query_preserves_visual_payload_and_json_contract(provider, 
                 "detail": "auto",
             }},
         ]
+
+
+@pytest.mark.parametrize("provider", ["deepseek", "hybrid2"])
+@pytest.mark.parametrize("model,supported", [
+    ("deepseek-flash", True),
+    ("deepseek-v4-flash", True),
+    ("deepseek-v4-flash-vision-exp", True),
+    ("deepseek-v4-pro", False),
+    ("deepseek-chat", False),
+])
+def test_deepseek_image_capability_follows_requested_model(monkeypatch, provider, model, supported):
+    from llm import client
+
+    calls = []
+
+    def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content="ok"),
+        )])
+
+    monkeypatch.setattr(client, "LLM_PROVIDER", provider)
+    # The per-request model override is authoritative, in both directions.
+    monkeypatch.setattr(client, "DEEPSEEK_MODEL_NAME", "deepseek-v4-pro" if supported else "deepseek-flash")
+    monkeypatch.setattr(client, "llm_client", SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create)),
+    ))
+    client.remote_llm_messages_query(MESSAGES, model=model, visual_context=_visual_context())
+    assert calls[0]["model"] == model
+    content = calls[0]["messages"][-1]["content"]
+    if supported:
+        assert content[1]["type"] == "image_url"
     else:
-        assert sent[-1]["content"] == visual_notice_text("Current fact", visual, supported=False)
+        assert "[VISUAL_CONTEXT_UNAVAILABLE]" in content
 
 
 def test_gemini_image_uses_sdk_encoding_and_preserves_conversation_roles():
@@ -269,7 +305,7 @@ def test_text_only_transport_explains_visual_limit_without_rejecting_chat(provid
     }]
 
 
-@pytest.mark.parametrize("provider", ["openai", "hybrid3", "gemini"])
+@pytest.mark.parametrize("provider", ["openai", "hybrid3", "gemini", "deepseek", "hybrid2"])
 def test_multimodal_capture_failure_uses_existing_error_notice(provider):
     from llm import client
     from llm.visual_context import visual_notice_text
@@ -288,6 +324,7 @@ def test_multimodal_capture_failure_uses_existing_error_notice(provider):
 
     with ExitStack() as stack:
         stack.enter_context(patch.object(client, "LLM_PROVIDER", provider))
+        stack.enter_context(patch.object(client, "DEEPSEEK_MODEL_NAME", "deepseek-flash"))
         stack.enter_context(patch.object(client, "gemini_model", object()))
         stack.enter_context(patch.object(client, "generate_gemini_text", side_effect=generate))
         stack.enter_context(patch.object(client, "llm_client", SimpleNamespace(
@@ -401,6 +438,7 @@ def test_message_stream_is_one_request_and_closes_on_callback_failure(backend, f
     with ExitStack() as stack:
         stack.enter_context(patch.object(client, "LLM_PROVIDER", provider))
         stack.enter_context(patch.object(client, "init_llm_client", return_value=None))
+        stack.enter_context(patch.object(client, "DEEPSEEK_MODEL_NAME", "deepseek-flash"))
         stack.enter_context(patch.object(client, "llm_client", SimpleNamespace(
             chat=SimpleNamespace(completions=SimpleNamespace(create=create)),
         )))
@@ -449,7 +487,7 @@ def test_message_stream_is_one_request_and_closes_on_callback_failure(backend, f
         assert json.loads(calls[0]["body"])["stream"] is True
     elif bearer:
         assert calls[0]["json"]["stream"] is True
-    if backend in {"openai", "hybrid3"}:
+    if backend in sdk_backends:
         assert calls[0]["messages"][-1]["content"][1]["type"] == "image_url"
         if json_output:
             assert calls[0]["response_format"] == {"type": "json_object"}
