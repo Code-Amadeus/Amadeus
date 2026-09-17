@@ -373,7 +373,11 @@ def test_close_cancels_all_owned_streams_even_when_transport_alias_is_reused(con
         assert old is not current and not old.done()
         timed_out = False
         try:
-            await asyncio.wait_for(handler.close(), timeout=0.3)
+            # A blocked runner would hang close() indefinitely, so the budget
+            # only has to separate 'returns' from 'never returns'.  Measured
+            # close() is ~2ms; a tight bound just flakes on Windows CI, where
+            # the ledger's synchronous=FULL commits fsync on the loop thread.
+            await asyncio.wait_for(handler.close(), timeout=3)
         except asyncio.TimeoutError:
             timed_out = True
         finally:
