@@ -27,6 +27,20 @@ precedence, and records every setting declared through it. New startup
 configuration should use this boundary rather than calling `load_dotenv`
 again.
 
+## Chat image input
+
+DeepSeek image input is available with `DEEPSEEK_MODEL_NAME=deepseek-flash`.
+The documented `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` aliases
+also accept images. DeepSeek Pro and legacy text models remain text-only.
+See the [DeepSeek vision guide](https://api-docs.deepseek.com/guides/vision/).
+
+Both direct DeepSeek Chat and the DeepSeek tail of `hybrid2` send the image
+using the existing OpenAI-compatible `image_url` format. The hybrid local
+head receives only a text acknowledgement hint. Images are attached to the
+current user turn, not stored in conversation history. The desktop image
+button follows the backend's selected-model capability; changing the model
+in startup settings requires restarting the backend.
+
 ## Graphics profiles
 
 `GRAPHICS_PROFILE` is the startup owner for the shared PixiJS render budget:

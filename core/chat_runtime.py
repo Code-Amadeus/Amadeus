@@ -4865,9 +4865,14 @@ class ChatRuntime:
             messages.append({"role": "user", "content": visible_question})
 
         if visual_context:
-            from llm.visual_context import attach_openai_chat_image, visual_notice_text
+            from llm.visual_context import (
+                attach_openai_chat_image, provider_supports_direct_image, visual_notice_text,
+            )
 
-            if llm_provider == "openai":
+            if (
+                provider_supports_direct_image(llm_provider, DEEPSEEK_MODEL_NAME)
+                and not visual_context.get("error")
+            ):
                 messages = attach_openai_chat_image(messages, visual_context)
             else:
                 messages[-1]["content"] = visual_notice_text(
@@ -5324,6 +5329,9 @@ class ChatRuntime:
         self, st, question, text_only_question, visual_context, enable_conv, llm_provider
     ) -> None:
         from llm.hybrid_stream import hybrid_llm_stream
+        from llm.visual_context import provider_supports_direct_image
+
+        supports_image = provider_supports_direct_image(llm_provider, DEEPSEEK_MODEL_NAME)
 
         if getattr(st, "prompt_variant", ""):
             # Host-forced variant (the lookup answering pass): bare prompt on
@@ -5334,10 +5342,10 @@ class ChatRuntime:
         else:
             _system_local = _turn_system_prompt(st, "hybrid_local")
             _system_bedrock = _turn_system_prompt(st, "bedrock")
-        _hybrid_remote_question = question if llm_provider == "hybrid3" else text_only_question
+        _hybrid_remote_question = question if supports_image else text_only_question
         _hybrid_user_question = _wrap_user_message_for_language_lock(_hybrid_remote_question)
         _hybrid_local_source_question = question
-        if visual_context and llm_provider == "hybrid3":
+        if visual_context and supports_image:
             from llm.visual_context import local_visual_ack_text
 
             _hybrid_local_source_question = local_visual_ack_text(question, visual_context)
@@ -5360,7 +5368,7 @@ class ChatRuntime:
                 {"role": "user", "content": _hybrid_user_question}
             )
 
-        if visual_context and llm_provider == "hybrid3":
+        if visual_context and supports_image:
             from llm.visual_context import attach_openai_chat_image, visual_notice_text
 
             if visual_context.get("error"):

@@ -211,11 +211,13 @@ def test_cooperative_settings_preserve_all_existing_role_backend_choices() -> No
         with (
             patch.object(settings, "COOPERATIVE_CHAT_ENABLED", True),
             patch.object(llm_client, "LLM_PROVIDER", "deepseek"),
+            patch.object(llm_client, "DEEPSEEK_MODEL_NAME", "deepseek-v4-pro"),
             patch("server.handlers.system_handler.bus.emit", new=AsyncMock()),
         ):
             try:
                 result = await handler._get_config({})
                 assert result["llm_provider"] == "deepseek"
+                assert result["chat_supports_images"] is False
                 assert result["cooperative_chat_input_capabilities"] == {
                     "typed_text":True, "confirmed_transcript_text":True,
                     "visual_attachment":True, "speculative_voice":False,
@@ -223,11 +225,30 @@ def test_cooperative_settings_preserve_all_existing_role_backend_choices() -> No
                 changed = await handler._set_config(
                     {"values":{"llm_provider":"gemini"}})
                 assert changed["values"]["llm_provider"] == "gemini"
+                assert changed["values"]["chat_supports_images"] is True
                 assert runtime.provider == "gemini"
             finally:
                 runtime.set_provider(old_provider)
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("provider,model,supported", [
+    ("deepseek", "deepseek-flash", True),
+    ("deepseek", "deepseek-v4-flash", True),
+    ("hybrid2", "deepseek-flash", True),
+    ("deepseek", "deepseek-v4-pro", False),
+    ("local", "deepseek-flash", False),
+])
+def test_chat_image_capability_is_published_from_the_selected_model(provider, model, supported):
+    import llm.client as llm_client
+
+    with (
+        patch.object(llm_client, "LLM_PROVIDER", provider),
+        patch.object(llm_client, "DEEPSEEK_MODEL_NAME", model),
+    ):
+        config = asyncio.run(SystemHandler()._get_config({}))
+    assert config["chat_supports_images"] is supported
 
 
 def test_voice_settings_keep_wake_and_conversation_recognition_independent() -> None:
