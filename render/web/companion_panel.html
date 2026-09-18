@@ -10,6 +10,7 @@
 <body>
   <main class="companion-card">
     <header><span class="brand">A M A D E U S</span><span class="link-label">HOLO-LINK</span>
+      <button id="motion" title="切换待机微动或静止" aria-label="待机微动" aria-pressed="true" hidden>动</button>
       <button id="dock" title="停靠到游戏旁边" aria-label="停靠到游戏旁边">⊞</button>
       <button id="close" title="收起面板，继续语音和游戏" aria-label="收起面板">×</button>
     </header>
@@ -20,6 +21,7 @@
     <footer><span class="signal" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span id="status" role="status">CONNECTING</span><span class="drag-hint">拖动顶部调整位置</span></footer>
   </main>
   <script src="companion_presentation.js"></script>
+  <script src="companion_atlas.js"></script>
   <script src="companion_panel.js"></script>
 </body>
 </html>

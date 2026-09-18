@@ -135,6 +135,7 @@ assets/models/live2d/
 assets/models/gsvlite/
 assets/source/**
 assets/spriteforge/runtime/**
+assets/companion/**
 assets/images/*
 !assets/images/amadeus_desktop_wallpaper.png
 assets/previews/**

@@ -113,7 +113,7 @@ export class CompanionPanel {
         ...bounds, minWidth: 300, minHeight: 226, frame: false, transparent: true,
         backgroundColor: '#00000000', show: false, alwaysOnTop: true, skipTaskbar: true,
         title: 'Amadeus · Companion',
-        webPreferences: { preload: this.options.preload, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false },
+        webPreferences: { preload: this.options.preload, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: true },
       })
       this.window = window
       const url = `http://127.0.0.1:${bridge.assetPort}/render/web/companion_panel.html?bridgePort=${bridge.bridgePort}&v=${encodeURIComponent(bridge.assetVersion)}`

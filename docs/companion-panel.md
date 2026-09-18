@@ -1,12 +1,38 @@
 # Compact companion panel — 0.15 Alpha candidate
 
-The optional panel brings the existing VN-style portrait and speaking card beside a
-selected Work preview. It reuses the existing portrait cache and Host presentation
-signals; it does not start another VN session, TTS pipeline, Work, or AUIP authority.
+The optional panel brings a small portrait and speaking card beside a selected Work
+preview. It uses the optional Companion Lite pack at `assets/companion/kurisu/` and
+existing Host presentation signals. It does not start another VN session, TTS
+pipeline, Work, or AUIP authority.
+
+Install the separately supplied `companion-kurisu` archive with
+`python tools/external_assets.py install <bundle.zip>`. It is derived from the same
+SpriteForge character sources but is independently installable; Companion does not
+need the multi-gigabyte wallpaper textures or an authoring workspace. Missing media
+keeps the text/avatar presentation available. An explicit
+`AMADEUS_COMPANION_PORTRAIT_CACHE` still supports the existing PNG cache. There is no
+implicit sibling `visual novel player` directory lookup.
+
+The Lite renderer uses lossless WebP atlases and a small CPU Canvas2D surface. The
+manifest preserves the source clip's complete duration; additional frames improve
+motion detail without speeding it up. Two atlas bitmaps and at most 16 MiB of
+explicit decoded atlas pixels are retained. This is not a cap on total Electron or
+browser decoder memory. Hidden windows pause; closing destroys the renderer and
+closes its bitmaps. Static frames do not run a redraw timer.
+
+The `动` / `静` button selects gentle or static idle and remembers the choice.
+The reviewed pack uses `idle_static_saved`, `speaking_short`, and both thinking
+speaking variants. Thinking variants alternate between speech runs, never halfway
+through a sentence. After speech ends the expression returns to neutral idle after
+350 ms. A new expression or new speech cancels that deadline. Captions remain intact.
+Other expressions retain their approved closed-mouth idle frames; `disappointed`
+retains the older three-frame artwork because no matching new source was selected.
+
+See [the source, edge-processing and performance experiment](companion-lite-2026-09-19.md).
 
 ![Companion panel showing a portrait, dialogue caption and VOICE indicator](images/companion-panel-speaking.png)
 
-Local UI preview in the speaking state, using the optional VN portrait cache and
+Historical UI preview in the speaking state, using the optional VN portrait cache and
 test presentation events. The still image shows the signal bars during animation.
 
 Speech completion must leave the just-spoken line on an already open card. Empty
