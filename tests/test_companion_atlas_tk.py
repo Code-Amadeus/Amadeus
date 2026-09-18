@@ -31,7 +31,7 @@ def pack(root, size=2, count=4, columns=2):
 
 
 def test_exact_source_tile_no_extra_alpha_tint_crop_or_fast_forward(tmp_path):
-    manifest = pack(tmp_path)
+    pack(tmp_path)
     now = [0.0]
     player = AtlasPlayer(tmp_path, clock=lambda: now[0])
     player.select("normal", True)
