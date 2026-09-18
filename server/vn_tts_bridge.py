@@ -34,6 +34,7 @@ _SEMAPHORES: dict[int, asyncio.Semaphore] = {}
 _SUBTITLE_SEMAPHORES: dict[int, asyncio.Semaphore] = {}
 _SENTENCE_META: dict[str, dict[str, Any]] = {}
 _VN_SUBTITLE_CACHE: dict[str, dict[str, str]] = {}
+_OVERLAY_LOCKS: dict[int, asyncio.Lock] = {}
 
 
 def is_vn_sentence(sentence_id: str) -> bool:
@@ -594,7 +595,17 @@ async def publish_overlay_subtitle(sentence_id: str, japanese_text: str, chinese
         display_text=str(chinese_text or "").strip(),
         raw_text=str(chinese_text or japanese_text or "").strip(),
         source="vn_pretranslation",
+        sentence_id=sentence_id,
     )
+
+
+async def publish_overlay_playback(sentence_id: str, speaking: bool) -> None:
+    """Project only real VN audio boundaries, never main-chat speech, to its overlay."""
+    meta = _SENTENCE_META.get(str(sentence_id or ""))
+    if not meta or not meta.get("overlay_url"):
+        return
+    await _publish_overlay(meta, display_text=str(meta.get("display_text") or "") if speaking else "",
+                           raw_text="", source="vn_playback", sentence_id=sentence_id, speaking=speaking)
 
 
 async def _publish_overlay(
@@ -603,6 +614,8 @@ async def _publish_overlay(
     display_text: str,
     raw_text: str,
     source: str,
+    sentence_id: str = "",
+    speaking: bool | None = None,
 ) -> None:
     url = str((meta or {}).get("overlay_url") or "").strip()
     if not url:
@@ -615,9 +628,16 @@ async def _publish_overlay(
         "line_id": str((meta or {}).get("line_id") or ""),
         "script_id": str((meta or {}).get("script_id") or ""),
         "source": source,
+        "sentence_id": sentence_id,
     }
+    if speaking is not None:
+        payload["speaking"] = speaking
     try:
-        await asyncio.to_thread(_post_json, url, payload, 0.25)
+        # Preserve audio start/end order while the blocking HTTP calls run off-loop.
+        loop_id = id(asyncio.get_running_loop())
+        lock = _OVERLAY_LOCKS.setdefault(loop_id, asyncio.Lock())
+        async with lock:
+            await asyncio.to_thread(_post_json, url, payload, 0.25)
     except Exception:
         logger.debug("[VN TTS] overlay publish failed: %s", url, exc_info=True)
 

@@ -30,6 +30,12 @@ retains the older three-frame artwork because no matching new source was selecte
 
 See [the source, edge-processing and performance experiment](companion-lite-2026-09-19.md).
 
+VN Player keeps its original Tk window and uses a native portrait-only adapter for
+the same optional Lite assets, timelines and cache budget. No window or outer-frame
+replacement is needed. The Tk/Canvas adapters are different display backends with
+cross-renderer timing tests, not the same JavaScript engine. See the
+[VN integration record](vn-shared-companion-2026-09-19.md) for measurements and limitations.
+
 ![Companion panel showing a portrait, dialogue caption and VOICE indicator](images/companion-panel-speaking.png)
 
 Historical UI preview in the speaking state, using the optional VN portrait cache and

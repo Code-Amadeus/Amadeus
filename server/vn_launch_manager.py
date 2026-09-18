@@ -327,6 +327,10 @@ class VNLaunchManager:
             "--crop-y-ratio",
             str(_coerce_float(params.get("overlayCropYRatio") or params.get("overlay_crop_y_ratio"), 0.035)),
         ]
+        # Keep the original VN Tk shell. The adapter replaces only its portrait area.
+        adapter = self.project_root / "tools" / "vn_portrait_overlay_lite.py"
+        args[1:2] = [str(adapter), "--legacy-helper", str(helper),
+                     "--lite-dir", str(self.project_root / "assets" / "companion" / "kurisu")]
         self._overlay_proc = self._spawn(args, cwd=helper.parent, hidden=True)
         self._state["overlay"] = {
             "status": "starting",
