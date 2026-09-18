@@ -22,6 +22,17 @@ from tools.check_third_party_provenance import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_companion_code_ships_but_optional_media_does_not():
+    policy = json.loads((ROOT / "release/source_release_policy.json").read_text(encoding="utf-8"))
+    code = ["render/companion_pack.py", "render/web/companion_atlas.js",
+            "tools/package_companion_character.py", "docs/companion-lite-2026-09-19.md",
+            "docs/evidence/companion-lite-2026-09-19.json"]
+    media = ["assets/companion/kurisu/manifest.json", "assets/companion/kurisu/normal/idle.webp"]
+    selected, excluded = select_paths(code + media, policy)
+    assert selected == sorted(code)
+    assert excluded == sorted(media)
+
+
 def test_double_star_glob_matches_root_and_nested_files() -> None:
     assert matches_any("GPT_SoVITS/model.py", ["GPT_SoVITS/**"])
     assert matches_any("wallpaper/scene/deep/frame.png", ["wallpaper/**/*.png"])

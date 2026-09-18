@@ -28,6 +28,7 @@ copy continues to live below `assets/`.
 | --- | --- | --- |
 | `visual-runtime` | ambient/subtitle images, scenario runtime, keyboard SFX | Optional wallpaper effects and activities |
 | `character-kurisu` | `spriteforge/runtime/kurisu/` | Optional manifest-indexed KTX2 animation |
+| `companion-kurisu` | `companion/kurisu/` | Derived small WebP portraits; usable without the full wallpaper pack |
 | `asr-qwen3-0.6b` | `models/asr/qwen3-asr-0.6b/` | Offline Qwen3-ASR conversation model |
 | `voice-kurisu-gpt-sovits-v3` | GPT-SoVITS v3 runtime weights and reference audio | Optional embedded Kurisu voice |
 
@@ -58,6 +59,9 @@ python tools/external_assets.py build visual-runtime `
 python tools/external_assets.py build character-kurisu `
   --output output\amadeus-character-kurisu.zip
 
+python tools/external_assets.py build companion-kurisu `
+  --output output\amadeus-companion-kurisu.zip
+
 python tools/external_assets.py build asr-qwen3-0.6b `
   --output output\amadeus-asr-qwen3-0.6b.zip
 
@@ -67,6 +71,16 @@ python tools/external_assets.py build voice-kurisu-gpt-sovits-v3 `
 python tools/external_assets.py build visual-runtime character-kurisu `
   --output output\amadeus-runtime-assets.zip
 ```
+
+Ship `amadeus-companion-kurisu.zip` beside the existing art archives as an optional
+download. It needs neither of the other art packs; those packs remain valid
+without it. To intentionally include it in a combined archive, append
+`companion-kurisu` to that build command. A combined archive installs all its
+declared packs, so separate archives are preferred for optional components.
+
+Companion build/verify/install/status validate manifest-indexed files, animation
+timelines, decoded-memory limits, sizes, and hashes. Uninstalled is allowed;
+corrupt selected packs are rejected before installation.
 
 The archive stores repository-relative `assets/...` paths, streams large files,
 uses ZIP64, and records size and SHA-256 for every member. The installer rejects

@@ -5,6 +5,7 @@ export type PortraitFrames = Record<string, { idle: string[]; speaking: string[]
 
 /** Read the existing, optional VN cache. No character media is bundled or generated. */
 export async function readCompanionPortraits(cacheDir: string): Promise<PortraitFrames> {
+  if (!cacheDir) return {}
   try {
     const root = await fs.realpath(cacheDir)
     const manifest = JSON.parse(await fs.readFile(path.join(root, 'manifest.json'), 'utf8'))

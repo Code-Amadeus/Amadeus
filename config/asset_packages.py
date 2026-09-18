@@ -8,6 +8,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from config.asset_paths import ASSET_ROOT
+from render.companion_pack import CompanionPackError, load_companion_pack
 
 
 ASSET_INDEX_SCHEMA = "amadeus.asset-index.v2"
@@ -82,7 +83,7 @@ def asset_pack_specs(index_path: Path = ASSET_INDEX_PATH) -> dict[str, AssetPack
         if spec_version <= 0:
             raise AssetPackageError(f"external pack {pack_id!r} has an invalid spec version")
         validator = str(entry.get("validator") or "required_files").strip()
-        if validator not in {"required_files", "visual_runtime", "character_pack"}:
+        if validator not in {"required_files", "visual_runtime", "character_pack", "companion_pack"}:
             raise AssetPackageError(f"external pack {pack_id!r} has an unknown validator")
         spec = AssetPackSpec(
             id=pack_id,
@@ -95,6 +96,8 @@ def asset_pack_specs(index_path: Path = ASSET_INDEX_PATH) -> dict[str, AssetPack
         )
         if not spec.required or (not spec.paths and not spec.trees):
             raise AssetPackageError(f"external pack {pack_id!r} has no install contract")
+        if spec.validator == "companion_pack" and len(spec.trees) != 1:
+            raise AssetPackageError("companion pack requires exactly one runtime tree")
         specs[pack_id] = spec
     return specs
 
@@ -150,6 +153,13 @@ def external_asset_pack_status(
             ):
                 raise ValueError("scenario graph requires object-valued nodes and edges arrays")
         except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+            state = "invalid"
+            message = str(exc)
+
+    if state == "installed" and spec.validator == "companion_pack":
+        try:
+            load_companion_pack(asset_path(asset_root, spec.trees[0]))
+        except CompanionPackError as exc:
             state = "invalid"
             message = str(exc)
 

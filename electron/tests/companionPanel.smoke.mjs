@@ -12,7 +12,7 @@ const output = path.join(root, 'output/diagnostics/companion-panel')
 await fs.mkdir(output, { recursive: true })
 app.setPath('userData', path.join(output, 'electron-profile'))
 app.disableHardwareAcceleration()
-BrowserWindow.prototype.showInactive = function () {} // Exercise native layout without showing test windows.
+BrowserWindow.prototype.showInactive = function () { this.webContents.setBackgroundThrottling(false) } // Hidden diagnostic rendering only.
 const clients = new Set()
 const visibility = []
 const token = 'companion-smoke-local-only'
@@ -40,7 +40,7 @@ const server = http.createServer(async (request, response) => {
     response.setHeader('Content-Type', 'application/json'); response.end('{"ok":true}')
   } else {
     const name = path.basename(url.pathname)
-    if (!['companion_panel.html', 'companion_panel.css', 'companion_panel.js', 'companion_presentation.js', 'crt_canvas_surface.js'].includes(name)) {
+    if (!['companion_panel.html', 'companion_panel.css', 'companion_panel.js', 'companion_presentation.js', 'companion_atlas.js', 'crt_canvas_surface.js'].includes(name)) {
       response.writeHead(404); response.end(); return
     }
     response.setHeader('Content-Type', name.endsWith('.html') ? 'text/html; charset=utf-8' : name.endsWith('.css') ? 'text/css' : 'application/javascript')

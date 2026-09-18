@@ -158,7 +158,7 @@ const companionPanel = new CompanionPanel({
   userDataDir: USER_DATA_DIR,
   preload: path.join(__dirname, '..', 'preload', 'companion.cjs'),
   portraitCacheDir: process.env.AMADEUS_COMPANION_PORTRAIT_CACHE
-    || path.join(PROJECT_ROOT, '..', 'visual novel player', 'out', 'vn_portrait_cache'),
+    || '', // Explicit legacy PNG override; the default Lite pack is served under assets/.
   bridge: () => companionBridge,
   slice: () => [
     electronCanvasLifecycle.window?.webContents,

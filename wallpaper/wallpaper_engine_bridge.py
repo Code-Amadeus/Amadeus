@@ -80,6 +80,7 @@ _WALLPAPER_CLIENT_ASSETS = (
     _PROJECT_ROOT / "render" / "web" / "companion_panel.html",
     _PROJECT_ROOT / "render" / "web" / "companion_panel.css",
     _PROJECT_ROOT / "render" / "web" / "companion_panel.js",
+    _PROJECT_ROOT / "render" / "web" / "companion_atlas.js",
     _PROJECT_ROOT / "render" / "web" / "companion_presentation.js",
     _PROJECT_ROOT / "render" / "web" / "wallpaper_scene.js",
     _PROJECT_ROOT / "render" / "web" / "renderer.js",
