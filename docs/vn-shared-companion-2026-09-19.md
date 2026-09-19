@@ -9,6 +9,11 @@ outer frame is unchanged. No Electron process/window, browser shell, new UI togg
 or IPC is added for VN. The earlier whole-window experiment was superseded and its
 entrypoints removed; its measurement artifacts remain under diagnostics.
 
+Subsequent visual refinement requested by the user: the existing moving scan lines
+are blended 75% toward the card background (25% of their original RGB difference).
+Only their fill colors change, once at construction; their geometry, cadence,
+caption styling, frame and avatar are unaffected. No new timer/effect is added.
+
 `server/vn_launch_manager.py` now invokes `tools/vn_portrait_overlay_lite.py`,
 passing the existing profile's Tk helper explicitly. That adapter subclasses the
 original window without copying/modifying its constructor/layout/drag/scan code.
@@ -39,8 +44,16 @@ Default idle is gentle motion; direct adapter launches can use `--static-idle`.
 
 The VN TTS bridge publishes real sentence start/end signals only to its configured
 overlay. Captions alone cannot restart speaking; stale sentence completions cannot
-stop newer speech. Speech completion schedules a 350 ms neutral return, preserving
-the caption. Runner-only events retain their declared duration. Missing Lite media
+stop newer speech. On-loop playback callbacks are scheduled directly before the
+cached-subtitle tasks, so a ready second caption cannot overtake its playback identity.
+Sentence completion pauses the current speaking pose during the existing 350 ms
+neutral-return window, following the main graph runtime's hold/cancel-release
+principle. A new sentence cancels that return and can enter the next thinking
+variant directly, with no intermediate idle atlas; duplicate starts/stops do not
+cycle variants or extend the deadline. With no continuation before the deadline,
+the normal idle pose returns. Captions remain intact. This is a bounded sentence-gap
+hold, not a claim to know the final sentence of an arbitrarily long silent utterance.
+Runner-only events retain their declared duration. Missing Lite media
 uses the existing VN cache/legacy renderer; a malformed installed pack fails visibly
 rather than silently substituting different artwork. Existing Lite ZIPs are reused
 without repackaging or adding a full wallpaper-pack dependency.

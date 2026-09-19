@@ -599,6 +599,18 @@ async def publish_overlay_subtitle(sentence_id: str, japanese_text: str, chinese
     )
 
 
+def schedule_overlay_playback(sentence_id: str, speaking: bool, loop: asyncio.AbstractEventLoop):
+    """Queue audio identity before subtitle tasks created next on the same host loop."""
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        current_loop = None
+    event = publish_overlay_playback(sentence_id, speaking)
+    if current_loop is loop:
+        return loop.create_task(event)
+    return asyncio.run_coroutine_threadsafe(event, loop)
+
+
 async def publish_overlay_playback(sentence_id: str, speaking: bool) -> None:
     """Project only real VN audio boundaries, never main-chat speech, to its overlay."""
     meta = _SENTENCE_META.get(str(sentence_id or ""))
