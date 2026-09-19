@@ -1618,7 +1618,7 @@ def test_sdk_runtime_config_isolated_from_codex_desktop_defaults() -> None:
     assert adapter.reasoning_effort == ReasoningEffort("max")
 
 
-@pytest.mark.parametrize("effort", ["medium", "ultra"])
+@pytest.mark.parametrize("effort", ["medium", "max"])
 def test_sdk_adapter_forwards_sol_effort_and_fast_without_changing_global_codex(effort) -> None:
     async def scenario(root: Path) -> None:
         turn = _FakeTurn("turn-fast", _success_events("turn-fast"))
@@ -1688,6 +1688,27 @@ def test_sdk_adapter_rejects_unknown_service_tier() -> None:
         assert "CODEX_APP_SERVER_SERVICE_TIER" in str(exc)
     else:
         raise AssertionError("unknown Codex service tier must fail at configuration time")
+
+
+def test_chatgpt_auth_mode_uses_codex_login_without_custom_provider_credentials() -> None:
+    adapter = CodexAppServerAdapter(
+        codex=object(),
+        auth_mode="chatgpt",
+        chatgpt_model="gpt-5.6-sol",
+        model_provider="deepseek",
+        provider_base_url="https://api.deepseek.com",
+        provider_api_key_env="DEEPSEEK_API_KEY",
+        sync_desktop_provider=False,
+    )
+
+    config = adapter._codex_config()
+
+    assert adapter.model == "gpt-5.6-sol"
+    assert adapter.model_provider == "openai"
+    assert adapter.provider_base_url == ""
+    assert adapter.provider_api_key_env == ""
+    assert not any(value.startswith("model_providers.") for value in config.config_overrides)
+    assert not config.env or "DEEPSEEK_API_KEY" not in config.env
 
 
 def test_sdk_adapter_syncs_custom_provider_for_desktop_resume() -> None:
@@ -2560,7 +2581,7 @@ def _main() -> None:
     test_unknown_and_collaboration_items_fail_closed_as_execution()
     test_windows_runtime_path_prefers_a_real_powershell_binary()
     test_sdk_runtime_config_isolated_from_codex_desktop_defaults()
-    for effort in ("medium", "ultra"):
+    for effort in ("medium", "max"):
         test_sdk_adapter_forwards_sol_effort_and_fast_without_changing_global_codex(effort)
     test_sdk_adapter_rejects_unknown_service_tier()
     test_sdk_adapter_resumes_only_the_host_attached_thread()

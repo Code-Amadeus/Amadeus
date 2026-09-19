@@ -19,6 +19,9 @@ const WORK_FOCUS_CWD_KEY = 'amadeus.work.focusCwd'
 
 function initialPage(): Page {
   const page = new URLSearchParams(window.location.search).get('page')
+  // `expressions` is a deprecated diagnostic deep link. It is intentionally
+  // no longer exposed by the Render surface, but remains available to older
+  // tooling that opens `?page=expressions` directly.
   if (page === 'vn' || page === 'backend' || page === 'expressions' || page === 'settings') {
     return page
   }
@@ -26,7 +29,7 @@ function initialPage(): Page {
 }
 
 function AmadeusApp() {
-  const { send, subscribe, connected } = useBackend()
+  const { send, subscribe, connected, reconnect } = useBackend()
   const searchParams = new URLSearchParams(window.location.search)
   const desktopProjection = searchParams.get('desktopProjection') === '1'
   const panelWindow = searchParams.get('panelWindow') === '1'
@@ -131,6 +134,7 @@ function AmadeusApp() {
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail
+      // Deprecated compatibility event retained for older renderer tooling.
       if (detail === 'expressions') setPage('expressions')
       if (detail === 'toggle-render') handleToggleRender()
     }
@@ -290,7 +294,7 @@ function AmadeusApp() {
         {page === 'vn' && <VNPage send={send} subscribe={subscribe} connected={connected} />}
         {page === 'expressions' && <ExpressionPage send={send} subscribe={subscribe} />}
         {page === 'backend' && <BackendPage send={send} subscribe={subscribe} connected={connected} renderActive={renderActive} wallpaperActive={wallpaperActive} />}
-        {page === 'settings' && <SettingsPage send={send} subscribe={subscribe} />}
+        {page === 'settings' && <SettingsPage send={send} subscribe={subscribe} connected={connected} reconnectBackend={reconnect} />}
       </div>
     </div>
   )

@@ -95,24 +95,22 @@ async def _exercise_renderer(page: Any, *, timeout: float) -> dict[str, bool]:
     await page.get_by_text("Speech synthesis", exact=True).wait_for(
         state="visible", timeout=timeout_ms
     )
-    await page.get_by_role("button", name="General", exact=True).click()
-    await page.get_by_text("Optional Runtime Assets", exact=True).wait_for(
-        state="visible", timeout=timeout_ms
-    )
+    await page.get_by_role("button", name="Capabilities", exact=True).click()
+    await page.get_by_role("tab", name="Runtime packages", exact=True).click()
     await page.get_by_text("Visual Runtime Pack", exact=True).wait_for(
         state="visible", timeout=timeout_ms
     )
     await page.get_by_text("Kurisu Character Pack", exact=True).wait_for(
         state="visible", timeout=timeout_ms
     )
-    checks["settings_and_optional_assets_rendered"] = True
+    checks["settings_and_runtime_packages_rendered"] = True
 
     await page.get_by_role("button", name="Models", exact=True).click()
-    await page.get_by_text("Advanced model roles", exact=True).click()
+    await page.get_by_text("Advanced role overrides", exact=True).click()
     auip_action_role = page.get_by_text("AUIP action decision", exact=True).last
     await auip_action_role.wait_for(state="visible", timeout=timeout_ms)
     auip_action_card = auip_action_role.locator(
-        "xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' setting-card ')][1]"
+        "xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' setting-card ')][1]"
     )
     await auip_action_card.get_by_text("Needs setup", exact=True).wait_for(
         state="visible", timeout=timeout_ms

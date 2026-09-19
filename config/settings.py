@@ -490,7 +490,9 @@ PROVIDER_DELEGATE_DEFAULT_PROVIDER = _str("PROVIDER_DELEGATE_DEFAULT_PROVIDER", 
 # the turn-scoped CLI remains an explicit compatibility transport.
 CODEX_APP_SERVER_PROVIDER_ENABLED = _bool("CODEX_APP_SERVER_PROVIDER_ENABLED", True)
 CODEX_APP_SERVER_CODEX_BIN = _str("CODEX_APP_SERVER_CODEX_BIN", "")
-CODEX_APP_SERVER_MODEL = _str("CODEX_APP_SERVER_MODEL", "deepseek-v4-flash")
+CODEX_APP_SERVER_AUTH_MODE = _str("CODEX_APP_SERVER_AUTH_MODE", "model_api").strip().lower()
+if CODEX_APP_SERVER_AUTH_MODE not in {"model_api", "chatgpt"}:
+    raise ValueError("CODEX_APP_SERVER_AUTH_MODE must be model_api or chatgpt")
 # Provider-native execution settings belong to the Provider adapter, not to
 # the user's Codex Desktop profile.  Keeping all four values explicit prevents
 # an unrelated Desktop model/effort change from silently changing Amadeus work.
@@ -498,6 +500,18 @@ CODEX_APP_SERVER_MODEL_PROVIDER = _str(
     "CODEX_APP_SERVER_MODEL_PROVIDER",
     "deepseek",
 ).strip().lower()
+_CODEX_CONNECTION_DEFAULTS = {
+    "deepseek": (DEEPSEEK_BASE_URL, DEEPSEEK_MODEL_NAME, "DEEPSEEK_API_KEY"),
+    "openai": (OPENAI_BASE_URL, OPENAI_MODEL_NAME, "OPENAI_API_KEY"),
+}
+_CODEX_PROVIDER_BASE_DEFAULT, _CODEX_MODEL_DEFAULT, _CODEX_API_KEY_ENV_DEFAULT = (
+    _CODEX_CONNECTION_DEFAULTS.get(
+        CODEX_APP_SERVER_MODEL_PROVIDER,
+        (DEEPSEEK_BASE_URL, DEEPSEEK_MODEL_NAME, "DEEPSEEK_API_KEY"),
+    )
+)
+CODEX_APP_SERVER_MODEL = _str("CODEX_APP_SERVER_MODEL", _CODEX_MODEL_DEFAULT)
+CODEX_APP_SERVER_CHATGPT_MODEL = _str("CODEX_APP_SERVER_CHATGPT_MODEL", "").strip()
 CODEX_APP_SERVER_REASONING_EFFORT = _str(
     "CODEX_APP_SERVER_REASONING_EFFORT",
     "max",
@@ -508,11 +522,11 @@ CODEX_APP_SERVER_SERVICE_TIER = _str(
 ).strip().lower()
 CODEX_APP_SERVER_PROVIDER_BASE_URL = _str(
     "CODEX_APP_SERVER_PROVIDER_BASE_URL",
-    "https://api.deepseek.com",
+    _CODEX_PROVIDER_BASE_DEFAULT,
 ).strip()
 CODEX_APP_SERVER_PROVIDER_API_KEY_ENV = _str(
     "CODEX_APP_SERVER_PROVIDER_API_KEY_ENV",
-    "DEEPSEEK_API_KEY",
+    _CODEX_API_KEY_ENV_DEFAULT,
 ).strip()
 # Persist only the non-secret provider definition into the Codex user profile
 # so Desktop can resume Amadeus-created threads. Authentication remains backed

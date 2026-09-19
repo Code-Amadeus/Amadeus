@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import FluentIcon from './FluentIcon'
+import { useI18n } from '../i18n'
 
 export interface ChatSessionContext {
   bindingKind: 'project' | 'work_item'
@@ -103,6 +104,7 @@ function SessionRow({
   onRename: () => void
   onDelete: () => void
 }) {
+  const { t } = useI18n()
   const detail = session.context?.bindingKind === 'work_item'
     ? session.context.workItemTitle || 'Task'
     : session.message_count
@@ -134,7 +136,7 @@ function SessionRow({
         title={session.title}
       >
         <span className="block truncate" style={{ fontSize: 11, fontWeight: active ? 600 : 500 }}>
-          {session.title || 'Untitled chat'}
+          {session.title || t('Untitled chat')}
         </span>
         <span className="flex items-center gap-1 min-w-0" style={{ marginTop: 2, color: 'var(--faint)', fontSize: 9 }}>
           <span className="truncate">{detail}</span>
@@ -145,8 +147,8 @@ function SessionRow({
       <button
         type="button"
         onClick={event => { event.stopPropagation(); onDelete() }}
-        title="Delete chat"
-        aria-label={`Delete ${session.title || 'chat'}`}
+        title={t('Delete chat')}
+        aria-label={`${t('Delete')} ${session.title || t('chat')}`}
         className="opacity-0 group-hover:opacity-100 border-none bg-transparent cursor-pointer"
         style={{ color: 'var(--faint)', padding: '7px 7px 7px 3px', fontSize: 11 }}
       >
@@ -170,6 +172,7 @@ export default function ChatSessionRail({
   onRename,
   onDelete,
 }: Props) {
+  const { t } = useI18n()
   const [railHovered, setRailHovered] = useState(false)
   const [railFocused, setRailFocused] = useState(false)
   const [railMode, setRailMode] = useState<RailMode>(artifactViewId ? 'artifacts' : 'chats')
@@ -315,7 +318,7 @@ export default function ChatSessionRail({
           onClick={() => setPreviewGroupId(group.id)}
           className="flex items-center flex-1 min-w-0 border-none bg-transparent cursor-pointer text-left"
           style={{ height: 29, padding: '0 4px 0 8px', color: selected ? 'var(--text)' : 'var(--muted)', fontSize: 10 }}
-          title={`Show ${group.label} chats`}
+          title={`${t('Show')} ${group.label} ${t('chats')}`}
           aria-current={selected ? 'true' : undefined}
         >
           <span aria-hidden="true" style={{ width: 13, color: 'var(--faint)' }}>›</span>
@@ -326,8 +329,8 @@ export default function ChatSessionRail({
           <button
             type="button"
             onClick={() => onNewProjectSession(group.projectId || '')}
-            title={`New chat in ${group.label}`}
-            aria-label={`New chat in ${group.label}`}
+            title={`${t('New chat in')} ${group.label}`}
+            aria-label={`${t('New chat in')} ${group.label}`}
             className="flex items-center justify-center border-none bg-transparent cursor-pointer"
             style={{ width: 23, height: 25, borderRadius: 6, color: 'var(--faint)', fontSize: 15 }}
           >
@@ -341,7 +344,7 @@ export default function ChatSessionRail({
   return (
     <aside
       className="shrink-0"
-      aria-label="Chat history"
+      aria-label={t('Chat history')}
       style={{
         width: 44,
         position: 'relative',
@@ -352,7 +355,7 @@ export default function ChatSessionRail({
       <div
         className="flex flex-col h-full"
         role="navigation"
-        aria-label="Chat and artifact navigation"
+        aria-label={t('Chat and artifact navigation')}
         aria-expanded={railOpen}
         tabIndex={0}
         onMouseEnter={openRail}
@@ -400,7 +403,7 @@ export default function ChatSessionRail({
                 }}
               >
                 <FluentIcon name={mode === 'chats' ? 'Chat' : 'Tiles'} size={13} />
-                <span className="truncate">{mode === 'chats' ? 'Chats' : 'Artifacts'}</span>
+                <span className="truncate">{t(mode === 'chats' ? 'Chats' : 'Artifacts')}</span>
               </button>
             ))}
           </>
@@ -413,8 +416,8 @@ export default function ChatSessionRail({
           <button
             type="button"
             onClick={onNew}
-            title="New chat"
-            aria-label="New chat"
+            title={t('New chat')}
+            aria-label={t('New chat')}
             className="flex items-center justify-center border-none bg-transparent cursor-pointer"
             style={{ width: 30, height: 30, borderRadius: 6, color: 'var(--muted)' }}
           >
@@ -430,8 +433,8 @@ export default function ChatSessionRail({
               type="search"
               value={query}
               onChange={event => setQuery(event.target.value)}
-              placeholder="Search chats"
-              aria-label="Search chats"
+              placeholder={t('Search chats')}
+              aria-label={t('Search chats')}
               style={{
                 width: '100%',
                 height: 28,
@@ -449,13 +452,13 @@ export default function ChatSessionRail({
           <div className="chat-scroll-area shrink-0 overflow-y-auto" style={{ maxHeight: '38%', paddingBottom: 5 }}>
             <div className="flex items-center" style={{ padding: '1px 6px 2px 10px' }}>
               <span className="flex-1" style={{ color: 'var(--faint)', fontSize: 9, fontWeight: 700, letterSpacing: '0.08em' }}>
-                PROJECTS
+                {t('PROJECTS')}
               </span>
               <button
                 type="button"
                 onClick={onNewProject}
-                title="New Project"
-                aria-label="New Project"
+                title={t('New Project')}
+                aria-label={t('New Project')}
                 className="flex items-center justify-center border-none bg-transparent cursor-pointer"
                 style={{ width: 26, height: 26, borderRadius: 6, color: 'var(--faint)', fontSize: 16 }}
               >
@@ -464,7 +467,7 @@ export default function ChatSessionRail({
             </div>
             {projectGroups.length > 0
               ? projectGroups.map(renderProjectHeader)
-              : <p style={{ padding: '5px 10px 7px', color: 'var(--faint)', fontSize: 10 }}>No Projects</p>}
+              : <p style={{ padding: '5px 10px 7px', color: 'var(--faint)', fontSize: 10 }}>{t('No Projects')}</p>}
             <div style={{ height: 1, margin: '5px 9px', backgroundColor: 'var(--border)' }} />
             {renderProjectHeader(draftGroup)}
           </div>
@@ -472,7 +475,7 @@ export default function ChatSessionRail({
           <section className="flex flex-col flex-1 min-h-0" style={{ borderTop: '1px solid var(--border)', paddingTop: 5 }}>
             <div className="flex items-center shrink-0" style={{ padding: '3px 10px 5px' }}>
               <span className="flex-1 truncate" style={{ color: 'var(--muted)', fontSize: 10, fontWeight: 650 }}>
-                {previewGroup.label}
+                {t(previewGroup.label)}
               </span>
               <span style={{ color: 'var(--faint)', fontSize: 9 }}>{previewGroup.sessions.length}</span>
             </div>
@@ -489,7 +492,7 @@ export default function ChatSessionRail({
               ))}
               {previewGroup.sessions.length === 0 && (
                 <p style={{ padding: '9px 10px', color: 'var(--faint)', fontSize: 9 }}>
-                  {normalizedQuery ? 'No matching chats' : 'No chats yet'}
+                  {t(normalizedQuery ? 'No matching chats' : 'No chats yet')}
                 </p>
               )}
               {visibleCount < previewGroup.sessions.length && (
@@ -502,7 +505,7 @@ export default function ChatSessionRail({
                   className="border-none bg-transparent cursor-pointer"
                   style={{ width: '100%', padding: '8px 10px', color: 'var(--accent)', fontSize: 9 }}
                 >
-                  Show {Math.min(SESSION_PAGE_SIZE, previewGroup.sessions.length - visibleCount)} more
+                  {t('Show')} {Math.min(SESSION_PAGE_SIZE, previewGroup.sessions.length - visibleCount)} {t('more')}
                 </button>
               )}
             </div>
@@ -511,10 +514,10 @@ export default function ChatSessionRail({
       )}
 
       {railOpen && railMode === 'artifacts' && (
-        <div className="flex flex-col flex-1 min-h-0" aria-label="Artifact collections" style={{ padding: '5px 6px 8px' }}>
+        <div className="flex flex-col flex-1 min-h-0" aria-label={t('Artifact collections')} style={{ padding: '5px 6px 8px' }}>
           <div style={{ padding: '3px 5px 7px' }}>
             <div style={{ color: 'var(--faint)', fontSize: 9, fontWeight: 700, letterSpacing: '0.08em' }}>
-              DRAFTS
+              {t('DRAFTS')}
             </div>
           </div>
           <button

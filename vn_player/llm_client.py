@@ -54,7 +54,7 @@ class VNLLMClient:
         else:
             api_key = getattr(settings, "DEEPSEEK_API_KEY", "")
             base_url = self.profile.base_url or getattr(settings, "DEEPSEEK_BASE_URL", "")
-            model = self.profile.model or "deepseek-v4-flash"
+            model = self.profile.model or getattr(settings, "DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
 
         if not api_key:
             raise RuntimeError(f"{provider} API key is not configured")

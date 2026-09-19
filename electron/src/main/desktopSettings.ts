@@ -7,6 +7,8 @@ type StoredDesktopSettings = {
   values: Record<string, string>
   encryptedSecrets: Record<string, string>
   mcpConnections: Record<string, StoredMcpConnection>
+  pendingRevisions: Record<string, number>
+  nextRevision: number
 }
 
 export type DesktopSettingsUpdate = {
@@ -48,6 +50,21 @@ type StoredMcpConnection = {
 }
 
 const VALUE_KEYS = new Set([
+  'AMADEUS_UI_LOCALE',
+  'AMADEUS_UI_THEME',
+  'AMADEUS_PRESENTATION_LOCALE',
+  'AMADEUS_WALLPAPER_CAPTION_MODE',
+  'AMADEUS_CHAT_TRANSLATION_SUBTITLES_ENABLED',
+  'AMADEUS_VISION_ENABLED',
+  'AMADEUS_VISION_MODE',
+  'AMADEUS_VISION_SCOPE',
+  'AMADEUS_VISION_MAX_LONG_SIDE',
+  'AMADEUS_VISION_JPEG_QUALITY',
+  'AMADEUS_VISION_REGION',
+  'AMADEUS_VISION_WINDOW_HANDLE',
+  'ENABLE_CUDA_GRAPH',
+  'EXP_TTS_MAX_CONCURRENCY',
+  'TTS_OUTPUT_LANGUAGE',
   'LLM_PROVIDER',
   'DEEPSEEK_BASE_URL',
   'DEEPSEEK_MODEL_NAME',
@@ -78,6 +95,7 @@ const VALUE_KEYS = new Set([
   'LOCAL_LLM_CLI_CONTEXT',
   'LOCAL_LLM_CLI_NGL',
   'LOCAL_LLM_CUDA_VISIBLE_DEVICES',
+  'COOPERATIVE_WORK_PLANNER_MODEL',
   'WORK_OBSERVER_PROVIDER',
   'WORK_OBSERVER_MODEL',
   'AUIP_NARRATION_PROVIDER',
@@ -86,13 +104,25 @@ const VALUE_KEYS = new Set([
   'AUIP_ACTION_MODEL',
   'AUIP_ACTION_REASONING_EFFORT',
   'AUIP_ACTION_SERVICE_TIER',
+  'BROWSER_BRANCH_PROVIDER',
+  'BROWSER_BRANCH_MODEL',
+  'VN_LLM_PROVIDER',
+  'VN_LLM_MODEL',
+  'VN_SUBTITLE_TRANSLATE_PROVIDER',
+  'VN_SUBTITLE_TRANSLATE_MODEL',
+  'VN_TTS_TRANSLATE_PROVIDER',
+  'VN_TTS_TRANSLATE_MODEL',
+  'COOPERATIVE_CHAT_ENABLED',
+  'COOPERATIVE_CHAT_PROVIDER',
   'OPENCLAW_BASE_URL',
   'OPENCLAW_PROJECT_DIR',
   'CODEX_PROVIDER_TRANSPORT',
+  'CODEX_APP_SERVER_AUTH_MODE',
   'CODEX_APP_SERVER_CODEX_BIN',
   'CODEX_APP_SERVER_MODEL_PROVIDER',
   'CODEX_APP_SERVER_PROVIDER_BASE_URL',
   'CODEX_APP_SERVER_MODEL',
+  'CODEX_APP_SERVER_CHATGPT_MODEL',
   'CODEX_APP_SERVER_REASONING_EFFORT',
   'CODEX_APP_SERVER_SERVICE_TIER',
   'DIRECT_CODEX_CLI_PATH',
@@ -163,6 +193,16 @@ const CODEX_TRANSPORT_KEYS = [
 ] as const
 
 const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
+  AMADEUS_UI_LOCALE: new Set(['en-US', 'zh-CN']),
+  AMADEUS_UI_THEME: new Set(['classic', 'wallpaper-slice']),
+  AMADEUS_PRESENTATION_LOCALE: new Set(['en-US', 'zh-CN', 'ja-JP']),
+  AMADEUS_WALLPAPER_CAPTION_MODE: new Set(['translated', 'source', 'bilingual', 'off']),
+  AMADEUS_CHAT_TRANSLATION_SUBTITLES_ENABLED: new Set(['true', 'false']),
+  AMADEUS_VISION_ENABLED: new Set(['true', 'false']),
+  AMADEUS_VISION_MODE: new Set(['off', 'on_demand', 'watching', 'self_aware']),
+  AMADEUS_VISION_SCOPE: new Set(['full_screen', 'current_window', 'selected_window', 'wallpaper_surface', 'region']),
+  ENABLE_CUDA_GRAPH: new Set(['1', '0']),
+  TTS_OUTPUT_LANGUAGE: new Set(['日文', '英文']),
   LLM_PROVIDER: new Set(['deepseek', 'openai', 'gemini', 'bedrock', 'local', 'hybrid', 'hybrid2', 'hybrid3']),
   BEDROCK_AUTH_MODE: new Set(['auto', 'boto3', 'bearer']),
   AWS_BEDROCK_USE_INFERENCE_PROFILE: new Set(['true', 'false']),
@@ -171,8 +211,16 @@ const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
   LOCAL_LLM_LAUNCH_MODE: new Set(['external', 'managed']),
   AUIP_ACTION_REASONING_EFFORT: new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']),
   AUIP_ACTION_SERVICE_TIER: new Set(['auto', 'default', 'fast', 'priority']),
+  BROWSER_BRANCH_PROVIDER: new Set(['deepseek', 'openai']),
+  VN_LLM_PROVIDER: new Set(['deepseek', 'openai']),
+  VN_SUBTITLE_TRANSLATE_PROVIDER: new Set(['deepseek', 'openai']),
+  VN_TTS_TRANSLATE_PROVIDER: new Set(['deepseek', 'openai']),
+  COOPERATIVE_CHAT_ENABLED: new Set(['true', 'false']),
+  COOPERATIVE_CHAT_PROVIDER: new Set(['codex', 'openclaw', 'browser']),
   CODEX_PROVIDER_TRANSPORT: new Set(['app_server', 'direct', 'disabled']),
-  CODEX_APP_SERVER_REASONING_EFFORT: new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']),
+  CODEX_APP_SERVER_AUTH_MODE: new Set(['model_api', 'chatgpt']),
+  CODEX_APP_SERVER_MODEL_PROVIDER: new Set(['deepseek', 'openai']),
+  CODEX_APP_SERVER_REASONING_EFFORT: new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
   CODEX_APP_SERVER_SERVICE_TIER: new Set(['', 'auto', 'default', 'flex', 'priority', 'fast', 'ultrafast']),
   QWEN3_ASR_DEVICE: new Set(['auto', 'cpu', 'cuda']),
   QWEN3_ASR_REQUIRE_CUDA: new Set(['true', 'false']),
@@ -213,11 +261,15 @@ const NUMBER_RANGES: Record<string, readonly [number, number]> = {
   ASR_LISTEN_TIMEOUT_SECONDS: [1, 120],
   ASR_VAD_SILENCE_MS: [100, 3000],
   AEC_REALTIME_DELAY_MS: [0, 2000],
+  AMADEUS_VISION_MAX_LONG_SIDE: [320, 4096],
+  AMADEUS_VISION_JPEG_QUALITY: [35, 92],
+  EXP_TTS_MAX_CONCURRENCY: [1, 16],
 }
 
-const INTEGER_KEYS = new Set(['RAG_TOP_K', 'ASR_VAD_SILENCE_MS'])
+const INTEGER_KEYS = new Set(['RAG_TOP_K', 'ASR_VAD_SILENCE_MS', 'AMADEUS_VISION_MAX_LONG_SIDE', 'AMADEUS_VISION_JPEG_QUALITY', 'EXP_TTS_MAX_CONCURRENCY'])
 
 const MCP_CONNECTIONS_ENV = 'AMADEUS_MCP_CONNECTIONS'
+const FRONTEND_ONLY_VALUE_KEYS = new Set(['AMADEUS_UI_LOCALE', 'AMADEUS_UI_THEME'])
 const MCP_ID_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/
 const MCP_ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/
 
@@ -264,7 +316,34 @@ export function validateAcpProviders(raw: string): Array<Record<string, unknown>
 }
 
 function emptyStore(): StoredDesktopSettings {
-  return { version: 2, values: {}, encryptedSecrets: {}, mcpConnections: {} }
+  return { version: 2, values: {}, encryptedSecrets: {}, mcpConnections: {}, pendingRevisions: {}, nextRevision: 1 }
+}
+
+function allowedPendingKey(key: string): boolean {
+  return key === MCP_CONNECTIONS_ENV || (VALUE_KEYS.has(key) && !FRONTEND_ONLY_VALUE_KEYS.has(key)) || SECRET_KEYS.has(key)
+}
+
+function cleanPendingRevisions(value: unknown, legacyKeys: unknown): Record<string, number> {
+  const result: Record<string, number> = {}
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    for (const [key, revision] of Object.entries(value)) {
+      if (allowedPendingKey(key) && Number.isSafeInteger(revision) && Number(revision) > 0) result[key] = Number(revision)
+    }
+  }
+  if (!Object.keys(result).length && Array.isArray(legacyKeys)) {
+    let revision = 1
+    for (const rawKey of legacyKeys) {
+      const key = String(rawKey || '').trim()
+      if (allowedPendingKey(key)) result[key] = revision++
+    }
+  }
+  return result
+}
+
+function markPending(stored: StoredDesktopSettings, keys: Iterable<string>): void {
+  for (const key of keys) {
+    stored.pendingRevisions[key] = stored.nextRevision++
+  }
 }
 
 function boundedText(value: unknown, label: string, limit: number): string {
@@ -394,11 +473,18 @@ export class DesktopSettingsStore {
   private read(): StoredDesktopSettings {
     try {
       const parsed = JSON.parse(fs.readFileSync(this.filePath, 'utf8')) as Record<string, unknown>
+      const pendingRevisions = cleanPendingRevisions(parsed.pendingRevisions, parsed.pendingKeys)
+      const highestRevision = Math.max(0, ...Object.values(pendingRevisions))
+      const storedNextRevision = Number.isSafeInteger(parsed.nextRevision) && Number(parsed.nextRevision) > 0
+        ? Number(parsed.nextRevision)
+        : 1
       return {
         version: 2,
         values: cleanRecord(parsed.values, VALUE_KEYS),
         encryptedSecrets: cleanRecord(parsed.encryptedSecrets, SECRET_KEYS),
         mcpConnections: cleanStoredMcpConnections(parsed.mcpConnections),
+        pendingRevisions,
+        nextRevision: Math.max(storedNextRevision, highestRevision + 1),
       }
     } catch {
       return emptyStore()
@@ -449,14 +535,16 @@ export class DesktopSettingsStore {
         locked: locked[key],
       }]),
     )
+    const pendingKeys = Object.keys(stored.pendingRevisions)
     return {
       values: { ...stored.values },
       sources,
       locked,
       secrets,
       encryptionAvailable: safeStorage.isEncryptionAvailable(),
-      restartRequired: Object.keys(stored.values).length > 0
-        || Object.keys(stored.encryptedSecrets).length > 0,
+      restartRequired: pendingKeys.length > 0,
+      pendingKeys,
+      pendingRevisions: { ...stored.pendingRevisions },
       mcpConnections: Object.values(stored.mcpConnections)
         .sort((left, right) => left.name.localeCompare(right.name))
         .map(mcpConnectionSnapshot),
@@ -537,6 +625,7 @@ export class DesktopSettingsStore {
       bearerTokenEnvVar: transport === 'http' ? bearerTokenEnvVar : '',
       encryptedEnvironment,
     }
+    markPending(stored, [MCP_CONNECTIONS_ENV])
     this.write(stored)
     return this.snapshot(environment)
   }
@@ -549,6 +638,7 @@ export class DesktopSettingsStore {
     const stored = this.read()
     if (!stored.mcpConnections[id]) throw new Error('MCP connection was not found')
     delete stored.mcpConnections[id]
+    markPending(stored, [MCP_CONNECTIONS_ENV])
     this.write(stored)
     return this.snapshot(environment)
   }
@@ -560,6 +650,7 @@ export class DesktopSettingsStore {
     const stored = this.read()
     const values = raw?.values && typeof raw.values === 'object' ? raw.values : {}
     const secrets = raw?.secrets && typeof raw.secrets === 'object' ? raw.secrets : {}
+    const changedKeys = new Set<string>()
 
     for (const [key, rawValue] of Object.entries(values)) {
       if (!VALUE_KEYS.has(key)) throw new Error(`Unsupported desktop setting: ${key}`)
@@ -567,6 +658,7 @@ export class DesktopSettingsStore {
         throw new Error(`${key} is locked by the parent process environment`)
       }
       if (rawValue === null || rawValue === '') {
+        if (stored.values[key] !== undefined) changedKeys.add(key)
         delete stored.values[key]
         continue
       }
@@ -598,6 +690,7 @@ export class DesktopSettingsStore {
         try { protocol = new URL(value).protocol } catch { /* rejected below */ }
         if (!['ws:', 'wss:'].includes(protocol)) throw new Error(`${key} must be a WebSocket URL`)
       }
+      if (stored.values[key] !== value) changedKeys.add(key)
       stored.values[key] = value
     }
 
@@ -607,6 +700,7 @@ export class DesktopSettingsStore {
         throw new Error(`${key} is locked by the parent process environment`)
       }
       if (rawValue === null) {
+        if (stored.encryptedSecrets[key] !== undefined) changedKeys.add(key)
         delete stored.encryptedSecrets[key]
         continue
       }
@@ -618,8 +712,27 @@ export class DesktopSettingsStore {
         throw new Error('System credential encryption is unavailable; the secret was not saved')
       }
       stored.encryptedSecrets[key] = safeStorage.encryptString(value).toString('base64')
+      changedKeys.add(key)
     }
 
+    markPending(stored, [...changedKeys].filter(key => !FRONTEND_ONLY_VALUE_KEYS.has(key)))
+    this.write(stored)
+    return this.snapshot(environment)
+  }
+
+  pendingRevisionSnapshot(): Record<string, number> {
+    return { ...this.read().pendingRevisions }
+  }
+
+  markApplied(environment: NodeJS.ProcessEnv, revisions?: Readonly<Record<string, number>>): Record<string, unknown> {
+    const stored = this.read()
+    if (revisions === undefined) {
+      stored.pendingRevisions = {}
+    } else {
+      for (const [key, revision] of Object.entries(revisions)) {
+        if (stored.pendingRevisions[key] === revision) delete stored.pendingRevisions[key]
+      }
+    }
     this.write(stored)
     return this.snapshot(environment)
   }
@@ -632,7 +745,7 @@ export class DesktopSettingsStore {
     const dotenvKeys = this.dotenvKeys()
     const result: NodeJS.ProcessEnv = {}
     for (const [key, value] of Object.entries(stored.values)) {
-      if (key === 'CODEX_PROVIDER_TRANSPORT' || explicitEnvironmentHas(environment, key)) continue
+      if (key === 'CODEX_PROVIDER_TRANSPORT' || FRONTEND_ONLY_VALUE_KEYS.has(key) || explicitEnvironmentHas(environment, key)) continue
       result[key] = value
     }
 

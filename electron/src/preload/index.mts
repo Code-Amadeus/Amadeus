@@ -16,10 +16,12 @@ contextBridge.exposeInMainWorld('amadeus', {
   } | null> => ipcRenderer.invoke('get-backend-connection'),
   restartBackend: (): Promise<boolean> => ipcRenderer.invoke('restart-backend'),
   getDesktopSettings: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('desktop-settings.get'),
+  getCompanionPortraitStatus: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('companion-portraits.status'),
   updateDesktopSettings: (update: {
     values?: Record<string, string | boolean | null>
     secrets?: Record<string, string | null>
   }): Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }> => ipcRenderer.invoke('desktop-settings.update', update),
+  markDesktopSettingsApplied: (revisions: Record<string, number>): Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }> => ipcRenderer.invoke('desktop-settings.mark-applied', revisions),
   upsertMcpConnection: (update: {
     connection: {
       id?: string

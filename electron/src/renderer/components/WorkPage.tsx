@@ -35,6 +35,7 @@ import {
   toolCount,
 } from './work/workState'
 import { isVisibleProviderEvent } from './work/providerEventVisibility'
+import { useI18n } from '../i18n'
 
 type DisplayNarrationItem = {
   label: string
@@ -155,6 +156,7 @@ function consumeWorkFocusRequest() {
 }
 
 export default function WorkPage({ send, subscribe, connected }: WorkPageProps) {
+  const { t } = useI18n()
   const searchParams = new URLSearchParams(window.location.search)
   const desktopProjection = searchParams.get('desktopProjection') === '1'
   const sliceWindow = searchParams.get('sliceWindow') === '1'
@@ -1150,7 +1152,7 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
       <div className={`crt-popover crt-popover-${overlay}`}>
         <div className="crt-popover-head">
           <span>{overlay}</span>
-          <button onClick={() => setOverlay('none')}>Close</button>
+          <button onClick={() => setOverlay('none')}>{t('Close')}</button>
         </div>
         <div className="crt-popover-body">
           {overlay === 'canvas' && diffPreview && (
@@ -1191,16 +1193,16 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
                     onClick={() => { void resolveAttention(activeAttention.id, option.id) }}
                   >
                     <span className="crt-attention-kind">
-                      {option.entityKind === 'project'
+                      {t(option.entityKind === 'project'
                         ? 'PROJECT'
                         : option.entityKind === 'work_item'
                           ? option.parentLabel ? 'WORKITEM IN PROJECT' : 'SESSION DRAFT'
-                          : 'CHOICE'}
+                          : 'CHOICE')}
                     </span>
                     <strong>{option.label}</strong>
                     {option.parentLabel && <small>↳ {option.parentLabel}</small>}
                     {option.description && <p>{option.description}</p>}
-                    {attentionResolving === option.id && <em>Applying…</em>}
+                    {attentionResolving === option.id && <em>{t('Applying…')}</em>}
                   </button>
                 ))}
               </div>
@@ -1208,9 +1210,9 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
           )}
           {overlay === 'attention' && !activeAttention && attentionError && (
             <div className="crt-attention-card" role="alert">
-              <h3>Selection could not be applied</h3>
+              <h3>{t('Selection could not be applied')}</h3>
               <p className="crt-attention-error">{attentionError}</p>
-              <p>The original operation was not started again. You can repeat the request in Chat.</p>
+              <p>{t('The original operation was not started again. You can repeat the request in Chat.')}</p>
             </div>
           )}
           {overlay === 'permission' && (
@@ -1220,21 +1222,21 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
                 <button
                   onClick={() => refreshDiff()}
                   disabled={!activeWorkRunId}
-                >Load Diff</button>
-                <button onClick={refreshStatus} disabled={!activeRun}>Git Status</button>
+                >{t('Load Diff')}</button>
+                <button onClick={refreshStatus} disabled={!activeRun}>{t('Git Status')}</button>
                 <button onClick={() => { void acceptWorkItem() }} disabled={!canAcceptWork || !!workAction}>
-                  {workAction === 'accept' ? 'Accepting' : 'Accept WorkItem'}
+                  {t(workAction === 'accept' ? 'Accepting' : 'Accept WorkItem')}
                 </button>
                 <button onClick={() => { void archiveWorkItem() }} disabled={!canArchiveWork || !!workAction}>
-                  {workAction === 'archive' ? 'Archiving' : 'Archive WorkItem'}
+                  {t(workAction === 'archive' ? 'Archiving' : 'Archive WorkItem')}
                 </button>
-                <button onClick={() => { void reopenWorkItem() }} disabled={!selectedWorkClosed || !!workAction}>Reopen WorkItem</button>
+                <button onClick={() => { void reopenWorkItem() }} disabled={!selectedWorkClosed || !!workAction}>{t('Reopen WorkItem')}</button>
                 <button
                   onClick={() => { void promoteWorkItem() }}
                   disabled={!activeWorkItem?.canPromoteToProject || !!workAction}
                   title="Keep this scratch task as a project so later instructions can be sent to it by name."
                 >
-                  {workAction === 'promote' ? 'Keeping' : 'Keep as project'}
+                  {t(workAction === 'promote' ? 'Keeping' : 'Keep as project')}
                 </button>
                 {activeWorkItem?.projectState === 'retired'
                   ? (
@@ -1243,7 +1245,7 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
                       disabled={!!workAction}
                       title="Offer this project again as somewhere to send new work."
                     >
-                      {workAction === 'project' ? 'Restoring' : 'Restore project'}
+                      {t(workAction === 'project' ? 'Restoring' : 'Restore project')}
                     </button>
                   )
                   : (
@@ -1252,7 +1254,7 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
                       disabled={!activeWorkItem?.projectId || !activeWorkItem?.projectState || !!workAction}
                       title="Stop offering this project for new work. Its files, tasks and history all stay."
                     >
-                      {workAction === 'project' ? 'Retiring' : 'Retire project'}
+                      {t(workAction === 'project' ? 'Retiring' : 'Retire project')}
                     </button>
                   )}
               </div>
@@ -1271,9 +1273,9 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
         <div className="crt-scanlines" />
         <div className="crt-projection-content" ref={projectionPanelRef}>
           <header className="crt-topbar" onPointerDown={startSlicePanelDrag}>
-            <span>AMADEUS AI WORK INTERFACE</span>
+            <span>{t('AMADEUS AI WORK INTERFACE')}</span>
             <span className="crt-topbar-right">
-              {connected ? 'ACTIVE SESSION' : 'BACKEND OFFLINE'} <span className="crt-dot" /> {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {t(connected ? 'ACTIVE SESSION' : 'BACKEND OFFLINE')} <span className="crt-dot" /> {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
           </header>
 
@@ -1307,14 +1309,14 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
           <main className="crt-focus-layout">
         <section
           className={`crt-task-dock ${planDockOpen ? 'open' : ''}`}
-          aria-label="Plan drawer"
+          aria-label={t('Plan drawer')}
           onMouseEnter={() => setPlanDockOpen(true)}
           onMouseLeave={() => setPlanDockOpen(false)}
           onFocus={() => setPlanDockOpen(true)}
           onBlur={() => setPlanDockOpen(false)}
         >
           <div className="crt-panel crt-timeline-compact">
-            <div className="crt-panel-label">Dynamic Timeline</div>
+            <div className="crt-panel-label">{t('Dynamic Timeline')}</div>
             <div className="crt-taskline">
               {TASK_STEPS.map((step, index) => {
                 const state = inferStepState(activeRun, index)
@@ -1322,8 +1324,8 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
                   <div key={step.key} className={`crt-task-step ${state}`}>
                     <span className="crt-task-index">{index + 1}</span>
                     <div>
-                      <strong>{step.label}</strong>
-                      <small>{state === 'complete' ? 'Done' : state === 'active' ? 'Now' : 'Next'}</small>
+                      <strong>{t(step.label)}</strong>
+                      <small>{t(state === 'complete' ? 'Done' : state === 'active' ? 'Now' : 'Next')}</small>
                     </div>
                   </div>
                 )
@@ -1345,16 +1347,16 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
             <button
               className={hasAttention ? 'attention icon-only' : 'icon-only'}
               onClick={() => setOverlay(activeAttention ? 'attention' : 'permission')}
-              title={activeAttention ? 'Needs your choice' : hasAttention ? 'Intervention' : 'Permissions'}
-              aria-label={activeAttention ? 'Needs your choice' : hasAttention ? 'Intervention' : 'Permissions'}
+              title={t(activeAttention ? 'Needs your choice' : hasAttention ? 'Intervention' : 'Permissions')}
+              aria-label={t(activeAttention ? 'Needs your choice' : hasAttention ? 'Intervention' : 'Permissions')}
             >
               <FluentIcon name="Pin" size={15} />
             </button>
           </div>
 
           <div className="crt-turn-title-ribbon plan">
-            <span>{workProjection ? 'Work Items' : 'Project Map'}</span>
-            <strong>{activeWorkItem?.title || 'Turn Timeline / Work Plan'}</strong>
+            <span>{t(workProjection ? 'Work Items' : 'Project Map')}</span>
+            <strong>{activeWorkItem?.title || t('Turn Timeline / Work Plan')}</strong>
             <small>{workCountSummary}</small>
           </div>
 
@@ -1370,7 +1372,7 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
                       onClick={() => setWorkListFilter(filter)}
                       title={`Show ${filter === 'projects' ? 'projects' : `${filter} tasks`}`}
                     >
-                      {filter[0].toUpperCase() + filter.slice(1)}
+                      {t(filter[0].toUpperCase() + filter.slice(1))}
                     </button>
                   ))}
                   {workListFilter === 'projects' ? visibleProjects.map(project => {
@@ -1413,7 +1415,7 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
                       ? `Workspace routing is locked to ${workspaceFocusPath || 'the pinned task directory'}. Click to unlock.`
                       : `Restore ${activeWorkItem?.workspacePath || 'the selected historical task directory'} as the workspace for future work.`}
                   >
-                    {workAction === 'focus' ? 'Updating' : workspaceFocusLocked ? 'Unlock workspace' : 'Restore workspace'}
+                    {t(workAction === 'focus' ? 'Updating' : workspaceFocusLocked ? 'Unlock workspace' : 'Restore workspace')}
                   </button>
                 </>
               ) : projectMap.turns.slice(-5).map(node => (
@@ -1423,15 +1425,15 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
                   className={`crt-turn-capsule ${node.id === projectMap.currentTurnId ? 'current' : ''} ${node.status}`}
                   onClick={() => setSelectedRunId(node.id)}
                 >
-                  {node.title || 'Turn'}
+                  {node.title || t('Turn')}
                 </button>
               ))}
             </div>
             <button
               className="crt-map-expand"
               onClick={() => setMapExpanded(value => !value)}
-              title={mapExpanded ? 'Hide project map' : 'Expand project map'}
-              aria-label={mapExpanded ? 'Hide project map' : 'Expand project map'}
+              title={t(mapExpanded ? 'Hide project map' : 'Expand project map')}
+              aria-label={t(mapExpanded ? 'Hide project map' : 'Expand project map')}
             >
               <span />
             </button>
