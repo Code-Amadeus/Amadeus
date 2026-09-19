@@ -6,7 +6,7 @@ import importlib.util
 from pathlib import Path
 import sys
 
-from PIL import Image, ImageTk
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -50,13 +50,20 @@ def overlay_class(legacy):
             key = legacy.EMOTION_ALIASES.get(emotion, emotion or "normal")
             return key if key in self._lite.emotions else "normal"
 
-        def _set_emotion(self, emotion, state="idle"):
+        def _set_emotion(self, emotion, state="idle", *, advance_variant=False):
             super()._set_emotion(emotion, state)
             if self._lite:
-                self._lite.select(self._current_emotion, self._current_state == "speaking", self._static_idle)
+                self._lite.select(self._current_emotion, self._current_state == "speaking", self._static_idle,
+                                  advance_variant=advance_variant)
                 self._draw_lite()
 
         def _draw_lite(self):
+            from PIL import ImageTk
+
+            # Hold the current pose during the short sentence-end grace period.
+            # The next speaking variant can enter directly, without routing through idle.
+            settling = self._current_state == "speaking" and self._active_until == 0.0
+            self._lite.set_paused(not self.root.winfo_viewable() or settling)
             if self._atlas_timer is not None:
                 self.root.after_cancel(self._atlas_timer)
                 self._atlas_timer = None
@@ -78,7 +85,6 @@ def overlay_class(legacy):
 
         def _visibility(self, event):
             if self._lite and event.widget == self.root:
-                self._lite.set_paused(not self.root.winfo_viewable())
                 self._draw_lite()
 
         def _dispose(self, event):
@@ -95,6 +101,7 @@ def overlay_class(legacy):
             sentence = str(payload.get("sentence_id") or "")
             playback = payload.get("source") == "vn_playback"
             subtitle = payload.get("source") == "vn_pretranslation"
+            new_sentence = playback and payload.get("speaking") is True and sentence != self._sentence_id
             if (subtitle or (playback and payload.get("speaking") is False)) and sentence and sentence != self._sentence_id:
                 return
             if playback and payload.get("speaking") is True:
@@ -105,7 +112,9 @@ def overlay_class(legacy):
                 self.text_var.set(text)
             if subtitle:
                 return
-            if playback and payload.get("speaking") is False and self._current_state != "speaking":
+            if playback and payload.get("speaking") is False and (
+                self._current_state != "speaking" or (self._return_timer is not None and self._active_until == 0.0)
+            ):
                 return  # Duplicate completion must not extend the existing return deadline.
             if self._return_timer is not None:
                 self.root.after_cancel(self._return_timer)
@@ -115,17 +124,21 @@ def overlay_class(legacy):
             state = str(payload.get("portrait_state") or payload.get("state") or "")
             if state not in {"idle", "speaking"}:
                 state = "idle" if speaking is False else "speaking"
-            if playback and speaking is False:
-                emotion = self._current_emotion
-            self._set_emotion(emotion, state)
-            self._idle_deadline = 0.0
-            self._active_until = float("inf") if state == "speaking" else 0.0
-
             def neutral():
                 self._return_timer = None
                 self._active_until = 0.0
                 self._set_emotion("normal", "idle")
 
+            self._idle_deadline = 0.0
+            self._active_until = float("inf") if state == "speaking" else 0.0
+            if playback and speaking is False:
+                # Do not select an idle atlas at each sentence boundary. Pause this pose;
+                # a following start enters its speaking variant directly and cancels return.
+                self.frame.itemconfigure(self._signal_label, text="STANDBY")
+                self._draw_lite()
+                self._return_timer = self.root.after(350, neutral)
+                return
+            self._set_emotion(emotion, state, advance_variant=new_sentence)
             if state == "idle":
                 self._return_timer = self.root.after(350, neutral)
             elif not playback:

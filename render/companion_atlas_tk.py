@@ -36,9 +36,9 @@ class AtlasPlayer:
         self.last_tile = None
         self.draws = 0
 
-    def select(self, emotion: str, speaking: bool, static_idle: bool = False):
+    def select(self, emotion: str, speaking: bool, static_idle: bool = False, *, advance_variant: bool = False):
         key = emotion if emotion in self.emotions else "normal"
-        if speaking and (not self.last_speaking or key != self.last_emotion):
+        if speaking and (advance_variant or not self.last_speaking or key != self.last_emotion):
             self.speech_counts[key] = self.speech_counts.get(key, 0) + 1
         self.last_speaking, self.last_emotion = speaking, key
         states = self.emotions[key]

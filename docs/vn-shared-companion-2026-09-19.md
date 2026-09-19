@@ -39,8 +39,16 @@ Default idle is gentle motion; direct adapter launches can use `--static-idle`.
 
 The VN TTS bridge publishes real sentence start/end signals only to its configured
 overlay. Captions alone cannot restart speaking; stale sentence completions cannot
-stop newer speech. Speech completion schedules a 350 ms neutral return, preserving
-the caption. Runner-only events retain their declared duration. Missing Lite media
+stop newer speech. On-loop playback callbacks are scheduled directly before the
+cached-subtitle tasks, so a ready second caption cannot overtake its playback identity.
+Sentence completion pauses the current speaking pose during the existing 350 ms
+neutral-return window, following the main graph runtime's hold/cancel-release
+principle. A new sentence cancels that return and can enter the next thinking
+variant directly, with no intermediate idle atlas; duplicate starts/stops do not
+cycle variants or extend the deadline. With no continuation before the deadline,
+the normal idle pose returns. Captions remain intact. This is a bounded sentence-gap
+hold, not a claim to know the final sentence of an arbitrarily long silent utterance.
+Runner-only events retain their declared duration. Missing Lite media
 uses the existing VN cache/legacy renderer; a malformed installed pack fails visibly
 rather than silently substituting different artwork. Existing Lite ZIPs are reused
 without repackaging or adding a full wallpaper-pack dependency.

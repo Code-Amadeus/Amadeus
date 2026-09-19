@@ -1036,9 +1036,9 @@ async def bootstrap(port: int = 17777) -> None:
 
     def _on_sentence_start(sentence_id: str) -> None:
         _expr_ctrl.on_sentence_start(sentence_id)
-        from server.vn_tts_bridge import publish_overlay_playback
+        from server.vn_tts_bridge import schedule_overlay_playback
 
-        asyncio.run_coroutine_threadsafe(publish_overlay_playback(sentence_id, True), server_loop)
+        schedule_overlay_playback(sentence_id, True, server_loop)
         try:
             from server.character_presentation import playback_bridge
             from server.vn_tts_bridge import get_vn_sentence_metadata
@@ -1054,9 +1054,9 @@ async def bootstrap(port: int = 17777) -> None:
     playback_manager.on_sentence_start = _on_sentence_start
 
     def _on_sentence_complete(sentence_id: str, _text: str) -> None:
-        from server.vn_tts_bridge import publish_overlay_playback
+        from server.vn_tts_bridge import schedule_overlay_playback
 
-        asyncio.run_coroutine_threadsafe(publish_overlay_playback(sentence_id, False), server_loop)
+        schedule_overlay_playback(sentence_id, False, server_loop)
         try:
             from server.character_presentation import playback_bridge
 
