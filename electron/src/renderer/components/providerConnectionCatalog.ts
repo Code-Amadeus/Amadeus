@@ -37,8 +37,8 @@ export function buildWorkProviderCatalog(
   const codexAuthMode = value('CODEX_APP_SERVER_AUTH_MODE', 'model_api')
   const codexModelConnection = value('CODEX_APP_SERVER_MODEL_PROVIDER', 'deepseek')
   const connectionDefaults = codexModelConnection === 'openai'
-    ? { model: value('OPENAI_MODEL_NAME', 'gpt-5.4-mini'), secret: 'OPENAI_API_KEY' }
-    : { model: value('DEEPSEEK_MODEL_NAME', 'deepseek-v4-flash'), secret: 'DEEPSEEK_API_KEY' }
+    ? { model: value('OPENAI_MODEL_NAME', 'gpt-5.4-mini'), credentialKey: 'OPENAI_API_KEY' }
+    : { model: value('DEEPSEEK_MODEL_NAME', 'deepseek-v4-flash'), credentialKey: 'DEEPSEEK_API_KEY' }
   const codexConnectionOptions = [
     ...(secret('DEEPSEEK_API_KEY') || codexModelConnection === 'deepseek'
       ? [{ value: 'deepseek', label: secret('DEEPSEEK_API_KEY') ? 'DeepSeek' : 'DeepSeek · Not configured' }]
@@ -101,7 +101,7 @@ export function buildWorkProviderCatalog(
   } else if (transport === 'direct') {
     codexFields.push(field('DIRECT_CODEX_CLI_PATH', 'Direct CLI executable', 'path', value('DIRECT_CODEX_CLI_PATH', 'codex'), undefined, 'Direct CLI uses the existing local `codex login` session.'))
   }
-  const codexCredentialReady = transport === 'direct' || codexAuthMode === 'chatgpt' || secret(connectionDefaults.secret)
+  const codexCredentialReady = transport === 'direct' || codexAuthMode === 'chatgpt' || secret(connectionDefaults.credentialKey)
 
   const connections: ModelConnectionCatalogGroup[] = [
     {
