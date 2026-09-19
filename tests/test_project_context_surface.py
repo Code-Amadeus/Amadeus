@@ -33,7 +33,7 @@ def test_electron_owns_history_and_receives_cross_surface_session_changes() -> N
     assert "subscribe('session.changed'" in app_source
     assert "setPage('chat')" in app_source
     assert "focusMainWindow()" in app_source
-    assert 'aria-label="Current chat project"' in source
+    assert "aria-label={t('Current chat project')}" in source
     assert "handleProjectContextChange" not in source
     assert "Promote this Draft to a Project" in source
     assert "session.correct_project" in source
