@@ -110,7 +110,7 @@ async def _exercise_renderer(page: Any, *, timeout: float) -> dict[str, bool]:
     auip_action_role = page.get_by_text("AUIP action decision", exact=True).last
     await auip_action_role.wait_for(state="visible", timeout=timeout_ms)
     auip_action_card = auip_action_role.locator(
-        "xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' setting-card ')][1]"
+        "xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' setting-card ')][1]"
     )
     await auip_action_card.get_by_text("Needs setup", exact=True).wait_for(
         state="visible", timeout=timeout_ms
