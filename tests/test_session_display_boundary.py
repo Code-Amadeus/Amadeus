@@ -75,11 +75,11 @@ def test_chat_history_uses_an_internal_project_and_draft_rail() -> None:
     assert "PROJECTS" in rail
     assert "label: 'Drafts'" in rail
     assert "projectGroups.map(renderProjectHeader)" in rail
-    assert 'title="New Project"' in rail
+    assert "title={t('New Project')}" in rail
     assert "onNewProjectSession(group.projectId" in rail
     assert "onOpenProject(group.projectId" in rail
     assert "onMouseEnter={openRail}" in rail
-    assert 'aria-label="Chat history"\n      onMouseEnter' not in rail
+    assert "aria-label={t('Chat history')}\n      onMouseEnter" not in rail
     assert "aria-expanded={railOpen}\n        tabIndex={0}\n        onMouseEnter={openRail}" in rail
     assert "RAIL_CLOSE_DELAY_MS = 180" in rail
     assert "setPreviewGroupId(group.id)" in rail
@@ -88,9 +88,9 @@ def test_chat_history_uses_an_internal_project_and_draft_rail() -> None:
     assert "if (!selected) event.currentTarget.style.background = 'var(--hover)'" in rail
     assert "SESSION_PAGE_SIZE = 30" in rail
     assert "previewGroup.sessions.slice(0, visibleCount)" in rail
-    assert 'aria-label="Search chats"' in rail
+    assert "aria-label={t('Search chats')}" in rail
     assert 'type RailMode = \'chats\' | \'artifacts\'' in rail
-    assert 'aria-label="Artifact collections"' in rail
+    assert "aria-label={t('Artifact collections')}" in rail
     assert "Draft artifacts" in rail
     assert "Recent 5" in rail
     assert "onClick={onOpenDraftApps}" in rail
@@ -99,8 +99,8 @@ def test_chat_history_uses_an_internal_project_and_draft_rail() -> None:
     assert "revealedGroup" not in rail
     assert "setCollapsed" not in rail
     assert "toggleGroup" not in rail
-    assert 'aria-label="Current chat project"' in chat
-    assert chat.count('title="New chat"') >= 1
+    assert "aria-label={t('Current chat project')}" in chat
+    assert "title={t('New chat')}" in chat
     assert "send('project.apps.list'" in chat
     assert "selectSession('session.open_context'" in chat
     assert "mode: 'observe'" in chat
