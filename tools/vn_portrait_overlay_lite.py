@@ -6,7 +6,7 @@ import importlib.util
 from pathlib import Path
 import sys
 
-from PIL import Image
+from PIL import Image, ImageColor
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -33,6 +33,13 @@ def overlay_class(legacy):
             self._atlas_timer = self._return_timer = None
             self._sentence_id = ""
             super().__init__(*args, **kwargs)
+            # Preserve the existing sweep/path/cadence, with one quarter of its RGB
+            # distance from the card background. Decoration should not compete with text.
+            background = ImageColor.getrgb(legacy.CARD_BG)
+            for line in self._scan_lines:
+                foreground = ImageColor.getrgb(self.frame.itemcget(line, "fill"))
+                muted = tuple(round(bg + (fg - bg) * 0.25) for bg, fg in zip(background, foreground))
+                self.frame.itemconfigure(line, fill="#{:02x}{:02x}{:02x}".format(*muted))
             self.root.bind("<Unmap>", self._visibility, add="+")
             self.root.bind("<Map>", self._visibility, add="+")
             self.root.bind("<Destroy>", self._dispose, add="+")

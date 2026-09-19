@@ -9,6 +9,11 @@ outer frame is unchanged. No Electron process/window, browser shell, new UI togg
 or IPC is added for VN. The earlier whole-window experiment was superseded and its
 entrypoints removed; its measurement artifacts remain under diagnostics.
 
+Subsequent visual refinement requested by the user: the existing moving scan lines
+are blended 75% toward the card background (25% of their original RGB difference).
+Only their fill colors change, once at construction; their geometry, cadence,
+caption styling, frame and avatar are unaffected. No new timer/effect is added.
+
 `server/vn_launch_manager.py` now invokes `tools/vn_portrait_overlay_lite.py`,
 passing the existing profile's Tk helper explicitly. That adapter subclasses the
 original window without copying/modifying its constructor/layout/drag/scan code.
