@@ -696,7 +696,7 @@ def _model_connections(
         {
             "id": "hybrid_local",
             "label": "Hybrid local head",
-            "description": "Dedicated OpenAI-compatible endpoint used only for the fast first sentence in hybrid profiles. The optional Hybrid BAT launcher shares the llama.cpp executable and GGUF settings above.",
+            "description": "Shared fast first-sentence endpoint. Hybrid pairs it with Bedrock, Hybrid2 with DeepSeek, and Hybrid3 with OpenAI-compatible. The optional Hybrid BAT launcher shares the llama.cpp executable and GGUF settings above.",
             "active": "hybrid_local" in active_connections,
             "configured": bool(hybrid_status.get("configured")),
             "status": str(hybrid_status.get("state") or "unavailable"),
@@ -717,6 +717,8 @@ def _model_connections(
 
 
 def _model_role_configuration(settings: Any) -> list[dict[str, Any]]:
+    import os
+
     from server.auip_b2 import b2_runtime_unavailable_reason
     from server.auip_b2_role_llm import has_b2_role_model_config
 
@@ -745,7 +747,58 @@ def _model_role_configuration(settings: Any) -> list[dict[str, Any]]:
     else:
         b2_status_detail = "B2 is not selected; this action role is optional."
 
+    vn_provider_override = os.environ.get("VN_LLM_PROVIDER", "").strip().lower()
+    vn_provider = vn_provider_override or "deepseek"
+    vn_model_override = os.environ.get("VN_LLM_MODEL", "").strip()
+    vn_configured = bool(
+        settings.OPENAI_API_KEY if vn_provider == "openai" else settings.DEEPSEEK_API_KEY
+    )
+
     return [
+        {
+            "id": "vn_companion",
+            "label": "VN companion",
+            "description": "Dedicated VN reasoning and reaction role. DeepSeek is the recommended default; OpenAI-compatible is also supported.",
+            "active": True,
+            "configured": vn_configured,
+            "status": "needs_setup" if not vn_configured else "override" if vn_provider_override or vn_model_override else "recommended",
+            "status_ok": vn_configured,
+            "fields": [
+                _startup_field(
+                    "VN_LLM_PROVIDER", "Model connection",
+                    vn_provider,
+                    field_type="select",
+                    options=(
+                        {"value": "deepseek", "label": "DeepSeek · Recommended"},
+                        {"value": "openai", "label": "OpenAI-compatible"},
+                    ),
+                ),
+                _startup_field(
+                    "VN_LLM_MODEL", "Model override",
+                    vn_model_override,
+                    description="Optional. Leave blank to use the model from the selected connection.",
+                ),
+            ],
+        },
+        {
+            "id": "work_planner",
+            "label": "Work planner / router",
+            "description": "Plans and routes cooperative Work; an empty model inherits the main conversation model on the existing backend.",
+            "active": bool(
+                getattr(settings, "COOPERATIVE_CHAT_ENABLED", False)
+                and getattr(settings, "COOPERATIVE_WORK_PLANNER_ENABLED", False)
+            ),
+            "configured": True,
+            "status": "override" if settings.COOPERATIVE_WORK_PLANNER_MODEL else "inherited",
+            "status_ok": True,
+            "fields": [
+                _startup_field(
+                    "COOPERATIVE_WORK_PLANNER_MODEL", "Model override",
+                    settings.COOPERATIVE_WORK_PLANNER_MODEL,
+                    description="Leave empty to inherit the main conversation model.",
+                ),
+            ],
+        },
         {
             "id": "work_observer",
             "label": "Work observer",
@@ -754,6 +807,31 @@ def _model_role_configuration(settings: Any) -> list[dict[str, Any]]:
             "fields": [
                 _startup_field("WORK_OBSERVER_PROVIDER", "Provider override", settings.WORK_OBSERVER_PROVIDER),
                 _startup_field("WORK_OBSERVER_MODEL", "Model override", settings.WORK_OBSERVER_MODEL),
+            ],
+        },
+        {
+            "id": "browser_branch_planner",
+            "label": "Browser branch planner",
+            "description": "Chooses bounded browser branches; inherits a supported main provider and its model when left blank.",
+            "configured": True,
+            "status": "override" if os.environ.get("BROWSER_BRANCH_PROVIDER") or os.environ.get("BROWSER_BRANCH_MODEL") else "inherited",
+            "status_ok": True,
+            "fields": [
+                _startup_field(
+                    "BROWSER_BRANCH_PROVIDER", "Provider override",
+                    os.environ.get("BROWSER_BRANCH_PROVIDER", ""),
+                    field_type="select",
+                    options=(
+                        {"value": "", "label": "Inherit supported main provider"},
+                        {"value": "deepseek", "label": "DeepSeek"},
+                        {"value": "openai", "label": "OpenAI-compatible"},
+                    ),
+                ),
+                _startup_field(
+                    "BROWSER_BRANCH_MODEL", "Model override",
+                    os.environ.get("BROWSER_BRANCH_MODEL", ""),
+                    description="Leave empty to use the selected provider's configured model.",
+                ),
             ],
         },
         {
@@ -790,6 +868,56 @@ def _model_role_configuration(settings: Any) -> list[dict[str, Any]]:
                 ),
             ],
         },
+        {
+            "id": "vn_subtitle_translation",
+            "label": "VN subtitle translation",
+            "description": "Translates Japanese game dialogue into Simplified Chinese for display.",
+            "configured": True,
+            "status": "override" if os.environ.get("VN_SUBTITLE_TRANSLATE_PROVIDER") or os.environ.get("VN_SUBTITLE_TRANSLATE_MODEL") else "inherited",
+            "status_ok": True,
+            "fields": [
+                _startup_field(
+                    "VN_SUBTITLE_TRANSLATE_PROVIDER", "Provider override",
+                    os.environ.get("VN_SUBTITLE_TRANSLATE_PROVIDER", ""),
+                    field_type="select",
+                    options=(
+                        {"value": "", "label": "DeepSeek default"},
+                        {"value": "deepseek", "label": "DeepSeek"},
+                        {"value": "openai", "label": "OpenAI-compatible"},
+                    ),
+                ),
+                _startup_field(
+                    "VN_SUBTITLE_TRANSLATE_MODEL", "Model override",
+                    os.environ.get("VN_SUBTITLE_TRANSLATE_MODEL", ""),
+                    description="Leave empty to use the selected provider's configured model.",
+                ),
+            ],
+        },
+        {
+            "id": "vn_speech_translation",
+            "label": "VN speech translation",
+            "description": "Translates Chinese companion reactions into Japanese before speech synthesis.",
+            "configured": True,
+            "status": "override" if os.environ.get("VN_TTS_TRANSLATE_PROVIDER") or os.environ.get("VN_TTS_TRANSLATE_MODEL") else "inherited",
+            "status_ok": True,
+            "fields": [
+                _startup_field(
+                    "VN_TTS_TRANSLATE_PROVIDER", "Provider override",
+                    os.environ.get("VN_TTS_TRANSLATE_PROVIDER", ""),
+                    field_type="select",
+                    options=(
+                        {"value": "", "label": "DeepSeek default"},
+                        {"value": "deepseek", "label": "DeepSeek"},
+                        {"value": "openai", "label": "OpenAI-compatible"},
+                    ),
+                ),
+                _startup_field(
+                    "VN_TTS_TRANSLATE_MODEL", "Model override",
+                    os.environ.get("VN_TTS_TRANSLATE_MODEL", ""),
+                    description="Leave empty to use the selected provider's configured model.",
+                ),
+            ],
+        },
     ]
 
 
@@ -810,6 +938,81 @@ def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
         else "direct" if settings.DIRECT_CODEX_PROVIDER_ENABLED
         else "disabled"
     )
+    codex_auth_mode = str(
+        getattr(settings, "CODEX_APP_SERVER_AUTH_MODE", "model_api") or "model_api"
+    ).strip().lower()
+    codex_model_provider = str(
+        getattr(settings, "CODEX_APP_SERVER_MODEL_PROVIDER", "deepseek") or "deepseek"
+    ).strip().lower()
+    codex_connection_options = []
+    if bool(getattr(settings, "DEEPSEEK_API_KEY", "")) or codex_model_provider == "deepseek":
+        codex_connection_options.append({
+            "value": "deepseek",
+            "label": "DeepSeek" if getattr(settings, "DEEPSEEK_API_KEY", "") else "DeepSeek · Not configured",
+        })
+    if bool(getattr(settings, "OPENAI_API_KEY", "")) or codex_model_provider == "openai":
+        codex_connection_options.append({
+            "value": "openai",
+            "label": "OpenAI-compatible" if getattr(settings, "OPENAI_API_KEY", "") else "OpenAI-compatible · Not configured",
+        })
+    codex_fields = [
+        _startup_field(
+            "CODEX_PROVIDER_TRANSPORT", "Transport", codex_transport,
+            field_type="select", options=("app_server", "direct", "disabled"),
+        ),
+    ]
+    if codex_transport == "app_server":
+        codex_fields.extend([
+            _startup_field(
+            "CODEX_APP_SERVER_CODEX_BIN", "App Server executable",
+            settings.CODEX_APP_SERVER_CODEX_BIN, field_type="path",
+            ),
+            _startup_field(
+            "CODEX_APP_SERVER_AUTH_MODE", "App Server authentication",
+            codex_auth_mode, field_type="select", options=(
+                {"value": "chatgpt", "label": "ChatGPT subscription"},
+                {"value": "model_api", "label": "Model API connection"},
+            ),
+            description="Run `codex login` once for subscription use. Model API reuses a connection from Models.",
+            ),
+        ])
+        if codex_auth_mode == "chatgpt":
+            codex_fields.append(_startup_field(
+                "CODEX_APP_SERVER_CHATGPT_MODEL", "Subscription model override",
+                settings.CODEX_APP_SERVER_CHATGPT_MODEL,
+                description="Optional. Leave blank to use the model selected by the signed-in Codex client.",
+            ))
+        else:
+            codex_fields.extend([
+            _startup_field(
+                "CODEX_APP_SERVER_MODEL_PROVIDER", "Model API connection",
+                settings.CODEX_APP_SERVER_MODEL_PROVIDER,
+                field_type="select", options=tuple(codex_connection_options),
+                description="Reuses the API key and endpoint configured in Models.",
+            ),
+            _startup_field(
+                "CODEX_APP_SERVER_MODEL", "Model", settings.CODEX_APP_SERVER_MODEL,
+                description="Defaults to the model from the selected Models connection.",
+            ),
+            ])
+        codex_fields.extend([
+            _startup_field(
+            "CODEX_APP_SERVER_REASONING_EFFORT", "Reasoning effort",
+            settings.CODEX_APP_SERVER_REASONING_EFFORT, field_type="select",
+            options=("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"),
+            ),
+            _startup_field(
+            "CODEX_APP_SERVER_SERVICE_TIER", "Service tier",
+            settings.CODEX_APP_SERVER_SERVICE_TIER, field_type="select",
+            options=("", "auto", "default", "flex", "priority", "fast", "ultrafast"),
+            ),
+        ])
+    elif codex_transport == "direct":
+        codex_fields.append(_startup_field(
+            "DIRECT_CODEX_CLI_PATH", "Direct CLI executable",
+            settings.DIRECT_CODEX_CLI_PATH, field_type="path",
+            description="Direct CLI uses the existing local `codex login` session.",
+        ))
     return [
         {
             "id": "browser",
@@ -840,39 +1043,7 @@ def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
             "id": "codex",
             "label": "Codex",
             "description": "Coding Provider. Exactly one App Server or Direct transport may own this id.",
-            "fields": [
-                _startup_field(
-                    "CODEX_PROVIDER_TRANSPORT", "Transport", codex_transport,
-                    field_type="select", options=("app_server", "direct", "disabled"),
-                ),
-                _startup_field(
-                    "CODEX_APP_SERVER_CODEX_BIN", "App Server executable",
-                    settings.CODEX_APP_SERVER_CODEX_BIN, field_type="path",
-                ),
-                _startup_field(
-                    "CODEX_APP_SERVER_MODEL_PROVIDER", "Model provider",
-                    settings.CODEX_APP_SERVER_MODEL_PROVIDER,
-                ),
-                _startup_field(
-                    "CODEX_APP_SERVER_PROVIDER_BASE_URL", "Provider base URL",
-                    settings.CODEX_APP_SERVER_PROVIDER_BASE_URL, field_type="url",
-                ),
-                _startup_field("CODEX_APP_SERVER_MODEL", "Model", settings.CODEX_APP_SERVER_MODEL),
-                _startup_field(
-                    "CODEX_APP_SERVER_REASONING_EFFORT", "Reasoning effort",
-                    settings.CODEX_APP_SERVER_REASONING_EFFORT, field_type="select",
-                    options=("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"),
-                ),
-                _startup_field(
-                    "CODEX_APP_SERVER_SERVICE_TIER", "Service tier",
-                    settings.CODEX_APP_SERVER_SERVICE_TIER, field_type="select",
-                    options=("", "auto", "default", "flex", "priority", "fast", "ultrafast"),
-                ),
-                _startup_field(
-                    "DIRECT_CODEX_CLI_PATH", "Direct CLI executable",
-                    settings.DIRECT_CODEX_CLI_PATH, field_type="path",
-                ),
-            ],
+            "fields": codex_fields,
         },
     ]
 
@@ -1064,7 +1235,6 @@ class SystemHandler(RequestHandler):
             "vision_enabled",
             "vision_mode",
             "vision_scope",
-            "vision_provider",
             "vision_max_long_side",
             "vision_jpeg_quality",
             "vision_region",

@@ -92,7 +92,7 @@ export default function ChatBubble({ role, text, translation = '', streaming, on
           fontWeight: 600, fontFamily: 'var(--font)',
           ...(isUser
             ? { color: '#FFFFFF', backgroundColor: 'var(--accent)', border: '1px solid var(--accent)' }
-            : { color: 'var(--accent)', backgroundColor: '#EEF2F6', border: '1px solid var(--border)' }
+            : { color: 'var(--text)', backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }
           ),
         }}
       >

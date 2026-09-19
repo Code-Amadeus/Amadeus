@@ -10,6 +10,7 @@ import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { CompanionPanel } from './companionPanel.js'
+import { companionPortraitStatus } from './companionPortraits.js'
 import {
   DesktopSettingsStore,
   type DesktopSettingsUpdate,
@@ -154,11 +155,12 @@ type WorkPreviewSurface = {
 const workPreviewSurfaces = new Map<string, WorkPreviewSurface>()
 const workPreviewIdsByWorkItem = new Map<string, string>()
 let companionBridge: WallpaperBridgeDescriptor | null = null
+const COMPANION_PORTRAIT_DIR = process.env.AMADEUS_COMPANION_PORTRAIT_CACHE || ''
 const companionPanel = new CompanionPanel({
   userDataDir: USER_DATA_DIR,
   preload: path.join(__dirname, '..', 'preload', 'companion.cjs'),
-  portraitCacheDir: process.env.AMADEUS_COMPANION_PORTRAIT_CACHE
-    || '', // Explicit legacy PNG override; the default Lite pack is served under assets/.
+  // Explicit legacy PNG override; the default Lite pack is served under assets/.
+  portraitCacheDir: COMPANION_PORTRAIT_DIR,
   bridge: () => companionBridge,
   slice: () => [
     electronCanvasLifecycle.window?.webContents,
@@ -404,6 +406,7 @@ async function startBackend(): Promise<void> {
   console.log(`[electron] starting backend: ${python} -m server.app --port ${BACKEND_PORT}`)
   console.log(`[electron] project root: ${PROJECT_ROOT}`)
 
+  const launchPendingRevisions = desktopSettings.pendingRevisionSnapshot()
   const backendEnvironment = desktopSettings.backendEnvironment(process.env, {
     AEC_REALTIME_ENABLED: '1',
     AEC_REALTIME_BARGE_IN: '1',
@@ -441,6 +444,7 @@ async function startBackend(): Promise<void> {
     backendOwned = false
   })
   await waitForBackendReady()
+  desktopSettings.markApplied(process.env, launchPendingRevisions)
 }
 
 async function stopBackend(): Promise<void> {
@@ -2057,12 +2061,32 @@ ipcMain.handle('desktop-settings.get', (event) => {
   if (!isTrustedBackendRenderer(event.sender)) return null
   return desktopSettings.snapshot(process.env)
 })
+ipcMain.handle('companion-portraits.status', (event) => {
+  if (!isTrustedBackendRenderer(event.sender)) return null
+  return companionPortraitStatus(COMPANION_PORTRAIT_DIR)
+})
 ipcMain.handle('desktop-settings.update', (event, update: DesktopSettingsUpdate) => {
   if (!isTrustedBackendRenderer(event.sender)) {
     return { ok: false, error: 'Untrusted desktop settings requester.' }
   }
   try {
     return { ok: true, settings: desktopSettings.update(process.env, update || {}) }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+})
+ipcMain.handle('desktop-settings.mark-applied', (event, revisions: Record<string, number>) => {
+  if (!isTrustedBackendRenderer(event.sender)) {
+    return { ok: false, error: 'Untrusted desktop settings requester.' }
+  }
+  try {
+    return { ok: true, settings: desktopSettings.markApplied(
+      process.env,
+      revisions && typeof revisions === 'object' && !Array.isArray(revisions) ? revisions : {},
+    ) }
   } catch (error) {
     return {
       ok: false,

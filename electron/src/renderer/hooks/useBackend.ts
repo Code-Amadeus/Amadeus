@@ -58,6 +58,11 @@ export function useBackend() {
   const reconnectDelay = useRef(RECONNECT_DELAY)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const connectionRef = useRef<BackendConnection | null>(null)
+  const connectionWaitersRef = useRef<Set<{
+    resolve: () => void
+    reject: (error: Error) => void
+    timer: ReturnType<typeof setTimeout>
+  }>>(new Set())
 
   const connect = useCallback((connection: BackendConnection) => {
     connectionRef.current = connection
@@ -72,6 +77,11 @@ export function useBackend() {
     ws.onopen = () => {
       setConnected(true)
       reconnectDelay.current = RECONNECT_DELAY
+      for (const waiter of connectionWaitersRef.current) {
+        clearTimeout(waiter.timer)
+        waiter.resolve()
+      }
+      connectionWaitersRef.current.clear()
     }
 
     ws.onmessage = (event) => {
@@ -105,6 +115,7 @@ export function useBackend() {
     }
 
     ws.onclose = () => {
+      if (wsRef.current !== ws) return
       setConnected(false)
       // reject all pending
       for (const [, p] of pendingRef.current) {
@@ -127,6 +138,42 @@ export function useBackend() {
 
     ws.onerror = () => { /* onclose handles cleanup */ }
   }, [])
+
+  const reconnect = useCallback(async (): Promise<void> => {
+    if (reconnectTimer.current) {
+      clearTimeout(reconnectTimer.current)
+      reconnectTimer.current = null
+    }
+    const previous = wsRef.current
+    wsRef.current = null
+    connectionRef.current = null
+    setConnected(false)
+    previous?.close()
+    for (const [, pending] of pendingRef.current) {
+      clearTimeout(pending.timer)
+      pending.reject(new Error('reconnecting'))
+    }
+    pendingRef.current.clear()
+
+    const connection = window.amadeus
+      ? await window.amadeus.getBackendConnection()
+      : { url: 'ws://127.0.0.1:17777/ws', protocols: [] }
+    if (!connection) throw new Error('backend instance is not authenticated')
+
+    const ready = new Promise<void>((resolve, reject) => {
+      const waiter = {
+        resolve,
+        reject,
+        timer: setTimeout(() => {
+          connectionWaitersRef.current.delete(waiter)
+          reject(new Error('backend reconnect timed out'))
+        }, 30_000),
+      }
+      connectionWaitersRef.current.add(waiter)
+    })
+    connect({ url: connection.url, protocols: connection.protocols })
+    await ready
+  }, [connect])
 
   const send = useCallback((method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> => {
     return new Promise((resolve, reject) => {
@@ -157,6 +204,11 @@ export function useBackend() {
     return () => {
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current)
       wsRef.current?.close()
+      for (const waiter of connectionWaitersRef.current) {
+        clearTimeout(waiter.timer)
+        waiter.reject(new Error('disconnected'))
+      }
+      connectionWaitersRef.current.clear()
     }
   }, [])
 
@@ -181,5 +233,5 @@ export function useBackend() {
     init()
   }, [connect])
 
-  return { send, subscribe, connected }
+  return { send, subscribe, connected, reconnect }
 }

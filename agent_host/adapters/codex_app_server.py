@@ -345,7 +345,9 @@ class CodexAppServerAdapter:
         codex: Any | None = None,
         codex_factory: Callable[[CodexConfig], Any] | None = None,
         codex_bin: str | None = None,
+        auth_mode: str | None = None,
         model: str | None = None,
+        chatgpt_model: str | None = None,
         model_provider: str | None = None,
         reasoning_effort: str | None = None,
         service_tier: str | None = None,
@@ -368,16 +370,30 @@ class CodexAppServerAdapter:
             if codex_bin is not None
             else getattr(settings, "CODEX_APP_SERVER_CODEX_BIN", "")
         ).strip()
-        self.model = str(
+        self.auth_mode = str(
+            auth_mode
+            if auth_mode is not None
+            else getattr(settings, "CODEX_APP_SERVER_AUTH_MODE", "model_api")
+        ).strip().lower()
+        if self.auth_mode not in {"model_api", "chatgpt"}:
+            raise ValueError("CODEX_APP_SERVER_AUTH_MODE must be model_api or chatgpt")
+        provider_model = str(
             model
             if model is not None
             else getattr(settings, "CODEX_APP_SERVER_MODEL", "")
         ).strip()
-        self.model_provider = str(
+        subscription_model = str(
+            chatgpt_model
+            if chatgpt_model is not None
+            else getattr(settings, "CODEX_APP_SERVER_CHATGPT_MODEL", "")
+        ).strip()
+        configured_model_provider = str(
             model_provider
             if model_provider is not None
             else getattr(settings, "CODEX_APP_SERVER_MODEL_PROVIDER", "")
         ).strip().lower()
+        self.model = subscription_model if self.auth_mode == "chatgpt" else provider_model
+        self.model_provider = "openai" if self.auth_mode == "chatgpt" else configured_model_provider
         self.reasoning_effort_label = str(
             reasoning_effort
             if reasoning_effort is not None
@@ -389,16 +405,18 @@ class CodexAppServerAdapter:
             if service_tier is not None
             else getattr(settings, "CODEX_APP_SERVER_SERVICE_TIER", "")
         )
-        self.provider_base_url = str(
+        configured_provider_base_url = str(
             provider_base_url
             if provider_base_url is not None
             else getattr(settings, "CODEX_APP_SERVER_PROVIDER_BASE_URL", "")
         ).strip().rstrip("/")
-        self.provider_api_key_env = str(
+        configured_provider_api_key_env = str(
             provider_api_key_env
             if provider_api_key_env is not None
             else getattr(settings, "CODEX_APP_SERVER_PROVIDER_API_KEY_ENV", "")
         ).strip()
+        self.provider_base_url = "" if self.auth_mode == "chatgpt" else configured_provider_base_url
+        self.provider_api_key_env = "" if self.auth_mode == "chatgpt" else configured_provider_api_key_env
         project_root = Path(__file__).resolve().parents[2]
         self.provider_auth_env_file = Path(
             provider_auth_env_file
@@ -2099,9 +2117,9 @@ class CodexAppServerAdapter:
         }
         if normalized in by_name:
             return by_name[normalized]
-        # Current App Server advertises max/ultra before the generated enum's
-        # static member table does. Its forward-compatible constructor retains
-        # those wire values exactly; older runtimes still get the xhigh bound.
+        # Current App Server advertises max before some generated enum member
+        # tables do. Its forward-compatible constructor retains that wire value;
+        # older runtimes still get the xhigh bound.
         if normalized == "max":
             try:
                 return ReasoningEffort("max")

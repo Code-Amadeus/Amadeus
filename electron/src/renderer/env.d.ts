@@ -35,10 +35,12 @@ export declare global {
     } | null>
     restartBackend: () => Promise<boolean>
     getDesktopSettings: () => Promise<Record<string, unknown> | null>
+    getCompanionPortraitStatus: () => Promise<Record<string, unknown> | null>
     updateDesktopSettings: (update: {
       values?: Record<string, string | boolean | null>
       secrets?: Record<string, string | null>
     }) => Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }>
+    markDesktopSettingsApplied: (revisions: Record<string, number>) => Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }>
     upsertMcpConnection: (update: {
       connection: {
         id?: string
