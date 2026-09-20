@@ -106,6 +106,7 @@ def test_user_managed_voice_and_avatar_startup_controls_are_grouped_by_owner() -
         "AEC_REALTIME_DELAY_MS",
     }
     assert "TTS_DEVICE" in embedded
+    assert "TTS_VOICE_PROFILE" in embedded
     assert references == {
         "TTS_REF_AUDIO_JA",
         "TTS_REF_TEXT_JA",
@@ -286,10 +287,12 @@ def test_voice_settings_keep_wake_and_conversation_recognition_independent() -> 
         "available",
         "disabled",
     }
-    assert "v3 checkpoints only" in groups["speech_synthesis"]["description"]
+    assert "v2Pro" in groups["speech_synthesis"]["description"]
+    assert "v3" in groups["speech_synthesis"]["description"]
     embedded_tts = groups["tts_embedded_v3"]
-    assert "v1 and v2 checkpoints are not supported" in embedded_tts["description"]
+    assert "checkpoint header selects" in embedded_tts["description"]
     assert {field["key"] for field in embedded_tts["fields"]} == {
+        "TTS_VOICE_PROFILE",
         "TTS_GPT_MODEL_PATH",
         "TTS_SOVITS_MODEL_PATH",
         "TTS_DEVICE",

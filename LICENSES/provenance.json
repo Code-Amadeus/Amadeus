@@ -1,6 +1,6 @@
 {
   "schema": "amadeus.third-party-provenance.v1",
-  "last_reviewed": "2026-08-29",
+  "last_reviewed": "2026-09-21",
   "inventory_roots": [
     "GPT_SoVITS",
     "tools/AP_BWE_main",
@@ -25,8 +25,8 @@
         "tools/subfix_webui.py"
       ],
       "source_url": "https://github.com/RVC-Boss/GPT-SoVITS",
-      "source_revision": "closest verified base 9da7e17efe05041e31d3c3f42c8730ae890397f2 (2025-04-01), with documented Amadeus import and inference changes",
-      "declared_compatibility": "GPT-SoVITS v3; closest verified 2025-04-01 baseline",
+      "source_revision": "closest verified base 9da7e17efe05041e31d3c3f42c8730ae890397f2 (2025-04-01), plus v2Pro speaker-conditioning sources from 08d627c3338173c3229286d8787060d6559fe0f8 (2026-04-30), with documented Amadeus import and inference changes",
+      "declared_compatibility": "GPT-SoVITS v1/v2/v2Pro/v2ProPlus/v3; closest verified 2025-04-01 baseline with scoped v2Pro additions from 2026-04-30",
       "license_expression": "MIT AND Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause",
       "license_evidence": [
         "LICENSES/GPT-SoVITS-MIT.txt",
@@ -39,7 +39,7 @@
       "modified": true,
       "release_action": "include",
       "gate_status": "ready",
-      "notes": "The initial Amadeus import has 155 exact blobs, 11 different blobs, and 7 local-only files across 173 non-BigVGAN files when compared with the closest verified upstream baseline; 33 scoped paths changed later, and local_tts_infer.py is the included Amadeus inference overlay. The release relies on the immediate RVC-Boss/GPT-SoVITS repository-wide MIT grant while preserving the SoundStorm and opencpop source-chain caveats instead of assigning them an invented standalone license. The separately verified AGPL Cantonese frontend, UVR/AP-BWE utilities, unverified Japanese dictionary, generated caches, model weights, and voices are excluded by policy."
+      "notes": "The initial Amadeus import has 155 exact blobs, 11 different blobs, and 7 local-only files across 173 non-BigVGAN files when compared with the closest verified upstream baseline; 33 scoped paths changed later, and local_tts_infer.py is the included Amadeus inference overlay. The scoped v2Pro extension adds the upstream ERes2NetV2 speaker encoder and conditioning contract while model weights remain external. The release relies on the immediate RVC-Boss/GPT-SoVITS repository-wide MIT grant while preserving the SoundStorm and opencpop source-chain caveats instead of assigning them an invented standalone license. The separately verified AGPL Cantonese frontend, UVR/AP-BWE utilities, unverified Japanese dictionary, generated caches, model weights, and voices are excluded by policy."
     },
     {
       "id": "bert-vits2-cantonese-frontend",

@@ -7,9 +7,8 @@ This script focuses on the current non-chunked first-sentence path:
 
 It compares two first-sentence shapes:
 - `full`: full first sentence as-is
-- `early_cut`: a proxy for main.py's early-cut behavior, truncating the first
-  sentence to `FIRST_SENTENCE_EARLY_CUT_CHARS` visible chars and appending a
-  sentence terminator when needed
+- `early_cut`: the first boundary selected by the production language-aware
+  streaming splitter after `FIRST_SENTENCE_EARLY_CUT_CHARS` visible chars
 
 Run:
     python tools/ttfp_test.py
@@ -33,6 +32,8 @@ PYTHON = sys.executable
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+from llm.sentence_splitter import split_stream_buffer_for_first_sentence
+
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 os.environ.setdefault("PYTHONUTF8", "1")
 try:
@@ -53,9 +54,6 @@ ENABLE_CUDA_GRAPH = os.environ.get("ENABLE_CUDA_GRAPH", "0") == "1"
 EARLY_CUT_CHARS = int(os.environ.get("FIRST_SENTENCE_EARLY_CUT_CHARS", "11") or "11")
 REPEATS = int(os.environ.get("TTFP_TEST_REPEATS", "3") or "3")
 KERNEL_MODES = ("off", "on")
-
-SENTENCE_ENDINGS = "。！？?!."
-
 
 @dataclass(frozen=True)
 class Case:
@@ -82,10 +80,18 @@ def _build_early_cut_text(text: str, cut_chars: int) -> str:
     if len(stripped) <= cut_chars:
         return stripped
 
-    prefix = stripped[:cut_chars].rstrip()
-    if prefix and prefix[-1] not in SENTENCE_ENDINGS:
-        prefix += "。"
-    return prefix
+    # Mirror the production streaming splitter instead of truncating Japanese
+    # at exactly N characters.  A hard character slice can split a connective
+    # such as 「けど」 into 「け。」 and create an artificial swallowed ending.
+    for end in range(cut_chars, len(stripped) + 1):
+        prefix, _tail, _reason = split_stream_buffer_for_first_sentence(
+            stripped[:end],
+            cut_chars,
+            "日文",
+        )
+        if prefix:
+            return prefix.rstrip()
+    return stripped
 
 
 def _build_cases(cut_chars: int) -> list[Case]:
@@ -186,7 +192,7 @@ def _print_controller_summary(results: list[dict]) -> None:
             )
     print("=" * 84)
     print("Notes:")
-    print("- early_cut is a proxy for main.py's first-sentence early cut, not a full LLM benchmark.")
+    print("- early_cut uses the production first-sentence splitter, but is not a full LLM benchmark.")
     print("- TTFP here means infer_stream() -> first non-empty audio chunk in the current non-chunked path.")
     print("- Use this to compare TTS-stage benefit of earlier first-sentence handoff and kernel mode.")
 

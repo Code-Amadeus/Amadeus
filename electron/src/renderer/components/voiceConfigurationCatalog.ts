@@ -127,7 +127,7 @@ export function buildVoiceConfigurationCatalog(
       status: ttsBackend === 'disabled' ? 'Off' : unknown,
       status_ok: ttsBackend === 'disabled',
       fields: [field('TTS_BACKEND', 'Backend', 'select', ttsBackend, [
-        { value: 'gpt_sovits', label: 'GPT-SoVITS v3 · Amadeus' },
+        { value: 'gpt_sovits', label: 'GPT-SoVITS · Amadeus' },
         { value: 'openai_compatible', label: 'OpenAI-compatible API' },
         { value: 'mimo', label: 'MiMo TTS (Xiaomi)' },
         { value: 'disabled', label: 'Disabled' },
@@ -135,16 +135,21 @@ export function buildVoiceConfigurationCatalog(
     },
     {
       id: 'tts_embedded_v3',
-      label: 'Embedded GPT-SoVITS v3 model',
-      description: 'Checkpoint pair for the Amadeus low-latency rewrite; v1 and v2 checkpoints are unsupported.',
+      label: 'Embedded GPT-SoVITS model',
+      description: 'Choose a compatible voice profile or provide a custom GPT/SoVITS checkpoint pair.',
       active: ttsBackend === 'gpt_sovits',
       configured: false,
       status: ttsBackend === 'gpt_sovits' ? unknown : 'Optional',
       status_ok: false,
       fields: [
+        field('TTS_VOICE_PROFILE', 'Voice checkpoint profile', 'select', value('TTS_VOICE_PROFILE', 'custom'), [
+          { value: 'kurisu_v3', label: 'Kurisu v3' },
+          { value: 'kurisu_v2pro', label: 'Kurisu v2Pro · experimental' },
+          { value: 'custom', label: 'Custom checkpoint pair' },
+        ], 'Named profiles select compatible GPT and SoVITS paths together. Restart the voice runtime after changing this setting.'),
         field('TTS_DEVICE', 'Inference device', 'text', value('TTS_DEVICE', 'auto'), undefined, 'auto/cuda, cuda:N, mps, or cpu.'),
-        field('TTS_GPT_MODEL_PATH', 'GPT semantic checkpoint (v3)', 'path', value('TTS_GPT_MODEL_PATH')),
-        field('TTS_SOVITS_MODEL_PATH', 'SoVITS acoustic checkpoint (v3)', 'path', value('TTS_SOVITS_MODEL_PATH')),
+        field('TTS_GPT_MODEL_PATH', 'Custom GPT semantic checkpoint', 'path', value('TTS_GPT_MODEL_PATH'), undefined, 'Used only with the Custom checkpoint pair profile.'),
+        field('TTS_SOVITS_MODEL_PATH', 'Custom SoVITS acoustic checkpoint', 'path', value('TTS_SOVITS_MODEL_PATH'), undefined, 'Used only with the Custom checkpoint pair profile.'),
       ],
     },
     {

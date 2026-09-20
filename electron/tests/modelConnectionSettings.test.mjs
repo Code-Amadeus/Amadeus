@@ -61,6 +61,7 @@ test('a blank desktop install can persist a complete model selection for the nex
       ENABLE_CUDA_GRAPH: '1',
       EXP_TTS_MAX_CONCURRENCY: '1',
       TTS_OUTPUT_LANGUAGE: '英文',
+      TTS_VOICE_PROFILE: 'kurisu_v2pro',
     },
     secrets: { OPENAI_API_KEY: 'test-api-key' },
   })
@@ -81,6 +82,7 @@ test('a blank desktop install can persist a complete model selection for the nex
   assert.equal(environment.AMADEUS_PRESENTATION_LOCALE, 'zh-CN')
   assert.equal(environment.ENABLE_CUDA_GRAPH, '1')
   assert.equal(environment.TTS_OUTPUT_LANGUAGE, '英文')
+  assert.equal(environment.TTS_VOICE_PROFILE, 'kurisu_v2pro')
   assert.ok(!JSON.stringify(reloaded.snapshot({})).includes('test-api-key'))
 })
 

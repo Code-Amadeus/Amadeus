@@ -1,4 +1,4 @@
-"""Adapter for Amadeus's embedded, v3-only GPT-SoVITS inference rewrite."""
+"""Adapter for Amadeus's embedded GPT-SoVITS inference pipeline."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ _SIDECAR_SCRIPT = _PROJECT_ROOT / "tts" / "gpt_sovits_sidecar.py"
 
 
 class GPTSoVITSBackend(BaseTTSBackend):
-    """Run GPT-SoVITS v3 checkpoints through the Amadeus low-latency pipeline."""
+    """Run supported GPT-SoVITS checkpoints through the low-latency pipeline."""
 
     backend_id = "gpt_sovits"
     deployment = "embedded"

@@ -843,6 +843,9 @@ class CodePredictor(nn.Module):
             return pred_codes.transpose(0, 1)
 
 
+v2pro_set = {"v2Pro", "v2ProPlus"}
+
+
 class SynthesizerTrn(nn.Module):
     """
     Synthesizer for Training
@@ -944,6 +947,15 @@ class SynthesizerTrn(nn.Module):
         self.quantizer = ResidualVectorQuantizer(dimension=ssl_dim, n_q=1, bins=1024)
         self.freeze_quantizer = freeze_quantizer
 
+        # v2Pro keeps the 1024-channel reference style embedding for the flow and
+        # decoder, but projects it to the 512 channels expected by MRTE.  It also
+        # conditions the style embedding with an ERes2Net speaker embedding.
+        self.is_v2pro = self.version in v2pro_set
+        if self.is_v2pro:
+            self.sv_emb = nn.Linear(20480, gin_channels)
+            self.ge_to512 = nn.Linear(gin_channels, 512)
+            self.prelu = nn.PReLU(num_parameters=gin_channels)
+
     def forward(self, ssl, y, y_lengths, text, text_lengths):
         y_mask = torch.unsqueeze(commons.sequence_mask(y_lengths, y.size(2)), 1).to(
             y.dtype
@@ -1015,8 +1027,8 @@ class SynthesizerTrn(nn.Module):
         return o, y_mask, (z, z_p, m_p, logs_p)
 
     @torch.no_grad()
-    def decode(self, codes, text, refer, noise_scale=0.5,speed=1):
-        def get_ge(refer):
+    def decode(self, codes, text, refer, noise_scale=0.5, speed=1, sv_emb=None):
+        def get_ge(refer, speaker_embedding=None):
             ge = None
             if refer is not None:
                 refer_lengths = torch.LongTensor([refer.size(2)]).to(refer.device)
@@ -1027,15 +1039,22 @@ class SynthesizerTrn(nn.Module):
                     ge = self.ref_enc(refer * refer_mask, refer_mask)
                 else:
                     ge = self.ref_enc(refer[:, :704] * refer_mask, refer_mask)
+                if self.is_v2pro:
+                    if speaker_embedding is None:
+                        raise ValueError("v2Pro decoding requires a speaker embedding")
+                    ge = ge + self.sv_emb(speaker_embedding).unsqueeze(-1)
+                    ge = self.prelu(ge)
             return ge
         if(type(refer)==list):
             ges=[]
-            for _refer in refer:
-                ge=get_ge(_refer)
+            if self.is_v2pro and (not isinstance(sv_emb, list) or len(sv_emb) != len(refer)):
+                raise ValueError("v2Pro decoding requires one speaker embedding per reference")
+            for idx, _refer in enumerate(refer):
+                ge=get_ge(_refer, sv_emb[idx] if self.is_v2pro else None)
                 ges.append(ge)
             ge=torch.stack(ges,0).mean(0)
         else:
-            ge=get_ge(refer)
+            ge=get_ge(refer, sv_emb)
 
         y_lengths = torch.LongTensor([codes.size(2) * 2]).to(codes.device)
         text_lengths = torch.LongTensor([text.size(-1)]).to(text.device)
@@ -1046,7 +1065,12 @@ class SynthesizerTrn(nn.Module):
                 quantized, size=int(quantized.shape[-1] * 2), mode="nearest"
             )
         x, m_p, logs_p, y_mask = self.enc_p(
-            quantized, y_lengths, text, text_lengths, ge,speed
+            quantized,
+            y_lengths,
+            text,
+            text_lengths,
+            self.ge_to512(ge.transpose(2, 1)).transpose(2, 1) if self.is_v2pro else ge,
+            speed,
         )
         z_p = m_p + torch.randn_like(m_p) * torch.exp(logs_p) * noise_scale
 

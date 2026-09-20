@@ -125,12 +125,15 @@ installable. Consumers must update the application code to a version with the
 Companion player/catalog before installing this new pack; existing old art packs
 do not require the Lite pack or a contract-version migration.
 
-The two voice-model packs keep the offline runtime under canonical `assets/`
+The local model packs keep the offline runtime under canonical `assets/`
 paths. `asr-qwen3-0.6b` contains the complete local Hugging Face snapshot used
-by Qwen inference. `voice-kurisu-gpt-sovits-v3` contains only the GPT-SoVITS v3
+by Qwen inference. `voice-kurisu-gpt-sovits-v3` contains the GPT-SoVITS v3
 pretrained/runtime weights, selected v3 checkpoints, and configured reference
-audio. Model and voice redistribution terms remain independent of this bundle
-format and must be reviewed before publishing either archive.
+audio. `voice-kurisu-gpt-sovits-v2pro-experimental` adds the v2Pro GPT/SoVITS
+pair and its ERes2Net speaker-encoder weight; it reuses the shared text, SSL,
+and reference-audio assets from the v3 voice pack. Model and voice
+redistribution terms remain independent of this bundle format and must be
+reviewed before publishing either voice archive.
 
 ## Archive contract
 
