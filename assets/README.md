@@ -100,3 +100,13 @@ unexpected overwrites before committing files.
   manifest, graph, mouth config, and indexed KTX2 textures.
 - Model families keep their existing directories under `models/`; model files
   and reference voices remain separately supplied.
+
+## Repository Star History
+
+The README loads the chart from the generated `star-history` branch. The
+`Update star history` workflow refreshes it daily, on manual dispatch, and
+when its workflow or generator changes on `main`. It publishes only
+`star-history.svg` and skips commits when the chart content is unchanged.
+The protected `main` branch does not receive automated chart commits.
+`assets/star-history.svg` is the local snapshot; scheduled updates are served
+from the generated branch. GitHub's image cache may briefly delay display.

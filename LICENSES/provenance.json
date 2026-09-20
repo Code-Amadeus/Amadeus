@@ -282,9 +282,12 @@
       "category": "repository-presentation-assets",
       "paths": [
         "assets/architecture-overview-crt.svg",
+        "assets/architecture-overview-crt.zh.svg",
         "assets/demo/**",
         "assets/header-strip.en.svg",
+        "assets/header-strip.en.mobile.svg",
         "assets/header-strip.zh.svg",
+        "assets/header-strip.zh.mobile.svg",
         "assets/star-history.svg"
       ],
       "source_url": "https://github.com/Code-Amadeus/Amadeus",
