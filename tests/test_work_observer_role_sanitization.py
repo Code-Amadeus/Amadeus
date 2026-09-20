@@ -167,6 +167,86 @@ def test_terminal_report_retries_with_a_concrete_japanese_summary(monkeypatch) -
     assert "ドローン攻撃" in decision["display_text"]
 
 
+def test_terminal_report_repair_exception_defers_to_host_fallback(monkeypatch) -> None:
+    class _FakeCompletions:
+        calls = 0
+
+        def create(self, **_kwargs):
+            self.calls += 1
+            if self.calls == 2:
+                raise RuntimeError("repair unavailable")
+            payload = json.dumps(
+                {
+                    "action": "final_report",
+                    "display_text": "The task is finished.",
+                    "main_chat_entry": "The task is finished.",
+                    "append_to_main_chat": True,
+                    "speak": True,
+                }
+            )
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content=payload))]
+            )
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=_FakeCompletions()))
+    monkeypatch.setattr(work_observer_llm, "_client", lambda _provider: client)
+    monkeypatch.setattr(work_observer_llm, "_model", lambda _provider: "test-model")
+
+    decision = work_observer_llm._decide_sync(
+        provider="deepseek",
+        note={
+            "phase": "Result",
+            "summary": "The search found that Ukraine launched a large drone attack on Moscow.",
+        },
+        notes=[],
+        recent_chat=[],
+        recent_spoken_updates=[],
+        display_language="japanese",
+    )
+
+    assert decision is None
+
+
+def test_terminal_report_empty_repair_defers_to_host_fallback(monkeypatch) -> None:
+    responses = iter(
+        [
+            {
+                "action": "final_report",
+                "display_text": "The task is finished.",
+                "main_chat_entry": "The task is finished.",
+                "append_to_main_chat": True,
+                "speak": True,
+            },
+            {},
+        ]
+    )
+
+    class _FakeCompletions:
+        def create(self, **_kwargs):
+            payload = json.dumps(next(responses), ensure_ascii=False)
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content=payload))]
+            )
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=_FakeCompletions()))
+    monkeypatch.setattr(work_observer_llm, "_client", lambda _provider: client)
+    monkeypatch.setattr(work_observer_llm, "_model", lambda _provider: "test-model")
+
+    decision = work_observer_llm._decide_sync(
+        provider="deepseek",
+        note={
+            "phase": "Result",
+            "summary": "The search found that Ukraine launched a large drone attack on Moscow.",
+        },
+        notes=[],
+        recent_chat=[],
+        recent_spoken_updates=[],
+        display_language="japanese",
+    )
+
+    assert decision is None
+
+
 def _main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

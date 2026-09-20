@@ -183,7 +183,7 @@ def _decide_sync(
         )
     except Exception:
         logger.exception("terminal Work report language repair failed")
-        return decision
+        return None
     if repaired is not None and not _terminal_report_needs_repair(
         repaired,
         note,
@@ -191,7 +191,7 @@ def _decide_sync(
     ):
         return repaired
     logger.warning("terminal Work report repair remained invalid; using the Host semantic fallback")
-    return decision
+    return None
 
 
 def _terminal_report_needs_repair(

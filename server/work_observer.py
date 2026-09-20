@@ -1986,12 +1986,17 @@ class WorkObserverCoordinator:
         if language == "english":
             if body and not text_matches_assistant_language(body, language):
                 excerpt = self._terminal_result_excerpt(summary)
-                if excerpt:
+                if excerpt and text_matches_assistant_language(excerpt, language):
                     return f"The task is finished. The final report says: “{excerpt}”. I kept the details on the card."
-                body = ""
+                return (
+                    "The task is finished, but I could not safely translate the concrete result into English. "
+                    "The original report is preserved on the card."
+                )
             if not body:
                 return "I checked it. This background task is finished."
             return f"I checked it. The task is finished. Briefly: {body}. I kept the details on the card."
+        if body and not text_matches_assistant_language(body, language):
+            return "任务已经结束，但具体结果未能安全转换成中文；原始报告已保留在卡片中。"
         if not body:
             return "我这边确认好了，这轮后台工作已经结束。"
         return f"我这边确认好了，这轮后台工作已经结束。简要结果是：{body}。详细来源我保留在卡片里。"
