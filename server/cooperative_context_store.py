@@ -19,7 +19,10 @@ from agent_host.provider_types import (
     ProviderRunIntakeReceipt,
     ProviderSessionHandle,
 )
-from server.provider_session_binding import ProviderSessionAttachment
+from server.provider_session_binding import (
+    ProviderSessionAttachment,
+    supports_conversation_attachment,
+)
 from agent_host.provider_contract import ProviderRequirements
 from agent_host.work_ledger_store import WorkLedgerStore
 from server.control_ledger import ControlLedgerConflict, ControlLedgerStore
@@ -100,7 +103,9 @@ class CooperativeContextStore:
         row["native_session"] = ProviderSessionHandle.from_dict(raw) if raw else None
         if row["native_session"] is not None and (
                 row["native_session"].provider != row["provider"]
-                or (row["requirements"].resume == "attach" and row["native_session"].scope != "interaction")):
+                or (row["requirements"].resume == "attach"
+                    and not supports_conversation_attachment(row["native_session"],
+                        work_item_id=row["work_item_id"]))):
             raise ControlLedgerConflict("stored native context has foreign identity")
         return row
 
@@ -195,7 +200,7 @@ class CooperativeContextStore:
         return os.path.normcase(str(Path(str(value or "")).expanduser().resolve()))
 
     def bind_work_item(self, child, work_item_id, *, binding_token, source_context_id=None):
-        """Rebind one existing same-workspace WorkItem without creating execution."""
+        """Associate Work without execution; task-scoped sessions cannot rebind."""
         clean_work_item_id = str(work_item_id or "").strip()
         if not clean_work_item_id:
             raise ValueError("work_item_id is required")
@@ -221,6 +226,10 @@ class CooperativeContextStore:
             if str(context["work_item_id"]) == clean_work_item_id:
                 child.work_item_id = clean_work_item_id
                 return binding_token
+            raw_session = json.loads(context["native_session"])
+            if (raw_session is not None
+                    and ProviderSessionHandle.from_dict(raw_session).scope == "work_item"):
+                raise ControlLedgerConflict("native session is confined to its original Work")
             next_token = uuid.uuid4().hex if source_context_id == child.child_id else binding_token
             changed = db.execute("""UPDATE cooperative_contexts
                 SET work_item_id=?,revision=revision+1
@@ -301,7 +310,9 @@ class CooperativeContextStore:
         """
         handle = child.native_session
         if handle is not None and (handle.provider != child.provider
-                or (child.requirements.resume == "attach" and handle.scope != "interaction")):
+                or (child.requirements.resume == "attach"
+                    and not supports_conversation_attachment(handle,
+                        work_item_id=child.work_item_id))):
             raise ControlLedgerConflict("native context has foreign identity")
         encoded = json.dumps(handle.to_dict() if handle else None, ensure_ascii=False, sort_keys=True)
         with self.ledger._transaction() as db:

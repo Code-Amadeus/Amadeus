@@ -898,8 +898,13 @@ class CooperativeChatManager:
                     item = self.destination.store.get_work_item(
                         str(route.get("workItemId") or ""))
                     if (item is None or item.state == "archived"
-                            or item.workspace_mode == "none"
                             or item.project_id != str(route.get("projectId") or "")):
+                        return False
+                    if (child.requirements.workspace_access == "none"
+                            or workspace_route_authority(
+                                child.requirements.workspace_ownership) != "host"):
+                        return child.workspace == ""
+                    if item.workspace_mode == "none":
                         return False
                     expected_workspace = item.workspace_path
                     if route.get("destinationKind") == "draft":
@@ -1336,8 +1341,16 @@ class CooperativeChatManager:
                         "child_id":frozen["source_binding_context_id"]}
                     child = None
                 else:
-                    child = self.work_conversation_context(ingress, work_id,
-                        provider or self.provider)
+                    try:
+                        child = self.work_conversation_context(ingress, work_id,
+                            provider or self.provider)
+                    except (LoopConflict, WorkLedgerConflict) as exc:
+                        # Restoration precedes execution acceptance. An unavailable
+                        # task is a no-effect receipt, not a failed Chat turn.
+                        loop.trace.append({"kind":"work_conversation_unavailable",
+                            "work_item_id":work_id, "turn_id":turn_id,
+                            "error":type(exc).__name__ + ": " + str(exc)})
+                        child = None
             else:
                 child = loop.get_context(target["child_id"])
             if work_input_receipt is not None:
@@ -2205,23 +2218,34 @@ class CooperativeChatManager:
         """Resolve an interaction address without changing Work or Project state."""
         from server.provider_session_binding import resolve_provider_session_attachment
 
-        if item.state == "archived" or item.workspace_mode == "none" or not Path(item.workspace_path).is_dir():
+        manifest = self.runtime.get_manifest(provider_id)
+        ownership = requirements.workspace_ownership or (
+            manifest.capabilities.workspace_ownership if manifest else "none")
+        host_workspace = (requirements.workspace_access != "none"
+            and workspace_route_authority(ownership) == "host")
+        if item.state == "archived" or (host_workspace and (
+                item.workspace_mode == "none" or not item.workspace_path
+                or not Path(item.workspace_path).is_dir())):
             raise LoopConflict("selected Work destination is unavailable")
-        is_draft = self.destination.is_unkept_draft(item.workspace_path)
-        if not is_draft:
+        # Work identity/native continuity do not require a local directory.
+        # Only a receiving Provider with host workspace access consumes it.
+        workspace = item.workspace_path if host_workspace else ""
+        is_draft = bool(workspace) and self.destination.is_unkept_draft(workspace)
+        if host_workspace and not is_draft:
             self.destination.available_project(item.project_id)
         attempts = self.destination.store.list_attempts(item.work_item_id)
-        manifest = self.runtime.get_manifest(provider_id)
         attachment = resolve_provider_session_attachment(has_existing_item=True,
             previous_attempt=attempts[-1] if attempts else None, continuation="conversation",
             provider_capabilities=manifest.capabilities.to_dict() if manifest else {},
             request_provider=provider_id)
-        return {"requirements":replace(requirements, workspace_access="read"),
-            "workspace":item.workspace_path, "native_session":attachment.session,
-            "workspace_route":{"status":"resolved", "source":"cooperative_session_work_item",
+        return {"requirements":replace(requirements, workspace_access="read")
+                if requirements.workspace_access == "write" else requirements,
+            "workspace":workspace, "native_session":attachment.session,
+            "workspace_route":{"status":"resolved" if workspace else "not_required",
+                "source":"cooperative_session_work_item",
                 "destinationKind":"draft" if is_draft else "work_item",
                 "projectId":item.project_id, "workItemId":item.work_item_id,
-                "cwd":item.workspace_path}}
+                "cwd":workspace}}
 
     def work_conversation_context(self, ingress, work_item_id, provider_id):
         """Lazily restore a Work-associated conversation; no Work mutation occurs."""
@@ -2235,8 +2259,9 @@ class CooperativeChatManager:
             if (not row["closed"] and row["work_item_id"] == work_item_id
                     and row["provider"] == provider_id):
                 child = loop.get_context(row["context_id"])
-                if (child is not None and child.requirements.workspace_access == "read"
-                        and Path(child.workspace).resolve() == Path(item.workspace_path).resolve()):
+                if (child is not None and child.requirements.workspace_access
+                        == destination["requirements"].workspace_access
+                        and child.workspace == destination["workspace"]):
                     return child
         child = loop._create_context(item.title, provider_id,
             requirements=destination["requirements"], workspace=destination["workspace"],
