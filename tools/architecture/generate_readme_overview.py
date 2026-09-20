@@ -16,18 +16,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 BOXES = {
     "host": (470, 175, 650, 809),
-    "user": (60, 185, 330, 120),
-    "desktop": (60, 350, 330, 180),
-    "surface": (60, 570, 330, 158),
-    "headless": (60, 798, 330, 132),
-    "chat": (500, 220, 590, 144),
-    "memory": (1230, 329, 510, 101),
+    "user": (30, 185, 360, 120),
+    "desktop": (30, 350, 360, 180),
+    "surface": (30, 570, 360, 158),
+    "headless": (30, 798, 360, 132),
+    "chat": (500, 220, 590, 148),
+    "memory": (1230, 351, 510, 115),
     "work": (500, 406, 590, 210),
-    "auip": (500, 658, 590, 136),
-    "voice": (500, 834, 590, 130),
-    "models": (1230, 185, 510, 120),
-    "providers": (1230, 454, 510, 210),
-    "apps": (1230, 704, 510, 136),
+    "auip": (500, 658, 590, 146),
+    "voice": (500, 824, 590, 148),
+    "models": (1230, 185, 510, 140),
+    "providers": (1230, 494, 510, 270),
+    "apps": (1230, 790, 510, 182),
 }
 
 # Compact three-column layout. Ports stay on card borders; labels are placed
@@ -36,16 +36,16 @@ EDGES = [
     ("user", "desktop", [(225, 305), (225, 350)], "control", (310, 334), "input"),
     ("desktop", "chat", [(390, 418), (438, 418), (438, 292), (500, 292)], "control", (440, 376), "ws"),
     ("chat", "models", [(1090, 260), (1230, 260)], "control", (1160, 236), "infer"),
-    ("chat", "memory", [(1090, 334), (1148, 334), (1148, 380), (1230, 380)], "planned", (1160, 356), "retrieve"),
-    ("chat", "work", [(795, 364), (795, 406)], "control", (730, 391), "delegate"),
+    ("chat", "memory", [(1090, 334), (1148, 334), (1148, 412), (1230, 412)], "planned", (1160, 380), "retrieve"),
+    ("chat", "work", [(795, 368), (795, 406)], "control", (730, 391), "delegate"),
     ("chat", "voice", [(500, 332), (482, 332), (482, 876), (500, 876)], "control", None, "speech"),
-    ("work", "providers", [(1090, 484), (1230, 484)], "control", (1160, 460), "run"),
-    ("providers", "work", [(1230, 560), (1090, 560)], "return", (1160, 587), "results"),
+    ("work", "providers", [(1090, 484), (1176, 484), (1176, 548), (1230, 548)], "control", (1160, 463), "run"),
+    ("providers", "work", [(1230, 626), (1144, 626), (1144, 578), (1090, 578)], "return", (1160, 653), "results"),
     ("work", "desktop", [(500, 574), (416, 574), (416, 506), (390, 506)], "return", (440, 548), "projection"),
     ("work", "auip", [(795, 616), (795, 658)], "artifact", (921, 645), "artifact"),
     ("headless", "host", [(390, 864), (470, 864)], "control", (430, 835), "api"),
-    ("auip", "apps", [(1090, 704), (1160, 704), (1160, 748), (1230, 748)], "artifact", (1160, 680), "action"),
-    ("apps", "auip", [(1230, 800), (1184, 800), (1184, 760), (1090, 760)], "return", (1160, 822), "receipts"),
+    ("auip", "apps", [(1090, 704), (1160, 704), (1160, 832), (1230, 832)], "artifact", (1160, 690), "action"),
+    ("apps", "auip", [(1230, 910), (1196, 910), (1196, 760), (1090, 760)], "return", (1160, 940), "receipts"),
     ("voice", "surface", [(500, 904), (448, 904), (448, 652), (390, 652)], "control", (440, 743), "playback"),
 ]
 
@@ -63,19 +63,19 @@ COPY = {
         "surface": ["Character Presentation", "Wallpaper · SpriteForge / PixiJS", "Subtitles · lips · emotion · scene", "Character packs are optional"],
         "chat": ["Main Chat & Turn Control", "Sessions · models · visual context", "Streams · interruption epochs", "Conversation only · no MCP tools"],
         "memory": ["Memory & Persona Runtime", "Retrieval / updates · lifecycle design pending", "PLANNED · interface not finalized"],
-        "retrieve": ["Context exchange"],
+        "retrieve": ["Context", "exchange"],
         "planned_legend": "Planned extension",
         "work": ["Work Control Plane", "Projects · Drafts · WorkItems / Attempts", "Provider selection · run / cancel", "Continue / retry · permissions · Artifacts", "Ledger · diffs · completion · recovery", "Host verifies identity and execution facts"],
         "auip": ["AUIP Session Authority", "Attach tickets · session identity · revisions", "Action authorization · declared state · receipts", "No Work / Provider / TTS authority granted"],
-        "voice": ["Voice & Embodiment", "Wake / conversation ASR · local or remote ASR / TTS", "Physical playback · mouth / render events", "Presentation stays separate from execution"],
+        "voice": ["Voice & Embodiment", "Wake / chat ASR · local or remote ASR / TTS", "Playback · mouth / render events", "Presentation stays separate from execution"],
         "models": ["Main Chat Model Endpoints", "Local / remote / hybrid inference", "Remote services are explicitly configured"],
-        "apps": ["Attached AUIP Applications", "Verified Artifact entry · declared state/events", "Bounded actions · application receipts", "Visible disconnects · not a Work Provider"],
+        "apps": ["Attached AUIP Applications", "Verified Artifact entry", "Declared state / events · bounded actions", "Application receipts · visible disconnects", "Separate from Work Providers"],
         "providers": "Work Providers",
         "provider_subtitle": "Separate transports and capabilities",
         "provider_details": [["Browser", "Playwright", "Scoped session"], ["Codex", "App Server", "or Direct"], ["OpenClaw", "Optional", "gateway"]],
         "capabilities": "MCP / Skills · compatible Providers only",
         "planned": "Planned: Claude CLI direct Provider",
-        "input": ["Input / consent"], "ws": ["Authenticated", "WebSocket"],
+        "input": ["Input / consent"], "ws": ["Auth.", "WebSocket"],
         "infer": ["Inference"], "delegate": ["Delegate"], "speech": ["Chat speech"],
         "run": ["Run / cancel"], "results": ["Events / results"],
         "projection": ["Work-state", "projection"], "artifact": ["Verified Artifact"],
@@ -136,14 +136,17 @@ def render(lang: str) -> str:
     .title{{font-size:38px;font-weight:700;fill:#edf8f0}}
     .subtitle{{font-size:20px;fill:#a5c5b2}}
     .column{{font-size:17px;letter-spacing:1px;font-weight:700;fill:#89c9a8}}
-    .card-title{{font-size:23px;font-weight:650;fill:#effaf3}}
-    .body{{font-size:18px;fill:#c0d6c9}}
-    .note{{font-size:15px;fill:#93b5a1}}
-    .flow{{font-size:14px;font-weight:600;fill:#cce7d7;paint-order:stroke;stroke:#081b13;stroke-width:6;stroke-linejoin:round}}
-    .mini-title{{font-size:17px;font-weight:650;fill:#f5e7ce}}
-    .mini{{font-size:15px;fill:#cfccb7}}
-    .footer{{font-size:15px;font-weight:600;fill:#c7e5d3}}
-    .planned-title{{font-size:20px;font-weight:650;fill:#d8ddcd}}
+    .card-title{{font-size:27px;font-weight:650;fill:#effaf3}}
+    .body{{font-size:23px;fill:#c0d6c9}}
+    .note{{font-size:19px;fill:#a6c5b3}}
+    .flow{{font-size:16px;font-weight:600;fill:#cce7d7;paint-order:stroke;stroke:#081b13;stroke-width:6;stroke-linejoin:round}}
+    .mini-title{{font-size:23px;font-weight:650;fill:#f5e7ce}}
+    .mini{{font-size:20px;fill:#cfccb7}}
+    .provider-detail{{font-size:18px;fill:#cfccb7}}
+    .footer{{font-size:19px;font-weight:600;fill:#c7e5d3}}
+    .planned-title{{font-size:27px;font-weight:650;fill:#d8ddcd}}
+    #node-user .body,#node-desktop .body,#node-surface .body,#node-headless .body{{font-size:21px}}
+    #node-user .card-title,#node-desktop .card-title,#node-surface .card-title,#node-headless .card-title{{font-size:25px}}
   </style>
 </defs>
 <rect width="1800" height="1120" rx="24" fill="url(#bg)"/>
@@ -185,34 +188,34 @@ def render(lang: str) -> str:
         fill = "#201e15" if warm else "#0c241a"
         lines = c[key]
         out.append(f'<g id="node-{key}" data-node="{key}"><rect x="{x}" y="{y}" width="{w}" height="{h}" rx="16" fill="{fill}" stroke="{stroke}" stroke-width="1.6"/>')
-        text(x + 22, y + 33, lines[0], "card-title")
+        text(x + 22, y + 37, lines[0], "card-title")
         # Topology is identical across translations; only localized strings vary.
         for i, line in enumerate(lines[1:-1]):
-            text(x + 22, y + 63 + i * 25, line, "body")
+            text(x + 22, y + 71 + i * 32, line, "body")
         text(x + 22, y + h - 16, lines[-1], "note")
         out.append("</g>")
 
     x, y, w, h = BOXES["memory"]
     out.append(f'<g id="node-memory" data-node="memory" data-status="planned"><rect x="{x}" y="{y}" width="{w}" height="{h}" rx="12" fill="#14221b" stroke="#a4b9a9" stroke-width="1.5" stroke-dasharray="6 5"/>')
-    text(x + 22, y + 30, c["memory"][0], "planned-title")
-    text(x + 22, y + 57, c["memory"][1], "note")
-    text(x + 22, y + 84, c["memory"][2], "mini")
+    text(x + 22, y + 37, c["memory"][0], "planned-title")
+    text(x + 22, y + 69, c["memory"][1], "note")
+    text(x + 22, y + 98, c["memory"][2], "mini")
     out.append("</g>")
 
     x, y, w, h = BOXES["providers"]
     out.append(f'<g id="node-providers" data-node="providers"><rect x="{x}" y="{y}" width="{w}" height="{h}" rx="16" fill="#231f15" stroke="#cfa566" stroke-width="1.6"/>')
-    text(x + 22, y + 33, c["providers"], "card-title")
-    text(x + 22, y + 61, c["provider_subtitle"], "note")
+    text(x + 22, y + 37, c["providers"], "card-title")
+    text(x + 22, y + 68, c["provider_subtitle"], "note")
     for i, words in enumerate(c["provider_details"]):
-        px, py = x + 18 + i * 164, y + 76
+        px, py = x + 18 + i * 164, y + 86
         dash = ' stroke-dasharray="6 5"' if words[0] == "OpenClaw" else ""
-        out.append(f'<rect x="{px}" y="{py}" width="146" height="74" rx="9" fill="#30281a" stroke="#9e8454"{dash}/>')
-        text(px + 12, py + 22, words[0], "mini-title")
-        text(px + 12, py + 46, words[1], "mini")
-        text(px + 12, py + 66, words[2], "mini")
-    out.append(f'<rect x="{x + 18}" y="{y + 156}" width="474" height="25" rx="8" fill="#102c1f" stroke="#456d55"/>')
-    text(x + w / 2, y + 174, c["capabilities"], "note", "middle")
-    text(x + 20, y + 199, c["planned"], "mini")
+        out.append(f'<rect x="{px}" y="{py}" width="146" height="98" rx="9" fill="#30281a" stroke="#9e8454"{dash}/>')
+        text(px + 12, py + 29, words[0], "mini-title")
+        text(px + 12, py + 59, words[1], "provider-detail")
+        text(px + 12, py + 84, words[2], "provider-detail")
+    out.append(f'<rect x="{x + 18}" y="{y + 196}" width="474" height="32" rx="8" fill="#102c1f" stroke="#456d55"/>')
+    text(x + w / 2, y + 219, c["capabilities"], "note", "middle")
+    text(x + 20, y + 253, c["planned"], "mini")
     out.append("</g>")
 
     for _, _, _, _, position, label in EDGES:
