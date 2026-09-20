@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  TRANSLATION_RECENT_MESSAGE_LIMIT,
   chatTranslationCandidates,
   chatTranslationKey,
 } from '../src/renderer/components/chatTranslationState.ts'
@@ -31,4 +32,19 @@ test('translation identity changes with visible text without mutating history me
   assert.notEqual(firstKey, nextKey)
   assert.deepEqual(messages, before)
   assert.equal('translation' in original, false)
+})
+
+test('a long reloaded transcript only translates the recent window', () => {
+  const messages = Array.from({ length: 80 }, (_, index) => ({
+    role: 'assistant',
+    text: `応答 ${index}`,
+    turnId: `turn-${index}`,
+    streaming: false,
+  }))
+
+  const candidates = chatTranslationCandidates(messages)
+
+  assert.equal(candidates.length, TRANSLATION_RECENT_MESSAGE_LIMIT)
+  assert.equal(candidates[0].turnId, `turn-${80 - TRANSLATION_RECENT_MESSAGE_LIMIT}`)
+  assert.equal(candidates.at(-1).turnId, 'turn-79')
 })
