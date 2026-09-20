@@ -501,7 +501,7 @@ def test_resolve_websocket_proxy_raises_clear_error_when_proxy_unusable(monkeypa
     with pytest.raises(TTSBackendError, match="requires python-socks"):
         _resolve_websocket_proxy("wss://api.fish.audio/v1/tts/live")
 
-    # SOCKS in socks entry without HTTP fallback
+    # SOCKS in socks entry without HTTP fallback (socks5h URI)
     monkeypatch.setattr(
         urllib.request,
         "getproxies",
@@ -509,3 +509,38 @@ def test_resolve_websocket_proxy_raises_clear_error_when_proxy_unusable(monkeypa
     )
     with pytest.raises(TTSBackendError, match="requires python-socks"):
         _resolve_websocket_proxy("wss://api.fish.audio/v1/tts/live")
+
+    # SOCKS in macOS unnormalized format without HTTP fallback
+    monkeypatch.setattr(
+        urllib.request,
+        "getproxies",
+        lambda: {"socks": "http://127.0.0.1:7890"},
+    )
+    with pytest.raises(TTSBackendError, match="requires python-socks"):
+        _resolve_websocket_proxy("wss://api.fish.audio/v1/tts/live")
+
+
+async def test_synthesize_stream_raises_clear_error_when_proxy_unusable(monkeypatch):
+    import urllib.request
+
+    monkeypatch.setattr(urllib.request, "proxy_bypass", lambda host: False)
+    monkeypatch.setattr("tts.backends.fish_audio._has_python_socks", lambda: False)
+    monkeypatch.setattr(
+        urllib.request,
+        "getproxies",
+        lambda: {"socks": "http://127.0.0.1:7890"},
+    )
+
+    backend = FishAudioTTSBackend(
+        ws_url="wss://api.fish.audio/v1/tts/live",
+        api_key="test-secret",
+        model="s2.1-pro-free",
+        reference_id="test-voice",
+    )
+    with pytest.raises(TTSBackendError, match="requires python-socks"):
+        _ = [
+            chunk
+            async for chunk in backend.synthesize_text_stream(
+                TTSSynthesisRequest("test"), text_source("hi")
+            )
+        ]
