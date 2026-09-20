@@ -97,3 +97,25 @@ def test_c7_status_and_schedule_preserve_simulated_life_classification(continuit
     assert schedule["schedule_present"] is True
     assert schedule["items"]
     assert all("summary" not in item and "source_hash" not in item for item in schedule["items"])
+
+
+def test_c7_status_metrics_follow_the_requested_scope(continuity_store) -> None:
+    """Memory and mute metrics describe one dialogue; omitting the scope
+    keeps the store-wide diagnostics view used by tools."""
+
+    _insert_memory(continuity_store)
+    continuity_store.add_topic_mute("旧话题", scope="s")
+    service = ContinuityService(
+        continuity_store, memory_enabled=True, relationship_enabled=False
+    )
+
+    mine = service.c7_status(scope="s")
+    assert mine["memory"]["hot_memory_count"] == 1
+    assert mine["topic_mute_count"] == 1
+
+    other = service.c7_status(scope="other-session")
+    assert other["memory"]["hot_memory_count"] == 0
+    assert other["topic_mute_count"] == 0
+
+    storewide = service.c7_status()
+    assert storewide["memory"]["hot_memory_count"] == 1

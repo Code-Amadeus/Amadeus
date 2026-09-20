@@ -1090,11 +1090,29 @@ class ContinuityStore:
                     pass
                 raise
 
-    def continuity_diagnostics(self) -> dict[str, Any]:
-        """Return bounded content-free counts for Host diagnostics."""
+    def continuity_diagnostics(self, *, scope: str | None = None) -> dict[str, Any]:
+        """Return bounded content-free counts for Host diagnostics.
+
+        ``scope`` narrows the retention counts to one dialogue; the
+        maintenance-run facts stay store-wide because retention maintenance
+        itself is a store-wide operation.
+        """
         with self._lock:
             self._ensure_open()
-            counts = {str(row["retention_tier"]): int(row["n"]) for row in self._connection.execute("SELECT retention_tier, COUNT(*) n FROM memory_items WHERE state = 'active' GROUP BY retention_tier")}
+            clauses = ["state = 'active'"]
+            params: list[Any] = []
+            if scope is not None:
+                clauses.append("scope = ?")
+                params.append(str(scope))
+            counts = {
+                str(row["retention_tier"]): int(row["n"])
+                for row in self._connection.execute(
+                    "SELECT retention_tier, COUNT(*) n FROM memory_items WHERE "
+                    + " AND ".join(clauses)
+                    + " GROUP BY retention_tier",
+                    tuple(params),
+                )
+            }
             last = self._connection.execute("SELECT * FROM continuity_maintenance_runs ORDER BY completed_at DESC LIMIT 1").fetchone()
             return {"hot_memory_count": counts.get("hot", 0), "cold_memory_count": counts.get("cold", 0), "archive_memory_count": counts.get("archive", 0), "last_maintenance_at": float(last["completed_at"]) if last else None, "last_maintenance_duration_ms": None if not last else round((float(last["completed_at"]) - float(last["started_at"])) * 1000.0, 3)}
 
@@ -1118,14 +1136,25 @@ class ContinuityStore:
 
     # ------------------------------------------------------------------
     def list_scopes(self) -> list[str]:
-        """Return every scope that currently owns durable Continuity state."""
+        """Return every scope that currently owns durable Continuity state.
+
+        The consolidation journal counts as owned state too: a dialogue whose
+        turns produced no memory/relationship rows still keeps durable
+        bookkeeping rows, and the startup reaper must be able to see them so a
+        scope without any recoverable transcript cannot leave state behind.
+        """
 
         with self._lock:
             self._ensure_open()
             scopes: set[str] = set()
-            for table in ("memory_items", "memory_tombstones", "relationship_events"):
+            for table, column in (
+                ("memory_items", "scope"),
+                ("memory_tombstones", "scope"),
+                ("relationship_events", "scope"),
+                ("consolidation_turns", "session_id"),
+            ):
                 rows = self._connection.execute(
-                    f"SELECT DISTINCT scope FROM {table}"
+                    f"SELECT DISTINCT {column} AS scope FROM {table}"
                 ).fetchall()
                 scopes.update(str(row["scope"] or "") for row in rows)
             scopes.update(mute.scope for mute in self._mute_entries_locked())

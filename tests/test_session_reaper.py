@@ -102,6 +102,123 @@ def test_reap_purges_scopes_without_live_or_backup_transcript(tmp_path) -> None:
     )
 
 
+def test_mirror_transcript_restores_dialogue_and_state(tmp_path) -> None:
+    """Deleting the live transcript is recoverable while the mirror exists."""
+
+    db = tmp_path / "runtime" / "continuity.sqlite3"
+    sessions = tmp_path / "sessions"
+    mirror = tmp_path / "runtime" / "backup" / "sessions"
+    sessions.mkdir(parents=True)
+    mirror.mkdir(parents=True)
+
+    store = ContinuityStore(db)
+    _seed_memory(store, "restore-me", "user.fact.birth_date", "我的生日是1月2日")
+    store.add_topic_mute("旧话题", scope="restore-me")
+    store.close()
+    transcript = {
+        "session_id": "restore-me",
+        "dialog": [
+            {"role": "user", "content": "我的生日是1月2日", "turn_id": "t1"},
+        ],
+    }
+    (mirror / "restore-me.json").write_text(
+        json.dumps(transcript, ensure_ascii=False), encoding="utf-8"
+    )
+
+    # The live transcript is gone, but the mirror keeps everything recoverable:
+    # reaping must not touch this scope.
+    assert (
+        reap_session_state(continuity_db=db, sessions_dir=sessions, backup_sessions_dir=mirror)
+        == {}
+    )
+
+    # Restore = copy the mirror transcript back into the sessions directory;
+    # memory, mutes and later recall all work again unchanged.
+    (sessions / "restore-me.json").write_text(
+        json.dumps(transcript, ensure_ascii=False), encoding="utf-8"
+    )
+    reopened = ContinuityStore(db)
+    try:
+        assert (
+            reopened.get_active_memory("user.fact.birth_date", scope="restore-me") is not None
+        )
+        assert [mute.topic for mute in reopened.list_topic_mutes(scope="restore-me")] == [
+            "旧话题"
+        ]
+    finally:
+        reopened.close()
+    assert (
+        reap_session_state(continuity_db=db, sessions_dir=sessions, backup_sessions_dir=mirror)
+        == {}
+    )
+
+
+def test_journal_only_scope_is_reaped(tmp_path) -> None:
+    """A chit-chat dialogue can own journal rows without ever producing a
+    memory; once its transcript is gone for good those rows are cleared too
+    instead of accumulating forever."""
+
+    db = tmp_path / "runtime" / "continuity.sqlite3"
+    sessions = tmp_path / "sessions"
+    mirror = tmp_path / "runtime" / "backup" / "sessions"
+    sessions.mkdir(parents=True)
+    mirror.mkdir(parents=True)
+
+    store = ContinuityStore(db)
+    store.apply_memory_candidates(
+        TurnEvidence(
+            session_id="chit-chat", turn_id="t1", user_text="嗯", observed_at=100.0
+        ),
+        (),
+        resolver=MemoryResolver(),
+        complete_turn=True,
+    )
+    store.close()
+
+    purged = reap_session_state(
+        continuity_db=db, sessions_dir=sessions, backup_sessions_dir=mirror
+    )
+
+    assert set(purged) == {"chit-chat"}
+    assert purged["chit-chat"] == {
+        "memories": 0,
+        "tombstones": 0,
+        "relationship_events": 0,
+        "journal_turns": 1,
+        "mutes": 0,
+    }
+    # The journal-only scope is gone for good; nothing remains to reap.
+    assert (
+        reap_session_state(continuity_db=db, sessions_dir=sessions, backup_sessions_dir=mirror)
+        == {}
+    )
+
+
+def test_reap_keeps_the_inert_global_placeholder(tmp_path) -> None:
+    """The legacy ``global`` scope owns no dialogue and stays exempt."""
+
+    db = tmp_path / "runtime" / "continuity.sqlite3"
+    sessions = tmp_path / "sessions"
+    mirror = tmp_path / "runtime" / "backup" / "sessions"
+    sessions.mkdir(parents=True)
+    mirror.mkdir(parents=True)
+
+    store = ContinuityStore(db)
+    _seed_memory(store, "global", "user.fact.legacy", "遗留事实")
+    store.close()
+
+    assert (
+        reap_session_state(continuity_db=db, sessions_dir=sessions, backup_sessions_dir=mirror)
+        == {}
+    )
+
+    reopened = ContinuityStore(db)
+    try:
+        assert reopened.get_active_memory("user.fact.legacy", scope="global") is not None
+    finally:
+        reopened.close()
+
+
 def test_reap_ignores_a_missing_database(tmp_path) -> None:
     assert (
         reap_session_state(

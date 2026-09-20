@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import threading
 from collections import OrderedDict
 from typing import Callable, Protocol
 
@@ -130,6 +131,9 @@ class ModelTextCompressor:
         self._complete = complete
         self._fallback = fallback or DeterministicTextCompressor()
         self._cache: OrderedDict[str, str] = OrderedDict()
+        # The capture worker and the archive-recall worker share one compressor
+        # instance, so cache access is guarded against their concurrency.
+        self._cache_lock = threading.Lock()
         self._cache_size = max(0, int(cache_size))
 
     def compress(self, text: str, max_chars: int, *, speaker: str = "") -> str:
@@ -142,10 +146,11 @@ class ModelTextCompressor:
         cache_key = hashlib.sha1(
             f"{limit}\x1f{speaker}\x1f{value}".encode("utf-8")
         ).hexdigest()
-        cached = self._cache.get(cache_key)
-        if cached is not None:
-            self._cache.move_to_end(cache_key)
-            return cached
+        with self._cache_lock:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                self._cache.move_to_end(cache_key)
+                return cached
         result = ""
         try:
             model_text = str(
@@ -169,9 +174,10 @@ class ModelTextCompressor:
         if not result:
             result = self._fallback.compress(value, limit, speaker=speaker)
         if self._cache_size:
-            self._cache[cache_key] = result
-            while len(self._cache) > self._cache_size:
-                self._cache.popitem(last=False)
+            with self._cache_lock:
+                self._cache[cache_key] = result
+                while len(self._cache) > self._cache_size:
+                    self._cache.popitem(last=False)
         return result
 
 

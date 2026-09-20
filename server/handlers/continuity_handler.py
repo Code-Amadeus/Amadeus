@@ -42,7 +42,7 @@ class ContinuityHandler(RequestHandler):
 
     async def handle(self, method: str, params: dict[str, Any]) -> dict[str, Any] | None:
         if method == Method.CONTINUITY_STATUS:
-            scope = str(params.get("scope") or "").strip() or "global"
+            scope = str(params.get("scope") or "").strip() or None
             return await asyncio.to_thread(self._service.c7_status, scope=scope)
         if method == Method.CONTINUITY_MEMORY_LIST:
             scope = str(params.get("scope") or "").strip() or None
@@ -73,7 +73,7 @@ class ContinuityHandler(RequestHandler):
         if method == Method.CONTINUITY_MAINTENANCE_RUN:
             return {"ok": True, **(await self._service.run_maintenance(reason="c7_user_control"))}
         if method == Method.CONTINUITY_RELATIONSHIP_DEBUG:
-            scope = str(params.get("scope") or "").strip() or "global"
+            scope = str(params.get("scope") or "").strip() or None
             status = await asyncio.to_thread(self._service.c7_status, scope=scope)
             return {"ok": True, "relationship": status["relationship"]}
         if method == Method.CONTINUITY_RETRIEVAL_TRACE:

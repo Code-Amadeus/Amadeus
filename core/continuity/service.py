@@ -499,12 +499,17 @@ class ContinuityService:
             ],
         }
 
-    def c7_status(self, *, scope: str = "global") -> dict[str, Any]:
+    def c7_status(self, *, scope: str | None = None) -> dict[str, Any]:
+        """Return Host diagnostics narrowed to one dialogue when ``scope`` is
+        given; ``None`` keeps the store-wide view used before Session
+        isolation."""
         now = self.clock.current_time()
         now_ts = float(now.timestamp())
         relationship = (
             self.store.relationship_diagnostics(
-                scope=scope, now=now_ts, policy=self.relationship_policy
+                scope=str(scope or "").strip() or "global",
+                now=now_ts,
+                policy=self.relationship_policy,
             )
             if self.relationship_enabled
             else {"disabled": True}
@@ -526,8 +531,8 @@ class ContinuityService:
             "life_enabled": bool(self.life_enabled),
             "life_live_enabled": bool(self.life_live_enabled),
             "archive_recall_enabled": bool(self.archive_recall_enabled),
-            "topic_mute_count": len(self.store.list_topic_mutes(active_only=True)) if self.memory_enabled else 0,
-            "memory": self.store.continuity_diagnostics(),
+            "topic_mute_count": len(self.store.list_topic_mutes(active_only=True, scope=scope)) if self.memory_enabled else 0,
+            "memory": self.store.continuity_diagnostics(scope=scope),
             "relationship": relationship,
             "life": life,
         }

@@ -96,21 +96,21 @@ The integration must preserve the same invariants as Browser and Codex:
 
 ### Memory evolution
 
-Amadeus already has bounded conversation working memory and durable event memory
-in the Work Ledger. The missing product layer is cross-session recall and a
-small, user-governed semantic memory for preferences and long-term context.
+The C0–C8 Continuity Runtime is delivered with per-dialogue semantics: durable
+memories, relationship and affect state, topic mutes, and the user-visible
+controls all belong to the owning dialogue, a fresh dialogue starts from zero,
+and dialogue state whose transcript is neither live nor backed up is reaped at
+startup. Remaining candidate work deepens within-dialogue recall rather than
+widening its reach:
 
-If this becomes active work, the intended sequence is:
-
-1. make existing project and Work Ledger events discoverable across sessions;
-2. add a small explicit profile plus retrieval, rather than injecting an
-   ever-growing transcript into every prompt;
-3. give users a way to inspect, correct, forget, and scope retained memories;
-4. test persona continuity and bad-precedent propagation before enabling
+1. improve within-dialogue recall fidelity and diagnostics without enlarging
+   prompt budgets;
+2. give users a way to inspect, correct, forget, and mute retained memories;
+3. test persona continuity and bad-precedent propagation before enabling
    automatic memory writing.
 
-A generic vector store or silent prompt dump is not, by itself, a memory
-feature.
+A generic vector store, silent prompt dump, or cross-dialogue memory sharing is
+not a memory feature for Amadeus.
 
 ### Multi-platform support
 

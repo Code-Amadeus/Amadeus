@@ -86,3 +86,49 @@ async def test_relationship_state_is_per_dialogue(continuity_store, tmp_path) ->
     assert "Relationship context:" in grounding_a.text
     assert "Relationship context:" not in grounding_b.text
     await service.aclose(graceful=False)
+
+
+async def test_updates_in_one_dialogue_never_touch_another(continuity_store, tmp_path) -> None:
+    """A superseding update in A rewrites only A's copy of the key."""
+
+    service = _service(continuity_store, tmp_path)
+    service.start()
+    await _turn(service, "session-a", "a1", "我的生日是1月2日")
+    await _turn(service, "session-b", "b1", "我的生日是3月4日")
+    await _turn(service, "session-a", "a2", "我的生日是5月6日")
+
+    a_memory = continuity_store.get_active_memory("user.fact.birth_date", scope="session-a")
+    b_memory = continuity_store.get_active_memory("user.fact.birth_date", scope="session-b")
+    assert a_memory is not None and a_memory.object_text == "5月6日"
+    assert b_memory is not None and b_memory.object_text == "3月4日"
+
+    # Supersede history stays inside its own dialogue.
+    a_history = continuity_store.get_memory_history("user.fact.birth_date", scope="session-a")
+    b_history = continuity_store.get_memory_history("user.fact.birth_date", scope="session-b")
+    assert len(a_history) == 2 and len(b_history) == 1
+
+    in_b = service.grounding_for_turn("我的生日是什么？", session_id="session-b", turn_id="b2")
+    assert "3月4日" in in_b.text and "5月6日" not in in_b.text
+    await service.aclose(graceful=False)
+
+
+async def test_topic_mutes_never_silence_another_dialogue(continuity_store, tmp_path) -> None:
+    """A mute hides proactive recall in its own dialogue only."""
+
+    service = _service(continuity_store, tmp_path)
+    service.start()
+    await _turn(service, "session-a", "a1", "京都那家甜点店的焙茶巴菲很好吃")
+    await _turn(service, "session-b", "b1", "京都那家甜点店的焙茶巴菲很好吃")
+    await _turn(service, "session-a", "a2", "不要再提京都那家甜点店了")
+
+    suppressed = service.grounding_for_turn("焙茶巴菲怎么样", session_id="session-a", turn_id="a3")
+    assert "焙茶巴菲" not in suppressed.text
+    assert "Topics the user asked you not to raise" in suppressed.text
+
+    raised = service.grounding_for_turn("还记得京都那家甜点店吗", session_id="session-a", turn_id="a4")
+    assert "焙茶巴菲" in raised.text
+
+    unaffected = service.grounding_for_turn("焙茶巴菲怎么样", session_id="session-b", turn_id="b2")
+    assert "焙茶巴菲" in unaffected.text
+    assert "Topics the user asked you not to raise" not in unaffected.text
+    await service.aclose(graceful=False)
