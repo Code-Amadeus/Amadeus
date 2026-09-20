@@ -16,6 +16,7 @@ import {
 import { buildVoiceConfigurationCatalog } from './voiceConfigurationCatalog'
 import { buildWorkProviderCatalog } from './providerConnectionCatalog'
 import { buildModelRoleCatalog } from './modelRoleCatalog'
+import { buildGraphicsConfiguration, type GraphicsRuntimeSettings } from './graphicsConfigurationCatalog'
 import { markRuntimeSettingsApplied, persistDesktopRuntimeSettings, runtimeSettingFromDesktopValues } from './desktopRuntimeSettings'
 
 interface Props {
@@ -25,7 +26,7 @@ interface Props {
   reconnectBackend: () => Promise<void>
 }
 
-type SettingsSection = 'capabilities' | SceneConfigureSection
+type SettingsSection = 'capabilities' | 'graphics' | SceneConfigureSection
 type ModelsPage = 'roles' | 'connections'
 
 type StartupOption = string | { value: string; label: string }
@@ -499,7 +500,7 @@ function StartupFieldRow({ field, desktop, onSave }: {
   )
 }
 
-function ConfigurationCard({ group, desktop, availability, onSave, collapsible = false, defaultOpen = false, optionalWhenInactive = false }: {
+function ConfigurationCard({ group, desktop, availability, onSave, collapsible = false, defaultOpen = false, optionalWhenInactive = false, icon }: {
   group: ConfigurationGroup
   desktop: DesktopSettingsSnapshot | null
   availability?: ProviderAvailability
@@ -507,6 +508,7 @@ function ConfigurationCard({ group, desktop, availability, onSave, collapsible =
   collapsible?: boolean
   defaultOpen?: boolean
   optionalWhenInactive?: boolean
+  icon?: FluentIconName
 }) {
   const { t } = useI18n()
   const [expanded, setExpanded] = useState(defaultOpen)
@@ -523,7 +525,7 @@ function ConfigurationCard({ group, desktop, availability, onSave, collapsible =
   const header = (
       <div className="configuration-card-header flex items-start gap-2.5">
         <div className="flex items-center justify-center mt-0.5" style={{ width: 24, color: 'var(--muted)' }}>
-          <FluentIcon name={group.id === 'local' ? 'CommandPrompt' : 'Robot'} size={17} />
+          <FluentIcon name={icon || (group.id === 'local' ? 'CommandPrompt' : 'Robot')} size={17} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -662,7 +664,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   const { theme, setTheme } = useTheme()
   const [section, setSection] = useState<SettingsSection>(() => {
     const saved = window.localStorage.getItem('amadeus.settings.section')
-    return ['capabilities', 'general', 'models', 'voice', 'providers'].includes(String(saved))
+    return ['capabilities', 'general', 'graphics', 'models', 'voice', 'providers'].includes(String(saved))
       ? saved as SettingsSection
       : 'capabilities'
   })
@@ -1012,6 +1014,8 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     roleGroups[id]?.status === 'override'
       || (roleGroups[id]?.fields || []).some(item => item.key && desktop?.sources?.[item.key] === 'user'),
   ).length
+  const graphicsRuntime = connected ? config.graphics as GraphicsRuntimeSettings | undefined : undefined
+  const graphicsConfiguration = buildGraphicsConfiguration(graphicsRuntime, desktop)
   const backendProviderConfiguration = asConfigurationGroups(config.work_provider_configuration)
   const providerCatalog = buildWorkProviderCatalog({ provider: selectedWorkProvider, enabled: workExecutionEnabled,
     codingProvider: selectedCodingProvider, roleCandidates: providerRoleCandidates }, desktop)
@@ -1129,7 +1133,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
             </div>
           </div>
           {restartPending ? (
-            <button onClick={() => void restartBackend()} disabled={restarting} className="text-[11px] font-[600] rounded-md px-3 disabled:opacity-50" style={{ height: 32, color: 'white', background: 'var(--accent)', border: 0 }}>
+            <button onClick={() => void restartBackend()} disabled={restarting} className="text-[11px] font-[600] rounded-md disabled:opacity-50" style={{ height: 32, padding: '0 12px', whiteSpace: 'nowrap', flexShrink: 0, color: 'white', background: 'var(--accent)', border: 0 }}>
               {t(restarting ? 'Restarting…' : 'Restart backend to apply')}
             </button>
           ) : null}
@@ -1148,6 +1152,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
             {([
               ['capabilities', 'Capabilities', 'Tiles'],
               ['general', 'General', 'Setting'],
+              ['graphics', 'Graphics & performance', 'Video'],
               ['models', 'Models', 'Robot'],
               ['voice', 'Voice', 'Microphone'],
               ['providers', 'Providers', 'Work'],
@@ -1161,6 +1166,22 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
           <main className="settings-main flex-1 min-w-0" style={{ maxWidth: 760 }}>
             {section === 'capabilities' ? (
               <CapabilitiesPanel capabilities={capabilityProfiles} runtimePackages={runtimePackages} onOpenSection={openCapabilityTarget} />
+            ) : null}
+
+            {section === 'graphics' ? (
+              <div className="flex flex-col gap-5">
+                <BoundaryNote title="Graphics & performance">
+                  {t('Applies to character rendering and wallpapers, not model inference or voice processing. Restart the backend after saving, then reopen existing character and wallpaper windows.')}
+                </BoundaryNote>
+                {graphicsRuntime ? <BoundaryNote title="Current backend limits">
+                  {graphicsRuntime.effective_max_fps} FPS · {graphicsRuntime.effective_max_resolution === null
+                    ? t('Native pixel density') : `${graphicsRuntime.effective_max_resolution}× ${t('pixel density')}`}
+                  <div>{t('Wallpaper Engine can impose a lower FPS limit. These are configured ceilings, not measured performance.')}</div>
+                </BoundaryNote> : <BoundaryNote title="Backend status unavailable">
+                  {t('You can save graphics settings while disconnected. Current renderer limits will appear when the backend connects.')}
+                </BoundaryNote>}
+                {graphicsConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} icon="Video" collapsible={group.id === 'graphics_sampling'} />)}
+              </div>
             ) : null}
 
             {section === 'general' ? (

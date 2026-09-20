@@ -184,6 +184,22 @@ def test_system_settings_report_optional_character_pack_status() -> None:
     asyncio.run(run())
 
 
+def test_graphics_status_distinguishes_saved_custom_limits_from_applied_preset(monkeypatch):
+    from config import settings
+
+    monkeypatch.setattr(settings, "GRAPHICS_PROFILE", "standard")
+    monkeypatch.setattr(settings, "RENDER_MAX_FPS", 48)
+    monkeypatch.setattr(settings, "RENDER_MAX_RESOLUTION", 1.25)
+    fps, resolution = settings._resolve_graphics_profile("standard", 48, 1.25)
+    monkeypatch.setattr(settings, "RENDER_EFFECTIVE_MAX_FPS", fps)
+    monkeypatch.setattr(settings, "RENDER_EFFECTIVE_MAX_RESOLUTION", resolution)
+    monkeypatch.setattr(settings, "RENDER_TEXTURE_SAMPLING", False)
+    result = asyncio.run(SystemHandler()._get_config({}))
+    assert result["graphics"] == {"profile": "standard", "custom_max_fps": 48,
+        "custom_max_resolution": 1.25, "texture_sampling": False,
+        "effective_max_fps": 60, "effective_max_resolution": None}
+
+
 def test_system_settings_report_optional_visual_asset_pack_status() -> None:
     async def run() -> None:
         handler = SystemHandler()

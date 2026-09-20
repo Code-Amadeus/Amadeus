@@ -537,7 +537,10 @@ Electron 会直接创建桌面层的全场景窗口，并用独立透明窗口�
 
 ### 图形性能配置
 
-所有 PixiJS 角色与壁纸表面共享一个 `.env` 图形 Profile：
+所有 PixiJS 角色与壁纸表面共享一个图形预设。可在 **设置 → 图形与性能** 中配置，
+也可使用 `.env`：
+
+[界面预览](docs/images/graphics-performance-settings.png)（自定义设置已保存，等待重启）。
 
 | `GRAPHICS_PROFILE` | 最大帧率 | resolution | 用途 |
 |---|---:|---:|---|
@@ -557,12 +560,15 @@ Wallpaper Engine 通过
 [`applyGeneralProperties().fps`](https://docs.wallpaperengine.io/en/web/performance/fps.html)
 提供用户 FPS 设置时，运行时采用该设置与项目 Profile 中较低的有效值；Electron、
 Lively 及普通角色表面没有该宿主设置，直接使用项目 Profile。
-暂不提供对应 GUI，修改 `.env` 后需重启 Amadeus。
+选择“自定义”后，GUI 会显示帧率和像素密度上限；切换预设会保留自定义数值。
+保存后需重启后端，再重新打开现有角色与壁纸窗口。页面会单独显示当前后端的渲染上限，
+不会将尚未应用的设置显示成已生效。这些上限不是实测帧率，Wallpaper Engine 还可能进一步降低帧率。
 
 #### 实验性纹理采样（默认关闭）
 
 `RENDER_TEXTURE_SAMPLING=false` 为默认值，保持现有的全帧加载与播放规则。
-**16GB 或其他内存压力较大的设备**，可考虑在 `.env` 中开启并选择 30 FPS 省电档：
+**16GB 或其他内存压力较大的设备**，可在图形页展开“实验性纹理采样”并试用 30 FPS 节能档。
+开关独立于预设，默认仍关闭。等效 `.env` 配置为：
 
 ```dotenv
 GRAPHICS_PROFILE=power_saving
