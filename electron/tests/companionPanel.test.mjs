@@ -50,6 +50,28 @@ test('optional VN cache reuses frames but cannot read outside its root', async (
     assert.equal((await companionPortraitStatus(path.join(root, 'cache'))).state, 'ready')
   } finally { await fs.rm(root, { recursive: true, force: true }) }
 })
+test('default Companion Lite atlas reports installed WebP resources', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'companion-atlas-'))
+  try {
+    const clip = Buffer.from('webp-atlas')
+    await fs.mkdir(path.join(root, 'normal'))
+    await fs.writeFile(path.join(root, 'normal', 'idle.webp'), clip)
+    await fs.writeFile(path.join(root, 'manifest.json'), JSON.stringify({
+      format: 'amadeus.companion-atlas.v1',
+      emotions: {
+        normal: {
+          idle: { url: 'normal/idle.webp', sequence: [0, 1], fileBytes: clip.length },
+          speaking: { url: 'normal/idle.webp', sequence: [0, 1, 2], fileBytes: clip.length },
+        },
+      },
+    }))
+    const status = await companionPortraitStatus(root)
+    assert.equal(status.state, 'ready')
+    assert.equal(status.installed, true)
+    assert.equal(status.emotionCount, 1)
+    assert.equal(status.frameCount, 5)
+  } finally { await fs.rm(root, { recursive: true, force: true }) }
+})
 test('companion projects the shared current display without acting on Work or AUIP events', async () => {
   const scope = vm.createContext({})
   vm.runInContext(await fs.readFile(new URL('../../render/web/companion_presentation.js', import.meta.url), 'utf8'), scope)

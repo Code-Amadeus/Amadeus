@@ -11,7 +11,12 @@ export type CompanionPortraitStatus = {
   detail: string
 }
 
-type PortraitManifest = { root: string; emotions: Record<string, unknown> }
+type PortraitManifest = { root: string; format?: unknown; emotions: Record<string, unknown> }
+type CompanionAtlasSpec = { url?: unknown; sequence?: unknown; fileBytes?: unknown }
+
+const COMPANION_ATLAS_FORMAT = 'amadeus.companion-atlas.v1'
+const COMPANION_ATLAS_URL = /^(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.webp$/
+const COMPANION_ATLAS_BYTE_LIMIT = 16 * 1024 * 1024
 
 async function readPortraitManifest(cacheDir: string): Promise<PortraitManifest> {
   const root = await fs.realpath(cacheDir)
@@ -19,7 +24,71 @@ async function readPortraitManifest(cacheDir: string): Promise<PortraitManifest>
   if (!manifest.emotions || typeof manifest.emotions !== 'object' || Array.isArray(manifest.emotions)) {
     throw new Error('manifest.json has no emotions map')
   }
-  return { root, emotions: manifest.emotions as Record<string, unknown> }
+  return { root, format: manifest.format, emotions: manifest.emotions as Record<string, unknown> }
+}
+
+async function validatedCompanionAtlasSpec(root: string, raw: unknown): Promise<{ file: string; frameCount: number } | null> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const spec = raw as CompanionAtlasSpec
+  if (typeof spec.url !== 'string' || !COMPANION_ATLAS_URL.test(spec.url)) return null
+  if (!Array.isArray(spec.sequence) || !spec.sequence.length) return null
+  if (typeof spec.fileBytes !== 'number' || !Number.isInteger(spec.fileBytes) || spec.fileBytes <= 0) return null
+  try {
+    const file = await fs.realpath(path.resolve(root, spec.url))
+    const relative = path.relative(root, file)
+    if (relative.startsWith('..') || path.isAbsolute(relative)) return null
+    const size = (await fs.stat(file)).size
+    if (size !== spec.fileBytes || size > COMPANION_ATLAS_BYTE_LIMIT) return null
+    return { file, frameCount: spec.sequence.length }
+  } catch {
+    return null
+  }
+}
+
+async function companionAtlasStatus(root: string, emotions: Record<string, unknown>): Promise<CompanionPortraitStatus> {
+  const validFiles = new Set<string>()
+  let emotionCount = 0
+  let frameCount = 0
+  let invalidFrames = 0
+  for (const raw of Object.values(emotions).slice(0, 24)) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      invalidFrames += 1
+      continue
+    }
+    const states = raw as Record<string, unknown>
+    let emotionHasFrame = false
+    for (const mode of ['idle', 'speaking', 'idleStatic', 'speakingAlternate']) {
+      if (!(mode in states)) continue
+      const result = await validatedCompanionAtlasSpec(root, states[mode])
+      if (!result) {
+        invalidFrames += 1
+        continue
+      }
+      validFiles.add(result.file)
+      frameCount += result.frameCount
+      emotionHasFrame = true
+    }
+    if (emotionHasFrame) emotionCount += 1
+  }
+  if (!validFiles.size) {
+    return {
+      installed: false,
+      state: 'incomplete',
+      emotionCount: 0,
+      frameCount: 0,
+      detail: 'The baked VN portrait manifest contains no loadable WebP atlas frames.',
+    }
+  }
+  const incomplete = invalidFrames > 0
+  return {
+    installed: !incomplete,
+    state: incomplete ? 'incomplete' : 'ready',
+    emotionCount,
+    frameCount,
+    detail: incomplete
+      ? `${emotionCount} emotions are usable, but some manifest atlas files are missing or invalid.`
+      : `${emotionCount} emotions and ${frameCount} baked atlas frames are available.`,
+  }
 }
 
 async function validatedPortraitPath(root: string, name: unknown): Promise<string | null> {
@@ -62,7 +131,10 @@ export async function readCompanionPortraits(cacheDir: string): Promise<Portrait
 /** Report the baked VN portrait asset boundary without loading image bytes. */
 export async function companionPortraitStatus(cacheDir: string): Promise<CompanionPortraitStatus> {
   try {
-    const { root, emotions } = await readPortraitManifest(cacheDir)
+    const { root, format, emotions } = await readPortraitManifest(cacheDir)
+    if (format === COMPANION_ATLAS_FORMAT) {
+      return companionAtlasStatus(root, emotions)
+    }
     const validFiles = new Set<string>()
     let emotionCount = 0
     let invalidFrames = 0

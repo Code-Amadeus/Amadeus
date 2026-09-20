@@ -155,12 +155,13 @@ type WorkPreviewSurface = {
 const workPreviewSurfaces = new Map<string, WorkPreviewSurface>()
 const workPreviewIdsByWorkItem = new Map<string, string>()
 let companionBridge: WallpaperBridgeDescriptor | null = null
-const COMPANION_PORTRAIT_DIR = process.env.AMADEUS_COMPANION_PORTRAIT_CACHE || ''
+const COMPANION_PORTRAIT_CACHE = process.env.AMADEUS_COMPANION_PORTRAIT_CACHE || ''
+const COMPANION_PORTRAIT_DIR = path.join(PROJECT_ROOT, 'assets', 'companion', 'kurisu')
 const companionPanel = new CompanionPanel({
   userDataDir: USER_DATA_DIR,
   preload: path.join(__dirname, '..', 'preload', 'companion.cjs'),
   // Explicit legacy PNG override; the default Lite pack is served under assets/.
-  portraitCacheDir: COMPANION_PORTRAIT_DIR,
+  portraitCacheDir: COMPANION_PORTRAIT_CACHE,
   bridge: () => companionBridge,
   slice: () => [
     electronCanvasLifecycle.window?.webContents,
