@@ -251,8 +251,8 @@ def render_provider_routing_addon(
     if has_codex:
         lines.append(
             wording(
-                "- Codex App Server (provider=\"codex\") is the default local code provider for code reading, file generation, writing, editing, tests, commands, diffs, and repo work.",
-                "- Codex App Server（provider=\"codex\"）は、コード読解、ファイル生成・書き込み・編集、テスト、コマンド、diff、リポジトリ作業の既定 local code provider である。",
+                "- Codex App Server (provider=\"codex\") is the default local code provider for complex coding, repository investigation, refactoring, tests and diffs. When Pi is available, routine small file edits can stay within its daily-task goal.",
+                "- Codex App Server（provider=\"codex\"）は複雑な開発、リポジトリ調査、リファクタリング、テスト、diff の既定 local code provider である。Pi が利用可能なら、日常的な小規模ファイル編集は Pi の同じ作業目標で完了できる。",
             )
         )
     lines.append(
@@ -273,7 +273,7 @@ def render_provider_routing_addon(
             + "task 本文にデスクトップのパスを書いてはいけない。",
         )
     )
-    if not has_codex:
+    if not has_codex and "pi" not in providers:
         lines.append(
             wording(
                 "- No workspace code provider is registered. Do not promise that file or repository work has started.",
@@ -299,11 +299,18 @@ def render_provider_routing_addon(
                 "- Browser action=\"open\" は一回の atomic navigation であり、ユーザーが示した URL（または現在の live page で確認済みの URL）が必要である。Browser を選ぶために URL を推測してはいけない。その証拠がないサイト・ページ探索、比較、Web 調査の統合は Agent research である。",
             )
         )
+    if "pi" in providers:
+        lines.append(
+            wording(
+                "- Pi is the daily-task agent for public article/news discovery, reading and synthesis, opening verified web URLs in the system browser, launching applications, and small scoped file edits. Keep source discovery, article reading and requested visible opening in the same research goal. Fetching a page is not visibly opening it; opening a URL does not grant control over logged-in tabs. Codex handles complex code/repository investigation and changes.",
+                "- Pi は公開記事・ニュースの探索、本文の読解・統合、確認済み URL のシステムブラウザでの表示、アプリ起動、小範囲のファイル編集を担当する日常作業 Agent。情報源の探索、記事の読解、依頼された画面表示は同じ調査目標に保持する。取得だけを画面表示済みと述べない。URL の表示だけでログイン済みタブを操作できるわけではない。複雑なコードやリポジトリの調査・変更は Codex が担当する。",
+            )
+        )
     if "openclaw" in providers:
         lines.append(
             wording(
-                "- OpenClaw is for open-ended non-code external work, including web research, source discovery, comparison, and synthesis when no live Browser page must be preserved, as well as desktop operations. Do not route code/file generation to it merely because the final destination is Desktop.",
-                "- OpenClaw は、live Browser page を保持する必要がない Web 調査、情報源探索、比較、統合を含む open-ended な非コード外部作業、およびデスクトップ操作に使う。最終的な出力先がデスクトップという理由だけで、コードやファイル生成を OpenClaw に送ってはいけない。",
+                "- OpenClaw remains an optional registered provider for explicitly selected work and continuation of its existing Work/session. It is not the default daily-task agent; Pi owns that role when available. Provider unavailability does not authorize silently switching execution to OpenClaw.",
+                "- OpenClaw は明示的に選択された作業と既存 Work/session の継続に使える任意 Provider。日常作業の既定 Agent は利用可能な Pi であり、Provider が利用不能でも OpenClaw へ黙って実行を切り替えない。",
             )
         )
     if not tool_transport:

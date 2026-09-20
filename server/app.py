@@ -1711,12 +1711,13 @@ async def bootstrap(port: int = 17777) -> None:
         context_requirements = {provider_id:requirements}
         for configured_provider, payload in additional_requirements_payload.items():
             configured_provider = str(configured_provider or "").strip().lower()
-            if (not configured_provider or not isinstance(payload, dict)
-                    or configured_provider in context_requirements
-                    or provider_runtime.get_manifest(configured_provider) is None):
-                raise RuntimeError(
-                    "additional cooperative Provider policy names an unavailable Provider"
-                )
+            if not configured_provider or not isinstance(payload, dict):
+                raise RuntimeError("invalid additional cooperative Provider policy")
+            if configured_provider in context_requirements:
+                continue
+            if provider_runtime.get_manifest(configured_provider) is None:
+                logger.warning("additional cooperative Provider is unavailable: %s", configured_provider)
+                continue
             context_requirements[configured_provider] = ProviderRequirements.from_dict(payload)
         cooperative_ledger = ControlLedgerStore(Path(work_ledger_store.db_path))
         cooperative_deliveries = {}

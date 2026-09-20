@@ -15,14 +15,13 @@ import subprocess
 import sys
 import tempfile
 import time
-import urllib.parse
-import webbrowser
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from server.event_bus import bus
 from server.protocol import Method
+from server.web_navigation import open_web_url, sanitize_source_url
 
 
 _UNSAFE_CANVAS_OPEN_SUFFIXES = frozenset(
@@ -366,7 +365,7 @@ class CanvasActionRouter:
         try:
             url = self._sanitize_source_url(str(data.get("url") or ""))
             if action == "open":
-                webbrowser.open(url, new=2, autoraise=True)
+                open_web_url(url)
                 return {"ok": True, "target": "url", "action": action, "url": url}
             source_path = self._make_source_chip(url)
             return {
@@ -561,10 +560,4 @@ class CanvasActionRouter:
 
     @staticmethod
     def _sanitize_source_url(raw_url: str) -> str:
-        text = str(raw_url or "").strip()
-        if text.lower().startswith("www."):
-            text = "https://" + text
-        parsed = urllib.parse.urlparse(text)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise ValueError("invalid_url")
-        return urllib.parse.urlunparse(parsed)
+        return sanitize_source_url(raw_url)

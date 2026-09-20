@@ -996,7 +996,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     ? desktop.values.COOPERATIVE_CHAT_ENABLED === 'true'
     : config.cooperative_chat_enabled === undefined ? true : bool('cooperative_chat_enabled')
   const selectedWorkProviderStatus = providerAvailability.find(item => item.provider_id === selectedWorkProvider)
-  const workProviderLabels: Record<string, string> = { codex: 'Codex agent', openclaw: 'OpenClaw agent', browser: 'Browser provider' }
+  const workProviderLabels: Record<string, string> = { codex: 'Codex agent', openclaw: 'OpenClaw agent', browser: 'Browser provider', pi: 'Pi daily agent' }
   const workProviderAssignment = `${workProviderLabels[selectedWorkProvider] || selectedWorkProvider} · ${t(
     desktop?.sources?.COOPERATIVE_CHAT_PROVIDER === 'user' || config.cooperative_chat_provider !== undefined
       ? 'Current selection'

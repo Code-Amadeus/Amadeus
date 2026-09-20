@@ -19,7 +19,7 @@ from agent_host.provider_contract import (
     compatibility_errors,
     select_provider,
 )
-from agent_host.provider_runtime import ProviderRuntime, runtime as global_runtime
+from agent_host.provider_runtime import ProviderRuntime
 from agent_host.provider_types import (
     ProviderEvent,
     ProviderRunRequest,
@@ -421,7 +421,7 @@ def test_bootstrap_separates_known_providers_from_runtime_availability() -> None
     }
     assert disabled["codex"].runtime_enabled is False
     assert disabled["codex"].instantiate_when_disabled is False
-    assert set(disabled) == {"browser", "openclaw", "codex"}
+    assert set(disabled) == {"browser", "openclaw", "codex", "pi"}
     enabled = {
         spec.provider_id: spec
         for spec in builtin_provider_specs(
@@ -430,7 +430,7 @@ def test_bootstrap_separates_known_providers_from_runtime_availability() -> None
         )
     }
     assert enabled["codex"].runtime_enabled is True
-    assert set(enabled) == {"browser", "openclaw", "codex"}
+    assert set(enabled) == {"browser", "openclaw", "codex", "pi"}
 
 
 def test_delegate_selector_only_accepts_injected_or_registered_manifests() -> None:
@@ -636,15 +636,18 @@ def test_runtime_owns_and_protects_workspace_binding() -> None:
         asyncio.run(scenario(Path(temp_dir)))
 
 
-def test_disabled_codex_is_not_registered_for_execution() -> None:
+def test_disabled_codex_is_not_registered_for_execution(monkeypatch) -> None:
+    # Other registration tests may already have populated the process singleton.
+    # Verify this composition against a fresh Runtime, as at Host startup.
+    isolated_runtime = ProviderRuntime()
+    monkeypatch.setattr("server.handlers.provider_handler.runtime", isolated_runtime)
     previous_codex = settings.DIRECT_CODEX_PROVIDER_ENABLED
     previous_app_server = settings.CODEX_APP_SERVER_PROVIDER_ENABLED
     try:
         settings.DIRECT_CODEX_PROVIDER_ENABLED = False
         settings.CODEX_APP_SERVER_PROVIDER_ENABLED = False
         ProviderHandler()
-        assert global_runtime.get_manifest("codex") is None
-        assert global_runtime.get_manifest("codex") is None
+        assert isolated_runtime.get_manifest("codex") is None
     finally:
         settings.DIRECT_CODEX_PROVIDER_ENABLED = previous_codex
         settings.CODEX_APP_SERVER_PROVIDER_ENABLED = previous_app_server

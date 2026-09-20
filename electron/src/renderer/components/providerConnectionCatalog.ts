@@ -31,7 +31,7 @@ export function buildWorkProviderCatalog(
   const value = (key: string, fallback = '') => values[key] || fallback
   const bool = (key: string, fallback: boolean) => values[key] === undefined ? fallback : values[key] === 'true'
   const secret = (key: string) => Boolean(snapshot?.secrets?.[key]?.configured)
-  const provider = value('COOPERATIVE_CHAT_PROVIDER', runtimeSelection.provider || 'codex')
+  const provider = value('COOPERATIVE_CHAT_PROVIDER', runtimeSelection.provider || 'pi')
   const enabled = bool('COOPERATIVE_CHAT_ENABLED', runtimeSelection.enabled)
   const transport = value('CODEX_PROVIDER_TRANSPORT', 'app_server')
   const codexAuthMode = value('CODEX_APP_SERVER_AUTH_MODE', 'model_api')
@@ -62,6 +62,7 @@ export function buildWorkProviderCatalog(
       field('COOPERATIVE_CHAT_PROVIDER', 'Work Provider', 'select', provider, [
         { value: 'codex', label: 'Codex · Recommended' },
         { value: 'openclaw', label: 'OpenClaw' },
+        { value: 'pi', label: 'Pi · Experimental' },
         { value: 'browser', label: 'Browser' },
       ]),
     ],
@@ -105,6 +106,22 @@ export function buildWorkProviderCatalog(
 
   const connections: ModelConnectionCatalogGroup[] = [
     {
+      id: 'pi',
+      label: 'Pi · Experimental',
+      description: 'Default daily-task agent over native RPC. Install the pinned runtime; uses native Pi model credentials.',
+      active: enabled && provider === 'pi',
+      configured: bool('PI_PROVIDER_ENABLED', true),
+      status: bool('PI_PROVIDER_ENABLED', true) ? unknown : 'Off',
+      status_ok: false,
+      fields: [
+        field('PI_PROVIDER_ENABLED', 'Enable Pi', 'boolean', bool('PI_PROVIDER_ENABLED', true)),
+        field('PI_NODE_PATH', 'Node executable', 'path', value('PI_NODE_PATH', 'node')),
+        field('PI_AGENT_DIR', 'Pi configuration and sessions', 'path', value('PI_AGENT_DIR', 'runtime/pi')),
+        field('PI_MODEL_PROVIDER', 'Pi model provider', 'text', value('PI_MODEL_PROVIDER', 'deepseek'), undefined, 'Uses native Pi authentication or the model provider API key in the backend environment.'),
+        field('PI_MODEL', 'Pi model', 'text', value('PI_MODEL', value('DEEPSEEK_MODEL_NAME', 'deepseek-v4-flash'))),
+      ],
+    },
+    {
       id: 'browser',
       label: 'Browser',
       description: 'Host-managed browser Work Provider; no user-managed connection settings.',
@@ -117,7 +134,7 @@ export function buildWorkProviderCatalog(
     {
       id: 'openclaw',
       label: 'OpenClaw',
-      description: 'Remote agent Gateway used only after the main role delegates Work.',
+      description: 'Optional Gateway provider for explicitly selected Work and existing sessions. Daily tasks default to Pi.',
       active: enabled && provider === 'openclaw',
       configured: secret('OPENCLAW_GATEWAY_TOKEN'),
       status: enabled && provider === 'openclaw'

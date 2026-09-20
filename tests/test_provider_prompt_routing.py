@@ -51,7 +51,7 @@ def test_delegate_prompts_follow_live_provider_registration() -> None:
     assert "explicitly chooses one registered provider" in representative
     assert "Never infer force_provider" in representative
     assert "live page state must be retained or manipulated" in representative
-    assert "web research, source discovery, comparison, and synthesis" in representative
+    assert "OpenClaw remains an optional registered provider" in representative
     assert "Never invent a URL merely to select Browser" in representative
     assert "without that evidence is Agent research" in representative
     assert "continues the export-owning WorkItem" in representative

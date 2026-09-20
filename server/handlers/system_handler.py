@@ -1015,6 +1015,17 @@ def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
         ))
     return [
         {
+            "id": "pi", "label": "Pi · Experimental",
+            "description": "Default daily-task agent using the pinned native RPC runtime.",
+            "fields": [
+                _startup_field("PI_PROVIDER_ENABLED", "Enable Pi", settings.PI_PROVIDER_ENABLED, field_type="boolean"),
+                _startup_field("PI_NODE_PATH", "Node executable", settings.PI_NODE_PATH, field_type="path"),
+                _startup_field("PI_AGENT_DIR", "Pi configuration and sessions", settings.PI_AGENT_DIR, field_type="path"),
+                _startup_field("PI_MODEL_PROVIDER", "Pi model provider", settings.PI_MODEL_PROVIDER),
+                _startup_field("PI_MODEL", "Pi model", settings.PI_MODEL),
+            ],
+        },
+        {
             "id": "browser",
             "label": "Browser",
             "description": "Host-managed browser work Provider; no connection settings.",
@@ -1023,7 +1034,7 @@ def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
         {
             "id": "openclaw",
             "label": "OpenClaw",
-            "description": "Remote agent Gateway used only after the main role delegates work.",
+            "description": "Optional Gateway provider for explicitly selected work and existing sessions. Daily tasks default to Pi.",
             "fields": [
                 _startup_field(
                     "OPENCLAW_BASE_URL", "Gateway URL", settings.OPENCLAW_BASE_URL,

@@ -1,6 +1,7 @@
 """Exercise production planner assembly without booting devices or Providers."""
 import ast
 import asyncio
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -43,6 +44,34 @@ def test_default_route_enables_both_cooperative_and_professional():
     fields = {field.key: field for field in settings.declared_environment_fields()}
     assert fields["COOPERATIVE_CHAT_ENABLED"].default is True
     assert fields["COOPERATIVE_WORK_PLANNER_ENABLED"].default is True
+    assert fields["COOPERATIVE_CHAT_PROVIDER"].default == "pi"
+    assert fields["PROVIDER_DELEGATE_DEFAULT_PROVIDER"].default == "pi"
+    assert fields["PI_PROVIDER_ENABLED"].default is True
+    assert set(json.loads(fields["COOPERATIVE_CHAT_ADDITIONAL_REQUIREMENTS_JSON"].default)) == {"codex"}
+
+
+@pytest.mark.parametrize("additional,registered,expected", [
+    ({"codex": {}}, {"codex"}, {"pi", "codex"}),
+    ({"codex": {}}, set(), {"pi"}),
+    ({"pi": {}}, {"pi"}, {"pi"}),
+    ({"openclaw": {"workspace_access": "none"}}, {"openclaw"}, {"pi", "openclaw"}),
+])
+def test_additional_provider_assembly_preserves_primary_and_tolerates_missing_runtime(additional, registered, expected):
+    from agent_host.provider_contract import ProviderRequirements
+
+    path = Path(__file__).resolve().parents[1] / "server/app.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    loop = next(node for node in ast.walk(tree) if isinstance(node, ast.For)
+        and isinstance(node.target, ast.Tuple)
+        and [getattr(item, "id", None) for item in node.target.elts] == ["configured_provider", "payload"])
+    primary = ProviderRequirements(workspace_access="write")
+    scope = {"additional_requirements_payload": additional,
+        "context_requirements": {"pi": primary}, "ProviderRequirements": ProviderRequirements,
+        "provider_runtime": SimpleNamespace(get_manifest=lambda name: object() if name in registered else None),
+        "logger": Mock()}
+    exec(compile(ast.Module(body=[loop], type_ignores=[]), str(path), "exec"), scope)
+    assert set(scope["context_requirements"]) == expected
+    assert scope["context_requirements"]["pi"] is primary
 
 
 @pytest.mark.parametrize("enabled", [False, True])

@@ -12,10 +12,17 @@ new Function('exports', compiled)(exports)
 
 test('built-in Work Provider connections remain discoverable without the backend', () => {
   const catalog = exports.buildWorkProviderCatalog({ provider: 'codex', enabled: true }, null)
-  assert.deepEqual(catalog.connections.map(group => group.id), ['browser', 'openclaw', 'codex'])
+  assert.deepEqual(catalog.connections.map(group => group.id), ['pi', 'browser', 'openclaw', 'codex'])
   assert.equal(catalog.connections.find(group => group.id === 'codex').active, true)
   assert.equal(catalog.connections.find(group => group.id === 'openclaw').status, 'Optional')
   assert.ok(catalog.routing.fields.some(field => field.key === 'COOPERATIVE_CHAT_PROVIDER'))
+})
+
+test('new daily-agent defaults select Pi and leave OpenClaw optional', () => {
+  const catalog = exports.buildWorkProviderCatalog({ provider: '', enabled: true }, null)
+  assert.equal(catalog.connections.find(group => group.id === 'pi').active, true)
+  assert.equal(catalog.connections.find(group => group.id === 'openclaw').active, false)
+  assert.equal(catalog.connections.find(group => group.id === 'openclaw').status, 'Optional')
 })
 
 test('OpenClaw is the only connection requiring setup when selected without a token', () => {
