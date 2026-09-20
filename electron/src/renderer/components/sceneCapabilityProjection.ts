@@ -326,8 +326,12 @@ function sceneVisualCapability(
 ): SceneCapabilityItem {
   const backendFactsAvailable = groups(settings.model_connections).length > 0
   const provider = String(settings.llm_provider || 'deepseek').trim().toLowerCase()
-  const supported = chatProviderSupportsImages(provider)
+  const modelConnections = groups(settings.model_connections)
   const requiredConnections = ACTIVE_MODEL_CONNECTIONS[provider] || [provider]
+  const imageModel = provider === 'deepseek' || provider === 'hybrid2'
+    ? fieldValue(findGroup(modelConnections, 'deepseek'), 'DEEPSEEK_MODEL_NAME', 'deepseek-v4-flash')
+    : ''
+  const supported = chatProviderSupportsImages(provider, imageModel)
   const modelConfigured = requiredConnections.length > 0
     && requiredConnections.every(id => groupAvailable(findGroup(groups(settings.model_connections), id)))
   const enabled = settings.vision_enabled === true && String(settings.vision_mode || 'off') !== 'off'
