@@ -33,7 +33,7 @@ def _write(store, *, turn: str, key: str, summary: str, object_text: str = "", k
         priority_class=MemoryPriorityClass.P2,
     )
     store.apply_memory_candidates(evidence, (candidate,), resolver=MemoryResolver(), complete_turn=True)
-    record = store.get_active_memory(key)
+    record = store.get_active_memory(key, scope="session-r")
     assert record is not None
     return record
 
@@ -47,7 +47,7 @@ def test_structured_slot_recall_works_for_short_chinese_query(continuity_store) 
         object_text="1月2日",
     )
     retriever = MemoryRetriever(continuity_store)
-    hits = retriever.retrieve("生日？", now=1100.0)
+    hits = retriever.retrieve("生日？", now=1100.0, scope="session-r")
     assert hits
     assert hits[0].memory.memory_key == "user.fact.birth_date"
     assert "structured" in hits[0].reasons
@@ -62,7 +62,7 @@ def test_trigram_fts_recalls_chinese_phrase_without_semantic_dependencies(contin
         kind=MemoryKind.TOPIC,
     )
     retriever = MemoryRetriever(continuity_store)
-    hits = retriever.retrieve("上次说的记忆巩固论文呢", now=1100.0)
+    hits = retriever.retrieve("上次说的记忆巩固论文呢", now=1100.0, scope="session-r")
     assert any(hit.memory.memory_key == "user.note.paper" for hit in hits)
     assert any("lexical" in hit.reasons for hit in hits)
 
@@ -89,7 +89,7 @@ def test_retrieval_excludes_current_turn_and_expired_memory(continuity_store) ->
         (950.0, expired.id),
     )
     retriever = MemoryRetriever(continuity_store)
-    hits = retriever.retrieve("我的生日和记忆巩固论文", now=1100.0, exclude_turn_id="current")
+    hits = retriever.retrieve("我的生日和记忆巩固论文", now=1100.0, exclude_turn_id="current", scope="session-r")
     ids = {hit.memory.id for hit in hits}
     assert current.id not in ids
     assert expired.id not in ids
@@ -119,7 +119,7 @@ def test_semantic_search_is_optional_and_combines_with_host_scoring(continuity_s
             return {first.id: 0.95, second.id: 0.2}
 
     retriever = MemoryRetriever(continuity_store, semantic_searcher=FakeSemantic())
-    hits = retriever.retrieve("conceptual cue", now=1100.0)
+    hits = retriever.retrieve("conceptual cue", now=1100.0, scope="session-r")
     assert hits and hits[0].memory.id == first.id
     assert hits[0].semantic_score == 0.95
     assert "semantic" in hits[0].reasons
@@ -149,7 +149,7 @@ def test_mmr_and_context_budget_avoid_duplicate_memory_dump(continuity_store) ->
         max_context_chars=900,
     )
     retriever = MemoryRetriever(continuity_store, policy=policy)
-    hits = retriever.retrieve("下雨天在家看电影", now=1200.0)
+    hits = retriever.retrieve("下雨天在家看电影", now=1200.0, scope="session-r")
     assert len(hits) <= 3
     rendered = render_continuity_grounding(hits, max_chars=policy.max_context_chars)
     assert len(rendered.text) <= policy.max_context_chars
@@ -174,11 +174,11 @@ def test_fts_tracks_supersede_and_forget_without_becoming_second_truth(continuit
         object_text="拉面",
     )
     continuity_store.apply_memory_candidates(newer, (candidate,), resolver=MemoryResolver(), complete_turn=True)
-    assert not any(record.id == old.id for record, _ in continuity_store.search_memory_fts('"寿司"'))
-    assert any(record.object_text == "拉面" for record, _ in continuity_store.search_memory_fts('"喜欢的食物"'))
+    assert not any(record.id == old.id for record, _ in continuity_store.search_memory_fts('"寿司"', scope="session-r"))
+    assert any(record.object_text == "拉面" for record, _ in continuity_store.search_memory_fts('"喜欢的食物"', scope="session-r"))
 
-    continuity_store.forget_memory("user.fact.favorite_food", session_id="session-r", turn_id="forget")
-    assert continuity_store.search_memory_fts('"喜欢的食物"') == []
+    continuity_store.forget_memory("user.fact.favorite_food", scope="session-r", session_id="session-r", turn_id="forget")
+    assert continuity_store.search_memory_fts('"喜欢的食物"', scope="session-r") == []
     assert continuity_store.rebuild_fts() == 0
 
 
@@ -200,10 +200,10 @@ def test_recall_accounting_updates_only_selected_rendered_memory(continuity_stor
         monotonic_provider=fake_clock.monotonic,
     )
     service = ContinuityService(continuity_store, clock=clock)
-    grounding = service.grounding_for_turn("你还记得我的生日吗？", turn_id="new")
+    grounding = service.grounding_for_turn("你还记得我的生日吗？", session_id="session-r", turn_id="new")
     assert grounding.memory_count == 1
     assert "1月2日" in grounding.text
-    updated = continuity_store.get_active_memory("user.fact.birth_date")
+    updated = continuity_store.get_active_memory("user.fact.birth_date", scope="session-r")
     assert updated is not None
     assert updated.recall_count == record.recall_count + 1
     assert updated.last_recalled_at is not None
@@ -230,7 +230,7 @@ def test_structured_slot_recall_is_not_lost_behind_large_generic_candidate_windo
             observed_at=100.0 + index,
         )
 
-    hits = MemoryRetriever(continuity_store).retrieve("生日？", now=1000.0)
+    hits = MemoryRetriever(continuity_store).retrieve("生日？", now=1000.0, scope="session-r")
     assert hits
     assert hits[0].memory.id == target.id
     assert "structured" in hits[0].reasons
@@ -266,7 +266,7 @@ def test_semantic_search_scans_beyond_fast_generic_candidate_window(continuity_s
     hits = MemoryRetriever(
         continuity_store,
         semantic_searcher=FakeSemantic(),
-    ).retrieve("conceptual cue", now=1000.0)
+    ).retrieve("conceptual cue", now=1000.0, scope="session-r")
     assert hits and hits[0].memory.id == target.id
     assert hits[0].semantic_score == 0.99
 

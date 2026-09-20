@@ -152,12 +152,12 @@ class RelationshipRuntime:
             as_of=as_of,
         )
 
-    def snapshot(self, *, now: float) -> RelationshipSnapshot:
-        return self.store.get_relationship_snapshot(now=now, policy=self.policy)
+    def snapshot(self, *, now: float, scope: str = "global") -> RelationshipSnapshot:
+        return self.store.get_relationship_snapshot(now=now, scope=scope, policy=self.policy)
 
-    def render_projection(self, *, now: float) -> str:
+    def render_projection(self, *, now: float, scope: str = "global") -> str:
         return render_relationship_projection(
-            self.snapshot(now=now),
+            self.snapshot(now=now, scope=scope),
             policy=self.policy,
         )
 

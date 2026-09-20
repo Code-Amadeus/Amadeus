@@ -4,6 +4,7 @@
   - 客户端初始化（init_llm_client）
   - 远程 API 查询（remote_llm_query：DeepSeek / Gemini / AWS Bedrock）
   - 本地模型查询（local_llm_query：Ollama / LM Studio / llama-server / CLI）
+  - 一次性文本补全（text_completion：语意压缩等 Host 内部用途）
 
 依赖注入（configure()）：
   - llm_provider : str，覆盖默认 LLM_PROVIDER
@@ -254,6 +255,86 @@ def remote_llm_messages_query(
     if not response or not getattr(response, "choices", None):
         raise RuntimeError("structured control backend returned no choices")
     return str(response.choices[0].message.content or "")
+
+
+def text_completion(
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    max_tokens: int = 2048,
+    timeout: float = 30.0,
+    temperature: float = 0.2,
+) -> str:
+    """One-shot non-streaming plain-text completion on the configured provider.
+
+    Unlike ``remote_llm_query`` this port returns the raw model text and raises
+    on unavailable/failed backends instead of returning localized placeholder
+    strings, so Host-internal callers (semantic compression) can fall back to
+    their own bounded deterministic path instead of adopting an error message
+    as content.  Bedrock has no port here yet; its callers degrade.
+    """
+
+    global llm_client, gemini_model
+    if LLM_PROVIDER in ("deepseek", "hybrid2"):
+        if llm_client is None:
+            llm_client = init_llm_client()
+        response = llm_client.chat.completions.create(
+            model=DEEPSEEK_MODEL_NAME,
+            messages=[
+                {"role": "system", "content": str(system_prompt or "")},
+                {"role": "user", "content": str(user_prompt or "")},
+            ],
+            temperature=float(temperature),
+            max_tokens=max(1, int(max_tokens)),
+            stream=False,
+            timeout=float(timeout),
+            extra_body={"thinking": {"type": "disabled"}},
+        )
+    elif LLM_PROVIDER in ("openai", "hybrid3"):
+        if llm_client is None:
+            llm_client = init_llm_client()
+        response = llm_client.chat.completions.create(
+            model=OPENAI_MODEL_NAME,
+            messages=[
+                {"role": "system", "content": str(system_prompt or "")},
+                {"role": "user", "content": str(user_prompt or "")},
+            ],
+            max_completion_tokens=max(1, int(max_tokens)),
+            reasoning_effort="low",
+            stream=False,
+            timeout=float(timeout),
+        )
+    elif LLM_PROVIDER == "gemini":
+        if gemini_model is None:
+            gemini_model = init_llm_client()
+        reply = generate_gemini_text(
+            gemini_model,
+            model=GEMINI_MODEL_NAME,
+            contents=f"{str(system_prompt or '')}\n\n{str(user_prompt or '')}",
+            config={
+                "temperature": float(temperature),
+                "max_output_tokens": max(1, int(max_tokens)),
+            },
+        )
+        text = str(reply or "").strip()
+        if not text:
+            raise RuntimeError("gemini text completion returned no content")
+        return text
+    elif LLM_PROVIDER in ("local", "hybrid"):
+        reply = local_llm_query(user_prompt, system_prompt=system_prompt)
+        text = str(reply or "").strip()
+        if not text:
+            raise RuntimeError("local text completion returned no content")
+        return text
+    else:
+        raise RuntimeError(f"text completion is unavailable for provider {LLM_PROVIDER!r}")
+
+    if not response or not getattr(response, "choices", None):
+        raise RuntimeError(f"{LLM_PROVIDER} text completion returned no choices")
+    text = str(response.choices[0].message.content or "").strip()
+    if not text:
+        raise RuntimeError(f"{LLM_PROVIDER} text completion returned no content")
+    return text
 
 from llm.prompts import get_system_prompt as _get_system_prompt
 

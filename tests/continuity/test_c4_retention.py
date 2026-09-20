@@ -19,10 +19,10 @@ def test_truth_state_and_retention_tier_are_independent():
     _put(store, when=0.0)
     result = store.run_retention_maintenance(now=200 * 86400.0)
     assert result["archived"] == 1
-    record = store.get_active_memory("loop")
+    record = store.get_active_memory("loop", scope="s")
     assert record is not None and record.state.value == "active"
     assert record.retention_tier is RetentionTier.ARCHIVE
-    assert store.get_memory_history("loop")[0].state.value == "active"
+    assert store.get_memory_history("loop", scope="s")[0].state.value == "active"
 
 
 def test_pinned_memory_stays_hot_and_maintenance_is_idempotent():
@@ -33,7 +33,7 @@ def test_pinned_memory_stays_hot_and_maintenance_is_idempotent():
     first = store.run_retention_maintenance(now=200 * 86400.0)
     second = store.run_retention_maintenance(now=200 * 86400.0)
     assert first["scanned"] == second["scanned"] == 1
-    assert store.get_active_memory("p").retention_tier is RetentionTier.HOT
+    assert store.get_active_memory("p", scope="s").retention_tier is RetentionTier.HOT
 
 
 def test_work_update_is_idempotent_and_downgrades_terminal_open_loop():
@@ -42,7 +42,7 @@ def test_work_update_is_idempotent_and_downgrades_terminal_open_loop():
     payload = {"event_id": "evt-1", "work": {"id": "w-1", "state": "completed"}}
     assert store.apply_work_update(payload)["updated"] == 1
     assert store.apply_work_update(payload)["applied"] is False
-    record = store.get_active_memory("wloop")
+    record = store.get_active_memory("wloop", scope="s")
     assert record is not None and record.retention_tier is RetentionTier.COLD
 
 
@@ -50,9 +50,9 @@ def test_forget_removes_memory_regardless_of_retention_tier():
     store = ContinuityStore(":memory:")
     _put(store, key="forget-me", when=0.0)
     store.run_retention_maintenance(now=200 * 86400.0)
-    assert store.forget_memory("forget-me") == 1
+    assert store.forget_memory("forget-me", scope="s") == 1
     assert store.list_memories_by_tier(RetentionTier.ARCHIVE) == []
-    assert store.get_active_tombstone("forget-me") is not None
+    assert store.get_active_tombstone("forget-me", scope="s") is not None
 
 
 def test_work_snapshot_shape_is_normalized_and_stale_update_is_ignored():
@@ -63,7 +63,7 @@ def test_work_snapshot_shape_is_normalized_and_stale_update_is_ignored():
     assert store.apply_work_update(terminal, observed_at=200.0)["updated"] == 1
     result = store.apply_work_update(stale, observed_at=100.0)
     assert result["applied"] is False and result["stale"] is True
-    assert store.get_active_memory("real-work").retention_tier is RetentionTier.COLD
+    assert store.get_active_memory("real-work", scope="s").retention_tier is RetentionTier.COLD
 
 
 def test_retention_maintenance_enforces_hot_working_set_cap_idempotently():
@@ -103,13 +103,13 @@ def test_product_retention_ladder_keeps_memory_visible_until_six_months():
     kwargs = _policy_retention_kwargs()
 
     store.run_retention_maintenance(now=100 * 86400.0, **kwargs)
-    assert store.get_active_memory("ladder").retention_tier is RetentionTier.HOT
+    assert store.get_active_memory("ladder", scope="s").retention_tier is RetentionTier.HOT
 
     store.run_retention_maintenance(now=200 * 86400.0, **kwargs)
-    assert store.get_active_memory("ladder").retention_tier is RetentionTier.COLD
+    assert store.get_active_memory("ladder", scope="s").retention_tier is RetentionTier.COLD
 
     store.run_retention_maintenance(now=800 * 86400.0, **kwargs)
-    record = store.get_active_memory("ladder")
+    record = store.get_active_memory("ladder", scope="s")
     assert record is not None and record.retention_tier is RetentionTier.ARCHIVE
     assert record.state.value == "active"
 

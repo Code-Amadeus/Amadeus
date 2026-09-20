@@ -21,10 +21,18 @@ deletes the row and its derived state without installing a forget tombstone,
 because this is data repair, not a user forget request; user-requested
 forgetting must keep going through ``continuity.memory.forget``.
 
+``--rebuild`` re-applies the current extraction rules to every retained turn
+and first deletes the rows previously sourced from that turn, so older
+truncated captures are replaced by the current bounded whole-text compression
+instead of duplicating them.  Like the rest of this tool it writes no
+tombstones and never rewrites the consolidation journal; relationship/life
+derived events are preserved, and replacement rows keep stable keys whenever
+the user text is unchanged.
+
 Usage:
 
     python tools/backfill_continuity_memories.py --dry-run
-    python tools/backfill_continuity_memories.py --backup
+    python tools/backfill_continuity_memories.py --rebuild --backup
     python tools/backfill_continuity_memories.py --drop-memory-id <memory-id>
 """
 
@@ -33,7 +41,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import sqlite3
 import sys
 import time
 from pathlib import Path
@@ -43,8 +50,11 @@ if str(Path(__file__).resolve().parents[1]) not in sys.path:
 
 from core.continuity.memory_extractor import DeterministicMemoryExtractor
 from core.continuity.memory_resolver import MemoryResolver, normalize_memory_text
+from core.continuity.models import TurnEvidence
 from core.continuity.store import ContinuityStore
-from core.continuity.turn_ingest import load_turn_evidence
+from core.continuity.text_excerpt import default_text_compressor
+from core.continuity.turn_ingest import load_turn_evidence, storage_session_id
+from server.backup_state import backup_database
 
 _SUMMARY_PREVIEW_CHARS = 60
 
@@ -76,24 +86,68 @@ def _session_turns(session_path: Path) -> tuple[str, list[str]]:
     return session_id, turn_ids
 
 
-def _write_backup(db_path: str) -> Path:
-    backup = Path(f"{db_path}.backup-{time.strftime('%Y%m%d-%H%M%S')}")
-    connection = sqlite3.connect(db_path)
-    try:
-        connection.execute("VACUUM INTO ?", (str(backup),))
-    finally:
-        connection.close()
-    return backup
+def _refresh_backup(db_path: str) -> Path | None:
+    """Refresh the single fixed backup slot next to the database (relative to
+    the working tree, so a renamed project folder changes nothing).
+    Never stacks timestamped copies."""
+
+    target = Path(db_path).parent / "backup" / "continuity.sqlite3"
+    if backup_database(db_path, target):
+        return target
+    return None
+
+
+def _source_turn_memory_ids(store: ContinuityStore, evidence: TurnEvidence) -> list[str]:
+    """Return ids of durable rows previously sourced from this exact turn."""
+
+    sid = storage_session_id(evidence.session_id)
+    tid = str(evidence.turn_id or "").strip()
+    if not tid:
+        return []
+    with store._lock:
+        store._ensure_open()
+        rows = store._connection.execute(
+            "SELECT id FROM memory_items WHERE source_session_id = ? AND source_turn_id = ?",
+            (sid, tid),
+        ).fetchall()
+    return [str(row["id"]) for row in rows]
+
+
+def _reset_source_turn(store: ContinuityStore, evidence: TurnEvidence) -> int:
+    """Delete rows previously sourced from this turn (repair, not forget).
+
+    Deletion happens without tombstones because the same turn is re-applied
+    immediately from its retained transcript.  FTS rows follow the delete
+    trigger; embeddings are removed explicitly so the derived cache cannot
+    outlive the durable row.
+    """
+
+    ids = _source_turn_memory_ids(store, evidence)
+    if not ids:
+        return 0
+    placeholders = ",".join("?" for _ in ids)
+    with store._lock:
+        store._ensure_open()
+        store._connection.execute(
+            f"DELETE FROM memory_embeddings WHERE memory_id IN ({placeholders})",
+            ids,
+        )
+        store._connection.execute(
+            f"DELETE FROM memory_items WHERE id IN ({placeholders})",
+            ids,
+        )
+    return len(ids)
 
 
 async def _backfill(args: argparse.Namespace) -> dict[str, int]:
     session_dir = Path(args.session_dir)
     store = ContinuityStore(args.db)
-    extractor = DeterministicMemoryExtractor()
+    extractor = DeterministicMemoryExtractor(text_compressor=default_text_compressor())
     resolver = MemoryResolver()
     totals = {
         "sessions": 0,
         "turns": 0,
+        "reset_rows": 0,
         "candidates": 0,
         "created": 0,
         "updated": 0,
@@ -112,6 +166,16 @@ async def _backfill(args: argparse.Namespace) -> dict[str, int]:
                 if evidence is None:
                     continue
                 totals["turns"] += 1
+                if args.rebuild:
+                    if args.dry_run:
+                        stale = _source_turn_memory_ids(store, evidence)
+                        if stale:
+                            print(
+                                f"[dry-run] would reset {len(stale)} row(s) "
+                                f"{session_id}/{turn_id}"
+                            )
+                    else:
+                        totals["reset_rows"] += _reset_source_turn(store, evidence)
                 try:
                     candidates = tuple(await extractor.extract(evidence))
                 except Exception as exc:  # noqa: BLE001 - operator tool reports and continues
@@ -120,7 +184,7 @@ async def _backfill(args: argparse.Namespace) -> dict[str, int]:
                     continue
                 for candidate in candidates:
                     totals["candidates"] += 1
-                    scope = str(candidate.scope or "global")
+                    scope = storage_session_id(evidence.session_id)
                     existing = store.get_active_memory(candidate.memory_key, scope=scope)
                     same_value = existing is not None and normalize_memory_text(
                         existing.object_text or existing.summary
@@ -167,7 +231,7 @@ def _list_rows(args: argparse.Namespace) -> int:
             created = time.strftime("%Y-%m-%d %H:%M", time.localtime(float(record.created_at)))
             print(
                 f"- {record.id} [{created}] {record.retention_tier.value} "
-                f"{record.kind.value} {record.memory_key} :: {_preview(record.summary)}"
+                f"{record.kind.value} {record.scope} {record.memory_key} :: {_preview(record.summary)}"
             )
         print("diagnostics: " + json.dumps(store.continuity_diagnostics(), ensure_ascii=False))
     finally:
@@ -208,7 +272,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--db", default="runtime/continuity.sqlite3", help="Continuity SQLite path")
     parser.add_argument("--session-dir", default="sessions", help="Session transcript directory")
     parser.add_argument("--dry-run", action="store_true", help="report without writing")
-    parser.add_argument("--backup", action="store_true", help="VACUUM INTO a timestamped backup first")
+    parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="replace rows previously sourced from each turn before re-applying (no tombstones)",
+    )
+    parser.add_argument(
+        "--backup",
+        action="store_true",
+        help="refresh the fixed runtime/backup slot first (overwrites, never stacks)",
+    )
     parser.add_argument(
         "--drop-memory-id",
         action="append",
@@ -227,8 +300,11 @@ def main(argv: list[str] | None = None) -> int:
         _drop_rows(args)
         return 0
     if args.backup and not args.dry_run:
-        backup = _write_backup(args.db)
-        print(f"backup written: {backup}")
+        refreshed = _refresh_backup(args.db)
+        if refreshed is None:
+            print("backup skipped: database missing or unreadable")
+        else:
+            print(f"backup refreshed: {refreshed}")
     totals = asyncio.run(_backfill(args))
     print(
         "summary: "

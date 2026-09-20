@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.continuity.memory_extractor import (
+    EPISODIC_SUMMARY_MAX_CHARS,
     DeterministicMemoryExtractor,
     parse_explicit_memory_directive,
 )
@@ -164,3 +165,87 @@ async def test_explicit_remember_still_stores_free_form_evidence() -> None:
     assert candidates[0].pinned is True
     assert candidates[0].explicit_keep is True
     assert candidates[0].object_text == "我们之间的暗号是蓝鲸"
+
+
+async def test_medium_utterance_keeps_full_verbatim_text_above_the_old_bound() -> None:
+    extractor = DeterministicMemoryExtractor()
+    # ASCII colon: the extractor normalizes (NFKC) before storing, and this
+    # assertion is about the length bound, not about normalization.
+    text = "记录一段五百字左右的说明:" + "内容" * 240 + "结束。"
+    assert 400 < len(text) <= EPISODIC_SUMMARY_MAX_CHARS
+    evidence = TurnEvidence(session_id="s1", turn_id="t5", user_text=text, assistant_text="")
+    candidates = tuple(await extractor.extract(evidence))
+    assert len(candidates) == 1
+    assert candidates[0].kind is MemoryKind.EPISODIC
+    assert candidates[0].summary == text
+    assert candidates[0].object_text == text
+
+
+async def test_overlong_utterance_is_compressed_as_a_whole_not_tail_cut() -> None:
+    extractor = DeterministicMemoryExtractor()
+    head = "关于那个项目的安排"
+    tail = "最后约定下周三交付初稿。"
+    text = head + "补充说明" * 300 + tail
+    assert len(text) > EPISODIC_SUMMARY_MAX_CHARS
+    evidence = TurnEvidence(session_id="s1", turn_id="t6", user_text=text, assistant_text="")
+    candidates = tuple(await extractor.extract(evidence))
+    assert len(candidates) == 1
+    summary = candidates[0].summary
+    assert len(summary) <= EPISODIC_SUMMARY_MAX_CHARS
+    assert summary.startswith(head)
+    assert tail in summary
+    assert "…" in summary
+
+
+async def test_overlong_utterance_uses_injected_semantic_compressor_stably() -> None:
+    from core.continuity.text_excerpt import ModelTextCompressor
+
+    text = "关于项目安排" + "细节" * 400 + "最终约定下周三交付。"
+
+    def fake_complete(system: str, user: str) -> str:
+        assert "用户发言" in user
+        return "语意摘要：覆盖了全部细节，最终约定下周三交付初稿。"
+
+    extractor = DeterministicMemoryExtractor(
+        text_compressor=ModelTextCompressor(fake_complete)
+    )
+    evidence = TurnEvidence(session_id="s1", turn_id="t7", user_text=text, assistant_text="")
+    candidates = tuple(await extractor.extract(evidence))
+
+    assert len(candidates) == 1
+    assert candidates[0].summary == "语意摘要：覆盖了全部细节，最终约定下周三交付初稿。"
+    assert candidates[0].object_text == candidates[0].summary
+
+    # The memory key hashes the full original text, so re-extraction with any
+    # compressor stays idempotent instead of forking one row per wording.
+    other = DeterministicMemoryExtractor(
+        text_compressor=ModelTextCompressor(lambda system, user: "另一种摘要写法")
+    )
+    again = tuple(await other.extract(evidence))
+    assert again[0].memory_key == candidates[0].memory_key
+
+
+async def test_overlong_explicit_remember_payload_is_semantically_compressed() -> None:
+    from core.continuity.text_excerpt import ModelTextCompressor
+
+    payload = "请记住我的名字，以及下列设定：" + "设定内容" * 900
+    compressor = ModelTextCompressor(
+        lambda system, user: "语意摘要：用户要求记住其名字与完整的世界线设定。"
+    )
+    extractor = DeterministicMemoryExtractor(text_compressor=compressor)
+    evidence = TurnEvidence(session_id="s1", turn_id="t8", user_text=payload, assistant_text="")
+    candidates = tuple(await extractor.extract(evidence))
+
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate.pinned is True
+    assert candidate.explicit_keep is True
+    assert candidate.summary == "语意摘要：用户要求记住其名字与完整的世界线设定。"
+    assert candidate.object_text == candidate.summary
+
+    # Forget/re-remember linkage still derives from the original text.
+    other = DeterministicMemoryExtractor(
+        text_compressor=ModelTextCompressor(lambda system, user: "另一种写法")
+    )
+    again = tuple(await other.extract(evidence))
+    assert again[0].memory_key == candidate.memory_key

@@ -51,7 +51,7 @@ def test_duplicate_reinforces_once_per_turn_and_survives_restart(tmp_path) -> No
             complete_turn=False,
         )
         assert same_turn == [] or same_turn[0].mention_count == 1
-        active = store.get_active_memory("user.fact.favorite_color")
+        active = store.get_active_memory("user.fact.favorite_color", scope="session-a")
         assert active is not None
         assert active.mention_count == 1
         assert active.pinned is True
@@ -59,14 +59,14 @@ def test_duplicate_reinforces_once_per_turn_and_survives_restart(tmp_path) -> No
         second = _evidence("t2", "我的最喜欢的颜色是蓝色")
         store.register_turn_observed(second)
         store.apply_memory_candidates(second, (_candidate("蓝色"),), resolver=resolver, complete_turn=True)
-        active = store.get_active_memory("user.fact.favorite_color")
+        active = store.get_active_memory("user.fact.favorite_color", scope="session-a")
         assert active is not None and active.mention_count == 2
     finally:
         store.close()
 
     reopened = ContinuityStore(db_path)
     try:
-        active = reopened.get_active_memory("user.fact.favorite_color")
+        active = reopened.get_active_memory("user.fact.favorite_color", scope="session-a")
         assert active is not None
         assert active.object_text == "蓝色"
         assert active.mention_count == 2
@@ -81,9 +81,9 @@ def test_changed_value_supersedes_without_destroying_history(continuity_store) -
     continuity_store.apply_memory_candidates(first, (_candidate("蓝色"),), resolver=resolver, complete_turn=True)
     continuity_store.apply_memory_candidates(second, (_candidate("红色"),), resolver=resolver, complete_turn=True)
 
-    active = continuity_store.get_active_memory("user.fact.favorite_color")
+    active = continuity_store.get_active_memory("user.fact.favorite_color", scope="session-a")
     assert active is not None and active.object_text == "红色"
-    history = continuity_store.get_memory_history("user.fact.favorite_color")
+    history = continuity_store.get_memory_history("user.fact.favorite_color", scope="session-a")
     assert len(history) == 2
     assert history[0].state.value == "superseded"
     assert history[0].valid_to is not None
@@ -97,21 +97,22 @@ def test_explicit_forget_hard_deletes_history_and_blocks_passive_reimport(contin
 
     deleted = continuity_store.forget_memory(
         "user.fact.favorite_color",
+        scope="session-a",
         kind=MemoryKind.USER_FACT,
         session_id="session-a",
         turn_id="forget-1",
         observed_at=200.0,
     )
     assert deleted == 1
-    assert continuity_store.get_memory_history("user.fact.favorite_color") == []
-    tombstone = continuity_store.get_active_tombstone("user.fact.favorite_color")
+    assert continuity_store.get_memory_history("user.fact.favorite_color", scope="session-a") == []
+    tombstone = continuity_store.get_active_tombstone("user.fact.favorite_color", scope="session-a")
     assert tombstone is not None
     assert not hasattr(tombstone, "summary")
     assert not hasattr(tombstone, "object_text")
 
     passive = _evidence("t3", "我的最喜欢的颜色是蓝色")
     continuity_store.apply_memory_candidates(passive, (_candidate("蓝色"),), resolver=resolver, complete_turn=True)
-    assert continuity_store.get_active_memory("user.fact.favorite_color") is None
+    assert continuity_store.get_active_memory("user.fact.favorite_color", scope="session-a") is None
 
     explicit = TurnEvidence(
         session_id="session-a",
@@ -126,9 +127,9 @@ def test_explicit_forget_hard_deletes_history_and_blocks_passive_reimport(contin
         resolver=resolver,
         complete_turn=True,
     )
-    restored = continuity_store.get_active_memory("user.fact.favorite_color")
+    restored = continuity_store.get_active_memory("user.fact.favorite_color", scope="session-a")
     assert restored is not None and restored.pinned is True
-    assert continuity_store.get_active_tombstone("user.fact.favorite_color") is None
+    assert continuity_store.get_active_tombstone("user.fact.favorite_color", scope="session-a") is None
 
 
 def test_consolidation_writes_and_completion_marker_are_atomic(continuity_store) -> None:
@@ -169,8 +170,8 @@ def test_consolidation_writes_and_completion_marker_are_atomic(continuity_store)
             complete_turn=True,
         )
 
-    assert continuity_store.get_active_memory("user.fact.one") is None
-    assert continuity_store.get_active_memory("user.fact.two") is None
+    assert continuity_store.get_active_memory("user.fact.one", scope="session-a") is None
+    assert continuity_store.get_active_memory("user.fact.two", scope="session-a") is None
     state = continuity_store.get_consolidation_turn("session-a", "t9")
     assert state is not None and state.status.value == "observed"
 
@@ -191,6 +192,7 @@ def test_tombstone_table_does_not_copy_forgotten_plaintext(tmp_path) -> None:
         )
         store.forget_memory(
             "user.fact.favorite_color",
+            scope="session-a",
             kind=MemoryKind.USER_FACT,
             session_id="session-a",
             turn_id="forget-raw",
@@ -228,6 +230,7 @@ def test_stale_explicit_remember_cannot_resurrect_after_newer_forget(continuity_
     )
     continuity_store.forget_memory(
         "user.fact.favorite_color",
+        scope="session-a",
         kind=MemoryKind.USER_FACT,
         session_id="session-a",
         turn_id="forget-newer",
@@ -247,8 +250,8 @@ def test_stale_explicit_remember_cannot_resurrect_after_newer_forget(continuity_
         resolver=resolver,
         complete_turn=True,
     )
-    assert continuity_store.get_active_memory("user.fact.favorite_color") is None
-    assert continuity_store.get_active_tombstone("user.fact.favorite_color") is not None
+    assert continuity_store.get_active_memory("user.fact.favorite_color", scope="session-a") is None
+    assert continuity_store.get_active_tombstone("user.fact.favorite_color", scope="session-a") is not None
 
 
 def test_stale_conflicting_recovery_cannot_override_newer_active_value(continuity_store) -> None:
@@ -268,7 +271,7 @@ def test_stale_conflicting_recovery_cannot_override_newer_active_value(continuit
     )
 
     stale = TurnEvidence(
-        session_id="session-old",
+        session_id="session-a",
         turn_id="stale",
         user_text="我的最喜欢的颜色是蓝色",
         assistant_text="ack",
@@ -280,6 +283,6 @@ def test_stale_conflicting_recovery_cannot_override_newer_active_value(continuit
         resolver=resolver,
         complete_turn=True,
     )
-    active = continuity_store.get_active_memory("user.fact.favorite_color")
+    active = continuity_store.get_active_memory("user.fact.favorite_color", scope="session-a")
     assert active is not None and active.object_text == "红色"
-    assert len(continuity_store.get_memory_history("user.fact.favorite_color")) == 1
+    assert len(continuity_store.get_memory_history("user.fact.favorite_color", scope="session-a")) == 1

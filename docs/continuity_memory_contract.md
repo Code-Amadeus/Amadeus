@@ -16,6 +16,16 @@ The C4.1 Candidate remains historical acceptance evidence; the C8 package is the
 Continuity is Host-owned. The LLM may propose text or classifications, but it is not durable-state authority.
 
 - SQLite is the durable authority for Continuity state.
+- **Scope = owning chat Session**: memories, tombstones, topic mutes and
+  relationship/affect state belong to the dialogue that produced them
+  (`scope` is the storage form of its session id).  A new dialogue starts from
+  zero; recall, forgetting, mutes, quoting and relationship projection never
+  cross dialogues.  Character Life (C6) and the RealityClock stay
+  character-/host-global by design.
+- A Session scope is preserved while its transcript exists either live
+  (`sessions/<id>.json`) or in the backup mirror
+  (`runtime/backup/sessions/<id>.json`); when both are gone, the next server
+  start reaps the scope entirely (`__unsessioned__` is exempt).
 - `ChatRuntime` receives only bounded, read-only Continuity grounding by dependency injection.
 - Character RAG remains a separate Canon/reference domain.
 - Work Ledger remains the authority for Work lifecycle/completion.
@@ -78,11 +88,19 @@ Passive capture (no explicit user command) is bounded and reviewable:
 - stable facts are limited to the registered fact slots the structured recall
   path can query, plus preferences;
 - every other **substantive** user utterance (>= 12 content characters, or >= 4
-  when it carries a time/plan anchor) is kept verbatim (bounded to 400
-  characters) as a conversation record: `EPISODIC` for statements and shared
- 回忆, `OPEN_LOOP` for plans.  The thresholds are constants in
-  `core/continuity/memory_extractor.py`, so capture breadth is auditable and
-  testable rather than model-dependent;
+  when it carries a time/plan anchor) is kept verbatim up to 800 characters as a
+  conversation record: `EPISODIC` for statements and shared
+ 回忆, `OPEN_LOOP` for plans.  An utterance above the budget is compressed as a
+  whole — faithful semantic compression through the configured LLM
+  (`TextCompressor` in `core/continuity/text_excerpt.py`), with a deterministic
+  whole-span sampler as the offline fallback — instead of being tail-cut, so
+  the entire turn stays represented and no region is silently dropped.  The
+  thresholds are constants in `core/continuity/memory_extractor.py`, so capture
+  breadth is auditable and testable rather than model-dependent;
+- an explicit "记住…" payload over the same budget is compressed under the same
+  rule; the original wording stays in the Session transcript for archive
+  quoting, and the stable memory key keeps hashing the full original text so
+  re-extraction and forget linkage stay idempotent;
 - greetings, acknowledgements, and memory-control directives are never stored;
 - assistant prose never becomes a user fact.
 

@@ -48,7 +48,7 @@ def test_c7_memory_list_pin_and_forget_use_host_store_controls(continuity_store)
     result = service.c7_forget_memory(record.id)
     assert result["deleted"] == 1
     assert service.c7_list_memories() == []
-    assert continuity_store.get_active_tombstone("user.preference.tea") is not None
+    assert continuity_store.get_active_tombstone("user.preference.tea", scope="s") is not None
 
 
 @pytest.mark.asyncio
@@ -68,7 +68,7 @@ async def test_c7_rebuild_indexes_only_rebuilds_derived_state(continuity_store) 
         "cleared_embedding_rows": 1,
         "semantic_rebuild": "lazy",
     }
-    assert continuity_store.get_active_memory("user.preference.tea") is not None
+    assert continuity_store.get_active_memory("user.preference.tea", scope="s") is not None
 
 
 def test_c7_status_and_schedule_preserve_simulated_life_classification(continuity_store) -> None:
@@ -88,7 +88,7 @@ def test_c7_status_and_schedule_preserve_simulated_life_classification(continuit
         life_enabled=True,
     )
     status = service.c7_status()
-    assert status["schema_version"] == 7
+    assert status["schema_version"] == 8
     assert status["life"]["source_class"] == "simulated_life"
     assert "source_hash" not in repr(status["relationship"])
 

@@ -31,7 +31,7 @@ def test_c8_migration_is_idempotent_and_adds_archive_forget_guard(tmp_path) -> N
     finally:
         connection.close()
 
-    assert version == SCHEMA_VERSION == 7
+    assert version == SCHEMA_VERSION == 8
     assert {
         "continuity_meta",
         "conversation_clock",
@@ -135,7 +135,7 @@ def test_existing_c1_database_migrates_through_c6_without_losing_clock_state(tmp
 
     store = ContinuityStore(db_path)
     try:
-        assert store.schema_version == 7
+        assert store.schema_version == 8
         state = store.get_clock_state()
         assert state.last_user_turn_at == 123.0
         assert state.last_session_id == "session-c1"
@@ -177,7 +177,7 @@ def test_existing_c2_memory_is_backfilled_into_c3_fts(tmp_path) -> None:
 
     store = ContinuityStore(db_path)
     try:
-        assert store.schema_version == 7
+        assert store.schema_version == 8
         hits = store.search_memory_fts('"我的生日"', now=20.0)
         assert [record.id for record, _ in hits] == ["m-c2"]
     finally:
@@ -214,7 +214,7 @@ def test_existing_c4_database_migrates_through_c6_without_changing_memory_truth(
 
     store = ContinuityStore(db_path)
     try:
-        assert store.schema_version == 7
+        assert store.schema_version == 8
         memory = store.get_active_memory("user.fact.name")
         assert memory is not None
         assert memory.object_text == "真由理"
@@ -228,7 +228,10 @@ def test_existing_c4_database_migrates_through_c6_without_changing_memory_truth(
         store.close()
 
 
-def test_existing_c5_database_migrates_to_c6_preserving_relationship_state(tmp_path) -> None:
+def test_existing_c5_database_migrates_with_relationship_events_healing(tmp_path) -> None:
+    """Schema 8 scopes relationship state to its Session; the derived snapshot
+    heals itself from surviving events instead of trusting legacy table rows."""
+
     db_path = tmp_path / "continuity-v5.sqlite3"
     connection = sqlite3.connect(db_path)
     try:
@@ -238,7 +241,22 @@ def test_existing_c5_database_migrates_to_c6_preserving_relationship_state(tmp_p
         connection.executescript(MIGRATION_4)
         connection.executescript(MIGRATION_5)
         connection.execute(
-            "UPDATE relationship_state SET value = 0.62, event_count = 1, updated_at = 100.0 WHERE dimension = 'trust'"
+            "UPDATE relationship_state SET value = 0.62, event_count = 1, updated_at = 100.0 "
+            "WHERE dimension = 'trust'"
+        )
+        connection.execute(
+            """
+            INSERT INTO relationship_events(
+                event_id, source_session_id, source_turn_id, source_memory_id,
+                source_memory_key, source_hash, source_fingerprint, event_type,
+                state_class, dimension, proposed_delta, bounded_delta, confidence,
+                occurred_at, created_at, invalidated_at, invalidation_reason, policy_version
+            ) VALUES (
+                'evt-legacy', 'session-c5', 'turn-c5', NULL,
+                '', 'hash', 'fp-legacy', 'user_expressed_trust',
+                'relationship', 'trust', 0.04, 0.0, 0.99,
+                90.0, 90.0, NULL, '', 'c5-v1'
+            )"""
         )
         connection.commit()
         assert int(connection.execute("PRAGMA user_version").fetchone()[0]) == 5
@@ -247,9 +265,13 @@ def test_existing_c5_database_migrates_to_c6_preserving_relationship_state(tmp_p
 
     store = ContinuityStore(db_path)
     try:
-        assert store.schema_version == 7
-        snapshot = store.get_relationship_snapshot(now=100.0)
-        assert snapshot.relationship_value("trust") == 0.62
+        assert store.schema_version == 8
+        # The event (the source of truth) is backfilled to its Session scope
+        # and the snapshot heals on read; the legacy direct table value was
+        # derived state and is legitimately re-derived.
+        snapshot = store.get_relationship_snapshot(scope="session-c5", now=100.0)
+        assert round(snapshot.relationship_value("trust"), 6) == 0.54
+        assert store.get_relationship_snapshot(now=100.0).relationship_value("trust") == 0.5
         assert store.get_life_schedule("kurisu", "2026-09-18") is None
         assert store.list_life_events("kurisu") == []
     finally:

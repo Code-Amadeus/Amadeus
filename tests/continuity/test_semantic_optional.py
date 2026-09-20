@@ -30,7 +30,7 @@ def test_embedding_rows_are_derived_and_removed_when_memory_becomes_inactive(con
         object_text="1月2日",
     )
     continuity_store.apply_memory_candidates(first, (candidate,), resolver=resolver, complete_turn=True)
-    record = continuity_store.get_active_memory("user.fact.birth_date")
+    record = continuity_store.get_active_memory("user.fact.birth_date", scope="s")
     assert record is not None
     continuity_store.upsert_memory_embedding(
         record.id,

@@ -65,8 +65,8 @@ def _service(store, tmp_path, *, session_dir=None):
 
 
 def test_store_mutes_are_idempotent_and_clearable(continuity_store) -> None:
-    created = continuity_store.add_topic_mute("京都那家甜点店", session_id="s", turn_id="t1")
-    repeated = continuity_store.add_topic_mute("京都那家甜点店", session_id="s", turn_id="t2")
+    created = continuity_store.add_topic_mute("京都那家甜点店", scope="s", session_id="s", turn_id="t1")
+    repeated = continuity_store.add_topic_mute("京都那家甜点店", scope="s", session_id="s", turn_id="t2")
     assert repeated.id == created.id
     assert [mute.topic for mute in continuity_store.list_topic_mutes()] == ["京都那家甜点店"]
 
@@ -79,25 +79,25 @@ def test_store_mutes_are_idempotent_and_clearable(continuity_store) -> None:
 def test_muted_topic_is_hidden_but_a_user_raised_topic_still_recalls(continuity_store) -> None:
     _memory(continuity_store, key="user.episode.dessert", summary="京都那家甜点店的焙茶巴菲很好吃")
     retriever = MemoryRetriever(continuity_store)
-    assert retriever.retrieve("京都那家甜点店怎么样", now=1000.0)
+    assert retriever.retrieve("京都那家甜点店怎么样", now=1000.0, scope="s")
 
-    continuity_store.add_topic_mute("京都那家甜点店")
-    assert retriever.retrieve("那家店后来怎么样了", now=1000.0) == []
-    resumed = retriever.retrieve("还记得京都那家甜点店吗", now=1000.0)
+    continuity_store.add_topic_mute("京都那家甜点店", scope="s")
+    assert retriever.retrieve("那家店后来怎么样了", now=1000.0, scope="s") == []
+    resumed = retriever.retrieve("还记得京都那家甜点店吗", now=1000.0, scope="s")
     assert [hit.memory.memory_key for hit in resumed] == ["user.episode.dessert"]
 
 
 def test_grounding_note_lists_muted_topics_without_injecting_them(continuity_store, tmp_path) -> None:
     _memory(continuity_store, key="user.episode.dessert", summary="京都那家甜点店的焙茶巴菲很好吃")
-    continuity_store.add_topic_mute("京都那家甜点店")
+    continuity_store.add_topic_mute("京都那家甜点店", scope="s")
     service = _service(continuity_store, tmp_path)
 
-    ordinary = service.grounding_for_turn("晚饭吃什么好", turn_id="now")
+    ordinary = service.grounding_for_turn("晚饭吃什么好", session_id="s", turn_id="now")
     assert "焙茶巴菲" not in ordinary.text
     assert "Topics the user asked you not to raise" in ordinary.text
     assert "京都那家甜点店" in ordinary.text
 
-    raised = service.grounding_for_turn("还记得京都那家甜点店吗", turn_id="asked")
+    raised = service.grounding_for_turn("还记得京都那家甜点店吗", session_id="s", turn_id="asked")
     assert "焙茶巴菲" in raised.text
     assert "Topics the user asked you not to raise" not in raised.text
     trace = service.c8_retrieval_traces(limit=1)[0]

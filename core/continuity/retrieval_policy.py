@@ -15,7 +15,7 @@ from pathlib import Path
 class ContinuityRetrievalPolicy:
     max_items: int = 5
     max_open_loops: int = 2
-    max_context_chars: int = 2400
+    max_context_chars: int = 3600
     candidate_limit: int = 24
     structured_weight: float = 0.34
     lexical_weight: float = 0.26
@@ -39,7 +39,8 @@ class ContinuityRetrievalPolicy:
     archive_max_sessions: int = 32
     archive_max_source_turns: int = 120
     archive_max_hits: int = 3
-    archive_max_excerpt_chars: int = 720
+    archive_max_excerpt_chars: int = 1400
+    archive_max_assistant_excerpt_chars: int = 1000
     archive_min_score: float = 0.12
 
     @classmethod
@@ -96,6 +97,9 @@ class ContinuityRetrievalPolicy:
             archive_max_source_turns=int(archive.get("max_source_turns", defaults.archive_max_source_turns)),
             archive_max_hits=int(archive.get("max_hits", defaults.archive_max_hits)),
             archive_max_excerpt_chars=int(archive.get("max_excerpt_chars", defaults.archive_max_excerpt_chars)),
+            archive_max_assistant_excerpt_chars=int(
+                archive.get("max_assistant_excerpt_chars", defaults.archive_max_assistant_excerpt_chars)
+            ),
             archive_min_score=float(archive.get("minimum_score", defaults.archive_min_score)),
         )
         if not 1 <= result.max_items <= 20:
@@ -108,6 +112,10 @@ class ContinuityRetrievalPolicy:
             raise ValueError("continuity candidate_limit must be 1..200")
         if not 1 <= result.semantic_candidate_limit <= 200:
             raise ValueError("continuity semantic candidate_limit must be 1..200")
+        if not 1 <= result.archive_max_excerpt_chars <= 8000:
+            raise ValueError("continuity archive max_excerpt_chars must be 1..8000")
+        if not 1 <= result.archive_max_assistant_excerpt_chars <= 8000:
+            raise ValueError("continuity archive max_assistant_excerpt_chars must be 1..8000")
         if not 0.0 <= result.mmr_lambda <= 1.0:
             raise ValueError("continuity mmr_lambda must be 0..1")
         if not 0.0 <= result.minimum_score <= 1.0:

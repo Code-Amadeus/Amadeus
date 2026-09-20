@@ -12,8 +12,8 @@ from core.continuity import (
     MemoryResolver,
     TurnEvidence,
 )
-from core import session_manager as sm
 from core.continuity.clock import RealityClock
+from core import session_manager as sm
 from server.handlers.continuity_handler import ContinuityHandler
 from server.protocol import Method
 from ._support import FakeClock
@@ -93,7 +93,7 @@ def _write_session(
     )
 
 
-def _service(store, session_dir: Path, now: datetime) -> ContinuityService:
+def _service(store, session_dir: Path, now: datetime, *, text_compressor=None) -> ContinuityService:
     fake = FakeClock(now)
     return ContinuityService(
         store,
@@ -103,6 +103,7 @@ def _service(store, session_dir: Path, now: datetime) -> ContinuityService:
         life_enabled=False,
         archive_recall_enabled=True,
         session_dir=session_dir,
+        text_compressor=text_compressor,
     )
 
 
@@ -133,7 +134,7 @@ def test_low_confidence_historical_question_uses_high_fidelity_session_fallback(
 
     grounding = service.grounding_for_turn(
         "你还记得去年在京都那家店我点的具体是什么吗？",
-        session_id="current",
+        session_id="kyoto-2025",
         turn_id="current-turn",
     )
 
@@ -167,11 +168,13 @@ def test_ordinary_or_confident_fast_recall_never_scans_session_archive(continuit
     search = Mock(wraps=service.archive_searcher.search)
     service.archive_searcher.search = search
 
-    direct = service.grounding_for_turn("我的生日是什么？", turn_id="now-1")
+    direct = service.grounding_for_turn("我的生日是什么？", session_id="facts", turn_id="now-1")
     assert direct.memory_count == 1
     assert search.call_count == 0
 
-    historical_but_strong = service.grounding_for_turn("你还记得我的生日吗？", turn_id="now-2")
+    historical_but_strong = service.grounding_for_turn(
+        "你还记得我的生日吗？", session_id="facts", turn_id="now-2"
+    )
     assert historical_but_strong.memory_count == 1
     assert search.call_count == 0
     assert service.c8_retrieval_traces(limit=1)[0]["archive_gate"] == "fast_confident"
@@ -196,10 +199,16 @@ def test_archive_tier_memory_is_only_used_after_historical_low_confidence_gate(c
         datetime(2026, 9, 18, 9, 0, tzinfo=timezone.utc),
     )
 
-    ordinary = service.grounding_for_turn("代码审查暗号是什么？", turn_id="ordinary")
+    ordinary = service.grounding_for_turn(
+        "代码审查暗号是什么？", session_id="archive-session", turn_id="ordinary"
+    )
     assert ordinary.memory_count == 0
 
-    historical = service.grounding_for_turn("你还记得很久以前代码审查暗号是什么吗？", turn_id="historical")
+    historical = service.grounding_for_turn(
+        "你还记得很久以前代码审查暗号是什么吗？",
+        session_id="archive-session",
+        turn_id="historical",
+    )
     assert historical.archive_used is True
     assert "蓝鲸" in historical.text
     trace = service.c8_retrieval_traces(limit=1)[0]
@@ -229,7 +238,8 @@ def test_explicit_forget_records_source_guard_and_session_fallback_cannot_resurr
 
     deleted = continuity_store.forget_memory(
         record.memory_key,
-        session_id="current",
+        scope="secret-session",
+        session_id="secret-session",
         turn_id="forget-turn",
         observed_at=_ts("2026-09-18T09:00:00+00:00"),
     )
@@ -251,6 +261,7 @@ def test_explicit_forget_records_source_guard_and_session_fallback_cannot_resurr
     )
     grounding = service.grounding_for_turn(
         "你还记得以前那个私人纪念日具体是哪天吗？",
+        session_id="secret-session",
         turn_id="ask-after-forget",
     )
     assert "2月10日" not in grounding.text
@@ -327,10 +338,10 @@ def test_long_session_transcript_keeps_archived_turns_recallable(continuity_stor
         )
         for index in range(4):
             assert sm.append_session_message(
-                session_id, role="user", content=f"后来的闲聊 {index}", turn_id=f"turn-{index}",
+                session_id, role="user", content=f"后来的闲聊 {index}", turn_id=f"turn-{index}"
             )
             assert sm.append_session_message(
-                session_id, role="assistant", content=f"回应 {index}", turn_id=f"turn-{index}",
+                session_id, role="assistant", content=f"回应 {index}", turn_id=f"turn-{index}"
             )
     finally:
         sm._SESSION_DIR = old_dir
@@ -360,7 +371,7 @@ def test_long_session_transcript_keeps_archived_turns_recallable(continuity_stor
     )
     grounding = service.grounding_for_turn(
         "你还记得去年在京都那家店我点的具体是什么吗？",
-        session_id="current",
+        session_id=session_id,
         turn_id="current-turn",
     )
     assert grounding.archive_used is True
@@ -386,11 +397,15 @@ def test_cold_tier_memory_is_recalled_on_explicit_history_question(continuity_st
         datetime(2026, 9, 18, 9, 0, tzinfo=timezone.utc),
     )
 
-    ordinary = service.grounding_for_turn("代码审查暗号是什么？", turn_id="ordinary")
+    ordinary = service.grounding_for_turn(
+        "代码审查暗号是什么？", session_id="cold-session", turn_id="ordinary"
+    )
     assert ordinary.memory_count == 0
 
     historical = service.grounding_for_turn(
-        "你还记得很久以前代码审查暗号是什么吗？", turn_id="historical"
+        "你还记得很久以前代码审查暗号是什么吗？",
+        session_id="cold-session",
+        turn_id="historical",
     )
     assert "蓝鲸" in historical.text
     trace = service.c8_retrieval_traces(limit=1)[0]
@@ -416,20 +431,24 @@ def test_muted_topic_skips_archive_unless_the_query_raises_it(continuity_store, 
         user_text="去年在京都那家店我点的是焙茶巴菲。",
         assistant_text="我记得你当时很喜欢那份焙茶巴菲。",
     )
-    continuity_store.add_topic_mute("京都那家甜点店")
+    continuity_store.add_topic_mute("京都那家甜点店", scope="kyoto-2025")
     service = _service(
         continuity_store,
         session_dir,
         datetime(2026, 9, 18, 9, 0, tzinfo=timezone.utc),
     )
 
-    muted = service.grounding_for_turn("还记得去年那家店我点了什么吗？", turn_id="muted")
+    muted = service.grounding_for_turn(
+        "还记得去年那家店我点了什么吗？", session_id="kyoto-2025", turn_id="muted"
+    )
     assert "焙茶巴菲" not in muted.text
     assert "一家甜点店" not in muted.text
     assert "Topics the user asked you not to raise" in muted.text
 
     raised = service.grounding_for_turn(
-        "你还记得去年在京都那家甜点店我点了什么吗？", turn_id="raised"
+        "你还记得去年在京都那家甜点店我点了什么吗？",
+        session_id="kyoto-2025",
+        turn_id="raised",
     )
     assert "焙茶巴菲" in raised.text
     assert "Topics the user asked you not to raise" not in raised.text
@@ -461,21 +480,26 @@ def test_archive_hit_quotes_past_assistant_wording_by_default(continuity_store, 
     )
     grounding = service.grounding_for_turn(
         "还记得我们聊的那部番里魔族为什么说谎吗？",
+        session_id="anime-session",
         turn_id="ask-anime",
     )
     # The anime title only ever appeared in the assistant turn; quoting both
     # sides is what makes it recoverable.
     assert "钢之炼金术师" in grounding.text
     assert "Past assistant wording" in grounding.text
+    # Verbatim excerpts must not carry the condensation marker.
+    assert "(condensed)" not in grounding.text
 
 
 def test_time_aware_archive_search_prefers_requested_year(continuity_store, tmp_path) -> None:
+    # Session isolation: temporal filtering is exercised inside one dialogue
+    # (cross-dialogue quoting is deliberately impossible now).
     session_dir = tmp_path / "sessions"
     old = "2025-06-01T12:00:00+00:00"
     recent = "2026-06-01T12:00:00+00:00"
     _write_memory(
         continuity_store,
-        session_id="dessert-2025",
+        session_id="dessert-log",
         turn_id="dessert-old",
         summary="京都甜点讨论",
         key="user.episode.dessert.2025",
@@ -483,34 +507,114 @@ def test_time_aware_archive_search_prefers_requested_year(continuity_store, tmp_
     )
     _write_memory(
         continuity_store,
-        session_id="dessert-2026",
+        session_id="dessert-log",
         turn_id="dessert-new",
         summary="京都甜点讨论",
         key="user.episode.dessert.2026",
         created_at=recent,
     )
-    _write_session(
-        session_dir,
-        session_id="dessert-2025",
-        turn_id="dessert-old",
-        created_at=old,
-        user_text="京都甜点那次我点了抹茶羊羹。",
-    )
-    _write_session(
-        session_dir,
-        session_id="dessert-2026",
-        turn_id="dessert-new",
-        created_at=recent,
-        user_text="京都甜点这次我点了栗子蒙布朗。",
+    session_dir.mkdir(parents=True, exist_ok=True)
+    (session_dir / "dessert-log.json").write_text(
+        json.dumps(
+            {
+                "session_id": "dessert-log",
+                "dialog": [
+                    {
+                        "role": "user",
+                        "content": "京都甜点那次我点了抹茶羊羹。",
+                        "turn_id": "dessert-old",
+                        "created_at": old,
+                    },
+                    {
+                        "role": "user",
+                        "content": "京都甜点这次我点了栗子蒙布朗。",
+                        "turn_id": "dessert-new",
+                        "created_at": recent,
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
     )
     service = _service(
         continuity_store,
         session_dir,
         datetime(2026, 9, 18, 9, 0, tzinfo=timezone.utc),
     )
-    grounding = service.grounding_for_turn("你还记得去年京都甜点具体点了什么吗？", turn_id="now")
+    grounding = service.grounding_for_turn(
+        "你还记得去年京都甜点具体点了什么吗？", session_id="dessert-log", turn_id="now"
+    )
     assert "抹茶羊羹" in grounding.text
     assert "栗子蒙布朗" not in grounding.text
+
+
+def test_archive_quoting_never_crosses_dialogues(continuity_store, tmp_path) -> None:
+    """Session isolation: a historical question only quotes its own dialogue."""
+
+    session_dir = tmp_path / "sessions"
+    created = "2025-05-12T18:30:00+00:00"
+    _write_memory(
+        continuity_store,
+        session_id="session-a",
+        turn_id="turn-a",
+        summary="去年在京都聊过一家甜点店",
+        key="user.episode.kyoto-dessert",
+        created_at=created,
+    )
+    _write_memory(
+        continuity_store,
+        session_id="session-b",
+        turn_id="turn-b",
+        summary="很久以前约定代码审查暗号",
+        key="user.episode.review-codeword",
+        created_at=created,
+    )
+    _write_session(
+        session_dir,
+        session_id="session-a",
+        turn_id="turn-a",
+        created_at=created,
+        user_text="去年在京都那家店我点的是焙茶巴菲，还坐在靠窗第二桌。",
+        assistant_text="我记得你当时很喜欢那份焙茶巴菲。",
+    )
+    _write_session(
+        session_dir,
+        session_id="session-b",
+        turn_id="turn-b",
+        created_at=created,
+        user_text="我们的代码审查暗号是蓝鲸，别告诉别人。",
+        assistant_text="放心，我不会说出去。",
+    )
+    service = _service(
+        continuity_store,
+        session_dir,
+        datetime(2026, 9, 18, 9, 0, tzinfo=timezone.utc),
+    )
+
+    in_a = service.grounding_for_turn(
+        "你还记得去年在京都那家店我点的具体是什么吗？",
+        session_id="session-a",
+        turn_id="ask-a",
+    )
+    assert "焙茶巴菲" in in_a.text
+    assert "蓝鲸" not in in_a.text
+
+    in_b = service.grounding_for_turn(
+        "你还记得以前约定的代码审查暗号是什么吗？",
+        session_id="session-b",
+        turn_id="ask-b",
+    )
+    assert "蓝鲸" in in_b.text
+    assert "焙茶巴菲" not in in_b.text
+
+    in_empty = service.grounding_for_turn(
+        "你还记得去年在京都那家店我点的具体是什么吗？",
+        session_id="session-c",
+        turn_id="ask-c",
+    )
+    assert "焙茶巴菲" not in in_empty.text
+    assert in_empty.archive_used is False
 
 
 async def _call_trace_handler(service: ContinuityService):
@@ -534,3 +638,127 @@ def test_retrieval_trace_handler_exposes_content_free_diagnostics(continuity_sto
     assert len(trace["query_fingerprint"]) == 16
     assert "普通问题" not in repr(trace)
     assert trace["archive_gate"] == "no_historical_cue"
+
+
+def test_overlong_turn_quotes_are_compressed_as_a_whole_not_tail_cut(
+    continuity_store, tmp_path
+) -> None:
+    session_dir = tmp_path / "sessions"
+    created = "2025-05-12T18:30:00+00:00"
+    _write_memory(
+        continuity_store,
+        session_id="kyoto-2025",
+        turn_id="turn-dessert",
+        summary="去年在京都聊过一家甜点店",
+        key="user.episode.kyoto-dessert",
+        created_at=created,
+    )
+    user_text = (
+        "去年在京都那家店我们聊了很久，"
+        + "后来还谈过很多细节，" * 200
+        + "最后我点的是焙茶巴菲，坐在靠窗第二桌。"
+    )
+    assistant_text = (
+        "你当时还问我季节限定推荐，"
+        + "我解释了不少做法，" * 160
+        + "你说下次要带朋友一起去坐同样的座位。"
+    )
+    _write_session(
+        session_dir,
+        session_id="kyoto-2025",
+        turn_id="turn-dessert",
+        created_at=created,
+        user_text=user_text,
+        assistant_text=assistant_text,
+    )
+    service = _service(
+        continuity_store,
+        session_dir,
+        datetime(2026, 9, 18, 9, 0, tzinfo=timezone.utc),
+    )
+    policy = service.retrieval_policy
+    result = service.archive_searcher.search(
+        "你还记得去年在京都那家店我点的具体是什么吗？",
+        scope="kyoto-2025",
+        now=datetime(2026, 9, 18, 9, 0, tzinfo=timezone.utc),
+    )
+    assert result.hits, result.reason
+    hit = result.hits[0]
+    # Whole-turn compression keeps the opening, samples the middle and keeps
+    # the ending instead of cutting both sides at the old excerpt budgets.
+    assert len(hit.user_text) <= policy.archive_max_excerpt_chars
+    assert len(hit.assistant_text) <= policy.archive_max_assistant_excerpt_chars
+    assert hit.user_text.startswith("去年在京都那家店我们聊了很久")
+    assert "靠窗第二桌" in hit.user_text
+    assert "…" in hit.user_text
+    assert "带朋友一起去坐同样的座位" in hit.assistant_text
+    assert "…" in hit.assistant_text
+
+    grounding = service.grounding_for_turn(
+        "你还记得去年在京都那家店我点的具体是什么吗？",
+        session_id="kyoto-2025",
+        turn_id="ask-long",
+    )
+    assert grounding.archive_used is True
+    assert "靠窗第二桌" in grounding.text
+    assert "带朋友一起去坐同样的座位" in grounding.text
+
+
+def test_overlong_turn_quotes_use_injected_semantic_compression(continuity_store, tmp_path) -> None:
+    from core.continuity.text_excerpt import ModelTextCompressor
+
+    session_dir = tmp_path / "sessions"
+    created = "2025-05-12T18:30:00+00:00"
+    _write_memory(
+        continuity_store,
+        session_id="kyoto-2025",
+        turn_id="turn-dessert",
+        summary="去年在京都聊过一家甜点店",
+        key="user.episode.kyoto-dessert",
+        created_at=created,
+    )
+    user_text = "去年在京都那家店我点的甜品：" + "甜品细节" * 500
+    assistant_text = "我当时的推荐说明：" + "推荐细节" * 400
+    _write_session(
+        session_dir,
+        session_id="kyoto-2025",
+        turn_id="turn-dessert",
+        created_at=created,
+        user_text=user_text,
+        assistant_text=assistant_text,
+    )
+
+    def fake_complete(system: str, user: str) -> str:
+        if "用户发言" in user:
+            return "语意压缩：用户点了焙茶巴菲，坐在靠窗第二桌。"
+        return "语意压缩：角色当时推荐了季节限定，并提到下次可以带朋友。"
+
+    service = _service(
+        continuity_store,
+        session_dir,
+        datetime(2026, 9, 18, 9, 0, tzinfo=timezone.utc),
+        text_compressor=ModelTextCompressor(fake_complete),
+    )
+
+    result = service.archive_searcher.search(
+        "你还记得去年在京都那家店我点的具体是什么吗？",
+        scope="kyoto-2025",
+        now=datetime(2026, 9, 18, 9, 0, tzinfo=timezone.utc),
+    )
+
+    assert result.hits, result.reason
+    hit = result.hits[0]
+    assert hit.user_text == "语意压缩：用户点了焙茶巴菲，坐在靠窗第二桌。"
+    assert hit.assistant_text == "语意压缩：角色当时推荐了季节限定，并提到下次可以带朋友。"
+    assert hit.user_condensed is True
+    assert hit.assistant_condensed is True
+
+    grounding = service.grounding_for_turn(
+        "你还记得去年在京都那家店我点的具体是什么吗？",
+        session_id="kyoto-2025",
+        turn_id="ask-condensed",
+    )
+    assert grounding.archive_used is True
+    assert "语意压缩：用户点了焙茶巴菲" in grounding.text
+    # A condensation is labeled so it can never pass as verbatim wording.
+    assert "(condensed)" in grounding.text

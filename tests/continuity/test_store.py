@@ -13,7 +13,7 @@ def test_store_creates_parent_and_expected_sqlite_pragmas(tmp_path) -> None:
     store = ContinuityStore(db_path)
     try:
         assert db_path.exists()
-        assert store.schema_version == SCHEMA_VERSION == 7
+        assert store.schema_version == SCHEMA_VERSION == 8
         assert int(store.pragma("foreign_keys")) == 1
         assert int(store.pragma("secure_delete")) == 1
         assert str(store.pragma("journal_mode")).lower() == "wal"

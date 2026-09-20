@@ -472,6 +472,11 @@ class ArchiveRetrievalHit:
     lexical_score: float = 0.0
     temporal_score: float = 0.0
     anchor_memory_ids: tuple[str, ...] = ()
+    # True when that side no longer matches the transcript word-for-word
+    # (it was condensed to fit the excerpt budget); the renderer must not
+    # present a condensation as verbatim wording.
+    user_condensed: bool = False
+    assistant_condensed: bool = False
 
 
 @dataclass(frozen=True, slots=True)

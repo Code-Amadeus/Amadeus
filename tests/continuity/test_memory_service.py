@@ -50,7 +50,7 @@ async def test_normal_completed_turn_is_consolidated_after_chat_complete(continu
         {"session_id": "session-a", "turn_id": "t1", "text": "我的生日是1月2日"},
     )
     # Passive memory must not be written on the pre-LLM user event.
-    assert continuity_store.get_active_memory("user.fact.birth_date") is None
+    assert continuity_store.get_active_memory("user.fact.birth_date", scope="session-a") is None
 
     await bus.emit(
         "chat.complete",
@@ -58,7 +58,7 @@ async def test_normal_completed_turn_is_consolidated_after_chat_complete(continu
     )
     await service.drain()
 
-    memory = continuity_store.get_active_memory("user.fact.birth_date")
+    memory = continuity_store.get_active_memory("user.fact.birth_date", scope="session-a")
     assert memory is not None
     assert memory.object_text == "1月2日"
     state = continuity_store.get_consolidation_turn("session-a", "t1")
@@ -73,7 +73,7 @@ async def test_explicit_remember_and_forget_use_fast_durable_path(continuity_sto
         "chat.user",
         {"session_id": "session-a", "turn_id": "remember", "text": "记住我的生日是1月2日"},
     )
-    remembered = continuity_store.get_active_memory("user.fact.birth_date")
+    remembered = continuity_store.get_active_memory("user.fact.birth_date", scope="session-a")
     assert remembered is not None
     assert remembered.pinned is True
 
@@ -81,8 +81,8 @@ async def test_explicit_remember_and_forget_use_fast_durable_path(continuity_sto
         "chat.user",
         {"session_id": "session-a", "turn_id": "forget", "text": "忘记我的生日"},
     )
-    assert continuity_store.get_active_memory("user.fact.birth_date") is None
-    assert continuity_store.get_active_tombstone("user.fact.birth_date") is not None
+    assert continuity_store.get_active_memory("user.fact.birth_date", scope="session-a") is None
+    assert continuity_store.get_active_tombstone("user.fact.birth_date", scope="session-a") is not None
 
 
 async def test_assistant_generated_fact_is_not_saved_by_default(continuity_store, tmp_path) -> None:
@@ -158,7 +158,7 @@ async def test_registered_completed_turn_recovers_after_restart(tmp_path) -> Non
     )
     service2.start()
     await service2.drain()
-    memory = store2.get_active_memory("user.fact.occupation")
+    memory = store2.get_active_memory("user.fact.occupation", scope="session-recover")
     assert memory is not None and memory.object_text == "研究员"
     state = store2.get_consolidation_turn("session-recover", "recover-1")
     assert state is not None and state.status is ConsolidationStatus.COMPLETED
@@ -228,7 +228,7 @@ async def test_chat_complete_without_in_memory_user_event_reloads_exact_session_
         },
     )
     await service.drain()
-    memory = continuity_store.get_active_memory("user.fact.name")
+    memory = continuity_store.get_active_memory("user.fact.name", scope="session-rebind")
     assert memory is not None and memory.object_text == "真由理"
 
 

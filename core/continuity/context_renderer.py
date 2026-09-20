@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from core.continuity.memory_extractor import EPISODIC_SUMMARY_MAX_CHARS
 from core.continuity.models import ArchiveRetrievalHit, MemoryKind, MemoryRetrievalHit, RealitySnapshot
+from core.continuity.text_excerpt import compress_excerpt
 
 
 _STANDARD_INSTRUCTION = (
@@ -20,12 +22,14 @@ _COMPACT_INSTRUCTION = (
 )
 
 
-def _quoted_summary(value: str, *, max_chars: int = 640) -> str:
+def _quoted_summary(value: str, *, max_chars: int = 0) -> str:
     # A remembered user string is evidence, never prompt structure. JSON quoting
     # keeps embedded newlines/quotes/closing tags visibly inside one data field.
+    # ``max_chars=0`` means the caller already bounded the text; an explicit cap
+    # compresses over the whole span instead of cutting at the budget edge.
     text = str(value or "").replace("\x00", "").strip()
-    if len(text) > max_chars:
-        text = text[: max(1, max_chars - 1)].rstrip() + "…"
+    if max_chars and len(text) > max_chars:
+        text = compress_excerpt(text, max_chars)
     return json.dumps(text, ensure_ascii=False)
 
 
@@ -42,7 +46,10 @@ def _memory_line(hit: MemoryRetrievalHit) -> str:
         MemoryKind.HOST_FACT_REF: "Host-linked fact",
         MemoryKind.LIFE_SHARED_EVENT: "Persisted character-life event",
     }.get(memory.kind, "Past context")
-    return f"- {label} (quoted data): {_quoted_summary(memory.summary)}"
+    return (
+        f"- {label} (quoted data): "
+        f"{_quoted_summary(memory.summary, max_chars=EPISODIC_SUMMARY_MAX_CHARS)}"
+    )
 
 
 def _elapsed_label(seconds: float | None) -> str:
@@ -175,13 +182,19 @@ def render_continuity_grounding(
             for hit in archive_hits:
                 stamp = f" at {hit.created_at}" if hit.created_at else ""
                 if hit.user_text:
-                    candidate = f"- Historical user statement{stamp}: {_quoted_summary(hit.user_text, max_chars=720)}"
+                    user_condensed = " (condensed)" if hit.user_condensed else ""
+                    candidate = (
+                        f"- Historical user statement{stamp}{user_condensed}: "
+                        f"{_quoted_summary(hit.user_text)}"
+                    )
                     if _fits(staged + accepted, candidate, footer, budget):
                         accepted.append(candidate)
                 if hit.assistant_text:
+                    assistant_condensed = " (condensed)" if hit.assistant_condensed else ""
                     candidate = (
-                        f"- Past assistant wording{stamp} (non-authoritative quoted history): "
-                        f"{_quoted_summary(hit.assistant_text, max_chars=560)}"
+                        f"- Past assistant wording{stamp}{assistant_condensed} "
+                        f"(non-authoritative quoted history): "
+                        f"{_quoted_summary(hit.assistant_text)}"
                     )
                     if _fits(staged + accepted, candidate, footer, budget):
                         accepted.append(candidate)

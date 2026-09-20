@@ -42,7 +42,8 @@ class ContinuityHandler(RequestHandler):
 
     async def handle(self, method: str, params: dict[str, Any]) -> dict[str, Any] | None:
         if method == Method.CONTINUITY_STATUS:
-            return await asyncio.to_thread(self._service.c7_status)
+            scope = str(params.get("scope") or "").strip() or "global"
+            return await asyncio.to_thread(self._service.c7_status, scope=scope)
         if method == Method.CONTINUITY_MEMORY_LIST:
             scope = str(params.get("scope") or "").strip() or None
             tier = str(params.get("tier") or "").strip().lower() or None
@@ -72,7 +73,8 @@ class ContinuityHandler(RequestHandler):
         if method == Method.CONTINUITY_MAINTENANCE_RUN:
             return {"ok": True, **(await self._service.run_maintenance(reason="c7_user_control"))}
         if method == Method.CONTINUITY_RELATIONSHIP_DEBUG:
-            status = await asyncio.to_thread(self._service.c7_status)
+            scope = str(params.get("scope") or "").strip() or "global"
+            status = await asyncio.to_thread(self._service.c7_status, scope=scope)
             return {"ok": True, "relationship": status["relationship"]}
         if method == Method.CONTINUITY_RETRIEVAL_TRACE:
             try:
@@ -92,7 +94,8 @@ class ContinuityHandler(RequestHandler):
             )
             return {"ok": True, **result}
         if method == Method.CONTINUITY_MUTE_LIST:
-            mutes = await asyncio.to_thread(self._service.c7_list_mutes)
+            scope = str(params.get("scope") or "").strip() or None
+            mutes = await asyncio.to_thread(self._service.c7_list_mutes, scope=scope)
             return {"ok": True, "mutes": mutes}
         if method == Method.CONTINUITY_MUTE_CLEAR:
             mute_id = str(params.get("mute_id") or "").strip()

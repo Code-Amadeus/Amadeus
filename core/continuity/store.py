@@ -15,6 +15,7 @@ import time
 import uuid
 import math
 from collections import defaultdict, deque
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -97,7 +98,12 @@ def _stronger_priority(a: MemoryPriorityClass, b: MemoryPriorityClass) -> Memory
 
 
 class ContinuityStore:
-    """Host-owned repository for cross-session continuity state."""
+    """Host-owned repository for Session-scoped continuity state.
+
+    Memory, tombstones, topic mutes and relationship/affect state belong to
+    their owning chat Session (``scope``); Character Life and the RealityClock
+    intentionally stay character-/host-global.
+    """
 
     def __init__(
         self,
@@ -132,6 +138,27 @@ class ContinuityStore:
             self._connection.execute("PRAGMA journal_mode = WAL")
             self._connection.execute("PRAGMA synchronous = NORMAL")
         self._migrate()
+        self._backfill_mute_scopes()
+
+    def _backfill_mute_scopes(self) -> None:
+        """Schema-8 ownership backfill for topic mutes stored as JSON meta.
+
+        Mutes move from the legacy 'global' placeholder to the source Session
+        recorded when the user asked for them; idempotent and cheap to run on
+        every open.
+        """
+
+        with self._lock:
+            self._ensure_open()
+            entries = self._mute_entries_locked()
+            migrated = [
+                replace(mute, scope=mute.source_session_id)
+                if mute.scope == "global" and mute.source_session_id
+                else mute
+                for mute in entries
+            ]
+            if migrated != entries:
+                self._write_mute_entries_locked(migrated)
 
     def __enter__(self) -> "ContinuityStore":
         return self
@@ -803,25 +830,27 @@ class ContinuityStore:
         if not normalized:
             raise ValueError("mute topic is required")
         when = float(observed_at if observed_at is not None else time.time())
+        target_scope = str(scope or "").strip() or "global"
         with self._lock:
             self._ensure_open()
-            entries = [mute for mute in self._mute_entries_locked() if mute.cleared_at is None]
-            for mute in entries:
+            active = [mute for mute in self._mute_entries_locked() if mute.cleared_at is None]
+            scope_entries = [mute for mute in active if mute.scope == target_scope]
+            for mute in scope_entries:
                 if normalize_text(mute.topic) == normalize_text(normalized):
                     return mute
-            if len(entries) >= MUTE_MAX_ACTIVE:
-                raise ContinuityStoreError("too many active topic mutes")
+            if len(scope_entries) >= MUTE_MAX_ACTIVE:
+                raise ContinuityStoreError("too many active topic mutes for this session")
             mute = MemoryMute(
                 id=uuid.uuid4().hex,
-                scope=str(scope or "global"),
+                scope=target_scope,
                 topic=normalized,
                 created_at=when,
                 source_session_id=str(session_id or ""),
                 source_turn_id=str(turn_id or ""),
                 reason=str(reason or "user_mute"),
             )
-            entries.append(mute)
-            self._write_mute_entries_locked(entries)
+            active.append(mute)
+            self._write_mute_entries_locked(active)
             return mute
 
     def list_topic_mutes(
@@ -1088,6 +1117,115 @@ class ContinuityStore:
     get_retention_diagnostics = continuity_diagnostics
 
     # ------------------------------------------------------------------
+    def list_scopes(self) -> list[str]:
+        """Return every scope that currently owns durable Continuity state."""
+
+        with self._lock:
+            self._ensure_open()
+            scopes: set[str] = set()
+            for table in ("memory_items", "memory_tombstones", "relationship_events"):
+                rows = self._connection.execute(
+                    f"SELECT DISTINCT scope FROM {table}"
+                ).fetchall()
+                scopes.update(str(row["scope"] or "") for row in rows)
+            scopes.update(mute.scope for mute in self._mute_entries_locked())
+        return sorted(scope for scope in scopes if scope)
+
+    def purge_scope(self, scope: str) -> dict[str, int]:
+        """Remove every durable row owned by one Session scope (recovery purge).
+
+        Used by the startup reaper when a scope has neither a live transcript
+        nor a backup transcript.  Derived rows (FTS/embeddings/mentions/links,
+        relationship snapshots) are removed together with their sources; the
+        returned counts are for logs and tests.
+        """
+
+        target = str(scope or "").strip()
+        if not target:
+            raise ValueError("scope is required")
+        counts = {
+            "memories": 0,
+            "tombstones": 0,
+            "relationship_events": 0,
+            "journal_turns": 0,
+            "mutes": 0,
+        }
+        with self._lock:
+            self._ensure_open()
+            try:
+                self._connection.execute("BEGIN IMMEDIATE")
+                memory_rows = self._connection.execute(
+                    "SELECT id FROM memory_items WHERE scope = ?", (target,)
+                ).fetchall()
+                memory_ids = [str(row["id"]) for row in memory_rows]
+                if memory_ids:
+                    placeholders = ",".join("?" for _ in memory_ids)
+                    for table in ("memory_embeddings", "memory_mentions", "memory_links"):
+                        column = "memory_id"
+                        if table == "memory_links":
+                            self._connection.execute(
+                                f"DELETE FROM memory_links WHERE from_memory_id IN ({placeholders}) "
+                                f"OR to_memory_id IN ({placeholders})",
+                                (*memory_ids, *memory_ids),
+                            )
+                            continue
+                        self._connection.execute(
+                            f"DELETE FROM {table} WHERE {column} IN ({placeholders})",
+                            memory_ids,
+                        )
+                    self._connection.execute(
+                        f"DELETE FROM memory_items WHERE id IN ({placeholders})", memory_ids
+                    )
+                counts["memories"] = len(memory_ids)
+
+                tombstone_rows = self._connection.execute(
+                    "SELECT id FROM memory_tombstones WHERE scope = ?", (target,)
+                ).fetchall()
+                tombstone_ids = [str(row["id"]) for row in tombstone_rows]
+                if tombstone_ids:
+                    placeholders = ",".join("?" for _ in tombstone_ids)
+                    self._connection.execute(
+                        f"DELETE FROM memory_forget_sources WHERE tombstone_id IN ({placeholders})",
+                        tombstone_ids,
+                    )
+                self._connection.execute(
+                    "DELETE FROM memory_forget_sources WHERE source_session_id = ?", (target,)
+                )
+                self._connection.execute(
+                    "DELETE FROM memory_tombstones WHERE scope = ?", (target,)
+                )
+                counts["tombstones"] = len(tombstone_ids)
+
+                cursor = self._connection.execute(
+                    "DELETE FROM relationship_events WHERE scope = ?", (target,)
+                )
+                counts["relationship_events"] = int(cursor.rowcount or 0)
+                self._connection.execute(
+                    "DELETE FROM relationship_state WHERE scope = ?", (target,)
+                )
+                self._connection.execute(
+                    "DELETE FROM short_term_affect WHERE scope = ?", (target,)
+                )
+
+                cursor = self._connection.execute(
+                    "DELETE FROM consolidation_turns WHERE session_id = ?", (target,)
+                )
+                counts["journal_turns"] = int(cursor.rowcount or 0)
+
+                entries = self._mute_entries_locked()
+                kept = [mute for mute in entries if mute.scope != target]
+                counts["mutes"] = len(entries) - len(kept)
+                if counts["mutes"]:
+                    self._write_mute_entries_locked(kept)
+                self._connection.execute("COMMIT")
+            except Exception:
+                try:
+                    self._connection.execute("ROLLBACK")
+                except sqlite3.Error:
+                    pass
+                raise
+        return counts
+
     # C5 relationship derived state
     # ------------------------------------------------------------------
     @staticmethod
@@ -1135,16 +1273,32 @@ class ContinuityStore:
         ))
         return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
+    def _relationship_scopes_locked(self) -> list[str]:
+        rows = self._connection.execute(
+            "SELECT DISTINCT scope FROM relationship_events"
+        ).fetchall()
+        return sorted(str(row["scope"]) for row in rows)
+
     def _rebuild_relationship_locked(self, *, as_of: float, policy: RelationshipPolicy) -> None:
-        """Deterministically recompute C5 bounded deltas and derived snapshots."""
+        """Recompute every scope that has relationship events (broad invalidation)."""
+
+        for scope in self._relationship_scopes_locked():
+            self._rebuild_relationship_scope_locked(scope=scope, as_of=as_of, policy=policy)
+
+    def _rebuild_relationship_scope_locked(
+        self, *, scope: str, as_of: float, policy: RelationshipPolicy
+    ) -> None:
+        """Deterministically recompute one Session's bounded deltas and snapshots."""
 
         policy.validate()
+        target_scope = str(scope)
         rows = self._connection.execute(
             """
             SELECT * FROM relationship_events
-             WHERE invalidated_at IS NULL
+             WHERE invalidated_at IS NULL AND scope = ?
              ORDER BY occurred_at ASC, event_id ASC
-            """
+            """,
+            (target_scope,),
         ).fetchall()
         window_seconds = float(policy.window_hours) * 3600.0
         windows: dict[tuple[str, str, int], deque[tuple[float, float]]] = defaultdict(deque)
@@ -1189,15 +1343,22 @@ class ContinuityStore:
             value = _bounded(policy.long_term_baseline + relationship_sums.get(dimension, 0.0))
             self._connection.execute(
                 """
-                INSERT INTO relationship_state(dimension, value, event_count, updated_at, policy_version)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(dimension) DO UPDATE SET
+                INSERT INTO relationship_state(scope, dimension, value, event_count, updated_at, policy_version)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(scope, dimension) DO UPDATE SET
                     value = excluded.value,
                     event_count = excluded.event_count,
                     updated_at = excluded.updated_at,
                     policy_version = excluded.policy_version
                 """,
-                (dimension, value, relationship_counts.get(dimension, 0), as_of, policy.policy_version),
+                (
+                    target_scope,
+                    dimension,
+                    value,
+                    relationship_counts.get(dimension, 0),
+                    as_of,
+                    policy.policy_version,
+                ),
             )
 
         for dimension in policy.affect_dimensions:
@@ -1214,15 +1375,15 @@ class ContinuityStore:
             value = _bounded(value)
             self._connection.execute(
                 """
-                INSERT INTO short_term_affect(dimension, value, event_count, as_of, policy_version)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(dimension) DO UPDATE SET
+                INSERT INTO short_term_affect(scope, dimension, value, event_count, as_of, policy_version)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(scope, dimension) DO UPDATE SET
                     value = excluded.value,
                     event_count = excluded.event_count,
                     as_of = excluded.as_of,
                     policy_version = excluded.policy_version
                 """,
-                (dimension, value, count, as_of, policy.policy_version),
+                (target_scope, dimension, value, count, as_of, policy.policy_version),
             )
 
     def apply_relationship_proposals(
@@ -1238,6 +1399,7 @@ class ContinuityStore:
         policy = policy or RelationshipPolicy()
         policy.validate()
         source_session_id = storage_session_id(evidence.session_id)
+        scope = source_session_id
         source_turn_id = str(evidence.turn_id or "").strip()
         if not source_turn_id:
             raise ValueError("relationship proposal requires turn_id")
@@ -1285,8 +1447,8 @@ class ContinuityStore:
                     source_memory_id = str(proposal.source_memory_id or "").strip()
                     if not source_memory_id and source_memory_key:
                         linked = self._connection.execute(
-                            "SELECT id FROM memory_items WHERE scope = 'global' AND memory_key = ? AND state = 'active'",
-                            (source_memory_key,),
+                            "SELECT id FROM memory_items WHERE scope = ? AND memory_key = ? AND state = 'active'",
+                            (scope, source_memory_key),
                         ).fetchone()
                         if linked is not None:
                             source_memory_id = str(linked["id"])
@@ -1302,15 +1464,16 @@ class ContinuityStore:
                     cursor = self._connection.execute(
                         """
                         INSERT OR IGNORE INTO relationship_events(
-                            event_id, source_session_id, source_turn_id,
+                            event_id, scope, source_session_id, source_turn_id,
                             source_memory_id, source_memory_key, source_hash,
                             source_fingerprint, event_type, state_class, dimension,
                             proposed_delta, bounded_delta, confidence, occurred_at,
                             created_at, invalidated_at, invalidation_reason, policy_version
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.0, ?, ?, ?, NULL, '', ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.0, ?, ?, ?, NULL, '', ?)
                         """,
                         (
                             event_id,
+                            scope,
                             source_session_id,
                             source_turn_id,
                             source_memory_id or None,
@@ -1329,7 +1492,7 @@ class ContinuityStore:
                     )
                     if int(cursor.rowcount or 0) > 0:
                         accepted.append(event_id)
-                self._rebuild_relationship_locked(as_of=now, policy=policy)
+                self._rebuild_relationship_scope_locked(scope=scope, as_of=now, policy=policy)
                 self._connection.execute("COMMIT")
             except Exception:
                 try:
@@ -1351,16 +1514,23 @@ class ContinuityStore:
     def rebuild_relationship_state(
         self,
         *,
+        scope: str = "",
         now: float | None = None,
         policy: RelationshipPolicy | None = None,
     ) -> RelationshipSnapshot:
         policy = policy or RelationshipPolicy()
         when = float(time.time() if now is None else now)
+        target_scope = str(scope or "").strip()
         with self._lock:
             self._ensure_open()
             try:
                 self._connection.execute("BEGIN IMMEDIATE")
-                self._rebuild_relationship_locked(as_of=when, policy=policy)
+                if target_scope:
+                    self._rebuild_relationship_scope_locked(
+                        scope=target_scope, as_of=when, policy=policy
+                    )
+                else:
+                    self._rebuild_relationship_locked(as_of=when, policy=policy)
                 self._connection.execute("COMMIT")
             except Exception:
                 try:
@@ -1368,58 +1538,116 @@ class ContinuityStore:
                 except sqlite3.Error:
                     pass
                 raise
-        return self.get_relationship_snapshot(now=when, policy=policy)
+        return self.get_relationship_snapshot(
+            scope=target_scope or "global", now=when, policy=policy
+        )
+
+    def _read_relationship_snapshot_rows_locked(self, scope: str) -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
+        relationship_rows = self._connection.execute(
+            "SELECT * FROM relationship_state WHERE scope = ? ORDER BY dimension",
+            (scope,),
+        ).fetchall()
+        affect_rows = self._connection.execute(
+            "SELECT * FROM short_term_affect WHERE scope = ? ORDER BY dimension",
+            (scope,),
+        ).fetchall()
+        return relationship_rows, affect_rows
 
     def get_relationship_snapshot(
         self,
         *,
+        scope: str = "global",
         now: float | None = None,
         policy: RelationshipPolicy | None = None,
     ) -> RelationshipSnapshot:
-        """Read a bounded snapshot without scanning event history.
+        """Read one Session's bounded snapshot without scanning event history.
 
         Affect rows are analytically decayed from their stored as-of timestamp,
-        so the Main Chat fast path reads only the small snapshot tables.
+        so the Main Chat fast path reads only the small snapshot tables.  A
+        scope with events but no cached rows heals itself on read; a scope with
+        no events returns the neutral baseline (a fresh dialogue starts at
+        zero relationship history).
         """
 
+        target_scope = str(scope or "").strip() or "global"
         policy = policy or RelationshipPolicy()
         when = float(time.time() if now is None else now)
         with self._lock:
             self._ensure_open()
-            relationship_rows = self._connection.execute(
-                "SELECT * FROM relationship_state ORDER BY dimension"
-            ).fetchall()
-            affect_rows = self._connection.execute(
-                "SELECT * FROM short_term_affect ORDER BY dimension"
-            ).fetchall()
-        relationship = tuple(
-            RelationshipDimensionState(
-                dimension=str(row["dimension"]),
-                value=float(row["value"]),
-                event_count=int(row["event_count"]),
-                updated_at=float(row["updated_at"]),
-                policy_version=str(row["policy_version"]),
-            )
-            for row in relationship_rows
-        )
-        affects: list[AffectDimensionState] = []
-        for row in affect_rows:
-            dimension = str(row["dimension"])
-            value = float(row["value"])
-            as_of = float(row["as_of"])
-            if when > as_of and value != policy.affect_baseline:
-                half_life_seconds = policy.affect_half_life(dimension) * 3600.0
-                decay = math.exp(-math.log(2.0) * (when - as_of) / half_life_seconds)
-                value = _bounded(policy.affect_baseline + (value - policy.affect_baseline) * decay)
-            affects.append(
-                AffectDimensionState(
-                    dimension=dimension,
-                    value=value,
+            relationship_rows, affect_rows = self._read_relationship_snapshot_rows_locked(target_scope)
+            if not relationship_rows and not affect_rows:
+                has_events = self._connection.execute(
+                    "SELECT 1 FROM relationship_events WHERE invalidated_at IS NULL AND scope = ? LIMIT 1",
+                    (target_scope,),
+                ).fetchone() is not None
+                if has_events:
+                    try:
+                        self._connection.execute("BEGIN IMMEDIATE")
+                        self._rebuild_relationship_scope_locked(
+                            scope=target_scope, as_of=when, policy=policy
+                        )
+                        self._connection.execute("COMMIT")
+                    except Exception:
+                        try:
+                            self._connection.execute("ROLLBACK")
+                        except sqlite3.Error:
+                            pass
+                        raise
+                    relationship_rows, affect_rows = self._read_relationship_snapshot_rows_locked(
+                        target_scope
+                    )
+        if relationship_rows:
+            relationship = tuple(
+                RelationshipDimensionState(
+                    dimension=str(row["dimension"]),
+                    value=float(row["value"]),
                     event_count=int(row["event_count"]),
-                    as_of=when,
+                    updated_at=float(row["updated_at"]),
                     policy_version=str(row["policy_version"]),
                 )
+                for row in relationship_rows
             )
+        else:
+            relationship = tuple(
+                RelationshipDimensionState(
+                    dimension=dimension,
+                    value=_bounded(policy.long_term_baseline),
+                    event_count=0,
+                    updated_at=when,
+                    policy_version=policy.policy_version,
+                )
+                for dimension in policy.relationship_dimensions
+            )
+        affects: list[AffectDimensionState] = []
+        if affect_rows:
+            for row in affect_rows:
+                dimension = str(row["dimension"])
+                value = float(row["value"])
+                as_of = float(row["as_of"])
+                if when > as_of and value != policy.affect_baseline:
+                    half_life_seconds = policy.affect_half_life(dimension) * 3600.0
+                    decay = math.exp(-math.log(2.0) * (when - as_of) / half_life_seconds)
+                    value = _bounded(policy.affect_baseline + (value - policy.affect_baseline) * decay)
+                affects.append(
+                    AffectDimensionState(
+                        dimension=dimension,
+                        value=value,
+                        event_count=int(row["event_count"]),
+                        as_of=when,
+                        policy_version=str(row["policy_version"]),
+                    )
+                )
+        else:
+            affects = [
+                AffectDimensionState(
+                    dimension=dimension,
+                    value=float(policy.affect_baseline),
+                    event_count=0,
+                    as_of=when,
+                    policy_version=policy.policy_version,
+                )
+                for dimension in policy.affect_dimensions
+            ]
         return RelationshipSnapshot(relationship=relationship, affect=tuple(affects), as_of=when)
 
     def list_relationship_events(self, *, include_invalidated: bool = False) -> list[RelationshipEvent]:
@@ -1508,14 +1736,28 @@ class ContinuityStore:
                     pass
                 raise
 
-    def relationship_diagnostics(self, *, now: float | None = None, policy: RelationshipPolicy | None = None) -> dict[str, Any]:
+    def relationship_diagnostics(
+        self,
+        *,
+        scope: str = "global",
+        now: float | None = None,
+        policy: RelationshipPolicy | None = None,
+    ) -> dict[str, Any]:
+        target_scope = str(scope or "").strip() or "global"
         policy = policy or RelationshipPolicy()
-        snapshot = self.get_relationship_snapshot(now=now, policy=policy)
+        snapshot = self.get_relationship_snapshot(scope=target_scope, now=now, policy=policy)
         with self._lock:
             self._ensure_open()
-            active = int(self._connection.execute("SELECT COUNT(*) FROM relationship_events WHERE invalidated_at IS NULL").fetchone()[0])
-            invalidated = int(self._connection.execute("SELECT COUNT(*) FROM relationship_events WHERE invalidated_at IS NOT NULL").fetchone()[0])
+            active = int(self._connection.execute(
+                "SELECT COUNT(*) FROM relationship_events WHERE invalidated_at IS NULL AND scope = ?",
+                (target_scope,),
+            ).fetchone()[0])
+            invalidated = int(self._connection.execute(
+                "SELECT COUNT(*) FROM relationship_events WHERE invalidated_at IS NOT NULL AND scope = ?",
+                (target_scope,),
+            ).fetchone()[0])
         return {
+            "scope": target_scope,
             "policy_version": policy.policy_version,
             "active_event_count": active,
             "invalidated_event_count": invalidated,
@@ -1795,8 +2037,12 @@ class ContinuityStore:
         event_id = self._life_stable_id("life-event", fingerprint)
         linked_memory_id = str(source_memory_id or "")
         if not linked_memory_id and source_memory_key:
+            # Character Life is character-global while memories are Session-scoped,
+            # so the provenance link resolves the newest matching active row
+            # across scopes; forget closure additionally matches by key.
             row = self._connection.execute(
-                "SELECT id FROM memory_items WHERE scope = 'global' AND memory_key = ? AND state = 'active'",
+                "SELECT id FROM memory_items WHERE memory_key = ? AND state = 'active' "
+                "ORDER BY updated_at DESC LIMIT 1",
                 (str(source_memory_key),),
             ).fetchone()
             if row is not None:
@@ -2430,7 +2676,8 @@ class ContinuityStore:
                         (tombstone_id,),
                     )
                 if invalidated_relationship_events:
-                    self._rebuild_relationship_locked(
+                    self._rebuild_relationship_scope_locked(
+                        scope=scope,
                         as_of=when,
                         policy=relationship_policy or RelationshipPolicy(),
                     )
@@ -2650,6 +2897,21 @@ class ContinuityStore:
             raise ContinuityStoreError("reinforced memory could not be reloaded")
         return record
 
+    @staticmethod
+    def _owning_scope(evidence: TurnEvidence) -> str:
+        """Session isolation: durable state belongs to its accepted turn's Session."""
+
+        return storage_session_id(evidence.session_id)
+
+    @staticmethod
+    def _resolve_scope(candidate_scope: str, owning_scope: str) -> str:
+        """Legacy/default placeholder values resolve to the owning Session."""
+
+        scope = str(candidate_scope or "").strip()
+        if not scope or scope == "global":
+            return owning_scope
+        return scope
+
     def apply_memory_candidates(
         self,
         evidence: TurnEvidence,
@@ -2716,11 +2978,13 @@ class ContinuityStore:
                         return []
 
                 seen: set[tuple[str, str]] = set()
+                owning_scope = self._owning_scope(evidence)
                 for candidate in candidate_list:
                     key = str(candidate.memory_key or "").strip()
-                    scope = str(candidate.scope or "global").strip() or "global"
+                    scope = self._resolve_scope(candidate.scope, owning_scope)
                     if not key or not str(candidate.summary or "").strip():
                         continue
+                    candidate = replace(candidate, scope=scope)
                     dedupe_key = (scope, key)
                     if dedupe_key in seen:
                         continue

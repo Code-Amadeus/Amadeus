@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 MIGRATION_1 = r"""
@@ -482,6 +482,58 @@ PRAGMA user_version = 7;
 """
 
 
+MIGRATION_8 = r"""
+-- 2026-09 Session isolation: remembered facts, tombstones, topic mutes and
+-- relationship/affect state belong to their owning chat Session.  ``scope`` is
+-- the storage form of that Session id; 'global' is a legacy placeholder that
+-- is backfilled from recorded provenance below.  Character Life (C6) and the
+-- RealityClock intentionally stay character-/host-global.
+ALTER TABLE relationship_events ADD COLUMN scope TEXT NOT NULL DEFAULT 'global';
+CREATE INDEX IF NOT EXISTS idx_relationship_events_scope
+    ON relationship_events(scope, occurred_at, event_id);
+
+-- The two snapshot tables are derived caches that can always be recomputed
+-- from scoped events (heal-on-read keeps them current), so they are re-created
+-- with the scope key instead of migrated row by row.
+DROP TABLE IF EXISTS relationship_state;
+CREATE TABLE relationship_state (
+    scope TEXT NOT NULL,
+    dimension TEXT NOT NULL CHECK (dimension IN (
+        'familiarity', 'trust', 'warmth', 'respect', 'closeness'
+    )),
+    value REAL NOT NULL CHECK (value >= 0.0 AND value <= 1.0),
+    event_count INTEGER NOT NULL DEFAULT 0 CHECK (event_count >= 0),
+    updated_at REAL NOT NULL,
+    policy_version TEXT NOT NULL,
+    PRIMARY KEY(scope, dimension)
+);
+
+DROP TABLE IF EXISTS short_term_affect;
+CREATE TABLE short_term_affect (
+    scope TEXT NOT NULL,
+    dimension TEXT NOT NULL CHECK (dimension IN (
+        'irritation', 'embarrassment', 'tension', 'playfulness'
+    )),
+    value REAL NOT NULL CHECK (value >= 0.0 AND value <= 1.0),
+    event_count INTEGER NOT NULL DEFAULT 0 CHECK (event_count >= 0),
+    as_of REAL NOT NULL,
+    policy_version TEXT NOT NULL,
+    PRIMARY KEY(scope, dimension)
+);
+
+-- Ownership backfill from recorded provenance; rows without a source Session
+-- keep the inert 'global' placeholder and are never matched by a real scope.
+UPDATE memory_items SET scope = source_session_id
+ WHERE scope = 'global' AND source_session_id <> '';
+UPDATE memory_tombstones SET scope = source_session_id
+ WHERE scope = 'global' AND source_session_id <> '';
+UPDATE relationship_events SET scope = source_session_id
+ WHERE scope = 'global' AND source_session_id <> '';
+
+PRAGMA user_version = 8;
+"""
+
+
 MIGRATIONS: dict[int, str] = {
     1: MIGRATION_1,
     2: MIGRATION_2,
@@ -490,4 +542,5 @@ MIGRATIONS: dict[int, str] = {
     5: MIGRATION_5,
     6: MIGRATION_6,
     7: MIGRATION_7,
+    8: MIGRATION_8,
 }

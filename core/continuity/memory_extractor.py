@@ -20,9 +20,11 @@ implement the same protocol without changing Host write semantics.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import re
 import unicodedata
+from dataclasses import replace
 from typing import Protocol, Sequence
 
 from core.continuity.models import (
@@ -33,6 +35,11 @@ from core.continuity.models import (
     MemoryKind,
     MemoryPriorityClass,
     TurnEvidence,
+)
+from core.continuity.text_excerpt import (
+    DeterministicTextCompressor,
+    TextCompressor,
+    compress_excerpt,
 )
 from core.continuity.topic_mute import normalize_topic
 
@@ -280,7 +287,9 @@ def _looks_like_open_loop(text: str) -> bool:
 # deliberately simple, testable, and lower than the stable-slot rules.
 _SUBSTANTIVE_MIN_CONTENT_CHARS = 12
 _ANCHORED_MIN_CONTENT_CHARS = 4
-_EPISODIC_SUMMARY_MAX_CHARS = 400
+# Public because the renderer bounds memory lines by the same verbatim budget:
+# one source of truth for "how much of an utterance stays recallable".
+EPISODIC_SUMMARY_MAX_CHARS = 800
 
 _PAST_ANCHOR_MARKERS = (
     "昨天", "前天", "前几天", "几天前", "上周", "上周末", "上个月", "去年", "前年",
@@ -314,9 +323,11 @@ def _contains_marker(text: str, markers: tuple[str, ...]) -> bool:
 def _candidate_from_substantive_utterance(claim: str) -> MemoryCandidate | None:
     """Fallback passive write: remember the user's own substantive sentence.
 
-    The summary keeps the user's wording verbatim (bounded) so later recall
-    and C8 archive quoting carry detail instead of a paraphrase.  Stable slots
-    and preferences are resolved by the earlier rules and never reach here.
+    The summary keeps the user's wording verbatim up to the bounded budget; an
+    overlong utterance is semantically compressed later in ``extract()`` (see
+    ``EPISODIC_SUMMARY_MAX_CHARS``).  The key hashes the *full* normalized text,
+    so re-extraction with any compressor stays idempotent.  Stable slots and
+    preferences are resolved by the earlier rules and never reach here.
     """
 
     text = _norm(claim)
@@ -328,7 +339,7 @@ def _candidate_from_substantive_utterance(claim: str) -> MemoryCandidate | None:
     minimum = _ANCHORED_MIN_CONTENT_CHARS if anchored else _SUBSTANTIVE_MIN_CONTENT_CHARS
     if content_length < minimum:
         return None
-    summary = text[:_EPISODIC_SUMMARY_MAX_CHARS].strip()
+    summary = text.strip()
     if not summary:
         return None
     return MemoryCandidate(
@@ -467,7 +478,15 @@ def parse_explicit_memory_directive(text: str) -> MemoryDirective | None:
 
 
 class DeterministicMemoryExtractor:
-    """High-precision user-only baseline used when no model extractor exists."""
+    """High-precision user-only baseline used when no model extractor exists.
+
+    The optional ``text_compressor`` only shapes over-budget utterances; it is
+    the shared semantic-compression port (model-backed in production, the
+    deterministic sampler in the model-less baseline).
+    """
+
+    def __init__(self, *, text_compressor: TextCompressor | None = None) -> None:
+        self._text_compressor = text_compressor or DeterministicTextCompressor()
 
     async def extract(self, evidence: TurnEvidence) -> Sequence[MemoryCandidate]:
         user_text = _norm(evidence.user_text)
@@ -477,14 +496,46 @@ class DeterministicMemoryExtractor:
         directive = parse_explicit_memory_directive(user_text)
         if directive is not None:
             if directive.action is MemoryDirectiveAction.REMEMBER and directive.candidate:
-                return (directive.candidate,)
+                candidate = directive.candidate
+                original = str(candidate.summary or "")
+                if len(original) > EPISODIC_SUMMARY_MAX_CHARS:
+                    # An explicit "记住…" payload over budget is still one
+                    # over-limit turn: compress it as a whole (semantic when a
+                    # model is wired, deterministic otherwise) instead of
+                    # storing an unbounded note or tail-cutting it.
+                    compressed = await asyncio.to_thread(
+                        self._text_compressor.compress,
+                        original,
+                        EPISODIC_SUMMARY_MAX_CHARS,
+                        speaker="用户发言",
+                    )
+                    summary = str(compressed or "").strip() or compress_excerpt(
+                        original, EPISODIC_SUMMARY_MAX_CHARS
+                    )
+                    candidate = replace(
+                        candidate, summary=summary, object_text=summary
+                    )
+                return (candidate,)
             return ()
 
         candidate = _candidate_from_claim(user_text, explicit_keep=False)
         if candidate is not None:
             return (candidate,)
         remembered = _candidate_from_substantive_utterance(user_text)
-        return (remembered,) if remembered is not None else ()
+        if remembered is None:
+            return ()
+        if len(user_text) > EPISODIC_SUMMARY_MAX_CHARS:
+            compressed = await asyncio.to_thread(
+                self._text_compressor.compress,
+                user_text,
+                EPISODIC_SUMMARY_MAX_CHARS,
+                speaker="用户发言",
+            )
+            summary = str(compressed or "").strip() or compress_excerpt(
+                user_text, EPISODIC_SUMMARY_MAX_CHARS
+            )
+            remembered = replace(remembered, summary=summary, object_text=summary)
+        return (remembered,)
 
 
 __all__ = [

@@ -40,12 +40,12 @@ def _proposal(
     )
 
 
-def _relationship_value(store: ContinuityStore, dimension: str, *, now: float) -> float:
-    return store.get_relationship_snapshot(now=now).relationship_value(dimension)
+def _relationship_value(store: ContinuityStore, dimension: str, *, now: float, scope: str = "s") -> float:
+    return store.get_relationship_snapshot(scope=scope, now=now).relationship_value(dimension)
 
 
-def _affect_value(store: ContinuityStore, dimension: str, *, now: float) -> float:
-    return store.get_relationship_snapshot(now=now).affect_value(dimension)
+def _affect_value(store: ContinuityStore, dimension: str, *, now: float, scope: str = "s") -> float:
+    return store.get_relationship_snapshot(scope=scope, now=now).affect_value(dimension)
 
 
 async def test_default_extractor_uses_user_evidence_not_assistant_friendliness() -> None:
@@ -166,11 +166,11 @@ def test_forget_closure_invalidates_relationship_effect_even_without_memory_row(
     assert _relationship_value(continuity_store, "trust", now=1000.0) == 0.54
 
     # There is no memory row, but the opaque source key still closes the derived effect.
-    assert continuity_store.forget_memory(key, observed_at=1100.0) == 0
+    assert continuity_store.forget_memory(key, scope="s", observed_at=1100.0) == 0
     assert _relationship_value(continuity_store, "trust", now=1100.0) == 0.5
     events = continuity_store.list_relationship_events(include_invalidated=True)
     assert len(events) == 1 and events[0].invalidated_at == 1100.0
-    assert text not in repr(continuity_store.relationship_diagnostics(now=1100.0))
+    assert text not in repr(continuity_store.relationship_diagnostics(now=1100.0, scope="s"))
 
 
 def test_forget_closure_follows_linked_memory_id(continuity_store) -> None:
@@ -204,7 +204,7 @@ def test_forget_closure_follows_linked_memory_id(continuity_store) -> None:
     )
     event = continuity_store.list_relationship_events()[0]
     assert event.source_memory_id == records[0].id
-    assert continuity_store.forget_memory("user.fact.name", observed_at=1100.0) == 1
+    assert continuity_store.forget_memory("user.fact.name", scope="s", observed_at=1100.0) == 1
     assert _relationship_value(continuity_store, "warmth", now=1100.0) == 0.5
     assert continuity_store.list_relationship_events() == []
 
@@ -221,14 +221,14 @@ def test_restart_and_explicit_rebuild_are_deterministic(tmp_path) -> None:
         ),
         as_of=1000.0,
     )
-    before = store.relationship_diagnostics(now=1300.0)
+    before = store.relationship_diagnostics(now=1300.0, scope="s")
     store.close()
 
     reopened = ContinuityStore(db_path)
     try:
-        after = reopened.relationship_diagnostics(now=1300.0)
+        after = reopened.relationship_diagnostics(now=1300.0, scope="s")
         assert before == after
-        rebuilt = reopened.rebuild_relationship_state(now=1300.0)
+        rebuilt = reopened.rebuild_relationship_state(now=1300.0, scope="s")
         assert round(rebuilt.relationship_value("warmth"), 6) == round(before["relationship"]["warmth"], 6)
         assert round(rebuilt.affect_value("playfulness"), 6) == round(before["affect"]["playfulness"], 6)
     finally:
@@ -302,7 +302,7 @@ async def test_relationship_disable_prevents_relationship_writes(continuity_stor
     await service._on_chat_complete("chat.complete", {"session_id": "s", "turn_id": "t", "full_text": "嗯"})
     await service.drain()
     assert continuity_store.list_relationship_events() == []
-    assert "Relationship context:" not in service.grounding_for_turn("继续").text
+    assert "Relationship context:" not in service.grounding_for_turn("继续", session_id="s").text
     await service.aclose(graceful=False)
 
 
@@ -391,6 +391,6 @@ def test_expired_affect_only_history_does_not_create_neutral_relationship_projec
     )
     # After many half-lives, the transient affect is below the Live projection
     # threshold. It must not manufacture a neutral long-term relationship line.
-    snapshot = continuity_store.get_relationship_snapshot(now=1000.0 + 48 * 3600)
+    snapshot = continuity_store.get_relationship_snapshot(scope="s", now=1000.0 + 48 * 3600)
     assert render_relationship_projection(snapshot) == ""
 

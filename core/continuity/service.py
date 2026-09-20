@@ -24,6 +24,11 @@ from core.continuity.archive_recall import ArchiveRecallResult, SessionArchiveSe
 from core.continuity.context_renderer import render_continuity_grounding
 from core.continuity.embedding_runtime import MemorySemanticIndex
 from core.continuity.retrieval_policy import ContinuityRetrievalPolicy
+from core.continuity.text_excerpt import (
+    DeterministicTextCompressor,
+    TextCompressor,
+    default_text_compressor,
+)
 from core.continuity.relationship import RelationshipRuntime
 from core.continuity.relationship_policy import RelationshipPolicy
 from core.continuity.life_policy import LifePolicy
@@ -66,6 +71,7 @@ class ContinuityService:
         memory_retriever: MemoryRetriever | None = None,
         retrieval_policy: ContinuityRetrievalPolicy | None = None,
         archive_searcher: SessionArchiveSearcher | None = None,
+        text_compressor: TextCompressor | None = None,
         relationship_runtime: RelationshipRuntime | None = None,
         relationship_policy: RelationshipPolicy | None = None,
         life_runtime: CharacterLifeRuntime | None = None,
@@ -81,7 +87,10 @@ class ContinuityService:
     ) -> None:
         self.store = store
         self.clock = clock or RealityClock(store)
-        self.memory_extractor = memory_extractor or DeterministicMemoryExtractor()
+        self.text_compressor = text_compressor or DeterministicTextCompressor()
+        self.memory_extractor = memory_extractor or DeterministicMemoryExtractor(
+            text_compressor=self.text_compressor
+        )
         self.memory_resolver = memory_resolver or MemoryResolver()
         self.retrieval_policy = retrieval_policy or ContinuityRetrievalPolicy()
         self.memory_retriever = memory_retriever or MemoryRetriever(
@@ -89,7 +98,10 @@ class ContinuityService:
         )
         self.session_dir = Path(session_dir).expanduser() if session_dir is not None else None
         self.archive_searcher = archive_searcher or SessionArchiveSearcher(
-            store, self.session_dir, policy=self.retrieval_policy
+            store,
+            self.session_dir,
+            policy=self.retrieval_policy,
+            text_compressor=self.text_compressor,
         )
         self.relationship_policy = relationship_policy or RelationshipPolicy()
         self.relationship_runtime = relationship_runtime or RelationshipRuntime(
@@ -154,6 +166,7 @@ class ContinuityService:
             session_dir=session_dir,
             memory_retriever=retriever,
             retrieval_policy=policy,
+            text_compressor=default_text_compressor(),
             relationship_policy=relationship_policy,
             life_runtime=life_runtime,
             life_policy=life_policy,
@@ -430,12 +443,12 @@ class ContinuityService:
             "source_turn_id": mute.source_turn_id,
         }
 
-    def c7_list_mutes(self) -> list[dict[str, Any]]:
+    def c7_list_mutes(self, *, scope: str | None = None) -> list[dict[str, Any]]:
         """Return active user-requested topic mutes (bounded user controls)."""
 
         return [
             self._c7_mute_payload(mute)
-            for mute in self.store.list_topic_mutes(active_only=True)
+            for mute in self.store.list_topic_mutes(active_only=True, scope=scope)
         ]
 
     def c7_clear_mute(self, mute_id: str) -> dict[str, Any] | None:
@@ -486,12 +499,12 @@ class ContinuityService:
             ],
         }
 
-    def c7_status(self) -> dict[str, Any]:
+    def c7_status(self, *, scope: str = "global") -> dict[str, Any]:
         now = self.clock.current_time()
         now_ts = float(now.timestamp())
         relationship = (
             self.store.relationship_diagnostics(
-                now=now_ts, policy=self.relationship_policy
+                scope=scope, now=now_ts, policy=self.relationship_policy
             )
             if self.relationship_enabled
             else {"disabled": True}
@@ -735,6 +748,7 @@ class ContinuityService:
         directive = parse_explicit_memory_directive(evidence.user_text)
         if directive is None:
             return
+        scope = storage_session_id(evidence.session_id)
         # Explicit memory-control commands are intentionally durable before the
         # normal post-completion consolidation path.
         await asyncio.to_thread(self.store.register_turn_observed, evidence)
@@ -761,6 +775,7 @@ class ContinuityService:
             await asyncio.to_thread(
                 self.store.add_topic_mute,
                 topic,
+                scope=scope,
                 session_id=evidence.session_id,
                 turn_id=evidence.turn_id,
                 observed_at=evidence.observed_at,
@@ -772,6 +787,7 @@ class ContinuityService:
             memory_key = await asyncio.to_thread(
                 self.store.find_active_memory_key_by_exact_summary,
                 directive.target_text,
+                scope=scope,
             )
         if not memory_key:
             logger.info(
@@ -782,7 +798,7 @@ class ContinuityService:
         await asyncio.to_thread(
             self.store.forget_memory,
             memory_key,
-            scope="global",
+            scope=scope,
             kind=directive.target_kind,
             session_id=evidence.session_id,
             turn_id=evidence.turn_id,
@@ -877,19 +893,19 @@ class ContinuityService:
                 name=f"continuity-turn-load:{turn_id}",
             )
 
-    def _mute_topics_for_query(self, query: str) -> tuple[tuple[str, ...], int]:
+    def _mute_topics_for_query(self, query: str, scope: str) -> tuple[tuple[str, ...], int]:
         """Return (topics suppressed this turn, count of topics the user raised).
 
         A topic the current user turn raises itself is dropped from the
         suppressed list for this turn only, so suppression never makes a
         remembered topic unrecallable.  Reading the mute list must never break
-        a chat turn.
+        a chat turn.  Mutes are Session-scoped like the memories they hide.
         """
 
         if not self.memory_enabled:
             return (), 0
         try:
-            mutes = self.store.list_topic_mutes(active_only=True)
+            mutes = self.store.list_topic_mutes(active_only=True, scope=scope)
         except Exception:
             logger.exception("continuity topic mute read failed; continuing unmuted")
             return (), 0
@@ -919,14 +935,15 @@ class ContinuityService:
         started = time.perf_counter()
         snapshot = self.clock.snapshot()
         query = str(question or "")
-        suppressed_topics, mute_exempted = self._mute_topics_for_query(query)
+        scope = storage_session_id(session_id)
+        suppressed_topics, mute_exempted = self._mute_topics_for_query(query, scope)
         hits = []
         fast_started = time.perf_counter()
         if self.memory_enabled and query.strip():
             try:
                 hits = self.memory_retriever.retrieve(
                     query,
-                    scope="global",
+                    scope=scope,
                     now=float(snapshot.now.timestamp()),
                     exclude_turn_id=str(turn_id or ""),
                     suppressed_topics=suppressed_topics,
@@ -948,7 +965,7 @@ class ContinuityService:
                     archive_attempted = True
                     archive_memory_hits = self.memory_retriever.retrieve_archive(
                         query,
-                        scope="global",
+                        scope=scope,
                         now=float(snapshot.now.timestamp()),
                         exclude_turn_id=str(turn_id or ""),
                         max_items=min(3, self.retrieval_policy.max_items),
@@ -956,7 +973,7 @@ class ContinuityService:
                     )
                     archive_result = self.archive_searcher.search(
                         query,
-                        scope="global",
+                        scope=scope,
                         now=snapshot.now,
                         exclude_turn_id=str(turn_id or ""),
                         suppressed_topics=suppressed_topics,
@@ -975,7 +992,7 @@ class ContinuityService:
         if self.relationship_enabled and self.relationship_live_enabled:
             try:
                 relationship_context = self.relationship_runtime.render_projection(
-                    now=float(snapshot.now.timestamp())
+                    now=float(snapshot.now.timestamp()), scope=scope
                 )
             except Exception:
                 logger.exception("continuity relationship projection failed; omitting relationship context")

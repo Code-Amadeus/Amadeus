@@ -25,6 +25,11 @@ from typing import Sequence
 from core.continuity.models import ArchiveRetrievalHit, MemoryRecord, MemoryRetrievalHit
 from core.continuity.retrieval_policy import ContinuityRetrievalPolicy
 from core.continuity.store import ContinuityStore
+from core.continuity.text_excerpt import (
+    DeterministicTextCompressor,
+    TextCompressor,
+    compress_excerpt,
+)
 from core.continuity.topic_mute import ngram_coverage, normalize_text, text_is_muted
 
 
@@ -140,6 +145,12 @@ def has_historical_cue(query: str) -> bool:
     return any(marker in text for marker in _HISTORICAL_MARKERS)
 
 
+# One historical question quotes at most three turns; the compression budget
+# bounds how many over-budget sides may invoke the (possibly model-backed)
+# compressor, so a single question cannot fan out into unbounded model calls.
+_MAX_COMPRESSIONS_PER_SEARCH = 4
+
+
 class SessionArchiveSearcher:
     """Read-only, bounded Session JSON search gated behind low fast confidence."""
 
@@ -149,10 +160,30 @@ class SessionArchiveSearcher:
         session_dir: str | Path | None,
         *,
         policy: ContinuityRetrievalPolicy | None = None,
+        text_compressor: TextCompressor | None = None,
     ) -> None:
         self.store = store
         self.session_dir = Path(session_dir).expanduser() if session_dir is not None else None
         self.policy = policy or ContinuityRetrievalPolicy()
+        self.text_compressor = text_compressor or DeterministicTextCompressor()
+
+    def _bounded_side(
+        self, value: str, cap: int, *, speaker: str, compressions_left: list[int]
+    ) -> tuple[str, bool]:
+        """Return ``(text, condensed)``: the text as-is when it fits, else a
+        budget compression within the per-search budget (deterministic sampler
+        once spent).  ``condensed`` marks that the result is no longer verbatim."""
+
+        text = str(value or "").strip()
+        if len(text) <= cap:
+            return text, False
+        if compressions_left[0] <= 0:
+            return compress_excerpt(text, cap), True
+        compressions_left[0] -= 1
+        compressed = str(
+            self.text_compressor.compress(text, cap, speaker=speaker) or ""
+        ).strip()
+        return (compressed or compress_excerpt(text, cap)), True
 
     def evaluate_gate(self, query: str, fast_hits: Sequence[MemoryRetrievalHit]) -> tuple[bool, str]:
         if not self.policy.archive_recall_enabled:
@@ -203,8 +234,13 @@ class SessionArchiveSearcher:
             limit=max(5000, self.policy.archive_max_source_turns * 8),
         )
         grouped: dict[tuple[str, str], list[MemoryRecord]] = defaultdict(list)
+        wanted_scope = str(scope or "").strip()
         for record in anchors:
-            key = (record.source_session_id, record.source_turn_id)
+            source_sid = str(record.source_session_id)
+            if wanted_scope and wanted_scope != "global" and source_sid != wanted_scope:
+                # Session isolation: archive quoting never crosses dialogues.
+                continue
+            key = (source_sid, record.source_turn_id)
             if self.store.is_archive_source_blocked(*key):
                 continue
             grouped[key].append(record)
@@ -246,6 +282,7 @@ class SessionArchiveSearcher:
         hits: list[ArchiveRetrievalHit] = []
         opened = 0
         turns_scored = 0
+        compressions_left = [_MAX_COMPRESSIONS_PER_SEARCH]
         for sid in session_ids:
             path = self.session_dir / f"{self._safe_session_name(sid)}.json"
             if not path.is_file():
@@ -310,12 +347,25 @@ class SessionArchiveSearcher:
                 score = 0.64 * lexical + 0.21 * anchor_score + 0.15 * temporal
                 if score < self.policy.archive_min_score:
                     continue
-                max_chars = self.policy.archive_max_excerpt_chars
-                chosen_user = user_text[:max_chars].strip()
                 # Both sides of the turn are quoted so details that only the
                 # assistant voiced (a title, a name) are recoverable; the
                 # renderer labels past assistant wording as non-authoritative.
-                chosen_assistant = assistant_text[: min(max_chars, 560)].strip()
+                # A side over its budget is semantically compressed across the
+                # whole turn (deterministic sampler as the bounded fallback).
+                user_excerpt_chars = self.policy.archive_max_excerpt_chars
+                assistant_excerpt_chars = self.policy.archive_max_assistant_excerpt_chars
+                chosen_user, user_condensed = self._bounded_side(
+                    user_text,
+                    user_excerpt_chars,
+                    speaker="用户发言",
+                    compressions_left=compressions_left,
+                )
+                chosen_assistant, assistant_condensed = self._bounded_side(
+                    assistant_text,
+                    assistant_excerpt_chars,
+                    speaker="角色发言",
+                    compressions_left=compressions_left,
+                )
                 hits.append(
                     ArchiveRetrievalHit(
                         session_id=sid,
@@ -327,6 +377,8 @@ class SessionArchiveSearcher:
                         lexical_score=min(1.0, max(0.0, lexical)),
                         temporal_score=min(1.0, max(0.0, temporal)),
                         anchor_memory_ids=tuple(dict.fromkeys(r.id for r in records)),
+                        user_condensed=user_condensed,
+                        assistant_condensed=assistant_condensed,
                     )
                 )
 

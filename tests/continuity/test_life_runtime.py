@@ -168,7 +168,7 @@ def test_life_event_provenance_closes_when_linked_memory_is_forgotten(continuity
         source_memory_key="user.preference.tea",
     )
     assert len(continuity_store.list_life_events("kurisu")) == 1
-    assert continuity_store.forget_memory("user.preference.tea", observed_at=1100.0) == 1
+    assert continuity_store.forget_memory("user.preference.tea", scope="s", observed_at=1100.0) == 1
     assert continuity_store.list_life_events("kurisu") == []
     historical = continuity_store.list_life_events("kurisu", include_invalidated=True)
     assert len(historical) == 1 and historical[0].invalidated_at == 1100.0

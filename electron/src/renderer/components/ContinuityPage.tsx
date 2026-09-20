@@ -78,6 +78,7 @@ export default function ContinuityPage({ send, connected }: Props) {
   const [status, setStatus] = useState<Record<string, any>>({})
   const [memories, setMemories] = useState<MemoryItem[]>([])
   const [schedule, setSchedule] = useState<Record<string, any>>({})
+  const [sessionScope, setSessionScope] = useState('')
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState('')
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null)
@@ -86,9 +87,14 @@ export default function ContinuityPage({ send, connected }: Props) {
     if (!connected) return
     setBusy('refresh')
     try {
+      // Memory and relationship views are Session-scoped: they follow the
+      // active chat dialogue, exactly like Main Chat does.
+      const sessionResult = await send('session.list', {})
+      const scope = String(sessionResult.current_session_id || '')
+      setSessionScope(scope)
       const [statusResult, memoryResult, scheduleResult] = await Promise.all([
-        send('continuity.status', {}),
-        send('continuity.memory.list', { limit: 500 }),
+        send('continuity.status', scope ? { scope } : {}),
+        send('continuity.memory.list', scope ? { limit: 500, scope } : { limit: 500 }),
         send('continuity.life.schedule', {}),
       ])
       setStatus(asRecord(statusResult))
@@ -141,7 +147,7 @@ export default function ContinuityPage({ send, connected }: Props) {
           <div className="flex-1">
             <h1 className="text-[20px] font-[700]" style={{ color: 'var(--text)' }}>Continuity</h1>
             <p className="text-[12px] mt-0.5" style={{ color: 'var(--muted)' }}>
-              Host-owned memory, relationship, and simulated-life diagnostics. UI controls never open the Continuity database directly.
+              Host-owned memory, relationship, and simulated-life diagnostics. Memories and the relationship debug view follow the current chat session; life stays character-global. UI controls never open the Continuity database directly.
             </p>
           </div>
           <ActionButton onClick={() => { setFeedback(null); void load() }} disabled={!connected || Boolean(busy)}>{busy === 'refresh' ? 'Refreshing…' : 'Refresh'}</ActionButton>
@@ -183,7 +189,7 @@ export default function ContinuityPage({ send, connected }: Props) {
                 {Object.entries(relationshipValues).map(([key, value]) => <div key={key} className="flex justify-between gap-3"><span style={{ color: 'var(--muted)' }}>{key}</span><span style={{ color: 'var(--text)' }}>{Number(value).toFixed(3)}</span></div>)}
                 {Object.entries(affectValues).map(([key, value]) => <div key={key} className="flex justify-between gap-3"><span style={{ color: 'var(--muted)' }}>{key}</span><span style={{ color: 'var(--text)' }}>{Number(value).toFixed(3)}</span></div>)}
               </div>
-              <div className="text-[11px] mt-3" style={{ color: 'var(--muted)' }}>Debug values are derived state, not Persona, Canon, Work, or permission authority.</div>
+              <div className="text-[11px] mt-3" style={{ color: 'var(--muted)' }}>Scope {sessionScope || '—'} · Debug values are derived state, not Persona, Canon, Work, or permission authority.</div>
             </section>
             <section className="rounded-xl border p-4 lg:col-span-2" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
               <h2 className="text-[14px] font-[700] mb-2" style={{ color: 'var(--text)' }}>Character Life diagnostics</h2>
@@ -200,7 +206,7 @@ export default function ContinuityPage({ send, connected }: Props) {
         {tab === 'memories' ? <section>
           <div className="flex gap-3 mb-3">
             <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search saved memories…" className="flex-1 rounded-lg px-3 py-2 text-[12px] outline-none" style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }} />
-            <div className="text-[12px] self-center" style={{ color: 'var(--muted)' }}>{filtered.length} active</div>
+            <div className="text-[12px] self-center" style={{ color: 'var(--muted)' }}>{filtered.length} active · {sessionScope || 'no active session'}</div>
           </div>
           <div className="space-y-2">
             {filtered.map(item => <div key={item.id} className="rounded-xl border p-4" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>

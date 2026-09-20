@@ -297,6 +297,26 @@ async def bootstrap(port: int = 17777) -> None:
     global exp_tts_semaphore, exp_play_condition, output_idle_probe, host_readonly_voice_sink
     global work_status_narrator
 
+    # Refresh the fixed runtime/backup slot from the previous run's durable
+    # state before anything opens the databases.  Backup failures must never
+    # block startup.
+    try:
+        from server.backup_state import run_startup_backup
+
+        run_startup_backup(ROOT)
+    except Exception:
+        logger.exception("startup state backup failed; continuing without it")
+
+    # Then reap Session-owned state whose dialogue has neither a live
+    # transcript nor a backup copy.  This runs after the backup refresh so the
+    # pre-reap snapshot always exists.
+    try:
+        from server.session_state_reaper import run_startup_reap
+
+        run_startup_reap(ROOT)
+    except Exception:
+        logger.exception("startup session reap failed; continuing without it")
+
     auth_policy = LocalAuthPolicy.from_environment(os.environ)
     clear_inherited_auth_environment(os.environ)
     if auth_policy.required:

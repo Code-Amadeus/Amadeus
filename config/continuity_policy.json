@@ -2,7 +2,7 @@
   "retrieval": {
     "max_items": 5,
     "max_open_loops": 2,
-    "max_context_chars": 2400,
+    "max_context_chars": 3600,
     "candidate_limit": 24,
     "structured_weight": 0.34,
     "lexical_weight": 0.26,
@@ -81,7 +81,8 @@
     "max_sessions": 32,
     "max_source_turns": 120,
     "max_hits": 3,
-    "max_excerpt_chars": 720,
+    "max_excerpt_chars": 1400,
+    "max_assistant_excerpt_chars": 1000,
     "minimum_score": 0.12
   }
 }
