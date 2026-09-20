@@ -19,12 +19,6 @@ _MAX_AUDIO_BYTES = 64 * 1024 * 1024
 
 
 _SOCKS_SCHEMES = frozenset({"socks", "socks4", "socks4a", "socks5", "socks5h"})
-_HTTP_SCHEMES = frozenset({"http", "https"})
-
-
-def _is_socks_proxy(proxy_url: str) -> bool:
-    """Return True if the proxy URL specifies a SOCKS protocol."""
-    return urlsplit(proxy_url).scheme.lower() in _SOCKS_SCHEMES
 
 
 def _has_python_socks() -> bool:
@@ -35,17 +29,6 @@ def _has_python_socks() -> bool:
         return True
     except ImportError:
         return False
-
-
-def _normalize_proxy_url(scheme_key: str, raw_proxy: str) -> str:
-    """Normalize system proxy entries into valid proxy URLs."""
-    proxy = raw_proxy.strip()
-    if scheme_key == "socks":
-        if proxy.startswith("http://"):
-            return "socks5h://" + proxy[7:]
-        if "://" not in proxy:
-            return "socks5h://" + proxy
-    return proxy
 
 
 def _resolve_websocket_proxy(ws_url: str) -> str | None:
@@ -66,38 +49,37 @@ def _resolve_websocket_proxy(ws_url: str) -> str | None:
         return None
 
     proxies = urllib.request.getproxies()
-    is_secure = endpoint.scheme == "wss"
-    candidate_keys = (
-        ["wss", "socks", "https", "all", "http"]
-        if is_secure
-        else ["ws", "socks", "http", "all", "https"]
+    keys = (
+        ("wss", "socks", "https", "all", "http")
+        if endpoint.scheme == "wss"
+        else ("ws", "socks", "http", "all")
     )
-
-    unusable_proxies: list[str] = []
     has_socks = _has_python_socks()
+    unusable: list[str] = []
 
-    for key in candidate_keys:
-        raw = proxies.get(key)
-        if not raw:
+    for key in keys:
+        proxy = proxies.get(key)
+        if not proxy:
             continue
-        proxy = _normalize_proxy_url(key, raw)
-        if _is_socks_proxy(proxy):
+        proxy = proxy.strip()
+        if key == "socks" and proxy.startswith("http://"):
+            proxy = "socks5h://" + proxy[7:]
+        elif key == "socks" and "://" not in proxy:
+            proxy = "socks5h://" + proxy
+
+        scheme = urlsplit(proxy).scheme.lower()
+        if scheme in _SOCKS_SCHEMES:
             if has_socks:
                 return proxy
-            unusable_proxies.append(f"{key}={proxy}")
-            continue
-        scheme = urlsplit(proxy).scheme.lower()
-        if scheme in _HTTP_SCHEMES:
+            unusable.append(proxy)
+        elif scheme in {"http", "https"}:
             return proxy
-        unusable_proxies.append(f"{key}={proxy}")
 
-    if unusable_proxies:
-        details = ", ".join(unusable_proxies)
+    if unusable:
         raise TTSBackendError(
-            f"Configured proxy ({details}) requires python-socks which is not installed, "
+            f"Configured SOCKS proxy ({unusable[0]}) requires python-socks which is not installed, "
             "and no usable HTTP fallback proxy was found."
         )
-
     return None
 
 
