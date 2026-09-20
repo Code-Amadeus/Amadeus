@@ -114,6 +114,13 @@ const VALUE_KEYS = new Set([
   'VN_TTS_TRANSLATE_MODEL',
   'COOPERATIVE_CHAT_ENABLED',
   'COOPERATIVE_CHAT_PROVIDER',
+  'WORK_CODING_PROVIDER',
+  'WORK_EXECUTION_PROVIDER',
+  'PI_PROVIDER_ENABLED',
+  'PI_NODE_PATH',
+  'PI_AGENT_DIR',
+  'PI_MODEL_PROVIDER',
+  'PI_MODEL',
   'OPENCLAW_BASE_URL',
   'OPENCLAW_PROJECT_DIR',
   'CODEX_PROVIDER_TRANSPORT',
@@ -216,7 +223,8 @@ const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
   VN_SUBTITLE_TRANSLATE_PROVIDER: new Set(['deepseek', 'openai']),
   VN_TTS_TRANSLATE_PROVIDER: new Set(['deepseek', 'openai']),
   COOPERATIVE_CHAT_ENABLED: new Set(['true', 'false']),
-  COOPERATIVE_CHAT_PROVIDER: new Set(['codex', 'openclaw', 'browser']),
+  COOPERATIVE_CHAT_PROVIDER: new Set(['codex', 'openclaw', 'browser', 'pi']),
+  PI_PROVIDER_ENABLED: new Set(['true', 'false']),
   CODEX_PROVIDER_TRANSPORT: new Set(['app_server', 'direct', 'disabled']),
   CODEX_APP_SERVER_AUTH_MODE: new Set(['model_api', 'chatgpt']),
   CODEX_APP_SERVER_MODEL_PROVIDER: new Set(['deepseek', 'openai']),
@@ -236,7 +244,7 @@ const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
   AUIP_ARTIFACT_STYLE_ENABLED: new Set(['true', 'false']),
 }
 
-const IDENTIFIER_KEYS = new Set(['ASR_BACKEND', 'TTS_BACKEND'])
+const IDENTIFIER_KEYS = new Set(['ASR_BACKEND', 'TTS_BACKEND', 'WORK_CODING_PROVIDER', 'WORK_EXECUTION_PROVIDER'])
 
 const URL_KEYS = new Set([
   'DEEPSEEK_BASE_URL',
@@ -283,7 +291,7 @@ export function validateAcpProviders(raw: string): Array<Record<string, unknown>
     const allowed = new Set(['id', 'name', 'command', 'args', 'enabled', 'environment', 'config_options', 'resume'])
     if (Object.keys(profile).some(key => !allowed.has(key))) throw new Error('Unknown ACP configuration field')
     const id = profile.id
-    if (typeof id !== 'string' || !MCP_ID_PATTERN.test(id) || ['codex', 'browser', 'openclaw'].includes(id) || ids.has(id)) {
+    if (typeof id !== 'string' || !MCP_ID_PATTERN.test(id) || ['codex', 'browser', 'openclaw', 'pi'].includes(id) || ids.has(id)) {
       throw new Error('ACP agents require unique ids distinct from built-in Providers')
     }
     ids.add(id)

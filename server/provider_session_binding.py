@@ -27,6 +27,18 @@ class ProviderSessionAttachment:
     audit: dict[str, Any] = field(default_factory=dict)
 
 
+def supports_conversation_attachment(
+    session: ProviderSessionHandle, *, work_item_id: str = "",
+) -> bool:
+    """A task-scoped native session requires an immutable Host Work binding.
+
+    The context owner obtains both identities from durable state and refuses
+    to rebind a Work-scoped session to another Work. No scope is upgraded.
+    """
+    return session.scope == "interaction" or (
+        session.scope == "work_item" and bool(work_item_id))
+
+
 def resolve_provider_session_attachment(
     *,
     has_existing_item: bool,
@@ -114,8 +126,6 @@ def resolve_provider_session_attachment(
             "stored provider session belongs to a different provider"
         )
     if session.scope not in {"work_item", "interaction"}:
-        return ProviderSessionAttachment()
-    if clean_continuation == "conversation" and session.scope != "interaction":
         return ProviderSessionAttachment()
     return ProviderSessionAttachment(
         session=session,

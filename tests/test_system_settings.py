@@ -124,6 +124,7 @@ def test_settings_only_publish_composed_work_providers() -> None:
     from config import settings
 
     assert {group["id"] for group in _work_provider_configuration(settings)} == {
+        "pi",
         "browser",
         "openclaw",
         "codex",

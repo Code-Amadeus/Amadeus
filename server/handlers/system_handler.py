@@ -1015,6 +1015,17 @@ def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
         ))
     return [
         {
+            "id": "pi", "label": "Pi · Experimental",
+            "description": "Local agent using the pinned native RPC runtime; Work role assignment is independent.",
+            "fields": [
+                _startup_field("PI_PROVIDER_ENABLED", "Enable Pi", settings.PI_PROVIDER_ENABLED, field_type="boolean"),
+                _startup_field("PI_NODE_PATH", "Node executable", settings.PI_NODE_PATH, field_type="path"),
+                _startup_field("PI_AGENT_DIR", "Pi configuration and sessions", settings.PI_AGENT_DIR, field_type="path"),
+                _startup_field("PI_MODEL_PROVIDER", "Pi model provider", settings.PI_MODEL_PROVIDER),
+                _startup_field("PI_MODEL", "Pi model", settings.PI_MODEL),
+            ],
+        },
+        {
             "id": "browser",
             "label": "Browser",
             "description": "Host-managed browser work Provider; no connection settings.",
@@ -1023,7 +1034,7 @@ def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
         {
             "id": "openclaw",
             "label": "OpenClaw",
-            "description": "Remote agent Gateway used only after the main role delegates work.",
+            "description": "Optional Gateway provider; Work role assignment is independent. Existing sessions remain supported.",
             "fields": [
                 _startup_field(
                     "OPENCLAW_BASE_URL", "Gateway URL", settings.OPENCLAW_BASE_URL,
@@ -1207,6 +1218,8 @@ class SystemHandler(RequestHandler):
             "cooperative_chat_provider": str(
                 getattr(settings, "COOPERATIVE_CHAT_PROVIDER", "") or ""
             ),
+            "work_coding_provider": settings.WORK_CODING_PROVIDER,
+            "work_execution_provider": settings.WORK_EXECUTION_PROVIDER,
             "cooperative_permission_policy": (
                 str(getattr(settings, "COOPERATIVE_CHAT_PERMISSION_POLICY", "") or "")
                 if bool(getattr(settings, "COOPERATIVE_CHAT_ENABLED", False))
