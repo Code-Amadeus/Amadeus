@@ -85,6 +85,7 @@ jobs:
         run: |
           uv run --locked --no-sync python -m ruff check .
           uv run --locked --no-sync python tools/architecture/generate_views.py --check
+          uv run --locked --no-sync python tools/architecture/generate_readme_overview.py --check
 
       - name: Audit Python dependencies
         # Accepted until the already-green suite is qualified on pytest 9.

@@ -1,126 +1,149 @@
 <div align="center">
 
-<h1>Amadeus: Real-Time Multimodal AI Agent for Desktop Interaction</h1>
+<p><img src="./assets/demo/amadeus-header-layered.png" width="1100" alt="Amadeus — Real-Time Multimodal AI Agent for Desktop Interaction. Anime character rendered as a green glyph projection."/></p>
 
-<p>一层面向本地 AI OS 的交互界面</p>
-
-<p>
-  中文 | <a href="./README_EN.md">English</a>
-</p>
-
-<img src="./assets/header-strip.zh.svg" width="880" alt="TALK 可打断的实时语音 · EMBODY 表演与语音同帧 · ACT Provider 委派执行 · CONTROL 可恢复、可接管"/>
+<p><picture>
+  <source media="(max-width: 600px)" srcset="./assets/header-strip.en.mobile.svg"/>
+  <img src="./assets/header-strip.en.svg" width="1100" alt="TALK Interruptible voice · EMBODY Speech-synced presence · ACT Delegated execution · CONTROL Resume and take over"/>
+</picture></p>
 
 <p>
-  <a href="https://www.bilibili.com/video/BV1783G6hEYY/"><img src="https://img.shields.io/badge/demo-Bilibili-2f624a?labelColor=061710&logo=bilibili&logoColor=61eeb6" alt="B 站演示"/></a>
-  <a href="./assets/architecture-overview-crt.svg"><img src="https://img.shields.io/badge/architecture-current-184b36?labelColor=061710" alt="当前架构图"/></a>
-  <img src="https://img.shields.io/badge/version-0.15_Alpha-2f624a?labelColor=061710" alt="Amadeus 0.15 Alpha candidate"/>
-  <img src="https://img.shields.io/badge/安装配置-core%20%2F%20voice%20%2F%20CPU%20VAD%20%2F%20cu124-2f624a?labelColor=061710" alt="安装配置：core、voice、CPU VAD、cu124"/>
-  <img src="https://img.shields.io/badge/license-AGPL--3.0-272018?labelColor=061710" alt="许可证"/>
+  <a href="https://www.bilibili.com/video/BV1783G6hEYY/"><img src="https://img.shields.io/badge/demo-Bilibili-46745c?labelColor=16291f&amp;logo=bilibili&amp;logoColor=b4e4c4" alt="Bilibili demo"/></a>
+  <a href="#architecture"><img src="https://img.shields.io/badge/architecture-current-46745c?labelColor=16291f" alt="Current architecture"/></a>
+  <a href="./docs/alpha-0.15.md"><img src="https://img.shields.io/badge/version-0.15_Alpha-46745c?labelColor=16291f" alt="0.15 Alpha"/></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-58625c?labelColor=16291f" alt="AGPL-3.0 license"/></a>
+  <br/>
+  <a href="#quick-start"><img src="https://img.shields.io/badge/Windows-reference-46745c?labelColor=16291f" alt="Windows — reference platform"/></a>
+  <a href="#quick-start"><img src="https://img.shields.io/badge/macOS-MPS-46745c?labelColor=16291f" alt="macOS — Apple Silicon MPS supported"/></a>
+  <a href="#linux"><img src="https://img.shields.io/badge/Linux-verified-46745c?labelColor=16291f" alt="Linux — verified on real hardware"/></a>
 </p>
 
-[![Amadeus 中的 Provider 工作界面：任务状态、流式结果与角色场景同时可见](./assets/demo/provider-runtime.jpg)](https://www.bilibili.com/video/BV1783G6hEYY/)
+<p><strong>English</strong> · <a href="./README_ZH.md">简体中文</a></p>
 
-<sub>点击画面观看 10 分钟完整演示</sub>
+<p>
+  <sub><strong>Local models:</strong> <a href="./docs/install_profiles.md">NVIDIA CUDA cu124</a> &nbsp;·&nbsp; <a href="./tools/rocm_sidecar/README.md">AMD ROCm / Windows (experimental)</a> &nbsp;·&nbsp; <a href="./docs/torch27_candidates.md">Apple MPS</a></sub>
+  <br/>
+  <sub><a href="#quick-start">Quick start</a> &nbsp;·&nbsp; <a href="./docs/install_profiles.md">Installation profiles</a> &nbsp;·&nbsp; <a href="#development-and-contribution">Contribute</a></sub>
+</p>
 
 </div>
 
-> [0.15 Alpha：路由权威、开关与验收范围](docs/alpha-0.15.md)
+Amadeus is a **real-time multimodal desktop agent** that brings voice, character presence, and Agent work into one interface. Speak or type naturally, delegate tasks to specialized Providers, and stay involved through visible progress, permission requests, and controls to resume or take over.
+
+The desktop app and Host run locally, with remote services or local inference selected through model configuration. Character packs are optional: Chat and Work remain available without them.
+
+## What Amadeus is trying to solve
+
+Voice assistants, desktop characters, and execution agents usually live in
+separate windows: one chats, one performs, and another works in a terminal or
+browser. Once a long task starts, it is difficult to see what is happening,
+which permission is needed, or whether the work can recover after a failure.
+
+Amadeus connects those experiences into one loop:
+
+1. **Talk — communicate naturally:** speak or type, with interruption across generation, synthesis, and physical playback.
+2. **Embody — make the agent present:** voice, subtitles, lip sync, expression, and scene behavior share one playback timeline.
+3. **Act — delegate real work:** the main role delegates to registered Work Providers instead of receiving every tool directly.
+4. **Control — stay in charge:** Projects, Drafts, Artifacts, progress, permissions, diffs, and results remain visible and recoverable.
+
+The character communicates and narrates, specialized Providers execute, and
+the Host owns identity, state, permissions, persistence, and recovery.
 
 > [!IMPORTANT]
-> 本仓库包含可构建、可运行的公开源码，本分支为 **0.15 Alpha 候选版**，
-> 不是带安装器的正式桌面发行版。Amadeus 第一方代码依据
-> [GNU Affero General Public License v3.0（AGPL-3.0）](LICENSE) 开源。
-> 第三方代码与外部资产保留各自条款。
+> This repository contains buildable, runnable source. This branch targets
+> **0.15 Alpha**, not a packaged desktop release.
+> Amadeus first-party code is open-source under the
+> [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
+> Third-party code and external assets retain their own terms.
 >
-> **想先跑起来？** → [快速开始](#快速开始)。想先了解项目，从
-> [Amadeus 想解决什么](#amadeus-想解决什么) 开始。
+> **Want to run it first?** See [Quick start](#quick-start). For an introduction,
+> start with [What Amadeus is trying to solve](#what-amadeus-is-trying-to-solve).
 
-## Amadeus 想解决什么
+## Demo highlights
 
-语音助手、桌面角色与执行型 Agent 往往分散在不同窗口：一个负责聊天，一个
-负责表演，另一个在终端或浏览器中工作。长任务开始后，用户又很难知道它进行
-到了哪里、需要什么权限，以及失败后能否继续。
+[![The Amadeus Provider workspace, with task state, streaming results, and the character scene visible together](./assets/demo/provider-runtime.jpg)](https://www.bilibili.com/video/BV1783G6hEYY/)
 
-Amadeus 试图把这些体验连成一个闭环：
+Click the image to watch the full 10-minute demo.
 
-1. **Talk — 自然交流**：语音或文字对话，并能在生成、合成和真实播放过程中随时打断。
-2. **Embody — 角色具身**：语音、字幕、口型、表情和场景行为沿同一条播放时间线发生。
-3. **Act — 委派执行**：主角色把工作交给注册的 Work Provider，而不是直接获得所有工具。
-4. **Control — 保持掌控**：Project、Draft、Artifact、进度、权限、Diff 和结果保持可见，并可继续、重试或接管。
-
-角色负责交流和叙述，专业 Provider 负责执行，Host 负责身份、状态、权限、
-持久化与恢复。
-
-## 演示切片
-
-| 实时对话与角色表现 | 场景化工作状态 |
+| Real-time conversation and performance | Scene-aware working state |
 |---|---|
-| ![角色正在进行带字幕的实时语音对话](./assets/demo/conversation.jpg) | ![角色进入工作场景并播报 Provider 的检索结果](./assets/demo/scene-runtime.jpg) |
-| 语音、字幕、口型与表情绑定到真实播放进度。 | 后台任务驱动角色行为、场景状态和结果叙述。 |
+| ![The character speaking in a real-time voice conversation with synchronized subtitles](./assets/demo/conversation.jpg) | ![The character moves into a working scene and reports the Provider's research result](./assets/demo/scene-runtime.jpg) |
+| Voice, subtitles, lip sync, and expression follow actual playback. | Background work drives character behavior, scene state, and result narration. |
 
-演示视频展示了实时语音、角色表现、桌面场景、Browser / OpenClaw 任务以及
-论文检索流程。当前源码的桌面界面、Provider 接入和资产边界已经继续演进，
-视频应被视为一次产品切片，而不是逐像素安装预览。
+The video demonstrates real-time voice, character performance, desktop scenes,
+Browser / OpenClaw tasks, and a paper-research flow. The desktop UI, Provider
+integration, and asset boundaries have continued to evolve, so the video is a
+product slice rather than a pixel-exact installation preview.
 
 > [!NOTE]
-> 演示中的角色、场景、声音及其他第三方素材只用于展示原型，不属于 Amadeus
-> 代码许可证授权范围。公开源码不包含未获得再分发许可的角色包、模型权重、
-> 参考音频或创作中间资产。
+> The header is a brand illustration; the demo screenshots show the prototype.
+> Characters, scenes, voices, and other third-party material in the header or
+> demo are not granted rights by
+> the Amadeus code license. Public source does not include character packs,
+> model weights, reference audio, or authoring intermediates without confirmed
+> redistribution rights.
 
-## 当前核心能力
+## Current capabilities
 
-| 能力 | 当前公开源码 |
+| Area | Current public source |
 |---|---|
-| **可打断实时对话** | 共享麦克风生命周期、独立 Wake / Conversation ASR、两段式端点、AEC / barge-in，以及贯穿 LLM、TTS 与物理播放的中断。 |
-| **远程主 Chat 与本地语音** | DeepSeek V4 Flash Main Chat；Qwen3-ASR / SenseVoice；内嵌 GPT-SoVITS v3 流式合成、连续播放与播放前口型发布。 |
-| **角色与桌面呈现** | SpriteForge 图状态、KTX2/PixiJS 运行时、字幕、口型和情绪同步；没有角色包时 Chat、Work 与 headless 仍可启动。 |
-| **Provider Runtime** | 当前包括 Browser、Codex App Server / Direct Codex 与可选 OpenClaw；Claude CLI 是已确定的后续 direct Provider。 |
-| **持久 Work 控制面** | Project、默认 Draft、WorkItem / Attempt、Continue / Retry、重启恢复、权限、Artifact Registry 与结构化 Diff。 |
-| **Artifact 与 AUIP** | Work 产物可预览、打开，或在校验后附加为有界 AUIP AppSession，让 Amadeus 与应用交互而不把叙述变成执行权限。 |
-| **统一设置入口** | Models、Voice、Providers/MCP、视觉、角色包状态和聊天外观在 Electron Settings 中集中管理。 |
+| **Interruptible real-time conversation** | Shared microphone lifecycle, independent Wake / Conversation ASR, two-stage endpointing, AEC / barge-in, and interruption across LLM, TTS, and physical playback. |
+| **Remote Main Chat and local voice** | DeepSeek V4 Flash Main Chat; Qwen3-ASR / SenseVoice; embedded GPT-SoVITS v3 streaming synthesis, continuous playback, and mouth values published before matching PCM windows. |
+| **Character and desktop presentation** | SpriteForge graph state, a KTX2/PixiJS runtime, subtitle, lip-sync, and emotion timing; Chat, Work, and headless startup remain available without a character pack. |
+| **Provider Runtime** | Browser, Codex App Server / Direct Codex, and optional OpenClaw are current Providers. Claude CLI is a committed future direct Provider. |
+| **Durable Work control plane** | Projects, default Drafts, WorkItems / Attempts, Continue / Retry, restart recovery, permissions, the Artifact Registry, and structured diffs. |
+| **Artifacts and AUIP** | A Work Artifact can be previewed, opened, or attached as a bounded AUIP AppSession so Amadeus can interact with it without turning narration into execution authority. |
+| **Unified settings** | Models, Voice, Providers/MCP, vision, character-pack status, and chat appearance are managed in Electron Settings. |
 
-MCP 与 Skills 即使共用 Host registry，也只授予兼容 Provider；**Main Chat
-不能直接调用 MCP 工具**。远程 DeepSeek 是主 Chat 基线；远程 ASR/TTS 是显式
-兼容路径，不会在本地语音失败后静默上传或产生第二笔计费请求。
+MCP and Skills remain compatible-Provider capabilities even when they share a
+Host registry; **Main Chat cannot invoke MCP tools directly**. Remote DeepSeek
+is the Main Chat baseline; remote ASR/TTS remain explicit compatibility routes.
+A local voice failure never silently uploads data or creates a second billable request.
 
-## 仓库地图
+## Repository map
 
 ```text
-electron/       Electron main、preload、React renderer 与 Settings
-server/         认证后的本地后端、Host 控制面与 AUIP
-core/           Main Chat runtime 与会话集成
-agent_host/     Provider contracts、adapters、Work identity 与 capabilities
-asr/            Conversation / Wake 识别后端
-tts/            合成后端、分句 pipeline、播放与口型信号
-render/         SpriteForge runtime adapter 与 PixiJS renderer
-wallpaper/      Electron/Lively host 与 Win32 桌面放置
-vn_player/      Experimental VN Player integration
-assets/         Git-owned UI 资产与外部 runtime 资产落点
-release/        公开源码选择、provenance 与 deterministic archive policy
+electron/       Electron main, preload, React renderer, and Settings
+server/         authenticated local backend, Host control plane, and AUIP
+core/           Main Chat runtime and session integration
+agent_host/     Provider contracts, adapters, Work identity, and capabilities
+asr/            Conversation / Wake recognition backends
+tts/            synthesis backends, sentence pipeline, playback, and mouth signal
+render/         SpriteForge runtime adapter and PixiJS renderer
+wallpaper/      Electron/Lively hosts and Win32 desktop placement
+vn_player/      experimental VN Player integration
+assets/         Git-owned UI assets and external runtime-asset destinations
+release/        public-source selection, provenance, and deterministic archive policy
 ```
 
-`main.py` 不是应用入口，只输出退役提示。Python 主入口是
-`uv run --locked --no-sync python -m server.app --port 17777`，桌面入口是
-Windows `run_electron_utf8.bat` / macOS `npm run electron:dev`（自动发现 `.venv`，L1–L4 通用）。
+`main.py` is not an application entry; it prints a retirement notice. The
+Python entry is `uv run --locked --no-sync python -m server.app --port 17777`,
+and the desktop entry is `run_electron_utf8.bat` on Windows or
+`npm run electron:dev` from `electron/` on macOS. Both discover `.venv`
+automatically; choose an installation profile supported on your platform.
 
-## 系统架构
+## Architecture
 
-[![Amadeus 当前架构：Host 权威、Work Provider、Provider-scoped MCP/Skills、AUIP AppSession、语音与 SpriteForge 呈现边界](./assets/architecture-overview-crt.svg)](./assets/architecture-overview-crt.svg)
+[![Current Amadeus architecture: Host authority, Work Providers, Provider-scoped MCP/Skills, AUIP AppSessions, voice, and SpriteForge presentation](./assets/architecture-overview-crt.svg)](./assets/architecture-overview-crt.svg)
 
-图中有三个刻意的“不合并”：
+The dashed **Memory & Persona Runtime** is a roadmap extension. Its two-way connection to Main Chat represents proposed context retrieval and updates; storage, memory formation, persona updates, and lifecycle mechanisms remain to be designed.
 
-- Main Chat、Work Provider 与 AUIP application 是不同权限域；
-- MCP/Skills 不会因为 registry 共用而直接暴露给 Main Chat；
-- Artifact、identity、permission 与 receipt 是 Host 核验的事实，模型叙述不能替代。
+Three separations are deliberate:
 
-当前 Codex 由 App Server 或 Direct transport 接入，不依赖旧 Locus 网关。
-Claude CLI 将在后续作为独立 direct Provider 进入同一边界，而不是恢复 Locus。
+- Main Chat, Work Providers, and AUIP applications are distinct authority domains.
+- A shared MCP/Skill registry does not expose those capabilities directly to Main Chat.
+- Artifacts, identity, permission, and receipts are Host-verified facts; model narration cannot replace them.
 
-## AUIP 应用会话（application sessions）
+Codex currently connects through App Server or Direct transport without the
+retired Locus gateway. Claude CLI will join the same boundary later as an
+independent direct Provider, not by restoring Locus.
 
-AUIP 是 Amadeus 的 cooperative application protocol，不是 Provider、MCP 或主
-Chat 工具系统。它解决的是：当 Work 已生成一个可运行 Artifact，用户如何在
-保留 Host 权限边界的前提下，继续让 Amadeus 与这个应用协作。
+## AUIP application sessions
+
+AUIP is Amadeus's cooperative application protocol. It is not a Provider, MCP,
+or Main Chat tool system. It addresses a different problem: once Work has
+created a runnable Artifact, how can Amadeus continue collaborating with that
+application while preserving Host authority?
 
 ```text
 verified Work Artifact
@@ -130,75 +153,86 @@ verified Work Artifact
   -> character receives scoped projection and action receipts
 ```
 
-- ticket 绑定当前 Session、不可变 Artifact 引用与有效期；应用提交 Artifact id，而不是任意路径。
-- Host 校验 workspace 归属、类型、digest 和启动入口，并拥有 AppSession identity、revision 与 action authority。
-- 应用只能发布 manifest 中声明的状态和语义事件，只能接收已声明且经过授权的 typed action。
-- AUIP 不授予 `work.*`、`provider.*`、`tts.*`、任意文件系统或其他 Session 权限。
-- 断连成为可见状态并使待确认动作失效，不会在陈旧状态上静默继续。
+- The ticket binds the current Session, an immutable Artifact reference, and a TTL. The application submits an Artifact id, not an arbitrary path.
+- The Host validates workspace ownership, type, digest, and launch entry, and owns AppSession identity, revision, and action authority.
+- The application may publish only declared state and semantic events and receive only declared, authorized typed actions.
+- AUIP grants no `work.*`, `provider.*`, `tts.*`, arbitrary filesystem, or other-Session authority.
+- Disconnects become visible state and invalidate pending actions instead of continuing against stale application state.
 
-当前 schema 是实验性的 `amadeus.auip/v0`；协议实现、[Web SDK](sdk/auip-web/)、
-[Managed Core](sdk/auip-core/)、应用示例和集成测试均位于本仓库。详见
-[AUIP 应用会话文档](docs/auip_application_sessions.md)。
-[Code-Amadeus/AUIP](https://github.com/Code-Amadeus/AUIP) 维护协议现状、实现入口与
-后续 SDK 发布条件；目前尚未发布独立版本的 SDK 或独立 conformance suite。
+The experimental schema is `amadeus.auip/v0`. The protocol implementation,
+[Web SDK](sdk/auip-web/), [Managed Core](sdk/auip-core/), application examples,
+and integration tests live in this repository. See
+[AUIP application sessions](docs/auip_application_sessions.md).
+[Code-Amadeus/AUIP](https://github.com/Code-Amadeus/AUIP) documents the current
+protocol, public implementation entry points, and future SDK release criteria;
+a separately versioned SDK and standalone conformance suite are not yet published.
 
-## 快速开始
+## Quick start
 
-依赖按能力分四级：先装最小的 L1 跑通，再按需升梯（默认阶梯中 torch 在 L3/L4 进入安装；可选 RAG 也会引入
-本地 embedding/Torch 依赖）。Windows 是当前参考平台，macOS 的 L1/L2 安装与 CI 单独验证；实际
-桌面、麦克风和播放体验仍需设备验收。L3 可选择 CPU VAD，**无需 NVIDIA GPU**；
-L4 的当前 cu124 配置面向 Windows + NVIDIA。Windows ROCm 7.2.1 已有互斥的
-`local-rocm` 实验锁与验证入口，但尚未完成受支持 AMD GPU 的端到端验收；RTX 50 系
-cu128 与 Apple Silicon MPS 已提供实验安装配置。
-统一使用 [uv](https://docs.astral.sh/uv/) 与 Python 3.12，CI 固定 uv 0.12.8。
+Dependencies are grouped into four capability tiers. Start with the minimal L1
+installation, then add the tiers you need. Torch enters at L3/L4 in the default
+ladder; optional RAG also adds local embedding/Torch dependencies. Windows is
+the reference platform. macOS with Apple Silicon MPS and Linux source deployment
+have also been verified on real hardware; macOS L1/L2 has separate installation CI. L3 offers CPU VAD with **no NVIDIA GPU requirement**. The current L4
+cu124 profile targets Windows + NVIDIA. Windows ROCm 7.2.1 has a mutually exclusive
+`local-rocm` experimental lock and validation tools for GPUs in AMD's official
+support matrix. Apple Silicon MPS uses the verified
+`local-mps` profile; NVIDIA cu128 remains an experimental Torch 2.7.0 profile.
 
-Linux 用户请从下方的 [Linux（实验性）](#linux实验性) 章节开始。
+All profiles use [uv](https://docs.astral.sh/uv/) and Python 3.12; CI pins uv 0.12.8.
 
-| 梯级 | 能力 | 平台 | 安装方式 |
+Linux users should start with [Linux](#linux) below.
+
+| Tier | Capability | Platform | Installation |
 |---|---|---|---|
-| L1 core | 文字聊天、工作、Provider、角色渲染 | Windows / macOS | `uv sync --locked` |
-| L2 voice | 说（远程 TTS、播放、口型）+ 听（麦克风、远程 ASR）| Windows / macOS | `uv sync --locked --extra voice` |
-| L3 CPU VAD | 实时打断（角色说话时可以插话）| CPU，无 NVIDIA GPU 前提 | `uv sync --locked --extra voice --extra vad --extra torch-cpu` |
-| L4 local-cu124 | 本地 GPT-SoVITS / Qwen3 ASR / 唤醒词 | Windows + NVIDIA GPU | `uv sync --locked --extra voice --extra vad --extra local-cu124` |
-| 实验 local-rocm | 本地 GPT-SoVITS / Qwen3 ASR sidecar | Windows + AMD 官方矩阵内 GPU | `uv sync --locked --extra voice --extra vad --extra local-rocm` |
+| L1 core | Text Chat, Work, Providers, and character rendering | Windows / macOS | `uv sync --locked` |
+| L2 voice | Remote TTS, playback, lip-sync, microphone, and remote ASR | Windows / macOS | `uv sync --locked --extra voice` |
+| L3 CPU VAD | Real-time interruption while the character is speaking | CPU; no NVIDIA GPU required | `uv sync --locked --extra voice --extra vad --extra torch-cpu` |
+| L4 local-cu124 | Local GPT-SoVITS, Qwen3 ASR, and wake word | Windows + NVIDIA GPU | `uv sync --locked --extra voice --extra vad --extra local-cu124` |
+| Experimental local-rocm | Local GPT-SoVITS / Qwen3 ASR sidecars | Windows + GPU in AMD's official support matrix | `uv sync --locked --extra voice --extra vad --extra local-rocm` |
 
-各安装配置均使用**同一个 `.venv`**。每次给出完整目标配置：
-`uv sync` 会精确同步，漏带会移除已装层。`torch-cpu`、`local-cu124`、`local-cu128`、`local-mps` 与
-`local-rocm` 两两互斥；切换构建时替换对应 extra，并保留 `voice`、`vad`。
-详见[安装配置与迁移](docs/install_profiles.md)。
+The four default tiers and the ROCm experiment use **the same `.venv`**. Give the
+complete target configuration each time: `uv sync` is exact and removes packages
+from omitted tiers. `torch-cpu`, `local-cu124`, `local-cu128`, `local-mps`, and `local-rocm` are pairwise
+incompatible. To switch builds, replace the build extra while keeping `voice`
+and `vad`. See [installation profiles and migration](docs/install_profiles.md).
 
-- 主 Chat 默认远程 DeepSeek；llama.cpp 是可选本地 LLM profile（见
-  [兼容路径](#兼容路径)），不是安装前提。
-- L2 无 vad 层时，语音端点自动降级为能量检测；安装 vad 后恢复
-  silero 精准端点与打断。
-- Windows 上每装完一级可验证导入合同（`ci` 同 `cpu`）：
-  `uv run --locked --no-sync python tools/verify_python_environment.py --profile <cpu|voice|vad-cpu>`，
-  L4 用 `--profile cu124 --require-cuda-device`；ROCm 实验入口用 `--profile rocm`
-  并继续执行 GPU compute probe。导入/构建验证不替代真实模型与音频设备测试。
-- 纯文字 / headless（CI）场景用 L1 即可：`uv run --locked --no-sync python -m server.app --port 17777`
-  直接启动后端；严格文字模式设置 `TTS_BACKEND=disabled` 并关闭 Wake。
+- Main Chat defaults to remote DeepSeek. llama.cpp is an optional local LLM
+  profile under [Compatibility routes](#compatibility-routes), not an installation prerequisite.
+- L2 without VAD uses energy-based endpoint detection. Adding VAD enables
+  Silero endpointing and interruption.
+- On Windows, check each tier with
+  `uv run --locked --no-sync python tools/verify_python_environment.py --profile <cpu|voice|vad-cpu>`
+  (`ci` shares the core import checks). For L4, use `--profile cu124 --require-cuda-device`.
+  For ROCm, use `--profile rocm`, then run the GPU compute probe. Import/build
+  checks do not replace real model and audio-device tests.
+- L1 is sufficient for text-only/headless use. Start the backend with
+  `uv run --locked --no-sync python -m server.app --port 17777`.
+  Set `TTS_BACKEND=disabled` and disable Wake for a strict text-only profile.
 
-### 参考硬件
+### Reference hardware
 
-**L1/L2（Windows / macOS）**
+**L1/L2 (Windows / macOS)**
 
-- CPython **3.12**（由 uv 管理，无需系统安装）
-- Node.js **22**（当前参考 `22.21.1`）
-- 无 GPU 要求
+- CPython **3.12**, managed by uv; no system Python installation required
+- Node.js **22** (`22.21.1` is the current reference)
+- No GPU required
 
-**L4 cu124（Windows 本地模型）追加**
+**Additional requirements for L4 cu124 (Windows local models)**
 
-- CUDA 12.4-compatible NVIDIA GPU，目标 **8 GiB VRAM**
-- **16 GiB 内存起步，32 GiB 推荐**
+- CUDA 12.4-compatible NVIDIA GPU, targeting **8 GiB VRAM**
+- **16 GiB system RAM minimum; 32 GiB recommended**
 
-具体峰值取决于本地 ASR/TTS 模型与并发配置；8 GiB / 16–32 GiB
-描述的是远程 Chat + 本地语音配置。选用本地 LLM 时需要按模型、量化、
-context 和 GPU offload 另行评估内存。
+Peak memory depends on local ASR/TTS models and concurrency. The target describes
+the remote-Chat/local-voice profile. An optional local LLM needs additional
+memory according to its model, quantization, context, and GPU offload.
 
-### 基础环境（L1/L2，Windows / macOS）
+### Base environment (L1/L2, Windows / macOS)
 
-安装 uv（Windows：`winget install astral-sh.uv`；macOS：`brew install uv`），
-然后克隆并按梯级安装——两个平台的命令完全一致：
+Install uv with `winget install astral-sh.uv` on Windows or `brew install uv` on
+macOS. For L2 on macOS, install PortAudio first with `brew install portaudio`;
+PyAudio builds from source there. Then clone and choose a tier with the same
+commands on both platforms:
 
 ```bash
 git clone https://github.com/Code-Amadeus/Amadeus.git
@@ -206,15 +240,14 @@ cd Amadeus
 
 uv venv .venv --python 3.12
 uv sync --locked                              # L1 core
-uv sync --locked --extra voice                # L2 voice（可选）
+uv sync --locked --extra voice                # L2 voice (optional)
 ```
 
-macOS 上 PyAudio（L2 语音采集）从源码编译，需要先 `brew install portaudio`。
+Keep the environment named `.venv`. Electron discovers its interpreter
+automatically (`Scripts/python.exe` on Windows, `bin/python3` on macOS), without
+requiring an `AMADEUS_PYTHON` override.
 
-venv 固定命名为 `.venv`：Electron 启动器会自动发现它（Windows
-`Scripts\python.exe`，macOS `bin/python3`），无需手动设置 `AMADEUS_PYTHON`。
-
-Electron 前端（全平台）：
+Build the Electron frontend on either platform:
 
 ```bash
 cd electron
@@ -223,25 +256,29 @@ npm run build
 cd ..
 ```
 
-`npm ci` 会通过项目 postinstall 安装锁定的 Electron 运行时。国内网络可为
-npm/Electron 配置镜像（如 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`）。
+`npm ci` uses the project postinstall hook to fetch the pinned Electron runtime.
+Where network access requires it, configure npm/Electron mirrors, such as
+`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`.
 
-### Linux（实验性）
+### Linux
 
-**Linux 目前属于实验性源码运行路径，尚未纳入完整支持的平台范围。**
-[第一阶段 Linux CI（#63）](https://github.com/Code-Amadeus/Amadeus/pull/63) 已通过
-Ubuntu 24.04 上的 L1 + dev 锁定安装、环境导入与无模型依赖检查、基础契约测试、
-Ruff、架构视图检查及 Electron 构建。另有独立 Voice source-build CI，验证锁定安装、
-AEC 导入、bundled Abseil 选择及相关契约。CI 不覆盖 Electron GUI、真实音频设备、
-VAD/本地模型推理、Wayland 会话或壁纸集成。
-另有 cu128 候选安装、依赖和 CPU VAD 回切检查，均不替代真实 GPU 模型验收。
+**Linux source deployment has been verified on real hardware.** [Phase 1 Linux CI (#63)](https://github.com/Code-Amadeus/Amadeus/pull/63)
+has passed locked L1 + dev installation, environment imports and model-less
+dependency checks, basic contract tests, Ruff, architecture-view checks, and the
+Electron build on Ubuntu 24.04. A separate Voice source-build job checks locked
+installation, AEC import, bundled Abseil selection and related contracts. CI does
+not cover the Electron GUI, real audio devices, VAD/local model inference,
+Wayland sessions, or wallpaper integration.
+Additional jobs check cu128 candidate installation, dependencies and transitions
+back to CPU VAD; they do not qualify real GPU model inference.
 
-社区已报告 Arch Linux / Wayland 下的桌面与角色渲染等实机结果；这些结果不代表
-所有发行版或桌面环境均已验证。环境记录、已知问题和后续进展见
-[Linux 跟踪 issue #64](https://github.com/Code-Amadeus/Amadeus/issues/64)。
+The community has reported desktop and character-rendering results on Arch Linux /
+Wayland. These reports do not establish compatibility across all distributions or
+desktop environments. See [Linux tracking issue #64](https://github.com/Code-Amadeus/Amadeus/issues/64)
+for environment records, known issues, and follow-up work.
 
-先安装 Git、[uv](https://docs.astral.sh/uv/)（CI 使用 `0.12.8`）和 Node.js 22
-（CI 使用 `22.21.1`），从无需 GPU 或语音包的 L1 开始：
+Install Git, [uv](https://docs.astral.sh/uv/) (`0.12.8` in CI), and Node.js 22
+(`22.21.1` in CI), then start with L1, which needs no GPU or voice packages:
 
 ```bash
 git clone https://github.com/Code-Amadeus/Amadeus.git
@@ -251,15 +288,16 @@ uv sync --locked
 cp .env.example .env
 ```
 
-编辑 `.env`，填写 `DEEPSEEK_API_KEY`，设置 `TTS_BACKEND=disabled`，并保持
-`WAKE_ENABLED=false`，先验证文字路径。然后在项目根目录检查环境：
+Edit `.env`, provide `DEEPSEEK_API_KEY`, set `TTS_BACKEND=disabled`, and keep
+`WAKE_ENABLED=false` to try the text-only path first. Verify the environment from
+the project root:
 
 ```bash
 uv run --locked --no-sync python tools/verify_python_environment.py --profile cpu
 ```
 
-在 Linux 图形桌面会话中构建并启动 Electron；启动器会自动发现
-`.venv/bin/python3` 并启动后端：
+Build and launch Electron from a Linux graphical desktop session. The launcher
+automatically discovers `.venv/bin/python3` and starts the backend:
 
 ```bash
 cd electron
@@ -268,14 +306,15 @@ npm run build
 npm run electron:dev
 ```
 
-如只需 headless 后端，可改为在项目根目录运行：
+For a headless backend instead, run this from the project root:
 
 ```bash
 uv run --locked --no-sync python -m server.app --port 17777
 ```
 
-需要远程语音、录音和播放时，可在同一 `.venv` 安装 L2。Ubuntu 24.04 先安装
-CI 使用的源码构建前置包；其他发行版请使用对应的软件包名称：
+For remote voice, recording and playback, install L2 in the same `.venv`.
+On Ubuntu 24.04, install the native prerequisites used by CI first; other Linux
+distributions need their corresponding package names:
 
 ```bash
 sudo apt-get update
@@ -284,83 +323,93 @@ uv sync --locked --extra voice
 uv run --locked --no-sync python tools/verify_python_environment.py --profile voice
 ```
 
-升级到语音或本地模型前，请留意以下实验边界：
+For voice, local models, and desktop integration, see the component-specific notes:
 
-- **Voice / AEC**：Linux 使用基于官方 `aec-audio-processing==1.0.1` sdist 的仓库内
-  源码，强制选择 bundled Abseil 20240722.0，避免选中新版 system Abseil 导致的构建
-  失败。该修改不更改系统 Abseil；Windows/macOS 继续使用 registry 包。来源、独立
-  补丁与移除条件见 [AEC provenance](vendor/aec-audio-processing.PROVENANCE.md)。
-  构建/导入通过不代表真实设备上的回声消除或完整语音交互已验收。
-- **VAD / NVIDIA**：Linux CPU VAD 与 `local-cu128` 候选已有明确的 Torch 构建选择
-  和安装/契约 CI；cu124 参考配置仍面向 Windows。真实 GPU 模型推理及完整语音
-  交互继续按设备验收，见下方候选配置说明。
-- **桌面 / 壁纸**：GUI 与 Wayland compositor 集成仍需分别验收；GNOME 的社区结果
-  不代表 niri、KDE 或其他桌面也可用。
+- **Voice / AEC:** Linux uses vendored source based on the official
+  `aec-audio-processing==1.0.1` sdist and forces bundled Abseil 20240722.0 to avoid
+  selecting an incompatible modern system Abseil. The system installation is
+  unchanged; Windows/macOS retain their registry artifacts. Source identity,
+  the isolated patch and removal conditions are in [AEC provenance](vendor/aec-audio-processing.PROVENANCE.md).
+  Build/import success does not qualify real-device echo cancellation or full voice interaction.
+- **VAD / NVIDIA:** Linux CPU VAD and the `local-cu128` candidate have explicit
+  Torch build selections and installation/contract CI. The cu124 reference
+  remains Windows-specific; real GPU inference and full voice interaction
+  require device acceptance. See the candidate profiles below.
+- **Desktop / wallpaper:** GUI and Wayland compositor integration need separate
+  acceptance. Community GNOME results do not establish support for niri, KDE, or
+  other desktops.
 
-### VAD 与本地模型
+### VAD and local models
 
-与 L1/L2 共用同一个 `.venv`，选择完整的能力与构建组合：
+Use the same `.venv` as L1/L2 and select the complete capability/build combination.
 
-**L3 vad — 实时打断**（torch 随之以 CPU 版进入安装）：
+**L3 CPU VAD — real-time interruption:** Torch enters as a CPU build.
 
 ```powershell
 uv sync --locked --extra voice --extra vad --extra torch-cpu
 uv run --locked --no-sync python tools\verify_python_environment.py --profile vad-cpu
 ```
 
-**L4 local-cu124 — 本地语音模型栈**：在同一 `.venv` 上选择 CUDA 配置，torch 换为
-CUDA 12.4 构建（经 `pyproject.toml` 的 `[tool.uv.sources]` 路由到
-PyTorch cu124 index，仅 Windows + 本 extra 生效）：
+**L4 local-cu124 — local voice models:** select the CUDA profile in that same
+environment. On Windows, `[tool.uv.sources]` routes this extra's Torch/Torchaudio
+packages to the PyTorch cu124 index.
 
 ```powershell
 uv sync --locked --extra voice --extra vad --extra local-cu124
 uv run --locked --no-sync python tools\verify_python_environment.py --profile cu124 --require-cuda-device
 ```
 
-L4 profile 固定 `torch==2.6.0+cu124`、`torchaudio==2.6.0+cu124` 和本地模型
-依赖集；它以当前实际运行环境为第一版基线。
+The L4 profile pins `torch==2.6.0+cu124`, `torchaudio==2.6.0+cu124`, and the local
+model dependencies. This is the current qualified local-model profile.
 
-**实验 local-rocm（Windows）**：同一 `.venv` 可精确选择 AMD 官方 ROCm 7.2.1、
-Torch/Torchaudio 2.9.1 与完整本地模型依赖；Qwen ASR 和 GPT-SoVITS 在常驻 sidecar
-子进程中运行，但默认仍使用当前 `.venv` 的解释器。该入口默认关闭，且与 cu124/CPU
-Torch 构建互斥。安装后必须先运行环境验证与真实 FP32 GPU compute probe；即使
-`torch.cuda.is_available()` 返回 True，compute 失败也不得继续模型测试。完整命令、
-设备矩阵和验收边界见 [Windows ROCm 实验 sidecar](tools/rocm_sidecar/README.md)。
+**Experimental local-rocm (Windows):** this profile targets GPUs in AMD's official
+ROCm 7.2.1 Windows PyTorch support matrix. The same `.venv` can select ROCm 7.2.1,
+Torch/Torchaudio 2.9.1, and the local-model dependencies. Persistent Qwen ASR and
+GPT-SoVITS sidecars use that environment's interpreter by default. This profile
+conflicts with cu124/CPU Torch builds. After installation, run the environment
+check and GPU compute validation before loading models. See the
+[Windows ROCm sidecar guide](tools/rocm_sidecar/README.md) for supported hardware,
+installation commands, and validation steps.
 
-本机 Radeon 780M（gfx1103）实测可被 ROCm 枚举，但首次 FP32 计算在 AMD HIP DLL
-中崩溃；该核显不在 AMD 官方 7.2.1 Windows PyTorch 矩阵内，因此不能作为可用目标。
-
-**实验 Torch 2.7 配置**：`local-cu128`（Windows/Linux x86_64）与
-`local-mps`（Apple Silicon）提供锁定的 Torch/Torchaudio 2.7.0 安装入口。
-现有 Windows cu124 仍保留为参考配置，Windows ROCm 继续使用 AMD 配套的 2.9.1。
+**Torch 2.7 profiles:** `local-cu128` (Windows/Linux x86_64)
+and `local-mps` (Apple Silicon) select locked Torch/Torchaudio 2.7.0 packages.
+Apple Silicon MPS has been verified on real hardware; cu128 remains an experimental
+NVIDIA profile. Windows cu124 remains the reference, and Windows ROCm retains
+AMD's 2.9.1 pair.
 
 ```bash
-# Windows/Linux NVIDIA 候选，包含完整模型依赖
+# Windows/Linux NVIDIA candidate, including the model dependency set
 uv sync --locked --extra voice --extra vad --extra local-cu128
 uv run --locked --no-sync python tools/verify_python_environment.py --profile cu128
 
-# Apple Silicon 安装候选
+# Apple Silicon MPS
 uv sync --locked --extra voice --extra vad --extra local-mps
 uv run --locked --no-sync python tools/verify_python_environment.py --profile mps
 ```
 
-以上为互斥选择，按当前平台只执行一组。安装检查与 CPU 契约 CI 不代表 GPU 推理、
-麦克风、连续播放和打断已验收。#67 报告了 M4 Max 上独立 Qwen-ASR MPS 实测；
-当前应用内 Qwen 仍只支持 CPU/CUDA 设备选择，安装此配置不会自动接通 ASR MPS。
-现有 GPT-SoVITS MPS 路径可使用该候选环境，2.7.0 上的模型回归仍需实测。
+Select only the command for your platform. Installation and CPU contract CI do
+not qualify GPU inference, microphones, continuous playback or interruption.
+Issue #67 reports standalone Qwen-ASR MPS results on an M4 Max; the application
+currently accepts only CPU/CUDA Qwen device selection. Installing `local-mps`
+does not enable application ASR MPS routing. GPT-SoVITS supports the MPS path
+through the `local-mps` environment.
 
-RTX 50 系应评估 cu128 候选，不能使用旧 cu124 作为 Blackwell 运行依据。
-FlashAttention 保持可选；已找到匹配 cp312/Torch 2.7/cu128 的 Windows 社区 wheel
-和 Linux 上游 wheel，来源、哈希与验证范围见
-[Torch 2.7 与 FlashAttention 候选](docs/torch27_candidates.md)。
+RTX 50-series users should evaluate cu128; cu124 is not a Blackwell baseline.
+FlashAttention remains optional. Matching cp312/Torch 2.7/cu128 community Windows
+and upstream Linux wheels have been located; see
+[Torch 2.7 and FlashAttention candidates](docs/torch27_candidates.md) for sources,
+hashes and verification limits.
 
-### 安装外部运行资产
+### Install external runtime assets
 
-另提供默认关闭的[角色知识 RAG 选项](docs/character_rag.md)，支持远程和本地 Main Chat。
-它包含可直接构建的中日文基础资料，也支持自己的知识目录；Settings 可查看实际阈值和加载状态。
-RAG 会额外安装本地 embedding/Torch 依赖。资料、索引构建、诊断与验证范围见说明。
+[Optional character RAG](docs/character_rag.md) is off by default and works with
+remote and local Main Chat. It includes a buildable Chinese/Japanese starter
+corpus and supports personal knowledge directories. Settings shows applied
+thresholds and loading state. RAG adds local embedding/Torch dependencies;
+the guide covers setup, diagnostics and evaluation limits.
 
-完整本地语音需要 Qwen ASR 与 GPT-SoVITS v3 语音包；视觉和角色包可选：
+The full local-voice profile needs the Qwen ASR and GPT-SoVITS v3 voice packs.
+The visual and character packs are optional:
 
 ```powershell
 uv run --locked --no-sync python tools\external_assets.py verify C:\Downloads\amadeus-asr-qwen3-0.6b.zip
@@ -368,92 +417,97 @@ uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\a
 uv run --locked --no-sync python tools\external_assets.py verify C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
 uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v3.zip
 
-# 可选：场景与 KTX2 角色动画
+# Optional scene and KTX2 character animation
 uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-visual-runtime.zip
 uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-character-kurisu.zip
 uv run --locked --no-sync python tools\external_assets.py status
 ```
 
-如果没有预制 Qwen 包，可直接把上游 snapshot 下载到同一个固定落点；运行时
-保持离线，不会在第一次录音时临时联网：
+If a prepared Qwen pack is unavailable, download the upstream snapshot into
+the same canonical location. Runtime inference remains offline and will not
+start an implicit download when the microphone is opened:
 
 ```powershell
 uv run --locked --no-sync python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-ASR-0.6B', local_dir='assets/models/asr/qwen3-asr-0.6b')"
 ```
 
-GPT-SoVITS 日文前端第一次使用会准备 OpenJTalk 字典。希望正式启动时不再下载，
-可预先运行一次：
+The Japanese GPT-SoVITS frontend prepares an OpenJTalk dictionary on first
+use. Prewarm it once if the normal application launch must remain offline:
 
 ```powershell
 uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('準備完了'))"
 ```
 
-### 配置与启动
+### Configure and launch
 
-复制 `.env` 并填写 DeepSeek API key（Windows：`Copy-Item .env.example .env`；
-macOS：`cp .env.example .env`），然后在 Settings 中核对：
+Copy `.env.example` to `.env` (`Copy-Item .env.example .env` on Windows;
+`cp .env.example .env` on macOS), provide the DeepSeek API key, then review Settings:
 
-- **Models**：`deepseek`、官方 endpoint、`deepseek-v4-flash` 与 API key；
-- **Voice**：远程 TTS 推荐 Fish Audio S2.1 + Kurisu，也支持 MiMo / OpenAI-compatible；L4 本地栈另需 Qwen model 目录、GPT-SoVITS **v3** checkpoints、reference audio/text、麦克风、AEC 和 barge-in；
-- **General**：可选角色包状态与呈现设置。
+- **Models:** `deepseek`, the official endpoint, `deepseek-v4-flash`, and an API key;
+- **Voice:** Fish Audio S2.1 + Kurisu is the recommended remote TTS profile; MiMo and OpenAI-compatible endpoints are also supported. The L4 local stack also needs a Qwen model directory, GPT-SoVITS **v3** checkpoints, reference audio/text, microphone, AEC, and barge-in;
+- **General:** optional character-pack status and presentation settings.
 
-启动：
+Launch Amadeus:
 
-- Windows：`run_electron_utf8.bat`（单一启动器；自动发现 `.venv`，L1–L4 通用）
-- macOS：`cd electron && npm run electron:dev`
+- Windows: `run_electron_utf8.bat`, the shared launcher for L1–L4; it discovers `.venv` automatically.
+- macOS: `cd electron && npm run electron:dev`.
 
-macOS 登录后自动启动壁纸可使用原生 `Amadeus Wallpaper.app`；构建、验证和
-LaunchAgent 安装步骤见 [macOS 壁纸自启动](docs/macos_wallpaper_startup.md)。
+For wallpaper startup at macOS login, use the native `Amadeus Wallpaper.app`.
+Build, verification, and LaunchAgent installation steps are documented in
+[macOS wallpaper startup](docs/macos_wallpaper_startup.md).
 
-启动型设置变更后按 **Restart backend to apply**。角色包显示
-**Not installed** 是健康状态，不影响 Chat、Work 或 headless 启动。
+Use **Restart backend to apply** after changing startup settings. A
+**Not installed** character pack is healthy and does not disable Chat, Work,
+or headless startup.
 
-默认 B2 AppSession 动作路径不会阻塞首次配置。尚未配置受支持的 AUIP
-动作模型凭据时，Chat 和 Settings 仍可启动；应用动作保持 fail-closed，
-Settings 会明确显示缺少的能力。
+The default B2 AppSession action path does not block first-time setup. Chat and
+Settings still start without supported AUIP action-model credentials; application
+actions remain blocked, and Settings displays the missing capability.
 
-## 兼容路径
+## Compatibility routes
 
-### 可选本地 LLM
+### Optional local LLM
 
-需要 llama.cpp 时，显式设置 `LLM_PROVIDER=local`，配置 executable / GGUF
-或已存在的 OpenAI-compatible endpoint，再按需启动：
+To use llama.cpp instead of the remote Main Chat baseline, set
+`LLM_PROVIDER=local`, configure its executable/GGUF or an existing
+OpenAI-compatible endpoint, and start it when needed:
 
 ```powershell
 .\start_llm_server.bat
 ```
 
-LM Studio、Ollama、llama-cli 和 hybrid profiles 仍保留，但不会在
-DeepSeek 失败后自动切换。
+LM Studio, Ollama, llama-cli, and hybrid profiles remain available, but none is
+an automatic fallback after a DeepSeek failure.
 
-### 可选远程模型建议
+### Optional remote model recommendations
 
-下表是面向当前 API 的推荐 profile，不改变上述角色分工，也不会在端点
-失败后自动切换 provider：
+These are recommended profiles for the current APIs. They do not change the
+role split above, and Amadeus never switches Providers silently after an endpoint
+failure:
 
-| 职责 | 推荐 profile | 当前边界 |
+| Responsibility | Recommended profile | Current boundary |
 |---|---|---|
-| 主 Chat API | DeepSeek-V4-Flash-0731：`DEEPSEEK_BASE_URL=https://api.deepseek.com`，`DEEPSEEK_MODEL_NAME=deepseek-v4-flash` | `deepseek-v4-flash` 是稳定 API alias，当前指向 0731 版本；不把日期写进运行时 model id。 |
-| 远程语音合成 TTS | 推荐 **Fish Audio S2.1**：`TTS_BACKEND=fish_audio`、`FISH_TTS_MODEL=s2.1-pro-free`；Kurisu 音色：`FISH_TTS_REFERENCE_ID=b450b19370434173b121446057622e9b` | WebSocket 双向流式 API；本地分句片段按 `text → flush` 发送，音频逐块接收。主 Chat 保留现有分句调度；不直接发送原始 LLM token。 |
-| 多模态 / Vision | 优先 `gemini-3.7-flash`；需要较保守的兼容 profile 时可用 `gemini-3.5-flash` | 当前由 Host 内部 visual-context 链负责图像采集，图像发送仍跟随主 Chat provider；独立 Gemini Vision API 路由尚未实现，也不代表恢复旧 Gemini Live sidecar。 |
-| Work 执行 Provider | 首选 Codex App Server；其次是可选 OpenClaw Gateway | 这是推荐优先级，不是失败后自动 fallback。Browser 仍是网页任务的专用 Provider。 |
-| Work 执行模型 | Codex App Server 可显式选择 GPT-5.6 family 或 `deepseek-v4-flash` | 执行模型属于 Work Provider，不与主 Chat 共用路由或密钥。 |
-| AUIP 运行时动作判定 | `AUIP_ACTION_PROVIDER=openai`、`AUIP_ACTION_MODEL=gpt-5.6-terra`、`AUIP_ACTION_REASONING_EFFORT=low`、`AUIP_ACTION_SERVICE_TIER=fast` | 这是 AppSession 的动作 / 参与判定模型，不是 AUIP Artifact 的执行 Provider；`fast` 需要对应 API 项目可用。 |
+| Main Chat API | DeepSeek-V4-Flash-0731: `DEEPSEEK_BASE_URL=https://api.deepseek.com` and `DEEPSEEK_MODEL_NAME=deepseek-v4-flash` | `deepseek-v4-flash` is the stable API alias currently pointing to the 0731 release; the dated version is not used as the runtime model id. |
+| Remote speech synthesis | **Fish Audio S2.1**: `TTS_BACKEND=fish_audio`, `FISH_TTS_MODEL=s2.1-pro-free`; Kurisu voice: `FISH_TTS_REFERENCE_ID=b450b19370434173b121446057622e9b` | Bidirectional WebSocket streaming; locally committed sentence chunks use `text → flush`, with incremental audio output. Existing Chat sentence scheduling is preserved. |
+| Multimodal / Vision | Prefer `gemini-3.7-flash`; use `gemini-3.5-flash` as a more conservative compatibility profile | Host-owned visual context performs capture in-process, while image delivery still follows the Main Chat Provider. Independent Gemini Vision API routing is not implemented and does not imply restoring the retired Gemini Live sidecar. |
+| Work execution Provider | Prefer Codex App Server; use the optional OpenClaw Gateway second | This is a recommendation order, not an automatic failure fallback. Browser remains the specialized Provider for web tasks. |
+| Work execution model | Codex App Server may explicitly select a GPT-5.6-family model or `deepseek-v4-flash` | The execution model belongs to the Work Provider and does not share Main Chat routing or credentials. |
+| AUIP runtime action decisions | `AUIP_ACTION_PROVIDER=openai`, `AUIP_ACTION_MODEL=gpt-5.6-terra`, `AUIP_ACTION_REASONING_EFFORT=low`, and `AUIP_ACTION_SERVICE_TIER=fast` | This model decides AppSession actions and participation; it is not the execution Provider that authors an AUIP Artifact. `fast` requires availability for the API project. |
 
-### 推荐远程 TTS：Fish Audio + Kurisu
+### Recommended remote TTS: Fish Audio + Kurisu
 
-安装 L2 voice 后，在 **Settings → Voice** 的 Speech synthesis 中选择
-**Fish Audio**，填写 API key，确认以下两个不同的 ID，再重启后端：
+After installing L2 voice, select **Fish Audio** under **Settings → Voice →
+Speech synthesis**, enter the API key, and restart the backend. Use:
 
-| 设置 | 推荐值 |
+| Setting | Recommended value |
 |---|---|
-| Fish 推理模型 ID（S2.1 免费模型） | `s2.1-pro-free` |
-| Kurisu 音色 / reference ID | `b450b19370434173b121446057622e9b` |
-| 音色页面 | [牧濑红莉栖 / Makise kurisu](https://fish.audio/zh-CN/app/text-to-speech/?modelId=b450b19370434173b121446057622e9b) |
+| Fish inference model ID (S2.1 free model) | `s2.1-pro-free` |
+| Kurisu voice / reference ID | `b450b19370434173b121446057622e9b` |
+| Voice page | [Makise kurisu / 牧濑红莉栖](https://fish.audio/zh-CN/app/text-to-speech/?modelId=b450b19370434173b121446057622e9b) |
 | WebSocket endpoint | `wss://api.fish.audio/v1/tts/live` |
-| 延迟模式 | `balanced` |
+| Latency mode | `balanced` |
 
-也可在本机 `.env` 中配置：
+The equivalent local `.env` configuration is:
 
 ```dotenv
 TTS_BACKEND=fish_audio
@@ -463,32 +517,37 @@ FISH_TTS_REFERENCE_ID=b450b19370434173b121446057622e9b
 FISH_TTS_LATENCY=balanced
 ```
 
-这是日语 Kurisu 音色；推理模型 ID 和音色 ID 不能互换。GUI 中的 API key
-进入现有加密凭据存储。推荐远程配置不改变默认的本地 GPT-SoVITS 后端。
-在一台 Windows 主机上，DeepSeek + 此 Fish 配置的三次基线测试中，
-从发送 `chat.send` 到首个非静音音频写入声卡的中位数为 **3.70 秒**
-（另有约 91 ms 声卡输出延迟；不代表所有网络或冷启动表现）。
-配置、增量 chunk 试验与音频检查见 [Fish Audio 接入说明](docs/fish_audio_websocket.md)。
+The Japanese voice ID is separate from the inference model ID. GUI credentials
+use the existing encrypted store. This remote recommendation does not change the
+default embedded GPT-SoVITS backend. A three-trial Windows baseline with DeepSeek
+measured a **3.70 s** median from `chat.send` to the first non-silent device write,
+plus roughly 91 ms reported output latency; other networks and cold starts vary.
+See [Fish Audio setup, chunk probes, and audio checks](docs/fish_audio_websocket.md).
 
-## 外部模型与运行资产
+## External models and runtime assets
 
-模型权重、参考音频、角色包及大型/版权敏感素材独立分发；源码仓库只保留
-必要图标、默认壁纸、schema、validator 和安装工具。
+Model weights, reference audio, character packs, and large or copyright-
+sensitive media are distributed separately. The source repository keeps the
+required icons, default wallpaper, schemas, validators, and installation tool.
 
-当前目录合同包括 `asr-qwen3-0.6b`、`voice-kurisu-gpt-sovits-v3`、
-`visual-runtime` 与 `character-kurisu`。前两个组成完整本地语音 profile；
-后两个只影响场景和角色呈现。
+The current directory contracts are `asr-qwen3-0.6b`,
+`voice-kurisu-gpt-sovits-v3`, `visual-runtime`, and `character-kurisu`. The
+first two form the full local-voice profile; the latter two affect only scene
+and character presentation.
 
 ```powershell
 uv run --locked --no-sync python tools\external_assets.py verify C:\path\to\asset-bundle.zip
 uv run --locked --no-sync python tools\external_assets.py install C:\path\to\asset-bundle.zip
 uv run --locked --no-sync python tools\external_assets.py status
 ```
-`external_assets.py` 是纯标准库工具，在任一梯级的 `.venv` 下运行均可。运行本地语音
-模型还需匹配的模型依赖与硬件，安装资产包本身不会补齐这些依赖。cu124 正式配置和
-ROCm 实验边界见[安装配置](docs/install_profiles.md)。
 
-SpriteForge 角色包最终应落在：
+A bundle can be installed from any tier: `external_assets.py` uses only the
+Python standard library. Running local voice models additionally requires the
+matching model dependencies and hardware; installing a bundle alone does not
+add them. See [installation profiles](docs/install_profiles.md) for the qualified
+cu124 profile and the ROCm experimental boundary.
+
+A SpriteForge character package ultimately lands at:
 
 ```text
 assets/spriteforge/runtime/kurisu/
@@ -498,43 +557,49 @@ assets/spriteforge/runtime/kurisu/
   textures/
 ```
 
-安装器保持标准 `assets/...` 路径、校验 SHA-256、跳过相同文件并拒绝意外覆盖。
-详见[外部资产包](docs/external_asset_bundles.md)与
-[角色包合同](docs/character_pack_authoring.md)。
+The installer preserves the canonical `assets/...` layout, verifies SHA-256,
+skips identical files, and rejects unexpected overwrites. See
+[external asset bundles](docs/external_asset_bundles.md) and the
+[character-pack contract](docs/character_pack_authoring.md).
 
-### 壁纸模式（推荐 Lively Wallpaper）
+### Wallpaper mode (Lively Wallpaper recommended)
 
-Windows 下推荐用开源的
-[Lively Wallpaper](https://github.com/rocksdanister/lively) 托管 Amadeus 网页壁纸；
-Wallpaper Engine 仍保留兼容。启动 Amadeus 后，将下列本地网页 URL
-添加到 Lively（推荐 WebView2），再在 Amadeus 左侧栏点击 **Wallpaper**：
+On Windows, the open-source
+[Lively Wallpaper](https://github.com/rocksdanister/lively) is the recommended
+host for Amadeus's web wallpaper; Wallpaper Engine remains compatible. Start
+Amadeus, add the local webpage URL below to Lively (WebView2 is recommended),
+then click **Wallpaper** in the Amadeus sidebar:
 
 ```text
 http://127.0.0.1:17777/wallpaper/lively/index.html
 ```
 
-该稳定入口会自动发现实际 asset/bridge 端口；壁纸模式关闭时会原地等待，
-不要手工写死 `17778` 或 `17797`。诊断时可运行
-`uv run --locked --no-sync python tools\run_wallpaper_engine_bridge.py` 并使用它打印的 `Lively URL`。
-详见 [Lively 入口说明](wallpaper/lively/README.md)。
+This stable entry discovers the actual asset and bridge ports automatically
+and waits in place while wallpaper mode is off. Do not hard-code `17778` or
+`17797`. For diagnostics, run
+`uv run --locked --no-sync python tools\run_wallpaper_engine_bridge.py` and use the printed `Lively URL`.
+See the [Lively entry guide](wallpaper/lively/README.md).
 
-macOS 没有对应的 Lively/Wallpaper Engine 桌面宿主。点击 **Wallpaper** 后，
-Electron 会直接创建桌面层的全场景窗口，并用独立透明窗口承载可交互 Canvas；
-场景本身保持鼠标穿透，不会挡住 Finder 桌面图标。该能力目前属于社区实机验证候选，
-不构成正式 macOS 支持；依赖与 CI 由 [#46](https://github.com/Code-Amadeus/Amadeus/pull/46)
-承接，目前也不包含签名、公证或安装器。
+macOS has no corresponding Lively/Wallpaper Engine desktop host. When
+**Wallpaper** is activated, Electron hosts the full scene at the desktop level
+and uses a separate transparent window for the interactive Canvas. The scene
+remains click-through so it does not block Finder desktop icons. The macOS
+Electron wallpaper host has community real-device verification; dependency
+and CI work is tracked by
+[#46](https://github.com/Code-Amadeus/Amadeus/pull/46), and signing,
+notarization, and an installer are not included yet.
 
-### 图形性能配置
+### Graphics performance
 
-所有 PixiJS 角色与壁纸表面共享一个 `.env` 图形 Profile：
+All PixiJS character and wallpaper surfaces share one `.env` graphics profile:
 
-| `GRAPHICS_PROFILE` | 最大帧率 | resolution | 用途 |
+| `GRAPHICS_PROFILE` | Maximum frame rate | Resolution | Purpose |
 |---|---:|---:|---|
-| `standard`（默认） | 60 FPS | 原生 device-pixel ratio | 保持动画设计质量 |
-| `power_saving` | 30 FPS | 最高 1.5× | 降低 GPU、功耗与发热 |
-| `custom` | `RENDER_MAX_FPS` | `RENDER_MAX_RESOLUTION` | 自定义性能预算 |
+| `standard` (default) | 60 FPS | Native device-pixel ratio | Preserve animation quality |
+| `power_saving` | 30 FPS | Up to 1.5× | Reduce GPU use, power consumption, and heat |
+| `custom` | `RENDER_MAX_FPS` | `RENDER_MAX_RESOLUTION` | Set a custom performance budget |
 
-自定义帧率支持 10–240 FPS，resolution 支持 0.25–4.0。示例：
+Custom frame rates support 10–240 FPS and resolution supports 0.25–4.0. Example:
 
 ```dotenv
 GRAPHICS_PROFILE=custom
@@ -542,72 +607,79 @@ RENDER_MAX_FPS=45
 RENDER_MAX_RESOLUTION=1.25
 ```
 
-Wallpaper Engine 通过
-[`applyGeneralProperties().fps`](https://docs.wallpaperengine.io/en/web/performance/fps.html)
-提供用户 FPS 设置时，运行时采用该设置与项目 Profile 中较低的有效值；Electron、
-Lively 及普通角色表面没有该宿主设置，直接使用项目 Profile。
-暂不提供对应 GUI，修改 `.env` 后需重启 Amadeus。
+When Wallpaper Engine supplies a user FPS setting through
+[`applyGeneralProperties().fps`](https://docs.wallpaperengine.io/en/web/performance/fps.html),
+the runtime uses the lower of that setting and the project profile. Electron,
+Lively, and other character surfaces use the project profile directly.
+These settings currently live in `.env`; restart Amadeus after changing them.
 
-#### 实验性纹理采样（默认关闭）
+#### Experimental texture sampling (off by default)
 
-`RENDER_TEXTURE_SAMPLING=false` 为默认值，保持现有的全帧加载与播放规则。
-**16GB 或其他内存压力较大的设备**，可考虑在 `.env` 中开启并选择 30 FPS 省电档：
+`RENDER_TEXTURE_SAMPLING=false` preserves the existing full-frame loading and
+playback rules. On **16GB systems or other memory-constrained setups**, consider
+trying the experimental option with the 30 FPS power-saving profile in `.env`:
 
 ```dotenv
 GRAPHICS_PROFILE=power_saving
 RENDER_TEXTURE_SAMPLING=true
 ```
 
-开启后，角色动画按有效帧率选择要加载的源帧，保留关键停留帧、动作时长与嘴型索引。
-本机 30 FPS 离屏实验中，CPU 纹理缓冲约减少 50%，播放帧间隔与原版接近；
-这不代表整机 RAM 或显存减半，16GB 实机及长期运行仍待验证。
-详见[实验数据与限制](docs/fps_texture_sampling_experiment_2026-09-16.md)。
+When enabled, character frames are sampled against the effective FPS budget,
+preserving required hold frames, animation duration and mouth-anchor indices.
+One local 30 FPS offscreen experiment reduced CPU texture buffers by about 50%
+with similar frame pacing. This is not a claim of halving total RAM or VRAM;
+16GB hardware and long-running sessions still need validation.
+See the [experiment and limitations](docs/fps_texture_sampling_experiment_2026-09-16.md).
 
-修改后需重启 Amadeus/后端并重开壁纸。仅切换绘制 FPS 不会立即重建纹理缓存。
-如需恢复原行为，将 `RENDER_TEXTURE_SAMPLING=false` 后按同样步骤重启。
+Restart Amadeus/the backend and reopen the wallpaper after changing this option.
+Changing the draw FPS alone does not rebuild the texture cache. To restore the
+existing behavior, set `RENDER_TEXTURE_SAMPLING=false` and restart in the same way.
 
-## 配置所有权
+## Configuration ownership
 
-启动值优先级固定为：
+Startup values use one precedence order:
 
-1. 父进程环境变量（最高权威，在 GUI 中显示为 locked）；
-2. Electron desktop settings；
-3. 仓库根目录 `.env`；
-4. `config/settings.py` 默认值。
+1. Parent-process environment variables (highest authority; shown as locked in the GUI)
+2. Electron desktop settings
+3. Repository-root `.env`
+4. Defaults in `config/settings.py`
 
-Settings 不会回写 `.env`。普通模型、语音、麦克风、Provider/MCP、视觉、头像和
-角色包状态应从 GUI 配置；高级诊断、实验阈值和测试开关留在 `.env`。密钥通过
-操作系统 `safeStorage` 加密。详见[配置所有权](config/README.md)与
-[本地实例认证](docs/local_instance_authentication.md)。
+Settings never rewrites `.env`. Ordinary models, voice, microphones,
+Providers/MCP, vision, avatars, and character-pack status belong in the GUI;
+advanced diagnostics, experimental thresholds, and test-only flags remain in
+`.env`. Secrets use the operating system's `safeStorage` encryption. See
+[configuration ownership](config/README.md) and
+[local instance authentication](docs/local_instance_authentication.md).
 
-## 当前发布边界
+## Current release boundaries
 
-| 范围 | 状态 |
+| Scope | Status |
 |---|---|
-| L1/L2（文字 + 远程语音）| Windows 与 macOS 源码部署；Windows 为参考平台，macOS L1/L2 有独立 CI，桌面与音频体验仍需实机验收 |
-| Linux（实验性）| Ubuntu 24.04 的 L1、L2 Voice 源码构建与 Electron 构建有 CI；GUI、真实音频设备、GPU 与壁纸仍需验收，见 [Linux 章节](#linux实验性) |
-| L3 CPU VAD | 不要求 NVIDIA GPU；使用明确的 CPU 构建配置 |
-| L4 cu124（本地 CUDA 12.4 语音）| Windows + NVIDIA；以当前实际运行环境为参考 |
-| AMD ROCm 7.2.1 | 单 `.venv` 实验锁、sidecar adapter 与失败闭环已提供；受支持 AMD GPU 实机验收待补齐 |
-| cu128 / Apple Silicon MPS | Torch 2.7.0 实验锁与安装 CI；完整设备和模型回归待完成 |
-| 8 GiB VRAM / 16–32 GiB RAM | 目标配置；实际占用由模型组合决定 |
-| 远程 DeepSeek Main Chat | 第一版默认 profile |
-| 远程 ASR / TTS | 显式兼容路径，不静默 fallback |
-| Electron installer | 尚未提供；当前从源码启动 |
-| macOS Electron 壁纸宿主 | 社区实机验证候选；依赖/CI 由 #46 承接，尚无签名、公证或安装器 |
-| Docker | 不是支持的桌面安装路径 |
-| SpriteForge 角色包 | 外部分发；缺包仍可启动 |
-| VTS | 默认关闭的兼容旁路 |
+| L1/L2 (text + remote voice) | Source deployment on Windows, macOS, and Linux; Windows is the reference platform, with separate macOS L1/L2 and Linux CI |
+| Linux | Source deployment verified on real hardware; Ubuntu 24.04 CI covers L1, L2 Voice source builds and the Electron build. See [Linux setup](#linux) for environment-specific notes |
+| L3 CPU VAD | No NVIDIA GPU required; uses an explicit CPU build selection |
+| L4 cu124 (local CUDA 12.4 voice) | Windows + NVIDIA; follows the qualified local-model configuration |
+| AMD ROCm 7.2.1 | Targets GPUs in AMD's official Windows support matrix; `local-rocm` experimental profile with Qwen ASR / GPT-SoVITS sidecars. See [setup and validation](tools/rocm_sidecar/README.md) |
+| NVIDIA cu128 | Experimental Torch 2.7.0 lock and installation CI; full device/model qualification pending |
+| Apple Silicon MPS | Supported through `local-mps`; verified on real hardware |
+| 8 GiB VRAM / 16–32 GiB RAM | Target configuration; actual use depends on model selection |
+| Remote DeepSeek Main Chat | First-release default profile |
+| Remote ASR / TTS | Explicit compatibility path, never a silent fallback |
+| Electron installer | Not provided yet; launch from source |
+| macOS Electron wallpaper host | Community real-device verification; dependency/CI tracked by #46, with no signing, notarization, or installer yet |
+| Docker | Not a supported desktop installation path |
+| SpriteForge character pack | Externally distributed; source starts without it |
+| VTS | Disabled-by-default compatibility route |
 | VN Player | Experimental |
-| 壁纸模式 | 仅 Windows 宿主（Lively / Wallpaper Engine）；其他平台不提供 |
-| PyQt / 旧壁纸 host | 已退出公开主线 |
-| Claude CLI Provider | 已确定的后续主线 Provider；当前没有 live caller |
+| Wallpaper hosts | Lively / Wallpaper Engine on Windows; the macOS Electron host has community real-device verification as noted above |
+| PyQt / old wallpaper hosts | Retired from public mainline |
+| Claude CLI Provider | Committed future mainline Provider; no live caller yet |
 
-## 开发与贡献
+## Development and contribution
 
 ```powershell
-uv sync --locked --extra dev      # core + 开发工具；会移除未选择的语音/模型层
-# 保留语音/模型能力时，在完整安装命令末尾追加 --extra dev
+uv sync --locked --extra dev      # Core + dev tools; removes unselected voice/model tiers
+# To retain voice/models, append --extra dev to the complete installation command
 uv run --locked --no-sync python tools\verify_python_environment.py --profile ci
 uv run --locked --no-sync python -X utf8 tools\run_tests.py
 
@@ -617,37 +689,40 @@ npm run build
 npm audit --audit-level=high
 ```
 
-提交前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 与 [ROADMAP.md](ROADMAP.md)。
-产品语义、权限、协议、Provider/MCP/Skill、Project/Draft/Artifact 或 AUIP 边界变化
-应先开 Issue；小型修复、文档、测试和纯呈现 UI 变更可直接发 PR。安全问题请按
-[SECURITY.md](SECURITY.md) 私下报告。
+Read [CONTRIBUTING.md](CONTRIBUTING.md) and [ROADMAP.md](ROADMAP.md) before
+submitting a change. Product semantics, authority, protocols,
+Providers/MCP/Skills, Projects/Drafts/Artifacts, or AUIP changes should start
+with an Issue. Small fixes, documentation, tests, and presentation-only UI
+changes may open a PR directly. Report security issues privately under
+[SECURITY.md](SECURITY.md).
 
-## 公开历史与许可证
+## Public history and license
 
-公开仓库从一个整理后的初始提交开始。内部研发 commit、实验 branch、已删除角色
-素材、模型、密钥、会话、本地路径及原始共作者元数据没有迁入公开 Git 历史。
-代码本身按当前发行边界保留。
+The public repository begins with one prepared root commit. Internal development
+commits, experimental branches, deleted character media, models, credentials,
+sessions, personal paths, and original co-author metadata were not migrated.
+The source itself remains included according to the reviewed release boundary.
 
-Amadeus 第一方源码和修改依据
-[GNU Affero General Public License v3.0（AGPL-3.0）](LICENSE) 开源。
-第三方组件保留各自许可证，见 [LICENSES](LICENSES/README.md) 与
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。代码许可证不会自动授予角色、
-模型、参考音频或外部资产包的权利。
+Amadeus first-party source and modifications are open-source under the
+[GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE). Third-party
+components retain their own licenses, recorded under [LICENSES](LICENSES/README.md) and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The code license grants no
+automatic rights to character, model, reference-audio, or external asset packs.
 
-## 相关项目
+## Related projects
 
-- [Aqua-TTS](https://github.com/Lucas1479/Aqua-TTS)：MIT 的低延迟 GPT-SoVITS v3 推理运行时；Amadeus 当前不要求安装 Aqua 才能启动。
-- [Amadeus SpriteForge](https://github.com/Code-Amadeus/Amadeus-SpriteForge)：已公开源码的 **0.1.0 Source Alpha**，提供本地 sprite 资产检查、行为图编辑与 KTX2 角色包预览/导出；项目代码采用 AGPL-3.0-only，生成服务与 Amadeus 运行时独立。
-- [AUIP](https://github.com/Code-Amadeus/AUIP)：已在 Amadeus 中实现的实验性 application-session / typed-action 协议；独立仓库维护现状与公开实现入口，独立版本 SDK 和 conformance suite 尚未发布。
-- [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)：内嵌语音合成推理基础。
-- [OpenClaw](https://github.com/openclaw/openclaw)：可选外部 Work gateway。
+- [Aqua-TTS](https://github.com/Lucas1479/Aqua-TTS): an MIT-licensed low-latency GPT-SoVITS v3 inference runtime. Amadeus does not require Aqua to start today.
+- [Amadeus SpriteForge](https://github.com/Code-Amadeus/Amadeus-SpriteForge): public **0.1.0 Source Alpha** for local sprite inspection, behavior-graph editing, and KTX2 character-pack preview/export. Licensed under AGPL-3.0-only; generation services are separate from the Amadeus runtime.
+- [AUIP](https://github.com/Code-Amadeus/AUIP): the experimental application-session / typed-action protocol implemented in Amadeus. The separate repository documents its status and public implementation entry points; a separately versioned SDK and conformance suite are not yet published.
+- [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS): the embedded speech-synthesis inference foundation.
+- [OpenClaw](https://github.com/openclaw/openclaw): an optional external Work gateway.
 
 <details>
 <summary>Star History</summary>
 <br />
 <p align="center">
   <a href="https://github.com/Code-Amadeus/Amadeus/stargazers">
-    <img src="./assets/star-history.svg" alt="Amadeus Star History" width="620" />
+    <img src="https://raw.githubusercontent.com/Code-Amadeus/Amadeus/star-history/star-history.svg" alt="Amadeus Star History" width="620" />
   </a>
 </p>
 </details>

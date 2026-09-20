@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 170" width="1280" height="170" role="img" aria-label="Amadeus 运行时四层：可打断的实时语音、表演与语音同帧、Provider 委派执行、可恢复可接管">
-  <title>AMADEUS // CHAPTER 00 — TALK / EMBODY / ACT / CONTROL</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="12 12 1256 146" width="1256" height="146" role="img" aria-label="Amadeus 运行时四层：可打断的实时语音、表演与语音同帧、Provider 委派执行、可恢复可接管">
+  <title>AMADEUS // INTERACTION LAYER — TALK / EMBODY / ACT / CONTROL</title>
   <defs>
     <linearGradient id="s_panel" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#0b1711"/>
@@ -41,11 +41,11 @@
     <rect x="12" y="12" width="4" height="146" fill="#61eeb6" opacity=".9"/>
     <rect x="12" y="12" width="16" height="146" fill="#61eeb6" opacity=".13" filter="url(#s_soft)"/>
 
-    <text class="mono" x="44" y="48" font-size="15" letter-spacing="4.4" fill="#83d7aa">AMADEUS // CHAPTER 00</text>
+    <text class="mono" x="44" y="48" font-size="15" letter-spacing="3" fill="#83d7aa">AMADEUS // INTERACTION LAYER</text>
 
     <g>
       <rect x="1053.5" y="33.5" width="156" height="25" rx="12.5" fill="#272018" stroke="#483820"/>
-      <text class="cjk" x="1131" y="51" font-size="13" letter-spacing="1" fill="#d7a95f" text-anchor="middle">源码整理中</text>
+      <text class="cjk" x="1131" y="51" font-size="13" letter-spacing="1" fill="#d7a95f" text-anchor="middle">源码 Alpha</text>
     </g>
     <g stroke="#46745d" fill="none"><rect x="1225.5" y="33.5" width="19" height="19" rx="2"/></g>
     <rect class="rec" x="1230" y="38" width="10" height="10" rx="1" fill="#61eeb6" opacity=".8"/>
@@ -57,7 +57,7 @@
     <g class="mono" font-size="12" letter-spacing="2.4" fill="#82aa92">
       <text x="44" y="106">TALK</text><text x="342" y="106">EMBODY</text><text x="640" y="106">ACT</text><text x="938" y="106">CONTROL</text>
     </g>
-    <g class="cjk" font-size="18" font-weight="600" fill="#d9f7e6">
+    <g class="cjk" font-size="21" font-weight="600" fill="#d9f7e6">
       <text x="44" y="136">可打断的实时语音</text><text x="342" y="136">表演与语音同帧</text><text x="640" y="136">Provider 委派执行</text><text x="938" y="136">可恢复 · 可接管</text>
     </g>
   </g>

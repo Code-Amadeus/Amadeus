@@ -4,6 +4,11 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "23 3 * * *"
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/star-history.yml
+      - scripts/update_star_history.py
 
 permissions:
   contents: write
@@ -27,14 +32,27 @@ jobs:
           --repository "$GITHUB_REPOSITORY"
           --output assets/star-history.svg
 
-      - name: Commit a changed chart
+      # Generated media has its own branch. The protected application branch
+      # remains PR-only; updating a chart does not need application CI/review.
+      - name: Publish a changed chart
+        shell: bash
         run: |
-          if git diff --quiet -- assets/star-history.svg; then
-            echo "Star history is already current."
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- assets/star-history.svg
-          git commit -m "docs: update star history"
-          git push
+
+          blob=$(git hash-object -w assets/star-history.svg)
+          tree=$(printf '100644 blob %s\tstar-history.svg\n' "$blob" | git mktree)
+          remote_ref=$(git ls-remote --heads origin refs/heads/star-history)
+          parents=()
+          if [ -n "$remote_ref" ]; then
+            git fetch --depth=1 origin refs/heads/star-history
+            parent=$(git rev-parse FETCH_HEAD)
+            if [ "$(git rev-parse "$parent^{tree}")" = "$tree" ]; then
+              echo "Star history is already current."
+              exit 0
+            fi
+            parents=(-p "$parent")
+          fi
+
+          commit=$(printf 'docs: update star history\n' | git commit-tree "$tree" "${parents[@]}")
+          git push origin "$commit:refs/heads/star-history"
