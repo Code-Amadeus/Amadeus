@@ -123,6 +123,23 @@
         "audio/reference/english_recording.wav"
       ],
       "validator": "required_files"
+    },
+    {
+      "id": "voice-kurisu-gpt-sovits-v2pro-experimental",
+      "display_name": "Kurisu GPT-SoVITS v2Pro Experimental Voice Pack",
+      "spec_version": 1,
+      "paths": [
+        "models/gpt-sovits/pretrained/sv/pretrained_eres2netv2w24s4ep4.ckpt",
+        "models/gpt-sovits/weights/gpt/v2Pro/kurisu_v2pro-e15.ckpt",
+        "models/gpt-sovits/weights/sovits/v2Pro/kurisu_v2pro.pth"
+      ],
+      "trees": [],
+      "required": [
+        "models/gpt-sovits/pretrained/sv/pretrained_eres2netv2w24s4ep4.ckpt",
+        "models/gpt-sovits/weights/gpt/v2Pro/kurisu_v2pro-e15.ckpt",
+        "models/gpt-sovits/weights/sovits/v2Pro/kurisu_v2pro.pth"
+      ],
+      "validator": "required_files"
     }
   ]
 }

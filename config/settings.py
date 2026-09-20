@@ -324,9 +324,38 @@ def _resolve_tts_device() -> str:
 
 
 TTS_DEVICE = _resolve_tts_device()
-# v3 模型权重路径（相对于项目根或绝对路径，写在 .env 中）
-TTS_GPT_MODEL_PATH    = _str("TTS_GPT_MODEL_PATH")
-TTS_SOVITS_MODEL_PATH = _str("TTS_SOVITS_MODEL_PATH")
+
+_TTS_VOICE_PROFILE_PATHS = {
+    "kurisu_v3": (
+        "assets/models/gpt-sovits/weights/gpt/v3/xxx-e15.ckpt",
+        "assets/models/gpt-sovits/weights/sovits/v3/xxx_e2_s174_l32.pth",
+    ),
+    "kurisu_v2pro": (
+        "assets/models/gpt-sovits/weights/gpt/v2Pro/kurisu_v2pro-e15.ckpt",
+        "assets/models/gpt-sovits/weights/sovits/v2Pro/kurisu_v2pro.pth",
+    ),
+}
+
+
+def _resolve_tts_voice_paths(profile: str, gpt_path: str, sovits_path: str) -> tuple[str, str]:
+    selected = str(profile or "custom").strip().lower()
+    if selected == "custom":
+        return str(gpt_path or "").strip(), str(sovits_path or "").strip()
+    try:
+        return _TTS_VOICE_PROFILE_PATHS[selected]
+    except KeyError as exc:
+        supported = ", ".join(("custom", *_TTS_VOICE_PROFILE_PATHS))
+        raise ValueError(f"Unsupported TTS_VOICE_PROFILE={profile!r}; expected one of {supported}") from exc
+
+
+# A named profile keeps compatible GPT/SoVITS pairs atomic. `custom` preserves
+# existing installations that provide explicit relative or absolute paths.
+TTS_VOICE_PROFILE = _str("TTS_VOICE_PROFILE", "custom").strip().lower()
+TTS_GPT_MODEL_PATH, TTS_SOVITS_MODEL_PATH = _resolve_tts_voice_paths(
+    TTS_VOICE_PROFILE,
+    _str("TTS_GPT_MODEL_PATH"),
+    _str("TTS_SOVITS_MODEL_PATH"),
+)
 
 # 输出语言："日文" | "英文"（对应 dict_language 中的键名）
 # 切换此项即可在日文 LoRA 管线和英文 base 管线之间手动选择
