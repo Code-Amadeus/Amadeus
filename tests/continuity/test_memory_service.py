@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from core.continuity import ContinuityService, ContinuityStore, RealityClock
-from core.continuity.models import ConsolidationStatus
+from core.continuity.models import ConsolidationStatus, MemoryKind
 from ._support import FakeClock
 
 
@@ -230,3 +230,38 @@ async def test_chat_complete_without_in_memory_user_event_reloads_exact_session_
     await service.drain()
     memory = continuity_store.get_active_memory("user.fact.name")
     assert memory is not None and memory.object_text == "真由理"
+
+
+async def test_substantive_discussion_turn_is_remembered_without_a_time_anchor(continuity_store, tmp_path) -> None:
+    """A topic discussion the user starts must survive even with no time cue."""
+
+    service = _service(continuity_store, tmp_path)
+    bus = FakeEventBus()
+    service.start()
+    service.bind_event_bus(bus)
+
+    await bus.emit(
+        "chat.user",
+        {
+            "session_id": "session-anime",
+            "turn_id": "anime-1",
+            "text": "这部番里魔族为什么总是说谎？",
+        },
+    )
+    await bus.emit(
+        "chat.complete",
+        {
+            "session_id": "session-anime",
+            "turn_id": "anime-1",
+            "full_text": "設定の話ね。",
+        },
+    )
+    await service.drain()
+
+    memories = continuity_store.list_active_memories()
+    assert len(memories) == 1
+    assert memories[0].kind is MemoryKind.EPISODIC
+    # NFKC normalization folds the full-width question mark.
+    assert memories[0].summary == "这部番里魔族为什么总是说谎?"
+    assert memories[0].source_turn_id == "anime-1"
+    await service.aclose(graceful=False)

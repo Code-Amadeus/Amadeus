@@ -5,13 +5,17 @@ SQLite memory fast path reports low confidence.  A Session turn is eligible only
 when it is anchored by at least one currently-active memory row and is not covered
 by explicit-forget provenance.  This keeps archive recall from becoming a second
 durable truth source or bypassing tombstones.
+
+Selected turns quote both sides of the exchange (user statement plus
+non-authoritative past assistant wording) so details that only the assistant
+voiced remain recoverable.  User-muted topics are skipped unless the current
+question raises them itself.
 """
 
 from __future__ import annotations
 
 import json
 import re
-import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -21,6 +25,7 @@ from typing import Sequence
 from core.continuity.models import ArchiveRetrievalHit, MemoryRecord, MemoryRetrievalHit
 from core.continuity.retrieval_policy import ContinuityRetrievalPolicy
 from core.continuity.store import ContinuityStore
+from core.continuity.topic_mute import ngram_coverage, normalize_text, text_is_muted
 
 
 _HISTORICAL_MARKERS = (
@@ -31,7 +36,6 @@ _HISTORICAL_MARKERS = (
     "yesterday", "the day before yesterday", "last week", "last month", "last year",
     "ago", "back then", "we talked about", "i told you", "i said", "you said",
 )
-_ASSISTANT_HISTORY_MARKERS = ("你说过", "你当时说", "你上次说", "what did you say", "you said", "your reply")
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,25 +57,11 @@ class ArchiveRecallResult:
 
 
 def _normalize(value: str) -> str:
-    text = unicodedata.normalize("NFKC", str(value or "")).casefold().strip()
-    return re.sub(r"\s+", " ", text)
-
-
-def _ngrams(value: str) -> set[str]:
-    text = re.sub(r"\s+", "", _normalize(value))
-    if not text:
-        return set()
-    if len(text) <= 3:
-        return {text}
-    return {text[i : i + 3] for i in range(len(text) - 2)}
+    return normalize_text(value)
 
 
 def _coverage(query: str, text: str) -> float:
-    q = _ngrams(query)
-    t = _ngrams(text)
-    if not q or not t:
-        return 0.0
-    return len(q & t) / max(1, min(len(q), 24))
+    return ngram_coverage(query, text)
 
 
 def _parse_dt(value: str) -> float | None:
@@ -198,6 +188,7 @@ class SessionArchiveSearcher:
         scope: str = "global",
         now: datetime,
         exclude_turn_id: str = "",
+        suppressed_topics: Sequence[str] = (),
     ) -> ArchiveRecallResult:
         if self.session_dir is None or not self.session_dir.is_dir():
             return ArchiveRecallResult(reason="session_dir_missing")
@@ -252,7 +243,6 @@ class SessionArchiveSearcher:
         session_ids.sort(key=lambda sid: (-session_rank[sid], sid))
         session_ids = session_ids[: self.policy.archive_max_sessions]
 
-        prefer_assistant = any(marker in _normalize(query) for marker in _ASSISTANT_HISTORY_MARKERS)
         hits: list[ArchiveRetrievalHit] = []
         opened = 0
         turns_scored = 0
@@ -290,6 +280,14 @@ class SessionArchiveSearcher:
                 assistant_text = "\n".join(str(m.get("content") or "").strip() for m in assistants if str(m.get("content") or "").strip())
                 if not user_text and not assistant_text:
                     continue
+                if suppressed_topics and text_is_muted(
+                    f"{user_text} {assistant_text}",
+                    topics=tuple(suppressed_topics),
+                ):
+                    # The user asked not to raise this topic; only their own
+                    # words may re-open it (the service drops exempt topics
+                    # from this list for the turn).
+                    continue
                 user_score = _coverage(query, user_text)
                 assistant_score = _coverage(query, assistant_text)
                 lexical = max(user_score, assistant_score)
@@ -314,9 +312,10 @@ class SessionArchiveSearcher:
                     continue
                 max_chars = self.policy.archive_max_excerpt_chars
                 chosen_user = user_text[:max_chars].strip()
-                chosen_assistant = ""
-                if prefer_assistant or assistant_score > user_score + 0.08:
-                    chosen_assistant = assistant_text[: min(max_chars, 560)].strip()
+                # Both sides of the turn are quoted so details that only the
+                # assistant voiced (a title, a name) are recoverable; the
+                # renderer labels past assistant wording as non-authoritative.
+                chosen_assistant = assistant_text[: min(max_chars, 560)].strip()
                 hits.append(
                     ArchiveRetrievalHit(
                         session_id=sid,

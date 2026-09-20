@@ -26,6 +26,8 @@ class ContinuityHandler(RequestHandler):
         Method.CONTINUITY_RELATIONSHIP_DEBUG,
         Method.CONTINUITY_LIFE_SCHEDULE,
         Method.CONTINUITY_RETRIEVAL_TRACE,
+        Method.CONTINUITY_MUTE_LIST,
+        Method.CONTINUITY_MUTE_CLEAR,
     ]
 
     def __init__(self, service: ContinuityService) -> None:
@@ -89,6 +91,17 @@ class ContinuityHandler(RequestHandler):
                 self._service.c7_schedule_inspector, local_date=local_date
             )
             return {"ok": True, **result}
+        if method == Method.CONTINUITY_MUTE_LIST:
+            mutes = await asyncio.to_thread(self._service.c7_list_mutes)
+            return {"ok": True, "mutes": mutes}
+        if method == Method.CONTINUITY_MUTE_CLEAR:
+            mute_id = str(params.get("mute_id") or "").strip()
+            if not mute_id:
+                raise ValueError("mute_id is required")
+            result = await asyncio.to_thread(self._service.c7_clear_mute, mute_id)
+            if result is None:
+                raise ValueError("active topic mute not found")
+            return {"ok": True, "mute": result}
         return None
 
 

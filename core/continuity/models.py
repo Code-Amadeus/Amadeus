@@ -70,6 +70,7 @@ class RetentionTier(StrEnum):
 class MemoryDirectiveAction(StrEnum):
     REMEMBER = "remember"
     FORGET = "forget"
+    MUTE = "mute"
 
 
 class RelationshipStateClass(StrEnum):
@@ -181,13 +182,32 @@ class MemoryCandidate:
 
 @dataclass(frozen=True, slots=True)
 class MemoryDirective:
-    """High-confidence explicit user remember/forget command."""
+    """High-confidence explicit user remember/forget/mute command."""
 
     action: MemoryDirectiveAction
     target_key: str = ""
     target_kind: MemoryKind | None = None
     target_text: str = ""
     candidate: MemoryCandidate | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryMute:
+    """User-requested topic suppression (stop proactively raising a topic).
+
+    A mute is a Host-owned presentation/retrieval filter, not a memory fact:
+    matching durable memories stay stored and can still be recalled when the
+    user raises the topic themselves.
+    """
+
+    id: str
+    scope: str
+    topic: str
+    created_at: float
+    cleared_at: float | None = None
+    source_session_id: str = ""
+    source_turn_id: str = ""
+    reason: str = "user_mute"
 
 
 @dataclass(frozen=True, slots=True)

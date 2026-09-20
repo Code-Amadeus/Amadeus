@@ -11,6 +11,7 @@ from typing import Protocol, Sequence
 from core.continuity.models import MemoryKind, MemoryRecord, MemoryRetrievalHit, RetentionTier
 from core.continuity.retrieval_policy import ContinuityRetrievalPolicy
 from core.continuity.store import ContinuityStore
+from core.continuity.topic_mute import text_is_muted
 
 
 class SemanticSearcher(Protocol):
@@ -143,6 +144,16 @@ def _record_is_retrievable(
     return True
 
 
+def _memory_search_text(record: MemoryRecord) -> str:
+    return f"{record.memory_key} {record.summary} {record.object_text}"
+
+
+def _mute_allows(record: MemoryRecord, *, suppressed_topics: tuple[str, ...]) -> bool:
+    if not suppressed_topics:
+        return True
+    return not text_is_muted(_memory_search_text(record), topics=suppressed_topics)
+
+
 class MemoryRetriever:
     def __init__(
         self,
@@ -182,6 +193,7 @@ class MemoryRetriever:
         scope: str = "global",
         now: float | None = None,
         exclude_turn_id: str = "",
+        suppressed_topics: tuple[str, ...] = (),
     ) -> list[MemoryRetrievalHit]:
         clean_query = str(query or "").strip()
         if not clean_query:
@@ -213,7 +225,14 @@ class MemoryRetriever:
                 limit=self.policy.candidate_limit,
             ):
                 record_by_id[record.id] = record
-        records = list(record_by_id.values())
+        if suppressed_topics:
+            records = [
+                record for record in record_by_id.values()
+                if _mute_allows(record, suppressed_topics=suppressed_topics)
+            ]
+            record_by_id = {record.id: record for record in records}
+        else:
+            records = list(record_by_id.values())
         if not records:
             return []
         structured = self._structured_scores(clean_query, records)
@@ -247,6 +266,11 @@ class MemoryRetriever:
                 exclude_turn_id=exclude_turn_id,
                 limit=1000,
             )
+            if suppressed_topics:
+                semantic_records = [
+                    record for record in semantic_records
+                    if _mute_allows(record, suppressed_topics=suppressed_topics)
+                ]
             for record in semantic_records:
                 record_by_id.setdefault(record.id, record)
             semantic = self.semantic_searcher.search(
@@ -339,12 +363,15 @@ class MemoryRetriever:
         now: float | None = None,
         exclude_turn_id: str = "",
         max_items: int = 3,
+        suppressed_topics: tuple[str, ...] = (),
     ) -> list[MemoryRetrievalHit]:
-        """C8 bounded search over active archive-tier memory summaries.
+        """C8 bounded search over cold/archive-tier memory summaries.
 
         This path is never called by ordinary fast recall. It exists only after
         the explicit historical/low-confidence gate and therefore does not put
-        archive rows back into the normal FTS working set.
+        cold or archive rows back into the normal FTS working set.  Cold rows
+        are included so the demoted-but-durable window still answers explicit
+        historical questions.
         """
 
         clean_query = str(query or "").strip()
@@ -353,8 +380,10 @@ class MemoryRetriever:
         observed_at = float(time.time() if now is None else now)
         records = [
             record
-            for record in self.store.list_memories_by_tier(RetentionTier.ARCHIVE, scope=scope)
+            for tier in (RetentionTier.ARCHIVE, RetentionTier.COLD)
+            for record in self.store.list_memories_by_tier(tier, scope=scope)
             if _record_is_retrievable(record, now=observed_at, exclude_turn_id=exclude_turn_id)
+            and _mute_allows(record, suppressed_topics=suppressed_topics)
         ][:1000]
         if not records:
             return []

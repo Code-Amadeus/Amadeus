@@ -31,6 +31,9 @@ class ContinuityRetrievalPolicy:
     retention_archive_after_days: float = 180.0
     retention_maintenance_interval_hours: float = 24.0
     retention_max_hot_memories: int = 5000
+    retention_hot_score_threshold: float = 0.62
+    retention_cold_score_threshold: float = 0.55
+    retention_archive_score_threshold: float = 0.35
     archive_recall_enabled: bool = True
     archive_fast_score_threshold: float = 0.38
     archive_max_sessions: int = 32
@@ -84,6 +87,9 @@ class ContinuityRetrievalPolicy:
             retention_archive_after_days=float(retention.get("archive_after_days", defaults.retention_archive_after_days)),
             retention_maintenance_interval_hours=float(retention.get("maintenance_interval_hours", defaults.retention_maintenance_interval_hours)),
             retention_max_hot_memories=int(retention.get("max_hot_memories", defaults.retention_max_hot_memories)),
+            retention_hot_score_threshold=float(retention.get("hot_score_threshold", defaults.retention_hot_score_threshold)),
+            retention_cold_score_threshold=float(retention.get("cold_score_threshold", defaults.retention_cold_score_threshold)),
+            retention_archive_score_threshold=float(retention.get("archive_score_threshold", defaults.retention_archive_score_threshold)),
             archive_recall_enabled=bool(archive.get("enabled", defaults.archive_recall_enabled)),
             archive_fast_score_threshold=float(archive.get("fast_score_threshold", defaults.archive_fast_score_threshold)),
             archive_max_sessions=int(archive.get("max_sessions", defaults.archive_max_sessions)),
@@ -110,6 +116,14 @@ class ContinuityRetrievalPolicy:
             raise ValueError("invalid continuity retention age policy")
         if result.retention_maintenance_interval_hours <= 0 or result.retention_max_hot_memories < 1:
             raise ValueError("invalid continuity retention maintenance policy")
+        for name in (
+            "retention_hot_score_threshold",
+            "retention_cold_score_threshold",
+            "retention_archive_score_threshold",
+        ):
+            value = getattr(result, name)
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(f"continuity {name} must be 0..1")
         for name in (
             "structured_weight", "lexical_weight", "semantic_weight",
             "importance_weight", "recency_weight",

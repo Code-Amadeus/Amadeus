@@ -36,6 +36,7 @@ from core.continuity.models import (
     TurnEvidence,
 )
 from core.continuity.store import ContinuityStore
+from core.continuity.topic_mute import topic_is_raised_by_query
 from core.continuity.turn_ingest import load_turn_evidence, storage_session_id
 
 logger = logging.getLogger(__name__)
@@ -333,6 +334,9 @@ class ContinuityService:
             cold_after_days=self.retrieval_policy.retention_cold_after_days,
             archive_after_days=self.retrieval_policy.retention_archive_after_days,
             max_hot_memories=self.retrieval_policy.retention_max_hot_memories,
+            hot_score_threshold=self.retrieval_policy.retention_hot_score_threshold,
+            cold_score_threshold=self.retrieval_policy.retention_cold_score_threshold,
+            archive_score_threshold=self.retrieval_policy.retention_archive_score_threshold,
             reason=reason,
         )
 
@@ -415,6 +419,31 @@ class ContinuityService:
             "scope": record.scope,
         }
 
+    @staticmethod
+    def _c7_mute_payload(mute) -> dict[str, Any]:
+        return {
+            "id": mute.id,
+            "scope": mute.scope,
+            "topic": mute.topic,
+            "created_at": float(mute.created_at),
+            "source_session_id": mute.source_session_id,
+            "source_turn_id": mute.source_turn_id,
+        }
+
+    def c7_list_mutes(self) -> list[dict[str, Any]]:
+        """Return active user-requested topic mutes (bounded user controls)."""
+
+        return [
+            self._c7_mute_payload(mute)
+            for mute in self.store.list_topic_mutes(active_only=True)
+        ]
+
+    def c7_clear_mute(self, mute_id: str) -> dict[str, Any] | None:
+        cleared = self.store.clear_topic_mute(str(mute_id or ""))
+        if cleared is None:
+            return None
+        return self._c7_mute_payload(cleared)
+
     async def c7_rebuild_indexes(self) -> dict[str, Any]:
         """Rebuild FTS and invalidate semantic cache from SQLite authority."""
 
@@ -484,6 +513,7 @@ class ContinuityService:
             "life_enabled": bool(self.life_enabled),
             "life_live_enabled": bool(self.life_live_enabled),
             "archive_recall_enabled": bool(self.archive_recall_enabled),
+            "topic_mute_count": len(self.store.list_topic_mutes(active_only=True)) if self.memory_enabled else 0,
             "memory": self.store.continuity_diagnostics(),
             "relationship": relationship,
             "life": life,
@@ -720,6 +750,23 @@ class ContinuityService:
             )
             return
 
+        if directive.action is MemoryDirectiveAction.MUTE:
+            topic = str(directive.target_text or "").strip()
+            if not topic:
+                logger.info(
+                    "explicit mute target was ambiguous; no topic muted turn=%s",
+                    evidence.turn_id,
+                )
+                return
+            await asyncio.to_thread(
+                self.store.add_topic_mute,
+                topic,
+                session_id=evidence.session_id,
+                turn_id=evidence.turn_id,
+                observed_at=evidence.observed_at,
+            )
+            return
+
         memory_key = str(directive.target_key or "")
         if not memory_key and directive.target_text:
             memory_key = await asyncio.to_thread(
@@ -830,6 +877,29 @@ class ContinuityService:
                 name=f"continuity-turn-load:{turn_id}",
             )
 
+    def _mute_topics_for_query(self, query: str) -> tuple[tuple[str, ...], int]:
+        """Return (topics suppressed this turn, count of topics the user raised).
+
+        A topic the current user turn raises itself is dropped from the
+        suppressed list for this turn only, so suppression never makes a
+        remembered topic unrecallable.  Reading the mute list must never break
+        a chat turn.
+        """
+
+        if not self.memory_enabled:
+            return (), 0
+        try:
+            mutes = self.store.list_topic_mutes(active_only=True)
+        except Exception:
+            logger.exception("continuity topic mute read failed; continuing unmuted")
+            return (), 0
+        if not mutes:
+            return (), 0
+        topics = tuple(dict.fromkeys(str(mute.topic) for mute in mutes if str(mute.topic).strip()))
+        raised = tuple(topic for topic in topics if topic_is_raised_by_query(topic, query))
+        suppressed = tuple(topic for topic in topics if topic not in raised)
+        return suppressed, len(raised)
+
     def grounding_for_turn(
         self,
         question: str,
@@ -849,6 +919,7 @@ class ContinuityService:
         started = time.perf_counter()
         snapshot = self.clock.snapshot()
         query = str(question or "")
+        suppressed_topics, mute_exempted = self._mute_topics_for_query(query)
         hits = []
         fast_started = time.perf_counter()
         if self.memory_enabled and query.strip():
@@ -858,6 +929,7 @@ class ContinuityService:
                     scope="global",
                     now=float(snapshot.now.timestamp()),
                     exclude_turn_id=str(turn_id or ""),
+                    suppressed_topics=suppressed_topics,
                 )
             except Exception:
                 logger.exception("continuity memory retrieval failed; using reality context only")
@@ -880,12 +952,14 @@ class ContinuityService:
                         now=float(snapshot.now.timestamp()),
                         exclude_turn_id=str(turn_id or ""),
                         max_items=min(3, self.retrieval_policy.max_items),
+                        suppressed_topics=suppressed_topics,
                     )
                     archive_result = self.archive_searcher.search(
                         query,
                         scope="global",
                         now=snapshot.now,
                         exclude_turn_id=str(turn_id or ""),
+                        suppressed_topics=suppressed_topics,
                     )
                     seen = {hit.memory.id for hit in hits}
                     for hit in archive_memory_hits:
@@ -919,6 +993,7 @@ class ContinuityService:
             relationship=relationship_context,
             life=life_context,
             archive_hits=archive_result.hits,
+            suppressed_topics=suppressed_topics,
             max_chars=self.retrieval_policy.max_context_chars,
         )
         recall_ids = list(rendered.memory_ids)
@@ -958,6 +1033,8 @@ class ContinuityService:
             "archive_result": archive_result.reason,
             "temporal_filter": archive_result.temporal_kind,
             "archive_ms": round(archive_ms, 3),
+            "mute_count": len(suppressed_topics),
+            "mute_exempted": int(mute_exempted),
             "total_ms": round(elapsed_ms, 3),
         }
         self._retrieval_traces.append(trace)

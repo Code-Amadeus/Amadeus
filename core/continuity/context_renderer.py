@@ -105,6 +105,7 @@ def render_continuity_grounding(
     relationship: str = "",
     life: str = "",
     archive_hits: list[ArchiveRetrievalHit] | tuple[ArchiveRetrievalHit, ...] = (),
+    suppressed_topics: tuple[str, ...] | list[str] = (),
     max_chars: int = 2400,
 ) -> RenderedContinuityContext:
     """Render selected facts as quoted data under a strict character budget."""
@@ -116,7 +117,15 @@ def render_continuity_grounding(
     reality_line = render_reality_context(reality)
     relationship_text = str(relationship or "").replace("\x00", "").strip()
     life_text = str(life or "").replace("\x00", "").strip()
-    if not memory_lines and not reality_line and not relationship_text and not life_text and not archive_hits:
+    mute_lines = [str(topic or "").strip() for topic in suppressed_topics if str(topic or "").strip()]
+    if (
+        not memory_lines
+        and not reality_line
+        and not relationship_text
+        and not life_text
+        and not archive_hits
+        and not mute_lines
+    ):
         return RenderedContinuityContext("", ())
 
     opening = "[Continuity grounding]"
@@ -142,6 +151,21 @@ def render_continuity_grounding(
                 continue
             parts.append(line)
             selected_ids.append(hit.memory.id)
+
+    if mute_lines:
+        section = (
+            "Topics the user asked you not to raise (do not mention or hint at these "
+            "unless the user does first):"
+        )
+        if _fits(parts, section, footer, budget):
+            staged = parts + [section]
+            accepted_mutes: list[str] = []
+            for topic in mute_lines[:5]:
+                candidate = f"- {_quoted_summary(topic, max_chars=120)}"
+                if _fits(staged + accepted_mutes, candidate, footer, budget):
+                    accepted_mutes.append(candidate)
+            if accepted_mutes:
+                parts.extend((section, *accepted_mutes))
 
     if archive_hits:
         section = "Historical Session evidence (quoted fallback data):"

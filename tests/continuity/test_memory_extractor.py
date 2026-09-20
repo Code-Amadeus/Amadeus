@@ -58,7 +58,7 @@ async def test_default_extractor_passively_accepts_high_confidence_user_fact() -
     assert candidates[0].pinned is False
 
 
-async def test_default_extractor_ignores_prose_clauses_that_are_not_stable_facts() -> None:
+async def test_prose_clause_is_not_read_as_a_stable_fact() -> None:
     extractor = DeterministicMemoryExtractor()
     evidence = TurnEvidence(
         session_id="s1",
@@ -69,7 +69,86 @@ async def test_default_extractor_ignores_prose_clauses_that_are_not_stable_facts
         ),
         assistant_text="收到了。",
     )
-    assert tuple(await extractor.extract(evidence)) == ()
+    candidates = tuple(await extractor.extract(evidence))
+    assert len(candidates) == 1
+    # It is kept as a conversation record, never as a durable user fact slot.
+    assert candidates[0].kind is MemoryKind.EPISODIC
+    assert candidates[0].memory_key.startswith("user.episode.")
+
+
+async def test_substantive_utterance_is_kept_as_conversation_memory() -> None:
+    extractor = DeterministicMemoryExtractor()
+    candidates = tuple(
+        await extractor.extract(
+            TurnEvidence(
+                session_id="s1",
+                turn_id="t5",
+                user_text="其实是说魔族不懂人性,只是说谎",
+                assistant_text="そうね。",
+            )
+        )
+    )
+    assert len(candidates) == 1
+    assert candidates[0].kind is MemoryKind.EPISODIC
+    assert candidates[0].summary == "其实是说魔族不懂人性,只是说谎"
+    assert candidates[0].object_text == candidates[0].summary
+    assert candidates[0].priority_class is MemoryPriorityClass.P3
+
+
+async def test_short_acknowledgements_are_not_remembered() -> None:
+    extractor = DeterministicMemoryExtractor()
+    for turn_id, text in (("t6", "好了知道了"), ("t7", "还是。"), ("t8", "你好")):
+        candidates = tuple(
+            await extractor.extract(
+                TurnEvidence(session_id="s1", turn_id=turn_id, user_text=text)
+            )
+        )
+        assert candidates == (), text
+
+
+async def test_time_anchored_short_statement_is_remembered() -> None:
+    extractor = DeterministicMemoryExtractor()
+    candidates = tuple(
+        await extractor.extract(
+            TurnEvidence(session_id="s1", turn_id="t9", user_text="昨天去海边了")
+        )
+    )
+    assert len(candidates) == 1
+    assert candidates[0].kind is MemoryKind.EPISODIC
+    assert candidates[0].summary == "昨天去海边了"
+
+
+async def test_future_plan_becomes_an_open_loop() -> None:
+    extractor = DeterministicMemoryExtractor()
+    candidates = tuple(
+        await extractor.extract(
+            TurnEvidence(
+                session_id="s1",
+                turn_id="t10",
+                user_text="下个月打算去京都看那家甜点店",
+            )
+        )
+    )
+    assert len(candidates) == 1
+    assert candidates[0].kind is MemoryKind.OPEN_LOOP
+    assert candidates[0].future_value == 0.6
+
+
+def test_mute_directive_parses_concrete_topic_only() -> None:
+    directive = parse_explicit_memory_directive("不要再提京都那家甜点店了")
+    assert directive is not None
+    assert directive.action is MemoryDirectiveAction.MUTE
+    assert directive.target_text == "京都那家甜点店"
+
+    english = parse_explicit_memory_directive("don't mention the release plan anymore")
+    assert english is not None
+    assert english.action is MemoryDirectiveAction.MUTE
+    assert english.target_text == "the release plan"
+
+    for ambiguous in ("别再提这个了", "不要聊天了", "don't mention it"):
+        declined = parse_explicit_memory_directive(ambiguous)
+        assert declined is not None and declined.action is MemoryDirectiveAction.MUTE, ambiguous
+        assert declined.target_text == "", ambiguous
 
 
 async def test_explicit_remember_still_stores_free_form_evidence() -> None:

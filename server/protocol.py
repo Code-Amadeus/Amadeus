@@ -231,6 +231,8 @@ class Method(StrEnum):
     CONTINUITY_RELATIONSHIP_DEBUG = "continuity.relationship.debug"
     CONTINUITY_LIFE_SCHEDULE = "continuity.life.schedule"
     CONTINUITY_RETRIEVAL_TRACE = "continuity.retrieval.trace"
+    CONTINUITY_MUTE_LIST = "continuity.mute.list"
+    CONTINUITY_MUTE_CLEAR = "continuity.mute.clear"
 
     # Render
     RENDER_START       = "render.start"

@@ -18,10 +18,13 @@
   },
   "retention": {
     "half_life_days": 30,
-    "cold_after_days": 45,
-    "archive_after_days": 180,
+    "cold_after_days": 180,
+    "archive_after_days": 730,
     "maintenance_interval_hours": 24,
-    "max_hot_memories": 5000
+    "max_hot_memories": 5000,
+    "hot_score_threshold": 0.62,
+    "cold_score_threshold": 0.55,
+    "archive_score_threshold": 0.55
   },
   "relationship": {
     "policy_version": "c5-v1",

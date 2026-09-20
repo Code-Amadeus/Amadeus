@@ -7,6 +7,7 @@ derived artifacts and must remain rebuildable from records stored behind this bo
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import sqlite3
 import threading
@@ -30,6 +31,7 @@ from core.continuity.models import (
     ConversationClockState,
     MemoryCandidate,
     MemoryKind,
+    MemoryMute,
     MemoryPriorityClass,
     MemoryRecord,
     MemoryState,
@@ -51,6 +53,7 @@ from core.continuity.models import (
     LifeSnapshot,
     TurnEvidence,
 )
+from core.continuity.topic_mute import MUTE_MAX_ACTIVE, normalize_text, normalize_topic
 from core.continuity.turn_ingest import evidence_source_hash, storage_session_id
 from core.continuity.relationship import relationship_evidence_hash
 from core.continuity.relationship_policy import RelationshipPolicy
@@ -709,6 +712,169 @@ class ContinuityStore:
                 raise
 
     # ------------------------------------------------------------------
+    # User-governed topic mutes.  A mute keeps durable memory intact and only
+    # suppresses proactive surfacing: it is Host-owned presentation state, not
+    # a fact and not explicit forget.  Topics are bounded and user-authored.
+    # ------------------------------------------------------------------
+    _MUTES_META_KEY = "memory_mutes"
+
+    @staticmethod
+    def _mute_from_payload(payload: Any) -> MemoryMute | None:
+        if not isinstance(payload, dict):
+            return None
+        mute_id = str(payload.get("id") or "").strip()
+        topic = str(payload.get("topic") or "").strip()
+        if not mute_id or not topic:
+            return None
+        try:
+            created_at = float(payload.get("created_at"))
+        except (TypeError, ValueError):
+            return None
+        raw_cleared = payload.get("cleared_at")
+        try:
+            cleared_at = None if raw_cleared is None else float(raw_cleared)
+        except (TypeError, ValueError):
+            cleared_at = None
+        return MemoryMute(
+            id=mute_id,
+            scope=str(payload.get("scope") or "global"),
+            topic=topic,
+            created_at=created_at,
+            cleared_at=cleared_at,
+            source_session_id=str(payload.get("source_session_id") or ""),
+            source_turn_id=str(payload.get("source_turn_id") or ""),
+            reason=str(payload.get("reason") or "user_mute"),
+        )
+
+    def _mute_entries_locked(self) -> list[MemoryMute]:
+        row = self._connection.execute(
+            "SELECT value_json FROM continuity_meta WHERE key = ?",
+            (self._MUTES_META_KEY,),
+        ).fetchone()
+        if row is None:
+            return []
+        try:
+            payload = json.loads(str(row["value_json"]))
+        except (TypeError, ValueError):
+            return []
+        if not isinstance(payload, list):
+            return []
+        return [mute for item in payload if (mute := self._mute_from_payload(item)) is not None]
+
+    def _write_mute_entries_locked(self, mutes: list[MemoryMute]) -> None:
+        now = time.time()
+        payload = [
+            {
+                "id": mute.id,
+                "scope": mute.scope,
+                "topic": mute.topic,
+                "created_at": mute.created_at,
+                "cleared_at": mute.cleared_at,
+                "source_session_id": mute.source_session_id,
+                "source_turn_id": mute.source_turn_id,
+                "reason": mute.reason,
+            }
+            for mute in mutes
+        ]
+        self._connection.execute(
+            """
+            INSERT INTO continuity_meta(key, value_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                value_json = excluded.value_json,
+                updated_at = excluded.updated_at
+            """,
+            (self._MUTES_META_KEY, json.dumps(payload, ensure_ascii=False), now, now),
+        )
+
+    def add_topic_mute(
+        self,
+        topic: str,
+        *,
+        scope: str = "global",
+        session_id: str = "",
+        turn_id: str = "",
+        reason: str = "user_mute",
+        observed_at: float | None = None,
+    ) -> MemoryMute:
+        """Record one user-requested topic suppression, idempotently."""
+
+        normalized = normalize_topic(topic)
+        if not normalized:
+            raise ValueError("mute topic is required")
+        when = float(observed_at if observed_at is not None else time.time())
+        with self._lock:
+            self._ensure_open()
+            entries = [mute for mute in self._mute_entries_locked() if mute.cleared_at is None]
+            for mute in entries:
+                if normalize_text(mute.topic) == normalize_text(normalized):
+                    return mute
+            if len(entries) >= MUTE_MAX_ACTIVE:
+                raise ContinuityStoreError("too many active topic mutes")
+            mute = MemoryMute(
+                id=uuid.uuid4().hex,
+                scope=str(scope or "global"),
+                topic=normalized,
+                created_at=when,
+                source_session_id=str(session_id or ""),
+                source_turn_id=str(turn_id or ""),
+                reason=str(reason or "user_mute"),
+            )
+            entries.append(mute)
+            self._write_mute_entries_locked(entries)
+            return mute
+
+    def list_topic_mutes(
+        self,
+        *,
+        active_only: bool = True,
+        scope: str | None = None,
+    ) -> list[MemoryMute]:
+        with self._lock:
+            self._ensure_open()
+            mutes = self._mute_entries_locked()
+        if active_only:
+            mutes = [mute for mute in mutes if mute.cleared_at is None]
+        if scope is not None:
+            wanted = str(scope)
+            mutes = [mute for mute in mutes if mute.scope == wanted]
+        return sorted(mutes, key=lambda mute: (mute.created_at, mute.id))
+
+    def clear_topic_mute(
+        self,
+        mute_id: str,
+        *,
+        observed_at: float | None = None,
+    ) -> MemoryMute | None:
+        target = str(mute_id or "").strip()
+        if not target:
+            return None
+        when = float(observed_at if observed_at is not None else time.time())
+        with self._lock:
+            self._ensure_open()
+            entries = self._mute_entries_locked()
+            cleared: MemoryMute | None = None
+            updated: list[MemoryMute] = []
+            for mute in entries:
+                if mute.id == target and mute.cleared_at is None:
+                    cleared = MemoryMute(
+                        id=mute.id,
+                        scope=mute.scope,
+                        topic=mute.topic,
+                        created_at=mute.created_at,
+                        cleared_at=when,
+                        source_session_id=mute.source_session_id,
+                        source_turn_id=mute.source_turn_id,
+                        reason=mute.reason,
+                    )
+                    updated.append(cleared)
+                    continue
+                updated.append(mute)
+            if cleared is not None:
+                self._write_mute_entries_locked(updated)
+            return cleared
+
+    # ------------------------------------------------------------------
     # C4 retention / maintenance and Work lifecycle linkage
     # ------------------------------------------------------------------
     @staticmethod
@@ -735,6 +901,9 @@ class ContinuityStore:
         cold_after_days: float = 45.0,
         archive_after_days: float = 180.0,
         max_hot_memories: int = 5000,
+        hot_score_threshold: float = 0.62,
+        cold_score_threshold: float = 0.55,
+        archive_score_threshold: float = 0.35,
         reason: str = "scheduled",
     ) -> dict[str, int | float | str]:
         """Idempotently score active memories and move only retrieval tiers.
@@ -742,10 +911,15 @@ class ContinuityStore:
         Pinned/P0 facts remain hot. Explicit tombstones and superseded facts are
         never promoted or resurrected by maintenance. The unprotected hot
         working set is deterministically capped so retrieval latency remains
-        bounded without deleting durable memory.
+        bounded without deleting durable memory. Score thresholds live in the
+        reviewable retrieval policy so visibility demotion can be tuned without
+        touching the store.
         """
         when = float(time.time() if now is None else now)
         hot_limit = max(1, int(max_hot_memories))
+        hot_threshold = _bounded(float(hot_score_threshold))
+        cold_threshold = _bounded(float(cold_score_threshold))
+        archive_threshold = _bounded(float(archive_score_threshold))
         started = time.perf_counter()
         started_wall = time.time()
         run_id = uuid.uuid4().hex
@@ -766,11 +940,11 @@ class ContinuityStore:
                 protected = bool(record.pinned or record.priority_class.value == "P0")
                 if protected:
                     new_tier = RetentionTier.HOT
-                elif age_days >= archive_after_days and score < 0.35:
+                elif age_days >= archive_after_days and score < archive_threshold:
                     new_tier = RetentionTier.ARCHIVE
-                elif age_days >= cold_after_days and score < 0.55:
+                elif age_days >= cold_after_days and score < cold_threshold:
                     new_tier = RetentionTier.COLD
-                elif score >= 0.62:
+                elif score >= hot_threshold:
                     new_tier = RetentionTier.HOT
                 else:
                     new_tier = record.retention_tier
@@ -888,6 +1062,7 @@ class ContinuityStore:
                 raise
 
     def continuity_diagnostics(self) -> dict[str, Any]:
+        """Return bounded content-free counts for Host diagnostics."""
         with self._lock:
             self._ensure_open()
             counts = {str(row["retention_tier"]): int(row["n"]) for row in self._connection.execute("SELECT retention_tier, COUNT(*) n FROM memory_items WHERE state = 'active' GROUP BY retention_tier")}

@@ -77,6 +77,43 @@ def test_retention_maintenance_enforces_hot_working_set_cap_idempotently():
     assert second["promoted"] == second["demoted"] == second["archived"] == 0
 
 
+def _policy_retention_kwargs():
+    from pathlib import Path
+
+    from core.continuity.retrieval_policy import ContinuityRetrievalPolicy
+
+    policy = ContinuityRetrievalPolicy.load(
+        Path(__file__).resolve().parents[2] / "config" / "continuity_policy.json"
+    )
+    return {
+        "half_life_days": policy.retention_half_life_days,
+        "cold_after_days": policy.retention_cold_after_days,
+        "archive_after_days": policy.retention_archive_after_days,
+        "hot_score_threshold": policy.retention_hot_score_threshold,
+        "cold_score_threshold": policy.retention_cold_score_threshold,
+        "archive_score_threshold": policy.retention_archive_score_threshold,
+    }
+
+
+def test_product_retention_ladder_keeps_memory_visible_until_six_months():
+    """Configured ladder: hot until ~6 months, cold until 2 years, then archive."""
+
+    store = ContinuityStore(":memory:")
+    _put(store, key="ladder", when=0.0)
+    kwargs = _policy_retention_kwargs()
+
+    store.run_retention_maintenance(now=100 * 86400.0, **kwargs)
+    assert store.get_active_memory("ladder").retention_tier is RetentionTier.HOT
+
+    store.run_retention_maintenance(now=200 * 86400.0, **kwargs)
+    assert store.get_active_memory("ladder").retention_tier is RetentionTier.COLD
+
+    store.run_retention_maintenance(now=800 * 86400.0, **kwargs)
+    record = store.get_active_memory("ladder")
+    assert record is not None and record.retention_tier is RetentionTier.ARCHIVE
+    assert record.state.value == "active"
+
+
 def test_real_work_snapshot_is_normalized_per_item():
     payload = {
         "reason": "work.complete",
