@@ -83,7 +83,7 @@ Amadeus 试图把这些体验连成一个闭环：
 | 能力 | 当前公开源码 |
 |---|---|
 | **可打断实时对话** | 共享麦克风生命周期、独立 Wake / Conversation ASR、两段式端点、AEC / barge-in，以及贯穿 LLM、TTS 与物理播放的中断。 |
-| **远程主 Chat 与本地语音** | DeepSeek V4 Flash Main Chat；Qwen3-ASR / SenseVoice；内嵌 GPT-SoVITS v3 流式合成、连续播放与播放前口型发布。 |
+| **远程主 Chat 与本地语音** | DeepSeek V4 Flash Main Chat；Qwen3-ASR / SenseVoice；内嵌 GPT-SoVITS 流式合成（默认 v3，可选实验性 v2Pro）、连续播放与播放前口型发布。 |
 | **角色与桌面呈现** | SpriteForge 图状态、KTX2/PixiJS 运行时、字幕、口型和情绪同步；没有角色包时 Chat、Work 与 headless 仍可启动。 |
 | **Provider Runtime** | [Pi 原生 RPC](docs/pi-rpc-provider.md) 默认负责日常任务，Codex App Server / Direct Codex 负责复杂开发，Browser 保留受管页面操作，OpenClaw 保留为可选 Provider；Claude CLI 是已确定的后续 direct Provider。 |
 | **持久 Work 控制面** | Project、默认 Draft、WorkItem / Attempt、Continue / Retry、重启恢复、权限、Artifact Registry 与结构化 Diff。 |
@@ -371,7 +371,7 @@ FlashAttention 保持可选；已找到匹配 cp312/Torch 2.7/cu128 的 Windows 
 它包含可直接构建的中日文基础资料，也支持自己的知识目录；Settings 可查看实际阈值和加载状态。
 RAG 会额外安装本地 embedding/Torch 依赖。资料、索引构建、诊断与验证范围见说明。
 
-完整本地语音需要 Qwen ASR 与 GPT-SoVITS v3 语音包；视觉和角色包可选：
+默认本地语音配置使用 Qwen ASR 与 GPT-SoVITS v3 语音包；视觉和角色包可选：
 
 ```powershell
 uv run --locked --no-sync python tools\external_assets.py verify C:\Downloads\amadeus-asr-qwen3-0.6b.zip
@@ -384,6 +384,23 @@ uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\a
 uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-character-kurisu.zip
 uv run --locked --no-sync python tools\external_assets.py status
 ```
+
+要试用 **Kurisu v2Pro**，先安装上面的 v3 语音包，再安装独立提供的实验附加包。
+附加包包含 v2Pro GPT/SoVITS 权重组合和 ERes2Net 说话人编码器，复用 v3 包中的
+BERT、CNHuBERT 与参考音频：
+
+```powershell
+uv run --locked --no-sync python tools\external_assets.py verify C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v2pro-experimental.zip
+uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v2pro-experimental.zip
+```
+
+在 **Settings → Voice → Voice backends → Embedded GPT-SoVITS model** 中，
+将 **Voice checkpoint profile** 选为 **Kurisu v2Pro · experimental**，然后重启后端。
+使用 `.env` 配置时，设置 `TTS_VOICE_PROFILE=kurisu_v2pro`；`.env.example` 仍默认
+使用 `kurisu_v3`。预设会同时选择匹配的两份权重。内嵌运行时支持 v1、v2、v2Pro、
+v2ProPlus 和 v3；其他兼容权重组合可选择 `custom`，并填写 `TTS_GPT_MODEL_PATH`
+与 `TTS_SOVITS_MODEL_PATH`。v2Pro/v2ProPlus 还需要附加包中的说话人编码器权重。
+选择 v2Pro 不会自动开启可选的 `TTS_T2S_FLASH_ATTN` 路径，该开关默认关闭。
 
 如果没有预制 Qwen 包，可直接把上游 snapshot 下载到同一个固定落点；运行时
 保持离线，不会在第一次录音时临时联网：
@@ -405,7 +422,7 @@ uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('
 macOS：`cp .env.example .env`），然后在 Settings 中核对：
 
 - **Models**：`deepseek`、官方 endpoint、`deepseek-v4-flash` 与 API key；
-- **Voice**：远程 TTS 推荐 Fish Audio S2.1 + Kurisu，也支持 MiMo / OpenAI-compatible；L4 本地栈另需 Qwen model 目录、GPT-SoVITS **v3** checkpoints、reference audio/text、麦克风、AEC 和 barge-in；
+- **Voice**：远程 TTS 推荐 Fish Audio S2.1 + Kurisu，也支持 MiMo / OpenAI-compatible；L4 本地栈另需 Qwen model 目录、兼容的 GPT-SoVITS 权重组合（默认 **Kurisu v3**，可选实验性 **Kurisu v2Pro**）、reference audio/text、麦克风、AEC 和 barge-in；
 - **General**：可选角色包状态与呈现设置。
 
 启动：
@@ -486,9 +503,10 @@ FISH_TTS_LATENCY=balanced
 模型权重、参考音频、角色包及大型/版权敏感素材独立分发；源码仓库只保留
 必要图标、默认壁纸、schema、validator 和安装工具。
 
-当前目录合同包括 `asr-qwen3-0.6b`、`voice-kurisu-gpt-sovits-v3`、
-`visual-runtime` 与 `character-kurisu`。前两个组成完整本地语音 profile；
-后两个只影响场景和角色呈现。
+本地语音的目录合同包括 `asr-qwen3-0.6b`、`voice-kurisu-gpt-sovits-v3`，以及可选的
+`voice-kurisu-gpt-sovits-v2pro-experimental` 附加包。v3 包提供附加包所需的共享资源。
+`visual-runtime` 与 `character-kurisu` 用于场景和角色呈现。各包内容与安装细节见
+[外部资产包说明](docs/external_asset_bundles.md)。
 
 ```powershell
 uv run --locked --no-sync python tools\external_assets.py verify C:\path\to\asset-bundle.zip
