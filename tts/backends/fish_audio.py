@@ -18,6 +18,49 @@ _SAMPLE_RATE = 44100
 _MAX_AUDIO_BYTES = 64 * 1024 * 1024
 
 
+def _resolve_websocket_proxy(ws_url: str) -> str | None:
+    import ipaddress
+    import urllib.request
+
+    endpoint = urlsplit(ws_url)
+    host = endpoint.hostname or ""
+    if not host or host == "localhost":
+        return None
+    try:
+        if ipaddress.ip_address(host).is_loopback:
+            return None
+    except ValueError:
+        pass
+    port = endpoint.port or (443 if endpoint.scheme in {"wss", "https"} else 80)
+    if urllib.request.proxy_bypass(f"{host}:{port}"):
+        return None
+
+    proxies = urllib.request.getproxies()
+    is_secure = endpoint.scheme == "wss"
+    schemes = ["wss", "socks", "https"] if is_secure else ["ws", "socks", "https", "http"]
+
+    has_python_socks = None
+    for scheme in schemes:
+        proxy = proxies.get(scheme)
+        if not proxy:
+            continue
+        if scheme == "socks":
+            if has_python_socks is None:
+                try:
+                    import python_socks.async_  # noqa: F401
+
+                    has_python_socks = True
+                except ImportError:
+                    has_python_socks = False
+            if not has_python_socks:
+                continue
+            if proxy.startswith("http://"):
+                proxy = "socks5h://" + proxy[7:]
+            return proxy
+        return proxy
+    return None
+
+
 class FishAudioTTSBackend(BaseTTSBackend):
     backend_id = "fish_audio"
     deployment = "remote"
@@ -69,6 +112,7 @@ class FishAudioTTSBackend(BaseTTSBackend):
 
     def synthesize_stream(self, request: TTSSynthesisRequest) -> Iterator[TTSAudioChunk]:
         """Bridge the sentence worker's synchronous iterator to the duplex transport."""
+
         async def text_chunks():
             yield request.text
 
@@ -106,33 +150,38 @@ class FishAudioTTSBackend(BaseTTSBackend):
         yielded = False
         input_finished = False
         try:
+            proxy = _resolve_websocket_proxy(self._ws_url)
             async with connect(
                 self._ws_url,
                 additional_headers={
                     "Authorization": f"Bearer {self._api_key}",
                     "model": self._model,
                 },
+                proxy=proxy,
                 open_timeout=self._timeout,
                 close_timeout=min(5.0, self._timeout),
                 max_size=_MAX_AUDIO_BYTES,
             ) as websocket:
+
                 async def send(event):
                     await asyncio.wait_for(
                         websocket.send(msgpack.packb(event, use_bin_type=True)),
                         timeout=self._timeout,
                     )
 
-                await send({
-                    "event": "start",
-                    "request": {
-                        "text": "",
-                        "reference_id": request.voice or self._reference_id,
-                        "format": "pcm",
-                        "sample_rate": _SAMPLE_RATE,
-                        "latency": self._latency,
-                        "prosody": {"speed": request.speed},
-                    },
-                })
+                await send(
+                    {
+                        "event": "start",
+                        "request": {
+                            "text": "",
+                            "reference_id": request.voice or self._reference_id,
+                            "format": "pcm",
+                            "sample_rate": _SAMPLE_RATE,
+                            "latency": self._latency,
+                            "prosody": {"speed": request.speed},
+                        },
+                    }
+                )
 
                 async def send_text():
                     nonlocal input_finished
@@ -167,7 +216,9 @@ class FishAudioTTSBackend(BaseTTSBackend):
                         try:
                             event = msgpack.unpackb(raw, raw=False)
                         except (ValueError, TypeError, msgpack.UnpackException) as exc:
-                            raise TTSBackendError("Fish Audio returned malformed MessagePack") from exc
+                            raise TTSBackendError(
+                                "Fish Audio returned malformed MessagePack"
+                            ) from exc
                         if not isinstance(event, dict):
                             raise TTSBackendError("Fish Audio expected an event object")
                         kind = event.get("event")
@@ -175,7 +226,9 @@ class FishAudioTTSBackend(BaseTTSBackend):
                             if event.get("reason") != "stop":
                                 raise TTSBackendError("Fish Audio synthesis finished with an error")
                             if not input_finished:
-                                raise TTSBackendError("Fish Audio finished before text input completed")
+                                raise TTSBackendError(
+                                    "Fish Audio finished before text input completed"
+                                )
                             await sender
                             break
                         if kind != "audio":
