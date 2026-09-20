@@ -31,6 +31,7 @@ copy continues to live below `assets/`.
 | `companion-kurisu` | `companion/kurisu/` | Derived small WebP portraits; usable without the full wallpaper pack |
 | `asr-qwen3-0.6b` | `models/asr/qwen3-asr-0.6b/` | Offline Qwen3-ASR conversation model |
 | `voice-kurisu-gpt-sovits-v3` | GPT-SoVITS v3 runtime weights and reference audio | Optional embedded Kurisu voice |
+| `voice-kurisu-gpt-sovits-v2pro-experimental` | GPT-SoVITS v2Pro voice and speaker-encoder weights | Optional experimental Kurisu voice |
 
 All packs are optional at application startup. Without them, the built-in
 wallpaper, text Chat, Work, and headless startup remain available; Settings
@@ -67,6 +68,9 @@ python tools/external_assets.py build asr-qwen3-0.6b `
 
 python tools/external_assets.py build voice-kurisu-gpt-sovits-v3 `
   --output output\amadeus-voice-kurisu-gpt-sovits-v3.zip
+
+python tools/external_assets.py build voice-kurisu-gpt-sovits-v2pro-experimental `
+  --output output\amadeus-voice-kurisu-gpt-sovits-v2pro-experimental.zip
 
 python tools/external_assets.py build visual-runtime character-kurisu `
   --output output\amadeus-runtime-assets.zip

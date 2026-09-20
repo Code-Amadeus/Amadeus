@@ -300,7 +300,7 @@ def _voice_configuration(settings: Any) -> list[dict[str, Any]]:
         {
             "id": "speech_synthesis",
             "label": "Speech synthesis",
-            "description": "The embedded default is Amadeus's low-latency GPT-SoVITS v3 rewrite and accepts v3 checkpoints only. Remote audio enters the same playback, subtitle, AEC, and mouth-signal pipeline.",
+            "description": "The embedded default is Amadeus's low-latency GPT-SoVITS runtime and accepts v1, v2, v2Pro, v2ProPlus, and v3 checkpoints. Remote audio enters the same playback, subtitle, AEC, and mouth-signal pipeline.",
             "active": tts_selected != "disabled",
             "configured": bool(tts_status.get("available")),
             "status": str(tts_status.get("state") or "unavailable"),
@@ -319,8 +319,8 @@ def _voice_configuration(settings: Any) -> list[dict[str, Any]]:
         },
         {
             "id": "tts_embedded_v3",
-            "label": "Embedded GPT-SoVITS v3 model",
-            "description": "Checkpoint pair for the Amadeus low-latency rewrite. v1 and v2 checkpoints are not supported by this runtime.",
+            "label": "Embedded GPT-SoVITS model",
+            "description": "Checkpoint pair for the Amadeus low-latency runtime. The SoVITS checkpoint header selects the v1, v2, v2Pro, v2ProPlus, or v3 decoder.",
             "active": tts_selected == "gpt_sovits",
             "configured": bool(embedded_tts_status.get("available")),
             "status": str(embedded_tts_status.get("state") or "not_installed"),
@@ -328,18 +328,29 @@ def _voice_configuration(settings: Any) -> list[dict[str, Any]]:
             "status_detail": str(embedded_tts_status.get("detail") or ""),
             "fields": [
                 _startup_field(
+                    "TTS_VOICE_PROFILE", "Voice checkpoint profile",
+                    settings.TTS_VOICE_PROFILE,
+                    field_type="select",
+                    options=(
+                        {"value": "kurisu_v3", "label": "Kurisu v3"},
+                        {"value": "kurisu_v2pro", "label": "Kurisu v2Pro · experimental"},
+                        {"value": "custom", "label": "Custom checkpoint pair"},
+                    ),
+                    description="Named profiles select compatible GPT and SoVITS paths together. Restart the voice runtime after changing this setting.",
+                ),
+                _startup_field(
                     "TTS_DEVICE", "Inference device", settings.TTS_DEVICE,
                     description="auto/cuda, cuda:N, or cpu. Used only by the embedded backend.",
                 ),
                 _startup_field(
-                    "TTS_GPT_MODEL_PATH", "GPT semantic checkpoint (v3)",
+                    "TTS_GPT_MODEL_PATH", "Custom GPT semantic checkpoint",
                     settings.TTS_GPT_MODEL_PATH,
-                    description="Path to a GPT-SoVITS v3 .ckpt file; relative paths resolve from the repository root.",
+                    description="Used only with the Custom checkpoint pair profile; relative paths resolve from the repository root.",
                 ),
                 _startup_field(
-                    "TTS_SOVITS_MODEL_PATH", "SoVITS acoustic checkpoint (v3)",
+                    "TTS_SOVITS_MODEL_PATH", "Custom SoVITS acoustic checkpoint",
                     settings.TTS_SOVITS_MODEL_PATH,
-                    description="Path to a GPT-SoVITS v3 .pth file; relative paths resolve from the repository root.",
+                    description="Used only with the Custom checkpoint pair profile; relative paths resolve from the repository root.",
                 ),
             ],
         },

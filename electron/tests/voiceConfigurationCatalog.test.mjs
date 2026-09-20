@@ -22,6 +22,8 @@ test('voice setup remains discoverable without a running backend', () => {
   assert.equal(groups.find(group => group.id === 'tts_remote').status, 'Optional')
   assert.ok(groups.find(group => group.id === 'conversation_asr').fields.some(field => field.key === 'ASR_BACKEND'))
   assert.ok(groups.find(group => group.id === 'speech_synthesis').fields.some(field => field.key === 'TTS_BACKEND'))
+  const profile = groups.find(group => group.id === 'tts_embedded_v3').fields.find(field => field.key === 'TTS_VOICE_PROFILE')
+  assert.deepEqual(profile.options.map(option => option.value), ['kurisu_v3', 'kurisu_v2pro', 'custom'])
 })
 
 test('selected remote voice services request only their own credentials', () => {

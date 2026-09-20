@@ -129,7 +129,7 @@ def _local_probe() -> tuple[str, str]:
     from config import settings
 
     if importlib.util.find_spec("soundfile") is None:
-        return "not_installed", "Local GPT-SoVITS v3 dependencies are not installed"
+        return "not_installed", "Local GPT-SoVITS dependencies are not installed"
     model_root = _PROJECT_ROOT / "assets" / "models" / "gpt-sovits"
 
     def configured_path(raw: str, fallback: Path) -> Path:
@@ -145,8 +145,8 @@ def _local_probe() -> tuple[str, str]:
         model_root / "weights" / "sovits" / "v3" / "xxx_e2_s174_l32.pth",
     )
     if gpt.is_file() and sovits.is_file():
-        return "installed", "Embedded GPT-SoVITS v3 checkpoint pair found"
-    return "not_installed", "Embedded GPT-SoVITS v3 checkpoint pair is not installed"
+        return "installed", f"Embedded GPT-SoVITS checkpoint pair found ({settings.TTS_VOICE_PROFILE})"
+    return "not_installed", f"Embedded GPT-SoVITS checkpoint pair is not installed ({settings.TTS_VOICE_PROFILE})"
 
 
 def _remote_probe() -> tuple[str, str]:
@@ -183,11 +183,11 @@ def _ensure_builtins() -> None:
             {
                 "gpt_sovits": TTSBackendDescriptor(
                     "gpt_sovits",
-                    "GPT-SoVITS v3 · Amadeus",
+                    "GPT-SoVITS · Amadeus",
                     "embedded",
                     _local_factory,
                     _local_probe,
-                    "Amadeus low-latency rewrite; only GPT-SoVITS v3 checkpoints are supported.",
+                    "Amadeus low-latency runtime for v1, v2, v2Pro, v2ProPlus, and v3 checkpoints.",
                     supports_streaming=True,
                     supports_reference_conditioning=True,
                 ),

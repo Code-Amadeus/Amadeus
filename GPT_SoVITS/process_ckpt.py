@@ -27,6 +27,8 @@ def my_save(fea,path):#####fix issue: torch.save doesn't support chinese path
 01:v2
 02:v3
 03:v3lora
+05:v2Pro
+06:v2ProPlus
 
 
 '''
@@ -63,6 +65,8 @@ head2version={
     b'01':["v2","v2",False],
     b'02':["v2","v3",False],
     b'03':["v2","v3",True],
+    b'05':["v2","v2Pro",False],
+    b'06':["v2","v2ProPlus",False],
 }
 hash_pretrained_dict={
     "dc3c97e17592963677a4a1681f30c653":["v2","v2",False],#s2G488k.pth#sovits_v1_pretrained

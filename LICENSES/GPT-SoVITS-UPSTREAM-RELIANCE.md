@@ -1,10 +1,16 @@
 # GPT-SoVITS immediate-upstream license reliance
 
-Amadeus includes a modified GPT-SoVITS v3 inference runtime. The closest
-reproducible immediate upstream is RVC-Boss/GPT-SoVITS commit
+Amadeus includes a modified GPT-SoVITS inference runtime. The closest
+reproducible base is RVC-Boss/GPT-SoVITS commit
 `9da7e17efe05041e31d3c3f42c8730ae890397f2`, whose repository-level `LICENSE`
 grants the MIT License for the software distributed in that tree. The exact
 license text is preserved in `LICENSES/GPT-SoVITS-MIT.txt`.
+
+The scoped v2Pro speaker-conditioning extension and ERes2NetV2 sources were
+updated from RVC-Boss/GPT-SoVITS commit
+`08d627c3338173c3229286d8787060d6559fe0f8`, dated 2026-04-30, under the same
+repository-level MIT grant. Model and speaker-encoder weights are not part of
+the source release and remain separately supplied external assets.
 
 For the public Amadeus source release, the project relies on that immediate
 upstream MIT grant for the integrated GPT-SoVITS files and preserves the more
