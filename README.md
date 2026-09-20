@@ -591,7 +591,10 @@ notarization, and an installer are not included yet.
 
 ### Graphics performance
 
-All PixiJS character and wallpaper surfaces share one `.env` graphics profile:
+All PixiJS character and wallpaper surfaces share one graphics profile. Configure
+it in **Settings → Graphics & performance**, or through `.env`:
+
+[GUI preview](docs/images/graphics-performance-settings.png) (custom settings awaiting restart).
 
 | `GRAPHICS_PROFILE` | Maximum frame rate | Resolution | Purpose |
 |---|---:|---:|---|
@@ -611,13 +614,19 @@ When Wallpaper Engine supplies a user FPS setting through
 [`applyGeneralProperties().fps`](https://docs.wallpaperengine.io/en/web/performance/fps.html),
 the runtime uses the lower of that setting and the project profile. Electron,
 Lively, and other character surfaces use the project profile directly.
-These settings currently live in `.env`; restart Amadeus after changing them.
+The GUI exposes custom FPS and pixel-density limits when **Custom** is selected,
+preserving those values when switching presets. Saved desktop settings apply on
+backend restart; reopen existing character and wallpaper windows afterward.
+The page shows current backend limits separately from saved choices. Wallpaper
+Engine may impose a lower FPS cap; displayed limits are not measured frame rates.
 
 #### Experimental texture sampling (off by default)
 
 `RENDER_TEXTURE_SAMPLING=false` preserves the existing full-frame loading and
 playback rules. On **16GB systems or other memory-constrained setups**, consider
-trying the experimental option with the 30 FPS power-saving profile in `.env`:
+trying **Experimental texture sampling** in the graphics page with the 30 FPS
+power-saving profile. The toggle is independent of presets and remains off by
+default. The equivalent `.env` values are:
 
 ```dotenv
 GRAPHICS_PROFILE=power_saving
