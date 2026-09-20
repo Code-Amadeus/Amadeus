@@ -9,6 +9,7 @@ import BackendPage from './components/BackendPage'
 import VNPage from './components/VNPage'
 import WorkPreviewPage from './components/WorkPreviewPage'
 import { ELECTRON_SLICE_START_PARAMS, syncElectronSliceHost } from './wallpaperSlice'
+import appIconUrl from '@assets/icons/app/app_icon.png'
 
 export type Page = 'chat' | 'vn' | 'backend' | 'expressions' | 'settings'
 
@@ -284,7 +285,9 @@ function AmadeusApp() {
 
   return (
     <>
-      <div className="native-titlebar-drag-region" aria-hidden="true" />
+      <div className="native-titlebar-drag-region" aria-hidden="true">
+        <img className="native-titlebar-app-icon" src={appIconUrl} alt="" />
+      </div>
       <div className="flex h-full">
         <Sidebar
           page={page} onNavigate={handleNavigate}
