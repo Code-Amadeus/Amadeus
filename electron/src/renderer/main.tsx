@@ -6,8 +6,11 @@ import { ThemeProvider } from './theme'
 import './styles/index.css'
 
 const workPreviewWindow = new URLSearchParams(window.location.search).get('previewWindow') === '1'
+const nativeTitlebarWindow = new URLSearchParams(window.location.search).get('mainWindow') === '1'
 document.documentElement.classList.toggle('work-preview-window', workPreviewWindow)
 document.body.classList.toggle('work-preview-window', workPreviewWindow)
+document.documentElement.classList.toggle('native-titlebar-window', nativeTitlebarWindow)
+document.body.classList.toggle('native-titlebar-window', nativeTitlebarWindow)
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <ThemeProvider>

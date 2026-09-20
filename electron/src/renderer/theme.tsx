@@ -22,6 +22,7 @@ function normalizeTheme(value: unknown): UiTheme {
 function applyTheme(theme: UiTheme): void {
   document.documentElement.dataset.theme = theme
   document.documentElement.style.colorScheme = theme === 'wallpaper-slice' ? 'dark' : 'light'
+  void window.amadeus?.setTitleBarTheme(theme).catch(() => {})
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {

@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('amadeus', {
   } | null> => ipcRenderer.invoke('get-backend-connection'),
   restartBackend: (): Promise<boolean> => ipcRenderer.invoke('restart-backend'),
   getDesktopSettings: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('desktop-settings.get'),
+  setTitleBarTheme: (theme: 'classic' | 'wallpaper-slice'): Promise<boolean> => ipcRenderer.invoke('window-theme.set', theme),
   getCompanionPortraitStatus: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('companion-portraits.status'),
   updateDesktopSettings: (update: {
     values?: Record<string, string | boolean | null>

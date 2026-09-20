@@ -35,6 +35,7 @@ export declare global {
     } | null>
     restartBackend: () => Promise<boolean>
     getDesktopSettings: () => Promise<Record<string, unknown> | null>
+    setTitleBarTheme: (theme: 'classic' | 'wallpaper-slice') => Promise<boolean>
     getCompanionPortraitStatus: () => Promise<Record<string, unknown> | null>
     updateDesktopSettings: (update: {
       values?: Record<string, string | boolean | null>

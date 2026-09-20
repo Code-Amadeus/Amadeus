@@ -81,6 +81,23 @@ html, body, #root {
   -webkit-font-smoothing: antialiased;
 }
 
+html.native-titlebar-window body {
+  padding-top: env(titlebar-area-height, 48px);
+}
+
+.native-titlebar-drag-region {
+  display: none;
+}
+
+html.native-titlebar-window .native-titlebar-drag-region {
+  display: block;
+  position: fixed;
+  z-index: 1000;
+  inset: 0 0 auto 0;
+  height: env(titlebar-area-height, 48px);
+  -webkit-app-region: drag;
+}
+
 html.desktop-work-overlay,
 body.desktop-work-overlay,
 html.desktop-work-overlay #root {

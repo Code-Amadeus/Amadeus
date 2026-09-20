@@ -283,20 +283,23 @@ function AmadeusApp() {
   }
 
   return (
-    <div className="flex h-full">
-      <Sidebar
-        page={page} onNavigate={handleNavigate}
-        renderActive={renderActive} wallpaperActive={wallpaperActive}
-        onToggleRender={handleToggleRender} onToggleWallpaper={handleToggleWallpaper}
-      />
-      <div className="flex-1 flex flex-col min-w-0" style={{ backgroundColor: 'var(--bg)' }}>
-        {page === 'chat' && <ChatPage send={send} subscribe={subscribe} connected={connected} renderActive={renderActive} renderAssetUrl={renderAssetUrl} />}
-        {page === 'vn' && <VNPage send={send} subscribe={subscribe} connected={connected} />}
-        {page === 'expressions' && <ExpressionPage send={send} subscribe={subscribe} />}
-        {page === 'backend' && <BackendPage send={send} subscribe={subscribe} connected={connected} renderActive={renderActive} wallpaperActive={wallpaperActive} />}
-        {page === 'settings' && <SettingsPage send={send} subscribe={subscribe} connected={connected} reconnectBackend={reconnect} />}
+    <>
+      <div className="native-titlebar-drag-region" aria-hidden="true" />
+      <div className="flex h-full">
+        <Sidebar
+          page={page} onNavigate={handleNavigate}
+          renderActive={renderActive} wallpaperActive={wallpaperActive}
+          onToggleRender={handleToggleRender} onToggleWallpaper={handleToggleWallpaper}
+        />
+        <div className="flex-1 flex flex-col min-w-0" style={{ backgroundColor: 'var(--bg)' }}>
+          {page === 'chat' && <ChatPage send={send} subscribe={subscribe} connected={connected} renderActive={renderActive} renderAssetUrl={renderAssetUrl} />}
+          {page === 'vn' && <VNPage send={send} subscribe={subscribe} connected={connected} />}
+          {page === 'expressions' && <ExpressionPage send={send} subscribe={subscribe} />}
+          {page === 'backend' && <BackendPage send={send} subscribe={subscribe} connected={connected} renderActive={renderActive} wallpaperActive={wallpaperActive} />}
+          {page === 'settings' && <SettingsPage send={send} subscribe={subscribe} connected={connected} reconnectBackend={reconnect} />}
+        </div>
       </div>
-    </div>
+    </>
   )
 }
 

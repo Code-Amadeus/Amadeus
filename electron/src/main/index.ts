@@ -157,6 +157,18 @@ const workPreviewIdsByWorkItem = new Map<string, string>()
 let companionBridge: WallpaperBridgeDescriptor | null = null
 const COMPANION_PORTRAIT_CACHE = process.env.AMADEUS_COMPANION_PORTRAIT_CACHE || ''
 const COMPANION_PORTRAIT_DIR = path.join(PROJECT_ROOT, 'assets', 'companion', 'kurisu')
+const TITLE_BAR_THEMES = {
+  classic: { color: '#F6F7F9', symbolColor: '#202124', height: 48 },
+  'wallpaper-slice': { color: '#061116', symbolColor: '#D4F8EF', height: 48 },
+} as const
+
+function setMainWindowTheme(theme: unknown): boolean {
+  if (!mainWindow || process.platform !== 'win32') return false
+  const key = theme === 'wallpaper-slice' ? 'wallpaper-slice' : 'classic'
+  mainWindow.setTitleBarOverlay(TITLE_BAR_THEMES[key])
+  return true
+}
+
 const companionPanel = new CompanionPanel({
   userDataDir: USER_DATA_DIR,
   preload: path.join(__dirname, '..', 'preload', 'companion.cjs'),
@@ -511,6 +523,8 @@ function createWindow(): void {
     icon: getAppIconPath(),
     title: '',
     frame: true,
+    titleBarStyle: process.platform === 'win32' ? 'hidden' : 'default',
+    titleBarOverlay: process.platform === 'win32' ? TITLE_BAR_THEMES.classic : undefined,
     show: !isWallpaperOnly,
     autoHideMenuBar: true,
     webPreferences: {
@@ -521,6 +535,7 @@ function createWindow(): void {
       webSecurity: false,   // allow file:// iframe for PixiJS renderer
     },
   })
+  setMainWindowTheme('classic')
   mainWindow.setMenuBarVisibility(false)
   mainWindow.setTitle('')
   guardTrustedRendererShell(mainWindow)
@@ -530,18 +545,20 @@ function createWindow(): void {
   })
 
   // load from vite dev server or built files
-  const queryParam = wantsWallpaper() ? '?wallpaper=1' : ''
+  const rendererQuery = { mainWindow: '1', ...(wantsWallpaper() ? { wallpaper: '1' } : {}) }
+  const query = new URLSearchParams(rendererQuery)
+  const queryParam = `?${query.toString()}`
   if (isDev) {
     mainWindow.loadURL(`http://localhost:5173${queryParam}`)
       .catch(() => {
         // fallback: try built files
         const p = path.join(__dirname, '..', 'renderer', 'index.html')
-        if (fs.existsSync(p)) mainWindow?.loadFile(p, wantsWallpaper() ? { query: { wallpaper: '1' } } : undefined)
+        if (fs.existsSync(p)) mainWindow?.loadFile(p, { query: rendererQuery })
       })
   } else {
     mainWindow.loadFile(
       path.join(__dirname, '..', 'renderer', 'index.html'),
-      wantsWallpaper() ? { query: { wallpaper: '1' } } : undefined
+      { query: rendererQuery }
     )
   }
 
@@ -2061,6 +2078,10 @@ ipcMain.handle('restart-backend', async (event) => {
 ipcMain.handle('desktop-settings.get', (event) => {
   if (!isTrustedBackendRenderer(event.sender)) return null
   return desktopSettings.snapshot(process.env)
+})
+ipcMain.handle('window-theme.set', (event, theme: unknown) => {
+  if (!isTrustedBackendRenderer(event.sender)) return false
+  return setMainWindowTheme(theme)
 })
 ipcMain.handle('companion-portraits.status', (event) => {
   if (!isTrustedBackendRenderer(event.sender)) return null
