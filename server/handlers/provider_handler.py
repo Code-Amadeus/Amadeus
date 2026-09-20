@@ -280,6 +280,7 @@ class ProviderHandler(RequestHandler):
 
     async def _list(self, params: dict[str, Any]) -> dict[str, Any]:
         from agent_host.acp_configuration import load_acp_agents
+        from config import settings
 
         try:
             acp_agents = [spec.public_dict() for spec in load_acp_agents()]
@@ -287,6 +288,8 @@ class ProviderHandler(RequestHandler):
             acp_agents = []
         return {
             "providers": runtime.list_providers(),
+            "default_provider": (settings.COOPERATIVE_CHAT_PROVIDER if settings.COOPERATIVE_CHAT_ENABLED
+                else settings.PROVIDER_DELEGATE_DEFAULT_PROVIDER),
             "provider_manifests": runtime.list_provider_manifests(),
             "provider_availability": self.provider_availability(),
             "provider_configurations": [

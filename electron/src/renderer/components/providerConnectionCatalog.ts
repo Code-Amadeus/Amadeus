@@ -60,9 +60,9 @@ export function buildWorkProviderCatalog(
     fields: [
       field('COOPERATIVE_CHAT_ENABLED', 'Work execution', 'boolean', enabled),
       field('COOPERATIVE_CHAT_PROVIDER', 'Work Provider', 'select', provider, [
-        { value: 'codex', label: 'Codex · Recommended' },
+        { value: 'pi', label: 'Pi · Daily tasks' },
+        { value: 'codex', label: 'Codex · Coding' },
         { value: 'openclaw', label: 'OpenClaw' },
-        { value: 'pi', label: 'Pi · Experimental' },
         { value: 'browser', label: 'Browser' },
       ]),
     ],

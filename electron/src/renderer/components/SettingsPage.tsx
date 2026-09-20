@@ -990,7 +990,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   const selectedWorkProvider = String(
     desktop?.sources?.COOPERATIVE_CHAT_PROVIDER === 'user'
       ? desktop.values.COOPERATIVE_CHAT_PROVIDER
-      : val('cooperative_chat_provider', 'codex'),
+      : val('cooperative_chat_provider', 'pi'),
   ).toLowerCase()
   const workExecutionEnabled = desktop?.sources?.COOPERATIVE_CHAT_ENABLED === 'user'
     ? desktop.values.COOPERATIVE_CHAT_ENABLED === 'true'

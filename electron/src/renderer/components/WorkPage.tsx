@@ -648,7 +648,7 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
         setProvider(current => preserveOrChooseProvider(
           current,
           nextProviders,
-          res.provider_manifests,
+          String(res.default_provider || ''),
         ))
       }
       if (Array.isArray(res.runs)) {
@@ -999,7 +999,7 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
 
   const submit = useCallback(async () => {
     const prompt = task.trim()
-    if (!connected || !prompt || workAction) return
+    if (!connected || !prompt || !provider || workAction) return
     setSubmitting(true)
     try {
       const routedCwd = workProjection?.workspaceFocusMode === 'pinned'
@@ -1706,9 +1706,10 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
                 onChange={event => setTask(event.target.value)}
                 placeholder="Describe the next instruction; it starts a new WorkItem"
               />
-              <button onClick={submit} disabled={!connected || submitting || !!workAction || !task.trim()}>{submitting ? 'Starting' : activeWorkItem ? 'New' : 'Run'}</button>
+              <button onClick={submit} disabled={!connected || submitting || !!workAction || !task.trim() || !provider}>{submitting ? 'Starting' : activeWorkItem ? 'New' : 'Run'}</button>
             </div>
             <select value={provider} onChange={event => setProvider(event.target.value)}>
+              <option value="" disabled>Select a provider</option>
               {providers.map(item => <option key={item} value={item}>{item}</option>)}
             </select>
             <input

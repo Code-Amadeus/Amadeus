@@ -433,6 +433,20 @@ def test_bootstrap_separates_known_providers_from_runtime_availability() -> None
     assert set(enabled) == {"browser", "openclaw", "codex", "pi"}
 
 
+def test_provider_list_exposes_host_default_even_when_runtime_is_unavailable(monkeypatch):
+    monkeypatch.setattr("server.handlers.provider_handler.runtime", ProviderRuntime())
+    monkeypatch.setattr(settings, "COOPERATIVE_CHAT_PROVIDER", "pi")
+    monkeypatch.setattr(settings, "PROVIDER_DELEGATE_DEFAULT_PROVIDER", "openclaw")
+    handler = ProviderHandler.__new__(ProviderHandler)
+    handler._host_adapters = {}
+    handler._provider_availability = {}
+    for cooperative, expected in ((True, "pi"), (False, "openclaw")):
+        monkeypatch.setattr(settings, "COOPERATIVE_CHAT_ENABLED", cooperative)
+        listed = asyncio.run(handler._list({}))
+        assert listed["default_provider"] == expected
+        assert listed["providers"] == []
+
+
 def test_delegate_selector_only_accepts_injected_or_registered_manifests() -> None:
     try:
         _delegate_provider_selection(

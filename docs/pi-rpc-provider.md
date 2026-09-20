@@ -63,6 +63,31 @@ the additional policy JSON with `task_kind=general`, `workspace_access=none`,
 
 ## Responsibilities and reuse
 
+### Registration and GUI settings
+
+Builtin adapters are composed by `provider_bootstrap.py`; their capability
+manifests are code-owned in `provider_catalog.py`. Settings choose connections,
+enablement and defaults, not whether an implementation can actually restore,
+cancel, access a workspace or accept an MCP projection. The GUI displays runtime
+availability; it does not let users grant an adapter unsupported capabilities.
+
+Settings → Providers can select Pi/Codex/OpenClaw/Browser as the main Work
+provider and configure connections. Changes persist in Desktop settings and
+apply at backend restart. The Work page lists registered providers dynamically
+and uses the Host-configured default, while preserving explicit user selection.
+An unavailable default requires a selection rather than silently choosing a
+different provider by manifest priority.
+
+The existing ACP editor adds installed external agents without Python code
+changes. The main default-provider Settings dropdown currently lists builtins;
+selecting a custom ACP default still requires `COOPERATIVE_CHAT_PROVIDER` in
+startup configuration. Additional cooperative policy JSON and trusted Pi
+extension paths also remain startup configuration, with no dedicated GUI editor.
+MCP connections are configurable in the GUI only for adapters advertising the
+`mcp_connection` projection (currently Codex and compatible ACP agents). Pi's
+bundled anonymous web search reuses the MCP client internally; this does not
+advertise arbitrary MCP projection support for Pi or OpenClaw.
+
 - `ProviderRuntime`, Work Ledger, control admission and task/session identities
   remain unchanged. Bootstrap registers one ordinary `pi` provider.
 - The adapter reuses `ProviderSessionHandle`, `ProviderInputDelivery`, activity

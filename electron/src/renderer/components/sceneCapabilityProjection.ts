@@ -606,6 +606,7 @@ function directSceneUsage(
 function providerDisplayName(providerId: string): string {
   const known: Record<string, string> = {
     codex: 'Codex agent',
+    pi: 'Pi daily agent',
     openclaw: 'OpenClaw agent',
     browser: 'Browser provider',
   }
@@ -619,7 +620,7 @@ export function buildCapabilityProfiles(
   const profiles = buildSceneCapabilityProfiles(settings)
   const backendFactsAvailable = Array.isArray(settings.model_connections)
   const workEnabled = settings.cooperative_chat_enabled === true
-  const workProviderId = String(settings.cooperative_chat_provider || 'codex').trim().toLowerCase()
+  const workProviderId = String(settings.cooperative_chat_provider || 'pi').trim().toLowerCase()
   const workProvider = providerAvailability.find(item => item.provider_id === workProviderId)
   const workReady = workEnabled && workProvider?.registered === true && workProvider?.ready === true
   const workImplementation = `${providerDisplayName(workProviderId)} · ${backendFactsAvailable ? 'current selection' : 'recommended default'}`
