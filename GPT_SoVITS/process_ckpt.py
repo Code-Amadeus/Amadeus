@@ -72,6 +72,8 @@ hash_pretrained_dict={
     "dc3c97e17592963677a4a1681f30c653":["v2","v2",False],#s2G488k.pth#sovits_v1_pretrained
     "43797be674a37c1c83ee81081941ed0f":["v2","v3",False],#s2Gv3.pth#sovits_v3_pretrained
     "6642b37f3dbb1f76882b69937c95a5f3":["v2","v2",False],#s2G2333K.pth#sovits_v2_pretrained
+    "c7e9fce2223f3db685cdfa1e6368728a":["v2","v2Pro",False],#s2Gv2Pro.pth
+    "66b313e39455b57ab1b0bc0b239c9d0a":["v2","v2ProPlus",False],#s2Gv2ProPlus.pth
 }
 import hashlib
 def get_hash_from_file(sovits_path):
