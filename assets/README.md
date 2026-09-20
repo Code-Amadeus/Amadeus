@@ -110,3 +110,8 @@ when its workflow or generator changes on `main`. It publishes only
 The protected `main` branch does not receive automated chart commits.
 `assets/star-history.svg` is the local snapshot; scheduled updates are served
 from the generated branch. GitHub's image cache may briefly delay display.
+
+The generator owns the near-square, pen-style presentation (including dark
+mode). Its monotone curve passes through every daily cumulative total; the
+subpixel ink texture does not alter the data. Counts describe current
+stargazers grouped by their original star dates, not an archive of past totals.

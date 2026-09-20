@@ -13,14 +13,17 @@
     .title{font-size:38px;font-weight:700;fill:#edf8f0}
     .subtitle{font-size:20px;fill:#a5c5b2}
     .column{font-size:17px;letter-spacing:1px;font-weight:700;fill:#89c9a8}
-    .card-title{font-size:23px;font-weight:650;fill:#effaf3}
-    .body{font-size:18px;fill:#c0d6c9}
-    .note{font-size:15px;fill:#93b5a1}
-    .flow{font-size:14px;font-weight:600;fill:#cce7d7;paint-order:stroke;stroke:#081b13;stroke-width:6;stroke-linejoin:round}
-    .mini-title{font-size:17px;font-weight:650;fill:#f5e7ce}
-    .mini{font-size:15px;fill:#cfccb7}
-    .footer{font-size:15px;font-weight:600;fill:#c7e5d3}
-    .planned-title{font-size:20px;font-weight:650;fill:#d8ddcd}
+    .card-title{font-size:27px;font-weight:650;fill:#effaf3}
+    .body{font-size:23px;fill:#c0d6c9}
+    .note{font-size:19px;fill:#a6c5b3}
+    .flow{font-size:16px;font-weight:600;fill:#cce7d7;paint-order:stroke;stroke:#081b13;stroke-width:6;stroke-linejoin:round}
+    .mini-title{font-size:23px;font-weight:650;fill:#f5e7ce}
+    .mini{font-size:20px;fill:#cfccb7}
+    .provider-detail{font-size:18px;fill:#cfccb7}
+    .footer{font-size:19px;font-weight:600;fill:#c7e5d3}
+    .planned-title{font-size:27px;font-weight:650;fill:#d8ddcd}
+    #node-user .body,#node-desktop .body,#node-surface .body,#node-headless .body{font-size:21px}
+    #node-user .card-title,#node-desktop .card-title,#node-surface .card-title,#node-headless .card-title{font-size:25px}
   </style>
 </defs>
 <rect width="1800" height="1120" rx="24" fill="url(#bg)"/>
@@ -50,20 +53,20 @@
 <path d="M1090 260 L1230 260" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
 <path class="connector" d="M1090 260 L1230 260" fill="none" stroke="#72dfad" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#control)"/></g>
 <g data-edge="chat-memory" data-from="chat" data-to="memory"><title>上下文交互</title>
-<path d="M1090 334 L1148 334 L1148 380 L1230 380" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
-<path class="connector" d="M1090 334 L1148 334 L1148 380 L1230 380" fill="none" stroke="#a4b9a9" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#planned)" marker-start="url(#planned)" stroke-dasharray="2 5"/></g>
+<path d="M1090 334 L1148 334 L1148 412 L1230 412" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
+<path class="connector" d="M1090 334 L1148 334 L1148 412 L1230 412" fill="none" stroke="#a4b9a9" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#planned)" marker-start="url(#planned)" stroke-dasharray="2 5"/></g>
 <g data-edge="chat-work" data-from="chat" data-to="work"><title>委派任务</title>
-<path d="M795 364 L795 406" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
-<path class="connector" d="M795 364 L795 406" fill="none" stroke="#72dfad" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#control)"/></g>
+<path d="M795 368 L795 406" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
+<path class="connector" d="M795 368 L795 406" fill="none" stroke="#72dfad" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#control)"/></g>
 <g data-edge="chat-voice" data-from="chat" data-to="voice"><title>对话语音</title>
 <path d="M500 332 L482 332 L482 876 L500 876" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
 <path class="connector" d="M500 332 L482 332 L482 876 L500 876" fill="none" stroke="#72dfad" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#control)"/></g>
 <g data-edge="work-providers" data-from="work" data-to="providers"><title>执行 / 取消</title>
-<path d="M1090 484 L1230 484" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
-<path class="connector" d="M1090 484 L1230 484" fill="none" stroke="#72dfad" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#control)"/></g>
+<path d="M1090 484 L1176 484 L1176 548 L1230 548" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
+<path class="connector" d="M1090 484 L1176 484 L1176 548 L1230 548" fill="none" stroke="#72dfad" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#control)"/></g>
 <g data-edge="providers-work" data-from="providers" data-to="work"><title>事件 / 结果</title>
-<path d="M1230 560 L1090 560" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
-<path class="connector" d="M1230 560 L1090 560" fill="none" stroke="#b4dcc7" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#return)" stroke-dasharray="8 6"/></g>
+<path d="M1230 626 L1144 626 L1144 578 L1090 578" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
+<path class="connector" d="M1230 626 L1144 626 L1144 578 L1090 578" fill="none" stroke="#b4dcc7" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#return)" stroke-dasharray="8 6"/></g>
 <g data-edge="work-desktop" data-from="work" data-to="desktop"><title>工作状态 / 投射</title>
 <path d="M500 574 L416 574 L416 506 L390 506" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
 <path class="connector" d="M500 574 L416 574 L416 506 L390 506" fill="none" stroke="#b4dcc7" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#return)" stroke-dasharray="8 6"/></g>
@@ -74,97 +77,97 @@
 <path d="M390 864 L470 864" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
 <path class="connector" d="M390 864 L470 864" fill="none" stroke="#72dfad" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#control)"/></g>
 <g data-edge="auip-apps" data-from="auip" data-to="apps"><title>挂接 / 动作</title>
-<path d="M1090 704 L1160 704 L1160 748 L1230 748" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
-<path class="connector" d="M1090 704 L1160 704 L1160 748 L1230 748" fill="none" stroke="#e5bc79" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#artifact)"/></g>
+<path d="M1090 704 L1160 704 L1160 832 L1230 832" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
+<path class="connector" d="M1090 704 L1160 704 L1160 832 L1230 832" fill="none" stroke="#e5bc79" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#artifact)"/></g>
 <g data-edge="apps-auip" data-from="apps" data-to="auip"><title>状态 / 回执</title>
-<path d="M1230 800 L1184 800 L1184 760 L1090 760" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
-<path class="connector" d="M1230 800 L1184 800 L1184 760 L1090 760" fill="none" stroke="#b4dcc7" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#return)" stroke-dasharray="8 6"/></g>
+<path d="M1230 910 L1196 910 L1196 760 L1090 760" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
+<path class="connector" d="M1230 910 L1196 910 L1196 760 L1090 760" fill="none" stroke="#b4dcc7" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#return)" stroke-dasharray="8 6"/></g>
 <g data-edge="voice-surface" data-from="voice" data-to="surface"><title>播放 / / 渲染事件</title>
 <path d="M500 904 L448 904 L448 652 L390 652" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
 <path class="connector" d="M500 904 L448 904 L448 652 L390 652" fill="none" stroke="#72dfad" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#control)"/></g>
-<g id="node-user" data-node="user"><rect x="60" y="185" width="330" height="120" rx="16" fill="#0c241a" stroke="#67c599" stroke-width="1.6"/>
-<text x="82" y="218" class="card-title" text-anchor="start">用户</text>
-<text x="82" y="248" class="body" text-anchor="start">语音 · 文字 · 点击 · 授权</text>
-<text x="82" y="289" class="note" text-anchor="start">随时打断、改变目标或接管</text>
+<g id="node-user" data-node="user"><rect x="30" y="185" width="360" height="120" rx="16" fill="#0c241a" stroke="#67c599" stroke-width="1.6"/>
+<text x="52" y="222" class="card-title" text-anchor="start">用户</text>
+<text x="52" y="256" class="body" text-anchor="start">语音 · 文字 · 点击 · 授权</text>
+<text x="52" y="289" class="note" text-anchor="start">随时打断、改变目标或接管</text>
 </g>
-<g id="node-desktop" data-node="desktop"><rect x="60" y="350" width="330" height="180" rx="16" fill="#0c241a" stroke="#456d55" stroke-width="1.6"/>
-<text x="82" y="383" class="card-title" text-anchor="start">Electron 桌面界面</text>
-<text x="82" y="413" class="body" text-anchor="start">聊天 · 项目 · 草稿</text>
-<text x="82" y="438" class="body" text-anchor="start">工作 · 产物 · 设置</text>
-<text x="82" y="463" class="body" text-anchor="start">后端状态 · VN Player</text>
-<text x="82" y="514" class="note" text-anchor="start">VN Player 仍为实验性功能</text>
+<g id="node-desktop" data-node="desktop"><rect x="30" y="350" width="360" height="180" rx="16" fill="#0c241a" stroke="#456d55" stroke-width="1.6"/>
+<text x="52" y="387" class="card-title" text-anchor="start">Electron 桌面界面</text>
+<text x="52" y="421" class="body" text-anchor="start">聊天 · 项目 · 草稿</text>
+<text x="52" y="453" class="body" text-anchor="start">工作 · 产物 · 设置</text>
+<text x="52" y="485" class="body" text-anchor="start">后端状态 · VN Player</text>
+<text x="52" y="514" class="note" text-anchor="start">VN Player 仍为实验性功能</text>
 </g>
-<g id="node-headless" data-node="headless"><rect x="60" y="798" width="330" height="132" rx="16" fill="#0c241a" stroke="#456d55" stroke-width="1.6"/>
-<text x="82" y="831" class="card-title" text-anchor="start">无界面 / API 客户端</text>
-<text x="82" y="861" class="body" text-anchor="start">无需角色包或本地模型即可启动</text>
-<text x="82" y="914" class="note" text-anchor="start">接入同一已认证的 Host 边界</text>
+<g id="node-headless" data-node="headless"><rect x="30" y="798" width="360" height="132" rx="16" fill="#0c241a" stroke="#456d55" stroke-width="1.6"/>
+<text x="52" y="835" class="card-title" text-anchor="start">无界面 / API 客户端</text>
+<text x="52" y="869" class="body" text-anchor="start">无需角色包或本地模型即可启动</text>
+<text x="52" y="914" class="note" text-anchor="start">接入同一已认证的 Host 边界</text>
 </g>
-<g id="node-surface" data-node="surface"><rect x="60" y="570" width="330" height="158" rx="16" fill="#0c241a" stroke="#456d55" stroke-width="1.6"/>
-<text x="82" y="603" class="card-title" text-anchor="start">角色呈现界面</text>
-<text x="82" y="633" class="body" text-anchor="start">壁纸 · SpriteForge / PixiJS</text>
-<text x="82" y="658" class="body" text-anchor="start">字幕 · 口型 · 表情 · 场景行为</text>
-<text x="82" y="712" class="note" text-anchor="start">角色包可选，缺包仍可聊天</text>
+<g id="node-surface" data-node="surface"><rect x="30" y="570" width="360" height="158" rx="16" fill="#0c241a" stroke="#456d55" stroke-width="1.6"/>
+<text x="52" y="607" class="card-title" text-anchor="start">角色呈现界面</text>
+<text x="52" y="641" class="body" text-anchor="start">壁纸 · SpriteForge / PixiJS</text>
+<text x="52" y="673" class="body" text-anchor="start">字幕 · 口型 · 表情 · 场景行为</text>
+<text x="52" y="712" class="note" text-anchor="start">角色包可选，缺包仍可聊天</text>
 </g>
-<g id="node-chat" data-node="chat"><rect x="500" y="220" width="590" height="144" rx="16" fill="#0c241a" stroke="#67c599" stroke-width="1.6"/>
-<text x="522" y="253" class="card-title" text-anchor="start">主对话与轮次控制</text>
-<text x="522" y="283" class="body" text-anchor="start">会话 · 模型配置 · 视觉上下文</text>
-<text x="522" y="308" class="body" text-anchor="start">生成流生命周期 · 打断轮次</text>
-<text x="522" y="348" class="note" text-anchor="start">只负责对话，不直接调用 MCP 工具</text>
+<g id="node-chat" data-node="chat"><rect x="500" y="220" width="590" height="148" rx="16" fill="#0c241a" stroke="#67c599" stroke-width="1.6"/>
+<text x="522" y="257" class="card-title" text-anchor="start">主对话与轮次控制</text>
+<text x="522" y="291" class="body" text-anchor="start">会话 · 模型配置 · 视觉上下文</text>
+<text x="522" y="323" class="body" text-anchor="start">生成流生命周期 · 打断轮次</text>
+<text x="522" y="352" class="note" text-anchor="start">只负责对话，不直接调用 MCP 工具</text>
 </g>
 <g id="node-work" data-node="work"><rect x="500" y="406" width="590" height="210" rx="16" fill="#0c241a" stroke="#67c599" stroke-width="1.6"/>
-<text x="522" y="439" class="card-title" text-anchor="start">工作控制面</text>
-<text x="522" y="469" class="body" text-anchor="start">项目 · 草稿 · 工作项 / 执行尝试</text>
-<text x="522" y="494" class="body" text-anchor="start">执行器选择 · 执行与取消</text>
-<text x="522" y="519" class="body" text-anchor="start">继续 / 重试 · 权限 · 产物登记</text>
-<text x="522" y="544" class="body" text-anchor="start">持久记录 · 差异 · 完成判定 · 恢复</text>
+<text x="522" y="443" class="card-title" text-anchor="start">工作控制面</text>
+<text x="522" y="477" class="body" text-anchor="start">项目 · 草稿 · 工作项 / 执行尝试</text>
+<text x="522" y="509" class="body" text-anchor="start">执行器选择 · 执行与取消</text>
+<text x="522" y="541" class="body" text-anchor="start">继续 / 重试 · 权限 · 产物登记</text>
+<text x="522" y="573" class="body" text-anchor="start">持久记录 · 差异 · 完成判定 · 恢复</text>
 <text x="522" y="600" class="note" text-anchor="start">Host 核验身份和执行事实</text>
 </g>
-<g id="node-auip" data-node="auip"><rect x="500" y="658" width="590" height="136" rx="16" fill="#201e15" stroke="#cfa566" stroke-width="1.6"/>
-<text x="522" y="691" class="card-title" text-anchor="start">AUIP 会话权限</text>
-<text x="522" y="721" class="body" text-anchor="start">挂接票据 · 会话身份 · 版本</text>
-<text x="522" y="746" class="body" text-anchor="start">动作授权 · 声明状态 · 动作回执</text>
-<text x="522" y="778" class="note" text-anchor="start">不授予工作执行或语音权限</text>
+<g id="node-auip" data-node="auip"><rect x="500" y="658" width="590" height="146" rx="16" fill="#201e15" stroke="#cfa566" stroke-width="1.6"/>
+<text x="522" y="695" class="card-title" text-anchor="start">AUIP 会话权限</text>
+<text x="522" y="729" class="body" text-anchor="start">挂接票据 · 会话身份 · 版本</text>
+<text x="522" y="761" class="body" text-anchor="start">动作授权 · 声明状态 · 动作回执</text>
+<text x="522" y="788" class="note" text-anchor="start">不授予工作执行或语音权限</text>
 </g>
-<g id="node-voice" data-node="voice"><rect x="500" y="834" width="590" height="130" rx="16" fill="#0c241a" stroke="#456d55" stroke-width="1.6"/>
-<text x="522" y="867" class="card-title" text-anchor="start">语音与角色表现</text>
-<text x="522" y="897" class="body" text-anchor="start">唤醒 / 对话识别 · 本地或远程 ASR / TTS</text>
-<text x="522" y="922" class="body" text-anchor="start">真实播放 · 嘴型 / 渲染事件</text>
-<text x="522" y="948" class="note" text-anchor="start">呈现与执行权限分离</text>
+<g id="node-voice" data-node="voice"><rect x="500" y="824" width="590" height="148" rx="16" fill="#0c241a" stroke="#456d55" stroke-width="1.6"/>
+<text x="522" y="861" class="card-title" text-anchor="start">语音与角色表现</text>
+<text x="522" y="895" class="body" text-anchor="start">唤醒 / 对话识别 · 本地或远程 ASR / TTS</text>
+<text x="522" y="927" class="body" text-anchor="start">真实播放 · 嘴型 / 渲染事件</text>
+<text x="522" y="956" class="note" text-anchor="start">呈现与执行权限分离</text>
 </g>
-<g id="node-models" data-node="models"><rect x="1230" y="185" width="510" height="120" rx="16" fill="#0c241a" stroke="#456d55" stroke-width="1.6"/>
-<text x="1252" y="218" class="card-title" text-anchor="start">主对话模型端点</text>
-<text x="1252" y="248" class="body" text-anchor="start">本地 / 远程 / 混合模型推理</text>
-<text x="1252" y="289" class="note" text-anchor="start">远程服务由用户显式配置</text>
+<g id="node-models" data-node="models"><rect x="1230" y="185" width="510" height="140" rx="16" fill="#0c241a" stroke="#456d55" stroke-width="1.6"/>
+<text x="1252" y="222" class="card-title" text-anchor="start">主对话模型端点</text>
+<text x="1252" y="256" class="body" text-anchor="start">本地 / 远程 / 混合模型推理</text>
+<text x="1252" y="309" class="note" text-anchor="start">远程服务由用户显式配置</text>
 </g>
-<g id="node-apps" data-node="apps"><rect x="1230" y="704" width="510" height="136" rx="16" fill="#201e15" stroke="#cfa566" stroke-width="1.6"/>
-<text x="1252" y="737" class="card-title" text-anchor="start">已挂接的 AUIP 应用</text>
-<text x="1252" y="767" class="body" text-anchor="start">已核验的产物入口 · 声明状态 / 事件</text>
-<text x="1252" y="792" class="body" text-anchor="start">有界动作 · 应用回执</text>
-<text x="1252" y="824" class="note" text-anchor="start">断连状态可见，不是工作执行器</text>
+<g id="node-apps" data-node="apps"><rect x="1230" y="790" width="510" height="182" rx="16" fill="#201e15" stroke="#cfa566" stroke-width="1.6"/>
+<text x="1252" y="827" class="card-title" text-anchor="start">已挂接的 AUIP 应用</text>
+<text x="1252" y="861" class="body" text-anchor="start">已核验的产物入口 · 声明状态 / 事件</text>
+<text x="1252" y="893" class="body" text-anchor="start">有界动作 · 应用回执</text>
+<text x="1252" y="956" class="note" text-anchor="start">断连状态可见，不是工作执行器</text>
 </g>
-<g id="node-memory" data-node="memory" data-status="planned"><rect x="1230" y="329" width="510" height="101" rx="12" fill="#14221b" stroke="#a4b9a9" stroke-width="1.5" stroke-dasharray="6 5"/>
-<text x="1252" y="359" class="planned-title" text-anchor="start">记忆与人格运行时</text>
-<text x="1252" y="386" class="note" text-anchor="start">检索 / 更新 · 生命周期机制待设计</text>
-<text x="1252" y="413" class="mini" text-anchor="start">规划中 · 交互接口尚未定型</text>
+<g id="node-memory" data-node="memory" data-status="planned"><rect x="1230" y="351" width="510" height="115" rx="12" fill="#14221b" stroke="#a4b9a9" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text x="1252" y="388" class="planned-title" text-anchor="start">记忆与人格运行时</text>
+<text x="1252" y="420" class="note" text-anchor="start">检索 / 更新 · 生命周期机制待设计</text>
+<text x="1252" y="449" class="mini" text-anchor="start">规划中 · 交互接口尚未定型</text>
 </g>
-<g id="node-providers" data-node="providers"><rect x="1230" y="454" width="510" height="210" rx="16" fill="#231f15" stroke="#cfa566" stroke-width="1.6"/>
-<text x="1252" y="487" class="card-title" text-anchor="start">工作执行器</text>
-<text x="1252" y="515" class="note" text-anchor="start">各自独立的传输与能力范围</text>
-<rect x="1248" y="530" width="146" height="74" rx="9" fill="#30281a" stroke="#9e8454"/>
-<text x="1260" y="552" class="mini-title" text-anchor="start">Browser</text>
-<text x="1260" y="576" class="mini" text-anchor="start">Playwright</text>
-<text x="1260" y="596" class="mini" text-anchor="start">限定会话</text>
-<rect x="1412" y="530" width="146" height="74" rx="9" fill="#30281a" stroke="#9e8454"/>
-<text x="1424" y="552" class="mini-title" text-anchor="start">Codex</text>
-<text x="1424" y="576" class="mini" text-anchor="start">App Server</text>
-<text x="1424" y="596" class="mini" text-anchor="start">或 Direct</text>
-<rect x="1576" y="530" width="146" height="74" rx="9" fill="#30281a" stroke="#9e8454" stroke-dasharray="6 5"/>
-<text x="1588" y="552" class="mini-title" text-anchor="start">OpenClaw</text>
-<text x="1588" y="576" class="mini" text-anchor="start">可选</text>
-<text x="1588" y="596" class="mini" text-anchor="start">外部网关</text>
-<rect x="1248" y="610" width="474" height="25" rx="8" fill="#102c1f" stroke="#456d55"/>
-<text x="1485.0" y="628" class="note" text-anchor="middle">MCP / Skills · 仅授予兼容执行器</text>
-<text x="1250" y="653" class="mini" text-anchor="start">规划中：Claude CLI 直接接入</text>
+<g id="node-providers" data-node="providers"><rect x="1230" y="494" width="510" height="270" rx="16" fill="#231f15" stroke="#cfa566" stroke-width="1.6"/>
+<text x="1252" y="531" class="card-title" text-anchor="start">工作执行器</text>
+<text x="1252" y="562" class="note" text-anchor="start">各自独立的传输与能力范围</text>
+<rect x="1248" y="580" width="146" height="98" rx="9" fill="#30281a" stroke="#9e8454"/>
+<text x="1260" y="609" class="mini-title" text-anchor="start">Browser</text>
+<text x="1260" y="639" class="provider-detail" text-anchor="start">Playwright</text>
+<text x="1260" y="664" class="provider-detail" text-anchor="start">限定会话</text>
+<rect x="1412" y="580" width="146" height="98" rx="9" fill="#30281a" stroke="#9e8454"/>
+<text x="1424" y="609" class="mini-title" text-anchor="start">Codex</text>
+<text x="1424" y="639" class="provider-detail" text-anchor="start">App Server</text>
+<text x="1424" y="664" class="provider-detail" text-anchor="start">或 Direct</text>
+<rect x="1576" y="580" width="146" height="98" rx="9" fill="#30281a" stroke="#9e8454" stroke-dasharray="6 5"/>
+<text x="1588" y="609" class="mini-title" text-anchor="start">OpenClaw</text>
+<text x="1588" y="639" class="provider-detail" text-anchor="start">可选</text>
+<text x="1588" y="664" class="provider-detail" text-anchor="start">外部网关</text>
+<rect x="1248" y="690" width="474" height="32" rx="8" fill="#102c1f" stroke="#456d55"/>
+<text x="1485.0" y="713" class="note" text-anchor="middle">MCP / Skills · 仅授予兼容执行器</text>
+<text x="1250" y="747" class="mini" text-anchor="start">规划中：Claude CLI 直接接入</text>
 </g>
 <g data-label="input">
 <text x="310" y="334" class="flow" text-anchor="middle">输入 / 授权</text>
@@ -177,16 +180,16 @@
 <text x="1160" y="236" class="flow" text-anchor="middle">模型推理</text>
 </g>
 <g data-label="retrieve">
-<text x="1160" y="356" class="flow" text-anchor="middle">上下文交互</text>
+<text x="1160" y="380" class="flow" text-anchor="middle">上下文交互</text>
 </g>
 <g data-label="delegate">
 <text x="730" y="391" class="flow" text-anchor="middle">委派任务</text>
 </g>
 <g data-label="run">
-<text x="1160" y="460" class="flow" text-anchor="middle">执行 / 取消</text>
+<text x="1160" y="463" class="flow" text-anchor="middle">执行 / 取消</text>
 </g>
 <g data-label="results">
-<text x="1160" y="587" class="flow" text-anchor="middle">事件 / 结果</text>
+<text x="1160" y="653" class="flow" text-anchor="middle">事件 / 结果</text>
 </g>
 <g data-label="projection">
 <text x="440" y="538" class="flow" text-anchor="middle">工作状态</text>
@@ -199,10 +202,10 @@
 <text x="430" y="835" class="flow" text-anchor="middle">认证 API</text>
 </g>
 <g data-label="action">
-<text x="1160" y="680" class="flow" text-anchor="middle">挂接 / 动作</text>
+<text x="1160" y="690" class="flow" text-anchor="middle">挂接 / 动作</text>
 </g>
 <g data-label="receipts">
-<text x="1160" y="822" class="flow" text-anchor="middle">状态 / 回执</text>
+<text x="1160" y="940" class="flow" text-anchor="middle">状态 / 回执</text>
 </g>
 <g data-label="playback">
 <text x="440" y="733" class="flow" text-anchor="middle">播放 /</text>
