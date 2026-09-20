@@ -128,6 +128,34 @@ test('an image-capable model remains available when visual context is default-of
   assert.equal(visual.currentLabel, 'Currently off')
 })
 
+test('DeepSeek Flash is image-capable while DeepSeek Pro remains text-only', () => {
+  const flash = configuredSnapshot()
+  flash.model_connections[0].fields = [{ key: 'DEEPSEEK_MODEL_NAME', value: 'deepseek-v4-flash' }]
+  const flashVisual = exports.buildSceneCapabilityProfiles(flash)
+    .find(profile => profile.id === 'chat').capabilities.find(item => item.id === 'chat_visual_context')
+  assert.equal(flashVisual.state, 'inactive')
+  assert.equal(flashVisual.stateLabel, 'Available · Off')
+
+  const pro = configuredSnapshot()
+  pro.model_connections[0].fields = [{ key: 'DEEPSEEK_MODEL_NAME', value: 'deepseek-v4-pro' }]
+  const proVisual = exports.buildSceneCapabilityProfiles(pro)
+    .find(profile => profile.id === 'chat').capabilities.find(item => item.id === 'chat_visual_context')
+  assert.equal(proVisual.state, 'attention')
+  assert.equal(proVisual.stateLabel, 'Text-only model')
+  assert.match(proVisual.detail, /does not accept direct image input/)
+})
+
+test('Hybrid2 follows the selected DeepSeek model capability', () => {
+  const snapshot = configuredSnapshot()
+  snapshot.llm_provider = 'hybrid2'
+  snapshot.model_connections.push(group('hybrid_local', true))
+  snapshot.model_connections[0].fields = [{ key: 'DEEPSEEK_MODEL_NAME', value: 'deepseek-v4-flash' }]
+  const visual = exports.buildSceneCapabilityProfiles(snapshot)
+    .find(profile => profile.id === 'chat').capabilities.find(item => item.id === 'chat_visual_context')
+  assert.equal(visual.state, 'inactive')
+  assert.equal(visual.stateLabel, 'Available · Off')
+})
+
 test('disconnected preview does not guess that Wallpaper visual context cannot be enabled', () => {
   const profiles = exports.buildSceneCapabilityProfiles({})
   const visual = profiles.find(profile => profile.id === 'wallpaper').capabilities.find(item => item.id === 'wallpaper_visual_context')

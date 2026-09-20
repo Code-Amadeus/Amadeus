@@ -979,7 +979,11 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     hybrid3: ['hybrid_local', 'openai'],
   }[mainModelProvider] || [mainModelProvider]).every(modelGroupReady)
   const mainModelLabel = modelProviderLabels[mainModelProvider] || mainModelProvider
-  const visionModelReady = mainModelReady && chatProviderSupportsImages(mainModelProvider)
+  const imageModel = mainModelProvider === 'deepseek' || mainModelProvider === 'hybrid2'
+    ? String(modelConnections.find(group => group.id === 'deepseek')?.fields
+      ?.find(field => field.key === 'DEEPSEEK_MODEL_NAME')?.value || 'deepseek-v4-flash')
+    : ''
+  const visionModelReady = mainModelReady && chatProviderSupportsImages(mainModelProvider, imageModel)
   const configuredTranslationModels = modelConnections
     .filter(group => ['deepseek', 'openai', 'gemini'].includes(group.id) && (group.status_ok ?? group.configured))
     .map(group => group.label || modelProviderLabels[group.id] || group.id)
