@@ -1,11 +1,13 @@
 # Amadeus header with separately processed character
 
-Created with two built-in ImageGen edits. First, the character from the
+Created with three built-in ImageGen edits. First, the character from the
 [original organization header](https://github.com/Code-Amadeus/.github/blob/fbbfc221d43d415dbe865566ccccc94625ecd1d3/profile/assets/code-amadeus-hero.png)
 was processed as the separate `amadeus-character-projection.png` panel,
 preserving source detail and distinguishing hair, face, headset and clothing.
 The approved panel was then combined with the dotted AMADEUS wordmark and
-Real-Time subtitle. The separate character panel is retained for future edits;
+Real-Time subtitle. A final selective color edit changed only the character's
+hair to coral-red halftone, retaining the mint-green face, headset and clothing.
+The separate green character panel is retained as the pre-color-edit source;
 superseded header concepts are not part of the published asset set.
 
 This is brand artwork, not an application screenshot. The source character's
@@ -48,3 +50,25 @@ Exact text retained from Image 1:
 "for Desktop Interaction"
 "VOICE / PRESENCE / ACTION"
 No CODE, no slogan changes, no new text. NO redesign of the approved character. This is a faithful two-region composite of final approved assets. Output one complete final 3:1 banner.
+
+## Selective hair-color edit prompt
+
+Edit the supplied approved README header with ONE precise local color change.
+Output the same complete wide 3:1 banner, matching source dimensions approximately
+2172x724. ONLY recolor the right-side anime woman's HAIR DOTS / GLYPHS from jade
+green to restrained warm crimson / vermilion red (base around #d75a56, highlights
+around #e77468). Include her crown, bangs and long flowing strands, preserving
+the exact hair silhouette, black strand separations, dot grid, dot density,
+layered source shading, and fine wisps. This is a selective recoloring, not a
+redraw. Keep hair's brightness comparable to its original medium-green
+brightness; do not make it neon bright. Her FACE, headset, neck, clothing and
+shoulder MUST stay their current mint-green color. Headset-origin rectangular
+signal fragments remain mint green. Background near black-green, thin green arc
+and HUD marks, all left-side dotted AMADEUS typography, exact subtitle
+'Real-Time Multimodal AI Agent' / 'for Desktop Interaction', and footer
+'VOICE / PRESENCE / ACTION' remain completely unchanged. Preserve their exact
+positioning, shapes, fonts and brightness. No red spill onto skin, headphones,
+clothing, text, background or arc. Keep the same clean fine halftone dots, no
+blur, no added glow or shadow, no new elements, no smoothing or simplification.
+Return just the edited image without framing. This is a comparison variant to
+assess selective red hair against the existing green design.
