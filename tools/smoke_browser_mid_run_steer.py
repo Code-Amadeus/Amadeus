@@ -16,7 +16,6 @@ import socketserver
 import sys
 import tempfile
 import threading
-import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -30,7 +29,6 @@ if str(ROOT) not in sys.path:
 from agent_host.adapters.browser_branch import BrowserBranchAdapter  # noqa: E402
 from agent_host.provider_runtime import ProviderRuntime  # noqa: E402
 from agent_host.provider_types import ProviderRunRequest, ProviderSteerRequest  # noqa: E402
-import server.interaction_branch as interaction_branch_module  # noqa: E402
 from server.event_bus import bus  # noqa: E402
 from server.handlers.chat_handler import ChatHandler  # noqa: E402
 from server.interaction_branch import (  # noqa: E402
@@ -218,10 +216,8 @@ async def main() -> None:
                     title="Steer Home",
                     url=start_url,
                     active_run_id=record.run_id,
-                    expires_at=time.time() + 900,
                 )
                 coordinator._active_by_session[active_branch.parent_session_id] = active_branch
-                interaction_branch_module._current_coordinator = coordinator
 
                 unexpected_llm: list[str] = []
 
@@ -307,22 +303,14 @@ async def main() -> None:
                         assert second_task is not None
                         await _wait_for_steer(record, 2)
                         release_stale_planner.set()
-                        outcomes = await asyncio.wait_for(
-                            asyncio.gather(
-                                first_task,
-                                second_task,
-                                return_exceptions=True,
-                            ),
+                        await asyncio.wait_for(
+                            asyncio.gather(first_task, second_task),
                             timeout=30.0,
                         )
-                        assert isinstance(outcomes[0], asyncio.CancelledError), outcomes
-                        if isinstance(outcomes[1], BaseException):
-                            raise outcomes[1]
                         await asyncio.sleep(0)
                 finally:
                     bus.off(Method.CHAT_COMPLETE, capture_complete)
                     bus.off(Method.CHAT_TOKEN, capture_token)
-                    interaction_branch_module._current_coordinator = None
 
                 assert record.status == "done", record.to_dict()
 

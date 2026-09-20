@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from agent_host.provider_types import ProviderInputDelivery, ProviderPermissionResponse
+from agent_host.provider_types import ProviderPermissionResponse
 from agent_host.work_ledger_store import WorkLedgerConflict, WorkLedgerNotFound
 from server.auip_app_source import discover_registered_auip_app
 from server.protocol import Method
-from server.event_bus import bus
 from server.work_ledger_coordinator import DEFAULT_WORK_SURFACE, WorkLedgerCoordinator
 from server.ws_handler import RequestHandler
 
@@ -25,7 +23,6 @@ class WorkLedgerHandler(RequestHandler):
         Method.WORK_LIST,
         Method.WORK_GET,
         Method.WORK_START,
-        Method.WORK_INPUT,
         Method.WORK_FOCUS,
         Method.WORK_RETRY,
         Method.WORK_RESUME,
@@ -45,14 +42,11 @@ class WorkLedgerHandler(RequestHandler):
         *,
         provider_run: Callable[[dict[str, Any]], Any] | None = None,
         provider_permission: Callable[[str, ProviderPermissionResponse], Any] | None = None,
-        provider_input: Callable[[str, str], Any] | None = None,
         preview_open: Callable[[dict[str, Any]], Any] | None = None,
     ) -> None:
         self.coordinator = coordinator
         self._provider_run = provider_run
         self._provider_permission = provider_permission
-        self._provider_input = provider_input
-        self._input_deliveries: set[asyncio.Task[None]] = set()
         self._preview_open = preview_open
 
     async def handle(self, method: str, params: dict[str, Any]) -> dict[str, Any] | None:
@@ -83,8 +77,6 @@ class WorkLedgerHandler(RequestHandler):
             }
         if method == Method.WORK_START:
             return await self._start(params)
-        if method == Method.WORK_INPUT:
-            return await self._input(params)
         if method == Method.WORK_FOCUS:
             return await self._focus(params)
         if method == Method.WORK_RETRY:
@@ -177,7 +169,6 @@ class WorkLedgerHandler(RequestHandler):
             "reject",
             "retry_export",
             "abandon_export",
-            "review_file",
         }:
             return await self._resolve_permission(data, canvas_action=action)
         if target == "work_item" and action == "open_preview":
@@ -235,7 +226,7 @@ class WorkLedgerHandler(RequestHandler):
             if action == "accept" and state not in {"review_ready", "accepted"}:
                 return reject("work_action_not_available")
             if action == "archive" and (
-                execution in {"queued", "running", "orphaned"}
+                execution in {"queued", "running"}
                 or state not in {"open", "review_ready", "archived"}
             ):
                 return reject("work_action_not_available")
@@ -395,8 +386,8 @@ class WorkLedgerHandler(RequestHandler):
                 **result,
             }
         if action == "select":
+            current = self.coordinator.snapshot(surface=DEFAULT_WORK_SURFACE)
             if not revision:
-                current = self.coordinator.snapshot(surface=DEFAULT_WORK_SURFACE)
                 return {
                     "ok": False,
                     "error": "missing_revision",
@@ -500,7 +491,6 @@ class WorkLedgerHandler(RequestHandler):
             "reject",
             "retry_export",
             "abandon_export",
-            "review_file",
         }:
             return reject("invalid_permission_decision")
         current_request_field = (
@@ -522,14 +512,6 @@ class WorkLedgerHandler(RequestHandler):
             return reject("permission_work_item_mismatch")
         if request.attempt_id != attempt_id:
             return reject("permission_attempt_mismatch")
-
-        if action == "review_file":
-            try:
-                source = self.coordinator.export_service.review_file(
-                    request_id, str(params.get("relative_path") or ""))
-            except (OSError, ValueError, WorkLedgerConflict) as exc:
-                return reject(str(exc))
-            return {"ok": True, "review_path": str(source)}
 
         # The immutable ledger request is the authority contract.  Renderer
         # input may select only an option that contract actually offered;
@@ -675,60 +657,6 @@ class WorkLedgerHandler(RequestHandler):
         response = dict(result) if isinstance(result, dict) else {"result": result}
         response.update(self._projection_response(snapshot))
         return response
-
-    async def _input(self, params: dict[str, Any]) -> dict[str, Any]:
-        return await self.submit_input(params)
-
-    async def submit_input(self, params: dict[str, Any], *,
-                           accepted: tuple[dict[str, Any], bool] | None = None) -> dict[str, Any]:
-        """Accept one explicitly addressed message for the current execution."""
-        if self._provider_input is None:
-            raise RuntimeError("provider input delivery is unavailable")
-        # Freeze submission identity before waiting; selection/focus is not a
-        # recipient source and arbitrary metadata never enters this channel.
-        values = {key: params.get(key) for key in ("input_id", "work_item_id", "run_id", "text")}
-        if accepted is None:
-            await self.coordinator.drain_provider_facts()
-            receipt, created = self.coordinator.store.accept_provider_input(**values)
-        else:
-            # Only the internal Control/Work owner supplies the committed local
-            # receipt. WebSocket params cannot select this keyword-only path.
-            receipt, created = accepted
-        if created:
-            delivery = asyncio.create_task(self._deliver_input(receipt), name=f"work-input:{receipt['input_id']}")
-            self._input_deliveries.add(delivery)
-            delivery.add_done_callback(self._input_deliveries.discard)
-        # Do not occupy the ordinary WebSocket FIFO while an SDK approval may
-        # be blocking its reader. The next permission response must get in.
-        return {"ok": True, "input": receipt, "replayed": not created}
-
-    async def _deliver_input(self, receipt: dict[str, Any]) -> None:
-        try:
-            try:
-                assert self._provider_input is not None
-                result = self._provider_input(receipt["provider_run_id"], receipt["text"])
-                if inspect.isawaitable(result):
-                    result = await result
-                if not isinstance(result, ProviderInputDelivery):
-                    result = ProviderInputDelivery("unknown", "invalid_input_delivery_result")
-            except Exception as exc:
-                result = ProviderInputDelivery("unknown", str(exc) or type(exc).__name__)
-            # Process loss leaves the pre-I/O unknown row. Request cancellation
-            # cannot cancel this Host-owned transaction or authorize a resend.
-            receipt = self.coordinator.store.finish_provider_input(
-                receipt["input_id"], state=result.state, reason=result.reason,
-            )
-            refreshed = self.coordinator.refresh_input_completion(receipt)
-            await bus.emit(Method.WORK_INPUT_UPDATED, {"input": receipt})
-            if refreshed:
-                await self.coordinator.publish_snapshot(reason="work.input.delivery")
-        except Exception:
-            logger.exception("provider input receipt could not be published: %s", receipt["input_id"])
-
-    async def drain_inputs(self) -> None:
-        """After native Runtime shutdown, finish receipts before closing SQL."""
-        if self._input_deliveries:
-            await asyncio.gather(*tuple(self._input_deliveries), return_exceptions=True)
 
     async def _retry(self, params: dict[str, Any]) -> dict[str, Any]:
         if self._provider_run is None:
@@ -1065,13 +993,8 @@ class WorkLedgerHandler(RequestHandler):
 
     def _require_no_active_attempt(self, work_item_id: str) -> None:
         attempts = self.coordinator.store.list_attempts(work_item_id)
-        if any(
-            attempt.execution_status in {"queued", "running", "orphaned"}
-            for attempt in attempts
-        ):
-            raise WorkLedgerConflict(
-                f"work item {work_item_id} still has an unresolved attempt"
-            )
+        if any(attempt.execution_status in {"queued", "running"} for attempt in attempts):
+            raise WorkLedgerConflict(f"work item {work_item_id} still has an active attempt")
 
     def _checkpoint_handoff(self, item, attempt) -> dict[str, Any]:
         completion = self.coordinator.store.latest_completion(item.work_item_id)

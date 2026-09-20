@@ -7,31 +7,28 @@
   onToggleHistory: () => void
 }
 
-import { useI18n } from '../i18n'
-
 const PROVIDERS = ['deepseek', 'openai', 'gemini', 'bedrock', 'hybrid', 'hybrid2', 'hybrid3']
 const TTS_MODES = ['gpt_sovits', 'edge']
 
 export default function ModelBar({ provider, onProviderChange, ttsMode, onTtsModeChange, showHistory, onToggleHistory }: Props) {
-  const { t } = useI18n()
   return (
-    <div className="flex items-center gap-3 px-3 py-1.5 bg-[var(--surface-alt)] border-b border-[var(--border)] h-[36px] shrink-0">
+    <div className="flex items-center gap-3 px-3 py-1.5 bg-[#F5F5F5] border-b border-[#E0E0E0] h-[36px] shrink-0">
       {/* collapse toggle */}
       <button
         onClick={onToggleHistory}
         className="text-[#666666] hover:text-[#333333] text-xs px-1 transition-colors"
-        title={t(showHistory ? 'Hide history' : 'Show history')}
+        title={showHistory ? 'Hide history' : 'Show history'}
       >
         {showHistory ? '◀' : '▶'}
       </button>
 
       {/* provider */}
       <div className="flex items-center gap-1.5">
-        <label className="text-[11px] text-[#888888]">{t('Model')}</label>
+        <label className="text-[11px] text-[#888888]">Model</label>
         <select
           value={provider}
           onChange={e => onProviderChange(e.target.value)}
-          className="text-[12px] bg-[var(--surface)] border border-[var(--border-strong)] rounded px-1.5 py-0.5 text-[var(--text)]
+          className="text-[12px] bg-white border border-[#D0D0D0] rounded px-1.5 py-0.5 text-[#444444]
                      focus:outline-none focus:border-[#0078D4]"
         >
           {PROVIDERS.map(p => (
@@ -41,7 +38,7 @@ export default function ModelBar({ provider, onProviderChange, ttsMode, onTtsMod
       </div>
 
       {/* divider */}
-      <div className="w-px h-4 bg-[var(--border-strong)]" />
+      <div className="w-px h-4 bg-[#D0D0D0]" />
 
       {/* TTS mode */}
       <div className="flex items-center gap-1.5">
@@ -49,7 +46,7 @@ export default function ModelBar({ provider, onProviderChange, ttsMode, onTtsMod
         <select
           value={ttsMode}
           onChange={e => onTtsModeChange(e.target.value)}
-          className="text-[12px] bg-[var(--surface)] border border-[var(--border-strong)] rounded px-1.5 py-0.5 text-[var(--text)]
+          className="text-[12px] bg-white border border-[#D0D0D0] rounded px-1.5 py-0.5 text-[#444444]
                      focus:outline-none focus:border-[#0078D4]"
         >
           {TTS_MODES.map(m => (

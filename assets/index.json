@@ -19,17 +19,6 @@
   ],
   "external_packs": [
     {
-      "id": "companion-kurisu",
-      "display_name": "Kurisu Companion Lite",
-      "spec_version": 1,
-      "paths": [],
-      "trees": ["companion/kurisu"],
-      "required": [
-        "companion/kurisu/manifest.json"
-      ],
-      "validator": "companion_pack"
-    },
-    {
       "id": "visual-runtime",
       "display_name": "Visual Runtime Pack",
       "spec_version": 1,

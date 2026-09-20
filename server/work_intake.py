@@ -14,7 +14,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from agent_host.provider_types import ProviderRecoveryContext
 from agent_host.work_ledger_store import (
     WorkLedgerConflict,
     WorkLedgerStore,
@@ -94,7 +93,6 @@ def plan_work_intake(
     request_provider: str,
     request_mode: str,
     predecessor_attempt_id: str,
-    recovery: ProviderRecoveryContext | None = None,
 ) -> WorkIntakePlan:
     """Choose Operation append versus Attempt retry from durable identity.
 
@@ -154,17 +152,7 @@ def plan_work_intake(
         )
 
     if clean_continuation == "retry":
-        host_failed_auip = bool(
-            isinstance(recovery, ProviderRecoveryContext)
-            and recovery.reason == "auip_validation_failed"
-            and previous_attempt.execution_status == "succeeded"
-            and recovery.root_attempt_id == previous_attempt.attempt_id
-            and recovery.predecessor_attempt_id == previous_attempt.attempt_id
-        )
-        if (
-            previous_attempt.execution_status not in {"failed", "cancelled"}
-            and not host_failed_auip
-        ):
+        if previous_attempt.execution_status not in {"failed", "cancelled"}:
             raise WorkLedgerConflict(
                 "Retry is only valid after a failed or cancelled attempt"
             )
@@ -222,7 +210,6 @@ def persist_work_intake(
     mode: str,
     operation_metadata: dict[str, Any],
     attempt_metadata: dict[str, Any],
-    provider_run_id: str = "",
 ) -> tuple[WorkOperationRecord, RunAttemptRecord]:
     """Persist exactly one previously planned Operation/Attempt relationship."""
 
@@ -234,7 +221,6 @@ def persist_work_intake(
             provider=provider,
             task=provider_task,
             mode=mode,
-            provider_run_id=provider_run_id,
             operation_metadata=operation_metadata,
             attempt_metadata=attempt_metadata,
         )
@@ -249,7 +235,6 @@ def persist_work_intake(
         provider=provider,
         task=provider_task,
         mode=mode,
-        provider_run_id=provider_run_id,
         operation_id=operation.operation_id,
         metadata=attempt_metadata,
     )

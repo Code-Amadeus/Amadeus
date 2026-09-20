@@ -45,6 +45,13 @@ def _fresh_coordinator() -> TurnCoordinator:
     return c
 
 
+def _isolate_session_store(tmp_path, monkeypatch) -> None:
+    """Keep ChatHandler persistence tests out of the source-tree sessions directory."""
+    from core import session_manager as sm
+
+    monkeypatch.setattr(sm, "_SESSION_DIR", str(tmp_path / "sessions"))
+
+
 def test_turn_state_machine_and_gate():
     c = TurnCoordinator()
     # 普通轮：开即 confirmed，门控放行
@@ -195,7 +202,9 @@ def test_chat_handler_pending_lifecycle():
     asyncio.run(run())
 
 
-def test_pending_chat_visible_only_after_confirmed():
+def test_pending_chat_visible_only_after_confirmed(tmp_path, monkeypatch):
+    _isolate_session_store(tmp_path, monkeypatch)
+
     async def run():
         _fresh_coordinator()
         from server.event_bus import bus
@@ -251,7 +260,7 @@ def test_pending_chat_visible_only_after_confirmed():
             assert events == [
                 (
                     Method.CHAT_COMPLETE,
-                    {"turn_id": "spec_visible", "session_id": "spec-visible-session", "full_text": "draft final"},
+                    {"turn_id": "spec_visible", "full_text": "draft final", "session_id": "spec-visible-session"},
                 )
             ]
         finally:
@@ -262,7 +271,9 @@ def test_pending_chat_visible_only_after_confirmed():
     asyncio.run(run())
 
 
-def test_confirmed_chat_turn_emits_the_authoritative_user_message():
+def test_confirmed_chat_turn_emits_the_authoritative_user_message(tmp_path, monkeypatch):
+    _isolate_session_store(tmp_path, monkeypatch)
+
     async def run():
         _fresh_coordinator()
         from server.event_bus import bus

@@ -35,14 +35,6 @@
 
       var assetPort = normalizePort(params.get("assetPort"));
       var bridgePort = normalizePort(params.get("bridgePort"));
-      var graphicsProfile = params.get("graphicsProfile") || "";
-      var samplingValue = params.get("renderTextureSampling");
-      var renderTextureSampling = samplingValue === null ? null : samplingValue === "1" || samplingValue === "true";
-      var renderMaxFps = Number(params.get("renderMaxFps"));
-      var renderMaxResolutionValue = params.get("renderMaxResolution");
-      var renderMaxResolution = renderMaxResolutionValue === null
-        ? null
-        : Number(renderMaxResolutionValue);
       var sliceHost = params.get("sliceHost") === "electron" ? "electron" : "";
 
       // This wrapper can be served either by the backend (normally 17777) or
@@ -52,13 +44,7 @@
       // intended local origins.  Falling back to window.location.port here
       // made the backend wrapper silently load assets from the wrong server.
       var discoveryWarningLogged = false;
-      while (
-        !assetPort ||
-        !bridgePort ||
-        !graphicsProfile ||
-        !(renderMaxFps > 0) ||
-        renderTextureSampling === null
-      ) {
+      while (!assetPort || !bridgePort) {
         try {
           var response = await fetch(
             window.location.origin + "/wallpaper/bridge-info",
@@ -68,12 +54,6 @@
             var info = await response.json();
             assetPort = assetPort || normalizePort(info.assetPort);
             bridgePort = bridgePort || normalizePort(info.bridgePort);
-            graphicsProfile = graphicsProfile || String(info.graphicsProfile || "");
-            if (samplingValue === null) renderTextureSampling = info.renderTextureSampling === true;
-            renderMaxFps = renderMaxFps > 0 ? renderMaxFps : Number(info.renderMaxFps);
-            renderMaxResolution = renderMaxResolution !== null && renderMaxResolution > 0
-              ? renderMaxResolution
-              : (info.renderMaxResolution == null ? null : Number(info.renderMaxResolution));
             if (info.sliceHost === "electron") sliceHost = "electron";
           }
         } catch (error) {
@@ -94,12 +74,7 @@
 
       var url = "http://127.0.0.1:" + assetPort +
         "/render/web/wallpaper_engine.html?bridgePort=" + bridgePort +
-        "&host=lively&renderMaxFps=" + encodeURIComponent(renderMaxFps) +
-        "&graphicsProfile=" + encodeURIComponent(graphicsProfile);
-      url += "&renderTextureSampling=" + (renderTextureSampling ? "1" : "0");
-      if (renderMaxResolution !== null && renderMaxResolution > 0) {
-        url += "&renderMaxResolution=" + encodeURIComponent(renderMaxResolution);
-      }
+        "&host=lively";
       if (sliceHost) url += "&sliceHost=" + encodeURIComponent(sliceHost);
       document.getElementById("amadeus-wallpaper").src = url;
     })();

@@ -21,7 +21,7 @@
   - 通过 ASR prompt 泄漏过滤
 
 单槽设计：同一时刻至多一个投机轮；新 launch 抢占旧槽（旧轮静默作废）。
-普通投机失败可退化为旧流程；Host turn authority 失败不能成为同轮重新发送许可。
+所有方法绝不抛异常；启动器失效退化为无投机的旧流程。
 """
 
 from __future__ import annotations
@@ -32,7 +32,6 @@ import uuid
 from typing import Awaitable, Callable
 
 from config.log_privacy import protected_text
-from core.turn_coordinator import TurnAuthorityError
 
 logger = logging.getLogger("speculative_turn")
 
@@ -142,14 +141,12 @@ class SpeculativeTurnLauncher:
                     session_id = self._session_id_factory() or ""
                 except Exception:
                     logger.exception("speculative session id factory failed")
-            result = await self._send_pending(
+            await self._send_pending(
                 text,
                 turn_id=turn_id,
                 session_id=session_id,
                 source="wake",
             )
-            if not isinstance(result, dict) or result.get("status") != "ok":
-                return False
             self._slot_turn_id = turn_id
             self._slot_text = text
             self._slot_at = time.monotonic()
@@ -170,10 +167,10 @@ class SpeculativeTurnLauncher:
             if not turn_id:
                 return False
             age = time.monotonic() - self._slot_at
+            self._clear_slot()
             if age > _SLOT_MAX_AGE_S:
                 logger.info("[SPEC-LLM] stale slot (%.1fs); discarding turn=%s", age, turn_id)
                 await self._safe_discard(turn_id, "stale_slot")
-                self._clear_slot(turn_id)
                 return False
             if str(final_text or "").strip() != spec_text:
                 logger.info(
@@ -181,24 +178,20 @@ class SpeculativeTurnLauncher:
                     turn_id, spec_text[:40], str(final_text or "")[:40],
                 )
                 await self._safe_discard(turn_id, "text_mismatch")
-                self._clear_slot(turn_id)
                 return False
             confirmed = bool(await self._confirm(turn_id, reason="asr_final_match"))
-            self._clear_slot(turn_id)
             if confirmed:
                 logger.info("[SPEC-LLM] confirmed turn=%s (LLM head start banked)", turn_id)
             else:
                 # 轮已被作废（打断 / 门控超时）：按未投机处理，正常发送
                 logger.info("[SPEC-LLM] confirm no-op (turn already decided) turn=%s", turn_id)
             return confirmed
-        except TurnAuthorityError:
-            raise
         except Exception:
             logger.exception("[SPEC-LLM] resolve failed")
             return False
 
     async def abandon(self, reason: str = "") -> None:
-        """Retire the pending slot; authority failure remains observable."""
+        """监听停止 / 会话收尾：清理未决议的投机槽。绝不抛异常。"""
         await self._drop_slot(reason or "abandoned")
 
     async def _drop_slot(self, reason: str) -> None:
@@ -206,11 +199,9 @@ class SpeculativeTurnLauncher:
             turn_id = self._slot_turn_id
             if not turn_id:
                 return
+            self._clear_slot()
             logger.info("[SPEC-LLM] dropping pending turn=%s reason=%s", turn_id, reason)
             await self._safe_discard(turn_id, reason)
-            self._clear_slot(turn_id)
-        except TurnAuthorityError:
-            raise
         except Exception:
             logger.debug("speculative slot drop failed", exc_info=True)
 
@@ -218,15 +209,10 @@ class SpeculativeTurnLauncher:
         try:
             if self._discard is not None:
                 await self._discard(turn_id, reason=reason)
-        except TurnAuthorityError:
-            raise
         except Exception:
             logger.exception("[SPEC-LLM] discard failed turn=%s", turn_id)
 
-    def _clear_slot(self, turn_id: str) -> None:
-        # Confirmation/discard may await; never erase a replacement slot.
-        if self._slot_turn_id != turn_id:
-            return
+    def _clear_slot(self) -> None:
         self._slot_turn_id = ""
         self._slot_text = ""
         self._slot_at = 0.0

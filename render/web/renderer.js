@@ -24,27 +24,13 @@
   // ---------------------------------------------------------------------------
   // PixiJS Application
   // ---------------------------------------------------------------------------
-  const renderParams = new URLSearchParams(window.location.search || "");
-  const graphicsProfile = renderParams.get("graphicsProfile") || "standard";
-  const renderBudget = window.RenderBudget.resolveRenderBudget({
-    maxFps: renderParams.get("renderMaxFps"),
-    maxResolution: renderParams.get("renderMaxResolution"),
-    textureSampling: renderParams.get("renderTextureSampling"),
-    devicePixelRatio: window.devicePixelRatio,
-  });
   const app = new PIXI.Application({
     resizeTo: document.getElementById("canvas-container"),
     backgroundAlpha: 0,          // Transparent background
     autoDensity: true,
-    resolution: renderBudget.resolution,
+    resolution: window.devicePixelRatio || 1,
     antialias: true,
   });
-  const frameRateController = window.RenderBudget.createFrameRateController(
-    app.ticker,
-    renderBudget.maxFps,
-  );
-  frameRateController.apply();
-  window.RenderBudget.installWallpaperEngineListener(window, frameRateController);
   document.getElementById("canvas-container").appendChild(app.view);
 
   // ---------------------------------------------------------------------------
@@ -64,11 +50,6 @@
       this._frames = {};
       this._frameUrls = {};
       this._texturePromisesByUrl = new Map();
-      this._textureSamplingEnabled = renderBudget.textureSampling;
-      this._frameSamplingPlans = new Map();
-      this._requiredFrameIndices = new Map();
-      this._textureSampleFps = null;
-      this._sampleTimeMs = null;
       this._compressedTextureRuntimePromise = null;
       this._compressedTextureRuntimeReady = false;
       this._framePromises = {};
@@ -154,8 +135,6 @@
         return;
       }
       this._frameUrls[emotion] = Array.isArray(urls) ? urls.slice() : [];
-      this._frameSamplingPlans.delete(emotion);
-      this._requiredFrameIndices.delete(emotion);
       console.log("[SpriteRenderer] registerFrames:", emotion, urls.length, "urls, first:", (urls[0]||'').slice(0, 100));
       const textures = new Array(urls.length);
       this._frames[emotion] = textures;
@@ -201,7 +180,6 @@
         prev, emotion, key in this._transitions, !!this._frames[emotion]);
       this._currentEmotion = emotion;
       this._frameIdx = 0;
-      this._sampleTimeMs = null;
       this._cycleCompletedForEmotion = "";
       this._hideMouthLayer();
       this._queueFrameSet(emotion, this._currentFrameSetPriority(emotion), { reason: "current" });
@@ -224,7 +202,6 @@
       }
       if (speaking) {
         this._frameIdx = 0;
-        this._sampleTimeMs = null;
         this._cycleCompletedForEmotion = "";
         this._held = false;
       }
@@ -242,7 +219,6 @@
 
     setIdleFrameIntervalMs(emotion, intervalMs) {
       this._frameIntervals[emotion] = intervalMs;
-      this._frameSamplingPlans.delete(emotion);
     }
 
     setClipConfig(emotion, config) {
@@ -260,7 +236,6 @@
       }
       this._mouthConfigSignatures[label] = signature;
       this._mouthConfigs[label] = config;
-      this._frameSamplingPlans.delete(label);
       const urls = Array.isArray(config.frameUrls) ? config.frameUrls : [];
       const textures = new Array(urls.length);
       this._mouthTextures[label] = textures;
@@ -282,41 +257,6 @@
         if (a[i] !== b[i]) return false;
       }
       return true;
-    }
-
-    _sampleFrameIndex(emotion, idx, timeMs = null) {
-      if (!this._textureSamplingEnabled) return idx;
-      const count = (this._frameUrls[emotion] || []).length;
-      const interval = this._frameIntervals[emotion];
-      if (!count || !(interval > 0)) return idx;
-      let plan = this._frameSamplingPlans.get(emotion);
-      if (!plan) {
-        // Changes to graphics settings take effect for texture sampling on reload.
-        if (this._textureSampleFps === null) this._textureSampleFps = app.ticker.maxFPS;
-        const cfg = this._mouthConfigs[emotion] || {};
-        const required = Array.from(this._requiredFrameIndices.get(emotion) || []);
-        if (Number.isInteger(cfg.closedFrameIdx)) required.push(cfg.closedFrameIdx);
-        const openness = cfg.opennessByFrame || [];
-        let minimum = Infinity, closed = -1;
-        for (let i = 0; i < Math.min(count, openness.length); i++) {
-          const value = Number(openness[i]);
-          if (Number.isFinite(value) && value < minimum) { minimum = value; closed = i; }
-        }
-        if (closed >= 0) required.push(closed);
-        plan = window.RenderBudget.createFrameSamplingPlan(count, interval, this._textureSampleFps, required);
-        this._frameSamplingPlans.set(emotion, plan);
-      }
-      if (timeMs !== null && !this._held && idx !== count - 1) {
-        const slot = Math.min(plan.timelineIndices.length - 1, Math.floor(timeMs / plan.sampleIntervalMs));
-        const selected = plan.timelineIndices[slot] ?? idx;
-        // The legacy speaking loop deliberately excludes its zero/neutral pose.
-        if (selected === 0 && idx > 0 && this._speaking && !this._mouthConfigs[emotion]
-            && this._clipConfigs[emotion]?.loopMode !== "once_then_hold") {
-          return plan.indices.find(index => index > 0) ?? idx;
-        }
-        return selected;
-      }
-      return plan.sourceIndex[idx] ?? idx;
     }
 
     prefetchLabels(labels, priority = "interactive", options = {}) {
@@ -437,7 +377,6 @@
       console.log("[SpriteRenderer] frame load start:", emotion, urls.length, entry && entry.reason ? entry.reason : "");
       let loadedThisSlice = 0;
       for (let i = 0; i < urls.length; i += 1) {
-        if (this._sampleFrameIndex(emotion, i) !== i) continue;
         if (entry && entry.speculative && entry.speculativeEpoch !== this._speculativeLoadEpoch) {
           this._frameSetStates[emotion] = "cold";
           return;
@@ -470,7 +409,6 @@
       const urls = this._frameUrls[emotion] || [];
       const textures = this._frames[emotion] || [];
       if (!urls.length || idx < 0 || idx >= urls.length) return Promise.resolve(null);
-      idx = this._sampleFrameIndex(emotion, idx);
       if (textures[idx]) return Promise.resolve(textures[idx]);
       if (!this._framePromises[emotion]) this._framePromises[emotion] = new Array(urls.length);
       if (this._framePromises[emotion][idx]) return this._framePromises[emotion][idx];
@@ -478,8 +416,8 @@
       const promise = this._loadTextureFromImage(urls[idx]).then((tex) => {
         if (tex) {
           textures[idx] = tex;
-          if (emotion === this._currentEmotion && idx === this._sampleFrameIndex(emotion, this._frameIdx, this._sampleTimeMs)) {
-            this._showFrame(this._frameIdx);
+          if (emotion === this._currentEmotion && idx === this._frameIdx) {
+            this._showFrame(idx);
           }
         }
         return tex;
@@ -492,32 +430,16 @@
 
     holdFrame(which) {
       if (which === undefined || which === null) {
-        this._heldFrameIdx = this._textureSamplingEnabled ? this._activeFrameIdx : this._frameIdx;
+        this._heldFrameIdx = this._frameIdx; // hold current
       } else if (which === -1) {
         const frames = this._getEmotionFrames();
         this._heldFrameIdx = frames ? frames.length - 1 : this._frameIdx; // hold last
       } else {
         this._heldFrameIdx = which;
       }
-      const emotion = this._currentEmotion;
-      const validHold = this._textureSamplingEnabled && Number.isInteger(this._heldFrameIdx) && this._heldFrameIdx >= 0
-        && this._heldFrameIdx < (this._frameUrls[emotion] || []).length;
-      if (validHold && this._sampleFrameIndex(emotion, this._heldFrameIdx) !== this._heldFrameIdx) {
-        if (!this._requiredFrameIndices.has(emotion)) this._requiredFrameIndices.set(emotion, new Set());
-        this._requiredFrameIndices.get(emotion).add(this._heldFrameIdx);
-        this._frameSamplingPlans.delete(emotion);
-      }
-      if (validHold && !this._frames[emotion]?.[this._heldFrameIdx]) {
-        const heldIdx = this._heldFrameIdx;
-        void this._ensureFrameIndex(emotion, heldIdx).then(() => {
-          if (this._held && this._heldFrameIdx === heldIdx && this._currentEmotion === emotion) this._showFrame(heldIdx);
-        });
-      }
       this._held = true;
-      if (!this._textureSamplingEnabled) {
-        this._activeFramePhase = "frames";
-        this._activeFrameIdx = this._heldFrameIdx;
-      }
+      this._activeFramePhase = "frames";
+      this._activeFrameIdx = this._heldFrameIdx;
       this._showFrame(this._heldFrameIdx);
     }
 
@@ -582,9 +504,7 @@
     _showFrame(idx) {
       const frames = this._getEmotionFrames();
       if (!frames || frames.length === 0) return;
-      const logicalIdx = idx % frames.length;
-      const emotion = this._frames[this._currentEmotion] ? this._currentEmotion : "normal";
-      let targetIdx = this._sampleFrameIndex(emotion, logicalIdx, this._sampleTimeMs);
+      const targetIdx = idx % frames.length;
       let texture = frames[targetIdx];
       if (!texture) {
         // file:// assets are decoded asynchronously. Falling back to the first
@@ -592,15 +512,10 @@
         // frame until the requested texture is ready.
         const hasCurrentTexture = this.sprite.texture && this.sprite.texture.height > 1;
         if (hasCurrentTexture) return;
-        if (this._textureSamplingEnabled) {
-          targetIdx = frames.findIndex(Boolean);
-          texture = frames[targetIdx];
-        } else {
-          texture = frames.find(Boolean);
-        }
+        texture = frames.find(Boolean);
       }
       if (!texture) return;
-      this._frameIdx = logicalIdx;
+      this._frameIdx = targetIdx;
       this._activeFramePhase = "frames";
       this._activeFrameIdx = targetIdx;
       this._applyFrame(texture);
@@ -769,8 +684,7 @@
         const scale = Math.min(maxW / texture.width, maxH / texture.height);
         this.sprite.scale.set(scale);
         this.sprite.x = b.x + b.width * 0.52;
-        // Keep the lower artwork just inside the CRT viewport.
-        this.sprite.y = b.y + b.height - Math.max(3, b.height * 0.012);
+        this.sprite.y = b.y + b.height * 0.96;
         return;
       }
       const h = app.screen.height;
@@ -980,18 +894,15 @@
 
         elapsed += Math.min(app.ticker.deltaMS, 100);
         if (elapsed < interval) return;
-        const steps = this._textureSamplingEnabled
-          ? Math.floor(elapsed / interval) : Math.min(4, Math.floor(elapsed / interval));
+        const steps = Math.min(4, Math.floor(elapsed / interval));
         elapsed -= steps * interval;
 
         let advanced = false;
-        let crossedCycle = false;
         for (let i = 0; i < steps; i++) {
           if (onceThenHold && this._frameIdx >= frames.length - 1) {
             break;
           }
 
-          const previousIdx = this._frameIdx;
           if (onceThenHold) {
             this._frameIdx = Math.min(this._frameIdx + 1, frames.length - 1);
           } else if (this._speaking && mouthCfg && frames.length > 1) {
@@ -1001,7 +912,6 @@
           } else {
             this._frameIdx = (this._frameIdx + 1) % frames.length;
           }
-          if (!onceThenHold && this._frameIdx <= previousIdx) crossedCycle = true;
           advanced = true;
         }
 
@@ -1009,12 +919,10 @@
           return;
         }
 
-        if (this._textureSamplingEnabled) this._sampleTimeMs = this._frameIdx * interval + elapsed;
         this._showFrame(this._frameIdx);
         if (onceThenHold && this._frameIdx >= frames.length - 1) {
           this._notifyCycleComplete(emotion);
-        } else if (!onceThenHold && (this._textureSamplingEnabled ? crossedCycle : this._frameIdx === 0)) {
-          if (this._textureSamplingEnabled) this._cycleCompletedForEmotion = "";
+        } else if (!onceThenHold && this._frameIdx === 0) {
           this._notifyCycleComplete(emotion);
         } else {
           this._cycleCompletedForEmotion = "";
@@ -1623,7 +1531,6 @@
   // ---------------------------------------------------------------------------
   class RenderApp {
     constructor() {
-      this.graphicsProfile = graphicsProfile;
       this._sprite = new SpriteRenderer(app.stage);
       this._live2d = new Live2DRenderer(app.stage);
       this._subtitle = new SubtitleOverlay(app.stage);

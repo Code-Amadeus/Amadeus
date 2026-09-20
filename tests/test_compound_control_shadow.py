@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from server.compound_control import (
+from server.compound_control_shadow import (
     build_decomposition_messages,
     parse_decomposition_reply,
     resolve_compound_control_plan,

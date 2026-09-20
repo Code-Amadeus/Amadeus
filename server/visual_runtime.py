@@ -66,8 +66,8 @@ _VISION_TRIGGERS = (
 
 @dataclass
 class VisionConfig:
-    enabled: bool = _bool_env("AMADEUS_VISION_ENABLED", False)
-    mode: str = _str_env("AMADEUS_VISION_MODE", "off")
+    enabled: bool = _bool_env("AMADEUS_VISION_ENABLED", True)
+    mode: str = _str_env("AMADEUS_VISION_MODE", "on_demand")
     scope: str = _str_env("AMADEUS_VISION_SCOPE", "full_screen")
     provider: str = _str_env("AMADEUS_VISION_PROVIDER", "auto")
     max_long_side: int = _int_env("AMADEUS_VISION_MAX_LONG_SIDE", 960)
@@ -111,8 +111,11 @@ def set_config(values: dict[str, Any]) -> list[str]:
         else:
             setattr(_config, key, str(value or "").strip())
         updated.append(str(raw_key))
-    if "vision_enabled" in updated and _config.enabled and _config.mode == "off":
-        _config.mode = "on_demand"
+    if "vision_enabled" in updated:
+        if _config.enabled and _config.mode == "off":
+            _config.mode = "on_demand"
+        elif not _config.enabled:
+            _config.mode = "off"
     if updated:
         logger.info("[VisionRuntime] updated config: %s", {k: getattr(_config, aliases[k]) for k in updated if k in aliases})
     return updated
@@ -347,7 +350,7 @@ def _resolve_capture_region(scope: str, monitor_all: dict[str, int]) -> dict[str
         if parsed:
             parsed["_actual_scope"] = "region"
             return parsed
-        raise RuntimeError("Vision region is missing or invalid; choose the region again before capturing")
+        logger.warning("[VisionRuntime] vision_region is invalid; falling back to full_screen")
 
     if scope in {"selected_window", "window"}:
         rect = _configured_window_rect()
@@ -356,7 +359,7 @@ def _resolve_capture_region(scope: str, monitor_all: dict[str, int]) -> dict[str
             if clamped:
                 clamped["_actual_scope"] = "selected_window"
                 return clamped
-        raise RuntimeError("The selected vision window is missing or no longer available; choose a window again")
+        logger.warning("[VisionRuntime] selected window capture unavailable; falling back to full_screen")
 
     if scope in {"current_window", "browser_view"}:
         rect = _foreground_window_rect()
@@ -365,17 +368,13 @@ def _resolve_capture_region(scope: str, monitor_all: dict[str, int]) -> dict[str
             if clamped:
                 clamped["_actual_scope"] = "current_window"
                 return clamped
-        raise RuntimeError("The active window could not be resolved; focus a window and try again")
+        logger.warning("[VisionRuntime] active window capture unavailable; falling back to full_screen")
 
     if scope == "wallpaper_surface":
         parsed = _parse_region(_config.region)
         if parsed:
             parsed["_actual_scope"] = "wallpaper_surface"
             return parsed
-        raise RuntimeError("The wallpaper capture surface is not available")
-
-    if scope not in {"full_screen", "screen"}:
-        raise RuntimeError(f"Unsupported vision capture scope: {scope}")
 
     region = {
         "left": int(monitor_all.get("left", 0)),
@@ -448,17 +447,6 @@ def _capture_image(requested_scope: str):
         image = ImageGrab.grab(bbox=bbox, all_screens=True).convert("RGB")
         parsed["_actual_scope"] = normalized_scope
         return image, parsed, normalized_scope
-
-    if normalized_scope not in {"full_screen", "screen"}:
-        if normalized_scope in {"selected_window", "window"}:
-            raise RuntimeError("The selected vision window is missing or no longer available; choose a window again")
-        if normalized_scope in {"current_window", "browser_view"}:
-            raise RuntimeError("The active window could not be resolved; focus a window and try again")
-        if normalized_scope == "region":
-            raise RuntimeError("Vision region is missing or invalid; choose the region again before capturing")
-        if normalized_scope == "wallpaper_surface":
-            raise RuntimeError("The wallpaper capture surface is not available")
-        raise RuntimeError(f"Unsupported vision capture scope: {normalized_scope}")
 
     image = ImageGrab.grab(all_screens=True).convert("RGB")
     region = {"left": 0, "top": 0, "width": image.width, "height": image.height, "_actual_scope": "full_screen"}

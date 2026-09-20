@@ -240,20 +240,16 @@ def _discover_registered_auip_app(
     if len(entries) != 1:
         return None
     entry_record, entry = entries[0]
-    contributing_attempt_ids = _bundle_contributing_attempt_ids(
-        store,
-        artifacts,
-        manifest_record=manifest_record,
-        manifest_path=manifest_path,
-        entry_record=entry_record,
-        proposed_only=proposed_only,
-    )
     try:
         validation = _validate_host_managed_workspace_bundle(
             store,
             manifest_path=manifest_path,
             entry_path=Path(str(entry["entry_path"])),
-            attempt_ids=set(contributing_attempt_ids),
+            attempt_ids={
+                str(entry_record.attempt_id or ""),
+                str(manifest_record.attempt_id or ""),
+            }
+            - {""},
         )
     except AuipProtocolError as exc:
         logger.warning(
@@ -281,7 +277,13 @@ def _discover_registered_auip_app(
             **({"objective": manifest.objective} if manifest.objective else {}),
         },
         "stances": list(manifest.stances),
-        "contributing_attempt_ids": contributing_attempt_ids,
+        "contributing_attempt_ids": sorted(
+            {
+                str(entry_record.attempt_id or ""),
+                str(manifest_record.attempt_id or ""),
+            }
+            - {""}
+        ),
         **(
             {"bundle_validation": validation}
             if isinstance(validation, dict)
@@ -572,48 +574,6 @@ def _latest_artifacts_by_path(store: ArtifactSource, records: list[Any]) -> list
     return latest
 
 
-def _bundle_contributing_attempt_ids(
-    store: ArtifactSource,
-    artifacts: list[Any],
-    *,
-    manifest_record: Any,
-    manifest_path: Path,
-    entry_record: Any,
-    proposed_only: bool,
-) -> list[str]:
-    """Return Attempts owning the WorkItem's current verified bundle files.
-
-    Entry and manifest were already hashed by discovery. One verified member
-    is sufficient to establish an Attempt's contribution, so further files
-    from that same Attempt do not repeat filesystem reads. This is
-    code/artifact provenance, not proof that Host validation or
-    the application's primary loop succeeded.
-    """
-
-    bundle_root = manifest_path.parent
-    contributors = {str(record.attempt_id) for record in (entry_record, manifest_record)
-        if record.attempt_id}
-    for record in artifacts:
-        if not _registered_file(record):
-            continue
-        attempt_id = str(getattr(record, "attempt_id", "") or "").strip()
-        if not attempt_id or attempt_id in contributors:
-            continue
-        if not str(getattr(record, "sha256", "") or "").strip():
-            continue
-        path = _verified_artifact_path(store, record)
-        if path is None:
-            continue
-        if (not proposed_only and _is_proposed_export_path(path)) or (
-            _is_private_authoring_input_path(path)
-        ):
-            continue
-        if _contained_path(str(bundle_root), str(path)) is None:
-            continue
-        contributors.add(attempt_id)
-    return sorted(contributors)
-
-
 def _approved_export_file(record: Any) -> bool:
     return (
         record is not None
@@ -729,20 +689,15 @@ def _validate_host_managed_workspace_bundle(
         raise AuipProtocolError("auip_bundle_location_invalid") from exc
 
     required_files: set[str] = set()
-    expected_assets: dict[str, Any] = {}
     bundle_roots: dict[str, Path] = {}
     required = False
-    attempts = sorted((store.get_attempt(value) for value in attempt_ids),
-        key=lambda value: int(getattr(value, "attempt_number", 0) or 0))
-    execution_validations = []
-    for attempt in attempts:
-        attempt_id = str(getattr(attempt, "attempt_id", "") or "")
+    for attempt_id in sorted(attempt_ids):
+        attempt = store.get_attempt(attempt_id)
         metadata = (
             getattr(attempt, "metadata", {})
             if isinstance(getattr(attempt, "metadata", {}), dict)
             else {}
         )
-        execution_validations.append(metadata.get("host_auip_bundle_validation") or {})
         if metadata.get("auip_host_validates_bundle") is not True:
             continue
         required = True
@@ -751,9 +706,6 @@ def _validate_host_managed_workspace_bundle(
             for value in metadata.get("auip_host_materialized_files") or []
             if str(value)
         )
-        assets = metadata.get("auip_host_materialized_assets")
-        if isinstance(assets, dict):
-            expected_assets.update(assets)
         try:
             root = canonicalize_path(
                 str(metadata.get("auip_bundle_root") or "")
@@ -766,27 +718,6 @@ def _validate_host_managed_workspace_bundle(
             ) from exc
     if not required:
         return None
-    # New authoring Attempts declare the entry check at intake in the same
-    # validation record used for its result. Legacy static-only records keep
-    # their existing contract. A predecessor's failed boot must not overrule
-    # the newer contributing Attempt that verified the repaired bundle.
-    if any(isinstance(value, dict) and "boot" in value
-            for value in execution_validations):
-        latest_validation = execution_validations[-1]
-        latest_boot = (
-            latest_validation.get("boot")
-            if isinstance(latest_validation, dict)
-            and isinstance(latest_validation.get("boot"), dict)
-            else {}
-        )
-        if (
-            not isinstance(latest_validation, dict)
-            or latest_boot.get("ok") is not True
-        ):
-            raise AuipProtocolError("auip_entry_not_verified")
-        if (latest_validation.get("entry") != entry_path.name
-                or latest_validation.get("manifest") != manifest_path.name):
-            raise AuipProtocolError("auip_entry_validation_changed")
     if len(bundle_roots) != 1:
         raise AuipProtocolError("auip_bundle_root_ambiguous")
     bundle_root = next(iter(bundle_roots.values()))
@@ -802,7 +733,6 @@ def _validate_host_managed_workspace_bundle(
         bundle_root,
         entry_filename=entry_path.name,
         materialized_files=tuple(sorted(required_files)),
-        expected_assets=expected_assets,
     )
 
 
@@ -835,14 +765,6 @@ def _is_proposed_export_path(path: Path) -> bool:
     return any(
         parts[index : index + 2] == (".amadeus", "proposed_exports")
         for index in range(max(0, len(parts) - 1))
-    )
-
-
-def _is_private_authoring_input_path(path: Path) -> bool:
-    parts = tuple(part.casefold() for part in path.parts)
-    return any(
-        parts[index : index + 3] == (".amadeus", "runtime", "authoring_inputs")
-        for index in range(max(0, len(parts) - 2))
     )
 
 

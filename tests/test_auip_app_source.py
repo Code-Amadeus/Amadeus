@@ -249,7 +249,6 @@ def test_host_managed_attach_preserves_the_exact_bundle_validation_error() -> No
                         "auip_host_validates_bundle": True,
                         "auip_bundle_root": str(root),
                         "auip_host_materialized_files": list(materialized),
-                        "auip_host_materialized_assets": {name:official[name] for name in materialized},
                     }
                 )
 

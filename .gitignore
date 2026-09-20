@@ -45,7 +45,6 @@ weight.json
 *.pth
 *.gguf
 *.bin
-/Amadeus Wallpaper.app/
 
 # ── 运行时生成数据 ──────────────────────────────────────────────────────────
 sessions/
@@ -135,7 +134,6 @@ assets/models/live2d/
 assets/models/gsvlite/
 assets/source/**
 assets/spriteforge/runtime/**
-assets/companion/**
 assets/images/*
 !assets/images/amadeus_desktop_wallpaper.png
 assets/previews/**

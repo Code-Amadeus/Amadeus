@@ -54,14 +54,6 @@ def project_inline_role_history(
     return "".join(projected)
 
 
-def project_completed_role_history(text: str) -> str:
-    """Apply the same inline-history policy to an already completed role line."""
-    from llm.stream_parser import StreamTagParser
-
-    _visible, _actions, parts = StreamTagParser(stop_after_control=False).process_chunk_parts(text)
-    return project_inline_role_history(parts)
-
-
 async def turn_allows_history(turn_id: str) -> bool:
     """Return whether the turn coordinator permits durable chat projection."""
 
@@ -83,22 +75,21 @@ async def turn_allows_history(turn_id: str) -> bool:
         return True
 
 
-def stamp_branch_entries(branch_id: str, count: int = 2) -> None:
-    """Mark entries only for the exact branch captured by this turn."""
+def stamp_active_branch_entries(count: int = 2) -> None:
+    """Mark the just-projected entries as belonging to the active branch."""
 
     try:
         from server.interaction_branch import get_interaction_branch_coordinator
 
         coordinator = get_interaction_branch_coordinator()
-        expected_branch_id = str(branch_id or "").strip()
-        if coordinator is None or not expected_branch_id:
+        if coordinator is None:
             return
         branch = coordinator.active_branch_for_session(get_current_session_id() or "")
-        if branch is None or branch.branch_id != expected_branch_id:
+        if branch is None:
             return
         for entry in conversation_history.dialog[-max(1, count) :]:
             if isinstance(entry, dict):
-                entry["branch_id"] = expected_branch_id
+                entry["branch_id"] = branch.branch_id
     except Exception:
         logger.debug("branch entry stamping failed", exc_info=True)
 
@@ -110,7 +101,7 @@ async def project_completed_turn(
     history_response: str,
     visible_response: str,
     turn_id: str,
-    interaction_branch_id: str = "",
+    branch_continue_seen: bool,
 ) -> bool:
     """Project one accepted turn into its originating Session history."""
 
@@ -130,25 +121,11 @@ async def project_completed_turn(
         )
         return False
 
-    # The pending-turn gate may block while the UI switches conversations.
-    # Revalidate at the write boundary so a completion from Session A cannot
-    # mutate the globally loaded transcript for Session B.
-    current_session_id = get_current_session_id()
-    if current_session_id != session_id:
-        logger.warning(
-            "[scope guard] session switched while turn %s awaited admission "
-            "(turn=%r, current=%r); skipping history write.",
-            turn_id,
-            session_id,
-            current_session_id,
-        )
-        return False
-
-    conversation_history.add_user(question)
+    conversation_history.add_user(question, turn_id=turn_id)
     conversation_history.add_assistant(
         history_response or visible_response,
         turn_id=turn_id,
     )
-    if interaction_branch_id:
-        stamp_branch_entries(interaction_branch_id, 2)
+    if branch_continue_seen:
+        stamp_active_branch_entries(2)
     return True

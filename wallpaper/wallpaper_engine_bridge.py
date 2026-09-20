@@ -27,14 +27,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional
 
 from config.asset_paths import SPRITEFORGE_RUNTIME_ROOT
-from config.settings import (
-    GRAPHICS_PROFILE,
-    RENDER_EFFECTIVE_MAX_FPS,
-    RENDER_EFFECTIVE_MAX_RESOLUTION,
-    RENDER_TEXTURE_SAMPLING,
-    WALLPAPER_SFX_GATE_LOG,
-    WALLPAPER_WHEEL_FORWARD,
-)
+from config.settings import WALLPAPER_SFX_GATE_LOG, WALLPAPER_WHEEL_FORWARD
 from render.server import AssetServer
 from wallpaper.scene_assets import (
     _PROJECT_ROOT,
@@ -77,11 +70,6 @@ _WALLPAPER_CLIENT_ASSETS = (
     _PROJECT_ROOT / "render" / "web" / "electron_slice_host.js",
     _PROJECT_ROOT / "render" / "web" / "crt_canvas_surface.js",
     _PROJECT_ROOT / "render" / "web" / "electron_keyboard_composer.js",
-    _PROJECT_ROOT / "render" / "web" / "companion_panel.html",
-    _PROJECT_ROOT / "render" / "web" / "companion_panel.css",
-    _PROJECT_ROOT / "render" / "web" / "companion_panel.js",
-    _PROJECT_ROOT / "render" / "web" / "companion_atlas.js",
-    _PROJECT_ROOT / "render" / "web" / "companion_presentation.js",
     _PROJECT_ROOT / "render" / "web" / "wallpaper_scene.js",
     _PROJECT_ROOT / "render" / "web" / "renderer.js",
 )
@@ -128,9 +116,6 @@ class _BridgeState:
         self.bootstrap_calls: list[dict] = []
         self.bootstrap_keys: dict[str, int] = {}
         self.last_calls: dict[str, dict] = {}
-        # Compact cards retain the last spoken line for this bridge lifetime;
-        # wallpaper subtitles still clear normally when speech finishes.
-        self.last_caption: dict | None = None
         self.action_token = secrets.token_urlsafe(24)
         self.canvas_action_handler: Callable[[dict], dict] | None = None
         self.chat_submit_handler: Callable[[dict], dict] | None = None
@@ -151,15 +136,9 @@ class _BridgeState:
             "calls": [item for item in (presentation, canvas, attention) if item]
         }
 
-    def add_client(self, *, retain_subtitle: bool = False) -> queue.Queue[dict]:
+    def add_client(self) -> queue.Queue[dict]:
         q: queue.Queue[dict] = queue.Queue()
         with self.lock:
-            # Seed and subscribe under the same lock: reconnecting renderers
-            # must see current Host state before subsequent live updates.
-            for event in (*self.bootstrap_calls, *self.last_calls.values()):
-                if retain_subtitle and event.get("method") == "setSubtitle":
-                    event = self.last_caption or event
-                q.put_nowait(event)
             self.clients.append(q)
         return q
 
@@ -173,10 +152,6 @@ class _BridgeState:
     def add_canvas_client(self) -> queue.Queue[dict]:
         q: queue.Queue[dict] = queue.Queue()
         with self.lock:
-            for key in ("canvasPresentation", "canvas", "attention"):
-                event = self.last_calls.get(key)
-                if event:
-                    q.put_nowait(event)
             self.canvas_clients.append(q)
         return q
 
@@ -191,8 +166,6 @@ class _BridgeState:
         with self.lock:
             if replay:
                 self.last_calls[replay] = event
-            if event.get("method") == "setSubtitle" and str(event["args"][0] or "").strip():
-                self.last_caption = event
             clients = list(self.clients)
             canvas_clients = (
                 list(self.canvas_clients)
@@ -569,11 +542,7 @@ def _make_bridge_handler(
                 self._stream_events(state.add_canvas_client, state.remove_canvas_client)
                 return
             if self.path.startswith("/wallpaper-engine/events") or self.path.startswith("/wallpaper/events"):
-                query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-                self._stream_events(
-                    lambda: state.add_client(retain_subtitle=query.get("retainSubtitle") == ["true"]),
-                    state.remove_client,
-                )
+                self._stream_events(state.add_client, state.remove_client)
                 return
             if self.path.startswith("/wallpaper-engine/health") or self.path.startswith("/wallpaper/health"):
                 body = b'{"ok":true}'
@@ -723,24 +692,11 @@ class WallpaperEngineBridgeHost:
 
     @property
     def url(self) -> str:
-        query = self._render_query({
-            "bridgePort": self._bridge_port,
-            "host": "webwallpaper",
-            **({"sliceHost": "electron"} if self._slice_host == "electron" else {}),
-        })
-        return f"http://127.0.0.1:{self._asset_port}/render/web/wallpaper_engine.html?{query}"
-
-    @staticmethod
-    def _render_query(params: dict[str, object]) -> str:
-        render_params: dict[str, object] = {
-            "graphicsProfile": GRAPHICS_PROFILE,
-            "renderMaxFps": RENDER_EFFECTIVE_MAX_FPS,
-            "renderTextureSampling": int(RENDER_TEXTURE_SAMPLING),
-            **params,
-        }
-        if RENDER_EFFECTIVE_MAX_RESOLUTION is not None:
-            render_params["renderMaxResolution"] = RENDER_EFFECTIVE_MAX_RESOLUTION
-        return urllib.parse.urlencode(render_params)
+        slice_param = "&sliceHost=electron" if self._slice_host == "electron" else ""
+        return (
+            f"http://127.0.0.1:{self._asset_port}/render/web/wallpaper_engine.html"
+            f"?bridgePort={self._bridge_port}&host=webwallpaper{slice_param}"
+        )
 
     @property
     def asset_port(self) -> int:
@@ -779,33 +735,14 @@ class WallpaperEngineBridgeHost:
         return _wallpaper_asset_revision()
 
     @property
-    def render_max_fps(self) -> int:
-        return RENDER_EFFECTIVE_MAX_FPS
-
-    @property
-    def render_max_resolution(self) -> float | None:
-        return RENDER_EFFECTIVE_MAX_RESOLUTION
-
-    @property
-    def render_texture_sampling(self) -> bool:
-        return RENDER_TEXTURE_SAMPLING
-
-    @property
-    def graphics_profile(self) -> str:
-        return GRAPHICS_PROFILE
-
-    @property
     def lively_url(self) -> str:
-        query = self._render_query({
-            "assetPort": self._asset_port,
-            "bridgePort": self._bridge_port,
-            **({"sliceHost": "electron"} if self._slice_host == "electron" else {}),
-        })
-        return f"http://127.0.0.1:{self._asset_port}/wallpaper/lively/index.html?{query}"
+        slice_param = "&sliceHost=electron" if self._slice_host == "electron" else ""
+        return (
+            f"http://127.0.0.1:{self._asset_port}/wallpaper/lively/index.html"
+            f"?assetPort={self._asset_port}&bridgePort={self._bridge_port}{slice_param}"
+        )
 
     def start(self) -> "WallpaperEngineBridgeHost":
-        # A new display lifetime cannot inherit suppression from a closed card.
-        self.set_companion_active(False)
         self._asset_port = self._asset_server.start()
         if _SPRITEFORGE_RUNTIME_ROOT.is_dir():
             self._asset_server.mount_static("/spriteforge", _SPRITEFORGE_RUNTIME_ROOT)
@@ -819,10 +756,6 @@ class WallpaperEngineBridgeHost:
                 "assetPort": self._asset_port,
                 "bridgeToken": self._state.action_token,
                 "assetVersion": _wallpaper_asset_revision(),
-                "graphicsProfile": GRAPHICS_PROFILE,
-                "renderMaxFps": RENDER_EFFECTIVE_MAX_FPS,
-                "renderMaxResolution": RENDER_EFFECTIVE_MAX_RESOLUTION,
-                "renderTextureSampling": RENDER_TEXTURE_SAMPLING,
                 "sliceHost": self._slice_host,
                 "sliceBounds": self._slice_bounds,
                 "canvasBounds": self._canvas_bounds,
@@ -964,9 +897,6 @@ class WallpaperEngineBridgeHost:
 
     def set_subtitle(self, text: str) -> None:
         self._event("setSubtitle", text, replay="subtitle")
-
-    def set_companion_active(self, active: bool) -> None:
-        self._event("setCompanionActive", bool(active), replay="companion")
 
     def set_canvas_presentation(self, profile: dict) -> None:
         self._event(

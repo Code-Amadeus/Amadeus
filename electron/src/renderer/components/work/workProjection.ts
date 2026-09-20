@@ -186,14 +186,6 @@ export function attentionActionLabel(attention: string | undefined): string {
   return value && value !== 'none' ? 'Action required' : ''
 }
 
-export function workItemAttentionActionLabel(
-  item: Pick<WorkDockItem, 'execution' | 'attention'>,
-): string {
-  return text(item.execution).toLowerCase() === 'orphaned'
-    ? 'Reconcile outcome'
-    : attentionActionLabel(item.attention)
-}
-
 export function workItemBelongsToCurrentSession(
   item: WorkDockItem | undefined,
   projection: WorkProjection | null,

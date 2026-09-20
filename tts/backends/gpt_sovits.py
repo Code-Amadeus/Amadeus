@@ -53,16 +53,9 @@ class GPTSoVITSBackend(BaseTTSBackend):
 
         load_project_environment(_PROJECT_ROOT)
         mode = os.environ.get("TTS_MODE", "").strip().lower()
-        if mode in {"sidecar", "subprocess", "process"} or bool(
+        return mode in {"sidecar", "subprocess", "process"} or bool(
             os.environ.get("TTS_PYTHON", "").strip()
-        ):
-            return True
-        from config import settings
-
-        # ASR/VAD dependencies change process-wide PyTorch CPU thread settings.
-        # Keep CPU synthesis in the existing worker process, including when
-        # device=auto resolves to CPU (Intel macOS).
-        return str(settings.TTS_DEVICE).strip().lower().split(":", 1)[0] == "cpu"
+        )
 
     def load(self) -> None:
         if self._inferencer is not None or self._is_running():

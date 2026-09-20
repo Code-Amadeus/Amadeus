@@ -74,10 +74,7 @@ def project_activity_event(
     if sequence > 0 and previous_sequence > 0 and sequence <= previous_sequence:
         return before
 
-    raw_payload = params.get("payload")
-    payload: dict[str, Any] = (
-        dict(raw_payload) if isinstance(raw_payload, dict) else {}
-    )
+    payload = params.get("payload") if isinstance(params.get("payload"), dict) else {}
     observed_at = _positive_float(params.get("observed_at")) or float(now)
     after = dict(before)
     after["version"] = ACTIVITY_SNAPSHOT_VERSION
@@ -212,10 +209,6 @@ def project_activity_event(
         after["phase"] = "terminal"
     elif execution_status == "succeeded":
         after["phase"] = "review"
-    elif execution_status == "orphaned":
-        after["phase"] = "orphaned"
-        after.pop("finishedAt", None)
-        after["uncertainty"] = "native_outcome_unknown"
     return after
 
 
@@ -235,33 +228,9 @@ def project_activity_result(
     after["lastMeaningfulEventAt"] = float(observed_at)
     after["lastSemanticProgressAt"] = float(observed_at)
     after["lastEventType"] = "provider.result"
-    normalized_status = str(status or "").lower()
-    if normalized_status == "orphaned":
-        after.pop("finishedAt", None)
-        after["phase"] = "orphaned"
-        after["uncertainty"] = "native_outcome_unknown"
-        raw_liveness = after.get("liveness")
-        previous_liveness: dict[str, Any] = (
-            dict(raw_liveness) if isinstance(raw_liveness, dict) else {}
-        )
-        after["liveness"] = {
-            **previous_liveness,
-            "state": "orphaned",
-            "observedAt": float(observed_at),
-        }
-    else:
-        after["finishedAt"] = float(observed_at)
-        after["phase"] = "review" if normalized_status == "succeeded" else "terminal"
-        after["uncertainty"] = ""
-        raw_liveness = after.get("liveness")
-        previous_liveness = (
-            dict(raw_liveness) if isinstance(raw_liveness, dict) else {}
-        )
-        after["liveness"] = {
-            **previous_liveness,
-            "state": "terminal",
-            "observedAt": float(observed_at),
-        }
+    after["finishedAt"] = float(observed_at)
+    after["phase"] = "review" if str(status or "").lower() == "succeeded" else "terminal"
+    after["uncertainty"] = ""
     return after
 
 
@@ -299,9 +268,8 @@ def project_host_steering(
     elif state in {"rejected", "failed"}:
         if str(after.get("phase") or "") == "cancelling":
             after["phase"] = "working"
-        raw_liveness = after.get("liveness")
-        previous_liveness: dict[str, Any] = (
-            dict(raw_liveness) if isinstance(raw_liveness, dict) else {}
+        previous_liveness = (
+            after.get("liveness") if isinstance(after.get("liveness"), dict) else {}
         )
         after["liveness"] = {
             **previous_liveness,
@@ -328,8 +296,6 @@ def activity_report_fields(
     raw_activity = dict(snapshot) if isinstance(snapshot, dict) else {}
     activity = _normalise_snapshot(snapshot)
     phase = str(raw_activity.get("phase") or _phase_for_execution(execution_status))
-    if str(execution_status or "").strip().lower() == "orphaned":
-        phase = "orphaned"
     start = (
         _positive_float(started_at)
         or _positive_float(activity.get("startedAt"))
@@ -351,8 +317,6 @@ def activity_report_fields(
     if str(liveness.get("state") or "") in {"stalled", "cancel_pending"}:
         silence = max(silence, reported_silence)
     uncertainty = str(raw_activity.get("uncertainty") or "")
-    if execution_status == "orphaned":
-        uncertainty = "native_outcome_unknown"
     if (
         execution_status in {"queued", "running"}
         and not str(activity.get("latestSemanticSummary") or "")
@@ -433,19 +397,6 @@ def _project_status(after: dict[str, Any], payload: dict[str, Any], observed_at:
         after["phase"] = "terminal"
         after["finishedAt"] = observed_at
         after["uncertainty"] = ""
-    elif status == "orphaned":
-        after["phase"] = "orphaned"
-        after.pop("finishedAt", None)
-        after["uncertainty"] = "native_outcome_unknown"
-        raw_liveness = after.get("liveness")
-        previous_liveness = (
-            dict(raw_liveness) if isinstance(raw_liveness, dict) else {}
-        )
-        after["liveness"] = {
-            **previous_liveness,
-            "state": "orphaned",
-            "observedAt": observed_at,
-        }
     elif status == "queued":
         after["phase"] = "queued"
     elif status in {"running", "active", "started"}:
@@ -573,10 +524,8 @@ def _phase_for_execution(execution_status: str) -> str:
         return "working"
     if status == "succeeded":
         return "review"
-    if status in {"failed", "cancelled"}:
+    if status in {"failed", "cancelled", "orphaned"}:
         return "terminal"
-    if status == "orphaned":
-        return "orphaned"
     return "queued"
 
 

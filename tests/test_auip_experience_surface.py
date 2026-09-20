@@ -106,7 +106,7 @@ def test_verified_auip_reuses_a_matching_work_preview_without_sharing_content() 
     work_page = WORK_PAGE.read_text(encoding="utf-8")
 
     assert "openAuipInWorkPreview" in source
-    assert "partition: auipStoragePartition(surface.descriptor.workItemId, policy.entryPath)" in source
+    assert "auip-work-preview-${partitionToken}" in source
     assert "Loading is presentation readiness only" in source
     assert "descriptor.revision <= pending.startRevision" in source
     assert "descriptor.attemptId === pending.attemptId" in source

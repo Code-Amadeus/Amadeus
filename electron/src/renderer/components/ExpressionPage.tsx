@@ -1,7 +1,5 @@
 ﻿import { useState, useEffect, useCallback } from 'react'
 
-import { useI18n } from '../i18n'
-
 interface PresetField {
   name: string
   value: number
@@ -23,10 +21,7 @@ interface Props {
   subscribe: (method: string, fn: (p: Record<string, unknown>) => void) => () => void
 }
 
-/** @deprecated Legacy diagnostic editor retained for direct deep links and
- * older renderer tooling. The primary Render UI no longer links to it. */
 export default function ExpressionPage({ send, subscribe }: Props) {
-  const { t } = useI18n()
   const [presets, setPresets] = useState<Preset[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [values, setValues] = useState<Record<string, number>>({})
@@ -89,29 +84,29 @@ export default function ExpressionPage({ send, subscribe }: Props) {
       {/* Left: compact preset list */}
       <div
         className="flex flex-col shrink-0"
-        style={{ width: 190, backgroundColor: 'var(--surface-alt)', borderRight: '1px solid var(--border)' }}
+        style={{ width: 190, backgroundColor: '#FAFAFA', borderRight: '1px solid #E0E0E0' }}
       >
         <div
           className="text-[13px] font-bold shrink-0"
-          style={{ color: 'var(--muted)', padding: '16px 14px 8px 14px' }}
+          style={{ color: '#555', padding: '16px 14px 8px 14px' }}
         >
-          {t('Presets')}
+          Presets
         </div>
         <div className="flex-1 overflow-y-auto">
           {presets.map(p => (
             <button
               key={p.name}
               onClick={() => handleSelect(p.name)}
-              className="w-full text-left text-[13px] border-b border-[var(--border)] transition-colors"
+              className="w-full text-left text-[13px] border-b border-[#F0F0F0] transition-colors"
               style={{
                 padding: '10px 16px',
                 color: selected === p.name ? '#0078D4' : '#555',
-                backgroundColor: selected === p.name ? 'var(--focus-fill)' : 'transparent',
+                backgroundColor: selected === p.name ? '#E3F2FD' : 'transparent',
                 borderRadius: 4,
               }}
               onMouseEnter={e => {
                 if (selected !== p.name)
-                  (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--hover)'
+                  (e.currentTarget as HTMLElement).style.backgroundColor = '#F5F5F5'
               }}
               onMouseLeave={e => {
                 if (selected !== p.name)
@@ -122,8 +117,8 @@ export default function ExpressionPage({ send, subscribe }: Props) {
             </button>
           ))}
           {presets.length === 0 && (
-            <p className="px-4 py-4 text-[12px] italic" style={{ color: 'var(--faint)' }}>
-              {t('No presets loaded')}
+            <p className="px-4 py-4 text-[12px] italic" style={{ color: '#AAA' }}>
+              No presets loaded
             </p>
           )}
         </div>
@@ -132,8 +127,8 @@ export default function ExpressionPage({ send, subscribe }: Props) {
       {/* Right: expression editor */}
       <div className="flex-1 overflow-y-auto" style={{ padding: '28px 36px' }}>
         {!selectedPreset ? (
-          <p className="text-center mt-20" style={{ color: 'var(--faint)', fontSize: 13 }}>
-            {t('Select a preset from the left panel.')}
+          <p className="text-center mt-20" style={{ color: '#AAA', fontSize: 13 }}>
+            Select a preset from the left panel.
           </p>
         ) : (
           <div className="max-w-lg">
@@ -146,15 +141,15 @@ export default function ExpressionPage({ send, subscribe }: Props) {
                 <button
                   onClick={handleTest}
                   className="px-4 py-1.5 text-[13px] font-[500] text-white rounded"
-                  style={{ backgroundColor: 'var(--accent)', height: 32, width: 80 }}
+                  style={{ backgroundColor: '#0078D4', height: 32, width: 80 }}
                 >
-                  {t('Test')}
+                  Test
                 </button>
               </div>
             </div>
 
             {/* separator */}
-            <div style={{ height: 1, backgroundColor: 'var(--border)', margin: '12px 0' }} />
+            <div style={{ height: 1, backgroundColor: '#E8E8E8', margin: '12px 0' }} />
 
             {/* fields — spacing 20px */}
             <div className="flex flex-col" style={{ gap: 20 }}>
@@ -162,12 +157,12 @@ export default function ExpressionPage({ send, subscribe }: Props) {
                 <div key={f.name}>
                   {/* label + value */}
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-[13px] font-[500]" style={{ color: 'var(--text)' }}>
+                    <label className="text-[13px] font-[500]" style={{ color: '#444' }}>
                       {f.name}
                     </label>
                     <span
                       className="text-[13px] font-bold tabular-nums text-right"
-                      style={{ color: 'var(--accent)', width: 70 }}
+                      style={{ color: '#0078D4', width: 70 }}
                     >
                       {values[f.name]?.toFixed(2) ?? f.value.toFixed(2)}
                     </span>
@@ -175,7 +170,7 @@ export default function ExpressionPage({ send, subscribe }: Props) {
 
                   {/* slider */}
                   <div className="flex items-center gap-2">
-                    <span className="text-[11px] tabular-nums text-right" style={{ color: 'var(--faint)', width: 32 }}>
+                    <span className="text-[11px] tabular-nums text-right" style={{ color: '#AAA', width: 32 }}>
                       {f.min}
                     </span>
                     <input
@@ -188,20 +183,20 @@ export default function ExpressionPage({ send, subscribe }: Props) {
                       className="flex-1"
                       disabled={!autoReturn && f.name === 'idle_return_delay_sec'}
                     />
-                    <span className="text-[11px] tabular-nums" style={{ color: 'var(--faint)', width: 32 }}>
+                    <span className="text-[11px] tabular-nums" style={{ color: '#AAA', width: 32 }}>
                       {f.max}
                     </span>
                   </div>
 
                   {f.description && (
-                    <p className="text-[11px] mt-0.5" style={{ color: 'var(--muted)' }}>{f.description}</p>
+                    <p className="text-[11px] mt-0.5" style={{ color: '#999' }}>{f.description}</p>
                   )}
                 </div>
               ))}
             </div>
 
             {/* auto return checkbox */}
-            <div style={{ height: 1, backgroundColor: 'var(--border)', margin: '24px 0 0 0' }} />
+            <div style={{ height: 1, backgroundColor: '#E8E8E8', margin: '24px 0 0 0' }} />
             <div className="flex items-center gap-2 pt-4">
               <input
                 type="checkbox"
@@ -210,16 +205,16 @@ export default function ExpressionPage({ send, subscribe }: Props) {
                 onChange={e => setAutoReturn(e.target.checked)}
                 className="accent-[#0078D4]"
               />
-              <label htmlFor="autoReturn" className="text-[13px]" style={{ color: 'var(--text)', fontWeight: 500 }}>
-                {t('Auto Return to Idle')}
+              <label htmlFor="autoReturn" className="text-[13px]" style={{ color: '#444', fontWeight: 500 }}>
+                Auto Return to Idle
               </label>
             </div>
-            <p className="text-[11px] mt-1 ml-6" style={{ color: 'var(--muted)' }}>
-              {t('Fade out after delay — otherwise stays until next turn')}
+            <p className="text-[11px] mt-1 ml-6" style={{ color: '#999' }}>
+              Fade out after delay — otherwise stays until next turn
             </p>
 
             {selectedPreset.description && (
-              <p className="text-[11px] mt-4" style={{ color: 'var(--faint)' }}>
+              <p className="text-[11px] mt-4" style={{ color: '#BBB' }}>
                 {selectedPreset.description}
               </p>
             )}

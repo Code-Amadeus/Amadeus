@@ -45,7 +45,8 @@ _REGISTRY: dict[str, ASRBackendDescriptor] = {}
 _LOCK = threading.Lock()
 _BUILTINS_READY = False
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
-_BUILTIN_IDS = frozenset({"qwen3_asr", "sense_voice", "openai_compatible"})
+_BUILTIN_IDS = frozenset({"qwen3_asr","qwen3_asr_api", "sense_voice", "openai_compatible"})
+
 
 
 def register_asr_backend(
@@ -68,6 +69,11 @@ def _qwen_factory() -> BaseASRBackend:
 
     return Qwen3ASRBackend()
 
+def _qwen_api_factory() -> BaseASRBackend:
+    from asr.backends.qwen3_asr_api import (
+        Qwen3ASRAPIBackend,
+    )
+    return Qwen3ASRAPIBackend()
 
 def _sense_voice_factory() -> BaseASRBackend:
     from asr.backends.sense_voice import SenseVoiceBackend
@@ -100,6 +106,38 @@ def _qwen_probe() -> tuple[str, str]:
         return "not_installed", model_detail
     return "installed", f"{model_detail}; {runtime_detail}"
 
+def _qwen_api_probe() -> tuple[str, str]:
+    from config import settings
+
+    if not str(
+        settings.QWEN3_ASR_API_BASE_URL or ""
+    ).strip():
+        return (
+            "unavailable",
+            "Qwen3 ASR API endpoint is not configured",
+        )
+
+    if not str(
+        settings.QWEN3_ASR_API_KEY or ""
+    ).strip():
+        return (
+            "unavailable",
+            "Qwen3 ASR API key is not configured",
+        )
+
+    if not str(
+        settings.QWEN3_ASR_API_MODEL or ""
+    ).strip():
+        return (
+            "unavailable",
+            "Qwen3 ASR API model is not configured",
+        )
+
+    return (
+        "remote",
+        "Qwen3-ASR-Flash API configured; "
+        "availability is checked on use",
+    )
 
 def _sense_voice_probe() -> tuple[str, str]:
     from config import settings
@@ -145,6 +183,18 @@ def _ensure_builtins() -> None:
                     _qwen_factory,
                     _qwen_probe,
                     "Full conversation recognizer with context and speculative endpointing.",
+                ),
+                "qwen3_asr_api": ASRBackendDescriptor(
+                    "qwen3_asr_api",
+                    "Qwen3-ASR Flash API",
+                    "remote",
+                    _qwen_api_factory,
+                    _qwen_api_probe,
+                    (
+                        "Alibaba Cloud Model Studio "
+                        "full conversation recognition; "
+                        "speculative requests are disabled."
+                    ),
                 ),
                 "sense_voice": ASRBackendDescriptor(
                     "sense_voice",

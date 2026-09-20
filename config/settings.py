@@ -62,7 +62,6 @@ if EMO_HISTORY_POLICY not in EMO_HISTORY_POLICIES:
         + f"; observed {EMO_HISTORY_POLICY!r}"
     )
 
-
 # Pending-turn gates share one timeout so TTS, visible completion, and history
 # cannot disagree about whether an undecided speculative turn is still viable.
 PENDING_TURN_GATE_TIMEOUT_S = _float("PENDING_TURN_GATE_TIMEOUT_S", 8.0)
@@ -83,9 +82,52 @@ if LLM_PROVIDER not in LLM_PROVIDERS:
         + ", ".join(sorted(LLM_PROVIDERS))
         + f"; observed {LLM_PROVIDER!r}"
     )
-DEEPSEEK_API_KEY   = _secret("DEEPSEEK_API_KEY")
-DEEPSEEK_BASE_URL  = _str("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-DEEPSEEK_MODEL_NAME = _str("DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
+# DEEPSEEK_API_KEY   = _secret("DEEPSEEK_API_KEY")
+# DEEPSEEK_BASE_URL  = _str("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+# DEEPSEEK_MODEL_NAME = _str("DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
+DEEPSEEK_API_KEY = _secret("DEEPSEEK_API_KEY")
+DEEPSEEK_BASE_URL = _str("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+
+# 普通文本聊天
+DEEPSEEK_MODEL_NAME = _str(
+    "DEEPSEEK_MODEL_NAME",
+    "deepseek-v4-flash",
+)
+
+# 有图片 / 桌面截图时使用
+DEEPSEEK_VISION_MODEL_NAME = _str(
+    "DEEPSEEK_VISION_MODEL_NAME",
+    "deepseek-v4-flash-vision-exp",
+)
+
+# ===========================================================================
+# Native Research Provider — Web search + DeepSeek synthesis (no OpenClaw)
+# ===========================================================================
+RESEARCH_SEARCH_BACKEND = _str("RESEARCH_SEARCH_BACKEND", "auto").strip().lower()
+if RESEARCH_SEARCH_BACKEND not in {"auto", "tavily", "bing", "searxng", "duckduckgo"}:
+    raise ValueError("RESEARCH_SEARCH_BACKEND must be auto|tavily|bing|searxng|duckduckgo")
+RESEARCH_TAVILY_API_KEY = _secret("RESEARCH_TAVILY_API_KEY", aliases=("TAVILY_API_KEY",))
+RESEARCH_BING_API_KEY = _secret("RESEARCH_BING_API_KEY", aliases=("BING_SEARCH_API_KEY",))
+RESEARCH_BING_ENDPOINT = _str("RESEARCH_BING_ENDPOINT", "https://api.bing.microsoft.com/v7.0/search")
+RESEARCH_SEARXNG_URL = _str("RESEARCH_SEARXNG_URL", "").strip()
+RESEARCH_DEEPSEEK_MODEL = _str("RESEARCH_DEEPSEEK_MODEL", "").strip() or DEEPSEEK_MODEL_NAME
+RESEARCH_SEARCH_TIMEOUT_S = _float("RESEARCH_SEARCH_TIMEOUT_S", 12.0)
+RESEARCH_FETCH_TIMEOUT_S = _float("RESEARCH_FETCH_TIMEOUT_S", 15.0)
+RESEARCH_LLM_TIMEOUT_S = _float("RESEARCH_LLM_TIMEOUT_S", 60.0)
+RESEARCH_QUICK_MAX_SOURCES = _int("RESEARCH_QUICK_MAX_SOURCES", 3)
+RESEARCH_DEEP_MAX_SOURCES = _int("RESEARCH_DEEP_MAX_SOURCES", 12)
+RESEARCH_MAX_QUERIES = _int("RESEARCH_MAX_QUERIES", 5)
+RESEARCH_RESULTS_PER_QUERY = _int("RESEARCH_RESULTS_PER_QUERY", 6)
+RESEARCH_SEARCH_CONCURRENCY = _int("RESEARCH_SEARCH_CONCURRENCY", 2)
+RESEARCH_FETCH_CONCURRENCY = _int("RESEARCH_FETCH_CONCURRENCY", 4)
+RESEARCH_MIN_SOURCE_SCORE = _float("RESEARCH_MIN_SOURCE_SCORE", 0.45)
+RESEARCH_MAX_RESPONSE_BYTES = _int("RESEARCH_MAX_RESPONSE_BYTES", 2_500_000)
+RESEARCH_MAX_SOURCE_CHARS = _int("RESEARCH_MAX_SOURCE_CHARS", 14_000)
+RESEARCH_USER_AGENT = _str(
+    "RESEARCH_USER_AGENT",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0 Safari/537.36 AmadeusResearch/0.3",
+)
 
 # ===========================================================================
 # LLM 提供商 — OpenAI / GPT
@@ -250,6 +292,18 @@ FIRST_SENTENCE_AUDIO_CACHE_DIR = _str(
 FIRST_SENTENCE_AUDIO_CACHE_MAX_SECONDS = _float("FIRST_SENTENCE_AUDIO_CACHE_MAX_SECONDS", 1.5)
 
 # ===========================================================================
+# Persistent Continuity Runtime (Host-owned state; restart required).
+# ===========================================================================
+CONTINUITY_ENABLED = _bool("CONTINUITY_ENABLED", True)
+CONTINUITY_MEMORY_ENABLED = _bool("CONTINUITY_MEMORY_ENABLED", True)
+CONTINUITY_RELATIONSHIP_ENABLED = _bool("CONTINUITY_RELATIONSHIP_ENABLED", True)
+CONTINUITY_RELATIONSHIP_LIVE_ENABLED = _bool("CONTINUITY_RELATIONSHIP_LIVE_ENABLED", False)
+CONTINUITY_LIFE_ENABLED = _bool("CONTINUITY_LIFE_ENABLED", True)
+CONTINUITY_LIFE_LIVE_ENABLED = _bool("CONTINUITY_LIFE_LIVE_ENABLED", False)
+CONTINUITY_SEMANTIC_RECALL_ENABLED = _bool("CONTINUITY_SEMANTIC_RECALL_ENABLED", False)
+CONTINUITY_ARCHIVE_RECALL_ENABLED = _bool("CONTINUITY_ARCHIVE_RECALL_ENABLED", True)
+
+# ===========================================================================
 # Optional local retrieval for all Main Chat models (restart required).
 # The retired local-only flag does not authorize sending references remotely.
 # ===========================================================================
@@ -285,13 +339,6 @@ MIMO_TTS_BASE_URL = _str("MIMO_TTS_BASE_URL", "https://api.xiaomimimo.com/v1")
 MIMO_TTS_API_KEY = _secret("MIMO_TTS_API_KEY", "")
 MIMO_TTS_MODEL = _str("MIMO_TTS_MODEL", "mimo-v2.5-tts")
 MIMO_TTS_VOICE = _str("MIMO_TTS_VOICE", "冰糖")
-
-# Fish Audio: the voice reference ID is distinct from the inference model header.
-FISH_TTS_WS_URL = _str("FISH_TTS_WS_URL", "wss://api.fish.audio/v1/tts/live")
-FISH_TTS_API_KEY = _secret("FISH_TTS_API_KEY", "")
-FISH_TTS_MODEL = _str("FISH_TTS_MODEL", "s2.1-pro-free")
-FISH_TTS_REFERENCE_ID = _str("FISH_TTS_REFERENCE_ID", "b450b19370434173b121446057622e9b")
-FISH_TTS_LATENCY = _str("FISH_TTS_LATENCY", "balanced")
 
 
 def _resolve_tts_device() -> str:
@@ -394,6 +441,10 @@ if QWEN3_ASR_DEVICE not in {"auto", "cpu", "cuda"}:
 QWEN3_ASR_REQUIRE_CUDA = _bool("QWEN3_ASR_REQUIRE_CUDA", False)
 # Qwen3-ASR context：作为 system prompt 注入，用于偏置混合中英文识别
 # 填入领域热词和指令；SenseVoice 后端会忽略此项
+ASR_AUTO_SEND_TO_CHAT = _bool(
+    "ASR_AUTO_SEND_TO_CHAT",
+    False,
+)
 ASR_CONTEXT = _str("ASR_CONTEXT", "")
 ASR_API_BASE_URL = _str("ASR_API_BASE_URL", "https://api.openai.com/v1")
 ASR_API_KEY = _secret("ASR_API_KEY", "")
@@ -427,42 +478,6 @@ ASR_SPECULATIVE_END_MS = _int("ASR_SPECULATIVE_END_MS", 160)
 # 仅对本地首句链路（hybrid/hybrid2/hybrid3）生效——远程单链有计费与幂等成本。
 ASR_SPECULATIVE_LLM_START = _bool("ASR_SPECULATIVE_LLM_START", True)
 
-# Global PixiJS render budget shared by the chat and wallpaper surfaces.
-GRAPHICS_PROFILES = frozenset({"standard", "power_saving", "custom"})
-GRAPHICS_PROFILE = _str("GRAPHICS_PROFILE", "standard").strip().lower()
-RENDER_MAX_FPS = _int("RENDER_MAX_FPS", 30)
-RENDER_MAX_RESOLUTION = _float("RENDER_MAX_RESOLUTION", 1.5)
-RENDER_TEXTURE_SAMPLING = _bool("RENDER_TEXTURE_SAMPLING", False)
-
-
-def _resolve_graphics_profile(
-    profile: str,
-    custom_max_fps: int,
-    custom_max_resolution: float,
-) -> tuple[int, float | None]:
-    if profile not in GRAPHICS_PROFILES:
-        raise ValueError(
-            "GRAPHICS_PROFILE must be one of "
-            + ", ".join(sorted(GRAPHICS_PROFILES))
-            + f"; observed {profile!r}"
-        )
-    if not 10 <= custom_max_fps <= 240:
-        raise ValueError("RENDER_MAX_FPS must be between 10 and 240")
-    if not 0.25 <= custom_max_resolution <= 4.0:
-        raise ValueError("RENDER_MAX_RESOLUTION must be between 0.25 and 4.0")
-    if profile == "standard":
-        return 60, None
-    if profile == "power_saving":
-        return 30, 1.5
-    return custom_max_fps, custom_max_resolution
-
-
-RENDER_EFFECTIVE_MAX_FPS, RENDER_EFFECTIVE_MAX_RESOLUTION = _resolve_graphics_profile(
-    GRAPHICS_PROFILE,
-    RENDER_MAX_FPS,
-    RENDER_MAX_RESOLUTION,
-)
-
 # Wallpaper diagnostics. keyboard_sfx.gate is a high-frequency client-side
 # gate snapshot; keep it out of WARNING unless explicitly diagnosing SFX.
 WALLPAPER_SFX_GATE_LOG = _bool("WALLPAPER_SFX_GATE_LOG", False)
@@ -490,9 +505,7 @@ PROVIDER_DELEGATE_DEFAULT_PROVIDER = _str("PROVIDER_DELEGATE_DEFAULT_PROVIDER", 
 # the turn-scoped CLI remains an explicit compatibility transport.
 CODEX_APP_SERVER_PROVIDER_ENABLED = _bool("CODEX_APP_SERVER_PROVIDER_ENABLED", True)
 CODEX_APP_SERVER_CODEX_BIN = _str("CODEX_APP_SERVER_CODEX_BIN", "")
-CODEX_APP_SERVER_AUTH_MODE = _str("CODEX_APP_SERVER_AUTH_MODE", "model_api").strip().lower()
-if CODEX_APP_SERVER_AUTH_MODE not in {"model_api", "chatgpt"}:
-    raise ValueError("CODEX_APP_SERVER_AUTH_MODE must be model_api or chatgpt")
+CODEX_APP_SERVER_MODEL = _str("CODEX_APP_SERVER_MODEL", "deepseek-v4-flash")
 # Provider-native execution settings belong to the Provider adapter, not to
 # the user's Codex Desktop profile.  Keeping all four values explicit prevents
 # an unrelated Desktop model/effort change from silently changing Amadeus work.
@@ -500,18 +513,6 @@ CODEX_APP_SERVER_MODEL_PROVIDER = _str(
     "CODEX_APP_SERVER_MODEL_PROVIDER",
     "deepseek",
 ).strip().lower()
-_CODEX_CONNECTION_DEFAULTS = {
-    "deepseek": (DEEPSEEK_BASE_URL, DEEPSEEK_MODEL_NAME, "DEEPSEEK_API_KEY"),
-    "openai": (OPENAI_BASE_URL, OPENAI_MODEL_NAME, "OPENAI_API_KEY"),
-}
-_CODEX_PROVIDER_BASE_DEFAULT, _CODEX_MODEL_DEFAULT, _CODEX_API_KEY_ENV_DEFAULT = (
-    _CODEX_CONNECTION_DEFAULTS.get(
-        CODEX_APP_SERVER_MODEL_PROVIDER,
-        (DEEPSEEK_BASE_URL, DEEPSEEK_MODEL_NAME, "DEEPSEEK_API_KEY"),
-    )
-)
-CODEX_APP_SERVER_MODEL = _str("CODEX_APP_SERVER_MODEL", _CODEX_MODEL_DEFAULT)
-CODEX_APP_SERVER_CHATGPT_MODEL = _str("CODEX_APP_SERVER_CHATGPT_MODEL", "").strip()
 CODEX_APP_SERVER_REASONING_EFFORT = _str(
     "CODEX_APP_SERVER_REASONING_EFFORT",
     "max",
@@ -522,11 +523,11 @@ CODEX_APP_SERVER_SERVICE_TIER = _str(
 ).strip().lower()
 CODEX_APP_SERVER_PROVIDER_BASE_URL = _str(
     "CODEX_APP_SERVER_PROVIDER_BASE_URL",
-    _CODEX_PROVIDER_BASE_DEFAULT,
+    "https://api.deepseek.com",
 ).strip()
 CODEX_APP_SERVER_PROVIDER_API_KEY_ENV = _str(
     "CODEX_APP_SERVER_PROVIDER_API_KEY_ENV",
-    _CODEX_API_KEY_ENV_DEFAULT,
+    "DEEPSEEK_API_KEY",
 ).strip()
 # Persist only the non-secret provider definition into the Codex user profile
 # so Desktop can resume Amadeus-created threads. Authentication remains backed
@@ -558,33 +559,6 @@ PROVIDER_RUN_EVENT_CAP = _int("PROVIDER_RUN_EVENT_CAP", 500)
 PROVIDER_WORK_HEARTBEAT_S = _int("PROVIDER_WORK_HEARTBEAT_S", 45)
 PROVIDER_WORK_QUIET_NOTICE_S = _int("PROVIDER_WORK_QUIET_NOTICE_S", 90)
 PROVIDER_WORK_QUIET_REPEAT_S = _int("PROVIDER_WORK_QUIET_REPEAT_S", 300)
-# Whole-instance routing selector. Keep both routing strategies and share their
-# execution/presentation facilities; false selects the original Chat authority
-# at restart. The JSON is a Host-authored ProviderRequirements contract, not a
-# capability inference.
-COOPERATIVE_CHAT_ENABLED = _bool("COOPERATIVE_CHAT_ENABLED", True)
-# Professional cooperative routing is the default. False selects basic cooperative
-# routing; the whole-instance selector above restores original Chat at restart.
-# A failed professional decision never falls back to a different route.
-COOPERATIVE_WORK_PLANNER_ENABLED = _bool("COOPERATIVE_WORK_PLANNER_ENABLED", True)
-# Optional model on the existing LLM backend; empty inherits the role model.
-COOPERATIVE_WORK_PLANNER_MODEL = _str("COOPERATIVE_WORK_PLANNER_MODEL", "").strip()
-COOPERATIVE_CHAT_PROVIDER = _str("COOPERATIVE_CHAT_PROVIDER", "codex").strip().lower()
-COOPERATIVE_CHAT_REQUIREMENTS_JSON = _str(
-    "COOPERATIVE_CHAT_REQUIREMENTS_JSON",
-    '{"task_kind":"general","workspace_access":"write",'
-    '"workspace_ownership":"caller","ownership":"managed","resume":"attach"}',
-)
-COOPERATIVE_CHAT_ADDITIONAL_REQUIREMENTS_JSON = _str(
-    "COOPERATIVE_CHAT_ADDITIONAL_REQUIREMENTS_JSON", "{}",
-)
-COOPERATIVE_CHAT_QUERY_TIMEOUT_S = _float("COOPERATIVE_CHAT_QUERY_TIMEOUT_S", 45.0)
-COOPERATIVE_CHAT_QUERY_MAX_TOKENS = _int("COOPERATIVE_CHAT_QUERY_MAX_TOKENS", 900)
-COOPERATIVE_CHAT_PERMISSION_POLICY = _str(
-    "COOPERATIVE_CHAT_PERMISSION_POLICY", "ask",
-).strip().lower()
-if COOPERATIVE_CHAT_PERMISSION_POLICY not in {"deny", "ask"}:
-    raise ValueError("COOPERATIVE_CHAT_PERMISSION_POLICY supports deny or ask")
 # Host-owned Project trust roots. Project/Scratch/focus routing and Host diff
 # inspection read only this setting; retired Provider settings cannot widen it.
 WORK_PROJECT_ALLOWLIST = _str("WORK_PROJECT_ALLOWLIST", "")
@@ -769,12 +743,6 @@ COMPOUND_CONTROL_SHADOW_ENABLED = _bool(
     "COMPOUND_CONTROL_SHADOW_ENABLED", False
 )
 
-# Observe how the existing Work/AUIP/Browser witnesses converge for one origin
-# turn.  This adds no planner call and owns no dispatch: it records immutable
-# provenance plus a read-only ShadowTurnDecision so cardinality and cross-axis
-# relations can be replayed before any production authority migration.
-TURN_DECISION_SHADOW_ENABLED = _bool("TURN_DECISION_SHADOW_ENABLED", True)
-
 # AUIP action existence has a source-local decision axis because an AppSession
 # is neither Provider Work nor a Project/WorkItem.  When enabled, the role
 # prompt no longer carries a duplicate AUIP tag contract: the role speaks
@@ -785,9 +753,6 @@ TURN_DECISION_SHADOW_ENABLED = _bool("TURN_DECISION_SHADOW_ENABLED", True)
 # authority; setting the flag false restores the legacy inline-role proposal
 # for bounded rollback.
 AUIP_CONTROL_DECISION_ENABLED = _bool("AUIP_CONTROL_DECISION_ENABLED", True)
-
-# Generation preference; never restyles existing artifacts or overrides user design.
-AUIP_ARTIFACT_STYLE_ENABLED = _bool("AUIP_ARTIFACT_STYLE_ENABLED", True)
 
 # Resolve the entity of an already-proposed Project focus against complete
 # host catalogs.  Genuine ambiguity becomes a one-shot Slice selection before
@@ -894,7 +859,7 @@ WORK_TERMINAL_NARRATION_MAX_WAIT_S = _float(
 # Wake word settings. SenseVoice is intended to be the lightweight always-on
 # recognizer; Qwen-ASR remains the lazy-loaded full recognizer.
 WAKE_ENABLED = _bool("WAKE_ENABLED", False)
-WAKE_ASR_BACKEND = _str("WAKE_ASR_BACKEND", "sense_voice")
+WAKE_ASR_BACKEND = _str("WAKE_ASR_BACKEND", "qwen3_asr")
 WAKE_PHRASES = _str(
     "WAKE_PHRASES",
     "hi amadeus,hey amadeus,hello amadeus,high amadeus,"
@@ -903,6 +868,7 @@ WAKE_PHRASES = _str(
     "hi i'm as,hi im as,hi ims,hi i'ms,hi i am as,"
     "嗨阿玛迪斯,嘿阿玛迪斯,你好阿玛迪斯,"
     "嗨阿马迪斯,嘿阿马迪斯,你好阿马迪斯,"
+    "你好红莉栖,hi红莉栖,你好克里斯缇娜,hi克里斯缇娜"
     "ハイアマデウス,ヘイアマデウス,アマデウス",
 )
 WAKE_MATCH_THRESHOLD = _float("WAKE_MATCH_THRESHOLD", 0.10)
@@ -972,3 +938,22 @@ MICROPHONE_DEVICE_INDEX   = _int("MICROPHONE_DEVICE_INDEX", -1)
 OPENCLAW_BASE_URL    = _str("OPENCLAW_BASE_URL",      "http://127.0.0.1:18789")
 OPENCLAW_TOKEN       = _str("OPENCLAW_GATEWAY_TOKEN")
 OPENCLAW_PROJECT_DIR = _str("OPENCLAW_PROJECT_DIR")   # Node.js 项目根目录（本机路径）
+
+
+# Alibaba Cloud Model Studio Qwen3-ASR-Flash synchronous API.
+QWEN3_ASR_API_BASE_URL = _str(
+    "QWEN3_ASR_API_BASE_URL",
+    "https://dashscope.aliyuncs.com/api/v1",
+)
+QWEN3_ASR_API_KEY = _secret(
+    "QWEN3_ASR_API_KEY",
+    "",
+)
+QWEN3_ASR_API_MODEL = _str(
+    "QWEN3_ASR_API_MODEL",
+    "qwen3-asr-flash",
+)
+QWEN3_ASR_API_ENABLE_ITN = _bool(
+    "QWEN3_ASR_API_ENABLE_ITN",
+    False,
+)

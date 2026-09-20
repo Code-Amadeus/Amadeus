@@ -489,16 +489,70 @@ class BrowserAdapter:
         results: list[dict[str, str]] = []
         search_engines = (
             (
-                "duckduckgo",
-                f"https://duckduckgo.com/html/?q={quote_plus(query)}",
-                "a.result__a",
-            ),
-            (
                 "bing",
                 f"https://www.bing.com/search?q={quote_plus(query)}",
                 "li.b_algo h2 a[href]",
             ),
+            (
+                "duckduckgo",
+                f"https://duckduckgo.com/html/?q={quote_plus(query)}",
+                "a.result__a",
+            ),
         )
+        # for engine, search_url, selector in search_engines:
+        #     await emit(
+        #         ProviderEvent(
+        #             provider=self.provider_id,
+        #             run_id=run_id,
+        #             type="tool.call",
+        #             payload={
+        #                 "tool": "browser.search",
+        #                 "engine": engine,
+        #                 "query": query,
+        #                 "browser_session_id": session.session_id,
+        #             },
+        #         )
+        #     )
+        #     response = await session.page.goto(
+        #         search_url,
+        #         wait_until="domcontentloaded",
+        #         timeout=timeout_ms,
+        #     )
+        #     session.last_url = str(session.page.url or search_url)
+        #     session.updated_at = time.time()
+        #     html = await session.page.content()
+        #     soup = BeautifulSoup(html or "", "html.parser")
+        #     engine_results: list[dict[str, str]] = []
+        #     for anchor in soup.select(selector):
+        #         href = str(anchor.get("href") or "").strip()
+        #         label = self._clean_text(anchor.get_text(" ", strip=True))
+        #         normalized = self._normalize_search_href(href)
+        #         if not normalized or not label:
+        #             continue
+        #         if any(item["url"] == normalized for item in engine_results):
+        #             continue
+        #         engine_results.append({"title": label[:120], "url": normalized})
+        #         if len(engine_results) >= max_results:
+        #             break
+        #     await emit(
+        #         ProviderEvent(
+        #             provider=self.provider_id,
+        #             run_id=run_id,
+        #             type="tool.result",
+        #             payload={
+        #                 "tool": "browser.search",
+        #                 "engine": engine,
+        #                 "query": query,
+        #                 "status_code": response.status if response else None,
+        #                 "status": "ok" if engine_results else "no_results",
+        #                 "results": engine_results,
+        #                 "browser_session_id": session.session_id,
+        #             },
+        #         )
+        #     )
+        #     if engine_results:
+        #         results = engine_results
+        #         break
         for engine, search_url, selector in search_engines:
             await emit(
                 ProviderEvent(
@@ -513,46 +567,61 @@ class BrowserAdapter:
                     },
                 )
             )
-            response = await session.page.goto(
-                search_url,
-                wait_until="domcontentloaded",
-                timeout=timeout_ms,
-            )
+
+            try:
+                await session.page.goto(
+                    search_url,
+                    wait_until="domcontentloaded",
+                    timeout=timeout_ms,
+                )
+            except Exception as exc:
+                await emit(
+                    ProviderEvent(
+                        provider=self.provider_id,
+                        run_id=run_id,
+                        type="tool.result",
+                        payload={
+                            "tool": "browser.search",
+                            "engine": engine,
+                            "query": query,
+                            "status": "failed",
+                            "error": str(exc),
+                            "browser_session_id": session.session_id,
+                        },
+                    )
+                )
+                continue
+
             session.last_url = str(session.page.url or search_url)
             session.updated_at = time.time()
+
             html = await session.page.content()
             soup = BeautifulSoup(html or "", "html.parser")
-            engine_results: list[dict[str, str]] = []
+
+            engine_results = []
             for anchor in soup.select(selector):
                 href = str(anchor.get("href") or "").strip()
                 label = self._clean_text(anchor.get_text(" ", strip=True))
                 normalized = self._normalize_search_href(href)
+
                 if not normalized or not label:
                     continue
+
                 if any(item["url"] == normalized for item in engine_results):
                     continue
-                engine_results.append({"title": label[:120], "url": normalized})
+
+                engine_results.append({
+                    "title": label[:120],
+                    "url": normalized,
+                })
+
                 if len(engine_results) >= max_results:
                     break
-            await emit(
-                ProviderEvent(
-                    provider=self.provider_id,
-                    run_id=run_id,
-                    type="tool.result",
-                    payload={
-                        "tool": "browser.search",
-                        "engine": engine,
-                        "query": query,
-                        "status_code": response.status if response else None,
-                        "status": "ok" if engine_results else "no_results",
-                        "results": engine_results,
-                        "browser_session_id": session.session_id,
-                    },
-                )
-            )
+
             if engine_results:
                 results = engine_results
                 break
+
         if results:
             await emit(
                 ProviderEvent(
@@ -1417,11 +1486,7 @@ class BrowserAdapter:
             urls.extend(str(item) for item in raw_urls)
         if metadata.get("url"):
             urls.append(str(metadata.get("url")))
-        # A typed Host target is the complete navigation authority. Re-reading
-        # free-form task prose can manufacture a second URL by swallowing
-        # punctuation or instructions that follow the accepted address.
-        if not urls:
-            urls.extend(self._extract_urls(request.task))
+        urls.extend(self._extract_urls(request.task))
         normalized: list[str] = []
         for url in urls:
             fixed = self._normalize_url(url, allow_bare_domain=allow_bare_domain)

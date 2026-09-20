@@ -221,7 +221,6 @@ class EnvelopeAdapter:
                 metadata={
                     "replay": True,
                     "provider_ownership": "attached",
-                    "cooperative_context_id": "spoofed-event-context",
                     # An adapter cannot escape the Task/Attempt to which the
                     # control plane bound its run.
                     "work": {
@@ -236,7 +235,6 @@ class EnvelopeAdapter:
             status="done",
             result="ok",
             metadata={
-                "cooperative_context_id": "spoofed-result-context",
                 "outcome_evidence": {
                     "facet": "spoofed.native_claim",
                     "operation": "spoof",
@@ -289,7 +287,6 @@ def test_runtime_envelope_and_work_ledger_identity_are_assembled(tmp_path) -> No
                     ownership="managed",
                     metadata={
                         "source": "provider_abstraction_test",
-                        "cooperative_context_id": "host-context",
                         "provider_ownership": "attached",
                         "provider_requirements": {"task_kind": "spoofed"},
                         "provider_selection": {
@@ -317,7 +314,6 @@ def test_runtime_envelope_and_work_ledger_identity_are_assembled(tmp_path) -> No
             assert progress["provider"] == "envelope"
             assert progress["run_id"] == record.run_id
             assert progress["metadata"]["provider_ownership"] == "managed"
-            assert progress["metadata"]["cooperative_context_id"] == "host-context"
             assert progress["metadata"]["provider_requirements"]["task_kind"] == "general"
             assert progress["metadata"]["work"]["work_item_id"] == progress["task_id"]
             assert progress["metadata"]["work"]["attempt_id"] == progress["attempt_id"]
@@ -326,13 +322,12 @@ def test_runtime_envelope_and_work_ledger_identity_are_assembled(tmp_path) -> No
             # back into provider-specific metadata.work. Old events remain
             # supported by the coordinator's fallback below this path.
             event_without_metadata = {**progress, "metadata": {}}
-            attempt = coordinator.event_ingestor.attempt_for_event(event_without_metadata)
+            attempt = coordinator._attempt_for_event(event_without_metadata, adopt=False)
             assert attempt is not None
             assert attempt.attempt_id == progress["attempt_id"]
 
             assert captured_results
             terminal = captured_results[-1]
-            assert terminal["metadata"]["cooperative_context_id"] == "host-context"
             assert terminal["task_id"] == progress["task_id"]
             assert terminal["attempt_id"] == progress["attempt_id"]
             assert terminal["attempt_epoch"] == 1

@@ -18,13 +18,9 @@ import inspect
 import json
 import logging
 from collections.abc import Awaitable, Callable, Mapping
-from typing import Any, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from server.turn_admission import TurnAdmissionRecord
+from typing import Any
 
 from config import settings
-from core.turn_coordinator import require_legacy_turn_authority
 from server.auip_action_candidates import (
     AuipActionCandidate,
     compile_auip_action_candidates,
@@ -113,13 +109,9 @@ class AuipB2Coordinator:
         text: str,
         session_id: str,
         turn_id: str = "",
-        turn_admission: TurnAdmissionRecord | None = None,
     ) -> dict[str, Any] | None:
         """Return one direct Chat branch result, or stage the decision for fallback."""
 
-        require_legacy_turn_authority(turn_admission)
-        if turn_admission is not None:
-            session_id = turn_admission.session_id
         if self.runtime.role_branch_mode != "b2":
             return None
         projection = self.runtime.focused_projection(str(session_id or ""))
@@ -168,51 +160,17 @@ class AuipB2Coordinator:
             self.stage_decision(str(turn_id or ""), decision)
             return None
 
-        result = await self.execute_user_decision(
-            decision=decision, text=text, session_id=session_id, turn_id=turn_id)
-        if result is None:
-            self.stage_decision(str(turn_id or ""), decision)
-        return result
-
-    async def execute_user_decision(
-        self, *, decision: Any, text: str, session_id: str, turn_id: str,
-        acceptance_check: Callable[[], Any] | None = None,
-    ) -> dict[str, Any] | None:
-        """Consume an already-resolved app step without reinterpreting the turn.
-
-        The caller owns Chat admission and any independent Work clause. B2 keeps
-        the same role choice, revision-bound action and receipt delivery owner.
-        """
-        app_session_id = str(getattr(decision, "app_session_id", "") or "")
-        if (self.runtime.role_branch_mode != "b2"
-                or str(getattr(decision, "status", "") or "") != "ok"
-                or str(getattr(decision, "action", "") or "") != "step"
-                or not app_session_id or not self.runtime.role_branch_active(app_session_id)):
-            return None
-        projection = self.runtime.get(app_session_id)
-        if str(projection.get("conversation_id") or "") != session_id:
-            raise AuipProtocolError("b2_conversation_mismatch")
         lock = self._locks.setdefault(app_session_id, asyncio.Lock())
         async with lock:
-            if acceptance_check is not None:
-                checked = acceptance_check()
-                if inspect.isawaitable(checked):
-                    await checked
-            try:
-                return await self._execute_candidate_step(
-                    app_session_id=app_session_id,
-                    conversation_id=str(session_id or ""),
-                    user_instruction=str(getattr(decision, "instruction", "") or text),
-                    source_user_text=str(text or ""),
-                    turn_id=str(turn_id or ""),
-                    trigger="explicit_step",
-                    acceptance_check=acceptance_check,
-                )
-            except asyncio.CancelledError:
-                # A superseded private choice is no longer thinking. A real
-                # pending action retains its domain owner until its receipt.
-                await self._restore_idle(app_session_id)
-                raise
+            return await self._execute_candidate_step(
+                app_session_id=app_session_id,
+                conversation_id=str(session_id or ""),
+                user_instruction=str(getattr(decision, "instruction", "") or text),
+                source_user_text=str(text or ""),
+                turn_id=str(turn_id or ""),
+                decision=decision,
+                trigger="explicit_step",
+            )
 
     async def execute_automatic_step(
         self,
@@ -243,6 +201,7 @@ class AuipB2Coordinator:
                 user_instruction="",
                 source_user_text="",
                 turn_id="",
+                decision=None,
                 trigger=clean_trigger,
                 automatic=True,
                 role_decision_attempts=2 if required_opportunity else 1,
@@ -267,15 +226,16 @@ class AuipB2Coordinator:
         user_instruction: str,
         source_user_text: str,
         turn_id: str,
+        decision: Any | None,
         trigger: str,
         automatic: bool = False,
         role_decision_attempts: int = 1,
-        acceptance_check: Callable[[], Any] | None = None,
     ) -> dict[str, Any] | None:
         projection = self.runtime.get(app_session_id)
         if projection.get("pending_action"):
             if automatic:
                 return {"status": "skipped", "reason": "action_already_pending"}
+            self.stage_decision(turn_id, decision)
             return None
         if str(projection.get("engagement_mode") or "observe") == "observe":
             projection = self.runtime.set_engagement_mode(
@@ -315,6 +275,7 @@ class AuipB2Coordinator:
                                 compiled.uncovered_action_types
                             ),
                         }
+                    self.stage_decision(turn_id, decision)
                     return None
                 if not compiled.candidates and not hybrid_decision:
                     raise AuipProtocolError("b2_candidates_unavailable")
@@ -392,6 +353,7 @@ class AuipB2Coordinator:
                         "status": "blocked",
                         "reason": getattr(exc, "code", type(exc).__name__),
                     }
+                self.stage_decision(turn_id, decision)
                 return None
 
             try:
@@ -420,6 +382,7 @@ class AuipB2Coordinator:
                 await self._restore_idle(app_session_id)
                 if automatic:
                     return {"status": "superseded", "reason": "stale_candidate"}
+                self.stage_decision(turn_id, decision)
                 return None
             break
         if source_user_text:
@@ -431,6 +394,7 @@ class AuipB2Coordinator:
             )
             if not recorded:
                 await self._restore_idle(app_session_id)
+                self.stage_decision(turn_id, decision)
                 return None
 
         proposal_id = (
@@ -464,10 +428,6 @@ class AuipB2Coordinator:
 
         bus.on(Method.AUIP_UPDATED, capture_receipt)
         try:
-            if acceptance_check is not None:
-                checked = acceptance_check()
-                if inspect.isawaitable(checked):
-                    await checked
             invoked = self.runtime.invoke_action(
                 app_session_id=app_session_id,
                 actor="kurisu",
@@ -491,30 +451,6 @@ class AuipB2Coordinator:
             action_id = str(action.get("action_id") or "").strip()
             if not action_id:
                 raise AuipProtocolError("invalid_action_request")
-            try:
-                from server.turn_decision_shadow import (
-                    get_enabled_turn_decision_shadow_observer,
-                )
-
-                shadow = get_enabled_turn_decision_shadow_observer()
-                if shadow is not None:
-                    shadow.record_event(
-                        turn_id,
-                        stage="auip_action_requested",
-                        origin_kind="auip_runtime",
-                        origin_id=action_id,
-                        payload={
-                            "app_session_id": app_session_id,
-                            "proposal_id": proposal_id,
-                            "candidate_id": candidate.candidate_id,
-                            "action_id": action_id,
-                            "action_type": candidate.action_type,
-                            "expected_revision": candidate.revision,
-                            "decision_generation": candidate.decision_generation,
-                        },
-                    )
-            except Exception:
-                logger.debug("turn decision AUIP action observation failed", exc_info=True)
             await bus.emit(
                 Method.AUIP_ACTION_REQUESTED,
                 {
@@ -562,29 +498,6 @@ class AuipB2Coordinator:
             )
         finally:
             bus.off(Method.AUIP_UPDATED, capture_receipt)
-
-        try:
-            from server.turn_decision_shadow import (
-                get_enabled_turn_decision_shadow_observer,
-            )
-
-            shadow = get_enabled_turn_decision_shadow_observer()
-            if shadow is not None:
-                shadow.record_event(
-                    turn_id,
-                    stage="auip_action_receipt",
-                    origin_kind="auip_application",
-                    origin_id=action_id,
-                    payload={
-                        "app_session_id": app_session_id,
-                        "proposal_id": proposal_id,
-                        "action_id": action_id,
-                        "accepted": receipt.get("accepted") is True,
-                        "resulting_revision": receipt.get("resulting_revision"),
-                    },
-                )
-        except Exception:
-            logger.debug("turn decision AUIP receipt observation failed", exc_info=True)
 
         if receipt.get("accepted") is not True:
             if automatic:

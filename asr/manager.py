@@ -44,7 +44,11 @@ from config.settings import (
 )
 from asr.mic_input_service import get_mic_input_service
 from asr.text_filter import is_asr_prompt_leak
-from asr.backend import ASRBackendFatalError
+# from asr.backend import ASRBackendFatalError
+from asr.backend import (
+    ASRBackendError,
+    ASRBackendFatalError,
+)
 from asr.registry import create_asr_backend
 
 logger = logging.getLogger(__name__)
@@ -211,6 +215,11 @@ class ASRManager:
             ASRManager.MICROPHONE_DEVICE_INDEX = _configured_mic_index()
         self._mic_index: Optional[int] = ASRManager.MICROPHONE_DEVICE_INDEX
         self._init_lock = threading.Lock()
+        # Serialize listen_for_speech calls so a mode switch can never leave
+        # two Conversation-ASR captures/transcriptions running concurrently.
+        self._listen_lock = threading.Lock()
+        self._capture_cancel_lock = threading.Lock()
+        self._capture_cancel_event: threading.Event | None = None
         # 可选：外部注入的 TTS 播放状态查询函数，返回 True 表示 TTS 正在播放
         # 播放期间暂停 pre-roll 写入，避免将 TTS 输出混入 ASR 输入
         self._tts_playing_fn = None
@@ -241,7 +250,22 @@ class ASRManager:
             name="asr-backend-load",
         ).start()
 
+    def create_capture_token(self) -> threading.Event:
+        """Create/register the cancellation token for the next listen attempt."""
+        event = threading.Event()
+        with self._capture_cancel_lock:
+            self._capture_cancel_event = event
+        return event
+
+    def cancel_capture(self) -> None:
+        """Request cancellation of the current or queued listen attempt."""
+        with self._capture_cancel_lock:
+            event = self._capture_cancel_event
+        if event is not None:
+            event.set()
+
     def close(self) -> None:
+        self.cancel_capture()
         try:
             close = getattr(self._backend, "close", None)
             if callable(close):
@@ -396,6 +420,10 @@ class ASRManager:
         """后端是否已加载完成（可用于 GUI 显示加载状态）。"""
         return self._backend_ready.is_set() and self._backend_load_err is None
 
+    @property
+    def load_error(self) -> str:
+        return str(self._backend_load_err or "")
+
     def vad_status(self) -> tuple[str, str]:
         """VAD 端点检测的公开状态，返回 (state, reason)。
 
@@ -414,27 +442,75 @@ class ASRManager:
         """阻塞等待后端就绪，返回是否成功。供需要同步等待的场景使用。"""
         return self._backend_ready.wait(timeout=timeout)
 
-    def listen_for_speech(self, max_retries: int = 2) -> Optional[str]:
+    def listen_for_speech(
+        self,
+        max_retries: int = 2,
+        *,
+        cancel_event: threading.Event | None = None,
+    ) -> Optional[str]:
         """监听语音并返回识别文本；无有效输入返回 None。"""
-        # 后端尚未就绪时等待（最多 120s），不阻塞主进程启动
-        if not self._backend_ready.is_set():
-            logger.info("[ASR] backend is loading; waiting for readiness...")
-            if not self._backend_ready.wait(timeout=120.0):
-                logger.error("[ASR] backend startup timed out; skipping this recognition attempt")
-                return None
-        if self._backend_load_err:
-            logger.error(f"[ASR] backend unavailable: {self._backend_load_err}")
-            return None
+        # A cancelled asyncio.to_thread() keeps its Python worker alive.  The
+        # event is created by AsrHandler *before* the worker is submitted, so a
+        # stop that races with executor startup still cancels the queued worker.
+        if cancel_event is None:
+            cancel_event = self.create_capture_token()
+        else:
+            with self._capture_cancel_lock:
+                self._capture_cancel_event = cancel_event
 
-        logger.info("[ASR] listening started")
-        for attempt in range(max_retries + 1):
-            result = self._listen_once(listen_timeout_attempt=attempt)
-            if result:
-                return result
-            if attempt < max_retries:
-                logger.debug(f"[ASR] attempt {attempt + 1} recognized no speech; retrying...")
-        logger.info("[ASR] no speech recognized after all attempts")
-        return None
+        # Serialize capture/transcription calls.  A replacement session may
+        # queue here, but its own token can still be cancelled while queued.
+        with self._listen_lock:
+            try:
+                # 后端尚未就绪时也要响应模式切换/停止，而不是卡满 120 秒。
+                if not self._backend_ready.is_set():
+                    logger.info("[ASR] backend is loading; waiting for readiness...")
+                    deadline = time.monotonic() + 120.0
+                    while not self._backend_ready.is_set():
+                        if cancel_event.is_set():
+                            logger.info("[ASR] listen cancelled while backend was loading")
+                            return None
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            logger.error(
+                                "[ASR] backend startup timed out; "
+                                "skipping this recognition attempt"
+                            )
+                            return None
+                        self._backend_ready.wait(timeout=min(0.1, remaining))
+
+                if cancel_event.is_set():
+                    logger.info("[ASR] listen cancelled before capture")
+                    return None
+
+                if self._backend_load_err:
+                    logger.error(f"[ASR] backend unavailable: {self._backend_load_err}")
+                    return None
+
+                logger.info("[ASR] listening started")
+                for attempt in range(max_retries + 1):
+                    if cancel_event.is_set():
+                        logger.info("[ASR] listen cancelled")
+                        return None
+                    result = self._listen_once(
+                        listen_timeout_attempt=attempt,
+                        cancel_event=cancel_event,
+                    )
+                    if cancel_event.is_set():
+                        logger.info("[ASR] listen result discarded after cancellation")
+                        return None
+                    if result:
+                        return result
+                    if attempt < max_retries:
+                        logger.debug(
+                            f"[ASR] attempt {attempt + 1} recognized no speech; retrying..."
+                        )
+                logger.info("[ASR] no speech recognized after all attempts")
+                return None
+            finally:
+                with self._capture_cancel_lock:
+                    if self._capture_cancel_event is cancel_event:
+                        self._capture_cancel_event = None
 
     def set_language(self, language_code: str) -> None:
         """Set the conversation recognizer language when supported."""
@@ -493,7 +569,12 @@ class ASRManager:
     # 内部实现
     # ------------------------------------------------------------------
 
-    def _listen_once(self, *, listen_timeout_attempt: int = 0) -> Optional[str]:
+    def _listen_once(
+        self,
+        *,
+        listen_timeout_attempt: int = 0,
+        cancel_event: threading.Event | None = None,
+    ) -> Optional[str]:
         def _should_block_mic() -> bool:
             try:
                 if self._tts_block_mic_fn is not None and self._tts_block_mic_fn():
@@ -543,8 +624,13 @@ class ASRManager:
             probable_end_silence_ms=_SPECULATIVE_END_MS if speculative is not None else 0,
             on_probable_end=speculative.submit if speculative is not None else None,
             on_probable_end_cancelled=speculative.invalidate if speculative is not None else None,
+            cancel_event=cancel_event,
         )
         self._mic_index = mic_service.mic_index
+        if cancel_event is not None and cancel_event.is_set():
+            if speculative is not None:
+                speculative.invalidate("capture_cancelled")
+            return None
         if audio is None:
             msg = "[ASR] listen timed out; no speech detected"
             if listen_timeout_attempt <= 0:
@@ -566,6 +652,20 @@ class ASRManager:
                 except Exception as retry_exc:
                     logger.error("[ASR] retry after backend recovery failed: %s", retry_exc)
                     return None
+
+            except ASRBackendError as exc:
+                logger.error(
+                    "[ASR] backend transcription failed: %s",
+                    exc,
+                )
+                return None
+
+        if cancel_event is not None and cancel_event.is_set():
+            if speculative is not None:
+                speculative.invalidate("transcription_cancelled")
+            logger.info("[ASR] transcription result discarded after cancellation")
+            return None
+
         if is_asr_prompt_leak(text or "", context=self.context):
             logger.warning(
                 "[ASR] dropped context-prompt leak from recognizer: %s",

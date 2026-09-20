@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Iterable, Literal, Mapping
+from typing import Any, Literal, Mapping
 
 
 AUIP_SCHEMA = "amadeus.auip/v0"
@@ -56,18 +56,6 @@ class AuipProtocolError(ValueError):
         self.code = str(code or "invalid_auip_message")
         self.detail = str(detail or "")
         super().__init__(f"{self.code}: {self.detail}" if self.detail else self.code)
-
-
-def available_engagement_modes(stances: Iterable[str]) -> list[str]:
-    """Project manifest stances into the shared Host engagement modes."""
-
-    available = {str(value or "").strip().lower() for value in stances}
-    modes: list[str] = []
-    if "spectator" in available:
-        modes.append("observe")
-    if "participant" in available:
-        modes.extend(("collaborate", "delegate"))
-    return modes
 
 
 @dataclass(frozen=True, slots=True)

@@ -16,13 +16,10 @@ contextBridge.exposeInMainWorld('amadeus', {
   } | null> => ipcRenderer.invoke('get-backend-connection'),
   restartBackend: (): Promise<boolean> => ipcRenderer.invoke('restart-backend'),
   getDesktopSettings: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('desktop-settings.get'),
-  setTitleBarTheme: (theme: 'classic' | 'wallpaper-slice'): Promise<boolean> => ipcRenderer.invoke('window-theme.set', theme),
-  getCompanionPortraitStatus: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('companion-portraits.status'),
   updateDesktopSettings: (update: {
     values?: Record<string, string | boolean | null>
     secrets?: Record<string, string | null>
   }): Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }> => ipcRenderer.invoke('desktop-settings.update', update),
-  markDesktopSettingsApplied: (revisions: Record<string, number>): Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }> => ipcRenderer.invoke('desktop-settings.mark-applied', revisions),
   upsertMcpConnection: (update: {
     connection: {
       id?: string
@@ -45,7 +42,7 @@ contextBridge.exposeInMainWorld('amadeus', {
   clearChatAvatar: (role: 'user' | 'assistant'): Promise<{ ok: boolean; error?: string; avatars?: { user: string; assistant: string } }> => ipcRenderer.invoke('chat-avatars.clear', role),
   focusMainWindow: (): Promise<boolean> => ipcRenderer.invoke('main-window.focus'),
   selectProjectDirectory: (): Promise<{ ok: boolean; cancelled: boolean; path: string; detail: string }> => ipcRenderer.invoke('project-directory.select'),
-  openElectronSlice: (bridge: { assetPort: number; bridgePort: number; assetVersion?: string; graphicsProfile: string; renderMaxFps: number; renderTextureSampling?: boolean; renderMaxResolution: number | null; sliceBounds?: { x: number; y: number; width: number; height: number } }): Promise<boolean> => ipcRenderer.invoke('electron-slice.open', bridge),
+  openElectronSlice: (bridge: { assetPort: number; bridgePort: number; assetVersion?: string; sliceBounds?: { x: number; y: number; width: number; height: number } }): Promise<boolean> => ipcRenderer.invoke('electron-slice.open', bridge),
   closeElectronSlice: (): Promise<boolean> => ipcRenderer.invoke('electron-slice.close'),
   openAuipApp: (launchUrl: string, hostSurfaceId?: string, workItemId?: string): Promise<{ ok: boolean; detail: string }> => ipcRenderer.invoke('auip-app.open', launchUrl, hostSurfaceId, workItemId),
   closeAuipApp: (hostSurfaceId: string, appSessionId?: string): Promise<{ ok: boolean; status: string; detail: string }> => ipcRenderer.invoke('auip-app.close', hostSurfaceId, appSessionId),

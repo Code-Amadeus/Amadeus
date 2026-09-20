@@ -10,8 +10,6 @@ import sqlite3
 import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import closing
-from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -21,68 +19,8 @@ from agent_host.work_ledger_store import (
     WorkLedgerConflict,
     WorkLedgerStore,
 )
-from agent_host import work_ledger_store as work_ledger_store_module
 from agent_host.work_ledger_types import CompletionDecision
 from server.work_completion import CompletionEvidence, assess_completion
-from work_ledger_fixtures import create_historical_schema, seed_historical_work
-
-
-def test_lightweight_reads_trim_json_before_decode_without_changing_full_records(tmp_path, monkeypatch):
-    with WorkLedgerStore(tmp_path / "lightweight.sqlite3", clock=lambda:10.0) as store:
-        project, item = _create_project_and_item(store, tmp_path / "project")
-        presentation = {"text":"presentation-payload-" + "p" * 1_000_000}
-        store.update_work_item_metadata(item.work_item_id,
-            {"presentation":presentation, "provider":"native", "keep":{"nested":True}})
-        _, first = store.create_operation_attempt(item.work_item_id, intent="execute",
-            instruction="First version", provider="native", task="First version")
-        store.update_attempt(first.attempt_id, execution_status="succeeded")
-        _, second = store.create_operation_attempt(item.work_item_id, intent="amend",
-            instruction="Current version", provider="native", task="Current version",
-            attempt_metadata={"provider_result":{"provider_branch":{"text":"branch-payload-" + "b" * 1_000_000},
-                "session_id":"session-snake", "sessionId":"session-camel", "keep":True},
-                "provider_session":{"session_id":"native-context"}})
-        full_item = store.get_work_item(item.work_item_id)
-        full_attempt = store.get_attempt(second.attempt_id)
-        assert store.list_work_items(project_id=project.project_id) == [full_item]
-        assert store.list_attempts(item.work_item_id)[-1] == full_attempt
-        assert store.latest_attempt(item.work_item_id) == full_attempt
-
-        decoded = []
-        original_load = work_ledger_store_module._load_json
-        def observe_load(value):
-            decoded.append(value)
-            return original_load(value)
-        monkeypatch.setattr(work_ledger_store_module, "_load_json", observe_load)
-        light_item = store.list_work_items(project_id=project.project_id,
-            states=["open"], include_presentation=False)[0]
-        light_attempt = store.latest_attempt(item.work_item_id, include_provider_branch=False)
-        assert light_item == replace(full_item,
-            metadata={key:value for key, value in full_item.metadata.items() if key != "presentation"})
-        assert light_attempt == replace(full_attempt, metadata={**full_attempt.metadata,
-            "provider_result":{key:value for key, value in full_attempt.metadata["provider_result"].items()
-                if key != "provider_branch"}})
-        assert all("presentation-payload-" not in raw and "branch-payload-" not in raw for raw in decoded)
-        assert store.get_work_item(item.work_item_id) == full_item
-        assert store.get_attempt(second.attempt_id) == full_attempt
-        assert store.latest_attempt("missing-work", include_provider_branch=False) is None
-
-
-def test_artifact_counts_preserve_case_sensitive_business_prefix_and_scope(tmp_path):
-    with WorkLedgerStore(tmp_path / "counts.sqlite3") as store:
-        project, item = _create_project_and_item(store, tmp_path / "project")
-        other = store.create_work_item(project.project_id, title="Other scope")
-        assert store.artifact_counts(item.work_item_id) == {"business":0, "runtime":0}
-        kinds = ("business.export", "business.", "business.Δ", "Business.export",
-            "BUSINESS.export", "business", "businesses.export", "business．export", "provider_payload")
-        for kind in kinds:
-            store.register_artifact(item.work_item_id, kind=kind, metadata={"screenshot":"opaque" * 20_000})
-        store.register_artifact(other.work_item_id, kind="business.export")
-        expected = sum(kind.startswith("business.") for kind in kinds)
-        assert store.artifact_counts(item.work_item_id) == {
-            "business":expected, "runtime":len(kinds) - expected}
-        assert store.artifact_counts(other.work_item_id) == {"business":1, "runtime":0}
-        store.register_artifact(item.work_item_id, kind="business.new")
-        assert store.artifact_counts(item.work_item_id)["business"] == expected + 1
 
 
 def _create_project_and_item(store: WorkLedgerStore, project_root: Path):
@@ -94,33 +32,6 @@ def _create_project_and_item(store: WorkLedgerStore, project_root: Path):
         goal="Keep provider attempts distinguishable.",
     )
     return project, item
-
-
-def test_session_roster_preserves_legacy_metadata_and_latest_attempt_scope(tmp_path):
-    with WorkLedgerStore(tmp_path / "session-roster.sqlite3") as store:
-        project, first = _create_project_and_item(store, tmp_path / "project")
-        items = [first, *(store.create_work_item(project.project_id, title=f"Work {n}")
-            for n in range(4))]
-        metadata = [
-            {"session_id":"current", "provider_result":{"sessionId":"other"}},
-            {"provider_result":{"session_id":"current"}},
-            {"provider_result":{"sessionId":"current"}},
-            {"session_id":" current "},
-            {"session_id":"current"},
-        ]
-        for item, fields in zip(items, metadata, strict=True):
-            _, attempt = store.create_operation_attempt(item.work_item_id, intent="execute",
-                instruction="First version", provider="native", task="First version",
-                attempt_metadata=fields)
-            store.update_attempt(attempt.attempt_id, execution_status="succeeded")
-        store.create_operation_attempt(items[-1].work_item_id, intent="amend",
-            instruction="Continue elsewhere", provider="native", task="Continue elsewhere",
-            attempt_metadata={"session_id":"other"})
-        assert {item.work_item_id for item in store.list_work_items(session_id="current")} == {
-            item.work_item_id for item in items[:-1]}
-        assert [item.work_item_id for item in store.list_work_items(session_id="other")] == [
-            items[-1].work_item_id]
-        assert len(store.list_work_items()) == 5
 
 
 def test_schema_migration_is_idempotent_and_records_survive_restart() -> None:
@@ -234,7 +145,13 @@ def test_attempt_metadata_compare_and_set_is_atomic_and_monotonic() -> None:
 def test_version_one_database_upgrades_writer_lease_schema() -> None:
     with tempfile.TemporaryDirectory(prefix="work_ledger_v1_upgrade_") as temp:
         db_path = Path(temp) / "ledger.sqlite3"
-        create_historical_schema(db_path, 1).close()
+        seeded = WorkLedgerStore(db_path)
+        seeded.close()
+        connection = sqlite3.connect(db_path)
+        connection.execute("DROP TABLE workspace_leases")
+        connection.execute("PRAGMA user_version = 1")
+        connection.commit()
+        connection.close()
 
         upgraded = WorkLedgerStore(db_path)
         assert upgraded.schema_version == SCHEMA_VERSION
@@ -246,13 +163,18 @@ def test_version_two_migration_reconciles_duplicate_current_attempts() -> None:
     with tempfile.TemporaryDirectory(prefix="work_ledger_v2_upgrade_") as temp:
         root = Path(temp)
         db_path = root / "ledger.sqlite3"
-        connection = create_historical_schema(db_path, 2)
-        seeded = seed_historical_work(connection, root / "project")
-        connection.execute(
-            "INSERT INTO workspace_leases(lease_id,workspace_path,workspace_identity,work_item_id,"
-            "attempt_id,status,acquired_at,heartbeat_at) VALUES ('lease_historical',?,?,?,?,'active',1,1)",
-            (seeded["workspace_path"], seeded["workspace_identity"], seeded["work_item_id"], seeded["attempt_id"]),
+        seeded = WorkLedgerStore(db_path)
+        _, item = _create_project_and_item(seeded, root / "project")
+        older = seeded.create_attempt(item.work_item_id, provider="locus", task="Older writer")
+        seeded.acquire_writer_lease(
+            item.work_item_id,
+            older.attempt_id,
+            workspace_path=root / "project",
         )
+        seeded.close()
+
+        connection = sqlite3.connect(db_path)
+        connection.execute("DROP INDEX uq_work_item_active_attempt")
         connection.execute(
             """
             INSERT INTO run_attempts (
@@ -261,18 +183,20 @@ def test_version_two_migration_reconciles_duplicate_current_attempts() -> None:
             ) VALUES ('attempt_newer', ?, 2, 'locus', '', 'Newer writer',
                       'agent', 'queued', 2, 2, '{}')
             """,
-            (seeded["work_item_id"],),
+            (item.work_item_id,),
         )
+        connection.execute("PRAGMA user_version = 2")
+        connection.commit()
         connection.close()
 
         upgraded = WorkLedgerStore(db_path)
         assert upgraded.schema_version == SCHEMA_VERSION
-        attempts = upgraded.list_attempts(seeded["work_item_id"])
+        attempts = upgraded.list_attempts(item.work_item_id)
         assert [attempt.execution_status for attempt in attempts] == ["orphaned", "queued"]
-        older_lease = upgraded.get_writer_lease(seeded["attempt_id"])
+        older_lease = upgraded.get_writer_lease(older.attempt_id)
         assert older_lease is not None and older_lease.status == "stale"
         try:
-            upgraded.create_attempt(seeded["work_item_id"], provider="locus", task="Third writer")
+            upgraded.create_attempt(item.work_item_id, provider="locus", task="Third writer")
         except WorkLedgerConflict:
             pass
         else:
@@ -280,42 +204,16 @@ def test_version_two_migration_reconciles_duplicate_current_attempts() -> None:
         upgraded.close()
 
 
-def test_version_ten_writer_lease_migrates_to_explicit_work_owner() -> None:
-    with tempfile.TemporaryDirectory(prefix="work_ledger_v10_writer_upgrade_") as temp:
-        root = Path(temp)
-        db_path = root/"ledger.sqlite3"
-        connection = create_historical_schema(db_path, 7)
-        seeded = seed_historical_work(connection, root/"project")
-        for migration in (
-                work_ledger_store_module._MIGRATION_8,
-                work_ledger_store_module._MIGRATION_9,
-                work_ledger_store_module._MIGRATION_10):
-            connection.execute("BEGIN IMMEDIATE")
-            for statement in migration:
-                connection.execute(statement)
-            connection.execute("COMMIT")
-        connection.execute("""INSERT INTO workspace_leases(
-            lease_id,workspace_path,workspace_identity,work_item_id,attempt_id,
-            status,acquired_at,heartbeat_at,metadata_json)
-            VALUES ('lease-v10',?,?,?,?, 'active',1,1,'{}')""",
-            (seeded["workspace_path"], seeded["workspace_identity"],
-             seeded["work_item_id"], seeded["attempt_id"]))
-        connection.close()
-
-        upgraded = WorkLedgerStore(db_path)
-        lease = upgraded.get_writer_lease(seeded["attempt_id"])
-        assert upgraded.schema_version == 11
-        assert lease is not None and lease.owner_kind == "work_attempt"
-        assert lease.work_item_id == seeded["work_item_id"]
-        assert not lease.session_id and not lease.context_id
-        assert not lease.provider_effect_id and not lease.provider_run_id
-        upgraded.close()
-
-
 def test_version_three_database_upgrades_permission_request_schema() -> None:
     with tempfile.TemporaryDirectory(prefix="work_ledger_v3_upgrade_") as temp:
         db_path = Path(temp) / "ledger.sqlite3"
-        create_historical_schema(db_path, 3).close()
+        seeded = WorkLedgerStore(db_path)
+        seeded.close()
+        connection = sqlite3.connect(db_path)
+        connection.execute("DROP TABLE permission_requests")
+        connection.execute("PRAGMA user_version = 3")
+        connection.commit()
+        connection.close()
 
         upgraded = WorkLedgerStore(db_path)
         assert upgraded.schema_version == SCHEMA_VERSION
@@ -473,28 +371,48 @@ def test_schema_v6_migration_backfills_operations_and_session_active_work() -> N
     with tempfile.TemporaryDirectory(prefix="work_ledger_v6_upgrade_") as temp:
         root = Path(temp)
         db_path = root / "ledger.sqlite3"
-        connection = create_historical_schema(db_path, 6)
+        seeded = WorkLedgerStore(db_path)
+        project, item = _create_project_and_item(seeded, root / "project")
+        attempt = seeded.create_attempt(
+            item.work_item_id,
+            provider="locus",
+            task="Historical instruction",
+        )
+        seeded.bind_conversation(
+            "legacy-chat",
+            project.project_id,
+            anchor_work_item_id=item.work_item_id,
+        )
+        seeded.update_work_item_metadata(item.work_item_id, {"intent": "amend"})
+        seeded.close()
+
+        connection = sqlite3.connect(db_path)
+        connection.execute("PRAGMA foreign_keys = OFF")
         # Imported/older ledgers may contain valid, non-compact JSON. The
         # migration must preserve intent semantically, not by byte pattern.
-        seeded = seed_historical_work(connection, root / "project", metadata_json='{ "intent": "amend" }')
         connection.execute(
-            "INSERT INTO conversation_bindings(session_id,project_id,anchor_work_item_id,"
-            "binding_kind,created_at,updated_at) VALUES ('legacy-chat',?,?,'work_item',1,1)",
-            (seeded["project_id"], seeded["work_item_id"]),
+            "UPDATE work_items SET metadata_json = ? WHERE work_item_id = ?",
+            ('{ "intent": "amend" }', item.work_item_id),
         )
+        connection.execute("DROP INDEX idx_run_attempts_operation_number")
+        connection.execute("ALTER TABLE run_attempts DROP COLUMN operation_id")
+        connection.execute("DROP TABLE session_work_contexts")
+        connection.execute("DROP TABLE work_operations")
+        connection.execute("PRAGMA user_version = 6")
+        connection.commit()
         connection.close()
 
         upgraded = WorkLedgerStore(db_path)
         assert upgraded.schema_version == SCHEMA_VERSION
-        loaded_attempt = upgraded.get_attempt(seeded["attempt_id"])
-        operations = upgraded.list_operations(seeded["work_item_id"])
+        loaded_attempt = upgraded.get_attempt(attempt.attempt_id)
+        operations = upgraded.list_operations(item.work_item_id)
         active = upgraded.get_session_work_context("legacy-chat")
         assert loaded_attempt is not None and loaded_attempt.operation_id
         assert len(operations) == 1
         assert loaded_attempt.operation_id == operations[0].operation_id
-        assert operations[0].instruction == seeded["goal"]
+        assert operations[0].instruction == item.goal
         assert operations[0].intent == "amend"
-        assert active is not None and active.active_work_item_id == seeded["work_item_id"]
+        assert active is not None and active.active_work_item_id == item.work_item_id
         upgraded.close()
 
 
@@ -562,57 +480,6 @@ def test_concurrent_attempt_creation_allows_only_one_current_attempt() -> None:
         assert continued.attempt_number == 2
         first_store.close()
         second_store.close()
-
-
-def test_pending_terminal_receipt_query_filters_before_limit_and_uses_status_index() -> None:
-    with tempfile.TemporaryDirectory(prefix="work_ledger_terminal_receipts_") as temp:
-        root = Path(temp)
-        now = [1.0]
-        with WorkLedgerStore(root / "ledger.sqlite3", clock=lambda: now[0]) as store:
-            project = store.create_or_get_project(root / "project")
-
-            def terminal_attempt(ordinal: int, state: str, updated_at: float, run_id: str):
-                item = store.create_work_item(
-                    project.project_id,
-                    title=f"Terminal receipt {ordinal}",
-                    work_item_id=f"work-terminal-receipt-{ordinal}",
-                )
-                attempt = store.create_attempt(
-                    item.work_item_id,
-                    provider="locus",
-                    task=f"Terminal receipt task {ordinal}",
-                    provider_run_id=run_id,
-                    attempt_id=f"attempt-terminal-receipt-{ordinal}",
-                )
-                now[0] = updated_at
-                return store.update_attempt(
-                    attempt.attempt_id,
-                    execution_status="succeeded",
-                    metadata={"provider_terminal_pipeline": {"state": state}},
-                )
-
-            terminal_attempt(1, "completed", 1.0, "run-completed-oldest")
-            pending_oldest = terminal_attempt(2, "pending", 2.0, "run-pending-oldest")
-            terminal_attempt(3, "pending", 3.0, "run-pending-newest")
-            terminal_attempt(4, "pending", 0.5, "")
-
-            selected = store.list_pending_terminal_provider_attempts(limit=1)
-            plan = " ".join(
-                str(row[3])
-                for row in store._connection.execute(  # noqa: SLF001
-                    "EXPLAIN QUERY PLAN SELECT * FROM run_attempts "
-                    "WHERE execution_status IN ('succeeded', 'failed', 'cancelled') "
-                    "AND provider_run_id <> '' "
-                    "AND json_extract(metadata_json, "
-                    "'$.provider_terminal_pipeline.state') = 'pending' "
-                    "ORDER BY updated_at ASC, attempt_id ASC LIMIT ?",
-                    (1,),
-                )
-            )
-
-            assert selected == [pending_oldest]
-            assert "idx_run_attempts_status_updated" in plan
-            assert store.list_pending_terminal_provider_attempts(limit=0) == []
 
 
 def test_artifacts_are_deduplicated_and_external_outputs_stay_pending() -> None:
@@ -753,116 +620,6 @@ def test_permission_request_upsert_resolution_and_restart_are_persistent() -> No
         assert persisted is not None and persisted.status == "allowed"
         assert persisted.resolved_at == 300.0
         verified.close()
-
-
-def test_cooperative_permission_owner_is_persistent_without_creating_work() -> None:
-    with tempfile.TemporaryDirectory(prefix="cooperative_permission_restart_") as temp:
-        path = Path(temp) / "host.sqlite3"
-        store = WorkLedgerStore(path)
-        with store._transaction() as cursor:
-            cursor.execute("""CREATE TABLE cooperative_contexts (
-                session_id TEXT NOT NULL,context_id TEXT NOT NULL,closed INTEGER NOT NULL,
-                run_id TEXT NOT NULL,run_status TEXT NOT NULL,
-                PRIMARY KEY(session_id,context_id))""")
-            cursor.execute("INSERT INTO cooperative_contexts VALUES (?,?,?,?,?)",
-                ("session-a", "context-a", 0, "run-a", "running"))
-        request = store.create_cooperative_permission_request(
-            session_id="session-a", context_id="context-a", provider_run_id="run-a",
-            capability="shell.execute", action="execute_command",
-            scope_paths=["workspace"], reason="Needs approval", options=["deny"],
-            idempotency_key="provider:codex:run-a:native-request",
-            metadata={"provider":"codex", "provider_request_id":"native-request"})
-        assert request.owner_kind == "cooperative_run"
-        assert (request.work_item_id, request.attempt_id) == ("", "")
-        assert (request.session_id, request.context_id, request.provider_run_id) == (
-            "session-a", "context-a", "run-a")
-        replay = store.create_cooperative_permission_request(
-            session_id="session-a", context_id="context-a", provider_run_id="run-a",
-            capability="shell.execute", action="execute_command",
-            idempotency_key="provider:codex:run-a:native-request",
-            metadata={"provider":"codex", "provider_request_id":"native-request"})
-        assert replay.request_id == request.request_id
-        assert store.list_work_items() == [] and store.list_projects() == []
-        denied = store.resolve_permission_request(request.request_id, "denied",
-            metadata={"resolution":"policy_denied"})
-        assert denied.status == "denied"
-        with store._transaction() as cursor:
-            cursor.execute("""UPDATE cooperative_contexts SET run_status='done'
-                WHERE session_id='session-a' AND context_id='context-a'""")
-        terminal_replay = store.create_cooperative_permission_request(
-            session_id="session-a", context_id="context-a", provider_run_id="run-a",
-            capability="shell.execute", action="execute_command",
-            idempotency_key="provider:codex:run-a:native-request",
-            metadata={"provider":"codex", "provider_request_id":"native-request"})
-        assert terminal_replay.status == "denied"
-        store.close()
-
-        reopened = WorkLedgerStore(path)
-        persisted = reopened.list_cooperative_permission_requests(
-            "session-a", context_id="context-a", provider_run_id="run-a",
-            status="denied")
-        assert len(persisted) == 1 and persisted[0].request_id == request.request_id
-        assert persisted[0].metadata["resolution"] == "policy_denied"
-        reopened.close()
-
-
-def test_v9_permission_rows_migrate_to_explicit_work_owner() -> None:
-    with tempfile.TemporaryDirectory(prefix="permission_v9_migration_") as temp:
-        root = Path(temp)
-        path = root / "ledger.sqlite3"
-        store = WorkLedgerStore(path)
-        _, item = _create_project_and_item(store, root / "project")
-        attempt = store.create_attempt(item.work_item_id, provider="codex", task="Build")
-        request = store.create_permission_request(item.work_item_id,
-            attempt_id=attempt.attempt_id, request_id="permission-v9",
-            idempotency_key="native-v9", capability="shell.execute",
-            action="execute_command", options=["allow_once", "deny"],
-            metadata={"provider":"codex"})
-        store.close()
-
-        with closing(sqlite3.connect(path)) as db, db:
-            db.executescript("""
-                DROP INDEX uq_permission_request_attempt_key;
-                DROP INDEX uq_permission_request_cooperative_key;
-                DROP INDEX idx_permission_requests_item_status;
-                DROP INDEX idx_permission_requests_attempt_status;
-                DROP INDEX idx_permission_requests_cooperative_status;
-                ALTER TABLE permission_requests RENAME TO permission_requests_v10;
-                CREATE TABLE permission_requests (
-                    request_id TEXT PRIMARY KEY,
-                    work_item_id TEXT NOT NULL REFERENCES work_items(work_item_id) ON DELETE CASCADE,
-                    attempt_id TEXT NOT NULL REFERENCES run_attempts(attempt_id) ON DELETE CASCADE,
-                    idempotency_key TEXT NOT NULL DEFAULT '', capability TEXT NOT NULL,
-                    action TEXT NOT NULL, scope_paths_json TEXT NOT NULL DEFAULT '[]',
-                    reason TEXT NOT NULL DEFAULT '', reversibility TEXT NOT NULL DEFAULT 'unknown',
-                    status TEXT NOT NULL CHECK (status IN ('pending','allowed','denied','expired')),
-                    options_json TEXT NOT NULL DEFAULT '[]', created_at REAL NOT NULL,
-                    updated_at REAL NOT NULL, resolved_at REAL,
-                    metadata_json TEXT NOT NULL DEFAULT '{}');
-                INSERT INTO permission_requests SELECT request_id,work_item_id,attempt_id,
-                    idempotency_key,capability,action,scope_paths_json,reason,reversibility,
-                    status,options_json,created_at,updated_at,resolved_at,metadata_json
-                    FROM permission_requests_v10;
-                DROP TABLE permission_requests_v10;
-                CREATE UNIQUE INDEX uq_permission_request_attempt_key
-                    ON permission_requests(attempt_id,idempotency_key)
-                    WHERE idempotency_key<>'';
-                CREATE INDEX idx_permission_requests_item_status
-                    ON permission_requests(work_item_id,status,updated_at DESC);
-                CREATE INDEX idx_permission_requests_attempt_status
-                    ON permission_requests(attempt_id,status,updated_at DESC);
-                PRAGMA user_version=9;
-            """)
-
-        migrated = WorkLedgerStore(path)
-        loaded = migrated.get_permission_request(request.request_id)
-        assert loaded is not None and loaded.owner_kind == "work_attempt"
-        assert loaded.work_item_id == item.work_item_id
-        assert loaded.attempt_id == attempt.attempt_id
-        assert not loaded.session_id and not loaded.context_id and not loaded.provider_run_id
-        assert loaded.options == ["allow_once", "deny"]
-        assert migrated.schema_version == SCHEMA_VERSION
-        migrated.close()
 
 
 def test_permission_request_rejects_invalid_identity_and_repeated_decisions() -> None:
@@ -1113,102 +870,6 @@ def test_single_writer_lease_is_atomic_across_connections() -> None:
         assert reacquired.status == "active"
         assert reacquired.lease_id == active[0].lease_id
         verified.release_writer_lease(active[0].attempt_id)
-        verified.close()
-
-
-def test_cooperative_writer_lease_shares_work_slot_without_work_identity() -> None:
-    with tempfile.TemporaryDirectory(prefix="cooperative_writer_lease_") as temp:
-        root = Path(temp)
-        workspace = root/"project"
-        store = WorkLedgerStore(root/"ledger.sqlite3")
-        _, item = _create_project_and_item(store, workspace)
-        attempt = store.create_attempt(item.work_item_id, provider="codex", task="Work writer")
-
-        cooperative = store.acquire_cooperative_writer_lease(
-            "session-a", "context-a", "effect-a", workspace_path=workspace,
-            metadata={"source":"cooperative"})
-        assert cooperative.owner_kind == "cooperative_run"
-        assert not cooperative.work_item_id and not cooperative.attempt_id
-        assert (cooperative.session_id, cooperative.context_id,
-            cooperative.provider_effect_id) == ("session-a", "context-a", "effect-a")
-        assert not cooperative.provider_run_id
-        assert store.acquire_cooperative_writer_lease(
-            "session-a", "context-a", "effect-a",
-            workspace_path=workspace).lease_id == cooperative.lease_id
-        try:
-            store.acquire_writer_lease(item.work_item_id, attempt.attempt_id,
-                workspace_path=workspace)
-        except WorkLedgerConflict as exc:
-            assert "active writer" in str(exc)
-        else:
-            raise AssertionError("Work cannot bypass an active cooperative writer")
-
-        bound = store.bind_cooperative_writer_run("effect-a", "provider-run-a")
-        assert bound.provider_run_id == "provider-run-a"
-        assert store.bind_cooperative_writer_run(
-            "effect-a", "provider-run-a").provider_run_id == "provider-run-a"
-        released = store.release_cooperative_writer_lease("effect-a",
-            metadata={"terminal":"done"})
-        assert released is not None and released.status == "released"
-        assert released.metadata == {"source":"cooperative", "terminal":"done"}
-        try:
-            store.acquire_cooperative_writer_lease("session-a", "context-a",
-                "effect-a", workspace_path=workspace)
-        except WorkLedgerConflict as exc:
-            assert "cannot reactivate" in str(exc)
-        else:
-            raise AssertionError("a terminal effect cannot reacquire its old lease")
-
-        work_lease = store.acquire_writer_lease(item.work_item_id,
-            attempt.attempt_id, workspace_path=workspace)
-        assert work_lease.owner_kind == "work_attempt"
-        assert not work_lease.session_id and not work_lease.provider_effect_id
-        try:
-            store.acquire_cooperative_writer_lease("session-b", "context-b",
-                "effect-b", workspace_path=workspace)
-        except WorkLedgerConflict as exc:
-            assert "active writer" in str(exc)
-        else:
-            raise AssertionError("cooperative writes cannot bypass a Work writer")
-        store.release_writer_lease(attempt.attempt_id)
-        store.close()
-
-
-def test_work_and_cooperative_writer_acquisition_is_atomic_across_connections() -> None:
-    with tempfile.TemporaryDirectory(prefix="cross_owner_writer_lease_") as temp:
-        root = Path(temp)
-        workspace = root/"project"
-        database = root/"ledger.sqlite3"
-        seed = WorkLedgerStore(database)
-        _, item = _create_project_and_item(seed, workspace)
-        attempt = seed.create_attempt(item.work_item_id, provider="codex", task="Work")
-        seed.close()
-
-        def acquire(kind: str) -> bool:
-            store = WorkLedgerStore(database)
-            try:
-                if kind == "work":
-                    store.acquire_writer_lease(item.work_item_id,
-                        attempt.attempt_id, workspace_path=workspace)
-                else:
-                    store.acquire_cooperative_writer_lease(
-                        "session", "context", "effect", workspace_path=workspace)
-                return True
-            except WorkLedgerConflict:
-                return False
-            finally:
-                store.close()
-
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            outcomes = list(pool.map(acquire, ("work", "cooperative")))
-        assert sorted(outcomes) == [False, True]
-        verified = WorkLedgerStore(database)
-        active, = verified.list_writer_leases(active_only=True)
-        assert active.owner_kind in {"work_attempt", "cooperative_run"}
-        if active.owner_kind == "work_attempt":
-            verified.release_writer_lease(active.attempt_id)
-        else:
-            verified.release_cooperative_writer_lease(active.provider_effect_id)
         verified.close()
 
 

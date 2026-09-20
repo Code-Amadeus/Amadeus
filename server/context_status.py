@@ -63,14 +63,12 @@ def project_item_status_labels(item: dict[str, Any]) -> tuple[str, str]:
     state = str(item.get("state") or "open").strip().lower()
     if execution in {"queued", "running"}:
         return "执行中", "実行中"
-    if execution == "orphaned":
-        return "执行结果待确认", "実行結果の確認待ち"
     if attention not in {"", "none"}:
         return "需要处理", "対応が必要"
     if state == "accepted":
         return "已验收", "受け入れ済み"
     if state == "archived":
         return "已归档", "アーカイブ済み"
-    if execution == "failed":
+    if execution in {"failed", "orphaned"}:
         return "失败", "失敗"
     return "当前", "進行中"

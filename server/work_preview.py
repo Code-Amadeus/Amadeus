@@ -260,11 +260,6 @@ class WorkPreviewManager:
                     self._watch(session),
                     name=f"work-preview:{item.work_item_id}",
                 )
-            elif self._auip_owns_preview(session):
-                # A newer Work Attempt may continue independently, but it cannot
-                # replace the exact content and identity of a still-owned AUIP
-                # surface.  Its exact close receipt releases adoption below.
-                pass
             elif (
                 session.attempt_id != attempt.attempt_id
                 or session.attempt_generation != attempt.attempt_number
@@ -348,15 +343,12 @@ class WorkPreviewManager:
             raise WorkPreviewError("invalid_auip_handoff_source")
         async with self._lock:
             key = self._work_keys.get(work_item_id)
-            current = self._sessions.get(key) if key is not None else None
-            needs_surface = current is None or current.attempt_id != attempt_id
+            needs_surface = key is None or self._sessions.get(key) is None
         if needs_surface:
             # Attach may be the first reason an application needs a Host
             # surface. Reuse the ordinary Preview identity/open event instead
             # of creating a second AUIP-only window contract. ``open`` still
             # re-resolves the trusted ledger and rejects stale Attempts.
-            # After an exact AUIP close, this also adopts the new Attempt
-            # without depending on the next background watcher tick.
             await self.open(work_item_id, expected_attempt_id=attempt_id)
         publish: PreviewSession | None = None
         async with self._lock:
@@ -366,7 +358,10 @@ class WorkPreviewManager:
                 return {"status": "closed", "workItemId": work_item_id}
             if session.attempt_id != attempt_id:
                 return self._projection(session)
-            if self._auip_owns_preview(session):
+            if (
+                session.attached_attempt_id == attempt_id
+                and session.app_session_status in {"active", "completed", "closing"}
+            ):
                 # A second prepare cannot replace an AppSession which the AUIP
                 # runtime still considers live.  Preview presentation has no
                 # authority to close or supersede that session.
@@ -592,13 +587,6 @@ class WorkPreviewManager:
         session.attached_host_surface_id = ""
 
     @staticmethod
-    def _auip_owns_preview(session: PreviewSession) -> bool:
-        return bool(
-            session.attached_attempt_id == session.attempt_id
-            and session.app_session_status in {"active", "completed", "closing"}
-        )
-
-    @staticmethod
     def _is_auip_authoring(attempt: Any) -> bool:
         metadata = attempt.metadata if isinstance(attempt.metadata, dict) else {}
         return bool(
@@ -620,7 +608,7 @@ class WorkPreviewManager:
         attempt: Any,
     ) -> str:
         if session.attached_attempt_id == attempt.attempt_id:
-            if self._auip_owns_preview(session):
+            if session.app_session_status in {"active", "completed", "closing"}:
                 # accepted/archive is a Work ledger fact, not authority to
                 # close an active AUIP AppSession.  The upper coordinator must
                 # request/observe AUIP closure; only that closure freezes this
@@ -748,12 +736,6 @@ class WorkPreviewManager:
                     latest = attempts[-1] if attempts else None
                     if latest is None:
                         await self._set_error(session, "work_attempt_unavailable")
-                        continue
-                    if self._auip_owns_preview(session):
-                        # AUIP owns this exact visible surface until its terminal
-                        # surface-close receipt.  Work may advance in the ledger,
-                        # but neither that Attempt nor a changed preview root can
-                        # be projected into the owned surface in the meantime.
                         continue
                     previous_execution = session.attempt_execution
                     attempt_changed = (

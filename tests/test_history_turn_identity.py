@@ -18,9 +18,11 @@ def test_assistant_entry_carries_turn_id():
     history = ConversationHistory()
     history.add_assistant("reply", turn_id="turn_normal")
 
-    assert history.dialog == [
-        {"role": "assistant", "content": "reply", "turn_id": "turn_normal"}
-    ]
+    assert len(history.dialog) == 1
+    assert history.dialog[0]["role"] == "assistant"
+    assert history.dialog[0]["content"] == "reply"
+    assert history.dialog[0]["turn_id"] == "turn_normal"
+    assert history.dialog[0].get("created_at")
 
 
 def test_interruption_targets_requested_turn_not_latest_assistant():
@@ -74,79 +76,6 @@ def test_interruption_preserves_an_already_committed_delegate_fact():
         turn_id="turn_work",
     ) is False
     assert history.dialog[-1]["content"].count("[DELEGATE") == 1
-
-
-def _assert_interrupted_records(controls):
-    history = ConversationHistory()
-    history.add_assistant("Before." + "Between.".join(controls), turn_id="compound")
-    history.add_assistant("A later unrelated reply.", turn_id="later")
-
-    assert history.mark_last_assistant_interrupted("Heard.", turn_id="compound")
-    expected = "Heard. [interrupted by user]\n\n" + "".join(controls)
-    assert history.dialog[0]["content"] == expected
-    assert history.dialog[1]["content"] == "A later unrelated reply."
-    # Keep multiplicity, even identical records: rewriting audio history is
-    # neither semantic deduplication nor another execution/acceptance pass.
-    assert not history.mark_last_assistant_interrupted("Heard.", turn_id="compound")
-    assert history.dialog[0]["content"] == expected
-
-
-def test_interruption_preserves_compound_delegate_records():
-    _assert_interrupted_records((
-        '[DELEGATE provider="codex" intent="amend" task="Change Game"]',
-        '[DELEGATE provider="codex" intent="amend" task="Change Page"]',
-    ))
-
-
-def test_interruption_preserves_compound_control_envelopes():
-    _assert_interrupted_records((
-        '[CONTROL delegate="true" provider="codex" intent="amend" task="Change Game"]',
-        '[CONTROL delegate="true" provider="codex" intent="amend" task="Change Page"]',
-    ))
-
-
-def test_interruption_preserves_work_and_app_records():
-    _assert_interrupted_records((
-        '[DELEGATE provider="codex" intent="amend" task="Change Game"]',
-        '[AUIP action="launch"]',
-    ))
-
-
-def test_interruption_preserves_no_work_and_app_leave_records():
-    _assert_interrupted_records(('[CONTROL delegate="false"]', '[AUIP action="leave"]'))
-
-
-def test_interruption_does_not_deduplicate_identical_recorded_controls():
-    _assert_interrupted_records(('[DELEGATE provider="codex" intent="report" subject="project"]',) * 2)
-
-
-def test_interruption_keeps_stored_control_spelling_and_noop_without_inventing_work():
-    history = ConversationHistory()
-    control = '[control delegate="false"]'
-    history.add_assistant("No work." + control + '[EMO preset="smile"]', turn_id="noop")
-    assert history.mark_last_assistant_interrupted("No", turn_id="noop")
-    assert history.dialog[0]["content"] == "No [interrupted by user]\n\n" + control
-    assert "DELEGATE" not in history.dialog[0]["content"]
-
-
-def test_interruption_never_completes_a_truncated_control_record():
-    history = ConversationHistory()
-    complete = '[DELEGATE provider="codex" intent="amend" task="Change Game"]'
-    history.add_assistant(complete + '[DELEGATE provider="codex" task="unfinished', turn_id="partial")
-    assert history.mark_last_assistant_interrupted("", turn_id="partial")
-    assert history.dialog[0]["content"] == "[interrupted by user]\n\n" + complete
-
-
-def test_history_reader_still_excludes_hidden_thought_and_presentation_tags():
-    history = ConversationHistory()
-    control = '[AUIP action="leave"]'
-    history.add_assistant(
-        '<think>[DELEGATE provider="codex" task="not a recorded call"]</think>'
-        '[EMO preset="smile"]Visible.' + control,
-        turn_id="visible",
-    )
-    assert history.mark_last_assistant_interrupted("Visible.", turn_id="visible")
-    assert history.dialog[0]["content"] == "Visible. [interrupted by user]\n\n" + control
 
 
 def test_legacy_session_json_loads_and_can_be_annotated():

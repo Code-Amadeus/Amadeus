@@ -17,8 +17,6 @@ from server.local_git import collect_diff, run_git
 _HASH_LIMIT_BYTES = 64 * 1024 * 1024
 _UNTRACKED_PATCH_FILE_LIMIT_BYTES = 512 * 1024
 _UNTRACKED_PATCH_TOTAL_LIMIT_BYTES = 1024 * 1024
-_FILESYSTEM_BASELINE_MAX_FILES = 4096
-_FILESYSTEM_BASELINE_MAX_PATH_CHARS = 512 * 1024
 
 
 class WorkArtifactRegistry:
@@ -37,7 +35,7 @@ class WorkArtifactRegistry:
         attempt: RunAttemptRecord,
         item: WorkItemRecord,
     ) -> dict[str, Any]:
-        baseline = await capture_workspace_baseline(item.workspace_path)
+        baseline = await capture_git_baseline(item.workspace_path)
         lineage_paths = self._lineage_owned_dirty_paths(
             attempt=attempt,
             item=item,
@@ -90,13 +88,9 @@ class WorkArtifactRegistry:
         if not same_workspace:
             return []
 
-        baseline_paths = (baseline.get("files", {}).keys()
-            if baseline.get("source") == "filesystem"
-            and isinstance(baseline.get("files"), dict)
-            else baseline.get("dirty_files") or [])
         dirty_by_key = {
             _path_key(path): str(path)
-            for path in baseline_paths
+            for path in baseline.get("dirty_files") or []
             if str(path or "").strip()
         }
         owned: list[str] = []
@@ -141,14 +135,13 @@ class WorkArtifactRegistry:
             delta["artifact_ids"] = []
             return delta
         artifact_ids: list[str] = []
-        delta_source = str(delta.get("source") or "git")
-        delta_identity = f"{delta_source}.delta:{attempt.attempt_id}"
+        delta_identity = f"git.delta:{attempt.attempt_id}"
         delta_artifact = self.store.register_artifact(
             item.work_item_id,
             attempt_id=attempt.attempt_id,
-            kind=f"{delta_source}.delta",
-            title=f"{delta_source.title()} delta for attempt {attempt.attempt_number}",
-            uri=f"work-ledger://{delta_source}-delta/{attempt.attempt_id}",
+            kind="git.delta",
+            title=f"Git delta for attempt {attempt.attempt_number}",
+            uri=f"work-ledger://git-delta/{attempt.attempt_id}",
             identity=delta_identity,
             status="pending" if ambiguous or delta.get("conflicts") else "registered",
             metadata={"delta": delta},
@@ -166,7 +159,7 @@ class WorkArtifactRegistry:
                 kind="business.file",
                 title=Path(relative_path).name or relative_path,
                 path=str(candidate) if candidate is not None else None,
-                identity=f"{delta_source}.path:{_path_key(relative_path)}",
+                identity=f"git.path:{_path_key(relative_path)}",
                 status="pending" if relative_path in ambiguous else ("registered" if fact.get("exists") else "missing"),
                 sha256=str(fact.get("sha256") or ""),
                 size_bytes=int(fact["size_bytes"]) if fact.get("size_bytes") is not None else None,
@@ -260,19 +253,12 @@ class WorkArtifactRegistry:
         if cached is not None:
             return dict(cached)
         for artifact in self.store.list_artifacts(attempt.work_item_id, attempt_id=attempt_id):
-            if artifact.kind not in {"git.delta", "filesystem.delta"}:
+            if artifact.kind != "git.delta":
                 continue
             delta = artifact.metadata.get("delta") if isinstance(artifact.metadata.get("delta"), dict) else None
             if delta is not None:
                 return dict(delta)
         return None
-
-
-async def capture_workspace_baseline(cwd: str) -> dict[str, Any]:
-    baseline = await capture_git_baseline(cwd)
-    if baseline.get("reason") != "not_a_git_workspace":
-        return baseline
-    return await asyncio.to_thread(_filesystem_baseline, Path(cwd))
 
 
 async def capture_git_baseline(cwd: str) -> dict[str, Any]:
@@ -293,7 +279,6 @@ async def capture_git_baseline(cwd: str) -> dict[str, Any]:
     fingerprints = await _fingerprints(repo_root, dirty_files)
     return {
         "available": True,
-        "source": "git",
         "repo_root": repo_root,
         "head": head_result["stdout"].strip() if head_result["returncode"] == 0 else "",
         "branch": branch_result["stdout"].strip() if branch_result["returncode"] == 0 else "",
@@ -311,10 +296,6 @@ async def collect_git_delta(
     include_patch: bool = True,
     verify_baseline_dirty: bool = True,
 ) -> dict[str, Any]:
-    if baseline.get("source") == "filesystem":
-        return await collect_filesystem_delta(cwd, baseline,
-            include_patch=include_patch,
-            verify_baseline_dirty=verify_baseline_dirty)
     if not baseline.get("available"):
         return {
             "available": False,
@@ -440,7 +421,6 @@ async def collect_git_delta(
         conflicts.append(f"Git branch changed from {baseline_branch} to {current_branch}")
     return {
         "available": True,
-        "source": "git",
         "repo_root": repo_root,
         "baseline_head": baseline_head,
         "current_head": current_head,
@@ -467,131 +447,6 @@ async def collect_git_delta(
         "untracked_patch_omissions": untracked_patch_omissions,
         "file_facts": current_fingerprints,
     }
-
-
-async def collect_filesystem_delta(
-    cwd: str,
-    baseline: dict[str, Any],
-    *,
-    include_patch: bool = True,
-    verify_baseline_dirty: bool = True,
-) -> dict[str, Any]:
-    """Compare one complete Host-bounded non-Git workspace snapshot."""
-
-    if not baseline.get("available") or baseline.get("source") != "filesystem":
-        return {"available":False,
-            "reason":str(baseline.get("reason") or "filesystem_baseline_unavailable"),
-            "changed_files":[], "ambiguous_paths":[]}
-    root = Path(cwd).resolve()
-    baseline_root = Path(str(baseline.get("workspace_path") or "")).resolve()
-    if os.path.normcase(str(root)) != os.path.normcase(str(baseline_root)):
-        return {"available":False, "reason":"workspace_root_changed",
-            "changed_files":[], "ambiguous_paths":[],
-            "conflicts":["workspace root changed since attempt start"]}
-    current = await asyncio.to_thread(_filesystem_baseline, root)
-    if not current.get("available"):
-        return {"available":False,
-            "reason":str(current.get("reason") or "filesystem_observation_incomplete"),
-            "changed_files":[], "ambiguous_paths":[],
-            "conflicts":["filesystem observation exceeded its bounded baseline"]}
-    before = baseline.get("files") if isinstance(baseline.get("files"), dict) else {}
-    after = current.get("files") if isinstance(current.get("files"), dict) else {}
-    lineage_owned = {_path_key(path) for path in
-        baseline.get("lineage_owned_dirty_paths") or []}
-    all_changed: list[str] = []
-    all_ambiguous: list[str] = []
-    all_lineage: list[str] = []
-    new_files: list[str] = []
-    excluded: list[str] = []
-    for relative_path in sorted(set(before) | set(after), key=_path_key):
-        prior = before.get(relative_path)
-        current_fact = after.get(relative_path)
-        if prior is None:
-            all_changed.append(relative_path)
-            new_files.append(relative_path)
-        elif current_fact is None or not _same_filesystem_stat(prior, current_fact):
-            all_changed.append(relative_path)
-            if _path_key(relative_path) in lineage_owned:
-                all_lineage.append(relative_path)
-            else:
-                all_ambiguous.append(relative_path)
-        elif verify_baseline_dirty:
-            excluded.append(relative_path)
-    changed_files = _bounded_pathspec(all_changed)
-    changed_keys = {_path_key(path) for path in changed_files}
-    ambiguous = [path for path in all_ambiguous if _path_key(path) in changed_keys]
-    lineage = [path for path in all_lineage if _path_key(path) in changed_keys]
-    bounded_new = [path for path in new_files if _path_key(path) in changed_keys]
-    truncated_paths = len(all_changed) - len(changed_files)
-    file_facts = await _fingerprints(str(root), changed_files)
-    patch, patch_omissions = (await asyncio.to_thread(_untracked_text_patch,
-        root, bounded_new) if include_patch else ("", []))
-    conflicts = []
-    if ambiguous:
-        conflicts.append("pre-existing non-Git workspace paths changed during the attempt")
-    if truncated_paths:
-        conflicts.append(
-            f"Filesystem delta path list was truncated by {truncated_paths} file(s)")
-    return {"available":True, "source":"filesystem", "repo_root":str(root),
-        "workspace_path":str(root), "baseline_head":"", "current_head":"",
-        "baseline_branch":"", "current_branch":"", "head_changed":False,
-        "changed_files":changed_files, "committed_files":[],
-        "working_files":changed_files, "untracked":bounded_new,
-        "excluded_baseline_paths":_bounded_pathspec(excluded),
-        "ambiguous_paths":ambiguous, "lineage_owned_paths":lineage,
-        "conflicts":conflicts, "truncated_paths":truncated_paths,
-        "patch":patch, "committed_patch":"", "working_patch":"",
-        "untracked_patch":patch, "untracked_patch_omissions":patch_omissions,
-        "file_facts":file_facts}
-
-
-def _filesystem_baseline(root: Path) -> dict[str, Any]:
-    """Capture a complete bounded inventory without following links."""
-
-    try:
-        workspace = root.resolve(strict=True)
-    except OSError:
-        return {"available":False, "source":"filesystem",
-            "reason":"workspace_unavailable", "workspace_path":str(root)}
-    if not workspace.is_dir():
-        return {"available":False, "source":"filesystem",
-            "reason":"workspace_not_directory", "workspace_path":str(workspace)}
-    files: dict[str, dict[str, Any]] = {}
-    path_chars = 0
-    try:
-        for current, directories, names in os.walk(workspace, followlinks=False):
-            current_path = Path(current)
-            directories[:] = sorted(name for name in directories
-                if name != ".git" and not (current_path/name).is_symlink())
-            for name in sorted(names):
-                candidate = current_path/name
-                if candidate.is_symlink() or not candidate.is_file():
-                    continue
-                relative = candidate.relative_to(workspace).as_posix()
-                path_chars += len(relative) + 1
-                if (len(files) >= _FILESYSTEM_BASELINE_MAX_FILES
-                        or path_chars > _FILESYSTEM_BASELINE_MAX_PATH_CHARS):
-                    return {"available":False, "source":"filesystem",
-                        "reason":"filesystem_baseline_limit",
-                        "workspace_path":str(workspace),
-                        "observed_file_count":len(files)}
-                stat = candidate.stat()
-                files[relative] = {"size_bytes":stat.st_size,
-                    "modified_at_ns":stat.st_mtime_ns}
-    except (OSError, ValueError):
-        return {"available":False, "source":"filesystem",
-            "reason":"filesystem_baseline_unreadable",
-            "workspace_path":str(workspace),
-            "observed_file_count":len(files)}
-    return {"available":True, "source":"filesystem",
-        "workspace_path":str(workspace), "files":files,
-        "file_count":len(files), "complete":True}
-
-
-def _same_filesystem_stat(before: Any, after: Any) -> bool:
-    return bool(isinstance(before, dict) and isinstance(after, dict)
-        and before.get("size_bytes") == after.get("size_bytes")
-        and before.get("modified_at_ns") == after.get("modified_at_ns"))
 
 
 async def _fingerprints(repo_root: str, relative_paths: list[str]) -> dict[str, dict[str, Any]]:

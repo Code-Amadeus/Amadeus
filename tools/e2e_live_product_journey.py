@@ -57,11 +57,7 @@ from tools.semantic_journey_evidence import build_evidence, code_identity
 from tools.sync_auip_manifest import sync_manifest
 from agent_host.work_ledger_store import WorkLedgerStore
 from agent_host.work_ledger_types import CompletionDecision
-from agent_host.provider_authoring import (
-    materialize_auip_runtime_assets,
-    required_auip_engagement_mode,
-    requires_auip_authoring,
-)
+from agent_host.provider_authoring import materialize_auip_runtime_assets
 from config import settings
 from server.auip_contract import parse_manifest
 from server.auip_bundle_validation import validate_staged_auip_web_bundle
@@ -72,7 +68,6 @@ SCHEMA = "amadeus.live-product-journey.v1"
 SUCCESS_STATUSES = {"done", "succeeded", "completed"}
 JOURNEY_LAYERS = {"full", "adaptation", "interaction"}
 ENGAGEMENT_MODES = {"observe", "collaborate", "delegate"}
-CHAT_ROUTES = {"inherit", "cooperative", "default"}
 WORK_STATUS_ANSWER_SOURCES = frozenset(
     {
         "work_status_narrator",
@@ -80,69 +75,6 @@ WORK_STATUS_ANSWER_SOURCES = frozenset(
         "work_ledger_status_fallback",
     }
 )
-
-
-def _chat_route_profile(
-    route: str,
-    environ: Mapping[str, str] | None = None,
-) -> dict[str, Any]:
-    selected = str(route or "inherit").strip().lower()
-    if selected not in CHAT_ROUTES:
-        raise ValueError(f"unsupported Chat route: {selected}")
-    source = os.environ if environ is None else environ
-    overrides = (
-        {
-            "COOPERATIVE_CHAT_ENABLED": "1",
-            "COOPERATIVE_WORK_PLANNER_ENABLED": "1",
-        }
-        if selected == "cooperative"
-        else {
-            "COOPERATIVE_CHAT_ENABLED": "0",
-            "COOPERATIVE_WORK_PLANNER_ENABLED": "0",
-        }
-        if selected == "default"
-        else {}
-    )
-    effective = {**source, **overrides}
-
-    def enabled(name: str, default: bool) -> bool:
-        raw = effective.get(name)
-        if raw is None:
-            return default
-        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
-
-    return {
-        "selection": selected,
-        "source": "ambient" if selected == "inherit" else "cli",
-        "environment_overrides": overrides,
-        "cooperative_chat_enabled": enabled("COOPERATIVE_CHAT_ENABLED", True),
-        "cooperative_work_planner_enabled": enabled(
-            "COOPERATIVE_WORK_PLANNER_ENABLED", False
-        ),
-    }
-
-
-def _has_host_auip_preparation_context(
-    metadata: Mapping[str, Any],
-    required_mode: str,
-) -> bool:
-    files = metadata.get("auip_host_materialized_files")
-    assets = metadata.get("auip_host_materialized_assets")
-    authoring = metadata.get("auip_authoring_inputs")
-    return bool(
-        requires_auip_authoring(metadata)
-        and required_auip_engagement_mode(metadata)
-        == str(required_mode or "").strip().lower()
-        and metadata.get("auip_host_validates_bundle") is True
-        and isinstance(files, list)
-        and bool(files)
-        and isinstance(assets, dict)
-        and all(str(name) in assets for name in files)
-        and str(metadata.get("auip_bundle_root") or "").strip()
-        and str(metadata.get("auip_authoring_skill_path") or "").strip()
-        and isinstance(authoring, dict)
-        and int(authoring.get("required_read_file_count") or 0) > 0
-    )
 SCENARIOS = {
     "lights": {
         "create": (
@@ -422,7 +354,7 @@ SCENARIOS = {
                 },
             ],
         },
-        "query": "刚才自动打怪了吗？现在还有多少血、剩多少秒？",
+        "query": "刚才接管了吗？局面怎样？",
         "query_oracle": {
             "metric_ids": ["hp", "time"],
             "terminal_state_path_any": ["phase"],
@@ -449,8 +381,6 @@ SCENARIOS = {
         ),
         "step": "你能下一手吗",
         "expected_situation_kind": "grid/v1",
-        # The CPU can publish its white reply after the accepted black move.
-        "ambient_state_advances": True,
         "query_oracle": {
             "state_field_ids": ["turn"],
             "terminal_state_field_ids": ["winner", "lifecycle"],
@@ -1025,7 +955,6 @@ class TurnEvidence:
     started_elapsed_s: float = 0.0
     event_end: int = 0
     turn_id: str = ""
-    session_id: str = ""
     reply: str = ""
     screenshot: str = ""
     run_ids: list[str] = field(default_factory=list)
@@ -1038,7 +967,6 @@ class TurnEvidence:
             "label": self.label,
             "text": self.text,
             "turn_id": self.turn_id,
-            "session_id": self.session_id,
             "reply": self.reply,
             "screenshot": self.screenshot,
             "run_ids": list(self.run_ids),
@@ -1061,13 +989,11 @@ class ElectronProduct:
         debug_port: int,
         no_tts: bool,
         identity: dict[str, Any],
-        chat_route: str = "inherit",
     ) -> None:
         self.run_root = run_root
         self.debug_port = int(debug_port)
         self.no_tts = bool(no_tts)
         self.identity = dict(identity)
-        self.chat_route = str(chat_route or "inherit")
         self.process: subprocess.Popen | None = None
         self.log_handle = None
         self.playwright = None
@@ -1112,8 +1038,6 @@ class ElectronProduct:
 
     def _environment(self) -> dict[str, str]:
         env = os.environ.copy()
-        route = _chat_route_profile(self.chat_route, env)
-        env.update(route["environment_overrides"])
         for name in (
             "AMADEUS_PYTHON",
             "AMADUES_PYTHON",
@@ -1273,16 +1197,6 @@ class ElectronProduct:
         await self.page.screenshot(path=str(target), full_page=True)
         return target
 
-    async def runtime_status(self) -> dict[str, Any]:
-        """Read the authenticated Host snapshot while the product is alive."""
-
-        return await asyncio.to_thread(
-            _http_json,
-            f"http://127.0.0.1:{BACKEND_PORT}/runtime/status",
-            timeout=20.0,
-            headers={"X-Amadeus-Token": self.backend_token},
-        )
-
     async def app_pages(self) -> list[Any]:
         if self.browser is None:
             return []
@@ -1345,202 +1259,6 @@ async def _wait_provider_ready(
     )
 
 
-def _event_work_attempt_id(event: EventRecord) -> str:
-    payload = event.params.get("payload")
-    payload = payload if isinstance(payload, dict) else {}
-    metadata = event.params.get("metadata")
-    metadata = metadata if isinstance(metadata, dict) else {}
-    payload_metadata = payload.get("metadata")
-    payload_metadata = payload_metadata if isinstance(payload_metadata, dict) else {}
-    for owner in (event.params, payload, metadata, payload_metadata):
-        work = owner.get("work")
-        if isinstance(work, dict):
-            value = str(
-                work.get("attempt_id") or work.get("attemptId") or ""
-            ).strip()
-            if value:
-                return value
-        value = str(owner.get("attempt_id") or owner.get("attemptId") or "").strip()
-        if value:
-            return value
-    return ""
-
-
-def _persisted_turn_dialog(
-    run_root: Path,
-    session_id: str,
-) -> list[dict[str, Any]]:
-    path = run_root / "state" / "sessions" / f"{session_id}.json"
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
-        return []
-    if not isinstance(value, dict):
-        return []
-    conversation = (
-        value.get("conversation")
-        if isinstance(value.get("conversation"), dict)
-        else value
-    )
-    rows = conversation.get("dialog")
-    return [dict(row) for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
-
-
-def _requirement_identities(rows: object) -> set[tuple[str, str, str]]:
-    if not isinstance(rows, list):
-        return set()
-    return {
-        (
-            str(row.get("operation_id") or ""),
-            str(row.get("input_id") or ""),
-            str(row.get("attempt_id") or ""),
-        )
-        for row in rows
-        if isinstance(row, Mapping)
-    }
-
-
-def _provider_message_query_evidence(
-    *,
-    turn: TurnEvidence,
-    created_work_item_id: str,
-    created_attempt_id: str,
-    created_run_id: str,
-    before_item: Mapping[str, Any],
-    after_item: Mapping[str, Any],
-    dialog: list[dict[str, Any]],
-) -> dict[str, Any]:
-    """Evaluate a natural active-Work answer from durable public facts."""
-
-    before_input_rows = before_item.get("providerInputs")
-    after_input_rows = after_item.get("providerInputs")
-    before_attempt_rows = before_item.get("attempts")
-    after_attempt_rows = after_item.get("attempts")
-    before_requirements = before_item.get("inputRequirements")
-    after_requirements = after_item.get("inputRequirements")
-    complete_shape = bool(
-        isinstance(before_input_rows, list)
-        and isinstance(after_input_rows, list)
-        and isinstance(before_attempt_rows, list)
-        and isinstance(after_attempt_rows, list)
-        and isinstance(before_requirements, list)
-        and isinstance(after_requirements, list)
-    )
-    before_inputs = {
-        str(row.get("input_id") or "")
-        for row in before_input_rows or []
-        if isinstance(row, Mapping)
-    }
-    added_inputs = [
-        dict(row)
-        for row in after_input_rows or []
-        if isinstance(row, Mapping)
-        and str(row.get("input_id") or "") not in before_inputs
-    ]
-    matching_inputs = [
-        row
-        for row in added_inputs
-        if str(row.get("input_id") or "") == turn.turn_id
-        and str(row.get("attempt_id") or "") == created_attempt_id
-        and str(row.get("provider_run_id") or "") == created_run_id
-        and str(row.get("text") or "") == turn.text
-        and str(row.get("state") or "") == "delivered"
-    ]
-    before_attempts = {
-        str(row.get("attempt_id") or "")
-        for row in before_attempt_rows or []
-        if isinstance(row, Mapping)
-    }
-    after_attempts = {
-        str(row.get("attempt_id") or "")
-        for row in after_attempt_rows or []
-        if isinstance(row, Mapping)
-    }
-    public_replies = [
-        str(row.get("content") or "").strip()
-        for row in dialog
-        if row.get("role") == "assistant"
-        and str(row.get("turn_id") or "") == turn.turn_id
-        and str(row.get("content") or "").strip()
-    ]
-    checks = {
-        "complete_work_projection": complete_shape,
-        "same_work": str(after_item.get("workItemId") or after_item.get("id") or "")
-        == created_work_item_id,
-        "same_attempt": str(after_item.get("attemptId") or "")
-        == created_attempt_id,
-        "same_run": str(after_item.get("runId") or after_item.get("currentRunId") or "")
-        == created_run_id,
-        "one_delivered_input": len(added_inputs) == 1 and len(matching_inputs) == 1,
-        "no_new_attempt": bool(
-            created_attempt_id
-            and created_attempt_id in before_attempts
-            and before_attempts == after_attempts
-        ),
-        "no_new_requirement": complete_shape
-        and _requirement_identities(before_requirements)
-        == _requirement_identities(after_requirements),
-        "public_same_turn_reply": bool(turn.reply.strip() and public_replies),
-    }
-    return {
-        "passed": all(checks.values()),
-        "checks": checks,
-        "added_inputs": added_inputs,
-        "public_replies": public_replies,
-    }
-
-
-async def _capture_final_runtime_status(
-    probe: WsProbe | None,
-    report: dict[str, Any],
-    *,
-    product: ElectronProduct | None = None,
-) -> None:
-    """Record bounded end-of-Journey routing evidence without changing its result."""
-
-    captured_at = datetime.now(timezone.utc).isoformat()
-    try:
-        if probe is not None:
-            runtime = await probe.request("runtime.status", {}, timeout=20.0)
-            transport = "websocket"
-        elif product is not None:
-            runtime = await product.runtime_status()
-            transport = "authenticated_http"
-        else:
-            raise RuntimeError("no live runtime status transport")
-        server = runtime.get("server")
-        code_identity = (
-            server.get("code_identity") if isinstance(server, Mapping) else None
-        )
-        if not isinstance(code_identity, Mapping):
-            raise ValueError("runtime.status omitted server code identity")
-        shadow = runtime.get("turn_decision_shadow")
-        if not isinstance(shadow, Mapping):
-            raise ValueError("runtime.status omitted turn_decision_shadow")
-        if shadow.get("error"):
-            raise ValueError(
-                "runtime.status turn_decision_shadow failed: "
-                f"{shadow.get('error')}"
-            )
-        if not isinstance(shadow.get("counters"), Mapping):
-            raise ValueError("turn_decision_shadow omitted counters")
-        if not isinstance(shadow.get("recent"), list):
-            raise ValueError("turn_decision_shadow omitted recent turns")
-        report["final_runtime_status"] = {
-            "captured": True,
-            "captured_at": captured_at,
-            "transport": transport,
-            "server_code_identity": dict(code_identity),
-            "turn_decision_shadow": dict(shadow),
-        }
-    except Exception as exc:
-        report["final_runtime_status"] = {
-            "captured": False,
-            "captured_at": captured_at,
-            "instrumentation_error": f"{type(exc).__name__}: {exc}",
-        }
-
-
 def _runtime_ready_for_live_journey(status: Mapping[str, Any]) -> bool:
     provider = status.get("provider")
     availability = (
@@ -1581,12 +1299,6 @@ async def _finalize_product_run(
     """Persist evidence and stop the exact product tree even on cancellation."""
 
     try:
-        final_status = report.get("final_runtime_status")
-        if not isinstance(final_status, dict) or final_status.get("captured") is not True:
-            # The WebSocket context exits before the outer Journey exception
-            # handler runs.  Recover the same read-only evidence over the
-            # authenticated local HTTP boundary before stopping the backend.
-            await _capture_final_runtime_status(None, report, product=product)
         if product.page is not None:
             report["paths"].setdefault(
                 "failure_screenshot",
@@ -1628,7 +1340,6 @@ async def _send_ui_turn(
         description=f"{label} chat.complete",
     )
     turn.turn_id = str(complete.params.get("turn_id") or "")
-    turn.session_id = str(complete.params.get("session_id") or "")
     turn.reply = str(complete.params.get("full_text") or "")
     await asyncio.sleep(0.25)
     turn.event_end = len(probe.state.events)
@@ -1711,155 +1422,6 @@ async def _selected_work(probe: WsProbe) -> tuple[dict[str, Any], dict[str, Any]
     return projection, selected
 
 
-async def _wait_active_work_query_result(
-    *,
-    product: ElectronProduct,
-    probe: WsProbe,
-    run_root: Path,
-    turn: TurnEvidence,
-    created: EventRecord,
-    before_item: Mapping[str, Any],
-    timeout: float,
-) -> dict[str, Any]:
-    """Accept either the legacy ledger report or one delivered Provider message."""
-
-    deadline = time.monotonic() + max(1.0, float(timeout))
-    work_item_id = _event_work_item_id(created)
-    attempt_id = _event_work_attempt_id(created)
-    run_id = _event_run_id(created)
-    latest_provider_evidence: dict[str, Any] = {}
-    while time.monotonic() < deadline:
-        complete_index = next(
-            (
-                index
-                for index, event in enumerate(probe.state.events)
-                if event.method == "chat.complete"
-                and str(event.params.get("turn_id") or "") == turn.turn_id
-            ),
-            -1,
-        )
-        status_answer = next(
-            (
-                event
-                for event in probe.state.events[
-                    turn.event_start : complete_index + 1 if complete_index >= 0 else None
-                ]
-                if _is_work_status_answer(event)
-                and str(event.params.get("session_id") or "") == turn.session_id
-            ),
-            None,
-        )
-        if status_answer is not None:
-            status_text = str(
-                status_answer.params.get("main_chat_entry")
-                or status_answer.params.get("display_text")
-                or ""
-            ).strip()
-            report_work_verified = False
-            try:
-                detail = await probe.request(
-                    "work.get",
-                    {"work_item_id": work_item_id},
-                    timeout=min(20.0, max(1.0, deadline - time.monotonic())),
-                )
-                report_item = (
-                    detail.get("item") if isinstance(detail.get("item"), dict) else {}
-                )
-                before_attempts = before_item.get("attempts")
-                after_attempts = report_item.get("attempts")
-                before_attempt_ids = {
-                    str(row.get("attempt_id") or "")
-                    for row in before_attempts or []
-                    if isinstance(row, Mapping)
-                }
-                after_attempt_ids = {
-                    str(row.get("attempt_id") or "")
-                    for row in after_attempts or []
-                    if isinstance(row, Mapping)
-                }
-                before_requirement_ids = _requirement_identities(
-                    before_item.get("inputRequirements")
-                )
-                after_requirement_ids = _requirement_identities(
-                    report_item.get("inputRequirements")
-                )
-                report_work_verified = bool(
-                    isinstance(before_attempts, list)
-                    and isinstance(after_attempts, list)
-                    and isinstance(before_item.get("inputRequirements"), list)
-                    and isinstance(report_item.get("inputRequirements"), list)
-                    and str(report_item.get("workItemId") or report_item.get("id") or "")
-                    == work_item_id
-                    and str(report_item.get("attemptId") or "") == attempt_id
-                    and str(report_item.get("runId") or report_item.get("currentRunId") or "")
-                    == run_id
-                    and attempt_id in before_attempt_ids
-                    and before_attempt_ids == after_attempt_ids
-                    and before_requirement_ids == after_requirement_ids
-                )
-            except Exception:
-                report_work_verified = False
-            if (
-                status_text
-                and status_answer.params.get("append_to_main_chat") is True
-                and report_work_verified
-                and product.page is not None
-            ):
-                try:
-                    await product.page.get_by_text(status_text, exact=True).wait_for(
-                        state="visible",
-                        timeout=1000,
-                    )
-                    return {
-                        "kind": "ledger_report",
-                        "display_text": status_text,
-                        "evidence": _safe_excerpt(status_answer.params, 1600),
-                    }
-                except Exception:
-                    pass
-
-        if work_item_id and attempt_id and run_id and turn.session_id:
-            try:
-                detail = await probe.request(
-                    "work.get",
-                    {"work_item_id": work_item_id},
-                    timeout=min(20.0, max(1.0, deadline - time.monotonic())),
-                )
-                after_item = (
-                    detail.get("item") if isinstance(detail.get("item"), dict) else {}
-                )
-                latest_provider_evidence = _provider_message_query_evidence(
-                    turn=turn,
-                    created_work_item_id=work_item_id,
-                    created_attempt_id=attempt_id,
-                    created_run_id=run_id,
-                    before_item=before_item,
-                    after_item=after_item,
-                    dialog=_persisted_turn_dialog(run_root, turn.session_id),
-                )
-                if latest_provider_evidence.get("passed") is True:
-                    if product.page is not None:
-                        await product.page.get_by_text(
-                            turn.reply, exact=True
-                        ).wait_for(state="visible", timeout=1000)
-                    return {
-                        "kind": "provider_message",
-                        "display_text": turn.reply,
-                        "evidence": _safe_excerpt(latest_provider_evidence, 2400),
-                    }
-            except Exception as exc:
-                latest_provider_evidence = {
-                    **latest_provider_evidence,
-                    "observation_error": f"{type(exc).__name__}: {exc}",
-                }
-        await asyncio.sleep(0.1)
-    raise TimeoutError(
-        "active Work query produced neither a visible ledger report nor a "
-        "same-Work delivered Provider message: "
-        + json.dumps(_safe_excerpt(latest_provider_evidence, 2400), ensure_ascii=False)
-    )
-
-
 async def _resolve_safe_permission(
     *,
     product: ElectronProduct,
@@ -1867,20 +1429,12 @@ async def _resolve_safe_permission(
     run_root: Path,
     seen: set[str],
     evidence: list[dict[str, Any]],
-    run_id: str = "",
 ) -> bool:
     projection, selected = await _selected_work(probe)
-    if run_id:
-        selected = next(
-            (row for row in projection.get("items") or []
-             if isinstance(row, dict)
-             and str(row.get("runId") or row.get("currentRunId") or "") == run_id),
-            {},
-        )
     request_id = str(selected.get("pendingPermissionRequestId") or "").strip()
     if not request_id or request_id in seen:
         return False
-    work_item_id = str(selected.get("workItemId") or selected.get("id") or "").strip()
+    work_item_id = str(projection.get("selectedWorkItemId") or "").strip()
     attempt_id = str(selected.get("attemptId") or "").strip()
     revision = str(projection.get("revision") or "").strip()
     detail = await probe.request(
@@ -1910,19 +1464,6 @@ async def _resolve_safe_permission(
         and scopes_safe
         and "allow_once" in (request.get("options") or [])
     )
-    permission_selection = None
-    if allowed and str(projection.get("selectedWorkItemId") or "") != work_item_id:
-        # Permission resolution requires the same selection as the Slice card.
-        # This is an operator approval step, not a routing hint for a chat turn.
-        focus = await probe.request("work.focus", {"work_item_id": work_item_id}, timeout=20.0)
-        projection = _work_projection(focus)
-        selected = projection.get("selected") or {}
-        if (projection.get("selectedWorkItemId") != work_item_id
-                or selected.get("attemptId") != attempt_id
-                or selected.get("pendingPermissionRequestId") != request_id):
-            raise RuntimeError("permission selection changed before approval")
-        revision = str(projection.get("revision") or "")
-        permission_selection = {"work_item_id": work_item_id, "revision": revision}
     screenshot = ""
     screenshot_error = ""
     try:
@@ -1939,7 +1480,6 @@ async def _resolve_safe_permission(
         "workspace_safe": workspace_safe,
         "scopes_safe": scopes_safe,
         "decision": "allow_once" if allowed else "withheld",
-        "selection_for_permission": permission_selection,
         "screenshot": screenshot,
         **({"screenshot_error": screenshot_error} if screenshot_error else {}),
     }
@@ -1996,7 +1536,6 @@ async def _wait_run_terminal(
             run_root=run_root,
             seen=seen_permissions,
             evidence=permission_evidence,
-            run_id=run_id,
         )
         if terminal is not None:
             created_for_run = next(
@@ -4767,19 +4306,9 @@ def _semantic_review(
             "the read-only status question started another Provider run",
         )
         record(
-            "status_query_reached_visible_or_delivered_owner",
-            bool(
-                status
-                and (
-                    status.checks.get("canonical_status_answer_visible") is True
-                    or status.checks.get(
-                        "provider_query_accepted_and_reply_visible"
-                    )
-                    is True
-                )
-            ),
-            "the active Work query produced neither a visible ledger answer nor "
-            "a visible acknowledgement with a delivered same-Work Provider input",
+            "status_answer_entered_the_visible_main_chat",
+            bool(status and status.checks.get("canonical_status_answer_visible")),
+            "the Work Ledger answered but its canonical status did not enter main Chat",
         )
     if layer in {"full", "adaptation"}:
         record(
@@ -5075,53 +4604,46 @@ async def _run_full_creation_stage(
     create.run_ids = [_event_run_id(created)]
     turns.append(create)
 
-    created_work_item_id = _event_work_item_id(created)
-    if not created_work_item_id:
-        raise RuntimeError("created Provider run omitted its WorkItem identity")
-    before_status_detail = await probe.request(
-        "work.get",
-        {"work_item_id": created_work_item_id},
-        timeout=20.0,
-    )
-    before_status_item = (
-        before_status_detail.get("item")
-        if isinstance(before_status_detail.get("item"), dict)
-        else {}
-    )
-
-    # Address the author while the same Provider run is still active. This
-    # verifies the natural Provider-message continuation that isolated
-    # one-turn probes cannot reproduce.
+    # Ask while the same Provider run is still active. This is the ordinary
+    # long-conversation interruption that isolated one-turn probes cannot
+    # reproduce.
     status = await _send_ui_turn(
         product,
         probe,
         label="status",
-        text="问问写这个的，现在还差哪些？",
+        text="现在做到哪一步了？",
         chat_timeout=args.chat_timeout,
     )
-    status_outcome = await _wait_active_work_query_result(
-        product=product,
-        probe=probe,
-        run_root=run_root,
-        turn=status,
-        created=created,
-        before_item=before_status_item,
+    status_answer = await probe.wait_event(
+        _is_work_status_answer,
+        after=status.event_start,
         timeout=args.settle_timeout,
+        description="deterministic Work Ledger status answer",
     )
-    status.checks["canonical_status_answer_visible"] = (
-        status_outcome.get("kind") == "ledger_report"
+    status_text = str(
+        status_answer.params.get("main_chat_entry")
+        or status_answer.params.get("display_text")
+        or ""
+    ).strip()
+    dom_visible = False
+    if status_text and product.page is not None:
+        try:
+            await product.page.get_by_text(status_text, exact=True).wait_for(
+                state="visible",
+                timeout=max(1000, int(args.settle_timeout * 1000)),
+            )
+            dom_visible = True
+        except Exception as exc:
+            status.notes.append(
+                "ledger answer DOM visibility: " f"{type(exc).__name__}: {exc}"
+            )
+    status.checks["canonical_status_answer_visible"] = bool(
+        status_text
+        and status_answer.params.get("append_to_main_chat") is True
+        and dom_visible
     )
-    status.checks["provider_query_accepted_and_reply_visible"] = (
-        status_outcome.get("kind") == "provider_message"
-    )
-    status.checks["active_query_reached_existing_work_owner"] = bool(
-        status.checks["canonical_status_answer_visible"]
-        or status.checks["provider_query_accepted_and_reply_visible"]
-    )
-    status.notes.append(
-        "active query outcome: "
-        + json.dumps(_safe_excerpt(status_outcome, 2600), ensure_ascii=False)
-    )
+    if status_text:
+        status.notes.append(f"ledger answer: {status_text}")
     await asyncio.sleep(0.25)
     status.event_end = len(probe.state.events)
     status.run_ids = [
@@ -5303,7 +4825,6 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         debug_port=debug_port,
         no_tts=bool(args.no_tts),
         identity=identity,
-        chat_route=str(args.chat_route),
     )
     report_path = run_root / "report.json"
     report: dict[str, Any] = {
@@ -5335,7 +4856,6 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             ),
             "auip_action_service_tier": str(settings.AUIP_ACTION_SERVICE_TIER),
         },
-        "chat_route": _chat_route_profile(str(args.chat_route)),
         "turns": [],
         "permissions": [],
         "events": [],
@@ -5489,10 +5009,10 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                             and source_request == expected_request
                         )
                         prepare.checks["natural_request_kept_prepare_authority"] = (
-                            _has_host_auip_preparation_context(
-                                created_metadata,
-                                engagement_mode,
-                            )
+                            str(created_metadata.get("source") or "")
+                            == "auip_prepare"
+                            and _event_work_item_id(prepared_run)
+                            == expected_work_item_id
                         )
                         if not all(
                             prepare.checks[name]
@@ -5503,7 +5023,7 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                         ):
                             raise RuntimeError(
                                 "natural AUIP adaptation changed the user's request "
-                                "or lost its Host-owned AUIP preparation context"
+                                "or lost its Host-grounded WorkItem"
                             )
                     prepared_terminal, prepared_item, prepare_run_ids = (
                         await _wait_provider_chain_terminal(
@@ -7374,11 +6894,6 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                 ),
             )
             exit_code = 0 if report["status"] == "passed" else 1
-            # Capture after the last product assertion while this Journey's
-            # authenticated WebSocket is still live. This is evidence only:
-            # an instrumentation failure is recorded but cannot overwrite the
-            # already-computed Journey result.
-            await _capture_final_runtime_status(probe, report)
     except Exception as exc:
         if product is not None:
             report["app_surface_diagnostics"] = product.app_diagnostics()
@@ -7558,16 +7073,6 @@ def _parser() -> argparse.ArgumentParser:
             "Interaction-test-only: amend the focused application's existing "
             "WorkItem, close its exact old AppSession, and require the successful "
             "new artifact to reattach in the shared surface."
-        ),
-    )
-    parser.add_argument(
-        "--chat-route",
-        choices=sorted(CHAT_ROUTES),
-        default="inherit",
-        help=(
-            "inherit preserves ambient configuration; cooperative pins the "
-            "professional cooperative Work planner on; default selects the "
-            "established non-cooperative Chat owner."
         ),
     )
     parser.add_argument(

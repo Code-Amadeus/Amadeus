@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useI18n } from '../i18n'
 
 type BackendSend = (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
 type BackendSubscribe = (method: string, fn: (p: Record<string, unknown>) => void) => () => void
@@ -112,7 +111,6 @@ function Toggle({
   detail?: string
   onChange: (checked: boolean) => void
 }) {
-  const { t } = useI18n()
   return (
     <label
       className="flex items-start gap-2"
@@ -131,15 +129,14 @@ function Toggle({
         style={{ marginTop: 2 }}
       />
       <span>
-        <span style={{ fontWeight: 650 }}>{t(label)}</span>
-        {detail && <span style={{ color: 'var(--muted)' }}> · {t(detail)}</span>}
+        <span style={{ fontWeight: 650 }}>{label}</span>
+        {detail && <span style={{ color: 'var(--muted)' }}> · {detail}</span>}
       </span>
     </label>
   )
 }
 
 function RuntimeChip({ label, status, detail }: { label: string; status: string; detail?: string }) {
-  const { t } = useI18n()
   return (
     <span
       className="inline-flex items-center gap-1.5 shrink-0"
@@ -155,15 +152,14 @@ function RuntimeChip({ label, status, detail }: { label: string; status: string;
       }}
     >
       <span className="rounded-full" style={{ width: 7, height: 7, background: statusColor(status) }} />
-      <span style={{ color: 'var(--text)', fontWeight: 650 }}>{t(label)}</span>
-      <span>{t(status.replaceAll('_', ' '))}</span>
+      <span style={{ color: 'var(--text)', fontWeight: 650 }}>{label}</span>
+      <span>{status.replaceAll('_', ' ')}</span>
       {detail ? <span style={{ color: 'var(--faint)' }}>{detail}</span> : null}
     </span>
   )
 }
 
 export default function VNPage({ send, subscribe, connected }: Props) {
-  const { t } = useI18n()
   const [profiles, setProfiles] = useState<VNProfile[]>([])
   const [selectedProfile, setSelectedProfile] = useState('paranormasight')
   const [launch, setLaunch] = useState<LaunchStatus>({ status: 'idle' })
@@ -418,16 +414,16 @@ export default function VNPage({ send, subscribe, connected }: Props) {
     <div className="flex-1 flex flex-col min-h-0" style={{ padding: '16px 18px 18px', backgroundColor: 'var(--bg)' }}>
       <header className="flex items-start gap-4 shrink-0" style={{ marginBottom: 12 }}>
         <div className="min-w-0 flex-1">
-          <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 20, fontWeight: 700, lineHeight: '26px' }}>{t('VN Player — Experimental')}</h2>
+          <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 20, fontWeight: 700, lineHeight: '26px' }}>VN Player — Experimental</h2>
           <p style={{ margin: '2px 0 0', color: 'var(--muted)', fontSize: 11, lineHeight: '16px' }}>
-            {t('Live VN activity, player intervention, and runtime control.')}
+            Live VN activity, player intervention, and runtime control.
           </p>
         </div>
-        <button onClick={refresh} disabled={!connected || busy} style={controlButtonStyle}>{t('Refresh')}</button>
+        <button onClick={refresh} disabled={!connected || busy} style={controlButtonStyle}>Refresh</button>
       </header>
 
       <div className="flex items-center flex-wrap gap-2 shrink-0" style={{ marginBottom: 9, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface)' }}>
-        <span style={{ color: 'var(--muted)', fontSize: 10.5, fontWeight: 650 }}>{t('Profile')}</span>
+        <span style={{ color: 'var(--muted)', fontSize: 10.5, fontWeight: 650 }}>Profile</span>
         <select
           value={selectedProfile}
           onChange={event => setSelectedProfile(event.target.value)}
@@ -439,8 +435,8 @@ export default function VNPage({ send, subscribe, connected }: Props) {
         </select>
         <span style={{ color: statusColor(launchStatus), fontSize: 10.5, fontWeight: 650 }}>{launchStatus.replaceAll('_', ' ')}</span>
         <span className="flex-1" />
-        <button onClick={() => startWithOptions()} disabled={!connected || busy || isActive} style={{ ...controlButtonStyle, borderColor: 'var(--accent)', color: 'var(--accent)', fontWeight: 650 }}>{t('Start')}</button>
-        <button onClick={stop} disabled={!connected || busy || launchStatus === 'idle'} style={controlButtonStyle}>{t('Stop')}</button>
+        <button onClick={() => startWithOptions()} disabled={!connected || busy || isActive} style={{ ...controlButtonStyle, borderColor: 'var(--accent)', color: 'var(--accent)', fontWeight: 650 }}>Start</button>
+        <button onClick={stop} disabled={!connected || busy || launchStatus === 'idle'} style={controlButtonStyle}>Stop</button>
       </div>
 
       <div className="flex items-center flex-wrap gap-1.5 shrink-0" style={{ marginBottom: 9 }}>
@@ -453,15 +449,15 @@ export default function VNPage({ send, subscribe, connected }: Props) {
 
       <section className="flex-1 flex flex-col min-h-0" style={{ border: '1px solid var(--border)', borderRadius: 11, overflow: 'hidden', background: 'var(--surface)' }}>
         <div className="flex items-center gap-2 shrink-0" style={{ minHeight: 41, padding: '6px 10px 6px 13px', borderBottom: '1px solid var(--border)' }}>
-          <h3 style={{ margin: 0, color: 'var(--text)', fontSize: 13, fontWeight: 650 }}>{t('VN activity')}</h3>
-          <span style={{ color: 'var(--faint)', fontSize: 10 }}>{events.length} {t('recent')}</span>
+          <h3 style={{ margin: 0, color: 'var(--text)', fontSize: 13, fontWeight: 650 }}>VN activity</h3>
+          <span style={{ color: 'var(--faint)', fontSize: 10 }}>{events.length} recent</span>
           <span className="flex-1" />
-          <button onClick={() => setEvents([])} disabled={events.length === 0} style={{ ...controlButtonStyle, height: 28, color: 'var(--muted)', opacity: events.length ? 1 : 0.4 }}>{t('Clear')}</button>
+          <button onClick={() => setEvents([])} disabled={events.length === 0} style={{ ...controlButtonStyle, height: 28, color: 'var(--muted)', opacity: events.length ? 1 : 0.4 }}>Clear</button>
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto" style={{ padding: events.length ? '4px 14px 12px' : 0 }}>
           {events.length === 0 ? (
-            <div className="flex items-center justify-center h-full" style={{ color: 'var(--muted)', fontSize: 12 }}>{t('No VN activity yet.')}</div>
+            <div className="flex items-center justify-center h-full" style={{ color: 'var(--muted)', fontSize: 12 }}>No VN activity yet.</div>
           ) : events.map(item => (
             <article key={item.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
               <div className="flex items-center gap-2">
@@ -478,9 +474,9 @@ export default function VNPage({ send, subscribe, connected }: Props) {
 
         <div className="shrink-0" style={{ padding: '10px 12px 11px', borderTop: '1px solid var(--border)', background: 'var(--surface-alt)' }}>
           <div className="flex items-center gap-2" style={{ marginBottom: 7 }}>
-            <span style={{ color: 'var(--text)', fontSize: 11, fontWeight: 650 }}>{t('Player intervention')}</span>
+            <span style={{ color: 'var(--text)', fontSize: 11, fontWeight: 650 }}>Player intervention</span>
             <span style={{ color: playerListening ? '#107C10' : 'var(--muted)', fontSize: 10 }}>
-              {t(runtimeStatus === 'active' ? (playerListening ? 'voice lane active' : 'arming voice lane') : 'starts with runtime')}
+              {runtimeStatus === 'active' ? (playerListening ? 'voice lane active' : 'arming voice lane') : 'starts with runtime'}
             </span>
           </div>
           <div className="flex items-stretch gap-2">
@@ -490,29 +486,29 @@ export default function VNPage({ send, subscribe, connected }: Props) {
               disabled={busy}
               style={{ width: 104, minHeight: 40, borderRadius: 8, border: '1px solid var(--border)', color: 'var(--text)', background: 'var(--surface)', padding: '0 8px', fontSize: 11 }}
             >
-              <option value="ask">{t('Ask')}</option>
-              <option value="note">{t('Note')}</option>
-              <option value="choice">{t('Choice')}</option>
-              <option value="pin">{t('Pin')}</option>
+              <option value="ask">Ask</option>
+              <option value="note">Note</option>
+              <option value="choice">Choice</option>
+              <option value="pin">Pin</option>
             </select>
             <textarea
               value={playerText}
               onChange={event => setPlayerText(event.target.value)}
               rows={2}
-              placeholder={t('Ask about the current line, add a note, or inspect a choice...')}
+              placeholder="Ask about the current line, add a note, or inspect a choice..."
               style={{ minWidth: 0, flex: 1, resize: 'none', borderRadius: 8, border: '1px solid var(--border)', color: 'var(--text)', background: 'var(--surface)', padding: '8px 10px', fontSize: 12, lineHeight: 1.4 }}
             />
-            <button onClick={sendPlayerIntervention} disabled={!connected || busy || runtimeStatus !== 'active' || !playerText.trim()} style={{ ...controlButtonStyle, alignSelf: 'stretch', height: 'auto', color: 'var(--accent)', fontWeight: 650 }}>{t('Send')}</button>
+            <button onClick={sendPlayerIntervention} disabled={!connected || busy || runtimeStatus !== 'active' || !playerText.trim()} style={{ ...controlButtonStyle, alignSelf: 'stretch', height: 'auto', color: 'var(--accent)', fontWeight: 650 }}>Send</button>
           </div>
           <div style={{ marginTop: 5, color: playerListening ? '#107C10' : 'var(--faint)', fontSize: 9.5 }}>
-            {t(playerListening ? 'Speech is routed to VN runtime only.' : 'Player speech never enters main chat.')}
+            {playerListening ? 'Speech is routed to VN runtime only.' : 'Player speech never enters main chat.'}
           </div>
         </div>
       </section>
 
       <details className="shrink-0" style={{ marginTop: 9, border: '1px solid var(--border)', borderRadius: 9, background: 'var(--surface)' }}>
         <summary className="cursor-pointer select-none" style={{ padding: '9px 12px', color: 'var(--muted)', fontSize: 11, fontWeight: 600 }}>
-          {t('Advanced launch options and line test')}
+          Advanced launch options and line test
         </summary>
         <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18, padding: '12px 14px 14px', borderTop: '1px solid var(--border)' }}>
           <div>
@@ -531,21 +527,21 @@ export default function VNPage({ send, subscribe, connected }: Props) {
               <Toggle checked={stopWallpaper} disabled={busy || isActive || !launchGame} label="Exit wallpaper before game" detail="keeps game focus clean" onChange={setStopWallpaper} />
               <Toggle checked={closeGameOnStop} disabled={busy} label="Close game on stop" detail="off keeps the game open" onChange={setCloseGameOnStop} />
             </div>
-            <button onClick={() => startWithOptions({ launchGame: true, attachHook: true, launchOverlay: true, bridgeClipboard: true, stopWallpaper: true })} disabled={!connected || busy || isActive} style={{ ...controlButtonStyle, marginTop: 10 }}>{t('Start full stack')}</button>
+            <button onClick={() => startWithOptions({ launchGame: true, attachHook: true, launchOverlay: true, bridgeClipboard: true, stopWallpaper: true })} disabled={!connected || busy || isActive} style={{ ...controlButtonStyle, marginTop: 10 }}>Start full stack</button>
           </div>
 
           <div>
             <div style={{ marginBottom: 9, color: 'var(--muted)', fontSize: 10.5 }}>
-              {t('Session')} <span title={launch.sessionId || ''} style={{ color: 'var(--text)' }}>{launch.sessionId || '-'}</span>
+              Session <span title={launch.sessionId || ''} style={{ color: 'var(--text)' }}>{launch.sessionId || '-'}</span>
             </div>
-            <label style={{ display: 'block', marginBottom: 6, color: 'var(--text)', fontSize: 11, fontWeight: 650 }}>{t('Manual vn.line test')}</label>
+            <label style={{ display: 'block', marginBottom: 6, color: 'var(--text)', fontSize: 11, fontWeight: 650 }}>Manual vn.line test</label>
             <textarea
               value={lineText}
               onChange={event => setLineText(event.target.value)}
               rows={3}
               style={{ width: '100%', resize: 'vertical', borderRadius: 8, border: '1px solid var(--border)', color: 'var(--text)', background: 'var(--bg)', padding: 9, fontSize: 12, lineHeight: 1.45 }}
             />
-            <button onClick={sendLine} disabled={!connected || busy || runtimeStatus !== 'active'} style={{ ...controlButtonStyle, marginTop: 7 }}>{t('Send line')}</button>
+            <button onClick={sendLine} disabled={!connected || busy || runtimeStatus !== 'active'} style={{ ...controlButtonStyle, marginTop: 7 }}>Send line</button>
           </div>
         </div>
       </details>

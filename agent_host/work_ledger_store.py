@@ -8,18 +8,14 @@ transactional records.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import sqlite3
 import threading
-from contextlib import contextmanager, nullcontext
-from dataclasses import fields
+from contextlib import contextmanager
 from pathlib import Path
-from types import MappingProxyType
 from typing import Any, Callable, Iterator, Sequence
 
-from agent_host.provider_types import ProviderRecoveryContext
 from agent_host.work_ledger_types import (
     ARTIFACT_LOCATIONS,
     ARTIFACT_STATUSES,
@@ -29,7 +25,6 @@ from agent_host.work_ledger_types import (
     EXECUTION_STATUSES,
     FOCUS_MODES,
     PERMISSION_REQUEST_STATUSES,
-    PERMISSION_OWNER_KINDS,
     PROJECT_STATES,
     WORK_OPERATION_INTENTS,
     WORK_ITEM_STATES,
@@ -44,7 +39,6 @@ from agent_host.work_ledger_types import (
     FocusMode,
     FocusRecord,
     PermissionRequestRecord,
-    PermissionOwnerKind,
     PermissionRequestStatus,
     ProjectRecord,
     RunAttemptRecord,
@@ -61,22 +55,9 @@ from agent_host.work_ledger_types import (
 )
 
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 7
 _UNSET = object()
 _TERMINAL_EXECUTION = frozenset({"succeeded", "failed", "cancelled"})
-PROVIDER_RECOVERY_METADATA_KEYS = MappingProxyType({
-    "progress_only_completion":"provider_completion",
-    "auip_validation_failed":"host_auip_bundle_validation",
-})
-_RECOVERY_HISTORY_STATES = frozenset(
-    {"claimed", "started", "failed", "cancelled", "cancel_pending"}
-)
-# Match the persisted Session spelling/precedence used by the coordinator,
-# including older attempts that only retained it in provider_result.
-_ATTEMPT_SESSION_SQL = """trim(coalesce(
-    nullif(json_extract({column}, '$.session_id'), ''),
-    nullif(json_extract({column}, '$.provider_result.session_id'), ''),
-    nullif(json_extract({column}, '$.provider_result.sessionId'), ''), ''))"""
 
 
 class WorkLedgerError(RuntimeError):
@@ -423,164 +404,6 @@ PRAGMA user_version = 7;
 """
 
 
-# Separate statements preserve the caller's transaction (executescript commits
-# an existing transaction). Historical text/metadata never establish an origin.
-_MIGRATION_8 = (
-    "ALTER TABLE work_items ADD COLUMN origin_effect_id TEXT NOT NULL DEFAULT '';",
-    "ALTER TABLE work_operations ADD COLUMN origin_effect_id TEXT NOT NULL DEFAULT '';",
-    "ALTER TABLE run_attempts ADD COLUMN origin_effect_id TEXT NOT NULL DEFAULT '';",
-    "CREATE UNIQUE INDEX uq_work_items_origin_effect "
-    "ON work_items(origin_effect_id) WHERE origin_effect_id <> '';",
-    "CREATE UNIQUE INDEX uq_work_operations_origin_effect "
-    "ON work_operations(origin_effect_id) WHERE origin_effect_id <> '';",
-    "CREATE UNIQUE INDEX uq_run_attempts_origin_effect "
-    "ON run_attempts(origin_effect_id) WHERE origin_effect_id <> '';",
-    "PRAGMA user_version = 8;",
-)
-
-_MIGRATION_9 = (
-    """CREATE TABLE provider_inputs (
-        input_id TEXT PRIMARY KEY,
-        attempt_id TEXT NOT NULL REFERENCES run_attempts(attempt_id) ON DELETE CASCADE,
-        provider_run_id TEXT NOT NULL,
-        text TEXT NOT NULL,
-        state TEXT NOT NULL CHECK (state IN ('unknown', 'delivered', 'rejected')),
-        reason TEXT NOT NULL DEFAULT '',
-        created_at REAL NOT NULL,
-        updated_at REAL NOT NULL
-    )""",
-    "CREATE INDEX idx_provider_inputs_attempt ON provider_inputs(attempt_id, created_at)",
-    "PRAGMA user_version = 9",
-)
-
-
-_MIGRATION_10 = (
-    "ALTER TABLE permission_requests RENAME TO permission_requests_v9",
-    "DROP INDEX uq_permission_request_attempt_key",
-    "DROP INDEX idx_permission_requests_item_status",
-    "DROP INDEX idx_permission_requests_attempt_status",
-    """CREATE TABLE permission_requests (
-        request_id TEXT PRIMARY KEY,
-        owner_kind TEXT NOT NULL CHECK (owner_kind IN ('work_attempt','cooperative_run')),
-        work_item_id TEXT REFERENCES work_items(work_item_id) ON DELETE CASCADE,
-        attempt_id TEXT REFERENCES run_attempts(attempt_id) ON DELETE CASCADE,
-        session_id TEXT NOT NULL DEFAULT '',
-        context_id TEXT NOT NULL DEFAULT '',
-        provider_run_id TEXT NOT NULL DEFAULT '',
-        idempotency_key TEXT NOT NULL DEFAULT '',
-        capability TEXT NOT NULL,
-        action TEXT NOT NULL,
-        scope_paths_json TEXT NOT NULL DEFAULT '[]',
-        reason TEXT NOT NULL DEFAULT '',
-        reversibility TEXT NOT NULL DEFAULT 'unknown',
-        status TEXT NOT NULL CHECK (status IN ('pending','allowed','denied','expired')),
-        options_json TEXT NOT NULL DEFAULT '[]',
-        created_at REAL NOT NULL,
-        updated_at REAL NOT NULL,
-        resolved_at REAL,
-        metadata_json TEXT NOT NULL DEFAULT '{}',
-        CHECK (
-            (owner_kind='work_attempt' AND work_item_id IS NOT NULL
-                AND attempt_id IS NOT NULL AND session_id='' AND context_id=''
-                AND provider_run_id='')
-            OR
-            (owner_kind='cooperative_run' AND work_item_id IS NULL
-                AND attempt_id IS NULL AND session_id<>'' AND context_id<>''
-                AND provider_run_id<>'')
-        )
-    )""",
-    """INSERT INTO permission_requests (
-        request_id,owner_kind,work_item_id,attempt_id,session_id,context_id,
-        provider_run_id,idempotency_key,capability,action,scope_paths_json,
-        reason,reversibility,status,options_json,created_at,updated_at,
-        resolved_at,metadata_json)
-        SELECT request_id,'work_attempt',work_item_id,attempt_id,'','','',
-        idempotency_key,capability,action,scope_paths_json,reason,reversibility,
-        status,options_json,created_at,updated_at,resolved_at,metadata_json
-        FROM permission_requests_v9""",
-    "DROP TABLE permission_requests_v9",
-    """CREATE UNIQUE INDEX uq_permission_request_attempt_key
-        ON permission_requests(attempt_id,idempotency_key)
-        WHERE owner_kind='work_attempt' AND idempotency_key<>''""",
-    """CREATE UNIQUE INDEX uq_permission_request_cooperative_key
-        ON permission_requests(provider_run_id,idempotency_key)
-        WHERE owner_kind='cooperative_run' AND idempotency_key<>''""",
-    """CREATE INDEX idx_permission_requests_item_status
-        ON permission_requests(work_item_id,status,updated_at DESC)
-        WHERE owner_kind='work_attempt'""",
-    """CREATE INDEX idx_permission_requests_attempt_status
-        ON permission_requests(attempt_id,status,updated_at DESC)
-        WHERE owner_kind='work_attempt'""",
-    """CREATE INDEX idx_permission_requests_cooperative_status
-        ON permission_requests(session_id,context_id,status,updated_at DESC)
-        WHERE owner_kind='cooperative_run'""",
-    "PRAGMA user_version = 10",
-)
-
-
-_MIGRATION_11 = (
-    "ALTER TABLE workspace_leases RENAME TO workspace_leases_v10",
-    "DROP INDEX uq_workspace_active_writer",
-    "DROP INDEX idx_workspace_leases_item",
-    "DROP INDEX idx_workspace_leases_status_heartbeat",
-    """CREATE TABLE workspace_leases (
-        lease_id TEXT PRIMARY KEY,
-        workspace_path TEXT NOT NULL,
-        workspace_identity TEXT NOT NULL,
-        owner_kind TEXT NOT NULL CHECK (owner_kind IN ('work_attempt','cooperative_run')),
-        work_item_id TEXT REFERENCES work_items(work_item_id) ON DELETE CASCADE,
-        attempt_id TEXT REFERENCES run_attempts(attempt_id) ON DELETE CASCADE,
-        session_id TEXT NOT NULL DEFAULT '',
-        context_id TEXT NOT NULL DEFAULT '',
-        provider_effect_id TEXT NOT NULL DEFAULT '',
-        provider_run_id TEXT NOT NULL DEFAULT '',
-        status TEXT NOT NULL CHECK (status IN ('active','released','stale')),
-        acquired_at REAL NOT NULL,
-        heartbeat_at REAL NOT NULL,
-        released_at REAL,
-        metadata_json TEXT NOT NULL DEFAULT '{}',
-        CHECK (
-            (owner_kind='work_attempt' AND work_item_id IS NOT NULL
-                AND attempt_id IS NOT NULL AND session_id='' AND context_id=''
-                AND provider_effect_id='' AND provider_run_id='')
-            OR
-            (owner_kind='cooperative_run' AND work_item_id IS NULL
-                AND attempt_id IS NULL AND session_id<>'' AND context_id<>''
-                AND provider_effect_id<>'')
-        )
-    )""",
-    """INSERT INTO workspace_leases (
-        lease_id,workspace_path,workspace_identity,owner_kind,work_item_id,
-        attempt_id,session_id,context_id,provider_effect_id,provider_run_id,
-        status,acquired_at,heartbeat_at,released_at,metadata_json)
-        SELECT lease_id,workspace_path,workspace_identity,'work_attempt',
-        work_item_id,attempt_id,'','','','',status,acquired_at,heartbeat_at,
-        released_at,metadata_json FROM workspace_leases_v10""",
-    "DROP TABLE workspace_leases_v10",
-    """CREATE UNIQUE INDEX uq_workspace_active_writer
-        ON workspace_leases(workspace_identity) WHERE status='active'""",
-    """CREATE UNIQUE INDEX uq_workspace_lease_work_attempt
-        ON workspace_leases(attempt_id) WHERE owner_kind='work_attempt'""",
-    """CREATE UNIQUE INDEX uq_workspace_lease_cooperative_effect
-        ON workspace_leases(provider_effect_id) WHERE owner_kind='cooperative_run'""",
-    """CREATE INDEX idx_workspace_leases_item
-        ON workspace_leases(work_item_id,acquired_at DESC)
-        WHERE owner_kind='work_attempt'""",
-    """CREATE INDEX idx_workspace_leases_cooperative
-        ON workspace_leases(session_id,context_id,status,acquired_at DESC)
-        WHERE owner_kind='cooperative_run'""",
-    """CREATE INDEX idx_workspace_leases_status_heartbeat
-        ON workspace_leases(status,heartbeat_at)""",
-    "PRAGMA user_version = 11",
-)
-
-
-def _validate_origin_effect_id(value: str, *, required: bool = False) -> None:
-    # Opaque identity: validate without coercing, trimming or case folding it.
-    if not isinstance(value, str) or ((required or value != "") and not value.strip()):
-        raise ValueError("origin_effect_id must be a non-blank string (or empty for legacy writes)")
-
-
 def _escape_like(value: str) -> str:
     """Neutralise LIKE wildcards so a filename is matched literally."""
 
@@ -611,31 +434,6 @@ def _merged_json(existing: Any, update: dict[str, Any] | None) -> str:
     if update:
         merged.update(update)
     return _dump_json(merged)
-
-
-def attempt_recovery_snapshot_token(attempt: RunAttemptRecord) -> str:
-    """Return an opaque token for one durable recovery-relevant Attempt state.
-
-    Control-plane receipts may change without advancing activity timestamps, so
-    ``updated_at`` alone is not a safe recovery compare-and-set predicate.  The
-    token intentionally excludes task/model output while covering every durable
-    identity, lifecycle value, result and metadata fact that can change whether
-    an orphan is still safe to promote.
-    """
-
-    payload = {
-        "attempt_id": attempt.attempt_id,
-        "work_item_id": attempt.work_item_id,
-        "operation_id": attempt.operation_id,
-        "provider": attempt.provider,
-        "provider_run_id": attempt.provider_run_id,
-        "execution_status": attempt.execution_status,
-        "result": attempt.result,
-        "error": attempt.error,
-        "updated_at": attempt.updated_at,
-        "metadata": attempt.metadata,
-    }
-    return hashlib.sha256(_dump_json(payload).encode("utf-8")).hexdigest()
 
 
 def _dump_string_list(value: Sequence[Any] | None) -> str:
@@ -829,44 +627,6 @@ class WorkLedgerStore:
                     except sqlite3.Error:
                         pass
                     raise
-            if current < 8:
-                with self._transaction() as cursor:
-                    # Another connection may have upgraded while this one
-                    # waited. Version and DDL must share the writer lock.
-                    current = int(cursor.execute("PRAGMA user_version").fetchone()[0])
-                    if current == 7:
-                        for statement in _MIGRATION_8:
-                            cursor.execute(statement)
-                    elif not 8 <= current <= SCHEMA_VERSION:
-                        raise WorkLedgerError(f"unexpected work ledger schema during v8 upgrade: {current}")
-            if current < 9:
-                with self._transaction() as cursor:
-                    current = int(cursor.execute("PRAGMA user_version").fetchone()[0])
-                    if current == 8:
-                        for statement in _MIGRATION_9:
-                            cursor.execute(statement)
-                    elif not 9 <= current <= SCHEMA_VERSION:
-                        raise WorkLedgerError(f"unexpected work ledger schema during v9 upgrade: {current}")
-            if current < 10:
-                with self._transaction() as cursor:
-                    current = int(cursor.execute("PRAGMA user_version").fetchone()[0])
-                    if current == 9:
-                        for statement in _MIGRATION_10:
-                            cursor.execute(statement)
-                    elif not 10 <= current <= SCHEMA_VERSION:
-                        raise WorkLedgerError(
-                            f"unexpected work ledger schema during v10 upgrade: {current}"
-                        )
-            if current < 11:
-                with self._transaction() as cursor:
-                    current = int(cursor.execute("PRAGMA user_version").fetchone()[0])
-                    if current == 10:
-                        for statement in _MIGRATION_11:
-                            cursor.execute(statement)
-                    elif current != 11:
-                        raise WorkLedgerError(
-                            f"unexpected work ledger schema during v11 upgrade: {current}"
-                        )
             # Repair the short-lived pre-v2 development schema where
             # completion_assessments did not yet persist the terminal bit.
             completion_columns = {
@@ -880,18 +640,6 @@ class WorkLedgerStore:
                     "ALTER TABLE completion_assessments "
                     "ADD COLUMN terminal INTEGER NOT NULL DEFAULT 1 CHECK (terminal IN (0, 1))"
                 )
-            # The global activity view has neither a Project nor a state filter.
-            # Their existing indexes cannot order this query, forcing a temporary
-            # sort of rows that can contain large historical presentation payloads.
-            self._connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_work_items_activity "
-                "ON work_items(last_activity_at DESC, work_item_id)"
-            )
-            self._connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_run_attempts_session_scope "
-                f"ON run_attempts({_ATTEMPT_SESSION_SQL.format(column='metadata_json')}, "
-                "work_item_id, attempt_number DESC)"
-            )
 
     @contextmanager
     def _transaction(self) -> Iterator[sqlite3.Cursor]:
@@ -972,7 +720,6 @@ class WorkLedgerStore:
             updated_at=float(row["updated_at"]),
             last_activity_at=float(row["last_activity_at"]),
             metadata=_load_json(row["metadata_json"]),
-            origin_effect_id=str(row["origin_effect_id"]),
         )
 
     @staticmethod
@@ -986,7 +733,6 @@ class WorkLedgerStore:
             created_at=float(row["created_at"]),
             updated_at=float(row["updated_at"]),
             metadata=_load_json(row["metadata_json"]),
-            origin_effect_id=str(row["origin_effect_id"]),
         )
 
     @staticmethod
@@ -1012,7 +758,6 @@ class WorkLedgerStore:
             started_at=float(row["started_at"]) if row["started_at"] is not None else None,
             finished_at=float(row["finished_at"]) if row["finished_at"] is not None else None,
             metadata=_load_json(row["metadata_json"]),
-            origin_effect_id=str(row["origin_effect_id"]),
         )
 
     @staticmethod
@@ -1040,12 +785,8 @@ class WorkLedgerStore:
     def _permission_request_from_row(row: sqlite3.Row) -> PermissionRequestRecord:
         return PermissionRequestRecord(
             request_id=str(row["request_id"]),
-            owner_kind=str(row["owner_kind"]),  # type: ignore[arg-type]
-            work_item_id=str(row["work_item_id"] or ""),
-            attempt_id=str(row["attempt_id"] or ""),
-            session_id=str(row["session_id"] or ""),
-            context_id=str(row["context_id"] or ""),
-            provider_run_id=str(row["provider_run_id"] or ""),
+            work_item_id=str(row["work_item_id"]),
+            attempt_id=str(row["attempt_id"]),
             idempotency_key=str(row["idempotency_key"] or ""),
             capability=str(row["capability"]),
             action=str(row["action"]),
@@ -1092,13 +833,8 @@ class WorkLedgerStore:
             lease_id=str(row["lease_id"]),
             workspace_path=str(row["workspace_path"]),
             workspace_identity=str(row["workspace_identity"]),
-            owner_kind=str(row["owner_kind"]),  # type: ignore[arg-type]
-            work_item_id=str(row["work_item_id"] or ""),
-            attempt_id=str(row["attempt_id"] or ""),
-            session_id=str(row["session_id"] or ""),
-            context_id=str(row["context_id"] or ""),
-            provider_effect_id=str(row["provider_effect_id"] or ""),
-            provider_run_id=str(row["provider_run_id"] or ""),
+            work_item_id=str(row["work_item_id"]),
+            attempt_id=str(row["attempt_id"]),
             status=str(row["status"]),  # type: ignore[arg-type]
             acquired_at=float(row["acquired_at"]),
             heartbeat_at=float(row["heartbeat_at"]),
@@ -1219,27 +955,6 @@ class WorkLedgerStore:
     ) -> ConversationBindingRecord:
         """Create or replace one chat's explicit Project/WorkItem context."""
 
-        with self._transaction() as cursor:
-            return self._bind_conversation_sql(
-                cursor,
-                session_id,
-                project_id,
-                anchor_work_item_id=anchor_work_item_id,
-                metadata=metadata,
-                now=float(self._clock()),
-            )
-
-    @classmethod
-    def _bind_conversation_sql(
-        cls,
-        cursor: sqlite3.Cursor,
-        session_id: str,
-        project_id: str,
-        *,
-        anchor_work_item_id: str,
-        metadata: dict[str, Any] | None,
-        now: float,
-    ) -> ConversationBindingRecord:
         clean_session = str(session_id or "").strip()
         clean_project = str(project_id or "").strip()
         clean_anchor = str(anchor_work_item_id or "").strip()
@@ -1250,68 +965,70 @@ class WorkLedgerStore:
         kind = "work_item" if clean_anchor else "project"
         if kind not in CONVERSATION_BINDING_KINDS:
             raise ValueError(f"unsupported conversation binding kind: {kind!r}")
-        project = cursor.execute(
-            "SELECT 1 FROM projects WHERE project_id = ?",
-            (clean_project,),
-        ).fetchone()
-        if project is None:
-            raise WorkLedgerNotFound(f"unknown project: {clean_project}")
-        if clean_anchor:
-            item = cursor.execute(
-                "SELECT project_id FROM work_items WHERE work_item_id = ?",
-                (clean_anchor,),
+        now = float(self._clock())
+        with self._transaction() as cursor:
+            project = cursor.execute(
+                "SELECT 1 FROM projects WHERE project_id = ?",
+                (clean_project,),
             ).fetchone()
-            if item is None:
-                raise WorkLedgerNotFound(f"unknown work item: {clean_anchor}")
-            if str(item["project_id"]) != clean_project:
-                raise WorkLedgerConflict(
-                    "conversation anchor belongs to a different project"
+            if project is None:
+                raise WorkLedgerNotFound(f"unknown project: {clean_project}")
+            if clean_anchor:
+                item = cursor.execute(
+                    "SELECT project_id FROM work_items WHERE work_item_id = ?",
+                    (clean_anchor,),
+                ).fetchone()
+                if item is None:
+                    raise WorkLedgerNotFound(f"unknown work item: {clean_anchor}")
+                if str(item["project_id"]) != clean_project:
+                    raise WorkLedgerConflict(
+                        "conversation anchor belongs to a different project"
+                    )
+            existing = cursor.execute(
+                "SELECT * FROM conversation_bindings WHERE session_id = ?",
+                (clean_session,),
+            ).fetchone()
+            if existing is None:
+                cursor.execute(
+                    """
+                    INSERT INTO conversation_bindings (
+                        session_id, project_id, anchor_work_item_id, binding_kind,
+                        created_at, updated_at, metadata_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        clean_session,
+                        clean_project,
+                        clean_anchor or None,
+                        kind,
+                        now,
+                        now,
+                        _dump_json(metadata),
+                    ),
                 )
-        existing = cursor.execute(
-            "SELECT * FROM conversation_bindings WHERE session_id = ?",
-            (clean_session,),
-        ).fetchone()
-        if existing is None:
-            cursor.execute(
-                """
-                INSERT INTO conversation_bindings (
-                    session_id, project_id, anchor_work_item_id, binding_kind,
-                    created_at, updated_at, metadata_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    clean_session,
-                    clean_project,
-                    clean_anchor or None,
-                    kind,
-                    now,
-                    now,
-                    _dump_json(metadata),
-                ),
-            )
-        else:
-            cursor.execute(
-                """
-                UPDATE conversation_bindings
-                SET project_id = ?, anchor_work_item_id = ?, binding_kind = ?,
-                    updated_at = ?, metadata_json = ?
-                WHERE session_id = ?
-                """,
-                (
-                    clean_project,
-                    clean_anchor or None,
-                    kind,
-                    now,
-                    _merged_json(existing["metadata_json"], metadata),
-                    clean_session,
-                ),
-            )
-        row = cursor.execute(
-            "SELECT * FROM conversation_bindings WHERE session_id = ?",
-            (clean_session,),
-        ).fetchone()
-        assert row is not None
-        return cls._conversation_binding_from_row(row)
+            else:
+                cursor.execute(
+                    """
+                    UPDATE conversation_bindings
+                    SET project_id = ?, anchor_work_item_id = ?, binding_kind = ?,
+                        updated_at = ?, metadata_json = ?
+                    WHERE session_id = ?
+                    """,
+                    (
+                        clean_project,
+                        clean_anchor or None,
+                        kind,
+                        now,
+                        _merged_json(existing["metadata_json"], metadata),
+                        clean_session,
+                    ),
+                )
+            row = cursor.execute(
+                "SELECT * FROM conversation_bindings WHERE session_id = ?",
+                (clean_session,),
+            ).fetchone()
+            assert row is not None
+            return self._conversation_binding_from_row(row)
 
     def get_conversation_binding(self, session_id: str) -> ConversationBindingRecord | None:
         row = self._fetchone(
@@ -1320,31 +1037,14 @@ class WorkLedgerStore:
         )
         return self._conversation_binding_from_row(row) if row is not None else None
 
-    def clear_conversation_binding(
-        self,
-        session_id: str,
-        *,
-        expected_project_id: str | None = None,
-    ) -> bool:
-        """Clear a binding, optionally only for the Project actually observed.
-
-        Availability cleanup uses the comparison; an obsolete read must not
-        erase a different Project selected while its filesystem was checked.
-        """
-
+    def clear_conversation_binding(self, session_id: str) -> bool:
         clean_session = str(session_id or "").strip()
         if not clean_session:
             return False
         with self._transaction() as cursor:
-            predicate = " AND project_id = ?" if expected_project_id is not None else ""
-            params = (
-                (clean_session, str(expected_project_id))
-                if expected_project_id is not None
-                else (clean_session,)
-            )
             cursor.execute(
-                "DELETE FROM conversation_bindings WHERE session_id = ?" + predicate,
-                params,
+                "DELETE FROM conversation_bindings WHERE session_id = ?",
+                (clean_session,),
             )
             return cursor.rowcount > 0
 
@@ -1362,77 +1062,60 @@ class WorkLedgerStore:
         a one-off Draft, then return to Project A for the next unplaced goal.
         """
 
-        with self._transaction() as cursor:
-            return self._set_session_active_work_item_sql(
-                cursor,
-                session_id,
-                work_item_id,
-                metadata=metadata,
-                now=float(self._clock()),
-            )
-
-    @classmethod
-    def _set_session_active_work_item_sql(
-        cls,
-        cursor: sqlite3.Cursor,
-        session_id: str,
-        work_item_id: str,
-        *,
-        metadata: dict[str, Any] | None,
-        now: float,
-    ) -> SessionWorkContextRecord:
         clean_session = str(session_id or "").strip()
         clean_work_item = str(work_item_id or "").strip()
         if not clean_session:
             raise ValueError("session_id is required")
         if not clean_work_item:
             raise ValueError("work_item_id is required")
-        item = cursor.execute(
-            "SELECT 1 FROM work_items WHERE work_item_id = ?",
-            (clean_work_item,),
-        ).fetchone()
-        if item is None:
-            raise WorkLedgerNotFound(f"unknown work item: {clean_work_item}")
-        existing = cursor.execute(
-            "SELECT * FROM session_work_contexts WHERE session_id = ?",
-            (clean_session,),
-        ).fetchone()
-        if existing is None:
-            cursor.execute(
-                """
-                INSERT INTO session_work_contexts (
-                    session_id, active_work_item_id, created_at, updated_at,
-                    metadata_json
-                ) VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    clean_session,
-                    clean_work_item,
-                    now,
-                    now,
-                    _dump_json(metadata),
-                ),
-            )
-        else:
-            cursor.execute(
-                """
-                UPDATE session_work_contexts
-                SET active_work_item_id = ?, updated_at = ?, metadata_json = ?
-                WHERE session_id = ?
-                """,
-                (
-                    clean_work_item,
-                    now,
-                    _merged_json(existing["metadata_json"], metadata),
-                    clean_session,
-                ),
-            )
-        row = cursor.execute(
-            "SELECT * FROM session_work_contexts WHERE session_id = ?",
-            (clean_session,),
-        ).fetchone()
-        assert row is not None
-        return cls._session_work_context_from_row(row)
+        now = float(self._clock())
+        with self._transaction() as cursor:
+            item = cursor.execute(
+                "SELECT 1 FROM work_items WHERE work_item_id = ?",
+                (clean_work_item,),
+            ).fetchone()
+            if item is None:
+                raise WorkLedgerNotFound(f"unknown work item: {clean_work_item}")
+            existing = cursor.execute(
+                "SELECT * FROM session_work_contexts WHERE session_id = ?",
+                (clean_session,),
+            ).fetchone()
+            if existing is None:
+                cursor.execute(
+                    """
+                    INSERT INTO session_work_contexts (
+                        session_id, active_work_item_id, created_at, updated_at,
+                        metadata_json
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        clean_session,
+                        clean_work_item,
+                        now,
+                        now,
+                        _dump_json(metadata),
+                    ),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE session_work_contexts
+                    SET active_work_item_id = ?, updated_at = ?, metadata_json = ?
+                    WHERE session_id = ?
+                    """,
+                    (
+                        clean_work_item,
+                        now,
+                        _merged_json(existing["metadata_json"], metadata),
+                        clean_session,
+                    ),
+                )
+            row = cursor.execute(
+                "SELECT * FROM session_work_contexts WHERE session_id = ?",
+                (clean_session,),
+            ).fetchone()
+            assert row is not None
+            return self._session_work_context_from_row(row)
 
     def get_session_work_context(
         self,
@@ -1455,86 +1138,6 @@ class WorkLedgerStore:
             )
             return cursor.rowcount > 0
 
-    def update_session_context(
-        self,
-        session_id: str,
-        *,
-        project_id: str | None,
-        work_item_id: str = "",
-        binding_metadata: dict[str, Any] | None = None,
-        work_metadata: dict[str, Any] | None = None,
-    ) -> None:
-        """Atomically update the standing Project and foreground Work referent."""
-
-        with self._transaction() as cursor:
-            self.write_session_context(
-                cursor,
-                session_id,
-                project_id=project_id,
-                work_item_id=work_item_id,
-                binding_metadata=binding_metadata,
-                work_metadata=work_metadata,
-                now=float(self._clock()),
-            )
-
-    @classmethod
-    def write_session_context(
-        cls,
-        cursor: sqlite3.Cursor,
-        session_id: str,
-        *,
-        project_id: str | None,
-        work_item_id: str = "",
-        binding_metadata: dict[str, Any] | None = None,
-        work_metadata: dict[str, Any] | None = None,
-        now: float,
-    ) -> None:
-        """SQL-only domain write in a caller-owned Work database transaction.
-
-        None preserves the standing Project (foregrounding a Draft); an empty
-        Project clears it. Empty Work clears the narrow referent. Exact entity
-        membership/ownership is checked on this cursor, with the same writers
-        as the single-row APIs. The caller owns workspace trust, semantic
-        eligibility, commit/rollback and any post-commit presentation. This
-        helper never opens another connection, commits, or emits an event.
-        """
-
-        if not cursor.connection.in_transaction:
-            raise WorkLedgerConflict("session context requires an active transaction")
-        clean_session = str(session_id or "").strip()
-        if not clean_session:
-            raise ValueError("session_id is required")
-        clean_work_item = str(work_item_id or "").strip()
-        if project_id is not None:
-            clean_project = str(project_id or "").strip()
-            if clean_project:
-                cls._bind_conversation_sql(
-                    cursor,
-                    clean_session,
-                    clean_project,
-                    anchor_work_item_id=clean_work_item,
-                    metadata=binding_metadata,
-                    now=now,
-                )
-            else:
-                cursor.execute(
-                    "DELETE FROM conversation_bindings WHERE session_id = ?",
-                    (clean_session,),
-                )
-        if clean_work_item:
-            cls._set_session_active_work_item_sql(
-                cursor,
-                clean_session,
-                clean_work_item,
-                metadata=work_metadata,
-                now=now,
-            )
-        else:
-            cursor.execute(
-                "DELETE FROM session_work_contexts WHERE session_id = ?",
-                (clean_session,),
-            )
-
     # -- WorkItem --------------------------------------------------------
 
     def create_work_item(
@@ -1550,161 +1153,6 @@ class WorkLedgerStore:
         metadata: dict[str, Any] | None = None,
         work_item_id: str = "",
     ) -> WorkItemRecord:
-        """Create a standalone WorkItem without requiring an Attempt."""
-
-        with self._transaction() as cursor:
-            return self._write_work_item(
-                cursor, project_id, title=title, goal=goal,
-                workspace_mode=workspace_mode, workspace_path=workspace_path,
-                branch=branch, base_revision=base_revision, metadata=metadata,
-                work_item_id=work_item_id,
-            )
-
-    def create_work_item_with_attempt(
-        self,
-        project_id: str,
-        *,
-        title: str,
-        intent: str,
-        instruction: str,
-        provider: str,
-        task: str,
-        goal: str = "",
-        workspace_mode: str = "local",
-        workspace_path: str | os.PathLike[str] | None = None,
-        branch: str = "",
-        base_revision: str = "",
-        mode: str = "agent",
-        provider_run_id: str = "",
-        metadata: dict[str, Any] | None = None,
-        operation_metadata: dict[str, Any] | None = None,
-        attempt_metadata: dict[str, Any] | None = None,
-        work_item_id: str = "",
-        operation_id: str = "",
-        attempt_id: str = "",
-        origin_effect_id: str = "",
-    ) -> tuple[WorkItemRecord, WorkOperationRecord, RunAttemptRecord]:
-        """Create the runtime's initial Work/Operation/Attempt in one transaction.
-
-        This is local preparation, not Provider submission or effect acceptance.
-        Project registration and workspace allocation remain outside this write set.
-        A nonempty origin must be supplied by the Host acceptance owner, never
-        recovered from model/Provider metadata. This store only enforces its
-        domain uniqueness; it does not verify Control Ledger acceptance.
-        """
-        _validate_origin_effect_id(origin_effect_id)
-        with self._transaction() as cursor:
-            self._require_unused_origin_effect(cursor, origin_effect_id)
-            item = self._write_work_item(
-                cursor, project_id, title=title, goal=goal,
-                workspace_mode=workspace_mode, workspace_path=workspace_path,
-                branch=branch, base_revision=base_revision, metadata=metadata,
-                work_item_id=work_item_id, origin_effect_id=origin_effect_id,
-            )
-            operation, attempt = self._write_operation_attempt(
-                cursor, item.work_item_id, intent=intent, instruction=instruction,
-                provider=provider, task=task, mode=mode, provider_run_id=provider_run_id,
-                operation_metadata=operation_metadata, attempt_metadata=attempt_metadata,
-                operation_id=operation_id, attempt_id=attempt_id,
-                origin_effect_id=origin_effect_id,
-            )
-            row = cursor.execute(
-                "SELECT * FROM work_items WHERE work_item_id=?", (item.work_item_id,),
-            ).fetchone()
-            assert row is not None
-            return self._work_item_from_row(row), operation, attempt
-
-    def write_effect_work_item_with_attempt(
-        self,
-        cursor: sqlite3.Cursor,
-        project_id: str,
-        *,
-        title: str,
-        intent: str,
-        instruction: str,
-        provider: str,
-        task: str,
-        origin_effect_id: str,
-        provider_run_id: str,
-        workspace_mode: str = "local",
-        workspace_path: str | os.PathLike[str] | None = None,
-        branch: str = "",
-        base_revision: str = "",
-        mode: str = "agent",
-        goal: str = "",
-        metadata: dict[str, Any] | None = None,
-        operation_metadata: dict[str, Any] | None = None,
-        attempt_metadata: dict[str, Any] | None = None,
-        work_item_id: str = "",
-        operation_id: str = "",
-        attempt_id: str = "",
-    ) -> tuple[WorkItemRecord, WorkOperationRecord, RunAttemptRecord]:
-        """Write one accepted effect's initial Work triple in a caller transaction.
-
-        This SQL-only seam neither opens nor ends a transaction and performs no
-        filesystem, Provider, EventBus, permission, or presentation work.  The
-        caller owns Control acceptance and must use the same physical Work
-        database.  A non-empty effect and preallocated Runtime run identity are
-        mandatory so this cannot silently become a legacy intake path.
-        """
-
-        self._validate_effect_intake_cursor(cursor)
-        _validate_origin_effect_id(origin_effect_id, required=True)
-        clean_run_id = str(provider_run_id or "").strip()
-        if not clean_run_id:
-            raise ValueError("provider_run_id is required for effect Work intake")
-        self._require_unused_origin_effect(cursor, origin_effect_id)
-        item = self._write_work_item(
-            cursor,
-            project_id,
-            title=title,
-            goal=goal,
-            workspace_mode=workspace_mode,
-            workspace_path=workspace_path,
-            branch=branch,
-            base_revision=base_revision,
-            metadata=metadata,
-            work_item_id=work_item_id,
-            origin_effect_id=origin_effect_id,
-        )
-        operation, attempt = self._write_operation_attempt(
-            cursor,
-            item.work_item_id,
-            intent=intent,
-            instruction=instruction,
-            provider=provider,
-            task=task,
-            mode=mode,
-            provider_run_id=clean_run_id,
-            operation_metadata=operation_metadata,
-            attempt_metadata=attempt_metadata,
-            operation_id=operation_id,
-            attempt_id=attempt_id,
-            origin_effect_id=origin_effect_id,
-        )
-        row = cursor.execute(
-            "SELECT * FROM work_items WHERE work_item_id=?", (item.work_item_id,),
-        ).fetchone()
-        assert row is not None
-        return self._work_item_from_row(row), operation, attempt
-
-    def _write_work_item(
-        self,
-        cursor: sqlite3.Cursor,
-        project_id: str,
-        *,
-        title: str,
-        goal: str = "",
-        workspace_mode: str = "local",
-        workspace_path: str | os.PathLike[str] | None = None,
-        branch: str = "",
-        base_revision: str = "",
-        metadata: dict[str, Any] | None = None,
-        work_item_id: str = "",
-        origin_effect_id: str = "",
-    ) -> WorkItemRecord:
-        """Write through the caller-owned Work Store transaction."""
-
         clean_title = str(title or "").strip()
         if not clean_title:
             raise ValueError("work item title is required")
@@ -1724,142 +1172,63 @@ class WorkLedgerStore:
             workspace_value = ""
             workspace_identity = ""
         now = float(self._clock())
-        project = cursor.execute("SELECT * FROM projects WHERE project_id = ?", (project_id,)).fetchone()
-        if project is None:
-            raise WorkLedgerNotFound(f"unknown project: {project_id}")
-        if clean_workspace_mode != "none":
-            workspace = canonicalize_path(
-                workspace_path or str(project["canonical_path"])
-            )
-            workspace_value = workspace.canonical_path
-            workspace_identity = workspace.identity_key
-        try:
-            cursor.execute(
-                """
-                INSERT INTO work_items (
-                    work_item_id, project_id, title, goal, state,
-                    workspace_mode, workspace_path, workspace_identity, branch, base_revision,
-                    created_at, updated_at, last_activity_at, metadata_json, origin_effect_id
-                ) VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    next_id,
-                    str(project_id),
-                    clean_title,
-                    str(goal or "").strip(),
-                    clean_workspace_mode,
-                    workspace_value,
-                    workspace_identity,
-                    str(branch or "").strip(),
-                    str(base_revision or "").strip(),
-                    now,
-                    now,
-                    now,
-                    _dump_json(metadata),
-                    origin_effect_id,
-                ),
-            )
-        except sqlite3.IntegrityError as exc:
-            raise WorkLedgerConflict(f"work item already exists: {next_id}") from exc
-        row = cursor.execute("SELECT * FROM work_items WHERE work_item_id = ?", (next_id,)).fetchone()
-        assert row is not None
-        return self._work_item_from_row(row)
-
-    @staticmethod
-    def _require_unused_origin_effect(cursor: sqlite3.Cursor, effect_id: str) -> None:
-        """Reserve one domain write set under the caller's IMMEDIATE transaction."""
-        if not effect_id:
-            return
-        row = cursor.execute(
-            "SELECT 1 FROM work_items WHERE origin_effect_id=? AND origin_effect_id<>'' "
-            "UNION ALL SELECT 1 FROM work_operations "
-            "WHERE origin_effect_id=? AND origin_effect_id<>'' "
-            "UNION ALL SELECT 1 FROM run_attempts "
-            "WHERE origin_effect_id=? AND origin_effect_id<>'' LIMIT 1",
-            (effect_id, effect_id, effect_id),
-        ).fetchone()
-        if row is not None:
-            raise WorkLedgerConflict(f"origin effect already has a domain binding: {effect_id}")
-
-    def get_origin_effect_binding(self, effect_id: str) -> dict[str, str] | None:
-        """Read an effect's first Attempt and exact lineage in one SQLite snapshot.
-
-        A binding is correlation, not acceptance, dispatch or completion evidence.
-        Later amendments do not replace the Work's creation origin; legacy retry
-        attempts do not inherit the initial effect. Incomplete lineage is a conflict,
-        not permission to create a replacement. Caller must verify the accepted
-        immutable effect separately before replay or execution.
-        """
-        _validate_origin_effect_id(effect_id, required=True)
-        row = self._fetchone(
-            """
-            SELECT created.work_item_id AS created_work_item_id,
-                   op.operation_id, op.work_item_id AS operation_work_item_id,
-                   attempt.attempt_id, attempt.work_item_id AS attempt_work_item_id,
-                   attempt.operation_id AS attempt_operation_id, attempt.provider_run_id,
-                   parent.work_item_id
-            FROM (SELECT ? AS effect_id) AS source
-            LEFT JOIN work_items AS created
-                ON created.origin_effect_id=source.effect_id AND created.origin_effect_id<>''
-            LEFT JOIN work_operations AS op
-                ON op.origin_effect_id=source.effect_id AND op.origin_effect_id<>''
-            LEFT JOIN run_attempts AS attempt
-                ON attempt.origin_effect_id=source.effect_id AND attempt.origin_effect_id<>''
-            LEFT JOIN work_items AS parent ON parent.work_item_id=op.work_item_id
-            """,
-            (effect_id,),
-        )
-        assert row is not None
-        if all(row[key] is None for key in ("created_work_item_id", "operation_id", "attempt_id")):
-            return None
-        if (
-            row["operation_id"] is None or row["attempt_id"] is None or row["work_item_id"] is None
-            or row["attempt_operation_id"] != row["operation_id"]
-            or row["attempt_work_item_id"] != row["operation_work_item_id"]
-            or (row["created_work_item_id"] is not None
-                and row["created_work_item_id"] != row["work_item_id"])
-        ):
-            raise WorkLedgerConflict(f"incomplete or mismatched origin effect binding: {effect_id}")
-        return {"origin_effect_id": effect_id, **{
-            key: str(row[key]) for key in ("work_item_id", "operation_id", "attempt_id", "provider_run_id")
-        }}
+        with self._transaction() as cursor:
+            project = cursor.execute("SELECT * FROM projects WHERE project_id = ?", (project_id,)).fetchone()
+            if project is None:
+                raise WorkLedgerNotFound(f"unknown project: {project_id}")
+            if clean_workspace_mode != "none":
+                workspace = canonicalize_path(
+                    workspace_path or str(project["canonical_path"])
+                )
+                workspace_value = workspace.canonical_path
+                workspace_identity = workspace.identity_key
+            try:
+                cursor.execute(
+                    """
+                    INSERT INTO work_items (
+                        work_item_id, project_id, title, goal, state,
+                        workspace_mode, workspace_path, workspace_identity, branch, base_revision,
+                        created_at, updated_at, last_activity_at, metadata_json
+                    ) VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        next_id,
+                        str(project_id),
+                        clean_title,
+                        str(goal or "").strip(),
+                        clean_workspace_mode,
+                        workspace_value,
+                        workspace_identity,
+                        str(branch or "").strip(),
+                        str(base_revision or "").strip(),
+                        now,
+                        now,
+                        now,
+                        _dump_json(metadata),
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise WorkLedgerConflict(f"work item already exists: {next_id}") from exc
+            row = cursor.execute("SELECT * FROM work_items WHERE work_item_id = ?", (next_id,)).fetchone()
+            assert row is not None
+            return self._work_item_from_row(row)
 
     def get_work_item(self, work_item_id: str) -> WorkItemRecord | None:
         row = self._fetchone("SELECT * FROM work_items WHERE work_item_id = ?", (str(work_item_id),))
         return self._work_item_from_row(row) if row is not None else None
 
-    @staticmethod
-    def _record_projection(record_type: type, metadata_sql: str) -> str:
-        """Select persisted record fields while reducing JSON inside SQLite.
-
-        These two read projections use the existing record shape; callers pass
-        fixed Host SQL, never a model-authored expression or a second schema.
-        """
-        return ", ".join(metadata_sql + " AS metadata_json" if field.name == "metadata"
-            else field.name for field in fields(record_type))
-
     def list_work_items(
         self,
         *,
         project_id: str = "",
-        session_id: str = "",
         states: Sequence[str] | None = None,
         limit: int = 200,
-        include_presentation: bool = True,
     ) -> list[WorkItemRecord]:
         clauses: list[str] = []
         params: list[Any] = []
         if project_id:
             clauses.append("project_id = ?")
             params.append(str(project_id))
-        if session_id:
-            clauses.append(f"""work_item_id IN (
-                SELECT scoped.work_item_id FROM run_attempts scoped
-                WHERE {_ATTEMPT_SESSION_SQL.format(column='scoped.metadata_json')} = ?
-                AND NOT EXISTS (SELECT 1 FROM run_attempts newer
-                    WHERE newer.work_item_id = scoped.work_item_id
-                    AND newer.attempt_number > scoped.attempt_number))""")
-            params.append(str(session_id))
         if states:
             clean_states = [str(state) for state in states]
             invalid = [state for state in clean_states if state not in WORK_ITEM_STATES]
@@ -1867,9 +1236,7 @@ class WorkLedgerStore:
                 raise ValueError(f"unsupported work item state: {invalid[0]!r}")
             clauses.append("state IN (" + ",".join("?" for _ in clean_states) + ")")
             params.extend(clean_states)
-        projection = "*" if include_presentation else self._record_projection(
-            WorkItemRecord, "json_remove(metadata_json, '$.presentation')")
-        sql = f"SELECT {projection} FROM work_items"
+        sql = "SELECT * FROM work_items"
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY last_activity_at DESC, work_item_id LIMIT ?"
@@ -2013,14 +1380,12 @@ class WorkLedgerStore:
         instruction: str,
         metadata: dict[str, Any] | None = None,
         operation_id: str = "",
-        cursor: sqlite3.Cursor | None = None,
     ) -> WorkOperationRecord:
         """Append one semantic instruction without starting a Provider.
 
         Runtime intake normally uses :meth:`create_operation_attempt` so the
-        instruction and its first execution are atomic. An accepted amendment
-        delivered to an active Run uses this narrower method in the same
-        transaction as its input, without creating another Attempt.
+        instruction and its first execution are atomic. This narrower method
+        is retained for import/repair tooling and deterministic store tests.
         """
 
         clean_intent = str(intent or "").strip().lower()
@@ -2029,10 +1394,8 @@ class WorkLedgerStore:
             raise ValueError(f"unsupported work operation intent: {intent!r}")
         if not clean_instruction:
             raise ValueError("operation instruction is required")
-        if cursor is not None:
-            self._validate_effect_intake_cursor(cursor)
         now = float(self._clock())
-        with self._transaction() if cursor is None else nullcontext(cursor) as cursor:
+        with self._transaction() as cursor:
             item = cursor.execute(
                 "SELECT * FROM work_items WHERE work_item_id = ?",
                 (str(work_item_id),),
@@ -2103,35 +1466,6 @@ class WorkLedgerStore:
         )
         return [self._operation_from_row(row) for row in rows]
 
-    def _validate_effect_intake_cursor(self, cursor: sqlite3.Cursor) -> None:
-        if not isinstance(cursor, sqlite3.Cursor) or not cursor.connection.in_transaction:
-            raise WorkLedgerConflict("effect Work intake requires an active SQLite transaction")
-        main_database = next(
-            (str(row[2] or "") for row in cursor.execute("PRAGMA database_list").fetchall()
-             if str(row[1]) == "main"), "",
-        )
-        if self.db_path == ":memory:" or not main_database or Path(main_database).resolve() != Path(self.db_path).resolve():
-            raise WorkLedgerConflict("effect Work intake cursor belongs to another database")
-
-    def write_effect_operation_attempt(
-        self, cursor: sqlite3.Cursor, work_item_id: str, *, origin_effect_id: str,
-        provider_run_id: str, intent: str, instruction: str, provider: str, task: str,
-        mode: str = "agent", operation_metadata: dict[str, Any] | None = None,
-        attempt_metadata: dict[str, Any] | None = None,
-    ) -> tuple[WorkOperationRecord, RunAttemptRecord]:
-        """Append an effect-owned operation in the caller's Control transaction."""
-        self._validate_effect_intake_cursor(cursor)
-        _validate_origin_effect_id(origin_effect_id, required=True)
-        if not str(provider_run_id or "").strip():
-            raise ValueError("provider_run_id is required for effect Work intake")
-        self._require_unused_origin_effect(cursor, origin_effect_id)
-        return self._write_operation_attempt(
-            cursor, work_item_id, intent=intent, instruction=instruction,
-            provider=provider, task=task, mode=mode, provider_run_id=provider_run_id,
-            operation_metadata=operation_metadata, attempt_metadata=attempt_metadata,
-            origin_effect_id=origin_effect_id,
-        )
-
     def create_operation_attempt(
         self,
         work_item_id: str,
@@ -2146,38 +1480,8 @@ class WorkLedgerStore:
         attempt_metadata: dict[str, Any] | None = None,
         operation_id: str = "",
         attempt_id: str = "",
-        origin_effect_id: str = "",
     ) -> tuple[WorkOperationRecord, RunAttemptRecord]:
-        """Append one Operation/first Attempt; origin follows the initial writer's contract."""
-        _validate_origin_effect_id(origin_effect_id)
-        with self._transaction() as cursor:
-            self._require_unused_origin_effect(cursor, origin_effect_id)
-            return self._write_operation_attempt(
-                cursor, work_item_id, intent=intent, instruction=instruction,
-                provider=provider, task=task, mode=mode, provider_run_id=provider_run_id,
-                operation_metadata=operation_metadata, attempt_metadata=attempt_metadata,
-                operation_id=operation_id, attempt_id=attempt_id,
-                origin_effect_id=origin_effect_id,
-            )
-
-    def _write_operation_attempt(
-        self,
-        cursor: sqlite3.Cursor,
-        work_item_id: str,
-        *,
-        intent: str,
-        instruction: str,
-        provider: str,
-        task: str,
-        mode: str = "agent",
-        provider_run_id: str = "",
-        operation_metadata: dict[str, Any] | None = None,
-        attempt_metadata: dict[str, Any] | None = None,
-        operation_id: str = "",
-        attempt_id: str = "",
-        origin_effect_id: str = "",
-    ) -> tuple[WorkOperationRecord, RunAttemptRecord]:
-        """Write through the caller-owned Work Store transaction."""
+        """Atomically append an Operation and its first queued Attempt."""
 
         clean_intent = str(intent or "").strip().lower()
         clean_instruction = str(instruction or "").strip()
@@ -2192,118 +1496,101 @@ class WorkLedgerStore:
         if not clean_task:
             raise ValueError("task is required")
         now = float(self._clock())
-        item = cursor.execute(
-            "SELECT * FROM work_items WHERE work_item_id = ?",
-            (str(work_item_id),),
-        ).fetchone()
-        if item is None:
-            raise WorkLedgerNotFound(f"unknown work item: {work_item_id}")
-        if str(item["state"]) == "archived":
-            raise WorkLedgerConflict(
-                f"work item {work_item_id} must be reopened before adding an operation"
+        with self._transaction() as cursor:
+            item = cursor.execute(
+                "SELECT * FROM work_items WHERE work_item_id = ?",
+                (str(work_item_id),),
+            ).fetchone()
+            if item is None:
+                raise WorkLedgerNotFound(f"unknown work item: {work_item_id}")
+            if str(item["state"]) == "archived":
+                raise WorkLedgerConflict(
+                    f"work item {work_item_id} must be reopened before adding an operation"
+                )
+            operation_number_row = cursor.execute(
+                "SELECT COALESCE(MAX(operation_number), 0) + 1 AS next_number "
+                "FROM work_operations WHERE work_item_id = ?",
+                (str(work_item_id),),
+            ).fetchone()
+            attempt_number_row = cursor.execute(
+                "SELECT COALESCE(MAX(attempt_number), 0) + 1 AS next_number "
+                "FROM run_attempts WHERE work_item_id = ?",
+                (str(work_item_id),),
+            ).fetchone()
+            next_operation_number = int(
+                operation_number_row["next_number"] if operation_number_row else 1
             )
-        self._require_available_provider_context(cursor, attempt_metadata)
-        operation_number_row = cursor.execute(
-            "SELECT COALESCE(MAX(operation_number), 0) + 1 AS next_number "
-            "FROM work_operations WHERE work_item_id = ?",
-            (str(work_item_id),),
-        ).fetchone()
-        attempt_number_row = cursor.execute(
-            "SELECT COALESCE(MAX(attempt_number), 0) + 1 AS next_number "
-            "FROM run_attempts WHERE work_item_id = ?",
-            (str(work_item_id),),
-        ).fetchone()
-        next_operation_number = int(
-            operation_number_row["next_number"] if operation_number_row else 1
-        )
-        next_attempt_number = int(
-            attempt_number_row["next_number"] if attempt_number_row else 1
-        )
-        next_operation_id = str(operation_id or new_ledger_id("operation"))
-        next_attempt_id = str(attempt_id or new_ledger_id("attempt"))
-        try:
+            next_attempt_number = int(
+                attempt_number_row["next_number"] if attempt_number_row else 1
+            )
+            next_operation_id = str(operation_id or new_ledger_id("operation"))
+            next_attempt_id = str(attempt_id or new_ledger_id("attempt"))
+            try:
+                cursor.execute(
+                    """
+                    INSERT INTO work_operations (
+                        operation_id, work_item_id, operation_number, intent,
+                        instruction, created_at, updated_at, metadata_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        next_operation_id,
+                        str(work_item_id),
+                        next_operation_number,
+                        clean_intent,
+                        clean_instruction,
+                        now,
+                        now,
+                        _dump_json(operation_metadata),
+                    ),
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO run_attempts (
+                        attempt_id, work_item_id, operation_id, attempt_number,
+                        provider, provider_run_id, task, mode, execution_status,
+                        created_at, updated_at, metadata_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)
+                    """,
+                    (
+                        next_attempt_id,
+                        str(work_item_id),
+                        next_operation_id,
+                        next_attempt_number,
+                        clean_provider,
+                        str(provider_run_id or "").strip(),
+                        clean_task,
+                        str(mode or "agent").strip() or "agent",
+                        now,
+                        now,
+                        _dump_json(attempt_metadata),
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise WorkLedgerConflict(
+                    "work item already has an active attempt, or the operation/attempt binding already exists"
+                ) from exc
             cursor.execute(
                 """
-                INSERT INTO work_operations (
-                    operation_id, work_item_id, operation_number, intent,
-                    instruction, created_at, updated_at, metadata_json, origin_effect_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                UPDATE work_items
+                SET state = 'open', updated_at = ?, last_activity_at = ?
+                WHERE work_item_id = ?
                 """,
-                (
-                    next_operation_id,
-                    str(work_item_id),
-                    next_operation_number,
-                    clean_intent,
-                    clean_instruction,
-                    now,
-                    now,
-                    _dump_json(operation_metadata),
-                    origin_effect_id,
-                ),
+                (now, now, str(work_item_id)),
             )
-            cursor.execute(
-                """
-                INSERT INTO run_attempts (
-                    attempt_id, work_item_id, operation_id, attempt_number,
-                    provider, provider_run_id, task, mode, execution_status,
-                    created_at, updated_at, metadata_json, origin_effect_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)
-                """,
-                (
-                    next_attempt_id,
-                    str(work_item_id),
-                    next_operation_id,
-                    next_attempt_number,
-                    clean_provider,
-                    str(provider_run_id or "").strip(),
-                    clean_task,
-                    str(mode or "agent").strip() or "agent",
-                    now,
-                    now,
-                    _dump_json(attempt_metadata),
-                    origin_effect_id,
-                ),
+            operation_row = cursor.execute(
+                "SELECT * FROM work_operations WHERE operation_id = ?",
+                (next_operation_id,),
+            ).fetchone()
+            attempt_row = cursor.execute(
+                "SELECT * FROM run_attempts WHERE attempt_id = ?",
+                (next_attempt_id,),
+            ).fetchone()
+            assert operation_row is not None and attempt_row is not None
+            return (
+                self._operation_from_row(operation_row),
+                self._attempt_from_row(attempt_row),
             )
-        except sqlite3.IntegrityError as exc:
-            raise WorkLedgerConflict(
-                "work item already has an active attempt, or the operation/attempt binding already exists"
-            ) from exc
-        cursor.execute(
-            """
-            UPDATE work_items
-            SET state = 'open', updated_at = ?, last_activity_at = ?
-            WHERE work_item_id = ?
-            """,
-            (now, now, str(work_item_id)),
-        )
-        operation_row = cursor.execute(
-            "SELECT * FROM work_operations WHERE operation_id = ?",
-            (next_operation_id,),
-        ).fetchone()
-        attempt_row = cursor.execute(
-            "SELECT * FROM run_attempts WHERE attempt_id = ?",
-            (next_attempt_id,),
-        ).fetchone()
-        assert operation_row is not None and attempt_row is not None
-        return (
-            self._operation_from_row(operation_row),
-            self._attempt_from_row(attempt_row),
-        )
-
-    @staticmethod
-    def _require_available_provider_context(cursor: sqlite3.Cursor, metadata) -> None:
-        """An unresolved Attempt exclusively owns a rebindable native context."""
-        session = (metadata or {}).get("provider_session")
-        if not isinstance(session, dict) or session.get("scope") != "interaction":
-            return
-        occupied = cursor.execute(
-            "SELECT attempt_id FROM run_attempts WHERE execution_status NOT IN ('succeeded','failed','cancelled') "
-            "AND json_extract(metadata_json, '$.provider_session.provider')=? "
-            "AND json_extract(metadata_json, '$.provider_session.session_id')=? LIMIT 1",
-            (session.get("provider"), session.get("session_id")),
-        ).fetchone()
-        if occupied is not None:
-            raise WorkLedgerConflict("Provider context already has an unresolved Attempt")
 
     def create_attempt(
         self,
@@ -2332,7 +1619,6 @@ class WorkLedgerStore:
                 raise WorkLedgerConflict(
                     f"work item {work_item_id} must be reopened before creating another attempt"
                 )
-            self._require_available_provider_context(cursor, metadata)
             clean_operation_id = str(operation_id or "").strip()
             operation = None
             if clean_operation_id:
@@ -2440,248 +1726,6 @@ class WorkLedgerStore:
         )
         return [self._attempt_from_row(row) for row in rows]
 
-    def get_recovery_predecessor(
-        self,
-        attempt: RunAttemptRecord,
-    ) -> RunAttemptRecord | None:
-        """Return the durable predecessor of one accepted recovery Attempt.
-
-        This proves historical ancestry only. It does not authorize execution,
-        session attachment, cancellation, permissions, or another recovery.
-        An ordinary Attempt returns before any SQL read.
-        """
-
-        if not isinstance(attempt, RunAttemptRecord):
-            raise TypeError("recovery ancestry requires a RunAttemptRecord")
-        raw_recovery = attempt.metadata.get("provider_recovery")
-        if not isinstance(raw_recovery, dict):
-            return None
-        try:
-            recovery = ProviderRecoveryContext(
-                reason=raw_recovery.get("reason"),
-                root_attempt_id=raw_recovery.get("root_attempt_id"),
-                predecessor_attempt_id=raw_recovery.get("predecessor_attempt_id"),
-                ordinal=raw_recovery.get("ordinal", 1),
-                feedback=raw_recovery.get("feedback", ""),
-            )
-        except (TypeError, ValueError):
-            return None
-        if raw_recovery != recovery.to_dict():
-            return None
-        marker_key = PROVIDER_RECOVERY_METADATA_KEYS.get(recovery.reason)
-        if not marker_key:
-            return None
-        predecessor = self.get_attempt(recovery.predecessor_attempt_id)
-        if predecessor is None:
-            return None
-        if (
-            recovery.root_attempt_id != predecessor.attempt_id
-            or predecessor.work_item_id != attempt.work_item_id
-            or predecessor.operation_id != attempt.operation_id
-            or predecessor.provider.strip().lower() != attempt.provider.strip().lower()
-            or attempt.attempt_number != predecessor.attempt_number + 1
-        ):
-            return None
-        marker = predecessor.metadata.get(marker_key)
-        if not isinstance(marker, dict):
-            return None
-        if (
-            marker.get("recovery_state") not in _RECOVERY_HISTORY_STATES
-            or marker.get("recovery_root_attempt_id") != predecessor.attempt_id
-            or marker.get("recovery_ordinal") != 1
-            or "recovery_claimed_at" not in marker
-        ):
-            return None
-        if recovery.reason == "progress_only_completion":
-            if marker.get("classification") != "progress_only_completion":
-                return None
-        elif marker.get("verified") is not False or marker.get("kind") != "app_error":
-            return None
-        successor_attempt_id = str(marker.get("successor_attempt_id") or "").strip()
-        successor_run_id = str(marker.get("successor_run_id") or "").strip()
-        if bool(successor_attempt_id) != bool(successor_run_id):
-            return None
-        if (
-            successor_attempt_id
-            and (
-                successor_attempt_id != attempt.attempt_id
-                or successor_run_id != attempt.provider_run_id
-            )
-        ):
-            return None
-        return predecessor
-
-    def latest_attempt(self, work_item_id: str, *,
-                       include_provider_branch: bool = True) -> RunAttemptRecord | None:
-        projection = "*" if include_provider_branch else self._record_projection(
-            RunAttemptRecord, "json_remove(metadata_json, '$.provider_result.provider_branch')")
-        row = self._fetchone(f"SELECT {projection} FROM run_attempts WHERE work_item_id = ? "
-            "ORDER BY attempt_number DESC LIMIT 1", (str(work_item_id),))
-        return self._attempt_from_row(row) if row is not None else None
-
-    def list_unresolved_provider_attempts(
-        self,
-        *,
-        limit: int = 2000,
-    ) -> list[RunAttemptRecord]:
-        """Return bounded durable owners without implying Runtime liveness."""
-
-        clean_limit = int(limit)
-        if clean_limit < 0:
-            raise ValueError("unresolved provider attempt limit cannot be negative")
-        if clean_limit == 0:
-            return []
-        rows = self._fetchall(
-            """
-            SELECT * FROM run_attempts
-            WHERE execution_status IN ('queued', 'running', 'orphaned')
-              AND provider_run_id <> ''
-            ORDER BY updated_at ASC, attempt_id ASC
-            LIMIT ?
-            """,
-            (min(clean_limit, 2000),),
-        )
-        return [self._attempt_from_row(row) for row in rows]
-
-    def accept_provider_input(
-        self, *, input_id: str, work_item_id: str, run_id: str, text: str,
-        cursor: sqlite3.Cursor | None = None,
-    ) -> tuple[dict[str, Any], bool]:
-        """Bind one immutable input before I/O; replay never grants another send.
-
-        Unknown is written first: a process/caller loss cannot prove whether
-        the input crossed the native boundary. The one successful insert owns
-        the only delivery attempt. Existing receipts remain readable after the
-        run ends, but new messages require this Work's exact current run.
-        A trusted Control owner may supply its same-database transaction cursor
-        to commit source acceptance and this receipt atomically.
-        """
-        if cursor is not None:
-            self._validate_effect_intake_cursor(cursor)
-        for label, value in (("input_id", input_id), ("work_item_id", work_item_id),
-                             ("run_id", run_id), ("text", text)):
-            if not isinstance(value, str) or not value.strip():
-                raise ValueError(f"{label} must be a non-blank string")
-            value.encode("utf-8", errors="strict")
-        now = self._clock()
-        with self._transaction() if cursor is None else nullcontext(cursor) as cursor:
-            existing = cursor.execute(
-                "SELECT i.*, a.work_item_id FROM provider_inputs i "
-                "JOIN run_attempts a ON a.attempt_id = i.attempt_id WHERE input_id = ?",
-                (input_id,),
-            ).fetchone()
-            if existing is not None:
-                if (existing["work_item_id"], existing["provider_run_id"], existing["text"]) != (work_item_id, run_id, text):
-                    raise WorkLedgerConflict("input_id already names a different message or recipient")
-                return dict(existing), False
-            attempt = cursor.execute(
-                "SELECT a.* FROM run_attempts a JOIN work_items w ON w.work_item_id = a.work_item_id "
-                "WHERE a.work_item_id = ? AND a.provider_run_id = ? AND w.state = 'open' "
-                "AND a.execution_status = 'running' AND a.attempt_number = "
-                "(SELECT MAX(attempt_number) FROM run_attempts WHERE work_item_id = a.work_item_id)",
-                (work_item_id, run_id),
-            ).fetchone()
-            if attempt is None:
-                raise WorkLedgerConflict("recipient is not the current active run of this WorkItem")
-            cursor.execute(
-                "INSERT INTO provider_inputs VALUES (?, ?, ?, ?, 'unknown', 'delivery_unconfirmed', ?, ?)",
-                (input_id, attempt["attempt_id"], run_id, text, now, now),
-            )
-            row = cursor.execute("SELECT * FROM provider_inputs WHERE input_id = ?", (input_id,)).fetchone()
-            return {**dict(row), "work_item_id": work_item_id}, True
-
-    def finish_provider_input(self, input_id: str, *, state: str, reason: str = "") -> dict[str, Any]:
-        if state not in {"delivered", "rejected", "unknown"}:
-            raise ValueError("invalid provider input delivery state")
-        with self._transaction() as cursor:
-            cursor.execute(
-                "UPDATE provider_inputs SET state = ?, reason = ?, updated_at = ? "
-                "WHERE input_id = ? AND state = 'unknown'",
-                (state, reason, self._clock(), input_id),
-            )
-            row = cursor.execute(
-                "SELECT i.*, a.work_item_id FROM provider_inputs i "
-                "JOIN run_attempts a ON a.attempt_id = i.attempt_id WHERE input_id = ?", (input_id,),
-            ).fetchone()
-            if row is None:
-                raise WorkLedgerNotFound(f"unknown provider input: {input_id}")
-            return dict(row)
-
-    def list_provider_inputs(self, work_item_id: str) -> list[dict[str, Any]]:
-        return [dict(row) for row in self._fetchall(
-            "SELECT i.*, a.work_item_id FROM provider_inputs i "
-            "JOIN run_attempts a ON a.attempt_id = i.attempt_id "
-            "WHERE a.work_item_id = ? ORDER BY i.rowid", (work_item_id,),
-        )]
-
-    def get_provider_input(self, input_id: str) -> dict[str, Any] | None:
-        row = self._fetchone(
-            "SELECT i.*, a.work_item_id FROM provider_inputs i "
-            "JOIN run_attempts a ON a.attempt_id = i.attempt_id WHERE i.input_id = ?", (input_id,))
-        return dict(row) if row is not None else None
-
-    def list_orphaned_provider_attempts(
-        self,
-        *,
-        limit: int = 32,
-    ) -> list[RunAttemptRecord]:
-        """Return a bounded, oldest-first recovery candidate set.
-
-        This is candidate pruning, not a recovery decision. The query uses the
-        existing execution-status index and requires the Host's durable
-        Provider run binding. Callers must still validate the typed session
-        hint and the registered Provider capability before observation.
-        """
-
-        clean_limit = int(limit)
-        if clean_limit < 0:
-            raise ValueError("orphaned provider attempt limit cannot be negative")
-        if clean_limit == 0:
-            return []
-        rows = self._fetchall(
-            """
-            SELECT * FROM run_attempts
-            WHERE execution_status = 'orphaned' AND provider_run_id <> ''
-            ORDER BY updated_at ASC, attempt_id ASC
-            LIMIT ?
-            """,
-            (min(clean_limit, 2000),),
-        )
-        return [self._attempt_from_row(row) for row in rows]
-
-    def list_pending_terminal_provider_attempts(
-        self,
-        *,
-        limit: int = 2000,
-    ) -> list[RunAttemptRecord]:
-        """Return bounded oldest-first pending terminal receipt candidates.
-
-        The lifecycle predicate uses the existing status index; the JSON
-        predicate selects only the Host-created receipt state so completed
-        history cannot starve a newer interrupted terminal pipeline.
-        """
-
-        clean_limit = int(limit)
-        if clean_limit < 0:
-            raise ValueError("terminal provider attempt limit cannot be negative")
-        if clean_limit == 0:
-            return []
-        rows = self._fetchall(
-            """
-            SELECT * FROM run_attempts
-            WHERE execution_status IN ('succeeded', 'failed', 'cancelled')
-              AND provider_run_id <> ''
-              AND json_extract(
-                    metadata_json,
-                    '$.provider_terminal_pipeline.state'
-                  ) = 'pending'
-            ORDER BY updated_at ASC, attempt_id ASC
-            LIMIT ?
-            """,
-            (min(clean_limit, 2000),),
-        )
-        return [self._attempt_from_row(row) for row in rows]
-
     def bind_provider_run(self, attempt_id: str, provider_run_id: str) -> RunAttemptRecord:
         clean_run_id = str(provider_run_id or "").strip()
         if not clean_run_id:
@@ -2713,7 +1757,6 @@ class WorkLedgerStore:
         result: str | object = _UNSET,
         error: str | object = _UNSET,
         metadata: dict[str, Any] | None = None,
-        expected_snapshot_token: str | None = None,
     ) -> RunAttemptRecord:
         if execution_status is not None and execution_status not in EXECUTION_STATUSES:
             raise ValueError(f"unsupported execution status: {execution_status!r}")
@@ -2722,14 +1765,6 @@ class WorkLedgerStore:
             row = cursor.execute("SELECT * FROM run_attempts WHERE attempt_id = ?", (attempt_id,)).fetchone()
             if row is None:
                 raise WorkLedgerNotFound(f"unknown attempt: {attempt_id}")
-            if expected_snapshot_token is not None:
-                current_token = attempt_recovery_snapshot_token(
-                    self._attempt_from_row(row)
-                )
-                if current_token != str(expected_snapshot_token):
-                    raise WorkLedgerConflict(
-                        f"attempt {attempt_id} changed since its recovery snapshot"
-                    )
             previous = str(row["execution_status"])
             next_status = str(execution_status or previous)
             if previous in _TERMINAL_EXECUTION and next_status != previous:
@@ -3035,16 +2070,6 @@ class WorkLedgerStore:
         row = self._fetchone("SELECT * FROM artifacts WHERE artifact_id = ?", (str(artifact_id),))
         return self._artifact_from_row(row) if row is not None else None
 
-    def artifact_counts(self, work_item_id: str) -> dict[str, int]:
-        # GLOB is case-sensitive: this preserves Python startswith('business.')
-        # even on connections whose LIKE operator folds ASCII case.
-        row = self._fetchone("SELECT COUNT(*) AS total, "
-            "COALESCE(SUM(kind GLOB 'business.*'), 0) AS business "
-            "FROM artifacts WHERE work_item_id = ?", (str(work_item_id),))
-        assert row is not None
-        business = int(row["business"])
-        return {"business":business, "runtime":int(row["total"]) - business}
-
     def list_artifacts(self, work_item_id: str, *, attempt_id: str = "") -> list[ArtifactRecord]:
         if attempt_id:
             rows = self._fetchall(
@@ -3136,10 +2161,6 @@ class WorkLedgerStore:
         metadata: dict[str, Any] | None = None,
         request_id: str = "",
         idempotency_key: str = "",
-        owner_kind: PermissionOwnerKind = "work_attempt",
-        session_id: str = "",
-        context_id: str = "",
-        provider_run_id: str = "",
     ) -> PermissionRequestRecord:
         """Create or idempotently enrich a pending permission request.
 
@@ -3153,30 +2174,14 @@ class WorkLedgerStore:
 
         clean_work_item_id = str(work_item_id or "").strip()
         clean_attempt_id = str(attempt_id or "").strip()
-        clean_owner_kind = str(owner_kind or "").strip()
-        clean_session_id = str(session_id or "").strip()
-        clean_context_id = str(context_id or "").strip()
-        clean_provider_run_id = str(provider_run_id or "").strip()
         clean_capability = str(capability or "").strip()
         clean_action = str(action or "").strip()
         clean_request_id = str(request_id or "").strip()
         clean_key = str(idempotency_key or clean_request_id).strip()
-        if clean_owner_kind not in PERMISSION_OWNER_KINDS:
-            raise ValueError("unsupported permission owner kind")
-        if clean_owner_kind == "work_attempt":
-            if not clean_work_item_id:
-                raise ValueError("work_item_id is required")
-            if not clean_attempt_id:
-                raise ValueError("attempt_id is required")
-            if clean_session_id or clean_context_id or clean_provider_run_id:
-                raise ValueError("Work permission cannot claim cooperative ownership")
-        else:
-            if clean_work_item_id or clean_attempt_id:
-                raise ValueError("cooperative permission cannot claim Work ownership")
-            if not clean_session_id or not clean_context_id or not clean_provider_run_id:
-                raise ValueError(
-                    "cooperative permission requires Session, context and Provider run"
-                )
+        if not clean_work_item_id:
+            raise ValueError("work_item_id is required")
+        if not clean_attempt_id:
+            raise ValueError("attempt_id is required")
         if not clean_capability:
             raise ValueError("permission capability is required")
         if not clean_action:
@@ -3192,45 +2197,22 @@ class WorkLedgerStore:
         now = float(self._clock())
 
         with self._transaction() as cursor:
-            if clean_owner_kind == "work_attempt":
-                item = cursor.execute(
-                    "SELECT 1 FROM work_items WHERE work_item_id = ?",
-                    (clean_work_item_id,),
-                ).fetchone()
-                if item is None:
-                    raise WorkLedgerNotFound(f"unknown work item: {clean_work_item_id}")
-                attempt = cursor.execute(
-                    "SELECT work_item_id FROM run_attempts WHERE attempt_id = ?",
-                    (clean_attempt_id,),
-                ).fetchone()
-                if attempt is None:
-                    raise WorkLedgerNotFound(f"unknown attempt: {clean_attempt_id}")
-                if str(attempt["work_item_id"]) != clean_work_item_id:
-                    raise WorkLedgerConflict(
-                        "permission request attempt belongs to a different work item"
-                    )
-            else:
-                try:
-                    context = cursor.execute("""SELECT closed,run_id,run_status
-                        FROM cooperative_contexts
-                        WHERE session_id=? AND context_id=?""",
-                        (clean_session_id, clean_context_id)).fetchone()
-                except sqlite3.OperationalError as exc:
-                    raise WorkLedgerNotFound(
-                        "cooperative permission owner is unavailable"
-                    ) from exc
-                if context is None:
-                    raise WorkLedgerNotFound("unknown cooperative permission context")
-                prior = cursor.execute("""SELECT 1 FROM permission_requests
-                    WHERE owner_kind='cooperative_run' AND provider_run_id=?
-                    AND (request_id=? OR (idempotency_key<>'' AND idempotency_key=?))""",
-                    (clean_provider_run_id, clean_request_id, clean_key)).fetchone()
-                if (context["run_id"] != clean_provider_run_id
-                        or ((context["closed"] or context["run_status"] not in {
-                            "queued", "running"}) and prior is None)):
-                    raise WorkLedgerConflict(
-                        "cooperative permission owner is not the active Provider run"
-                    )
+            item = cursor.execute(
+                "SELECT 1 FROM work_items WHERE work_item_id = ?",
+                (clean_work_item_id,),
+            ).fetchone()
+            if item is None:
+                raise WorkLedgerNotFound(f"unknown work item: {clean_work_item_id}")
+            attempt = cursor.execute(
+                "SELECT work_item_id FROM run_attempts WHERE attempt_id = ?",
+                (clean_attempt_id,),
+            ).fetchone()
+            if attempt is None:
+                raise WorkLedgerNotFound(f"unknown attempt: {clean_attempt_id}")
+            if str(attempt["work_item_id"]) != clean_work_item_id:
+                raise WorkLedgerConflict(
+                    "permission request attempt belongs to a different work item"
+                )
 
             by_id = None
             if clean_request_id:
@@ -3240,14 +2222,12 @@ class WorkLedgerStore:
                 ).fetchone()
             by_key = None
             if clean_key:
-                owner_column = ("attempt_id" if clean_owner_kind == "work_attempt"
-                    else "provider_run_id")
-                owner_identity = (clean_attempt_id if clean_owner_kind == "work_attempt"
-                    else clean_provider_run_id)
                 by_key = cursor.execute(
-                    f"""SELECT * FROM permission_requests
-                    WHERE owner_kind=? AND {owner_column}=? AND idempotency_key=?""",
-                    (clean_owner_kind, owner_identity, clean_key),
+                    """
+                    SELECT * FROM permission_requests
+                    WHERE attempt_id = ? AND idempotency_key = ?
+                    """,
+                    (clean_attempt_id, clean_key),
                 ).fetchone()
             if (
                 by_id is not None
@@ -3260,15 +2240,11 @@ class WorkLedgerStore:
             existing = by_id if by_id is not None else by_key
             if existing is not None:
                 if (
-                    str(existing["owner_kind"]) != clean_owner_kind
-                    or str(existing["session_id"] or "") != clean_session_id
-                    or str(existing["context_id"] or "") != clean_context_id
-                    or str(existing["provider_run_id"] or "") != clean_provider_run_id
-                    or str(existing["work_item_id"] or "") != clean_work_item_id
-                    or str(existing["attempt_id"] or "") != clean_attempt_id
+                    str(existing["work_item_id"]) != clean_work_item_id
+                    or str(existing["attempt_id"]) != clean_attempt_id
                 ):
                     raise WorkLedgerConflict(
-                        "permission request identity belongs to a different owner"
+                        "permission request identity belongs to a different work attempt"
                     )
                 if (
                     str(existing["capability"]) != clean_capability
@@ -3317,20 +2293,16 @@ class WorkLedgerStore:
                     cursor.execute(
                         """
                         INSERT INTO permission_requests (
-                            request_id,owner_kind,work_item_id,attempt_id,session_id,
-                            context_id,provider_run_id,idempotency_key,capability,
-                            action,scope_paths_json,reason,reversibility,status,
-                            options_json,created_at,updated_at,resolved_at,metadata_json
-                        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,NULL,?)
+                            request_id, work_item_id, attempt_id, idempotency_key,
+                            capability, action, scope_paths_json, reason,
+                            reversibility, status, options_json, created_at,
+                            updated_at, resolved_at, metadata_json
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, NULL, ?)
                         """,
                         (
                             next_id,
-                            clean_owner_kind,
-                            clean_work_item_id or None,
-                            clean_attempt_id or None,
-                            clean_session_id,
-                            clean_context_id,
-                            clean_provider_run_id,
+                            clean_work_item_id,
+                            clean_attempt_id,
                             next_key,
                             clean_capability,
                             clean_action,
@@ -3348,12 +2320,14 @@ class WorkLedgerStore:
                         f"permission request already exists: {next_id}"
                     ) from exc
 
-            if clean_owner_kind == "work_attempt":
-                cursor.execute(
-                    """UPDATE work_items SET updated_at=?,last_activity_at=?
-                    WHERE work_item_id=?""",
-                    (now, now, clean_work_item_id),
-                )
+            cursor.execute(
+                """
+                UPDATE work_items
+                SET updated_at = ?, last_activity_at = ?
+                WHERE work_item_id = ?
+                """,
+                (now, now, clean_work_item_id),
+            )
             row = cursor.execute(
                 "SELECT * FROM permission_requests WHERE request_id = ?",
                 (next_id,),
@@ -3365,30 +2339,6 @@ class WorkLedgerStore:
     # coordinator can use ``create`` for first delivery and ``upsert`` when an
     # observer may replay provider events.
     upsert_permission_request = create_permission_request
-
-    def create_cooperative_permission_request(
-        self,
-        *,
-        session_id: str,
-        context_id: str,
-        provider_run_id: str,
-        capability: str,
-        action: str,
-        scope_paths: Sequence[str] | None = None,
-        reason: str = "",
-        reversibility: str = "",
-        options: Sequence[str] | None = None,
-        metadata: dict[str, Any] | None = None,
-        request_id: str = "",
-        idempotency_key: str = "",
-    ) -> PermissionRequestRecord:
-        return self.create_permission_request("", attempt_id="",
-            capability=capability, action=action, scope_paths=scope_paths,
-            reason=reason, reversibility=reversibility, options=options,
-            metadata=metadata, request_id=request_id,
-            idempotency_key=idempotency_key, owner_kind="cooperative_run",
-            session_id=session_id, context_id=context_id,
-            provider_run_id=provider_run_id)
 
     def get_permission_request(self, request_id: str) -> PermissionRequestRecord | None:
         row = self._fetchone(
@@ -3411,7 +2361,7 @@ class WorkLedgerStore:
         clean_status = str(status or "").strip().lower()
         if clean_status and clean_status not in PERMISSION_REQUEST_STATUSES:
             raise ValueError(f"unsupported permission request status: {status!r}")
-        conditions = ["owner_kind = 'work_attempt'", "work_item_id = ?"]
+        conditions = ["work_item_id = ?"]
         params: list[Any] = [clean_work_item_id]
         if clean_attempt_id:
             conditions.append("attempt_id = ?")
@@ -3425,35 +2375,6 @@ class WorkLedgerStore:
             + " ORDER BY created_at, rowid",
             params,
         )
-        return [self._permission_request_from_row(row) for row in rows]
-
-    def list_cooperative_permission_requests(
-        self,
-        session_id: str,
-        *,
-        context_id: str = "",
-        provider_run_id: str = "",
-        status: str = "",
-    ) -> list[PermissionRequestRecord]:
-        clean_session_id = str(session_id or "").strip()
-        if not clean_session_id:
-            raise ValueError("session_id is required")
-        clean_status = str(status or "").strip().lower()
-        if clean_status and clean_status not in PERMISSION_REQUEST_STATUSES:
-            raise ValueError(f"unsupported permission request status: {status!r}")
-        conditions = ["owner_kind='cooperative_run'", "session_id=?"]
-        params: list[Any] = [clean_session_id]
-        if str(context_id or "").strip():
-            conditions.append("context_id=?")
-            params.append(str(context_id).strip())
-        if str(provider_run_id or "").strip():
-            conditions.append("provider_run_id=?")
-            params.append(str(provider_run_id).strip())
-        if clean_status:
-            conditions.append("status=?")
-            params.append(clean_status)
-        rows = self._fetchall("SELECT * FROM permission_requests WHERE "
-            + " AND ".join(conditions) + " ORDER BY created_at,rowid", params)
         return [self._permission_request_from_row(row) for row in rows]
 
     def resolve_permission_request(
@@ -3511,12 +2432,14 @@ class WorkLedgerStore:
                 raise WorkLedgerConflict(
                     f"permission request {clean_request_id} was resolved concurrently"
                 )
-            if str(existing["owner_kind"]) == "work_attempt":
-                cursor.execute(
-                    """UPDATE work_items SET updated_at=?,last_activity_at=?
-                    WHERE work_item_id=?""",
-                    (now, now, existing["work_item_id"]),
-                )
+            cursor.execute(
+                """
+                UPDATE work_items
+                SET updated_at = ?, last_activity_at = ?
+                WHERE work_item_id = ?
+                """,
+                (now, now, existing["work_item_id"]),
+            )
             row = cursor.execute(
                 "SELECT * FROM permission_requests WHERE request_id = ?",
                 (clean_request_id,),
@@ -3634,94 +2557,6 @@ class WorkLedgerStore:
 
     # -- Workspace writer lease -----------------------------------------
 
-    @classmethod
-    def bind_cooperative_writer_run_in_transaction(
-        cls,
-        cursor: sqlite3.Cursor,
-        provider_effect_id: str,
-        provider_run_id: str,
-        *,
-        session_id: str = "",
-        context_id: str = "",
-        workspace_path: str | os.PathLike[str] | None = None,
-        required: bool = True,
-        now: float | None = None,
-    ) -> dict[str, Any] | None:
-        """Bind a validated cooperative run inside its caller's SQL commit."""
-
-        clean_effect = str(provider_effect_id or "").strip()
-        clean_run = str(provider_run_id or "").strip()
-        if not clean_effect or not clean_run:
-            raise ValueError("cooperative writer run identity is incomplete")
-        row = cursor.execute("""SELECT * FROM workspace_leases
-            WHERE owner_kind='cooperative_run' AND provider_effect_id=?""",
-            (clean_effect,)).fetchone()
-        if row is None:
-            if required:
-                raise WorkLedgerNotFound("cooperative writer lease is unavailable")
-            return None
-        expected_workspace = (canonicalize_path(workspace_path).identity_key
-            if workspace_path is not None else "")
-        if (str(row["status"]) != "active"
-                or (session_id and str(row["session_id"]) != str(session_id))
-                or (context_id and str(row["context_id"]) != str(context_id))
-                or (expected_workspace
-                    and str(row["workspace_identity"]) != expected_workspace)):
-            raise WorkLedgerConflict("cooperative writer lease owner changed")
-        current = str(row["provider_run_id"] or "")
-        if current and current != clean_run:
-            raise WorkLedgerConflict("cooperative writer lease run changed")
-        if not current:
-            cursor.execute("""UPDATE workspace_leases
-                SET provider_run_id=?,heartbeat_at=? WHERE lease_id=?""",
-                (clean_run, float(now if now is not None else utc_timestamp()),
-                 row["lease_id"]))
-        row = cursor.execute("SELECT * FROM workspace_leases WHERE lease_id=?",
-            (row["lease_id"],)).fetchone()
-        assert row is not None
-        return dict(row)
-
-    @classmethod
-    def release_cooperative_writer_lease_in_transaction(
-        cls,
-        cursor: sqlite3.Cursor,
-        provider_effect_id: str,
-        *,
-        status: str = "released",
-        metadata: dict[str, Any] | None = None,
-        session_id: str = "",
-        context_id: str = "",
-        workspace_path: str | os.PathLike[str] | None = None,
-        now: float | None = None,
-    ) -> dict[str, Any] | None:
-        """Release an exact cooperative owner in the caller's SQL commit."""
-
-        if status not in WORKSPACE_LEASE_STATUSES - {"active"}:
-            raise ValueError(f"unsupported writer lease release status: {status!r}")
-        clean_effect = str(provider_effect_id or "").strip()
-        row = cursor.execute("""SELECT * FROM workspace_leases
-            WHERE owner_kind='cooperative_run' AND provider_effect_id=?""",
-            (clean_effect,)).fetchone()
-        if row is None:
-            return None
-        expected_workspace = (canonicalize_path(workspace_path).identity_key
-            if workspace_path is not None else "")
-        if ((session_id and str(row["session_id"]) != str(session_id))
-                or (context_id and str(row["context_id"]) != str(context_id))
-                or (expected_workspace
-                    and str(row["workspace_identity"]) != expected_workspace)):
-            raise WorkLedgerConflict("cooperative writer lease owner changed")
-        if str(row["status"]) == "active":
-            timestamp = float(now if now is not None else utc_timestamp())
-            cursor.execute("""UPDATE workspace_leases SET status=?,heartbeat_at=?,
-                released_at=?,metadata_json=? WHERE lease_id=?""",
-                (status, timestamp, timestamp,
-                 _merged_json(row["metadata_json"], metadata), row["lease_id"]))
-        row = cursor.execute("SELECT * FROM workspace_leases WHERE lease_id=?",
-            (row["lease_id"],)).fetchone()
-        assert row is not None
-        return dict(row)
-
     def acquire_writer_lease(
         self,
         work_item_id: str,
@@ -3756,7 +2591,7 @@ class WorkLedgerStore:
                 "SELECT * FROM workspace_leases WHERE workspace_identity = ? AND status = 'active'",
                 (workspace.identity_key,),
             ).fetchone()
-            if active is not None and str(active["owner_kind"]) == "work_attempt":
+            if active is not None:
                 active_attempt = cursor.execute(
                     "SELECT execution_status FROM run_attempts WHERE attempt_id = ?",
                     (active["attempt_id"],),
@@ -3775,11 +2610,9 @@ class WorkLedgerStore:
                     )
                     active = None
             if active is not None:
-                owner = (f"{active['work_item_id']} ({active['attempt_id']})"
-                    if str(active["owner_kind"]) == "work_attempt"
-                    else f"cooperative {active['session_id']}/{active['context_id']}")
                 raise WorkLedgerConflict(
-                    "workspace already has an active writer: " + owner
+                    "workspace already has an active writer: "
+                    f"{active['work_item_id']} ({active['attempt_id']})"
                 )
             if existing_attempt is not None:
                 cursor.execute(
@@ -3809,12 +2642,9 @@ class WorkLedgerStore:
                 cursor.execute(
                     """
                     INSERT INTO workspace_leases (
-                        lease_id, workspace_path, workspace_identity, owner_kind,
-                        work_item_id, attempt_id, session_id, context_id,
-                        provider_effect_id, provider_run_id, status, acquired_at,
-                        heartbeat_at, metadata_json
-                    ) VALUES (?, ?, ?, 'work_attempt', ?, ?, '', '', '', '',
-                        'active', ?, ?, ?)
+                        lease_id, workspace_path, workspace_identity, work_item_id,
+                        attempt_id, status, acquired_at, heartbeat_at, metadata_json
+                    ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?)
                     """,
                     (
                         next_id,
@@ -3834,100 +2664,6 @@ class WorkLedgerStore:
             ).fetchone()
             assert row is not None
             return self._workspace_lease_from_row(row)
-
-    def acquire_cooperative_writer_lease(
-        self,
-        session_id: str,
-        context_id: str,
-        provider_effect_id: str,
-        *,
-        workspace_path: str | os.PathLike[str],
-        metadata: dict[str, Any] | None = None,
-        lease_id: str = "",
-    ) -> WorkspaceLeaseRecord:
-        """Atomically share the one writer slot without manufacturing Work."""
-
-        clean_session = str(session_id or "").strip()
-        clean_context = str(context_id or "").strip()
-        clean_effect = str(provider_effect_id or "").strip()
-        if not clean_session or not clean_context or not clean_effect:
-            raise ValueError("cooperative writer lease owner is incomplete")
-        workspace = canonicalize_path(workspace_path)
-        now = float(self._clock())
-        with self._transaction() as cursor:
-            existing = cursor.execute("""SELECT * FROM workspace_leases
-                WHERE owner_kind='cooperative_run' AND provider_effect_id=?""",
-                (clean_effect,)).fetchone()
-            if existing is not None:
-                if (str(existing["session_id"]), str(existing["context_id"]),
-                        str(existing["workspace_identity"])) != (
-                        clean_session, clean_context, workspace.identity_key):
-                    raise WorkLedgerConflict("cooperative writer lease owner changed")
-                if str(existing["status"]) != "active":
-                    raise WorkLedgerConflict("terminal cooperative writer lease cannot reactivate")
-                return self._workspace_lease_from_row(existing)
-            active = cursor.execute("""SELECT * FROM workspace_leases
-                WHERE workspace_identity=? AND status='active'""",
-                (workspace.identity_key,)).fetchone()
-            if active is not None and str(active["owner_kind"]) == "work_attempt":
-                attempt = cursor.execute("""SELECT execution_status FROM run_attempts
-                    WHERE attempt_id=?""", (active["attempt_id"],)).fetchone()
-                if attempt is None or str(attempt["execution_status"]) in _TERMINAL_EXECUTION:
-                    cursor.execute("""UPDATE workspace_leases SET status='released',
-                        heartbeat_at=?,released_at=? WHERE lease_id=?""",
-                        (now, now, active["lease_id"]))
-                    active = None
-            if active is not None:
-                raise WorkLedgerConflict("workspace already has an active writer")
-            next_id = str(lease_id or new_ledger_id("lease"))
-            try:
-                cursor.execute("""INSERT INTO workspace_leases (
-                    lease_id,workspace_path,workspace_identity,owner_kind,
-                    work_item_id,attempt_id,session_id,context_id,
-                    provider_effect_id,provider_run_id,status,acquired_at,
-                    heartbeat_at,metadata_json)
-                    VALUES (?,?,?,'cooperative_run',NULL,NULL,?,?,?,'','active',?,?,?)""",
-                    (next_id, workspace.canonical_path, workspace.identity_key,
-                     clean_session, clean_context, clean_effect, now, now,
-                     _dump_json(metadata)))
-            except sqlite3.IntegrityError as exc:
-                raise WorkLedgerConflict(
-                    "workspace writer lease was acquired concurrently") from exc
-            row = cursor.execute("SELECT * FROM workspace_leases WHERE lease_id=?",
-                (next_id,)).fetchone()
-            assert row is not None
-            return self._workspace_lease_from_row(row)
-
-    def bind_cooperative_writer_run(
-        self, provider_effect_id: str, provider_run_id: str,
-    ) -> WorkspaceLeaseRecord:
-        with self._transaction() as cursor:
-            row = self.bind_cooperative_writer_run_in_transaction(cursor,
-                provider_effect_id, provider_run_id, now=float(self._clock()))
-            assert row is not None
-            return self._workspace_lease_from_row(row)  # type: ignore[arg-type]
-
-    def release_cooperative_writer_lease(
-        self,
-        provider_effect_id: str,
-        *,
-        status: str = "released",
-        metadata: dict[str, Any] | None = None,
-    ) -> WorkspaceLeaseRecord | None:
-        with self._transaction() as cursor:
-            row = self.release_cooperative_writer_lease_in_transaction(cursor,
-                provider_effect_id, status=status, metadata=metadata,
-                now=float(self._clock()))
-            return (self._workspace_lease_from_row(row)  # type: ignore[arg-type]
-                if row is not None else None)
-
-    def get_cooperative_writer_lease(
-        self, provider_effect_id: str,
-    ) -> WorkspaceLeaseRecord | None:
-        row = self._fetchone("""SELECT * FROM workspace_leases
-            WHERE owner_kind='cooperative_run' AND provider_effect_id=?""",
-            (str(provider_effect_id or "").strip(),))
-        return self._workspace_lease_from_row(row) if row is not None else None
 
     def heartbeat_writer_lease(self, attempt_id: str) -> WorkspaceLeaseRecord:
         now = float(self._clock())

@@ -11,7 +11,8 @@ from __future__ import annotations
 import re
 
 from tools.text_utils import (
-    _parse_tag_attrs,
+    _parse_attr_kv,
+    _parse_delegate_attrs,
     parse_tags_and_clean,
 )
 
@@ -31,18 +32,13 @@ class StreamTagParser:
     - 同时过滤 Qwen3 思维链残留 token：<think>...</think>（含跨 chunk 情况）
     """
 
-    def __init__(
-        self, *, control_envelope_enabled: bool = False, stop_after_control: bool = True,
-    ) -> None:
+    def __init__(self, *, control_envelope_enabled: bool = False) -> None:
         self._in_tag = False
         self._tag_buf = ""
         self._delegate_seen = False
         self._think_buf = ""
         self._think_active = False
         self._control_envelope_enabled = bool(control_envelope_enabled)
-        # Live role streams stop at their first control gate. Stored history
-        # may contain several Host-composed controls and must read them all.
-        self._stop_after_control = bool(stop_after_control)
 
     def reset(self) -> None:
         self._in_tag = False
@@ -122,11 +118,14 @@ class StreamTagParser:
                         # do not expose an action, and continue the stream.
                         if tag_type == "CONTROL" and not self._control_envelope_enabled:
                             continue
-                        attrs = _parse_tag_attrs(tag_type, attr_text)
+                        if tag_type == "DELEGATE":
+                            attrs = _parse_delegate_attrs(attr_text)
+                        else:
+                            attrs = _parse_attr_kv(attr_text)
                         action = {"type": tag_type, "attrs": attrs, "raw": full}
                         actions.append(action)
                         parts.append(("action", action))
-                        if self._stop_after_control and tag_type in {"DELEGATE", "CONTROL"}:
+                        if tag_type in {"DELEGATE", "CONTROL"}:
                             self._delegate_seen = True
                             break
                     # else: 非法标签直接丢弃

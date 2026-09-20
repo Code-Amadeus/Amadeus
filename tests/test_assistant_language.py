@@ -49,9 +49,9 @@ def test_presentation_locale_and_caption_mode_are_independent():
         presentation_runtime.set_config(original, render_current=False)
 
 
-def test_presentation_locale_defaults_to_english():
-    assert presentation_runtime.normalize_presentation_locale(None) == "en-US"
-    assert presentation_runtime.normalize_presentation_locale("unknown") == "en-US"
+def test_presentation_locale_defaults_to_chinese():
+    assert presentation_runtime.normalize_presentation_locale(None) == "zh-CN"
+    assert presentation_runtime.normalize_presentation_locale("unknown") == "zh-CN"
     assert presentation_runtime.normalize_presentation_locale("zh-CN") == "zh-CN"
 
 

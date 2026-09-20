@@ -61,6 +61,68 @@ def load_policy(path: Path) -> dict[str, Any]:
 
 
 def tracked_file_modes(root: Path) -> dict[str, str]:
+    if not (root / ".git").exists():
+        # Formal source archives intentionally omit Git metadata.
+        # Approximate the tracked-file view from the detached source tree,
+        # excluding only generated/environment content that Git would not
+        # normally track.  Release policy checks still run on the resulting
+        # source-file set.
+        ignored_dirs = {
+            ".git",
+            "__pycache__",
+            ".pytest_cache",
+            ".mypy_cache",
+            ".ruff_cache",
+            "node_modules",
+        }
+        ignored_files = {
+            ".coverage",
+        }
+
+        modes: dict[str, str] = {}
+
+        for source_path in sorted(
+            root.rglob("*"),
+            key=lambda item: item.as_posix(),
+        ):
+            relative = source_path.relative_to(root)
+
+            if any(
+                part in ignored_dirs
+                or part.startswith(".venv")
+                for part in relative.parts
+            ):
+                continue
+
+            if source_path.name in ignored_files:
+                continue
+
+            if source_path.suffix.lower() in {
+                ".pyc",
+                ".pyo",
+            }:
+                continue
+
+            relative_name = relative.as_posix()
+
+            if source_path.is_symlink():
+                modes[relative_name] = "120000"
+                continue
+
+            if not source_path.is_file():
+                continue
+
+            # A detached ZIP does not carry Git's executable-bit index.
+            # Regular source files therefore receive the normal blob mode.
+            modes[relative_name] = "100644"
+
+        if not modes:
+            raise RuntimeError(
+                "detached source tree contains no source files"
+            )
+
+        return modes
+
     raw = _run_git(root, "ls-files", "-s", "-z", binary=True)
     assert isinstance(raw, bytes)
     modes: dict[str, str] = {}
@@ -75,6 +137,13 @@ def tracked_file_modes(root: Path) -> dict[str, str]:
 
 
 def dirty_paths(root: Path) -> set[str]:
+    if not (root / ".git").exists():
+        # Detached source archives intentionally contain no Git metadata.
+        # There is no Git baseline against which a "dirty worktree" can be
+        # computed. Source identity/integrity is handled separately by the
+        # detached-source fingerprint, so dirty-path policy is not applicable.
+        return set()
+
     raw = _run_git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all", binary=True)
     assert isinstance(raw, bytes)
     records = [record for record in raw.split(b"\0") if record]
@@ -344,8 +413,47 @@ def build_report(
                 )
         issues.extend(release_blockers_for_paths(provenance, selected_present))
 
-    commit = str(_run_git(root, "rev-parse", "HEAD")).strip()
-    source_date_epoch = int(str(_run_git(root, "show", "-s", "--format=%ct", "HEAD")).strip())
+    if (root / ".git").exists():
+        commit = str(_run_git(root, "rev-parse", "HEAD")).strip()
+        source_date_epoch = int(str(_run_git(root, "show", "-s", "--format=%ct", "HEAD")).strip())
+    else:
+        # Formal source archives intentionally omit .git.
+        # Build a stable source identity from the same detached
+        # file view already produced by tracked_file_modes().
+        import hashlib as _detached_hashlib
+        _source_identity = _detached_hashlib.sha256()
+        _source_identity.update(
+            b"amadeus-detached-release-source-v1\0"
+        )
+        for _relative_name in sorted(modes):
+            _source_path = root / _relative_name
+            if not _source_path.is_file():
+                continue
+        
+            _source_identity.update(
+                _relative_name.encode(
+                    "utf-8",
+                    errors="surrogateescape",
+                )
+            )
+            _source_identity.update(b"\0")
+            _source_identity.update(
+                str(modes[_relative_name]).encode("ascii")
+            )
+            _source_identity.update(b"\0")
+        
+            with _source_path.open("rb") as _source_handle:
+                for _chunk in iter(
+                    lambda: _source_handle.read(1024 * 1024),
+                    b"",
+                ):
+                    _source_identity.update(_chunk)
+        
+            _source_identity.update(b"\0")
+        
+        _detached_fingerprint = _source_identity.hexdigest()
+        commit = _detached_fingerprint[:40]
+        source_date_epoch = 0
     policy_hash = hashlib.sha256(policy_path.read_bytes()).hexdigest()
     issues.sort(
         key=lambda item: (

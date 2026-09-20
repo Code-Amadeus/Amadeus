@@ -57,21 +57,6 @@ def test_project_default_and_active_draft_remain_orthogonal() -> None:
                 assert binding["projectId"] == ""
                 assert binding["defaultProjectId"] == project.project_id
                 assert destination.session_project("voice") == project.project_id
-                active = store.get_session_work_context("voice")
-                assert active is not None
-                assert active.metadata["explicit_context_binding"] is True
-                later = store.create_work_item(
-                    scratch.project_id,
-                    title="Later automatic work",
-                    workspace_path=str(scratch_root/"later"),
-                )
-                store.set_session_active_work_item("voice", later.work_item_id,
-                    metadata={"source":"provider_intake",
-                        "explicit_context_binding":False})
-                active = store.get_session_work_context("voice")
-                assert active is not None
-                assert active.active_work_item_id == later.work_item_id
-                assert active.metadata["explicit_context_binding"] is False
         finally:
             settings.WORK_SCRATCH_ROOT = old_scratch
             settings.WORK_PROJECT_ALLOWLIST = old_allowlist

@@ -98,29 +98,13 @@ class UnconfirmedCancelAdapter:
         }
 
 
-class BlockingOrphanCancelAdapter:
-    provider_id = "blocking-orphan-cancel"
-
-    def __init__(self) -> None:
-        self.cancel_started = asyncio.Event()
-        self.release_cancel = asyncio.Event()
-
-    async def run(self, request, run_id, emit):
-        return ProviderRunResult(status="orphaned", error="native outcome unknown")
-
-    async def cancel(self, run_id):
-        self.cancel_started.set()
-        await self.release_cancel.wait()
-        return {"confirmed": False, "cancelled": False, "reason": "still unknown"}
-
-
 def test_runtime_keeps_display_task_separate_from_provider_policy_prompt() -> None:
     async def run() -> None:
         runtime = ProviderRuntime()
         adapter = CapturePromptAdapter()
         runtime.register(adapter)
 
-        def prepare(request: ProviderRunRequest, _run_id: str) -> ProviderRunRequest:
+        def prepare(request: ProviderRunRequest) -> ProviderRunRequest:
             request.metadata["display_task"] = "Create chess_game.py on Desktop"
             request.task = "internal staged-export policy prompt"
             return request
@@ -190,8 +174,6 @@ def test_runtime_resume_is_orphan_only_single_flight_and_adopts_missing_task() -
                     "run_id": "taskless-orphan",
                     "cwd": temp,
                     "mode": "agent",
-                    "event_sequence": 7,
-                    "metadata": {"runtime_resumable": True},
                 },
             )
             record = await runtime.resume(
@@ -206,7 +188,6 @@ def test_runtime_resume_is_orphan_only_single_flight_and_adopts_missing_task() -
             assert record.task == "Durable ledger task"
             assert record.metadata["resume_task_authoritative"] is True
             assert record.status == "queued"
-            assert record.event_sequence == 8
 
             try:
                 await runtime.resume(
@@ -237,7 +218,6 @@ def test_runtime_resume_is_orphan_only_single_flight_and_adopts_missing_task() -
                     "task": "Original task",
                     "cwd": temp,
                     "mode": "agent",
-                    "metadata": {"runtime_resumable": True},
                 },
             )
             try:
@@ -254,40 +234,6 @@ def test_runtime_resume_is_orphan_only_single_flight_and_adopts_missing_task() -
                 assert "original task" in str(exc)
             else:
                 raise AssertionError("Resume must not replace an authoritative task")
-
-    asyncio.run(run())
-
-
-def test_runtime_resume_rejects_until_cancel_is_reconciled() -> None:
-    async def run() -> None:
-        runtime = ProviderRuntime()
-        adapter = BlockingOrphanCancelAdapter()
-        runtime.register(adapter)
-        record = await runtime.start(
-            ProviderRunRequest(provider=adapter.provider_id, task="Unknown native task")
-        )
-        assert record.task_handle is not None
-        await record.task_handle
-        assert record.status == "orphaned"
-        record.metadata["runtime_resumable"] = True
-
-        cancellation = asyncio.create_task(runtime.cancel(record.run_id))
-        await asyncio.wait_for(adapter.cancel_started.wait(), timeout=2.0)
-        try:
-            await runtime.resume(
-                record.run_id,
-                ProviderRunRequest(provider=adapter.provider_id, task=record.task),
-            )
-        except ValueError as exc:
-            assert "cancellation" in str(exc)
-        else:
-            raise AssertionError("Resume must not race an unresolved cancellation")
-        finally:
-            adapter.release_cancel.set()
-            await cancellation
-
-        assert record.status == "orphaned"
-        assert record.metadata["liveness"]["state"] == "cancel_pending"
 
     asyncio.run(run())
 
@@ -343,7 +289,6 @@ def _main() -> None:
     test_runtime_keeps_display_task_separate_from_provider_policy_prompt()
     test_runtime_hook_binds_and_releases_a_durable_attempt()
     test_runtime_resume_is_orphan_only_single_flight_and_adopts_missing_task()
-    test_runtime_resume_rejects_until_cancel_is_reconciled()
     test_runtime_keeps_unconfirmed_cancel_running()
     test_generic_provider_run_cannot_reach_resume()
     print("ok: provider runtime is durably bound to WorkItem lifecycle")

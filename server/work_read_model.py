@@ -20,7 +20,6 @@ from server.work_activity_snapshot import ACTIVITY_METADATA_KEY, activity_report
 
 
 _ACTIVE_EXECUTION = frozenset({"queued", "running"})
-_UNRESOLVED_EXECUTION = frozenset({*_ACTIVE_EXECUTION, "orphaned"})
 
 
 class WorkReadModel:
@@ -62,40 +61,16 @@ class WorkReadModel:
             record.to_dict()
             for record in self.store.list_permission_requests(work_item_id)
         ]
-        projected["providerInputs"] = self.store.list_provider_inputs(work_item_id)
-        projected["inputRequirements"] = self.input_requirements(work_item_id)
         return projected
-
-    def input_requirements(self, work_item_id: str, *, attempt_id: str = "", operations=None) -> list[dict]:
-        """Join accepted Work instructions to their original input delivery facts."""
-        attempt_ids = {str(attempt_id)} if attempt_id else set()
-        if attempt_id:
-            current = self.store.get_attempt(attempt_id)
-            if current is not None and current.work_item_id == work_item_id:
-                predecessor = self.store.get_recovery_predecessor(current)
-                if predecessor is not None:
-                    attempt_ids.add(predecessor.attempt_id)
-        requirements = [operation for operation in (
-            self.store.list_operations(work_item_id) if operations is None else operations)
-            if operation.metadata.get("work_input_id") and (not attempt_id
-                or operation.metadata.get("attempt_id") in attempt_ids)]
-        if not requirements:
-            return []
-        receipts = {row["input_id"]:row for row in self.store.list_provider_inputs(work_item_id)}
-        return [{"operation_id":operation.operation_id,
-            "input_id":operation.metadata["work_input_id"],
-            "attempt_id":operation.metadata["attempt_id"], "text":operation.instruction,
-            "delivery_state":receipts.get(operation.metadata["work_input_id"], {}).get("state", "unknown"),
-            "delivery_reason":receipts.get(operation.metadata["work_input_id"], {}).get("reason", "input_receipt_unavailable")}
-            for operation in requirements]
 
     def project_status_snapshot(self, project_id: str) -> dict[str, Any] | None:
         project = self.store.get_project(str(project_id or "").strip())
         if project is None:
             return None
-        projected = self.project_items(
-            self.store.list_work_items(project_id=project.project_id, limit=200)
-        )
+        projected = [
+            self.project_item(item)
+            for item in self.store.list_work_items(project_id=project.project_id, limit=200)
+        ]
         current = [
             item for item in projected if item.get("state") not in {"accepted", "archived"}
         ]
@@ -212,6 +187,7 @@ class WorkReadModel:
             ],
             "revision": int(latest_attempt.attempt_number if latest_attempt else 0),
             "updatedAt": self._iso_time(item.last_activity_at),
+            "updatedAtEpoch": float(item.last_activity_at),
             "workState": item.state,
             "execution": str(latest_attempt.execution_status if latest_attempt else "idle"),
             "artifactStatus": str(artifact.status if artifact is not None else "registered"),
@@ -226,7 +202,7 @@ class WorkReadModel:
                 can_promote
                 and (
                     latest_attempt is None
-                    or latest_attempt.execution_status not in _UNRESOLVED_EXECUTION
+                    or latest_attempt.execution_status not in _ACTIVE_EXECUTION
                 )
             ),
         }
@@ -251,36 +227,9 @@ class WorkReadModel:
         return str(min(candidates, key=rank).get("id") or "")
 
     def project_item(self, item: WorkItemRecord) -> dict[str, Any]:
-        return self._project_item(item, self._workspace_facts(item))
-
-    def project_items(self, items: list[WorkItemRecord]) -> list[dict[str, Any]]:
-        # A synchronous projection reads shared workspace facts once. Nothing
-        # survives this call: later projections recheck deletion, moves and Draft
-        # retention. Per-attempt permissions and completion remain per-item reads.
-        workspaces: dict[str, tuple[bool, bool, bool]] = {}
-        projected: list[dict[str, Any]] = []
-        for item in items:
-            key = item.workspace_path if item.workspace_mode != "none" else ""
-            if key not in workspaces:
-                workspaces[key] = self._workspace_facts(item)
-            projected.append(self._project_item(item, workspaces[key]))
-        return projected
-
-    def _workspace_facts(self, item: WorkItemRecord) -> tuple[bool, bool, bool]:
-        if item.workspace_mode == "none":
-            return False, False, False
-        return (
-            Path(item.workspace_path).is_dir(),
-            is_scratch_path(item.workspace_path),
-            bool(self._is_unkept_draft(item.workspace_path)),
-        )
-
-    def _project_item(
-        self, item: WorkItemRecord, workspace_facts: tuple[bool, bool, bool]
-    ) -> dict[str, Any]:
-        workspace_exists, is_scratch, unkept_draft = workspace_facts
         operations = self.store.list_operations(item.work_item_id)
-        latest_attempt = self.store.latest_attempt(item.work_item_id, include_provider_branch=False)
+        attempts = self.store.list_attempts(item.work_item_id)
+        latest_attempt = attempts[-1] if attempts else None
         latest_operation = (
             self.store.get_operation(latest_attempt.operation_id)
             if latest_attempt is not None and latest_attempt.operation_id
@@ -295,15 +244,23 @@ class WorkReadModel:
         execution = latest_attempt.execution_status if latest_attempt else "idle"
         completeness = completion.completeness if completion_matches else "unknown"
         attention = completion.attention if completion_matches else "none"
-        permissions = (self.store.list_permission_requests(
-            item.work_item_id, attempt_id=latest_attempt.attempt_id)
-            if latest_attempt is not None else [])
-        pending_permissions = [request for request in permissions if request.status == "pending"]
+        pending_permissions = (
+            self.store.list_permission_requests(
+                item.work_item_id,
+                attempt_id=latest_attempt.attempt_id,
+                status="pending",
+            )
+            if latest_attempt is not None
+            else []
+        )
         latest_permission = pending_permissions[-1] if pending_permissions else None
         retry_authorizations = (
             [
                 request
-                for request in permissions
+                for request in self.store.list_permission_requests(
+                    item.work_item_id,
+                    attempt_id=latest_attempt.attempt_id,
+                )
                 if request.status in {"denied", "expired"}
                 and "allow_once" not in request.options
                 and request.metadata.get("kind") == "provider_permission"
@@ -319,8 +276,12 @@ class WorkReadModel:
         recoverable_exports = (
             [
                 request
-                for request in permissions
-                if request.status == "allowed" and self._is_desktop_export_permission(request)
+                for request in self.store.list_permission_requests(
+                    item.work_item_id,
+                    attempt_id=latest_attempt.attempt_id,
+                    status="allowed",
+                )
+                if self._is_desktop_export_permission(request)
                 and self._can_resume_authorized_export(request)
             ]
             if latest_attempt is not None
@@ -328,6 +289,7 @@ class WorkReadModel:
         )
         recoverable_export = recoverable_exports[-1] if recoverable_exports else None
         has_workspace = item.workspace_mode != "none"
+        workspace_exists = bool(has_workspace and Path(item.workspace_path).is_dir())
         if execution == "orphaned" or (has_workspace and not workspace_exists):
             attention = "error"
         elif pending_permissions:
@@ -405,8 +367,6 @@ class WorkReadModel:
         )
         if execution in _ACTIVE_EXECUTION:
             liveness = str(provider_liveness.get("state") or "active")
-        elif execution == "orphaned":
-            liveness = str(provider_liveness.get("state") or "orphaned")
         elif latest_attempt is not None:
             liveness = "terminal"
         else:
@@ -441,6 +401,8 @@ class WorkReadModel:
             Path(item.workspace_path).name or item.workspace_mode if has_workspace else ""
         )
         metadata = dict(item.metadata or {})
+        is_scratch = bool(has_workspace and is_scratch_path(item.workspace_path))
+        unkept_draft = bool(has_workspace and self._is_unkept_draft(item.workspace_path))
         project = self.store.get_project(item.project_id)
         project_name = (
             "" if unkept_draft or not has_workspace else str(project.name if project else "")
@@ -465,8 +427,10 @@ class WorkReadModel:
             if isinstance(metadata.get("workspace_policy"), dict)
             else {}
         )
-        artifact_counts = self.store.artifact_counts(item.work_item_id)
-        business_artifact_count = artifact_counts["business"]
+        artifacts = self.store.list_artifacts(item.work_item_id)
+        business_artifact_count = sum(
+            1 for artifact in artifacts if artifact.kind.startswith("business.")
+        )
         return {
             "id": item.work_item_id,
             "workItemId": item.work_item_id,
@@ -494,13 +458,11 @@ class WorkReadModel:
             "workspaceExists": workspace_exists,
             "workspaceLabel": workspace_label,
             "isScratch": is_scratch,
-            "canPromoteToProject": bool(
-                unkept_draft and execution != "orphaned"
-            ),
+            "canPromoteToProject": unkept_draft,
             "canReopen": bool(
                 item.state in {"accepted", "archived", "closed"}
                 and (workspace_exists or not has_workspace)
-                and execution not in _UNRESOLVED_EXECUTION
+                and execution not in _ACTIVE_EXECUTION
             ),
             "branch": git_branch,
             "baseRevision": base_revision,
@@ -513,14 +475,10 @@ class WorkReadModel:
             # distinguish this conversation from older conversations. It is not
             # a new routing or lifecycle authority.
             "sessionId": session_id,
-            # This identifies the Operation that opened the execution. Active
-            # amendments remain separate requirements on that same Attempt.
             "operationId": latest_operation.operation_id if latest_operation else "",
             "operationNumber": latest_operation.operation_number if latest_operation else 0,
             "operationIntent": latest_operation.intent if latest_operation else "",
             "operationCount": len(operations),
-            "inputRequirements":self.input_requirements(item.work_item_id,
-                attempt_id=latest_attempt.attempt_id if latest_attempt else "", operations=operations),
             "provider": (
                 latest_attempt.provider
                 if latest_attempt
@@ -544,13 +502,11 @@ class WorkReadModel:
                 and execution == "orphaned"
                 and bool(latest_attempt.provider_run_id)
                 and attempt_metadata.get("runtime_resumable") is True
-                and str(provider_liveness.get("state") or "").strip().lower()
-                != "cancel_pending"
                 and item.state in {"open", "review_ready"}
             ),
             "artifactCount": business_artifact_count,
             "businessArtifactCount": business_artifact_count,
-            "runtimeArtifactCount": artifact_counts["runtime"],
+            "runtimeArtifactCount": len(artifacts) - business_artifact_count,
             "pendingPermissionCount": len(pending_permissions),
             "pendingPermissionRequestId": (
                 latest_permission.request_id if latest_permission is not None else ""

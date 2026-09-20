@@ -8,7 +8,7 @@
 
 依赖注入（configure()）：
   - vts_manager     : VTSConnectionManager 实例
-  - pending_actions : Queue（由 server.app 传入）
+  - pending_actions : Queue（由 main.py 传入）
   - delegate_fn     : async callable，处理 DELEGATE 标签（_handle_delegate）
 """
 
@@ -16,7 +16,7 @@ import logging
 import time
 import traceback
 from queue import Empty
-from threading import Event, Thread, Lock
+from threading import Thread, Lock
 
 from tools.tts_text_processor import EMO_PRESETS
 from tools.text_utils import _parse_seconds, _pair_ids_values
@@ -61,16 +61,14 @@ def set_paused(paused: bool) -> None:
 # 心跳
 # =============================================================================
 
-def heartbeat_worker(stop_event: Event) -> None:
+def heartbeat_worker():
     """VTS 心跳工作线程。断联时主动触发后台重连，不阻塞。
 
     _paused=True 时跳过所有操作（PixiJS 渲染模式下不需要维持 VTS 连接活跃度）。
-    启动方拥有 stop_event，退出时设置信号并等待线程结束。
     """
-    while not stop_event.is_set():
+    while True:
         try:
-            if stop_event.wait(3):
-                return
+            time.sleep(3)
             if _paused:
                 continue
             if _vts_manager is None:
@@ -89,25 +87,24 @@ def heartbeat_worker(stop_event: Event) -> None:
 # 动作队列消费
 # =============================================================================
 
-def action_worker(stop_event: Event) -> None:
+def action_worker():
     """VTS 动作队列消费线程。
 
     _paused=True 时丢弃队列中的 VTS 动作（PixiJS 渲染模式下 VTS 不应收到指令）。
-    stop_event 中断轮询和当前参数渐变；它不撤销已发出的设备请求。
     """
-    while not stop_event.is_set():
+    while True:
         try:
             if _pending_actions is None:
-                stop_event.wait(0.1)
+                time.sleep(0.1)
                 continue
             if _paused:
                 # 清空队列积压，避免切回 VTS 时一次性爆发大量旧指令
                 try:
-                    while not stop_event.is_set() and not _pending_actions.empty():
+                    while not _pending_actions.empty():
                         _pending_actions.get_nowait()
                 except Exception:
                     pass
-                stop_event.wait(0.1)
+                time.sleep(0.1)
                 continue
             act = _pending_actions.get_nowait()
             atype = (act.get("type") or "").upper()
@@ -218,14 +215,11 @@ def action_worker(stop_event: Event) -> None:
                 else:
                     steps = max(1, int(total_fade / 0.05))
                     for step in range(1, steps + 1):
-                        if stop_event.is_set():
-                            return
                         ratio = step / float(steps)
                         interp = {pid: val * ratio for pid, val in pairs.items()}
                         if _vts_manager is not None:
                             _vts_manager.send_parameters(interp)
-                        if stop_event.wait(0.05):
-                            return
+                        time.sleep(0.05)
                 if dur > 0:
                     def _reset(pairs_, fade_):
                         try:
@@ -286,7 +280,7 @@ def action_worker(stop_event: Event) -> None:
                 continue
 
         except Empty:
-            stop_event.wait(0.02)
+            time.sleep(0.02)
             continue
         except Exception as e:
             logger.error(f"action worker failed: {e}")

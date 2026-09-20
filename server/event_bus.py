@@ -52,21 +52,11 @@ class EventBus:
             asyncio.create_task(self._invoke(cb, method, params))
             for cb in callbacks
         ]
-        try:
-            for t in tasks:
-                try:
-                    await t
-                except Exception:
-                    logger.exception("event bus callback failed for %s", method)
-        except BaseException:
-            # emit() is one structured publication. If its caller is cancelled,
-            # do not leave later subscriber tasks alive to commit an older event
-            # after a newer terminal event has already been published.
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-            raise
+        for t in tasks:
+            try:
+                await t
+            except Exception:
+                logger.exception("event bus callback failed for %s", method)
 
     @staticmethod
     async def _invoke(

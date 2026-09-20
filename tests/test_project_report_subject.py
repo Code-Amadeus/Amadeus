@@ -15,7 +15,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config.settings as settings
 from agent_host.work_ledger_store import WorkLedgerStore
 from server.app import _handle_delegate
-from server.context_status import project_item_status_labels
 from server.project_report import answer_project_report, normalize_report_subject
 from server.work_ledger_coordinator import WorkLedgerCoordinator
 
@@ -58,21 +57,6 @@ def test_subject_contract_is_small_and_backward_compatible() -> None:
     assert normalize_report_subject("project") == "project"
     assert normalize_report_subject("projects") == "project"
     assert normalize_report_subject("workspace") is None
-
-
-def test_project_status_names_orphaned_as_unknown_not_failed() -> None:
-    zh, ja = project_item_status_labels(
-        {
-            "execution": "orphaned",
-            "attention": "error",
-            "state": "open",
-        }
-    )
-
-    assert "待确认" in zh
-    assert "失败" not in zh
-    assert "確認待ち" in ja
-    assert "失敗" not in ja
 
 
 def test_project_report_reads_specific_and_recent_ledger_truth() -> None:
@@ -160,8 +144,6 @@ def test_project_report_never_routes_or_creates_work() -> None:
 if __name__ == "__main__":
     test_subject_contract_is_small_and_backward_compatible()
     print("ok: report subject remains small and backward compatible")
-    test_project_status_names_orphaned_as_unknown_not_failed()
-    print("ok: orphaned project status remains explicitly unknown")
     test_project_report_reads_specific_and_recent_ledger_truth()
     print("ok: project reports read specific and recent ledger truth")
     test_project_report_never_routes_or_creates_work()

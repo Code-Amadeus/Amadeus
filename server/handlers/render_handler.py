@@ -8,12 +8,6 @@ from typing import Any, Callable
 from pathlib import Path
 from urllib.parse import urlencode
 
-from config.settings import (
-    GRAPHICS_PROFILE,
-    RENDER_EFFECTIVE_MAX_FPS,
-    RENDER_EFFECTIVE_MAX_RESOLUTION,
-    RENDER_TEXTURE_SAMPLING,
-)
 from server.protocol import Method
 from server.ws_handler import RequestHandler
 
@@ -62,16 +56,10 @@ class RenderHandler(RequestHandler):
         if self._project_root is None:
             return {"status": "error", "error": "render handler is not configured"}
         html_path = self._project_root / "render" / "web" / "index.html"
-        query_params = {
+        query = urlencode({
             "ws": f"ws://127.0.0.1:{self._backend_port}/ws",
             "v": str(int(html_path.stat().st_mtime)),
-            "graphicsProfile": GRAPHICS_PROFILE,
-            "renderMaxFps": RENDER_EFFECTIVE_MAX_FPS,
-            "renderTextureSampling": int(RENDER_TEXTURE_SAMPLING),
-        }
-        if RENDER_EFFECTIVE_MAX_RESOLUTION is not None:
-            query_params["renderMaxResolution"] = RENDER_EFFECTIVE_MAX_RESOLUTION
-        query = urlencode(query_params)
+        })
         url = f"{html_path.resolve().as_uri()}?{query}"
 
         # Schedule a delayed replay fallback in case the render surface loads

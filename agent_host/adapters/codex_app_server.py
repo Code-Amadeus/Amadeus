@@ -11,8 +11,6 @@ import asyncio
 from concurrent.futures import Future
 from dataclasses import dataclass, field
 from importlib import metadata as importlib_metadata
-import inspect
-import logging
 import os
 from pathlib import Path
 import threading
@@ -20,13 +18,10 @@ import time
 from typing import Any, Callable, cast
 
 from openai_codex import ApprovalMode, AsyncCodex, CodexConfig, Sandbox
-from openai_codex._approval_mode import _approval_mode_override_settings
-from openai_codex._inputs import _normalize_run_input, _to_wire_input
-from openai_codex._sandbox import _sandbox_mode, _sandbox_policy
-from openai_codex.api import AsyncThread, AsyncTurnHandle
+from openai_codex._sandbox import _sandbox_mode
+from openai_codex.api import AsyncThread
 from openai_codex.async_client import AsyncCodexClient
 from openai_codex.client import CodexClient
-from openai_codex.errors import InvalidParamsError, InvalidRequestError, TransportClosedError
 from openai_codex.generated.v2_all import (
     AskForApproval,
     AskForApprovalValue,
@@ -35,7 +30,6 @@ from openai_codex.generated.v2_all import (
     ThreadInjectItemsResponse,
     ThreadResumeParams,
     ThreadStartParams,
-    TurnStartParams,
 )
 
 from agent_host.codex_desktop_provider import (
@@ -44,7 +38,6 @@ from agent_host.codex_desktop_provider import (
     provider_auth_overrides,
 )
 from agent_host.provider_authoring import (
-    required_auip_engagement_mode,
     requires_auip_authoring,
     with_host_authoring_capabilities,
 )
@@ -69,20 +62,13 @@ from agent_host.provider_types import (
     EmitProviderEvent,
     ProviderActivityEvidence,
     ProviderEvent,
-    ProviderInputDelivery,
     ProviderPermissionResponse,
     ProviderRunRequest,
     ProviderRunResult,
     ProviderSessionHandle,
     ProviderSteerRequest,
-    ProviderNativeExecutionHandle,
-    ProviderSubmissionReconciliationRequest,
-    ProviderSubmissionReconciliationResult,
 )
 from config import settings
-
-
-logger = logging.getLogger(__name__)
 
 
 class CodexAppServerStartupUnavailable(RuntimeError):
@@ -120,22 +106,8 @@ class _ActiveTurn:
     handle: Any
     loop: asyncio.AbstractEventLoop
     emit: EmitProviderEvent
-    session: ProviderSessionHandle | None = None
-    steer_ready: asyncio.Event = field(default_factory=asyncio.Event)
-    native_started: bool = False
     terminal: asyncio.Event = field(default_factory=asyncio.Event)
     terminal_status: str = ""
-    cancel_requested: bool = False
-    cancel_task: asyncio.Task[dict[str, Any]] | None = None
-    stream_task: asyncio.Task[dict[str, Any]] | None = None
-
-
-@dataclass(slots=True)
-class _StartingTurn:
-    """One Host run while its exact native turn identity is being established."""
-
-    active_ready: asyncio.Event = field(default_factory=asyncio.Event)
-    submission_started: bool = False
     cancel_requested: bool = False
 
 
@@ -274,50 +246,6 @@ class _ApprovalAwareAsyncCodex(AsyncCodex):
         client = cast(_ApprovalAwareAsyncCodexClient, self._client)
         return await client.thread_inject_items(thread_id, items)
 
-    async def thread_read(self, thread_id: str, *, include_turns: bool = False) -> Any:
-        """Read native history through the pinned typed SDK."""
-
-        await self._ensure_initialized()
-        return await self._client.thread_read(thread_id, include_turns=include_turns)
-
-    async def turn_correlated(
-        self,
-        thread_id: str,
-        task: str,
-        *,
-        client_user_message_id: str,
-        approval_mode: ApprovalMode | None,
-        cwd: str,
-        effort: ReasoningEffort | None,
-        model: str | None,
-        sandbox: Sandbox,
-        service_tier: str | None,
-    ) -> AsyncTurnHandle:
-        """Start one turn with the Host Provider run id as native correlation."""
-
-        await self._ensure_initialized()
-        wire_input = _to_wire_input(_normalize_run_input(task))
-        approval_policy, approvals_reviewer = _approval_mode_override_settings(
-            approval_mode
-        )
-        started = await self._client.turn_start(
-            thread_id,
-            wire_input,
-            params=TurnStartParams(
-                approval_policy=approval_policy,
-                approvals_reviewer=approvals_reviewer,
-                client_user_message_id=client_user_message_id,
-                cwd=cwd,
-                effort=effort,
-                input=wire_input,
-                model=model,
-                sandbox_policy=_sandbox_policy(sandbox),
-                service_tier=service_tier,
-                thread_id=thread_id,
-            ),
-        )
-        return AsyncTurnHandle(self, thread_id, started.turn.id)
-
     async def thread_set_name(self, thread_id: str, name: str) -> Any:
         await self._ensure_initialized()
         return await self._client.thread_set_name(thread_id, name)
@@ -345,9 +273,7 @@ class CodexAppServerAdapter:
         codex: Any | None = None,
         codex_factory: Callable[[CodexConfig], Any] | None = None,
         codex_bin: str | None = None,
-        auth_mode: str | None = None,
         model: str | None = None,
-        chatgpt_model: str | None = None,
         model_provider: str | None = None,
         reasoning_effort: str | None = None,
         service_tier: str | None = None,
@@ -370,30 +296,16 @@ class CodexAppServerAdapter:
             if codex_bin is not None
             else getattr(settings, "CODEX_APP_SERVER_CODEX_BIN", "")
         ).strip()
-        self.auth_mode = str(
-            auth_mode
-            if auth_mode is not None
-            else getattr(settings, "CODEX_APP_SERVER_AUTH_MODE", "model_api")
-        ).strip().lower()
-        if self.auth_mode not in {"model_api", "chatgpt"}:
-            raise ValueError("CODEX_APP_SERVER_AUTH_MODE must be model_api or chatgpt")
-        provider_model = str(
+        self.model = str(
             model
             if model is not None
             else getattr(settings, "CODEX_APP_SERVER_MODEL", "")
         ).strip()
-        subscription_model = str(
-            chatgpt_model
-            if chatgpt_model is not None
-            else getattr(settings, "CODEX_APP_SERVER_CHATGPT_MODEL", "")
-        ).strip()
-        configured_model_provider = str(
+        self.model_provider = str(
             model_provider
             if model_provider is not None
             else getattr(settings, "CODEX_APP_SERVER_MODEL_PROVIDER", "")
         ).strip().lower()
-        self.model = subscription_model if self.auth_mode == "chatgpt" else provider_model
-        self.model_provider = "openai" if self.auth_mode == "chatgpt" else configured_model_provider
         self.reasoning_effort_label = str(
             reasoning_effort
             if reasoning_effort is not None
@@ -405,18 +317,16 @@ class CodexAppServerAdapter:
             if service_tier is not None
             else getattr(settings, "CODEX_APP_SERVER_SERVICE_TIER", "")
         )
-        configured_provider_base_url = str(
+        self.provider_base_url = str(
             provider_base_url
             if provider_base_url is not None
             else getattr(settings, "CODEX_APP_SERVER_PROVIDER_BASE_URL", "")
         ).strip().rstrip("/")
-        configured_provider_api_key_env = str(
+        self.provider_api_key_env = str(
             provider_api_key_env
             if provider_api_key_env is not None
             else getattr(settings, "CODEX_APP_SERVER_PROVIDER_API_KEY_ENV", "")
         ).strip()
-        self.provider_base_url = "" if self.auth_mode == "chatgpt" else configured_provider_base_url
-        self.provider_api_key_env = "" if self.auth_mode == "chatgpt" else configured_provider_api_key_env
         project_root = Path(__file__).resolve().parents[2]
         self.provider_auth_env_file = Path(
             provider_auth_env_file
@@ -481,7 +391,6 @@ class CodexAppServerAdapter:
             else load_mcp_connections()
         )
         self._active: dict[str, _ActiveTurn] = {}
-        self._starting: dict[str, _StartingTurn] = {}
         self._pending_approvals: dict[str, _PendingApproval] = {}
         self._approval_condition = threading.Condition()
         self._sdk_lock = asyncio.Lock()
@@ -530,27 +439,11 @@ class CodexAppServerAdapter:
         return snapshot
 
     async def close(self) -> None:
-        with self._approval_condition:
-            active_turns = tuple(self._active.values())
-            for active in active_turns:
-                active.cancel_requested = True
-                active.steer_ready.set()
-            self._release_pending_approvals()
+        self._release_pending_approvals()
         codex = self._codex
         self._codex = None
         if codex is not None and not self._injected_codex:
             await codex.close()
-        if not self._injected_codex:
-            # Closing our SDK wakes registered stream queues with transport EOF.
-            # An injected SDK remains its external owner's shutdown responsibility.
-            streams = [active.stream_task for active in active_turns if active.stream_task is not None]
-            if streams:
-                await asyncio.shield(asyncio.gather(*streams, return_exceptions=True))
-                # gather can finish immediately for already-done Tasks before
-                # their scheduled callbacks run. Close owns synchronous retirement.
-                for active in active_turns:
-                    if active.stream_task is not None:
-                        self._stream_finished(active, active.stream_task)
 
     async def run(
         self,
@@ -566,86 +459,26 @@ class CodexAppServerAdapter:
             )
 
         active: _ActiveTurn | None = None
-        starting = _StartingTurn()
-        self._starting[run_id] = starting
         state = _StreamState()
         try:
             codex = await self._ensure_codex()
             await self._ensure_desktop_provider_config(codex)
             thread = await self._open_thread(codex, request, cwd)
-            await emit(ProviderEvent(provider=self.provider_id, run_id=run_id,
-                type="session.opened", session=self._session(str(thread.id), request.session)))
             task_text = await self._prepare_desktop_handoff(
                 codex,
                 thread,
                 request,
                 rename_thread=request.session is None,
             )
-            if starting.cancel_requested:
-                return ProviderRunResult(
-                    status="cancelled",
-                    metadata={"codex": {
-                        "cwd": str(cwd),
-                        "thread_id": str(thread.id),
-                        "turn_id": "",
-                        "submission_status": "cancelled_before_turn",
-                    }},
-                    session=self._session(str(thread.id), request.session),
-                )
-            # No await may separate the cancellation check from this marker.
-            # A cancellation before it prevents submission; one after it waits
-            # for the exact returned turn rather than guessing by thread.
-            starting.submission_started = True
-            try:
-                correlated_turn = getattr(codex, "turn_correlated", None)
-                if callable(correlated_turn):
-                    turn = await correlated_turn(
-                        str(thread.id),
-                        task_text,
-                        client_user_message_id=run_id,
-                        approval_mode=self.approval_mode,
-                        cwd=str(cwd),
-                        effort=self.reasoning_effort,
-                        model=self.model or None,
-                        sandbox=self._sandbox(request),
-                        service_tier=self.service_tier,
-                    )
-                else:
-                    # Bounded compatibility for externally injected SDK
-                    # clients. The shipping wrapper always uses the exact
-                    # Host run id correlation path above.
-                    turn = await thread.turn(
-                        task_text,
-                        approval_mode=self.approval_mode,
-                        cwd=str(cwd),
-                        effort=self.reasoning_effort,
-                        model=self.model or None,
-                        sandbox=self._sandbox(request),
-                        service_tier=self.service_tier,
-                    )
-            except TransportClosedError as exc:
-                # The SDK's transport error does not say whether turn/start
-                # failed before its write or after native acceptance but before
-                # the response reached the Host.  Preserve the known thread as
-                # reconciliation evidence and refuse to make an ordinary Retry
-                # eligible by pretending this was a definite rejection.
-                thread_id = str(thread.id)
-                return ProviderRunResult(
-                    status="orphaned",
-                    error=f"Codex turn submission acknowledgement is unknown: {exc}",
-                    metadata={
-                        "result_type": "transport_outcome_unknown",
-                        "runtime_resumable": False,
-                        "outcome_uncertainty": "native_turn_may_have_been_accepted",
-                        "codex": {
-                            "cwd": str(cwd),
-                            "thread_id": thread_id,
-                            "turn_id": "",
-                            "submission_status": "acknowledgement_unknown",
-                        },
-                    },
-                    session=self._session(thread_id, request.session),
-                )
+            turn = await thread.turn(
+                task_text,
+                approval_mode=self.approval_mode,
+                cwd=str(cwd),
+                effort=self.reasoning_effort,
+                model=self.model or None,
+                sandbox=self._sandbox(request),
+                service_tier=self.service_tier,
+            )
             active = _ActiveTurn(
                 run_id=run_id,
                 thread_id=str(thread.id),
@@ -653,14 +486,10 @@ class CodexAppServerAdapter:
                 handle=turn,
                 loop=asyncio.get_running_loop(),
                 emit=emit,
-                session=self._session(str(thread.id), request.session),
             )
             with self._approval_condition:
                 self._active[run_id] = active
                 self._approval_condition.notify_all()
-            if starting.cancel_requested:
-                self._ensure_cancel_task(active)
-            starting.active_ready.set()
             await emit(
                 ProviderEvent(
                     provider=self.provider_id,
@@ -687,7 +516,7 @@ class CodexAppServerAdapter:
                     result=final_message,
                     metadata=metadata,
                     activity_evidence=activity_evidence,
-                    session=active.session,
+                    session=self._session(active.thread_id),
                 )
             if status == "interrupted":
                 return ProviderRunResult(
@@ -695,7 +524,7 @@ class CodexAppServerAdapter:
                     result=final_message,
                     metadata=metadata,
                     activity_evidence=activity_evidence,
-                    session=active.session,
+                    session=self._session(active.thread_id),
                 )
             error = self._turn_error(terminal_payload) or f"Codex turn ended as {status}"
             return ProviderRunResult(
@@ -704,7 +533,7 @@ class CodexAppServerAdapter:
                 error=error,
                 metadata=metadata,
                 activity_evidence=activity_evidence,
-                session=active.session,
+                session=self._session(active.thread_id),
             )
         except _TurnDeadlineExceeded:
             return ProviderRunResult(
@@ -718,11 +547,9 @@ class CodexAppServerAdapter:
                 activity_evidence=(
                     self._activity_evidence(state) if active is not None else None
                 ),
-                session=active.session if active is not None else None,
+                session=self._session(active.thread_id) if active is not None else None,
             )
         except asyncio.CancelledError:
-            if active is not None:
-                self._begin_interrupt(active)
             raise
         except Exception as exc:
             return ProviderRunResult(
@@ -738,84 +565,13 @@ class CodexAppServerAdapter:
                 activity_evidence=(
                     self._activity_evidence(state) if active is not None else None
                 ),
-                session=active.session if active is not None else None,
+                session=self._session(active.thread_id) if active is not None else None,
             )
         finally:
-            starting.active_ready.set()
-            if self._starting.get(run_id) is starting:
-                self._starting.pop(run_id, None)
             if active is not None:
                 self._release_pending_approvals(run_id)
                 with self._approval_condition:
-                    if active.stream_task is None or active.stream_task.done():
-                        if self._active.get(run_id) is active:
-                            self._active.pop(run_id, None)
-
-    async def reconcile_submission(
-        self,
-        request: ProviderSubmissionReconciliationRequest,
-    ) -> ProviderSubmissionReconciliationResult:
-        """Read one unknown native submission without replaying or mutating it."""
-
-        if request.provider != self.provider_id:
-            raise ValueError("Codex reconciliation request belongs to another provider")
-        session = request.session
-        if session is None:
-            return ProviderSubmissionReconciliationResult(
-                state="unavailable",
-                reason="codex_thread_session_unavailable",
-            )
-
-        owned_query_client = not self._injected_codex
-        codex = (
-            (
-                self._codex_factory(self._codex_config())
-                if self._codex_factory is not None
-                else _ApprovalAwareAsyncCodex(
-                    self._codex_config(),
-                    self._handle_sdk_approval,
-                )
-            )
-            if owned_query_client
-            else await self._ensure_codex()
-        )
-        try:
-            return await self._read_reconciled_submission(codex, request)
-        finally:
-            if owned_query_client:
-                close = getattr(codex, "close", None)
-                if callable(close):
-                    try:
-                        outcome = close()
-                        if inspect.isawaitable(outcome):
-                            await outcome
-                    except Exception:
-                        # A completed read is still valid evidence. Query-client
-                        # cleanup failure is observable in logs but cannot
-                        # erase or weaken the already parsed result.
-                        logger.exception("Codex reconciliation client close failed")
-
-    async def _read_reconciled_submission(
-        self,
-        codex,
-        request: ProviderSubmissionReconciliationRequest,
-    ) -> ProviderSubmissionReconciliationResult:
-        session = request.session
-        if session is None:
-            return ProviderSubmissionReconciliationResult(state="unavailable",
-                reason="codex_thread_session_unavailable")
-        thread_read = getattr(codex, "thread_read", None)
-        if not callable(thread_read):
-            return ProviderSubmissionReconciliationResult(state="unavailable",
-                reason="codex_thread_read_unsupported")
-        response = await thread_read(session.session_id, include_turns=True)
-        payload = self._payload_dict(response)
-        thread = payload.get("thread") if isinstance(payload.get("thread"), dict) else {}
-        if str(thread.get("id") or "").strip() != session.session_id:
-            return ProviderSubmissionReconciliationResult(state="unavailable",
-                reason="codex_thread_identity_mismatch")
-        return self._reconciliation_from_thread(thread, run_id=request.run_id,
-            session=session)
+                    self._active.pop(run_id, None)
 
     async def resolve_permission(
         self,
@@ -826,7 +582,7 @@ class CodexAppServerAdapter:
 
         with self._approval_condition:
             pending = self._pending_approvals.get(response.request_id)
-            if pending is None or pending.resolved.is_set():
+            if pending is None:
                 return {"accepted": False, "reason": "permission_request_not_pending"}
             if pending.run_id != str(run_id or "").strip():
                 return {"accepted": False, "reason": "permission_run_mismatch"}
@@ -835,41 +591,13 @@ class CodexAppServerAdapter:
             pending.resolved.set()
         return {"accepted": True}
 
-    async def append_input(self, run_id: str, text: str) -> ProviderInputDelivery:
-        """Map append delivery to the SDK's exact-turn additional-input API."""
-
-        clean_run_id = str(run_id or "").strip()
-        active = self._active.get(clean_run_id)
-        if active is None:
-            starting = self._starting.get(clean_run_id)
-            if starting is not None:
-                await starting.active_ready.wait()
-                active = self._active.get(clean_run_id)
-        if active is None or active.terminal.is_set() or active.cancel_requested:
-            return ProviderInputDelivery("rejected", "active_turn_not_found")
-        await active.steer_ready.wait()
-        if (not active.native_started or active.terminal.is_set()
-                or active.cancel_requested):
-            return ProviderInputDelivery("rejected", "active_turn_not_found")
-        try:
-            # AsyncTurnHandle.steer sends expectedTurnId. It cannot address a
-            # replacement turn just because the native thread stayed the same.
-            response = self._payload_dict(await active.handle.steer(text))
-        except (InvalidParamsError, InvalidRequestError) as exc:
-            return ProviderInputDelivery("rejected", str(exc))
-        except Exception as exc:
-            return ProviderInputDelivery("unknown", str(exc) or type(exc).__name__)
-        if response.get("turnId") != active.turn_id:
-            return ProviderInputDelivery("unknown", "native_input_receipt_mismatch")
-        return ProviderInputDelivery("delivered")
-
     async def steer(
         self,
         run_id: str,
         request: ProviderSteerRequest,
     ) -> dict[str, Any]:
         active = self._active.get(str(run_id or "").strip())
-        if active is None or active.terminal.is_set() or active.cancel_requested:
+        if active is None or active.terminal.is_set():
             return {"accepted": False, "reason": "active_turn_not_found"}
         try:
             await active.handle.steer(
@@ -898,49 +626,16 @@ class CodexAppServerAdapter:
         }
 
     async def cancel(self, run_id: str) -> dict[str, Any]:
-        clean_run_id = str(run_id or "").strip()
-        active = self._active.get(clean_run_id)
+        active = self._active.get(str(run_id or "").strip())
         if active is None:
-            starting = self._starting.get(clean_run_id)
-            if starting is None:
-                return {"confirmed": False, "cancelled": False, "reason": "not_found"}
-            if starting.cancel_requested:
-                return {"confirmed": False, "cancelled": False,
-                    "reason": "cancel_pending"}
-            starting.cancel_requested = True
-            if not starting.submission_started:
-                return {"confirmed": True, "cancelled": True,
-                    "reason": "cancelled_before_turn"}
-            try:
-                async with asyncio.timeout(self.cancel_confirm_timeout_s):
-                    await starting.active_ready.wait()
-            except asyncio.TimeoutError:
-                return {"confirmed": False, "cancelled": False,
-                    "reason": "native_turn_identity_pending"}
-            active = self._active.get(clean_run_id)
-            if active is None:
-                return {"confirmed": False, "cancelled": False,
-                    "reason": "native_turn_identity_unavailable"}
-        cancel_task = self._ensure_cancel_task(active)
-        return await asyncio.shield(cancel_task)
-
-    def _ensure_cancel_task(self, active: _ActiveTurn) -> asyncio.Task[dict[str, Any]]:
-        if active.cancel_task is None:
-            self._begin_interrupt(active)
-            active.cancel_task = asyncio.create_task(
-                self._cancel_active(active),
-                name=f"codex-cancel:{active.run_id}",
-            )
-        return active.cancel_task
-
-    async def _cancel_active(self, active: _ActiveTurn) -> dict[str, Any]:
+            return {"confirmed": False, "cancelled": False, "reason": "not_found"}
         try:
-            # Another turn's approval can also occupy the shared SDK reader.
-            # Do not revoke that unrelated approval or wait past our whole
-            # confirmation budget merely because the RPC reply is unread.
-            async with asyncio.timeout(self.cancel_confirm_timeout_s):
-                await active.handle.interrupt()
-                await active.terminal.wait()
+            active.cancel_requested = True
+            await active.handle.interrupt()
+            await asyncio.wait_for(
+                active.terminal.wait(),
+                timeout=self.cancel_confirm_timeout_s,
+            )
         except asyncio.TimeoutError:
             return {
                 "confirmed": False,
@@ -958,7 +653,6 @@ class CodexAppServerAdapter:
             "confirmed": True,
             "cancelled": cancelled,
             "reason": "interrupted" if cancelled else "turn_completed_before_interrupt",
-            "session": active.session,
             "thread_id": active.thread_id,
             "turn_id": active.turn_id,
         }
@@ -968,26 +662,23 @@ class CodexAppServerAdapter:
             return self._codex
         async with self._sdk_lock:
             if self._codex is None:
-                config = self._codex_config()
+                config = CodexConfig(
+                    codex_bin=self._codex_bin or None,
+                    config_overrides=(
+                        *self._provider_config_overrides(),
+                        *self._service_tier_config_overrides(),
+                        *codex_mcp_config_overrides(self._mcp_connections),
+                    ),
+                    env=self._codex_process_env_with_provider_key(),
+                    client_name="amadeus",
+                    client_title="Amadeus",
+                )
                 self._codex = (
                     self._codex_factory(config)
                     if self._codex_factory is not None
                     else _ApprovalAwareAsyncCodex(config, self._handle_sdk_approval)
                 )
         return self._codex
-
-    def _codex_config(self) -> CodexConfig:
-        return CodexConfig(
-            codex_bin=self._codex_bin or None,
-            config_overrides=(
-                *self._provider_config_overrides(),
-                *self._service_tier_config_overrides(),
-                *codex_mcp_config_overrides(self._mcp_connections),
-            ),
-            env=self._codex_process_env_with_provider_key(),
-            client_name="amadeus",
-            client_title="Amadeus",
-        )
 
     def _provider_config_overrides(self) -> tuple[str, ...]:
         """Declare a custom Responses provider without owning its runtime."""
@@ -1100,7 +791,7 @@ class CodexAppServerAdapter:
             while active is None and time.monotonic() < deadline:
                 self._approval_condition.wait(timeout=max(0.0, deadline - time.monotonic()))
                 active = self._active_for_native_turn(thread_id, turn_id)
-            if active is None or active.cancel_requested:
+            if active is None:
                 return self._native_approval_response(method, source, allow=False)
             request_id = self._approval_request_id(method, source)
             pending = _PendingApproval(
@@ -1346,12 +1037,6 @@ class CodexAppServerAdapter:
             state.native_events += 1
             method = str(getattr(notification, "method", "") or "")
             payload = self._payload_dict(getattr(notification, "payload", None))
-            if method == "turn/started":
-                turn = payload.get("turn") if isinstance(payload.get("turn"), dict) else {}
-                if (str(payload.get("threadId") or "") == active.thread_id
-                        and str(turn.get("id") or "") == active.turn_id):
-                    active.native_started = True
-                    active.steer_ready.set()
             for event in self._map_notification(method, payload, active, state):
                 if not active.cancel_requested:
                     await emit(event)
@@ -1360,7 +1045,7 @@ class CodexAppServerAdapter:
                 state.terminal_observed = True
                 active.terminal_status = self._turn_status(payload)
                 active.terminal.set()
-        if state.progress_pending and not active.cancel_requested:
+        if state.progress_pending:
             visible, milestones, _pending = split_progress_stream(
                 state.progress_pending,
                 "",
@@ -1396,8 +1081,6 @@ class CodexAppServerAdapter:
             self._consume_stream(active, state, emit),
             name=f"codex-stream:{active.run_id}",
         )
-        active.stream_task = stream_task
-        stream_task.add_done_callback(lambda task: self._stream_finished(active, task))
         completed, _pending = await asyncio.wait(
             {stream_task},
             timeout=max(1.0, float(timeout_s)),
@@ -1406,19 +1089,17 @@ class CodexAppServerAdapter:
             return stream_task.result()
 
         try:
-            self._begin_interrupt(active)
-            confirmation_started = time.monotonic()
-            await asyncio.wait_for(
-                active.handle.interrupt(),
-                timeout=self.cancel_confirm_timeout_s,
-            )
+            await active.handle.interrupt()
         except Exception:
+            stream_task.cancel()
             raise _TurnDeadlineExceeded from None
         drained, _pending = await asyncio.wait(
             {stream_task},
-            timeout=max(0.0, self.cancel_confirm_timeout_s - (time.monotonic() - confirmation_started)),
+            timeout=self.cancel_confirm_timeout_s,
         )
-        if stream_task in drained:
+        if stream_task not in drained:
+            stream_task.cancel()
+        else:
             # Retrieve any stream exception so the task does not become an
             # unobserved background failure. Timeout remains the user truth.
             try:
@@ -1426,17 +1107,6 @@ class CodexAppServerAdapter:
             except Exception:
                 pass
         raise _TurnDeadlineExceeded
-
-    def _stream_finished(self, active: _ActiveTurn, task: asyncio.Task[dict[str, Any]]) -> None:
-        # Cancelling an SDK stream can unregister its queue while a to_thread
-        # reader still waits on that queue. Keep the consumer until a real
-        # terminal/transport EOF, including after our local deadline returned.
-        active.steer_ready.set()
-        if not task.cancelled():
-            task.exception()  # also retrieve late transport failures after timeout
-        with self._approval_condition:
-            if active.cancel_requested and self._active.get(active.run_id) is active:
-                self._active.pop(active.run_id, None)
 
     def _map_notification(
         self,
@@ -1702,14 +1372,15 @@ class CodexAppServerAdapter:
             },
         )
 
-    def _begin_interrupt(self, active: _ActiveTurn) -> None:
-        # The SDK's sole response reader runs the approval callback synchronously.
-        # Withdraw this turn's approvals before awaiting a reply from that reader.
-        # The same lock prevents a late callback/click from reopening permission.
-        with self._approval_condition:
-            active.cancel_requested = True
-            active.steer_ready.set()
-            self._release_pending_approvals(active.run_id)
+    async def _interrupt(self, active: _ActiveTurn) -> None:
+        try:
+            await active.handle.interrupt()
+            await asyncio.wait_for(
+                active.terminal.wait(),
+                timeout=self.cancel_confirm_timeout_s,
+            )
+        except Exception:
+            return
 
     def _task_text(self, request: ProviderRunRequest) -> str:
         metadata = request.metadata or {}
@@ -1720,9 +1391,10 @@ class CodexAppServerAdapter:
                     metadata=metadata,
                     execution_provider=self.provider_id,
                 ),
-                require_auip_preparation=requires_auip_authoring(metadata),
+                require_auip_preparation=requires_auip_authoring(
+                    metadata.get("source")
+                ),
                 authoring_skill_path=str(metadata.get("auip_authoring_skill_path") or ""),
-                required_auip_mode=required_auip_engagement_mode(metadata),
             ),
             presentation_locale=metadata.get("presentation_locale"),
         )
@@ -1741,15 +1413,13 @@ class CodexAppServerAdapter:
         metadata = request.metadata or {}
         presentation = codex_handoff_presentation(
             request.task,
-            source_user_text=str(metadata.get("source_user_operation_text")
-                or metadata.get("source_user_text") or ""),
+            source_user_text=str(metadata.get("source_user_text") or ""),
             source_user_context=str(metadata.get("source_user_context") or ""),
             presentation_locale=metadata.get("presentation_locale"),
         )
         user_message = (
             provider_recovery_user_message(
-                presentation_locale=metadata.get("presentation_locale"),
-                reason=metadata.get("provider_recovery", {}).get("reason"),
+                presentation_locale=metadata.get("presentation_locale")
             )
             if isinstance(metadata.get("provider_recovery"), dict)
             else presentation.user_message
@@ -1830,158 +1500,6 @@ class CodexAppServerAdapter:
             }
         }
 
-    def _reconciliation_from_thread(
-        self,
-        thread: dict[str, Any],
-        *,
-        run_id: str,
-        session: ProviderSessionHandle,
-    ) -> ProviderSubmissionReconciliationResult:
-        matches: list[dict[str, Any]] = []
-        turns = thread.get("turns") if isinstance(thread.get("turns"), list) else []
-        for raw_turn in turns:
-            if not isinstance(raw_turn, dict):
-                continue
-            items = (
-                raw_turn.get("items")
-                if isinstance(raw_turn.get("items"), list)
-                else []
-            )
-            for item in items:
-                if not isinstance(item, dict) or str(item.get("type") or "") != "userMessage":
-                    continue
-                if str(item.get("clientId") or "") == run_id:
-                    matches.append(raw_turn)
-
-        if not matches:
-            return ProviderSubmissionReconciliationResult(
-                state="not_observed",
-                reason="codex_run_correlation_not_observed",
-            )
-        if len(matches) != 1:
-            return ProviderSubmissionReconciliationResult(
-                state="ambiguous",
-                reason="codex_run_correlation_is_not_unique",
-            )
-
-        turn = matches[0]
-        turn_id = str(turn.get("id") or "").strip()
-        if not turn_id:
-            return ProviderSubmissionReconciliationResult(
-                state="ambiguous",
-                reason="codex_matching_turn_has_no_identity",
-            )
-        execution = ProviderNativeExecutionHandle(
-            provider=self.provider_id,
-            execution_id=turn_id,
-        )
-        native_status = str(turn.get("status") or "").strip().lower()
-        if native_status == "inprogress":
-            return ProviderSubmissionReconciliationResult(
-                state="matched_active",
-                execution=execution,
-                reason="codex_exact_run_correlation",
-            )
-        if native_status not in {"completed", "failed", "interrupted"}:
-            return ProviderSubmissionReconciliationResult(
-                state="unavailable",
-                reason="codex_turn_status_unsupported",
-            )
-        items_view = str(turn.get("itemsView") or "full").strip().lower()
-        if items_view != "full":
-            return ProviderSubmissionReconciliationResult(
-                state="unavailable",
-                reason="codex_turn_items_not_fully_loaded",
-            )
-
-        state = self._state_from_persisted_turn(turn)
-        metadata = {
-            "codex": {
-                "sdk": "openai-codex",
-                "sdk_version": self.startup_readiness().get("sdk_version", ""),
-                "thread_id": str(thread.get("id") or session.session_id),
-                "turn_id": turn_id,
-                "turn_status": native_status,
-                "model": self.model,
-                "model_provider": self.model_provider,
-                "reasoning_effort": self.reasoning_effort_label,
-                "service_tier": self.service_tier or "",
-                "desktop_provider_config": self._desktop_provider_sync_status,
-                "cwd": str(thread.get("cwd") or ""),
-                "native_events": state.native_events,
-                "tool_failures": state.tool_failures,
-                "submission_correlation": "provider_run_id",
-                "reconciliation": "thread_read",
-            }
-        }
-        result_status = {
-            "completed": "done",
-            "interrupted": "cancelled",
-            "failed": "error",
-        }[native_status]
-        error_payload = turn.get("error") if isinstance(turn.get("error"), dict) else {}
-        error = str(error_payload.get("message") or "").strip() or None
-        if result_status == "error" and error is None:
-            error = "Codex turn ended as failed"
-        terminal = ProviderRunResult(
-            status=result_status,  # type: ignore[arg-type]
-            result=state.final_message.strip(),
-            error=error,
-            metadata=metadata,
-            activity_evidence=self._activity_evidence(state),
-            session=session,
-        )
-        return ProviderSubmissionReconciliationResult(
-            state="matched_terminal",
-            execution=execution,
-            terminal_result=terminal,
-            reason="codex_exact_run_correlation",
-        )
-
-    def _state_from_persisted_turn(self, turn: dict[str, Any]) -> _StreamState:
-        state = _StreamState(terminal_observed=True)
-        items = turn.get("items") if isinstance(turn.get("items"), list) else []
-        state.native_events = len(items)
-        fallback_message = ""
-        for index, item in enumerate(items):
-            if not isinstance(item, dict):
-                continue
-            item_type = str(item.get("type") or "")
-            item_id = str(item.get("id") or "")
-            if item_type == "agentMessage":
-                visible, milestones = self._without_progress_markers(
-                    str(item.get("text") or "")
-                )
-                for milestone in milestones:
-                    state.milestones.add(
-                        (
-                            str(milestone.get("milestone") or ""),
-                            str(milestone.get("summary") or ""),
-                        )
-                    )
-                if str(item.get("phase") or "").strip().lower() == "final_answer":
-                    state.final_message = visible.strip()
-                elif visible.strip():
-                    fallback_message = visible.strip()
-                continue
-            if item_type == "plan":
-                visible, _milestones = self._without_progress_markers(
-                    str(item.get("text") or "")
-                )
-                summary = " ".join(visible.split())[:320]
-                if summary:
-                    state.milestones.add(("design", summary))
-                continue
-            if item_type in _NON_EXECUTION_THREAD_ITEMS:
-                continue
-            safe_item_type = item_type or "unknownNativeItem"
-            state.execution_items.add(item_id or f"{safe_item_type}:{index}")
-            if not self._item_succeeded(item):
-                state.tool_failures += 1
-        if not state.final_message:
-            state.final_message = fallback_message
-        return state
-
     @staticmethod
     def _activity_evidence(state: _StreamState) -> ProviderActivityEvidence:
         return ProviderActivityEvidence(
@@ -1990,11 +1508,11 @@ class CodexAppServerAdapter:
             execution_items=len(state.execution_items),
         )
 
-    def _session(self, thread_id: str, attached: ProviderSessionHandle | None = None) -> ProviderSessionHandle:
+    def _session(self, thread_id: str) -> ProviderSessionHandle:
         return ProviderSessionHandle(
             provider=self.provider_id,
             session_id=thread_id,
-            scope=attached.scope if attached is not None else "interaction",
+            scope="work_item",
         )
 
     @staticmethod
@@ -2117,9 +1635,9 @@ class CodexAppServerAdapter:
         }
         if normalized in by_name:
             return by_name[normalized]
-        # Current App Server advertises max before some generated enum member
-        # tables do. Its forward-compatible constructor retains that wire value;
-        # older runtimes still get the xhigh bound.
+        # Current App Server advertises max/ultra before the generated enum's
+        # static member table does. Its forward-compatible constructor retains
+        # those wire values exactly; older runtimes still get the xhigh bound.
         if normalized == "max":
             try:
                 return ReasoningEffort("max")

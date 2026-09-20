@@ -13,7 +13,7 @@ from collections.abc import Callable, Mapping
 
 VALID_PRESENTATION_LOCALES = {"zh-CN", "en-US", "ja-JP"}
 VALID_CAPTION_MODES = {"translated", "source", "bilingual", "off"}
-DEFAULT_PRESENTATION_LOCALE = "en-US"
+DEFAULT_PRESENTATION_LOCALE = "zh-CN"
 
 
 def normalize_presentation_locale(value: object) -> str:

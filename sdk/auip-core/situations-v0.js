@@ -336,10 +336,6 @@
     const policyRevision = config.policyRevision;
     const policyAction = config.policyAction;
     const policySummary = config.policySummary;
-    // Controller Core releases the lease before reporting a callback failure.
-    // Preserve that blocked state without inventing an active policy identity.
-    const unbound = idle || (status === "blocked"
-      && policyRevision == null && policyAction == null && !policySummary);
     if (idle) {
       if (policyRevision !== null && policyRevision !== undefined) {
         throw new SituationProjectionError("controller_idle_policy_invalid");
@@ -356,9 +352,9 @@
     const result = {
       kind: "controller/v1",
       status: status,
-      policyRevision: unbound ? null : Number(policyRevision),
-      policyAction: unbound ? null : semanticType(policyAction, "policyAction"),
-      policySummary: unbound ? "" : boundedText(policySummary, "policySummary", 240),
+      policyRevision: idle ? null : Number(policyRevision),
+      policyAction: idle ? null : semanticType(policyAction, "policyAction"),
+      policySummary: idle ? "" : boundedText(policySummary, "policySummary", 240),
     };
     if (config.reason !== null && config.reason !== undefined && config.reason !== "") {
       result.reason = boundedText(config.reason, "reason", 160);

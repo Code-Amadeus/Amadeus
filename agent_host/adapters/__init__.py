@@ -6,6 +6,7 @@ __all__ = [
     "McpProviderAdapter",
     "McpToolBinding",
     "OpenClawAdapter",
+    "ResearchAdapter",
 ]
 
 
@@ -40,4 +41,8 @@ def __getattr__(name: str):
         from agent_host.adapters.openclaw import OpenClawAdapter
 
         return OpenClawAdapter
+    if name == "ResearchAdapter":
+        from agent_host.adapters.research import ResearchAdapter
+
+        return ResearchAdapter
     raise AttributeError(name)

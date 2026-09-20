@@ -24,8 +24,6 @@ from agent_host.provider_identity import (
     SOURCE_CONTEXT_SCOPE_METADATA_KEY,
 )
 from agent_host.provider_types import ProviderRunRequest
-from agent_host.provider_authoring import auip_authoring_outcome_requirement
-from agent_host.work_ledger_types import WORK_OPERATION_INTENTS
 from server.inherited_role_prompt import MAIN_CONVERSATION_ROLE_NAME
 from server.work_export_service import WorkExportService
 from server.work_steer_control import route_active_amendment
@@ -38,8 +36,6 @@ logger = logging.getLogger(__name__)
 class DelegateDispatchPlan:
     task_text: str
     attrs: dict[str, Any]
-    session_id: str
-    admission_id: str
     provider: str
     requirements: ProviderRequirements
     selection: ProviderSelection
@@ -63,9 +59,6 @@ def build_delegate_metadata(
     """Build one Provider request envelope from host-authoritative decisions."""
 
     attrs = dict(plan.attrs)
-    intent = str(attrs.get("intent") or "").strip().lower()
-    if intent and intent not in WORK_OPERATION_INTENTS:
-        raise ValueError(f"intent {intent!r} cannot be lowered to Provider Work execution")
     source_user_text = " ".join(
         str(attrs.get("_host_source_user_text") or "").split()
     )
@@ -84,9 +77,11 @@ def build_delegate_metadata(
             for key, value in attrs.items()
             if not str(key).startswith("_host_")
         },
-        # An omitted declaration retains the supported legacy execution path.
-        # An explicit non-Work/unknown intent cannot inherit that default.
-        "intent": intent or "execute",
+        "intent": (
+            str(attrs.get("intent") or "").strip().lower()
+            if str(attrs.get("intent") or "").strip().lower() in {"execute", "amend"}
+            else "execute"
+        ),
         "focus_applied": attrs.get("focus_applied") is True,
         "amend_inferred": attrs.get("amend_inferred") is True,
         "project_source_amend": attrs.get("_host_project_source_amend") is True,
@@ -99,8 +94,11 @@ def build_delegate_metadata(
         == "write",
     }
     if dispatch_source in auip_dispatch_sources:
-        metadata["host_outcome_requirement"] = auip_authoring_outcome_requirement(
-            mode=str(attrs.get("_host_auip_mode") or ""))
+        metadata["host_outcome_requirement"] = {
+            "operation": "prepare",
+            "facet": "auip.application",
+            "expected": {"current_attempt_contribution": True},
+        }
     delegate_recovered = str(attrs.get("delegate_recovered") or "").strip().lower()
     if delegate_recovered:
         metadata["delegate_recovered"] = delegate_recovered
@@ -133,12 +131,6 @@ def build_delegate_metadata(
         # the delivery that earned it.  It is not a routing hint and never
         # survives as WorkItem policy.
         metadata["turn_id"] = turn_id[:200]
-    routing_scope = attrs.get("_host_interaction_branch_routing_lease")
-    if isinstance(routing_scope, dict):
-        # Internal Host admission evidence. ProviderRuntime uses it at the last
-        # pre-schedule boundary and excludes it from public Provider surfaces.
-        metadata["interaction_branch_routing_scope"] = dict(routing_scope)
-        metadata["interaction_branch_admission_id"] = str(plan.admission_id or "")
     payload_source = str(attrs.get("_host_payload_source") or "").strip()
     if payload_source:
         metadata["payload_source"] = payload_source
@@ -242,6 +234,7 @@ async def dispatch_delegate(
     """Start one managed Provider run from an adjudicated dispatch plan."""
 
     from agent_host.provider_runtime import runtime
+    from core import session_manager as sm
 
     provider = plan.provider
     task_text = plan.task_text
@@ -249,23 +242,10 @@ async def dispatch_delegate(
     delegate_mode = plan.delegate_mode
     metadata = build_delegate_metadata(
         plan,
-        session_id=plan.session_id,
-    )
-    admission_request = ProviderRunRequest(
-        provider=provider,
-        task=str(task_text or ""),
-        cwd=delegate_cwd,
-        mode=delegate_mode,
-        metadata=metadata,
-        requirements=plan.requirements,
-        ownership="managed",
+        session_id=sm.get_current_session_id() or "",
     )
     used_provider_runtime = False
     try:
-        # Hold the short routing-admission window across active-amendment
-        # steering as well as new-run intake. Otherwise a branch can appear
-        # during route_active_amendment and bypass Runtime.start entirely.
-        await runtime.reserve_start_admission(admission_request)
         active_amendment_ref = (
             str(
                 (metadata.get("work") or {}).get("work_item_id")
@@ -293,7 +273,6 @@ async def dispatch_delegate(
                     source_context_scope=str(
                         metadata.get(SOURCE_CONTEXT_SCOPE_METADATA_KEY) or ""
                     ),
-                    session_id=plan.session_id,
                 )
                 if amendment_route.get("handled") is True:
                     return str(amendment_route.get("message") or "[amend] handled")
@@ -351,15 +330,9 @@ async def dispatch_delegate(
                 "delegate wait interrupted; provider runtime continues provider=%s action=%s",
                 provider,
                 delegate_mode,
-        )
+            )
         raise
     except Exception as exc:
-        from agent_host.provider_runtime import ProviderStartAdmissionRejected
-
-        if isinstance(exc, ProviderStartAdmissionRejected):
-            raise
         logger.exception("provider delegate failed: %s", provider)
         await announce_start_failure(provider, exc)
         return f"[{provider} error] delegate execution failed"
-    finally:
-        await runtime.release_start_admission(admission_request)

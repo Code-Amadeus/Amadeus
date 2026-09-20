@@ -121,21 +121,6 @@ def test_open_normalizes_explicit_bare_url_attribute() -> None:
     asyncio.run(run())
 
 
-def test_typed_url_is_not_reparsed_from_trailing_task_prose() -> None:
-    async def run() -> None:
-        adapter, calls = _adapter()
-        result = await adapter.run(
-            ProviderRunRequest(provider="browser",
-                task="打开 http://example.test/index.html，只读取当前值。",
-                mode="open", metadata={"browser_action":"open",
-                    "url":"http://example.test/index.html"}),
-            "run_typed_url", _noop_emit)
-        assert result.status == "done"
-        assert calls["opened"] == ["http://example.test/index.html"]
-
-    asyncio.run(run())
-
-
 def test_open_without_address_fails_before_browser_launch_or_search() -> None:
     async def run() -> None:
         adapter, calls = _adapter()

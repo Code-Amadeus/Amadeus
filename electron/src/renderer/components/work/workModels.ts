@@ -88,19 +88,11 @@ function risksFromRun(run?: ProviderRun, details?: ProviderInspectionDetails): R
   if (!run) {
     return [{ id: 'risk:scope', level: 'low', summary: 'No active provider turn yet.' }]
   }
-  if (run.status === 'orphaned') {
+  if (run.status === 'error' || run.status === 'orphaned' || details?.error) {
     return [{
       id: 'risk:blocker',
       level: 'high',
-      summary: String(run.error || details?.error || 'Native provider outcome is unknown and requires reconciliation.'),
-      mitigation: 'Reconcile the native thread and turn before any retry, replacement, or writer-fence release.',
-    }]
-  }
-  if (run.status === 'error' || details?.error) {
-    return [{
-      id: 'risk:blocker',
-      level: 'high',
-      summary: String(run.error || details?.error || 'Provider reported an error.'),
+      summary: String(run.error || details?.error || (run.status === 'orphaned' ? 'Run lost its live owner and needs recovery review.' : 'Provider reported an error.')),
       mitigation: 'Inspect the trace, then retry the failed instruction, resume an interrupted run, or submit revised intent as new work.',
     }]
   }

@@ -1293,36 +1293,6 @@ class WorkObserverCoordinator:
             },
         )
 
-    async def begin_external_result(self, run_id: str) -> None:
-        """Retire one native run's progress before its own role presents the result."""
-        target = str(run_id or "").strip()
-        if not target:
-            return
-        self._closed_runs[target] = time.time()
-        session = self._sessions.pop(target, None)
-        if session is not None:
-            session.close()
-        self._narration_governor.drop(target)
-        task = self._narration_tasks.pop(target, None)
-        if task is not None and not task.done():
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
-        from server.vn_tts_bridge import cancel_pending_vn_tts
-        from tts.pipeline import discard_pending_tts
-
-        cancel_pending_vn_tts(source="work_observer", run_id=target, nonterminal_only=True)
-        discard_pending_tts(source="work_observer", run_id=target, nonterminal_only=True)
-
-    async def finish_external_presentation(self, run_id: str) -> None:
-        """Use the existing bounded output/release boundary for another narrator.
-
-        This does not create an Observer session, note, model call or Work fact.
-        """
-        try:
-            await self._wait_for_terminal_output_idle()
-        finally:
-            await self._release_character_runtime(run_id)
-
     async def _release_character_runtime(self, run_id: str) -> None:
         try:
             if self._release_work is not None:
@@ -1837,7 +1807,6 @@ class WorkObserverCoordinator:
             "turn_id": line_id,
             "complete_turn": True,
             "source": "work_observer",
-            "run_id": run_id,
             "action": action,
             "terminal": bool(decision.get("terminal")),
             "work_item_id": str(decision.get("work_item_id") or ""),

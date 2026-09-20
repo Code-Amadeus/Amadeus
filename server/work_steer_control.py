@@ -31,7 +31,6 @@ async def route_active_amendment(
     source_user_text: str = "",
     source_user_context: str = "",
     source_context_scope: str = "",
-    session_id: str = "",
 ) -> dict[str, Any]:
     """Steer an active target natively or prepare a confirmed replacement.
 
@@ -51,7 +50,6 @@ async def route_active_amendment(
             "The ledger still shows that task as active, but its live run is not attached, "
             "so I did not start a second writer. Check or resume the task first.",
             reason="active_runtime_missing",
-            session_id=session_id,
         )
         return {"handled": True, "message": "[amend blocked] active runtime is unavailable"}
     if active.provider.strip().lower() != str(selected_provider or "").strip().lower():
@@ -60,7 +58,6 @@ async def route_active_amendment(
             "That task is already running with a different executor, so I did not switch "
             "executors in the middle of its workspace changes.",
             reason="provider_change_during_active_amendment",
-            session_id=session_id,
         )
         return {"handled": True, "message": "[amend blocked] active provider differs"}
     manifest = runtime.get_manifest(active.provider)
@@ -69,7 +66,6 @@ async def route_active_amendment(
             active.provider,
             "The active executor is no longer registered, so the change could not be applied.",
             reason="active_provider_unregistered",
-            session_id=session_id,
         )
         return {"handled": True, "message": "[amend blocked] provider unavailable"}
     if manifest.capabilities.steering == "immediate":
@@ -139,14 +135,12 @@ async def route_active_amendment(
                 "I stopped the active run, but could not carry it forward, so the "
                 "change was not applied and nothing is running now.",
                 reason=str(outcome.get("reason") or "steer_aborted_without_continuation"),
-                session_id=session_id,
             )
             return {"handled": True, "message": "[amend blocked] steer aborted without continuation"}
         await _announce_failure(
             active.provider,
             "The active executor did not accept the change, so its current plan is still running.",
             reason=str(outcome.get("reason") or "native_steer_rejected"),
-            session_id=session_id,
         )
         return {"handled": True, "message": "[amend blocked] native steer rejected"}
     if manifest.capabilities.cancellation != "confirmed":
@@ -155,7 +149,6 @@ async def route_active_amendment(
             "This executor cannot confirm that it has stopped, so I did not risk starting "
             "another writer in the same workspace.",
             reason="confirmed_cancellation_unavailable",
-            session_id=session_id,
         )
         return {"handled": True, "message": "[amend blocked] cancellation is not confirmable"}
     try:
@@ -169,7 +162,6 @@ async def route_active_amendment(
             active.provider,
             "I could not bind that change to the active task, so I left the current run alone.",
             reason=str(exc) or exc.__class__.__name__,
-            session_id=session_id,
         )
         return {"handled": True, "message": "[amend blocked] replacement could not be prepared"}
     control = dict(replacement.get("control") or {})
@@ -191,19 +183,12 @@ async def route_active_amendment(
             "The executor did not confirm that it stopped, so I did not start the revised run. "
             "The existing task remains the only writer.",
             reason=reason,
-            session_id=session_id,
         )
         return {"handled": True, "message": "[amend blocked] cancellation unconfirmed"}
     return {"handled": False, "replacement": replacement}
 
 
-async def _announce_failure(
-    provider: str,
-    summary: str,
-    *,
-    reason: str,
-    session_id: str = "",
-) -> None:
+async def _announce_failure(provider: str, summary: str, *, reason: str) -> None:
     """Correct the model's promise when an active amendment was not applied."""
 
     try:
@@ -213,8 +198,7 @@ async def _announce_failure(
             source="work_control",
             provider=str(provider or "provider"),
             run_id=f"steer_{time.time_ns()}",
-            session_id=str(session_id or "").strip()
-            or (sm.get_current_session_id() or ""),
+            session_id=sm.get_current_session_id() or "",
             phase="Result",
             title="Requested change was not applied",
             summary=summary,

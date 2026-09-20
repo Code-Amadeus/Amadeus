@@ -107,24 +107,3 @@ def stop_openclaw_gateway() -> None:
     except Exception as e:
         logger.warning(f"[OpenClaw] failed to terminate Gateway subprocess: {e}")
     _openclaw_gateway_proc = None
-
-
-async def close_openclaw_gateway(*, timeout_seconds: float = 5.0) -> None:
-    """Terminate and reap the exact Gateway process owned by this Host."""
-    global _openclaw_gateway_proc
-    process, _openclaw_gateway_proc = _openclaw_gateway_proc, None
-    if process is None:
-        return
-    if process.returncode is None:
-        try:
-            process.terminate()
-            logger.info("[OpenClaw] Gateway subprocess termination requested")
-        except ProcessLookupError:
-            pass
-    try:
-        await asyncio.wait_for(process.wait(), timeout=max(0.1, float(timeout_seconds)))
-    except TimeoutError:
-        if process.returncode is None:
-            process.kill()
-            await process.wait()
-        logger.warning("[OpenClaw] Gateway subprocess required forced shutdown")

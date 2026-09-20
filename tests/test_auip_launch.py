@@ -11,8 +11,6 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-import pytest
-
 from agent_host.work_ledger_store import WorkLedgerStore
 from core.chat_runtime import ChatRuntime, _TurnState
 from server.attention_request import AttentionRequestCoordinator
@@ -25,7 +23,7 @@ from server.auip_control_decision import (
     AuipControlDecisionResolver,
     render_auip_role_grounding,
 )
-from server.auip_launch import AuipLaunchCandidate, AuipLaunchCoordinator
+from server.auip_launch import AuipLaunchCoordinator
 from server.auip_runtime import AuipRuntime
 from server.capability_composition import auip_app_capability_packages
 from server.handlers.auip_handler import AuipHandler
@@ -42,36 +40,6 @@ SESSION = "chat-auip-launch"
 class _NoActiveApp:
     def focused_projection(self, _session_id: str):
         return None
-
-
-def test_incomplete_work_roster_cannot_ground_auip_candidates_or_active_owner() -> None:
-    class IncompleteRoster:
-        def conversation_work_items_for_resolution(self, _session_id: str, *, limit: int):
-            assert limit == 200
-            return {
-                "items": [
-                    {
-                        "work_item_id": "work-visible-subset",
-                        "attempt_id": "attempt-visible-subset",
-                    }
-                ],
-                "complete": False,
-            }
-
-    class UnusedArtifacts:
-        def __getattr__(self, name: str):
-            raise AssertionError(f"incomplete roster must stop before artifact access: {name}")
-
-    coordinator = AuipLaunchCoordinator(
-        artifacts=UnusedArtifacts(),
-        work_roster=IncompleteRoster(),
-        attention=AttentionRequestCoordinator(),
-        emit=lambda _method, _payload: asyncio.sleep(0),
-    )
-
-    assert coordinator.candidates(SESSION) == []
-    assert coordinator.preparation_candidates(SESSION) == []
-    assert coordinator._active_work_rows(SESSION, ("attempt-visible-subset",)) == []
 
 
 def _manifest(title: str) -> dict[str, Any]:
@@ -110,14 +78,12 @@ def _seed_app(
     turn_id: str,
     terminal: bool = True,
     with_manifest: bool = True,
-    goal: str = "",
 ) -> tuple[Any, Any, Any]:
     workspace = root / title.lower().replace(" ", "-")
     workspace.mkdir(parents=True)
     item = store.create_work_item(
         project.project_id,
         title=title,
-        goal=goal,
         workspace_path=workspace,
     )
     attempt = store.create_attempt(
@@ -136,73 +102,6 @@ def _seed_app(
     if terminal:
         store.update_attempt(attempt.attempt_id, execution_status="succeeded")
     return item, store.get_attempt(attempt.attempt_id), entry_artifact
-
-
-@pytest.mark.parametrize("launch_count,prepare_count", [(9, 1), (1, 9), (8, 8), (1, 0), (0, 1)])
-def test_entry_catalog_preserves_complete_cardinality_across_kinds(
-    launch_count: int, prepare_count: int,
-) -> None:
-    async def scenario() -> None:
-        with tempfile.TemporaryDirectory(prefix="auip_entry_overflow_") as temp:
-            root = Path(temp)
-            store = WorkLedgerStore(root / "ledger.sqlite3")
-            try:
-                project = store.create_or_get_project(root / "project")
-                for index in range(launch_count + prepare_count):
-                    _seed_app(
-                        store, project, root, title=f"App {index}",
-                        turn_id=f"turn-{index}", with_manifest=index < launch_count,
-                    )
-                coordinator = AuipLaunchCoordinator(
-                    artifacts=store, work_roster=WorkLedgerCoordinator(store),
-                    attention=AttentionRequestCoordinator(),
-                )
-
-                target = ""
-
-                async def query(_messages):
-                    return json.dumps({
-                        "action": "engage", "timing": "now", "mode": "observe",
-                        "target": target, "work_relation": "subsumed",
-                    })
-
-                resolver = AuipControlDecisionResolver(
-                    query=query, app_runtime=_NoActiveApp(), launch_catalog=coordinator,
-                )
-                pending = resolver.capture(
-                    session_id=SESSION, user_text="Open it for me to watch.",
-                    include_work_followup=True,
-                )
-                assert pending is not None
-                decision = await pending
-                if launch_count + prepare_count == 1:
-                    assert decision.status == "ok"
-                    assert decision.action == ("launch" if launch_count else "prepare")
-                else:
-                    assert decision.status == "ok" and decision.action == "engage", decision
-                if max(launch_count, prepare_count) > 8:
-                    assert coordinator.candidates(SESSION) == []
-                    assert coordinator.preparation_candidates(SESSION) == []
-                else:
-                    assert len(coordinator.candidates(SESSION)) == launch_count
-                    assert len(coordinator.preparation_candidates(SESSION)) == prepare_count
-                    # At the existing 8+8 boundary, exact references still resolve
-                    # on either side; completeness does not ban a known target.
-                    for index, action in ((0, "launch"), (launch_count, "prepare")):
-                        if not (launch_count if action == "launch" else prepare_count):
-                            continue
-                        target = f"App {index}"
-                        pending = resolver.capture(
-                            session_id=SESSION, user_text=f"Open {target}; I will play.",
-                        )
-                        assert pending is not None
-                        named = await pending
-                        assert named.status == "ok" and named.action == action
-                        assert named.target == target
-            finally:
-                store.close()
-
-    asyncio.run(scenario())
 
 
 def test_generic_html_is_not_an_auip_application() -> None:
@@ -863,10 +762,7 @@ def test_successful_preparation_waits_for_artifact_reconciliation_before_launch(
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("desktop", [False, True])
-def test_rejected_host_outcome_retires_deferred_launch_without_second_error(
-    desktop: bool,
-) -> None:
+def test_rejected_host_outcome_retires_deferred_launch_without_second_error() -> None:
     async def scenario() -> None:
         with tempfile.TemporaryDirectory(prefix="auip_launch_outcome_rejected_") as temp:
             root = Path(temp)
@@ -915,7 +811,6 @@ def test_rejected_host_outcome_retires_deferred_launch_without_second_error(
                 attempt.attempt_id,
                 execution_status="succeeded",
                 metadata={
-                    **({"export_plan": {"kind": "desktop"}} if desktop else {}),
                     "outcome_verdict": {
                         "facet": "auip.application",
                         "verified": False,
@@ -923,12 +818,6 @@ def test_rejected_host_outcome_retires_deferred_launch_without_second_error(
                     }
                 },
             )
-            workspace = Path(item.workspace_path)
-            spectator_manifest = _manifest("Prepared Spectator")
-            spectator_manifest["stances"] = ["spectator"]
-            manifest = workspace / "auip.manifest.json"
-            manifest.write_text(json.dumps(spectator_manifest), encoding="utf-8")
-            _register_file(store, item, attempt, manifest)
 
             await coordinator.on_work_updated(
                 Method.WORK_UPDATED,
@@ -1135,13 +1024,7 @@ def test_same_turn_launch_waits_for_that_turns_successful_auip_delivery() -> Non
                 emit=emit,
             )
             pending = await coordinator.route_control(
-                {
-                    "action": "launch",
-                    "target": "delivery",
-                    "mode": "collaborate",
-                    "after": "work",
-                    "_host_work_binding": "turn",
-                },
+                {"action": "launch", "target": "delivery", "mode": "collaborate", "after": "work"},
                 session_id=SESSION,
                 turn_id="turn-build-and-play",
             )
@@ -1164,328 +1047,6 @@ def test_same_turn_launch_waits_for_that_turns_successful_auip_delivery() -> Non
             # Replayed ledger snapshots cannot repeat the one-shot launch.
             await coordinator.on_work_updated(Method.WORK_UPDATED, {"reason": "provider.result"})
             assert len(emitted) == 1
-            store.close()
-
-    asyncio.run(scenario())
-
-
-def test_spectator_only_application_remains_manually_observable() -> None:
-    async def scenario() -> None:
-        with tempfile.TemporaryDirectory(prefix="auip_launch_spectator_") as temp:
-            root = Path(temp)
-            store = WorkLedgerStore(root / "ledger.sqlite3")
-            project = store.create_or_get_project(root / "project")
-            item, attempt, _entry = _seed_app(
-                store,
-                project,
-                root,
-                title="Spectator Game",
-                turn_id="turn-spectator",
-            )
-            manifest = Path(item.workspace_path) / "auip.manifest.json"
-            value = json.loads(manifest.read_text(encoding="utf-8"))
-            value["stances"] = ["spectator"]
-            manifest.write_text(json.dumps(value), encoding="utf-8")
-            _register_file(store, item, attempt, manifest)
-            emitted: list[tuple[str, dict[str, Any]]] = []
-
-            async def emit(method: str, payload: dict[str, Any]) -> None:
-                emitted.append((method, payload))
-
-            coordinator = AuipLaunchCoordinator(
-                artifacts=store,
-                work_roster=WorkLedgerCoordinator(store),
-                attention=AttentionRequestCoordinator(),
-                emit=emit,
-            )
-            result = await coordinator.route_control(
-                {"action": "launch", "mode": "observe"},
-                session_id=SESSION,
-                turn_id="turn-observe",
-            )
-
-            assert result["ok"] is True
-            assert emitted[-1][0] == Method.AUIP_LAUNCH_REQUESTED
-            assert emitted[-1][1]["mode"] == "observe"
-            store.close()
-
-    asyncio.run(scenario())
-
-
-def test_deferred_result_entry_waits_for_matching_source_close_then_launches_once() -> None:
-    async def scenario() -> None:
-        with tempfile.TemporaryDirectory(prefix="auip_launch_result_entry_wait_") as temp:
-            root = Path(temp)
-            store = WorkLedgerStore(root / "ledger.sqlite3")
-            project = store.create_or_get_project(root / "project")
-            emitted: list[tuple[str, dict[str, Any]]] = []
-            callbacks: list[tuple[str, AuipLaunchCandidate]] = []
-            ready = False
-
-            async def emit(method: str, payload: dict[str, Any]) -> None:
-                emitted.append((method, payload))
-
-            async def before_result_entry(
-                source_app_session_id: str,
-                candidate: AuipLaunchCandidate,
-            ) -> bool:
-                callbacks.append((source_app_session_id, candidate))
-                return ready
-
-            coordinator = AuipLaunchCoordinator(
-                artifacts=store,
-                work_roster=WorkLedgerCoordinator(store),
-                attention=AttentionRequestCoordinator(),
-                emit=emit,
-                before_result_entry=before_result_entry,
-            )
-            await coordinator.route_control(
-                {
-                    "action": "launch",
-                    "target": "delivery",
-                    "mode": "collaborate",
-                    "after": "work",
-                    "_host_work_binding": "turn",
-                },
-                session_id=SESSION,
-                turn_id="turn-result-entry-wait",
-                source_app_session_id="app-source",
-            )
-            item, _attempt, _entry = _seed_app(
-                store,
-                project,
-                root,
-                title="Replacement Result",
-                turn_id="turn-result-entry-wait",
-            )
-
-            await coordinator.on_work_updated(Method.WORK_UPDATED, {})
-            pending = coordinator._deferred[(SESSION, "turn-result-entry-wait")]
-            assert pending.source_app_session_id == "app-source"
-            assert callbacks[-1][0] == "app-source"
-            assert callbacks[-1][1].work_item_id == item.work_item_id
-            assert emitted == []
-
-            callback_count = len(callbacks)
-            ready = True
-            await coordinator.on_app_updated(
-                Method.AUIP_UPDATED,
-                {"app_session_id": "app-other", "status": "closed"},
-            )
-            await coordinator.on_app_updated(
-                Method.AUIP_UPDATED,
-                {"app_session_id": "app-source", "status": "active"},
-            )
-            assert len(callbacks) == callback_count
-            assert coordinator._deferred[(SESSION, "turn-result-entry-wait")] is pending
-
-            await coordinator.on_app_updated(
-                Method.AUIP_UPDATED,
-                {
-                    "app_session_id": "app-source",
-                    "status": "closed",
-                    "surface_close_status": "closed",
-                },
-            )
-            assert coordinator._deferred == {}
-            assert len(emitted) == 1
-            assert emitted[0][0] == Method.AUIP_LAUNCH_REQUESTED
-            assert emitted[0][1]["work_item_id"] == item.work_item_id
-
-            await coordinator.on_app_updated(
-                Method.AUIP_UPDATED,
-                {
-                    "app_session_id": "app-source",
-                    "status": "disconnected",
-                },
-            )
-            await coordinator.on_work_updated(Method.WORK_UPDATED, {})
-            assert len(emitted) == 1
-            store.close()
-
-    asyncio.run(scenario())
-
-
-def test_reentrant_source_close_cannot_emit_deferred_result_twice() -> None:
-    async def scenario() -> None:
-        with tempfile.TemporaryDirectory(prefix="auip_launch_result_entry_reentrant_") as temp:
-            root = Path(temp)
-            store = WorkLedgerStore(root / "ledger.sqlite3")
-            project = store.create_or_get_project(root / "project")
-            emitted: list[tuple[str, dict[str, Any]]] = []
-            callback_count = 0
-            coordinator: AuipLaunchCoordinator
-
-            async def emit(method: str, payload: dict[str, Any]) -> None:
-                emitted.append((method, payload))
-
-            async def before_result_entry(
-                source_app_session_id: str,
-                _candidate: AuipLaunchCandidate,
-            ) -> bool:
-                nonlocal callback_count
-                callback_count += 1
-                if callback_count == 1:
-                    await coordinator.on_app_updated(
-                        Method.AUIP_UPDATED,
-                        {
-                            "app_session_id": source_app_session_id,
-                            "status": "closed",
-                            "surface_close_status": "closed",
-                        },
-                    )
-                return True
-
-            coordinator = AuipLaunchCoordinator(
-                artifacts=store,
-                work_roster=WorkLedgerCoordinator(store),
-                attention=AttentionRequestCoordinator(),
-                emit=emit,
-                before_result_entry=before_result_entry,
-            )
-            await coordinator.route_control(
-                {
-                    "action": "launch",
-                    "target": "delivery",
-                    "mode": "observe",
-                    "after": "work",
-                    "_host_work_binding": "turn",
-                },
-                session_id=SESSION,
-                turn_id="turn-result-entry-reentrant",
-                source_app_session_id="app-reentrant",
-            )
-            _seed_app(
-                store,
-                project,
-                root,
-                title="Reentrant Result",
-                turn_id="turn-result-entry-reentrant",
-            )
-
-            await coordinator.on_work_updated(Method.WORK_UPDATED, {})
-            assert callback_count == 2
-            assert coordinator._deferred == {}
-            assert [method for method, _payload in emitted].count(
-                Method.AUIP_LAUNCH_REQUESTED
-            ) == 1
-            store.close()
-
-    asyncio.run(scenario())
-
-
-def test_deferred_result_entry_callback_failure_cancels_without_launch() -> None:
-    async def scenario() -> None:
-        for failure in ("missing", "raised"):
-            with tempfile.TemporaryDirectory(
-                prefix=f"auip_launch_result_entry_{failure}_"
-            ) as temp:
-                root = Path(temp)
-                store = WorkLedgerStore(root / "ledger.sqlite3")
-                project = store.create_or_get_project(root / "project")
-                emitted: list[tuple[str, dict[str, Any]]] = []
-
-                async def emit(method: str, payload: dict[str, Any]) -> None:
-                    emitted.append((method, payload))
-
-                async def fail_result_entry(
-                    _source_app_session_id: str,
-                    _candidate: AuipLaunchCandidate,
-                ) -> bool:
-                    raise RuntimeError("close boundary failed")
-
-                coordinator = AuipLaunchCoordinator(
-                    artifacts=store,
-                    work_roster=WorkLedgerCoordinator(store),
-                    attention=AttentionRequestCoordinator(),
-                    emit=emit,
-                    before_result_entry=(
-                        fail_result_entry if failure == "raised" else None
-                    ),
-                )
-                await coordinator.route_control(
-                    {
-                        "action": "launch",
-                        "target": "delivery",
-                        "mode": "observe",
-                        "after": "work",
-                        "_host_work_binding": "turn",
-                    },
-                    session_id=SESSION,
-                    turn_id=f"turn-result-entry-{failure}",
-                    source_app_session_id="app-source",
-                )
-                _seed_app(
-                    store,
-                    project,
-                    root,
-                    title=f"{failure.title()} Callback Result",
-                    turn_id=f"turn-result-entry-{failure}",
-                )
-
-                await coordinator.on_work_updated(Method.WORK_UPDATED, {})
-                assert coordinator._deferred == {}
-                assert not any(
-                    method == Method.AUIP_LAUNCH_REQUESTED for method, _ in emitted
-                )
-                store.close()
-
-    asyncio.run(scenario())
-
-
-def test_deferred_launch_without_host_work_binding_fails_closed() -> None:
-    async def scenario() -> None:
-        with tempfile.TemporaryDirectory(prefix="auip_launch_unbound_") as temp:
-            root = Path(temp)
-            store = WorkLedgerStore(root / "ledger.sqlite3")
-
-            coordinator = AuipLaunchCoordinator(
-                artifacts=store,
-                work_roster=WorkLedgerCoordinator(store),
-                attention=AttentionRequestCoordinator(),
-                emit=lambda _method, _payload: asyncio.sleep(0),
-            )
-            result = await coordinator.route_control(
-                {
-                    "action": "launch",
-                    "target": "delivery",
-                    "mode": "collaborate",
-                    "after": "work",
-                },
-                session_id=SESSION,
-                turn_id="turn-unbound",
-            )
-
-            assert result == {"ok": False, "error": "invalid_work_binding"}
-            assert coordinator._deferred == {}
-            store.close()
-
-    asyncio.run(scenario())
-
-
-def test_deferred_turn_reservation_can_be_cancelled_only_by_its_exact_key() -> None:
-    async def scenario() -> None:
-        with tempfile.TemporaryDirectory(prefix="auip_launch_cancel_deferred_") as temp:
-            root = Path(temp)
-            store = WorkLedgerStore(root / "ledger.sqlite3")
-            coordinator = AuipLaunchCoordinator(
-                artifacts=store,
-                work_roster=WorkLedgerCoordinator(store),
-                attention=AttentionRequestCoordinator(),
-                emit=lambda _method, _payload: asyncio.sleep(0),
-            )
-            result = await coordinator.route_control(
-                {"action":"launch", "target":"delivery", "mode":"observe",
-                    "after":"work", "_host_work_binding":"turn"},
-                session_id=SESSION, turn_id="turn-cancel-deferred")
-            assert result["deferred"] is True
-            assert coordinator.cancel_deferred(
-                session_id=SESSION, turn_id="other-turn") is False
-            assert coordinator.cancel_deferred(
-                session_id=SESSION, turn_id="turn-cancel-deferred") is True
-            assert coordinator.cancel_deferred(
-                session_id=SESSION, turn_id="turn-cancel-deferred") is False
-            assert coordinator._deferred == {}
             store.close()
 
     asyncio.run(scenario())
@@ -1730,406 +1291,6 @@ def test_followup_launch_freezes_the_active_operation_without_redelegating() -> 
     asyncio.run(scenario())
 
 
-def test_captured_active_work_may_succeed_before_host_binding() -> None:
-    async def scenario() -> None:
-        with tempfile.TemporaryDirectory(prefix="auip_launch_capture_race_") as temp:
-            root = Path(temp)
-            store = WorkLedgerStore(root / "ledger.sqlite3")
-            project = store.create_or_get_project(root / "project")
-            item, _old_attempt, _old_entry = _seed_app(
-                store,
-                project,
-                root,
-                title="Capture Race",
-                turn_id="turn-old",
-            )
-            _operation, captured = store.create_operation_attempt(
-                item.work_item_id,
-                intent="amend",
-                instruction="Update the app",
-                provider="locus",
-                task="Update the app",
-                attempt_metadata={"session_id": SESSION, "turn_id": "turn-update"},
-            )
-            workspace = Path(item.workspace_path)
-            entry = workspace / "index.html"
-            entry.write_text("<!doctype html><title>new</title>", encoding="utf-8")
-            latest_entry = _register_file(store, item, captured, entry)
-            manifest = workspace / "auip.manifest.json"
-            manifest.write_text(
-                json.dumps(_manifest("Capture Race v2")),
-                encoding="utf-8",
-            )
-            _register_file(store, item, captured, manifest)
-            store.update_attempt(captured.attempt_id, execution_status="succeeded")
-            emitted: list[tuple[str, dict[str, Any]]] = []
-
-            async def emit(method: str, payload: dict[str, Any]) -> None:
-                emitted.append((method, payload))
-
-            coordinator = AuipLaunchCoordinator(
-                artifacts=store,
-                work_roster=WorkLedgerCoordinator(store),
-                attention=AttentionRequestCoordinator(),
-                emit=emit,
-            )
-            result = await coordinator.route_control(
-                {
-                    "action": "launch",
-                    "target": "delivery",
-                    "mode": "observe",
-                    "after": "work",
-                    "_host_work_binding": "active",
-                    "_host_active_work_attempt_ids": (captured.attempt_id,),
-                },
-                session_id=SESSION,
-                turn_id="turn-open-after-captured-success",
-            )
-
-            assert result["requested"] is True
-            assert len(emitted) == 1
-            assert emitted[0][1]["artifact_id"] == latest_entry.artifact_id
-            assert coordinator._deferred == {}
-            store.close()
-
-    asyncio.run(scenario())
-
-
-def test_captured_terminal_work_with_source_uses_deferred_result_readiness() -> None:
-    async def scenario() -> None:
-        with tempfile.TemporaryDirectory(prefix="auip_launch_terminal_source_") as temp:
-            root = Path(temp)
-            store = WorkLedgerStore(root / "ledger.sqlite3")
-            project = store.create_or_get_project(root / "project")
-            item, _old_attempt, _old_entry = _seed_app(
-                store,
-                project,
-                root,
-                title="Terminal Source",
-                turn_id="turn-old",
-            )
-            _operation, captured = store.create_operation_attempt(
-                item.work_item_id,
-                intent="amend",
-                instruction="Update the app",
-                provider="locus",
-                task="Update the app",
-                attempt_metadata={"session_id": SESSION, "turn_id": "turn-update"},
-            )
-            workspace = Path(item.workspace_path)
-            entry = workspace / "index.html"
-            entry.write_text("<!doctype html><title>terminal</title>", encoding="utf-8")
-            _register_file(store, item, captured, entry)
-            manifest = workspace / "auip.manifest.json"
-            manifest.write_text(
-                json.dumps(_manifest("Terminal Source v2")),
-                encoding="utf-8",
-            )
-            _register_file(store, item, captured, manifest)
-            store.update_attempt(captured.attempt_id, execution_status="succeeded")
-            emitted: list[tuple[str, dict[str, Any]]] = []
-            callbacks: list[AuipLaunchCandidate] = []
-            ready = False
-
-            async def emit(method: str, payload: dict[str, Any]) -> None:
-                emitted.append((method, payload))
-
-            async def before_result_entry(
-                _source_app_session_id: str,
-                candidate: AuipLaunchCandidate,
-            ) -> bool:
-                callbacks.append(candidate)
-                return ready
-
-            coordinator = AuipLaunchCoordinator(
-                artifacts=store,
-                work_roster=WorkLedgerCoordinator(store),
-                attention=AttentionRequestCoordinator(),
-                emit=emit,
-                before_result_entry=before_result_entry,
-            )
-            result = await coordinator.route_control(
-                {
-                    "action": "launch",
-                    "target": "delivery",
-                    "mode": "observe",
-                    "after": "work",
-                    "_host_work_binding": "active",
-                    "_host_active_work_attempt_ids": (captured.attempt_id,),
-                },
-                session_id=SESSION,
-                turn_id="turn-open-after-terminal-source",
-                source_app_session_id="app-terminal-source",
-            )
-
-            assert result["deferred"] is True
-            assert callbacks[-1].work_item_id == item.work_item_id
-            assert emitted == []
-            assert coordinator._deferred[
-                (SESSION, "turn-open-after-terminal-source")
-            ].source_app_session_id == "app-terminal-source"
-
-            ready = True
-            await coordinator.on_app_updated(
-                Method.AUIP_UPDATED,
-                {"app_session_id": "app-terminal-source", "status": "disconnected"},
-            )
-            assert coordinator._deferred == {}
-            assert [method for method, _ in emitted].count(
-                Method.AUIP_LAUNCH_REQUESTED
-            ) == 1
-            store.close()
-
-    asyncio.run(scenario())
-
-
-def test_exact_operation_orphan_keeps_deferred_launch_until_original_ttl() -> None:
-    async def scenario() -> None:
-        with tempfile.TemporaryDirectory(prefix="auip_launch_orphan_wait_") as temp:
-            root = Path(temp)
-            store = WorkLedgerStore(root / "ledger.sqlite3")
-            project = store.create_or_get_project(root / "project")
-            item, _old_attempt, _old_entry = _seed_app(
-                store,
-                project,
-                root,
-                title="Uncertain Game",
-                turn_id="turn-build",
-                with_manifest=False,
-            )
-            operation, attempt = store.create_operation_attempt(
-                item.work_item_id,
-                intent="amend",
-                instruction="Add AUIP support",
-                provider="codex",
-                task="Add AUIP support",
-                attempt_metadata={
-                    "session_id": SESSION,
-                    "turn_id": "turn-add-auip",
-                },
-            )
-            emitted: list[tuple[str, dict[str, Any]]] = []
-            now = [100.0]
-
-            async def emit(method: str, payload: dict[str, Any]) -> None:
-                emitted.append((method, payload))
-
-            coordinator = AuipLaunchCoordinator(
-                artifacts=store,
-                work_roster=WorkLedgerCoordinator(store),
-                attention=AttentionRequestCoordinator(),
-                emit=emit,
-                clock=lambda: now[0],
-            )
-            result = await coordinator.route_control(
-                {
-                    "action": "launch",
-                    "target": "delivery",
-                    "mode": "observe",
-                    "after": "work",
-                    "_host_work_binding": "active",
-                    "_host_active_work_attempt_ids": (attempt.attempt_id,),
-                },
-                session_id=SESSION,
-                turn_id="turn-open-after-unknown",
-            )
-            assert result["deferred"] is True
-            key = (SESSION, "turn-open-after-unknown")
-            pending = coordinator._deferred[key]
-            assert pending.operation_id == operation.operation_id
-
-            store.update_attempt(attempt.attempt_id, execution_status="orphaned")
-            await coordinator.on_work_updated(
-                Method.WORK_UPDATED,
-                {"reason": "provider.result"},
-            )
-
-            assert coordinator._deferred[key] == pending
-            assert emitted == []
-
-            now[0] = pending.expires_at
-            await coordinator.on_work_updated(
-                Method.WORK_UPDATED,
-                {"reason": "timer_probe"},
-            )
-
-            assert coordinator._deferred == {}
-            assert len(emitted) == 1
-            assert emitted[0][0] == Method.CHAT_WORK_NOTE
-            assert emitted[0][1]["metadata"] == {
-                "auip_launch_failed": True,
-                "reason": "deferred_launch_expired",
-                "execution_started": False,
-            }
-            store.close()
-
-    asyncio.run(scenario())
-
-
-def test_binding_exact_operation_with_existing_orphan_remains_deferred() -> None:
-    async def scenario() -> None:
-        with tempfile.TemporaryDirectory(prefix="auip_launch_bind_orphan_") as temp:
-            root = Path(temp)
-            store = WorkLedgerStore(root / "ledger.sqlite3")
-            project = store.create_or_get_project(root / "project")
-            item, _old_attempt, _old_entry = _seed_app(
-                store,
-                project,
-                root,
-                title="Unacknowledged Game",
-                turn_id="turn-build",
-                with_manifest=False,
-            )
-            operation, attempt = store.create_operation_attempt(
-                item.work_item_id,
-                intent="amend",
-                instruction="Prepare AUIP",
-                provider="codex",
-                task="Prepare AUIP",
-                attempt_metadata={
-                    "session_id": SESSION,
-                    "turn_id": "turn-prepare",
-                },
-            )
-            store.update_attempt(attempt.attempt_id, execution_status="orphaned")
-            emitted: list[tuple[str, dict[str, Any]]] = []
-            now = [200.0]
-
-            async def emit(method: str, payload: dict[str, Any]) -> None:
-                emitted.append((method, payload))
-
-            coordinator = AuipLaunchCoordinator(
-                artifacts=store,
-                work_roster=WorkLedgerCoordinator(store),
-                attention=AttentionRequestCoordinator(),
-                emit=emit,
-                clock=lambda: now[0],
-            )
-            result = await coordinator._bind_deferred_work(
-                SESSION,
-                "turn-bind-after-unknown",
-                {
-                    "work_item_id": item.work_item_id,
-                    "operation_id": operation.operation_id,
-                },
-                "collaborate",
-            )
-
-            assert result == {
-                "ok": True,
-                "deferred": True,
-                "turn_id": "turn-bind-after-unknown",
-            }
-            pending = coordinator._deferred[(SESSION, "turn-bind-after-unknown")]
-            assert pending.requested_at == 200.0
-            assert pending.expires_at == 200.0 + 30 * 60
-            assert emitted == []
-            store.close()
-
-    asyncio.run(scenario())
-
-
-def test_exact_operation_definite_failures_still_settle_deferred_launch() -> None:
-    async def one(status: str) -> None:
-        with tempfile.TemporaryDirectory(prefix=f"auip_launch_{status}_settle_") as temp:
-            root = Path(temp)
-            store = WorkLedgerStore(root / "ledger.sqlite3")
-            project = store.create_or_get_project(root / "project")
-            item, _old_attempt, _old_entry = _seed_app(
-                store,
-                project,
-                root,
-                title=f"{status.title()} Game",
-                turn_id="turn-build",
-                with_manifest=False,
-            )
-            _operation, attempt = store.create_operation_attempt(
-                item.work_item_id,
-                intent="amend",
-                instruction="Prepare AUIP",
-                provider="codex",
-                task="Prepare AUIP",
-                attempt_metadata={
-                    "session_id": SESSION,
-                    "turn_id": f"turn-{status}",
-                },
-            )
-            emitted: list[tuple[str, dict[str, Any]]] = []
-
-            async def emit(method: str, payload: dict[str, Any]) -> None:
-                emitted.append((method, payload))
-
-            coordinator = AuipLaunchCoordinator(
-                artifacts=store,
-                work_roster=WorkLedgerCoordinator(store),
-                attention=AttentionRequestCoordinator(),
-                emit=emit,
-            )
-            result = await coordinator.route_control(
-                {
-                    "action": "launch",
-                    "target": "delivery",
-                    "mode": "observe",
-                    "after": "work",
-                    "_host_work_binding": "active",
-                    "_host_active_work_attempt_ids": (attempt.attempt_id,),
-                },
-                session_id=SESSION,
-                turn_id=f"turn-open-after-{status}",
-            )
-            assert result["deferred"] is True
-
-            store.update_attempt(attempt.attempt_id, execution_status=status)
-            await coordinator.on_work_updated(
-                Method.WORK_UPDATED,
-                {"reason": "provider.result"},
-            )
-
-            assert coordinator._deferred == {}
-            assert emitted == []
-            store.close()
-
-    async def scenario() -> None:
-        for status in ("failed", "cancelled"):
-            await one(status)
-
-    asyncio.run(scenario())
-
-
-@pytest.mark.parametrize("entry", ["launch", "prepare", "stale_preparation_binding"])
-async def test_missing_entry_does_not_offer_unrelated_candidates(tmp_path, entry):
-    store = WorkLedgerStore(tmp_path / "ledger.sqlite3")
-    project = store.create_or_get_project(tmp_path / "project")
-    preparation = entry != "launch"
-    for title in ("Chess", "Gomoku"):
-        _seed_app(store, project, tmp_path, title=title, turn_id="turn-" + title,
-            with_manifest=not preparation)
-    attention = AttentionRequestCoordinator()
-    emitted, prepared = [], []
-
-    async def emit(method, payload):
-        emitted.append((method, payload))
-
-    async def prepare(candidate, mode):
-        prepared.append((candidate, mode))
-
-    coordinator = AuipLaunchCoordinator(artifacts=store,
-        work_roster=WorkLedgerCoordinator(store), attention=attention, emit=emit)
-    attrs = {"action":"prepare" if preparation else "launch", "target":"Timer", "mode":"observe"}
-    if entry == "stale_preparation_binding":
-        attrs.update(target="Chess", _host_preparation_work_item_id="absent-work")
-    try:
-        result = await coordinator.route_control(attrs, session_id=SESSION,
-            turn_id="missing-entry", prepare_work=prepare)
-        assert result == {"ok":False,
-            "error":"preparation_target_not_found" if preparation else "launch_target_not_found"}
-        assert attention.list_pending(SESSION) == []
-        assert prepared == []
-        assert not any(method == Method.AUIP_LAUNCH_REQUESTED for method, _ in emitted)
-    finally:
-        store.close()
-
-
 def test_ambiguous_launch_uses_one_shot_attention_selection() -> None:
     async def scenario() -> None:
         with tempfile.TemporaryDirectory(prefix="auip_launch_attention_") as temp:
@@ -2220,25 +1381,11 @@ def test_deferred_launch_uses_attention_to_freeze_one_active_operation() -> None
             async def emit(method: str, payload: dict[str, Any]) -> None:
                 emitted.append((method, payload))
 
-            async def before_result_entry(
-                _source_app_session_id: str,
-                _candidate: AuipLaunchCandidate,
-            ) -> bool:
-                return True
-
             coordinator = AuipLaunchCoordinator(
                 artifacts=store,
                 work_roster=WorkLedgerCoordinator(store),
                 attention=attention,
                 emit=emit,
-                before_result_entry=before_result_entry,
-            )
-            assert coordinator.candidates(SESSION, limit=1) == []
-            # Cardinality is frozen at semantic capture. A candidate becoming
-            # terminal before Host binding must not silently turn many into one.
-            store.update_attempt(
-                gomoku_attempt.attempt_id,
-                execution_status="failed",
             )
             routed = await coordinator.route_control(
                 {
@@ -2254,7 +1401,6 @@ def test_deferred_launch_uses_attention_to_freeze_one_active_operation() -> None
                 },
                 session_id=SESSION,
                 turn_id="turn-open-after-one-active",
-                source_app_session_id="app-before-attention",
             )
             assert routed["deferred"] is True
             request = attention.list_pending(SESSION)[0]
@@ -2274,8 +1420,11 @@ def test_deferred_launch_uses_attention_to_freeze_one_active_operation() -> None
             pending = next(iter(coordinator._deferred.values()))
             assert pending.work_item_id == chess.work_item_id
             assert pending.operation_id == chess_operation.operation_id
-            assert pending.source_app_session_id == "app-before-attention"
 
+            store.update_attempt(
+                gomoku_attempt.attempt_id,
+                execution_status="succeeded",
+            )
             await coordinator.on_work_updated(
                 Method.WORK_UPDATED,
                 {"reason": "provider.result"},

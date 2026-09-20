@@ -24,7 +24,6 @@ from agent_host.provider_identity import (
     with_parent_conversation_context,
 )
 from agent_host.provider_types import (
-    COOPERATIVE_CONTEXT_ACCEPTED_METADATA_KEY,
     EmitProviderEvent,
     ProviderEvent,
     ProviderRunRequest,
@@ -141,8 +140,6 @@ class OpenClawAdapter:
         applied_revisions: list[int] = []
         current_revision = 0
         try:
-            await emit(ProviderEvent(provider=self.provider_id, run_id=run_id,
-                type="session.opened", session=session))
             while True:
                 loop = asyncio.get_running_loop()
                 scheduled_emits: list[asyncio.Task[Any]] = []
@@ -497,8 +494,7 @@ class OpenClawAdapter:
                 raise ValueError("OpenClaw cannot attach another provider's session")
             return request.session
         work = request.metadata.get("work") if isinstance(request.metadata.get("work"), dict) else {}
-        scope = ("interaction" if request.metadata.get(COOPERATIVE_CONTEXT_ACCEPTED_METADATA_KEY) is True else
-            "work_item" if str(work.get("work_item_id") or "").strip() else "attempt")
+        scope = "work_item" if str(work.get("work_item_id") or "").strip() else "attempt"
         return ProviderSessionHandle(
             provider=cls.provider_id,
             session_id=f"agent:main:dashboard:amadeus-{uuid.uuid4().hex}",
@@ -607,27 +603,6 @@ class OpenClawAdapter:
                     data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
                     if stream == "tool":
                         tool_event_callback(data)
-                    elif stream == "assistant":
-                        # The native producer supplies its complete current
-                        # snapshot. Pi scopes it to an assistant message; ACP
-                        # may scope it to the turn; CLI emits it once. Preserve
-                        # that snapshot instead of rebuilding it from deltas.
-                        # Gateway chat is a derived UI merge: it can discard
-                        # repeated characters and glue message boundaries.
-                        text = data.get("text")
-                        if isinstance(text, str) and text:
-                            if text.startswith(visible_text):
-                                delta = text[len(visible_text) :]
-                            else:
-                                # A producer snapshot reset must not glue a
-                                # preceding progress line to the next result.
-                                separator = (
-                                    "\n" if visible_text and not visible_text.endswith("\n") else ""
-                                )
-                                delta = separator + text
-                            if delta:
-                                chunk_callback(delta)
-                            visible_text = text
                     elif stream == "lifecycle":
                         phase = str(data.get("phase") or "").strip().lower()
                         if phase in {"end", "error"}:
@@ -636,10 +611,17 @@ class OpenClawAdapter:
                 if event_name != "chat":
                     continue
                 state = str(payload.get("state") or "").strip().lower()
-                # Lifecycle/error metadata remains useful, but chat.message
-                # is not an independent final-text source. If native text was
-                # absent, retain the existing history recovery below rather
-                # than promoting a possibly lossy display projection.
+                text = self._gateway_message_text(payload.get("message"))
+                if text:
+                    if text.startswith(visible_text):
+                        delta = text[len(visible_text) :]
+                    elif visible_text.startswith(text):
+                        delta = ""
+                    else:
+                        delta = text
+                    if delta:
+                        chunk_callback(delta)
+                    visible_text = text
                 if state in {"final", "error", "aborted"}:
                     terminal_state = state
                     if wait_task.done():

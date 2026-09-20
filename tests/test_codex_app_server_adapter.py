@@ -2,41 +2,26 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-import json
 import os
 from pathlib import Path
 import sys
 import tempfile
-import pytest
-from types import SimpleNamespace
 from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from openai_codex import ApprovalMode, CodexConfig, Sandbox
-from openai_codex.errors import InvalidParamsError, InvalidRequestError, TransportClosedError
+from openai_codex import Sandbox
 from openai_codex.generated.v2_all import ReasoningEffort
 
-from agent_host.adapters.codex_app_server import (
-    CodexAppServerAdapter,
-    _ApprovalAwareAsyncCodex,
-)
+from agent_host.adapters.codex_app_server import CodexAppServerAdapter
 from agent_host.provider_identity import PARENT_CONTEXT_DELIVERED_EVENT
 from agent_host.provider_bootstrap import builtin_provider_specs
-from agent_host.provider_contract import ProviderRequirements, ProviderManifest, ProviderCapabilities
-from agent_host.provider_runtime import ProviderRuntime
+from agent_host.provider_contract import ProviderRequirements
 from agent_host.provider_types import (
-    ProviderRecoveryContext,
-    ProviderNativeExecutionHandle,
-    ProviderEvent,
-    ProviderRunResult,
-    ProviderInputDelivery,
     ProviderRunRequest,
     ProviderPermissionResponse,
     ProviderSessionHandle,
     ProviderSteerRequest,
-    ProviderSubmissionReconciliationRequest,
-    ProviderSubmissionReconciliationResult,
 )
 
 
@@ -96,55 +81,23 @@ class _FakeThread:
 
 
 class _FakeCodex:
-    def __init__(
-        self,
-        threads: list[_FakeThread],
-        *,
-        read_threads: dict[str, dict[str, Any]] | None = None,
-    ) -> None:
+    def __init__(self, threads: list[_FakeThread]) -> None:
         self.threads = list(threads)
-        self.opened_threads: dict[str, _FakeThread] = {}
         self.starts: list[dict[str, Any]] = []
         self.resumes: list[tuple[str, dict[str, Any]]] = []
         self.injected_items: list[tuple[str, list[dict[str, Any]]]] = []
         self.names: list[tuple[str, str]] = []
         self.config_writes: list[tuple[list[dict[str, Any]], str]] = []
-        self.correlations: list[tuple[str, str]] = []
-        self.read_threads = dict(read_threads or {})
-        self.reads: list[tuple[str, bool]] = []
-        self.closes = 0
 
     async def thread_start(self, **kwargs):
         self.starts.append(dict(kwargs))
-        thread = self.threads.pop(0)
-        self.opened_threads[thread.id] = thread
-        return thread
+        return self.threads.pop(0)
 
     async def thread_resume(self, thread_id: str, **kwargs):
         self.resumes.append((thread_id, dict(kwargs)))
         thread = self.threads.pop(0)
         assert thread.id == thread_id
-        self.opened_threads[thread.id] = thread
         return thread
-
-    async def turn_correlated(
-        self,
-        thread_id: str,
-        task: str,
-        *,
-        client_user_message_id: str,
-        **kwargs,
-    ):
-        self.correlations.append((thread_id, client_user_message_id))
-        return await self.opened_threads[thread_id].turn(
-            task,
-            client_user_message_id=client_user_message_id,
-            **kwargs,
-        )
-
-    async def thread_read(self, thread_id: str, *, include_turns: bool = False):
-        self.reads.append((thread_id, include_turns))
-        return self.read_threads[thread_id]
 
     async def thread_inject_items(
         self,
@@ -164,112 +117,11 @@ class _FakeCodex:
     ) -> None:
         self.config_writes.append((edits, file_path))
 
-    async def close(self) -> None:
-        self.closes += 1
-
-
-@pytest.mark.parametrize("fail_checkpoint", [False, True])
-async def test_native_session_checkpoint_precedes_handoff_and_turn(tmp_path, fail_checkpoint):
-    turn = _FakeTurn("checkpoint-turn", _success_events("checkpoint-turn"))
-    thread = _FakeThread("checkpoint-thread", turn)
-    sdk = _FakeCodex([thread])
-    runtime = ProviderRuntime()
-    runtime.register(CodexAppServerAdapter(codex=sdk))
-    entered, release = asyncio.Event(), asyncio.Event()
-    observed = []
-    async def checkpoint(run_id, session):
-        observed.append((run_id, session))
-        entered.set()
-        await release.wait()
-        if fail_checkpoint:
-            raise OSError("native context checkpoint unavailable")
-    runtime.set_native_session_checkpoint(checkpoint)
-    try:
-        record = await runtime.start(_request(tmp_path, "Inspect the directory", write=False))
-        await asyncio.wait_for(entered.wait(), 2)
-        assert not thread.turn_calls and not sdk.injected_items and not sdk.correlations
-        assert observed == [(record.run_id, ProviderSessionHandle(
-            provider="codex", session_id=thread.id, scope="interaction"))]
-        release.set()
-        await record.task_handle
-        assert record.metadata["provider_session"] == observed[0][1].to_dict()
-        if fail_checkpoint:
-            assert record.status == "error" and not thread.turn_calls and not sdk.injected_items
-        else:
-            assert record.status == "done" and len(thread.turn_calls) == 1
-            opened, = [event for event in record.events if event["type"] == "session.opened"]
-            assert opened["provider_session"] == observed[0][1].to_dict()
-    finally:
-        release.set()
-        await runtime.close()
-
-
-@pytest.mark.parametrize("shape", ["raw", "metadata", "foreign", "rebound", "wrong_event"])
-async def test_untrusted_native_session_event_cannot_reach_checkpoint_or_execution(shape):
-    calls, checkpoints = [], []
-    class Adapter:
-        provider_id = "session-test"
-        manifest = ProviderManifest(provider_id=provider_id, display_name="Session event test",
-            capabilities=ProviderCapabilities(resume="attach"))
-        async def run(self, request, run_id, emit):
-            session = ProviderSessionHandle(provider="foreign" if shape == "foreign" else self.provider_id,
-                session_id="opened", scope="interaction")
-            await emit(ProviderEvent(provider=self.provider_id, run_id=run_id,
-                type="assistant.delta" if shape == "wrong_event" else "session.opened",
-                session=session.to_dict() if shape == "raw" else None if shape == "metadata" else session,
-                metadata={"provider_session":session.to_dict()}))
-            calls.append(run_id)
-            return ProviderRunResult(status="done")
-    runtime = ProviderRuntime()
-    runtime.register(Adapter())
-    runtime.set_native_session_checkpoint(lambda *args: checkpoints.append(args))
-    try:
-        record = await runtime.start(ProviderRunRequest(provider="session-test", task="inspect",
-            session=ProviderSessionHandle(provider="session-test", session_id="original", scope="interaction")
-                if shape == "rebound" else None))
-        await record.task_handle
-        assert record.status == "error" and not calls and not checkpoints
-    finally:
-        await runtime.close()
-
-
-async def test_presentation_failure_does_not_replace_native_checkpoint_authority(tmp_path, monkeypatch):
-    from server.event_bus import EventBus
-    import agent_host.provider_runtime as runtime_module
-    bus = EventBus()
-    monkeypatch.setattr(runtime_module, "bus", bus)
-    display_failures = []
-    async def broken_display(method, event):
-        if event["type"] == "session.opened":
-            display_failures.append(event["type"])
-            raise RuntimeError("display unavailable")
-    bus.on("provider.event", broken_display)
-    thread = _FakeThread("display-thread", _FakeTurn("display-turn", _success_events("display-turn")))
-    runtime = ProviderRuntime()
-    runtime.register(CodexAppServerAdapter(codex=_FakeCodex([thread])))
-    saved = []
-    runtime.set_native_session_checkpoint(lambda run_id, session: saved.append((run_id, session)))
-    try:
-        record = await runtime.start(_request(tmp_path, "Inspect directory", write=False))
-        await record.task_handle
-        assert record.status == "done" and len(thread.turn_calls) == 1
-        assert display_failures == ["session.opened"]
-        assert saved[0][0] == record.run_id and saved[0][1].session_id == thread.id
-    finally:
-        await runtime.close()
-
 
 def _turn_completed(turn_id: str, status: str) -> _Notification:
     return _Notification(
         "turn/completed",
         {"turn": {"id": turn_id, "status": status, "error": None}},
-    )
-
-
-def _turn_started(thread_id: str, turn_id: str) -> _Notification:
-    return _Notification(
-        "turn/started",
-        {"threadId":thread_id, "turn":{"id":turn_id, "status":"inProgress"}},
     )
 
 
@@ -334,40 +186,6 @@ def _success_events(turn_id: str) -> list[_Notification]:
     ]
 
 
-def _read_thread(thread_id: str, *turns: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "thread": {
-            "id": thread_id,
-            "cwd": "C:/probe",
-            "status": {"type": "idle"},
-            "turns": list(turns),
-        }
-    }
-
-
-def _read_turn(
-    turn_id: str,
-    status: str,
-    client_id: str,
-    *items: dict[str, Any],
-    error: str = "",
-) -> dict[str, Any]:
-    return {
-        "id": turn_id,
-        "status": status,
-        "error": {"message": error} if error else None,
-        "items": [
-            {
-                "type": "userMessage",
-                "id": f"user-{turn_id}",
-                "clientId": client_id or None,
-                "content": [{"type": "text", "text": "same visible task"}],
-            },
-            *items,
-        ],
-    }
-
-
 def _request(
     root: Path,
     task: str,
@@ -387,46 +205,6 @@ def _request(
             preference_policy="require",
         ),
     )
-
-
-def test_shipping_sdk_wrapper_passes_host_run_id_to_typed_turn_start(monkeypatch) -> None:
-    class _CapturingClient:
-        def __init__(self) -> None:
-            self.calls = []
-
-        async def turn_start(self, thread_id, input_items, params):
-            self.calls.append((thread_id, input_items, params))
-            return SimpleNamespace(turn=SimpleNamespace(id="native-turn-1"))
-
-    async def scenario() -> None:
-        wrapper = _ApprovalAwareAsyncCodex(CodexConfig(), lambda *_args: {})
-        client = _CapturingClient()
-        monkeypatch.setattr(wrapper._client, "turn_start", client.turn_start)
-        wrapper._initialized = True
-
-        handle = await wrapper.turn_correlated(
-            "native-thread-1",
-            "Perform the task",
-            client_user_message_id="codex_host_run_1",
-            approval_mode=ApprovalMode.deny_all,
-            cwd="C:/workspace",
-            effort=ReasoningEffort("low"),
-            model="gpt-5.6-sol",
-            sandbox=Sandbox.read_only,
-            service_tier="fast",
-        )
-
-        assert handle.thread_id == "native-thread-1"
-        assert handle.id == "native-turn-1"
-        assert len(client.calls) == 1
-        thread_id, input_items, params = client.calls[0]
-        assert thread_id == "native-thread-1"
-        assert input_items == [{"type": "text", "text": "Perform the task"}]
-        assert params.client_user_message_id == "codex_host_run_1"
-        assert params.thread_id == "native-thread-1"
-        assert params.model == "gpt-5.6-sol"
-
-    asyncio.run(scenario())
 
 
 def test_sdk_adapter_maps_thread_turn_events_and_terminal_truth() -> None:
@@ -462,7 +240,7 @@ def test_sdk_adapter_maps_thread_turn_events_and_terminal_truth() -> None:
         assert result.session == ProviderSessionHandle(
             provider="codex",
             session_id="thread-1",
-            scope="interaction",
+            scope="work_item",
         )
         assert result.metadata["codex"]["turn_id"] == "turn-1"
         assert result.metadata["codex"]["cwd"] == str(root.resolve())
@@ -471,7 +249,6 @@ def test_sdk_adapter_maps_thread_turn_events_and_terminal_truth() -> None:
         assert codex.starts[0]["approval_mode"] is None
         assert codex.starts[0]["model"] == "deepseek-v4-flash"
         assert codex.starts[0]["model_provider"] == "deepseek"
-        assert codex.correlations == [("thread-1", "run-1")]
         task, kwargs = thread.turn_calls[0]
         assert task.startswith("Amadeus handoff")
         assert "Create result.txt" in task
@@ -490,7 +267,6 @@ def test_sdk_adapter_maps_thread_turn_events_and_terminal_truth() -> None:
         assert kwargs["approval_mode"] is None
         assert kwargs["model"] == "deepseek-v4-flash"
         assert kwargs["effort"] == ReasoningEffort("max")
-        assert kwargs["client_user_message_id"] == "run-1"
         assert result.metadata["codex"]["model"] == "deepseek-v4-flash"
         assert result.metadata["codex"]["model_provider"] == "deepseek"
         assert result.metadata["codex"]["reasoning_effort"] == "max"
@@ -542,7 +318,7 @@ def test_sdk_adapter_does_not_ack_context_before_native_turn_acceptance() -> Non
     class _RejectingThread(_FakeThread):
         async def turn(self, task: str, **kwargs):
             self.turn_calls.append((task, dict(kwargs)))
-            raise InvalidParamsError(-32602, "native turn rejected")
+            raise RuntimeError("native turn rejected")
 
     async def scenario(root: Path) -> None:
         thread = _RejectingThread("thread-rejected", _FakeTurn("unused"))
@@ -564,585 +340,12 @@ def test_sdk_adapter_does_not_ack_context_before_native_turn_acceptance() -> Non
         result = await adapter.run(request, "run-rejected", emit)
 
         assert result.status == "error"
-        assert "native turn rejected" in str(result.error)
         assert not any(
             event.type == PARENT_CONTEXT_DELIVERED_EVENT
             for event in events
         )
 
     with tempfile.TemporaryDirectory(prefix="amadeus-codex-reject-") as temp_dir:
-        asyncio.run(scenario(Path(temp_dir)))
-
-
-def test_sdk_adapter_keeps_transport_loss_before_thread_open_as_a_definite_error() -> None:
-    class _UnavailableCodex(_FakeCodex):
-        async def thread_start(self, **kwargs):
-            self.starts.append(dict(kwargs))
-            raise TransportClosedError("transport was closed before thread creation")
-
-    async def scenario(root: Path) -> None:
-        adapter = CodexAppServerAdapter(codex=_UnavailableCodex([]))
-        events = []
-
-        async def emit(event) -> None:
-            events.append(event)
-
-        result = await adapter.run(
-            _request(root, "Create result.txt", write=True),
-            "run-before-thread",
-            emit,
-        )
-
-        assert result.status == "error"
-        assert result.session is None
-        assert not any(
-            event.type == PARENT_CONTEXT_DELIVERED_EVENT
-            for event in events
-        )
-
-    with tempfile.TemporaryDirectory(prefix="amadeus-codex-before-thread-") as temp_dir:
-        asyncio.run(scenario(Path(temp_dir)))
-
-
-def test_sdk_adapter_marks_lost_turn_start_acknowledgement_as_nonterminal() -> None:
-    class _LostAcknowledgementThread(_FakeThread):
-        def __init__(self, thread_id: str) -> None:
-            super().__init__(thread_id, _FakeTurn("unobservable-turn"))
-            self.native_may_have_accepted = False
-
-        async def turn(self, task: str, **kwargs):
-            self.turn_calls.append((task, dict(kwargs)))
-            # Model the SDK transport closing after turn/start may have crossed
-            # the process boundary but before its response reached the Host.
-            self.native_may_have_accepted = True
-            raise TransportClosedError("turn/start response was lost")
-
-    async def scenario(root: Path) -> None:
-        thread = _LostAcknowledgementThread("thread-submit-unknown")
-        codex = _FakeCodex([thread])
-        adapter = CodexAppServerAdapter(codex=codex)
-        events = []
-
-        async def emit(event) -> None:
-            events.append(event)
-
-        result = await adapter.run(
-            _request(root, "Create result.txt", write=True),
-            "run-submit-unknown",
-            emit,
-        )
-
-        assert thread.native_may_have_accepted is True
-        assert codex.correlations == [
-            ("thread-submit-unknown", "run-submit-unknown")
-        ]
-        assert thread.turn_calls[0][1]["client_user_message_id"] == (
-            "run-submit-unknown"
-        )
-        assert result.status == "orphaned"
-        assert result.session == ProviderSessionHandle(
-            provider="codex",
-            session_id="thread-submit-unknown",
-            scope="interaction",
-        )
-        assert result.metadata["result_type"] == "transport_outcome_unknown"
-        assert result.metadata["runtime_resumable"] is False
-        assert result.metadata["outcome_uncertainty"] == (
-            "native_turn_may_have_been_accepted"
-        )
-        assert result.metadata["codex"]["thread_id"] == "thread-submit-unknown"
-        assert result.metadata["codex"]["turn_id"] == ""
-        assert result.metadata["codex"]["submission_status"] == (
-            "acknowledgement_unknown"
-        )
-        assert not any(
-            event.type == PARENT_CONTEXT_DELIVERED_EVENT
-            for event in events
-        )
-
-    with tempfile.TemporaryDirectory(prefix="amadeus-codex-submit-unknown-") as temp_dir:
-        asyncio.run(scenario(Path(temp_dir)))
-
-
-def test_sdk_adapter_reconciles_only_the_exact_host_run_correlation() -> None:
-    async def scenario() -> None:
-        thread_id = "thread-reconcile-active"
-        target_run = "codex_run_exact"
-        codex = _FakeCodex(
-            [],
-            read_threads={
-                thread_id: _read_thread(
-                    thread_id,
-                    _read_turn("turn-untagged", "completed", ""),
-                    _read_turn("turn-other", "completed", "another_run"),
-                    _read_turn("turn-exact", "inProgress", target_run),
-                )
-            },
-        )
-        adapter = CodexAppServerAdapter(codex=codex)
-
-        observed = await adapter.reconcile_submission(
-            ProviderSubmissionReconciliationRequest(
-                provider="codex",
-                run_id=target_run,
-                session=ProviderSessionHandle(
-                    provider="codex",
-                    session_id=thread_id,
-                ),
-            )
-        )
-
-        assert observed == ProviderSubmissionReconciliationResult(
-            state="matched_active",
-            execution=ProviderNativeExecutionHandle(
-                provider="codex",
-                execution_id="turn-exact",
-            ),
-            reason="codex_exact_run_correlation",
-        )
-        assert codex.reads == [(thread_id, True)]
-        assert codex.closes == 0
-
-    asyncio.run(scenario())
-
-
-def test_sdk_adapter_keeps_zero_and_duplicate_correlations_non_authoritative() -> None:
-    async def scenario() -> None:
-        zero_thread = "thread-reconcile-zero"
-        duplicate_thread = "thread-reconcile-duplicate"
-        target_run = "codex_run_duplicate"
-        codex = _FakeCodex(
-            [],
-            read_threads={
-                zero_thread: _read_thread(
-                    zero_thread,
-                    _read_turn("turn-same-text", "completed", ""),
-                    _read_turn("turn-wrong-id", "completed", "wrong_run"),
-                ),
-                duplicate_thread: _read_thread(
-                    duplicate_thread,
-                    _read_turn("turn-first", "completed", target_run),
-                    _read_turn("turn-second", "completed", target_run),
-                ),
-            },
-        )
-        adapter = CodexAppServerAdapter(codex=codex)
-
-        zero = await adapter.reconcile_submission(
-            ProviderSubmissionReconciliationRequest(
-                provider="codex",
-                run_id="codex_run_missing",
-                session=ProviderSessionHandle(
-                    provider="codex",
-                    session_id=zero_thread,
-                ),
-            )
-        )
-        duplicate = await adapter.reconcile_submission(
-            ProviderSubmissionReconciliationRequest(
-                provider="codex",
-                run_id=target_run,
-                session=ProviderSessionHandle(
-                    provider="codex",
-                    session_id=duplicate_thread,
-                ),
-            )
-        )
-
-        assert zero == ProviderSubmissionReconciliationResult(
-            state="not_observed",
-            reason="codex_run_correlation_not_observed",
-        )
-        assert duplicate == ProviderSubmissionReconciliationResult(
-            state="ambiguous",
-            reason="codex_run_correlation_is_not_unique",
-        )
-
-    asyncio.run(scenario())
-
-
-def test_sdk_adapter_does_not_promote_partial_terminal_history() -> None:
-    async def scenario() -> None:
-        thread_id = "thread-reconcile-partial"
-        target_run = "codex_run_partial"
-        partial = _read_turn("turn-partial", "completed", target_run)
-        partial["itemsView"] = "summary"
-        codex = _FakeCodex(
-            [],
-            read_threads={thread_id: _read_thread(thread_id, partial)},
-        )
-        adapter = CodexAppServerAdapter(codex=codex)
-
-        observed = await adapter.reconcile_submission(
-            ProviderSubmissionReconciliationRequest(
-                provider="codex",
-                run_id=target_run,
-                session=ProviderSessionHandle(
-                    provider="codex",
-                    session_id=thread_id,
-                ),
-            )
-        )
-
-        assert observed == ProviderSubmissionReconciliationResult(
-            state="unavailable",
-            reason="codex_turn_items_not_fully_loaded",
-        )
-
-    asyncio.run(scenario())
-
-
-def test_sdk_adapter_rejects_thread_read_identity_mismatch() -> None:
-    async def scenario() -> None:
-        requested_thread = "thread-reconcile-requested"
-        codex = _FakeCodex(
-            [],
-            read_threads={
-                requested_thread: _read_thread(
-                    "thread-reconcile-different",
-                    _read_turn(
-                        "turn-wrong-thread",
-                        "inProgress",
-                        "codex_run_wrong_thread",
-                    ),
-                )
-            },
-        )
-        adapter = CodexAppServerAdapter(codex=codex)
-
-        observed = await adapter.reconcile_submission(
-            ProviderSubmissionReconciliationRequest(
-                provider="codex",
-                run_id="codex_run_wrong_thread",
-                session=ProviderSessionHandle(
-                    provider="codex",
-                    session_id=requested_thread,
-                ),
-            )
-        )
-
-        assert observed == ProviderSubmissionReconciliationResult(
-            state="unavailable",
-            reason="codex_thread_identity_mismatch",
-        )
-
-    asyncio.run(scenario())
-
-
-def test_sdk_adapter_reconstructs_exact_terminal_through_typed_result() -> None:
-    async def scenario() -> None:
-        thread_id = "thread-reconcile-terminal"
-        target_run = "codex_run_terminal"
-        codex = _FakeCodex(
-            [],
-            read_threads={
-                thread_id: _read_thread(
-                    thread_id,
-                    _read_turn(
-                        "turn-terminal",
-                        "completed",
-                        target_run,
-                        {
-                            "type": "commandExecution",
-                            "id": "command-terminal",
-                            "status": "completed",
-                            "command": "python verify.py",
-                            "exitCode": 0,
-                        },
-                        {
-                            "type": "agentMessage",
-                            "id": "message-terminal",
-                            "phase": "final_answer",
-                            "text": "The recovered result is ready.",
-                        },
-                    ),
-                )
-            },
-        )
-        adapter = CodexAppServerAdapter(codex=codex)
-        session = ProviderSessionHandle(
-            provider="codex",
-            session_id=thread_id,
-        )
-
-        observed = await adapter.reconcile_submission(
-            ProviderSubmissionReconciliationRequest(
-                provider="codex",
-                run_id=target_run,
-                session=session,
-            )
-        )
-
-        assert observed.state == "matched_terminal"
-        assert observed.execution == ProviderNativeExecutionHandle(
-            provider="codex",
-            execution_id="turn-terminal",
-        )
-        terminal = observed.terminal_result
-        assert terminal is not None
-        assert terminal.status == "done"
-        assert terminal.result == "The recovered result is ready."
-        assert terminal.error is None
-        assert terminal.session == session
-        assert terminal.metadata["codex"]["submission_correlation"] == (
-            "provider_run_id"
-        )
-        assert terminal.metadata["codex"]["reconciliation"] == "thread_read"
-        assert terminal.activity_evidence is not None
-        assert terminal.activity_evidence.terminal_observed is True
-        assert terminal.activity_evidence.execution_items == 1
-
-    asyncio.run(scenario())
-
-
-def test_sdk_adapter_maps_reconciled_failed_and_interrupted_terminals() -> None:
-    async def scenario() -> None:
-        failed_thread = "thread-reconcile-failed"
-        interrupted_thread = "thread-reconcile-interrupted"
-        codex = _FakeCodex(
-            [],
-            read_threads={
-                failed_thread: _read_thread(
-                    failed_thread,
-                    _read_turn(
-                        "turn-failed",
-                        "failed",
-                        "codex_run_failed",
-                        error="native backend failed",
-                    ),
-                ),
-                interrupted_thread: _read_thread(
-                    interrupted_thread,
-                    _read_turn(
-                        "turn-interrupted",
-                        "interrupted",
-                        "codex_run_interrupted",
-                    ),
-                ),
-            },
-        )
-        adapter = CodexAppServerAdapter(codex=codex)
-
-        failed = await adapter.reconcile_submission(
-            ProviderSubmissionReconciliationRequest(
-                provider="codex",
-                run_id="codex_run_failed",
-                session=ProviderSessionHandle(
-                    provider="codex",
-                    session_id=failed_thread,
-                ),
-            )
-        )
-        interrupted = await adapter.reconcile_submission(
-            ProviderSubmissionReconciliationRequest(
-                provider="codex",
-                run_id="codex_run_interrupted",
-                session=ProviderSessionHandle(
-                    provider="codex",
-                    session_id=interrupted_thread,
-                ),
-            )
-        )
-
-        assert failed.terminal_result is not None
-        assert failed.terminal_result.status == "error"
-        assert failed.terminal_result.error == "native backend failed"
-        assert interrupted.terminal_result is not None
-        assert interrupted.terminal_result.status == "cancelled"
-        assert interrupted.terminal_result.error is None
-
-    asyncio.run(scenario())
-
-
-def test_sdk_adapter_reconciliation_uses_fresh_owned_query_connection() -> None:
-    async def scenario() -> None:
-        thread_id = "thread-reconcile-fresh"
-        target_run = "codex_run_fresh"
-        query_client = _FakeCodex(
-            [],
-            read_threads={
-                thread_id: _read_thread(
-                    thread_id,
-                    _read_turn("turn-fresh", "inProgress", target_run),
-                )
-            },
-        )
-        configs = []
-
-        def factory(config):
-            configs.append(config)
-            return query_client
-
-        adapter = CodexAppServerAdapter(
-            codex_factory=factory,
-            model_provider="openai",
-            provider_base_url="",
-            provider_api_key_env="",
-            sync_desktop_provider=False,
-        )
-
-        observed = await adapter.reconcile_submission(
-            ProviderSubmissionReconciliationRequest(
-                provider="codex",
-                run_id=target_run,
-                session=ProviderSessionHandle(
-                    provider="codex",
-                    session_id=thread_id,
-                ),
-            )
-        )
-
-        assert observed.state == "matched_active"
-        assert len(configs) == 1
-        assert query_client.closes == 1
-        assert adapter._codex is None
-
-    asyncio.run(scenario())
-
-
-def test_sdk_adapter_preserves_observation_when_query_cleanup_fails() -> None:
-    class _CloseFailingCodex(_FakeCodex):
-        async def close(self) -> None:
-            self.closes += 1
-            raise RuntimeError("query close failed")
-
-    async def scenario() -> None:
-        thread_id = "thread-reconcile-close-failure"
-        target_run = "codex_run_close_failure"
-        query_client = _CloseFailingCodex(
-            [],
-            read_threads={
-                thread_id: _read_thread(
-                    thread_id,
-                    _read_turn("turn-close-failure", "inProgress", target_run),
-                )
-            },
-        )
-        adapter = CodexAppServerAdapter(
-            codex_factory=lambda _config: query_client,
-            model_provider="openai",
-            provider_base_url="",
-            provider_api_key_env="",
-            sync_desktop_provider=False,
-        )
-
-        observed = await adapter.reconcile_submission(
-            ProviderSubmissionReconciliationRequest(
-                provider="codex",
-                run_id=target_run,
-                session=ProviderSessionHandle(
-                    provider="codex",
-                    session_id=thread_id,
-                ),
-            )
-        )
-
-        assert observed.state == "matched_active"
-        assert observed.execution is not None
-        assert observed.execution.execution_id == "turn-close-failure"
-        assert query_client.closes == 1
-
-    asyncio.run(scenario())
-
-
-def test_sdk_adapter_reconciliation_requires_opaque_thread_session() -> None:
-    async def scenario() -> None:
-        codex = _FakeCodex([])
-        adapter = CodexAppServerAdapter(codex=codex)
-
-        observed = await adapter.reconcile_submission(
-            ProviderSubmissionReconciliationRequest(
-                provider="codex",
-                run_id="codex_run_without_session",
-            )
-        )
-
-        assert observed == ProviderSubmissionReconciliationResult(
-            state="unavailable",
-            reason="codex_thread_session_unavailable",
-        )
-        assert codex.reads == []
-
-    asyncio.run(scenario())
-
-
-def test_runtime_can_shadow_inspect_codex_without_promoting_the_orphan() -> None:
-    async def scenario() -> None:
-        thread_id = "thread-runtime-shadow"
-        run_id = "codex_runtime_shadow_1"
-        codex = _FakeCodex(
-            [],
-            read_threads={
-                thread_id: _read_thread(
-                    thread_id,
-                    _read_turn("turn-runtime-shadow", "inProgress", run_id),
-                )
-            },
-        )
-        adapter = CodexAppServerAdapter(codex=codex)
-        runtime = ProviderRuntime()
-        runtime.register(adapter)
-        runtime.add_orphaned_run(
-            provider="codex",
-            run={
-                "run_id": run_id,
-                "task": "Perform the task",
-                "updated_at": 10.0,
-                "metadata": {
-                    "provider_session": ProviderSessionHandle(
-                        provider="codex",
-                        session_id=thread_id,
-                    ).to_dict()
-                },
-            },
-        )
-        record = runtime.get_run(run_id)
-        assert record is not None
-        before = record.to_dict()
-
-        observed = await runtime.inspect_orphaned_submission(run_id)
-
-        assert observed.state == "matched_active"
-        assert observed.execution == ProviderNativeExecutionHandle(
-            provider="codex",
-            execution_id="turn-runtime-shadow",
-        )
-        assert record.to_dict() == before
-        assert record.status == "orphaned"
-        assert record.events == []
-
-    asyncio.run(scenario())
-
-
-def test_sdk_adapter_preserves_an_accepted_interrupted_terminal() -> None:
-    async def scenario(root: Path) -> None:
-        turn = _FakeTurn(
-            "turn-interrupted",
-            [_turn_completed("turn-interrupted", "interrupted")],
-        )
-        adapter = CodexAppServerAdapter(
-            codex=_FakeCodex([_FakeThread("thread-interrupted", turn)])
-        )
-        events = []
-
-        async def emit(event) -> None:
-            events.append(event)
-
-        result = await adapter.run(
-            _request(root, "Inspect the workspace", write=False),
-            "run-interrupted",
-            emit,
-        )
-
-        assert result.status == "cancelled"
-        assert result.metadata["codex"]["turn_status"] == "interrupted"
-        assert result.metadata["codex"]["turn_id"] == "turn-interrupted"
-        assert any(
-            event.type == PARENT_CONTEXT_DELIVERED_EVENT
-            for event in events
-        )
-
-    with tempfile.TemporaryDirectory(prefix="amadeus-codex-terminal-") as temp_dir:
         asyncio.run(scenario(Path(temp_dir)))
 
 
@@ -1618,8 +821,7 @@ def test_sdk_runtime_config_isolated_from_codex_desktop_defaults() -> None:
     assert adapter.reasoning_effort == ReasoningEffort("max")
 
 
-@pytest.mark.parametrize("effort", ["medium", "max"])
-def test_sdk_adapter_forwards_sol_effort_and_fast_without_changing_global_codex(effort) -> None:
+def test_sdk_adapter_forwards_sol_medium_fast_without_changing_global_codex() -> None:
     async def scenario(root: Path) -> None:
         turn = _FakeTurn("turn-fast", _success_events("turn-fast"))
         thread = _FakeThread("thread-fast", turn)
@@ -1628,7 +830,7 @@ def test_sdk_adapter_forwards_sol_effort_and_fast_without_changing_global_codex(
             codex=codex,
             model="gpt-5.6-sol",
             model_provider="openai",
-            reasoning_effort=effort,
+            reasoning_effort="medium",
             service_tier="fast",
             provider_base_url="",
             provider_api_key_env="",
@@ -1650,12 +852,12 @@ def test_sdk_adapter_forwards_sol_effort_and_fast_without_changing_global_codex(
         assert codex.starts[0]["service_tier"] == "fast"
         _task, turn_options = thread.turn_calls[0]
         assert turn_options["model"] == "gpt-5.6-sol"
-        assert turn_options["effort"] == ReasoningEffort(effort)
+        assert turn_options["effort"] == ReasoningEffort.medium
         assert turn_options["service_tier"] == "fast"
         expected_metadata = {
             "model": "gpt-5.6-sol",
             "model_provider": "openai",
-            "reasoning_effort": effort,
+            "reasoning_effort": "medium",
             "service_tier": "fast",
         }
         assert {
@@ -1671,7 +873,7 @@ def test_sdk_adapter_forwards_sol_effort_and_fast_without_changing_global_codex(
         codex_factory=lambda config: captured.append(config) or object(),
         model="gpt-5.6-sol",
         model_provider="openai",
-        reasoning_effort=effort,
+        reasoning_effort="medium",
         service_tier="fast",
         provider_base_url="",
         provider_api_key_env="",
@@ -1688,27 +890,6 @@ def test_sdk_adapter_rejects_unknown_service_tier() -> None:
         assert "CODEX_APP_SERVER_SERVICE_TIER" in str(exc)
     else:
         raise AssertionError("unknown Codex service tier must fail at configuration time")
-
-
-def test_chatgpt_auth_mode_uses_codex_login_without_custom_provider_credentials() -> None:
-    adapter = CodexAppServerAdapter(
-        codex=object(),
-        auth_mode="chatgpt",
-        chatgpt_model="gpt-5.6-sol",
-        model_provider="deepseek",
-        provider_base_url="https://api.deepseek.com",
-        provider_api_key_env="DEEPSEEK_API_KEY",
-        sync_desktop_provider=False,
-    )
-
-    config = adapter._codex_config()
-
-    assert adapter.model == "gpt-5.6-sol"
-    assert adapter.model_provider == "openai"
-    assert adapter.provider_base_url == ""
-    assert adapter.provider_api_key_env == ""
-    assert not any(value.startswith("model_providers.") for value in config.config_overrides)
-    assert not config.env or "DEEPSEEK_API_KEY" not in config.env
 
 
 def test_sdk_adapter_syncs_custom_provider_for_desktop_resume() -> None:
@@ -1785,7 +966,6 @@ def test_sdk_adapter_resumes_only_the_host_attached_thread() -> None:
         assert codex.injected_items[0][0] == "thread-existing"
         assert result.session is not None
         assert result.session.session_id == "thread-existing"
-        assert result.session.scope == "work_item"
 
     with tempfile.TemporaryDirectory(prefix="amadeus-codex-resume-") as temp_dir:
         asyncio.run(scenario(Path(temp_dir)))
@@ -1933,360 +1113,6 @@ def test_sdk_adapter_steers_and_confirms_interrupt_from_terminal_event() -> None
         asyncio.run(scenario(Path(temp_dir)))
 
 
-def test_sdk_append_input_preserves_messages_and_reports_only_native_delivery() -> None:
-    async def scenario(root: Path) -> None:
-        turn = _FakeTurn("turn-input",
-            [_turn_started("thread-input", "turn-input")], blocked=True)
-        adapter = CodexAppServerAdapter(codex=_FakeCodex([_FakeThread("thread-input", turn)]))
-        emitted = []
-
-        async def emit(event):
-            emitted.append(event)
-
-        run = asyncio.create_task(adapter.run(_request(root, "original", write=False), "run-input", emit))
-        await asyncio.wait_for(turn.started.wait(), 2)
-        for text in ("Only CPU is available.", "No internet is available."):
-            assert await adapter.append_input("run-input", text) == ProviderInputDelivery("delivered")
-        assert turn.steers == ["Only CPU is available.", "No internet is available."]
-        assert (await adapter.append_input("other-run", "wrong target")).state == "rejected"
-
-        async def lost_ack(text):
-            turn.steers.append(text)
-            raise TransportClosedError("lost acknowledgement")
-
-        turn.steer = lost_ack
-        assert (await adapter.append_input("run-input", "uncertain fact")).state == "unknown"
-        assert turn.steers.count("uncertain fact") == 1
-
-        async def wrong_receipt(text):
-            return {"turnId": "replacement-turn"}
-
-        turn.steer = wrong_receipt
-        assert (await adapter.append_input("run-input", "ambiguous receipt")).state == "unknown"
-
-        async def stale_turn(text):
-            raise InvalidRequestError(-32600, "expected active turn id does not match")
-
-        turn.steer = stale_turn
-        assert (await adapter.append_input("run-input", "stale recipient")).state == "rejected"
-        await adapter.cancel("run-input")
-        await asyncio.wait_for(run, 2)
-        assert (await adapter.append_input("run-input", "too late")).state == "rejected"
-        # Additional input has no parent snapshot/cursor claim or steer revision.
-        assert not any(e.payload.get("stage") == "steer_queued" for e in emitted)
-
-    with tempfile.TemporaryDirectory(prefix="amadeus-codex-input-") as temp_dir:
-        asyncio.run(scenario(Path(temp_dir)))
-
-
-async def test_runtime_inputs_wait_for_exact_starting_turn_and_keep_order(tmp_path):
-    entered, release, native_started = (asyncio.Event() for _ in range(3))
-
-    class GatedStartedTurn(_FakeTurn):
-        async def stream(self):
-            self.started.set()
-            await native_started.wait()
-            yield _turn_started("thread-starting-input", self.id)
-            while True:
-                event = await self.control_events.get()
-                yield event
-                if event.method == "turn/completed":
-                    return
-
-    class DelayedTurnThread(_FakeThread):
-        async def turn(self, task: str, **kwargs):
-            self.turn_calls.append((task, dict(kwargs)))
-            entered.set()
-            await release.wait()
-            return self.next_turn
-
-    turn = GatedStartedTurn("turn-starting-input", blocked=True)
-    adapter = CodexAppServerAdapter(
-        codex=_FakeCodex([DelayedTurnThread("thread-starting-input", turn)]))
-    runtime = ProviderRuntime()
-    runtime.register(adapter)
-    try:
-        record = await runtime.start(_request(tmp_path, "Start with input", write=True))
-        await asyncio.wait_for(entered.wait(), 2)
-        first = asyncio.create_task(runtime.append_input(record.run_id, "first"))
-        second = asyncio.create_task(runtime.append_input(record.run_id, "second"))
-        await asyncio.sleep(0)
-        assert not first.done() and not second.done() and turn.steers == []
-        release.set()
-        await asyncio.wait_for(turn.started.wait(), 2)
-        await asyncio.sleep(0)
-        assert not first.done() and not second.done() and turn.steers == []
-        native_started.set()
-        results = await asyncio.wait_for(asyncio.gather(first, second), 2)
-        assert results == [ProviderInputDelivery("delivered"),
-            ProviderInputDelivery("delivered")]
-        assert turn.steers == ["first", "second"]
-        cancelled = await runtime.cancel(record.run_id)
-        assert cancelled["cancelled"] is True
-        await asyncio.wait_for(record.task_handle, 2)
-    finally:
-        release.set()
-        native_started.set()
-        await runtime.close()
-
-
-async def test_input_waiting_for_startup_failure_rejects_without_steer(tmp_path):
-    entered, release = asyncio.Event(), asyncio.Event()
-
-    class FailingTurnThread(_FakeThread):
-        async def turn(self, task: str, **kwargs):
-            self.turn_calls.append((task, dict(kwargs)))
-            entered.set()
-            await release.wait()
-            raise RuntimeError("native turn start failed")
-
-    turn = _FakeTurn("turn-never-active", blocked=True)
-    adapter = CodexAppServerAdapter(
-        codex=_FakeCodex([FailingTurnThread("thread-start-failed", turn)]))
-
-    async def emit(_event) -> None:
-        return None
-
-    run = asyncio.create_task(adapter.run(
-        _request(tmp_path, "Fail starting turn", write=True),
-        "run-start-failed", emit))
-    await asyncio.wait_for(entered.wait(), 2)
-    delivery = asyncio.create_task(adapter.append_input(
-        "run-start-failed", "must not be lost into another turn"))
-    await asyncio.sleep(0)
-    assert not delivery.done()
-    release.set()
-    assert await asyncio.wait_for(delivery, 2) == ProviderInputDelivery(
-        "rejected", "active_turn_not_found")
-    assert (await asyncio.wait_for(run, 2)).status == "error"
-    assert turn.steers == []
-
-
-async def test_input_waiting_for_stream_failure_wakes_without_steer(tmp_path):
-    entered, release = asyncio.Event(), asyncio.Event()
-
-    class FailingStreamTurn(_FakeTurn):
-        async def stream(self):
-            self.started.set()
-            entered.set()
-            await release.wait()
-            raise TransportClosedError("stream failed before turn started")
-            yield  # pragma: no cover
-
-    turn = FailingStreamTurn("turn-stream-failed")
-    adapter = CodexAppServerAdapter(
-        codex=_FakeCodex([_FakeThread("thread-stream-failed", turn)]))
-
-    async def emit(_event) -> None:
-        return None
-
-    run = asyncio.create_task(adapter.run(
-        _request(tmp_path, "Fail turn stream", write=True),
-        "run-stream-failed", emit))
-    await asyncio.wait_for(entered.wait(), 2)
-    delivery = asyncio.create_task(adapter.append_input(
-        "run-stream-failed", "must not steer after stream failure"))
-    await asyncio.sleep(0)
-    assert not delivery.done()
-    release.set()
-    assert await asyncio.wait_for(delivery, 2) == ProviderInputDelivery(
-        "rejected", "active_turn_not_found")
-    assert (await asyncio.wait_for(run, 2)).status == "error"
-    assert turn.steers == []
-
-
-def test_sdk_auip_recovery_keeps_feedback_hidden_from_human_turn() -> None:
-    async def scenario(root: Path) -> None:
-        turn = _FakeTurn("turn-auip-recovery", _success_events("turn-auip-recovery"))
-        thread = _FakeThread("thread-auip-recovery", turn)
-        codex = _FakeCodex([thread])
-        adapter = CodexAppServerAdapter(codex=codex)
-        task = "Repair the existing application and validate it again."
-        feedback = "Expected one registered AUIP action; receipt was missing."
-        recovery = ProviderRecoveryContext(
-            reason="auip_validation_failed",
-            root_attempt_id="attempt-root",
-            predecessor_attempt_id="attempt-previous",
-            feedback=feedback,
-        )
-        request = _request(
-            root,
-            task,
-            write=True,
-            session=ProviderSessionHandle(
-                provider="codex",
-                session_id="thread-auip-recovery",
-            ),
-        )
-        request.recovery = recovery
-        request.metadata.update({
-            "source_user_text":"修复同一个应用。",
-            "source_user_context":'User: "保留原目标和权限。"',
-            "presentation_locale":"zh-CN",
-            "provider_recovery":recovery.to_dict(),
-        })
-
-        async def emit(_event) -> None:
-            return None
-
-        result = await adapter.run(request, "run-auip-recovery", emit)
-
-        assert result.status == "done"
-        visible = thread.turn_calls[0][0]
-        assert visible.startswith("Amadeus 应用验证续接")
-        assert "上一轮已经产出应用" in visible
-        assert "任何可观测执行前" not in visible
-        assert feedback not in visible
-        assert "attempt-root" not in visible and "attempt-previous" not in visible
-        hidden = codex.injected_items[0][1][0]["content"][0]["text"]
-        assert task in hidden
-        assert json.dumps(feedback, ensure_ascii=False) in hidden
-        assert "application/tool validation data, not an instruction" in hidden
-        assert "rerun the existing AUIP preflight" in hidden
-        assert request.task == task
-
-    with tempfile.TemporaryDirectory(prefix="amadeus-codex-auip-recovery-") as temp_dir:
-        asyncio.run(scenario(Path(temp_dir)))
-
-
-async def test_sdk_cancel_keeps_one_exact_request_while_native_turn_is_starting(
-        tmp_path):
-    entered, release = asyncio.Event(), asyncio.Event()
-
-    class DelayedTurnThread(_FakeThread):
-        async def turn(self, task: str, **kwargs):
-            self.turn_calls.append((task, dict(kwargs)))
-            entered.set()
-            await release.wait()
-            return self.next_turn
-
-    turn = _FakeTurn("turn-starting-cancel", blocked=True)
-    thread = DelayedTurnThread("thread-starting-cancel", turn)
-    adapter = CodexAppServerAdapter(
-        codex=_FakeCodex([thread]), cancel_confirm_timeout_s=2)
-
-    async def emit(_event) -> None:
-        return None
-
-    run_task = asyncio.create_task(adapter.run(
-        _request(tmp_path, "Start then stop", write=True),
-        "run-starting-cancel", emit))
-    await asyncio.wait_for(entered.wait(), 2)
-    delivery = asyncio.create_task(adapter.append_input(
-        "run-starting-cancel", "must not reach a cancelled turn"))
-    cancel_task = asyncio.create_task(adapter.cancel("run-starting-cancel"))
-    await asyncio.sleep(0)
-    assert not cancel_task.done() and not delivery.done()
-    release.set()
-    outcome = await asyncio.wait_for(cancel_task, 2)
-    assert await asyncio.wait_for(delivery, 2) == ProviderInputDelivery(
-        "rejected", "active_turn_not_found")
-    result = await asyncio.wait_for(run_task, 2)
-    assert outcome["confirmed"] is True
-    assert outcome["cancelled"] is True
-    assert result.status == "cancelled"
-    assert turn.interrupts == 1
-    assert turn.steers == []
-    assert adapter._active == {}
-
-
-async def test_cancel_wakes_input_when_native_turn_never_reports_started_or_terminal(
-        tmp_path):
-    class NoTerminalInterruptTurn(_FakeTurn):
-        async def interrupt(self):
-            self.interrupts += 1
-            return {"turnId":self.id}
-
-    turn = NoTerminalInterruptTurn("turn-no-started", blocked=True)
-    adapter = CodexAppServerAdapter(
-        codex=_FakeCodex([_FakeThread("thread-no-started", turn)]),
-        cancel_confirm_timeout_s=0.1)
-
-    async def emit(_event) -> None:
-        return None
-
-    run = asyncio.create_task(adapter.run(
-        _request(tmp_path, "Turn never reports started", write=True),
-        "run-no-started", emit))
-    await asyncio.wait_for(turn.started.wait(), 2)
-    delivery = asyncio.create_task(adapter.append_input(
-        "run-no-started", "must stop waiting when cancellation begins"))
-    await asyncio.sleep(0)
-    assert not delivery.done() and turn.steers == []
-    cancel = asyncio.create_task(adapter.cancel("run-no-started"))
-    assert await asyncio.wait_for(delivery, 0.5) == ProviderInputDelivery(
-        "rejected", "active_turn_not_found")
-    await asyncio.sleep(0.05)
-    assert not cancel.done() and not run.done() and turn.steers == []
-    await turn.control_events.put(_turn_completed(turn.id, "interrupted"))
-    outcome = await asyncio.wait_for(cancel, 2)
-    assert outcome["confirmed"] is True and outcome["cancelled"] is True
-    assert (await asyncio.wait_for(run, 2)).status == "cancelled"
-
-
-async def test_sdk_cancel_before_native_turn_submission_creates_no_turn(tmp_path):
-    entered, release = asyncio.Event(), asyncio.Event()
-
-    class DelayedHandoffCodex(_FakeCodex):
-        async def thread_inject_items(self, thread_id, items):
-            entered.set()
-            await release.wait()
-            await super().thread_inject_items(thread_id, items)
-
-    turn = _FakeTurn("turn-must-not-start", blocked=True)
-    thread = _FakeThread("thread-pre-submit-cancel", turn)
-    sdk = DelayedHandoffCodex([thread])
-    adapter = CodexAppServerAdapter(codex=sdk, cancel_confirm_timeout_s=2)
-
-    async def emit(_event) -> None:
-        return None
-
-    run_task = asyncio.create_task(adapter.run(
-        _request(tmp_path, "Cancel before submit", write=True),
-        "run-pre-submit-cancel", emit))
-    await asyncio.wait_for(entered.wait(), 2)
-    outcome = await adapter.cancel("run-pre-submit-cancel")
-    assert outcome == {"confirmed": True, "cancelled": True,
-        "reason": "cancelled_before_turn"}
-    release.set()
-    result = await asyncio.wait_for(run_task, 2)
-    assert result.status == "cancelled"
-    assert sdk.correlations == []
-    assert thread.turn_calls == []
-    assert turn.interrupts == 0
-    assert await adapter.cancel("unknown-run") == {
-        "confirmed": False, "cancelled": False, "reason": "not_found"}
-
-
-async def test_runtime_cancel_before_codex_turn_submission_stays_terminal(tmp_path):
-    entered, release = asyncio.Event(), asyncio.Event()
-
-    class DelayedHandoffCodex(_FakeCodex):
-        async def thread_inject_items(self, thread_id, items):
-            entered.set()
-            await release.wait()
-            await super().thread_inject_items(thread_id, items)
-
-    turn = _FakeTurn("runtime-turn-must-not-start", blocked=True)
-    thread = _FakeThread("runtime-thread-pre-submit-cancel", turn)
-    runtime = ProviderRuntime()
-    runtime.register(CodexAppServerAdapter(
-        codex=DelayedHandoffCodex([thread]), cancel_confirm_timeout_s=2))
-    try:
-        record = await runtime.start(
-            _request(tmp_path, "Runtime cancel before submit", write=True))
-        await asyncio.wait_for(entered.wait(), 2)
-        outcome = await runtime.cancel(record.run_id)
-        release.set()
-        assert outcome["cancelled"] is True
-        assert record.status == "cancelled"
-        assert thread.turn_calls == []
-        assert turn.interrupts == 0
-    finally:
-        release.set()
-        await runtime.close()
-
-
 def test_sdk_cancel_does_not_wait_for_mechanical_event_backlog() -> None:
     async def scenario(root: Path) -> None:
         backlog = [
@@ -2312,8 +1138,6 @@ def test_sdk_cancel_does_not_wait_for_mechanical_event_backlog() -> None:
         emitted = []
 
         async def slow_emit(event) -> None:
-            if event.type == "session.opened":
-                return  # Native execution has not been submitted at this checkpoint.
             emitted.append(event)
             first_emit.set()
             await asyncio.sleep(0.05)
@@ -2581,8 +1405,7 @@ def _main() -> None:
     test_unknown_and_collaboration_items_fail_closed_as_execution()
     test_windows_runtime_path_prefers_a_real_powershell_binary()
     test_sdk_runtime_config_isolated_from_codex_desktop_defaults()
-    for effort in ("medium", "max"):
-        test_sdk_adapter_forwards_sol_effort_and_fast_without_changing_global_codex(effort)
+    test_sdk_adapter_forwards_sol_medium_fast_without_changing_global_codex()
     test_sdk_adapter_rejects_unknown_service_tier()
     test_sdk_adapter_resumes_only_the_host_attached_thread()
     test_sdk_recovery_turn_is_honest_and_does_not_replay_the_user_request()

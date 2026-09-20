@@ -73,7 +73,7 @@ class VNProfile:
     prompt_pack: str = "mystery"
     output_language: str = "ja"
     provider: str = "deepseek"
-    model: str = ""
+    model: str = "deepseek-v4-flash"
     base_url: str = ""
     overlay_url: str = ""
     short_memory_lines: int = 50
@@ -99,7 +99,7 @@ class VNProfile:
             prompt_pack=str(data.get("prompt_pack") or data.get("game_genre") or "mystery"),
             output_language=str(data.get("output_language") or "ja"),
             provider=str(data.get("provider") or "deepseek"),
-            model=str(data.get("model") or ""),
+            model=str(data.get("model") or "deepseek-v4-flash"),
             base_url=str(data.get("base_url") or ""),
             overlay_url=str(data.get("overlay_url") or data.get("overlayUrl") or ""),
             short_memory_lines=int(data.get("short_memory_lines") or 50),

@@ -16,10 +16,7 @@ from server.auip_app_source import (
     validate_launchable_app,
 )
 from server.auip_contract import AuipProtocolError
-from server.auip_control_decision import (
-    is_live_auip_control_projection,
-    reconcile_active_auip_control,
-)
+from server.auip_control_decision import reconcile_active_auip_control
 from server.auip_engagement import AuipEngagementCoordinator
 from server.auip_runtime import AuipRuntime, runtime
 from server.event_bus import bus
@@ -262,36 +259,6 @@ class AuipHandler(RequestHandler):
             await bus.emit(Method.AUIP_UPDATED, _public_update(result))
         return result
 
-    def _result_entry_source(self, app_session_id: str) -> tuple[dict, str]:
-        try:
-            snapshot = self.runtime.get(app_session_id) if app_session_id else {}
-        except AuipProtocolError:
-            snapshot = {}
-        prefix, separator, digest = str(snapshot.get("artifact_ref") or "").rpartition("@")
-        artifact_id = (prefix.removeprefix("artifact:")
-            if separator and digest and prefix.startswith("artifact:") else "")
-        artifact = (self.artifacts.get_artifact(artifact_id)
-            if artifact_id and self.artifacts is not None else None)
-        return snapshot, str(getattr(artifact, "work_item_id", "") or "")
-
-    async def prepare_result_entry(self, source_app_session_id: str, candidate) -> bool:
-        """Release only a prior version of the verified result, by exact receipt."""
-        snapshot, owner = self._result_entry_source(source_app_session_id)
-        if not snapshot or not owner or owner != candidate.work_item_id:
-            return True
-        if is_live_auip_control_projection(snapshot):
-            result = await self.handle(Method.AUIP_LEAVE, {
-                "app_session_id":source_app_session_id, "reason":"replace_after_work"})
-            if not result or result.get("ok") is not True:
-                raise AuipProtocolError("result_entry_leave_failed")
-            snapshot = self.runtime.get(source_app_session_id)
-        if snapshot.get("status") == "disconnected" or not snapshot.get("host_surface_id"):
-            return True
-        close_status = snapshot.get("surface_close_status")
-        if close_status == "failed":
-            raise AuipProtocolError("result_entry_surface_close_failed")
-        return close_status == "closed"
-
     async def route_control(
         self,
         attrs: dict[str, Any],
@@ -311,32 +278,6 @@ class AuipHandler(RequestHandler):
         projection = self.runtime.focused_projection(session_id)
         control = reconcile_active_auip_control(attrs, projection)
         action = str(control.get("action") or "").strip().lower()
-        generic_deferred_entry = bool(
-            action == "engage"
-            and str(control.get("after") or "").strip().lower() == "work"
-        )
-        captured_session_id = ""
-        if generic_deferred_entry:
-            # Work owns the result identity.  ``engage after work`` asks the
-            # existing launch owner to use that result; a captured focused app
-            # is replacement evidence only when its registered Artifact belongs
-            # to the same formally selected WorkItem.
-            control = {**control, "action": "launch"}
-            action = "launch"
-            captured_session_id = str(control.pop("_host_app_session_id", "") or "").strip()
-            planned_work_item_id = str(
-                control.get("_host_work_item_id") or ""
-            ).strip()
-            _captured, owner = self._result_entry_source(captured_session_id)
-            if planned_work_item_id and owner == planned_work_item_id:
-                if (
-                    not is_live_auip_control_projection(projection)
-                    or str(projection.get("app_session_id") or "")
-                    != captured_session_id
-                ):
-                    # Revalidate exact focus before the Launch Coordinator
-                    # records a reservation for a proved same-Work replacement.
-                    raise AuipProtocolError("app_session_changed")
         if action in {"launch", "prepare"}:
             if self.launch is None:
                 raise AuipProtocolError("launch_coordinator_unavailable")
@@ -349,7 +290,7 @@ class AuipHandler(RequestHandler):
             expected_session_id = str(
                 control.get("_host_app_session_id") or ""
             ).strip()
-            if deferred_launch and expected_session_id and not generic_deferred_entry:
+            if deferred_launch and expected_session_id:
                 if (
                     not isinstance(projection, dict)
                     or str(projection.get("status") or "") != "active"
@@ -361,7 +302,6 @@ class AuipHandler(RequestHandler):
                     raise AuipProtocolError("app_session_changed")
             elif (
                 deferred_launch
-                and not generic_deferred_entry
                 and isinstance(projection, dict)
                 and str(projection.get("status") or "") == "active"
             ):
@@ -371,13 +311,10 @@ class AuipHandler(RequestHandler):
                 session_id=session_id,
                 turn_id=turn_id,
                 prepare_work=prepare_work,
-                **({"source_app_session_id":captured_session_id} if generic_deferred_entry else {}),
             )
             if (
                 action == "launch"
-                and not generic_deferred_entry
                 and str(control.get("after") or "").strip().lower() == "work"
-                and expected_session_id
                 and isinstance(projection, dict)
                 and str(projection.get("status") or "") == "active"
                 and isinstance(routed, dict)

@@ -22,17 +22,6 @@ from tools.check_third_party_provenance import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_companion_code_ships_but_optional_media_does_not():
-    policy = json.loads((ROOT / "release/source_release_policy.json").read_text(encoding="utf-8"))
-    code = ["render/companion_pack.py", "render/web/companion_atlas.js",
-            "tools/package_companion_character.py", "docs/companion-lite-2026-09-19.md",
-            "docs/evidence/companion-lite-2026-09-19.json"]
-    media = ["assets/companion/kurisu/manifest.json", "assets/companion/kurisu/normal/idle.webp"]
-    selected, excluded = select_paths(code + media, policy)
-    assert selected == sorted(code)
-    assert excluded == sorted(media)
-
-
 def test_double_star_glob_matches_root_and_nested_files() -> None:
     assert matches_any("GPT_SoVITS/model.py", ["GPT_SoVITS/**"])
     assert matches_any("wallpaper/scene/deep/frame.png", ["wallpaper/**/*.png"])
@@ -219,25 +208,6 @@ def test_archive_is_deterministic(tmp_path: Path) -> None:
             "amadeus-1.2.3/src/a.py",
             "amadeus-1.2.3/SOURCE_MANIFEST.json",
         ]
-
-
-def test_source_release_keeps_the_linux_aec_path_dependency() -> None:
-    policy = json.loads((ROOT / "release/source_release_policy.json").read_text(encoding="utf-8"))
-    manifest = json.loads((ROOT / "LICENSES/provenance.json").read_text(encoding="utf-8"))
-    required = [
-        "vendor/aec-audio-processing/setup.py",
-        "vendor/aec-audio-processing/pyproject.toml",
-        "vendor/aec-audio-processing/LICENSE",
-        "vendor/aec-audio-processing/src/files/THIRD_PARTY_NOTICES.txt",
-        "vendor/aec-audio-processing/webrtc-audio-processing/meson.build",
-        "vendor/aec-audio-processing/webrtc-audio-processing/subprojects/abseil-cpp-20240722.0/LICENSE",
-        "vendor/aec-audio-processing.PROVENANCE.md",
-        "vendor/aec-audio-processing.patch",
-    ]
-    selected, excluded = select_paths(required, policy)
-    assert selected == sorted(required)
-    assert excluded == []
-    assert release_blockers_for_paths(manifest, selected) == []
 
 
 def test_current_source_policy_has_no_selected_provenance_blockers() -> None:

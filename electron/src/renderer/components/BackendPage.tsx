@@ -1,7 +1,6 @@
 ﻿import { useState, useEffect, useCallback, useRef } from 'react'
 import FluentIcon from './FluentIcon'
 import { ELECTRON_SLICE_START_PARAMS } from '../wallpaperSlice'
-import { useI18n } from '../i18n'
 
 interface Props {
   send: (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
@@ -12,7 +11,6 @@ interface Props {
 }
 
 export default function BackendPage({ send, subscribe, connected, renderActive, wallpaperActive }: Props) {
-  const { t } = useI18n()
   const [status, setStatus] = useState<Record<string, unknown>>({})
   const [logLines, setLogLines] = useState<string[]>([])
   const [logTotal, setLogTotal] = useState(0)
@@ -88,7 +86,7 @@ export default function BackendPage({ send, subscribe, connected, renderActive, 
       }}
     >
       {dot(ok)}
-      <span style={{ color: 'var(--text)', fontWeight: 600 }}>{t(label)}</span>
+      <span style={{ color: 'var(--text)', fontWeight: 600 }}>{label}</span>
       {detail ? <span style={{ color: 'var(--faint)' }}>{detail}</span> : null}
     </span>
   )
@@ -107,13 +105,13 @@ export default function BackendPage({ send, subscribe, connected, renderActive, 
     <div className="flex-1 flex flex-col min-h-0" style={{ padding: '16px 18px 18px', backgroundColor: 'var(--bg)' }}>
       <header className="flex items-start gap-4 shrink-0" style={{ marginBottom: 12 }}>
         <div className="min-w-0 flex-1">
-          <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 20, fontWeight: 700, lineHeight: '26px' }}>{t('Backend')}</h2>
+          <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 20, fontWeight: 700, lineHeight: '26px' }}>Backend</h2>
           <p style={{ margin: '2px 0 0', color: 'var(--muted)', fontSize: 11, lineHeight: '16px' }}>
-            {t('Live runtime status and server diagnostics.')}
+            Live runtime status and server diagnostics.
           </p>
         </div>
         <span className="inline-flex items-center gap-2 shrink-0" style={{ height: 29, color: statusColor, fontSize: 11, fontWeight: 650 }}>
-          {dot(connected)} {t(connected ? 'Connected' : 'Offline')}
+          {dot(connected)} {connected ? 'Connected' : 'Offline'}
         </span>
       </header>
 
@@ -127,16 +125,16 @@ export default function BackendPage({ send, subscribe, connected, renderActive, 
 
       <section className="flex-1 flex flex-col min-h-0" style={{ border: '1px solid var(--border)', borderRadius: 11, overflow: 'hidden', background: 'var(--surface)' }}>
         <div className="flex items-center gap-2 shrink-0" style={{ minHeight: 43, padding: '6px 10px 6px 13px', borderBottom: '1px solid var(--border)' }}>
-          <h3 style={{ margin: 0, color: 'var(--text)', fontSize: 13, fontWeight: 650 }}>{t('Server log')}</h3>
-          <span style={{ color: 'var(--faint)', fontSize: 10 }}>{logTotal.toLocaleString()} {t('lines')}</span>
+          <h3 style={{ margin: 0, color: 'var(--text)', fontSize: 13, fontWeight: 650 }}>Server log</h3>
+          <span style={{ color: 'var(--faint)', fontSize: 10 }}>{logTotal.toLocaleString()} lines</span>
           <span className="flex-1" />
-          <span style={{ color: 'var(--faint)', fontSize: 9.5 }}>{t('Updates every 3s')}</span>
+          <span style={{ color: 'var(--faint)', fontSize: 9.5 }}>Updates every 3s</span>
           <button
             onClick={fetchLog}
             className="inline-flex items-center gap-1.5 border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--hover)] cursor-pointer transition-colors"
             style={{ ...actionButtonStyle, height: 29 }}
           >
-            <FluentIcon name="Sync" size={13} /> {t('Refresh')}
+            <FluentIcon name="Sync" size={13} /> Refresh
           </button>
         </div>
         <div
@@ -150,7 +148,7 @@ export default function BackendPage({ send, subscribe, connected, renderActive, 
           }}
         >
           {logLines.length === 0 ? (
-            <span style={{ color: '#6C7086' }}>{t('No log output yet...')}</span>
+            <span style={{ color: '#6C7086' }}>No log output yet...</span>
           ) : (
             logLines.map((line, i) => (
               <div
@@ -175,22 +173,22 @@ export default function BackendPage({ send, subscribe, connected, renderActive, 
 
       <details className="shrink-0" style={{ marginTop: 10, border: '1px solid var(--border)', borderRadius: 9, background: 'var(--surface)' }}>
         <summary className="cursor-pointer select-none" style={{ padding: '9px 12px', color: 'var(--muted)', fontSize: 11, fontWeight: 600 }}>
-          {t('Runtime controls and connection details')}
+          Runtime controls and connection details
         </summary>
         <div style={{ padding: '0 12px 12px', borderTop: '1px solid var(--border)' }}>
           <div className="flex items-center flex-wrap gap-2" style={{ padding: '10px 0' }}>
             <span style={{ marginRight: 6, color: 'var(--faint)', fontSize: 10 }}>ws://127.0.0.1:17777/ws</span>
             <button disabled={!connected || actionsDisabled} onClick={() => doAction('render.start', setRenderStatus)} className="inline-flex items-center gap-1.5 disabled:opacity-40" style={actionButtonStyle}>
-              <FluentIcon name="Video" size={13} /> {t('Start Render')}
+              <FluentIcon name="Video" size={13} /> Start Render
             </button>
             <button disabled={!connected || actionsDisabled} onClick={() => doAction('render.stop', setRenderStatus)} className="inline-flex items-center gap-1.5 disabled:opacity-40" style={actionButtonStyle}>
-              <FluentIcon name="Video" size={13} /> {t('Stop Render')}
+              <FluentIcon name="Video" size={13} /> Stop Render
             </button>
             <button disabled={!connected || actionsDisabled} onClick={() => doAction('wallpaper.start', setWallpaperStatus, ELECTRON_SLICE_START_PARAMS)} className="inline-flex items-center gap-1.5 disabled:opacity-40" style={actionButtonStyle}>
-              <FluentIcon name="Tiles" size={13} /> {t('Start Wallpaper')}
+              <FluentIcon name="Tiles" size={13} /> Start Wallpaper
             </button>
             <button disabled={!connected || actionsDisabled} onClick={() => doAction('wallpaper.stop', setWallpaperStatus)} className="inline-flex items-center gap-1.5 disabled:opacity-40" style={actionButtonStyle}>
-              <FluentIcon name="Tiles" size={13} /> {t('Stop Wallpaper')}
+              <FluentIcon name="Tiles" size={13} /> Stop Wallpaper
             </button>
           </div>
           {(renderStatus || wallpaperStatus) && (

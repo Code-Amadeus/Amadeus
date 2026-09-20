@@ -24,7 +24,6 @@ import RightArrowSvg from '@assets/icons/ui/RightArrow.svg?raw'
 import AlbumSvg from '@assets/icons/ui/Album.svg?raw'
 import PeopleSvg from '@assets/icons/ui/People.svg?raw'
 import PhotoSvg from '@assets/icons/ui/Photo.svg?raw'
-import PhotoUploadSvg from '@assets/icons/ui/PhotoUpload.svg?raw'
 import EditSvg from '@assets/icons/ui/Edit.svg?raw'
 import WorkSvg from '@assets/icons/ui/Work.svg?raw'
 
@@ -33,7 +32,7 @@ export type FluentIconName =
   | 'Setting' | 'Palette' | 'Robot' | 'Camera' | 'Cut'
   | 'SpeedHigh' | 'Font' | 'Language' | 'Microphone'
   | 'Play' | 'Sync' | 'Send' | 'Pin'
-  | 'LeftArrow' | 'RightArrow' | 'Album' | 'People' | 'Photo' | 'PhotoUpload'
+  | 'LeftArrow' | 'RightArrow' | 'Album' | 'People' | 'Photo'
   | 'Edit' | 'Work'
 
 const ICONS: Record<FluentIconName, string> = {
@@ -44,7 +43,7 @@ const ICONS: Record<FluentIconName, string> = {
   Microphone: MicrophoneSvg, Play: PlaySvg, Sync: SyncSvg,
   Send: SendSvg, Pin: PinSvg, LeftArrow: LeftArrowSvg,
   RightArrow: RightArrowSvg, Album: AlbumSvg, People: PeopleSvg,
-  Photo: PhotoSvg, PhotoUpload: PhotoUploadSvg, Edit: EditSvg,
+  Photo: PhotoSvg, Edit: EditSvg,
   Work: WorkSvg,
 }
 

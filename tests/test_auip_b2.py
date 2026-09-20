@@ -96,12 +96,11 @@ def _manifest(*, include_open_action: bool = False) -> dict:
     return manifest
 
 
-def _runtime(*, include_open_action: bool = False,
-             conversation_id: str = "b2-chat") -> tuple[AuipRuntime, dict]:
+def _runtime(*, include_open_action: bool = False) -> tuple[AuipRuntime, dict]:
     runtime = AuipRuntime(role_branch_mode="b2")
     registered = runtime.register(
         manifest=_manifest(include_open_action=include_open_action),
-        conversation_id=conversation_id,
+        conversation_id="b2-chat",
     )
     runtime.set_engagement_mode(
         app_session_id=registered["app_session_id"],

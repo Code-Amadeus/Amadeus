@@ -122,7 +122,7 @@ def test_compound_shadow_runs_beside_immediate_single_action_dispatch() -> None:
 
                 return observe()
 
-            def capture_compound(self, batch):
+            def capture_compound_shadow(self, batch):
                 async def observe():
                     compound.append(batch)
 

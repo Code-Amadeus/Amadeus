@@ -3,11 +3,6 @@ import type { ChatWorkActivityEntry, ChatWorkActivityRun } from './chatWorkActiv
 
 interface Props {
   activity: ChatWorkActivityRun
-  onPermissionDecision?: (
-    activity: ChatWorkActivityRun,
-    entry: ChatWorkActivityEntry,
-    allow: boolean,
-  ) => Promise<void>
 }
 
 const STATUS_LABEL: Record<ChatWorkActivityRun['status'], string> = {
@@ -16,7 +11,6 @@ const STATUS_LABEL: Record<ChatWorkActivityRun['status'], string> = {
   failed: 'Failed',
   cancelled: 'Cancelled',
   stalled: 'Waiting',
-  orphaned: 'Outcome unknown',
 }
 
 const STATUS_COLOR: Record<ChatWorkActivityRun['status'], string> = {
@@ -25,7 +19,6 @@ const STATUS_COLOR: Record<ChatWorkActivityRun['status'], string> = {
   failed: '#C42B1C',
   cancelled: '#7C3AED',
   stalled: '#B45309',
-  orphaned: '#B45309',
 }
 
 function entryGlyph(entry: ChatWorkActivityEntry): string {
@@ -46,10 +39,8 @@ function durationLabel(activity: ChatWorkActivityRun, now: number): string {
   return `${minutes}m ${seconds % 60}s`
 }
 
-export default function ChatWorkActivityCard({ activity, onPermissionDecision }: Props) {
+export default function ChatWorkActivityCard({ activity }: Props) {
   const [now, setNow] = useState(Date.now())
-  const [permissionBusy, setPermissionBusy] = useState('')
-  const [permissionError, setPermissionError] = useState({ requestId: '', message: '' })
   useEffect(() => {
     if (activity.status !== 'running' && activity.status !== 'stalled') return
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
@@ -63,20 +54,6 @@ export default function ChatWorkActivityCard({ activity, onPermissionDecision }:
   const completed = activity.entries.filter(item => item.state === 'succeeded').length
   const failed = activity.entries.filter(item => item.state === 'failed').length
   const color = STATUS_COLOR[activity.status]
-
-  const decidePermission = async (entry: ChatWorkActivityEntry, allow: boolean) => {
-    if (!onPermissionDecision || !entry.permission || permissionBusy) return
-    setPermissionBusy(entry.permission.requestId)
-    setPermissionError({ requestId: '', message: '' })
-    try {
-      await onPermissionDecision(activity, entry, allow)
-    } catch (error) {
-      setPermissionError({ requestId: entry.permission.requestId,
-        message: error instanceof Error ? error.message : 'Permission decision failed' })
-    } finally {
-      setPermissionBusy('')
-    }
-  }
 
   return (
     <div
@@ -177,38 +154,6 @@ export default function ChatWorkActivityCard({ activity, onPermissionDecision }:
                   >
                     {entry.detail}
                   </pre>
-                )}
-                {entry.state === 'attention' && entry.permission && onPermissionDecision && (
-                  <div
-                    data-permission-request={entry.permission.requestId}
-                    style={{ display: 'flex', gap: 6, marginTop: 6 }}
-                  >
-                    {entry.permission.options.includes('allow_once') && (
-                      <button
-                        type="button"
-                        disabled={Boolean(permissionBusy)}
-                        onClick={() => { void decidePermission(entry, true) }}
-                        style={{ border: '1px solid var(--border-strong)', borderRadius: 6, padding: '3px 8px', fontSize: 10.5 }}
-                      >
-                        Allow once
-                      </button>
-                    )}
-                    {entry.permission.options.includes('deny') && (
-                      <button
-                        type="button"
-                        disabled={Boolean(permissionBusy)}
-                        onClick={() => { void decidePermission(entry, false) }}
-                        style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', fontSize: 10.5, color: 'var(--muted)' }}
-                      >
-                        Deny
-                      </button>
-                    )}
-                  </div>
-                )}
-                {permissionError.message && entry.permission?.requestId === permissionError.requestId && (
-                  <div style={{ color: '#C42B1C', fontSize: 10, marginTop: 4 }}>
-                    {permissionError.message}
-                  </div>
                 )}
               </div>
             </div>

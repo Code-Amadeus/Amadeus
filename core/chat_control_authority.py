@@ -20,35 +20,6 @@ from server.control_proposal import ControlProposalBatch, seal_control_proposals
 logger = logging.getLogger("chat_control_authority")
 
 
-def observe_control_resolution(turn_id: str, resolution: Any) -> None:
-    """Project an existing Host fact; never reinterpret or change authority."""
-    try:
-        from server.turn_decision_shadow import get_enabled_turn_decision_shadow_observer
-
-        shadow = get_enabled_turn_decision_shadow_observer()
-        if shadow is not None:
-            application_uncertain = (
-                getattr(resolution, "decision_outcome", "") == "application_uncertain"
-            )
-            shadow.record_event(
-                turn_id,
-                # Keep the existing failure latch in the bounded observer;
-                # application failure must not disappear when its event ages out.
-                stage="control_authority_resolved",
-                origin_kind=("host_action_dispatcher" if application_uncertain else "control_decision"),
-                origin_id=str(getattr(resolution, "decision_outcome", "") or ""),
-                payload={
-                    "disposition": str(getattr(resolution, "disposition", "") or ""),
-                    "decision_status": str(getattr(resolution, "decision_status", "") or ""),
-                    "action_count": len(tuple(getattr(resolution, "actions", ()) or ())),
-                    "reason": str(getattr(resolution, "reason", "") or "")[:400],
-                    **({"execution_uncertain": True} if application_uncertain else {}),
-                },
-            )
-    except Exception:
-        logger.debug("turn decision authority observation failed", exc_info=True)
-
-
 def render_control_history_tag(action: dict[str, Any]) -> str:
     """Render only effective public control attributes for model history."""
 
@@ -88,16 +59,6 @@ def publish_control_proposals(
         prior_messages=state.control_prior_messages,
     )
     state.control_proposal_batches.append(snapshot)
-    try:
-        from server.turn_decision_shadow import (
-            get_enabled_turn_decision_shadow_observer,
-        )
-
-        shadow = get_enabled_turn_decision_shadow_observer()
-        if shadow is not None:
-            shadow.observe_proposal_batch(snapshot)
-    except Exception:
-        logger.debug("turn decision proposal observation failed", exc_info=True)
     observer = getattr(owner, "_control_proposal_observer", None)
 
     # The optional compound shadow shares the immutable tag-closure snapshot
@@ -107,7 +68,7 @@ def publish_control_proposals(
     compound_capture = (
         None
         if bool(getattr(owner, "_compound_control_authority", False))
-        else getattr(observer, "capture_compound", None)
+        else getattr(observer, "capture_compound_shadow", None)
     )
     compound_job = None
     if callable(compound_capture):
@@ -218,7 +179,7 @@ def schedule_control_authority(
         owner._control_proposal_observer,
         snapshot,
         capture_method=(
-            "capture_compound" if compound_authority else "capture"
+            "capture_compound_shadow" if compound_authority else "capture"
         ),
     )
     placeholder = (
@@ -231,20 +192,13 @@ def schedule_control_authority(
         for action in fallback_actions
         if str(action.get("type") or "").upper() == "DELEGATE"
     )
-    # This is local handoff evidence, not a domain receipt. Once the callback
-    # may have scheduled execution, a later exception cannot prove no effect.
-    dispatch_may_have_started = False
-    starts_work = False
 
     async def apply_resolution(resolution: Any) -> None:
-        nonlocal dispatch_may_have_started, starts_work
         state.control_authority_resolved = True
-        observe_control_resolution(state.turn_id, resolution)
         effective_actions = owner._prepare_authority_actions(
             state,
             resolution.actions,
         )
-        pre_guard_count = len(effective_actions)
         # Canonical reconciliation may turn a role's non-Work proposal into
         # Work (for example report -> amend).  Start the orthogonal AUIP
         # decision from that effective shape before cross-axis composition;
@@ -256,39 +210,6 @@ def schedule_control_authority(
             effective_actions,
             fallback_actions=fallback_actions,
         )
-        from server.focus_policy import finalize_work_focus_modifiers
-
-        await finalize_work_focus_modifiers(effective_actions)
-        try:
-            from server.turn_decision_shadow import (
-                get_enabled_turn_decision_shadow_observer,
-            )
-
-            shadow = get_enabled_turn_decision_shadow_observer()
-            if shadow is not None:
-                shadow.record_event(
-                    state.turn_id,
-                    stage="cross_axis_guard_applied",
-                    origin_kind="host_work_auip_guard",
-                    origin_id=state.turn_id,
-                    payload={
-                        "before_count": pre_guard_count,
-                        "after_count": len(effective_actions),
-                        "auip_action": str(
-                            getattr(state.auip_decision_result, "action", "") or ""
-                        ),
-                        "auip_work_relation": str(
-                            getattr(
-                                state.auip_decision_result,
-                                "work_relation",
-                                "",
-                            )
-                            or ""
-                        ),
-                    },
-                )
-        except Exception:
-            logger.debug("turn decision guard observation failed", exc_info=True)
         state.control_effective_actions = effective_actions
         # History and dispatch must describe the same effective control.  The
         # authority/guard stages may add or remove public attrs after the first
@@ -305,40 +226,11 @@ def schedule_control_authority(
             1,
         )
         if effective_actions:
-            from server.host_action_dispatcher import HostDispatchUnavailable
-
-            starts_work = any(
+            dispatch_batch = record_actions_fn(effective_actions)
+            if any(
                 owner._delegate_action_starts_work(action)
                 for action in effective_actions
-            )
-            dispatch_may_have_started = True
-            try:
-                dispatch_batch = record_actions_fn(effective_actions)
-            except HostDispatchUnavailable:
-                # The dispatcher raises this only before creating its batch.
-                dispatch_may_have_started = False
-                raise
-            dispatch_may_have_started = dispatch_batch is not None
-            try:
-                from server.turn_decision_shadow import (
-                    get_enabled_turn_decision_shadow_observer,
-                )
-
-                shadow = get_enabled_turn_decision_shadow_observer()
-                if shadow is not None:
-                    shadow.record_event(
-                        state.turn_id,
-                        stage="legacy_dispatch_accepted",
-                        origin_kind="host_action_dispatcher",
-                        origin_id=state.turn_id,
-                        payload={
-                            "action_count": len(effective_actions),
-                            "dispatch_task_created": dispatch_batch is not None,
-                        },
-                    )
-            except Exception:
-                logger.debug("legacy dispatch observation failed", exc_info=True)
-            if starts_work:
+            ):
                 state.work_delegate_seen = True
                 owner._schedule_auip_after_effective_work(state)
             owner._remember_taskless_focus(state, effective_actions, dispatch_batch)
@@ -381,21 +273,14 @@ def schedule_control_authority(
             raise
         except Exception as exc:
             state.control_authority_resolved = True
-            if dispatch_may_have_started and starts_work:
-                state.work_handoff_uncertain = True
-            if not dispatch_may_have_started:
-                state.control_effective_actions = []
+            state.control_effective_actions = []
             state.history_response = state.history_response.replace(placeholder, "", 1)
             resolution = resolve_control_authority(
                 decision_status="invalid",
-                decision_outcome=("application_uncertain" if dispatch_may_have_started else "invalid"),
+                decision_outcome="invalid",
                 reason=f"authority application failed: {type(exc).__name__}",
             )
-            logger.exception(
-                "[CONTROL-AUTHORITY] application failed; execution_uncertain=%s",
-                dispatch_may_have_started,
-            )
-            observe_control_resolution(state.turn_id, resolution)
+            logger.exception("[CONTROL-AUTHORITY] application failed closed")
             await owner._announce_control_authority_block(resolution, state)
 
     loop = asyncio.get_running_loop()

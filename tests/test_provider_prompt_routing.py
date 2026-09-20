@@ -51,9 +51,25 @@ def test_delegate_prompts_follow_live_provider_registration() -> None:
     assert "explicitly chooses one registered provider" in representative
     assert "Never infer force_provider" in representative
     assert "live page state must be retained or manipulated" in representative
-    assert "web research, source discovery, comparison, and synthesis" in representative
-    assert "Never invent a URL merely to select Browser" in representative
-    assert "without that evidence is Agent research" in representative
+    assert "browser, codex, openclaw, research" not in representative
+
+    with (
+        patch("tts.pipeline.TTS_OUTPUT_LANGUAGE", "??"),
+        patch(
+            "llm.prompts.registered_provider_ids",
+            return_value=("browser", "codex", "openclaw", "research"),
+        ),
+    ):
+        research_enabled = prompts.get_system_prompt("with_delegate")
+
+    assert research_enabled != representative
+    assert "browser, codex, openclaw, research" in research_enabled
+    assert any(
+        "Research" in line
+        and 'provider="research"' in line
+        and "live Browser" in line
+        for line in research_enabled.splitlines()
+    )
     assert "continues the export-owning WorkItem" in representative
     assert "not the Session's current Project source" in representative
 

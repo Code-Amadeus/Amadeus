@@ -549,7 +549,6 @@ def test_audio_writer_publishes_mouth_envelope_before_each_physical_subwrite() -
                 mouth_envelope=True,
                 sample_rate=1000,
                 first_mouth_minimum=0.12,
-                after_first_write=lambda: events.append(("first_write_done", 1)),
             )
         finally:
             player._stop_audio_writer()
@@ -559,7 +558,6 @@ def test_audio_writer_publishes_mouth_envelope_before_each_physical_subwrite() -
     assert events == [
         ("mouth", 0.12),
         ("write", 50),
-        ("first_write_done", 1),
         ("mouth", 0.4),
         ("write", 50),
         ("mouth", 0.02),
@@ -612,7 +610,6 @@ def test_shared_stream_playback_feeds_aec_and_mouth_signals() -> None:
             mouth_envelope=False,
             sample_rate=None,
             first_mouth_minimum=None,
-            after_first_write=None,
         ) -> None:
             del loop
             if is_current is not None and not is_current():
@@ -629,12 +626,8 @@ def test_shared_stream_playback_feeds_aec_and_mouth_signals() -> None:
                         value = max(float(first_mouth_minimum), value)
                     self.mouth_sink.publish_mouth_value(value)
                     self.writes.append(segment.copy())
-                    if offset == 0 and after_first_write is not None:
-                        after_first_write()
             else:
                 self.writes.append(audio.copy())
-                if len(audio) and after_first_write is not None:
-                    after_first_write()
             if after_write is not None:
                 after_write()
 
@@ -698,38 +691,6 @@ def test_shared_stream_playback_feeds_aec_and_mouth_signals() -> None:
         assert len(player.writes) == write_count
 
     asyncio.run(run())
-
-
-def test_first_audio_write_evidence_requires_nonempty_successful_device_write() -> None:
-    from tts.playback import StreamPlayer
-
-    async def run(case):
-        observed = []
-
-        class FakeStream:
-            def write(self, _data):
-                if case == "failed":
-                    raise RuntimeError("device unavailable")
-
-        player = StreamPlayer(SimpleNamespace(publish_mouth_value=lambda _value: None))
-        player.stream = FakeStream()
-        player.is_playing = True
-        try:
-            try:
-                await player.write_audio_async(
-                    np.ones(0 if case == "empty" else 4, dtype=np.float32),
-                    is_current=lambda: case != "stale",
-                    after_first_write=lambda: observed.append("written"),
-                )
-                assert case != "failed"
-            except RuntimeError:
-                assert case == "failed"
-            assert observed == ([] if case != "success" else ["written"])
-        finally:
-            player._stop_audio_writer()
-
-    for case in ("empty", "failed", "stale", "success"):
-        asyncio.run(run(case))
 
 
 def test_stream_player_stop_is_idempotent_for_an_already_closed_stream() -> None:

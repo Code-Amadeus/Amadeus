@@ -13,7 +13,7 @@
 <p>
   <a href="https://www.bilibili.com/video/BV1783G6hEYY/"><img src="https://img.shields.io/badge/demo-Bilibili-2f624a?labelColor=061710&logo=bilibili&logoColor=61eeb6" alt="B 站演示"/></a>
   <a href="./assets/architecture-overview-crt.svg"><img src="https://img.shields.io/badge/architecture-current-184b36?labelColor=061710" alt="当前架构图"/></a>
-  <img src="https://img.shields.io/badge/version-0.15_Alpha-2f624a?labelColor=061710" alt="Amadeus 0.15 Alpha candidate"/>
+  <img src="https://img.shields.io/badge/version-0.1_%CE%B1-2f624a?labelColor=061710" alt="Amadeus 0.1 alpha"/>
   <img src="https://img.shields.io/badge/安装配置-core%20%2F%20voice%20%2F%20CPU%20VAD%20%2F%20cu124-2f624a?labelColor=061710" alt="安装配置：core、voice、CPU VAD、cu124"/>
   <img src="https://img.shields.io/badge/license-AGPL--3.0-272018?labelColor=061710" alt="许可证"/>
 </p>
@@ -24,10 +24,8 @@
 
 </div>
 
-> [0.15 Alpha：路由权威、开关与验收范围](docs/alpha-0.15.md)
-
 > [!IMPORTANT]
-> 本仓库包含可构建、可运行的公开源码，本分支为 **0.15 Alpha 候选版**，
+> 本仓库包含可构建、可运行的公开源码，当前版本为 **0.1 α**，
 > 不是带安装器的正式桌面发行版。Amadeus 第一方代码依据
 > [GNU Affero General Public License v3.0（AGPL-3.0）](LICENSE) 开源。
 > 第三方代码与外部资产保留各自条款。
@@ -78,6 +76,8 @@ Amadeus 试图把这些体验连成一个闭环：
 | **持久 Work 控制面** | Project、默认 Draft、WorkItem / Attempt、Continue / Retry、重启恢复、权限、Artifact Registry 与结构化 Diff。 |
 | **Artifact 与 AUIP** | Work 产物可预览、打开，或在校验后附加为有界 AUIP AppSession，让 Amadeus 与应用交互而不把叙述变成执行权限。 |
 | **统一设置入口** | Models、Voice、Providers/MCP、视觉、角色包状态和聊天外观在 Electron Settings 中集中管理。 |
+| **持久记忆与长期陪伴** | Host-owned Continuity Runtime：跨会话记忆、关系状态、角色生活与归档回忆；SQLite 单一事实源，显式忘记不可逆（见 [C0 → C8 升级](#连续性与长期陪伴c0--c8-升级)）。 |
+| **内置联网研究** | 不依赖 OpenClaw 的 Native Research：quick lookup 与带引用的深度多源报告；Tavily / Bing / SearXNG / DuckDuckGo 后端自动降级。 |
 
 MCP 与 Skills 即使共用 Host registry，也只授予兼容 Provider；**Main Chat
 不能直接调用 MCP 工具**。远程 DeepSeek 是主 Chat 基线；远程 ASR/TTS 是显式
@@ -116,6 +116,44 @@ Windows `run_electron_utf8.bat` / macOS `npm run electron:dev`（自动发现 `.
 当前 Codex 由 App Server 或 Direct transport 接入，不依赖旧 Locus 网关。
 Claude CLI 将在后续作为独立 direct Provider 进入同一边界，而不是恢复 Locus。
 
+## 连续性与长期陪伴（C0 → C8 升级）
+
+升级前，Amadeus 的对话记忆止步于单个 Session：没有跨会话的用户事实、稳定的关系
+状态，也无法可靠回溯旧经历。C0–C8 在 Host 层引入完整的 **Continuity Runtime**
+（实现位于 `core/continuity/`，测试位于 `tests/continuity/`），C8（Archive Recall /
+Advanced Retrieval）为该升级的收口版本。该升级线按阶段交付，每阶段附带 schema
+迁移、实现报告与回归证据。
+
+| 模块 | 阶段 | 升级内容 |
+|---|---|---|
+| 权威边界冻结 | C0 | 记忆 / 关系 / 生活状态的归属与来源分级、显式忘记语义、非权威规则固化为契约。 |
+| RealityClock | C1 | Host 统一提供现实时间（wall + monotonic），持久化时钟回拨检测；跨重启以 wall clock 为准。 |
+| Memory Runtime | C1–C2 | SQLite（schema 1→2）长期记忆：确定性抽取、create / reinforce / supersede 语义、显式 remember 快速路径、崩溃恢复与原子写入。 |
+| 检索与 grounding | C3 | 结构化查找 + SQLite FTS5 词法检索基线，可选语义检索仅作可重建派生索引；排序、去重与有界 `[Continuity grounding]` 注入。 |
+| Retention / Maintenance | C4 | `hot` / `cold` / `archive` 保留分层（schema 4）、确定性衰减、pinned / P0 保护、hot 工作集上限降级、Work Ledger 事件投影。 |
+| Relationship Runtime | C5 | 长期关系（familiarity / trust / warmth / respect / closeness）与短期情绪（半衰期衰减）分离；事件溯源 + Host reducer（schema 5）。 |
+| Character Life | C6 | 确定性每日日程（一个本地日一份计划）、跨日 ongoing threads、重启与跨日有界追补、聊天中断暂停与恢复（schema 6）。 |
+| Continuity UI 与诊断 | C7 | Host-owned WebSocket 控制面：记忆列表、pin / unpin、显式 Forget、维护操作与关系 / 日程诊断；Electron 只渲染 Host 事实。 |
+| Archive Recall | C8 | 低置信度历史 gate、有界 Session archive 检索、时间感知过滤、高保真引用回退与无内容检索 trace（schema 7）。 |
+
+### 技术路线
+
+- **SQLite 是唯一权威事实源**；FTS5、embedding 与向量索引均为可重建的派生缓存，不构成第二事实库。
+- **事件 / 事实 + 生命周期模型**：不把全部聊天无差别向量化；写入、合并、覆盖与过期的决定权在 Host，模型只输出候选语义。
+- **同步快速路径与异步整合分路**：显式 remember / forget 同步完成；普通记忆抽取在 `chat.complete` 之后异步整合，不阻塞首句延迟。
+- **显式忘记是不可逆闭包**：硬删除 + 不含被忘内容的 tombstone，并在同一事务内失效派生状态与派生索引；旧 Session 历史无法复活已忘记的事实。
+- **来源分级**：仅 user_asserted / host_verified / work_ledger / auip_verified / simulated_life 等来源可成为长期事实；助手自由生成文本默认不是用户事实。
+- **关系慢变量与短期情绪分离；角色生活是 `SIMULATED_LIFE` 派生状态**，不反向写入 Canon、用户事实或 Work 权威。
+- **Shadow → Live 两步交付**：新状态先在影子路径累积与验证，Main Chat 投影由独立 feature flag 控制、默认关闭。
+- **不改变既有权威边界**：Persona、Character RAG、Work、Provider、AUIP 与权限的权属维持不变；C8 的 schema 7 仅新增“归档检索不得绕过忘记”的 metadata guard。
+- **可观测与性能隔离**：诊断与检索 trace 内容无涉；普通聊天路径不触碰 Session archive（本地探针：500 次普通请求 0 次归档尝试）。
+
+## 其他更新（C8）
+
+- **兼容远程 Qwen3-ASR-Flash API（`qwen3_asr_api`）**：在本地 embedded Qwen3-ASR（sidecar）、SenseVoice 与 OpenAI-compatible 后端之外，新增阿里云百炼（Model Studio）Qwen3-ASR-Flash 形态的远程转录后端；配置 base URL、API key 与模型名即可启用，Settings 中可查看就绪状态。作为计量型远程 API，它不对未完成语音发送投机转录请求。
+- **手动 / 自动语音输入模式**：手动 Mic 为 click-to-talk——每次点击只识别一整段话，且不启用后台打断与投机转录；自动 Mic 开启连续会话（continuous session）持续监听多段对话，与 Wake 一并构成免手模式并启用实时 barge-in。
+- **Native Research 联网搜索**：内置研究 Provider 不依赖、也不调用 OpenClaw，直接从 Main Chat 或 Work 发起 Web 检索。短查询走 quick lookup（内联 `[n]` 引用）；复杂任务进入 ProviderRuntime 后台深度研究：多查询检索、来源评分与交叉印证、确定性生成带引用的 Markdown 报告。搜索后端按 Tavily → Bing → SearXNG → DuckDuckGo（免 key）自动降级，规划与综合复用现有 DeepSeek 配置。详见 [Native Research (Phase 3)](#native-research-phase-3)。
+
 ## AUIP 应用会话（application sessions）
 
 AUIP 是 Amadeus 的 cooperative application protocol，不是 Provider、MCP 或主
@@ -136,11 +174,10 @@ verified Work Artifact
 - AUIP 不授予 `work.*`、`provider.*`、`tts.*`、任意文件系统或其他 Session 权限。
 - 断连成为可见状态并使待确认动作失效，不会在陈旧状态上静默继续。
 
-当前 schema 是实验性的 `amadeus.auip/v0`；协议实现、[Web SDK](sdk/auip-web/)、
-[Managed Core](sdk/auip-core/)、应用示例和集成测试均位于本仓库。详见
-[AUIP 应用会话文档](docs/auip_application_sessions.md)。
-[Code-Amadeus/AUIP](https://github.com/Code-Amadeus/AUIP) 维护协议现状、实现入口与
-后续 SDK 发布条件；目前尚未发布独立版本的 SDK 或独立 conformance suite。
+当前 schema 是 `amadeus.auip/v0`，实现位于本仓库。详见
+[AUIP 应用会话文档](docs/auip_application_sessions.md)。独立的
+[Code-Amadeus/auip](https://github.com/Code-Amadeus/auip) 目前仍是公共 namespace
+placeholder，本版本不声称已经发布独立 SDK 或 conformance suite。
 
 ## 快速开始
 
@@ -149,10 +186,8 @@ verified Work Artifact
 桌面、麦克风和播放体验仍需设备验收。L3 可选择 CPU VAD，**无需 NVIDIA GPU**；
 L4 的当前 cu124 配置面向 Windows + NVIDIA。Windows ROCm 7.2.1 已有互斥的
 `local-rocm` 实验锁与验证入口，但尚未完成受支持 AMD GPU 的端到端验收；RTX 50 系
-cu128 与 Apple Silicon MPS 已提供实验安装配置。
+cu128 仍是社区配置记录。
 统一使用 [uv](https://docs.astral.sh/uv/) 与 Python 3.12，CI 固定 uv 0.12.8。
-
-Linux 用户请从下方的 [Linux（实验性）](#linux实验性) 章节开始。
 
 | 梯级 | 能力 | 平台 | 安装方式 |
 |---|---|---|---|
@@ -162,8 +197,8 @@ Linux 用户请从下方的 [Linux（实验性）](#linux实验性) 章节开始
 | L4 local-cu124 | 本地 GPT-SoVITS / Qwen3 ASR / 唤醒词 | Windows + NVIDIA GPU | `uv sync --locked --extra voice --extra vad --extra local-cu124` |
 | 实验 local-rocm | 本地 GPT-SoVITS / Qwen3 ASR sidecar | Windows + AMD 官方矩阵内 GPU | `uv sync --locked --extra voice --extra vad --extra local-rocm` |
 
-各安装配置均使用**同一个 `.venv`**。每次给出完整目标配置：
-`uv sync` 会精确同步，漏带会移除已装层。`torch-cpu`、`local-cu124`、`local-cu128`、`local-mps` 与
+四个默认梯级与 ROCm 实验选项均使用**同一个 `.venv`**。每次给出完整目标配置：
+`uv sync` 会精确同步，漏带会移除已装层。`torch-cpu`、`local-cu124` 与
 `local-rocm` 两两互斥；切换构建时替换对应 extra，并保留 `voice`、`vad`。
 详见[安装配置与迁移](docs/install_profiles.md)。
 
@@ -226,77 +261,6 @@ cd ..
 `npm ci` 会通过项目 postinstall 安装锁定的 Electron 运行时。国内网络可为
 npm/Electron 配置镜像（如 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`）。
 
-### Linux（实验性）
-
-**Linux 目前属于实验性源码运行路径，尚未纳入完整支持的平台范围。**
-[第一阶段 Linux CI（#63）](https://github.com/Code-Amadeus/Amadeus/pull/63) 已通过
-Ubuntu 24.04 上的 L1 + dev 锁定安装、环境导入与无模型依赖检查、基础契约测试、
-Ruff、架构视图检查及 Electron 构建。另有独立 Voice source-build CI，验证锁定安装、
-AEC 导入、bundled Abseil 选择及相关契约。CI 不覆盖 Electron GUI、真实音频设备、
-VAD/本地模型推理、Wayland 会话或壁纸集成。
-另有 cu128 候选安装、依赖和 CPU VAD 回切检查，均不替代真实 GPU 模型验收。
-
-社区已报告 Arch Linux / Wayland 下的桌面与角色渲染等实机结果；这些结果不代表
-所有发行版或桌面环境均已验证。环境记录、已知问题和后续进展见
-[Linux 跟踪 issue #64](https://github.com/Code-Amadeus/Amadeus/issues/64)。
-
-先安装 Git、[uv](https://docs.astral.sh/uv/)（CI 使用 `0.12.8`）和 Node.js 22
-（CI 使用 `22.21.1`），从无需 GPU 或语音包的 L1 开始：
-
-```bash
-git clone https://github.com/Code-Amadeus/Amadeus.git
-cd Amadeus
-uv venv .venv --python 3.12.10
-uv sync --locked
-cp .env.example .env
-```
-
-编辑 `.env`，填写 `DEEPSEEK_API_KEY`，设置 `TTS_BACKEND=disabled`，并保持
-`WAKE_ENABLED=false`，先验证文字路径。然后在项目根目录检查环境：
-
-```bash
-uv run --locked --no-sync python tools/verify_python_environment.py --profile cpu
-```
-
-在 Linux 图形桌面会话中构建并启动 Electron；启动器会自动发现
-`.venv/bin/python3` 并启动后端：
-
-```bash
-cd electron
-npm ci
-npm run build
-npm run electron:dev
-```
-
-如只需 headless 后端，可改为在项目根目录运行：
-
-```bash
-uv run --locked --no-sync python -m server.app --port 17777
-```
-
-需要远程语音、录音和播放时，可在同一 `.venv` 安装 L2。Ubuntu 24.04 先安装
-CI 使用的源码构建前置包；其他发行版请使用对应的软件包名称：
-
-```bash
-sudo apt-get update
-sudo apt-get install --no-install-recommends -y build-essential pkg-config portaudio19-dev
-uv sync --locked --extra voice
-uv run --locked --no-sync python tools/verify_python_environment.py --profile voice
-```
-
-升级到语音或本地模型前，请留意以下实验边界：
-
-- **Voice / AEC**：Linux 使用基于官方 `aec-audio-processing==1.0.1` sdist 的仓库内
-  源码，强制选择 bundled Abseil 20240722.0，避免选中新版 system Abseil 导致的构建
-  失败。该修改不更改系统 Abseil；Windows/macOS 继续使用 registry 包。来源、独立
-  补丁与移除条件见 [AEC provenance](vendor/aec-audio-processing.PROVENANCE.md)。
-  构建/导入通过不代表真实设备上的回声消除或完整语音交互已验收。
-- **VAD / NVIDIA**：Linux CPU VAD 与 `local-cu128` 候选已有明确的 Torch 构建选择
-  和安装/契约 CI；cu124 参考配置仍面向 Windows。真实 GPU 模型推理及完整语音
-  交互继续按设备验收，见下方候选配置说明。
-- **桌面 / 壁纸**：GUI 与 Wayland compositor 集成仍需分别验收；GNOME 的社区结果
-  不代表 niri、KDE 或其他桌面也可用。
-
 ### VAD 与本地模型
 
 与 L1/L2 共用同一个 `.venv`，选择完整的能力与构建组合：
@@ -330,29 +294,41 @@ Torch 构建互斥。安装后必须先运行环境验证与真实 FP32 GPU comp
 本机 Radeon 780M（gfx1103）实测可被 ROCm 枚举，但首次 FP32 计算在 AMD HIP DLL
 中崩溃；该核显不在 AMD 官方 7.2.1 Windows PyTorch 矩阵内，因此不能作为可用目标。
 
-**实验 Torch 2.7 配置**：`local-cu128`（Windows/Linux x86_64）与
-`local-mps`（Apple Silicon）提供锁定的 Torch/Torchaudio 2.7.0 安装入口。
-现有 Windows cu124 仍保留为参考配置，Windows ROCm 继续使用 AMD 配套的 2.9.1。
-
-```bash
-# Windows/Linux NVIDIA 候选，包含完整模型依赖
-uv sync --locked --extra voice --extra vad --extra local-cu128
-uv run --locked --no-sync python tools/verify_python_environment.py --profile cu128
-
-# Apple Silicon 安装候选
-uv sync --locked --extra voice --extra vad --extra local-mps
-uv run --locked --no-sync python tools/verify_python_environment.py --profile mps
-```
-
-以上为互斥选择，按当前平台只执行一组。安装检查与 CPU 契约 CI 不代表 GPU 推理、
-麦克风、连续播放和打断已验收。#67 报告了 M4 Max 上独立 Qwen-ASR MPS 实测；
-当前应用内 Qwen 仍只支持 CPU/CUDA 设备选择，安装此配置不会自动接通 ASR MPS。
-现有 GPT-SoVITS MPS 路径可使用该候选环境，2.7.0 上的模型回归仍需实测。
-
-RTX 50 系应评估 cu128 候选，不能使用旧 cu124 作为 Blackwell 运行依据。
-FlashAttention 保持可选；已找到匹配 cp312/Torch 2.7/cu128 的 Windows 社区 wheel
-和 Linux 上游 wheel，来源、哈希与验证范围见
-[Torch 2.7 与 FlashAttention 候选](docs/torch27_candidates.md)。
+> **GeForce RTX 50 系（Blackwell，社区验证配置）**：本项目当前使用的
+> `torch==2.6.0+cu124` profile 不兼容 RTX 50 系，无法运行本地 CUDA
+> 语音模型。50 系用户需要更新 NVIDIA 驱动，并改用社区已验证可运行的
+> PyTorch 2.7.0 CUDA 12.8 组合。
+>
+> **GeForce RTX 50 series (Blackwell, community-validated configuration):**
+> the current `torch==2.6.0+cu124` profile is incompatible with RTX 50-series
+> GPUs and cannot run the local CUDA voice models. Update the NVIDIA driver and
+> use the community-validated PyTorch 2.7.0 CUDA 12.8 combination instead:
+>
+> 请在单独的实验项目虚拟环境（例如 `.venv_cu128`）中运行以下命令，
+> 不要改动正式 `.venv`（其 `uv.lock` 固定 cu124）。
+>
+> Run this only inside a separate experimental project venv (for
+> example `.venv_cu128`); do not modify the formal `.venv` whose `uv.lock`
+> pins cu124.
+>
+> ```powershell
+> uv venv .venv_cu128 --python 3.12
+> uv pip install --python .venv_cu128 --reinstall `
+>   torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 `
+>   --index-url https://download.pytorch.org/whl/cu128
+> ```
+>
+> 上述仅安装社区记录的 PyTorch 组合，不是完整 Amadeus 安装步骤。
+>
+> 该组合目前尚未经过项目的完整 clean-install、ASR/TTS/VAD 与 Electron 回归；
+> 当前 `uv.lock` 与 `--profile cu124` 验证器仍以
+> `torch==2.6.0+cu124` 为准，因此不应将其视为 cu124 正式基线的替代品。
+>
+> This combination has not yet passed the project's full clean-install,
+> ASR/TTS/VAD, and Electron regression gates. The current
+> `uv.lock` and `--profile cu124` verifier still require
+> `torch==2.6.0+cu124`, so this is not a replacement for the official cu124
+> baseline.
 
 ### 安装外部运行资产
 
@@ -394,16 +370,13 @@ uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('
 macOS：`cp .env.example .env`），然后在 Settings 中核对：
 
 - **Models**：`deepseek`、官方 endpoint、`deepseek-v4-flash` 与 API key；
-- **Voice**：远程 TTS 推荐 Fish Audio S2.1 + Kurisu，也支持 MiMo / OpenAI-compatible；L4 本地栈另需 Qwen model 目录、GPT-SoVITS **v3** checkpoints、reference audio/text、麦克风、AEC 和 barge-in；
+- **Voice**：远程 TTS/ASR 端点（如 MiMo）；L4 本地栈另需 Qwen model 目录、GPT-SoVITS **v3** checkpoints、reference audio/text、麦克风、AEC 和 barge-in；
 - **General**：可选角色包状态与呈现设置。
 
 启动：
 
 - Windows：`run_electron_utf8.bat`（单一启动器；自动发现 `.venv`，L1–L4 通用）
 - macOS：`cd electron && npm run electron:dev`
-
-macOS 登录后自动启动壁纸可使用原生 `Amadeus Wallpaper.app`；构建、验证和
-LaunchAgent 安装步骤见 [macOS 壁纸自启动](docs/macos_wallpaper_startup.md)。
 
 启动型设置变更后按 **Restart backend to apply**。角色包显示
 **Not installed** 是健康状态，不影响 Chat、Work 或 headless 启动。
@@ -434,41 +407,10 @@ DeepSeek 失败后自动切换。
 | 职责 | 推荐 profile | 当前边界 |
 |---|---|---|
 | 主 Chat API | DeepSeek-V4-Flash-0731：`DEEPSEEK_BASE_URL=https://api.deepseek.com`，`DEEPSEEK_MODEL_NAME=deepseek-v4-flash` | `deepseek-v4-flash` 是稳定 API alias，当前指向 0731 版本；不把日期写进运行时 model id。 |
-| 远程语音合成 TTS | 推荐 **Fish Audio S2.1**：`TTS_BACKEND=fish_audio`、`FISH_TTS_MODEL=s2.1-pro-free`；Kurisu 音色：`FISH_TTS_REFERENCE_ID=b450b19370434173b121446057622e9b` | WebSocket 双向流式 API；本地分句片段按 `text → flush` 发送，音频逐块接收。主 Chat 保留现有分句调度；不直接发送原始 LLM token。 |
 | 多模态 / Vision | 优先 `gemini-3.7-flash`；需要较保守的兼容 profile 时可用 `gemini-3.5-flash` | 当前由 Host 内部 visual-context 链负责图像采集，图像发送仍跟随主 Chat provider；独立 Gemini Vision API 路由尚未实现，也不代表恢复旧 Gemini Live sidecar。 |
 | Work 执行 Provider | 首选 Codex App Server；其次是可选 OpenClaw Gateway | 这是推荐优先级，不是失败后自动 fallback。Browser 仍是网页任务的专用 Provider。 |
 | Work 执行模型 | Codex App Server 可显式选择 GPT-5.6 family 或 `deepseek-v4-flash` | 执行模型属于 Work Provider，不与主 Chat 共用路由或密钥。 |
 | AUIP 运行时动作判定 | `AUIP_ACTION_PROVIDER=openai`、`AUIP_ACTION_MODEL=gpt-5.6-terra`、`AUIP_ACTION_REASONING_EFFORT=low`、`AUIP_ACTION_SERVICE_TIER=fast` | 这是 AppSession 的动作 / 参与判定模型，不是 AUIP Artifact 的执行 Provider；`fast` 需要对应 API 项目可用。 |
-
-### 推荐远程 TTS：Fish Audio + Kurisu
-
-安装 L2 voice 后，在 **Settings → Voice** 的 Speech synthesis 中选择
-**Fish Audio**，填写 API key，确认以下两个不同的 ID，再重启后端：
-
-| 设置 | 推荐值 |
-|---|---|
-| Fish 推理模型 ID（S2.1 免费模型） | `s2.1-pro-free` |
-| Kurisu 音色 / reference ID | `b450b19370434173b121446057622e9b` |
-| 音色页面 | [牧濑红莉栖 / Makise kurisu](https://fish.audio/zh-CN/app/text-to-speech/?modelId=b450b19370434173b121446057622e9b) |
-| WebSocket endpoint | `wss://api.fish.audio/v1/tts/live` |
-| 延迟模式 | `balanced` |
-
-也可在本机 `.env` 中配置：
-
-```dotenv
-TTS_BACKEND=fish_audio
-FISH_TTS_API_KEY=<your-fish-api-key>
-FISH_TTS_MODEL=s2.1-pro-free
-FISH_TTS_REFERENCE_ID=b450b19370434173b121446057622e9b
-FISH_TTS_LATENCY=balanced
-```
-
-这是日语 Kurisu 音色；推理模型 ID 和音色 ID 不能互换。GUI 中的 API key
-进入现有加密凭据存储。推荐远程配置不改变默认的本地 GPT-SoVITS 后端。
-在一台 Windows 主机上，DeepSeek + 此 Fish 配置的三次基线测试中，
-从发送 `chat.send` 到首个非静音音频写入声卡的中位数为 **3.70 秒**
-（另有约 91 ms 声卡输出延迟；不代表所有网络或冷启动表现）。
-配置、增量 chunk 试验与音频检查见 [Fish Audio 接入说明](docs/fish_audio_websocket.md)。
 
 ## 外部模型与运行资产
 
@@ -518,54 +460,6 @@ http://127.0.0.1:17777/wallpaper/lively/index.html
 `uv run --locked --no-sync python tools\run_wallpaper_engine_bridge.py` 并使用它打印的 `Lively URL`。
 详见 [Lively 入口说明](wallpaper/lively/README.md)。
 
-macOS 没有对应的 Lively/Wallpaper Engine 桌面宿主。点击 **Wallpaper** 后，
-Electron 会直接创建桌面层的全场景窗口，并用独立透明窗口承载可交互 Canvas；
-场景本身保持鼠标穿透，不会挡住 Finder 桌面图标。该能力目前属于社区实机验证候选，
-不构成正式 macOS 支持；依赖与 CI 由 [#46](https://github.com/Code-Amadeus/Amadeus/pull/46)
-承接，目前也不包含签名、公证或安装器。
-
-### 图形性能配置
-
-所有 PixiJS 角色与壁纸表面共享一个 `.env` 图形 Profile：
-
-| `GRAPHICS_PROFILE` | 最大帧率 | resolution | 用途 |
-|---|---:|---:|---|
-| `standard`（默认） | 60 FPS | 原生 device-pixel ratio | 保持动画设计质量 |
-| `power_saving` | 30 FPS | 最高 1.5× | 降低 GPU、功耗与发热 |
-| `custom` | `RENDER_MAX_FPS` | `RENDER_MAX_RESOLUTION` | 自定义性能预算 |
-
-自定义帧率支持 10–240 FPS，resolution 支持 0.25–4.0。示例：
-
-```dotenv
-GRAPHICS_PROFILE=custom
-RENDER_MAX_FPS=45
-RENDER_MAX_RESOLUTION=1.25
-```
-
-Wallpaper Engine 通过
-[`applyGeneralProperties().fps`](https://docs.wallpaperengine.io/en/web/performance/fps.html)
-提供用户 FPS 设置时，运行时采用该设置与项目 Profile 中较低的有效值；Electron、
-Lively 及普通角色表面没有该宿主设置，直接使用项目 Profile。
-暂不提供对应 GUI，修改 `.env` 后需重启 Amadeus。
-
-#### 实验性纹理采样（默认关闭）
-
-`RENDER_TEXTURE_SAMPLING=false` 为默认值，保持现有的全帧加载与播放规则。
-**16GB 或其他内存压力较大的设备**，可考虑在 `.env` 中开启并选择 30 FPS 省电档：
-
-```dotenv
-GRAPHICS_PROFILE=power_saving
-RENDER_TEXTURE_SAMPLING=true
-```
-
-开启后，角色动画按有效帧率选择要加载的源帧，保留关键停留帧、动作时长与嘴型索引。
-本机 30 FPS 离屏实验中，CPU 纹理缓冲约减少 50%，播放帧间隔与原版接近；
-这不代表整机 RAM 或显存减半，16GB 实机及长期运行仍待验证。
-详见[实验数据与限制](docs/fps_texture_sampling_experiment_2026-09-16.md)。
-
-修改后需重启 Amadeus/后端并重开壁纸。仅切换绘制 FPS 不会立即重建纹理缓存。
-如需恢复原行为，将 `RENDER_TEXTURE_SAMPLING=false` 后按同样步骤重启。
-
 ## 配置所有权
 
 启动值优先级固定为：
@@ -585,16 +479,14 @@ Settings 不会回写 `.env`。普通模型、语音、麦克风、Provider/MCP�
 | 范围 | 状态 |
 |---|---|
 | L1/L2（文字 + 远程语音）| Windows 与 macOS 源码部署；Windows 为参考平台，macOS L1/L2 有独立 CI，桌面与音频体验仍需实机验收 |
-| Linux（实验性）| Ubuntu 24.04 的 L1、L2 Voice 源码构建与 Electron 构建有 CI；GUI、真实音频设备、GPU 与壁纸仍需验收，见 [Linux 章节](#linux实验性) |
 | L3 CPU VAD | 不要求 NVIDIA GPU；使用明确的 CPU 构建配置 |
 | L4 cu124（本地 CUDA 12.4 语音）| Windows + NVIDIA；以当前实际运行环境为参考 |
 | AMD ROCm 7.2.1 | 单 `.venv` 实验锁、sidecar adapter 与失败闭环已提供；受支持 AMD GPU 实机验收待补齐 |
-| cu128 / Apple Silicon MPS | Torch 2.7.0 实验锁与安装 CI；完整设备和模型回归待完成 |
+| RTX 50 系 cu128 | 社区配置记录，尚无正式锁与完整回归 |
 | 8 GiB VRAM / 16–32 GiB RAM | 目标配置；实际占用由模型组合决定 |
 | 远程 DeepSeek Main Chat | 第一版默认 profile |
 | 远程 ASR / TTS | 显式兼容路径，不静默 fallback |
 | Electron installer | 尚未提供；当前从源码启动 |
-| macOS Electron 壁纸宿主 | 社区实机验证候选；依赖/CI 由 #46 承接，尚无签名、公证或安装器 |
 | Docker | 不是支持的桌面安装路径 |
 | SpriteForge 角色包 | 外部分发；缺包仍可启动 |
 | VTS | 默认关闭的兼容旁路 |
@@ -637,8 +529,8 @@ Amadeus 第一方源码和修改依据
 ## 相关项目
 
 - [Aqua-TTS](https://github.com/Lucas1479/Aqua-TTS)：MIT 的低延迟 GPT-SoVITS v3 推理运行时；Amadeus 当前不要求安装 Aqua 才能启动。
-- [Amadeus SpriteForge](https://github.com/Code-Amadeus/Amadeus-SpriteForge)：已公开源码的 **0.1.0 Source Alpha**，提供本地 sprite 资产检查、行为图编辑与 KTX2 角色包预览/导出；项目代码采用 AGPL-3.0-only，生成服务与 Amadeus 运行时独立。
-- [AUIP](https://github.com/Code-Amadeus/AUIP)：已在 Amadeus 中实现的实验性 application-session / typed-action 协议；独立仓库维护现状与公开实现入口，独立版本 SDK 和 conformance suite 尚未发布。
+- [Amadeus SpriteForge](https://github.com/Code-Amadeus/amadeus-spriteforge)：角色 authoring 与 graph/KTX2 工具链的公共 namespace；当前仍是待发布占位仓库。
+- [AUIP](https://github.com/Code-Amadeus/auip)：application-session / typed-action 协议的公共 namespace；当前仍是待发布占位仓库。
 - [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)：内嵌语音合成推理基础。
 - [OpenClaw](https://github.com/openclaw/openclaw)：可选外部 Work gateway。
 
@@ -655,3 +547,7 @@ Amadeus 第一方源码和修改依据
 ---
 
 <div align="center"><em>El Psy Kongroo.</em></div>
+
+## Native Research (Phase 3)
+
+Amadeus includes a native `research` Provider for Web lookup and cited multi-source research without OpenClaw. Quick lookups return compact chat/voice-first answers; complex research runs inside ProviderRuntime's background Work lifecycle and produces a cited Markdown report. Search can use Tavily, Bing Web Search, SearXNG, or a keyless DuckDuckGo HTML fallback, while the existing DeepSeek configuration is used for planning and evidence synthesis. See `PHASE3_RESEARCH.md` for configuration, scoring/citation rules, and tests.

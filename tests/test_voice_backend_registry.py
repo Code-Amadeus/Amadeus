@@ -52,9 +52,24 @@ def _wav_bytes(*, sample_rate: int = 24000) -> bytes:
 
 
 def test_builtin_voice_registries_keep_embedded_defaults_and_remote_sidepaths() -> None:
-    assert asr_backend_ids()[:2] == ("qwen3_asr", "sense_voice")
-    assert "openai_compatible" in asr_backend_ids()
-    assert tts_backend_ids() == ("gpt_sovits", "openai_compatible", "mimo", "fish_audio", "disabled")
+    ids = asr_backend_ids()
+    assert {
+        "qwen3_asr",
+        "qwen3_asr_api",
+        "sense_voice",
+        "openai_compatible",
+    }.issubset(ids)
+
+    statuses = {
+        item["id"]: item
+        for item in asr_backend_statuses()
+    }
+
+    assert statuses["qwen3_asr"]["deployment"] == "embedded"
+    assert statuses["sense_voice"]["deployment"] == "embedded"
+    assert statuses["qwen3_asr_api"]["deployment"] == "remote"
+    assert statuses["openai_compatible"]["deployment"] == "remote"
+    assert tts_backend_ids() == ("gpt_sovits", "openai_compatible", "mimo", "disabled")
 
     remote_asr = create_asr_backend("openai_compatible")
     assert remote_asr.deployment == "remote"
@@ -418,9 +433,7 @@ def test_runtime_adapter_preserves_existing_pipeline_tuple_contract() -> None:
     assert streamed[0][2] == "hello"
 
 
-def test_embedded_tts_adapter_preserves_local_inference_options(monkeypatch) -> None:
-    # This test injects an embedded inferencer; local sidecar preferences are unrelated.
-    monkeypatch.setattr(GPTSoVITSBackend, "_sidecar_enabled", staticmethod(lambda: False))
+def test_embedded_tts_adapter_preserves_local_inference_options() -> None:
     calls: list[tuple[str, dict]] = []
 
     class FakeInferencer:

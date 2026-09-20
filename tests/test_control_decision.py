@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -201,27 +200,6 @@ def test_same_turn_reference_context_grounds_one_unique_typed_candidate() -> Non
     )
     assert decision.status == "ok"
     assert decision.entries[0].reference_candidates == (route,)
-
-
-def test_new_draft_subject_is_not_an_existing_target_or_project_report() -> None:
-    for subject in ("project", "work_item", "open"):
-        parsed = parse_control_decision_reply(json.dumps({"decisions": [{
-            "proposal_index": 0, "provider": "codex", "intent": "execute",
-            "subject": subject, "work_placement": "draft",
-            "session_context": "unchanged", "reference_mode": "none",
-            "workspace_effect": "write"}]}), proposal_count=1)
-        assert parsed.status == "ok"
-        entry = parsed.entries[0]
-        assert entry.reference_candidates is None
-        assert entry.reference_kind == "none"
-        assert "subject" not in entry.control
-    report = parse_control_decision_reply(json.dumps({"decisions": [{
-        "proposal_index": 0, "provider": "codex", "intent": "report",
-        "subject": "project", "work_placement": "not_applicable",
-        "session_context": "unchanged", "reference_mode": "none"}]}), proposal_count=1)
-    assert report.status == "ok"
-    assert report.entries[0].control["subject"] == "project"
-    assert report.entries[0].reference_kind == "project"
 
 
 def test_parser_preserves_per_proposal_axes_and_reference_need() -> None:
@@ -807,20 +785,15 @@ def test_retract_preserves_all_active_work_items_without_stronger_identity() -> 
         ),
     )
 
-    calls: list[str] = []
-
     async def query(messages: list[dict[str, str]]) -> str:
         joined = "\n".join(message["content"] for message in messages)
-        calls.append(joined)
         if "[Independent candidate verdict - FINAL]" not in joined:
             return (
                 '{"decisions":[{"proposal_index":0,"provider":"locus",'
                 '"intent":"retract","subject":"work_item","work_placement":"not_applicable",'
                 '"session_context":"unchanged","reference_mode":"candidates"}]}'
             )
-        return ('{"evidence":"contextual"}' if any(
-            token in joined for token in ("work_item:work_alpha", "work_item:work_beta"))
-            else '{"evidence":"none"}')
+        return '{"evidence":"none"}'
 
     messages = _messages()
     messages[-1]["content"] = "stop the running task"
@@ -835,10 +808,8 @@ def test_retract_preserves_all_active_work_items_without_stronger_identity() -> 
     )
     assert ambiguous.status == "ok"
     assert ambiguous.entries[0].reference_candidates == active[:2]
-    assert len(calls) == 1 + len(active)
 
     messages[-1]["content"] = "stop Alpha build"
-    calls.clear()
     exact = asyncio.run(
         resolve_control_decision(
             messages,
@@ -850,71 +821,6 @@ def test_retract_preserves_all_active_work_items_without_stronger_identity() -> 
     )
     assert exact.status == "ok"
     assert exact.entries[0].reference_candidates == (active[0],)
-    assert len(calls) == 1 + len(active)
-
-
-def test_retract_keeps_semantically_matched_terminal_work_over_unrelated_running() -> None:
-    candidates = (
-        TypedReferenceCandidate("work_item", "work_memo", "Personal notes page",
-            "session_draft", execution="succeeded"),
-        TypedReferenceCandidate("work_item", "work_timer", "Timer build",
-            "session_draft", execution="running"),
-    )
-    for matched_evidence in ("partial", "contextual"):
-        calls: list[str] = []
-
-        async def query(messages: list[dict[str, str]]) -> str:
-            joined = "\n".join(message["content"] for message in messages)
-            calls.append(joined)
-            if "[Independent candidate verdict - FINAL]" not in joined:
-                return (
-                    '{"decisions":[{"proposal_index":0,"provider":"locus",'
-                    '"intent":"retract","subject":"work_item",'
-                    '"work_placement":"not_applicable","session_context":"unchanged",'
-                    '"reference_mode":"candidates"}]}'
-                )
-            return ('{"evidence":"' + matched_evidence + '"}'
-                if "work_item:work_memo" in joined else '{"evidence":"none"}')
-
-        messages = _messages()
-        messages[-1]["content"] = "stop the memo I finished earlier"
-        decision = asyncio.run(resolve_control_decision(messages, ({},), candidates,
-            complete=True, query=query, proposal_controls=({"intent":"retract"},)))
-        assert decision.status == "ok"
-        assert decision.entries[0].reference_candidates == (candidates[0],)
-        assert decision.candidate_verdict_queries == len(candidates)
-        assert len(calls) == 1 + len(candidates)
-
-
-def test_retract_missing_named_target_does_not_default_to_running_work_or_retry() -> None:
-    candidates = (
-        TypedReferenceCandidate("work_item", "work_memo", "Memo",
-            "session_draft", execution="succeeded"),
-        TypedReferenceCandidate("work_item", "work_timer", "Timer",
-            "session_draft", execution="running"),
-    )
-    calls: list[str] = []
-
-    async def query(messages: list[dict[str, str]]) -> str:
-        joined = "\n".join(message["content"] for message in messages)
-        calls.append(joined)
-        if "[Independent candidate verdict - FINAL]" not in joined:
-            return (
-                '{"decisions":[{"proposal_index":0,"provider":"locus",'
-                '"intent":"retract","subject":"work_item",'
-                '"work_placement":"not_applicable","session_context":"unchanged",'
-                '"reference_mode":"candidates"}]}'
-            )
-        return '{"evidence":"none"}'
-
-    messages = _messages()
-    messages[-1]["content"] = "stop Naval Battle"
-    decision = asyncio.run(resolve_control_decision(messages, ({},), candidates,
-        complete=True, query=query, proposal_controls=({"intent":"retract"},)))
-    assert decision.status == "ok"
-    assert decision.entries[0].reference_candidates == ()
-    assert decision.candidate_verdict_queries == len(candidates)
-    assert len(calls) == 1 + len(candidates)
 
 
 def test_contextual_amend_prefers_the_unique_active_work_item() -> None:

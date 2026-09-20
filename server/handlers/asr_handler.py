@@ -51,6 +51,35 @@ class AsrHandler(RequestHandler):
                 return current
         return self._desired_backend
 
+    @property
+    def active(self) -> bool:
+        return bool(self._active)
+
+    @property
+    def source(self) -> str:
+        return self._source
+
+    @staticmethod
+    def _normalize_chat_mic_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
+        normalized = dict(payload or {})
+        mode = str(normalized.get("mode") or "").strip().lower()
+        if mode not in {"manual", "auto"}:
+            mode = "auto" if normalized.get("auto_send") is True else "manual"
+        normalized["mode"] = mode
+        normalized["auto_send"] = mode == "auto"
+        return normalized
+
+    def _chat_mic_mode(self) -> str:
+        if self._source != "chat_mic":
+            return ""
+        mode = str(self._source_payload.get("mode") or "").strip().lower()
+        if mode in {"manual", "auto"}:
+            return mode
+        return "auto" if self._source_payload.get("auto_send") is True else "manual"
+
+    def is_continuous_chat_mic(self) -> bool:
+        return self._active and self._source == "chat_mic" and self._chat_mic_mode() == "auto"
+
     async def set_backend(self, value: object) -> str:
         from asr.registry import asr_backend_ids
 
@@ -114,41 +143,84 @@ class AsrHandler(RequestHandler):
 
     async def start_listening(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
         params = params or {}
-        if not self._active:
-            try:
-                asr_manager = await self._ensure_asr_manager()
-            except Exception as exc:
-                logger.exception("asr lazy init failed")
-                await bus.emit(Method.ASR_STATUS, {"status": "error", "error": str(exc)})
-                return {"status": "error", "error": str(exc)}
-            if asr_manager is None:
-                return {"status": "error", "error": "ASR manager unavailable"}
-        # Lazy initialization can suspend two start callers. Rejoin the current
-        # lifecycle after that wait before either caller creates a listener.
+        requested_source = str(params.get("source") or "").strip()
+        requested_payload = dict(
+            params.get("source_payload")
+            or params.get("sourcePayload")
+            or {}
+        )
+        if requested_source == "chat_mic":
+            requested_payload = self._normalize_chat_mic_payload(requested_payload)
+        requested_mode = str(requested_payload.get("mode") or "").strip().lower()
+
         if self._active:
-            requested_source = str(params.get("source") or "")
-            if requested_source and requested_source == self._source:
-                self._source_payload = dict(params.get("source_payload") or params.get("sourcePayload") or self._source_payload)
+            if requested_source == "chat_mic" and self._source == "chat_mic":
+                current_mode = self._chat_mic_mode()
+                if current_mode == requested_mode:
+                    await self._emit_listening_status()
+                    return {
+                        "status": "listening",
+                        "source": "chat_mic",
+                        "mode": current_mode,
+                    }
+                logger.info(
+                    "switching chat mic mode: %s -> %s",
+                    current_mode or "unknown",
+                    requested_mode or "unknown",
+                )
+                await self.stop_listening(reason="chat_mic_mode_switch")
+            elif requested_source == "chat_mic" and self._source == "wake":
+                logger.info("chat mic preempting active wake ASR")
+                await self.stop_listening(reason="preempted_by_chat_mic")
+            elif requested_source == "wake" and self._source == "chat_mic":
+                return {
+                    "status": "ignored",
+                    "source": self._source,
+                    "reason": "chat_mic_active",
+                }
+            elif requested_source and requested_source == self._source:
                 if requested_source == "wake":
                     self._wake_payload = dict(params.get("wake") or {})
+                    self._source_payload = requested_payload
                     self._arm_awake(params)
                     await self._emit_listening_status()
-                    return {"status": "awake", "awake_seconds": self._awake_seconds}
+                    return {
+                        "status": "awake",
+                        "awake_seconds": self._awake_seconds,
+                    }
                 await self._emit_listening_status()
-                return {"status": "listening", "source": self._source}
-            if str(params.get("source") or "") == "wake":
-                self._source = "wake"
-                self._wake_payload = dict(params.get("wake") or {})
-                self._source_payload = dict(params.get("source_payload") or params.get("sourcePayload") or {})
-                self._arm_awake(params)
-                await self._emit_listening_status()
-                return {"status": "awake", "awake_seconds": self._awake_seconds}
-            return {"status": "already_listening"}
+                return {
+                    "status": "listening",
+                    "source": self._source,
+                }
+            else:
+                return {
+                    "status": "already_listening",
+                    "source": self._source,
+                }
+
+        try:
+            asr_manager = await self._ensure_asr_manager()
+        except Exception as exc:
+            logger.exception("asr lazy init failed")
+            await bus.emit(Method.ASR_STATUS, {"status": "error", "error": str(exc)})
+            return {"status": "error", "error": str(exc)}
+        if asr_manager is None:
+            return {"status": "error", "error": "ASR manager unavailable"}
+
         self._active = True
-        self._one_shot = bool(params.get("one_shot", False))
-        self._source = str(params.get("source") or "")
+        self._source = requested_source
         self._wake_payload = dict(params.get("wake") or {})
-        self._source_payload = dict(params.get("source_payload") or params.get("sourcePayload") or {})
+        self._source_payload = requested_payload
+
+        if self._source == "chat_mic":
+            # Manual Mic is always one-shot; Auto Mic is always continuous.
+            self._one_shot = self._chat_mic_mode() == "manual"
+        elif self._source == "barge_in":
+            self._one_shot = True
+        else:
+            self._one_shot = bool(params.get("one_shot", False))
+
         self._finish_after_turn_complete = bool(
             params.get("finish_after_turn_complete", self._source == "wake")
         )
@@ -156,22 +228,43 @@ class AsrHandler(RequestHandler):
         self._ready_callback_sent = False
         await self._emit_listening_status()
         self._listen_task = asyncio.create_task(self._listen_loop())
-        return {"status": "awake" if self._is_awake_session() else "listening"}
+        return {
+            "status": "awake" if self._is_awake_session() else "listening",
+            "source": self._source,
+            **({"mode": self._chat_mic_mode()} if self._source == "chat_mic" else {}),
+        }
 
     async def _stop(self, params: dict[str, Any]) -> dict[str, Any]:
         expected_source = str((params or {}).get("source") or "")
         if expected_source and self._source and expected_source != self._source:
             return {"status": "ignored", "source": self._source, "expected_source": expected_source}
-        return await self.stop_listening()
+        reason = str((params or {}).get("reason") or "manual_stop")
+        return await self.stop_listening(reason=reason)
 
-    async def stop_listening(self) -> dict[str, Any]:
+    async def stop_listening(self, reason: str = "manual_stop") -> dict[str, Any]:
+        if not self._active and self._listen_task is None:
+            return {"status": "idle", "reason": reason}
+
+        manager = self._asr_manager
+        if manager is not None:
+            cancel_capture = getattr(manager, "cancel_capture", None)
+            if callable(cancel_capture):
+                try:
+                    cancel_capture()
+                except Exception:
+                    logger.exception("failed to cancel active ASR capture")
+
         self._active = False
         self._one_shot = False
-        if self._listen_task:
-            self._listen_task.cancel()
-            self._listen_task = None
-        await self._finish_listening("manual_stop")
-        return {"status": "stopped"}
+
+        task = self._listen_task
+        self._listen_task = None
+        current_task = asyncio.current_task()
+        if task is not None and task is not current_task:
+            task.cancel()
+
+        await self._finish_listening(reason)
+        return {"status": "stopped", "reason": reason}
 
     def _arm_awake(self, params: dict[str, Any]) -> None:
         awake_seconds = float(params.get("awake_seconds") or 0.0)
@@ -231,8 +324,31 @@ class AsrHandler(RequestHandler):
     async def _wait_until_manager_ready(self, asr_manager) -> bool:
         if getattr(asr_manager, "is_ready", True):
             return True
-        await bus.emit(Method.ASR_STATUS, {"status": "loading", "source": self._source or ""})
+
+        await bus.emit(
+            Method.ASR_STATUS,
+            {"status": "loading", "source": self._source or ""},
+        )
+
         while self._active and not getattr(asr_manager, "is_ready", True):
+            load_error = str(
+                getattr(asr_manager, "load_error", "")
+                or getattr(asr_manager, "_backend_load_err", "")
+                or ""
+            ).strip()
+            if load_error:
+                await bus.emit(
+                    Method.ASR_STATUS,
+                    {
+                        "status": "error",
+                        "source": self._source or "",
+                        "error": load_error,
+                    },
+                )
+                self._active = False
+                await self._finish_listening("backend_unavailable")
+                return False
+
             if self._is_awake_session() and time.monotonic() >= self._awake_until:
                 self._active = False
                 await self._finish_listening("awake_timeout")
@@ -359,7 +475,16 @@ class AsrHandler(RequestHandler):
             try:
                 asr_manager = await self._ensure_asr_manager()
                 if asr_manager is None:
-                    await bus.emit(Method.ASR_STATUS, {"status": "error", "error": "ASR manager unavailable"})
+                    await bus.emit(
+                        Method.ASR_STATUS,
+                        {
+                            "status": "error",
+                            "source": self._source or "",
+                            "error": "ASR manager unavailable",
+                        },
+                    )
+                    self._active = False
+                    await self._finish_listening("manager_unavailable")
                     break
                 if not await self._wait_until_manager_ready(asr_manager):
                     break
@@ -369,13 +494,32 @@ class AsrHandler(RequestHandler):
                 if not await self._wait_until_tts_idle():
                     break
                 await self._emit_listening_status()
-                text = await asyncio.to_thread(
-                    asr_manager.listen_for_speech, max_retries=0
+
+                create_capture_token = getattr(
+                    asr_manager,
+                    "create_capture_token",
+                    None,
                 )
+                capture_token = (
+                    create_capture_token()
+                    if callable(create_capture_token)
+                    else None
+                )
+                if capture_token is None:
+                    text = await asyncio.to_thread(
+                        asr_manager.listen_for_speech,
+                        max_retries=0,
+                    )
+                else:
+                    text = await asyncio.to_thread(
+                        asr_manager.listen_for_speech,
+                        max_retries=0,
+                        cancel_event=capture_token,
+                    )
                 if text and self._active:
-                    if self._is_awake_session():
-                        # Do not start the idle countdown from user speech.
-                        # The hot window is reset after the assistant finishes speaking.
+                    if self._is_awake_session() or self.is_continuous_chat_mic():
+                        # Wake hot-window and Auto Mic both wait for the current
+                        # chat/TTS turn to finish before they listen again.
                         self._waiting_turn_complete = True
                     payload: dict[str, Any] = {"text": text, "is_final": True}
                     if self._source:
@@ -413,3 +557,7 @@ class AsrHandler(RequestHandler):
             except Exception:
                 logger.exception("asr listen error")
                 await asyncio.sleep(0.5)
+
+        current_task = asyncio.current_task()
+        if self._listen_task is current_task:
+            self._listen_task = None

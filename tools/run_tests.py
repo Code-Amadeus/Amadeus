@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import os
 import re
 import shutil
@@ -270,14 +269,7 @@ def _print_summary(results: list[SuiteResult]) -> None:
         print("failed suites: " + ", ".join(failed))
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run isolated per-file Python suites.")
-    parser.add_argument("--shard-count", type=int, default=1)
-    parser.add_argument("--shard-index", type=int, default=0, help="Zero-based shard index.")
-    args = parser.parse_args(argv)
-    if args.shard_count < 1 or not 0 <= args.shard_index < args.shard_count:
-        parser.error("require shard-count >= 1 and 0 <= shard-index < shard-count")
-
+def main() -> int:
     suites = sorted(TEST_DIR.glob("test_*.py"))
     if not suites:
         print(f"no test_*.py files found under {TEST_DIR}", file=sys.stderr)
@@ -297,17 +289,6 @@ def main(argv: list[str] | None = None) -> int:
         for node_id in missing:
             print(f"- {node_id}", file=sys.stderr)
         return 1
-    # Check discovery across the whole repository before partitioning. Every
-    # file belongs to exactly one shard; files still run in isolated processes.
-    suites = suites[args.shard_index::args.shard_count]
-    if not suites:
-        print("no suites assigned to this shard", file=sys.stderr)
-        return 1
-    print(
-        f"[run_tests] shard {args.shard_index + 1}/{args.shard_count}: "
-        f"{len(suites)} suites",
-        flush=True,
-    )
     # A fixed repository-local --basetemp made the next full run ask pytest to
     # delete the previous run's Windows directory.  Antivirus/indexing or a
     # late file handle can transiently deny that deletion before any test is

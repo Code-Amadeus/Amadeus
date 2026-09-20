@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
-from agent_host.provider_types import ProviderRecoveryContext, ProviderSessionHandle
+from agent_host.provider_types import ProviderSessionHandle
 from agent_host.work_ledger_store import WorkLedgerConflict
 from agent_host.work_ledger_types import RunAttemptRecord
 
@@ -35,7 +35,6 @@ def resolve_provider_session_attachment(
     provider_capabilities: Mapping[str, Any] | None,
     request_provider: str,
     recovery_reason: str = "",
-    recovery: ProviderRecoveryContext | None = None,
 ) -> ProviderSessionAttachment:
     """Resolve one ledger-owned session attachment or return no attachment.
 
@@ -48,32 +47,11 @@ def resolve_provider_session_attachment(
     parent-context delta provenance, while native Provider continuity remains
     WorkItem-scoped; a cross-source amendment therefore reuses this session
     but receives a bounded snapshot rather than a cross-source delta.
-
-    Retry attachment preserves the established progress-only path. An AUIP
-    validation retry additionally requires the Host-validated typed recovery
-    whose predecessor is exactly this durable Attempt; a reason string alone
-    cannot authorize native continuity.
     """
 
     clean_provider = str(request_provider or "").strip().lower()
     clean_continuation = str(continuation or "").strip().lower()
     clean_recovery_reason = str(recovery_reason or "").strip().lower()
-    if recovery is not None and not isinstance(recovery, ProviderRecoveryContext):
-        raise TypeError("provider recovery must use the typed contract")
-    typed_recovery_reason = recovery.reason if recovery is not None else ""
-    if (clean_recovery_reason and typed_recovery_reason
-            and clean_recovery_reason != typed_recovery_reason):
-        raise WorkLedgerConflict("provider recovery reason does not match typed lineage")
-    effective_recovery_reason = typed_recovery_reason or clean_recovery_reason
-    retry_recovery = (
-        effective_recovery_reason == "progress_only_completion"
-        or (
-            effective_recovery_reason == "auip_validation_failed"
-            and recovery is not None
-            and previous_attempt is not None
-            and recovery.predecessor_attempt_id == previous_attempt.attempt_id
-        )
-    )
     capabilities = (
         provider_capabilities if isinstance(provider_capabilities, Mapping) else {}
     )
@@ -81,10 +59,10 @@ def resolve_provider_session_attachment(
         not has_existing_item
         or previous_attempt is None
         or not (
-            clean_continuation in {"amend", "conversation"}
+            clean_continuation == "amend"
             or (
                 clean_continuation == "retry"
-                and retry_recovery
+                and clean_recovery_reason == "progress_only_completion"
             )
         )
         or str(capabilities.get("resume") or "none").strip().lower() != "attach"
@@ -113,9 +91,7 @@ def resolve_provider_session_attachment(
         raise WorkLedgerConflict(
             "stored provider session belongs to a different provider"
         )
-    if session.scope not in {"work_item", "interaction"}:
-        return ProviderSessionAttachment()
-    if clean_continuation == "conversation" and session.scope != "interaction":
+    if session.scope != "work_item":
         return ProviderSessionAttachment()
     return ProviderSessionAttachment(
         session=session,
@@ -124,8 +100,8 @@ def resolve_provider_session_attachment(
             "provider": session.provider,
             "previous_attempt_id": previous_attempt.attempt_id,
             **(
-                {"recovery_reason": effective_recovery_reason}
-                if effective_recovery_reason
+                {"recovery_reason": clean_recovery_reason}
+                if clean_recovery_reason
                 else {}
             ),
         },

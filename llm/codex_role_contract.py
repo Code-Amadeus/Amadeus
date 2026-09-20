@@ -264,25 +264,26 @@ def evaluate_role_output(
         if preset not in EMOTION_DURATION_RANGES:
             violations.append(ContractViolation("unknown_emo_preset", f"unsupported preset: {preset or '<missing>'}"))
             continue
-        # Compact EMO leaves timing to the existing presentation owner.
-        if duration_text:
-            duration_s = _parse_seconds(duration_text, -1.0)
-            if duration_s <= 0:
-                violations.append(ContractViolation("invalid_emo_duration", f"{preset} duration is {duration_text!r}"))
-                continue
-            bounds = EMOTION_DURATION_RANGES[preset]
-            if bounds is None:
-                if duration_s > 30.0:
-                    violations.append(
-                        ContractViolation("emo_duration_out_of_range", f"{preset} duration {duration_s:g}s exceeds 30s")
-                    )
-            elif not bounds[0] <= duration_s <= bounds[1]:
+        if not duration_text:
+            violations.append(ContractViolation("missing_emo_duration", f"{preset} has no dur attribute"))
+            continue
+        duration_s = _parse_seconds(duration_text, -1.0)
+        if duration_s <= 0:
+            violations.append(ContractViolation("invalid_emo_duration", f"{preset} duration is {duration_text!r}"))
+            continue
+        bounds = EMOTION_DURATION_RANGES[preset]
+        if bounds is None:
+            if duration_s > 30.0:
                 violations.append(
-                    ContractViolation(
-                        "emo_duration_out_of_range",
-                        f"{preset} duration {duration_s:g}s is outside {bounds[0]:g}-{bounds[1]:g}s",
-                    )
+                    ContractViolation("emo_duration_out_of_range", f"{preset} duration {duration_s:g}s exceeds 30s")
                 )
+        elif not bounds[0] <= duration_s <= bounds[1]:
+            violations.append(
+                ContractViolation(
+                    "emo_duration_out_of_range",
+                    f"{preset} duration {duration_s:g}s is outside {bounds[0]:g}-{bounds[1]:g}s",
+                )
+            )
         extras = sorted(set(attrs) - {"preset", "dur"})
         if extras:
             violations.append(

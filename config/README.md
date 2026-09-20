@@ -27,46 +27,6 @@ precedence, and records every setting declared through it. New startup
 configuration should use this boundary rather than calling `load_dotenv`
 again.
 
-## Chat image input
-
-DeepSeek image input is available with `DEEPSEEK_MODEL_NAME=deepseek-flash`.
-The documented `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` aliases
-also accept images. DeepSeek Pro and legacy text models remain text-only.
-See the [DeepSeek vision guide](https://api-docs.deepseek.com/guides/vision/).
-
-Both direct DeepSeek Chat and the DeepSeek tail of `hybrid2` send the image
-using the existing OpenAI-compatible `image_url` format. The hybrid local
-head receives only a text acknowledgement hint. Images are attached to the
-current user turn, not stored in conversation history. The desktop image
-button follows the backend's selected-model capability; changing the model
-in startup settings requires restarting the backend.
-
-## Graphics profiles
-
-`GRAPHICS_PROFILE` is the startup owner for the shared PixiJS render budget:
-
-- `standard` is the default and uses 60 FPS with the native device-pixel ratio.
-- `power_saving` uses 30 FPS and caps resolution at 1.5.
-- `custom` uses `RENDER_MAX_FPS` (10–240) and
-  `RENDER_MAX_RESOLUTION` (0.25–4.0).
-
-The parsed effective values are propagated to chat, Electron, Lively, and
-Wallpaper Engine render surfaces. A missing effective resolution limit means
-native DPR; it must not be serialized as zero, `NaN`, or the string `None`.
-Wallpaper Engine's valid general `fps` property is a runtime host constraint,
-so the renderer uses the lower of it and the project profile. Unsupported host
-values restore the project limit. This runtime constraint does not mutate the
-startup environment.
-
-`RENDER_TEXTURE_SAMPLING` is a separate experimental startup opt-in, defaulting
-to `false`. Off preserves full-frame loading and the pre-experiment playback
-clock/hold behavior, regardless of the selected graphics profile. On enables
-time-based texture sampling and its associated clock corrections against that
-same effective FPS budget. It reaches chat, web wallpaper, Lively and the macOS
-Electron scene through the existing render descriptors/URLs. It does not add
-another FPS setting. Restart the backend and recreate the render surface after
-changing it; texture selection is fixed for that surface lifetime.
-
 ## What belongs where
 
 - Credentials, model paths, ports, startup feature flags: `.env` ->
@@ -104,16 +64,6 @@ explicitly configured speech endpoint. Remote TTS defaults to broadly compatible
 buffered WAV responses; `TTS_API_STREAM_PROTOCOL=openai_sse` explicitly enables
 PCM first-packet playback for endpoints that implement OpenAI speech SSE events.
 There is no automatic retry from a partial stream to a second billable request.
-`TTS_BACKEND=fish_audio` selects Fish Audio's MessagePack WebSocket transport.
-Set `FISH_TTS_API_KEY`, `FISH_TTS_MODEL` (for example `s2.1-pro-free`), and
-`FISH_TTS_REFERENCE_ID` (the hosted voice ID, not the inference model).
-The default reference is the public Japanese Makise Kurisu voice
-`b450b19370434173b121446057622e9b`. `FISH_TTS_LATENCY=balanced` is the default;
-`FISH_TTS_WS_URL` defaults to `wss://api.fish.audio/v1/tts/live`.
-Install the `voice` extra for MessagePack support. Chat/VN keep their existing
-sentence scheduling; audio streams into the existing playback pipeline.
-The adapter also accepts asynchronously arriving text chunks for duplex
-experiments. See [Fish Audio setup and probe](../docs/fish_audio_websocket.md).
 `ASR_BACKEND` selects only
 the full Conversation recognizer and defaults to Qwen3-ASR, preserving context
 prompting and speculative endpoint optimization. `WAKE_ASR_BACKEND` is an
@@ -122,7 +72,7 @@ remote Conversation ASR intentionally disables partial speculative API calls
 to avoid hidden duplicate network requests and metered usage.
 
 The Electron Voice settings use the same precedence and encrypted-secret store
-as model connections. `ASR_API_KEY`, `TTS_API_KEY`, and `FISH_TTS_API_KEY` are never returned to the
+as model connections. `ASR_API_KEY` and `TTS_API_KEY` are never returned to the
 renderer. Remote voice backends are selected explicitly; local failures never
 silently upload microphone audio or synthesis text.
 The first-release Main Chat default is remote DeepSeek; local model settings
@@ -162,14 +112,6 @@ These are not pending mechanical migrations:
   to `os.environ` because the bundled BigVGAN loader directly consumes that
   variable. An explicit indexed CUDA device or explicit `mps`/`cpu` value is
   preserved.
-- Local GPT-SoVITS CPU synthesis automatically uses the existing persistent
-  TTS sidecar (the current Python interpreter unless `TTS_PYTHON` is set).
-  This isolates its PyTorch thread settings from ASR/VAD dependencies. CUDA
-  and MPS keep their embedded default; explicit sidecar/interpreter
-  settings still select a subprocess. The sidecar serializes synthesis and
-  drains interrupted requests before accepting the next one; CPU compute is
-  still shared with the host. All synthesis modes consume blocking model/IPC
-  streams on the TTS executor, keeping the event loop available to ASR.
 - `AMADUES_PRE_TRANSLATION_ENABLED` remains accepted as a deprecated spelling
   of `AMADEUS_PRE_TRANSLATION_ENABLED` at the pre-translation boundary.
 - The legacy root GPT-SoVITS WebUI/API entry points and their conflicting

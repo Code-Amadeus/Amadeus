@@ -5,12 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-from server.handlers.session_handler import (
-    SessionHandler,
-    _display_dialog,
-    _display_interruption,
-    _display_text,
-)
+from server.handlers.session_handler import SessionHandler, _display_dialog, _display_text
 
 
 def test_work_observer_marker_is_hidden_only_at_the_display_boundary() -> None:
@@ -24,19 +19,6 @@ def test_work_observer_marker_is_hidden_only_at_the_display_boundary() -> None:
 def test_work_observer_words_inside_normal_chat_are_not_removed() -> None:
     text = "The marker [WORK_OBSERVER] is part of this explanation."
     assert _display_text(text) == text
-
-
-def test_live_interruption_strips_presentation_tags_but_keeps_history_marker() -> None:
-    projected = _display_interruption(
-        "前半。[EMO preset=thinking dur=5s] 后半。 [interrupted by user]",
-        "前半。[EMO preset=thinking dur=5s] 后半。",
-        "[interrupted by user]",
-    )
-    assert projected == {
-        "text":"前半。 后半。 [interrupted by user]",
-        "completed_text":"前半。 后半。",
-        "marker":"[interrupted by user]",
-    }
 
 
 def test_session_index_is_newest_first() -> None:
@@ -75,11 +57,11 @@ def test_chat_history_uses_an_internal_project_and_draft_rail() -> None:
     assert "PROJECTS" in rail
     assert "label: 'Drafts'" in rail
     assert "projectGroups.map(renderProjectHeader)" in rail
-    assert "title={t('New Project')}" in rail
+    assert 'title="New Project"' in rail
     assert "onNewProjectSession(group.projectId" in rail
     assert "onOpenProject(group.projectId" in rail
     assert "onMouseEnter={openRail}" in rail
-    assert "aria-label={t('Chat history')}\n      onMouseEnter" not in rail
+    assert 'aria-label="Chat history"\n      onMouseEnter' not in rail
     assert "aria-expanded={railOpen}\n        tabIndex={0}\n        onMouseEnter={openRail}" in rail
     assert "RAIL_CLOSE_DELAY_MS = 180" in rail
     assert "setPreviewGroupId(group.id)" in rail
@@ -88,9 +70,9 @@ def test_chat_history_uses_an_internal_project_and_draft_rail() -> None:
     assert "if (!selected) event.currentTarget.style.background = 'var(--hover)'" in rail
     assert "SESSION_PAGE_SIZE = 30" in rail
     assert "previewGroup.sessions.slice(0, visibleCount)" in rail
-    assert "aria-label={t('Search chats')}" in rail
+    assert 'aria-label="Search chats"' in rail
     assert 'type RailMode = \'chats\' | \'artifacts\'' in rail
-    assert "aria-label={t('Artifact collections')}" in rail
+    assert 'aria-label="Artifact collections"' in rail
     assert "Draft artifacts" in rail
     assert "Recent 5" in rail
     assert "onClick={onOpenDraftApps}" in rail
@@ -99,10 +81,10 @@ def test_chat_history_uses_an_internal_project_and_draft_rail() -> None:
     assert "revealedGroup" not in rail
     assert "setCollapsed" not in rail
     assert "toggleGroup" not in rail
-    assert "aria-label={t('Current chat project')}" in chat
-    assert "title={t('New chat')}" in chat
+    assert 'aria-label="Current chat project"' in chat
+    assert chat.count('title="New chat"') >= 1
     assert "send('project.apps.list'" in chat
-    assert "selectSession('session.open_context'" in chat
+    assert "send('session.open_context'" in chat
     assert "mode: 'observe'" in chat
     assert "Interact with Amadeus" in apps
     assert "Promote to Project" in apps

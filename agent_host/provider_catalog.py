@@ -9,6 +9,23 @@ from agent_host.provider_contract import (
 )
 
 
+RESEARCH_MANIFEST = ProviderManifest(
+    provider_id="research",
+    display_name="Native Research",
+    runtime_kind="research_agent",
+    contract_version="0.3",
+    selection_priority=80,
+    capabilities=ProviderCapabilities(
+        task_kinds=("research",),
+        durability="process",
+        steering="none",
+        resume="none",
+        cancellation="confirmed",
+        interaction="none",
+        event_model="canonical+native",
+    ),
+)
+
 OPENCLAW_MANIFEST = ProviderManifest(
     provider_id="openclaw",
     display_name="OpenClaw",
@@ -32,7 +49,7 @@ BROWSER_MANIFEST = ProviderManifest(
     provider_id="browser",
     display_name="Browser",
     runtime_kind="stateful_tool",
-    selection_priority=40,
+    selection_priority=60,
     experience_extensions=("browser.snapshot",),
     contract_version="0.3",
     capabilities=ProviderCapabilities(
@@ -124,14 +141,13 @@ CODEX_APP_SERVER_MANIFEST = ProviderManifest(
         cancellation="confirmed",
         interaction="bidirectional",
         event_model="canonical+native",
-        submission_reconciliation="query",
-        append_input=True,
         capability_projections=("agent_skill", "mcp_connection"),
     ),
 )
 
 
 KNOWN_PROVIDER_MANIFESTS: tuple[ProviderManifest, ...] = (
+    RESEARCH_MANIFEST,
     BROWSER_MANIFEST,
     DIRECT_CODEX_MANIFEST,
     OPENCLAW_MANIFEST,

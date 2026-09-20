@@ -10,8 +10,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from core.chat_runtime import (
     ChatRuntime,
     _TurnState,
@@ -28,7 +26,6 @@ from server.auip_control_decision import (
     _INACTIVE_ENTRY_SYSTEM_PROMPT,
     AuipControlDecision,
     AuipControlDecisionResolver,
-    auip_decision_preserves_main_context,
     is_live_auip_control_projection,
     parse_auip_control_decision,
     reconcile_active_auip_control,
@@ -83,7 +80,8 @@ def test_only_live_or_still_open_completed_surfaces_gate_role_grounding() -> Non
 def test_collaborate_mode_never_manufactures_application_turns_or_roles() -> None:
     assert "application's accepted mechanics" in _ACTIVE_SESSION_SYSTEM_PROMPT
     assert "does not\ncreate alternating turns, player roles" in _ACTIVE_SESSION_SYSTEM_PROMPT
-    assert "アプリの規則や順番は作りません。" in _INACTIVE_ENTRY_SYSTEM_PROMPT
+    assert "application's accepted mechanics" in _INACTIVE_ENTRY_SYSTEM_PROMPT
+    assert "without inventing turns or roles" in _INACTIVE_ENTRY_SYSTEM_PROMPT
     assert "`collaborate` means they take turns" not in _ACTIVE_SESSION_SYSTEM_PROMPT
     assert "`collaborate` means they take turns" not in _INACTIVE_ENTRY_SYSTEM_PROMPT
     assert "退出这局，但别关游戏" in _ACTIVE_SESSION_SYSTEM_PROMPT
@@ -94,14 +92,6 @@ def test_collaborate_mode_never_manufactures_application_turns_or_roles() -> Non
     assert "把棋盘改成十九乘十九" in _ACTIVE_SESSION_SYSTEM_PROMPT
     assert "application-authoring Work" in _ACTIVE_SESSION_SYSTEM_PROMPT
     assert "may refer to the\nsame focused application" in _ACTIVE_SESSION_SYSTEM_PROMPT
-
-
-def test_inactive_entry_separates_managed_app_entry_from_external_browser_pages() -> None:
-    assert "Host が管理または AUIP として接続する成果アプリ" in _INACTIVE_ENTRY_SYSTEM_PROMPT
-    assert "一般の外部ウェブサイト、ウェブページ、検索結果" in _INACTIVE_ENTRY_SYSTEM_PROMPT
-    assert "Browser で開く要求はこの入口ではなく none" in _INACTIVE_ENTRY_SYSTEM_PROMPT
-    assert "外部サイト要求は、AUIP 一覧の候補有無で判断しません" in _INACTIVE_ENTRY_SYSTEM_PROMPT
-    assert "一覧にない旧アプリや「前のもの」への入口要求も engage" in _INACTIVE_ENTRY_SYSTEM_PROMPT
 
 
 class _Catalog:
@@ -171,121 +161,6 @@ def test_resolver_does_not_query_ordinary_chat_without_auip_scope() -> None:
         launch_catalog=_Catalog(),
     )
     assert resolver.capture(session_id="s", user_text="今天天气不错") is None
-
-
-def test_cooperative_focused_capture_does_not_query_inactive_launch_candidates() -> None:
-    async def query(_messages):
-        raise AssertionError("inactive entry is not part of the focused cooperative slice")
-
-    resolver = AuipControlDecisionResolver(query=query, app_runtime=_Runtime(),
-        launch_catalog=_Catalog("Counter"))
-    assert resolver.capture(session_id="s", user_text="普通聊天",
-        active_required=True) is None
-
-
-def test_active_work_opens_inactive_scope_and_preserves_deferred_proposal() -> None:
-    async def scenario() -> None:
-        captured: list[dict[str, str]] = []
-
-        async def query(messages):
-            captured.extend(messages)
-            return (
-                '{"action":"engage","timing":"after_work",'
-                '"mode":"collaborate","target":""}'
-            )
-
-        resolver = AuipControlDecisionResolver(
-            query=query,
-            app_runtime=_Runtime(),
-            launch_catalog=_Catalog(),
-            has_active_work=lambda _session_id: ("attempt-private-active",),
-        )
-        pending = resolver.capture(
-            session_id="session-active-work",
-            user_text="做好以后打开，我们一起试。",
-        )
-        assert pending is not None
-        decision = await pending
-
-        assert decision.status == "ok"
-        assert decision.action == "launch"
-        assert decision.timing == "after_work"
-        assert decision.app_session_id == ""
-        assert decision.active_work_attempt_ids == ("attempt-private-active",)
-        assert decision.control_attrs() == {
-            "action": "launch",
-            "target": "delivery",
-            "mode": "collaborate",
-            "after": "work",
-            "_host_active_work_attempt_ids": ("attempt-private-active",),
-        }
-        wire = "\n".join(message["content"] for message in captured)
-        assert '"other_provider_work_active":true' in wire
-        assert "attempt-private-active" not in wire
-
-    asyncio.run(scenario())
-
-
-def test_same_turn_work_followup_preserves_unbound_inactive_deferred_proposal() -> None:
-    async def scenario() -> None:
-        async def query(_messages):
-            return (
-                '{"action":"engage","timing":"after_work",'
-                '"mode":"observe","target":""}'
-            )
-
-        resolver = AuipControlDecisionResolver(
-            query=query,
-            app_runtime=_Runtime(),
-            launch_catalog=_Catalog(),
-        )
-        pending = resolver.capture(
-            session_id="session-same-turn-work",
-            user_text="写好以后打开，我来试玩。",
-            include_work_followup=True,
-        )
-        assert pending is not None
-        decision = await pending
-
-        assert decision.status == "ok"
-        assert decision.action == "launch"
-        assert decision.timing == "after_work"
-        assert decision.active_work_attempt_ids == ()
-        assert decision.app_session_id == ""
-        assert decision.control_attrs() == {
-            "action": "launch",
-            "target": "delivery",
-            "mode": "observe",
-            "after": "work",
-        }
-
-    asyncio.run(scenario())
-
-
-def test_unavailable_semantic_query_retains_only_host_active_work_candidates() -> None:
-    async def scenario() -> None:
-        async def query(_messages):
-            raise RuntimeError("semantic backend unavailable")
-
-        resolver = AuipControlDecisionResolver(
-            query=query,
-            app_runtime=_Runtime(),
-            launch_catalog=_Catalog(),
-            has_active_work=lambda _session_id: ("attempt-private-outage",),
-        )
-        pending = resolver.capture(
-            session_id="session-outage",
-            user_text="做好以后打开。",
-        )
-        assert pending is not None
-        decision = await pending
-
-        assert decision.status == "unavailable"
-        assert decision.action == "none"
-        assert decision.active_work_attempt_ids == ("attempt-private-outage",)
-        assert decision.control_attrs() is None
-
-    asyncio.run(scenario())
 
 
 def test_active_router_receives_bounded_action_semantics_for_work_boundary() -> None:
@@ -475,15 +350,6 @@ def test_strict_parser_separates_auip_timing_from_work_authority() -> None:
     )
     assert independent.status == "ok"
     assert independent.work_relation == "independent"
-    unmatched_entry = parse_auip_control_decision(
-        '{"action":"engage","timing":"now","mode":"observe",'
-        '"target":"","work_relation":"subsumed"}',
-        has_active=False,
-        candidate_titles=set(),
-        allow_after_work=True,
-    )
-    assert unmatched_entry.status == "ok"
-    assert unmatched_entry.action == "engage"
     preparation = parse_auip_control_decision(
         '{"action":"prepare","mode":"collaborate","target":"井字棋"}',
         has_active=False,
@@ -505,73 +371,7 @@ def test_strict_parser_separates_auip_timing_from_work_authority() -> None:
     ).status == "invalid"
 
 
-def test_zero_candidate_entry_retains_intent_without_executable_control() -> None:
-    async def scenario() -> None:
-        async def query(_messages):
-            return (
-                '{"action":"engage","timing":"now","mode":"collaborate",'
-                '"target":"","work_relation":"subsumed"}'
-            )
-
-        resolver = AuipControlDecisionResolver(
-            query=query,
-            app_runtime=_Runtime(),
-            launch_catalog=_Catalog(),
-        )
-        pending = resolver.capture(
-            session_id="session-zero-candidate",
-            user_text="现在打开它，我们一起玩。",
-            include_work_followup=True,
-        )
-        assert pending is not None
-        decision = await pending
-
-        assert decision.status == "ok" and decision.action == "engage"
-        assert decision.reason == "no host-known entry target"
-        assert decision.control_attrs() is None
-
-    asyncio.run(scenario())
-
-
-def test_explicit_absent_entry_target_never_becomes_an_omitted_reference() -> None:
-    async def scenario() -> None:
-        for action in ("engage", "launch", "prepare"):
-            raw = {"action": action, "mode": "collaborate", "target": "Missing app"}
-            if action != "prepare":
-                raw.update(timing="now", work_relation="subsumed")
-            parsed = parse_auip_control_decision(
-                json.dumps(raw),
-                has_active=False,
-                candidate_titles={"Existing app"},
-                preparation_titles={"Old app"},
-                allow_after_work=True,
-            )
-            assert parsed.target == "Missing app", action
-
-        async def query(_messages):
-            return json.dumps({
-                "action": "engage", "timing": "now", "mode": "collaborate",
-                "target": "Missing app", "work_relation": "subsumed",
-            })
-
-        for catalog in (
-            _Catalog("Existing app"),
-            _Catalog(preparation_titles=("Old app",)),
-        ):
-            resolver = AuipControlDecisionResolver(
-                query=query, app_runtime=_Runtime(), launch_catalog=catalog,
-            )
-            pending = resolver.capture(session_id="session", user_text="Open Missing app")
-            assert pending is not None
-            decision = await pending
-            assert decision.status == "ok" and decision.action == "engage"
-            assert decision.target == "Missing app"
-            assert decision.control_attrs() is None
-
-    asyncio.run(scenario())
-
-
-def test_after_work_entry_keeps_its_dependency_despite_existing_preparable_app() -> None:
+def test_after_work_engage_compiles_to_preparation_for_existing_unwired_app() -> None:
     async def scenario() -> None:
         async def query(_messages):
             return (
@@ -583,21 +383,19 @@ def test_after_work_entry_keeps_its_dependency_despite_existing_preparable_app()
             query=query,
             app_runtime=_Runtime(None),
             launch_catalog=_Catalog(preparation_titles=("信号路由",)),
-            has_active_work=lambda _session: ("attempt-new-game",),
         )
         pending = resolver.capture(
             session_id="session-prepare-after-work",
-            user_text="等正在做的新游戏完成以后打开，我们一起试一下。",
+            user_text="接好以后直接打开，我们一起试一下。",
         )
         assert pending is not None
         decision = await pending
 
         assert decision.control_attrs() == {
-            "action": "launch",
+            "action": "prepare",
             "mode": "collaborate",
-            "target": "delivery",
-            "after": "work",
-            "_host_active_work_attempt_ids": ("attempt-new-game",),
+            "target": "信号路由",
+            "_host_preparation_work_item_id": "work-private-1",
         }
 
     asyncio.run(scenario())
@@ -887,20 +685,6 @@ def test_pending_work_does_not_absorb_an_independent_work_clause() -> None:
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("target,project_ref", [("Missing App", ""), ("", "Other Project")])
-def test_active_preparation_does_not_capture_an_explicit_unmatched_reference(target, project_ref):
-    from server.auip_control_decision import _compile_entry_decision
-
-    decision = _compile_entry_decision(
-        AuipControlDecision(status="ok", action="engage", timing="now",
-            mode="collaborate", target=target, project_ref=project_ref,
-            work_relation="subsumed"),
-        candidates=(), preparation_candidates=(), active_work_attempt_ids=("attempt-existing",))
-    assert decision.action == "engage"
-    assert not decision.active_work_attempt_ids
-    assert decision.control_attrs() is None
-
-
 def test_resolver_exposes_only_the_current_lifecycle_vocabulary() -> None:
     async def scenario() -> None:
         active_messages = []
@@ -1049,16 +833,6 @@ def test_active_mode_decision_respects_host_declared_app_capability() -> None:
     assert terse_leave.status == "ok"
     assert terse_leave.action == "leave"
     assert terse_leave.work_relation == ""
-    terse_step = parse_auip_control_decision(
-        '{"action":"step","instruction":"把冷却调到二档"}',
-        has_active=True,
-        active_modes={"collaborate"},
-        candidate_titles=set(),
-        allow_after_work=True,
-    )
-    assert terse_step.status == "ok"
-    assert terse_step.work_relation == ""
-    assert auip_decision_preserves_main_context(terse_step) is False
 
 
 def test_read_facets_are_semantic_only_and_host_bound() -> None:
@@ -1109,16 +883,12 @@ def test_read_facets_are_semantic_only_and_host_bound() -> None:
 
     asyncio.run(scenario())
 
-    independent_read = parse_auip_control_decision(
+    assert parse_auip_control_decision(
         '{"action":"none","work_relation":"independent","read":["state"]}',
         has_active=True,
         candidate_titles=set(),
         allow_after_work=True,
-    )
-    assert independent_read.status == "ok"
-    assert independent_read.read_facets == ("state",)
-    assert independent_read.work_relation == "independent"
-    assert independent_read.control_attrs() is None
+    ).status == "invalid"
     assert parse_auip_control_decision(
         '{"action":"none","work_relation":"subsumed","read":["state","state"]}',
         has_active=True,
@@ -1148,69 +918,6 @@ def test_read_facets_are_semantic_only_and_host_bound() -> None:
         allow_after_work=True,
     )
     assert invented.status == "invalid"
-
-
-def test_active_read_can_preserve_valid_state_path_without_classifying_work_relation() -> None:
-    async def scenario() -> None:
-        app_runtime = _Runtime(
-            {
-                "status": "active",
-                "app_session_id": "app-reactor-read",
-                "app": {"title": "Reactor Controls"},
-                "available_modes": ["observe", "collaborate"],
-                "state": {"cooling": 2, "temperature": 72, "target": 70},
-            },
-            read_answer="冷却温度は72度で、目標は70度よ。",
-        )
-        captured = []
-
-        async def query(messages):
-            captured.append(messages)
-            return '{"action":"none","read":["state"],"state_paths":["cooling"]}'
-
-        resolver = AuipControlDecisionResolver(
-            query=query,
-            app_runtime=app_runtime,
-            launch_catalog=_Catalog(),
-        )
-        pending = resolver.capture(
-            session_id="reactor-read-session",
-            user_text="冷却调好了吗？",
-        )
-        assert pending is not None
-        decision = await pending
-        assert decision.status == "ok"
-        assert decision.action == "none"
-        assert decision.work_relation == ""
-        assert decision.read_facets == ("state",)
-        assert decision.read_paths == ("cooling",)
-        assert decision.app_session_id == "app-reactor-read"
-        assert decision.control_attrs() is None
-        grounding = render_auip_role_grounding(decision)
-        assert "provider_work_relation=independent" not in grounding
-        assert "provider_work_relation=subsumed" not in grounding
-        assert resolver.render_read_only_answer(decision, language="ja") == (
-            "冷却温度は72度で、目標は70度よ。"
-        )
-        assert '"readable_state_paths"' in captured[0][0]["content"]
-        assert '"cooling"' in captured[0][0]["content"]
-
-    asyncio.run(scenario())
-
-    for raw, active, paths in (
-        ('{"action":"none","read":["state"],"state_paths":["invented"]}', True, {"cooling"}),
-        ('{"action":"none","read":["state"],"unknown":true}', True, {"cooling"}),
-        ('{"action":"none","read":["state","state"]}', True, {"cooling"}),
-        ('{"action":"none","read":["state"]}', False, {"cooling"}),
-        ('{"action":"none","work_relation":"unknown","read":["state"]}', True, {"cooling"}),
-    ):
-        assert parse_auip_control_decision(
-            raw,
-            has_active=active,
-            active_state_paths=paths,
-            candidate_titles=set(),
-            allow_after_work=True,
-        ).status == "invalid"
 
 
 def test_standard_situation_root_is_a_readable_resource_without_dense_children() -> None:
@@ -1705,7 +1412,7 @@ class _AuthorityObserver:
 
 
 class _CompoundAuthorityObserver(_AuthorityObserver):
-    def capture_compound(self, batch):
+    def capture_compound_shadow(self, batch):
         return self.capture(batch)
 
 def test_role_grounding_describes_requested_state_not_completion() -> None:
@@ -1845,14 +1552,6 @@ def test_only_an_auip_control_acknowledgement_uses_bounded_context() -> None:
         action="none",
         read_facets=("state", "receipt"),
     )
-    assert _turn_uses_conversation_history(state, True) is True
-
-    state.auip_decision_result = AuipControlDecision(
-        status="ok",
-        action="none",
-        read_facets=("state", "receipt"),
-        work_relation="subsumed",
-    )
     assert _turn_uses_conversation_history(state, True) is False
 
     state.auip_decision_result = AuipControlDecision(
@@ -1979,27 +1678,6 @@ def test_a1_scopes_operational_turns_but_preserves_independent_parent_chat() -> 
         "role": "assistant",
         "content": "右へ行くわ。論文の方も調べておく。",
     }
-
-    unclassified_read = _state(question="冷却调好了吗？再帮我记录数据。")
-    unclassified_read.full_response = "冷却状態を答えて、記録も進めるわ。"
-    unclassified_read.auip_decision_result = AuipControlDecision(
-        status="ok",
-        action="none",
-        read_facets=("state",),
-        read_paths=("cooling",),
-        app_session_id=app_session_id,
-    )
-    unclassified_read.control_prior_messages = (
-        {"role": "user", "content": "父会话里的完整数据目标。"},
-        {"role": "assistant", "content": "会按原目标继续。"},
-    )
-    with patch("server.auip_runtime.runtime", app_runtime):
-        assert _turn_uses_conversation_history(unclassified_read, True) is True
-        source_messages, source_scope = _delegate_source_context(unclassified_read)
-        ChatRuntime._record_auip_role_branch_turn(unclassified_read)
-    assert source_scope == "chat:session-auip"
-    assert source_messages == unclassified_read.control_prior_messages
-    assert unclassified_read.auip_role_branch_isolated is False
 
 
 def test_active_app_dialogue_and_blocked_mode_bind_identity_without_action() -> None:
@@ -2184,44 +1862,6 @@ def test_runtime_decision_owns_action_and_inline_is_only_unavailable_fallback() 
         await runtime._wait_for_auip_controls(fallback)
         assert routed == [{"action": "launch", "mode": "collaborate"}]
         assert '[AUIP action="launch" mode="collaborate"]' in fallback.history_response
-
-        routed.clear()
-        unowned = _state("turn-unowned-deferred-fallback")
-        assert runtime._start_auip_decision(unowned) is True
-        runtime._consume_stream_chunk(
-            unowned,
-            '[AUIP action=launch target="delivery" mode="collaborate" after="work"]',
-        )
-        await runtime._wait_for_auip_controls(unowned)
-        assert routed == []
-        assert "[AUIP" not in unowned.history_response
-
-        runtime.configure(
-            auip_control_decider=_Decider(
-                AuipControlDecision(
-                    status="unavailable",
-                    active_work_attempt_ids=("attempt-fallback-active",),
-                )
-            )
-        )
-        active_owner = _state("turn-active-deferred-fallback")
-        assert runtime._start_auip_decision(active_owner) is True
-        runtime._consume_stream_chunk(
-            active_owner,
-            '[AUIP action=launch target="delivery" mode="observe" after="work"]',
-        )
-        await runtime._wait_for_auip_controls(active_owner)
-        assert routed == [
-            {
-                "action": "launch",
-                "target": "delivery",
-                "mode": "observe",
-                "after": "work",
-                "_host_work_binding": "active",
-                "_host_active_work_attempt_ids": ("attempt-fallback-active",),
-            }
-        ]
-        assert "[AUIP" in active_owner.history_response
 
     asyncio.run(scenario())
 
@@ -3069,8 +2709,7 @@ def test_build_then_open_waits_for_authoritative_work_without_merging_axes() -> 
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("entry_action", ["launch", "engage"])
-def test_deferred_relaunch_collapses_only_same_app_amendment_clauses(entry_action) -> None:
+def test_deferred_relaunch_collapses_only_same_app_amendment_clauses() -> None:
     async def scenario() -> None:
         routed: list[dict] = []
 
@@ -3083,7 +2722,7 @@ def test_deferred_relaunch_collapses_only_same_app_amendment_clauses(entry_actio
             auip_control_decider=_Decider(
                 AuipControlDecision(
                     status="ok",
-                    action=entry_action,
+                    action="launch",
                     timing="after_work",
                     mode="collaborate",
                     work_relation="independent",
@@ -3173,7 +2812,7 @@ def test_deferred_relaunch_collapses_only_same_app_amendment_clauses(entry_actio
         await runtime._wait_for_auip_controls(separate_state)
         assert routed == [
             {
-                "action": entry_action,
+                "action": "launch",
                 "target": "delivery",
                 "mode": "collaborate",
                 "after": "work",
@@ -3295,55 +2934,6 @@ def test_followup_launch_binds_the_frozen_active_work_without_a_new_delegate() -
                 "mode": "observe",
                 "after": "work",
                 "_host_active_work_attempt_ids": ("attempt-active",),
-                "_host_work_binding": "active",
-            }
-        ]
-
-    asyncio.run(scenario())
-
-
-def test_real_inactive_resolver_reaches_existing_active_work_binding_path() -> None:
-    async def scenario() -> None:
-        routed: list[dict] = []
-
-        async def query(_messages):
-            return (
-                '{"action":"engage","timing":"after_work",'
-                '"mode":"observe","target":""}'
-            )
-
-        async def route(attrs, **_context):
-            routed.append(dict(attrs))
-
-        resolver = AuipControlDecisionResolver(
-            query=query,
-            app_runtime=_Runtime(),
-            launch_catalog=_Catalog(preparation_titles=("Unrelated old app",)),
-            has_active_work=lambda _session_id: ("attempt-active-real-resolver",),
-        )
-        runtime = ChatRuntime()
-        runtime.configure(
-            auip_control_callback=route,
-            auip_control_decider=resolver,
-        )
-        state = _state(
-            "turn-real-resolver-after-existing-work",
-            question="做好以后打开，我来试玩。",
-        )
-
-        assert runtime._start_auip_decision(state) is True
-        await runtime._wait_for_auip_controls(state)
-
-        assert state.work_delegate_seen is False
-        assert routed == [
-            {
-                "action": "launch",
-                "target": "delivery",
-                "mode": "observe",
-                "after": "work",
-                "_host_active_work_attempt_ids": (
-                    "attempt-active-real-resolver",
-                ),
                 "_host_work_binding": "active",
             }
         ]

@@ -57,28 +57,3 @@ def test_process_environment_precedes_dotenv(tmp_path, monkeypatch) -> None:
 
 def test_project_reader_is_shared_for_one_root(tmp_path) -> None:
     assert load_project_environment(tmp_path) is load_project_environment(tmp_path)
-
-
-def test_cooperative_chat_is_the_declared_default_with_explicit_rollback() -> None:
-    from config import settings
-
-    field = next(field for field in settings.declared_environment_fields()
-        if field.key == "COOPERATIVE_CHAT_ENABLED")
-    assert field.default is True
-    assert EnvironmentReader({}).boolean("COOPERATIVE_CHAT_ENABLED", True) is True
-    assert EnvironmentReader({"COOPERATIVE_CHAT_ENABLED":"false"}).boolean(
-        "COOPERATIVE_CHAT_ENABLED", True) is False
-
-
-def test_professional_work_planner_defaults_on_with_explicit_rollback() -> None:
-    from config import settings
-
-    field = next(field for field in settings.declared_environment_fields()
-        if field.key == "COOPERATIVE_WORK_PLANNER_ENABLED")
-    assert field.default is True
-    model = next(field for field in settings.declared_environment_fields()
-        if field.key == "COOPERATIVE_WORK_PLANNER_MODEL")
-    assert model.default == ""
-    assert EnvironmentReader({}).boolean("COOPERATIVE_WORK_PLANNER_ENABLED", field.default) is True
-    assert EnvironmentReader({"COOPERATIVE_WORK_PLANNER_ENABLED":"false"}).boolean(
-        "COOPERATIVE_WORK_PLANNER_ENABLED", field.default) is False

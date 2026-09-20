@@ -7,15 +7,8 @@ import io
 from typing import Any
 
 
-def provider_supports_direct_image(provider: str, model: str = "") -> bool:
-    provider = str(provider or "").strip().lower()
-    if provider in {"deepseek", "hybrid2"}:
-        # DeepSeek's Flash aliases now resolve to the multimodal Flash model.
-        # Pro and legacy text models must not inherit Flash's image capability.
-        return str(model or "").strip().lower() in {
-            "deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp",
-        }
-    return provider in {"openai", "gemini", "hybrid3"}
+def provider_supports_direct_image(provider: str) -> bool:
+    return str(provider or "").strip().lower() in {"openai", "gemini", "hybrid3"}
 
 
 def visual_notice_text(question: str, visual_context: dict[str, Any] | None, *, supported: bool) -> str:

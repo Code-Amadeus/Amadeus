@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agent_host.provider_types import ProviderRecoveryContext, ProviderRunRequest
+from agent_host.provider_types import ProviderRunRequest
 from agent_host.work_ledger_store import WorkLedgerConflict, WorkLedgerStore
 from agent_host.work_ledger_types import RunAttemptRecord, WorkItemRecord
 from server.work_intake import (
@@ -156,43 +156,6 @@ def test_retry_and_steer_replacement_reuse_the_predecessor_operation() -> None:
     assert replacement.creates_operation is False
     assert replacement.operation_id == "operation_existing"
     assert replacement.lineage_label == "steer replacement"
-
-
-def test_host_failed_auip_recovery_truthfully_retries_succeeded_attempt() -> None:
-    predecessor = _attempt(status="succeeded")
-    recovery = ProviderRecoveryContext(
-        reason="auip_validation_failed",
-        root_attempt_id=predecessor.attempt_id,
-        predecessor_attempt_id=predecessor.attempt_id,
-        feedback="Host boot validation found an application error.",
-    )
-    planned = plan_work_intake(
-        continuation="retry",
-        declared_intent="execute",
-        existing_item=_item(),
-        previous_attempt=predecessor,
-        request_provider="locus",
-        request_mode="agent",
-        predecessor_attempt_id=predecessor.attempt_id,
-        recovery=recovery,
-    )
-    assert predecessor.execution_status == "succeeded"
-    assert planned.creates_operation is False
-    assert planned.operation_id == predecessor.operation_id
-    assert planned.previous_attempt_id == predecessor.attempt_id
-
-    _expect_conflict(
-        lambda: plan_work_intake(
-            continuation="retry",
-            declared_intent="execute",
-            existing_item=_item(),
-            previous_attempt=predecessor,
-            request_provider="locus",
-            request_mode="agent",
-            predecessor_attempt_id=predecessor.attempt_id,
-        ),
-        "failed or cancelled",
-    )
 
 
 def test_continuation_planning_rejects_identity_and_capability_drift() -> None:

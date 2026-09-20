@@ -227,7 +227,6 @@ def observe_auip_application(
         discover_registered_auip_app,
         discover_staged_auip_app,
     )
-    from server.auip_contract import available_engagement_modes
 
     work_item_id = str(getattr(attempt, "work_item_id", "") or "")
     attempt_id = str(getattr(attempt, "attempt_id", "") or "")
@@ -269,34 +268,17 @@ def observe_auip_application(
         )
     }
     bundle_validation_verified = bundle_validation.get("verified") is True
-    expected = requirement.get("expected")
-    required_mode = (
-        str(expected.get("engagement_mode") or "").strip().lower()
-        if isinstance(expected, dict)
-        else ""
-    )
-    candidate_stances = (
-        candidate.get("stances")
-        if isinstance(candidate, dict)
-        and isinstance(candidate.get("stances"), (list, tuple, set, frozenset))
-        else ()
-    )
-    supported_modes = available_engagement_modes(candidate_stances)
-    mode_supported = not required_mode or required_mode in supported_modes
-    application_verified = (
+    verified = (
         bool(candidate)
         and attempt_id in contributors
         and (not bundle_validation_required or bundle_validation_verified)
     )
-    verified = application_verified and mode_supported
+    expected = requirement.get("expected")
     observed = {
         "verified": verified,
-        "application_verified": application_verified,
         "current_attempt_contributed": attempt_id in contributors,
         "bundle_validation_required": bundle_validation_required,
         "bundle_validation_verified": bundle_validation_verified,
-        "supported_engagement_modes": supported_modes,
-        "engagement_mode_supported": mode_supported,
     }
     if bundle_validation.get("code"):
         observed["bundle_validation_code"] = str(bundle_validation.get("code"))
@@ -329,17 +311,7 @@ def verify_auip_application(
         "succeeded",
         "success",
     }
-    required_mode = str(evidence.expected.get("engagement_mode") or "").strip().lower()
-    supported_modes = {
-        str(mode or "").strip().lower()
-        for mode in evidence.observed.get("supported_engagement_modes") or []
-    }
-    mode_supported = not required_mode or required_mode in supported_modes
-    verified = (
-        succeeded
-        and evidence.observed.get("verified") is True
-        and mode_supported
-    )
+    verified = succeeded and evidence.observed.get("verified") is True
     language = str(display_language or "english").strip().lower().replace("-", "_")
     if verified:
         summary = (
@@ -348,15 +320,6 @@ def verify_auip_application(
             else "应用已通过 AUIP 验证；是否真正启动仍以 Host 的连接回执为准。"
             if language in {"zh", "zh_cn", "chinese", "simplified_chinese"}
             else "The AUIP application is verified; actual launch still requires a Host connection receipt."
-        )
-    elif (required_mode and evidence.observed.get("application_verified") is True
-            and not mode_supported):
-        summary = (
-            "アプリは生成できたけど、依頼された参加方法にはまだ対応できていないわ。"
-            if language in {"ja", "jp", "ja_jp", "japanese"}
-            else "应用已生成，但还不支持所需的参与方式。"
-            if language in {"zh", "zh_cn", "chinese", "simplified_chinese"}
-            else "The application was produced, but it does not yet support the requested participation mode."
         )
     else:
         summary = (
@@ -375,13 +338,6 @@ def verify_auip_application(
         rationale=(
             "The Host verified a launchable AUIP manifest and entry revision contributed by this Attempt."
             if verified
-            else (
-                "The Host verified the AUIP application revision, but it does not "
-                f"support the required {required_mode!r} engagement mode."
-            )
-            if required_mode
-            and evidence.observed.get("application_verified") is True
-            and not mode_supported
             else "The Host could not verify a launchable AUIP manifest and entry revision contributed by this Attempt."
         ),
         verified=verified,

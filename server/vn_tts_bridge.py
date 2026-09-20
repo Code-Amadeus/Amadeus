@@ -34,7 +34,6 @@ _SEMAPHORES: dict[int, asyncio.Semaphore] = {}
 _SUBTITLE_SEMAPHORES: dict[int, asyncio.Semaphore] = {}
 _SENTENCE_META: dict[str, dict[str, Any]] = {}
 _VN_SUBTITLE_CACHE: dict[str, dict[str, str]] = {}
-_OVERLAY_LOCKS: dict[int, asyncio.Lock] = {}
 
 
 def is_vn_sentence(sentence_id: str) -> bool:
@@ -58,21 +57,17 @@ def cancel_pending_vn_tts(
     *,
     source: str,
     work_item_id: str = "",
-    run_id: str = "",
     nonterminal_only: bool = False,
 ) -> int:
     """Cancel bridge jobs that have not finished enqueueing stale speech."""
 
     target_source = str(source or "").strip()
     target_work_item = str(work_item_id or "").strip()
-    target_run = str(run_id or "").strip()
     cancelled = 0
     for task, metadata in tuple(_TASK_META.items()):
         if target_source and str(metadata.get("source") or "") != target_source:
             continue
         if target_work_item and str(metadata.get("work_item_id") or "") != target_work_item:
-            continue
-        if target_run and str(metadata.get("run_id") or "") != target_run:
             continue
         if nonterminal_only and metadata.get("terminal") is True:
             continue
@@ -152,12 +147,10 @@ def submit_vn_tts(
         "emotion": str(payload.get("emotion") or payload.get("emotion_intent") or "").strip(),
         "duration_ms": int(payload.get("duration_ms") or 6500),
         "line_id": str(payload.get("line_id") or "").strip(),
-        "turn_id": str(payload.get("turn_id") or "").strip(),
         "script_id": str(payload.get("script_id") or "").strip(),
         "action": str(payload.get("action") or "").strip(),
         "terminal": payload.get("terminal") is True,
         "work_item_id": str(payload.get("work_item_id") or "").strip(),
-        "run_id": str(payload.get("run_id") or "").strip(),
         "attempt_id": str(payload.get("attempt_id") or "").strip(),
         "narration_source_kind": str(delivery.get("source_kind") or "").strip(),
         "narration_source_id": str(delivery.get("source_id") or "").strip(),
@@ -412,30 +405,8 @@ class _StreamingSentenceDispatcher:
         )
         try:
             put_timeout = max(0.1, _env_float("VN_TTS_QUEUE_PUT_TIMEOUT", 3.0))
-            # Keep acceptance and identity observation in the same coroutine:
-            # a separate wait_for task can release the TTS consumer first.
-            async with asyncio.timeout(put_timeout):
-                await self.pending_sentence_items.put(item)
+            await asyncio.wait_for(self.pending_sentence_items.put(item), timeout=put_timeout)
             self.last_sentence_id = sentence_id
-            if self.is_first and self.metadata.get("narration_complete_turn"):
-                # Only direct conversational answers carry a turn identity.
-                # Background narration line ids must not join an active turn.
-                try:
-                    from core.turn_coordinator import get_turn_coordinator
-                    from server.turn_decision_shadow import get_enabled_turn_decision_shadow_observer
-
-                    turn_id = str(self.metadata.get("turn_id") or "")
-                    get_turn_coordinator().on_first_sentence_enqueued(
-                        turn_id=turn_id, sentence_id=sentence_id,
-                    )
-                    observer = get_enabled_turn_decision_shadow_observer()
-                    if observer is not None:
-                        observer.record_event(
-                            turn_id, stage="first_sentence_enqueued",
-                            origin_kind="direct_answer", origin_id=sentence_id,
-                        )
-                except Exception:
-                    logger.debug("direct answer timing observation failed", exc_info=True)
             logger.info(
                 "[VN TTS] enqueue id=%s first=%s sha1=%s text='%s'",
                 sentence_id,
@@ -595,29 +566,7 @@ async def publish_overlay_subtitle(sentence_id: str, japanese_text: str, chinese
         display_text=str(chinese_text or "").strip(),
         raw_text=str(chinese_text or japanese_text or "").strip(),
         source="vn_pretranslation",
-        sentence_id=sentence_id,
     )
-
-
-def schedule_overlay_playback(sentence_id: str, speaking: bool, loop: asyncio.AbstractEventLoop):
-    """Queue audio identity before subtitle tasks created next on the same host loop."""
-    try:
-        current_loop = asyncio.get_running_loop()
-    except RuntimeError:
-        current_loop = None
-    event = publish_overlay_playback(sentence_id, speaking)
-    if current_loop is loop:
-        return loop.create_task(event)
-    return asyncio.run_coroutine_threadsafe(event, loop)
-
-
-async def publish_overlay_playback(sentence_id: str, speaking: bool) -> None:
-    """Project only real VN audio boundaries, never main-chat speech, to its overlay."""
-    meta = _SENTENCE_META.get(str(sentence_id or ""))
-    if not meta or not meta.get("overlay_url"):
-        return
-    await _publish_overlay(meta, display_text=str(meta.get("display_text") or "") if speaking else "",
-                           raw_text="", source="vn_playback", sentence_id=sentence_id, speaking=speaking)
 
 
 async def _publish_overlay(
@@ -626,8 +575,6 @@ async def _publish_overlay(
     display_text: str,
     raw_text: str,
     source: str,
-    sentence_id: str = "",
-    speaking: bool | None = None,
 ) -> None:
     url = str((meta or {}).get("overlay_url") or "").strip()
     if not url:
@@ -640,16 +587,9 @@ async def _publish_overlay(
         "line_id": str((meta or {}).get("line_id") or ""),
         "script_id": str((meta or {}).get("script_id") or ""),
         "source": source,
-        "sentence_id": sentence_id,
     }
-    if speaking is not None:
-        payload["speaking"] = speaking
     try:
-        # Preserve audio start/end order while the blocking HTTP calls run off-loop.
-        loop_id = id(asyncio.get_running_loop())
-        lock = _OVERLAY_LOCKS.setdefault(loop_id, asyncio.Lock())
-        async with lock:
-            await asyncio.to_thread(_post_json, url, payload, 0.25)
+        await asyncio.to_thread(_post_json, url, payload, 0.25)
     except Exception:
         logger.debug("[VN TTS] overlay publish failed: %s", url, exc_info=True)
 

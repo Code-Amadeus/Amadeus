@@ -26,7 +26,6 @@ if TYPE_CHECKING:
 # this module stays importable in audio-less installs (it is reachable from
 # backend bootstrap via barge-in / wake shutdown paths).
 
-from core.pyaudio_lifecycle import initialize_pyaudio, terminate_pyaudio
 from tts.aec_realtime import get_realtime_aec_processor
 
 logger = logging.getLogger(__name__)
@@ -121,6 +120,8 @@ class MicInputService:
 
     def start(self, preferred_index: int | None = None, *, wait_timeout: float | None = None) -> None:
         timeout = _startup_timeout_seconds() if wait_timeout is None else max(0.0, wait_timeout)
+        if preferred_index is not None:
+            self._mic_index = preferred_index
         if self.running:
             if self._stream is None:
                 if not self._wait_until_ready(timeout):
@@ -131,8 +132,6 @@ class MicInputService:
             if self._stream is None:
                 raise RuntimeError("[MicInput] microphone service is running without an input stream")
             return
-        if preferred_index is not None:
-            self._mic_index = preferred_index
         self._last_error = ""
         self._ready_event.clear()
         self._stop_event.clear()
@@ -240,7 +239,11 @@ class MicInputService:
         probable_end_silence_ms: int = 0,
         on_probable_end: Callable[[np.ndarray], None] | None = None,
         on_probable_end_cancelled: Callable[[], None] | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> np.ndarray | None:
+        if cancel_event is not None and cancel_event.is_set():
+            logger.info("[MicInput] ASR capture cancelled before start")
+            return None
         self.start()
         if vad_model is not None:
             import torch
@@ -318,6 +321,15 @@ class MicInputService:
                 on_probable_end_cancelled()
             except Exception:
                 logger.debug("[MicInput] probable-end cancel callback failed", exc_info=True)
+
+        def _capture_cancelled() -> bool:
+            return bool(cancel_event is not None and cancel_event.is_set())
+
+        def _abort_capture() -> None:
+            if probable_end_fired:
+                _cancel_probable_end()
+            logger.info("[MicInput] ASR capture cancelled")
+
         capture_started_at = time.monotonic() if speech_started else 0.0
         echo_dropped = False
         preroll_buf: deque[np.ndarray] = deque(maxlen=preroll_chunks)
@@ -364,6 +376,10 @@ class MicInputService:
 
         try:
             while not self._stop_event.is_set():
+                if _capture_cancelled():
+                    _abort_capture()
+                    return None
+
                 now = time.monotonic()
                 if not speech_started and now >= speech_start_deadline:
                     break
@@ -374,6 +390,9 @@ class MicInputService:
                 ):
                     return finish_audio("max_speech")
                 frame = cursor.read(timeout=0.25)
+                if _capture_cancelled():
+                    _abort_capture()
+                    return None
                 if frame is None:
                     continue
                 chunk_np = frame.audio
@@ -479,6 +498,8 @@ class MicInputService:
         finally:
             if vad_iter is not None:
                 vad_iter.reset_states()
+        if _capture_cancelled():
+            return None
         if speech_started and speech_chunks:
             return finish_audio("timeout")
         return None
@@ -505,7 +526,7 @@ class MicInputService:
         stream = None
         pa = None
         try:
-            pa = initialize_pyaudio(pyaudio.PyAudio)
+            pa = pyaudio.PyAudio()
             logger.info("[MicInput] opening microphone stream index=%s", self._mic_index)
             stream, self._mic_index = open_input_stream_with_fallback(
                 pa,
@@ -560,7 +581,7 @@ class MicInputService:
                 pass
             try:
                 if pa is not None:
-                    terminate_pyaudio(pa)
+                    pa.terminate()
             except Exception:
                 pass
             self._stream = None

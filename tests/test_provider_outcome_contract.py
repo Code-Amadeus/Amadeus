@@ -13,7 +13,6 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent_host.provider_outcome import ProviderOutcomeEvidence
-from agent_host.provider_authoring import auip_authoring_outcome_requirement
 from agent_host.provider_contract import (
     ProviderCapabilities,
     ProviderManifest,
@@ -178,53 +177,6 @@ def test_host_outcome_requirement_observes_artifacts_not_provider_identity() -> 
     assert verified.verified is True
     assert verified.completeness == "complete"
     assert verified.observed["app_id"] == "gomoku"
-
-
-def test_auip_outcome_requires_the_accepted_engagement_mode() -> None:
-    attempt = SimpleNamespace(work_item_id="work-game", attempt_id="attempt-current")
-    cases = (
-        (("spectator",), "collaborate", False),
-        (("spectator",), "observe", True),
-        (("participant",), "collaborate", True),
-        (("participant",), "delegate", True),
-        (("spectator",), "", True),
-        (("spectator",), "unknown", False),
-    )
-    for stances, required_mode, expected_verified in cases:
-        requirement = auip_authoring_outcome_requirement()
-        if required_mode:
-            requirement["expected"]["engagement_mode"] = required_mode
-        metadata = {"host_outcome_requirement": requirement}
-        with patch(
-            "server.auip_app_source.discover_registered_auip_app",
-            return_value={
-                "contributing_attempt_ids": ["attempt-current"],
-                "app": {"id": "gomoku", "title": "Gomoku"},
-                "stances": list(stances),
-            },
-        ):
-            observed = observe_required_host_outcome(
-                metadata,
-                store=object(),
-                attempt=attempt,
-            )
-        assert observed is not None
-        assert observed.observed["supported_engagement_modes"] == (
-            ["observe"]
-            if stances == ("spectator",)
-            else ["collaborate", "delegate"]
-        )
-        verdict = assess_provider_outcome(
-            execution_status="succeeded",
-            provider_report="Everything is ready.",
-            metadata={**metadata, "outcome_evidence": observed.to_dict()},
-        )
-        assert verdict is not None
-        assert verdict.verified is expected_verified
-        assert verdict.completeness == (
-            "complete" if expected_verified else "incomplete"
-        )
-        assert verdict.provider_report_allowed is expected_verified
 
 
 def test_observer_replaces_optimistic_prose_for_any_unverified_facet() -> None:

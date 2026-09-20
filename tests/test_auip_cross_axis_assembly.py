@@ -224,7 +224,6 @@ def test_deferred_launch_consumes_the_materialized_staged_auip_delivery(
                 "target": "delivery",
                 "mode": "collaborate",
                 "after": "work",
-                "_host_work_binding": "turn",
             },
             session_id=SESSION,
             turn_id="turn-connect-and-play",

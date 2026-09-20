@@ -22,7 +22,7 @@ from server.action_existence_recovery import (
 )
 from server.work_context import augment_system_prompt_with_active_provider_context
 from server.control_proposal import seal_control_proposals
-from server.control_adjudication import ControlDecisionAdjudicator, ControlDecisionContext
+from server.control_shadow import ControlDecisionAdjudicator, ControlShadowContext
 
 
 CASES = [
@@ -258,7 +258,7 @@ async def main() -> None:
         adjudicator = ControlDecisionAdjudicator(query=query)
         evidence = await adjudicator.observe(
             batch,
-            ControlDecisionContext(
+            ControlShadowContext(
                 messages=(
                     {
                         "role": "system",

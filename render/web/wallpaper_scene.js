@@ -51,22 +51,6 @@
     }
   }
 
-  // Keep the foreground character closer to the muted CRT background without
-  // changing any wallpaper layout or the original character assets.
-  const WALLPAPER_CHARACTER_BRIGHTNESS = 0.95;
-  const WALLPAPER_CHARACTER_SATURATION = -0.10;
-
-  function applyWallpaperCharacterColorGrade(layer) {
-    if (!layer || layer.__amadeusWallpaperCharacterGrade || !window.PIXI || typeof PIXI.ColorMatrixFilter !== "function") {
-      return;
-    }
-    const grade = new PIXI.ColorMatrixFilter();
-    grade.brightness(WALLPAPER_CHARACTER_BRIGHTNESS, false);
-    grade.saturate(WALLPAPER_CHARACTER_SATURATION, true);
-    layer.filters = (layer.filters || []).concat(grade);
-    layer.__amadeusWallpaperCharacterGrade = grade;
-  }
-
   const characterRuntime = {
     setMode(mode) { callRender("setMode", [mode]); },
     loadSpriteFrames(emotion, urls) { callRender("loadSpriteFrames", [emotion, urls]); },
@@ -164,7 +148,7 @@
       const width = Math.max(180, Math.min(b.width * 0.72, b.width - 24));
       const height = Math.max(34, Math.min(width / this._aspect, b.height * 0.16));
       const x = b.x + (b.width - width) / 2;
-      const y = b.y + b.height - height;
+      const y = b.y + b.height - height - Math.max(3, b.height * 0.012);
       this.frame.x = x;
       this.frame.y = y;
       if (this.frame.texture && this.frame.texture.valid) {
@@ -1710,7 +1694,6 @@
     ambientLayer: null,
     glowLayer: null,
     scanlineLayer: null,
-    bottomVignette: null,
     canvasSurface: null,
     ambientLowSprite: null,
     ambientSprite: null,
@@ -1762,8 +1745,6 @@
         this.app.stage.addChild(this.ambientLayer);
         this.app.stage.addChild(this.glowLayer);
         this.app.stage.addChild(this.scanlineLayer);
-        this.bottomVignette = this._createBottomVignette();
-        this.app.stage.addChild(this.bottomVignette);
         this.scanlineLayer.mask = this.mask;
         callRender("setSpriteViewportMask", [this.mask]);
         this._resizeBound = () => this.layout();
@@ -1784,7 +1765,6 @@
         this.canvasSurface = window.createCrtCanvasSurface();
       }
       scenarioRuntime.init(this.app, (payload && payload.scenario) || {});
-      this._applyCharacterColorGrade();
       if (!this._defaultSubtitleEnabled) characterRuntime.setSubtitle("");
       this.layout();
       console.log("[WallpaperScene] initialized with separated scene/character controllers");
@@ -1795,29 +1775,6 @@
         scenarioEnabled: !!(payload && payload.scenario && payload.scenario.enabled),
         stageChildren: this.app && this.app.stage ? this.app.stage.children.length : 0,
       });
-    },
-
-    _createBottomVignette() {
-      // A soft shadow across the inner lower bezel, strongest below the character.
-      // Keep it separate from the subtitle layer so the text stays crisp.
-      const canvas = document.createElement("canvas");
-      canvas.width = 1024;
-      canvas.height = 128;
-      const ctx = canvas.getContext("2d");
-      ctx.scale(8, 1);
-      const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-      gradient.addColorStop(0, "rgba(0,0,0,0.62)");
-      gradient.addColorStop(0.45, "rgba(0,0,0,0.38)");
-      gradient.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, 128, 128);
-      return new PIXI.Sprite(PIXI.Texture.from(canvas));
-    },
-
-    _applyCharacterColorGrade() {
-      const renderApp = window.renderApp || {};
-      applyWallpaperCharacterColorGrade(renderApp._sprite && renderApp._sprite.container);
-      applyWallpaperCharacterColorGrade(renderApp._live2d && renderApp._live2d.container);
     },
 
     setBackground(url) {
@@ -2083,11 +2040,6 @@
       callRender("setSpriteViewportBounds", [bounds]);
       scenarioRuntime.layout(bounds, this.mask);
       wallpaperSubtitle.layout(bounds);
-      this.bottomVignette.width = bounds.width * 0.76;
-      this.bottomVignette.height = bounds.height * 0.085;
-      this.bottomVignette.x = bounds.x + bounds.width * 0.52 - this.bottomVignette.width / 2;
-      this.bottomVignette.y = bounds.bottom - this.bottomVignette.height / 2;
-      wallpaperSubtitle.updateVisibility();
       if (this.canvasSurface && typeof this.canvasSurface.layout === "function") {
         this.canvasSurface.layout(bounds);
       }
@@ -2114,17 +2066,6 @@
       }
       if (this.canvasSurface && typeof this.canvasSurface.setPresentation === "function") {
         this.canvasSurface.setPresentation(profile || {});
-      }
-    },
-
-    setAttention(payload) {
-      if (this._externalCanvasHost) return;
-      if (!this.canvasSurface && typeof window.createCrtCanvasSurface === "function") {
-        this.canvasSurface = window.createCrtCanvasSurface();
-        if (this._crtBounds) this.canvasSurface.layout(this._crtBounds);
-      }
-      if (this.canvasSurface && typeof this.canvasSurface.setAttention === "function") {
-        this.canvasSurface.setAttention(payload || {});
       }
     },
 
@@ -2414,14 +2355,12 @@
   };
 
   try {
-    const pixiApp = callRender("getPixiApp", []);
-    if (!pixiApp || !pixiApp.view) throw new Error("Pixi view is unavailable");
-    pixiApp.view.addEventListener("webglcontextlost", function (event) {
+    app.view.addEventListener("webglcontextlost", function (event) {
       console.error("[WallpaperScene] WebGL context lost; preventing default restore path", event);
       diag("webgl.context_lost", {}, "error");
       if (event && typeof event.preventDefault === "function") event.preventDefault();
     }, false);
-    pixiApp.view.addEventListener("webglcontextrestored", function () {
+    app.view.addEventListener("webglcontextrestored", function () {
       console.info("[WallpaperScene] WebGL context restored");
       diag("webgl.context_restored");
       if (window.wallpaperApp && window.wallpaperApp.scene) {
@@ -2433,31 +2372,11 @@
   }
 
   window.wallpaperApp = {
-    // Preserve the animation/visibility owners while moving only presentation
-    // to the compact companion. Scenario transitions can continue underneath.
-    setCompanionActive(active) {
-      const app = window.renderApp;
-      const layers = [app && app._sprite && app._sprite.container,
-        app && app._live2d && app._live2d.container,
-        app && app._subtitle && app._subtitle.container, wallpaperSubtitle.container];
-      for (const layer of layers) {
-        if (!layer) continue;
-        if (active) {
-          if (layer._companionRenderable === undefined) layer._companionRenderable = layer.renderable;
-          layer.renderable = false;
-        } else if (layer._companionRenderable !== undefined) {
-          layer.renderable = layer._companionRenderable;
-          delete layer._companionRenderable;
-        }
-      }
-    },
     scene: desktopScene,
     character: characterRuntime,
 
     initDesktopScene(payload) { desktopScene.init(payload || {}); },
     setCanvas(payload) { desktopScene.setCanvas(payload || {}); },
-    setCanvasPresentation(profile) { desktopScene.setCanvasPresentation(profile || {}); },
-    setAttention(payload) { desktopScene.setAttention(payload || {}); },
     toggleCanvas() { desktopScene.toggleCanvas(); },
     setDefaultSubtitleEnabled(enabled) { desktopScene.setDefaultSubtitleEnabled(enabled); },
 

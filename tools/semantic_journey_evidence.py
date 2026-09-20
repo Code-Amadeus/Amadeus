@@ -45,19 +45,172 @@ def _run_git(root: Path, *args: str) -> bytes:
 
 
 def code_identity(root: Path) -> dict[str, Any]:
-    """Return an identity that distinguishes clean and dirty executions."""
+    """Return an exact identity for a Git checkout or detached source tree.
+
+    Git worktrees retain the historical commit/status/diff identity.
+
+    Formal source archives intentionally do not contain ``.git``.  For those
+    detached trees, derive an identity from the packaged source itself rather
+    than failing or pretending that a Git worktree exists.
+    """
 
     checkout = root.resolve()
-    commit_sha = _run_git(checkout, "rev-parse", "HEAD").decode().strip()
-    status = _run_git(checkout, "status", "--porcelain=v1", "-z")
+
+    try:
+        commit_sha = _run_git(
+            checkout,
+            "rev-parse",
+            "HEAD",
+        ).decode().strip()
+
+    except EvidenceError:
+        # A real Git checkout that fails Git inspection is still an error.
+        # Only a deliberately detached source tree receives the archive
+        # fingerprint fallback.
+        if (checkout / ".git").exists():
+            raise
+
+        excluded_dirs = {
+            ".git",
+            "__pycache__",
+            ".pytest_cache",
+            ".mypy_cache",
+            ".ruff_cache",
+            "node_modules",
+            "runtime",
+        }
+
+        excluded_files = {
+            ".coverage",
+        }
+
+        records: list[tuple[str, int, str]] = []
+
+        for source_path in sorted(
+            checkout.rglob("*"),
+            key=lambda item: item.as_posix(),
+        ):
+            if not source_path.is_file():
+                continue
+
+            relative = source_path.relative_to(checkout)
+
+            if any(
+                part in excluded_dirs
+                or part.startswith(".venv")
+                for part in relative.parts
+            ):
+                continue
+
+            if source_path.name in excluded_files:
+                continue
+
+            if source_path.suffix.lower() in {
+                ".pyc",
+                ".pyo",
+            }:
+                continue
+
+            digest = hashlib.sha256()
+
+            with source_path.open("rb") as handle:
+                for chunk in iter(
+                    lambda: handle.read(1024 * 1024),
+                    b"",
+                ):
+                    digest.update(chunk)
+
+            records.append(
+                (
+                    relative.as_posix(),
+                    source_path.stat().st_size,
+                    digest.hexdigest(),
+                )
+            )
+
+        if not records:
+            raise EvidenceError(
+                "detached source identity contains no source files"
+            )
+
+        fingerprint = hashlib.sha256()
+        fingerprint.update(
+            b"amadeus-detached-source-v1\0"
+        )
+
+        for relative, size, digest in records:
+            fingerprint.update(
+                relative.encode(
+                    "utf-8",
+                    errors="surrogateescape",
+                )
+            )
+            fingerprint.update(b"\0")
+            fingerprint.update(
+                str(size).encode("ascii")
+            )
+            fingerprint.update(b"\0")
+            fingerprint.update(
+                digest.encode("ascii")
+            )
+            fingerprint.update(b"\0")
+
+        workspace_fingerprint = (
+            fingerprint.hexdigest()
+        )
+
+        # ``commit_sha`` is a legacy evidence field.  Detached source archives
+        # have no Git commit object, so derive a stable 40-hex source identity
+        # from the full SHA-256 tree fingerprint instead of fabricating Git
+        # metadata or requiring .git in the release package.
+        detached_commit = hashlib.sha256()
+        detached_commit.update(
+            b"amadeus-detached-source-legacy-commit-v1\0"
+        )
+        detached_commit.update(
+            workspace_fingerprint.encode("ascii")
+        )
+
+        return {
+            "commit_sha":
+                detached_commit.hexdigest()[:40],
+            "workspace_dirty": False,
+            "workspace_fingerprint":
+                workspace_fingerprint,
+        }
+
+    status = _run_git(
+        checkout,
+        "status",
+        "--porcelain=v1",
+        "-z",
+    )
+
     fingerprint = hashlib.sha256()
     fingerprint.update(b"amadeus-worktree-v1\0")
-    fingerprint.update(commit_sha.encode("ascii", errors="replace"))
+    fingerprint.update(
+        commit_sha.encode(
+            "ascii",
+            errors="replace",
+        )
+    )
     fingerprint.update(b"\0status\0")
     fingerprint.update(status)
+
     if status:
         fingerprint.update(b"\0diff\0")
-        fingerprint.update(_run_git(checkout, "diff", "--binary", "HEAD", "--", "."))
+
+        fingerprint.update(
+            _run_git(
+                checkout,
+                "diff",
+                "--binary",
+                "HEAD",
+                "--",
+                ".",
+            )
+        )
+
         untracked = _run_git(
             checkout,
             "ls-files",
@@ -65,18 +218,35 @@ def code_identity(root: Path) -> dict[str, Any]:
             "--exclude-standard",
             "-z",
         )
-        for raw_name in sorted(value for value in untracked.split(b"\0") if value):
+
+        for raw_name in sorted(
+            value
+            for value in untracked.split(b"\0")
+            if value
+        ):
             fingerprint.update(b"\0untracked\0")
             fingerprint.update(raw_name)
-            path = checkout / raw_name.decode("utf-8", errors="surrogateescape")
-            if path.is_file():
+
+            source_path = checkout / raw_name.decode(
+                "utf-8",
+                errors="surrogateescape",
+            )
+
+            if source_path.is_file():
                 fingerprint.update(b"\0")
-                fingerprint.update(hashlib.sha256(path.read_bytes()).digest())
+                fingerprint.update(
+                    hashlib.sha256(
+                        source_path.read_bytes()
+                    ).digest()
+                )
+
     return {
         "commit_sha": commit_sha,
         "workspace_dirty": bool(status),
-        "workspace_fingerprint": fingerprint.hexdigest(),
+        "workspace_fingerprint":
+            fingerprint.hexdigest(),
     }
+
 
 
 def _assertion_rows(

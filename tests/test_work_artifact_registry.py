@@ -165,51 +165,6 @@ def test_non_ascii_entry_revision_is_registered_as_the_real_path() -> None:
     asyncio.run(run())
 
 
-def test_non_git_workspace_registers_new_files_without_claiming_preexisting_changes() -> None:
-    async def run() -> None:
-        with tempfile.TemporaryDirectory(prefix="work_artifact_filesystem_") as temp:
-            root = Path(temp)/"project"
-            root.mkdir()
-            marker = root/"marker.txt"
-            marker.write_text("before\n", encoding="utf-8")
-            store = WorkLedgerStore(Path(temp)/"ledger.sqlite3")
-            project = store.create_or_get_project(root)
-            item = store.create_work_item(project.project_id,
-                title="Generate a report", workspace_path=str(root))
-            attempt = store.create_attempt(item.work_item_id,
-                provider="locus", task="Generate report.md")
-            registry = WorkArtifactRegistry(store)
-            baseline = await registry.capture_baseline(attempt, item)
-            assert baseline["available"] is True
-            assert baseline["source"] == "filesystem"
-            assert set(baseline["files"]) == {"marker.txt"}
-
-            report = root/"report.md"
-            report.write_text("delivered\n", encoding="utf-8")
-            marker.write_text("changed during attempt\n", encoding="utf-8")
-            current_attempt = store.get_attempt(attempt.attempt_id)
-            assert current_attempt is not None
-            delta = await registry.finalize_attempt(current_attempt, item)
-            assert delta["source"] == "filesystem"
-            assert delta["changed_files"] == ["marker.txt", "report.md"]
-            assert delta["ambiguous_paths"] == ["marker.txt"]
-            assert delta["untracked"] == ["report.md"]
-            artifacts = store.list_artifacts(item.work_item_id,
-                attempt_id=attempt.attempt_id)
-            assert any(artifact.kind == "filesystem.delta" for artifact in artifacts)
-            report_artifact = next(artifact for artifact in artifacts
-                if artifact.title == "report.md")
-            assert report_artifact.status == "registered"
-            assert report_artifact.sha256
-            marker_artifact = next(artifact for artifact in artifacts
-                if artifact.title == "marker.txt")
-            assert marker_artifact.status == "pending"
-            assert marker_artifact.metadata["attribution"] == "ambiguous_origin"
-            store.close()
-
-    asyncio.run(run())
-
-
 def test_explicit_amend_may_change_predecessor_owned_dirty_artifact() -> None:
     async def run() -> None:
         with tempfile.TemporaryDirectory(prefix="work_artifact_amend_lineage_") as temp:
@@ -300,7 +255,6 @@ def _main() -> None:
     test_committed_delta_survives_and_baseline_dirty_is_not_stolen()
     test_changed_preexisting_dirty_path_is_ambiguous_not_claimed_exact()
     test_non_ascii_entry_revision_is_registered_as_the_real_path()
-    test_non_git_workspace_registers_new_files_without_claiming_preexisting_changes()
     test_explicit_amend_may_change_predecessor_owned_dirty_artifact()
     print("ok: work artifact registry preserves attempt Git boundaries")
 

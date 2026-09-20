@@ -5,10 +5,8 @@ import sys
 import tempfile
 
 from agent_host.provider_authoring import (
-    auip_authoring_outcome_requirement,
     auip_authoring_bundle_metrics,
     materialize_auip_runtime_assets,
-    required_auip_engagement_mode,
     requires_auip_authoring,
     stage_auip_authoring_bundle,
     with_host_authoring_capabilities,
@@ -81,53 +79,10 @@ def test_adjudicated_preparation_is_a_required_provider_prerequisite() -> None:
     assert "opaque dependencies" in prompt
     assert "validate_auip_manifest.py" in prompt
     assert "sync_auip_manifest.py" in prompt
-    assert "validate_auip_entry.py" in prompt
     assert "Do not open or inspect either implementation" in prompt
     assert "guess_number_game.html を開く" in prompt
     assert '"直接打开刚才那个小游戏吧，你在旁边看着我玩，顺便评论一下。"' in prompt
     assert "Optional host authoring capability" not in prompt
-
-
-def test_required_auip_mode_is_explicit_in_requirement_and_authoring_prompt() -> None:
-    assert auip_authoring_outcome_requirement() == {
-        "operation": "prepare",
-        "facet": "auip.application",
-        "expected": {"current_attempt_contribution": True},
-    }
-    requirement = auip_authoring_outcome_requirement(mode="collaborate")
-    assert requirement["expected"] == {
-        "current_attempt_contribution": True,
-        "engagement_mode": "collaborate",
-    }
-    metadata = {"host_outcome_requirement": requirement}
-    assert required_auip_engagement_mode(metadata) == "collaborate"
-    prompt = with_host_authoring_capabilities(
-        "Build the application.",
-        require_auip_preparation=True,
-        authoring_skill_path=str(STAGED_SKILL),
-        required_auip_mode=required_auip_engagement_mode(metadata),
-    )
-    assert "required AUIP engagement mode" in prompt
-    assert "`collaborate`" in prompt
-    assert "spectator-only delivery does not satisfy" in prompt
-    assert "coherent useful part" in prompt
-
-    observe_prompt = with_host_authoring_capabilities(
-        "Build the application.",
-        require_auip_preparation=True,
-        authoring_skill_path=str(STAGED_SKILL),
-        required_auip_mode="observe",
-    )
-    assert "`observe`" in observe_prompt
-    assert "spectator-only delivery does not satisfy" not in observe_prompt
-
-    for invalid in ("unknown", "agent"):
-        try:
-            auip_authoring_outcome_requirement(mode=invalid)
-        except ValueError as exc:
-            assert "unsupported AUIP engagement mode" in str(exc)
-        else:
-            raise AssertionError("unknown AUIP engagement mode was downgraded")
 
 
 def test_unstaged_optional_capability_is_not_advertised() -> None:
@@ -253,7 +208,6 @@ def test_authoring_bundle_preserves_the_skill_relative_layout() -> None:
         assert (bundle_root / "server" / "auip_contract.py").is_file()
         assert (bundle_root / "tools" / "validate_auip_manifest.py").is_file()
         assert (bundle_root / "tools" / "sync_auip_manifest.py").is_file()
-        assert (bundle_root / "tools" / "validate_auip_entry.py").is_file()
 
         completed = subprocess.run(
             [
@@ -323,9 +277,8 @@ def test_host_managed_authoring_bundle_omits_opaque_implementation_sources() -> 
         assert validator.is_file()
         sync = bundle_root / "tools" / "sync_auip_manifest.py"
         assert sync.is_file()
-        assert (bundle_root / "tools" / "validate_auip_entry.py").is_file()
         metrics = auip_authoring_bundle_metrics(skill_path)
-        assert metrics["staged_file_count"] == 9
+        assert metrics["staged_file_count"] == 8
         assert metrics["required_read_file_count"] == 2
         assert metrics["required_read_bytes"] < metrics["staged_bytes"]
         assert metrics["required_read_bytes"] < 40_000

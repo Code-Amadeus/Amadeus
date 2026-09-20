@@ -14,7 +14,6 @@ def test_canonical_asset_paths_stay_under_asset_root() -> None:
         asset_paths.SOURCE_ROOT,
         asset_paths.SPRITEFORGE_ROOT,
         asset_paths.SPRITEFORGE_RUNTIME_ROOT,
-        asset_paths.COMPANION_RUNTIME_ROOT,
         asset_paths.PROJECT_ASSET_ROOT,
     )
 

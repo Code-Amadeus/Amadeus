@@ -24,7 +24,7 @@ def _env_enabled(name: str, default: bool = False) -> bool:
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
-_enabled = _env_enabled("AMADEUS_CHAT_TRANSLATION_SUBTITLES_ENABLED", False)
+_enabled = _env_enabled("AMADEUS_CHAT_TRANSLATION_SUBTITLES_ENABLED", True)
 
 
 def is_enabled() -> bool:

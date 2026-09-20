@@ -1,7 +1,6 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import type { Page } from '../App'
 import FluentIcon from './FluentIcon'
-import { useI18n } from '../i18n'
 
 interface Props {
   page: Page
@@ -13,7 +12,7 @@ interface Props {
 }
 
 type NavItem =
-  | { kind: 'page'; page: Page; label: string; icon: 'Edit' | 'Setting' | 'CommandPrompt' | 'Movie' }
+  | { kind: 'page'; page: Page; label: string; icon: 'Edit' | 'Setting' | 'CommandPrompt' | 'Movie' | 'People' }
   | { kind: 'toggle'; label: string; icon: 'Video'; iconActive: 'Movie'; active: boolean; onClick: () => void }
   | { kind: 'toggle-simple'; label: string; icon: 'Tiles'; active: boolean; onClick: () => void }
 
@@ -37,7 +36,6 @@ export default function Sidebar({
   page, onNavigate,
   renderActive, wallpaperActive, onToggleRender, onToggleWallpaper,
 }: Props) {
-  const { t } = useI18n()
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('amadeus.sidebar.collapsed') === '1')
 
   useEffect(() => {
@@ -67,6 +65,7 @@ export default function Sidebar({
   ]
 
   const bottomItems: NavItem[] = [
+    { kind: 'page', page: 'continuity', label: 'Continuity', icon: 'People' },
     { kind: 'page', page: 'backend', label: 'Backend', icon: 'CommandPrompt' },
     { kind: 'page', page: 'settings', label: 'Settings', icon: 'Setting' },
   ]
@@ -78,7 +77,7 @@ export default function Sidebar({
         <button
           key={item.page}
           onClick={() => onNavigate(item.page)}
-          title={collapsed ? t(item.label) : undefined}
+          title={collapsed ? item.label : undefined}
           className="flex items-center gap-3 w-full text-left text-[13px]
                      transition-colors duration-150"
           style={navButtonStyle(active, collapsed)}
@@ -96,7 +95,7 @@ export default function Sidebar({
           }}
         >
           <FluentIcon name={item.icon} size={18} />
-          {!collapsed && <span>{t(item.label)}</span>}
+          {!collapsed && <span>{item.label}</span>}
         </button>
       )
     }
@@ -106,7 +105,7 @@ export default function Sidebar({
       <button
         key={item.label}
         onClick={item.onClick}
-        title={collapsed ? t(item.label) : undefined}
+        title={collapsed ? item.label : undefined}
         className="flex items-center gap-3 w-full text-left text-[13px]
                    transition-colors duration-150"
         style={navButtonStyle(item.active, collapsed)}
@@ -124,7 +123,7 @@ export default function Sidebar({
         }}
       >
         <FluentIcon name={iconName} size={18} />
-        {!collapsed && <span>{t(item.label)}</span>}
+        {!collapsed && <span>{item.label}</span>}
       </button>
     )
   }
@@ -149,7 +148,7 @@ export default function Sidebar({
       >
         <button
           onClick={() => setCollapsed(v => !v)}
-          title={t(collapsed ? 'Expand navigation' : 'Collapse navigation')}
+          title={collapsed ? 'Expand navigation' : 'Collapse navigation'}
           className="flex items-center justify-center border-none bg-transparent cursor-pointer"
           style={{
             width: 30,
@@ -176,7 +175,7 @@ export default function Sidebar({
         {topItems.map(renderItem)}
       </div>
 
-      <div style={{ paddingTop: 6, paddingBottom: 8, borderTop: '1px solid var(--divider)' }}>
+      <div style={{ paddingTop: 6, paddingBottom: 8, borderTop: '1px solid rgba(17,24,39,0.07)' }}>
         {bottomItems.map(renderItem)}
       </div>
     </nav>

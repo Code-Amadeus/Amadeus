@@ -300,9 +300,18 @@ def _mouth_runtime_config(
             raw_anchor = anchors[closed_index] if 0 <= closed_index < len(anchors) else {}
             anchor = dict(raw_anchor) if isinstance(raw_anchor, dict) else {}
         texture = _sidecar(source, suffix)
-        # An explicit source is a visually selected closed mouth. The loop's
-        # minimum openness score may still be an open mouth; it is not an
-        # equivalent fallback when that source has not been encoded.
+        if (not texture.is_file() or texture.stat().st_size <= 0) and use_closed_source:
+            if not isinstance(names, list) or not 0 <= closed_index < len(names):
+                raise ValueError(f"mouth profile {label!r} has no valid own closed frame")
+            source = _authoring_path(
+                workspace,
+                raw_profile.get("root"),
+                raw_profile.get("phase"),
+                names[closed_index],
+            )
+            raw_anchor = anchors[closed_index] if 0 <= closed_index < len(anchors) else {}
+            anchor = dict(raw_anchor) if isinstance(raw_anchor, dict) else {}
+            texture = _sidecar(source, suffix)
         if not texture.is_file() or texture.stat().st_size <= 0:
             raise ValueError(f"mouth profile {label!r} is missing KTX2 overlay: {texture}")
         runtime_anchor = {

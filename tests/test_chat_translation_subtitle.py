@@ -99,18 +99,43 @@ def test_chat_translation_output_uses_existing_subtitle_cleaner() -> None:
 def test_system_setting_applies_chat_translation_toggle_without_restart() -> None:
     async def run() -> None:
         original = chat_translation_runtime.is_enabled()
+        target = not original
         handler = SystemHandler()
+
+        async def current_config(_params):
+            return {
+                "chat_translation_subtitles_enabled":
+                    chat_translation_runtime.is_enabled()
+            }
+
         try:
             handler._get_config = AsyncMock(  # type: ignore[method-assign]
-                return_value={"chat_translation_subtitles_enabled": True}
+                side_effect=current_config
             )
-            with patch("server.handlers.system_handler.bus.emit", new=AsyncMock()):
+
+            with patch(
+                "server.handlers.system_handler.bus.emit",
+                new=AsyncMock(),
+            ):
                 result = await handler._set_config(
-                    {"values": {"chat_translation_subtitles_enabled": True}}
+                    {
+                        "values": {
+                            "chat_translation_subtitles_enabled":
+                                target
+                        }
+                    }
                 )
-            assert result["values"]["chat_translation_subtitles_enabled"] is True
+
+            assert chat_translation_runtime.is_enabled() is target
+            assert result["values"]["chat_translation_subtitles_enabled"] is target
             assert "chat_translation_subtitles_enabled" in result["updated"]
+
         finally:
-            chat_translation_runtime.set_config({"chat_translation_subtitles_enabled": original})
+            chat_translation_runtime.set_config(
+                {
+                    "chat_translation_subtitles_enabled":
+                        original
+                }
+            )
 
     asyncio.run(run())

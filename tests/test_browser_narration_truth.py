@@ -411,9 +411,7 @@ def test_continue_reuses_branch_new_supersedes_and_close_is_explicit() -> None:
     assert replacement is not None and replacement is not first
     assert first.status == "closed"
     assert coordinator.active_branch_for_session("session_1") is replacement
-    assert asyncio.run(
-        coordinator.close_active_branch("session_1", reason="test_close")
-    ) is True
+    assert coordinator.close_active_branch("session_1", reason="test_close") is True
     assert coordinator.active_branch_for_session("session_1") is None
 
 
