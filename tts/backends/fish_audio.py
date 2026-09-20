@@ -18,6 +18,36 @@ _SAMPLE_RATE = 44100
 _MAX_AUDIO_BYTES = 64 * 1024 * 1024
 
 
+_SOCKS_SCHEMES = frozenset({"socks", "socks4", "socks4a", "socks5", "socks5h"})
+_HTTP_SCHEMES = frozenset({"http", "https"})
+
+
+def _is_socks_proxy(proxy_url: str) -> bool:
+    """Return True if the proxy URL specifies a SOCKS protocol."""
+    return urlsplit(proxy_url).scheme.lower() in _SOCKS_SCHEMES
+
+
+def _has_python_socks() -> bool:
+    """Check if python-socks is available without importing at module load."""
+    try:
+        import python_socks.async_  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
+def _normalize_proxy_url(scheme_key: str, raw_proxy: str) -> str:
+    """Normalize system proxy entries into valid proxy URLs."""
+    proxy = raw_proxy.strip()
+    if scheme_key == "socks":
+        if proxy.startswith("http://"):
+            return "socks5h://" + proxy[7:]
+        if "://" not in proxy:
+            return "socks5h://" + proxy
+    return proxy
+
+
 def _resolve_websocket_proxy(ws_url: str) -> str | None:
     import ipaddress
     import urllib.request
@@ -37,27 +67,37 @@ def _resolve_websocket_proxy(ws_url: str) -> str | None:
 
     proxies = urllib.request.getproxies()
     is_secure = endpoint.scheme == "wss"
-    schemes = ["wss", "socks", "https"] if is_secure else ["ws", "socks", "https", "http"]
+    candidate_keys = (
+        ["wss", "socks", "https", "all", "http"]
+        if is_secure
+        else ["ws", "socks", "http", "all", "https"]
+    )
 
-    has_python_socks = None
-    for scheme in schemes:
-        proxy = proxies.get(scheme)
-        if not proxy:
+    unusable_proxies: list[str] = []
+    has_socks = _has_python_socks()
+
+    for key in candidate_keys:
+        raw = proxies.get(key)
+        if not raw:
             continue
-        if scheme == "socks":
-            if has_python_socks is None:
-                try:
-                    import python_socks.async_  # noqa: F401
-
-                    has_python_socks = True
-                except ImportError:
-                    has_python_socks = False
-            if not has_python_socks:
-                continue
-            if proxy.startswith("http://"):
-                proxy = "socks5h://" + proxy[7:]
+        proxy = _normalize_proxy_url(key, raw)
+        if _is_socks_proxy(proxy):
+            if has_socks:
+                return proxy
+            unusable_proxies.append(f"{key}={proxy}")
+            continue
+        scheme = urlsplit(proxy).scheme.lower()
+        if scheme in _HTTP_SCHEMES:
             return proxy
-        return proxy
+        unusable_proxies.append(f"{key}={proxy}")
+
+    if unusable_proxies:
+        details = ", ".join(unusable_proxies)
+        raise TTSBackendError(
+            f"Configured proxy ({details}) requires python-socks which is not installed, "
+            "and no usable HTTP fallback proxy was found."
+        )
+
     return None
 
 

@@ -388,7 +388,7 @@ def test_registry_validates_settings_and_creates_remote_runtime(monkeypatch):
     assert runtime.deployment == "remote"
 
 
-def test_resolve_websocket_proxy_prefers_http_when_python_socks_missing(monkeypatch):
+def test_resolve_websocket_proxy_bypass_loopback_and_unconfigured(monkeypatch):
     import urllib.request
     from tts.backends.fish_audio import _resolve_websocket_proxy
 
@@ -396,17 +396,116 @@ def test_resolve_websocket_proxy_prefers_http_when_python_socks_missing(monkeypa
     assert _resolve_websocket_proxy("ws://127.0.0.1:17777/ws") is None
     assert _resolve_websocket_proxy("ws://localhost:17777/ws") is None
 
-    # Simulate platform returning both SOCKS and HTTP proxies without python_socks installed
+    # Users without proxy configured connect directly
+    monkeypatch.setattr(urllib.request, "getproxies", lambda: {})
+    monkeypatch.setattr(urllib.request, "proxy_bypass", lambda host: False)
+    assert _resolve_websocket_proxy("wss://api.fish.audio/v1/tts/live") is None
+
+    # Explicit proxy bypass matches direct connection
+    monkeypatch.setattr(
+        urllib.request,
+        "getproxies",
+        lambda: {"https": "http://127.0.0.1:7890"},
+    )
+    monkeypatch.setattr(urllib.request, "proxy_bypass", lambda host: True)
+    assert _resolve_websocket_proxy("wss://api.fish.audio/v1/tts/live") is None
+
+
+def test_resolve_websocket_proxy_detects_socks_protocol_and_falls_back_to_http(monkeypatch):
+    import urllib.request
+    from tts.backends.fish_audio import _resolve_websocket_proxy
+
+    monkeypatch.setattr(urllib.request, "proxy_bypass", lambda host: False)
+    monkeypatch.setattr("tts.backends.fish_audio._has_python_socks", lambda: False)
+
+    # SOCKS in wss_proxy falls back to HTTPS HTTP proxy
     monkeypatch.setattr(
         urllib.request,
         "getproxies",
         lambda: {
-            "http": "http://127.0.0.1:7890",
+            "wss": "socks5://127.0.0.1:1080",
             "https": "http://127.0.0.1:7890",
-            "socks": "http://127.0.0.1:7890",
         },
     )
-    monkeypatch.setattr(urllib.request, "proxy_bypass", lambda host: False)
+    assert _resolve_websocket_proxy("wss://api.fish.audio/v1/tts/live") == "http://127.0.0.1:7890"
 
-    resolved = _resolve_websocket_proxy("wss://api.fish.audio/v1/tts/live")
-    assert resolved == "http://127.0.0.1:7890"
+    # SOCKS in https_proxy falls back to HTTP proxy
+    monkeypatch.setattr(
+        urllib.request,
+        "getproxies",
+        lambda: {
+            "https": "socks5h://127.0.0.1:1080",
+            "http": "http://127.0.0.1:7890",
+        },
+    )
+    assert _resolve_websocket_proxy("wss://api.fish.audio/v1/tts/live") == "http://127.0.0.1:7890"
+
+    # macOS SOCKS entry normalized and falls back to HTTPS proxy
+    monkeypatch.setattr(
+        urllib.request,
+        "getproxies",
+        lambda: {
+            "socks": "http://127.0.0.1:7890",
+            "https": "http://127.0.0.1:7890",
+        },
+    )
+    assert _resolve_websocket_proxy("wss://api.fish.audio/v1/tts/live") == "http://127.0.0.1:7890"
+
+
+def test_resolve_websocket_proxy_uses_socks_when_python_socks_available(monkeypatch):
+    import urllib.request
+    from tts.backends.fish_audio import _resolve_websocket_proxy
+
+    monkeypatch.setattr(urllib.request, "proxy_bypass", lambda host: False)
+    monkeypatch.setattr("tts.backends.fish_audio._has_python_socks", lambda: True)
+
+    # Uses SOCKS directly when python-socks is available
+    monkeypatch.setattr(
+        urllib.request,
+        "getproxies",
+        lambda: {
+            "https": "socks5://127.0.0.1:1080",
+            "http": "http://127.0.0.1:7890",
+        },
+    )
+    assert _resolve_websocket_proxy("wss://api.fish.audio/v1/tts/live") == "socks5://127.0.0.1:1080"
+
+    # Normalized macOS SOCKS entry is preferred when python-socks is available
+    monkeypatch.setattr(
+        urllib.request,
+        "getproxies",
+        lambda: {
+            "socks": "http://127.0.0.1:7890",
+            "https": "http://127.0.0.1:7890",
+        },
+    )
+    assert (
+        _resolve_websocket_proxy("wss://api.fish.audio/v1/tts/live") == "socks5h://127.0.0.1:7890"
+    )
+
+
+def test_resolve_websocket_proxy_raises_clear_error_when_proxy_unusable(monkeypatch):
+    import urllib.request
+    from tts.backend import TTSBackendError
+    from tts.backends.fish_audio import _resolve_websocket_proxy
+
+    monkeypatch.setattr(urllib.request, "proxy_bypass", lambda host: False)
+    monkeypatch.setattr("tts.backends.fish_audio._has_python_socks", lambda: False)
+
+    # Only SOCKS proxy configured, no HTTP fallback
+    monkeypatch.setattr(
+        urllib.request,
+        "getproxies",
+        lambda: {"https": "socks5://127.0.0.1:1080"},
+    )
+    with pytest.raises(TTSBackendError, match="requires python-socks"):
+        _resolve_websocket_proxy("wss://api.fish.audio/v1/tts/live")
+
+    # SOCKS in socks entry without HTTP fallback
+    monkeypatch.setattr(
+        urllib.request,
+        "getproxies",
+        lambda: {"socks": "socks5h://127.0.0.1:1080"},
+    )
+    with pytest.raises(TTSBackendError, match="requires python-socks"):
+        _resolve_websocket_proxy("wss://api.fish.audio/v1/tts/live")
