@@ -1,0 +1,99 @@
+{
+  "character_id": "kurisu",
+  "profile_version": "kurisu-c6-v1",
+  "seed": "amadeus-kurisu-life-v1",
+  "fact_source": "SIMULATED_LIFE",
+  "weekly_rhythm": {
+    "weekday": "research-heavy",
+    "weekend": "lighter-research-and-rest"
+  },
+  "time_slots": [
+    {"start": "08:30", "end": "10:30", "category": "research", "pool": "research"},
+    {"start": "12:10", "end": "13:00", "category": "daily_life", "pool": "daily_life"},
+    {"start": "14:00", "end": "16:45", "category": "analysis", "pool": "analysis"},
+    {"start": "18:30", "end": "19:20", "category": "daily_life", "pool": "daily_life"},
+    {"start": "21:00", "end": "22:20", "category": "leisure", "pool": "leisure"}
+  ],
+  "activity_pools": {
+    "research": [
+      "Read and annotate a neuroscience or memory paper",
+      "Review notes on a memory-research question",
+      "Draft a short research memo",
+      "Organize references for a neuroscience topic"
+    ],
+    "analysis": [
+      "Work through a small data-analysis problem",
+      "Check a statistical or programming result",
+      "Clean up notes from an earlier analysis",
+      "Compare two approaches to a research question"
+    ],
+    "daily_life": [
+      "Have a simple meal and reset the desk",
+      "Take a short walk and pick up small necessities",
+      "Tidy the workspace and take a proper break",
+      "Make a drink and step away from the screen for a while"
+    ],
+    "leisure": [
+      "Browse science news without treating it as verified project evidence",
+      "Read something light after work",
+      "Take a quiet break away from research",
+      "Catch up on general reading"
+    ]
+  },
+  "thread_templates": [
+    {
+      "key": "memory-paper-notes",
+      "title": "Memory research paper notes",
+      "activity_titles": [
+        "Continue the memory-research paper notes",
+        "Recheck the notes and unresolved questions",
+        "Condense the memory-paper notes into a short summary"
+      ]
+    },
+    {
+      "key": "simulation-analysis",
+      "title": "Small simulation and data-analysis thread",
+      "activity_titles": [
+        "Continue a small simulation/data-analysis thread",
+        "Review the analysis output and assumptions",
+        "Write down the next check for the analysis thread"
+      ]
+    },
+    {
+      "key": "reading-theme",
+      "title": "Ongoing research reading theme",
+      "activity_titles": [
+        "Continue the current research reading theme",
+        "Cross-check notes from the reading theme",
+        "Summarize what remains unresolved in the reading theme"
+      ]
+    }
+  ],
+  "outcomes": {
+    "research": [
+      {"result": "Finished a bounded pass over the material and kept a few concise notes.", "feeling": "focused", "follow_up": "Revisit the unresolved point later."},
+      {"result": "Made incremental progress without reaching a final conclusion.", "feeling": "thoughtful", "follow_up": "Check the remaining question in a later session."}
+    ],
+    "analysis": [
+      {"result": "Completed a small analysis pass and recorded the next check.", "feeling": "concentrated", "follow_up": "Validate the remaining assumption later."},
+      {"result": "Narrowed the problem and saved a compact follow-up note.", "feeling": "focused", "follow_up": "Return to the open point on another day."}
+    ],
+    "daily_life": [
+      {"result": "Took the planned break and returned with the routine reset.", "feeling": "settled", "follow_up": "Resume the day without treating the break as a factual external event."},
+      {"result": "Finished the ordinary daily-life block without anything notable to preserve.", "feeling": "neutral", "follow_up": "Continue with the next scheduled block."}
+    ],
+    "leisure": [
+      {"result": "Kept the leisure block light and non-authoritative.", "feeling": "relaxed", "follow_up": "No durable external claim is created from this simulated activity."},
+      {"result": "Used the time as a quiet reset rather than extending the work day.", "feeling": "calm", "follow_up": "Return to the next day without fabricating extra history."}
+    ]
+  },
+  "offline_summaries": {
+    "daily": "The app was offline for this day; only a coarse simulated-life continuity marker is kept, with no detailed reconstructed activities.",
+    "gap": "A longer offline gap passed; detailed simulated history was intentionally not reconstructed."
+  },
+  "forbidden_claims": [
+    "SIMULATED_LIFE must never be written into Character RAG",
+    "SIMULATED_LIFE must never be presented as Host-verified or external fact",
+    "Character Life must not acquire Work, Provider, AUIP, Persona, Canon, or permission authority"
+  ]
+}
