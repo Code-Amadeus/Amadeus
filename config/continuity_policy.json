@@ -1,0 +1,87 @@
+{
+  "retrieval": {
+    "max_items": 5,
+    "max_open_loops": 2,
+    "max_context_chars": 2400,
+    "candidate_limit": 24,
+    "structured_weight": 0.34,
+    "lexical_weight": 0.26,
+    "semantic_weight": 0.3,
+    "importance_weight": 0.06,
+    "recency_weight": 0.04,
+    "mmr_lambda": 0.82,
+    "minimum_score": 0.18
+  },
+  "semantic": {
+    "model": "intfloat/multilingual-e5-small",
+    "candidate_limit": 24
+  },
+  "retention": {
+    "half_life_days": 30,
+    "cold_after_days": 180,
+    "archive_after_days": 730,
+    "maintenance_interval_hours": 24,
+    "max_hot_memories": 5000,
+    "hot_score_threshold": 0.62,
+    "cold_score_threshold": 0.55,
+    "archive_score_threshold": 0.55
+  },
+  "relationship": {
+    "policy_version": "c5-v1",
+    "minimum_confidence": 0.8,
+    "long_term_baseline": 0.5,
+    "affect_baseline": 0.0,
+    "window_hours": 24,
+    "projection_max_chars": 520,
+    "projection_max_lines": 4,
+    "event_delta_caps": {
+      "familiarity": 0.03,
+      "trust": 0.05,
+      "warmth": 0.05,
+      "respect": 0.04,
+      "closeness": 0.04,
+      "irritation": 0.25,
+      "embarrassment": 0.2,
+      "tension": 0.25,
+      "playfulness": 0.2
+    },
+    "window_delta_caps": {
+      "familiarity": 0.05,
+      "trust": 0.12,
+      "warmth": 0.12,
+      "respect": 0.1,
+      "closeness": 0.1,
+      "irritation": 0.55,
+      "embarrassment": 0.45,
+      "tension": 0.55,
+      "playfulness": 0.45
+    },
+    "affect_half_life_hours": {
+      "irritation": 2.0,
+      "embarrassment": 3.0,
+      "tension": 2.0,
+      "playfulness": 4.0
+    }
+  },
+  "life": {
+    "policy_version": "c6-v1",
+    "character_id": "kurisu",
+    "profile_relative_path": "character_continuity/kurisu.json",
+    "projection_max_chars": 620,
+    "projection_max_lines": 5,
+    "detailed_catchup_hours": 24,
+    "daily_summary_days": 3,
+    "max_today_outcomes": 4,
+    "max_previous_day_outcomes": 3,
+    "thread_progress_step": 0.12
+  },
+  "archive_recall": {
+    "enabled": true,
+    "fast_score_threshold": 0.38,
+    "max_sessions": 32,
+    "max_source_turns": 120,
+    "max_hits": 3,
+    "max_excerpt_chars": 720,
+    "minimum_score": 0.12
+  }
+}

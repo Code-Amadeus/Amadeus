@@ -21,8 +21,21 @@ export function chatTranslationKey(message: Message, index: number): string {
   return `${identity}:${message.text.length}:${textFingerprint(message.text)}`
 }
 
-export function chatTranslationCandidates(messages: Message[]): ChatTranslationCandidate[] {
-  return messages.flatMap((message, index) => {
+// Subtitle translation is a render-time extra for the live conversational
+// flow.  A Session now reloads its complete transcript, so translating every
+// message on load would turn one reload into unbounded derived model work.
+// Only the most recent messages — one Main Chat prompt window — are
+// candidates; older text stays plain rather than triggering new calls.
+export const TRANSLATION_RECENT_MESSAGE_LIMIT = 20
+
+export function chatTranslationCandidates(
+  messages: Message[],
+  recentLimit: number = TRANSLATION_RECENT_MESSAGE_LIMIT,
+): ChatTranslationCandidate[] {
+  const limit = Math.max(1, Math.trunc(recentLimit) || TRANSLATION_RECENT_MESSAGE_LIMIT)
+  const start = Math.max(0, messages.length - limit)
+  return messages.slice(start).flatMap((message, offset) => {
+    const index = start + offset
     const key = chatTranslationKey(message, index)
     return key
       ? [{ key, text: message.text, turnId: message.turnId || '' }]
