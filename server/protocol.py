@@ -221,6 +221,17 @@ class Method(StrEnum):
     SYSTEM_ERROR       = "system.error"
     RUNTIME_STATUS     = "runtime.status"
 
+    # Host-owned Continuity controls for C7. The UI never receives SQLite ownership.
+    CONTINUITY_STATUS = "continuity.status"
+    CONTINUITY_MEMORY_LIST = "continuity.memory.list"
+    CONTINUITY_MEMORY_PIN = "continuity.memory.pin"
+    CONTINUITY_MEMORY_FORGET = "continuity.memory.forget"
+    CONTINUITY_INDEX_REBUILD = "continuity.index.rebuild"
+    CONTINUITY_MAINTENANCE_RUN = "continuity.maintenance.run"
+    CONTINUITY_RELATIONSHIP_DEBUG = "continuity.relationship.debug"
+    CONTINUITY_LIFE_SCHEDULE = "continuity.life.schedule"
+    CONTINUITY_RETRIEVAL_TRACE = "continuity.retrieval.trace"
+
     # Render
     RENDER_START       = "render.start"
     RENDER_STOP        = "render.stop"
