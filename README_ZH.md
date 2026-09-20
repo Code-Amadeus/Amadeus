@@ -402,6 +402,13 @@ v2ProPlus 和 v3；其他兼容权重组合可选择 `custom`，并填写 `TTS_G
 与 `TTS_SOVITS_MODEL_PATH`。v2Pro/v2ProPlus 还需要附加包中的说话人编码器权重。
 选择 v2Pro 不会自动开启可选的 `TTS_T2S_FLASH_ATTN` 路径，该开关默认关闭。
 
+**v2ProPlus 也受支持，并复用同一条推理管线**，包括说话人条件、会话缓存、
+CUDA Graph 和流式播放。使用时选择 **Custom checkpoint pair**
+（`TTS_VOICE_PROFILE=custom`），将 GPT 与 SoVITS 路径设为兼容的 v2ProPlus
+权重组合，然后重启后端；说话人编码器与 v2Pro 共用同一份 ERes2Net 权重。
+目前没有独立的 Kurisu v2ProPlus 预设或 Plus 资产包，上面的实验 Kurisu 包提供的是
+v2Pro 权重。本次改动的真实推理验证使用 v2Pro，尚未单独实测 v2ProPlus 权重。
+
 如果没有预制 Qwen 包，可直接把上游 snapshot 下载到同一个固定落点；运行时
 保持离线，不会在第一次录音时临时联网：
 

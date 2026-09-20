@@ -443,6 +443,15 @@ and v3 checkpoints; use `custom` with `TTS_GPT_MODEL_PATH` and
 the speaker-encoder weight supplied in the add-on. Selecting v2Pro does not
 enable the optional `TTS_T2S_FLASH_ATTN` path; it remains off by default.
 
+**v2ProPlus is also supported by the same inference pipeline**, including
+speaker conditioning, session caching, CUDA Graph, and streaming playback.
+To use it, select **Custom checkpoint pair** (`TTS_VOICE_PROFILE=custom`) and
+set the GPT and SoVITS paths to a compatible v2ProPlus pair, then restart the
+backend. It uses the same ERes2Net speaker encoder as v2Pro. There is currently
+no named Kurisu v2ProPlus profile or separate Plus asset pack; the experimental
+Kurisu pack above contains v2Pro weights. The real-inference validation for this
+change used v2Pro; v2ProPlus was not separately exercised with real weights.
+
 If a prepared Qwen pack is unavailable, download the upstream snapshot into
 the same canonical location. Runtime inference remains offline and will not
 start an implicit download when the microphone is opened:
