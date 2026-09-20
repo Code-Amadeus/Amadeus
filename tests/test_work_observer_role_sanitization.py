@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import sys
+import json
+from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -12,8 +14,10 @@ from server.work_observer_llm import (
     _compact_note,
     _normalize_decision,
     _sanitize_role_line,
+    _terminal_report_needs_repair,
     should_use_observer_llm,
 )
+from server import work_observer_llm
 
 
 def test_standalone_internal_role_terms_are_still_sanitized() -> None:
@@ -90,6 +94,77 @@ def test_merged_semantic_keypoints_reach_the_role_narrator() -> None:
         "semantic_progress",
     ]
     assert compact["progress_context"]["narration_merged_count"] == 2
+
+
+def test_terminal_report_repairs_wrong_language_or_status_only_output() -> None:
+    note = {
+        "phase": "Result",
+        "summary": "The search found that Ukraine launched a large drone attack on Moscow.",
+    }
+
+    assert _terminal_report_needs_repair(
+        {"display_text": "The task is finished."},
+        note,
+        "japanese",
+    ) is True
+    assert _terminal_report_needs_repair(
+        {"display_text": "こちらで確認したわ。この作業は終わっている。"},
+        note,
+        "japanese",
+    ) is True
+    assert _terminal_report_needs_repair(
+        {"display_text": "調査ではウクライナによるモスクワへの大規模ドローン攻撃が最上位のニュースだったわ。"},
+        note,
+        "japanese",
+    ) is False
+
+
+def test_terminal_report_retries_with_a_concrete_japanese_summary(monkeypatch) -> None:
+    responses = iter(
+        [
+            {
+                "action": "final_report",
+                "display_text": "The task is finished.",
+                "main_chat_entry": "The task is finished.",
+                "append_to_main_chat": True,
+                "speak": True,
+            },
+            {
+                "display_text": "調査の結果、最大の話題はウクライナによるモスクワへの大規模ドローン攻撃だったわ。",
+                "main_chat_entry": "調査の結果、最大の話題はウクライナによるモスクワへの大規模ドローン攻撃だったわ。",
+            },
+        ]
+    )
+
+    class _FakeCompletions:
+        def create(self, **_kwargs):
+            payload = json.dumps(next(responses), ensure_ascii=False)
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content=payload))]
+            )
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=_FakeCompletions()))
+    monkeypatch.setattr(work_observer_llm, "_client", lambda _provider: client)
+    monkeypatch.setattr(work_observer_llm, "_model", lambda _provider: "test-model")
+
+    decision = work_observer_llm._decide_sync(
+        provider="deepseek",
+        note={
+            "phase": "Result",
+            "summary": "The search found that Ukraine launched a large drone attack on Moscow.",
+        },
+        notes=[],
+        recent_chat=[],
+        recent_spoken_updates=[],
+        display_language="japanese",
+    )
+
+    assert decision is not None
+    assert decision["action"] == "final_report"
+    assert decision["speak"] is True
+    assert decision["append_to_main_chat"] is True
+    assert "ウクライナ" in decision["display_text"]
+    assert "ドローン攻撃" in decision["display_text"]
 
 
 def _main() -> None:

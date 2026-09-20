@@ -1967,12 +1967,27 @@ class WorkObserverCoordinator:
         language = str(display_language or "").strip().lower()
         if language == "japanese":
             if body and not text_matches_assistant_language(body, language):
+                # The result card and the role report have separate language
+                # contracts. Preserve a concrete result excerpt inside a
+                # Japanese frame when the Narrator cannot localize provider
+                # prose; silently collapsing it to "the task finished" loses
+                # the only fact the user was waiting for.
+                excerpt = self._terminal_result_excerpt(summary)
+                if excerpt:
+                    return (
+                        "作業は完了したわ。最終報告では"
+                        f"「{excerpt}」という結果になっている。"
+                        "詳しい内容はカードに残してある。"
+                    )
                 body = ""
             if not body:
                 return "こちらで確認したわ。この作業は終わっている。"
             return f"こちらで確認したわ。この作業は終わった。概要は「{body}」。詳しい根拠はカードに残してある。"
         if language == "english":
             if body and not text_matches_assistant_language(body, language):
+                excerpt = self._terminal_result_excerpt(summary)
+                if excerpt:
+                    return f"The task is finished. The final report says: “{excerpt}”. I kept the details on the card."
                 body = ""
             if not body:
                 return "I checked it. This background task is finished."
@@ -1980,6 +1995,50 @@ class WorkObserverCoordinator:
         if not body:
             return "我这边确认好了，这轮后台工作已经结束。"
         return f"我这边确认好了，这轮后台工作已经结束。简要结果是：{body}。详细来源我保留在卡片里。"
+
+    @staticmethod
+    def _terminal_result_excerpt(summary: str, *, limit: int = 140) -> str:
+        """Keep one concrete provider finding for a cross-language fallback."""
+
+        raw = str(summary or "").strip()
+        if not raw:
+            return ""
+        lines = [line.strip() for line in raw.splitlines() if line.strip()]
+        inline_numbered = re.search(
+            r"(?:^|\s)\*{1,2}\d+[.)]\s+(.+?)\*{1,2}(?=\s|$)",
+            raw,
+        )
+        numbered = (
+            inline_numbered.group(1).strip()
+            if inline_numbered is not None
+            else next(
+            (
+                match.group(1).strip()
+                for line in lines
+                if (
+                    match := re.match(
+                        r"^(?:#+\s*)?(?:\*{1,2})?\d+[.)]\s+(.+?)(?:\*{1,2})?$",
+                        line,
+                    )
+                )
+            ),
+            "",
+            )
+        )
+        candidate = numbered or next(
+            (
+                line
+                for line in lines
+                if line.lstrip("#*- ").strip().casefold()
+                not in {"result", "results", "summary", "top stories"}
+            ),
+            "",
+        )
+        candidate = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", candidate)
+        candidate = re.sub(r"^[#*\-\s]+|[#*\-\s]+$", "", candidate)
+        candidate = candidate.replace("`", "").strip()
+        candidate = WorkObserverCoordinator._strip_private_locations(candidate)
+        return WorkObserverCoordinator._trim(candidate, limit)
 
     @staticmethod
     def _blocking_summary(summary: str, display_language: str) -> str:

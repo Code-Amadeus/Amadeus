@@ -177,6 +177,45 @@ def test_observer_uses_bounded_host_japanese_when_both_outputs_are_wrong():
     assert "功能已经完成" not in merged["display_text"]
 
 
+def test_observer_cross_language_terminal_fallback_keeps_a_concrete_finding():
+    observer = WorkObserverCoordinator()
+    session = ObserverSession(
+        narration_id="narration_research",
+        run_id="run_research",
+        session_id="session_research",
+        provider="pi",
+    )
+    summary = """Here's the verified news roundup.
+
+## Top stories
+
+**1. Ukraine launches largest-ever drone attack on Moscow**
+The report compared Reuters, AP, and CNN coverage.
+"""
+    merged = observer._merge_decision_defaults(
+        {
+            "source": "work_observer_llm",
+            "display_language": "japanese",
+            "action": "final_report",
+            "terminal": True,
+            "append_to_main_chat": True,
+            "speak": True,
+            "display_text": "The task is finished.",
+            "main_chat_entry": "The task is finished.",
+        },
+        session,
+        {"phase": "result", "summary": summary},
+    )
+
+    assert merged["action"] == "final_report"
+    assert merged["speak"] is True
+    assert merged["append_to_main_chat"] is True
+    assert text_matches_assistant_language(merged["display_text"], "japanese")
+    assert "Ukraine launches largest-ever drone attack on Moscow" in merged["display_text"]
+    assert merged["main_chat_entry"] == merged["display_text"]
+    assert merged["display_text"] != "こちらで確認したわ。この作業は終わっている。"
+
+
 def _main() -> None:
     test_primary_language_does_not_follow_wallpaper_caption_mode()
     test_presentation_locale_and_caption_mode_are_independent()
@@ -186,6 +225,7 @@ def _main() -> None:
     test_host_status_flows_from_a_localized_milestone_without_quote_template()
     test_observer_keeps_one_valid_japanese_line_across_voice_and_chat()
     test_observer_uses_bounded_host_japanese_when_both_outputs_are_wrong()
+    test_observer_cross_language_terminal_fallback_keeps_a_concrete_finding()
     print("ok: assistant language is independent from subtitle presentation")
 
 
