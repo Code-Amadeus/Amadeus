@@ -35,11 +35,12 @@ def _reply(decisions) -> str:
 
 EXAMPLES = (
     {"name":"discover_named_website_without_url",
+        "assignment_role":"execution",
         "utterance":"帮我打开一下星海天文馆的官网。",
         "source":"帮我打开一下星海天文馆的官网。",
         "candidate":TypedReferenceCandidate("project", "example_trip_notes",
             "以前的旅行笔记", "persistent"),
-        "user":("[架空Provider能力] openclaw=Web調査と外部操作; workspace_access=none\n"
+        "user":("[架空作業] Web調査と外部操作; ローカルファイル操作は不要\n"
             "[架空AUIP scope] active_app=none; 既存Browser pageもなし\n"
             "[架空Work候補] project:example_trip_notes | title=以前的旅行笔记\n"
             "[当前用户原话] 帮我打开一下星海天文馆的官网。"),
@@ -50,6 +51,7 @@ EXAMPLES = (
             "source_clause":"帮我打开一下星海天文馆的官网。"}]),
         "intent":"execute", "target":None},
     {"name":"new_desktop_game_despite_similar_history",
+        "assignment_role":"coding",
         "utterance":"给我做个扫雷放桌面，做好咱俩一起玩。",
         "source":"给我做个扫雷放桌面",
         "candidate":TypedReferenceCandidate("project", "example_old_minesweeper",
@@ -65,6 +67,7 @@ EXAMPLES = (
             "source_clause":"给我做个扫雷放桌面"}]),
         "intent":"execute", "target":None},
     {"name":"app_step_and_new_schedule", "utterance":"你帮我走一步，再做个课程表吧。",
+        "assignment_role":"coding",
         "source":"再做个课程表吧。",
         "candidate":TypedReferenceCandidate("work_item", "example_shopping_list",
             "购物清单", "session_draft", execution="succeeded"),
@@ -150,6 +153,9 @@ EXAMPLES = (
 
 
 def augment_messages(messages: Sequence[Mapping[str, str]]) -> list[dict[str, str]]:
+    from agent_host.provider_roles import work_provider_roles
+
+    assignments = work_provider_roles()
     cloned = [{"role":str(message.get("role") or ""),
         "content":str(message.get("content") or "")} for message in deepcopy(messages)]
     if not cloned or cloned[0]["role"] != "system":
@@ -157,8 +163,15 @@ def augment_messages(messages: Sequence[Mapping[str, str]]) -> list[dict[str, st
     cloned[0]["content"] += SYSTEM_NOTE
     examples = []
     for example in EXAMPLES:
+        reply = example["reply"]
+        role = example.get("assignment_role")
+        if role:
+            decisions = json.loads(reply)["decisions"]
+            for decision in decisions:
+                decision["provider"] = assignments[role]
+            reply = _reply(decisions)
         examples.extend(({"role":"user", "content":example["user"]},
-            {"role":"assistant", "content":example["reply"]}))
+            {"role":"assistant", "content":reply}))
     return [cloned[0], *examples, *cloned[1:]]
 
 

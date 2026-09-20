@@ -244,17 +244,24 @@ def render_provider_routing_addon(
             '- ユーザーがこの操作の実行 Provider を明示的に一つ選んだ場合、その provider を保ち force_provider="user" を付ける。会話履歴、既定 Provider、または task との適合だけから force_provider を推測してはいけない。',
         ),
     ]
-    has_codex = "codex" in providers
+    from agent_host.provider_roles import work_provider_roles
+
+    assignments = work_provider_roles()
+    coding = assignments["coding"]
+    execution = assignments["execution"]
+    has_coding = coding in providers
     desktop_amend_contract = (
         _delegate_intent_required() and _delegate_amend_enabled()
     )
-    if has_codex:
-        lines.append(
-            wording(
-                "- Codex App Server (provider=\"codex\") is the default local code provider for complex coding, repository investigation, refactoring, tests and diffs. When Pi is available, routine small file edits can stay within its daily-task goal.",
-                "- Codex App Server（provider=\"codex\"）は複雑な開発、リポジトリ調査、リファクタリング、テスト、diff の既定 local code provider である。Pi が利用可能なら、日常的な小規模ファイル編集は Pi の同じ作業目標で完了できる。",
-            )
-        )
+    lines.append(wording(
+        f'- Coding role: provider="{coding}" ({"available" if has_coding else "unavailable"}). Use for coding, repository investigation, refactoring, tests and diffs.',
+        f'- Coding 担当: provider="{coding}"（{"利用可能" if has_coding else "利用不能"}）。開発、リポジトリ調査、リファクタリング、テスト、diff を担当する。'))
+    lines.append(wording(
+        f'- Everyday execution role: provider="{execution}" ({"available" if execution in providers else "unavailable"}). Use for public web/news research, reading articles, opening verified URLs, launching applications and routine small file edits. Keep search, reading and requested visible opening in one goal.',
+        f'- 日常実行担当: provider="{execution}"（{"利用可能" if execution in providers else "利用不能"}）。Web・ニュース調査、記事読解、確認済み URL の表示、アプリ起動、小規模ファイル編集を担当する。探索・読解・依頼された表示は同じ目標に保持する。'))
+    lines.append(wording(
+        '- These are Host-configured role assignments, not capabilities or registration priorities. Preserve the actual provider of existing Work/session continuations. An unavailable assignment does not authorize silently switching providers. Fetching a page does not prove visible opening or control of logged-in tabs.',
+        '- これは Host 設定の役割分担であり、能力や登録優先順位ではない。既存 Work/session の継続は実際の Provider を保つ。担当が利用不能でも黙って別 Provider に切り替えない。ページ取得だけでは画面表示やログイン済みタブの操作を証明しない。'))
     lines.append(
         wording(
             "- For a requested Desktop deliverable, select a compatible workspace provider and add target=\"desktop\". The provider builds and validates in its workspace; Amadeus stages the result and requests exact export approval. "
@@ -273,13 +280,6 @@ def render_provider_routing_addon(
             + "task 本文にデスクトップのパスを書いてはいけない。",
         )
     )
-    if not has_codex and "pi" not in providers:
-        lines.append(
-            wording(
-                "- No workspace code provider is registered. Do not promise that file or repository work has started.",
-                "- workspace code provider は一つも登録されていない。ファイルまたはリポジトリ作業を開始したと約束してはいけない。",
-            )
-        )
     if "browser" in providers:
         lines.append(
             wording(
@@ -299,20 +299,6 @@ def render_provider_routing_addon(
                 "- Browser action=\"open\" は一回の atomic navigation であり、ユーザーが示した URL（または現在の live page で確認済みの URL）が必要である。Browser を選ぶために URL を推測してはいけない。その証拠がないサイト・ページ探索、比較、Web 調査の統合は Agent research である。",
             )
         )
-    if "pi" in providers:
-        lines.append(
-            wording(
-                "- Pi is the daily-task agent for public article/news discovery, reading and synthesis, opening verified web URLs in the system browser, launching applications, and small scoped file edits. Keep source discovery, article reading and requested visible opening in the same research goal. Fetching a page is not visibly opening it; opening a URL does not grant control over logged-in tabs. Codex handles complex code/repository investigation and changes.",
-                "- Pi は公開記事・ニュースの探索、本文の読解・統合、確認済み URL のシステムブラウザでの表示、アプリ起動、小範囲のファイル編集を担当する日常作業 Agent。情報源の探索、記事の読解、依頼された画面表示は同じ調査目標に保持する。取得だけを画面表示済みと述べない。URL の表示だけでログイン済みタブを操作できるわけではない。複雑なコードやリポジトリの調査・変更は Codex が担当する。",
-            )
-        )
-    if "openclaw" in providers:
-        lines.append(
-            wording(
-                "- OpenClaw remains an optional registered provider for explicitly selected work and continuation of its existing Work/session. It is not the default daily-task agent; Pi owns that role when available. Provider unavailability does not authorize silently switching execution to OpenClaw.",
-                "- OpenClaw は明示的に選択された作業と既存 Work/session の継続に使える任意 Provider。日常作業の既定 Agent は利用可能な Pi であり、Provider が利用不能でも OpenClaw へ黙って実行を切り替えない。",
-            )
-        )
     if not tool_transport:
         intent = ' intent="execute"' if _delegate_intent_required() else ""
 
@@ -321,11 +307,11 @@ def render_provider_routing_addon(
                 return f'[CONTROL delegate="true" {attrs}]'
             return f"[DELEGATE {attrs}]"
 
-        if has_codex:
+        if has_coding:
             lines.append(
                 wording(
-                    f'- Example: {example(f"provider=\"codex\"{intent} task=\"create theme.txt and write color=blue\"")}.' ,
-                    f'- 例: {example(f"provider=\"codex\"{intent} task=\"theme.txt を作成して color=blue と書く\"")}。',
+                    f'- Example: {example(f"provider=\"{coding}\"{intent} task=\"implement theme configuration loading from theme.txt and add tests\"")}.' ,
+                    f'- 例: {example(f"provider=\"{coding}\"{intent} task=\"theme.txt からテーマ設定を読み込む機能とテストを実装する\"")}。',
                 )
             )
         if "browser" in providers:

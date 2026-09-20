@@ -1016,7 +1016,7 @@ def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
     return [
         {
             "id": "pi", "label": "Pi · Experimental",
-            "description": "Default daily-task agent using the pinned native RPC runtime.",
+            "description": "Local agent using the pinned native RPC runtime; Work role assignment is independent.",
             "fields": [
                 _startup_field("PI_PROVIDER_ENABLED", "Enable Pi", settings.PI_PROVIDER_ENABLED, field_type="boolean"),
                 _startup_field("PI_NODE_PATH", "Node executable", settings.PI_NODE_PATH, field_type="path"),
@@ -1034,7 +1034,7 @@ def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
         {
             "id": "openclaw",
             "label": "OpenClaw",
-            "description": "Optional Gateway provider for explicitly selected work and existing sessions. Daily tasks default to Pi.",
+            "description": "Optional Gateway provider; Work role assignment is independent. Existing sessions remain supported.",
             "fields": [
                 _startup_field(
                     "OPENCLAW_BASE_URL", "Gateway URL", settings.OPENCLAW_BASE_URL,
@@ -1218,6 +1218,8 @@ class SystemHandler(RequestHandler):
             "cooperative_chat_provider": str(
                 getattr(settings, "COOPERATIVE_CHAT_PROVIDER", "") or ""
             ),
+            "work_coding_provider": settings.WORK_CODING_PROVIDER,
+            "work_execution_provider": settings.WORK_EXECUTION_PROVIDER,
             "cooperative_permission_policy": (
                 str(getattr(settings, "COOPERATIVE_CHAT_PERMISSION_POLICY", "") or "")
                 if bool(getattr(settings, "COOPERATIVE_CHAT_ENABLED", False))

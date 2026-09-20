@@ -671,6 +671,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   const [config, setConfig] = useState<Record<string, unknown>>({})
   const [providerAvailability, setProviderAvailability] = useState<ProviderAvailability[]>([])
   const [providerManifests, setProviderManifests] = useState<ProviderManifest[]>([])
+  const [providerRoleCandidates, setProviderRoleCandidates] = useState<Record<string, string[]> | undefined>()
   const [acpAgents, setAcpAgents] = useState('[]')
   const [acpConfigurations, setAcpConfigurations] = useState<AcpConfiguration[]>([])
   const [capabilityPackages, setCapabilityPackages] = useState<CapabilityPackage[]>([])
@@ -709,6 +710,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     setAcpConfigurations((providerResponse.provider_configurations || []) as AcpConfiguration[])
     setProviderAvailability(Array.isArray(providerResponse.provider_availability) ? providerResponse.provider_availability as unknown as ProviderAvailability[] : [])
     setProviderManifests(Array.isArray(providerResponse.provider_manifests) ? providerResponse.provider_manifests as unknown as ProviderManifest[] : [])
+    setProviderRoleCandidates(providerResponse.role_candidates as Record<string, string[]> | undefined)
     setCapabilityPackages(Array.isArray(capabilityResponse.packages) ? capabilityResponse.packages as unknown as CapabilityPackage[] : [])
   }, [send])
 
@@ -988,20 +990,19 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     .filter(group => ['deepseek', 'openai', 'gemini'].includes(group.id) && (group.status_ok ?? group.configured))
     .map(group => group.label || modelProviderLabels[group.id] || group.id)
   const selectedWorkProvider = String(
-    desktop?.sources?.COOPERATIVE_CHAT_PROVIDER === 'user'
-      ? desktop.values.COOPERATIVE_CHAT_PROVIDER
+    desktop?.sources?.WORK_EXECUTION_PROVIDER === 'user'
+      ? desktop.values.WORK_EXECUTION_PROVIDER
+      : desktop?.sources?.COOPERATIVE_CHAT_PROVIDER === 'user'
+        ? desktop.values.COOPERATIVE_CHAT_PROVIDER
       : val('cooperative_chat_provider', 'pi'),
   ).toLowerCase()
+  const selectedCodingProvider = String(desktop?.sources?.WORK_CODING_PROVIDER === 'user'
+    ? desktop.values.WORK_CODING_PROVIDER : val('work_coding_provider', 'codex')).toLowerCase()
   const workExecutionEnabled = desktop?.sources?.COOPERATIVE_CHAT_ENABLED === 'user'
     ? desktop.values.COOPERATIVE_CHAT_ENABLED === 'true'
     : config.cooperative_chat_enabled === undefined ? true : bool('cooperative_chat_enabled')
-  const selectedWorkProviderStatus = providerAvailability.find(item => item.provider_id === selectedWorkProvider)
   const workProviderLabels: Record<string, string> = { codex: 'Codex agent', openclaw: 'OpenClaw agent', browser: 'Browser provider', pi: 'Pi daily agent' }
-  const workProviderAssignment = `${workProviderLabels[selectedWorkProvider] || selectedWorkProvider} · ${t(
-    desktop?.sources?.COOPERATIVE_CHAT_PROVIDER === 'user' || config.cooperative_chat_provider !== undefined
-      ? 'Current selection'
-      : 'Recommended default',
-  )}`
+  const workProviderAssignment = `${t('Coding')}: ${workProviderLabels[selectedCodingProvider] || selectedCodingProvider} · ${t('Everyday execution')}: ${workProviderLabels[selectedWorkProvider] || selectedWorkProvider}`
   const roleGroups = Object.fromEntries(modelRoles.map(group => [group.id, group])) as Record<string, ConfigurationGroup>
   const advancedRoleIds = [
     'work_planner', 'work_observer', 'browser_branch_planner', 'auip_narration',
@@ -1012,7 +1013,8 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
       || (roleGroups[id]?.fields || []).some(item => item.key && desktop?.sources?.[item.key] === 'user'),
   ).length
   const backendProviderConfiguration = asConfigurationGroups(config.work_provider_configuration)
-  const providerCatalog = buildWorkProviderCatalog({ provider: selectedWorkProvider, enabled: workExecutionEnabled }, desktop)
+  const providerCatalog = buildWorkProviderCatalog({ provider: selectedWorkProvider, enabled: workExecutionEnabled,
+    codingProvider: selectedCodingProvider, roleCandidates: providerRoleCandidates }, desktop)
   const providerConfiguration: ConfigurationGroup[] = providerCatalog.connections.map(base => {
     const backend = backendProviderConfiguration.find(group => group.id === base.id)
     return backend ? {
@@ -1255,18 +1257,8 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                       <ConfigurationCard group={roleGroups.vn_companion} desktop={desktop} onSave={handleStartupSave} collapsible />
                     </SettingsGroup>
 
-                    <SettingsGroup title="Work & application roles" detail="Work execution belongs to its Provider; advanced routing and observation overrides are available below.">
-                      <RoleAssignmentCard
-                        icon="Work"
-                        title="Work execution agent"
-                        description="The selected Work Provider owns its agent model and tools."
-                        assignment={workProviderAssignment}
-                        policy="Configured in Providers"
-                        status={!workExecutionEnabled ? 'Off' : selectedWorkProviderStatus?.ready ? 'Ready' : 'Needs setup'}
-                        statusOk={Boolean(workExecutionEnabled && selectedWorkProviderStatus?.ready)}
-                        onConfigure={() => setSection('providers')}
-                        configureLabel="Open Providers settings"
-                      />
+                    <SettingsGroup title="Work & application roles" detail="Assign coding and everyday execution separately. Each Provider keeps its own model and tools; connections and registration are managed in Providers.">
+                      <ConfigurationCard group={providerCatalog.routing} desktop={desktop} onSave={handleStartupSave} />
                     </SettingsGroup>
 
                     <SettingsGroup title="Presentation roles">
@@ -1360,9 +1352,10 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                 <BoundaryNote title="Execution boundary">
                   Main Chat may delegate work to a Provider. Skills and MCP connections are shared only among compatible Work Providers; their prompts and tool schemas are never attached directly to Main Chat.
                 </BoundaryNote>
-                <SettingsGroup title="Work routing" detail="Choose the Provider that receives delegated Work. This selection is independent from Main conversation models.">
-                  <ConfigurationCard group={providerCatalog.routing} desktop={desktop} onSave={handleStartupSave} />
-                </SettingsGroup>
+                <BoundaryNote title="Work role assignments">
+                  <span>{workProviderAssignment}</span>{' '}
+                  <button className="settings-action" onClick={() => { setSection('models'); setModelsPage('roles') }}>{t('Configure roles')}</button>
+                </BoundaryNote>
                 <SettingsGroup title="Work Provider connections" detail="Registered means the adapter passed its startup boundary. Remote availability is verified when that Provider connects.">
                   {providerConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} availability={providerAvailability.find(item => item.provider_id === group.id)} onSave={handleStartupSave} collapsible optionalWhenInactive />)}
                 </SettingsGroup>

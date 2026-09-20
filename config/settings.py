@@ -484,7 +484,13 @@ BRANCH_SQUASH_MERGE = _bool("BRANCH_SQUASH_MERGE", True)
 # ===========================================================================
 # Execution providers
 # ===========================================================================
-PROVIDER_DELEGATE_DEFAULT_PROVIDER = _str("PROVIDER_DELEGATE_DEFAULT_PROVIDER", "pi").strip().lower()
+WORK_CODING_PROVIDER = _str("WORK_CODING_PROVIDER", "codex").strip().lower()
+WORK_EXECUTION_PROVIDER = _str("WORK_EXECUTION_PROVIDER", "pi", aliases=(
+    "COOPERATIVE_CHAT_PROVIDER", "PROVIDER_DELEGATE_DEFAULT_PROVIDER",
+)).strip().lower()
+# Existing routing callers retain their names; both read the execution role.
+# Legacy startup keys are migration aliases, not independent assignments.
+PROVIDER_DELEGATE_DEFAULT_PROVIDER = WORK_EXECUTION_PROVIDER
 # Exactly one Codex transport may own the stable ``codex`` Provider id.  The
 # official persistent SDK/App Server transport is the local product default;
 # the turn-scoped CLI remains an explicit compatibility transport.
@@ -577,16 +583,13 @@ COOPERATIVE_CHAT_ENABLED = _bool("COOPERATIVE_CHAT_ENABLED", True)
 COOPERATIVE_WORK_PLANNER_ENABLED = _bool("COOPERATIVE_WORK_PLANNER_ENABLED", True)
 # Optional model on the existing LLM backend; empty inherits the role model.
 COOPERATIVE_WORK_PLANNER_MODEL = _str("COOPERATIVE_WORK_PLANNER_MODEL", "").strip()
-COOPERATIVE_CHAT_PROVIDER = _str("COOPERATIVE_CHAT_PROVIDER", "pi").strip().lower()
+COOPERATIVE_CHAT_PROVIDER = WORK_EXECUTION_PROVIDER
 COOPERATIVE_CHAT_REQUIREMENTS_JSON = _str(
     "COOPERATIVE_CHAT_REQUIREMENTS_JSON",
-    '{"task_kind":"general","workspace_access":"write",'
-    '"workspace_ownership":"caller","ownership":"managed","resume":"attach"}',
+    "{}",
 )
 COOPERATIVE_CHAT_ADDITIONAL_REQUIREMENTS_JSON = _str(
-    "COOPERATIVE_CHAT_ADDITIONAL_REQUIREMENTS_JSON",
-    '{"codex":{"task_kind":"general","workspace_access":"write",'
-    '"workspace_ownership":"caller","ownership":"managed","resume":"attach"}}',
+    "COOPERATIVE_CHAT_ADDITIONAL_REQUIREMENTS_JSON", "{}",
 )
 COOPERATIVE_CHAT_QUERY_TIMEOUT_S = _float("COOPERATIVE_CHAT_QUERY_TIMEOUT_S", 45.0)
 COOPERATIVE_CHAT_QUERY_MAX_TOKENS = _int("COOPERATIVE_CHAT_QUERY_MAX_TOKENS", 900)

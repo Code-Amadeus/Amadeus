@@ -1673,7 +1673,6 @@ async def bootstrap(port: int = 17777) -> None:
     cooperative_chat = None
     cooperative_ledger = None
     if cooperative_chat_enabled:
-        from agent_host.provider_contract import ProviderRequirements
         from server.control_ledger import ControlLedgerStore
         from server.cooperative_chat_ingress import CooperativeChatManager
         from server.cooperative_delivery import CooperativeHostDelivery
@@ -1695,7 +1694,6 @@ async def bootstrap(port: int = 17777) -> None:
             raise RuntimeError("invalid cooperative Chat Provider requirements JSON") from exc
         if not isinstance(requirements_payload, dict):
             raise RuntimeError("cooperative Chat Provider requirements must be an object")
-        requirements = ProviderRequirements.from_dict(requirements_payload)
         try:
             additional_requirements_payload = json.loads(
                 settings.COOPERATIVE_CHAT_ADDITIONAL_REQUIREMENTS_JSON
@@ -1708,17 +1706,11 @@ async def bootstrap(port: int = 17777) -> None:
             raise RuntimeError(
                 "additional cooperative Provider requirements must be an object"
             )
-        context_requirements = {provider_id:requirements}
-        for configured_provider, payload in additional_requirements_payload.items():
-            configured_provider = str(configured_provider or "").strip().lower()
-            if not configured_provider or not isinstance(payload, dict):
-                raise RuntimeError("invalid additional cooperative Provider policy")
-            if configured_provider in context_requirements:
-                continue
-            if provider_runtime.get_manifest(configured_provider) is None:
-                logger.warning("additional cooperative Provider is unavailable: %s", configured_provider)
-                continue
-            context_requirements[configured_provider] = ProviderRequirements.from_dict(payload)
+        from agent_host.provider_roles import work_provider_roles, work_context_requirements
+
+        context_requirements = work_context_requirements(provider_runtime,
+            roles=work_provider_roles(), primary_policy=requirements_payload,
+            additional_policies=additional_requirements_payload)
         cooperative_ledger = ControlLedgerStore(Path(work_ledger_store.db_path))
         cooperative_deliveries = {}
 
@@ -4481,8 +4473,8 @@ def _delegate_provider_selection(
     )
     requirements = compile_delegate_requirements(facts)
     default_provider = str(
-        getattr(settings, "PROVIDER_DELEGATE_DEFAULT_PROVIDER", "openclaw")
-        or "openclaw"
+        getattr(settings, "PROVIDER_DELEGATE_DEFAULT_PROVIDER", "pi")
+        or "pi"
     ).strip().lower()
     available_manifests = (
         tuple(manifests)

@@ -37,16 +37,14 @@ $env:PI_CODING_AGENT_DIR = (Join-Path (Get-Location) 'runtime/pi')
 node agent_host/pi_runtime/node_modules/@earendil-works/pi-coding-agent/dist/cli.js
 ```
 
-`COOPERATIVE_CHAT_PROVIDER=pi` and `PROVIDER_DELEGATE_DEFAULT_PROVIDER=pi` make
-Pi the default receiver. Caller-owned workspace, write and attach requirements
-apply. Codex remains available for complex coding through the default additional
-policy. Existing explicit configuration overrides are preserved; migrate older
-installations by updating these settings:
+Settings → Models → Roles → **Work role assignments** has two independent dropdowns:
+Coding defaults to Codex, everyday execution defaults to Pi. Candidates come
+from registered compatible manifests, including custom ACP agents. Equivalent
+startup settings are:
 
 ```dotenv
-COOPERATIVE_CHAT_PROVIDER=pi
-PROVIDER_DELEGATE_DEFAULT_PROVIDER=pi
-COOPERATIVE_CHAT_ADDITIONAL_REQUIREMENTS_JSON={"codex":{"task_kind":"general","workspace_access":"write","workspace_ownership":"caller","ownership":"managed","resume":"attach"}}
+WORK_CODING_PROVIDER=codex
+WORK_EXECUTION_PROVIDER=pi
 ```
 
 Restart the backend after startup configuration changes. Work Page also exposes
@@ -57,9 +55,20 @@ explicit task addressing use the existing planner.
 
 OpenClaw remains registerable through its existing Gateway adapter and keeps
 its native session support. It no longer owns the default everyday execution
-role. To explicitly use it in cooperative routing, add an `openclaw` entry to
-the additional policy JSON with `task_kind=general`, `workspace_access=none`,
-`workspace_ownership=none`, `ownership=managed`, and `resume=attach`.
+role by default. It can be assigned the execution role in the GUI, explicitly
+selected for an individual task, or used to continue its existing Work.
+
+Role changes update the existing planner's routing instructions and new-task
+examples; they do not alter registration, manifests, or existing Work ownership.
+Registered general agents remain addressable regardless of role assignment.
+No extra requirements JSON is needed to enable an assigned agent: the Host
+derives its baseline context requirements from registered capabilities.
+`COOPERATIVE_CHAT_REQUIREMENTS_JSON` and
+`COOPERATIVE_CHAT_ADDITIONAL_REQUIREMENTS_JSON` remain optional Host policy
+overrides, defaulting to `{}`. Remove stale overrides if switching providers
+with different workspace capabilities. Legacy `COOPERATIVE_CHAT_PROVIDER` and
+`PROVIDER_DELEGATE_DEFAULT_PROVIDER` are read as execution-role migration
+aliases only when `WORK_EXECUTION_PROVIDER` is absent.
 
 ## Responsibilities and reuse
 
@@ -71,18 +80,18 @@ enablement and defaults, not whether an implementation can actually restore,
 cancel, access a workspace or accept an MCP projection. The GUI displays runtime
 availability; it does not let users grant an adapter unsupported capabilities.
 
-Settings → Providers can select Pi/Codex/OpenClaw/Browser as the main Work
-provider and configure connections. Changes persist in Desktop settings and
-apply at backend restart. The Work page lists registered providers dynamically
-and uses the Host-configured default, while preserving explicit user selection.
-An unavailable default requires a selection rather than silently choosing a
-different provider by manifest priority.
+Role dropdowns live under Models → Roles; connection/registration cards live
+under Providers, with a link back to the role settings. Changes persist in
+Desktop settings and apply at backend restart.
+Coding and daily execution route independently; there is no universal Pi role.
+The Work page is an explicit per-task provider selector. It initially selects
+the execution-role provider and preserves manual choices. An unavailable default
+requires a selection rather than silently choosing by manifest priority.
 
 The existing ACP editor adds installed external agents without Python code
-changes. The main default-provider Settings dropdown currently lists builtins;
-selecting a custom ACP default still requires `COOPERATIVE_CHAT_PROVIDER` in
-startup configuration. Additional cooperative policy JSON and trusted Pi
-extension paths also remain startup configuration, with no dedicated GUI editor.
+changes. Registered compatible ACP agents appear in the role dropdowns too.
+Advanced cooperative policy overrides and trusted Pi extension paths remain
+startup configuration, with no dedicated GUI editor.
 MCP connections are configurable in the GUI only for adapters advertising the
 `mcp_connection` projection (currently Codex and compatible ACP agents). Pi's
 bundled anonymous web search reuses the MCP client internally; this does not

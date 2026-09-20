@@ -15,7 +15,8 @@ test('built-in Work Provider connections remain discoverable without the backend
   assert.deepEqual(catalog.connections.map(group => group.id), ['pi', 'browser', 'openclaw', 'codex'])
   assert.equal(catalog.connections.find(group => group.id === 'codex').active, true)
   assert.equal(catalog.connections.find(group => group.id === 'openclaw').status, 'Optional')
-  assert.ok(catalog.routing.fields.some(field => field.key === 'COOPERATIVE_CHAT_PROVIDER'))
+  assert.ok(catalog.routing.fields.some(field => field.key === 'WORK_CODING_PROVIDER'))
+  assert.ok(catalog.routing.fields.some(field => field.key === 'WORK_EXECUTION_PROVIDER'))
 })
 
 test('new daily-agent defaults select Pi and leave OpenClaw optional', () => {
@@ -25,11 +26,26 @@ test('new daily-agent defaults select Pi and leave OpenClaw optional', () => {
   assert.equal(catalog.connections.find(group => group.id === 'openclaw').status, 'Optional')
 })
 
-test('OpenClaw is the only connection requiring setup when selected without a token', () => {
+test('an execution assignment does not remove the separate coding assignment', () => {
   const catalog = exports.buildWorkProviderCatalog({ provider: 'openclaw', enabled: true }, { secrets: {} })
   assert.equal(catalog.connections.find(group => group.id === 'openclaw').status, 'Needs setup')
-  assert.equal(catalog.connections.find(group => group.id === 'codex').status, 'Optional')
+  assert.equal(catalog.connections.find(group => group.id === 'codex').active, true)
   assert.equal(catalog.connections.find(group => group.id === 'browser').status, 'Optional')
+})
+
+test('role dropdowns follow registered compatible candidates and persist independent choices', () => {
+  const catalog = exports.buildWorkProviderCatalog({ provider: 'pi', enabled: true,
+    roleCandidates: { coding: ['codex', 'pi', 'custom-agent'], execution: ['pi', 'codex', 'openclaw', 'custom-agent'] } },
+    { values: { WORK_CODING_PROVIDER: 'custom-agent', WORK_EXECUTION_PROVIDER: 'openclaw' } })
+  const coding = catalog.routing.fields.find(field => field.key === 'WORK_CODING_PROVIDER')
+  const execution = catalog.routing.fields.find(field => field.key === 'WORK_EXECUTION_PROVIDER')
+  assert.equal(coding.value, 'custom-agent')
+  assert.equal(execution.value, 'openclaw')
+  assert.ok(coding.options.some(option => option.value === 'custom-agent'))
+  assert.ok(!coding.options.some(option => option.value === 'openclaw'))
+  assert.equal(catalog.connections.find(group => group.id === 'pi').active, false)
+  assert.equal(catalog.connections.find(group => group.id === 'codex').active, false)
+  assert.equal(catalog.connections.find(group => group.id === 'openclaw').active, true)
 })
 
 test('Codex separates ChatGPT subscription auth from reusable model API connections', () => {

@@ -42,3 +42,14 @@ Local reports, UTF-8 artifacts, native session handles and window observations
 are intentionally excluded from Git under `runtime/pi-acceptance/`. Reproduce
 with `scripts/pi_daily_acceptance.py`; it uses real model/network calls and opens
 real windows. Close test windows manually when finished.
+
+## Role-assignment routing acceptance
+
+The production Work planner prompt and its few-shot examples were also queried
+with a real DeepSeek V4 Flash model for two fresh tasks: implement password reset
+with unit tests, and find/read/open the Transformer paper. With the default
+assignments the selected providers were Codex and Pi. After changing only the
+assignments to coding=Pi and execution=OpenClaw, the same tasks selected Pi and
+OpenClaw. All four checks passed. This is routing-model verification; the second
+pair was not dispatched to the agents. Separate tests cover settings persistence,
+manifest-based candidates, context assembly and existing-work owner retention.
