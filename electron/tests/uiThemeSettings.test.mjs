@@ -30,3 +30,23 @@ test('Electron theme persists as frontend-only state without requesting a backen
     fs.rmSync(root, { recursive: true, force: true })
   }
 })
+
+
+test('Windows startup mode persists without changing or restarting the backend', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'amadeus-startup-mode-'))
+  try {
+    const file = path.join(root, 'settings.json')
+    const store = new exports.DesktopSettingsStore(file, path.join(root, '.env'))
+    for (const mode of ['window', 'wallpaper']) {
+      const saved = store.update({}, { values: { AMADEUS_WINDOWS_STARTUP_MODE: mode } })
+      assert.equal(saved.platform, process.platform)
+      assert.equal(saved.restartRequired, false)
+      assert.equal(store.backendEnvironment({}).AMADEUS_WINDOWS_STARTUP_MODE, undefined)
+      assert.equal(new exports.DesktopSettingsStore(file, '').snapshot({}).values.AMADEUS_WINDOWS_STARTUP_MODE, mode)
+    }
+    const overridden = store.snapshot({ AMADEUS_WINDOWS_STARTUP_MODE: 'window' })
+    assert.equal(overridden.values.AMADEUS_WINDOWS_STARTUP_MODE, 'window')
+    assert.equal(overridden.locked.AMADEUS_WINDOWS_STARTUP_MODE, true)
+    assert.throws(() => store.update({}, { values: { AMADEUS_WINDOWS_STARTUP_MODE: 'invalid' } }), /Invalid value/)
+  } finally { fs.rmSync(root, { recursive: true, force: true }) }
+})

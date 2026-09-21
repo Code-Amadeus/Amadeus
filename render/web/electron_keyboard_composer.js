@@ -38,6 +38,7 @@
       toggleRoot.classList.add("has-chat-controls");
       composerRoot.querySelector(".wallpaper-keyboard-composer-header").innerHTML =
         '<strong>AMADEUS</strong><span class="wallpaper-keyboard-composer-status" role="status" aria-live="polite"></span>' +
+        '<button class="composer-console composer-tool" type="button" title="打开控制台" aria-label="Open control panel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 3h5l.5 2 1.6.9 2-.6 2.5 4.3-1.5 1.4v1.9l1.5 1.4-2.5 4.3-2-.6-1.6.9-.5 2h-5l-.5-2-1.6-.9-2 .6-2.5-4.3L4.4 13v-1.9L2.9 9.7l2.5-4.3 2 .6L9 5l.5-2Z"/><circle cx="12" cy="12" r="3"/></svg></button>' +
         '<button class="composer-new-chat composer-tool" type="button" title="新对话" aria-label="New chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-7M15 3l6 6M10 14l2-6 6-6a2 2 0 0 1 3 3l-6 6Z"/></svg></button>' +
         '<button class="wallpaper-keyboard-composer-close composer-tool" type="button" title="收起" aria-label="Close text input"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>';
       composerRoot.querySelector(".wallpaper-keyboard-composer-send").innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>';
@@ -279,6 +280,11 @@
     }
 
     if (options.controls) {
+      composerRoot.querySelector(".composer-console").addEventListener("click", async function () {
+        try {
+          if (!await window.amadeus?.focusMainWindow?.()) throw new Error("控制台暂不可用，请从托盘打开 Amadeus");
+        } catch (error) { showError(error); }
+      });
       bindPress(imageButton, function () { fileInput.click(); }, async function () {
         await control({ action: "vision_toggle" });
         setAttachment(null);

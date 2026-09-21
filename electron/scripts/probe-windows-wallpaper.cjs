@@ -13,6 +13,8 @@ const output = path.join(root, 'build/windows-wallpaper')
 const helper = path.join(output, 'host/Amadeus.Wallpaper.exe')
 const inspect = async () => JSON.parse((await execute(helper, ['inspect'], { windowsHide: true })).stdout.trim())
 process.env.NODE_ENV = 'production'
+// This probe explicitly selects wallpaper regardless of the saved GUI mode.
+process.env.AMADEUS_WALLPAPER = '1'
 process.env.AMADEUS_ELECTRON_USER_DATA_DIR = path.join(output, 'electron-probe-data')
 process.env.AMADEUS_ELECTRON_CACHE_DIR = path.join(output, 'electron-probe-cache')
 process.env.WAKE_ENABLED = '0'
@@ -65,6 +67,26 @@ void (async () => {
       const image = await slices[0].webContents.capturePage()
       fs.writeFileSync(path.join(output, 'electron-slice.png'), image.toPNG())
       console.log('MOUNTED Electron: real Slice loaded (an empty interaction region stays hidden)')
+      const consoleWindow = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('mainWindow=1'))
+      assert(consoleWindow, 'main window missing')
+      // Consume Start-Process's first-show suppression before testing the gear.
+      consoleWindow.showInactive()
+      await new Promise(resolve => setTimeout(resolve, 100))
+      consoleWindow.hide()
+      await slices[0].webContents.executeJavaScript(`(() => {
+        const composer = document.querySelector('#wallpaper-keyboard-composer');
+        if (composer.hidden) document.querySelector('.wallpaper-keyboard-composer-toggle').click();
+        document.querySelector('.composer-console').click();
+        return true;
+      })()`)
+      const consoleDeadline = Date.now() + 3000
+      while (!consoleWindow.isVisible() && Date.now() < consoleDeadline) await new Promise(resolve => setTimeout(resolve, 50))
+      assert(consoleWindow.isVisible(), 'composer gear did not open the control panel')
+      assert((await inspect()).wallpapers.some(item => path.basename(item.Path) === 'amadeus-managed'), 'opening the control panel stopped wallpaper')
+      consoleWindow.close()
+      assert(!consoleWindow.isDestroyed() && !consoleWindow.isVisible(), 'closing the control panel must return to wallpaper')
+      console.log('PASS composer gear opens control panel; closing it preserves wallpaper')
+
       if (faultProbe) {
         const main = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('mainWindow=1'))
         assert(main, 'main renderer missing')

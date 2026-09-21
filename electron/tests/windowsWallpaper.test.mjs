@@ -175,7 +175,9 @@ test('slow start and stop retain visible lifecycle status until the operation co
     }),
     status: status => statuses.push(status),
   })
+  assert.equal(session.active, false)
   const started = session.start('one')
+  assert.equal(session.active, true)
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(statuses.at(-1), 'mounting')
   mounted()
@@ -187,6 +189,7 @@ test('slow start and stop retain visible lifecycle status until the operation co
   restored()
   await stopped
   assert.equal(statuses.at(-1), 'idle')
+  assert.equal(session.active, false)
 })
 
 

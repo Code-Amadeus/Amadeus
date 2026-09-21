@@ -24,6 +24,8 @@ export class WindowsWallpaperSession {
 
   constructor(dependencies: WallpaperDependencies) { this.dependencies = dependencies }
 
+  get active(): boolean { return this.current !== null || this.pending !== null }
+
   private enqueue(action: () => Promise<void>): Promise<void> {
     const result = this.tail.then(action)
     this.tail = result.catch(() => {})

@@ -3,6 +3,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('amadeus', {
+  focusMainWindow: (): Promise<boolean> => ipcRenderer.invoke('main-window.focus'),
   toggleCompanionPanel: (workItemId: string): Promise<boolean> => ipcRenderer.invoke('companion.toggle', workItemId),
   getCompanionPanelState: (): Promise<boolean> => ipcRenderer.invoke('companion.state'),
   onCompanionPanelState: (callback: (open: boolean) => void) => {
