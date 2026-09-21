@@ -113,7 +113,18 @@ const VALUE_KEYS = new Set([
   'VN_TTS_TRANSLATE_PROVIDER',
   'VN_TTS_TRANSLATE_MODEL',
   'COOPERATIVE_CHAT_ENABLED',
+  'GRAPHICS_PROFILE',
+  'RENDER_MAX_FPS',
+  'RENDER_MAX_RESOLUTION',
+  'RENDER_TEXTURE_SAMPLING',
   'COOPERATIVE_CHAT_PROVIDER',
+  'WORK_CODING_PROVIDER',
+  'WORK_EXECUTION_PROVIDER',
+  'PI_PROVIDER_ENABLED',
+  'PI_NODE_PATH',
+  'PI_AGENT_DIR',
+  'PI_MODEL_PROVIDER',
+  'PI_MODEL',
   'OPENCLAW_BASE_URL',
   'OPENCLAW_PROJECT_DIR',
   'CODEX_PROVIDER_TRANSPORT',
@@ -151,6 +162,7 @@ const VALUE_KEYS = new Set([
   'AEC_REALTIME_DELAY_MS',
   'TTS_BACKEND',
   'TTS_DEVICE',
+  'TTS_VOICE_PROFILE',
   'TTS_GPT_MODEL_PATH',
   'TTS_SOVITS_MODEL_PATH',
   'TTS_REF_AUDIO_JA',
@@ -203,6 +215,7 @@ const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
   AMADEUS_VISION_SCOPE: new Set(['full_screen', 'current_window', 'selected_window', 'wallpaper_surface', 'region']),
   ENABLE_CUDA_GRAPH: new Set(['1', '0']),
   TTS_OUTPUT_LANGUAGE: new Set(['日文', '英文']),
+  TTS_VOICE_PROFILE: new Set(['custom', 'kurisu_v3', 'kurisu_v2pro']),
   LLM_PROVIDER: new Set(['deepseek', 'openai', 'gemini', 'bedrock', 'local', 'hybrid', 'hybrid2', 'hybrid3']),
   BEDROCK_AUTH_MODE: new Set(['auto', 'boto3', 'bearer']),
   AWS_BEDROCK_USE_INFERENCE_PROFILE: new Set(['true', 'false']),
@@ -216,7 +229,10 @@ const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
   VN_SUBTITLE_TRANSLATE_PROVIDER: new Set(['deepseek', 'openai']),
   VN_TTS_TRANSLATE_PROVIDER: new Set(['deepseek', 'openai']),
   COOPERATIVE_CHAT_ENABLED: new Set(['true', 'false']),
-  COOPERATIVE_CHAT_PROVIDER: new Set(['codex', 'openclaw', 'browser']),
+  COOPERATIVE_CHAT_PROVIDER: new Set(['codex', 'openclaw', 'browser', 'pi']),
+  PI_PROVIDER_ENABLED: new Set(['true', 'false']),
+  GRAPHICS_PROFILE: new Set(['standard', 'power_saving', 'custom']),
+  RENDER_TEXTURE_SAMPLING: new Set(['true', 'false']),
   CODEX_PROVIDER_TRANSPORT: new Set(['app_server', 'direct', 'disabled']),
   CODEX_APP_SERVER_AUTH_MODE: new Set(['model_api', 'chatgpt']),
   CODEX_APP_SERVER_MODEL_PROVIDER: new Set(['deepseek', 'openai']),
@@ -236,7 +252,7 @@ const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
   AUIP_ARTIFACT_STYLE_ENABLED: new Set(['true', 'false']),
 }
 
-const IDENTIFIER_KEYS = new Set(['ASR_BACKEND', 'TTS_BACKEND'])
+const IDENTIFIER_KEYS = new Set(['ASR_BACKEND', 'TTS_BACKEND', 'WORK_CODING_PROVIDER', 'WORK_EXECUTION_PROVIDER'])
 
 const URL_KEYS = new Set([
   'DEEPSEEK_BASE_URL',
@@ -256,6 +272,8 @@ const URL_KEYS = new Set([
 const WEBSOCKET_URL_KEYS = new Set(['VTS_WS_URL', 'FISH_TTS_WS_URL'])
 
 const NUMBER_RANGES: Record<string, readonly [number, number]> = {
+  RENDER_MAX_FPS: [10, 240],
+  RENDER_MAX_RESOLUTION: [0.25, 4],
   RAG_TOP_K: [1, 20],
   RAG_MAX_DISTANCE: [0, 4],
   ASR_LISTEN_TIMEOUT_SECONDS: [1, 120],
@@ -266,7 +284,7 @@ const NUMBER_RANGES: Record<string, readonly [number, number]> = {
   EXP_TTS_MAX_CONCURRENCY: [1, 16],
 }
 
-const INTEGER_KEYS = new Set(['RAG_TOP_K', 'ASR_VAD_SILENCE_MS', 'AMADEUS_VISION_MAX_LONG_SIDE', 'AMADEUS_VISION_JPEG_QUALITY', 'EXP_TTS_MAX_CONCURRENCY'])
+const INTEGER_KEYS = new Set(['RENDER_MAX_FPS', 'RAG_TOP_K', 'ASR_VAD_SILENCE_MS', 'AMADEUS_VISION_MAX_LONG_SIDE', 'AMADEUS_VISION_JPEG_QUALITY', 'EXP_TTS_MAX_CONCURRENCY'])
 
 const MCP_CONNECTIONS_ENV = 'AMADEUS_MCP_CONNECTIONS'
 const FRONTEND_ONLY_VALUE_KEYS = new Set(['AMADEUS_UI_LOCALE', 'AMADEUS_UI_THEME'])
@@ -283,7 +301,7 @@ export function validateAcpProviders(raw: string): Array<Record<string, unknown>
     const allowed = new Set(['id', 'name', 'command', 'args', 'enabled', 'environment', 'config_options', 'resume'])
     if (Object.keys(profile).some(key => !allowed.has(key))) throw new Error('Unknown ACP configuration field')
     const id = profile.id
-    if (typeof id !== 'string' || !MCP_ID_PATTERN.test(id) || ['codex', 'browser', 'openclaw'].includes(id) || ids.has(id)) {
+    if (typeof id !== 'string' || !MCP_ID_PATTERN.test(id) || ['codex', 'browser', 'openclaw', 'pi'].includes(id) || ids.has(id)) {
       throw new Error('ACP agents require unique ids distinct from built-in Providers')
     }
     ids.add(id)

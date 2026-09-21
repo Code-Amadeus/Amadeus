@@ -25,6 +25,7 @@ from weakref import WeakValueDictionary
 
 from agent_host.provider_contract import ProviderRequirements, compatibility_errors
 from agent_host.provider_workspace import prepare_workspace_binding, workspace_route_authority
+from server.provider_session_binding import supports_conversation_attachment
 from agent_host.provider_runtime import ProviderRuntime, ProviderStartAdmissionRejected
 from agent_host.provider_types import (
     ProviderRunIntakeAuthority,
@@ -2118,7 +2119,8 @@ class CooperativeProviderLoop:
                     "details":list(contract_errors), "child_id":child.child_id}
             if child.requirements.resume == "attach" and (record or child.run_status != "idle"):
                 if (child.native_session is None or child.native_session.provider != child.provider
-                        or child.native_session.scope != "interaction" or manifest is None
+                        or not supports_conversation_attachment(child.native_session,
+                            work_item_id=child.work_item_id) or manifest is None
                         or manifest.capabilities.resume != "attach"):
                     accept_no_effect("native_context_unavailable")
                     return {"state":"rejected", "reason":"native_context_unavailable", "child_id":child.child_id}

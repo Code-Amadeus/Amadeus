@@ -324,9 +324,38 @@ def _resolve_tts_device() -> str:
 
 
 TTS_DEVICE = _resolve_tts_device()
-# v3 模型权重路径（相对于项目根或绝对路径，写在 .env 中）
-TTS_GPT_MODEL_PATH    = _str("TTS_GPT_MODEL_PATH")
-TTS_SOVITS_MODEL_PATH = _str("TTS_SOVITS_MODEL_PATH")
+
+_TTS_VOICE_PROFILE_PATHS = {
+    "kurisu_v3": (
+        "assets/models/gpt-sovits/weights/gpt/v3/xxx-e15.ckpt",
+        "assets/models/gpt-sovits/weights/sovits/v3/xxx_e2_s174_l32.pth",
+    ),
+    "kurisu_v2pro": (
+        "assets/models/gpt-sovits/weights/gpt/v2Pro/kurisu_v2pro-e15.ckpt",
+        "assets/models/gpt-sovits/weights/sovits/v2Pro/kurisu_v2pro.pth",
+    ),
+}
+
+
+def _resolve_tts_voice_paths(profile: str, gpt_path: str, sovits_path: str) -> tuple[str, str]:
+    selected = str(profile or "custom").strip().lower()
+    if selected == "custom":
+        return str(gpt_path or "").strip(), str(sovits_path or "").strip()
+    try:
+        return _TTS_VOICE_PROFILE_PATHS[selected]
+    except KeyError as exc:
+        supported = ", ".join(("custom", *_TTS_VOICE_PROFILE_PATHS))
+        raise ValueError(f"Unsupported TTS_VOICE_PROFILE={profile!r}; expected one of {supported}") from exc
+
+
+# A named profile keeps compatible GPT/SoVITS pairs atomic. `custom` preserves
+# existing installations that provide explicit relative or absolute paths.
+TTS_VOICE_PROFILE = _str("TTS_VOICE_PROFILE", "custom").strip().lower()
+TTS_GPT_MODEL_PATH, TTS_SOVITS_MODEL_PATH = _resolve_tts_voice_paths(
+    TTS_VOICE_PROFILE,
+    _str("TTS_GPT_MODEL_PATH"),
+    _str("TTS_SOVITS_MODEL_PATH"),
+)
 
 # 输出语言："日文" | "英文"（对应 dict_language 中的键名）
 # 切换此项即可在日文 LoRA 管线和英文 base 管线之间手动选择
@@ -484,7 +513,13 @@ BRANCH_SQUASH_MERGE = _bool("BRANCH_SQUASH_MERGE", True)
 # ===========================================================================
 # Execution providers
 # ===========================================================================
-PROVIDER_DELEGATE_DEFAULT_PROVIDER = _str("PROVIDER_DELEGATE_DEFAULT_PROVIDER", "openclaw").strip().lower()
+WORK_CODING_PROVIDER = _str("WORK_CODING_PROVIDER", "codex").strip().lower()
+WORK_EXECUTION_PROVIDER = _str("WORK_EXECUTION_PROVIDER", "pi", aliases=(
+    "COOPERATIVE_CHAT_PROVIDER", "PROVIDER_DELEGATE_DEFAULT_PROVIDER",
+)).strip().lower()
+# Existing routing callers retain their names; both read the execution role.
+# Legacy startup keys are migration aliases, not independent assignments.
+PROVIDER_DELEGATE_DEFAULT_PROVIDER = WORK_EXECUTION_PROVIDER
 # Exactly one Codex transport may own the stable ``codex`` Provider id.  The
 # official persistent SDK/App Server transport is the local product default;
 # the turn-scoped CLI remains an explicit compatibility transport.
@@ -554,6 +589,14 @@ DIRECT_CODEX_PREFLIGHT_TIMEOUT_S = _int("DIRECT_CODEX_PREFLIGHT_TIMEOUT_S", 8)
 DIRECT_CODEX_TIMEOUT_S = _int("DIRECT_CODEX_TIMEOUT_S", 7200)
 DIRECT_CODEX_EVENT_SILENCE_WARN_S = _int("DIRECT_CODEX_EVENT_SILENCE_WARN_S", 60)
 DIRECT_CODEX_STDERR_CAP_BYTES = _int("DIRECT_CODEX_STDERR_CAP_BYTES", 12000)
+# Optional pinned Pi CLI; RPC controls execution while the Host owns Work.
+PI_PROVIDER_ENABLED = _bool("PI_PROVIDER_ENABLED", True)
+PI_NODE_PATH = _str("PI_NODE_PATH", "node")
+PI_AGENT_DIR = _str("PI_AGENT_DIR", "runtime/pi")
+PI_MODEL_PROVIDER = _str("PI_MODEL_PROVIDER", "deepseek")
+PI_MODEL = _str("PI_MODEL", DEEPSEEK_MODEL_NAME)
+PI_EXTENSIONS_JSON = _str("PI_EXTENSIONS_JSON", "[]")
+PI_TIMEOUT_S = _int("PI_TIMEOUT_S", 1800)
 PROVIDER_RUN_EVENT_CAP = _int("PROVIDER_RUN_EVENT_CAP", 500)
 PROVIDER_WORK_HEARTBEAT_S = _int("PROVIDER_WORK_HEARTBEAT_S", 45)
 PROVIDER_WORK_QUIET_NOTICE_S = _int("PROVIDER_WORK_QUIET_NOTICE_S", 90)
@@ -569,11 +612,10 @@ COOPERATIVE_CHAT_ENABLED = _bool("COOPERATIVE_CHAT_ENABLED", True)
 COOPERATIVE_WORK_PLANNER_ENABLED = _bool("COOPERATIVE_WORK_PLANNER_ENABLED", True)
 # Optional model on the existing LLM backend; empty inherits the role model.
 COOPERATIVE_WORK_PLANNER_MODEL = _str("COOPERATIVE_WORK_PLANNER_MODEL", "").strip()
-COOPERATIVE_CHAT_PROVIDER = _str("COOPERATIVE_CHAT_PROVIDER", "codex").strip().lower()
+COOPERATIVE_CHAT_PROVIDER = WORK_EXECUTION_PROVIDER
 COOPERATIVE_CHAT_REQUIREMENTS_JSON = _str(
     "COOPERATIVE_CHAT_REQUIREMENTS_JSON",
-    '{"task_kind":"general","workspace_access":"write",'
-    '"workspace_ownership":"caller","ownership":"managed","resume":"attach"}',
+    "{}",
 )
 COOPERATIVE_CHAT_ADDITIONAL_REQUIREMENTS_JSON = _str(
     "COOPERATIVE_CHAT_ADDITIONAL_REQUIREMENTS_JSON", "{}",

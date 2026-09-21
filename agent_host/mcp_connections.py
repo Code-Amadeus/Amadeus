@@ -253,7 +253,7 @@ def mcp_provider_environment(
 async def open_mcp_connection(
     connection: McpConnectionSpec,
 ) -> AsyncIterator[Any]:
-    """Open one official MCP client for a read-only discovery probe."""
+    """Open an official MCP client; callers own discovery or tool authorization."""
 
     from mcp import Client
 

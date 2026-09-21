@@ -83,9 +83,9 @@ Amadeus 试图把这些体验连成一个闭环：
 | 能力 | 当前公开源码 |
 |---|---|
 | **可打断实时对话** | 共享麦克风生命周期、独立 Wake / Conversation ASR、两段式端点、AEC / barge-in，以及贯穿 LLM、TTS 与物理播放的中断。 |
-| **远程主 Chat 与本地语音** | DeepSeek V4 Flash Main Chat；Qwen3-ASR / SenseVoice；内嵌 GPT-SoVITS v3 流式合成、连续播放与播放前口型发布。 |
+| **远程主 Chat 与本地语音** | DeepSeek V4 Flash Main Chat；Qwen3-ASR / SenseVoice；内嵌 GPT-SoVITS 流式合成（默认 v3，可选实验性 v2Pro）、连续播放与播放前口型发布。 |
 | **角色与桌面呈现** | SpriteForge 图状态、KTX2/PixiJS 运行时、字幕、口型和情绪同步；没有角色包时 Chat、Work 与 headless 仍可启动。 |
-| **Provider Runtime** | 当前包括 Browser、Codex App Server / Direct Codex 与可选 OpenClaw；Claude CLI 是已确定的后续 direct Provider。 |
+| **Provider Runtime** | [Pi 原生 RPC](docs/pi-rpc-provider.md) 默认负责日常任务，Codex App Server / Direct Codex 负责复杂开发，Browser 保留受管页面操作，OpenClaw 保留为可选 Provider；Claude CLI 是已确定的后续 direct Provider。 |
 | **持久 Work 控制面** | Project、默认 Draft、WorkItem / Attempt、Continue / Retry、重启恢复、权限、Artifact Registry 与结构化 Diff。 |
 | **Artifact 与 AUIP** | Work 产物可预览、打开，或在校验后附加为有界 AUIP AppSession，让 Amadeus 与应用交互而不把叙述变成执行权限。 |
 | **统一设置入口** | Models、Voice、Providers/MCP、视觉、角色包状态和聊天外观在 Electron Settings 中集中管理。 |
@@ -371,7 +371,7 @@ FlashAttention 保持可选；已找到匹配 cp312/Torch 2.7/cu128 的 Windows 
 它包含可直接构建的中日文基础资料，也支持自己的知识目录；Settings 可查看实际阈值和加载状态。
 RAG 会额外安装本地 embedding/Torch 依赖。资料、索引构建、诊断与验证范围见说明。
 
-完整本地语音需要 Qwen ASR 与 GPT-SoVITS v3 语音包；视觉和角色包可选：
+默认本地语音配置使用 Qwen ASR 与 GPT-SoVITS v3 语音包；视觉和角色包可选：
 
 ```powershell
 uv run --locked --no-sync python tools\external_assets.py verify C:\Downloads\amadeus-asr-qwen3-0.6b.zip
@@ -384,6 +384,30 @@ uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\a
 uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-character-kurisu.zip
 uv run --locked --no-sync python tools\external_assets.py status
 ```
+
+要试用 **Kurisu v2Pro**，先安装上面的 v3 语音包，再安装独立提供的实验附加包。
+附加包包含 v2Pro GPT/SoVITS 权重组合和 ERes2Net 说话人编码器，复用 v3 包中的
+BERT、CNHuBERT 与参考音频：
+
+```powershell
+uv run --locked --no-sync python tools\external_assets.py verify C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v2pro-experimental.zip
+uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v2pro-experimental.zip
+```
+
+在 **Settings → Voice → Voice backends → Embedded GPT-SoVITS model** 中，
+将 **Voice checkpoint profile** 选为 **Kurisu v2Pro · experimental**，然后重启后端。
+使用 `.env` 配置时，设置 `TTS_VOICE_PROFILE=kurisu_v2pro`；`.env.example` 仍默认
+使用 `kurisu_v3`。预设会同时选择匹配的两份权重。内嵌运行时支持 v1、v2、v2Pro、
+v2ProPlus 和 v3；其他兼容权重组合可选择 `custom`，并填写 `TTS_GPT_MODEL_PATH`
+与 `TTS_SOVITS_MODEL_PATH`。v2Pro/v2ProPlus 还需要附加包中的说话人编码器权重。
+选择 v2Pro 不会自动开启可选的 `TTS_T2S_FLASH_ATTN` 路径，该开关默认关闭。
+
+**v2ProPlus 也受支持，并复用同一条推理管线**，包括说话人条件、会话缓存、
+CUDA Graph 和流式播放。使用时选择 **Custom checkpoint pair**
+（`TTS_VOICE_PROFILE=custom`），将 GPT 与 SoVITS 路径设为兼容的 v2ProPlus
+权重组合，然后重启后端；说话人编码器与 v2Pro 共用同一份 ERes2Net 权重。
+目前没有独立的 Kurisu v2ProPlus 预设或 Plus 资产包，上面的实验 Kurisu 包提供的是
+v2Pro 权重。本次改动的真实推理验证使用 v2Pro，尚未单独实测 v2ProPlus 权重。
 
 如果没有预制 Qwen 包，可直接把上游 snapshot 下载到同一个固定落点；运行时
 保持离线，不会在第一次录音时临时联网：
@@ -405,7 +429,7 @@ uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('
 macOS：`cp .env.example .env`），然后在 Settings 中核对：
 
 - **Models**：`deepseek`、官方 endpoint、`deepseek-v4-flash` 与 API key；
-- **Voice**：远程 TTS 推荐 Fish Audio S2.1 + Kurisu，也支持 MiMo / OpenAI-compatible；L4 本地栈另需 Qwen model 目录、GPT-SoVITS **v3** checkpoints、reference audio/text、麦克风、AEC 和 barge-in；
+- **Voice**：远程 TTS 推荐 Fish Audio S2.1 + Kurisu，也支持 MiMo / OpenAI-compatible；L4 本地栈另需 Qwen model 目录、兼容的 GPT-SoVITS 权重组合（默认 **Kurisu v3**，可选实验性 **Kurisu v2Pro**）、reference audio/text、麦克风、AEC 和 barge-in；
 - **General**：可选角色包状态与呈现设置。
 
 启动：
@@ -447,7 +471,7 @@ DeepSeek 失败后自动切换。
 | 主 Chat API | DeepSeek-V4-Flash-0731：`DEEPSEEK_BASE_URL=https://api.deepseek.com`，`DEEPSEEK_MODEL_NAME=deepseek-v4-flash` | `deepseek-v4-flash` 是稳定 API alias，当前指向 0731 版本；不把日期写进运行时 model id。 |
 | 远程语音合成 TTS | 推荐 **Fish Audio S2.1**：`TTS_BACKEND=fish_audio`、`FISH_TTS_MODEL=s2.1-pro-free`；Kurisu 音色：`FISH_TTS_REFERENCE_ID=b450b19370434173b121446057622e9b` | WebSocket 双向流式 API；本地分句片段按 `text → flush` 发送，音频逐块接收。主 Chat 保留现有分句调度；不直接发送原始 LLM token。 |
 | 多模态 / Vision | 优先 `gemini-3.7-flash`；需要较保守的兼容 profile 时可用 `gemini-3.5-flash` | 当前由 Host 内部 visual-context 链负责图像采集，图像发送仍跟随主 Chat provider；独立 Gemini Vision API 路由尚未实现，也不代表恢复旧 Gemini Live sidecar。 |
-| Work 执行 Provider | 首选 Codex App Server；其次是可选 OpenClaw Gateway | 这是推荐优先级，不是失败后自动 fallback。Browser 仍是网页任务的专用 Provider。 |
+| Work 执行 Provider | 日常任务默认 Pi；复杂开发使用 Codex App Server | 需安装 [Pi 固定版本运行时](docs/pi-rpc-provider.md)。OpenClaw 保留为可显式选择的 Provider，Browser 保留受管页面操作。 |
 | Work 执行模型 | Codex App Server 可显式选择 GPT-5.6 family 或 `deepseek-v4-flash` | 执行模型属于 Work Provider，不与主 Chat 共用路由或密钥。 |
 | AUIP 运行时动作判定 | `AUIP_ACTION_PROVIDER=openai`、`AUIP_ACTION_MODEL=gpt-5.6-terra`、`AUIP_ACTION_REASONING_EFFORT=low`、`AUIP_ACTION_SERVICE_TIER=fast` | 这是 AppSession 的动作 / 参与判定模型，不是 AUIP Artifact 的执行 Provider；`fast` 需要对应 API 项目可用。 |
 
@@ -486,9 +510,10 @@ FISH_TTS_LATENCY=balanced
 模型权重、参考音频、角色包及大型/版权敏感素材独立分发；源码仓库只保留
 必要图标、默认壁纸、schema、validator 和安装工具。
 
-当前目录合同包括 `asr-qwen3-0.6b`、`voice-kurisu-gpt-sovits-v3`、
-`visual-runtime` 与 `character-kurisu`。前两个组成完整本地语音 profile；
-后两个只影响场景和角色呈现。
+本地语音的目录合同包括 `asr-qwen3-0.6b`、`voice-kurisu-gpt-sovits-v3`，以及可选的
+`voice-kurisu-gpt-sovits-v2pro-experimental` 附加包。v3 包提供附加包所需的共享资源。
+`visual-runtime` 与 `character-kurisu` 用于场景和角色呈现。各包内容与安装细节见
+[外部资产包说明](docs/external_asset_bundles.md)。
 
 ```powershell
 uv run --locked --no-sync python tools\external_assets.py verify C:\path\to\asset-bundle.zip
@@ -537,7 +562,10 @@ Electron 会直接创建桌面层的全场景窗口，并用独立透明窗口�
 
 ### 图形性能配置
 
-所有 PixiJS 角色与壁纸表面共享一个 `.env` 图形 Profile：
+所有 PixiJS 角色与壁纸表面共享一个图形预设。可在 **设置 → 图形与性能** 中配置，
+也可使用 `.env`：
+
+[界面预览](docs/images/graphics-performance-settings.png)（自定义设置已保存，等待重启）。
 
 | `GRAPHICS_PROFILE` | 最大帧率 | resolution | 用途 |
 |---|---:|---:|---|
@@ -557,12 +585,15 @@ Wallpaper Engine 通过
 [`applyGeneralProperties().fps`](https://docs.wallpaperengine.io/en/web/performance/fps.html)
 提供用户 FPS 设置时，运行时采用该设置与项目 Profile 中较低的有效值；Electron、
 Lively 及普通角色表面没有该宿主设置，直接使用项目 Profile。
-暂不提供对应 GUI，修改 `.env` 后需重启 Amadeus。
+选择“自定义”后，GUI 会显示帧率和像素密度上限；切换预设会保留自定义数值。
+保存后需重启后端，再重新打开现有角色与壁纸窗口。页面会单独显示当前后端的渲染上限，
+不会将尚未应用的设置显示成已生效。这些上限不是实测帧率，Wallpaper Engine 还可能进一步降低帧率。
 
 #### 实验性纹理采样（默认关闭）
 
 `RENDER_TEXTURE_SAMPLING=false` 为默认值，保持现有的全帧加载与播放规则。
-**16GB 或其他内存压力较大的设备**，可考虑在 `.env` 中开启并选择 30 FPS 省电档：
+**16GB 或其他内存压力较大的设备**，可在图形页展开“实验性纹理采样”并试用 30 FPS 节能档。
+开关独立于预设，默认仍关闭。等效 `.env` 配置为：
 
 ```dotenv
 GRAPHICS_PROFILE=power_saving

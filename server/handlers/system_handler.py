@@ -300,7 +300,7 @@ def _voice_configuration(settings: Any) -> list[dict[str, Any]]:
         {
             "id": "speech_synthesis",
             "label": "Speech synthesis",
-            "description": "The embedded default is Amadeus's low-latency GPT-SoVITS v3 rewrite and accepts v3 checkpoints only. Remote audio enters the same playback, subtitle, AEC, and mouth-signal pipeline.",
+            "description": "The embedded default is Amadeus's low-latency GPT-SoVITS runtime and accepts v1, v2, v2Pro, v2ProPlus, and v3 checkpoints. Remote audio enters the same playback, subtitle, AEC, and mouth-signal pipeline.",
             "active": tts_selected != "disabled",
             "configured": bool(tts_status.get("available")),
             "status": str(tts_status.get("state") or "unavailable"),
@@ -319,8 +319,8 @@ def _voice_configuration(settings: Any) -> list[dict[str, Any]]:
         },
         {
             "id": "tts_embedded_v3",
-            "label": "Embedded GPT-SoVITS v3 model",
-            "description": "Checkpoint pair for the Amadeus low-latency rewrite. v1 and v2 checkpoints are not supported by this runtime.",
+            "label": "Embedded GPT-SoVITS model",
+            "description": "Checkpoint pair for the Amadeus low-latency runtime. The SoVITS checkpoint header selects the v1, v2, v2Pro, v2ProPlus, or v3 decoder.",
             "active": tts_selected == "gpt_sovits",
             "configured": bool(embedded_tts_status.get("available")),
             "status": str(embedded_tts_status.get("state") or "not_installed"),
@@ -328,18 +328,29 @@ def _voice_configuration(settings: Any) -> list[dict[str, Any]]:
             "status_detail": str(embedded_tts_status.get("detail") or ""),
             "fields": [
                 _startup_field(
+                    "TTS_VOICE_PROFILE", "Voice checkpoint profile",
+                    settings.TTS_VOICE_PROFILE,
+                    field_type="select",
+                    options=(
+                        {"value": "kurisu_v3", "label": "Kurisu v3"},
+                        {"value": "kurisu_v2pro", "label": "Kurisu v2Pro · experimental"},
+                        {"value": "custom", "label": "Custom checkpoint pair"},
+                    ),
+                    description="Named profiles select compatible GPT and SoVITS paths together. Restart the voice runtime after changing this setting.",
+                ),
+                _startup_field(
                     "TTS_DEVICE", "Inference device", settings.TTS_DEVICE,
                     description="auto/cuda, cuda:N, or cpu. Used only by the embedded backend.",
                 ),
                 _startup_field(
-                    "TTS_GPT_MODEL_PATH", "GPT semantic checkpoint (v3)",
+                    "TTS_GPT_MODEL_PATH", "Custom GPT semantic checkpoint",
                     settings.TTS_GPT_MODEL_PATH,
-                    description="Path to a GPT-SoVITS v3 .ckpt file; relative paths resolve from the repository root.",
+                    description="Used only with the Custom checkpoint pair profile; relative paths resolve from the repository root.",
                 ),
                 _startup_field(
-                    "TTS_SOVITS_MODEL_PATH", "SoVITS acoustic checkpoint (v3)",
+                    "TTS_SOVITS_MODEL_PATH", "Custom SoVITS acoustic checkpoint",
                     settings.TTS_SOVITS_MODEL_PATH,
-                    description="Path to a GPT-SoVITS v3 .pth file; relative paths resolve from the repository root.",
+                    description="Used only with the Custom checkpoint pair profile; relative paths resolve from the repository root.",
                 ),
             ],
         },
@@ -1015,6 +1026,17 @@ def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
         ))
     return [
         {
+            "id": "pi", "label": "Pi · Experimental",
+            "description": "Local agent using the pinned native RPC runtime; Work role assignment is independent.",
+            "fields": [
+                _startup_field("PI_PROVIDER_ENABLED", "Enable Pi", settings.PI_PROVIDER_ENABLED, field_type="boolean"),
+                _startup_field("PI_NODE_PATH", "Node executable", settings.PI_NODE_PATH, field_type="path"),
+                _startup_field("PI_AGENT_DIR", "Pi configuration and sessions", settings.PI_AGENT_DIR, field_type="path"),
+                _startup_field("PI_MODEL_PROVIDER", "Pi model provider", settings.PI_MODEL_PROVIDER),
+                _startup_field("PI_MODEL", "Pi model", settings.PI_MODEL),
+            ],
+        },
+        {
             "id": "browser",
             "label": "Browser",
             "description": "Host-managed browser work Provider; no connection settings.",
@@ -1023,7 +1045,7 @@ def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
         {
             "id": "openclaw",
             "label": "OpenClaw",
-            "description": "Remote agent Gateway used only after the main role delegates work.",
+            "description": "Optional Gateway provider; Work role assignment is independent. Existing sessions remain supported.",
             "fields": [
                 _startup_field(
                     "OPENCLAW_BASE_URL", "Gateway URL", settings.OPENCLAW_BASE_URL,
@@ -1162,6 +1184,14 @@ class SystemHandler(RequestHandler):
             ),
             "model_roles": _model_role_configuration(settings),
             "work_provider_configuration": _work_provider_configuration(settings),
+            "graphics": {
+                "profile": settings.GRAPHICS_PROFILE,
+                "custom_max_fps": settings.RENDER_MAX_FPS,
+                "custom_max_resolution": settings.RENDER_MAX_RESOLUTION,
+                "texture_sampling": settings.RENDER_TEXTURE_SAMPLING,
+                "effective_max_fps": settings.RENDER_EFFECTIVE_MAX_FPS,
+                "effective_max_resolution": settings.RENDER_EFFECTIVE_MAX_RESOLUTION,
+            },
             "acp_credentials": _acp_credentials(),
             "artifact_configuration": _artifact_configuration(settings),
             "voice_configuration": voice_configuration,
@@ -1207,6 +1237,8 @@ class SystemHandler(RequestHandler):
             "cooperative_chat_provider": str(
                 getattr(settings, "COOPERATIVE_CHAT_PROVIDER", "") or ""
             ),
+            "work_coding_provider": settings.WORK_CODING_PROVIDER,
+            "work_execution_provider": settings.WORK_EXECUTION_PROVIDER,
             "cooperative_permission_policy": (
                 str(getattr(settings, "COOPERATIVE_CHAT_PERMISSION_POLICY", "") or "")
                 if bool(getattr(settings, "COOPERATIVE_CHAT_ENABLED", False))

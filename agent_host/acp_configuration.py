@@ -13,7 +13,7 @@ from typing import Any
 ACP_PROVIDERS_ENV = "AMADEUS_ACP_PROVIDERS"
 _ID = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 _ENV = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
-_RESERVED = {"browser", "codex", "openclaw"}
+_RESERVED = {"browser", "codex", "openclaw", "pi"}
 
 
 @dataclass(frozen=True, slots=True)

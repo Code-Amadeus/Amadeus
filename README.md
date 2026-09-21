@@ -88,9 +88,9 @@ product slice rather than a pixel-exact installation preview.
 | Area | Current public source |
 |---|---|
 | **Interruptible real-time conversation** | Shared microphone lifecycle, independent Wake / Conversation ASR, two-stage endpointing, AEC / barge-in, and interruption across LLM, TTS, and physical playback. |
-| **Remote Main Chat and local voice** | DeepSeek V4 Flash Main Chat; Qwen3-ASR / SenseVoice; embedded GPT-SoVITS v3 streaming synthesis, continuous playback, and mouth values published before matching PCM windows. |
+| **Remote Main Chat and local voice** | DeepSeek V4 Flash Main Chat; Qwen3-ASR / SenseVoice; embedded GPT-SoVITS streaming synthesis (v3 by default, optional experimental v2Pro), continuous playback, and mouth values published before matching PCM windows. |
 | **Character and desktop presentation** | SpriteForge graph state, a KTX2/PixiJS runtime, subtitle, lip-sync, and emotion timing; Chat, Work, and headless startup remain available without a character pack. |
-| **Provider Runtime** | Browser, Codex App Server / Direct Codex, and optional OpenClaw are current Providers. Claude CLI is a committed future direct Provider. |
+| **Provider Runtime** | [Pi over native RPC](docs/pi-rpc-provider.md) for daily tasks, Codex App Server / Direct Codex for complex coding, Browser for managed pages, and optional OpenClaw. Claude CLI is a committed future direct Provider. |
 | **Durable Work control plane** | Projects, default Drafts, WorkItems / Attempts, Continue / Retry, restart recovery, permissions, the Artifact Registry, and structured diffs. |
 | **Artifacts and AUIP** | A Work Artifact can be previewed, opened, or attached as a bounded AUIP AppSession so Amadeus can interact with it without turning narration into execution authority. |
 | **Unified settings** | Models, Voice, Providers/MCP, vision, character-pack status, and chat appearance are managed in Electron Settings. |
@@ -408,7 +408,7 @@ corpus and supports personal knowledge directories. Settings shows applied
 thresholds and loading state. RAG adds local embedding/Torch dependencies;
 the guide covers setup, diagnostics and evaluation limits.
 
-The full local-voice profile needs the Qwen ASR and GPT-SoVITS v3 voice packs.
+The default local-voice profile uses the Qwen ASR and GPT-SoVITS v3 voice packs.
 The visual and character packs are optional:
 
 ```powershell
@@ -422,6 +422,35 @@ uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\a
 uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-character-kurisu.zip
 uv run --locked --no-sync python tools\external_assets.py status
 ```
+
+To try **Kurisu v2Pro**, install the separately supplied experimental add-on
+after the v3 voice pack. It contains the v2Pro GPT/SoVITS checkpoint pair and
+ERes2Net speaker encoder, and reuses the BERT, CNHuBERT, and reference audio
+already installed by the v3 pack:
+
+```powershell
+uv run --locked --no-sync python tools\external_assets.py verify C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v2pro-experimental.zip
+uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\amadeus-voice-kurisu-gpt-sovits-v2pro-experimental.zip
+```
+
+In **Settings → Voice → Voice backends → Embedded GPT-SoVITS model**, select
+**Kurisu v2Pro · experimental** under **Voice checkpoint profile**, then restart
+the backend. For `.env` configuration, set `TTS_VOICE_PROFILE=kurisu_v2pro`;
+`kurisu_v3` remains the default in `.env.example`. Named profiles select both
+checkpoints together. The embedded runtime supports v1, v2, v2Pro, v2ProPlus,
+and v3 checkpoints; use `custom` with `TTS_GPT_MODEL_PATH` and
+`TTS_SOVITS_MODEL_PATH` for another compatible pair. v2Pro/v2ProPlus also require
+the speaker-encoder weight supplied in the add-on. Selecting v2Pro does not
+enable the optional `TTS_T2S_FLASH_ATTN` path; it remains off by default.
+
+**v2ProPlus is also supported by the same inference pipeline**, including
+speaker conditioning, session caching, CUDA Graph, and streaming playback.
+To use it, select **Custom checkpoint pair** (`TTS_VOICE_PROFILE=custom`) and
+set the GPT and SoVITS paths to a compatible v2ProPlus pair, then restart the
+backend. It uses the same ERes2Net speaker encoder as v2Pro. There is currently
+no named Kurisu v2ProPlus profile or separate Plus asset pack; the experimental
+Kurisu pack above contains v2Pro weights. The real-inference validation for this
+change used v2Pro; v2ProPlus was not separately exercised with real weights.
 
 If a prepared Qwen pack is unavailable, download the upstream snapshot into
 the same canonical location. Runtime inference remains offline and will not
@@ -444,7 +473,7 @@ Copy `.env.example` to `.env` (`Copy-Item .env.example .env` on Windows;
 `cp .env.example .env` on macOS), provide the DeepSeek API key, then review Settings:
 
 - **Models:** `deepseek`, the official endpoint, `deepseek-v4-flash`, and an API key;
-- **Voice:** Fish Audio S2.1 + Kurisu is the recommended remote TTS profile; MiMo and OpenAI-compatible endpoints are also supported. The L4 local stack also needs a Qwen model directory, GPT-SoVITS **v3** checkpoints, reference audio/text, microphone, AEC, and barge-in;
+- **Voice:** Fish Audio S2.1 + Kurisu is the recommended remote TTS profile; MiMo and OpenAI-compatible endpoints are also supported. The L4 local stack also needs a Qwen model directory, a compatible GPT-SoVITS checkpoint pair (**Kurisu v3** by default or experimental **Kurisu v2Pro**), reference audio/text, microphone, AEC, and barge-in;
 - **General:** optional character-pack status and presentation settings.
 
 Launch Amadeus:
@@ -490,7 +519,7 @@ failure:
 | Main Chat API | DeepSeek-V4-Flash-0731: `DEEPSEEK_BASE_URL=https://api.deepseek.com` and `DEEPSEEK_MODEL_NAME=deepseek-v4-flash` | `deepseek-v4-flash` is the stable API alias currently pointing to the 0731 release; the dated version is not used as the runtime model id. |
 | Remote speech synthesis | **Fish Audio S2.1**: `TTS_BACKEND=fish_audio`, `FISH_TTS_MODEL=s2.1-pro-free`; Kurisu voice: `FISH_TTS_REFERENCE_ID=b450b19370434173b121446057622e9b` | Bidirectional WebSocket streaming; locally committed sentence chunks use `text → flush`, with incremental audio output. Existing Chat sentence scheduling is preserved. |
 | Multimodal / Vision | Prefer `gemini-3.7-flash`; use `gemini-3.5-flash` as a more conservative compatibility profile | Host-owned visual context performs capture in-process, while image delivery still follows the Main Chat Provider. Independent Gemini Vision API routing is not implemented and does not imply restoring the retired Gemini Live sidecar. |
-| Work execution Provider | Prefer Codex App Server; use the optional OpenClaw Gateway second | This is a recommendation order, not an automatic failure fallback. Browser remains the specialized Provider for web tasks. |
+| Work execution Provider | Pi for daily tasks; Codex App Server for complex coding | Install the [pinned Pi runtime](docs/pi-rpc-provider.md). OpenClaw remains optional for explicit selection; Browser retains managed-page operations. |
 | Work execution model | Codex App Server may explicitly select a GPT-5.6-family model or `deepseek-v4-flash` | The execution model belongs to the Work Provider and does not share Main Chat routing or credentials. |
 | AUIP runtime action decisions | `AUIP_ACTION_PROVIDER=openai`, `AUIP_ACTION_MODEL=gpt-5.6-terra`, `AUIP_ACTION_REASONING_EFFORT=low`, and `AUIP_ACTION_SERVICE_TIER=fast` | This model decides AppSession actions and participation; it is not the execution Provider that authors an AUIP Artifact. `fast` requires availability for the API project. |
 
@@ -530,10 +559,12 @@ Model weights, reference audio, character packs, and large or copyright-
 sensitive media are distributed separately. The source repository keeps the
 required icons, default wallpaper, schemas, validators, and installation tool.
 
-The current directory contracts are `asr-qwen3-0.6b`,
-`voice-kurisu-gpt-sovits-v3`, `visual-runtime`, and `character-kurisu`. The
-first two form the full local-voice profile; the latter two affect only scene
-and character presentation.
+The local-voice directory contracts are `asr-qwen3-0.6b` and
+`voice-kurisu-gpt-sovits-v3`, with the optional
+`voice-kurisu-gpt-sovits-v2pro-experimental` add-on for v2Pro. The v3 pack provides
+shared resources required by the add-on. `visual-runtime` and `character-kurisu`
+affect scene and character presentation. See the [asset bundle guide](docs/external_asset_bundles.md)
+for pack contents and installation details.
 
 ```powershell
 uv run --locked --no-sync python tools\external_assets.py verify C:\path\to\asset-bundle.zip
@@ -591,7 +622,10 @@ notarization, and an installer are not included yet.
 
 ### Graphics performance
 
-All PixiJS character and wallpaper surfaces share one `.env` graphics profile:
+All PixiJS character and wallpaper surfaces share one graphics profile. Configure
+it in **Settings → Graphics & performance**, or through `.env`:
+
+[GUI preview](docs/images/graphics-performance-settings.png) (custom settings awaiting restart).
 
 | `GRAPHICS_PROFILE` | Maximum frame rate | Resolution | Purpose |
 |---|---:|---:|---|
@@ -611,13 +645,19 @@ When Wallpaper Engine supplies a user FPS setting through
 [`applyGeneralProperties().fps`](https://docs.wallpaperengine.io/en/web/performance/fps.html),
 the runtime uses the lower of that setting and the project profile. Electron,
 Lively, and other character surfaces use the project profile directly.
-These settings currently live in `.env`; restart Amadeus after changing them.
+The GUI exposes custom FPS and pixel-density limits when **Custom** is selected,
+preserving those values when switching presets. Saved desktop settings apply on
+backend restart; reopen existing character and wallpaper windows afterward.
+The page shows current backend limits separately from saved choices. Wallpaper
+Engine may impose a lower FPS cap; displayed limits are not measured frame rates.
 
 #### Experimental texture sampling (off by default)
 
 `RENDER_TEXTURE_SAMPLING=false` preserves the existing full-frame loading and
 playback rules. On **16GB systems or other memory-constrained setups**, consider
-trying the experimental option with the 30 FPS power-saving profile in `.env`:
+trying **Experimental texture sampling** in the graphics page with the 30 FPS
+power-saving profile. The toggle is independent of presets and remains off by
+default. The equivalent `.env` values are:
 
 ```dotenv
 GRAPHICS_PROFILE=power_saving

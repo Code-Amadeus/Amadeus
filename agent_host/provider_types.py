@@ -39,7 +39,8 @@ class ProviderSessionHandle:
 
     ``interaction`` permits explicit Host rebinding to a different Work. It
     does not choose that Work, its workspace, or authorize concurrent turns.
-    Older ``work_item`` handles remain confined to their existing Work.
+    ``work_item`` handles remain confined to their existing Work, including
+    conversations about that Work; they cannot be rebound to a different Work.
     """
 
     provider: str

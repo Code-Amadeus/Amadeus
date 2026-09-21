@@ -43,6 +43,14 @@ def _direct_codex_adapter() -> ProviderAdapter:
     return adapter
 
 
+def _pi_adapter() -> ProviderAdapter:
+    from agent_host.adapters.pi import PiAdapter
+
+    adapter = PiAdapter()
+    adapter.require_startup_ready()
+    return adapter
+
+
 def _codex_app_server_adapter() -> ProviderAdapter:
     from agent_host.adapters import CodexAppServerAdapter
 
@@ -75,6 +83,7 @@ def builtin_provider_specs(
     return (
         BuiltinProviderSpec("browser", _browser_branch_adapter, True),
         BuiltinProviderSpec("openclaw", _openclaw_adapter, True),
+        BuiltinProviderSpec("pi", _pi_adapter, bool(settings.PI_PROVIDER_ENABLED)),
         BuiltinProviderSpec(
             "codex",
             _codex_app_server_adapter if app_server_on else _direct_codex_adapter,

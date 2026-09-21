@@ -20,6 +20,22 @@ new Function('require', 'exports', compiled)(name => name === 'electron'
     } }
   : require(name), exports)
 
+test('Pi startup selection persists into the existing backend environment', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'amadeus-pi-settings-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const store = new exports.DesktopSettingsStore(path.join(root, 'settings.json'), path.join(root, '.env'))
+  store.update({}, { values: { WORK_EXECUTION_PROVIDER: 'pi', WORK_CODING_PROVIDER: 'codex', PI_PROVIDER_ENABLED: true,
+    PI_MODEL_PROVIDER: 'deepseek', PI_MODEL: 'daily-model', PI_NODE_PATH: 'node' } })
+  const env = store.backendEnvironment({})
+  assert.equal(env.WORK_EXECUTION_PROVIDER, 'pi')
+  assert.equal(env.WORK_CODING_PROVIDER, 'codex')
+  store.update({}, { values: { WORK_CODING_PROVIDER: 'custom-agent', WORK_EXECUTION_PROVIDER: 'openclaw' } })
+  assert.equal(store.backendEnvironment({}).WORK_CODING_PROVIDER, 'custom-agent')
+  assert.equal(store.backendEnvironment({}).WORK_EXECUTION_PROVIDER, 'openclaw')
+  assert.equal(env.PI_PROVIDER_ENABLED, 'true')
+  assert.equal(env.PI_MODEL, 'daily-model')
+})
+
 test('a blank desktop install can persist a complete model selection for the next backend', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'amadeus-model-connections-'))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
@@ -45,6 +61,7 @@ test('a blank desktop install can persist a complete model selection for the nex
       ENABLE_CUDA_GRAPH: '1',
       EXP_TTS_MAX_CONCURRENCY: '1',
       TTS_OUTPUT_LANGUAGE: '英文',
+      TTS_VOICE_PROFILE: 'kurisu_v2pro',
     },
     secrets: { OPENAI_API_KEY: 'test-api-key' },
   })
@@ -65,6 +82,7 @@ test('a blank desktop install can persist a complete model selection for the nex
   assert.equal(environment.AMADEUS_PRESENTATION_LOCALE, 'zh-CN')
   assert.equal(environment.ENABLE_CUDA_GRAPH, '1')
   assert.equal(environment.TTS_OUTPUT_LANGUAGE, '英文')
+  assert.equal(environment.TTS_VOICE_PROFILE, 'kurisu_v2pro')
   assert.ok(!JSON.stringify(reloaded.snapshot({})).includes('test-api-key'))
 })
 

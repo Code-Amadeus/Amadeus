@@ -1,6 +1,7 @@
 """Exercise production planner assembly without booting devices or Providers."""
 import ast
 import asyncio
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -43,6 +44,29 @@ def test_default_route_enables_both_cooperative_and_professional():
     fields = {field.key: field for field in settings.declared_environment_fields()}
     assert fields["COOPERATIVE_CHAT_ENABLED"].default is True
     assert fields["COOPERATIVE_WORK_PLANNER_ENABLED"].default is True
+    assert fields["WORK_CODING_PROVIDER"].default == "codex"
+    assert fields["WORK_EXECUTION_PROVIDER"].default == "pi"
+    assert fields["PI_PROVIDER_ENABLED"].default is True
+    assert json.loads(fields["COOPERATIVE_CHAT_ADDITIONAL_REQUIREMENTS_JSON"].default) == {}
+
+
+@pytest.mark.parametrize("additional,registered,expected", [
+    ({"codex": {}}, {"codex"}, {"pi", "codex"}),
+    ({"codex": {}}, set(), {"pi"}),
+    ({"pi": {}}, {"pi"}, {"pi"}),
+    ({"openclaw": {"workspace_access": "none"}}, {"openclaw"}, {"pi", "openclaw"}),
+])
+def test_additional_provider_assembly_preserves_primary_and_tolerates_missing_runtime(additional, registered, expected):
+    from agent_host.provider_roles import work_context_requirements
+    from agent_host.provider_catalog import PI_MANIFEST, CODEX_APP_SERVER_MANIFEST, OPENCLAW_MANIFEST
+
+    manifests = {m.provider_id: m for m in (PI_MANIFEST, CODEX_APP_SERVER_MANIFEST, OPENCLAW_MANIFEST)}
+    runtime = SimpleNamespace(get_manifest=lambda name: manifests[name] if name in registered else None,
+        provider_manifests=lambda: tuple(manifests[name] for name in registered))
+    contexts = work_context_requirements(runtime, roles={"coding":"codex", "execution":"pi"},
+        primary_policy={"workspace_access":"read"}, additional_policies=additional)
+    assert set(contexts) == expected
+    assert contexts["pi"].workspace_access == "read"
 
 
 @pytest.mark.parametrize("enabled", [False, True])

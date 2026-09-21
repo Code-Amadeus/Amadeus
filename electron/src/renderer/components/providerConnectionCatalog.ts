@@ -24,15 +24,23 @@ const field = (
 })
 
 export function buildWorkProviderCatalog(
-  runtimeSelection: { provider: string; enabled: boolean },
+  runtimeSelection: { provider: string; enabled: boolean; codingProvider?: string;
+    roleCandidates?: Record<string, string[]> },
   snapshot?: ProviderDesktopSnapshot | null,
 ): { routing: ModelConnectionCatalogGroup; connections: ModelConnectionCatalogGroup[] } {
   const values = snapshot?.values || {}
   const value = (key: string, fallback = '') => values[key] || fallback
   const bool = (key: string, fallback: boolean) => values[key] === undefined ? fallback : values[key] === 'true'
   const secret = (key: string) => Boolean(snapshot?.secrets?.[key]?.configured)
-  const provider = value('COOPERATIVE_CHAT_PROVIDER', runtimeSelection.provider || 'codex')
+  const provider = value('WORK_EXECUTION_PROVIDER', value('COOPERATIVE_CHAT_PROVIDER', runtimeSelection.provider || 'pi'))
+  const codingProvider = value('WORK_CODING_PROVIDER', runtimeSelection.codingProvider || 'codex')
+  const roleOptions = (role: string, assigned: string) => {
+    const candidates = runtimeSelection.roleCandidates?.[role] || []
+    return [...new Set([...candidates, assigned])].map(id => ({ value: id,
+      label: candidates.includes(id) ? id : `${id} · ${runtimeSelection.roleCandidates ? 'Unavailable' : 'Backend status unavailable'}` }))
+  }
   const enabled = bool('COOPERATIVE_CHAT_ENABLED', runtimeSelection.enabled)
+  const assigned = (id: string) => enabled && (provider === id || codingProvider === id)
   const transport = value('CODEX_PROVIDER_TRANSPORT', 'app_server')
   const codexAuthMode = value('CODEX_APP_SERVER_AUTH_MODE', 'model_api')
   const codexModelConnection = value('CODEX_APP_SERVER_MODEL_PROVIDER', 'deepseek')
@@ -51,19 +59,16 @@ export function buildWorkProviderCatalog(
 
   const routing: ModelConnectionCatalogGroup = {
     id: 'work_routing',
-    label: 'Work execution routing',
-    description: 'Select the Provider that owns delegated Work execution. Connections remain independently configurable below.',
+    label: 'Work role assignments',
+    description: 'Assign coding and everyday execution independently. Routing follows these roles after backend restart; existing Work keeps its owner. Registration and connections are configured below.',
     active: enabled,
     configured: true,
     status: enabled ? 'Enabled' : 'Off',
     status_ok: true,
     fields: [
       field('COOPERATIVE_CHAT_ENABLED', 'Work execution', 'boolean', enabled),
-      field('COOPERATIVE_CHAT_PROVIDER', 'Work Provider', 'select', provider, [
-        { value: 'codex', label: 'Codex · Recommended' },
-        { value: 'openclaw', label: 'OpenClaw' },
-        { value: 'browser', label: 'Browser' },
-      ]),
+      field('WORK_CODING_PROVIDER', 'Coding', 'select', codingProvider, roleOptions('coding', codingProvider)),
+      field('WORK_EXECUTION_PROVIDER', 'Everyday execution', 'select', provider, roleOptions('execution', provider)),
     ],
   }
 
@@ -105,10 +110,26 @@ export function buildWorkProviderCatalog(
 
   const connections: ModelConnectionCatalogGroup[] = [
     {
+      id: 'pi',
+      label: 'Pi · Experimental',
+      description: 'Local agent over native RPC. Install the pinned runtime; uses native Pi model credentials. Assign its role above.',
+      active: assigned('pi'),
+      configured: bool('PI_PROVIDER_ENABLED', true),
+      status: bool('PI_PROVIDER_ENABLED', true) ? unknown : 'Off',
+      status_ok: false,
+      fields: [
+        field('PI_PROVIDER_ENABLED', 'Enable Pi', 'boolean', bool('PI_PROVIDER_ENABLED', true)),
+        field('PI_NODE_PATH', 'Node executable', 'path', value('PI_NODE_PATH', 'node')),
+        field('PI_AGENT_DIR', 'Pi configuration and sessions', 'path', value('PI_AGENT_DIR', 'runtime/pi')),
+        field('PI_MODEL_PROVIDER', 'Pi model provider', 'text', value('PI_MODEL_PROVIDER', 'deepseek'), undefined, 'Uses native Pi authentication or the model provider API key in the backend environment.'),
+        field('PI_MODEL', 'Pi model', 'text', value('PI_MODEL', value('DEEPSEEK_MODEL_NAME', 'deepseek-v4-flash'))),
+      ],
+    },
+    {
       id: 'browser',
       label: 'Browser',
       description: 'Host-managed browser Work Provider; no user-managed connection settings.',
-      active: enabled && provider === 'browser',
+      active: assigned('browser'),
       configured: true,
       status: enabled && provider === 'browser' ? unknown : 'Optional',
       status_ok: false,
@@ -117,8 +138,8 @@ export function buildWorkProviderCatalog(
     {
       id: 'openclaw',
       label: 'OpenClaw',
-      description: 'Remote agent Gateway used only after the main role delegates Work.',
-      active: enabled && provider === 'openclaw',
+      description: 'Optional Gateway provider. Assign a role above or select it explicitly for a task; existing sessions remain supported.',
+      active: assigned('openclaw'),
       configured: secret('OPENCLAW_GATEWAY_TOKEN'),
       status: enabled && provider === 'openclaw'
         ? secret('OPENCLAW_GATEWAY_TOKEN') ? unknown : 'Needs setup'
@@ -134,11 +155,11 @@ export function buildWorkProviderCatalog(
       id: 'codex',
       label: 'Codex',
       description: 'Coding Work Provider. Exactly one App Server or Direct transport owns this Provider id.',
-      active: enabled && provider === 'codex',
+      active: assigned('codex'),
       configured: transport !== 'disabled' && codexCredentialReady,
       status: transport === 'disabled'
-        ? enabled && provider === 'codex' ? 'Needs setup' : 'Off'
-        : enabled && provider === 'codex'
+        ? assigned('codex') ? 'Needs setup' : 'Off'
+        : assigned('codex')
           ? transport === 'direct' || codexAuthMode === 'chatgpt' ? 'Needs Codex login' : codexCredentialReady ? unknown : 'Needs setup'
           : 'Optional',
       status_ok: false,
