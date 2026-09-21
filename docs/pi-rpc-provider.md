@@ -22,8 +22,10 @@ npm ci --ignore-scripts --prefix agent_host/pi_runtime
 Pi is enabled by default. The runtime install uses its existing lockfile and
 `--ignore-scripts`; if you skip the desktop postinstall with `--ignore-scripts`,
 install Pi separately with the command above (and provision Electron separately
-for desktop use). Model credentials are still required; installing the runtime
-does not configure an account or validate model access.
+for desktop use). Model credentials are still required. For the default
+DeepSeek connection, the same `DEEPSEEK_API_KEY` configured for Amadeus under
+Settings -> Models or in `.env` is passed to the trusted Pi child process; no
+second agent login is required.
 Settings → Work Provider connections and `.env` expose these defaults:
 
 ```dotenv
@@ -34,12 +36,15 @@ PI_MODEL_PROVIDER=deepseek
 PI_MODEL=deepseek-v4-flash
 ```
 
-Pi uses its native provider authentication: for this example supply
-`DEEPSEEK_API_KEY` in the backend environment. Model availability and access are
-checked by Pi; the example is not a guarantee of account access. For custom API
-endpoints or local models, configure `runtime/pi/models.json` using Pi's native
-model schema. Existing Amadeus Models UI endpoint settings are not automatically
-translated into Pi configuration. Do not put credentials in command-line args.
+At backend startup Amadeus runs Pi's non-refreshing native authentication check
+for the selected provider/model. A missing credential keeps Pi unregistered and
+Settings reports the actionable reason instead of allowing the first Work to
+fail. This check does not make a billed inference request, so account access and
+remote model availability are still established by the first real Work. For
+custom API endpoints or local models, configure `runtime/pi/models.json` using
+Pi's native model schema. Existing Amadeus Models UI endpoint settings are not
+automatically translated into Pi configuration. Do not put credentials in
+command-line args.
 
 For interactive Pi login against the same isolated configuration directory:
 

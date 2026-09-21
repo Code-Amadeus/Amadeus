@@ -107,21 +107,28 @@ export function buildWorkProviderCatalog(
     codexFields.push(field('DIRECT_CODEX_CLI_PATH', 'Direct CLI executable', 'path', value('DIRECT_CODEX_CLI_PATH', 'codex'), undefined, 'Direct CLI uses the existing local `codex login` session.'))
   }
   const codexCredentialReady = transport === 'direct' || codexAuthMode === 'chatgpt' || secret(connectionDefaults.credentialKey)
+  const piModelProvider = value('PI_MODEL_PROVIDER', 'deepseek').toLowerCase()
+  const piCredentialKey = ({ deepseek: 'DEEPSEEK_API_KEY', openai: 'OPENAI_API_KEY',
+    google: 'GEMINI_API_KEY', gemini: 'GEMINI_API_KEY' } as Record<string, string>)[piModelProvider]
+  // Unknown/custom providers may use Pi's isolated native auth store. Known
+  // Amadeus model connections use the same desktop credential as Main Chat.
+  const piCredentialReady = piCredentialKey ? secret(piCredentialKey) : true
+  const piEnabled = bool('PI_PROVIDER_ENABLED', true)
 
   const connections: ModelConnectionCatalogGroup[] = [
     {
       id: 'pi',
       label: 'Pi · Experimental',
-      description: 'Local agent over native RPC. Install the pinned runtime; uses native Pi model credentials. Assign its role above.',
+      description: 'Default daily agent over native RPC. Desktop setup installs its pinned runtime; known model providers reuse credentials configured in Models.',
       active: assigned('pi'),
-      configured: bool('PI_PROVIDER_ENABLED', true),
-      status: bool('PI_PROVIDER_ENABLED', true) ? unknown : 'Off',
+      configured: piEnabled && piCredentialReady,
+      status: !piEnabled ? 'Off' : assigned('pi') && !piCredentialReady ? 'Needs setup' : unknown,
       status_ok: false,
       fields: [
-        field('PI_PROVIDER_ENABLED', 'Enable Pi', 'boolean', bool('PI_PROVIDER_ENABLED', true)),
+        field('PI_PROVIDER_ENABLED', 'Enable Pi', 'boolean', piEnabled),
         field('PI_NODE_PATH', 'Node executable', 'path', value('PI_NODE_PATH', 'node')),
         field('PI_AGENT_DIR', 'Pi configuration and sessions', 'path', value('PI_AGENT_DIR', 'runtime/pi')),
-        field('PI_MODEL_PROVIDER', 'Pi model provider', 'text', value('PI_MODEL_PROVIDER', 'deepseek'), undefined, 'Uses native Pi authentication or the model provider API key in the backend environment.'),
+        field('PI_MODEL_PROVIDER', 'Pi model provider', 'text', piModelProvider, undefined, 'DeepSeek, OpenAI, and Google reuse the corresponding API key saved under Models; custom providers may use native Pi authentication.'),
         field('PI_MODEL', 'Pi model', 'text', value('PI_MODEL', value('DEEPSEEK_MODEL_NAME', 'deepseek-v4-flash'))),
       ],
     },

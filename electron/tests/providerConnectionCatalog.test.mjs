@@ -26,6 +26,22 @@ test('new daily-agent defaults select Pi and leave OpenClaw optional', () => {
   assert.equal(catalog.connections.find(group => group.id === 'openclaw').status, 'Optional')
 })
 
+test('default Pi setup reuses the Models credential instead of requiring another agent login', () => {
+  const missing = exports.buildWorkProviderCatalog({ provider: 'pi', enabled: true }, {
+    values: { PI_MODEL_PROVIDER: 'deepseek' }, secrets: {},
+  }).connections.find(group => group.id === 'pi')
+  assert.equal(missing.configured, false)
+  assert.equal(missing.status, 'Needs setup')
+  assert.match(missing.description, /reuse credentials configured in Models/i)
+
+  const ready = exports.buildWorkProviderCatalog({ provider: 'pi', enabled: true }, {
+    values: { PI_MODEL_PROVIDER: 'deepseek' },
+    secrets: { DEEPSEEK_API_KEY: { configured: true } },
+  }).connections.find(group => group.id === 'pi')
+  assert.equal(ready.configured, true)
+  assert.notEqual(ready.status, 'Needs setup')
+})
+
 test('an execution assignment does not remove the separate coding assignment', () => {
   const catalog = exports.buildWorkProviderCatalog({ provider: 'openclaw', enabled: true }, { secrets: {} })
   assert.equal(catalog.connections.find(group => group.id === 'openclaw').status, 'Needs setup')
