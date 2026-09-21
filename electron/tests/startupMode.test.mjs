@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { isWallpaperStartup } from '../src/main/startupMode.ts'
+import { managesWindowsWallpaper } from '../src/main/windowsWallpaper.ts'
 
 test('wallpaper startup is explicit in argv or environment', () => {
   for (const platform of ['darwin', 'linux', 'win32']) {
@@ -39,5 +40,17 @@ test('Windows GUI preference chooses the next launch without changing explicit o
   assert.equal(isWallpaperStartup(['electron', '.'], { AMADEUS_WALLPAPER: '0' }, 'win32', 'wallpaper'), false)
   for (const platform of ['darwin', 'linux']) {
     assert.equal(isWallpaperStartup(['electron', '.'], {}, platform, 'wallpaper'), false)
+  }
+})
+
+test('wallpaper entry choices never override external host ownership', () => {
+  for (const mode of ['window', 'wallpaper']) {
+    for (const override of [{}, { AMADEUS_WINDOWS_STARTUP_MODE: 'wallpaper' }, { AMADEUS_WALLPAPER: '1' }]) {
+      const environment = { AMADEUS_WALLPAPER_HOST: 'external', ...override }
+      assert.equal(isWallpaperStartup(['Amadeus.exe'], environment, 'win32', mode),
+        mode === 'wallpaper' || Object.keys(override).length > 0)
+      assert.equal(isWallpaperStartup(['Amadeus.exe', '--wallpaper'], environment, 'win32', mode), true)
+      assert.equal(managesWindowsWallpaper('win32', environment), false)
+    }
   }
 })

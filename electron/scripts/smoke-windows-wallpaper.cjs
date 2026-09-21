@@ -1,5 +1,5 @@
 // Native Electron/Windows smoke for the actual unpacked package. This checks
-// the default-mode tray and packaged resources, not a fake Lively desktop.
+// startup choices, the wallpaper tray and packaged resources, not a fake Lively desktop.
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -12,7 +12,13 @@ app.whenReady().then(async () => {
   const main = path.join(resources, 'app.asar', 'dist', 'main')
   const { isWallpaperStartup } = await import(pathToFileURL(path.join(main, 'startupMode.js')).href)
   const { WindowsWallpaperTray } = await import(pathToFileURL(path.join(main, 'windowsWallpaperTray.js')).href)
-  assert.equal(isWallpaperStartup(['Amadeus.exe'], {}, 'win32'), true)
+  const { managesWindowsWallpaper } = await import(pathToFileURL(path.join(main, 'windowsWallpaper.js')).href)
+  assert.equal(isWallpaperStartup(['Amadeus.exe'], {}, 'win32'), false, 'Fresh installs and upgrades without a saved choice open the control panel')
+  assert.equal(isWallpaperStartup(['Amadeus.exe'], {}, 'win32', 'wallpaper'), true)
+  assert.equal(isWallpaperStartup(['Amadeus.exe', '--wallpaper'], {}, 'win32'), true)
+  const external = { AMADEUS_WALLPAPER_HOST: 'external' }
+  assert.equal(isWallpaperStartup(['Amadeus.exe'], external, 'win32', 'wallpaper'), true)
+  assert.equal(managesWindowsWallpaper('win32', external), false, 'Wallpaper startup must not override external host ownership')
   const icon = path.join(resources, 'assets/icons/app/app_icon.ico')
   assert.ok(fs.existsSync(icon), 'Packaged Windows tray icon is missing')
   const tray = new WindowsWallpaperTray(icon, () => {}, () => {})
@@ -37,6 +43,6 @@ app.whenReady().then(async () => {
   // Read-only. Never installs Lively, mounts a scene or modifies the CI desktop.
   const inspected = JSON.parse(execFileSync(helper, ['inspect'], { encoding: 'utf8', windowsHide: true }).trim())
   assert.equal(typeof inspected.running, 'boolean')
-  console.log('PASS packaged Windows default mode: native tray, missing-icon recovery, setup resources and helper runtime')
+  console.log('PASS packaged Windows startup choices and external host ownership: native tray, missing-icon recovery, setup resources and helper runtime')
   app.quit()
 }).catch(error => { console.error(error); app.exit(1) })

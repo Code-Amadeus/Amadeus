@@ -8,6 +8,9 @@ quitting and reopening Amadeus; it does not change the current session or restar
 the backend. The BAT launcher stays unchanged. Ordinary startup does not prepare
 or install Lively or start the wallpaper wake service, so users can begin with
 text chat without setting up ASR/TTS. Existing saved startup choices are respected.
+Upgrades from the previous direct-wallpaper default also open the control panel
+when no startup choice has been saved and no launch override is set. Choose
+**Enter wallpaper directly** to retain automatic wallpaper entry.
 
 The wallpaper composer has a borderless gear button, **Open control panel**. It
 reveals the Electron main window without stopping wallpaper. The tray provides a
@@ -17,7 +20,10 @@ it again, including when wallpaper was entered manually from the sidebar.
 The existing macOS/Linux startup rules and Electron scene policy are unchanged.
 Explicit `--wallpaper` / `AMADEUS_WALLPAPER=1` and the Windows opt-out
 `--no-wallpaper` / `AMADEUS_WALLPAPER=0` take precedence over the GUI preference.
-`AMADEUS_WALLPAPER_HOST=external` retains manual Lively/Wallpaper Engine hosting.
+`AMADEUS_WALLPAPER_HOST=external` retains manual Lively/Wallpaper Engine hosting,
+including with **Enter wallpaper directly** selected. Startup mode selects the
+presentation; host selection independently disables Amadeus-managed Lively setup
+and mounting for external hosts.
 
 ## Startup and exit
 
