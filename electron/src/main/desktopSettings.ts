@@ -1,6 +1,7 @@
 import { safeStorage } from 'electron'
 import fs from 'fs'
 import path from 'path'
+import process from 'node:process'
 
 type StoredDesktopSettings = {
   version: 2
@@ -52,6 +53,7 @@ type StoredMcpConnection = {
 const VALUE_KEYS = new Set([
   'AMADEUS_UI_LOCALE',
   'AMADEUS_UI_THEME',
+  'AMADEUS_WINDOWS_STARTUP_MODE',
   'AMADEUS_PRESENTATION_LOCALE',
   'AMADEUS_WALLPAPER_CAPTION_MODE',
   'AMADEUS_CHAT_TRANSLATION_SUBTITLES_ENABLED',
@@ -207,6 +209,7 @@ const CODEX_TRANSPORT_KEYS = [
 const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
   AMADEUS_UI_LOCALE: new Set(['en-US', 'zh-CN']),
   AMADEUS_UI_THEME: new Set(['classic', 'wallpaper-slice']),
+  AMADEUS_WINDOWS_STARTUP_MODE: new Set(['window', 'wallpaper']),
   AMADEUS_PRESENTATION_LOCALE: new Set(['en-US', 'zh-CN', 'ja-JP']),
   AMADEUS_WALLPAPER_CAPTION_MODE: new Set(['translated', 'source', 'bilingual', 'off']),
   AMADEUS_CHAT_TRANSLATION_SUBTITLES_ENABLED: new Set(['true', 'false']),
@@ -287,7 +290,7 @@ const NUMBER_RANGES: Record<string, readonly [number, number]> = {
 const INTEGER_KEYS = new Set(['RENDER_MAX_FPS', 'RAG_TOP_K', 'ASR_VAD_SILENCE_MS', 'AMADEUS_VISION_MAX_LONG_SIDE', 'AMADEUS_VISION_JPEG_QUALITY', 'EXP_TTS_MAX_CONCURRENCY'])
 
 const MCP_CONNECTIONS_ENV = 'AMADEUS_MCP_CONNECTIONS'
-const FRONTEND_ONLY_VALUE_KEYS = new Set(['AMADEUS_UI_LOCALE', 'AMADEUS_UI_THEME'])
+const FRONTEND_ONLY_VALUE_KEYS = new Set(['AMADEUS_UI_LOCALE', 'AMADEUS_UI_THEME', 'AMADEUS_WINDOWS_STARTUP_MODE'])
 const MCP_ID_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/
 const MCP_ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/
 
@@ -555,7 +558,9 @@ export class DesktopSettingsStore {
     )
     const pendingKeys = Object.keys(stored.pendingRevisions)
     return {
-      values: { ...stored.values },
+      platform: process.platform,
+      values: { ...stored.values, ...(environment.AMADEUS_WINDOWS_STARTUP_MODE !== undefined
+        ? { AMADEUS_WINDOWS_STARTUP_MODE: environment.AMADEUS_WINDOWS_STARTUP_MODE } : {}) },
       sources,
       locked,
       secrets,

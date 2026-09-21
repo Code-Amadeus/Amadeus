@@ -77,6 +77,11 @@ app.whenReady().then(async () => {
   await press('.wallpaper-keyboard-composer-toggle')
   await until(`!document.querySelector('#wallpaper-keyboard-composer').hidden`)
   await until(`!document.querySelector('.composer-image').disabled`)
+  await evaluate(`window.consoleOpenCalls = 0; window.amadeus = { focusMainWindow: async () => { window.consoleOpenCalls++; return true } }; void 0`)
+  await press('.composer-console')
+  assert.equal(await evaluate('window.consoleOpenCalls'), 1)
+  assert.equal(await evaluate(`document.querySelector('#wallpaper-keyboard-composer').hidden`), false)
+
   await evaluate(`window.filePickerCalls = 0; document.querySelector('.composer-file').click = () => window.filePickerCalls++; void 0`)
   await press('.composer-image')
   assert.equal(await evaluate('window.filePickerCalls'), 1)

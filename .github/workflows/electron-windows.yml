@@ -55,6 +55,19 @@ jobs:
           Get-Content $err
           if ($probe.ExitCode -ne 0) { throw "Composer smoke failed: $($probe.ExitCode)" }
 
+      - name: Test offline startup settings GUI
+        shell: pwsh
+        run: |
+          $out = Join-Path $PWD 'build/startup-settings.stdout.log'
+          $err = Join-Path $PWD 'build/startup-settings.stderr.log'
+          $script = Join-Path $PWD 'scripts/smoke-startup-settings.cjs'
+          $exe = Join-Path $PWD 'node_modules/electron/dist/electron.exe'
+          $probe = Start-Process -FilePath $exe -ArgumentList ('"' + $script + '"') -WindowStyle Hidden -RedirectStandardOutput $out -RedirectStandardError $err -PassThru
+          if (!$probe.WaitForExit(60000)) { Stop-Process -Id $probe.Id; throw 'Startup settings smoke timed out' }
+          Get-Content $out
+          Get-Content $err
+          if ($probe.ExitCode -ne 0) { throw "Startup settings smoke failed: $($probe.ExitCode)" }
+
       - name: Test Windows wallpaper lifecycle contracts
         run: dotnet run --project ../wallpaper/windows/Amadeus.Wallpaper.Tests
 
@@ -86,6 +99,7 @@ jobs:
             electron/build/wallpaper-smoke.*.log
             electron/build/composer-smoke.*.log
             electron/build/composer-*.png
+            electron/build/startup-settings.*
           if-no-files-found: ignore
 
   dependency-review:

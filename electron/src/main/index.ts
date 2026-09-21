@@ -246,8 +246,15 @@ function wantsWorkOverlay(args = process.argv): boolean {
   return args.includes('--work-overlay') || process.env.AMADEUS_WORK_OVERLAY === '1'
 }
 
-function wantsWallpaper(args = process.argv): boolean {
-  return isWallpaperStartup(args, process.env)
+let wallpaperStartup: boolean | undefined
+function wantsWallpaper(): boolean {
+  // Resolve once per launch; changing the GUI preference must not alter the
+  // current window's close behavior or activate wallpaper halfway through use.
+  if (wallpaperStartup === undefined) {
+    const values = desktopSettings.snapshot(process.env).values as Record<string, string>
+    wallpaperStartup = isWallpaperStartup(process.argv, process.env, process.platform, values.AMADEUS_WINDOWS_STARTUP_MODE)
+  }
+  return wallpaperStartup
 }
 
 // Python backend management.
@@ -434,7 +441,9 @@ async function startBackend(): Promise<void> {
 
   const launchPendingRevisions = desktopSettings.pendingRevisionSnapshot()
   const backendEnvironment = desktopSettings.backendEnvironment(process.env, {
-    ...(process.platform === 'win32' && wantsWallpaper() ? { WAKE_ENABLED: '1' } : {}),
+    // Enable standby when Wallpaper is selected later too; this flag does not
+    // start the wake service during ordinary console startup. Explicit settings win.
+    ...(process.platform === 'win32' ? { WAKE_ENABLED: '1' } : {}),
     AEC_REALTIME_ENABLED: '1',
     AEC_REALTIME_BARGE_IN: '1',
     AEC_REALTIME_DELAY_MS: '280',
@@ -588,7 +597,8 @@ function createWindow(): void {
   }
 
   mainWindow.on('close', (event) => {
-    if (applicationLifecycle.shouldHideWallpaperWindow(wantsWallpaper())) {
+    const liveWindowsWallpaper = process.platform === 'win32' && Boolean(windowsWallpaper?.active || electronSliceWindow)
+    if (applicationLifecycle.shouldHideWallpaperWindow(wantsWallpaper() || liveWindowsWallpaper)) {
       event.preventDefault()
       mainWindow?.hide()
     }
@@ -2217,7 +2227,9 @@ ipcMain.handle('chat-avatars.clear', (event, role: ChatAvatarRole) => {
   }
 })
 ipcMain.handle('main-window.focus', (event) => {
-  if (!isTrustedBackendRenderer(event.sender)) return false
+  const isWindowsSlice = process.platform === 'win32'
+    && (event.sender === electronSliceWindow?.webContents || event.sender === electronCanvasLifecycle.window?.webContents)
+  if (!isTrustedBackendRenderer(event.sender) && !isWindowsSlice) return false
   if (!mainWindow) return false
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
@@ -2330,6 +2342,7 @@ ipcMain.handle('work-preview.set-bounds', (event, rawPreviewId: unknown, rawBoun
 })
 ipcMain.handle('electron-slice.open', async (event, bridge: unknown) => {
   if (!isMainRenderer(event.sender)) return false
+  if (process.platform === 'win32') ensureWindowsWallpaperTray()
   if (windowsWallpaper) {
     const descriptor = normalizeWallpaperBridge(bridge)
     if (!descriptor) return false
@@ -2643,13 +2656,23 @@ app.on('second-instance', (_event, commandLine) => {
   mainWindow.focus()
 })
 
+function ensureWindowsWallpaperTray(): void {
+  if (windowsWallpaperTray) return
+  const showMain = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+    if (mainWindow?.isMinimized()) mainWindow.restore()
+    mainWindow?.show()
+    mainWindow?.focus()
+  }
+  windowsWallpaperTray = new WindowsWallpaperTray(APP_ICON_PATH, showMain, () => app.quit())
+}
+
 app.whenReady().then(async () => {
   // This change owns Windows startup only; retain the existing non-Windows
   // second-instance lifecycle until that path is qualified independently.
   if (process.platform === 'win32' && !gotSingleInstanceLock) return
   if (process.platform === 'win32' && wantsWallpaper()) {
-    const showMain = () => { mainWindow?.show(); mainWindow?.focus() }
-    windowsWallpaperTray = new WindowsWallpaperTray(APP_ICON_PATH, showMain, () => app.quit())
+    ensureWindowsWallpaperTray()
   }
   let backendStartFailed = false
   try {

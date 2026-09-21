@@ -95,6 +95,20 @@ async def _exercise_renderer(page: Any, *, timeout: float) -> dict[str, bool]:
     await page.get_by_role("heading", name="Settings", exact=True).wait_for(
         state="visible", timeout=timeout_ms
     )
+    await page.get_by_role("button", name="General", exact=True).click()
+    startup_mode = page.get_by_role("combobox", name="Startup mode", exact=True)
+    await startup_mode.wait_for(state="visible", timeout=timeout_ms)
+    for mode in ("window", "wallpaper"):
+        await startup_mode.select_option(mode)
+        await page.wait_for_function(
+            "async mode => (await window.amadeus.getDesktopSettings()).values.AMADEUS_WINDOWS_STARTUP_MODE === mode",
+            arg=mode, timeout=timeout_ms,
+        )
+    desktop = await page.evaluate("window.amadeus.getDesktopSettings()")
+    if "AMADEUS_WINDOWS_STARTUP_MODE" in desktop.get("pendingKeys", []):
+        raise RuntimeError("startup preference incorrectly requires a backend restart")
+    checks["startup_mode_saved_in_gui"] = True
+
     await page.get_by_role("button", name="Voice", exact=True).click()
     await page.get_by_text("Speech synthesis", exact=True).wait_for(
         state="visible", timeout=timeout_ms

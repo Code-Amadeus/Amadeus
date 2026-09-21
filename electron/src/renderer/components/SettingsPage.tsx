@@ -1,3 +1,4 @@
+import { DEFAULT_WINDOWS_STARTUP_MODE } from '../../main/startupMode'
 import { useState, useEffect, useCallback, useMemo, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import FluentIcon, { type FluentIconName } from './FluentIcon'
 import McpConnections, { type McpConnectionSummary } from './McpConnections'
@@ -104,6 +105,7 @@ interface CapabilityPackage {
 }
 
 interface DesktopSettingsSnapshot {
+  platform: string
   values: Record<string, string>
   sources: Record<string, 'environment' | 'user' | 'dotenv' | 'default'>
   locked: Record<string, boolean>
@@ -1192,6 +1194,24 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
 
             {section === 'general' ? (
               <div className="flex flex-col gap-5">
+                {desktop?.platform === 'win32' ? (
+                  <SettingsGroup title="Startup" detail="Quit and reopen Amadeus to apply. Wallpaper is always available in the sidebar.">
+                    <ComboCard icon="Setting" title="Startup mode"
+                      content={desktop.locked?.AMADEUS_WINDOWS_STARTUP_MODE
+                        ? 'Startup mode is controlled by your launch environment.'
+                        : 'Choose whether to open the control panel first or enter wallpaper directly.'}
+                      value={desktop.values.AMADEUS_WINDOWS_STARTUP_MODE || DEFAULT_WINDOWS_STARTUP_MODE}
+                      disabled={saving === 'AMADEUS_WINDOWS_STARTUP_MODE' || desktop.locked?.AMADEUS_WINDOWS_STARTUP_MODE}
+                      options={[{ value: 'window', label: 'Open control panel first' }, { value: 'wallpaper', label: 'Enter wallpaper directly' }]}
+                      onChange={value => {
+                        void handleStartupSave({ key: 'AMADEUS_WINDOWS_STARTUP_MODE', label: 'Startup mode',
+                          type: 'select', editable: true, restart_required: false }, value, false)
+                          .then(() => setNotice('Startup mode saved. Quit and reopen Amadeus to apply.'))
+                          .catch(() => { /* handleStartupSave displays the save error. */ })
+                      }}
+                    />
+                  </SettingsGroup>
+                ) : null}
                 <SettingsGroup title="Appearance" detail="Choose the visual style used across the Electron frontend.">
                   <ThemePicker
                     value={theme}

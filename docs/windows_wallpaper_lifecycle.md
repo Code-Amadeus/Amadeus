@@ -1,14 +1,34 @@
 # Windows managed wallpaper lifecycle
 
-Windows starts in wallpaper mode by default. The existing macOS/Linux startup
-rules and Electron scene policy are unchanged. The shared bridge retains the
-existing text-submit protocol and adds authenticated Windows composer actions.
-Use `--no-wallpaper` or `AMADEUS_WALLPAPER=0` for an ordinary Windows window.
-`AMADEUS_WALLPAPER_HOST=external` retains manual Lively/Wallpaper Engine hosting.
+Windows supports two startup routes, selected in **Settings → General → Startup**:
+**Open control panel first** (the default), then click **Wallpaper** in the sidebar;
+or **Enter wallpaper directly**. Both routes use the same managed
+Lively lifecycle. The preference is saved locally and takes effect after fully
+quitting and reopening Amadeus; it does not change the current session or restart
+the backend. The BAT launcher stays unchanged. Ordinary startup does not prepare
+or install Lively or start the wallpaper wake service, so users can begin with
+text chat without setting up ASR/TTS. Existing saved startup choices are respected.
+Upgrades from the previous direct-wallpaper default also open the control panel
+when no startup choice has been saved and no launch override is set. Choose
+**Enter wallpaper directly** to retain automatic wallpaper entry.
+
+The wallpaper composer has a borderless gear button, **Open control panel**. It
+reveals the Electron main window without stopping wallpaper. The tray provides a
+second entry. Closing the control panel while Windows wallpaper is active hides
+it again, including when wallpaper was entered manually from the sidebar.
+
+The existing macOS/Linux startup rules and Electron scene policy are unchanged.
+Explicit `--wallpaper` / `AMADEUS_WALLPAPER=1` and the Windows opt-out
+`--no-wallpaper` / `AMADEUS_WALLPAPER=0` take precedence over the GUI preference.
+`AMADEUS_WALLPAPER_HOST=external` retains manual Lively/Wallpaper Engine hosting,
+including with **Enter wallpaper directly** selected. Startup mode selects the
+presentation; host selection independently disables Amadeus-managed Lively setup
+and mounting for external hosts.
 
 ## Startup and exit
 
-1. Electron starts its existing Python runtime and wallpaper bridge.
+1. Electron starts its existing Python runtime. Selecting Wallpaper (or the
+   direct-wallpaper startup route) starts the wallpaper bridge and managed host.
 2. The Windows-only setup checks the existing Lively installation. If missing,
    Windows Package Manager installs the pinned official 2.2.1.0 release and its
    dependencies, with installer autolaunch disabled.
@@ -187,6 +207,12 @@ provisioning remains external. CI additionally launches the actual unpacked exe
 with the checkout explicitly supplying that Python runtime, verifies connected
 Chat/Settings/navigation, and closes both frontend and backend. This proves the
 packaged executable path rather than a complete standalone installer.
+
+`electron/scripts/smoke-startup-settings.cjs` exercises the actual settings page,
+preload and settings store in a separate profile with all network blocked. It
+verifies both persisted choices and their launch policy without a running backend.
+The composer native smoke also checks the gear button; the real-desktop lifecycle
+probe checks that opening/closing the control panel preserves the mounted scene.
 
 ## Verification
 
