@@ -76,7 +76,7 @@ Amadeus 试图把这些体验连成一个闭环：
 | **持久 Work 控制面** | Project、默认 Draft、WorkItem / Attempt、Continue / Retry、重启恢复、权限、Artifact Registry 与结构化 Diff。 |
 | **Artifact 与 AUIP** | Work 产物可预览、打开，或在校验后附加为有界 AUIP AppSession，让 Amadeus 与应用交互而不把叙述变成执行权限。 |
 | **统一设置入口** | Models、Voice、Providers/MCP、视觉、角色包状态和聊天外观在 Electron Settings 中集中管理。 |
-| **持久记忆与长期陪伴** | Host-owned Continuity Runtime：跨会话记忆、关系状态、角色生活与归档回忆；SQLite 单一事实源，显式忘记不可逆（见 [C0 → C8 升级](#连续性与长期陪伴c0--c8-升级)）。 |
+| 持久记忆与长期陪伴 | Host-owned Continuity Runtime：**每个对话框是独立连续域**（记忆、关系/情感、主题静默按 Session 隔离，新对话从零开始）；角色生活为角色级全局；SQLite 单一事实源，显式忘记不可逆；会话 / 记忆 / 账本随启动自动备份到 `runtime/backup/`，无备份的对话框状态在重启时回收（见 [C0 → C8 升级](#连续性与长期陪伴c0--c8-升级)）。 |
 | **内置联网研究** | 不依赖 OpenClaw 的 Native Research：quick lookup 与带引用的深度多源报告；Tavily / Bing / SearXNG / DuckDuckGo 后端自动降级。 |
 
 MCP 与 Skills 即使共用 Host registry，也只授予兼容 Provider；**Main Chat
@@ -122,7 +122,10 @@ Claude CLI 将在后续作为独立 direct Provider 进入同一边界，而不�
 状态，也无法可靠回溯旧经历。C0–C8 在 Host 层引入完整的 **Continuity Runtime**
 （实现位于 `core/continuity/`，测试位于 `tests/continuity/`），C8（Archive Recall /
 Advanced Retrieval）为该升级的收口版本。该升级线按阶段交付，每阶段附带 schema
-迁移、实现报告与回归证据。
+迁移、实现报告与回归证据。**2026-09 语义调整**：连续性被明确为**以对话框为
+单位**——不同对话框之间的对话内容、记忆、关系/情感状态与主题静默完全隔离，
+新对话框从零开始；下述升级机制（归档回忆、保留分层、关系演化、显式遗忘、
+启动备份）在单个对话框域内全部成立。
 
 | 模块 | 阶段 | 升级内容 |
 |---|---|---|
@@ -134,7 +137,7 @@ Advanced Retrieval）为该升级的收口版本。该升级线按阶段交付�
 | Relationship Runtime | C5 | 长期关系（familiarity / trust / warmth / respect / closeness）与短期情绪（半衰期衰减）分离；事件溯源 + Host reducer（schema 5）。 |
 | Character Life | C6 | 确定性每日日程（一个本地日一份计划）、跨日 ongoing threads、重启与跨日有界追补、聊天中断暂停与恢复（schema 6）。 |
 | Continuity UI 与诊断 | C7 | Host-owned WebSocket 控制面：记忆列表、pin / unpin、显式 Forget、维护操作与关系 / 日程诊断；Electron 只渲染 Host 事实。 |
-| Archive Recall | C8 | 低置信度历史 gate、有界 Session archive 检索、时间感知过滤、高保真引用回退与无内容检索 trace（schema 7）。 |
+| Archive Recall | C8 | 低置信度历史 gate、有界 Session archive 检索（仅本对话框内引用）、时间感知过滤、双方引用的高保真回退（超限语意压缩并标注 `condensed`）与无内容检索 trace（schema 7）。 |
 
 ### 技术路线
 
@@ -147,6 +150,15 @@ Advanced Retrieval）为该升级的收口版本。该升级线按阶段交付�
 - **Shadow → Live 两步交付**：新状态先在影子路径累积与验证，Main Chat 投影由独立 feature flag 控制、默认关闭。
 - **不改变既有权威边界**：Persona、Character RAG、Work、Provider、AUIP 与权限的权属维持不变；C8 的 schema 7 仅新增“归档检索不得绕过忘记”的 metadata guard。
 - **可观测与性能隔离**：诊断与检索 trace 内容无涉；普通聊天路径不触碰 Session archive（本地探针：500 次普通请求 0 次归档尝试）。
+
+### 记忆保真、历史回忆与本地备份（2026-09 强化）
+
+- **会话隔离（核心语义）**：每个对话框（Session）是一个独立连续域 —— 记忆、关系/情感状态、主题静默、遗忘墓碑全部以 `scope = 会话 ID` 隔离，增删改查互不影响；新建对话框的记忆为空、关系为中性基线，另起新篇；历史提问只引用**本对话框**自己的对话原文。角色生活（C6）与主机时间保持角色/主机级全局。
+- **捕获**：实质性用户发言逐字保存至 800 字符；超出上限的发言与显式“记住…”长负载整段做**语意压缩**（复用主对话所配置的 LLM，失败时回退确定性整体采样），不再尾截断丢内容；原文始终保留在 Session 记录中，可再被历史引用找回。
+- **历史回忆**：显式历史提问触发的归档引用**每轮固定含双方**——用户声明 + 明确标注非权威的角色当时措辞；单侧预算 1400 / 1000 字符，超限侧压缩后在标签中标注 `(condensed)`，因此摘要不会被当作逐字原话；每次提问最多引用 3 轮、总 grounding 预算 3600 字符；语意压缩调用每问最多 4 次（带进程内缓存，失败 / 超时自动回退）。
+- **备份即恢复单元**：每次启动自动刷新固定备份槽 `runtime/backup/`（`continuity.sqlite3`、`work_ledger.sqlite3`、`sessions/` 镜像）。同名覆盖、不堆叠；**已从界面删除的对话框只要备份镜像还在，对话内容 / 记忆 / 关系状态均可完整找回**；数据库仅在通过 `PRAGMA quick_check` 时刷新，损坏或缺失会保留上一份好备份。路径全部相对项目根解析，项目文件夹改名不受影响；CI / 隔离环境设置 `AMADEUS_*` 状态路径时自动跳过。
+- **无备份则清理**：若某对话框的转录与备份镜像都不存在（例如会话和备份都被删掉），**下次启动时**该会话关联的记忆、关系/情感状态、静默、遗忘墓碑与整合日志会在启动备份之后被事务性清除；`__unsessioned__`（无会话语音轮）豁免。
+- **后台工具**：`uv run --locked --no-sync python -X utf8 tools/backfill_continuity_memories.py --rebuild --backup`（先 `--dry-run` 预演）按会话作用域重存历史聊天；Continuity 设置页默认只展示**当前对话框**的记忆与关系诊断。
 
 ## 其他更新（C8）
 
