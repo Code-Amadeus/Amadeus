@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
-    "postinstall": "install-electron",
+    "postinstall": "install-electron && npm ci --ignore-scripts --prefix ../agent_host/pi_runtime",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
