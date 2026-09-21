@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { managesWindowsWallpaper, WindowsWallpaperSession } from '../src/main/windowsWallpaper.ts'
+import fs from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
+import { managesWindowsWallpaper, stopWallpaperForRenderer, windowsWallpaperDependencies, WindowsWallpaperSession } from '../src/main/windowsWallpaper.ts'
 
 test('managed host is Windows-only; external hosts remain selectable', () => {
   assert.equal(managesWindowsWallpaper('win32', {}), true)
@@ -99,4 +102,89 @@ test('an unexpected helper exit invalidates the active session and reports the f
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(errors[0].message, 'host gone')
   await session.stop()
+})
+
+test('same-URL start retries preparation after the external failure is repaired', async () => {
+  let attempts = 0
+  const session = new WindowsWallpaperSession({
+    prepare: async () => { if (++attempts === 1) throw new Error('lively missing') },
+    launch: () => ({ process: { stdin: { end: () => {} } }, ready: Promise.resolve(), done: new Promise(() => {}) }),
+  })
+  await assert.rejects(session.start('same'), /lively missing/)
+  await session.start('same')
+  assert.equal(attempts, 2)
+})
+
+test('same-URL start retries a failed mount without requiring a separate stop', async () => {
+  let launches = 0
+  const session = new WindowsWallpaperSession({
+    prepare: async () => {},
+    launch: () => {
+      const failed = ++launches === 1
+      return {
+        process: { stdin: { end: () => {} } },
+        ready: failed ? Promise.reject(new Error('mount failed')) : Promise.resolve(),
+        done: failed ? Promise.resolve() : new Promise(() => {}),
+      }
+    },
+  })
+  await assert.rejects(session.start('same'), /mount failed/)
+  await session.start('same')
+  assert.equal(launches, 2)
+})
+
+test('failed renderer close resolves false, reports the error, and permits another attempt', async () => {
+  let attempts = 0
+  const errors = []
+  const session = { stop: async () => { if (++attempts === 1) throw new Error('restoration failed') } }
+  assert.equal(await stopWallpaperForRenderer(session, error => errors.push(error)), false)
+  assert.equal(errors[0].message, 'restoration failed')
+  assert.equal(await stopWallpaperForRenderer(session, error => errors.push(error)), true)
+  assert.equal(await stopWallpaperForRenderer(null, () => assert.fail('non-Windows stop reported error')), true)
+})
+
+test('real setup process is rerun after a previous setup failure', { skip: process.platform !== 'win32' }, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'amadeus-setup-retry-'))
+  try {
+    const scripts = path.join(root, 'scripts')
+    await fs.mkdir(scripts)
+    await fs.writeFile(path.join(scripts, 'setup_windows_wallpaper.ps1'), `
+$marker = Join-Path $PSScriptRoot 'attempted'
+if (Test-Path -LiteralPath $marker) { exit 0 }
+Set-Content -LiteralPath $marker -Value 'attempted'
+Write-Error 'fixture installation unavailable'
+exit 1
+`)
+    const dependencies = windowsWallpaperDependencies(root, '', false)
+    await assert.rejects(dependencies.prepare())
+    await dependencies.prepare()
+  } finally {
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
+
+test('slow start and stop retain visible lifecycle status until the operation completes', async () => {
+  const statuses = []
+  let mounted, restored
+  const session = new WindowsWallpaperSession({
+    prepare: async () => {},
+    launch: () => ({
+      process: { stdin: { end: () => {} } },
+      ready: new Promise(resolve => { mounted = resolve }),
+      done: new Promise(resolve => { restored = resolve }),
+    }),
+    status: status => statuses.push(status),
+  })
+  const started = session.start('one')
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(statuses.at(-1), 'mounting')
+  mounted()
+  await started
+  assert.equal(statuses.at(-1), 'active')
+  const stopped = session.stop()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(statuses.at(-1), 'restoring')
+  restored()
+  await stopped
+  assert.equal(statuses.at(-1), 'idle')
 })

@@ -6,10 +6,12 @@ export function managesWindowsWallpaper(platform: string, environment: NodeJS.Pr
 }
 
 type HelperSession = { process: ChildProcess; ready: Promise<void>; done: Promise<void> }
+export type WindowsWallpaperStatus = 'preparing' | 'mounting' | 'active' | 'restoring' | 'idle'
 type WallpaperDependencies = {
   prepare: () => Promise<void>
   launch: (url: string) => HelperSession
   exited?: (error?: unknown) => void
+  status?: (status: WindowsWallpaperStatus) => void
 }
 
 // The helper owns the before-image and cleanup; Electron owns when a session
@@ -33,7 +35,9 @@ export class WindowsWallpaperSession {
     const result = this.enqueue(async () => {
       if (this.current?.url === url) return
       await this.stopCurrent()
+      this.dependencies.status?.('preparing')
       await this.dependencies.prepare()
+      this.dependencies.status?.('mounting')
       const helper = this.dependencies.launch(url)
       this.current = { url, helper }
       try { await helper.ready }
@@ -41,15 +45,24 @@ export class WindowsWallpaperSession {
         await this.stopCurrent()
         throw error
       }
+      this.dependencies.status?.('active')
       const ended = (error?: unknown) => {
         if (this.current?.helper !== helper) return
         this.current = null
         this.pending = null
+        this.dependencies.status?.('idle')
         this.dependencies.exited?.(error)
       }
       void helper.done.then(() => ended(), ended)
     })
     this.pending = { url, result }
+    // Only an in-flight start is shared. A repaired installation must be able
+    // to retry the same URL, and an older attempt must not clear a newer one.
+    const settled = () => { if (this.pending?.result === result) this.pending = null }
+    void result.then(settled, () => {
+      settled()
+      this.dependencies.status?.('idle')
+    })
     return result
   }
 
@@ -62,18 +75,31 @@ export class WindowsWallpaperSession {
     const current = this.current
     if (!current) return
     this.current = null
+    this.dependencies.status?.('restoring')
     // Closing stdin also handles a parent crash. Never kill the recovery helper.
     current.helper.process.stdin?.end()
-    await current.helper.done
+    try { await current.helper.done }
+    finally { this.dependencies.status?.('idle') }
   }
+}
+
+// IPC's existing boolean contract: report a recovery failure at the host
+// boundary instead of rejecting into fire-and-forget renderer event handlers.
+export async function stopWallpaperForRenderer(
+  session: Pick<WindowsWallpaperSession, 'stop'> | null,
+  reportError: (error: unknown) => void,
+): Promise<boolean> {
+  try { await session?.stop(); return true }
+  catch (error) { reportError(error); return false }
 }
 
 export function windowsWallpaperDependencies(projectRoot: string, resourcesPath: string, packaged: boolean): WallpaperDependencies {
   const directory = packaged ? path.join(resourcesPath, 'windows-wallpaper') : path.join(projectRoot, 'build', 'windows-wallpaper', 'host')
   const executable = path.join(directory, 'Amadeus.Wallpaper.exe')
-  let prepared: Promise<void> | null = null
   return {
-    prepare: () => prepared ??= new Promise<void>((resolve, reject) => {
+    // Recheck on each new session: installation state is external, and failed
+    // setup must be retryable without restarting Amadeus.
+    prepare: () => new Promise<void>((resolve, reject) => {
       // Packaged builds contain the published helper. Source runs build it once.
       const script = packaged
         ? path.join(directory, 'setup_windows_wallpaper.ps1')

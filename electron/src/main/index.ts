@@ -2,7 +2,7 @@
  * Electron main process - spawns Python backend and creates the app window.
  */
 
-import { app, BrowserWindow, Menu, Tray, WebContentsView, dialog, ipcMain, screen } from 'electron'
+import { app, BrowserWindow, Menu, WebContentsView, dialog, ipcMain, screen } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import { randomBytes } from 'crypto'
 import http from 'http'
@@ -24,7 +24,8 @@ import {
 import { desktopPointHitsWindowRegions } from './wallpaperHitTesting.js'
 import { wallpaperWindowPolicy } from './wallpaperWindowPolicy.js'
 import { isWallpaperStartup } from './startupMode.js'
-import { managesWindowsWallpaper, WindowsWallpaperSession, windowsWallpaperDependencies } from './windowsWallpaper.js'
+import { managesWindowsWallpaper, stopWallpaperForRenderer, WindowsWallpaperSession, windowsWallpaperDependencies } from './windowsWallpaper.js'
+import { WindowsWallpaperTray } from './windowsWallpaperTray.js'
 import { ApplicationLifecycle } from './appLifecycle.js'
 import { applicationMenuTemplate } from './applicationMenu.js'
 import { defaultMpsFallbackEnvironment } from './mpsFallbackPolicy.js'
@@ -67,6 +68,10 @@ const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production'
 const windowsWallpaper = managesWindowsWallpaper(process.platform, process.env)
   ? new WindowsWallpaperSession({
       ...windowsWallpaperDependencies(PROJECT_ROOT, process.resourcesPath, app.isPackaged),
+      status: status => {
+        windowsWallpaperTray?.setStatus(status)
+        mainWindow?.setProgressBar(['preparing', 'mounting', 'restoring'].includes(status) ? 2 : -1)
+      },
       exited: error => {
         closeElectronSliceWindow()
         mainWindow?.show()
@@ -76,7 +81,7 @@ const windowsWallpaper = managesWindowsWallpaper(process.platform, process.env)
   : null
 
 let mainWindow: BrowserWindow | null = null
-let windowsWallpaperTray: Tray | null = null
+let windowsWallpaperTray: WindowsWallpaperTray | null = null
 let workGlowWindow: BrowserWindow | null = null
 let workPanelWindow: BrowserWindow | null = null
 let electronSliceWindow: BrowserWindow | null = null
@@ -2333,8 +2338,11 @@ ipcMain.handle('electron-slice.open', async (event, bridge: unknown) => {
 ipcMain.handle('electron-slice.close', async (event) => {
   if (!isMainRenderer(event.sender)) return false
   closeElectronSliceWindow()
-  await windowsWallpaper?.stop()
-  return true
+  return stopWallpaperForRenderer(windowsWallpaper, error => {
+    console.error('[windows-wallpaper] close cleanup failed:', error)
+    mainWindow?.show()
+    dialog.showErrorBox('Amadeus wallpaper recovery', `Wallpaper restoration failed. Recovery will resume on the next wallpaper start.\n${String(error)}`)
+  })
 })
 ipcMain.handle('electron-slice.set-shape', (event, boundsList: Electron.Rectangle[]) => {
   const canvasWindow = electronCanvasLifecycle.window
@@ -2620,17 +2628,12 @@ app.on('second-instance', (_event, commandLine) => {
 })
 
 app.whenReady().then(async () => {
+  // This change owns Windows startup only; retain the existing non-Windows
+  // second-instance lifecycle until that path is qualified independently.
   if (process.platform === 'win32' && !gotSingleInstanceLock) return
   if (process.platform === 'win32' && wantsWallpaper()) {
-    windowsWallpaperTray = new Tray(APP_ICON_PATH)
-    windowsWallpaperTray.setToolTip('Amadeus')
     const showMain = () => { mainWindow?.show(); mainWindow?.focus() }
-    windowsWallpaperTray.setContextMenu(Menu.buildFromTemplate([
-      { label: 'Open Amadeus', click: showMain },
-      { type: 'separator' },
-      { label: 'Quit Amadeus', click: () => app.quit() },
-    ]))
-    windowsWallpaperTray.on('double-click', showMain)
+    windowsWallpaperTray = new WindowsWallpaperTray(APP_ICON_PATH, showMain, () => app.quit())
   }
   let backendStartFailed = false
   try {
@@ -2640,7 +2643,7 @@ app.whenReady().then(async () => {
     console.error('[electron] backend failed to become ready', error)
   }
   createWindow()
-  if (process.platform === 'win32' && backendStartFailed) mainWindow?.show()
+  if (process.platform === 'win32' && (backendStartFailed || windowsWallpaperTray?.hasIcon === false)) mainWindow?.show()
   if (applicationLifecycle.completeStartup()) {
     mainWindow?.show()
     mainWindow?.focus()

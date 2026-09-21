@@ -23,6 +23,15 @@ Use `--no-wallpaper` or `AMADEUS_WALLPAPER=0` for an ordinary Windows window.
    exit restores the wallpaper before stopping the runtime. Closing the main
    window hides it; the tray's Quit command performs a full exit.
 
+The Windows tray shows preparing, starting and restoring states. Operations
+that remain in setup or restoration for more than three seconds also show a
+Windows notification (subject to the user's notification/quiet-time settings).
+Setup explicitly identifies that first use may download/install Lively. Failed
+setup or mounting can be retried in the same Amadeus process after the external
+problem is repaired; rejected attempts are not cached. A failed stop is reported
+by the desktop host and resolves `false` across IPC rather than rejecting into
+renderer event subscriptions.
+
 There is no permanent Windows wallpaper replacement. Lively's optional
 screenshot-to-desktop/lockscreen features are suppressed while the Amadeus scene
 is active, including the startup restoration of an existing Lively profile.
@@ -61,6 +70,18 @@ Manual recovery, after closing Amadeus:
 build\windows-wallpaper\host\Amadeus.Wallpaper.exe recover
 ```
 
+`recover` is an operator diagnostic/recovery command, also used by the desktop
+experiments; the regular application calls `run`, which performs recovery
+inline. Normal exit and a parent-only crash already trigger cleanup. If both
+processes are killed, or restoration fails, recovery requires a later managed
+start or the diagnostic command. There is no always-running repair service.
+
+Individual RPC deadlines are not an overall exit/setup deadline: several
+displays can take longer to restore, and an external installer may stall.
+Status/notifications make the wait visible, but this implementation does not
+force-kill the installer or recovery process after an arbitrary timer. A global
+cancellation/time-budget policy remains a release-acceptance item.
+
 ## Build and distribution
 
 Source runs need .NET 8 SDK on the build machine to build the helper once.
@@ -69,6 +90,13 @@ an SDK. The Electron Windows packaging hook builds and includes the helper and
 its dependency notices. It runs no Windows setup for macOS/Linux targets.
 Experimental logs, profile backups and screenshots live outside the published
 `host` directory and are not included in the application package.
+
+Electron packaging writes to `electron/build`, separate from compiled input
+in `electron/dist`; otherwise electron-builder excludes its own output folder
+and can omit the compiled main entry. The package explicitly includes the
+Windows tray icon under `resources/assets/icons/app`. A missing or invalid icon
+does not abort startup, and the main window remains visible if the tray lacks
+an icon.
 
 ```powershell
 powershell -NoProfile -File scripts\setup_windows_wallpaper.ps1 -BuildOnly -Rebuild
@@ -95,6 +123,14 @@ cd electron
 npm test
 npm run build
 ```
+
+The Windows Electron CI job also runs the C# contract executable, builds an
+unpacked Windows application with electron-builder (including `beforePack`),
+and runs `electron/scripts/smoke-windows-wallpaper.cjs` against that package.
+This smoke imports the packaged startup policy and tray component, creates a
+real Windows tray, checks missing-icon behavior, and runs the packaged helper
+in read-only `inspect` mode. It does not install Lively or replace the CI
+desktop. Actual Lively mounting remains a separate real-desktop experiment.
 
 Real desktop experiments (temporarily replace the current wallpaper and restore
 it in cleanup):
