@@ -1,11 +1,13 @@
 # Windows managed wallpaper lifecycle
 
 Windows supports two startup routes, selected in **Settings → General → Startup**:
-**Open control panel first**, then click **Wallpaper** in the sidebar; or **Enter
-wallpaper directly** (the current default). Both routes use the same managed
+**Open control panel first** (the default), then click **Wallpaper** in the sidebar;
+or **Enter wallpaper directly**. Both routes use the same managed
 Lively lifecycle. The preference is saved locally and takes effect after fully
 quitting and reopening Amadeus; it does not change the current session or restart
-the backend. The BAT launcher stays unchanged.
+the backend. The BAT launcher stays unchanged. Ordinary startup does not prepare
+or install Lively or start the wallpaper wake service, so users can begin with
+text chat without setting up ASR/TTS. Existing saved startup choices are respected.
 
 The wallpaper composer has a borderless gear button, **Open control panel**. It
 reveals the Electron main window without stopping wallpaper. The tray provides a

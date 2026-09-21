@@ -1,4 +1,4 @@
-export const DEFAULT_WINDOWS_STARTUP_MODE = 'wallpaper'
+export const DEFAULT_WINDOWS_STARTUP_MODE = 'window'
 
 export function isWallpaperStartup(
   args: readonly string[],
@@ -9,9 +9,8 @@ export function isWallpaperStartup(
   if (platform === 'win32') {
     if (args.includes('--no-wallpaper') || environment.AMADEUS_WALLPAPER === '0') return false
     if (args.includes('--wallpaper') || environment.AMADEUS_WALLPAPER === '1') return true
-    const mode = environment.AMADEUS_WINDOWS_STARTUP_MODE ?? savedMode
-    if (mode === 'window' || mode === 'wallpaper') return mode === 'wallpaper'
-    return environment.AMADEUS_WALLPAPER_HOST !== 'external' && DEFAULT_WINDOWS_STARTUP_MODE === 'wallpaper'
+    const mode = environment.AMADEUS_WINDOWS_STARTUP_MODE ?? savedMode ?? DEFAULT_WINDOWS_STARTUP_MODE
+    return mode === 'wallpaper'
   }
   return args.includes('--wallpaper') || environment.AMADEUS_WALLPAPER === '1'
 }

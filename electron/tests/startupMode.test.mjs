@@ -18,8 +18,9 @@ test('macOS and Linux retain explicit wallpaper startup and the existing flag pr
   }
 })
 
-test('Windows defaults to wallpaper, with an explicit ordinary-window escape', () => {
-  assert.equal(isWallpaperStartup(['electron', '.'], {}, 'win32'), true)
+test('Windows opens the control panel by default without opting into wallpaper setup', () => {
+  assert.equal(isWallpaperStartup(['electron', '.'], {}, 'win32'), false)
+  assert.equal(isWallpaperStartup(['electron', '.'], {}, 'win32', 'invalid'), false)
   assert.equal(isWallpaperStartup(['electron', '.', '--no-wallpaper'], {}, 'win32'), false)
   assert.equal(isWallpaperStartup(['electron', '.'], { AMADEUS_WALLPAPER: '0' }, 'win32'), false)
   assert.equal(isWallpaperStartup(['electron', '.'], { AMADEUS_WALLPAPER_HOST: 'external' }, 'win32'), false)
