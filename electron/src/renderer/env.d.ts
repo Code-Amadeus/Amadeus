@@ -79,7 +79,7 @@ export declare global {
       detail: string
     }>
     openElectronSlice: (bridge: { assetPort: number; bridgePort: number; assetVersion?: string; graphicsProfile: string; renderMaxFps: number; renderTextureSampling?: boolean; renderMaxResolution: number | null; sliceBounds?: { x: number; y: number; width: number; height: number } }) => Promise<boolean>
-    closeElectronSlice: () => Promise<boolean>
+    closeElectronSlice: (backendStopError?: string) => Promise<boolean>
     openAuipApp: (launchUrl: string, hostSurfaceId?: string, workItemId?: string) => Promise<{ ok: boolean; detail: string }>
     closeAuipApp: (hostSurfaceId: string, appSessionId?: string) => Promise<{ ok: boolean; status: string; detail: string }>
     openWorkPreview: (descriptor: Record<string, unknown>) => Promise<WorkPreviewIpcResult>

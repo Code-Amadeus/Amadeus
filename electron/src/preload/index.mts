@@ -46,7 +46,7 @@ contextBridge.exposeInMainWorld('amadeus', {
   focusMainWindow: (): Promise<boolean> => ipcRenderer.invoke('main-window.focus'),
   selectProjectDirectory: (): Promise<{ ok: boolean; cancelled: boolean; path: string; detail: string }> => ipcRenderer.invoke('project-directory.select'),
   openElectronSlice: (bridge: { assetPort: number; bridgePort: number; assetVersion?: string; graphicsProfile: string; renderMaxFps: number; renderTextureSampling?: boolean; renderMaxResolution: number | null; sliceBounds?: { x: number; y: number; width: number; height: number } }): Promise<boolean> => ipcRenderer.invoke('electron-slice.open', bridge),
-  closeElectronSlice: (): Promise<boolean> => ipcRenderer.invoke('electron-slice.close'),
+  closeElectronSlice: (backendStopError?: string): Promise<boolean> => ipcRenderer.invoke('electron-slice.close', backendStopError),
   openAuipApp: (launchUrl: string, hostSurfaceId?: string, workItemId?: string): Promise<{ ok: boolean; detail: string }> => ipcRenderer.invoke('auip-app.open', launchUrl, hostSurfaceId, workItemId),
   closeAuipApp: (hostSurfaceId: string, appSessionId?: string): Promise<{ ok: boolean; status: string; detail: string }> => ipcRenderer.invoke('auip-app.close', hostSurfaceId, appSessionId),
   openWorkOverlay: (): Promise<boolean> => ipcRenderer.invoke('work-overlay.open'),

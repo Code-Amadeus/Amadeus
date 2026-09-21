@@ -495,7 +495,7 @@ async function stopBackend(): Promise<void> {
   return backendStopping
 }
 
-function handleWindowsWallpaperHostExit(error?: unknown): Promise<void> {
+function handleWindowsWallpaperHostExit(error?: unknown): Promise<boolean> {
   return recoverWindowsWallpaperHostExit(error, {
     closeSurface: closeElectronSliceWindow,
     showMainWindow: () => { mainWindow?.show() },
@@ -2343,14 +2343,22 @@ ipcMain.handle('electron-slice.open', async (event, bridge: unknown) => {
   }
   return createElectronSliceWindow(bridge)
 })
-ipcMain.handle('electron-slice.close', async (event) => {
+ipcMain.handle('electron-slice.close', async (event, backendStopError?: unknown) => {
   if (!isMainRenderer(event.sender)) return false
-  closeElectronSliceWindow()
-  return stopWallpaperForRenderer(windowsWallpaper, error => {
+  // Explicit user stop has no helper 'exited' callback. Route a failed RPC
+  // through the same Windows voice cleanup before restoring the desktop.
+  let backendStopped = true
+  if (process.platform === 'win32' && typeof backendStopError === 'string') {
+    backendStopped = await handleWindowsWallpaperHostExit(new Error(`Backend wallpaper stop failed: ${backendStopError}`))
+  } else {
+    closeElectronSliceWindow()
+  }
+  const restored = await stopWallpaperForRenderer(windowsWallpaper, error => {
     console.error('[windows-wallpaper] close cleanup failed:', error)
     mainWindow?.show()
     dialog.showErrorBox('Amadeus wallpaper recovery', `Wallpaper restoration failed. Recovery will resume on the next wallpaper start.\n${String(error)}`)
   })
+  return backendStopped && restored
 })
 ipcMain.handle('electron-slice.set-shape', (event, boundsList: Electron.Rectangle[]) => {
   const canvasWindow = electronCanvasLifecycle.window

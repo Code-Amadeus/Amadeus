@@ -120,7 +120,8 @@ export async function recoverWindowsWallpaperHostExit(error: unknown, actions: {
   requestStop: () => Promise<boolean>
   stopBackend: () => Promise<void>
   reportError: (message: string) => void
-}): Promise<void> {
+}): Promise<boolean> {
+  let cleanupConfirmed = false
   const details = error ? [`Wallpaper error: ${String(error)}`] : []
   for (const action of [actions.closeSurface, actions.showMainWindow]) {
     try { action() }
@@ -128,6 +129,7 @@ export async function recoverWindowsWallpaperHostExit(error: unknown, actions: {
   }
   try {
     const backendStopped = await stopBackendWallpaperAfterHostExit(actions.requestStop, actions.stopBackend)
+    cleanupConfirmed = true
     if (backendStopped) details.unshift(
       'Amadeus stopped its backend to ensure the microphone is closed. Restart Amadeus to resume chatting; reconnecting alone will not restart the backend.',
     )
@@ -140,6 +142,7 @@ export async function recoverWindowsWallpaperHostExit(error: unknown, actions: {
     try { actions.reportError(message) }
     catch (reportError) { console.error('[windows-wallpaper] recovery notification failed:', message, reportError) }
   }
+  return cleanupConfirmed
 }
 
 export function windowsWallpaperDependencies(projectRoot: string, resourcesPath: string, packaged: boolean): WallpaperDependencies {

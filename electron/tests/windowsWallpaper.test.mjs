@@ -247,7 +247,7 @@ test('acknowledged wallpaper cleanup keeps the backend and only reports the orig
 test('cleanup failure preserves the initial error and does not claim shutdown succeeded', async () => {
   const f = recoveryActions({ requestStop: async () => false,
     stopBackend: async () => { throw new Error('shutdown failed') } })
-  await recoverWindowsWallpaperHostExit(new Error('Lively is missing'), f.actions)
+  assert.equal(await recoverWindowsWallpaperHostExit(new Error('Lively is missing'), f.actions), false)
   assert.match(f.messages[0], /Lively is missing/)
   assert.match(f.messages[0], /shutdown failed/)
   assert.match(f.messages[0], /shutdown could not be confirmed/)

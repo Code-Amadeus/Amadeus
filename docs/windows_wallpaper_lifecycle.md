@@ -154,6 +154,14 @@ or mounting uses the same cleanup. If the owned backend cannot acknowledge the
 stop, Electron uses its existing graceful shutdown / owned-process termination
 path, so a disconnected host cannot leave that runtime listening indefinitely.
 
+Explicit user shutdown follows the same ownership rule. Both the wallpaper
+toggle and switching to Render forward a failed `wallpaper.stop` RPC to the
+Windows main process, which uses the existing HTTP cleanup/backend-stop fallback
+before completing native restoration. The UI does not report a successful close
+when that fallback cannot confirm cleanup. The backend's `wallpaper.exited`
+notification still performs surface-only cleanup, without another stop request;
+macOS/Linux retain their existing stop path.
+
 The stop request has a five-second local acknowledgement budget. Both Python
 HTTP servers use daemon request threads, so shutdown does not join the long-lived
 chat/SSE requests; each server uses the default 0.5-second shutdown poll and a
