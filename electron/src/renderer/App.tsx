@@ -8,7 +8,7 @@ import SettingsPage from './components/SettingsPage'
 import BackendPage from './components/BackendPage'
 import VNPage from './components/VNPage'
 import WorkPreviewPage from './components/WorkPreviewPage'
-import { ELECTRON_SLICE_START_PARAMS, syncElectronSliceHost } from './wallpaperSlice'
+import { ELECTRON_SLICE_START_PARAMS, stopElectronSliceHost, syncElectronSliceHost } from './wallpaperSlice'
 import appIconUrl from '@assets/icons/app/app_icon.png'
 
 export type Page = 'chat' | 'vn' | 'backend' | 'expressions' | 'settings'
@@ -85,7 +85,10 @@ function AmadeusApp() {
 
     if (next) {
       if (wallpaperActive) {
-        try { await send('wallpaper.stop', {}) } catch {}
+        if (!await stopElectronSliceHost(send)) {
+          setRenderActive(false)
+          return
+        }
         setWallpaperActive(false)
       }
       // Start PixiJS render mode
@@ -108,9 +111,9 @@ function AmadeusApp() {
   const handleToggleWallpaper = useCallback(async () => {
     const next = !wallpaperActive
     setPage('chat')
-    setWallpaperActive(next)
 
     if (next) {
+      setWallpaperActive(true)
       if (renderActive) {
         send('expression.set_backend', { backend: 'vts' }).catch(() => {})
         try { await send('render.stop', {}) } catch {}
@@ -125,9 +128,7 @@ function AmadeusApp() {
         setWallpaperActive(false)     // 失败回退
       }
     } else {
-      try { await send('wallpaper.stop', {}) } catch {}
-      await window.amadeus?.closeElectronSlice()
-      setWallpaperActive(false)
+      if (await stopElectronSliceHost(send)) setWallpaperActive(false)
     }
   }, [wallpaperActive, renderActive, send])
 

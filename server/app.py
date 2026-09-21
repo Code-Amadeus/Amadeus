@@ -680,6 +680,16 @@ async def bootstrap(port: int = 17777) -> None:
         asyncio.create_task(_request_exit())
         return {"ok": True}
 
+    @app.post("/wallpaper/stop")
+    async def stop_wallpaper_host(request: Request):
+        if not _http_request_authenticated(request.headers, auth_policy):
+            raise HTTPException(status_code=401, detail="Authentication required")
+        if not _http_request_origin_allowed(request.headers, backend_port=port):
+            raise HTTPException(status_code=403, detail="Untrusted request origin")
+        # Electron owns the native host process. Its loss terminates the same
+        # backend lifecycle as a user disabling wallpaper, including wake/ASR.
+        return await wallpaper_h.handle(Method.WALLPAPER_STOP, {})
+
     @app.post("/vn/speak")
     async def vn_speak(payload: dict, request: Request):
         if not _http_request_authenticated(request.headers, auth_policy):
@@ -1312,12 +1322,15 @@ async def bootstrap(port: int = 17777) -> None:
             if asr_manager is manager:
                 asr_manager = None
 
-    async def _start_asr_from_wake(payload=None):
+    async def _start_asr_from_wake(payload=None, *, continuous: bool | None = None):
         payload = payload or {}
+        if continuous is None and sys.platform == "win32" and wallpaper_h.is_running():
+            continuous = True
         qwen_hot_window = max(float(WAKE_AWAKE_SECONDS), float(ASR_IDLE_UNLOAD_SECONDS))
         if not await _main_voice_allowed_now("wake detected"):
-            return
-        logger.info("wake detected; entering Qwen ASR hot window for %.1fs", qwen_hot_window)
+            return {"status": "error", "error": "voice_unavailable_during_vn"}
+        logger.info("wake detected; ASR conversation mode=%s hot_window_seconds=%.1f",
+                    "continuous" if continuous else "timed", qwen_hot_window)
         try:
             from core.turn_coordinator import get_turn_coordinator
 
@@ -1335,8 +1348,9 @@ async def bootstrap(port: int = 17777) -> None:
                 await _send_wake_text(command_text, source="wake")
             except Exception:
                 logger.exception("failed to send wake inline command")
-        await asr_h.start_listening(
+        return await asr_h.start_listening(
             {
+                **({"continuous": continuous} if continuous is not None else {}),
                 "source": "wake",
                 "wake": payload,
                 "awake_seconds": qwen_hot_window,
@@ -2509,18 +2523,22 @@ async def bootstrap(port: int = 17777) -> None:
     )
     from server.character_presentation import coordinator as character_presentation
 
+    from server.wallpaper_chat import wallpaper_chat_control
+
     wallpaper_h.configure(
         project_root=Path(ROOT),
         render_bridge=_render_signal_bridge,
         wake_start_fn=lambda: wake_h.start({}),
         wake_stop_fn=lambda: wake_h.stop({}),
         canvas_action_fn=canvas_action_router.route,
-        chat_send_fn=lambda text, session_id: chat_h.send_text(
-            text,
-            provider=_current_llm_provider(),
-            session_id=session_id,
-            source="wallpaper_keyboard",
-        ),
+        chat_send_fn=lambda text, session_id, visual: chat_h.handle(Method.CHAT_SEND, {
+            "text": text, "provider": _current_llm_provider(),
+            "session_id": session_id, "source": "wallpaper_keyboard", "visual": visual,
+        }),
+        chat_control_fn=(lambda action: wallpaper_chat_control(
+            action, session=session_h, asr=asr_h, system=sys_h, wake=wake_h,
+            voice_start=lambda: _start_asr_from_wake(continuous=True),
+        )) if sys.platform == "win32" else None,
         ensure_chat_session_fn=lambda: session_h.ensure_current_session(
             source="wallpaper_keyboard"
         ),

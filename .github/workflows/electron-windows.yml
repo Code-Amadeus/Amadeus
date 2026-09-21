@@ -11,7 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: windows-2025
-    timeout-minutes: 15
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: electron
@@ -25,6 +25,10 @@ jobs:
           cache: npm
           cache-dependency-path: electron/package-lock.json
 
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
       - name: Install locked dependencies
         run: npm ci
 
@@ -36,6 +40,53 @@ jobs:
 
       - name: Typecheck and build renderer
         run: npm run build
+
+      - name: Test native wallpaper composer interactions
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build | Out-Null
+          $out = Join-Path $PWD 'build/composer-smoke.stdout.log'
+          $err = Join-Path $PWD 'build/composer-smoke.stderr.log'
+          $script = Join-Path $PWD 'scripts/smoke-wallpaper-composer.cjs'
+          $exe = Join-Path $PWD 'node_modules/electron/dist/electron.exe'
+          $probe = Start-Process -FilePath $exe -ArgumentList ('"' + $script + '"') -WindowStyle Hidden -RedirectStandardOutput $out -RedirectStandardError $err -PassThru
+          if (!$probe.WaitForExit(60000)) { Stop-Process -Id $probe.Id; throw 'Composer smoke timed out' }
+          Get-Content $out
+          Get-Content $err
+          if ($probe.ExitCode -ne 0) { throw "Composer smoke failed: $($probe.ExitCode)" }
+
+      - name: Test Windows wallpaper lifecycle contracts
+        run: dotnet run --project ../wallpaper/windows/Amadeus.Wallpaper.Tests
+
+      - name: Build the unpacked Windows application including beforePack
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --win --x64 --dir --publish never
+
+      - name: Smoke packaged wallpaper startup resources and native tray
+        shell: pwsh
+        run: |
+          $out = Join-Path $PWD 'build/wallpaper-smoke.stdout.log'
+          $err = Join-Path $PWD 'build/wallpaper-smoke.stderr.log'
+          $script = Join-Path $PWD 'scripts/smoke-windows-wallpaper.cjs'
+          $resources = Join-Path $PWD 'build/win-unpacked/resources'
+          $exe = Join-Path $PWD 'node_modules/electron/dist/electron.exe'
+          $probe = Start-Process -FilePath $exe -ArgumentList @(('"' + $script + '"'), ('"' + $resources + '"')) -WindowStyle Hidden -RedirectStandardOutput $out -RedirectStandardError $err -PassThru
+          if (!$probe.WaitForExit(60000)) { Stop-Process -Id $probe.Id; throw 'Wallpaper package smoke timed out' }
+          Get-Content $out
+          Get-Content $err
+          if ($probe.ExitCode -ne 0) { throw "Wallpaper package smoke failed: $($probe.ExitCode)" }
+
+      - name: Upload wallpaper package smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-wallpaper-package-smoke
+          path: |
+            electron/build/wallpaper-smoke.*.log
+            electron/build/composer-smoke.*.log
+            electron/build/composer-*.png
+          if-no-files-found: ignore
 
   dependency-review:
     if: github.event_name == 'pull_request'

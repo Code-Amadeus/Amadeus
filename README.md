@@ -608,9 +608,16 @@ skips identical files, and rejects unexpected overwrites. See
 
 On Windows, the open-source
 [Lively Wallpaper](https://github.com/rocksdanister/lively) is the recommended
-host for Amadeus's web wallpaper; Wallpaper Engine remains compatible. Start
-Amadeus, add the local webpage URL below to Lively (WebView2 is recommended),
-then click **Wallpaper** in the Amadeus sidebar:
+host for Amadeus's web wallpaper. Windows now starts in managed wallpaper mode:
+it prepares Lively 2.2.1.0, mounts the scene, and restores the previous wallpaper
+when **Quit Amadeus** is selected in the Amadeus tray menu. `--no-wallpaper`
+opens an ordinary window. Missing Lively is installed through winget; source
+builds need .NET 8 SDK for the helper's first build. See the
+[Windows lifecycle and experiments](docs/windows_wallpaper_lifecycle.md).
+
+Wallpaper Engine remains compatible. Set `AMADEUS_WALLPAPER_HOST=external` for
+the original manual workflow: start Amadeus, add the URL below to Lively
+(WebView2 recommended), then click **Wallpaper** in the Amadeus sidebar:
 
 ```text
 http://127.0.0.1:17777/wallpaper/lively/index.html

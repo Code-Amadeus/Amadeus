@@ -24,6 +24,8 @@ import {
 import { desktopPointHitsWindowRegions } from './wallpaperHitTesting.js'
 import { wallpaperWindowPolicy } from './wallpaperWindowPolicy.js'
 import { isWallpaperStartup } from './startupMode.js'
+import { managesWindowsWallpaper, recoverWindowsWallpaperHostExit, WINDOWS_WALLPAPER_STOP_TIMEOUT_MS, stopWallpaperForRenderer, WindowsWallpaperSession, windowsWallpaperDependencies } from './windowsWallpaper.js'
+import { WindowsWallpaperTray } from './windowsWallpaperTray.js'
 import { ApplicationLifecycle } from './appLifecycle.js'
 import { applicationMenuTemplate } from './applicationMenu.js'
 import { defaultMpsFallbackEnvironment } from './mpsFallbackPolicy.js'
@@ -63,8 +65,19 @@ Menu.setApplicationMenu(menuTemplate ? Menu.buildFromTemplate(menuTemplate) : nu
 // development port. NODE_ENV is not guaranteed to be set by electron-builder,
 // so packaging identity is the owning security boundary.
 const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production'
+const windowsWallpaper = managesWindowsWallpaper(process.platform, process.env)
+  ? new WindowsWallpaperSession({
+      ...windowsWallpaperDependencies(PROJECT_ROOT, process.resourcesPath, app.isPackaged),
+      status: status => {
+        windowsWallpaperTray?.setStatus(status)
+        mainWindow?.setProgressBar(['preparing', 'mounting', 'restoring'].includes(status) ? 2 : -1)
+      },
+      exited: error => { void handleWindowsWallpaperHostExit(error) },
+    })
+  : null
 
 let mainWindow: BrowserWindow | null = null
+let windowsWallpaperTray: WindowsWallpaperTray | null = null
 let workGlowWindow: BrowserWindow | null = null
 let workPanelWindow: BrowserWindow | null = null
 let electronSliceWindow: BrowserWindow | null = null
@@ -353,15 +366,15 @@ async function waitForBackendReady(timeoutMs = 120_000): Promise<void> {
   throw new Error(`backend did not become ready within ${timeoutMs}ms`)
 }
 
-function requestBackendShutdown(): Promise<boolean> {
+function requestBackendAction(endpoint: string, timeoutMs: number): Promise<boolean> {
   return new Promise((resolve) => {
     const req = http.request(
       {
         hostname: '127.0.0.1',
         port: BACKEND_PORT,
-        path: '/shutdown',
+        path: endpoint,
         method: 'POST',
-        timeout: 900,
+        timeout: timeoutMs,
         headers: { [BACKEND_TOKEN_HEADER]: BACKEND_TOKEN },
       },
       (res) => {
@@ -421,6 +434,7 @@ async function startBackend(): Promise<void> {
 
   const launchPendingRevisions = desktopSettings.pendingRevisionSnapshot()
   const backendEnvironment = desktopSettings.backendEnvironment(process.env, {
+    ...(process.platform === 'win32' && wantsWallpaper() ? { WAKE_ENABLED: '1' } : {}),
     AEC_REALTIME_ENABLED: '1',
     AEC_REALTIME_BARGE_IN: '1',
     AEC_REALTIME_DELAY_MS: '280',
@@ -455,6 +469,7 @@ async function startBackend(): Promise<void> {
     console.log(`[electron] backend exited with code ${code}`)
     pythonProcess = null
     backendOwned = false
+    void windowsWallpaper?.stop().catch(error => console.error('[windows-wallpaper] backend exit cleanup:', error))
   })
   await waitForBackendReady()
   desktopSettings.markApplied(process.env, launchPendingRevisions)
@@ -466,7 +481,7 @@ async function stopBackend(): Promise<void> {
   if (!proc) return
 
   backendStopping = (async () => {
-    const requested = await requestBackendShutdown()
+    const requested = await requestBackendAction('/shutdown', 900)
     const exited = requested ? await waitForProcessExit(proc, 2500) : false
     if (!exited && proc.exitCode === null && proc.signalCode === null) {
       proc.kill()
@@ -478,6 +493,16 @@ async function stopBackend(): Promise<void> {
     backendStopping = null
   })
   return backendStopping
+}
+
+function handleWindowsWallpaperHostExit(error?: unknown): Promise<boolean> {
+  return recoverWindowsWallpaperHostExit(error, {
+    closeSurface: closeElectronSliceWindow,
+    showMainWindow: () => { mainWindow?.show() },
+    requestStop: () => requestBackendAction('/wallpaper/stop', WINDOWS_WALLPAPER_STOP_TIMEOUT_MS),
+    stopBackend,
+    reportError: message => dialog.showErrorBox('Amadeus wallpaper recovery', message),
+  })
 }
 
 // window management.
@@ -655,6 +680,7 @@ function electronSliceUrl(bridge: WallpaperBridgeDescriptor): string {
     query.set('sliceHost', 'electron')
     return `http://127.0.0.1:${bridge.assetPort}/render/web/wallpaper_engine.html?${query.toString()}`
   }
+  if (process.platform === 'win32') query.set('windowsComposer', '1')
   return `http://127.0.0.1:${bridge.assetPort}/render/web/electron_slice.html?${query.toString()}`
 }
 
@@ -663,6 +689,7 @@ function electronCanvasUrl(bridge: WallpaperBridgeDescriptor): string {
     bridgePort: String(bridge.bridgePort),
     assetVersion: bridge.assetVersion,
   })
+  if (process.platform === 'win32') query.set('windowsComposer', '1')
   return `http://127.0.0.1:${bridge.assetPort}/render/web/electron_slice.html?${query.toString()}`
 }
 
@@ -2301,14 +2328,37 @@ ipcMain.handle('work-preview.set-bounds', (event, rawPreviewId: unknown, rawBoun
   }
   return true
 })
-ipcMain.handle('electron-slice.open', (event, bridge: unknown) => {
+ipcMain.handle('electron-slice.open', async (event, bridge: unknown) => {
   if (!isMainRenderer(event.sender)) return false
+  if (windowsWallpaper) {
+    const descriptor = normalizeWallpaperBridge(bridge)
+    if (!descriptor) return false
+    try {
+      await windowsWallpaper.start(`http://127.0.0.1:${descriptor.assetPort}/wallpaper/lively/index.html`)
+    } catch (error) {
+      await handleWindowsWallpaperHostExit(error)
+      console.error('[windows-wallpaper] start failed:', error)
+      return false
+    }
+  }
   return createElectronSliceWindow(bridge)
 })
-ipcMain.handle('electron-slice.close', (event) => {
+ipcMain.handle('electron-slice.close', async (event, backendStopError?: unknown) => {
   if (!isMainRenderer(event.sender)) return false
-  closeElectronSliceWindow()
-  return true
+  // Explicit user stop has no helper 'exited' callback. Route a failed RPC
+  // through the same Windows voice cleanup before restoring the desktop.
+  let backendStopped = true
+  if (process.platform === 'win32' && typeof backendStopError === 'string') {
+    backendStopped = await handleWindowsWallpaperHostExit(new Error(`Backend wallpaper stop failed: ${backendStopError}`))
+  } else {
+    closeElectronSliceWindow()
+  }
+  const restored = await stopWallpaperForRenderer(windowsWallpaper, error => {
+    console.error('[windows-wallpaper] close cleanup failed:', error)
+    mainWindow?.show()
+    dialog.showErrorBox('Amadeus wallpaper recovery', `Wallpaper restoration failed. Recovery will resume on the next wallpaper start.\n${String(error)}`)
+  })
+  return backendStopped && restored
 })
 ipcMain.handle('electron-slice.set-shape', (event, boundsList: Electron.Rectangle[]) => {
   const canvasWindow = electronCanvasLifecycle.window
@@ -2594,12 +2644,22 @@ app.on('second-instance', (_event, commandLine) => {
 })
 
 app.whenReady().then(async () => {
+  // This change owns Windows startup only; retain the existing non-Windows
+  // second-instance lifecycle until that path is qualified independently.
+  if (process.platform === 'win32' && !gotSingleInstanceLock) return
+  if (process.platform === 'win32' && wantsWallpaper()) {
+    const showMain = () => { mainWindow?.show(); mainWindow?.focus() }
+    windowsWallpaperTray = new WindowsWallpaperTray(APP_ICON_PATH, showMain, () => app.quit())
+  }
+  let backendStartFailed = false
   try {
     await startBackend()
   } catch (error) {
+    backendStartFailed = true
     console.error('[electron] backend failed to become ready', error)
   }
   createWindow()
+  if (process.platform === 'win32' && (backendStartFailed || windowsWallpaperTray?.hasIcon === false)) mainWindow?.show()
   if (applicationLifecycle.completeStartup()) {
     mainWindow?.show()
     mainWindow?.focus()
@@ -2633,9 +2693,16 @@ app.on('before-quit', (event) => {
   for (const appWindow of auipAppWindows) appWindow.close()
   auipAppWindows.clear()
   auipAppSurfacesById.clear()
-  if (!applicationLifecycle.beginQuit(Boolean(pythonProcess))) return
+  if (!applicationLifecycle.beginQuit(Boolean(pythonProcess) || windowsWallpaper !== null)) return
   event.preventDefault()
-  void stopBackend().finally(() => {
+  void (async () => {
+    try { await windowsWallpaper?.stop() }
+    catch (error) {
+      console.error('[windows-wallpaper] exit cleanup failed:', error)
+      dialog.showErrorBox('Amadeus wallpaper recovery', `Wallpaper restoration failed. Recovery will resume on the next wallpaper start.\n${String(error)}`)
+    }
+    await stopBackend()
+  })().finally(() => {
     app.quit()
   })
 })

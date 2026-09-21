@@ -105,12 +105,30 @@ jobs:
           uv run --locked --no-sync python -X utf8 tools\smoke_electron_model_less.py
           --report-dir build\electron-smoke
 
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build actual Windows executable
+        working-directory: electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --win --x64 --dir --publish never
+
+      - name: Launch packaged frontend with supplied Python runtime
+        run: >-
+          uv run --locked --no-sync python -X utf8 tools\smoke_electron_model_less.py
+          --packaged-executable electron\build\win-unpacked\amadeus-desktop.exe
+          --report-dir build\electron-packaged-smoke
+
       - name: Upload Electron smoke diagnostics
         if: failure()
         uses: actions/upload-artifact@v6
         with:
           name: electron-model-less-smoke-${{ github.run_id }}
-          path: build/electron-smoke/**
+          path: |
+            build/electron-smoke/**
+            build/electron-packaged-smoke/**
           if-no-files-found: ignore
 
   # Preserve the branch-protection check name. A failed, cancelled or skipped

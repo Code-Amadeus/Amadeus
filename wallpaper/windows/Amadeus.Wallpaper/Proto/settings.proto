@@ -1,0 +1,17 @@
+syntax = "proto3";
+package Lively.Grpc.Common.Proto.Settings;
+option csharp_namespace = "Amadeus.Wallpaper.Protocol.Settings";
+import "google/protobuf/empty.proto";
+service SettingsService {
+  rpc GetSettings(google.protobuf.Empty) returns (Settings);
+  rpc SetSettings(Settings) returns (google.protobuf.Empty);
+}
+// Protobuf retains ALL unknown fields when this message is sent back. Always
+// read the current message before changing fields; never construct a replacement.
+message Settings {
+  int32 wallpaper_arrangement = 16;
+  int32 web_browser = 28;
+  string wallpaper_dir = 33;
+  bool lock_screen_auto_wallpaper = 48;
+  bool desktop_auto_wallpaper = 49;
+}

@@ -205,6 +205,55 @@
       letter-spacing: 0.025em;
       white-space: nowrap;
     }
+    #wallpaper-keyboard-toggle.has-chat-controls > button { position: relative; top: auto; right: auto; flex: 0 0 auto; }
+    #wallpaper-keyboard-composer.has-chat-controls {
+      max-height: none; padding: 8px 14px; gap: 5px;
+      border: 1px solid rgba(91, 239, 215, .38); border-radius: 16px;
+      background: linear-gradient(135deg, rgba(3, 26, 30, .9), rgba(5, 20, 28, .86)), repeating-linear-gradient(0deg, rgba(148, 255, 230, .025) 0 1px, transparent 1px 5px);
+      box-shadow: 0 12px 36px rgba(0, 12, 18, .3), 0 0 28px rgba(50, 238, 207, .08); backdrop-filter: blur(12px);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    .has-chat-controls .wallpaper-keyboard-composer-header { height: 20px; padding: 0; gap: 6px; }
+    .has-chat-controls .wallpaper-keyboard-composer-header strong { color: #9bccbf; font: 600 10px ui-monospace, monospace; letter-spacing: .14em; }
+    .has-chat-controls .wallpaper-keyboard-composer-status { color: #a6c6bd; font: 11px system-ui, sans-serif; text-shadow: none; letter-spacing: 0; }
+    .has-chat-controls .wallpaper-keyboard-composer-form { gap: 6px; }
+    .has-chat-controls .wallpaper-keyboard-composer-input {
+      min-height: 42px; max-height: 42px; padding: 2px; font: 13px/1.5 system-ui, sans-serif;
+      border: 0; border-radius: 0; background: transparent; box-shadow: none;
+      color: #eff5f2; letter-spacing: 0; caret-color: #a2e6d0;
+    }
+    .has-chat-controls .wallpaper-keyboard-composer-input:focus { border: 0; box-shadow: none; }
+    .has-chat-controls .wallpaper-keyboard-composer-input::placeholder { color: #81938f; }
+    .has-chat-controls .wallpaper-keyboard-composer-hints { display: flex; align-items: center; gap: 5px; margin: 0; min-width: 0; }
+    .composer-tool, .has-chat-controls .wallpaper-keyboard-composer-close {
+      display: inline-flex; position: relative; align-items: center; justify-content: center;
+      width: 28px; height: 28px; padding: 5px; flex: 0 0 auto;
+      border: 0; border-radius: 8px; background: transparent; box-shadow: none;
+      color: #a3b6b0; cursor: pointer; font: inherit;
+    }
+    .composer-tool svg, .has-chat-controls .wallpaper-keyboard-composer-send svg {
+      width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .composer-tool:hover, .has-chat-controls .wallpaper-keyboard-composer-close:hover { background: #ffffff0d; color: #e9f6f0; transform: none; box-shadow: none; }
+    .composer-tool:focus-visible, .has-chat-controls .wallpaper-keyboard-composer-send:focus-visible { outline: 2px solid #9ccbbb; outline-offset: 2px; }
+    .composer-tool:disabled { opacity: .4; cursor: not-allowed; }
+    .composer-tool[aria-pressed="true"] { color: #a8e8cf; }
+    .composer-tool small { position: absolute; right: -2px; top: -1px; font: 9px ui-monospace, monospace; color: #a9bbb5; }
+    .composer-voice small { display: none; }
+    .composer-voice-label { font: 11px system-ui, sans-serif; color: #819a93; margin-left: 4px; letter-spacing: 0; }
+    .has-chat-controls .wallpaper-keyboard-composer-send {
+      display: grid; place-items: center; width: 28px; height: 28px; min-width: 28px; padding: 0;
+      border: 0; border-radius: 50%; background: #bee0d1; color: #17352a; box-shadow: none;
+    }
+    .has-chat-controls .wallpaper-keyboard-composer-send:disabled { background: #354340; color: #71857e; opacity: 1; filter: none; }
+    .composer-attachment { display: flex; align-items: center; gap: 8px; height: 36px; color: #bdd0c8; font-size: 11px; }
+    .composer-attachment[hidden], .composer-window-picker[hidden] { display: none; }
+    .composer-attachment img { width: 36px; height: 32px; object-fit: cover; border-radius: 6px; }
+    .composer-attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .composer-attachment button { color: inherit; border: 0; background: transparent; cursor: pointer; padding: 6px; }
+    .composer-window-picker { position: absolute; bottom: 100%; left: 0; right: 0; max-height: 220px; overflow-y: auto; margin-bottom: 8px; padding: 8px; border: 1px solid #344b43; border-radius: 16px; background: #1c2928; box-shadow: 0 8px 24px #0018; color: #d1dfd9; }
+    .composer-window-picker button { display: block; width: 100%; text-align: left; padding: 9px; border: 0; border-radius: 7px; color: inherit; background: transparent; cursor: pointer; font: 12px system-ui, sans-serif; }
+    .composer-window-picker button:hover { background: #ffffff0d; }
   </style>
 </head>
 <body>

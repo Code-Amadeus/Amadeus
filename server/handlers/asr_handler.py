@@ -35,6 +35,7 @@ class AsrHandler(RequestHandler):
         self._source = ""
         self._wake_payload: dict[str, Any] = {}
         self._source_payload: dict[str, Any] = {}
+        self._continuous_awake = False
         self._awake_until = 0.0
         self._awake_seconds = 0.0
         self._ready_callback_sent = False
@@ -112,6 +113,10 @@ class AsrHandler(RequestHandler):
     async def _start(self, params: dict[str, Any]) -> dict[str, Any]:
         return await self.start_listening(params)
 
+    def listening_state(self) -> dict[str, Any]:
+        return {"active": self._active, "source": self._source,
+                "continuous": self._active and self._continuous_awake}
+
     async def start_listening(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
         params = params or {}
         if not self._active:
@@ -160,7 +165,7 @@ class AsrHandler(RequestHandler):
 
     async def _stop(self, params: dict[str, Any]) -> dict[str, Any]:
         expected_source = str((params or {}).get("source") or "")
-        if expected_source and self._source and expected_source != self._source:
+        if expected_source and expected_source != self._source:
             return {"status": "ignored", "source": self._source, "expected_source": expected_source}
         return await self.stop_listening()
 
@@ -174,6 +179,8 @@ class AsrHandler(RequestHandler):
         return {"status": "stopped"}
 
     def _arm_awake(self, params: dict[str, Any]) -> None:
+        if self._source == "wake" and "continuous" in params:
+            self._continuous_awake = bool(params["continuous"])
         awake_seconds = float(params.get("awake_seconds") or 0.0)
         if self._source == "wake" and awake_seconds > 0:
             self._one_shot = False
@@ -181,7 +188,10 @@ class AsrHandler(RequestHandler):
             self._awake_until = time.monotonic() + awake_seconds
 
     def _is_awake_session(self) -> bool:
-        return self._source == "wake" and self._awake_until > 0
+        return self._source == "wake" and (self._continuous_awake or self._awake_until > 0)
+
+    def _awake_expired(self) -> bool:
+        return self._is_awake_session() and not self._continuous_awake and time.monotonic() >= self._awake_until
 
     def _clear_session_state(self) -> dict[str, Any]:
         info = {
@@ -194,6 +204,7 @@ class AsrHandler(RequestHandler):
         self._source = ""
         self._wake_payload = {}
         self._source_payload = {}
+        self._continuous_awake = False
         self._awake_until = 0.0
         self._awake_seconds = 0.0
         self._ready_callback_sent = False
@@ -218,7 +229,8 @@ class AsrHandler(RequestHandler):
                 {
                     "status": "awake",
                     "source": "wake",
-                    "awake_remaining": remaining,
+                    "awake_remaining": None if self._continuous_awake else remaining,
+                    "continuous": self._continuous_awake,
                     "source_payload": self._source_payload,
                 },
             )
@@ -233,7 +245,7 @@ class AsrHandler(RequestHandler):
             return True
         await bus.emit(Method.ASR_STATUS, {"status": "loading", "source": self._source or ""})
         while self._active and not getattr(asr_manager, "is_ready", True):
-            if self._is_awake_session() and time.monotonic() >= self._awake_until:
+            if self._awake_expired():
                 self._active = False
                 await self._finish_listening("awake_timeout")
                 return False
@@ -397,14 +409,15 @@ class AsrHandler(RequestHandler):
                         {
                             "status": "no_speech",
                             "source": "wake",
-                            "awake_remaining": remaining,
+                            "awake_remaining": None if self._continuous_awake else remaining,
+                            "continuous": self._continuous_awake,
                         },
                     )
                 if self._one_shot:
                     self._active = False
                     await self._finish_listening("one_shot_complete")
                     break
-                if self._is_awake_session() and time.monotonic() >= self._awake_until:
+                if self._awake_expired():
                     self._active = False
                     await self._finish_listening("awake_timeout")
                     break

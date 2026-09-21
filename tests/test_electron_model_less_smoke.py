@@ -26,6 +26,7 @@ def test_model_less_smoke_uses_isolated_disabled_voice_profile(tmp_path: Path) -
     assert env["WAKE_ENABLED"] == "0"
     assert env["VTS_ENABLED"] == "0"
     assert env["AEC_REALTIME_ENABLED"] == "0"
+    assert env["AMADEUS_WALLPAPER"] == "0"
     assert env["LLM_PROVIDER"] == "deepseek"
     assert env["DEEPSEEK_API_KEY"] == ""
     assert env["OPENAI_API_KEY"] == ""

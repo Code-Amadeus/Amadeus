@@ -2,9 +2,11 @@
   "use strict";
 
   const params = new URLSearchParams(window.location.search || "");
+  const windowsComposer = params.get("windowsComposer") === "1";
+  let initialCanvasPending = windowsComposer;
   const surface = window.createCrtCanvasSurface();
   const keyboardComposer = window.createWallpaperKeyboardComposer
-    ? window.createWallpaperKeyboardComposer()
+    ? window.createWallpaperKeyboardComposer({ startCollapsed: windowsComposer, controls: windowsComposer })
     : null;
   let bridgePort = normalizePort(params.get("bridgePort"));
   let sliceBounds = null;
@@ -60,7 +62,9 @@
   function applyCall(call) {
     if (!call || typeof call !== "object") return;
     if (call.method === "setCanvas") {
-      surface.setPayload((call.args && call.args[0]) || {});
+      const payload = (call.args && call.args[0]) || {};
+      surface.setPayload(initialCanvasPending ? { ...payload, expanded: false } : payload);
+      initialCanvasPending = false;
       scheduleShapeUpdate();
     } else if (call.method === "toggleCanvas") {
       surface.toggle();
@@ -68,6 +72,8 @@
     } else if (call.method === "setCanvasPresentation") {
       surface.setPresentation((call.args && call.args[0]) || {});
       scheduleShapeUpdate();
+    } else if (call.method === "composerEvent") {
+      if (keyboardComposer) keyboardComposer.onEvent((call.args && call.args[0]) || {});
     } else if (call.method === "setAttention") {
       surface.setAttention((call.args && call.args[0]) || {});
       scheduleShapeUpdate();
@@ -81,6 +87,7 @@
       { selector: ".crt-canvas-surface-card", padding: 52 },
       { selector: "#wallpaper-keyboard-toggle:not([hidden])", padding: 4 },
       { selector: "#wallpaper-keyboard-composer:not([hidden])", padding: 4 },
+      { selector: ".composer-window-picker:not([hidden])", padding: 4 },
     ];
     return targets.flatMap(({ selector, padding }) => (
       Array.from(document.querySelectorAll(selector)).map((element) => ({ element, padding }))
