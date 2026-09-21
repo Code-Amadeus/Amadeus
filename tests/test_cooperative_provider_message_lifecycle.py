@@ -11,6 +11,12 @@ from test_cooperative_pending_turn import pending_host as pending_host
 from test_cooperative_planned_work import planned
 
 
+# These integration fixtures persist real SQLite and Session files. Bound a
+# deadlock, not CI disk latency: independence is asserted while append remains
+# explicitly gated, rather than by requiring chat completion within four seconds.
+STREAM_DEADLOCK_TIMEOUT = 30
+
+
 def configure(context, tmp_path, *, planner, query):
     adapter = CooperativeWorkFixture()
     adapter.provider_id = context.manager.provider
@@ -41,7 +47,7 @@ async def submit(context, text, turn_id):
     accepted = await context.handler.send_text(text,
         session_id=context.session_id, turn_id=turn_id)
     assert accepted["status"] == "ok"
-    await asyncio.wait_for(context.handler._stream_task, 4)
+    await asyncio.wait_for(context.handler._stream_task, STREAM_DEADLOCK_TIMEOUT)
     return context.manager.ingresses[context.session_id].receipts[turn_id]
 
 
@@ -185,12 +191,15 @@ async def test_pending_provider_input_does_not_block_independent_work(pending_ho
         return json.dumps({"action": {"op": "work" if frame["current"]["text"] == independent else "send"}, "say": "收到。"})
     adapter = configure(context, tmp_path, planner=planner, query=query)
     adapter.release.clear()
-    entered, release_append = asyncio.Event(), asyncio.Event()
+    entered, release_append, append_finished = asyncio.Event(), asyncio.Event(), asyncio.Event()
     original_stream = None
     async def pending_append(run_id, text):
         entered.set()
-        await release_append.wait()
-        return ProviderInputDelivery("unknown", reason="injected-lost-ack")
+        try:
+            await release_append.wait()
+            return ProviderInputDelivery("unknown", reason="injected-lost-ack")
+        finally:
+            append_finished.set()
     try:
         first = await submit(context, seed, "seed")
         context.manager.ingresses[context.session_id].loop.task_contexts = None
@@ -198,10 +207,11 @@ async def test_pending_provider_input_does_not_block_independent_work(pending_ho
         await context.handler.send_text(append, session_id=context.session_id, turn_id="pending")
         original_stream = context.handler._stream_task
         await asyncio.wait_for(entered.wait(), 3)
-        second = await asyncio.wait_for(submit(context, independent, "independent"), 4)
+        second = await submit(context, independent, "independent")
         assert second["state"] == "work_started"
         assert second["run_id"] != first["run_id"]
         assert not release_append.is_set()
+        assert not append_finished.is_set()
         assert len(context.host.work.list_work_items()) == 1
         assert context.host.runtime.get_run(first["run_id"]).status == "running"
     finally:
