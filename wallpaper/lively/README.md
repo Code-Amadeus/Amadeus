@@ -6,6 +6,14 @@ Windows; Wallpaper Engine remains compatible.
 
 ## Recommended setup
 
+On Windows, Amadeus now manages the Lively session automatically: startup,
+wallpaper registration, mounting and restoration on exit. Use the Amadeus tray
+menu's **Quit Amadeus** command for a full exit. See
+[Windows lifecycle, setup and experiments](../../docs/windows_wallpaper_lifecycle.md).
+
+The manual workflow below remains available with
+`AMADEUS_WALLPAPER_HOST=external`, including Wallpaper Engine users.
+
 1. Start Amadeus.
 2. In Lively, add a web wallpaper using the stable local URL below. WebView2 is
    the recommended Lively web player.

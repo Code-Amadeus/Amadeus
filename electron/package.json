@@ -13,8 +13,13 @@
     "electron:build": "npm run build && electron-builder"
   },
   "build": {
+    "beforePack": "scripts/build-windows-wallpaper.cjs",
     "win": {
-      "icon": "../assets/icons/app/app_icon.ico"
+      "icon": "../assets/icons/app/app_icon.ico",
+      "extraResources": [
+        { "from": "../build/windows-wallpaper/host", "to": "windows-wallpaper", "filter": ["**/*", "!*.pdb"] },
+        { "from": "../scripts/setup_windows_wallpaper.ps1", "to": "windows-wallpaper/setup_windows_wallpaper.ps1" }
+      ]
     }
   },
   "dependencies": {

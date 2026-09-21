@@ -44,6 +44,9 @@ def model_less_backend_environment(
             "WAKE_ENABLED": "0",
             "VTS_ENABLED": "0",
             "AEC_REALTIME_ENABLED": "0",
+            # This compatibility journey exercises Chat/Settings without a
+            # wallpaper host or character pack, including on Windows.
+            "AMADEUS_WALLPAPER": "0",
             # Exercise the shipping first-run boundary deterministically:
             # B2 remains selected, no remote credential can be inherited from
             # a developer desktop, and the backend must still expose Settings.

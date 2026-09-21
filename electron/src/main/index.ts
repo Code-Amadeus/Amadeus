@@ -2,7 +2,7 @@
  * Electron main process - spawns Python backend and creates the app window.
  */
 
-import { app, BrowserWindow, Menu, WebContentsView, dialog, ipcMain, screen } from 'electron'
+import { app, BrowserWindow, Menu, Tray, WebContentsView, dialog, ipcMain, screen } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import { randomBytes } from 'crypto'
 import http from 'http'
@@ -24,6 +24,7 @@ import {
 import { desktopPointHitsWindowRegions } from './wallpaperHitTesting.js'
 import { wallpaperWindowPolicy } from './wallpaperWindowPolicy.js'
 import { isWallpaperStartup } from './startupMode.js'
+import { managesWindowsWallpaper, WindowsWallpaperSession, windowsWallpaperDependencies } from './windowsWallpaper.js'
 import { ApplicationLifecycle } from './appLifecycle.js'
 import { applicationMenuTemplate } from './applicationMenu.js'
 import { defaultMpsFallbackEnvironment } from './mpsFallbackPolicy.js'
@@ -63,8 +64,19 @@ Menu.setApplicationMenu(menuTemplate ? Menu.buildFromTemplate(menuTemplate) : nu
 // development port. NODE_ENV is not guaranteed to be set by electron-builder,
 // so packaging identity is the owning security boundary.
 const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production'
+const windowsWallpaper = managesWindowsWallpaper(process.platform, process.env)
+  ? new WindowsWallpaperSession({
+      ...windowsWallpaperDependencies(PROJECT_ROOT, process.resourcesPath, app.isPackaged),
+      exited: error => {
+        closeElectronSliceWindow()
+        mainWindow?.show()
+        if (error) dialog.showErrorBox('Amadeus wallpaper recovery', String(error))
+      },
+    })
+  : null
 
 let mainWindow: BrowserWindow | null = null
+let windowsWallpaperTray: Tray | null = null
 let workGlowWindow: BrowserWindow | null = null
 let workPanelWindow: BrowserWindow | null = null
 let electronSliceWindow: BrowserWindow | null = null
@@ -455,6 +467,7 @@ async function startBackend(): Promise<void> {
     console.log(`[electron] backend exited with code ${code}`)
     pythonProcess = null
     backendOwned = false
+    void windowsWallpaper?.stop().catch(error => console.error('[windows-wallpaper] backend exit cleanup:', error))
   })
   await waitForBackendReady()
   desktopSettings.markApplied(process.env, launchPendingRevisions)
@@ -2301,13 +2314,26 @@ ipcMain.handle('work-preview.set-bounds', (event, rawPreviewId: unknown, rawBoun
   }
   return true
 })
-ipcMain.handle('electron-slice.open', (event, bridge: unknown) => {
+ipcMain.handle('electron-slice.open', async (event, bridge: unknown) => {
   if (!isMainRenderer(event.sender)) return false
+  if (windowsWallpaper) {
+    const descriptor = normalizeWallpaperBridge(bridge)
+    if (!descriptor) return false
+    try {
+      await windowsWallpaper.start(`http://127.0.0.1:${descriptor.assetPort}/wallpaper/lively/index.html`)
+    } catch (error) {
+      mainWindow?.show()
+      console.error('[windows-wallpaper] start failed:', error)
+      dialog.showErrorBox('Amadeus wallpaper', String(error))
+      return false
+    }
+  }
   return createElectronSliceWindow(bridge)
 })
-ipcMain.handle('electron-slice.close', (event) => {
+ipcMain.handle('electron-slice.close', async (event) => {
   if (!isMainRenderer(event.sender)) return false
   closeElectronSliceWindow()
+  await windowsWallpaper?.stop()
   return true
 })
 ipcMain.handle('electron-slice.set-shape', (event, boundsList: Electron.Rectangle[]) => {
@@ -2594,12 +2620,27 @@ app.on('second-instance', (_event, commandLine) => {
 })
 
 app.whenReady().then(async () => {
+  if (process.platform === 'win32' && !gotSingleInstanceLock) return
+  if (process.platform === 'win32' && wantsWallpaper()) {
+    windowsWallpaperTray = new Tray(APP_ICON_PATH)
+    windowsWallpaperTray.setToolTip('Amadeus')
+    const showMain = () => { mainWindow?.show(); mainWindow?.focus() }
+    windowsWallpaperTray.setContextMenu(Menu.buildFromTemplate([
+      { label: 'Open Amadeus', click: showMain },
+      { type: 'separator' },
+      { label: 'Quit Amadeus', click: () => app.quit() },
+    ]))
+    windowsWallpaperTray.on('double-click', showMain)
+  }
+  let backendStartFailed = false
   try {
     await startBackend()
   } catch (error) {
+    backendStartFailed = true
     console.error('[electron] backend failed to become ready', error)
   }
   createWindow()
+  if (process.platform === 'win32' && backendStartFailed) mainWindow?.show()
   if (applicationLifecycle.completeStartup()) {
     mainWindow?.show()
     mainWindow?.focus()
@@ -2633,9 +2674,16 @@ app.on('before-quit', (event) => {
   for (const appWindow of auipAppWindows) appWindow.close()
   auipAppWindows.clear()
   auipAppSurfacesById.clear()
-  if (!applicationLifecycle.beginQuit(Boolean(pythonProcess))) return
+  if (!applicationLifecycle.beginQuit(Boolean(pythonProcess) || windowsWallpaper !== null)) return
   event.preventDefault()
-  void stopBackend().finally(() => {
+  void (async () => {
+    try { await windowsWallpaper?.stop() }
+    catch (error) {
+      console.error('[windows-wallpaper] exit cleanup failed:', error)
+      dialog.showErrorBox('Amadeus wallpaper recovery', `Wallpaper restoration failed. Recovery will resume on the next wallpaper start.\n${String(error)}`)
+    }
+    await stopBackend()
+  })().finally(() => {
     app.quit()
   })
 })
