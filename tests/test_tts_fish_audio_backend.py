@@ -34,8 +34,12 @@ async def peer(handler, **kwargs):
         port = server.sockets[0].getsockname()[1]
         yield FishAudioTTSBackend(
             ws_url=f"ws://127.0.0.1:{port}/v1/tts/live",
-            api_key="test-secret", model="s2.1-pro-free", reference_id="test-voice",
-            latency="balanced", timeout_seconds=1, **kwargs,
+            api_key="test-secret",
+            model="s2.1-pro-free",
+            reference_id="test-voice",
+            latency="balanced",
+            timeout_seconds=1,
+            **kwargs,
         )
 
 
@@ -77,10 +81,17 @@ async def test_audio_arrives_before_future_text_is_available():
     assert headers["authorization"] == "Bearer test-secret"
     assert headers["model"] == "s2.1-pro-free"
     assert seen == [
-        {"event": "start", "request": {
-            "text": "", "reference_id": "override-voice", "format": "pcm",
-            "sample_rate": 44100, "latency": "balanced", "prosody": {"speed": 1.2},
-        }},
+        {
+            "event": "start",
+            "request": {
+                "text": "",
+                "reference_id": "override-voice",
+                "format": "pcm",
+                "sample_rate": 44100,
+                "latency": "balanced",
+                "prosody": {"speed": 1.2},
+            },
+        },
         {"event": "text", "text": "こんにちは、"},
         {"event": "text", "text": " 紅莉栖です。"},
         {"event": "stop"},
@@ -107,9 +118,12 @@ async def test_flush_is_explicit_and_empty_chunks_do_not_flush():
         await send(ws, {"event": "finish", "reason": "stop"})
 
     async with peer(handler) as backend:
-        chunks = [chunk async for chunk in backend.synthesize_text_stream(
-            TTSSynthesisRequest(""), text_source("one", "", " two"), flush_each_chunk=True
-        )]
+        chunks = [
+            chunk
+            async for chunk in backend.synthesize_text_stream(
+                TTSSynthesisRequest(""), text_source("one", "", " two"), flush_each_chunk=True
+            )
+        ]
     assert len(chunks) == 1
     assert [event["event"] for event in seen] == ["start", "text", "flush", "text", "flush", "stop"]
 
@@ -131,6 +145,7 @@ async def test_existing_sentence_worker_consumes_same_transport(mode):
         await send(ws, {"event": "finish", "reason": "stop"})
 
     async with peer(handler) as backend:
+
         def consume():
             request = TTSSynthesisRequest("Hello")
             if mode == "stream":
@@ -145,13 +160,19 @@ async def test_existing_sentence_worker_consumes_same_transport(mode):
     np.testing.assert_array_equal(chunks[0].audio, [0.0, 0.5])
 
 
-@pytest.mark.parametrize(("events", "message"), [
-    ([{"event": "finish", "reason": "error"}], "finished with an error"),
-    ([{"event": "finish", "reason": "stop"}], "without audio"),
-    ([{"event": "audio", "audio": "not binary"}], "binary audio"),
-    ([{"event": "audio", "audio": b"\x01"}, {"event": "finish", "reason": "stop"}], "incomplete PCM16"),
-    ([[]], "event object"),
-])
+@pytest.mark.parametrize(
+    ("events", "message"),
+    [
+        ([{"event": "finish", "reason": "error"}], "finished with an error"),
+        ([{"event": "finish", "reason": "stop"}], "without audio"),
+        ([{"event": "audio", "audio": "not binary"}], "binary audio"),
+        (
+            [{"event": "audio", "audio": b"\x01"}, {"event": "finish", "reason": "stop"}],
+            "incomplete PCM16",
+        ),
+        ([[]], "event object"),
+    ],
+)
 async def test_invalid_responses_fail_without_retry(events, message):
     connections = 0
 
@@ -165,9 +186,12 @@ async def test_invalid_responses_fail_without_retry(events, message):
 
     async with peer(handler) as backend:
         with pytest.raises(TTSBackendError, match=message):
-            _ = [chunk async for chunk in backend.synthesize_text_stream(
-                TTSSynthesisRequest(""), text_source("Hello")
-            )]
+            _ = [
+                chunk
+                async for chunk in backend.synthesize_text_stream(
+                    TTSSynthesisRequest(""), text_source("Hello")
+                )
+            ]
     assert connections == 1
 
 
@@ -180,9 +204,12 @@ async def test_malformed_wire_data(raw):
 
     async with peer(handler) as backend:
         with pytest.raises(TTSBackendError, match="MessagePack"):
-            _ = [chunk async for chunk in backend.synthesize_text_stream(
-                TTSSynthesisRequest(""), text_source("Hello")
-            )]
+            _ = [
+                chunk
+                async for chunk in backend.synthesize_text_stream(
+                    TTSSynthesisRequest(""), text_source("Hello")
+                )
+            ]
 
 
 async def test_truncated_connection_after_audio_is_not_success():
@@ -209,9 +236,12 @@ async def test_timeout_closes_socket():
     async with peer(handler) as backend:
         backend._timeout = 0.05
         with pytest.raises(TTSBackendError, match="timed out"):
-            _ = [chunk async for chunk in backend.synthesize_text_stream(
-                TTSSynthesisRequest(""), text_source("Hi")
-            )]
+            _ = [
+                chunk
+                async for chunk in backend.synthesize_text_stream(
+                    TTSSynthesisRequest(""), text_source("Hi")
+                )
+            ]
         await asyncio.wait_for(closed.wait(), 1)
 
 
@@ -259,19 +289,25 @@ async def test_input_error_wakes_receive_and_closes_socket():
     async with peer(handler) as backend:
         with pytest.raises(TTSBackendError, match="must be strings"):
             async with asyncio.timeout(0.5):
-                _ = [chunk async for chunk in backend.synthesize_text_stream(
-                    TTSSynthesisRequest(""), source()
-                )]
+                _ = [
+                    chunk
+                    async for chunk in backend.synthesize_text_stream(
+                        TTSSynthesisRequest(""), source()
+                    )
+                ]
 
 
-@pytest.mark.parametrize(("overrides", "message"), [
-    ({"api_key": ""}, "FISH_TTS_API_KEY"),
-    ({"ws_url": "https://api.fish.audio"}, "FISH_TTS_WS_URL"),
-    ({"reference_id": ""}, "FISH_TTS_REFERENCE_ID"),
-    ({"model": ""}, "FISH_TTS_MODEL"),
-    ({"latency": "invalid"}, "FISH_TTS_LATENCY"),
-    ({"timeout_seconds": 0}, "TIMEOUT"),
-])
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"api_key": ""}, "FISH_TTS_API_KEY"),
+        ({"ws_url": "https://api.fish.audio"}, "FISH_TTS_WS_URL"),
+        ({"reference_id": ""}, "FISH_TTS_REFERENCE_ID"),
+        ({"model": ""}, "FISH_TTS_MODEL"),
+        ({"latency": "invalid"}, "FISH_TTS_LATENCY"),
+        ({"timeout_seconds": 0}, "TIMEOUT"),
+    ],
+)
 def test_invalid_configuration(overrides, message):
     config = dict(api_key="test-secret", reference_id="voice", model="s2.1-pro-free")
     config.update(overrides)
@@ -291,9 +327,10 @@ async def test_early_finish_does_not_silently_drop_future_text():
 
     async with peer(handler) as backend:
         with pytest.raises(TTSBackendError, match="before text input completed"):
-            _ = [chunk async for chunk in backend.synthesize_text_stream(
-                TTSSynthesisRequest(""), source()
-            )]
+            _ = [
+                chunk
+                async for chunk in backend.synthesize_text_stream(TTSSynthesisRequest(""), source())
+            ]
 
 
 async def test_audio_limit_and_partial_stream_error_are_observable(monkeypatch):
@@ -325,6 +362,7 @@ async def test_sync_generator_close_closes_websocket():
         closed.set()
 
     async with peer(handler) as backend:
+
         def consume_one():
             stream = backend.synthesize_stream(TTSSynthesisRequest("Hello"))
             next(stream)
@@ -348,3 +386,142 @@ def test_registry_validates_settings_and_creates_remote_runtime(monkeypatch):
     runtime = create_tts_runtime("fish_audio")
     assert runtime.backend_id == "fish_audio"
     assert runtime.deployment == "remote"
+
+
+def test_resolve_websocket_proxy_bypass(monkeypatch):
+    import urllib.request
+    from tts.backends.fish_audio import _resolve_websocket_proxy
+
+    # Loopback targets must always bypass proxy
+    assert _resolve_websocket_proxy("ws://127.0.0.1:17777/ws") is None
+    assert _resolve_websocket_proxy("ws://localhost:17777/ws") is None
+
+    # Explicit proxy bypass matches direct connection
+    monkeypatch.setattr(urllib.request, "getproxies", lambda: {"https": "http://127.0.0.1:7890"})
+    monkeypatch.setattr(urllib.request, "proxy_bypass", lambda host: True)
+    assert _resolve_websocket_proxy("wss://api.fish.audio/v1/tts/live") is None
+
+
+@pytest.mark.parametrize(
+    ("proxies", "has_socks", "expected"),
+    [
+        # Direct connection when unconfigured
+        ({}, False, None),
+        # Protocol-based SOCKS detection falls back to HTTP when python-socks is missing
+        (
+            {"wss": "socks5://127.0.0.1:1080", "https": "http://127.0.0.1:7890"},
+            False,
+            "http://127.0.0.1:7890",
+        ),
+        (
+            {"https": "socks5h://127.0.0.1:1080", "http": "http://127.0.0.1:7890"},
+            False,
+            "http://127.0.0.1:7890",
+        ),
+        (
+            {"socks": "http://127.0.0.1:7890", "https": "http://127.0.0.1:7890"},
+            False,
+            "http://127.0.0.1:7890",
+        ),
+        (
+            {"socks": "127.0.0.1:7890", "https": "http://127.0.0.1:7890"},
+            False,
+            "http://127.0.0.1:7890",
+        ),
+        # SOCKS proxy is preferred when python-socks is available
+        (
+            {"https": "socks5://127.0.0.1:1080", "http": "http://127.0.0.1:7890"},
+            True,
+            "socks5://127.0.0.1:1080",
+        ),
+        (
+            {"socks": "http://127.0.0.1:7890", "https": "http://127.0.0.1:7890"},
+            True,
+            "socks5h://127.0.0.1:7890",
+        ),
+        (
+            {"socks": "127.0.0.1:7890", "https": "http://127.0.0.1:7890"},
+            True,
+            "socks5h://127.0.0.1:7890",
+        ),
+    ],
+)
+def test_resolve_websocket_proxy(monkeypatch, proxies, has_socks, expected):
+    import urllib.request
+    from tts.backends.fish_audio import _resolve_websocket_proxy
+
+    monkeypatch.setattr(urllib.request, "proxy_bypass", lambda host: False)
+    monkeypatch.setattr("tts.backends.fish_audio._has_python_socks", lambda: has_socks)
+    monkeypatch.setattr(urllib.request, "getproxies", lambda: proxies)
+    assert _resolve_websocket_proxy("wss://api.fish.audio/v1/tts/live") == expected
+
+
+@pytest.mark.parametrize(
+    "proxies",
+    [
+        {"https": "http://127.0.0.1:7890"},
+        {"https": "http://127.0.0.1:7890", "http": "http://127.0.0.1:7891"},
+        {"socks": "http://127.0.0.1:1080", "https": "http://127.0.0.1:7890"},
+    ],
+)
+def test_ws_endpoint_uses_https_proxy(monkeypatch, proxies):
+    import urllib.request
+    from tts.backends.fish_audio import _resolve_websocket_proxy
+
+    monkeypatch.setattr(urllib.request, "proxy_bypass", lambda host: False)
+    monkeypatch.setattr(urllib.request, "getproxies", lambda: proxies)
+    monkeypatch.setattr("tts.backends.fish_audio._has_python_socks", lambda: False)
+    assert _resolve_websocket_proxy("ws://tts.example.com/v1/tts/live") == proxies["https"]
+
+
+@pytest.mark.parametrize(
+    "proxies",
+    [
+        {"https": "socks5://127.0.0.1:1080"},
+        {"socks": "socks5h://127.0.0.1:1080"},
+        {"socks": "http://127.0.0.1:7890"},
+        {"socks": "127.0.0.1:7890"},
+    ],
+)
+def test_resolve_websocket_proxy_raises_when_unusable(monkeypatch, proxies):
+    import urllib.request
+    from tts.backend import TTSBackendError
+    from tts.backends.fish_audio import _resolve_websocket_proxy
+
+    monkeypatch.setattr(urllib.request, "proxy_bypass", lambda host: False)
+    monkeypatch.setattr("tts.backends.fish_audio._has_python_socks", lambda: False)
+    monkeypatch.setattr(urllib.request, "getproxies", lambda: proxies)
+    with pytest.raises(TTSBackendError, match="requires python-socks"):
+        _resolve_websocket_proxy("wss://api.fish.audio/v1/tts/live")
+
+
+@pytest.mark.parametrize(
+    "proxy",
+    [
+        "http://127.0.0.1:7890",
+        "http://proxy-user:proxy-password@127.0.0.1:7890",
+        "socks5h://proxy-user:proxy-password@127.0.0.1:7890",
+    ],
+)
+async def test_synthesize_stream_raises_clear_error_when_proxy_unusable(monkeypatch, proxy):
+    import urllib.request
+
+    monkeypatch.setattr(urllib.request, "proxy_bypass", lambda host: False)
+    monkeypatch.setattr("tts.backends.fish_audio._has_python_socks", lambda: False)
+    monkeypatch.setattr(urllib.request, "getproxies", lambda: {"socks": proxy})
+
+    backend = FishAudioTTSBackend(
+        ws_url="wss://api.fish.audio/v1/tts/live",
+        api_key="test-secret",
+        model="s2.1-pro-free",
+        reference_id="test-voice",
+    )
+    with pytest.raises(TTSBackendError, match="requires python-socks") as error:
+        _ = [
+            chunk
+            async for chunk in backend.synthesize_text_stream(
+                TTSSynthesisRequest("test"), text_source("hi")
+            )
+        ]
+    assert "proxy-user" not in str(error.value)
+    assert "proxy-password" not in str(error.value)
