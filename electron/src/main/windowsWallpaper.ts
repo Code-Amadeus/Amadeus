@@ -93,6 +93,18 @@ export async function stopWallpaperForRenderer(
   catch (error) { reportError(error); return false }
 }
 
+// A dead wallpaper host must not leave its backend-owned microphone session
+// alive. If the owned backend cannot acknowledge cleanup, shut that runtime
+// down using Electron's existing graceful-stop/owned-process fallback.
+export async function stopBackendWallpaperAfterHostExit(
+  requestStop: () => Promise<boolean>,
+  stopBackend: () => Promise<void>,
+): Promise<void> {
+  let stopped = false
+  try { stopped = await requestStop() } catch { /* transport is unavailable */ }
+  if (!stopped) await stopBackend()
+}
+
 export function windowsWallpaperDependencies(projectRoot: string, resourcesPath: string, packaged: boolean): WallpaperDependencies {
   const directory = packaged ? path.join(resourcesPath, 'windows-wallpaper') : path.join(projectRoot, 'build', 'windows-wallpaper', 'host')
   const executable = path.join(directory, 'Amadeus.Wallpaper.exe')

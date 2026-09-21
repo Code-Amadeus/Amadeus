@@ -1,6 +1,7 @@
 // Run with Electron after `npm run build`. Exercises the real main-process
 // startup and before-quit hooks, without model calls or microphone capture.
-const { app, BrowserWindow } = require('electron')
+const { app, BrowserWindow, dialog } = require('electron')
+const assert = require('node:assert/strict')
 const { execFile } = require('node:child_process')
 const { promisify } = require('node:util')
 const fs = require('node:fs')
@@ -22,6 +23,10 @@ process.env.VTS_ENABLED = '0'
 process.env.VTS_HEARTBEAT_ENABLED = '0'
 process.env.VTS_RECONNECT_ENABLED = '0'
 
+const faultProbe = process.argv.includes('--host-exit')
+let faultInjected = false
+let reportedHostExit = false
+if (faultProbe) dialog.showErrorBox = () => { reportedHostExit = true }
 let baseline
 let failed = false
 app.on('will-quit', event => {
@@ -29,7 +34,12 @@ app.on('will-quit', event => {
   event.preventDefault()
   const before = baseline
   baseline = null
-  void inspect().then(after => {
+  void (async () => {
+    // Killing the helper deliberately removes its restoration worker. Use its
+    // documented recovery command to restore the user's desktop in cleanup.
+    if (faultInjected) await execute(helper, ['recover'], { windowsHide: true })
+    return inspect()
+  })().then(after => {
     const passed = !failed && JSON.stringify(before.wallpapers) === JSON.stringify(after.wallpapers)
       && JSON.stringify(before.options) === JSON.stringify(after.options) && !after.recoveryPending
     fs.writeFileSync(path.join(output, 'electron-experiment.json'), JSON.stringify({ passed, before, after }, null, 2))
@@ -55,6 +65,42 @@ void (async () => {
       const image = await slices[0].webContents.capturePage()
       fs.writeFileSync(path.join(output, 'electron-slice.png'), image.toPNG())
       console.log('MOUNTED Electron: real Slice loaded (an empty interaction region stays hidden)')
+      if (faultProbe) {
+        const main = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('mainWindow=1'))
+        assert(main, 'main renderer missing')
+        // Start-Process -WindowStyle Hidden suppresses the first native show.
+        // Consume that harness-only launch flag before testing failure reveal.
+        main.showInactive()
+        await new Promise(resolve => setTimeout(resolve, 100))
+        main.hide()
+        const connection = await main.webContents.executeJavaScript('window.amadeus.getBackendConnection()')
+        const backend = new URL(connection.url.replace(/^ws/, 'http')).origin
+        const token = connection.protocols.find(value => value.startsWith('amadeus.auth.')).slice('amadeus.auth.'.length)
+        assert.equal((await fetch(backend + '/wallpaper/stop', { method: 'POST' })).status, 401)
+        assert.equal((await fetch(backend + '/wallpaper/stop', { method: 'POST', headers: {
+          'X-Amadeus-Token': token, Origin: 'https://untrusted.invalid',
+        } })).status, 403)
+        const children = JSON.parse((await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+          `@(Get-CimInstance Win32_Process -Filter "Name = 'Amadeus.Wallpaper.exe'" | Where-Object ParentProcessId -eq ${process.pid} | Select-Object -ExpandProperty ProcessId) | ConvertTo-Json -Compress`,
+        ], { windowsHide: true })).stdout)
+        const ids = Array.isArray(children) ? children : [children]
+        assert.equal(ids.length, 1, 'expected exactly one helper owned by this probe')
+        faultInjected = true
+        process.kill(ids[0])
+        const cleanupDeadline = Date.now() + 12000
+        let stopped = false
+        while (Date.now() < cleanupDeadline) {
+          const info = await (await fetch(backend + '/wallpaper/bridge-info')).json()
+          if (info.running === false && reportedHostExit) { stopped = true; break }
+          await new Promise(resolve => setTimeout(resolve, 100))
+        }
+        assert(stopped, 'helper death did not stop backend wallpaper ownership')
+        assert(main.isVisible(), 'failure did not reveal main window')
+        assert(slices[0].isDestroyed(), 'stale Slice survived helper death')
+        assert(reportedHostExit, 'helper failure was not reported')
+        console.log('PASS helper death: backend wallpaper stopped, Slice closed, window visible; stop endpoint authenticates and checks Origin')
+      }
+
       app.quit()
       return
     }

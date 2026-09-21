@@ -133,3 +133,32 @@ async def test_voice_projection_only_reaches_opted_in_composer(enabled):
         })
     else:
         host.composer_event.assert_not_called()
+
+
+async def test_wallpaper_stop_revokes_continuous_voice_and_bridge_before_cleanup(monkeypatch):
+    monkeypatch.setattr("server.handlers.asr_handler.bus", EventBus())
+    monkeypatch.setattr("server.handlers.wallpaper_handler.bus", EventBus())
+    monkeypatch.setattr("server.handlers.wallpaper_handler.WAKE_ENABLED", True)
+    monkeypatch.setattr("server.handlers.wallpaper_handler.WAKE_AUTO_START_WITH_WALLPAPER", True)
+    asr = AsrHandler()
+    asr._active, asr._source, asr._continuous_awake = True, "wake", True
+    listener = asyncio.create_task(asyncio.Event().wait())
+    await asyncio.sleep(0)
+    asr._listen_task = listener
+    monkeypatch.setattr(asr, "schedule_unload", Mock())
+    handler = WallpaperHandler()
+    host = SimpleNamespace(stop=Mock())
+    handler._wallpaper_host = host
+    handler._wake_stop_fn = AsyncMock()
+
+    async def control(payload):
+        assert handler.is_running() is False
+        return await asr.handle(Method.ASR_STOP, {"source": "wake"})
+
+    handler._chat_control_fn = control
+    await handler.handle(Method.WALLPAPER_STOP, {})
+    assert asr.listening_state() == {"active": False, "source": "", "continuous": False}
+    await asyncio.gather(listener, return_exceptions=True)
+    assert listener.cancelled()
+    host.stop.assert_called_once()
+    handler._wake_stop_fn.assert_awaited_once()

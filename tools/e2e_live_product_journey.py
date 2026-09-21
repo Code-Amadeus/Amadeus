@@ -1062,7 +1062,9 @@ class ElectronProduct:
         no_tts: bool,
         identity: dict[str, Any],
         chat_route: str = "inherit",
+        packaged_executable: Path | None = None,
     ) -> None:
+        self.packaged_executable = packaged_executable
         self.run_root = run_root
         self.debug_port = int(debug_port)
         self.no_tts = bool(no_tts)
@@ -1173,7 +1175,7 @@ class ElectronProduct:
         state = self.run_root / "state"
         for name in ("sessions", "desktop", "scratch", "worktrees"):
             (state / name).mkdir(parents=True, exist_ok=True)
-        electron = (
+        electron = self.packaged_executable or (
             ELECTRON_ROOT / "node_modules" / "electron" / "dist" / "electron.exe"
             if os.name == "nt"
             else ELECTRON_ROOT / "node_modules" / ".bin" / "electron"
@@ -1187,7 +1189,7 @@ class ElectronProduct:
         self.process = subprocess.Popen(
             [
                 str(electron),
-                ".",
+                *([] if self.packaged_executable else ["."]),
                 f"--remote-debugging-port={self.debug_port}",
             ],
             cwd=str(ELECTRON_ROOT),
@@ -1231,7 +1233,7 @@ class ElectronProduct:
                 page
                 for context in self.browser.contexts
                 for page in context.pages
-                if "electron/dist/renderer/index.html" in page.url.replace("\\", "/")
+                if "/dist/renderer/index.html" in page.url.replace("\\", "/")
             ]
             if pages:
                 self.page = pages[0]

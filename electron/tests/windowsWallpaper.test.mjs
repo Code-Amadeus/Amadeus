@@ -3,7 +3,7 @@ import test from 'node:test'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { managesWindowsWallpaper, stopWallpaperForRenderer, windowsWallpaperDependencies, WindowsWallpaperSession } from '../src/main/windowsWallpaper.ts'
+import { managesWindowsWallpaper, stopBackendWallpaperAfterHostExit, stopWallpaperForRenderer, windowsWallpaperDependencies, WindowsWallpaperSession } from '../src/main/windowsWallpaper.ts'
 
 test('managed host is Windows-only; external hosts remain selectable', () => {
   assert.equal(managesWindowsWallpaper('win32', {}), true)
@@ -188,3 +188,26 @@ test('slow start and stop retain visible lifecycle status until the operation co
   await stopped
   assert.equal(statuses.at(-1), 'idle')
 })
+
+
+for (const outcome of ['acknowledged', 'rejected', 'disconnected']) {
+  test(`host exit ends backend wallpaper ownership (${outcome})`, async () => {
+    const calls = []
+    let ended
+    const session = new WindowsWallpaperSession({
+      prepare: async () => {},
+      launch: () => ({process: {stdin: {end() {}}}, ready: Promise.resolve(),
+        done: new Promise((_resolve, reject) => { ended = reject })}),
+      exited: () => stopBackendWallpaperAfterHostExit(async () => {
+        calls.push('wallpaper.stop')
+        if (outcome === 'disconnected') throw new Error('connection lost')
+        return outcome === 'acknowledged'
+      }, async () => { calls.push('owned-backend.stop') }),
+    })
+    await session.start('one')
+    ended(new Error('helper killed'))
+    await new Promise(resolve => setImmediate(resolve))
+    assert.deepEqual(calls, outcome === 'acknowledged'
+      ? ['wallpaper.stop'] : ['wallpaper.stop', 'owned-backend.stop'])
+  })
+}

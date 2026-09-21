@@ -24,7 +24,7 @@ import {
 import { desktopPointHitsWindowRegions } from './wallpaperHitTesting.js'
 import { wallpaperWindowPolicy } from './wallpaperWindowPolicy.js'
 import { isWallpaperStartup } from './startupMode.js'
-import { managesWindowsWallpaper, stopWallpaperForRenderer, WindowsWallpaperSession, windowsWallpaperDependencies } from './windowsWallpaper.js'
+import { managesWindowsWallpaper, stopBackendWallpaperAfterHostExit, stopWallpaperForRenderer, WindowsWallpaperSession, windowsWallpaperDependencies } from './windowsWallpaper.js'
 import { WindowsWallpaperTray } from './windowsWallpaperTray.js'
 import { ApplicationLifecycle } from './appLifecycle.js'
 import { applicationMenuTemplate } from './applicationMenu.js'
@@ -72,11 +72,7 @@ const windowsWallpaper = managesWindowsWallpaper(process.platform, process.env)
         windowsWallpaperTray?.setStatus(status)
         mainWindow?.setProgressBar(['preparing', 'mounting', 'restoring'].includes(status) ? 2 : -1)
       },
-      exited: error => {
-        closeElectronSliceWindow()
-        mainWindow?.show()
-        if (error) dialog.showErrorBox('Amadeus wallpaper recovery', String(error))
-      },
+      exited: error => { void handleWindowsWallpaperHostExit(error) },
     })
   : null
 
@@ -370,15 +366,15 @@ async function waitForBackendReady(timeoutMs = 120_000): Promise<void> {
   throw new Error(`backend did not become ready within ${timeoutMs}ms`)
 }
 
-function requestBackendShutdown(): Promise<boolean> {
+function requestBackendAction(endpoint: string, timeoutMs: number): Promise<boolean> {
   return new Promise((resolve) => {
     const req = http.request(
       {
         hostname: '127.0.0.1',
         port: BACKEND_PORT,
-        path: '/shutdown',
+        path: endpoint,
         method: 'POST',
-        timeout: 900,
+        timeout: timeoutMs,
         headers: { [BACKEND_TOKEN_HEADER]: BACKEND_TOKEN },
       },
       (res) => {
@@ -485,7 +481,7 @@ async function stopBackend(): Promise<void> {
   if (!proc) return
 
   backendStopping = (async () => {
-    const requested = await requestBackendShutdown()
+    const requested = await requestBackendAction('/shutdown', 900)
     const exited = requested ? await waitForProcessExit(proc, 2500) : false
     if (!exited && proc.exitCode === null && proc.signalCode === null) {
       proc.kill()
@@ -497,6 +493,21 @@ async function stopBackend(): Promise<void> {
     backendStopping = null
   })
   return backendStopping
+}
+
+async function handleWindowsWallpaperHostExit(error?: unknown): Promise<void> {
+  closeElectronSliceWindow()
+  mainWindow?.show()
+  try {
+    await stopBackendWallpaperAfterHostExit(
+      () => requestBackendAction('/wallpaper/stop', 5000),
+      stopBackend,
+    )
+  } catch (cleanupError) {
+    console.error('[windows-wallpaper] host exit cleanup failed:', cleanupError)
+    error = cleanupError
+  }
+  if (error) dialog.showErrorBox('Amadeus wallpaper recovery', String(error))
 }
 
 // window management.
@@ -2330,9 +2341,8 @@ ipcMain.handle('electron-slice.open', async (event, bridge: unknown) => {
     try {
       await windowsWallpaper.start(`http://127.0.0.1:${descriptor.assetPort}/wallpaper/lively/index.html`)
     } catch (error) {
-      mainWindow?.show()
+      await handleWindowsWallpaperHostExit(error)
       console.error('[windows-wallpaper] start failed:', error)
-      dialog.showErrorBox('Amadeus wallpaper', String(error))
       return false
     }
   }

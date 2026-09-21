@@ -144,6 +144,31 @@ platform behavior. It does not capture microphone audio or make model calls.
 The ASR contract tests exercise continuous and timed sessions using synthetic
 utterances; hardware microphone quality remains a manual acceptance check.
 
+## Host loss and compatibility
+
+An unexpected native helper exit (including Lively loss reported by the helper)
+now invokes the authenticated backend wallpaper-stop endpoint. The backend clears
+wallpaper ownership before awaiting cleanup, stops its wake ASR conversation and
+wake service, and publishes the usual wallpaper-exited event. Failed installation
+or mounting uses the same cleanup. If the owned backend cannot acknowledge the
+stop, Electron uses its existing graceful shutdown / owned-process termination
+path, so a disconnected host cannot leave that runtime listening indefinitely.
+
+Voice behavior is tracked separately in issue #112; the confirmed default is
+standby followed by continuous conversation after waking, not a new idle timeout.
+For continuous sessions, `awake_remaining` and `awake_remaining_s` are nullable:
+`null` with `continuous: true` means there is no idle deadline. Timed sessions
+retain numeric values. External status clients must accept that nullable state.
+ASR stop with a source ignores a different owner, including an empty source;
+unscoped `asr.stop {}` keeps the original Chat behavior.
+
+Packaging explicitly includes compiled main/preload/renderer files and package
+metadata, plus the Windows icon/helper/setup resources. Python/model/asset runtime
+provisioning remains external. CI additionally launches the actual unpacked exe
+with the checkout explicitly supplying that Python runtime, verifies connected
+Chat/Settings/navigation, and closes both frontend and backend. This proves the
+packaged executable path rather than a complete standalone installer.
+
 ## Verification
 
 ```powershell
@@ -185,6 +210,10 @@ with stdout/stderr redirected to persistent files. Do not detach a GUI Electron
 process from short-lived terminal pipes: subsequent console writes can raise
 `EPIPE`. The probe launches the real backend and verifies the real before-quit
 hook; it writes results to `build/windows-wallpaper/electron-experiment.json`.
+Add `--host-exit` to terminate only the helper owned by the probe, verify backend
+wallpaper shutdown and authenticated/origin-checked cleanup, and then restore the
+desktop with the documented recovery command. No microphone is captured by this
+probe; active ASR cleanup is covered by the synthetic lifecycle contract.
 
 Validated locally: Windows x64, Lively 2.2.1.0, one active monitor. Multi-monitor
 restoration and user changes are covered by contract tests; physical multi-

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import http.client
 import json
 import os
 import re
@@ -216,9 +217,14 @@ async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         """Use the current test interpreter as the explicitly selected backend."""
 
         def _environment(self) -> dict[str, str]:
-            return model_less_backend_environment(
+            environment = model_less_backend_environment(
                 super()._environment(), python_executable=sys.executable
             )
+            if self.packaged_executable:
+                # The current distribution packages the Electron frontend;
+                # supply the separate Python runtime explicitly for this smoke.
+                environment["PYTHONPATH"] = str(ROOT)
+            return environment
 
     started_at = datetime.now(timezone.utc)
     report_root = Path(args.report_dir).resolve()
@@ -232,6 +238,7 @@ async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         debug_port=int(args.debug_port or _free_port()),
         no_tts=True,
         identity=code_identity(ROOT),
+        packaged_executable=args.packaged_executable.resolve() if args.packaged_executable else None,
     )
     report: dict[str, Any] = {
         "schema": SCHEMA,
@@ -257,6 +264,27 @@ async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         if not isinstance(runtime.get("server"), dict):
             raise RuntimeError("authenticated runtime.status did not return server state")
         report["checks"]["authenticated_runtime_status"] = True
+
+        def verify_wallpaper_stop() -> None:
+            for headers, expected in (
+                ({}, 401),
+                ({"X-Amadeus-Token": product.backend_token, "Origin": "https://untrusted.invalid"}, 403),
+                ({"X-Amadeus-Token": product.backend_token}, 200),
+            ):
+                connection = http.client.HTTPConnection("127.0.0.1", BACKEND_PORT, timeout=10)
+                try:
+                    connection.request("POST", "/wallpaper/stop", headers=headers)
+                    response = connection.getresponse()
+                    body = response.read()
+                    if response.status != expected:
+                        raise RuntimeError(f"wallpaper stop boundary returned {response.status}, expected {expected}")
+                    if expected == 200 and json.loads(body).get("status") != "stopped":
+                        raise RuntimeError("wallpaper stop did not acknowledge lifecycle cleanup")
+                finally:
+                    connection.close()
+
+        await asyncio.to_thread(verify_wallpaper_stop)
+        report["checks"]["authenticated_wallpaper_stop"] = True
 
         if product.page is None:
             raise RuntimeError("Electron renderer is unavailable")
@@ -303,6 +331,7 @@ def _parser() -> argparse.ArgumentParser:
         "--report-dir",
         default=str(RUNTIME / "electron_model_less_smoke"),
     )
+    parser.add_argument("--packaged-executable", type=Path, help="Launch the actual packaged frontend with this checkout supplying its external Python runtime")
     parser.add_argument("--debug-port", type=int, default=0)
     parser.add_argument("--startup-timeout", type=float, default=120.0)
     parser.add_argument("--ui-timeout", type=float, default=30.0)

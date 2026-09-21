@@ -233,18 +233,19 @@ class WallpaperHandler(RequestHandler):
         return {"ok": True, "result": result}
 
     async def _stop(self, params: dict[str, Any]) -> dict[str, Any]:
+        host = self._wallpaper_host
+        self._wallpaper_host = None
         self._stop_wallpaper_animator()
         if self._chat_control_fn:
             try:
                 await self._chat_control_fn({"action": "voice_stop"})
             except Exception:
                 logger.exception("wallpaper voice stop failed")
-        if self._wallpaper_host:
+        if host:
             try:
-                self._wallpaper_host.stop()
+                host.stop()
             except Exception:
                 logger.exception("wallpaper stop failed")
-            self._wallpaper_host = None
         if WAKE_ENABLED and WAKE_AUTO_START_WITH_WALLPAPER and self._wake_stop_fn:
             try:
                 result = self._wake_stop_fn()

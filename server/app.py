@@ -680,6 +680,16 @@ async def bootstrap(port: int = 17777) -> None:
         asyncio.create_task(_request_exit())
         return {"ok": True}
 
+    @app.post("/wallpaper/stop")
+    async def stop_wallpaper_host(request: Request):
+        if not _http_request_authenticated(request.headers, auth_policy):
+            raise HTTPException(status_code=401, detail="Authentication required")
+        if not _http_request_origin_allowed(request.headers, backend_port=port):
+            raise HTTPException(status_code=403, detail="Untrusted request origin")
+        # Electron owns the native host process. Its loss terminates the same
+        # backend lifecycle as a user disabling wallpaper, including wake/ASR.
+        return await wallpaper_h.handle(Method.WALLPAPER_STOP, {})
+
     @app.post("/vn/speak")
     async def vn_speak(payload: dict, request: Request):
         if not _http_request_authenticated(request.headers, auth_policy):
