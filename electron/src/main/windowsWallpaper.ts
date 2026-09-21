@@ -96,13 +96,50 @@ export async function stopWallpaperForRenderer(
 // A dead wallpaper host must not leave its backend-owned microphone session
 // alive. If the owned backend cannot acknowledge cleanup, shut that runtime
 // down using Electron's existing graceful-stop/owned-process fallback.
+// Local acknowledgement budget: the two ThreadingHTTPServers use daemon
+// request threads (no wait for the 60s chat handler), 0.5s shutdown polls and
+// 1s joins. Wake/mic cleanup has additional joins, so 5s is an escalation
+// policy for an unresponsive cleanup, not a guaranteed worst-case bound.
+export const WINDOWS_WALLPAPER_STOP_TIMEOUT_MS = 5000
+
 export async function stopBackendWallpaperAfterHostExit(
   requestStop: () => Promise<boolean>,
   stopBackend: () => Promise<void>,
-): Promise<void> {
+): Promise<boolean> {
   let stopped = false
   try { stopped = await requestStop() } catch { /* transport is unavailable */ }
   if (!stopped) await stopBackend()
+  return !stopped
+}
+
+// UI failures must neither skip microphone cleanup nor reject into the
+// helper's fire-and-forget exit notification. Preserve each failure's cause.
+export async function recoverWindowsWallpaperHostExit(error: unknown, actions: {
+  closeSurface: () => void
+  showMainWindow: () => void
+  requestStop: () => Promise<boolean>
+  stopBackend: () => Promise<void>
+  reportError: (message: string) => void
+}): Promise<void> {
+  const details = error ? [`Wallpaper error: ${String(error)}`] : []
+  for (const action of [actions.closeSurface, actions.showMainWindow]) {
+    try { action() }
+    catch (windowError) { details.push(`Window recovery failed: ${String(windowError)}`) }
+  }
+  try {
+    const backendStopped = await stopBackendWallpaperAfterHostExit(actions.requestStop, actions.stopBackend)
+    if (backendStopped) details.unshift(
+      'Amadeus stopped its backend to ensure the microphone is closed. Restart Amadeus to resume chatting; reconnecting alone will not restart the backend.',
+    )
+  } catch (cleanupError) {
+    details.push(`Wallpaper cleanup failed: ${String(cleanupError)}`,
+      'Backend shutdown could not be confirmed. Quit and restart Amadeus before using voice again.')
+  }
+  if (details.length) {
+    const message = details.join('\n\n')
+    try { actions.reportError(message) }
+    catch (reportError) { console.error('[windows-wallpaper] recovery notification failed:', message, reportError) }
+  }
 }
 
 export function windowsWallpaperDependencies(projectRoot: string, resourcesPath: string, packaged: boolean): WallpaperDependencies {

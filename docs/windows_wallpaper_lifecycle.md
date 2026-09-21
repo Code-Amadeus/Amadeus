@@ -154,6 +154,17 @@ or mounting uses the same cleanup. If the owned backend cannot acknowledge the
 stop, Electron uses its existing graceful shutdown / owned-process termination
 path, so a disconnected host cannot leave that runtime listening indefinitely.
 
+The stop request has a five-second local acknowledgement budget. Both Python
+HTTP servers use daemon request threads, so shutdown does not join the long-lived
+chat/SSE requests; each server uses the default 0.5-second shutdown poll and a
+one-second thread join. Wake/microphone cleanup adds its own bounded joins, so
+five seconds is an escalation policy rather than a complete worst-case bound.
+When this fallback stops the backend, the recovery message explicitly asks the
+user to restart Amadeus and explains that WebSocket reconnect alone cannot revive
+the process. Original host/setup errors and any cleanup errors remain visible.
+Window/dialog failures cannot skip backend cleanup or escape as rejected exit
+notifications.
+
 Voice behavior is tracked separately in issue #112; the confirmed default is
 standby followed by continuous conversation after waking, not a new idle timeout.
 For continuous sessions, `awake_remaining` and `awake_remaining_s` are nullable:

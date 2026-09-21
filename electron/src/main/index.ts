@@ -24,7 +24,7 @@ import {
 import { desktopPointHitsWindowRegions } from './wallpaperHitTesting.js'
 import { wallpaperWindowPolicy } from './wallpaperWindowPolicy.js'
 import { isWallpaperStartup } from './startupMode.js'
-import { managesWindowsWallpaper, stopBackendWallpaperAfterHostExit, stopWallpaperForRenderer, WindowsWallpaperSession, windowsWallpaperDependencies } from './windowsWallpaper.js'
+import { managesWindowsWallpaper, recoverWindowsWallpaperHostExit, WINDOWS_WALLPAPER_STOP_TIMEOUT_MS, stopWallpaperForRenderer, WindowsWallpaperSession, windowsWallpaperDependencies } from './windowsWallpaper.js'
 import { WindowsWallpaperTray } from './windowsWallpaperTray.js'
 import { ApplicationLifecycle } from './appLifecycle.js'
 import { applicationMenuTemplate } from './applicationMenu.js'
@@ -495,19 +495,14 @@ async function stopBackend(): Promise<void> {
   return backendStopping
 }
 
-async function handleWindowsWallpaperHostExit(error?: unknown): Promise<void> {
-  closeElectronSliceWindow()
-  mainWindow?.show()
-  try {
-    await stopBackendWallpaperAfterHostExit(
-      () => requestBackendAction('/wallpaper/stop', 5000),
-      stopBackend,
-    )
-  } catch (cleanupError) {
-    console.error('[windows-wallpaper] host exit cleanup failed:', cleanupError)
-    error = cleanupError
-  }
-  if (error) dialog.showErrorBox('Amadeus wallpaper recovery', String(error))
+function handleWindowsWallpaperHostExit(error?: unknown): Promise<void> {
+  return recoverWindowsWallpaperHostExit(error, {
+    closeSurface: closeElectronSliceWindow,
+    showMainWindow: () => { mainWindow?.show() },
+    requestStop: () => requestBackendAction('/wallpaper/stop', WINDOWS_WALLPAPER_STOP_TIMEOUT_MS),
+    stopBackend,
+    reportError: message => dialog.showErrorBox('Amadeus wallpaper recovery', message),
+  })
 }
 
 // window management.

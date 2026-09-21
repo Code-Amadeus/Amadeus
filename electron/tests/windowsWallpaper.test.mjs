@@ -3,7 +3,7 @@ import test from 'node:test'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { managesWindowsWallpaper, stopBackendWallpaperAfterHostExit, stopWallpaperForRenderer, windowsWallpaperDependencies, WindowsWallpaperSession } from '../src/main/windowsWallpaper.ts'
+import { managesWindowsWallpaper, recoverWindowsWallpaperHostExit, stopBackendWallpaperAfterHostExit, stopWallpaperForRenderer, windowsWallpaperDependencies, WindowsWallpaperSession } from '../src/main/windowsWallpaper.ts'
 
 test('managed host is Windows-only; external hosts remain selectable', () => {
   assert.equal(managesWindowsWallpaper('win32', {}), true)
@@ -211,3 +211,65 @@ for (const outcome of ['acknowledged', 'rejected', 'disconnected']) {
       ? ['wallpaper.stop'] : ['wallpaper.stop', 'owned-backend.stop'])
   })
 }
+
+
+function recoveryActions(overrides = {}) {
+  const messages = []
+  const calls = []
+  return { messages, calls, actions: {
+    closeSurface: () => { calls.push('close') },
+    showMainWindow: () => { calls.push('show') },
+    requestStop: async () => { calls.push('wallpaper.stop'); return true },
+    stopBackend: async () => { calls.push('backend.stop') },
+    reportError: message => { messages.push(message) },
+    ...overrides,
+  } }
+}
+
+test('backend fallback always explains restart even when the helper exited without an error', async () => {
+  const f = recoveryActions({ requestStop: async () => false })
+  await recoverWindowsWallpaperHostExit(undefined, f.actions)
+  assert(f.calls.includes('backend.stop'))
+  assert.equal(f.messages.length, 1)
+  assert.match(f.messages[0], /stopped its backend/)
+  assert.match(f.messages[0], /Restart Amadeus/)
+  assert.match(f.messages[0], /reconnecting alone will not restart/)
+})
+
+test('acknowledged wallpaper cleanup keeps the backend and only reports the original failure', async () => {
+  const f = recoveryActions()
+  await recoverWindowsWallpaperHostExit(new Error('Lively is missing'), f.actions)
+  assert(!f.calls.includes('backend.stop'))
+  assert.match(f.messages[0], /Lively is missing/)
+  assert.doesNotMatch(f.messages[0], /stopped its backend/)
+})
+
+test('cleanup failure preserves the initial error and does not claim shutdown succeeded', async () => {
+  const f = recoveryActions({ requestStop: async () => false,
+    stopBackend: async () => { throw new Error('shutdown failed') } })
+  await recoverWindowsWallpaperHostExit(new Error('Lively is missing'), f.actions)
+  assert.match(f.messages[0], /Lively is missing/)
+  assert.match(f.messages[0], /shutdown failed/)
+  assert.match(f.messages[0], /shutdown could not be confirmed/)
+  assert.doesNotMatch(f.messages[0], /stopped its backend/)
+})
+
+for (const failedAction of ['closeSurface', 'showMainWindow']) {
+  test(`${failedAction} failure cannot skip voice cleanup or reject the exit notification`, async () => {
+    const f = recoveryActions({ [failedAction]: () => { throw new Error('window destroyed') } })
+    await assert.doesNotReject(recoverWindowsWallpaperHostExit(new Error('helper lost'), f.actions))
+    assert(f.calls.includes('wallpaper.stop'))
+    assert.match(f.messages[0], /helper lost/)
+    assert.match(f.messages[0], /window destroyed/)
+  })
+}
+
+test('a failed recovery dialog does not create an unhandled rejection', async t => {
+  const errors = []
+  t.mock.method(console, 'error', (...args) => errors.push(args))
+  const f = recoveryActions({ reportError: () => { throw new Error('dialog unavailable') } })
+  await assert.doesNotReject(recoverWindowsWallpaperHostExit(new Error('helper lost'), f.actions))
+  assert(f.calls.includes('wallpaper.stop'))
+  assert.match(errors[0].join(' '), /helper lost/)
+  assert.match(errors[0].join(' '), /dialog unavailable/)
+})
