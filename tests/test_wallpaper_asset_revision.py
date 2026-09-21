@@ -249,7 +249,8 @@ def test_wallpaper_keyboard_submit_reuses_the_chat_transport() -> None:
     async def ensure_session() -> dict:
         return {"ok": True, "current_session_id": "wallpaper-session"}
 
-    async def send_chat(text: str, session_id: str) -> dict:
+    async def send_chat(text: str, session_id: str, visual: dict | None) -> dict:
+        assert visual is None
         submitted.append((text, session_id))
         return {"status": "ok", "turn_id": "turn-1"}
 

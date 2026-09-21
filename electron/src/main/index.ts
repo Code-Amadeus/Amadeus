@@ -438,6 +438,7 @@ async function startBackend(): Promise<void> {
 
   const launchPendingRevisions = desktopSettings.pendingRevisionSnapshot()
   const backendEnvironment = desktopSettings.backendEnvironment(process.env, {
+    ...(process.platform === 'win32' && wantsWallpaper() ? { WAKE_ENABLED: '1' } : {}),
     AEC_REALTIME_ENABLED: '1',
     AEC_REALTIME_BARGE_IN: '1',
     AEC_REALTIME_DELAY_MS: '280',
@@ -673,6 +674,7 @@ function electronSliceUrl(bridge: WallpaperBridgeDescriptor): string {
     query.set('sliceHost', 'electron')
     return `http://127.0.0.1:${bridge.assetPort}/render/web/wallpaper_engine.html?${query.toString()}`
   }
+  if (process.platform === 'win32') query.set('windowsComposer', '1')
   return `http://127.0.0.1:${bridge.assetPort}/render/web/electron_slice.html?${query.toString()}`
 }
 
@@ -681,6 +683,7 @@ function electronCanvasUrl(bridge: WallpaperBridgeDescriptor): string {
     bridgePort: String(bridge.bridgePort),
     assetVersion: bridge.assetVersion,
   })
+  if (process.platform === 'win32') query.set('windowsComposer', '1')
   return `http://127.0.0.1:${bridge.assetPort}/render/web/electron_slice.html?${query.toString()}`
 }
 

@@ -154,6 +154,15 @@ def test_readiness_marks_asr_not_fully_ready_only_for_degraded_vad():
     assert fallback._ready({"asr": fallback._asr()})["asr"] is True
 
 
+def test_continuous_wake_status_has_no_expired_idle_deadline():
+    collector = RuntimeStatusCollector()
+    collector._asr_handler = SimpleNamespace(_active=True, _source="wake", _continuous_awake=True, _awake_until=1.0)
+    state = collector._asr()
+    assert state["continuous"] is True
+    assert state["awake_remaining_s"] is None
+    assert collector._derived({"asr": state})["asr_mode"] == "awake_hot"
+
+
 def _main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

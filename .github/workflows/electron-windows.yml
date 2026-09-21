@@ -41,6 +41,20 @@ jobs:
       - name: Typecheck and build renderer
         run: npm run build
 
+      - name: Test native wallpaper composer interactions
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build | Out-Null
+          $out = Join-Path $PWD 'build/composer-smoke.stdout.log'
+          $err = Join-Path $PWD 'build/composer-smoke.stderr.log'
+          $script = Join-Path $PWD 'scripts/smoke-wallpaper-composer.cjs'
+          $exe = Join-Path $PWD 'node_modules/electron/dist/electron.exe'
+          $probe = Start-Process -FilePath $exe -ArgumentList ('"' + $script + '"') -WindowStyle Hidden -RedirectStandardOutput $out -RedirectStandardError $err -PassThru
+          if (!$probe.WaitForExit(60000)) { Stop-Process -Id $probe.Id; throw 'Composer smoke timed out' }
+          Get-Content $out
+          Get-Content $err
+          if ($probe.ExitCode -ne 0) { throw "Composer smoke failed: $($probe.ExitCode)" }
+
       - name: Test Windows wallpaper lifecycle contracts
         run: dotnet run --project ../wallpaper/windows/Amadeus.Wallpaper.Tests
 
@@ -68,7 +82,10 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: windows-wallpaper-package-smoke
-          path: electron/build/wallpaper-smoke.*.log
+          path: |
+            electron/build/wallpaper-smoke.*.log
+            electron/build/composer-smoke.*.log
+            electron/build/composer-*.png
           if-no-files-found: ignore
 
   dependency-review:

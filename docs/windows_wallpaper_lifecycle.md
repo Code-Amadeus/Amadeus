@@ -1,7 +1,8 @@
 # Windows managed wallpaper lifecycle
 
 Windows starts in wallpaper mode by default. The existing macOS/Linux startup
-rules, Electron scene policy, and shared Python wallpaper bridge are unchanged.
+rules and Electron scene policy are unchanged. The shared bridge retains the
+existing text-submit protocol and adds authenticated Windows composer actions.
 Use `--no-wallpaper` or `AMADEUS_WALLPAPER=0` for an ordinary Windows window.
 `AMADEUS_WALLPAPER_HOST=external` retains manual Lively/Wallpaper Engine hosting.
 
@@ -114,6 +115,34 @@ standalone installer distribution, and requires Windows App Installer/winget.
 
 This change does not turn the source release into a complete packaged Amadeus
 runtime installer. Existing Python/model/asset provisioning remains unchanged.
+
+## Windows Slice and input
+
+Windows opens the restored CRT Slice and text composer collapsed. Existing
+attention requests can still open their approval surface. The original input
+label/dot and authored location remain; expanding reveals a wider, shallow
+CRT-styled composer with borderless image, voice and New chat controls.
+
+Image short press attaches a normalized preview (the same image preparation as
+Chat); long press toggles watching; right-click selects a window or full screen.
+Failed sends preserve the draft and attachment. New chat uses the shared Session
+owner and clears the draft only after successful creation.
+
+Windows wallpaper startup defaults to wake-word standby, respecting explicit
+process, desktop-setting and `.env` overrides. The gray microphone/standby label
+reflects real backend state. Wake detection or microphone activation enters
+continuous conversation through the existing wake ASR and auto-send route;
+there is no second dictation listener. Short and long microphone presses toggle
+that same conversation state. Stopping returns to wake standby; folding the
+composer does not stop an active conversation. Wallpaper exit stops its wake
+conversation. Other platforms retain the existing hot-window timeout behavior.
+
+`electron/scripts/smoke-wallpaper-composer.cjs` runs the real Slice page in native
+Electron against a local bridge fixture, including pointer short/long/right
+clicks, attachment encoding/retry, new-chat failure, collapsed startup and legacy
+platform behavior. It does not capture microphone audio or make model calls.
+The ASR contract tests exercise continuous and timed sessions using synthetic
+utterances; hardware microphone quality remains a manual acceptance check.
 
 ## Verification
 

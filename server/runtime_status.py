@@ -302,11 +302,13 @@ class RuntimeStatusCollector:
         h = self._asr_handler
         if h is not None:
             awake_until = float(getattr(h, "_awake_until", 0.0) or 0.0)
+            continuous = bool(getattr(h, "_continuous_awake", False))
             out.update({
                 "active": bool(getattr(h, "_active", False)),
                 "source": str(getattr(h, "_source", "") or ""),
                 "one_shot": bool(getattr(h, "_one_shot", False)),
-                "awake_remaining_s": round(max(0.0, awake_until - time.monotonic()), 1),
+                "continuous": continuous,
+                "awake_remaining_s": None if continuous else round(max(0.0, awake_until - time.monotonic()), 1),
                 "waiting_turn_complete": bool(getattr(h, "_waiting_turn_complete", False)),
             })
         getter = self._asr_manager_getter
@@ -508,7 +510,7 @@ class RuntimeStatusCollector:
             output_mode = "idle"
 
         if asr.get("active"):
-            asr_mode = "awake_hot" if (asr.get("awake_remaining_s") or 0) > 0 else "listening"
+            asr_mode = "awake_hot" if asr.get("continuous") or (asr.get("awake_remaining_s") or 0) > 0 else "listening"
         elif wake.get("running"):
             asr_mode = "wake_listening"
         else:

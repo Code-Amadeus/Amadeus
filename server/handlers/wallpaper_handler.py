@@ -40,7 +40,8 @@ class WallpaperHandler(RequestHandler):
         self._wake_start_fn: Callable[[], Any] | None = None
         self._wake_stop_fn: Callable[[], Any] | None = None
         self._canvas_action_fn: Callable[[dict[str, Any]], Any] | None = None
-        self._chat_send_fn: Callable[[str, str], Any] | None = None
+        self._chat_send_fn: Callable[[str, str, dict | None], Any] | None = None
+        self._chat_control_fn: Callable[[dict], Any] | None = None
         self._ensure_chat_session_fn: Callable[[], Any] | None = None
         self._canvas_projector: Callable[[dict[str, Any]], dict[str, Any]] | None = None
         self._attention_snapshot: Callable[[], list[dict[str, Any]]] | None = None
@@ -54,8 +55,9 @@ class WallpaperHandler(RequestHandler):
         wake_start_fn: Callable[[], Any] | None = None,
         wake_stop_fn: Callable[[], Any] | None = None,
         canvas_action_fn: Callable[[dict[str, Any]], Any] | None = None,
-        chat_send_fn: Callable[[str, str], Any] | None = None,
+        chat_send_fn: Callable[[str, str, dict | None], Any] | None = None,
         ensure_chat_session_fn: Callable[[], Any] | None = None,
+        chat_control_fn: Callable[[dict], Any] | None = None,
         canvas_projector: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         attention_snapshot: Callable[[], list[dict[str, Any]]] | None = None,
         current_activity: Callable[[], str] | None = None,
@@ -65,6 +67,7 @@ class WallpaperHandler(RequestHandler):
         self._wake_start_fn = wake_start_fn
         self._wake_stop_fn = wake_stop_fn
         self._canvas_action_fn = canvas_action_fn
+        self._chat_control_fn = chat_control_fn
         self._chat_send_fn = chat_send_fn
         self._ensure_chat_session_fn = ensure_chat_session_fn
         self._canvas_projector = canvas_projector
@@ -76,9 +79,13 @@ class WallpaperHandler(RequestHandler):
             bus.on(Method.WALLPAPER_ACTIVITY, self._forward_activity_event)
             bus.on(Method.WALLPAPER_CANVAS, self._forward_canvas_event)
             bus.on(Method.ASR_STATUS, self._forward_asr_event)
+            bus.on(Method.WAKE_STATUS, self._forward_composer_event)
             bus.on(Method.ATTENTION_UPDATED, self._forward_attention_event)
             bus.on(Method.SESSION_CHANGED, self._forward_attention_event)
             self._subscribed = True
+
+    def is_running(self) -> bool:
+        return self._wallpaper_host is not None
 
     async def handle(self, method: str, params: dict[str, Any]) -> dict[str, Any] | None:
         if method == Method.WALLPAPER_START:
@@ -183,11 +190,20 @@ class WallpaperHandler(RequestHandler):
             future = asyncio.run_coroutine_threadsafe(
                 self._route_chat_submit(payload or {}), loop
             )
-            return future.result(timeout=10)
+            try:
+                return future.result(timeout=60 if payload.get("action") == "voice_start" else 10)
+            except TimeoutError:
+                future.cancel()
+                raise
 
         host.set_chat_submit_handler(_handler)
 
     async def _route_chat_submit(self, payload: dict[str, Any]) -> dict[str, Any]:
+        action = payload.get("action", "send")
+        if action != "send":
+            if action not in {"status", "new_chat", "voice_start", "voice_stop", "vision_toggle", "vision_windows", "vision_select"} or self._chat_control_fn is None:
+                return {"ok": False, "error": "unsupported_chat_action"}
+            return await self._chat_control_fn(payload)
         text = str(payload.get("text") or "").strip()
         if not text:
             return {"ok": False, "error": "empty_message"}
@@ -205,7 +221,7 @@ class WallpaperHandler(RequestHandler):
         session_id = str(session.get("current_session_id") or "").strip()
         if not session_id:
             return {"ok": False, "error": "wallpaper_session_unavailable"}
-        result = send_chat(text, session_id)
+        result = send_chat(text, session_id, payload.get("visual"))
         if hasattr(result, "__await__"):
             result = await result
         if isinstance(result, dict):
@@ -218,6 +234,11 @@ class WallpaperHandler(RequestHandler):
 
     async def _stop(self, params: dict[str, Any]) -> dict[str, Any]:
         self._stop_wallpaper_animator()
+        if self._chat_control_fn:
+            try:
+                await self._chat_control_fn({"action": "voice_stop"})
+            except Exception:
+                logger.exception("wallpaper voice stop failed")
         if self._wallpaper_host:
             try:
                 self._wallpaper_host.stop()
@@ -266,6 +287,12 @@ class WallpaperHandler(RequestHandler):
 
     async def _forward_asr_event(self, _method: str, params: dict[str, Any]) -> None:
         self._apply_asr_status(params or {})
+        await self._forward_composer_event(_method, params)
+
+    async def _forward_composer_event(self, method: str, params: dict[str, Any]) -> None:
+        host = self._wallpaper_host
+        if host is not None and hasattr(host, "composer_event"):
+            host.composer_event({"method": method, "params": params})
 
     async def _forward_attention_event(
         self, _method: str, _params: dict[str, Any]
