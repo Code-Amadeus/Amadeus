@@ -69,6 +69,7 @@ jobs:
         working-directory: electron
         run: |
           npm ci
+          node ../agent_host/pi_runtime/node_modules/@earendil-works/pi-coding-agent/dist/cli.js --version
           npm test
           npm run build
 

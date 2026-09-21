@@ -6,13 +6,24 @@ runtime is pinned to `@earendil-works/pi-coding-agent@0.86.1`.
 
 ## Install and configure
 
-Use Node 22.19 or newer, then from the repository root:
+Use Node 22.19 or newer. The normal desktop installation (`npm ci` in
+`electron/`) installs the pinned Pi runtime automatically alongside Electron.
+An existing desktop checkout can rerun that command to install Pi or restore
+the locked version. Pi installation errors fail the desktop installation;
+they are not silently ignored. Runtime startup does not install packages.
+
+For a headless deployment or a standalone Pi runtime repair, run this from
+the repository root:
 
 ```powershell
 npm ci --ignore-scripts --prefix agent_host/pi_runtime
 ```
 
-Pi is enabled by default; its npm runtime still needs the installation above.
+Pi is enabled by default. The runtime install uses its existing lockfile and
+`--ignore-scripts`; if you skip the desktop postinstall with `--ignore-scripts`,
+install Pi separately with the command above (and provision Electron separately
+for desktop use). Model credentials are still required; installing the runtime
+does not configure an account or validate model access.
 Settings → Work Provider connections and `.env` expose these defaults:
 
 ```dotenv

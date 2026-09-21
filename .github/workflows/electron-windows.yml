@@ -28,6 +28,9 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      - name: Verify default Pi runtime starts
+        run: node ../agent_host/pi_runtime/node_modules/@earendil-works/pi-coding-agent/dist/cli.js --version
+
       - name: Test renderer projections
         run: npm test
 
