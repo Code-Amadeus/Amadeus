@@ -65,6 +65,8 @@ interface ProviderAvailability {
   registered: boolean
   reason: string
   version?: string
+  diagnostic?: string
+  authentication?: string
 }
 
 interface ProviderManifest {
@@ -514,8 +516,11 @@ function ConfigurationCard({ group, desktop, availability, onSave, collapsible =
   const [expanded, setExpanded] = useState(defaultOpen)
   useEffect(() => setExpanded(defaultOpen), [defaultOpen])
   const statusOk = group.status_ok ?? (availability ? availability.ready && availability.registered : Boolean(group.configured))
+  const availabilityStatus = availability?.reason === 'pi_model_credentials_unavailable'
+    ? 'Missing credentials'
+    : availability?.reason?.replaceAll('_', ' ').replace(/^./, value => value.toUpperCase())
   const statusText = availability
-    ? statusOk ? 'Registered' : availability.reason || 'Unavailable'
+    ? statusOk ? 'Registered' : availabilityStatus || 'Unavailable'
     : optionalWhenInactive && !group.active && !group.configured
       ? 'Optional'
       : group.status
@@ -534,6 +539,7 @@ function ConfigurationCard({ group, desktop, availability, onSave, collapsible =
           </div>
           {group.description ? <div className="settings-card-description">{t(group.description)}</div> : null}
           {group.status_detail ? <div className="settings-meta-text">{t(group.status_detail)}</div> : null}
+          {availability?.diagnostic && !statusOk ? <div className="settings-meta-text">{t(availability.diagnostic)}</div> : null}
         </div>
         <StatusPill ok={statusOk} tone={neutralStatus ? 'neutral' : undefined}>{t(statusText)}</StatusPill>
       </div>

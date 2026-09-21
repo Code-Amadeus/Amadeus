@@ -237,8 +237,10 @@ cd ..
 ```
 
 `npm ci` 会通过项目 postinstall 安装 Electron 和固定版本的 Pi 运行时，桌面用户
-无需另外安装默认日常工作 Agent。仍需在后端环境中配置模型凭据（Pi 默认模型使用
-`DEEPSEEK_API_KEY`）；纯后端安装、认证和自定义模型地址见 [Pi 配置说明](docs/pi-rpc-provider.md)。
+无需另外安装默认日常工作 Agent，也不需要再做一次 Agent 登录。默认 Pi 连接复用
+Settings -> Models 或 `.env` 中主 Chat 的 `DEEPSEEK_API_KEY`；重启后端时会先检查
+固定版本运行时和所选模型凭据，再把 Pi 标记为可用。纯后端安装、原生认证和自定义
+模型地址见 [Pi 配置说明](docs/pi-rpc-provider.md)。
 国内网络可为 npm/Electron 配置镜像（如 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`）。
 
 ### Linux
@@ -283,7 +285,8 @@ npm run build
 npm run electron:dev
 ```
 
-桌面的 `npm ci` 同样会安装 Pi；模型凭据配置见 [Pi 配置说明](docs/pi-rpc-provider.md)。
+桌面的 `npm ci` 同样会安装 Pi；默认 Pi 复用基础配置中的 DeepSeek 凭据，并在后端
+启动时检查。自定义模型认证见 [Pi 配置说明](docs/pi-rpc-provider.md)。
 
 如只需 headless 后端，可改为在项目根目录运行：
 

@@ -258,9 +258,12 @@ cd ..
 
 `npm ci` uses the project postinstall hook to install Electron and the pinned
 Pi runtime for the default daily-task agent. No separate Pi installation is
-needed for desktop use. Provide model credentials in the backend environment
-(`DEEPSEEK_API_KEY` for the default Pi model); see [Pi configuration](docs/pi-rpc-provider.md)
-for headless installation, authentication, and custom model endpoints.
+needed for desktop use. The default Pi connection reuses the same
+`DEEPSEEK_API_KEY` configured for Main Chat under Settings -> Models or in
+`.env`; it does not require another agent installation or login. After restart,
+the backend checks the pinned runtime and selected model credentials before Pi
+is advertised as available. See [Pi configuration](docs/pi-rpc-provider.md) for
+headless installation, native authentication, and custom model endpoints.
 Where network access requires it, configure npm/Electron mirrors, such as
 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`.
 
@@ -310,8 +313,9 @@ npm run build
 npm run electron:dev
 ```
 
-The desktop `npm ci` also installs Pi. Configure its model credentials as
-described in [Pi configuration](docs/pi-rpc-provider.md).
+The desktop `npm ci` also installs Pi. The default Pi connection reuses the
+DeepSeek credential from the base configuration and is checked when the backend
+starts; custom model authentication is described in [Pi configuration](docs/pi-rpc-provider.md).
 
 For a headless backend instead, run this from the project root:
 

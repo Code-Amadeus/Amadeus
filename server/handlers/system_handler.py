@@ -1027,7 +1027,7 @@ def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
     return [
         {
             "id": "pi", "label": "Pi · Experimental",
-            "description": "Local agent using the pinned native RPC runtime; Work role assignment is independent.",
+            "description": "Default daily agent using the desktop-installed native RPC runtime and shared Models credentials; Work role assignment is independent.",
             "fields": [
                 _startup_field("PI_PROVIDER_ENABLED", "Enable Pi", settings.PI_PROVIDER_ENABLED, field_type="boolean"),
                 _startup_field("PI_NODE_PATH", "Node executable", settings.PI_NODE_PATH, field_type="path"),

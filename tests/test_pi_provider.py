@@ -3,10 +3,11 @@ import asyncio
 import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 import pytest
 
-from agent_host.adapters.pi import PiAdapter
+from agent_host.adapters.pi import PiAdapter, PiStartupUnavailable
 from agent_host.pi_rpc import PiCommandRejected, PiRpcClient, PiTransportError
 from agent_host.provider_contract import ProviderRequirements
 from agent_host.provider_types import ProviderPermissionResponse, ProviderRunRequest, ProviderSessionHandle
@@ -219,6 +220,69 @@ def test_pi_unavailable_runtime_uses_existing_startup_status(monkeypatch):
     assert availability["reason"] == "pi_node_unavailable"
     assert not availability["registered"]
     assert runtime.get_manifest("pi") is None
+
+
+def _installed_pi_runtime(tmp_path, monkeypatch):
+    from agent_host.adapters import pi
+    from config import settings
+
+    runtime = tmp_path / "pi_runtime"
+    packages = {
+        "@earendil-works/pi-coding-agent": pi.PI_VERSION,
+        "pi-simple-web-tools": "0.1.0",
+    }
+    for name, version in packages.items():
+        package = runtime / "node_modules" / name / "package.json"
+        package.parent.mkdir(parents=True, exist_ok=True)
+        package.write_text(json.dumps({"version": version}), encoding="utf-8")
+    cli = runtime / "node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
+    cli.parent.mkdir(parents=True, exist_ok=True)
+    cli.touch()
+    monkeypatch.setattr(pi, "RUNTIME_DIR", runtime)
+    monkeypatch.setattr(settings, "PI_EXTENSIONS_JSON", "[]")
+    return runtime
+
+
+def test_pi_startup_reuses_effective_model_credentials_and_checks_native_auth(tmp_path, monkeypatch):
+    from config import settings
+
+    runtime = _installed_pi_runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr(settings, "DEEPSEEK_API_KEY", "effective-dotenv-secret")
+    observed = {}
+
+    def probe(command, **kwargs):
+        observed.update(command=command, **kwargs)
+        return SimpleNamespace(returncode=0,
+            stdout=json.dumps({"status": "ready", "provider": "deepseek", "authType": "api_key"}))
+
+    adapter = PiAdapter(node_path=sys.executable, agent_dir=tmp_path / "agent",
+        model_provider="deepseek", model="deepseek-v4-flash", startup_probe=probe)
+    adapter.require_startup_ready()
+
+    assert observed["command"] == [sys.executable, str(adapter._cli_path()), "auth", "check",
+        "--provider", "deepseek", "--model", "deepseek-v4-flash", "--json", "--no-refresh"]
+    assert observed["cwd"] == str(runtime)
+    assert observed["env"]["DEEPSEEK_API_KEY"] == "effective-dotenv-secret"
+    assert "effective-dotenv-secret" not in observed["command"]
+    assert adapter._startup_readiness["authentication"] == "api_key"
+
+
+def test_pi_startup_rejects_missing_selected_model_credentials(tmp_path, monkeypatch):
+    _installed_pi_runtime(tmp_path, monkeypatch)
+
+    def probe(_command, **_kwargs):
+        return SimpleNamespace(returncode=1,
+            stdout=json.dumps({"status": "not_ready", "provider": "deepseek",
+                "reason": "credentials_not_configured"}))
+
+    adapter = PiAdapter(node_path=sys.executable, agent_dir=tmp_path / "agent",
+        model_provider="deepseek", model="deepseek-v4-flash", startup_probe=probe)
+    with pytest.raises(PiStartupUnavailable) as raised:
+        adapter.require_startup_ready()
+
+    assert raised.value.availability["reason"] == "pi_model_credentials_unavailable"
+    assert raised.value.availability["authentication"] == "unavailable"
+    assert "Settings -> Models" in raised.value.availability["diagnostic"]
 
 
 async def test_pi_rejects_concurrent_attachment_to_a_new_live_session(pi_host, monkeypatch):
