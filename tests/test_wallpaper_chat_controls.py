@@ -116,3 +116,20 @@ async def test_image_is_forwarded_with_the_same_session_as_text():
     visual = {"mode": "attachment", "frame": {"dataUrl": "data:image/jpeg;base64,AA=="}}
     assert (await handler._route_chat_submit({"text": "look", "visual": visual}))["ok"]
     handler._chat_send_fn.assert_awaited_once_with("look", "s1", visual)
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_voice_projection_only_reaches_opted_in_composer(enabled):
+    handler = WallpaperHandler()
+    host = SimpleNamespace(composer_event=Mock())
+    handler._wallpaper_host = host
+    handler._chat_control_fn = AsyncMock() if enabled else None
+    await handler._forward_composer_event(Method.WAKE_STATUS, {
+        "status": "listening", "running": True, "heard": "private speech", "score": 0.9,
+    })
+    if enabled:
+        host.composer_event.assert_called_once_with({
+            "method": Method.WAKE_STATUS, "params": {"status": "listening", "running": True},
+        })
+    else:
+        host.composer_event.assert_not_called()

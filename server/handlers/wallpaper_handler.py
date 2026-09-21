@@ -290,9 +290,14 @@ class WallpaperHandler(RequestHandler):
         await self._forward_composer_event(_method, params)
 
     async def _forward_composer_event(self, method: str, params: dict[str, Any]) -> None:
+        # Only the Windows composer opts into this projection. The shared
+        # wallpaper stream needs state indicators, not recognized wake text.
+        if self._chat_control_fn is None:
+            return
         host = self._wallpaper_host
         if host is not None and hasattr(host, "composer_event"):
-            host.composer_event({"method": method, "params": params})
+            state = {key: params[key] for key in ("status", "source", "running", "continuous") if key in params}
+            host.composer_event({"method": method, "params": state})
 
     async def _forward_attention_event(
         self, _method: str, _params: dict[str, Any]
