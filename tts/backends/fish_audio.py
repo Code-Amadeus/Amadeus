@@ -52,10 +52,10 @@ def _resolve_websocket_proxy(ws_url: str) -> str | None:
     keys = (
         ("wss", "socks", "https", "all", "http")
         if endpoint.scheme == "wss"
-        else ("ws", "socks", "http", "all")
+        else ("ws", "socks", "https", "http", "all")
     )
     has_socks = _has_python_socks()
-    unusable: list[str] = []
+    missing_socks_dependency = False
 
     for key in keys:
         proxy = proxies.get(key)
@@ -71,13 +71,13 @@ def _resolve_websocket_proxy(ws_url: str) -> str | None:
         if scheme in _SOCKS_SCHEMES:
             if has_socks:
                 return proxy
-            unusable.append(proxy)
+            missing_socks_dependency = True
         elif scheme in {"http", "https"}:
             return proxy
 
-    if unusable:
+    if missing_socks_dependency:
         raise TTSBackendError(
-            f"Configured SOCKS proxy ({unusable[0]}) requires python-socks which is not installed, "
+            "Configured SOCKS proxy requires python-socks which is not installed, "
             "and no usable HTTP fallback proxy was found."
         )
     return None

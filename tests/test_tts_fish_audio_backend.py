@@ -459,6 +459,24 @@ def test_resolve_websocket_proxy(monkeypatch, proxies, has_socks, expected):
 @pytest.mark.parametrize(
     "proxies",
     [
+        {"https": "http://127.0.0.1:7890"},
+        {"https": "http://127.0.0.1:7890", "http": "http://127.0.0.1:7891"},
+        {"socks": "http://127.0.0.1:1080", "https": "http://127.0.0.1:7890"},
+    ],
+)
+def test_ws_endpoint_uses_https_proxy(monkeypatch, proxies):
+    import urllib.request
+    from tts.backends.fish_audio import _resolve_websocket_proxy
+
+    monkeypatch.setattr(urllib.request, "proxy_bypass", lambda host: False)
+    monkeypatch.setattr(urllib.request, "getproxies", lambda: proxies)
+    monkeypatch.setattr("tts.backends.fish_audio._has_python_socks", lambda: False)
+    assert _resolve_websocket_proxy("ws://tts.example.com/v1/tts/live") == proxies["https"]
+
+
+@pytest.mark.parametrize(
+    "proxies",
+    [
         {"https": "socks5://127.0.0.1:1080"},
         {"socks": "socks5h://127.0.0.1:1080"},
         {"socks": "http://127.0.0.1:7890"},
@@ -477,12 +495,20 @@ def test_resolve_websocket_proxy_raises_when_unusable(monkeypatch, proxies):
         _resolve_websocket_proxy("wss://api.fish.audio/v1/tts/live")
 
 
-async def test_synthesize_stream_raises_clear_error_when_proxy_unusable(monkeypatch):
+@pytest.mark.parametrize(
+    "proxy",
+    [
+        "http://127.0.0.1:7890",
+        "http://proxy-user:proxy-password@127.0.0.1:7890",
+        "socks5h://proxy-user:proxy-password@127.0.0.1:7890",
+    ],
+)
+async def test_synthesize_stream_raises_clear_error_when_proxy_unusable(monkeypatch, proxy):
     import urllib.request
 
     monkeypatch.setattr(urllib.request, "proxy_bypass", lambda host: False)
     monkeypatch.setattr("tts.backends.fish_audio._has_python_socks", lambda: False)
-    monkeypatch.setattr(urllib.request, "getproxies", lambda: {"socks": "http://127.0.0.1:7890"})
+    monkeypatch.setattr(urllib.request, "getproxies", lambda: {"socks": proxy})
 
     backend = FishAudioTTSBackend(
         ws_url="wss://api.fish.audio/v1/tts/live",
@@ -490,10 +516,12 @@ async def test_synthesize_stream_raises_clear_error_when_proxy_unusable(monkeypa
         model="s2.1-pro-free",
         reference_id="test-voice",
     )
-    with pytest.raises(TTSBackendError, match="requires python-socks"):
+    with pytest.raises(TTSBackendError, match="requires python-socks") as error:
         _ = [
             chunk
             async for chunk in backend.synthesize_text_stream(
                 TTSSynthesisRequest("test"), text_source("hi")
             )
         ]
+    assert "proxy-user" not in str(error.value)
+    assert "proxy-password" not in str(error.value)
