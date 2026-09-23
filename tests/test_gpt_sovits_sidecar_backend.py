@@ -6,7 +6,7 @@ from types import ModuleType
 import numpy as np
 import pytest
 
-from tts.backend import TTSSynthesisRequest
+from tts.backend import TTSSynthesisRequest, TTSRuntimeAdapter
 from tts.backends import gpt_sovits as backend_module
 from tts.backends.gpt_sovits import GPTSoVITSBackend
 
@@ -68,6 +68,19 @@ def test_embedded_backend_preserves_synthesis_request(monkeypatch):
     assert observed["infer"]["text"] == "hello"
     assert observed["infer"]["ref_audio_path"] == "reference.wav"
     assert observed["infer"]["top_k"] == 7
+
+
+def test_embedded_rocm_identity_comes_from_loaded_inferencer():
+    backend = GPTSoVITSBackend()
+    backend._inferencer = type("Inferencer", (), {"is_rocm": True})()
+    assert TTSRuntimeAdapter(backend).is_rocm is True
+
+
+def test_hip_build_running_on_cpu_does_not_select_rocm_gpu_tuning():
+    backend = GPTSoVITSBackend()
+    backend.deployment = "subprocess"
+    backend._ready_info = {"hip": "7.2", "cuda_available": True, "device": "cpu"}
+    assert TTSRuntimeAdapter(backend).is_rocm is False
 
 
 def _write_fake_sidecar(path):
@@ -155,6 +168,7 @@ def test_sidecar_round_trip_preserves_request_and_float32_audio(tmp_path, monkey
             "cuda_available": True,
         }
         assert backend.deployment == "subprocess"
+        assert TTSRuntimeAdapter(backend).is_rocm is True
         assert chunk.sample_rate == 24000
         assert chunk.audio.dtype == np.float32
         np.testing.assert_allclose(chunk.audio, [0.25, -0.5])

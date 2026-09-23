@@ -45,6 +45,16 @@ class GPTSoVITSBackend(BaseTTSBackend):
         self._stderr_tail: deque[str] = deque(maxlen=50)
         self._ready_info: dict[str, Any] = {}
 
+    @property
+    def is_rocm(self) -> bool:
+        if self.deployment == "subprocess":
+            return bool(
+                self._ready_info.get("hip")
+                and self._ready_info.get("cuda_available")
+                and str(self._ready_info.get("device", "")).lower().startswith("cuda")
+            )
+        return bool(getattr(self._inferencer, "is_rocm", False))
+
     @staticmethod
     def _sidecar_enabled() -> bool:
         # Direct backend users may not have imported config.settings yet.  Load

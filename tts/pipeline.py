@@ -51,6 +51,20 @@ from tts.utterance_scheduler import TTSUtteranceScheduler
 logger = logging.getLogger(__name__)
 _utterance_scheduler = TTSUtteranceScheduler(logger=logger)
 
+# Settings offers standard ×1, CUDA Graph ×1 and Parallel ×2. A runtime mode
+# switch only replaces the semaphore, so the TTS worker pool is sized for the
+# most parallel selectable mode and configured values stay within that range.
+MAX_SELECTABLE_TTS_CONCURRENCY = 2
+
+
+def selectable_tts_concurrency(value) -> int:
+    """Clamp a configured synthesis concurrency to the modes Settings offers."""
+    try:
+        return min(MAX_SELECTABLE_TTS_CONCURRENCY, max(1, int(value)))
+    except (TypeError, ValueError):
+        return 1
+
+
 # ===== 运行时状态（供外部模块读写）=====
 exp_tts_semaphore = None
 exp_play_condition = None
@@ -64,7 +78,7 @@ _player = None
 _pending_sentence_items = None
 _llm_warmup_fn = None   # remote_llm_query，供 warmup_graph_pipeline 使用
 _exp_tts_semaphore = None  # 并发合成信号量，由 main.py 创建后注入
-_exp_tts_concurrency = EXP_TTS_MAX_CONCURRENCY
+_exp_tts_concurrency = selectable_tts_concurrency(EXP_TTS_MAX_CONCURRENCY)
 _RTF_EMA_ALPHA = 0.3
 _rtf_ema = max(0.001, float(TTS_RTF_INITIAL))
 _tts_interrupt_epoch: int = 0
@@ -184,21 +198,24 @@ def reconfigure_tts_language_code(value: str) -> str:
 def reconfigure_tts_mode(cuda_graph: bool, concurrency: int) -> None:
     """热更新 TTS 推理模式（GUI 切换时调用，当前无任务时最安全）。
 
-    cuda_graph=True  + concurrency=1 → CUDA Graph 串行模式（首句更快）
-    cuda_graph=False + concurrency=2 → 并行模式（吞吐量优先）
+    cuda_graph=True  + concurrency=1 → CUDA Graph 串行模式
+    cuda_graph=False + concurrency=1 → 常规串行模式
+    cuda_graph=False + concurrency=2 → 显式并行模式
     """
     global _exp_tts_semaphore, _exp_tts_concurrency
     os.environ['ENABLE_CUDA_GRAPH'] = '1' if cuda_graph else '0'
-    _exp_tts_concurrency = max(1, int(concurrency))
-    _exp_tts_semaphore = asyncio.Semaphore(concurrency)
+    _exp_tts_concurrency = selectable_tts_concurrency(concurrency)
+    _exp_tts_semaphore = asyncio.Semaphore(_exp_tts_concurrency)
     logger.info(
         f"[TTS Mode] switched -> CUDA_Graph={'ON' if cuda_graph else 'OFF'}, "
-        f"semaphore={concurrency}"
+        f"semaphore={_exp_tts_concurrency}"
     )
 
 
 def current_tts_mode() -> str:
-    return "cuda_graph" if os.environ.get("ENABLE_CUDA_GRAPH", "0") == "1" else "parallel"
+    if os.environ.get("ENABLE_CUDA_GRAPH", "0") == "1":
+        return "cuda_graph"
+    return "parallel2" if _exp_tts_concurrency > 1 else "parallel"
 
 
 def reconfigure_tts_mode_name(value: str) -> str:
@@ -208,7 +225,8 @@ def reconfigure_tts_mode_name(value: str) -> str:
         "cuda graph ×1": "cuda_graph",
         "graph": "cuda_graph",
         "parallel": "parallel",
-        "parallel ×2": "parallel",
+        "parallel2": "parallel2",
+        "parallel ×2": "parallel2",
     }
     mode = aliases.get(raw)
     if mode is None:
@@ -216,7 +234,10 @@ def reconfigure_tts_mode_name(value: str) -> str:
     if mode == "cuda_graph":
         reconfigure_tts_mode(cuda_graph=True, concurrency=1)
     else:
-        reconfigure_tts_mode(cuda_graph=False, concurrency=2)
+        reconfigure_tts_mode(
+            cuda_graph=False,
+            concurrency=MAX_SELECTABLE_TTS_CONCURRENCY if mode == "parallel2" else 1,
+        )
     return mode
 
 
@@ -480,10 +501,9 @@ def configure(
         _llm_warmup_fn = llm_warmup_fn
     if exp_tts_semaphore is not None:
         _exp_tts_semaphore = exp_tts_semaphore
-        try:
-            _exp_tts_concurrency = max(1, int(os.environ.get("EXP_TTS_MAX_CONCURRENCY", str(EXP_TTS_MAX_CONCURRENCY))))
-        except Exception:
-            _exp_tts_concurrency = EXP_TTS_MAX_CONCURRENCY
+        _exp_tts_concurrency = selectable_tts_concurrency(
+            os.environ.get("EXP_TTS_MAX_CONCURRENCY", EXP_TTS_MAX_CONCURRENCY)
+        )
 
 
 # =============================================================================
@@ -567,27 +587,26 @@ _REF_AUDIO = TTS_REF_AUDIO_JA
 _REF_TEXT  = TTS_REF_TEXT_JA
 
 
-_FIRST_SENTENCE_STREAM_MIN_CHUNK_SEC = 0.35
-_FIRST_SENTENCE_STREAM_MAX_CHUNK_SEC = 0.80
-_FIRST_SENTENCE_STREAM_TARGET_CHUNKS = 3
+_STREAM_MIN_CHUNK_SEC = 0.35
+_STREAM_MAX_CHUNK_SEC = 0.80
+_STREAM_TARGET_CHUNKS = 3
 
 
-def _compute_first_sentence_stream_chunk_seconds(text: str, params: dict) -> float:
-    """按首句长度估算一个更稳的 chunk 时长，目标约 3 段，避免切得过碎。"""
+def _compute_stream_chunk_seconds(text: str, params: dict) -> float:
+    """按句子长度估算 chunk 时长，目标约 3 段，避免切得过碎。"""
     stripped = (text or "").strip()
     length = len(stripped)
     speed = float(params.get("speed", 1.0) or 1.0)
 
     # 这里不用 max_sec_override，它对首句有 3.5s 下限，会让极短句估计严重失真。
     estimated_sec = max(0.9, min(3.0, (length * 0.11 + 0.25) / max(speed, 0.6)))
-    estimated_sec = max(0.9, min(3.0, (length * 0.11 + 0.25) / max(speed, 0.6)))
     if length <= 8:
         return 0.40
-    target_chunks = 2.5 if length <= 16 else float(_FIRST_SENTENCE_STREAM_TARGET_CHUNKS)
+    target_chunks = 2.5 if length <= 16 else float(_STREAM_TARGET_CHUNKS)
     chunk_sec = estimated_sec / target_chunks
     return max(
-        _FIRST_SENTENCE_STREAM_MIN_CHUNK_SEC,
-        min(_FIRST_SENTENCE_STREAM_MAX_CHUNK_SEC, chunk_sec),
+        _STREAM_MIN_CHUNK_SEC,
+        min(_STREAM_MAX_CHUNK_SEC, chunk_sec),
     )
 
 
@@ -851,6 +870,19 @@ async def speak_stream_enhanced_asyncio_queue(
         _sha = _compute_text_sha1(text)
     except Exception:
         _sha = "sha_err"
+    if _tts_runtime is None:
+        logger.error("TTS backend is not initialized; cannot generate speech")
+        _release_task_semaphore(task_semaphore, sentence_id)
+        return
+
+    rocm = bool(getattr(_tts_runtime, "is_rocm", False))
+    # ROCm starts each utterance from its first vocoder block. A merged
+    # utterance keeps playlist playback: play_s1_stream carries one logical
+    # sentence, while the playlist advances the shared sentence sequence past,
+    # and closes, every sentence the audio contains.
+    rocm_stream = rocm and bool(_tts_runtime.supports_streaming) and not segments
+    if rocm_stream:
+        stream_to_player = True
     logger.info(
         f"[TTS-FUNC-ENTER] func=speak_stream_enhanced_asyncio_queue "
         f"id={sentence_id} sha1={_sha} first={is_first_sentence} stream={stream_to_player}"
@@ -858,15 +890,13 @@ async def speak_stream_enhanced_asyncio_queue(
     if is_first_sentence:
         log_latency_marker(logger, "first_tts_enter", id=sentence_id, stream=int(bool(stream_to_player)))
 
-    if _tts_runtime is None:
-        logger.error("TTS backend is not initialized; cannot generate speech")
-        return
-
     synthesis_start = time.time()
     tts_text = _strip_tts_fullwidth_parentheses(text)
     if tts_text != text:
         logger.info(f"[TTS-TEXT-FILTER] removed full-width parentheses: {sentence_id}")
     params = get_sovits_params(tts_text, is_first_sentence)
+    if rocm and params["sample_steps"] > 16:
+        params["sample_steps"] = 16
     if force_graph:
         params["enable_cuda_graph"] = True
         params["enable_static_kv"] = True
@@ -875,8 +905,10 @@ async def speak_stream_enhanced_asyncio_queue(
     params["prompt_text"] = _get_ref_text(tts_text)
     processed_text = correct_pronunciation_for_tts(tts_text)
 
+    if rocm_stream and not chunk_size_seconds:
+        chunk_size_seconds = _compute_stream_chunk_seconds(processed_text, params)
     producer_chunk_size_seconds = (
-        chunk_size_seconds if (stream_to_player and is_first_sentence) else None
+        chunk_size_seconds if (stream_to_player and (is_first_sentence or rocm_stream)) else None
     )
     params["chunk_size_seconds"] = producer_chunk_size_seconds
     # TTS producer is started after the first-sentence audio cache check below.
@@ -1173,8 +1205,9 @@ async def _synthesize_experimental(
     task_semaphore,
 ):
     runtime = _tts_runtime
-    # Embedded synthesis modes retain their established playback policy. A
-    # remote backend that already yields native audio chunks must not have that
+    # Embedded synthesis modes retain their established playback policy, except
+    # that ROCm streams single-sentence jobs (speak_stream_enhanced_asyncio_queue).
+    # A remote backend that already yields native audio chunks must not have that
     # stream buffered merely because the local experimental scheduler is active.
     stream_to_player = bool(
         stream_tts

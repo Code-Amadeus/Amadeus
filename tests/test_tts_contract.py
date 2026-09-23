@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -512,6 +513,195 @@ def test_experimental_scheduler_only_forwards_native_remote_streams() -> None:
     assert asyncio.run(
         run_case(deployment="embedded", supports_streaming=True, stream_tts=True)
     ) is False
+
+
+def test_rocm_later_sentence_plays_before_synthesis_finishes() -> None:
+    from tts import pipeline
+
+    async def run_case(is_rocm: bool) -> tuple[list[str], dict]:
+        release = threading.Event()
+        first_audio = asyncio.Event()
+        playback_done = asyncio.Event()
+        events: list[str] = []
+        options: dict = {}
+
+        class Runtime:
+            backend_id = "gpt_sovits"
+            supports_streaming = True
+
+            def __init__(self):
+                self.is_rocm = is_rocm
+
+            def infer_stream(self, **kwargs):
+                options.update(kwargs)
+                yield 24000, np.ones(240, dtype=np.float32), "first"
+                assert release.wait(2)
+                yield 24000, np.ones(240, dtype=np.float32), "second"
+
+        class Playback:
+            player_is_ready = asyncio.Event()
+
+            def __init__(self):
+                self.player_is_ready.set()
+
+            async def play_s1_stream(self, queue, *_args, **_kwargs):
+                while await queue.get() is not None:
+                    events.append("stream")
+                    first_audio.set()
+                playback_done.set()
+
+            async def add_to_playlist(self, *_args, **_kwargs):
+                events.append("playlist")
+                first_audio.set()
+                playback_done.set()
+
+        executor = ThreadPoolExecutor(max_workers=1)
+        previous = pipeline._tts_runtime, pipeline._tts_executor, pipeline._playback_manager
+        try:
+            pipeline._tts_runtime = Runtime()
+            pipeline._tts_executor = executor
+            pipeline._playback_manager = Playback()
+            with patch.object(pipeline, "correct_pronunciation_for_tts", side_effect=lambda value: value):
+                synthesis = asyncio.create_task(
+                    pipeline.speak_stream_enhanced_asyncio_queue(
+                        "long text " * 6, "sentence_2_rocm", stream_to_player=False,
+                    )
+                )
+                if is_rocm:
+                    await asyncio.wait_for(first_audio.wait(), 1)
+                    assert events == ["stream"]
+                else:
+                    await asyncio.sleep(0.05)
+                    assert not first_audio.is_set()
+                release.set()
+                await asyncio.wait_for(synthesis, 2)
+                await asyncio.wait_for(first_audio.wait(), 1)
+                await asyncio.wait_for(playback_done.wait(), 1)
+        finally:
+            release.set()
+            pipeline._tts_runtime, pipeline._tts_executor, pipeline._playback_manager = previous
+            executor.shutdown(wait=True)
+        return events, options
+
+    rocm_events, rocm_options = asyncio.run(run_case(True))
+    ordinary_events, ordinary_options = asyncio.run(run_case(False))
+    assert rocm_events == ["stream", "stream"]
+    assert rocm_options["sample_steps"] == 16
+    assert rocm_options["chunk_size_seconds"] > 0
+    assert ordinary_events == ["playlist"]
+    assert ordinary_options["sample_steps"] == 32
+    assert ordinary_options["chunk_size_seconds"] is None
+
+
+def test_rocm_merged_utterance_keeps_every_sentence_in_the_playback_sequence() -> None:
+    """A merged job carries several sentence numbers; later speech must still play."""
+    from tts import pipeline
+    from tts.playback import PlaybackManager
+
+    class Player:
+        _hooks = SimpleNamespace(
+            subtitle_available=False,
+            update_subtitle_display=None,
+            check_and_display_pre_translation=None,
+        )
+        mouth_sink = SimpleNamespace(publish_mouth_value=lambda _value: None)
+
+        def __init__(self):
+            self.sample_rate = 24000
+            self.is_playing = False
+            self.last_send_time = 0.0
+
+        def initialize(self, sample_rate):
+            self.sample_rate = sample_rate
+            self.is_playing = True
+
+        async def write_audio_async(self, _audio, *, before_write=None, after_first_write=None, **_kwargs):
+            if before_write is not None:
+                before_write()
+            if after_first_write is not None:
+                after_first_write()
+
+        async def play_full_audio_and_signal_completion(self, *args, **_kwargs):
+            self.is_playing = True
+            args[4].set()
+
+    class Runtime:
+        backend_id = "gpt_sovits"
+        supports_streaming = True
+        is_rocm = True
+
+        def __init__(self):
+            self.requests: list[dict] = []
+
+        def infer_stream(self, **kwargs):
+            self.requests.append(kwargs)
+            yield 24000, np.ones(240, dtype=np.float32), kwargs["text"]
+
+    async def until(predicate) -> None:
+        while not predicate():
+            await asyncio.sleep(0.01)
+
+    async def run() -> tuple[list[dict], list[str], list[str]]:
+        manager = PlaybackManager(Player())
+        completed: list[str] = []
+        turns: list[str] = []
+        manager.on_sentence_start = lambda _sentence_id: None
+        manager.on_sentence_complete = lambda sentence_id, _text: completed.append(sentence_id)
+        manager.on_turn_playback_complete = lambda: turns.append("complete")
+        runtime = Runtime()
+        executor = ThreadPoolExecutor(max_workers=1)
+        playback = asyncio.create_task(manager.run())
+        previous = (
+            pipeline._tts_runtime, pipeline._tts_executor, pipeline._playback_manager, pipeline._rtf_ema,
+        )
+        try:
+            pipeline._tts_runtime = runtime
+            pipeline._tts_executor = executor
+            pipeline._playback_manager = manager
+            manager.mark_turn_last_sentence("sentence_4_d", "turn-merged")
+            with patch.object(pipeline, "correct_pronunciation_for_tts", side_effect=lambda value: value):
+                await pipeline.speak_stream_enhanced_asyncio_queue("one.", "sentence_1_a")
+                await pipeline.speak_stream_enhanced_asyncio_queue(
+                    "two, three. " * 5,
+                    "sentence_2_b",
+                    segments=[
+                        {"sentence_id": "sentence_2_b", "text": "two,", "seq": 2},
+                        {"sentence_id": "sentence_3_c", "text": "three.", "seq": 3},
+                    ],
+                )
+                await pipeline.speak_stream_enhanced_asyncio_queue("four.", "sentence_4_d")
+                await asyncio.wait_for(until(lambda: bool(turns)), 2)
+        finally:
+            playback.cancel()
+            await asyncio.gather(playback, return_exceptions=True)
+            (
+                pipeline._tts_runtime, pipeline._tts_executor, pipeline._playback_manager, pipeline._rtf_ema,
+            ) = previous
+            executor.shutdown(wait=True)
+        return runtime.requests, completed, turns
+
+    requests, completed, turns = asyncio.run(run())
+    assert completed == ["sentence_1_a", "sentence_2_b", "sentence_3_c", "sentence_4_d"]
+    assert turns == ["complete"]
+    single, merged, following = requests
+    assert single["chunk_size_seconds"] > 0 and following["chunk_size_seconds"] > 0
+    assert merged["chunk_size_seconds"] is None
+    assert merged["sample_steps"] == 16
+
+
+def test_missing_runtime_returns_the_synthesis_permit() -> None:
+    from tts import pipeline
+
+    async def run() -> bool:
+        permit = asyncio.Semaphore(1)
+        await permit.acquire()
+        with patch.object(pipeline, "_tts_runtime", None):
+            await pipeline.speak_stream_enhanced_asyncio_queue(
+                "text.", "sentence_1_a", task_semaphore=permit,
+            )
+        return permit.locked()
+
+    assert asyncio.run(run()) is False
 
 
 def test_audio_writer_publishes_mouth_envelope_before_each_physical_subwrite() -> None:

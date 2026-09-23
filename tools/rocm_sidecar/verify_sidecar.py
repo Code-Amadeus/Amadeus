@@ -44,6 +44,9 @@ def parse_args() -> argparse.Namespace:
     tts.add_argument("--text", required=True)
     tts.add_argument("--language", choices=["ja", "en"], default="ja")
     tts.add_argument("--output", required=True, type=Path)
+    tts.add_argument("--repeat", type=int, default=1, help="Repeat in the same process to measure warm synthesis.")
+    tts.add_argument("--chunk-seconds", type=float, default=0.8,
+                     help="Stream block length; the app uses 0.35-0.8 s (0.4 s for short first sentences).")
     tts.add_argument("--graph", action="store_true", help="Opt in to Graph; off for baseline verification.")
     return parser.parse_args()
 
@@ -61,6 +64,8 @@ def main() -> None:
         raise SystemExit("ASR needs an existing model directory and --repeat >= 1.")
     if args.mode == "tts" and args.output.exists():
         raise SystemExit("Output already exists; choose a new output filename (nothing was overwritten).")
+    if args.mode == "tts" and (args.repeat < 1 or not args.chunk_seconds > 0):
+        raise SystemExit("TTS needs --repeat >= 1 and a positive --chunk-seconds.")
 
     import numpy as np
     import soundfile as sf
@@ -104,7 +109,7 @@ def main() -> None:
         request = {"type": "infer_stream", "request_id": "rocm-tutorial-test", "request": {
             "text": args.text, "language": args.language, "reference_language": args.language,
             "reference_audio": str(args.reference), "reference_text": args.reference_text,
-            "speed": 1.0, "chunk_size_seconds": 0.8,
+            "speed": 1.0, "chunk_size_seconds": args.chunk_seconds,
             "options": {"text_language": language_label, "prompt_language": language_label,
                         "sample_steps": 16, "how_to_cut": "不切", "if_sr": False,
                         "enable_cuda_graph": args.graph, "enable_static_kv": True}}}
@@ -173,42 +178,45 @@ def main() -> None:
                                   "inference_seconds": round(elapsed, 3), "rtf": round(elapsed / (len(audio) / 16000), 3)}, ensure_ascii=False))
             print("PASS: protocol/finite input/non-empty output. Human comparison with the recording is still required.")
         else:
-            chunks = []
-            sample_rate = None
-            first_chunk_seconds = None
-            begin = time.perf_counter()
-            send(request)
-            while True:
-                item = receive()
-                if item.get("request_id") != request["request_id"]:
-                    raise RuntimeError("Unexpected TTS request_id.")
-                if item.get("type") == "done":
-                    break
-                if item.get("type") != "chunk":
-                    raise RuntimeError(f"Unexpected TTS message type: {item.get('type')}")
-                chunk = np.frombuffer(base64.b64decode(item["audio_b64"], validate=True), dtype="<f4").copy()
-                rate = int(item["sample_rate"])
-                if not len(chunk) or not np.isfinite(chunk).all() or rate <= 0:
-                    raise RuntimeError("Empty/non-finite PCM or invalid sample rate.")
-                if sample_rate is not None and sample_rate != rate:
-                    raise RuntimeError("Sample rate changed within an utterance.")
-                sample_rate = rate
-                if first_chunk_seconds is None:
-                    first_chunk_seconds = time.perf_counter() - begin
-                chunks.append(chunk)
-            elapsed = time.perf_counter() - begin
-            if not chunks:
-                raise RuntimeError("TTS returned done without audio.")
-            result_audio = np.concatenate(chunks)
-            if float(np.max(np.abs(result_audio))) < 1e-6:
-                raise RuntimeError("TTS audio is effectively silent.")
-            duration = len(result_audio) / sample_rate
+            for index in range(args.repeat):
+                request["request_id"] = f"rocm-tutorial-test-{index + 1}"
+                chunks = []
+                sample_rate = None
+                first_chunk_seconds = None
+                begin = time.perf_counter()
+                send(request)
+                while True:
+                    item = receive()
+                    if item.get("request_id") != request["request_id"]:
+                        raise RuntimeError("Unexpected TTS request_id.")
+                    if item.get("type") == "done":
+                        break
+                    if item.get("type") != "chunk":
+                        raise RuntimeError(f"Unexpected TTS message type: {item.get('type')}")
+                    chunk = np.frombuffer(base64.b64decode(item["audio_b64"], validate=True), dtype="<f4").copy()
+                    rate = int(item["sample_rate"])
+                    if not len(chunk) or not np.isfinite(chunk).all() or rate <= 0:
+                        raise RuntimeError("Empty/non-finite PCM or invalid sample rate.")
+                    if sample_rate is not None and sample_rate != rate:
+                        raise RuntimeError("Sample rate changed within an utterance.")
+                    sample_rate = rate
+                    if first_chunk_seconds is None:
+                        first_chunk_seconds = time.perf_counter() - begin
+                    chunks.append(chunk)
+                elapsed = time.perf_counter() - begin
+                if not chunks:
+                    raise RuntimeError("TTS returned done without audio.")
+                result_audio = np.concatenate(chunks)
+                if float(np.max(np.abs(result_audio))) < 1e-6:
+                    raise RuntimeError("TTS audio is effectively silent.")
+                duration = len(result_audio) / sample_rate
+                print(json.dumps({"trial": index + 1, "chunks": len(chunks), "sample_rate": sample_rate,
+                                  "first_chunk_seconds": round(first_chunk_seconds, 3), "synthesis_seconds": round(elapsed, 3),
+                                  "audio_seconds": round(duration, 3), "rtf": round(elapsed / duration, 3)}, ensure_ascii=False))
             output = args.output.resolve()
             output.parent.mkdir(parents=True, exist_ok=True)
             sf.write(output, result_audio, sample_rate, subtype="PCM_16")
-            print(json.dumps({"output": str(output), "chunks": len(chunks), "sample_rate": sample_rate,
-                              "first_chunk_seconds": round(first_chunk_seconds, 3), "synthesis_seconds": round(elapsed, 3),
-                              "audio_seconds": round(duration, 3), "rtf": round(elapsed / duration, 3)}, ensure_ascii=False))
+            print(json.dumps({"output": str(output)}, ensure_ascii=False))
             print("PASS: finite, non-empty, non-silent WAV. Listen to it; this does not test the live microphone or UI.")
     except Exception:
         print("\n--- Sidecar diagnostic tail ---", file=sys.stderr)

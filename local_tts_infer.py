@@ -75,6 +75,16 @@ def _allows_nvidia_cuda_extensions(uses_torch_cuda_api: bool) -> bool:
     """NVIDIA CUDA extensions are incompatible with PyTorch ROCm/HIP builds."""
     return uses_torch_cuda_api and not bool(getattr(torch.version, "hip", None))
 
+
+def _stream_bucket_mels() -> int:
+    """Minimum ROCm BigVGAN stream mel length; a bad tuning value keeps 80."""
+    raw = os.environ.get("TTS_BIGVGAN_STREAM_BUCKET_MELS", "80")
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        logger.warning("invalid TTS_BIGVGAN_STREAM_BUCKET_MELS=%r; using 80", raw)
+        return 80
+
 # 获取当前项目根目录
 root_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, root_dir)
@@ -139,6 +149,8 @@ class TTSInferencer:
             self.device = device
             device_name = str(device).lower()
             self._uses_torch_cuda_api = _uses_torch_cuda_device_api(device_name)
+            self.is_rocm = self._uses_torch_cuda_api and bool(getattr(torch.version, "hip", None))
+            self._rocm_bigvgan_bucket_mels = _stream_bucket_mels() if self.is_rocm else 80
             self._allows_nvidia_cuda_extensions = _allows_nvidia_cuda_extensions(
                 self._uses_torch_cuda_api
             )
@@ -255,6 +267,25 @@ class TTSInferencer:
         if self._uses_torch_cuda_api:
             return torch.cuda.device(self._tts_device_idx)
         return nullcontext()
+
+    def _run_bigvgan_stream_chunk(self, mel, *, target_frames: int):
+        """Vocode a ROCm stream chunk at a stable mel length, then trim it.
+
+        MIOpen runs an expensive solver search the first time BigVGAN sees a
+        mel length. Every chunk shorter than the bucket, including each
+        sentence's final chunk, repeats its last frame up to that length.
+        """
+        actual_frames = int(mel.shape[-1])
+        padded_frames = max(actual_frames, target_frames)
+        if padded_frames > actual_frames:
+            tail = mel[..., -1:].expand(*mel.shape[:-1], padded_frames - actual_frames)
+            mel = torch.cat((mel, tail), dim=-1)
+        with self._device_context(), torch.inference_mode():
+            audio = self.bigvgan_model(mel)[0][0]
+        if padded_frames > actual_frames:
+            samples = max(1, round(audio.shape[-1] * actual_frames / padded_frames))
+            audio = audio[..., :samples]
+        return audio
 
     def _synchronize_device(self):
         if self._uses_torch_cuda_api:
@@ -1945,10 +1976,14 @@ class TTSInferencer:
                                 if self._sovits_sync_timing_enabled:
                                     self._sync_sovits_timing()
                                 _t1 = time.perf_counter()
-                                with self._device_context():
-                                    with torch.inference_mode():
-                                        wav_gen = self.bigvgan_model(chunk_mel)
-                                        audio = wav_gen[0][0]
+                                if self.is_rocm:
+                                    audio = self._run_bigvgan_stream_chunk(
+                                        chunk_mel,
+                                        target_frames=max(chunk_len, self._rocm_bigvgan_bucket_mels),
+                                    )
+                                else:
+                                    with self._device_context(), torch.inference_mode():
+                                        audio = self.bigvgan_model(chunk_mel)[0][0]
                                 if self._sovits_sync_timing_enabled:
                                     self._sync_sovits_timing()
                                 if self._sovits_sync_timing_enabled:
