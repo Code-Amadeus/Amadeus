@@ -465,7 +465,7 @@ export default function VNPage({ send, subscribe, connected }: Props) {
         <div role="status" style={{ marginBottom: 9, color: '#C42B1C', fontSize: 10.5 }}>{launch.bridge.error}</div>
       ) : launch.bridge?.lastTextPreview ? (
         <div style={{ marginBottom: 9, color: 'var(--muted)', fontSize: 10.5 }}>
-          {t('Last captured line')}: {launch.bridge.lastTextPreview}
+          {t('Last VN line')}: {launch.bridge.lastTextPreview}
         </div>
       ) : null}
 

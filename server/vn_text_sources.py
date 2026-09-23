@@ -221,13 +221,14 @@ class AgentVNTextSource:
         result = await self._on_line(payload)
         if isinstance(result, dict) and result.get("status") == "ignored":
             return
+        line = result.get("line") if isinstance(result, dict) and isinstance(result.get("line"), dict) else {}
         self._line_count += 1
         self._bridge = {
             "status": "running",
             "lineCount": self._line_count,
             "source": source,
-            "lastTextPreview": payload["text"][:80],
-            "lastScriptId": str(payload.get("script_id") or ""),
+            "lastTextPreview": str(line.get("text") or payload["text"])[:80],
+            "lastScriptId": str(line.get("script_id") or payload.get("script_id") or ""),
         }
         if source == "agent_websocket":
             self._bridge["url"] = self._ws_url
@@ -302,10 +303,11 @@ class LunaVNTextSource:
                         result = await self._on_line({"text": text, "metadata": {"source": "luna_original_text"}})
                         if isinstance(result, dict) and result.get("status") == "ignored":
                             continue
+                        line = result.get("line") if isinstance(result, dict) and isinstance(result.get("line"), dict) else {}
                         self._count += 1
                         self._bridge = {
                             "status": "running", "lineCount": self._count, "source": "luna_original_text",
-                            "url": self._url, "lastTextPreview": text[:80],
+                            "url": self._url, "lastTextPreview": str(line.get("text") or text)[:80],
                         }
                         await self._publish()
             except asyncio.CancelledError:

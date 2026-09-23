@@ -12,6 +12,7 @@ import websockets
 
 from server.vn_launch_manager import VNLaunchManager
 from server.vn_text_sources import AgentVNTextSource, LunaVNTextSource
+from vn_player.runtime import VNPlayerRuntime
 
 
 def test_agent_preserves_identical_lines_even_when_message_id_repeats() -> None:
@@ -48,6 +49,25 @@ def test_agent_accepts_plain_text_without_optional_fields() -> None:
     assert payload["text"] == "普通台词"
     assert payload["speaker"] == ""
     assert payload["script_id"] == ""
+
+
+def test_agent_status_previews_the_line_accepted_by_vn_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("VN_LLM_ENABLED", "0")
+    monkeypatch.setenv("VN_IMMEDIATE_LLM_ENABLED", "0")
+    script = tmp_path / "script.json"
+    script.write_text(json.dumps({"lines": [{"script_id": "scene_001", "text": "桥边的可读台词", "order": 0}]}, ensure_ascii=False), encoding="utf-8")
+
+    async def run() -> None:
+        runtime = VNPlayerRuntime(tmp_path)
+        await runtime.start({"session_id": "capture_test", "script_path": str(script), "lookahead_enabled": False})
+        source = AgentVNTextSource(runtime.ingest_line, AsyncMock())
+        sentence = json.dumps({"text": "����", "script_id": "scene_001"}, ensure_ascii=False)
+        await source._receive_agent_message(json.dumps({"type": "copyText", "sentence": sentence}, ensure_ascii=False))
+        _hook, bridge = source.status()
+        assert bridge["lastTextPreview"] == "桥边的可读台词"
+        assert bridge["lastScriptId"] == "scene_001"
+
+    asyncio.run(run())
 
 
 def test_agent_adapter_launches_selected_script_and_stops_only_its_process(tmp_path: Path) -> None:

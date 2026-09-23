@@ -407,7 +407,7 @@ const ZH_CN: Record<string, string> = {
   'Advanced launch options and line test': '高级启动选项与台词测试',
   'Text source': '文本来源',
   'Luna WebSocket URL': 'Luna WebSocket 地址',
-  'Last captured line': '最近捕获的台词',
+  'Last VN line': '最近处理的 VN 台词',
   'Connects to Luna text only; VN behavior still uses the selected experimental profile.': '仅连接 Luna 原文流；VN 的行为仍使用当前选定的实验配置。',
   'Launch game process': '启动游戏进程',
   'Attach hook agent': '附加 Hook 代理',
