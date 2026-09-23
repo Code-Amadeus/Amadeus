@@ -45,6 +45,8 @@ def parse_args() -> argparse.Namespace:
     tts.add_argument("--language", choices=["ja", "en"], default="ja")
     tts.add_argument("--output", required=True, type=Path)
     tts.add_argument("--repeat", type=int, default=1, help="Repeat in the same process to measure warm synthesis.")
+    tts.add_argument("--chunk-seconds", type=float, default=0.8,
+                     help="Stream block length; the app uses 0.35-0.8 s (0.4 s for short first sentences).")
     tts.add_argument("--graph", action="store_true", help="Opt in to Graph; off for baseline verification.")
     return parser.parse_args()
 
@@ -62,8 +64,8 @@ def main() -> None:
         raise SystemExit("ASR needs an existing model directory and --repeat >= 1.")
     if args.mode == "tts" and args.output.exists():
         raise SystemExit("Output already exists; choose a new output filename (nothing was overwritten).")
-    if args.mode == "tts" and args.repeat < 1:
-        raise SystemExit("TTS needs --repeat >= 1.")
+    if args.mode == "tts" and (args.repeat < 1 or not args.chunk_seconds > 0):
+        raise SystemExit("TTS needs --repeat >= 1 and a positive --chunk-seconds.")
 
     import numpy as np
     import soundfile as sf
@@ -107,7 +109,7 @@ def main() -> None:
         request = {"type": "infer_stream", "request_id": "rocm-tutorial-test", "request": {
             "text": args.text, "language": args.language, "reference_language": args.language,
             "reference_audio": str(args.reference), "reference_text": args.reference_text,
-            "speed": 1.0, "chunk_size_seconds": 0.8,
+            "speed": 1.0, "chunk_size_seconds": args.chunk_seconds,
             "options": {"text_language": language_label, "prompt_language": language_label,
                         "sample_steps": 16, "how_to_cut": "不切", "if_sr": False,
                         "enable_cuda_graph": args.graph, "enable_static_kv": True}}}

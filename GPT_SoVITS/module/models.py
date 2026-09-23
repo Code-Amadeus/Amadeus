@@ -1101,14 +1101,9 @@ class CFM(torch.nn.Module):
     def inference(self, mu, x_lens, prompt, n_timesteps, temperature=1.0, inference_cfg_rate=0, use_dpm_solver=False):
         """Forward diffusion - Euler method by default"""
         B, T = mu.size(0), mu.size(1)
-        # On ROCm the unpadded, single-utterance path needs no all-True SDPA
-        # mask. Avoid rebuilding and transferring it at every diffusion step.
-        use_padding_mask = not (
-            getattr(torch.version, "hip", None)
-            and B == 1
-            and x_lens.numel() == 1
-            and int(x_lens[0]) == T
-        )
+        # A single unpadded sample needs no all-True attention mask. Resolve
+        # that once instead of rebuilding the mask at every diffusion step.
+        use_padding_mask = not (B == 1 and x_lens.numel() == 1 and int(x_lens[0]) == T)
         x = torch.randn([B, self.in_channels, T], device=mu.device,dtype=mu.dtype) * temperature
         prompt_len = prompt.size(-1)
         prompt_x = torch.zeros_like(x,dtype=mu.dtype)

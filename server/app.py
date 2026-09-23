@@ -1202,8 +1202,18 @@ async def bootstrap(port: int = 17777) -> None:
     mouth_signal_router.set_primary_sink(_render_signal_bridge.set_mouth_value)
 
     # thread pools & queues.
-    tts_max_workers = max(1, EXP_TTS_MAX_CONCURRENCY)
-    tts_executor = ThreadPoolExecutor(max_workers=tts_max_workers)
+    from tts.pipeline import MAX_SELECTABLE_TTS_CONCURRENCY, selectable_tts_concurrency
+
+    # The semaphore selects ×1/×2 and Settings switches it at runtime, so the
+    # worker pool must already fit the most parallel selectable mode.
+    tts_concurrency = selectable_tts_concurrency(EXP_TTS_MAX_CONCURRENCY)
+    if tts_concurrency != EXP_TTS_MAX_CONCURRENCY:
+        logger.warning(
+            "EXP_TTS_MAX_CONCURRENCY=%s is outside the selectable TTS modes; using %s",
+            EXP_TTS_MAX_CONCURRENCY,
+            tts_concurrency,
+        )
+    tts_executor = ThreadPoolExecutor(max_workers=MAX_SELECTABLE_TTS_CONCURRENCY)
     translation_executor = ThreadPoolExecutor(max_workers=4)
     try:
         from server.wallpaper_subtitle_translator import (
@@ -1224,7 +1234,7 @@ async def bootstrap(port: int = 17777) -> None:
         logger.exception("failed to configure server pre-translation cache")
     pending_actions = Queue()
     pending_sentence_items = asyncio.Queue(maxsize=3)
-    exp_tts_semaphore = asyncio.Semaphore(EXP_TTS_MAX_CONCURRENCY)
+    exp_tts_semaphore = asyncio.Semaphore(tts_concurrency)
     exp_play_condition = asyncio.Condition()
 
     # OpenClaw gateway.

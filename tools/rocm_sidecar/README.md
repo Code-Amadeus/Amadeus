@@ -74,26 +74,38 @@ uses another interpreter.
 The baseline disables CUDA Graphs, NVIDIA-only BigVGAN kernels, and flash
 attention. ROCm still uses the PyTorch device string `cuda:0`.
 
-On HIP devices, GPT-SoVITS now plays every utterance from its first generated
-audio block. For v3, the BigVGAN input for the final short block is padded to
-the same mel length as the preceding blocks, then the extra waveform is
-discarded. This avoids presenting a new convolution shape to MIOpen for every
-sentence. The default minimum bucket is 80 mel frames; change
-`TTS_BIGVGAN_STREAM_BUCKET_MELS` only while comparing the same voice and text.
-ROCm also uses 16 CFM steps for long utterances and omits the attention padding
-mask when a single sample has no padding. These choices do not change the
-NVIDIA or CPU path. CUDA Graphs remain off until the target AMD GPU has passed
-correctness and latency checks with them enabled.
+On HIP devices, GPT-SoVITS plays each single-sentence utterance from its first
+generated audio block in the default experimental queue and CUDA Graph modes
+(`USE_EXPERIMENTAL_TTS_STREAM=false` keeps the older enhanced path). Utterances
+merged by `ENABLE_TTS_UTTERANCE_SCHEDULER=1` keep playlist playback, because
+only that path advances and closes every sentence the merged audio carries.
+Stream blocks last 0.35-0.8 s, and every block after the first is conditioned on
+the previous block rather than on the reference recording.
+
+MIOpen runs an expensive solver search the first time BigVGAN sees a mel
+length. For v3, every stream block shorter than `TTS_BIGVGAN_STREAM_BUCKET_MELS`
+(default 80 frames, about 0.85 s) repeats its last frame up to that length, and
+the extra waveform is discarded. App blocks are 33-75 frames, so all of them run
+at the bucket length: a short first block does up to 2.4x its unpadded vocoder
+work in exchange for one stable shape. Change the bucket only while comparing
+the same voice and text. ROCm also uses 16 CFM steps for long utterances. On
+every platform, CFM omits the all-True attention padding mask for a single
+unpadded sample; the output is unchanged. CUDA Graphs remain off until the
+target AMD GPU has passed correctness and latency checks with them enabled.
 
 The default TTS synthesis concurrency is one. The desktop setting retains an
 explicit **Parallel ×2** choice for machines where a measured comparison shows
 it helps; **Standard ×1** keeps CUDA Graph disabled and runs one synthesis at a
-time.
+time. `EXP_TTS_MAX_CONCURRENCY` accepts 1 or 2 to match these modes.
 
 For performance acceptance, record cold and repeated warm runs separately,
 including first audio, total synthesis, output duration, and the CFM/BigVGAN
-stage timings (`TTS_SOVITS_SYNC_TIMING=1` for a diagnostic run). The package
-probe and sidecar smoke test below verify function, not a latency target.
+stage timings (`TTS_SOVITS_SYNC_TIMING=1` for a diagnostic run). Compare
+`--chunk-seconds 0.4` as well as the 0.8 s default, and listen for timbre drift
+across the blocks of a long sentence. The sidecar check measures the inferencer
+only; Host queueing, playback, and first-sentence scheduling still need an
+in-app run. The package probe and sidecar smoke test below verify function,
+not a latency target.
 
 Validate the real persistent protocol before enabling wake word or continuous
 voice. Use legally obtained model files and a short, known recording:

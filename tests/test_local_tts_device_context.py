@@ -132,7 +132,29 @@ def test_rocm_stream_vocoder_reuses_final_chunk_shape() -> None:
     assert last.shape[-1] == 12
 
 
-def test_rocm_cfm_omits_only_unneeded_padding_masks(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("value", ["", "80.0", "eighty"])
+def test_malformed_stream_bucket_setting_keeps_the_default(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    from local_tts_infer import _stream_bucket_mels
+
+    monkeypatch.setenv("TTS_BIGVGAN_STREAM_BUCKET_MELS", value)
+
+    assert _stream_bucket_mels() == 80
+
+
+def test_stream_bucket_setting_is_a_positive_frame_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from local_tts_infer import _stream_bucket_mels
+
+    monkeypatch.setenv("TTS_BIGVGAN_STREAM_BUCKET_MELS", "96")
+    assert _stream_bucket_mels() == 96
+    monkeypatch.setenv("TTS_BIGVGAN_STREAM_BUCKET_MELS", "0")
+    assert _stream_bucket_mels() == 1
+
+
+def test_cfm_omits_only_unneeded_padding_masks() -> None:
     from GPT_SoVITS.module.models import CFM
 
     observed = []
@@ -142,17 +164,16 @@ def test_rocm_cfm_omits_only_unneeded_padding_masks(monkeypatch: pytest.MonkeyPa
             observed.append(use_padding_mask)
             return x.transpose(2, 1)
 
-    monkeypatch.setattr(torch.version, "hip", "7.2")
     cfm = CFM(2, Estimator())
-    mu = torch.zeros((1, 4, 2))
     prompt = torch.zeros((1, 2, 1))
     for length in (4, 3):
-        cfm.inference(mu, torch.tensor([length]), prompt, n_timesteps=2)
+        cfm.inference(torch.zeros((1, 4, 2)), torch.tensor([length]), prompt, n_timesteps=2)
+    cfm.inference(
+        torch.zeros((2, 4, 2)), torch.tensor([4, 4]), torch.zeros((2, 2, 1)), n_timesteps=1
+    )
 
-    monkeypatch.setattr(torch.version, "hip", None)
-    cfm.inference(mu, torch.tensor([4]), prompt, n_timesteps=2)
-
-    assert observed == [False, False, True, True, True, True]
+    # Unpadded single sample, padded single sample, then a batch.
+    assert observed == [False, False, True, True, True]
 
 
 def test_unpadded_dit_output_matches_full_mask() -> None:

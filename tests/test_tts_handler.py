@@ -75,3 +75,12 @@ def test_tts_mode_method_applies_real_pipeline_mode() -> None:
             pipeline.reconfigure_tts_mode_name(old_mode)
 
     asyncio.run(run())
+
+
+def test_configured_tts_concurrency_stays_within_selectable_modes() -> None:
+    import tts.pipeline as pipeline
+
+    assert [
+        pipeline.selectable_tts_concurrency(value) for value in (0, 1, "2", 4, "four")
+    ] == [1, 1, 2, pipeline.MAX_SELECTABLE_TTS_CONCURRENCY, 1]
+    assert pipeline.MAX_SELECTABLE_TTS_CONCURRENCY == 2
