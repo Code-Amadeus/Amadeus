@@ -11,6 +11,8 @@ import pytest
 import websockets
 
 from server.vn_launch_manager import VNLaunchManager
+from server.handlers.vn_player_handler import VNPlayerHandler
+from server.protocol import Method
 from server.vn_text_sources import AgentVNTextSource, LunaVNTextSource
 from vn_player.runtime import VNPlayerRuntime
 
@@ -66,6 +68,52 @@ def test_agent_status_previews_the_line_accepted_by_vn_runtime(tmp_path: Path, m
         _hook, bridge = source.status()
         assert bridge["lastTextPreview"] == "桥边的可读台词"
         assert bridge["lastScriptId"] == "scene_001"
+
+    asyncio.run(run())
+
+
+def test_agent_lines_cross_vn_line_handler_with_optional_id_and_repeated_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VN_LLM_ENABLED", "0")
+    monkeypatch.setenv("VN_IMMEDIATE_LLM_ENABLED", "0")
+    script = tmp_path / "script.json"
+    script.write_text(json.dumps({"lines": [
+        {"script_id": "scene_001", "text": "同一句剧情", "order": 0},
+        {"script_id": "scene_002", "text": "同一句剧情", "order": 1},
+    ]}, ensure_ascii=False), encoding="utf-8")
+
+    async def run() -> None:
+        handler = VNPlayerHandler()
+        handler.configure(tmp_path)
+        await handler.handle(Method.VN_START, {
+            "session_id": "adapter_handler_validation", "script_path": str(script),
+            "lookahead_enabled": False, "lookahead_llm_enabled": False,
+        })
+        results: list[dict] = []
+
+        async def on_line(payload: dict) -> dict:
+            result = await handler.handle(Method.VN_LINE, payload)
+            assert result is not None
+            results.append(result)
+            return result
+
+        source = AgentVNTextSource(on_line, AsyncMock())
+        try:
+            for item in [
+                {"text": "【周围】"},
+                {"text": "同一句剧情", "script_id": "scene_001"},
+                {"text": "同一句剧情", "script_id": "scene_002"},
+                {"text": "【周围】"},
+            ]:
+                await source._receive_agent_message(json.dumps({
+                    "type": "copyText", "sentence": json.dumps(item, ensure_ascii=False),
+                }, ensure_ascii=False))
+            assert [result["status"] for result in results] == ["ok"] * 4
+            assert [result["line"]["script_id"] for result in results] == ["", "scene_001", "scene_002", ""]
+            assert source.status()[1]["lineCount"] == 4
+        finally:
+            await handler.handle(Method.VN_STOP, {"reason": "test"})
 
     asyncio.run(run())
 

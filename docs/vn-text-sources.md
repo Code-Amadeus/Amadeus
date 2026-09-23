@@ -28,6 +28,12 @@ does not terminate externally started Agent processes.
 
 ## LunaTranslator
 
+Amadeus only needs the extracted original text from Luna's hook workflow; it
+does not consume translated text or control Luna's other features. The current adapter
+connects to the network service hosted by the running LunaTranslator app.
+LunaHook can be used separately, but a standalone LunaHook setup would need a
+host/output bridge for Amadeus; it does not use this WebSocket adapter as-is.
+
 Configure text extraction and enable [LunaTranslator's network service](https://docs.lunatranslator.org/en/apiservice.html) in Luna.
 In VN Player's advanced options, select **LunaTranslator original text**, enter
 the WebSocket URL shown by Luna with the path `/api/ws/text/origin`, and start the
@@ -54,3 +60,9 @@ both are forwarded. Agent hybrid mode keeps only one live transport active at a
 time, avoiding routine WebSocket/clipboard double delivery. Source-specific
 replay suppression can be added when the external transport supplies a verified
 event identity.
+
+The current PARANORMASIGHT VN runtime still ignores a second observation with
+the same `script_id` during one session. That is a VN semantic limitation, not
+transport deduplication: revisiting a branch may legitimately show the same
+script line again. Keep source acceptance and runtime behavior as separate
+validation results until that rule is revised.
