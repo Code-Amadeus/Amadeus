@@ -76,6 +76,13 @@ def test_embedded_rocm_identity_comes_from_loaded_inferencer():
     assert TTSRuntimeAdapter(backend).is_rocm is True
 
 
+def test_hip_build_running_on_cpu_does_not_select_rocm_gpu_tuning():
+    backend = GPTSoVITSBackend()
+    backend.deployment = "subprocess"
+    backend._ready_info = {"hip": "7.2", "cuda_available": True, "device": "cpu"}
+    assert TTSRuntimeAdapter(backend).is_rocm is False
+
+
 def _write_fake_sidecar(path):
     path.write_text(
         r'''
