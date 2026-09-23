@@ -2541,10 +2541,10 @@ async def bootstrap(port: int = 17777) -> None:
         wake_start_fn=lambda: wake_h.start({}),
         wake_stop_fn=lambda: wake_h.stop({}),
         canvas_action_fn=canvas_action_router.route,
-        chat_send_fn=lambda text, session_id, visual: chat_h.handle(Method.CHAT_SEND, {
-            "text": text, "provider": _current_llm_provider(),
-            "session_id": session_id, "source": "wallpaper_keyboard", "visual": visual,
-        }),
+        chat_send_fn=lambda text, session_id, visual: chat_h.send_text(
+            text, provider=_current_llm_provider(), visual=visual,
+            session_id=session_id, source="wallpaper_keyboard",
+        ),
         chat_control_fn=(lambda action: wallpaper_chat_control(
             action, session=session_h, asr=asr_h, system=sys_h, wake=wake_h,
             voice_start=lambda: _start_asr_from_wake(continuous=True),
