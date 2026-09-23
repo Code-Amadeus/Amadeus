@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, patch as mock_patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from server.handlers import session_handler as session_handler_module
+from server.handlers.chat_handler import ChatHandler
 from server.handlers.session_handler import SessionHandler
 from server.handlers.wallpaper_handler import WallpaperHandler
 from server.protocol import Method
@@ -244,15 +245,23 @@ def test_shared_canvas_and_slice_host_are_javascript_syntax_valid() -> None:
 
 
 def test_wallpaper_keyboard_submit_reuses_the_chat_transport() -> None:
-    submitted: list[tuple[str, str]] = []
+    submitted: list[dict] = []
 
     async def ensure_session() -> dict:
         return {"ok": True, "current_session_id": "wallpaper-session"}
 
+    chat = ChatHandler()
+
+    async def capture_send(params: dict) -> dict:
+        submitted.append(params)
+        return {"status": "ok", "turn_id": params["turn_id"]}
+
+    chat._handle_send = capture_send
+
     async def send_chat(text: str, session_id: str, visual: dict | None) -> dict:
-        assert visual is None
-        submitted.append((text, session_id))
-        return {"status": "ok", "turn_id": "turn-1"}
+        return await chat.send_text(
+            text, session_id=session_id, source="wallpaper_keyboard", visual=visual,
+        )
 
     handler = WallpaperHandler()
     handler.configure(
@@ -261,10 +270,18 @@ def test_wallpaper_keyboard_submit_reuses_the_chat_transport() -> None:
         ensure_chat_session_fn=ensure_session,
     )
 
-    result = asyncio.run(handler._route_chat_submit({"text": "  type on the desk  "}))
+    text_result = asyncio.run(handler._route_chat_submit({"text": "  type on the desk  "}))
+    visual = {"request": True, "mode": "attachment"}
+    image_result = asyncio.run(handler._route_chat_submit({"text": "look", "visual": visual}))
 
-    assert submitted == [("type on the desk", "wallpaper-session")]
-    assert result == {"ok": True, "status": "ok", "turn_id": "turn-1"}
+    assert [item["text"] for item in submitted] == ["type on the desk", "look"]
+    assert all(item["session_id"] == "wallpaper-session" for item in submitted)
+    assert all(item["source"] == "wallpaper_keyboard" for item in submitted)
+    assert [item["visual"] for item in submitted] == [None, visual]
+    assert submitted[0]["turn_id"] and submitted[1]["turn_id"]
+    assert submitted[0]["turn_id"] != submitted[1]["turn_id"]
+    assert text_result == {"ok": True, "status": "ok", "turn_id": submitted[0]["turn_id"]}
+    assert image_result == {"ok": True, "status": "ok", "turn_id": submitted[1]["turn_id"]}
 
 
 def test_wallpaper_keyboard_creates_a_session_only_when_one_is_absent() -> None:

@@ -274,6 +274,7 @@ class ChatHandler(RequestHandler):
         text: str,
         *,
         provider: Any = None,
+        visual: Any = None,
         session_id: str = "",
         turn_id: str = "",
         source: str = "",
@@ -283,6 +284,7 @@ class ChatHandler(RequestHandler):
             {
                 "text": text,
                 "provider": provider,
+                "visual": visual,
                 "session_id": session_id,
                 "turn_id": turn_id or uuid.uuid4().hex,
                 "source": source,
