@@ -11,7 +11,8 @@ if str(ROOT) not in sys.path:
 
 
 async def main() -> int:
-    from server.vn_launch_manager import VNLaunchManager, _agent_switch
+    from server.vn_launch_manager import VNLaunchManager
+    from server.vn_text_sources import _agent_switch
 
     assert _agent_switch("pname", "1234") == "--pname=1234"
 

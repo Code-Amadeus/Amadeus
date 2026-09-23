@@ -728,7 +728,7 @@ advanced diagnostics, experimental thresholds, and test-only flags remain in
 | Docker | Not a supported desktop installation path |
 | SpriteForge character pack | Externally distributed; source starts without it |
 | VTS | Disabled-by-default compatibility route |
-| VN Player | Experimental |
+| VN Player | Experimental; [text-source setup](docs/vn-text-sources.md) |
 | Wallpaper hosts | Lively / Wallpaper Engine on Windows; the macOS Electron host has community real-device verification as noted above |
 | PyQt / old wallpaper hosts | Retired from public mainline |
 | Claude CLI Provider | Committed future mainline Provider; no live caller yet |

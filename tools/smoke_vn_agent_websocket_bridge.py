@@ -21,7 +21,7 @@ def _free_port() -> int:
 async def main() -> int:
     import websockets
 
-    from server.vn_launch_manager import VNLaunchManager
+    from server.vn_text_sources import AgentVNTextSource
 
     captured: list[dict[str, Any]] = []
     port = _free_port()
@@ -92,30 +92,18 @@ async def main() -> int:
         )
         await asyncio.sleep(0.2)
 
-    async def start(params: dict[str, Any]) -> dict[str, Any]:
-        return {"status": "active", "profile": dict(params)}
-
-    async def stop(params: dict[str, Any]) -> dict[str, Any]:
-        return {"status": "stopped", "reason": params.get("reason")}
-
-    async def status() -> dict[str, Any]:
-        return {"status": "active"}
-
     async def line(params: dict[str, Any]) -> dict[str, Any]:
         captured.append(dict(params))
         return {"status": "accepted"}
 
-    manager = VNLaunchManager(
-        ROOT,
-        runtime_start=start,
-        runtime_stop=stop,
-        runtime_status=status,
-        runtime_line=line,
-    )
+    async def on_status(_hook: dict[str, Any], _bridge: dict[str, Any]) -> None:
+        return None
+
+    source = AgentVNTextSource(line, on_status)
 
     server = await websockets.serve(ws_handler, "127.0.0.1", port)
     try:
-        manager._start_agent_websocket_bridge(host="127.0.0.1", port=port)
+        source._start_bridge({"agentWsHost": "127.0.0.1", "agentWsPort": port}, {"bridgeMode": "websocket"})
         deadline = asyncio.get_running_loop().time() + 5
         while len(captured) < 2 and asyncio.get_running_loop().time() < deadline:
             await asyncio.sleep(0.05)
@@ -128,11 +116,11 @@ async def main() -> int:
         assert captured[0]["metadata"]["process_path"] == "mock_game.exe"
         assert captured[1]["text"] == line_two["text"]
         assert captured[1]["metadata"]["agent_message_type"] == "copyText"
-        status_payload = await manager.status()
-        assert status_payload["bridge"]["source"] == "agent_websocket"
-        assert status_payload["bridge"]["lineCount"] == 2
+        _hook, bridge = source.status()
+        assert bridge["source"] == "agent_websocket"
+        assert bridge["lineCount"] == 2
     finally:
-        await manager._stop_line_bridge()
+        await source.stop()
         server.close()
         await server.wait_closed()
     return 0

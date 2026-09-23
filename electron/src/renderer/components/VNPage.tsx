@@ -46,10 +46,13 @@ type BridgeStatus = {
   status?: string
   lineCount?: number
   source?: string
+  error?: string
+  lastTextPreview?: string
 }
 
 type LaunchStatus = {
   status?: string
+  textSource?: string
   profileId?: string
   sessionId?: string
   startedAt?: number
@@ -90,7 +93,7 @@ function textFromPayload(payload: Record<string, unknown>): string {
 function statusColor(status: string): string {
   const key = status.toLowerCase()
   if (key === 'active' || key === 'running') return '#107C10'
-  if (key === 'starting' || key === 'stopping' || key === 'manual_required') return '#D83B01'
+  if (key === 'starting' || key === 'stopping' || key === 'manual_required' || key === 'connecting' || key === 'waiting') return '#D83B01'
   if (key === 'error' || key === 'exited') return '#C42B1C'
   return 'var(--muted)'
 }
@@ -166,6 +169,8 @@ export default function VNPage({ send, subscribe, connected }: Props) {
   const { t } = useI18n()
   const [profiles, setProfiles] = useState<VNProfile[]>([])
   const [selectedProfile, setSelectedProfile] = useState('paranormasight')
+  const [textSource, setTextSource] = useState<'agent' | 'luna'>('agent')
+  const [lunaWsUrl, setLunaWsUrl] = useState('')
   const [launch, setLaunch] = useState<LaunchStatus>({ status: 'idle' })
   const [runtime, setRuntime] = useState<Record<string, unknown> | null>(null)
   const [events, setEvents] = useState<VNEvent[]>([])
@@ -216,6 +221,9 @@ export default function VNPage({ send, subscribe, connected }: Props) {
       const loadedProfiles = Array.isArray(profileRes.profiles) ? profileRes.profiles as VNProfile[] : []
       setProfiles(loadedProfiles)
       setLaunch(statusRes as LaunchStatus)
+      if (statusRes.textSource === 'luna' || statusRes.textSource === 'agent') {
+        setTextSource(statusRes.textSource)
+      }
       if (statusRes.runtime && typeof statusRes.runtime === 'object') {
         setRuntime(statusRes.runtime as Record<string, unknown>)
       }
@@ -311,13 +319,16 @@ export default function VNPage({ send, subscribe, connected }: Props) {
     bridgeClipboard: boolean
     stopWallpaper: boolean
   }>) => {
-    const nextLaunchGame = options?.launchGame ?? launchGame
+    const usingLuna = textSource === 'luna'
+    const nextLaunchGame = usingLuna ? false : (options?.launchGame ?? launchGame)
     const payload = {
       profileId: selectedProfile,
+      textSource,
+      ...(usingLuna ? { lunaWsUrl: lunaWsUrl.trim() } : {}),
       launchGame: nextLaunchGame,
-      attachHook: options?.attachHook ?? attachHook,
-      launchOverlay: options?.launchOverlay ?? launchOverlay,
-      bridgeClipboard: options?.bridgeClipboard ?? bridgeClipboard,
+      attachHook: usingLuna ? false : (options?.attachHook ?? attachHook),
+      launchOverlay: usingLuna ? false : (options?.launchOverlay ?? launchOverlay),
+      bridgeClipboard: usingLuna ? false : (options?.bridgeClipboard ?? bridgeClipboard),
       stopWallpaper: options?.stopWallpaper ?? (nextLaunchGame ? stopWallpaper : false),
     }
     setBusy(true)
@@ -446,10 +457,17 @@ export default function VNPage({ send, subscribe, connected }: Props) {
       <div className="flex items-center flex-wrap gap-1.5 shrink-0" style={{ marginBottom: 9 }}>
         <RuntimeChip label="Runtime" status={runtimeStatus} />
         <RuntimeChip label="Game" status={gameStatus} detail={launch.game?.pid ? `pid ${launch.game.pid}` : undefined} />
-        <RuntimeChip label="Hook" status={hookStatus} detail={launch.hook?.pid ? `pid ${launch.hook.pid}` : undefined} />
+        <RuntimeChip label="Text source" status={hookStatus} detail={launch.hook?.pid ? `pid ${launch.hook.pid}` : undefined} />
         <RuntimeChip label="Overlay" status={overlayStatus} detail={launch.overlay?.pid ? `pid ${launch.overlay.pid}` : undefined} />
         <RuntimeChip label="Bridge" status={bridgeStatus} detail={`${launch.bridge?.lineCount || 0} lines`} />
       </div>
+      {(bridgeStatus === 'waiting' || bridgeStatus === 'error') && launch.bridge?.error ? (
+        <div role="status" style={{ marginBottom: 9, color: '#C42B1C', fontSize: 10.5 }}>{launch.bridge.error}</div>
+      ) : launch.bridge?.lastTextPreview ? (
+        <div style={{ marginBottom: 9, color: 'var(--muted)', fontSize: 10.5 }}>
+          {t('Last captured line')}: {launch.bridge.lastTextPreview}
+        </div>
+      ) : null}
 
       <section className="flex-1 flex flex-col min-h-0" style={{ border: '1px solid var(--border)', borderRadius: 11, overflow: 'hidden', background: 'var(--surface)' }}>
         <div className="flex items-center gap-2 shrink-0" style={{ minHeight: 41, padding: '6px 10px 6px 13px', borderBottom: '1px solid var(--border)' }}>
@@ -524,14 +542,31 @@ export default function VNPage({ send, subscribe, connected }: Props) {
               </div>
             ) : null}
             <div className="grid gap-2">
-              <Toggle checked={launchGame} disabled={busy || isActive} label="Launch game process" detail="PARANORMASIGHT.exe" onChange={setLaunchGame} />
-              <Toggle checked={attachHook} disabled={busy || isActive} label="Attach hook agent" detail="0xDC00 Agent + script" onChange={setAttachHook} />
-              <Toggle checked={launchOverlay} disabled={busy || isActive} label="Portrait overlay" detail="avatar + subtitle box" onChange={setLaunchOverlay} />
-              <Toggle checked={bridgeClipboard} disabled={busy || isActive} label="Enable line bridge" detail="agent websocket -> vn.line" onChange={setBridgeClipboard} />
-              <Toggle checked={stopWallpaper} disabled={busy || isActive || !launchGame} label="Exit wallpaper before game" detail="keeps game focus clean" onChange={setStopWallpaper} />
+              <label style={{ color: 'var(--text)', fontSize: 11 }}>
+                {t('Text source')}
+                <select value={textSource} onChange={event => setTextSource(event.target.value as 'agent' | 'luna')} disabled={busy || isActive} style={{ display: 'block', width: '100%', marginTop: 5, height: 34, borderRadius: 8, border: '1px solid var(--border)', color: 'var(--text)', background: 'var(--bg)', padding: '0 9px' }}>
+                  <option value="agent">0xDC00 Agent</option>
+                  <option value="luna">LunaTranslator original text</option>
+                </select>
+              </label>
+              {textSource === 'luna' ? (
+                <label style={{ color: 'var(--text)', fontSize: 11 }}>
+                  {t('Luna WebSocket URL')}
+                  <input value={lunaWsUrl} onChange={event => setLunaWsUrl(event.target.value)} disabled={busy || isActive} placeholder="ws://127.0.0.1:<port>/api/ws/text/origin" style={{ display: 'block', width: '100%', marginTop: 5, height: 34, borderRadius: 8, border: '1px solid var(--border)', color: 'var(--text)', background: 'var(--bg)', padding: '0 9px' }} />
+                  <span style={{ display: 'block', marginTop: 5, color: 'var(--muted)' }}>{t('Connects to Luna text only; VN behavior still uses the selected experimental profile.')}</span>
+                </label>
+              ) : (
+                <>
+                  <Toggle checked={launchGame} disabled={busy || isActive} label="Launch game process" detail="PARANORMASIGHT.exe" onChange={setLaunchGame} />
+                  <Toggle checked={attachHook} disabled={busy || isActive} label="Attach hook agent" detail="0xDC00 Agent + script" onChange={setAttachHook} />
+                  <Toggle checked={launchOverlay} disabled={busy || isActive} label="Portrait overlay" detail="avatar + subtitle box" onChange={setLaunchOverlay} />
+                  <Toggle checked={bridgeClipboard} disabled={busy || isActive} label="Enable line bridge" detail="agent websocket -> vn.line" onChange={setBridgeClipboard} />
+                  <Toggle checked={stopWallpaper} disabled={busy || isActive || !launchGame} label="Exit wallpaper before game" detail="keeps game focus clean" onChange={setStopWallpaper} />
+                </>
+              )}
               <Toggle checked={closeGameOnStop} disabled={busy} label="Close game on stop" detail="off keeps the game open" onChange={setCloseGameOnStop} />
             </div>
-            <button onClick={() => startWithOptions({ launchGame: true, attachHook: true, launchOverlay: true, bridgeClipboard: true, stopWallpaper: true })} disabled={!connected || busy || isActive} style={{ ...controlButtonStyle, marginTop: 10 }}>{t('Start full stack')}</button>
+            {textSource === 'agent' && <button onClick={() => startWithOptions({ launchGame: true, attachHook: true, launchOverlay: true, bridgeClipboard: true, stopWallpaper: true })} disabled={!connected || busy || isActive} style={{ ...controlButtonStyle, marginTop: 10 }}>{t('Start full stack')}</button>}
           </div>
 
           <div>
