@@ -28,7 +28,8 @@ export function runtimeSettingFromDesktopValues(
   if (!values) return undefined
   if (runtimeKey === 'tts_mode') {
     if (values.ENABLE_CUDA_GRAPH === undefined && values.EXP_TTS_MAX_CONCURRENCY === undefined) return undefined
-    return values.ENABLE_CUDA_GRAPH === '1' ? 'cuda_graph' : 'parallel'
+    if (values.ENABLE_CUDA_GRAPH === '1') return 'cuda_graph'
+    return Number(values.EXP_TTS_MAX_CONCURRENCY || '1') > 1 ? 'parallel2' : 'parallel'
   }
   if (runtimeKey === 'tts_output_language') {
     const value = values.TTS_OUTPUT_LANGUAGE
@@ -51,7 +52,7 @@ export function desktopValuesForRuntimeSettings(
     if (runtimeKey === 'tts_mode') {
       const graph = String(rawValue) === 'cuda_graph'
       desktopValues.ENABLE_CUDA_GRAPH = graph ? '1' : '0'
-      desktopValues.EXP_TTS_MAX_CONCURRENCY = graph ? '1' : '2'
+      desktopValues.EXP_TTS_MAX_CONCURRENCY = String(rawValue) === 'parallel2' ? '2' : '1'
       continue
     }
     if (runtimeKey === 'tts_output_language') {

@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -512,6 +513,84 @@ def test_experimental_scheduler_only_forwards_native_remote_streams() -> None:
     assert asyncio.run(
         run_case(deployment="embedded", supports_streaming=True, stream_tts=True)
     ) is False
+
+
+def test_rocm_later_sentence_plays_before_synthesis_finishes() -> None:
+    from tts import pipeline
+
+    async def run_case(is_rocm: bool) -> tuple[list[str], dict]:
+        release = threading.Event()
+        first_audio = asyncio.Event()
+        playback_done = asyncio.Event()
+        events: list[str] = []
+        options: dict = {}
+
+        class Runtime:
+            backend_id = "gpt_sovits"
+            supports_streaming = True
+
+            def __init__(self):
+                self.is_rocm = is_rocm
+
+            def infer_stream(self, **kwargs):
+                options.update(kwargs)
+                yield 24000, np.ones(240, dtype=np.float32), "first"
+                assert release.wait(2)
+                yield 24000, np.ones(240, dtype=np.float32), "second"
+
+        class Playback:
+            player_is_ready = asyncio.Event()
+
+            def __init__(self):
+                self.player_is_ready.set()
+
+            async def play_s1_stream(self, queue, *_args, **_kwargs):
+                while await queue.get() is not None:
+                    events.append("stream")
+                    first_audio.set()
+                playback_done.set()
+
+            async def add_to_playlist(self, *_args, **_kwargs):
+                events.append("playlist")
+                first_audio.set()
+                playback_done.set()
+
+        executor = ThreadPoolExecutor(max_workers=1)
+        previous = pipeline._tts_runtime, pipeline._tts_executor, pipeline._playback_manager
+        try:
+            pipeline._tts_runtime = Runtime()
+            pipeline._tts_executor = executor
+            pipeline._playback_manager = Playback()
+            with patch.object(pipeline, "correct_pronunciation_for_tts", side_effect=lambda value: value):
+                synthesis = asyncio.create_task(
+                    pipeline.speak_stream_enhanced_asyncio_queue(
+                        "long text " * 6, "sentence_2_rocm", stream_to_player=False,
+                    )
+                )
+                if is_rocm:
+                    await asyncio.wait_for(first_audio.wait(), 1)
+                    assert events == ["stream"]
+                else:
+                    await asyncio.sleep(0.05)
+                    assert not first_audio.is_set()
+                release.set()
+                await asyncio.wait_for(synthesis, 2)
+                await asyncio.wait_for(first_audio.wait(), 1)
+                await asyncio.wait_for(playback_done.wait(), 1)
+        finally:
+            release.set()
+            pipeline._tts_runtime, pipeline._tts_executor, pipeline._playback_manager = previous
+            executor.shutdown(wait=True)
+        return events, options
+
+    rocm_events, rocm_options = asyncio.run(run_case(True))
+    ordinary_events, ordinary_options = asyncio.run(run_case(False))
+    assert rocm_events == ["stream", "stream"]
+    assert rocm_options["sample_steps"] == 16
+    assert rocm_options["chunk_size_seconds"] > 0
+    assert ordinary_events == ["playlist"]
+    assert ordinary_options["sample_steps"] == 32
+    assert ordinary_options["chunk_size_seconds"] is None
 
 
 def test_audio_writer_publishes_mouth_envelope_before_each_physical_subwrite() -> None:

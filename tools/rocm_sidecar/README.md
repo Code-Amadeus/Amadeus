@@ -74,6 +74,27 @@ uses another interpreter.
 The baseline disables CUDA Graphs, NVIDIA-only BigVGAN kernels, and flash
 attention. ROCm still uses the PyTorch device string `cuda:0`.
 
+On HIP devices, GPT-SoVITS now plays every utterance from its first generated
+audio block. For v3, the BigVGAN input for the final short block is padded to
+the same mel length as the preceding blocks, then the extra waveform is
+discarded. This avoids presenting a new convolution shape to MIOpen for every
+sentence. The default minimum bucket is 80 mel frames; change
+`TTS_BIGVGAN_STREAM_BUCKET_MELS` only while comparing the same voice and text.
+ROCm also uses 16 CFM steps for long utterances and omits the attention padding
+mask when a single sample has no padding. These choices do not change the
+NVIDIA or CPU path. CUDA Graphs remain off until the target AMD GPU has passed
+correctness and latency checks with them enabled.
+
+The default TTS synthesis concurrency is one. The desktop setting retains an
+explicit **Parallel ×2** choice for machines where a measured comparison shows
+it helps; **Standard ×1** keeps CUDA Graph disabled and runs one synthesis at a
+time.
+
+For performance acceptance, record cold and repeated warm runs separately,
+including first audio, total synthesis, output duration, and the CFM/BigVGAN
+stage timings (`TTS_SOVITS_SYNC_TIMING=1` for a diagnostic run). The package
+probe and sidecar smoke test below verify function, not a latency target.
+
 Validate the real persistent protocol before enabling wake word or continuous
 voice. Use legally obtained model files and a short, known recording:
 

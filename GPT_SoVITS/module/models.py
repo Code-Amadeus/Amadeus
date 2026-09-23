@@ -1101,6 +1101,14 @@ class CFM(torch.nn.Module):
     def inference(self, mu, x_lens, prompt, n_timesteps, temperature=1.0, inference_cfg_rate=0, use_dpm_solver=False):
         """Forward diffusion - Euler method by default"""
         B, T = mu.size(0), mu.size(1)
+        # On ROCm the unpadded, single-utterance path needs no all-True SDPA
+        # mask. Avoid rebuilding and transferring it at every diffusion step.
+        use_padding_mask = not (
+            getattr(torch.version, "hip", None)
+            and B == 1
+            and x_lens.numel() == 1
+            and int(x_lens[0]) == T
+        )
         x = torch.randn([B, self.in_channels, T], device=mu.device,dtype=mu.dtype) * temperature
         prompt_len = prompt.size(-1)
         prompt_x = torch.zeros_like(x,dtype=mu.dtype)
@@ -1114,10 +1122,12 @@ class CFM(torch.nn.Module):
             t_tensor = torch.ones(_x.shape[0], device=_x.device, dtype=mu.dtype) * _t
             d_tensor = torch.ones(_x.shape[0], device=_x.device, dtype=mu.dtype) * _d
             v = self.estimator(_x, prompt_x, x_lens, t_tensor, d_tensor, mu,
-                              use_grad_ckpt=False, drop_audio_cond=False, drop_text=False).transpose(2, 1)
+                              use_grad_ckpt=False, drop_audio_cond=False, drop_text=False,
+                              use_padding_mask=use_padding_mask).transpose(2, 1)
             if inference_cfg_rate > 1e-5:
                 neg = self.estimator(_x, prompt_x, x_lens, t_tensor, d_tensor, mu,
-                                    use_grad_ckpt=False, drop_audio_cond=True, drop_text=True).transpose(2, 1)
+                                    use_grad_ckpt=False, drop_audio_cond=True, drop_text=True,
+                                    use_padding_mask=use_padding_mask).transpose(2, 1)
                 v = v + (v - neg) * inference_cfg_rate
             return v
 

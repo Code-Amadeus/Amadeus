@@ -46,3 +46,18 @@ test('saved desktop runtime values can render while the backend is offline', () 
   assert.equal(exports.runtimeSettingFromDesktopValues('tts_mode', values), 'cuda_graph')
   assert.equal(exports.runtimeSettingFromDesktopValues('tts_output_language', values), 'en')
 })
+
+test('standard synthesis defaults to one task while explicit parallel mode keeps two', () => {
+  assert.deepEqual(exports.desktopValuesForRuntimeSettings({ tts_mode: 'parallel' }), {
+    ENABLE_CUDA_GRAPH: '0', EXP_TTS_MAX_CONCURRENCY: '1',
+  })
+  assert.deepEqual(exports.desktopValuesForRuntimeSettings({ tts_mode: 'parallel2' }), {
+    ENABLE_CUDA_GRAPH: '0', EXP_TTS_MAX_CONCURRENCY: '2',
+  })
+  assert.equal(exports.runtimeSettingFromDesktopValues('tts_mode', {
+    ENABLE_CUDA_GRAPH: '0', EXP_TTS_MAX_CONCURRENCY: '1',
+  }), 'parallel')
+  assert.equal(exports.runtimeSettingFromDesktopValues('tts_mode', {
+    ENABLE_CUDA_GRAPH: '0', EXP_TTS_MAX_CONCURRENCY: '2',
+  }), 'parallel2')
+})

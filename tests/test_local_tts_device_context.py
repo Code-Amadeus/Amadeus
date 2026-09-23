@@ -114,6 +114,69 @@ def test_rocm_uses_torch_cuda_api_without_enabling_nvidia_extensions(
     assert _allows_nvidia_cuda_extensions(uses_torch_cuda_api) is False
 
 
+def test_rocm_stream_vocoder_reuses_final_chunk_shape() -> None:
+    inferencer = _inferencer("cpu", uses_torch_cuda_api=False)
+    shapes = []
+
+    class Vocoder:
+        def __call__(self, mel):
+            shapes.append(tuple(mel.shape))
+            return torch.ones((1, 1, mel.shape[-1] * 4)),
+
+    inferencer.bigvgan_model = Vocoder()
+    first = inferencer._run_bigvgan_stream_chunk(torch.ones((1, 100, 8)), target_frames=8)
+    last = inferencer._run_bigvgan_stream_chunk(torch.ones((1, 100, 3)), target_frames=8)
+
+    assert shapes == [(1, 100, 8), (1, 100, 8)]
+    assert first.shape[-1] == 32
+    assert last.shape[-1] == 12
+
+
+def test_rocm_cfm_omits_only_unneeded_padding_masks(monkeypatch: pytest.MonkeyPatch) -> None:
+    from GPT_SoVITS.module.models import CFM
+
+    observed = []
+
+    class Estimator(torch.nn.Module):
+        def forward(self, x, *_args, use_padding_mask=True, **_kwargs):
+            observed.append(use_padding_mask)
+            return x.transpose(2, 1)
+
+    monkeypatch.setattr(torch.version, "hip", "7.2")
+    cfm = CFM(2, Estimator())
+    mu = torch.zeros((1, 4, 2))
+    prompt = torch.zeros((1, 2, 1))
+    for length in (4, 3):
+        cfm.inference(mu, torch.tensor([length]), prompt, n_timesteps=2)
+
+    monkeypatch.setattr(torch.version, "hip", None)
+    cfm.inference(mu, torch.tensor([4]), prompt, n_timesteps=2)
+
+    assert observed == [False, False, True, True, True, True]
+
+
+def test_unpadded_dit_output_matches_full_mask() -> None:
+    from GPT_SoVITS.f5_tts.model.backbones.dit import DiT
+
+    torch.manual_seed(1)
+    model = DiT(
+        dim=16, depth=1, heads=2, dim_head=8,
+        mel_dim=4, text_dim=4, dropout=0,
+    ).eval()
+    noise = torch.randn(1, 4, 5)
+    condition = torch.randn(1, 4, 5)
+    text = torch.randn(1, 4, 5)
+    arguments = (
+        noise, condition, torch.tensor([5]),
+        torch.tensor([0.5]), torch.tensor([0.1]), text,
+    )
+    with torch.inference_mode():
+        masked = model(*arguments, use_padding_mask=True)
+        unmasked = model(*arguments, use_padding_mask=False)
+
+    torch.testing.assert_close(unmasked, masked)
+
+
 def test_nvidia_cuda_device_allows_nvidia_extensions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
