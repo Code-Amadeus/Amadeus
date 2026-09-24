@@ -2613,6 +2613,7 @@ async def bootstrap(port: int = 17777) -> None:
         runtime_status=lambda: vn_h.handle(Method.VN_STATUS, {}),
         runtime_line=lambda params: vn_h.handle(Method.VN_LINE, params),
         before_external_launch=_prepare_for_external_vn_launch,
+        runtime_overlay=vn_h.set_overlay_url,
     )
 
     # Start only after dependency configuration, inside the owning teardown scope.

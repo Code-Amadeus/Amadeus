@@ -9,8 +9,9 @@ text alone does not qualify its extraction quality or semantic behavior.
 
 ## Game profiles in VN Player
 
-Use **Add game** to name a game and select its executable, an installed Agent
-executable, and the game's compatible Hook `.js` script. The native file picker
+Use **Add game** to name a game, choose its type and select a text source. Agent
+profiles select an installed Agent executable and the game's compatible Hook `.js`
+script; Luna profiles use its original-text WebSocket endpoint. The native file picker
 is available in the desktop app; absolute paths can also be entered directly.
 Agent's installation path is shared by all profiles. Profiles are stored locally
 in `.amadeus/vn-profiles.json` under the backend's project root, outside Git, with
@@ -29,20 +30,26 @@ its exact executable path; if it is absent, the saved **Launch game if it is not
 running** preference is represented by **Launch game with**: direct executable,
 Steam, or **I will start the game**.
 Multiple matching instances produce an explicit error. PID values are never
-saved. For Steam, select the actual game executable for binding and enter the app ID
-from its store URL (demos have their own IDs). VN Player opens the registered
+saved. Game startup is shared by both sources. For Steam, selecting the actual
+game executable reads its matching local Steam manifest to fill the app ID;
+ambiguous or absent manifests leave the ID as an explicit choice (demos have
+their own IDs). VN Player opens the registered
 `steam://rungameid/<id>` link, waits up to 60 seconds for the exact executable, then
-injects Agent. It does not launch the exe with fabricated Steam environment values.
+connects the selected text source. It does not launch the exe with fabricated Steam environment values.
 A running game is reused without reopening Steam. Missing Steam, a wrong ID/path,
 or multiple matching processes fail visibly. Steam itself is never owned or closed.
 Other launchers currently require starting the game externally.
 
 **Edit game profile** updates the saved paths and launch preferences while the
-session is stopped. **Stop** disconnects capture and stops the Agent process
+session is stopped. **End session** disconnects capture and stops the Agent process
 launched by VN Player. Closing a game is opt-in and applies only to the game
 process owned by VN Player; externally started games remain open. Newly added
 games default to Base companion mode without requiring a complete script. The
-existing PARANORMASIGHT profile retains its Mystery preset. The editor groups game identity/type, text connection, and optional play preferences.
+existing PARANORMASIGHT profile retains its Mystery preset. The developer's built-in
+profile is offered only when that game is installed; a clean installation starts
+with **Add your first game**. The editor groups game identity/type, text connection,
+and optional play preferences. Agent download/script links use the official upstream
+pages; script selection starts in the configured Agent's `data/scripts` directory.
 Shared Agent setup is collapsed once configured. After previewing text, **Text looks
 right — start companion** switches to play while keeping the game open. This button
 is the user's quality check, not an automatic certification of extraction.
@@ -51,7 +58,7 @@ is the user's quality check, not an automatic certification of extraction.
 
 `promptPack` selects `base` or `mystery` in a launch profile; it maps to the existing
 runtime `prompt_pack`. Game type owns the following fixed capability presets;
-the editor and play sidebar display abilities without editable switches. The host
+the editor and expandable ability details display abilities without editable switches. The host
 returns `capabilityPresets` so the renderer does not maintain a separate policy.
 
 | Capability | General VN | Mystery VN | Prerequisites |
@@ -78,6 +85,36 @@ headless callers. Saved launch profiles no longer accept overrides; the launch
 facade always derives them from the selected type. Old persisted capability maps
 are discarded during load and removed on the next save. Type and voice preferences
 are retained; switching General → Mystery enables the entire Mystery preset.
+
+### Session controls and activity
+
+The VN page owns the current play controls. `commentaryFrequency` (`quiet`,
+`balanced`, `frequent`) and `speechEnabled` are saved startup preferences. Current
+changes use `vn.mode.set` with `session_id`, `commentary_frequency`,
+`commentary_paused` or `speech_enabled`. Normal frequency preserves the existing
+runtime cadence; quiet/frequent adjust its line cooldown and per-minute ceiling.
+Pausing spontaneous comments keeps story recording, summary work and direct
+player questions active. A pending model comment is checked again before delivery.
+**Read upcoming replies aloud** controls future speech submissions; existing audio
+has the separate **Stop speech** action. Text replies remain visible.
+
+The renderer reads production event shapes: `vn.line.line`,
+`vn.reaction.reaction.speak`, `vn.summary.scene_summary` and `vn.player.event.event`.
+Only spoken reactions appear as companion messages. Accepted player input is
+published before its model answer. Runtime-owned event identities and sequence
+numbers let clients merge current events with `vn.status {include_history: true}`
+without dropping real repeated text or duplicating replayed presentation events.
+The current runtime retains the most recent 200 visible activities; diagnostic
+events have a separate UI buffer. This restores a page reconnect, not a promise
+of semantic continuity across loading an earlier game save or restarting the host.
+
+The page distinguishes startup, waiting for first text, following, interrupted
+source, exited game and unavailable model. A source receiving no new text during
+a menu or reading pause is not by itself an error. Lifecycle monitoring publishes
+process exits even without new text. **Cancel connection** preempts startup on the
+same WebSocket and cleans acquired resources. Steam may still finish opening a
+game after its launch URI has been submitted; cancellation does not claim authority
+over an as-yet-unidentified future game process.
 
 ### Voice, companion window and game view
 
@@ -117,20 +154,39 @@ The present control surface is the VN page's always-visible session toolbar. The
 existing companion presentation windows are not given an independent input state;
 a later small-window control surface must use this same session API.
 
+On Windows, VN vision uses Windows Graphics Capture for the exact verified game
+HWND. It does not use a desktop crop: the earlier Pillow HWND implementation
+included occluding windows. Capture runs in a short-lived hidden worker because
+the native capture library faulted during a two-game acceptance run. A crash or
+timeout becomes a capture error while the VN host stays alive; no desktop fallback
+is allowed. `windows-capture` and its OpenCV dependency are pinned in `uv.lock` for
+Windows; this adds no Agent/Luna dependency. A minimized, closed or unavailable
+game must be restored/reconnected before capturing.
+
 New games enable the portrait overlay by default when its helper is installed.
 An explicitly saved off preference remains off. Text-capture-only tests still do
-not launch the overlay. An unavailable helper can be disabled in preferences.
+not launch the overlay. The window implementation is now entirely in this repository
+(`tools/vn_portrait_overlay_lite.py` and `render/vn_overlay_window.py`); it does not
+import the sibling workspace's Tk helper or portrait cropper. The optional
+`companion-kurisu` art pack uses the existing asset-bundle installer described in
+`docs/companion-panel.md`. Without that pack the window displays a simple avatar
+and captions. An invalid installed pack reports an error rather than silently
+substituting unrelated assets. **Show/Hide portrait** changes this session only;
+incoming reactions do not reopen a hidden window.
 
 Luna profiles save the original-text WebSocket URL. Start Luna, configure its
-extraction and start the game externally; VN Player then connects using the saved
-URL. Luna extraction compatibility still needs validation for each game.
+extraction; VN Player can launch the game through its shared exe/Steam launcher or
+connect to a game started manually. Luna's service remains externally owned.
+Luna extraction compatibility still needs validation for each game.
 
 ### API and verification
 
-- `vn.launch.profiles` returns profiles, file availability, the shared `agentExe`, and `capabilityPresets`.
+- `vn.launch.profiles` returns profiles, file availability, the shared `agentExe`, `overlayAvailable`, and `capabilityPresets`.
+- `vn.launch.inspect` accepts `{gameExe}` and returns an unambiguous installed
+  Steam app ID/name when its local manifest identifies that executable's directory.
 - `vn.launch.profile.save` accepts `{profile: {name, gameExe, hookHelper, ...}, agentExe}`;
   omit `profile.id` to create, or supply an existing ID to edit. `promptPack`,
-  `voiceInput`, `visionMode` and overlay preferences configure the companion. `launchMethod`
+  `voiceInput`, `visionMode`, `commentaryFrequency`, `speechEnabled` and overlay preferences configure the companion. `launchMethod`
   (`exe` or `steam`), `steamAppId` and `launchGame` configure startup. Live process IDs and
   arbitrary runtime implementation fields are not editable profile fields.
 - `vn.launch.start` accepts `{profileId}` to use saved settings, or
@@ -140,6 +196,8 @@ URL. Luna extraction compatibility still needs validation for each game.
 - `vn.input.set` accepts the active `session_id` plus `voice`, `vision_mode` or
   input `kind`; it returns enriched `vn.status` including `inputs`. Changes are
   broadcast through the existing `vn.status` event.
+- `vn.mode.set` changes current output preferences; `vn.launch.overlay` accepts
+  the active `session_id` plus boolean `enabled` to show/hide the window.
 - `vn.launch.capture` returns a transient `visual_context` for explicit previews
   or low-level question attachment. Normal typed/ASR requests acquire their fresh
   game frame at the shared VN player handler according to `vision_mode`.
@@ -148,9 +206,11 @@ Run `python -m pytest tests/test_vn_profiles.py tests/test_vn_text_sources.py` f
 storage, source, process ownership and runtime isolation checks. For a browser
 acceptance run, start Vite in `electron`, then run
 `python tools/probes/verify_vn_profiles_ui.py --url http://127.0.0.1:5173`.
-The UI probe uses the real form, handler, store and adapter in an isolated temporary
-directory, substituting process injection and the native file picker. It does
-not replace a real game's extraction acceptance.
+The UI probe uses the real form, handlers, store, runtime and emitted events in an
+isolated temporary directory. Process injection, file picking, microphone, images
+and model output are substituted. It does not replace real game, microphone or
+model acceptance. `tests/test_vn_product_contracts.py` separately exercises real
+loopback Agent and Luna streams plus direct recorded input against the same runtime.
 
 ## 0xDC00 Agent
 
@@ -188,11 +248,11 @@ not launch Luna, select hooks, change Luna settings, or consume translations.
 The original-text stream supplies text; speaker, script ID, choices, and scene
 metadata are not assumed. Repeated text is forwarded as repeated observations.
 
-When using the `vn.launch.start` API directly, pass `textSource: "luna"`,
-`lunaWsUrl: "ws://127.0.0.1:<configured-port>/api/ws/text/origin"`, and
-`launchOverlay: false`. The port comes from the user's Luna network-service
-configuration. Stop with `vn.launch.stop`; stopping disconnects Amadeus without
-stopping Luna.
+When using the API, first save a Luna profile with `textSource: "luna"`,
+`lunaWsUrl: "ws://127.0.0.1:<configured-port>/api/ws/text/origin"`, and the intended
+game launch preference. Pass its `profileId` to `vn.launch.start`. The port comes
+from the user's Luna network-service configuration. Stop with `vn.launch.stop`;
+stopping disconnects Amadeus without stopping Luna.
 
 ## Current boundary
 

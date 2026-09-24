@@ -317,7 +317,7 @@ def capture_game_window(pid: int, executable: str) -> dict[str, Any]:
     if os.name != "nt":
         raise RuntimeError("Game-window capture currently requires Windows.")
     import psutil
-    from PIL import ImageGrab
+    from server.window_capture import capture_window_frame
 
     actual = psutil.Process(pid).exe()
     if os.path.normcase(os.path.realpath(actual)) != os.path.normcase(os.path.realpath(executable)):
@@ -329,9 +329,9 @@ def capture_game_window(pid: int, executable: str) -> dict[str, Any]:
     hwnd = _parse_hwnd(window["hwnd"])
     if _window_pid(hwnd) != pid:
         raise RuntimeError("The game window changed. Try capturing again.")
-    # Pillow's window capture targets the HWND. Never fall back to the foreground
-    # window or desktop: other applications may contain unrelated private content.
-    image = ImageGrab.grab(window=hwnd).convert("RGB")
+    image = capture_window_frame(hwnd)
+    if _window_pid(hwnd) != pid:
+        raise RuntimeError("The game window changed during capture. Try capturing again.")
     result = _encode_visual_context(image, window["rect"], requested_scope="game_window", actual_scope="game_window",
                                     provider="auto", mode="on_demand", reason="vn_player",
                                     max_long_side=960, jpeg_quality=68)

@@ -1,5 +1,22 @@
 # VN Player implementation decisions
 
+## 2026-09-25 — Session controls and source-independent product flow
+
+Game launch, text extraction, VN semantics and presentation retain separate owners.
+Both Agent and Luna profiles can use the common exe/Steam launcher. The sole live
+ingress remains `vn.line`; game type selects abilities while session preferences
+control commentary, speech, microphone, scoped vision and portrait visibility.
+The runtime owns visible activity/history and event identity. The renderer reads
+the existing nested event structures. The portrait window is repository-owned,
+with the existing optional Companion Lite art pack.
+
+Window vision uses exact-HWND Windows Graphics Capture in an isolated worker.
+Desktop-composited screenshots violated the game-only boundary; a later observed
+native access violation justified isolating capture from the host. Neither error
+path falls back to a desktop screenshot or another text provider.
+
+Implementation and qualified evidence: [product acceptance](vn-product-acceptance-2026-09-25.md).
+
 ## 2026-09-24 — Saved game setup
 
 **Decision:** VN Player owns editable launch profiles and orchestrates the separately

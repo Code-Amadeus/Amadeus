@@ -112,6 +112,7 @@ class ConnectionManager:
             Method.OPENCLAW_TASK_EVENT, Method.OPENCLAW_TASK_RESULT,
             Method.VN_STATUS, Method.VN_LINE, Method.VN_REACTION,
             Method.VN_CONTEXT_UPDATED, Method.VN_SUMMARY, Method.VN_ERROR,
+            Method.VN_PLAYER_EVENT,
             Method.VN_LAUNCH_STATUS,
             Method.PROVIDER_EVENT, Method.PROVIDER_RESULT,
             Method.AUIP_ACTION_REQUESTED, Method.AUIP_UPDATED,
@@ -217,7 +218,8 @@ class ConnectionManager:
                         await self._send_error(send_json, "invalid request envelope", req_id)
                         continue
                     method = msg.get("method", "")
-                    if method in {Method.CHAT_ABORT, Method.TTS_INTERRUPT}:
+                    if method in {Method.CHAT_ABORT, Method.TTS_INTERRUPT, Method.VN_LAUNCH_STOP,
+                                  Method.VN_INPUT_SET, Method.VN_MODE_SET}:
                         cancelled_queued = False
                         if method == Method.CHAT_ABORT:
                             target = str(msg.get("params", {}).get("turn_id") or "").strip()

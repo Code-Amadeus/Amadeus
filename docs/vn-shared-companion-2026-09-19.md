@@ -1,5 +1,10 @@
 # VN Lite avatar integration — original Tk window retained
 
+> Historical implementation record. The 2026-09-25 product pass replaced the
+> external Tk helper dependency with the repository-owned window in
+> `render/vn_overlay_window.py`, preserving the shared atlas/playback contract.
+> Current behavior and setup are documented in `vn-text-sources.md`.
+
 ## Final scope
 
 Only the **avatar rendering area** is replaced. VN keeps its original Tk window,
@@ -82,7 +87,7 @@ final implementation, nor of an extra Slice window inside an existing desktop
 process. The discarded embedded-browser prototype is not installed or selectable.
 
 Run `python -m pytest tests/test_companion_atlas_tk.py tests/test_vn_portrait_shared.py -q`.
-Native checks use `tools/probes/verify_vn_lite_tk.py --legacy-helper <VN_ROOT>/vn_portrait_overlay_tk.py --output <FRESH_OUTPUT>`.
+Current native checks use `tools/probes/verify_vn_lite_tk.py --output <OUTPUT>`.
 Cost comparisons use `tools/probes/compare_vn_portrait_renderers.py --legacy-root <VN_ROOT> --output <FRESH_OUTPUT>`.
 
 This avatar-only integration builds on the earlier Companion Lite PR; that earlier

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
+from copy import deepcopy
 import inspect
 import logging
 import os
@@ -37,6 +39,7 @@ VN_EVENT_CONTEXT_UPDATED = "vn.context.updated"
 VN_EVENT_STATUS = "vn.status"
 VN_EVENT_ERROR = "vn.error"
 VN_EVENT_SUMMARY = "vn.summary"
+VN_EVENT_PLAYER = "vn.player.event"
 
 
 
@@ -107,6 +110,9 @@ class VNPlayerRuntime:
         self._last_retrospective_line_count: int | None = None
         self._last_player_intervention: dict[str, Any] | None = None
         self._player_dialogue: list[dict[str, Any]] = []
+        self._activity: deque[dict[str, Any]] = deque(maxlen=200)
+        self._activity_seq = 0
+        self._commentary_paused = False
 
         self._llm_enabled = _env_bool("VN_LLM_ENABLED", True)
         self._immediate_llm_enabled = _env_bool("VN_IMMEDIATE_LLM_ENABLED", self._llm_enabled)
@@ -185,6 +191,9 @@ class VNPlayerRuntime:
             self._aligned_script_id = ""
             self._last_player_intervention = None
             self._player_dialogue = []
+            self._activity.clear()
+            self._activity_seq = 0
+            self._commentary_paused = False
             self._reset_lookahead_planner()
 
             self.store.record_runtime_event(
@@ -225,12 +234,18 @@ class VNPlayerRuntime:
             "profile": profile,
             "capabilities": self._capability_status(),
             "visual": self._visual_status(),
+            "preferences": {
+                "commentary_frequency": self.profile.commentary_frequency if self.profile else "balanced",
+                "commentary_paused": self._commentary_paused,
+                "speech_enabled": self.profile.speech_enabled if self.profile else True,
+            },
             "script": {
                 "path": self.script_path,
                 "line_count": len(self.script_index.lines),
                 "last_order": self._last_script_order,
             },
             "llm": {
+                "configured": bool(self.llm and self.llm.configured()),
                 "enabled": self._llm_enabled,
                 "immediate_enabled": self._immediate_llm_enabled,
                 "lookahead_enabled": self._lookahead_llm_enabled,
@@ -243,6 +258,26 @@ class VNPlayerRuntime:
                 "verifier_enabled": self._verifier_enabled,
             },
         }
+
+    def activity(self) -> list[dict[str, Any]]:
+        """Recent presentation events for reconnecting clients, separate from diagnostics."""
+        return deepcopy(list(self._activity))
+
+    async def set_preferences(self, params: dict[str, Any]) -> dict[str, Any]:
+        if not self.enabled or not self.profile or params.get("session_id") != self.profile.session_id:
+            raise ValueError("The VN session has ended or changed.")
+        frequency = params.get("commentary_frequency", self.profile.commentary_frequency)
+        if frequency not in {"quiet", "balanced", "frequent"}:
+            raise ValueError("Unsupported VN commentary frequency")
+        for key in ("commentary_paused", "speech_enabled"):
+            if key in params and not isinstance(params[key], bool):
+                raise ValueError(f"{key} must be a boolean.")
+        self.profile.commentary_frequency = frequency
+        self.profile.speech_enabled = params.get("speech_enabled", self.profile.speech_enabled)
+        self._commentary_paused = params.get("commentary_paused", self._commentary_paused)
+        result = self.status()
+        await self._emit(VN_EVENT_STATUS, result)
+        return result
 
     def _visual_status(self) -> dict[str, Any]:
         if not self.llm or not self.llm.supports_visual():
@@ -292,6 +327,9 @@ class VNPlayerRuntime:
         assert self.profile is not None
         assert self.store is not None
 
+        if not self.enabled:
+            return {"status": "ignored", "reason": "inactive_vn_session"}
+        owner_profile, owner_store = self.profile, self.store
         text = strip_vn_tags(str(params.get("text") or "")).strip()
         if not text:
             return {**self.status(), "status": "ignored", "reason": "empty_text"}
@@ -353,15 +391,20 @@ class VNPlayerRuntime:
             context_pack = self._build_context_pack(line_event, lookahead, attention=attention)
             response = (
                 await self._immediate_response(context_pack, line_event, lookahead)
-                if self._capability("immediate")
+                if self._capability("immediate") and not self._commentary_paused
                 else default_response("silence", reason_label="capability_disabled")
             )
+            if not self.enabled or self.profile is not owner_profile or self.store is not owner_store:
+                return {"status": "ignored", "reason": "session_changed"}
             response = self._postprocess_response(response, line_event)
-            if self._capability("immediate"):
+            if self._capability("immediate") and not self._commentary_paused:
                 response = self._apply_attention_guard(response, attention, line_event)
                 if self.profile.prompt_pack == "mystery":
                     response = self._apply_silence_pressure_guard(response, attention, line_event)
                 response = self._apply_line_budget_guard(response, attention, line_event)
+            # Recheck after the model returns so pausing also revokes pending commentary.
+            if self._commentary_paused:
+                response = {**response, "decision": "silence", "speak": None, "reason_label": "commentary_paused"}
             self._update_silence_pressure(response)
 
             patches, verification = self._verify_context_patches(response.get("context_patches") or [], line_event)
@@ -456,6 +499,7 @@ class VNPlayerRuntime:
         self._last_player_intervention = event
         self._record_player_dialogue(event)
         self.store.record_runtime_event(f"vn.player.{kind}", event)
+        await self._emit(VN_EVENT_PLAYER, {"session_id": owner_profile.session_id, "event": event})
 
         if kind not in {"ask", "choice"} or not text:
             return {"status": "ok", "event": event}
@@ -505,7 +549,7 @@ class VNPlayerRuntime:
         )
         if not self.enabled or self.profile is not owner_profile or self.store is not owner_store:
             return {"status": "ignored", "reason": "session_changed", "event": event}
-        await self._speak(response["speak"], last_line)
+        await self._speak(response["speak"], last_line, player_requested=True)
         event["answered_at_ms"] = now_ms()
         return {"status": "ok", "event": event, "reaction": response}
 
@@ -1579,6 +1623,8 @@ class VNPlayerRuntime:
             cooldown = max(1, int(budget.get("speak_cooldown_lines") or 4))
         except Exception:
             cooldown = 4
+        factor = {"quiet": 2.0, "balanced": 1.0, "frequent": 0.5}[self.profile.commentary_frequency]
+        cooldown = max(1, round(cooldown * factor))
         try:
             importance = float(response.get("importance") or 0.0)
         except Exception:
@@ -1639,12 +1685,17 @@ class VNPlayerRuntime:
         assert self.profile is not None
         now = time.monotonic()
         self._recent_speaks = [t for t in self._recent_speaks if now - t < 60.0]
-        if len(self._recent_speaks) >= max(1, self.profile.max_reactions_per_minute):
+        factor = {"quiet": 0.25, "balanced": 1.0, "frequent": 1.5}[self.profile.commentary_frequency]
+        if len(self._recent_speaks) >= max(1, round(self.profile.max_reactions_per_minute * factor)):
             return False
         self._recent_speaks.append(now)
         return True
 
-    async def _speak(self, speak: dict[str, Any], line_event: dict[str, Any]) -> None:
+    async def _speak(self, speak: dict[str, Any], line_event: dict[str, Any], *, player_requested: bool = False) -> None:
+        if not self.enabled or not self.profile or not self.profile.speech_enabled:
+            return
+        if self._commentary_paused and not player_requested:
+            return
         payload = dict(speak)
         payload["line"] = _line_ref(line_event)
         payload["session_id"] = self.profile.session_id if self.profile else ""
@@ -1796,6 +1847,15 @@ class VNPlayerRuntime:
         return safe
 
     async def _emit(self, method: str, params: dict[str, Any]) -> None:
+        visible = method in {VN_EVENT_LINE, VN_EVENT_PLAYER, VN_EVENT_SUMMARY, VN_EVENT_ERROR}
+        if method == VN_EVENT_REACTION:
+            visible = (params.get("reaction") or {}).get("decision") == "speak"
+        if visible and self.profile:
+            self._activity_seq += 1
+            params = {**params, "session_id": self.profile.session_id,
+                      "event_id": f"{self.profile.session_id}:{self._activity_seq}",
+                      "event_seq": self._activity_seq, "emitted_at_ms": now_ms()}
+            self._activity.append({"method": method, "payload": deepcopy(params)})
         if self.event_emit is None:
             return
         result = self.event_emit(method, params)

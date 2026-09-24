@@ -122,6 +122,7 @@ class Method(StrEnum):
     VN_PLAYER_PIN        = "vn.player.pin"
     VN_CHOICE_ASK        = "vn.choice.ask"
     VN_MODE_SET          = "vn.mode.set"
+    VN_PLAYER_EVENT      = "vn.player.event"
     VN_INPUT_SET         = "vn.input.set"
     VN_LAUNCH_PROFILES   = "vn.launch.profiles"
     VN_LAUNCH_PROFILE_SAVE = "vn.launch.profile.save"
@@ -129,6 +130,8 @@ class Method(StrEnum):
     VN_LAUNCH_STOP       = "vn.launch.stop"
     VN_LAUNCH_STATUS     = "vn.launch.status"
     VN_LAUNCH_CAPTURE    = "vn.launch.capture"
+    VN_LAUNCH_OVERLAY    = "vn.launch.overlay"
+    VN_LAUNCH_INSPECT    = "vn.launch.inspect"
 
     # Generic providers and future AUIP apps
     PROVIDER_RUN         = "provider.run"

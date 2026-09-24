@@ -94,8 +94,7 @@ def main():
             cwd = args.legacy_root
         else:
             command = [sys.executable, str(ROOT / "tools/vn_portrait_overlay_lite.py"),
-                       "--legacy-helper", str(args.legacy_root / "vn_portrait_overlay_tk.py"),
-                       "--images-dir", str(ROOT / "assets/images"), "--port", str(port)]
+                       "--lite-dir", str(ROOT / "assets/companion/kurisu"), "--port", str(port)]
             cwd = ROOT
         result[mode] = run(command, cwd, out, port)
     (args.output / "summary.json").write_text(json.dumps(result, indent=2), encoding="utf-8")

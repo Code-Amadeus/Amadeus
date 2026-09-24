@@ -42,7 +42,19 @@
 .vn-input-switch span { display: block; width: 14px; height: 14px; margin-left: 3px; border-radius: 50%; background: white; transition: transform .15s; }
 .vn-input-switch[aria-checked=true] span { transform: translateX(16px); }
 .vn-session-inputs > .vn-error, .vn-session-inputs > .vn-help { margin-top: 9px; }
-.vn-workspace { flex: 1; min-height: 320px; display: grid; grid-template-columns: minmax(0, 1fr) 278px; gap: 16px; }
+.vn-player > :not(.vn-workspace) { flex-shrink: 0; }
+.vn-workspace { flex: 1 0 430px; min-height: 430px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.vn-conversation > .vn-section-heading, .vn-composer { flex-shrink: 0; }
+.vn-status-dot.waiting { background: #b77916; }
+.vn-status-dot.error { background: var(--danger); }
+.vn-session-inputs > header { flex-wrap: wrap; }
+.vn-session-inputs > header > button { margin-left: auto; }
+.vn-session-speech { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; font-size: 12px; }
+.vn-session-speech span { color: var(--muted); font-size: 11px; }
+.vn-capabilities { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 12px 16px; }
+.vn-capabilities > summary, .vn-message-actions > summary { cursor: pointer; font-size: 12px; }
+.vn-capabilities .vn-abilities { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; padding: 8px 0; }
+.vn-message-actions select { margin-top: 6px; }
 .vn-conversation { display: flex; flex-direction: column; min-height: 0; min-width: 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface); }
 .vn-section-heading { padding: 15px 18px; border-bottom: 1px solid var(--border); }
 .vn-section-heading h3 { margin: 0; font-weight: 600; font-size: 14px; }

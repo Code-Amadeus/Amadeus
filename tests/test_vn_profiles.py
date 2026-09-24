@@ -16,9 +16,17 @@ from server.vn_profiles import VNProfileStore
 
 
 def manager(root: Path) -> VNLaunchManager:
-    return VNLaunchManager(root, runtime_start=AsyncMock(return_value={"status": "active"}),
+    instance = VNLaunchManager(root, runtime_start=AsyncMock(return_value={"status": "active"}),
                            runtime_stop=AsyncMock(), runtime_status=AsyncMock(return_value={"status": "stopped"}),
                            runtime_line=AsyncMock(), before_external_launch=AsyncMock())
+    instance.vn_root = root / "external-vn-fixture"
+    return instance
+
+
+def install_builtin(instance):
+    executable = instance.vn_root / "PARANORMASIGHT/PARANORMASIGHT.exe"
+    executable.parent.mkdir(parents=True, exist_ok=True)
+    executable.touch()
 
 
 def game_settings(root: Path, name: str = "New game") -> dict:
@@ -56,12 +64,12 @@ def test_profile_save_edit_and_shared_agent_survive_manager_restart(tmp_path: Pa
     assert loaded["agentExists"] is True
     request["profile"].update(id=game_id, name="Renamed", launchGame=False, closeGameOnStop=True, launchOverlay=False)
     updated = second.save_profile(request)
-    assert len(updated["profiles"]) == 2
+    assert len(updated["profiles"]) == 1
     third = manager(tmp_path)
     assert third._profile_by_id(game_id)["name"] == "Renamed"
     assert third._profile_by_id(game_id)["launchGame"] is False
     assert third._profile_by_id(game_id)["launchOverlay"] is False
-    assert third._profile_by_id("paranormasight")["agentExe"] == request["agentExe"]
+    assert all(profile["agentExe"] == request["agentExe"] for profile in third.profiles()["profiles"])
     stored = json.loads(VNProfileStore(tmp_path).path.read_text(encoding="utf-8"))
     assert "runtime" not in stored["profiles"][0]
     assert "pid" not in stored["profiles"][0]
@@ -247,6 +255,7 @@ def test_luna_saved_url_reaches_capture_preview_over_real_websocket(tmp_path: Pa
 def test_existing_profile_can_test_without_runtime_and_play_with_original_preset(tmp_path: Path) -> None:
     async def run():
         instance = manager(tmp_path)
+        install_builtin(instance)
         with patch("server.vn_launch_manager.AgentVNTextSource", Source):
             params = {"launchGame": False, "attachHook": False, "launchOverlay": False}
             await instance.start({**params, "captureOnly": True})
@@ -298,6 +307,7 @@ def test_game_type_owns_capabilities_even_with_stale_start_overrides(tmp_path: P
 
 def test_pre_semantics_saved_builtin_profile_keeps_mystery_defaults(tmp_path: Path) -> None:
     instance = manager(tmp_path)
+    install_builtin(instance)
     request = game_settings(tmp_path)
     request["profile"]["id"] = "paranormasight"
     instance.save_profile(request)
@@ -328,6 +338,9 @@ def test_saved_legacy_switches_migrate_to_game_type(tmp_path: Path) -> None:
 
 def test_steam_launch_binds_game_not_steam_and_closes_only_owned_game(tmp_path: Path) -> None:
     async def run():
+        real_sleep = asyncio.sleep
+        async def fast_sleep(_delay):
+            await real_sleep(0)
         instance = manager(tmp_path)
         request = game_settings(tmp_path)
         request["profile"].update(launchMethod="steam", steamAppId="3345060", closeGameOnStop=True)
@@ -338,7 +351,7 @@ def test_steam_launch_binds_game_not_steam_and_closes_only_owned_game(tmp_path: 
         with patch("server.vn_launch_manager._find_game_pid", return_value=None), \
              patch("server.vn_launch_manager._open_steam_game") as launch_steam, \
              patch.object(instance, "_wait_for_steam_game", new_callable=AsyncMock, return_value=game), \
-             patch("server.vn_launch_manager.asyncio.sleep", new_callable=AsyncMock), \
+             patch("server.vn_launch_manager.asyncio.sleep", side_effect=fast_sleep), \
              patch("server.vn_launch_manager._bring_process_window_to_front"), \
              patch("server.vn_launch_manager.AgentVNTextSource", Source), \
              patch.object(instance, "_spawn") as spawn:

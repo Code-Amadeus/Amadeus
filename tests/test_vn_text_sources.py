@@ -212,8 +212,10 @@ def test_launcher_selects_luna_without_agent_launch(tmp_path: Path) -> None:
         )
         with patch("server.vn_launch_manager.LunaVNTextSource", FakeSource), \
              patch("server.vn_launch_manager.AgentVNTextSource") as agent_factory:
+            profile_id = manager.save_profile({"profile": {"name": "Luna", "textSource": "luna",
+                "lunaWsUrl": "ws://127.0.0.1:2333/api/ws/text/origin", "launchOverlay": False}})["profileId"]
             started = await manager.start({
-                "textSource": "luna", "lunaWsUrl": "ws://127.0.0.1:2333/api/ws/text/origin",
+                "profileId": profile_id,
                 "launchOverlay": False,
             })
             assert started["textSource"] == "luna"

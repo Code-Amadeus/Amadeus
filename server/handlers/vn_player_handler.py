@@ -41,6 +41,10 @@ class VNPlayerHandler(RequestHandler):
         runtime = self._runtime
         return str(runtime.profile.session_id) if runtime and runtime.enabled and runtime.profile else ""
 
+    def set_overlay_url(self, url: str) -> None:
+        if self._runtime and self._runtime.profile:
+            self._runtime.profile.overlay_url = url
+
     def _inputs(self, status: dict[str, Any]) -> dict[str, Any]:
         session_id = self._session_id()
         interaction = status.get("capabilities", {}).get("interaction", {})
@@ -124,7 +128,7 @@ class VNPlayerHandler(RequestHandler):
             return self.status()
         if method == Method.VN_STATUS:
             await self._reconcile_voice(runtime.status())
-            return self.status()
+            return {**self.status(), **({"activity": runtime.activity()} if params.get("include_history") else {})}
         if method == Method.VN_INPUT_SET:
             return await self.set_inputs(params)
         if method == Method.VN_LINE:
@@ -134,7 +138,8 @@ class VNPlayerHandler(RequestHandler):
         if method in kinds:
             return await self._intervene(kinds[method], params)
         if method == Method.VN_MODE_SET:
-            return await runtime.player_intervention("mode", params)
+            await runtime.set_preferences(params)
+            return self.status()
         return None
 
     async def set_inputs(self, params: dict[str, Any]) -> dict[str, Any]:

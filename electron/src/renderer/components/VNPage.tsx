@@ -4,6 +4,7 @@ import VNProfileEditor, { type VNProfileSettings } from './VNProfileEditor'
 import VNAbilities, { capabilityReason, type CapabilityState, type VNCapabilities, type VNCapabilityPresets } from './VNAbilities'
 import FluentIcon from './FluentIcon'
 import { StatusPill } from './SettingsPrimitives'
+import { activityFromEvent, mergeActivity, sessionBanner, type VNActivity } from './vnPresentation'
 
 type BackendSend = (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
 type BackendSubscribe = (method: string, fn: (p: Record<string, unknown>) => void) => () => void
@@ -46,6 +47,7 @@ type ProcessStatus = {
   helper?: string
   url?: string
   owned?: boolean
+  visible?: boolean
 }
 
 type BridgeStatus = {
@@ -94,6 +96,7 @@ type RuntimeState = Record<string, unknown> & {
   inputs?: VNInputs
   capabilities?: Record<string, CapabilityState>
   visual?: { supported?: boolean; reason?: string }
+  preferences?: { commentary_frequency: 'quiet' | 'balanced' | 'frequent'; commentary_paused: boolean; speech_enabled: boolean }
 }
 type VisualAttachment = {
   frame: { dataUrl: string; mime: string; width: number; height: number }
@@ -101,22 +104,6 @@ type VisualAttachment = {
   actualScope: string
   game?: { pid?: number; title?: string }
   [key: string]: unknown
-}
-
-function textFromPayload(payload: Record<string, unknown>): string {
-  const direct = payload.text ?? payload.summary ?? payload.message ?? payload.error
-  if (typeof direct === 'string' && direct.trim()) return direct
-  const line = payload.line
-  if (line && typeof line === 'object' && 'text' in line) {
-    const value = (line as { text?: unknown }).text
-    if (typeof value === 'string') return value
-  }
-  const speak = payload.speak
-  if (speak && typeof speak === 'object' && 'text' in speak) {
-    const value = (speak as { text?: unknown }).text
-    if (typeof value === 'string') return value
-  }
-  return ''
 }
 
 function statusColor(status: string): string {
@@ -157,10 +144,14 @@ export default function VNPage({ send, subscribe, connected }: Props) {
   const [capabilityPresets, setCapabilityPresets] = useState<VNCapabilityPresets>({ base: {}, mystery: {} })
   const [selectedProfile, setSelectedProfile] = useState('paranormasight')
   const [agentExe, setAgentExe] = useState('')
+  const [overlayAvailable, setOverlayAvailable] = useState(false)
   const [editor, setEditor] = useState<{ initial?: VNProfile } | null>(null)
   const [launch, setLaunch] = useState<LaunchStatus>({ status: 'idle' })
   const [runtime, setRuntime] = useState<RuntimeState | null>(null)
   const [events, setEvents] = useState<VNEvent[]>([])
+  const [activity, setActivity] = useState<VNActivity[]>([])
+  const [stopping, setStopping] = useState(false)
+  const [sending, setSending] = useState(false)
   const [lineText, setLineText] = useState('')
   const [playerText, setPlayerText] = useState('')
   const [inputsBusy, setInputsBusy] = useState(false)
@@ -188,6 +179,8 @@ export default function VNPage({ send, subscribe, connected }: Props) {
   inputsRef.current = inputs
 
   const pushEvent = useCallback((method: string, payload: Record<string, unknown>) => {
+    const visible = activityFromEvent(method, payload)
+    if (visible) setActivity(previous => mergeActivity(previous, [visible], visible.sessionId))
     const detail = typeof payload.reason_label === 'string'
       ? payload.reason_label
       : typeof payload.status === 'string'
@@ -196,7 +189,7 @@ export default function VNPage({ send, subscribe, connected }: Props) {
     const item: VNEvent = {
       id: crypto.randomUUID(),
       method,
-      text: textFromPayload(payload),
+      text: visible?.text || '',
       detail,
       raw: JSON.stringify(payload, (key, value) => key === 'dataUrl' ? '[image omitted]' : value),
       time: new Date().toLocaleTimeString(),
@@ -207,29 +200,35 @@ export default function VNPage({ send, subscribe, connected }: Props) {
   const refresh = useCallback(async () => {
     if (!connected) return
     try {
-      const [profileRes, statusRes] = await Promise.all([
+      const [profileRes, statusRes, runtimeRes] = await Promise.all([
         send('vn.launch.profiles', {}),
         send('vn.launch.status', {}),
+        send('vn.status', { include_history: true }),
       ])
       const loadedProfiles = Array.isArray(profileRes.profiles) ? profileRes.profiles as VNProfile[] : []
       setProfiles(loadedProfiles)
       setLaunch(statusRes as LaunchStatus)
       setAgentExe(String(profileRes.agentExe || ''))
+      setOverlayAvailable(profileRes.overlayAvailable === true)
+      const history = (Array.isArray(runtimeRes.activity) ? runtimeRes.activity : []) as Array<{method: string; payload: Record<string, unknown>}>
+      const restored = history.map(item => activityFromEvent(item.method, item.payload)).filter((item): item is VNActivity => !!item)
+      const historySession = String((runtimeRes.profile as {session_id?: string} | undefined)?.session_id || '')
+      if (historySession && (!sessionRef.current || sessionRef.current === historySession)) {
+        setActivity(previous => mergeActivity(previous, restored, historySession))
+      }
       if (profileRes.capabilityPresets) setCapabilityPresets(profileRes.capabilityPresets as VNCapabilityPresets)
-      if (statusRes.profileId) setSelectedProfile(String(statusRes.profileId))
+      setSelectedProfile(previous => statusRes.profileId ? String(statusRes.profileId)
+        : loadedProfiles.some(profile => profile.id === previous) ? previous : loadedProfiles[0]?.id || '')
       if (statusRes.runtime && typeof statusRes.runtime === 'object') {
         setRuntime(statusRes.runtime as RuntimeState)
       } else {
         setRuntime(null)
       }
-      if (loadedProfiles.length && !loadedProfiles.some(profile => profile.id === selectedProfile)) {
-        setSelectedProfile(loadedProfiles[0].id)
-      }
       setError('')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
-  }, [connected, send, selectedProfile])
+  }, [connected, send])
 
   useEffect(() => {
     refresh().catch(() => {})
@@ -251,14 +250,9 @@ export default function VNPage({ send, subscribe, connected }: Props) {
     const unsubSummary = subscribe('vn.summary', payload => pushEvent('vn.summary', payload))
     const unsubError = subscribe('vn.error', payload => {
       pushEvent('vn.error', payload)
-      setError(textFromPayload(payload))
+      setError(String(payload.error || ''))
     })
-    const unsubAsrRecognized = subscribe('asr.recognized', payload => {
-      if (payload.source !== 'vn_player' || !inputsRef.current?.voice.enabled) return
-      const sourcePayload = payload.source_payload as Record<string, unknown> | undefined
-      if (sourcePayload?.session_id && sourcePayload.session_id !== sessionRef.current) return
-      pushEvent('vn.player.asr', payload)
-    })
+    const unsubPlayer = subscribe('vn.player.event', payload => pushEvent('vn.player.event', payload))
     return () => {
       unsubLaunch()
       unsubStatus()
@@ -266,7 +260,7 @@ export default function VNPage({ send, subscribe, connected }: Props) {
       unsubReaction()
       unsubSummary()
       unsubError()
-      unsubAsrRecognized()
+      unsubPlayer()
     }
   }, [pushEvent, subscribe])
 
@@ -289,6 +283,9 @@ export default function VNPage({ send, subscribe, connected }: Props) {
     setBusy(true)
     setError('')
     setEvents([])
+    setActivity([])
+    setSending(false)
+    setPlayerText('')
     followFeedRef.current = true
     try {
       const res = await send('vn.launch.start', { profileId, captureOnly })
@@ -312,7 +309,7 @@ export default function VNPage({ send, subscribe, connected }: Props) {
   }
 
   const stop = async () => {
-    setBusy(true)
+    setStopping(true)
     setError('')
     try {
       setVisualAttachment(null)
@@ -326,7 +323,7 @@ export default function VNPage({ send, subscribe, connected }: Props) {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setBusy(false)
+      setStopping(false)
     }
   }
 
@@ -340,23 +337,24 @@ export default function VNPage({ send, subscribe, connected }: Props) {
   const sendPlayerIntervention = async () => {
     const text = playerText.trim()
     if (!text) return
-    setBusy(true)
+    const session = runtimeSessionId
+    setSending(true)
     setError('')
     try {
       const method = routePlayerMethod(playerMode)
       const response = await send(method, {
         text,
-        source: 'electron_vn_page', session_id: runtimeSessionId,
+        source: 'electron_vn_page', session_id: session,
         metadata: { source: 'vn_player_panel', mode: playerMode },
       })
+      if (session !== sessionRef.current) return
       if (response.status === 'unavailable' || response.error) throw new Error(String(response.error || t(capabilityReason(String(response.reason || '')))))
-      pushEvent('vn.player', { text })
       setPlayerText('')
       setVisualAttachment(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      if (session === sessionRef.current) setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setBusy(false)
+      if (session === sessionRef.current) setSending(false)
     }
   }
 
@@ -398,28 +396,50 @@ export default function VNPage({ send, subscribe, connected }: Props) {
   const isTesting = isActive && !!launch.captureOnly
   const isPlaying = launchStatus === 'active' && !launch.captureOnly
   const preset = capabilityPresets[activeProfile?.promptPack || 'base']
-  const storyEvents = events.filter(item => item.text && ['vn.line', 'vn.reaction', 'vn.summary', 'vn.player', 'vn.player.asr', 'vn.error'].includes(item.method)).reverse()
+  const storyEvents = activity
   const eventNames: Record<string, string> = {
     'vn.line': 'Game text', 'vn.reaction': 'Companion', 'vn.summary': 'Story summary',
-    'vn.player': 'You', 'vn.player.asr': 'You', 'vn.error': 'Companion error',
+    'vn.player.event': 'You', 'vn.error': 'Companion error',
   }
-  const sourceReady = activeProfile?.textSource === 'luna' ? !!activeProfile.lunaWsUrl : !!(activeProfile?.gameExists && activeProfile.agentExists && activeProfile.hookExists)
+  const sourceReady = !!activeProfile && (!activeProfile.launchGame || !!activeProfile.gameExists)
+    && (activeProfile.textSource === 'luna' ? !!activeProfile.lunaWsUrl : !!(activeProfile.gameExists && activeProfile.agentExists && activeProfile.hookExists))
   const lineCount = launch.bridge?.lineCount || 0
   const reasonText = (reason?: string, enabled = false) => t(capabilityReason(reason, enabled))
-  const bannerTitle = !connected ? 'Desktop connection unavailable' : launchStatus === 'error' ? 'Game connection failed'
-    : launchStatus === 'starting' ? launch.game?.status === 'waiting_for_steam' ? 'Waiting for Steam to start the game…' : 'Connecting to game…'
-    : launchStatus === 'stopping' ? 'Ending session…' : isTesting ? lineCount ? 'Text received — compare it with the game' : 'Waiting for game text…'
-    : isPlaying ? 'Companion is live' : !sourceReady ? 'Finish game setup' : 'Ready to play'
-  const bannerDetail = !connected ? 'Reconnect to the desktop service to manage VN Player.'
-    : isTesting ? 'Advance a few lines in the game. Check that the text below matches what you see.'
-    : isPlaying ? 'Keep playing. Your companion follows the story as text arrives.'
-    : !sourceReady ? 'Choose the game executable, Agent and its game script in settings.'
-    : activeProfile?.launchGame === false ? 'Start the game yourself. Agent will attach automatically when you click Start.'
-    : activeProfile?.launchMethod === 'steam' ? 'Steam will open the game. Agent connects automatically.' : 'Your saved settings will launch the game and connect Agent.'
+  const banner = sessionBanner(launch, runtime, connected, sourceReady)
+  const preferences = runtime?.preferences
+  const reconnect = async () => {
+    const captureOnly = !!launch.captureOnly
+    setStopping(true); setError('')
+    try {
+      await send('vn.launch.stop', { closeGame: false, reason: 'reconnect' })
+      await startProfile(activeProfile.id, captureOnly)
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
+    finally { setStopping(false) }
+  }
+
+  const setPreferences = async (patch: Partial<NonNullable<RuntimeState['preferences']>>) => {
+    setInputsBusy(true); setError('')
+    const session = runtimeSessionId
+    try {
+      const result = await send('vn.mode.set', { session_id: session, ...patch })
+      if (session === sessionRef.current) setRuntime(result as RuntimeState)
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
+    finally { setInputsBusy(false) }
+  }
+
+  const toggleOverlay = async () => {
+    setInputsBusy(true); setError('')
+    try {
+      const showing = ['running', 'external_running'].includes(String(launch.overlay?.status)) && launch.overlay?.visible !== false
+      const result = await send('vn.launch.overlay', { session_id: runtimeSessionId, enabled: !showing })
+      setLaunch(result as LaunchStatus)
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
+    finally { setInputsBusy(false) }
+  }
 
   useEffect(() => {
     if (followFeedRef.current && feedRef.current) feedRef.current.scrollTop = feedRef.current.scrollHeight
-  }, [events, launch.capturedLines])
+  }, [activity, launch.capturedLines])
 
   const beginAfterTest = async () => {
     const profileId = activeProfile.id
@@ -443,24 +463,35 @@ export default function VNPage({ send, subscribe, connected }: Props) {
           {!profiles.length && <option value="">{t('Add your first game')}</option>}
           {profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
         </select>
-        <span>{t(activeProfile?.promptPack === 'mystery' ? 'Mystery VN' : 'General VN')} · {activeProfile?.textSource === 'luna' ? 'Luna' : 'Agent'}</span>
+        {activeProfile && <span>{t(activeProfile.promptPack === 'mystery' ? 'Mystery VN' : 'General VN')} · {activeProfile.textSource === 'luna' ? 'Luna' : 'Agent'}</span>}
       </div>
       <div className="vn-game-actions">
         <button onClick={() => setEditor({})} disabled={!connected || busy || isActive}>{t('Add game')}</button>
         <button onClick={() => setEditor({ initial: activeProfile })} disabled={!connected || busy || isActive || !activeProfile}><FluentIcon name="Setting" size={14} aria-hidden="true" />{t('Edit game profile')}</button>
         {!isActive && <button className="vn-primary" onClick={() => void startProfile(activeProfile.id)} disabled={!connected || busy || !sourceReady}><FluentIcon name="Play" size={14} aria-hidden="true" />{t('Start')}</button>}
-        {isActive && <button onClick={stop} disabled={!connected || busy}>{t('Stop')}</button>}
+        {isActive && <button onClick={stop} disabled={!connected || stopping}>{t(launchStatus === 'starting' ? 'Cancel connection' : 'End session')}</button>}
       </div>
     </section>
-    <div className={`vn-session-banner ${launchStatus === 'error' ? 'has-error' : ''}`} role="status">
-      <span className={`vn-status-dot ${isPlaying || (isTesting && lineCount) ? 'live' : ''}`} aria-hidden="true" />
-      <div><strong>{t(bannerTitle)}</strong><p>{launch.error || t(bannerDetail)}</p></div>
+    <div className={`vn-session-banner ${banner.tone === 'error' ? 'has-error' : ''}`} role="status">
+      <span className={`vn-status-dot ${banner.tone}`} aria-hidden="true" />
+      <div><strong>{t(banner.title)}</strong><p>{t(banner.detail)}</p>{launch.error && <p className="vn-error">{launch.error}</p>}</div>
+      {launchStatus === 'active' && (banner.tone === 'error' || launch.bridge?.status !== 'running') && <button onClick={() => void reconnect()} disabled={stopping}>{t('Reconnect')}</button>}
       {isActive && <span className="vn-line-count">{lineCount} {t('lines received')}</span>}
     </div>
     {error && <div role="alert" className="vn-error vn-page-error">{error}</div>}
     {isPlaying && <section className="vn-session-inputs" aria-label={t('Session input controls')}>
-      <header><strong>{t('This play session')}</strong><span>{t('Changes here do not alter the saved game profile.')}</span></header>
+      <header><strong>{t('This play session')}</strong><span>{t('Changes here do not alter the saved game profile.')}</span>
+        <button onClick={() => void toggleOverlay()} disabled={inputsBusy || !overlayAvailable}>{t(launch.overlay?.visible !== false && ['running', 'external_running'].includes(String(launch.overlay?.status)) ? 'Hide portrait' : 'Show portrait')}</button>
+      </header>
       <div className="vn-input-options">
+        <div className="vn-input-option"><div><label htmlFor="vn-commentary-frequency">{t('Commentary frequency')}</label><p>{t('Controls spontaneous comments, not answers to your questions.')}</p></div>
+          <select id="vn-commentary-frequency" value={preferences?.commentary_frequency || 'balanced'} disabled={inputsBusy} onChange={e => void setPreferences({ commentary_frequency: e.target.value as 'quiet' | 'balanced' | 'frequent' })}>
+            <option value="quiet">{t('Occasional')}</option><option value="balanced">{t('Balanced')}</option><option value="frequent">{t('Frequent')}</option>
+          </select>
+        </div>
+        <div className="vn-input-option"><div><strong>{t('Proactive commentary')}</strong><p>{t('Pause comments while continuing to follow the story.')}</p></div>
+          <button disabled={inputsBusy} aria-pressed={preferences?.commentary_paused === true} onClick={() => void setPreferences({ commentary_paused: !preferences?.commentary_paused })}>{t(preferences?.commentary_paused ? 'Resume comments' : 'Pause comments')}</button>
+        </div>
         <div className="vn-input-option">
           <FluentIcon name="Microphone" size={18} aria-hidden="true" />
           <div><strong>{t('Voice input (ASR)')}</strong><p>{t(inputs?.voice.starting ? 'Starting microphone…' : voiceEnabled ? 'Speak to ask your companion.' : 'Microphone off')}
@@ -478,6 +509,7 @@ export default function VNPage({ send, subscribe, connected }: Props) {
           </select>
         </div>
       </div>
+      <label className="vn-session-speech"><input type="checkbox" aria-label={t('Read upcoming replies aloud')} checked={preferences?.speech_enabled !== false} disabled={inputsBusy} onChange={e => void setPreferences({ speech_enabled: e.target.checked })} />{t('Read upcoming replies aloud')}<span>{t('Text replies remain visible. Use Stop speech to interrupt current audio.')}</span></label>
       {inputs?.voice.error && <p className="vn-error">{t(inputs.voice.error)}</p>}
       {inputs?.vision.mode === 'on_question' && !visionEnabled && <p className="vn-help">{reasonText(inputs.vision.reason)}</p>}
     </section>}
@@ -506,33 +538,34 @@ export default function VNPage({ send, subscribe, connected }: Props) {
               <li><span>3</span><div><strong>{t('Start your companion')}</strong><small>{t('Abilities are selected automatically for this game type.')}</small></div></li>
             </ol>}
           </div> : storyEvents.map(item => <article key={item.id} className={`vn-story-item ${item.method === 'vn.line' ? 'game-line' : item.method.startsWith('vn.player') ? 'player-line' : 'companion-line'}`}>
-            <header><span>{t(eventNames[item.method])}</span><time>{item.time}</time></header><p>{item.text}</p>
+            <header><span>{t(eventNames[item.method])}</span><time>{new Date(item.time).toLocaleTimeString()}</time></header><p>{item.text}</p>
           </article>)}
         </div>
         {isPlaying && <div className="vn-composer">
           <div className="vn-composer-tools">
+            <details className="vn-message-actions"><summary>{t('Message options')}{playerMode !== 'ask' ? ` · ${t(playerMode === 'choice' ? 'Choice' : playerMode === 'note' ? 'Note' : 'Pin')}` : ''}</summary>
             <label className="sr-only" htmlFor="vn-player-mode">{t('Message type')}</label>
             <select id="vn-player-mode" value={playerMode} onChange={e => void setInputs({ kind: e.target.value as typeof playerMode })} disabled={busy || inputsBusy || !interactionEnabled}>
               <option value="ask">{t('Ask')}</option><option value="note">{t('Note')}</option><option value="choice">{t('Choice')}</option><option value="pin">{t('Pin')}</option>
             </select>
+            </details>
             <button onClick={() => void attachGameView()} disabled={!visionEnabled || visualBusy || busy || inputsBusy}>{t(visualBusy ? 'Capturing game view…' : 'Preview game view')}</button>
             <button onClick={() => void send('tts.interrupt', {}).catch(err => setError(String(err)))} disabled={!interactionEnabled}>{t('Stop speech')}</button>
           </div>
           {visualAttachment && <div className="vn-visual-attachment"><img src={visualAttachment.frame.dataUrl} alt={t('Attached game view')} /><span>{t('Preview only. Each question captures a fresh game frame.')}</span><button onClick={() => setVisualAttachment(null)}>{t('Remove')}</button></div>}
           <div className="vn-compose-row"><textarea aria-label={t('Message to companion')} value={playerText} onChange={e => setPlayerText(e.target.value)} rows={2}
-            placeholder={t('Ask about the current line, add a note, or inspect a choice...')} disabled={!interactionEnabled}
-            onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !e.nativeEvent.isComposing && !busy && !inputsBusy && playerText.trim()) void sendPlayerIntervention() }} />
-            <button className="vn-primary" onClick={sendPlayerIntervention} disabled={!connected || busy || inputsBusy || !interactionEnabled || !playerText.trim()}>{t('Send')}</button></div>
+            placeholder={t('Ask about the current story…')} disabled={!interactionEnabled}
+            onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !e.nativeEvent.isComposing && !sending && !inputsBusy && playerText.trim()) void sendPlayerIntervention() }} />
+            <button className="vn-primary" onClick={sendPlayerIntervention} disabled={!connected || sending || inputsBusy || !interactionEnabled || !playerText.trim()}>{t(sending ? 'Waiting for reply…' : 'Send')}</button></div>
           {!interactionEnabled && <p className="vn-help">{reasonText(interaction?.reason)}</p>}
           {visionEnabled && <p className="vn-help">{t('Typed and spoken questions include a fresh game image. Notes and pins remain text-only.')}</p>}
         </div>}
       </section>
-      <aside className="vn-companion-panel" aria-label={t('Game type and abilities')}>
-        <div className="vn-section-heading"><div><h3>{t(activeProfile?.promptPack === 'mystery' ? 'Mystery VN' : 'General VN')}</h3><p>{t('Abilities follow your game type.')}</p></div></div>
-        <VNAbilities preset={preset} states={isPlaying ? runtime?.capabilities : undefined} />
-        <p className="vn-sidebar-note">{t(isTesting ? 'Abilities start after the text test.' : 'Availability depends on the model, story script and current alignment.')}</p>
-      </aside>
     </div>
+    {activeProfile && <details className="vn-capabilities"><summary>{t(activeProfile.promptPack === 'mystery' ? 'Mystery VN' : 'General VN')} · {t('Game type and abilities')}</summary>
+      <VNAbilities preset={preset} states={isPlaying ? runtime?.capabilities : undefined} />
+      <p className="vn-help">{t('Availability depends on the model, story script and current alignment.')}</p>
+    </details>}
     <details className="vn-diagnostics">
       <summary>{t('Connection details and diagnostics')}</summary>
       <div className="vn-diagnostic-body"><div className="vn-diagnostic-status">
@@ -546,6 +579,6 @@ export default function VNPage({ send, subscribe, connected }: Props) {
       <details className="vn-raw-events"><summary>{t('Raw events')}</summary>{events.map(item => <div key={item.id}><time>{item.time}</time> <code>{item.method}</code><pre>{item.raw}</pre></div>)}</details>
       </div>
     </details>
-    {editor && <VNProfileEditor initial={editor.initial} capabilityPresets={capabilityPresets} overlayAvailable={profiles.some(profile => profile.overlayExists)} agentExe={agentExe} onClose={() => setEditor(null)} onSave={saveProfile} />}
+    {editor && <VNProfileEditor initial={editor.initial} capabilityPresets={capabilityPresets} overlayAvailable={overlayAvailable} agentExe={agentExe} inspectGame={gameExe => send('vn.launch.inspect', { gameExe })} onClose={() => setEditor(null)} onSave={saveProfile} />}
   </div>
 }

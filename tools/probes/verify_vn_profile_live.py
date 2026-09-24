@@ -21,8 +21,9 @@ sys.path.insert(0, str(ROOT))
 from playwright.async_api import async_playwright, expect
 
 from server.handlers.vn_launch_handler import VNLaunchHandler
+from server.handlers.vn_player_handler import VNPlayerHandler
+from server.protocol import Method
 from tools.probes.verify_vn_profiles_ui import HTML
-from vn_player.runtime import VNPlayerRuntime
 
 
 async def run(args) -> None:
@@ -38,18 +39,27 @@ async def run(args) -> None:
     # are a separate, explicitly enabled experiment.
     for name in ("VN_LLM_ENABLED", "VN_IMMEDIATE_LLM_ENABLED", "VN_LOOKAHEAD_LLM_ENABLED",
                  "VN_REASONER_LLM_ENABLED", "VN_SUMMARY_LLM_ENABLED", "VN_RETROSPECTIVE_LLM_ENABLED"):
-        os.environ[name] = "0"
+        os.environ[name] = "1" if args.with_model and name in {"VN_LLM_ENABLED", "VN_IMMEDIATE_LLM_ENABLED"} else "0"
 
     runtime = None
+    vn_handler = None
+    page = None
+    async def publish(method, payload):
+        if page and not page.is_closed():
+            await page.evaluate("([m,p]) => (window.vnSubscribers?.[m] || []).forEach(fn => fn(p))", [str(method), payload])
 
     def new_handler():
-        nonlocal runtime
-        runtime = VNPlayerRuntime(workspace)
-        async def runtime_status():
-            return runtime.status()
+        nonlocal runtime, vn_handler
+        vn_handler = VNPlayerHandler()
+        vn_handler.configure(workspace, event_emit=publish)
+        runtime = vn_handler._runtime
         handler = VNLaunchHandler()
-        handler.configure(workspace, runtime_start=runtime.start, runtime_stop=runtime.stop,
-                          runtime_status=runtime_status, runtime_line=runtime.ingest_line)
+        handler.configure(workspace, runtime_start=lambda p: vn_handler.handle(Method.VN_START, p),
+                          runtime_stop=lambda p: vn_handler.handle(Method.VN_STOP, p),
+                          runtime_status=lambda: vn_handler.handle(Method.VN_STATUS, {}),
+                          runtime_line=lambda p: vn_handler.handle(Method.VN_LINE, p), runtime_overlay=vn_handler.set_overlay_url)
+        handler._manager.project_root = ROOT
+        handler._manager.vn_root = workspace / "no-builtin"
         return handler
 
     handler = new_handler()
@@ -59,14 +69,16 @@ async def run(args) -> None:
     async def backend(method, params):
         if method != "vn.launch.status":
             calls.append({"method": method, "params": params})
+        if method in vn_handler.methods:
+            return await vn_handler.handle(method, params)
         return await handler.handle(method, params)
 
-    html = HTML.replace("window.amadeus =", """
+    html = HTML.replace("</body>", """<script>
 setInterval(async () => {
-  const status = await send('vn.launch.status', {});
-  for (const listener of window.vnSubscribers['vn.launch.status'] || []) listener(status);
+  const status = await window.backend('vn.launch.status', {});
+  for (const listener of window.vnSubscribers?.['vn.launch.status'] || []) listener(status);
 }, 1000);
-window.amadeus =""")
+</script></body>""")
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(headless=True)
         page = await browser.new_page(viewport={"width": 1120, "height": 900})
@@ -79,6 +91,8 @@ window.amadeus =""")
             await page.get_by_role("button", name="Add game", exact=True).click()
             form = page.get_by_role("dialog")
             await form.get_by_label("Game name", exact=True).fill(args.name)
+            if args.prompt_pack == "mystery":
+                await form.get_by_role("radio", name="Mystery VN", exact=False).check()
             await form.get_by_role("tab", name="Text connection", exact=True).click()
             for label in ("Game executable", "Game hook script (.js)"):
                 await form.get_by_role("button", name=f"Browse: {label}", exact=True).click()
@@ -87,6 +101,10 @@ window.amadeus =""")
                 await agent_details.locator("summary").click()
             await form.get_by_role("button", name="Browse: Agent installation (shared by all games)", exact=True).click()
             await form.get_by_role("tab", name="Play preferences", exact=True).click()
+            if not args.with_overlay:
+                await form.get_by_label("Portrait overlay", exact=True).uncheck()
+            if args.script:
+                await form.get_by_label("Full script for alignment", exact=True).fill(str(Path(args.script).resolve()))
             await form.get_by_label("Exit wallpaper before game").uncheck()
             if args.attach_running:
                 await form.get_by_role("tab", name="Text connection", exact=True).click()
@@ -132,11 +150,20 @@ window.amadeus =""")
                     await expect(page.get_by_role("region", name="Captured text")).to_contain_text(state["capturedLines"][-1]["text"])
                 else:
                     assert runtime.enabled
+                    if args.with_model:
+                        if not runtime.status()["llm"]["configured"]:
+                            raise RuntimeError("The configured VN model is unavailable for this acceptance.")
+                        await page.get_by_role("textbox", name="Message to companion").fill("根据刚才读到的内容，现在发生了什么？")
+                        await page.get_by_role("button", name="Send", exact=True).click()
+                        await expect(page.locator(".vn-feed .player-line")).to_have_count(1)
+                        await expect(page.get_by_role("textbox", name="Message to companion")).to_have_value("", timeout=90000)
+                    state = await handler._manager.status()
                     state["runtimeObservations"] = runtime.store.short_memory()
+                    state["runtimeActivity"] = runtime.activity()
                 await page.screenshot(path=str(output / f"capture-{attempt}.png"))
                 reports.append({"phase": attempt, "state": state})
                 (output / f"capture-{attempt}.json").write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-                await page.get_by_role("button", name="Stop", exact=True).click()
+                await page.get_by_role("button", name="End session", exact=True).click()
                 await expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
                 print(json.dumps({"phase": attempt, "result": "passed", "count": state["bridge"]["lineCount"]}), flush=True)
             first_pid = reports[0]["state"]["game"]["pid"]
@@ -165,4 +192,8 @@ if __name__ == "__main__":
     parser.add_argument("--attach-running", action="store_true", help="Validate a game already started by its storefront; does not qualify automatic game launch")
     parser.add_argument("--steam-app-id", default="", help="Start this Steam app through the saved profile")
     parser.add_argument("--timeout", type=int, default=180)
+    parser.add_argument("--with-model", action="store_true", help="Also exercise the configured VN model and a real player question")
+    parser.add_argument("--with-overlay", action="store_true", help="Launch the bundled portrait window in the second phase")
+    parser.add_argument("--prompt-pack", choices=["base", "mystery"], default="base")
+    parser.add_argument("--script", default="")
     asyncio.run(run(parser.parse_args()))

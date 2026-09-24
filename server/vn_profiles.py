@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import uuid
 from pathlib import Path
@@ -11,6 +12,29 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+def inspect_game(executable: str) -> dict[str, str]:
+    """Read the manifest belonging to a selected installed game, without guessing an exe."""
+    path = Path(executable)
+    if not path.is_absolute() or not path.is_file():
+        return {}
+    for parent in path.parents:
+        if parent.name.lower() != "common" or parent.parent.name.lower() != "steamapps":
+            continue
+        matches = []
+        for manifest in parent.parent.glob("appmanifest_*.acf"):
+            try:
+                fields = dict(re.findall(r'"([^"\r\n]+)"\s*"([^"\r\n]*)"', manifest.read_text(encoding="utf-8")))
+                app_id, directory = fields.get("appid", ""), fields.get("installdir", "")
+                if (app_id.isascii() and app_id.isdecimal() and directory
+                        and Path(directory).name == directory
+                        and path.resolve().is_relative_to((parent / directory).resolve())):
+                    matches.append({"steamAppId": app_id, "name": fields.get("name", "")})
+            except (OSError, UnicodeError):
+                continue
+        return matches[0] if len(matches) == 1 else {}
+    return {}
 
 
 class LaunchProfile(BaseModel):
@@ -23,7 +47,7 @@ class LaunchProfile(BaseModel):
     hookHelper: str = ""
     scriptPath: str = ""
     lunaWsUrl: str = ""
-    launchGame: bool = True
+    launchGame: bool | None = None
     launchMethod: Literal["exe", "steam"] = "exe"
     steamAppId: str = Field(default="", pattern=r"^(?:[1-9][0-9]{0,9})?$")
     launchOverlay: bool = True
@@ -33,6 +57,8 @@ class LaunchProfile(BaseModel):
     promptPack: Literal["base", "mystery"] | None = None
     voiceInput: bool | None = None
     visionMode: Literal["off", "on_question"] = "off"
+    commentaryFrequency: Literal["quiet", "balanced", "frequent"] = "balanced"
+    speechEnabled: bool = True
 
     @field_validator("gameExe", "hookHelper", "scriptPath")
     @classmethod
@@ -43,16 +69,19 @@ class LaunchProfile(BaseModel):
 
     @model_validator(mode="after")
     def source_settings(self) -> "LaunchProfile":
+        if self.launchGame is None:
+            self.launchGame = self.textSource == "agent"
         if self.textSource == "agent":
             if not self.gameExe or not self.hookHelper:
                 raise ValueError("Choose the game executable and its Agent hook script.")
-            if self.launchGame and self.launchMethod == "steam" and not self.steamAppId:
-                raise ValueError("Enter the Steam app ID for this game.")
         else:
             url = urlsplit(self.lunaWsUrl)
             if url.scheme not in {"ws", "wss"} or not url.hostname:
                 raise ValueError("Enter Luna's original-text WebSocket URL.")
-            self.launchGame = False
+        if self.launchGame and not self.gameExe:
+            raise ValueError("Choose the game executable or start the game manually.")
+        if self.launchGame and self.launchMethod == "steam" and not self.steamAppId:
+            raise ValueError("Enter the Steam app ID for this game.")
         return self
 
 

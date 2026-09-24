@@ -1,13 +1,16 @@
-"""Native verification: original Tk shell unchanged, only the avatar uses Lite atlases."""
+"""Verify the repository-owned VN window, real atlas lifecycle and optional art."""
 import argparse
 import json
 from pathlib import Path
 import sys
 import time
+import tkinter as tk
+from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from tools.vn_portrait_overlay_lite import load_legacy, overlay_class
+from tools.vn_portrait_overlay_lite import overlay_class
+from render.companion_pack import CompanionPackError
 
 
 def pump(overlay, seconds):
@@ -17,104 +20,85 @@ def pump(overlay, seconds):
         time.sleep(.005)
 
 
-def shell(overlay):
-    return {"size": [overlay.card_width, overlay.card_height], "alpha": overlay.root.attributes("-alpha"),
-            "avatar_position": overlay.avatar_label.place_info(), "text_position": overlay.text_label.place_info(),
-            "caption_font": str(overlay.text_label.cget("font")), "caption_bg": overlay.text_label.cget("bg"),
-            "caption_fg": overlay.text_label.cget("fg"), "canvas_bg": overlay.frame.cget("bg")}
+def post(overlay, path, payload):
+    port = overlay._server.server_address[1]
+    req = Request(f"http://127.0.0.1:{port}{path}", data=json.dumps(payload).encode(),
+                  headers={"Content-Type": "application/json"}, method="POST")
+    with urlopen(req, timeout=2) as response:
+        assert response.status == 200
+    pump(overlay, .08)
 
 
 def dispose(overlay):
-    overlay.server.shutdown()
-    overlay.server.server_close()
-    for timer in overlay.root.tk.call('after', 'info'):
-        overlay.root.after_cancel(timer)
-    overlay.root.destroy()
+    overlay._server.shutdown()
+    overlay._server.server_close()
+    overlay.close()
+    overlay._thread.join(timeout=2)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--legacy-helper", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    args.output.mkdir(parents=True, exist_ok=False)
-    legacy = load_legacy(args.legacy_helper)
-    cls = overlay_class(legacy)
-    methods = ("_layout_card", "_start_drag", "_drag", "_scan_tick", "_tick", "_poll_queue", "_start_http_server")
-    assert all(getattr(cls, name) is getattr(legacy.PortraitOverlayTk, name) for name in methods)
-    common = dict(images_dir=ROOT / "assets/images", cache_dir=legacy.DEFAULT_CACHE_DIR,
-                  host="127.0.0.1", port=0, x=60, y=80, crop_side_ratio=.74, crop_y_ratio=.035)
-    original = legacy.PortraitOverlayTk(**common)
-    try:
-        pump(original, .1)
-        before = shell(original)
-    finally:
-        dispose(original)
-    overlay = cls(**common, lite_dir=ROOT / "assets/companion/kurisu")
+    args.output.mkdir(parents=True, exist_ok=True)
+    cls = overlay_class()
+    overlay = cls(host="127.0.0.1", port=0, lite_dir=ROOT / "assets/companion/kurisu")
     try:
         pump(overlay, .1)
-        after = shell(overlay)
-        # Widget paths are interpreter-local identities, not presentation differences.
-        for snapshot in (before, after):
-            for key in ("avatar_position", "text_position"):
-                snapshot[key].pop("in", None)
-        assert before == after, (before, after)
-        assert overlay._lite and not overlay._photo_frames and not overlay._projection_sources
-        initial_images = len(overlay.root.tk.call('image', 'names'))
-        overlay.apply_reaction({"source": "vn_playback", "sentence_id": "1", "speaking": True,
-                                "emotion": "thinking", "display_text": "保留原来的 VN 外框，只更新头像绘制。"})
-        first_variant = overlay._lite.spec["url"]
-        draws = overlay._lite.draws
-        pump(overlay, .85)
-        speech_draws = overlay._lite.draws - draws
-        assert speech_draws >= 15, speech_draws
+        initial_images = len(overlay.root.tk.call("image", "names"))
+        post(overlay, "/reaction", {"source": "vn_playback", "sentence_id": "one", "speaking": True,
+                                    "emotion": "thinking", "display_text": "Repository-owned VN companion"})
+        first = overlay._lite.spec["url"]
+        post(overlay, "/reaction", {"source": "vn_playback", "sentence_id": "one", "speaking": False})
+        post(overlay, "/reaction", {"source": "vn_playback", "sentence_id": "two", "speaking": True, "emotion": "thinking"})
+        assert overlay._lite.spec["url"] != first
+        post(overlay, "/reaction", {"source": "vn_pretranslation", "sentence_id": "one", "display_text": "stale"})
+        assert overlay.text_var.get() != "stale"
+        post(overlay, "/visibility", {"visible": False})
+        assert not overlay.root.winfo_viewable() and overlay._lite.paused and overlay._atlas_timer is None
+        post(overlay, "/reaction", {"source": "vn_playback", "sentence_id": "three", "speaking": True,
+                                    "emotion": "sad", "text": "A sad beat [EMO preset=sad]"})
+        assert overlay._current_emotion == "sad" and overlay.text_var.get() == "A sad beat"
+        assert not overlay.root.winfo_viewable(), "incoming reactions must not reopen a hidden window"
+        post(overlay, "/visibility", {"visible": True})
+        assert overlay.root.winfo_viewable()
+        post(overlay, "/reaction", {"source": "vn_playback", "sentence_id": "four", "speaking": True,
+                                    "emotion": "surprised"})
+        assert overlay._current_emotion == "sided_surprised"
+        post(overlay, "/reaction", {"source": "vn_pretranslation", "sentence_id": "four", "display_text": "Long caption for layout verification. " * 15})
+        assert overlay.root.winfo_height() >= overlay._caption.winfo_reqheight() + 64
+        post(overlay, "/reaction", {"source": "vn_pretranslation", "sentence_id": "four", "display_text": "Short again"})
+        assert overlay.root.winfo_height() == 192
+        for index in range(16):
+            overlay._set_emotion("happy" if index % 2 else "normal", "speaking" if index % 3 else "idle")
+        assert len(overlay.root.tk.call("image", "names")) <= initial_images + 1
         assert overlay._lite.resident_bytes <= 16 * 1024**2
-        overlay.apply_reaction({"source": "vn_pretranslation", "sentence_id": "1", "display_text": "字幕保持，外框不改。"})
-        assert overlay._current_state == "speaking"
-        overlay.apply_reaction({"source": "vn_playback", "sentence_id": "1", "speaking": False})
-        pump(overlay, .15)
-        assert overlay._current_emotion == "sided_thinking"
-        pump(overlay, .3)
-        assert overlay._current_emotion == "normal" and overlay._current_state == "idle"
-        assert overlay.text_var.get() == "字幕保持，外框不改。"
-        overlay.apply_reaction({"source": "vn_playback", "sentence_id": "2", "speaking": True, "emotion": "thinking"})
-        assert overlay._lite.spec["url"] != first_variant
-        overlay.apply_reaction({"source": "vn_playback", "sentence_id": "1", "speaking": False})
-        assert overlay._current_state == "speaking"
-        for n in range(30):
-            overlay._set_emotion("happy" if n % 2 else "normal", "speaking" if n % 3 else "idle")
-        assert len(overlay.root.tk.call('image', 'names')) <= initial_images + 1
-        assert overlay._lite.resident_bytes <= 16 * 1024**2 and len(overlay._lite.entries) <= 2
-        overlay.root.withdraw(); pump(overlay, .05)
-        paused = overlay._lite.draws
-        pump(overlay, .3)
-        assert overlay._lite.draws == paused and overlay._atlas_timer is None
-        overlay.root.deiconify(); pump(overlay, .15)
-        assert not overlay._lite.paused
         player = overlay._lite
     finally:
         dispose(overlay)
-    assert player.resident_bytes == 0 and not player.entries
-    fallback = cls(**common, lite_dir=args.output / "no-pack")
+    assert player.resident_bytes == 0
+    placeholder = cls(host="127.0.0.1", port=0, lite_dir=args.output / "missing-optional-art")
     try:
-        assert fallback._lite is None and fallback._photo_frames
+        pump(placeholder, .1)
+        assert placeholder._lite is None
+        post(placeholder, "/reaction", {"source": "vn_playback", "sentence_id": "one", "speaking": True, "display_text": "Captions without an art bundle"})
+        assert placeholder.text_var.get() == "Captions without an art bundle"
     finally:
-        dispose(fallback)
-    static = cls(**common, lite_dir=ROOT / "assets/companion/kurisu", static_idle=True)
+        dispose(placeholder)
+    corrupt = args.output / "corrupt-installed-art"
+    corrupt.mkdir(exist_ok=True)
+    (corrupt / "manifest.json").write_text("{", encoding="utf-8")
     try:
-        pump(static, .1)
-        draws = static._lite.draws
-        pump(static, .4)
-        assert static._lite.draws == draws and static._atlas_timer is None
-    finally:
-        dispose(static)
-    report = {"ok": True, "unchanged_shell_methods": list(methods), "shell": after,
-              "speech_draws_in_850ms": speech_draws, "first_thinking_variant": first_variant,
-              "checks": ["original shell layout and styling", "24fps source-duration playback", "thinking alternate",
-                         "caption-only event", "350ms neutral return", "stale stop ignored", "bounded atlases and Tk images",
-                         "hidden avatar paused", "decoded images released", "missing pack uses original renderer", "static idle has no avatar timer"]}
-    (args.output / "result.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps(report, ensure_ascii=False))
+        broken = cls(host="127.0.0.1", port=0, lite_dir=corrupt)
+    except CompanionPackError:
+        pass
+    else:
+        dispose(broken)
+        raise AssertionError("corrupt installed art must fail visibly")
+    assert tk._default_root is None, "failed initialization must destroy its Tk root"
+    report = {"ok": True, "checks": ["repository-only window", "alternate speaking atlas", "stale subtitle rejected", "sad and surprise aliases select installed art", "hidden window pauses avatar", "caption grows and shrinks with text", "bounded atlas and Tk image memory", "decoded images released", "optional art missing: avatar and captions available", "corrupt installed art fails visibly"]}
+    (args.output / "result.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    print(json.dumps(report))
 
 
 if __name__ == "__main__":

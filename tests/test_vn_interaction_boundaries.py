@@ -51,9 +51,9 @@ def test_visual_capture_is_game_window_only_and_does_not_change_global_config(tm
     with patch("psutil.Process", return_value=Mock(exe=Mock(return_value=game))), \
          patch.object(visual_runtime, "list_capture_windows", return_value=[window]), \
          patch.object(visual_runtime, "_window_pid", return_value=42), \
-         patch("PIL.ImageGrab.grab", return_value=Image.new("RGB", (1600, 900))) as grab:
+         patch("server.window_capture.capture_window_frame", return_value=Image.new("RGB", (1600, 900))) as grab:
         result = visual_runtime.capture_game_window(42, game)
-        grab.assert_called_once_with(window=0x1234)
+        grab.assert_called_once_with(0x1234)
         assert result["actualScope"] == "game_window"
         assert result["frame"]["dataUrl"].startswith("data:image/jpeg;base64,")
         assert result["game"]["pid"] == 42
