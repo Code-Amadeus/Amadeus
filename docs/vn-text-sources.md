@@ -110,15 +110,18 @@ Rule-based paths remain synchronous, preserving the existing Mystery replay.
 ### Session controls and activity
 
 The VN page owns the current play controls. `commentaryFrequency` (`quiet`,
-`balanced`, `frequent`) and `speechEnabled` are saved startup preferences. Current
+`balanced`, `frequent`) is a saved startup preference. Current
 changes use `vn.mode.set` with `session_id`, `commentary_frequency`,
-`commentary_paused` or `speech_enabled`. Normal frequency preserves the existing
+or `commentary_paused`. Normal frequency preserves the existing
 runtime cadence; quiet/frequent adjust its line cooldown and per-minute ceiling.
 Pausing spontaneous comments keeps story recording, summary work and direct
 player questions active. A pending model comment is checked again before delivery.
-**Read upcoming replies aloud** controls future speech submissions; existing audio
-has the separate **Stop speech** action. Text replies remain visible in VN activity
-history. Portrait captions currently follow actual speech playback.
+The initial release has no independent VN mute preference. Replies use the configured
+speech path; **Stop speech** interrupts current playback. Pausing spontaneous
+comments still permits spoken answers to direct questions. ASR remains a separate
+input control. Text replies remain visible in VN activity history; portrait
+captions currently follow actual speech playback. Text-only portrait presentation
+and in-window failure feedback are deferred to the follow-up D3 design.
 
 The renderer reads production event shapes: `vn.line.line`,
 `vn.reaction.reaction.speak`, `vn.summary.scene_summary` and `vn.player.event.event`.
@@ -208,7 +211,7 @@ Luna extraction compatibility still needs validation for each game.
   Steam app ID/name when its local manifest identifies that executable's directory.
 - `vn.launch.profile.save` accepts `{profile: {name, gameExe, hookHelper, ...}, agentExe}`;
   omit `profile.id` to create, or supply an existing ID to edit. `promptPack`,
-  `voiceInput`, `visionMode`, `commentaryFrequency`, `speechEnabled` and overlay preferences configure the companion. `launchMethod`
+  `voiceInput`, `visionMode`, `commentaryFrequency` and overlay preferences configure the companion. `launchMethod`
   (`exe` or `steam`), `steamAppId` and `launchGame` configure startup. Live process IDs and
   arbitrary runtime implementation fields are not editable profile fields.
 - `vn.launch.start` accepts `{profileId}` to use saved settings, or

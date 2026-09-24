@@ -242,7 +242,6 @@ class VNPlayerRuntime:
             "preferences": {
                 "commentary_frequency": self.profile.commentary_frequency if self.profile else "balanced",
                 "commentary_paused": self._commentary_paused,
-                "speech_enabled": self.profile.speech_enabled if self.profile else True,
             },
             "script": {
                 "path": self.script_path,
@@ -274,11 +273,9 @@ class VNPlayerRuntime:
         frequency = params.get("commentary_frequency", self.profile.commentary_frequency)
         if frequency not in {"quiet", "balanced", "frequent"}:
             raise ValueError("Unsupported VN commentary frequency")
-        for key in ("commentary_paused", "speech_enabled"):
-            if key in params and not isinstance(params[key], bool):
-                raise ValueError(f"{key} must be a boolean.")
+        if "commentary_paused" in params and not isinstance(params["commentary_paused"], bool):
+            raise ValueError("commentary_paused must be a boolean.")
         self.profile.commentary_frequency = frequency
-        self.profile.speech_enabled = params.get("speech_enabled", self.profile.speech_enabled)
         self._commentary_paused = params.get("commentary_paused", self._commentary_paused)
         result = self.status()
         await self._emit(VN_EVENT_STATUS, result)
@@ -1782,7 +1779,7 @@ class VNPlayerRuntime:
         return True
 
     async def _speak(self, speak: dict[str, Any], line_event: dict[str, Any], *, player_requested: bool = False) -> None:
-        if not self.enabled or not self.profile or not self.profile.speech_enabled:
+        if not self.enabled or not self.profile:
             return
         if self._commentary_paused and not player_requested:
             return

@@ -116,7 +116,6 @@ class VNProfile:
     lookahead_spoiler_policy: str = "abstract_only"
     max_reactions_per_minute: int = 8
     commentary_frequency: str = "balanced"
-    speech_enabled: bool = True
     schema_modules: list[str] = field(
         default_factory=lambda: ["characters", "timeline", "evidence_map", "reasoning_graph", "open_questions"]
     )
@@ -151,7 +150,6 @@ class VNProfile:
             lookahead_spoiler_policy=str(data.get("lookahead_spoiler_policy") or "abstract_only"),
             max_reactions_per_minute=int(data.get("max_reactions_per_minute") or 8),
             commentary_frequency=frequency,
-            speech_enabled=bool(data.get("speech_enabled", True)),
             schema_modules=list(data.get("schema_modules") or ["characters", "timeline", "evidence_map", "reasoning_graph", "open_questions"]),
             capabilities=capabilities,
         )
@@ -174,7 +172,6 @@ class VNProfile:
             "lookahead_spoiler_policy": self.lookahead_spoiler_policy,
             "max_reactions_per_minute": self.max_reactions_per_minute,
             "commentary_frequency": self.commentary_frequency,
-            "speech_enabled": self.speech_enabled,
             "schema_modules": self.schema_modules,
             "capabilities": self.capabilities,
         }

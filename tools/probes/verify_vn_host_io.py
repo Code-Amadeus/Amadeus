@@ -92,7 +92,7 @@ async def run(args):
                 raise RuntimeError("An existing VN session must not be replaced by this probe.")
             owned = True
             state = await client.call("vn.launch.start", {"profileId": args.profile_id, "sessionId": session,
-                "runtime": {"voice_input": False, "vision_mode": "off", "speech_enabled": False,
+                "runtime": {"voice_input": False, "vision_mode": "off",
                             "output_language": "ja", "summary_llm_enabled": False, "retrospective_llm_enabled": False}})
             session = state["sessionId"]
             report["session_id"] = session
@@ -103,14 +103,6 @@ async def run(args):
             if "playback" in args.checks:
                 if not args.audio_cache_dir:
                     raise ValueError("Playback qualification requires --audio-cache-dir (a fresh host FIRST_SENTENCE_AUDIO_CACHE_DIR).")
-                before = len(client.events)
-                muted = await client.call("vn.player.ask", {"session_id": session, "text": "音声テストです。「聞こえているわ。」と一言だけ答えて。"})
-                assert muted.get("status") == "ok" and muted.get("reaction", {}).get("decision") == "speak"
-                assert muted["reaction"].get("reason_label") != "model_unavailable"
-                await asyncio.sleep(.5)
-                assert not any(row["method"] == "tts.sentence_start" for row in client.events[before:])
-                report["checks"]["muted_text_answer_without_playback"] = True
-                await client.call("vn.mode.set", {"session_id": session, "speech_enabled": True})
                 before, audio_since = len(client.events), time.time()
                 spoken = await client.call("vn.player.ask", {"session_id": session, "text": "音声テストです。「聞こえているわ。」と一言だけ答えて。"})
                 started = await client.event("tts.sentence_start", before)
@@ -119,7 +111,6 @@ async def run(args):
                 audio = verify_audio(args.audio_cache_dir, ended.get("text"), audio_since)
                 report["checks"]["real_tts_playback"] = {"sentence_id": started["sentence_id"], "text": ended.get("text"), "audio": audio, "reaction": spoken.get("reaction", {}).get("speak", {}).get("text")}
                 print(json.dumps({"phase": "tts_playback_passed", "output": str(output)}, ensure_ascii=False), flush=True)
-                await client.call("vn.mode.set", {"session_id": session, "speech_enabled": False})
             status = await client.call("vn.status")
             if "vision" in args.checks:
                 assert status["inputs"]["vision"]["available"], status["inputs"]["vision"]

@@ -49,8 +49,6 @@
 .vn-status-dot.error { background: var(--danger); }
 .vn-session-inputs > header { flex-wrap: wrap; }
 .vn-session-inputs > header > button { margin-left: auto; }
-.vn-session-speech { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; font-size: 12px; }
-.vn-session-speech span { color: var(--muted); font-size: 11px; }
 .vn-capabilities { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 12px 16px; }
 .vn-capabilities > summary, .vn-message-actions > summary { cursor: pointer; font-size: 12px; }
 .vn-capabilities .vn-abilities { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; padding: 8px 0; }

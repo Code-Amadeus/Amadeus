@@ -1,5 +1,19 @@
 # VN Player implementation decisions
 
+## 2026-09-25 — Defer independent muting from the initial PR
+
+At the user's request, remove the session mute checkbox, saved speech preference,
+and corresponding runtime gate from the initial release. Retain current-playback
+interruption, ASR input, and pausing spontaneous commentary. Paused commentary
+continues to allow spoken answers to player questions.
+
+D3's remaining portrait presentation work is deferred: directly pushing new text
+into the existing caption would overwrite the line whose audio is still playing.
+A later design must coordinate readable reply history, playback-aligned captions,
+queue failures, and input/model errors without discarding generated replies.
+The local saved profiles did not contain the removed preference, so no migration
+or compatibility path is introduced.
+
 ## 2026-09-25 — Session controls and source-independent product flow
 
 Game launch, text extraction, VN semantics and presentation retain separate owners.

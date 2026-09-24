@@ -64,7 +64,6 @@ class LaunchProfile(BaseModel):
     voiceInput: bool | None = None
     visionMode: Literal["off", "on_question"] = "off"
     commentaryFrequency: Literal["quiet", "balanced", "frequent"] = "balanced"
-    speechEnabled: bool = True
 
     @field_validator("gameExe", "hookHelper", "scriptPath")
     @classmethod

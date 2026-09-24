@@ -231,7 +231,6 @@ class VNLaunchManager:
             "voice_input": profile.get("voiceInput", False),
             "vision_mode": profile.get("visionMode", "off"),
             "commentary_frequency": profile.get("commentaryFrequency", "balanced"),
-            "speech_enabled": profile.get("speechEnabled", True),
         }
         if isinstance(params.get("runtime"), dict):
             runtime_params.update(params["runtime"])  # type: ignore[arg-type]

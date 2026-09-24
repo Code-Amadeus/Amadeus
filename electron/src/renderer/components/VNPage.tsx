@@ -96,7 +96,7 @@ type RuntimeState = Record<string, unknown> & {
   inputs?: VNInputs
   capabilities?: Record<string, CapabilityState>
   visual?: { supported?: boolean; reason?: string }
-  preferences?: { commentary_frequency: 'quiet' | 'balanced' | 'frequent'; commentary_paused: boolean; speech_enabled: boolean }
+  preferences?: { commentary_frequency: 'quiet' | 'balanced' | 'frequent'; commentary_paused: boolean }
 }
 type VisualAttachment = {
   frame: { dataUrl: string; mime: string; width: number; height: number }
@@ -509,7 +509,6 @@ export default function VNPage({ send, subscribe, connected }: Props) {
           </select>
         </div>
       </div>
-      <label className="vn-session-speech"><input type="checkbox" aria-label={t('Read upcoming replies aloud')} checked={preferences?.speech_enabled !== false} disabled={inputsBusy} onChange={e => void setPreferences({ speech_enabled: e.target.checked })} />{t('Read upcoming replies aloud')}<span>{t('Text replies remain visible. Use Stop speech to interrupt current audio.')}</span></label>
       {inputs?.voice.error && <p className="vn-error">{t(inputs.voice.error)}</p>}
       {inputs?.vision.mode === 'on_question' && !visionEnabled && <p className="vn-help">{reasonText(inputs.vision.reason)}</p>}
     </section>}

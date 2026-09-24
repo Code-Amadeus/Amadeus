@@ -10,7 +10,7 @@ export type VNProfileSettings = {
   scriptPath: string; lunaWsUrl: string; launchGame: boolean; launchMethod: 'exe' | 'steam'; steamAppId: string
   launchOverlay: boolean; stopWallpaper: boolean; closeGameOnStop: boolean
   promptPack: 'base' | 'mystery'; voiceInput: boolean; visionMode: 'off' | 'on_question'
-  commentaryFrequency: 'quiet' | 'balanced' | 'frequent'; speechEnabled: boolean
+  commentaryFrequency: 'quiet' | 'balanced' | 'frequent'
 }
 type EditorSection = 'game' | 'connection' | 'preferences'
 const sections: Array<{ id: EditorSection; title: string; icon: FluentIconName }> = [
@@ -32,7 +32,7 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
     name: '', textSource: 'agent', gameExe: '', hookHelper: '', scriptPath: '', lunaWsUrl: '',
     launchGame: true, launchMethod: 'exe', steamAppId: '', launchOverlay: overlayAvailable,
     stopWallpaper: true, closeGameOnStop: false, voiceInput: false, visionMode: 'off',
-    commentaryFrequency: 'balanced', speechEnabled: true,
+    commentaryFrequency: 'balanced',
     promptPack: initial?.id === 'paranormasight' ? 'mystery' : 'base', ...initial,
   }))
   const [section, setSection] = useState<EditorSection>('game')
@@ -103,8 +103,8 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
       setBusy(true); setError('')
       try {
         // Send editable settings only; capabilities are derived by the host.
-        const { id, name, textSource, gameExe, hookHelper, scriptPath, lunaWsUrl, launchGame, launchMethod, steamAppId, launchOverlay, stopWallpaper, closeGameOnStop, promptPack, voiceInput, visionMode, commentaryFrequency, speechEnabled } = profile
-        await onSave({ ...(id ? { id } : {}), name, textSource, gameExe, hookHelper, scriptPath, lunaWsUrl, launchGame, launchMethod, steamAppId, launchOverlay, stopWallpaper, closeGameOnStop, promptPack, voiceInput, visionMode, commentaryFrequency, speechEnabled }, agent, test)
+        const { id, name, textSource, gameExe, hookHelper, scriptPath, lunaWsUrl, launchGame, launchMethod, steamAppId, launchOverlay, stopWallpaper, closeGameOnStop, promptPack, voiceInput, visionMode, commentaryFrequency } = profile
+        await onSave({ ...(id ? { id } : {}), name, textSource, gameExe, hookHelper, scriptPath, lunaWsUrl, launchGame, launchMethod, steamAppId, launchOverlay, stopWallpaper, closeGameOnStop, promptPack, voiceInput, visionMode, commentaryFrequency }, agent, test)
       } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
       finally { setBusy(false) }
     }}>
@@ -171,7 +171,6 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
               <CardShell vertical><label className="vn-field">{t('Commentary frequency')}<select value={profile.commentaryFrequency} onChange={e => set('commentaryFrequency', e.target.value as VNProfileSettings['commentaryFrequency'])}>
                 <option value="quiet">{t('Occasional')}</option><option value="balanced">{t('Balanced')}</option><option value="frequent">{t('Frequent')}</option>
               </select></label><p className="vn-help">{t('Controls spontaneous comments, not answers to your questions.')}</p></CardShell>
-              <label className="vn-preference-row setting-card"><input type="checkbox" checked={profile.speechEnabled} onChange={e => set('speechEnabled', e.target.checked)} /> {t('Read replies aloud when play starts')}</label>
               {fileField('Full script for alignment', 'script', profile.scriptPath, value => set('scriptPath', value), false)}
               <p className="vn-help">{t('Live text is enough to begin. Mystery lookahead becomes available when a full script is aligned.')}</p>
               <label className="vn-preference-row setting-card"><input type="checkbox" checked={profile.voiceInput} onChange={e => set('voiceInput', e.target.checked)} /> {t('Voice input when play starts')}</label>

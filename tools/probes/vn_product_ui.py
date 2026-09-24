@@ -130,8 +130,6 @@ async def run(url):
                     await expect(feed.locator(".companion-line")).to_contain_text("我们先看看")
                     await page.get_by_role("button", name="Pause comments", exact=True).click()
                     await expect(page.get_by_text("Following quietly", exact=True)).to_be_visible()
-                    await page.get_by_label("Read upcoming replies aloud", exact=True).click()
-                    await expect(page.get_by_label("Read upcoming replies aloud", exact=True)).not_to_be_checked()
                     await page.get_by_label("Commentary frequency", exact=True).select_option("quiet")
                     await page.get_by_role("switch", name="Voice input (ASR)").click()
                     await page.get_by_label("VN vision", exact=True).select_option("on_question")
@@ -155,7 +153,7 @@ async def run(url):
                     await expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
                     assert not asr["active"]
                     saved = launch._manager._profiles.load().profiles[0]
-                    assert saved.commentaryFrequency == "balanced" and saved.voiceInput is False and saved.visionMode == "off" and saved.speechEnabled is True
+                    assert saved.commentaryFrequency == "balanced" and saved.voiceInput is False and saved.visionMode == "off"
                     model_ready[0] = False
                     await page.get_by_role("button", name="Start", exact=True).click()
                     await expect(page.get_by_text("Following text · model unavailable", exact=True)).to_be_visible()

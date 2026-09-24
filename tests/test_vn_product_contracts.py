@@ -32,19 +32,20 @@ async def runtime_fixture(root):
     return runtime
 
 
-def test_pause_mute_history_and_questions_are_independent(tmp_path):
+def test_pause_preserves_history_and_spoken_answers(tmp_path):
     async def run():
         runtime = await runtime_fixture(tmp_path)
-        await runtime.set_preferences({"session_id": "product", "commentary_paused": True, "speech_enabled": False})
+        await runtime.set_preferences({"session_id": "product", "commentary_paused": True})
         for index in range(12):
             await runtime.ingest_line({"text": f"今天开店的第 {index} 句话。"})
         runtime._immediate_response.assert_not_awaited()
+        runtime.speak_callback.assert_not_awaited()
         assert len(runtime.store.short_memory()) == 12
         assert any(item["method"] == "vn.summary" for item in runtime.activity())
         await runtime.player_intervention("ask", {"text": "发生了什么？"})
         assert [item["method"] for item in runtime.activity()][-2:] == ["vn.player.event", "vn.reaction"]
         assert runtime.activity()[-1]["payload"]["reaction"]["speak"]["text"] == "陪伴的回答"
-        runtime.speak_callback.assert_not_awaited()
+        runtime.speak_callback.assert_awaited_once()
         snapshot = runtime.activity()
         for _ in range(250):
             await runtime._emit("vn.status", runtime.status())
@@ -55,9 +56,8 @@ def test_pause_mute_history_and_questions_are_independent(tmp_path):
         handler._runtime = runtime
         restored = await handler.handle(Method.VN_STATUS, {"include_history": True})
         assert restored["activity"] == runtime.activity()
-        await runtime.set_preferences({"session_id": "product", "speech_enabled": True})
         await runtime.player_intervention("ask", {"text": "再说一句。"})
-        runtime.speak_callback.assert_awaited_once()
+        assert runtime.speak_callback.await_count == 2
         with pytest.raises(ValueError):
             await runtime.set_preferences({"session_id": "old", "commentary_paused": False})
         await runtime.stop()
@@ -112,7 +112,7 @@ def test_text_only_sources_share_runtime_controls_and_preserve_real_repetitions(
         instance._runtime_status, instance._runtime_line = AsyncMock(side_effect=runtime.status), runtime.ingest_line
         request = game_settings(tmp_path / "profiles")
         request["profile"].update(textSource=source if source != "replay" else "agent", launchGame=False,
-                                   commentaryFrequency="quiet", speechEnabled=False)
+                                   commentaryFrequency="quiet")
         lines = ["一句真正重复的台词。", "一句真正重复的台词。", "留下\n离开"]
         async def stream(ws):
             for line in lines:
@@ -136,7 +136,6 @@ def test_text_only_sources_share_runtime_controls_and_preserve_real_repetitions(
                             while len(runtime.store.short_memory()) < len(lines):
                                 await asyncio.sleep(.01)
                         assert runtime.status()["preferences"]["commentary_frequency"] == "quiet"
-                        assert runtime.status()["preferences"]["speech_enabled"] is False
                     finally:
                         await instance.stop()
         expected = [lines[0], lines[1], "留下 离开"]  # Existing VN display whitespace normalization.
