@@ -39,9 +39,6 @@ class AgentVNTextSource:
         self._on_status = on_status
         self._proc: subprocess.Popen[Any] | None = None
         self._ws_task: asyncio.Task[None] | None = None
-        self._clipboard_task: asyncio.Task[None] | None = None
-        self._clipboard_last_raw = ""
-        self._fallback_clipboard = False
         self._ws_url = ""
         self._line_count = 0
         self._hook: dict[str, Any] = {"status": "not_started", "pid": None, "helper": ""}
@@ -59,7 +56,7 @@ class AgentVNTextSource:
     async def start(self, profile: dict[str, Any], params: dict[str, Any], *, target_pid: int | None) -> None:
         attach = _truthy(params.get("attachHook") or params.get("attach_hook"))
         open_ui = _truthy(params.get("openHookAgent") or params.get("open_hook_agent"))
-        bridge = _truthy(params.get("bridgeClipboard") if "bridgeClipboard" in params else True)
+        bridge = _truthy(params.get("bridgeText", True))
         if attach or open_ui:
             await self._launch_agent(profile, target_pid=target_pid, attach=attach)
         else:
@@ -70,7 +67,6 @@ class AgentVNTextSource:
             await self._publish()
 
     async def stop(self) -> None:
-        await self._stop_task("_clipboard_task")
         await self._stop_task("_ws_task")
         if self._proc is not None and self._proc.poll() is None:
             await _terminate_proc(self._proc)
@@ -105,28 +101,15 @@ class AgentVNTextSource:
         await self._publish()
 
     def _start_bridge(self, profile: dict[str, Any], params: dict[str, Any]) -> None:
-        mode = str(params.get("bridgeMode") or params.get("bridge_mode") or profile.get("lineBridgeMode") or "hybrid").strip().lower()
+        mode = str(params.get("bridgeMode") or params.get("bridge_mode") or profile.get("lineBridgeMode") or "websocket").strip().lower()
+        if mode != "websocket":
+            raise ValueError("Agent text input supports WebSocket only. Select websocket; clipboard input is not supported.")
         self._line_count = 0
-        if mode in {"clipboard", "clip"}:
-            self._start_clipboard()
-            return
-        if mode in {"both", "debug-both"}:
-            raise ValueError("Simultaneous Agent WebSocket and clipboard input cannot identify repeated story lines reliably.")
         host = str(params.get("agentWsHost") or params.get("agent_ws_host") or profile.get("agentWsHost") or "127.0.0.1")
         port = _coerce_int(params.get("agentWsPort") or params.get("agent_ws_port") or profile.get("agentWsPort"), 9001)
         self._ws_url = f"ws://{host}:{port}"
-        self._fallback_clipboard = mode in {"hybrid", "auto"}
         self._bridge = {"status": "connecting", "lineCount": 0, "source": "agent_websocket", "url": self._ws_url}
-        if self._fallback_clipboard:
-            self._bridge.update({"mode": "auto", "fallback": "clipboard"})
         self._ws_task = asyncio.create_task(self._websocket_loop())
-
-    def _start_clipboard(self) -> None:
-        if self._clipboard_task is not None and not self._clipboard_task.done():
-            return
-        self._clipboard_last_raw = _clipboard_text()
-        self._bridge = {"status": "running", "lineCount": self._line_count, "source": "clipboard"}
-        self._clipboard_task = asyncio.create_task(self._clipboard_loop())
 
     async def _stop_task(self, name: str) -> None:
         task = getattr(self, name)
@@ -137,28 +120,6 @@ class AgentVNTextSource:
                 await task
             except asyncio.CancelledError:
                 pass
-
-    async def _clipboard_loop(self) -> None:
-        while True:
-            try:
-                raw = _clipboard_text()
-                if raw and raw != self._clipboard_last_raw:
-                    self._clipboard_last_raw = raw
-                    for item in _prepare_incoming_items(raw):
-                        hook_source = str(item["metadata"].get("source") or "")
-                        payload = {
-                            **item,
-                            "metadata": {**item["metadata"], "source": "vn_launch_clipboard_bridge", "hook_source": hook_source},
-                        }
-                        await self._forward(payload, source="clipboard")
-                await asyncio.sleep(0.35)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.exception("[VNSource] clipboard bridge error")
-                self._bridge = {"status": "error", "lineCount": self._line_count, "source": "clipboard"}
-                await self._publish()
-                await asyncio.sleep(1.0)
 
     async def _websocket_loop(self) -> None:
         try:
@@ -172,8 +133,6 @@ class AgentVNTextSource:
                 self._bridge = {"status": "connecting", "lineCount": self._line_count, "source": "agent_websocket", "url": self._ws_url}
                 await self._publish()
                 async with websockets.connect(self._ws_url, open_timeout=3, ping_interval=20, ping_timeout=10) as ws:
-                    if self._fallback_clipboard:
-                        await self._stop_task("_clipboard_task")
                     self._bridge = {"status": "running", "lineCount": self._line_count, "source": "agent_websocket", "url": self._ws_url}
                     await self._publish()
                     async for raw in ws:
@@ -184,10 +143,6 @@ class AgentVNTextSource:
                 logger.warning("[VNSource] Agent WebSocket waiting: %s", exc)
                 self._bridge = {"status": "waiting", "lineCount": self._line_count, "source": "agent_websocket", "url": self._ws_url, "error": str(exc)}
                 await self._publish()
-                if self._fallback_clipboard:
-                    self._start_clipboard()
-                    self._bridge = {**self._bridge, "source": "clipboard_fallback", "primary": "agent_websocket"}
-                    await self._publish()
                 await asyncio.sleep(1.0)
 
     async def _receive_agent_message(self, raw: Any) -> None:
@@ -444,41 +399,3 @@ def _matching_agent_pids_sync(executable: Path, script: Path) -> list[int]:
         except psutil.NoSuchProcess:
             continue
     return pids
-
-
-def _clipboard_text() -> str:
-    if os.name != "nt":
-        return ""
-    import ctypes
-
-    user32 = ctypes.windll.user32
-    kernel32 = ctypes.windll.kernel32
-    user32.OpenClipboard.argtypes = [ctypes.c_void_p]
-    user32.OpenClipboard.restype = ctypes.c_bool
-    user32.CloseClipboard.argtypes = []
-    user32.CloseClipboard.restype = ctypes.c_bool
-    user32.GetClipboardData.argtypes = [ctypes.c_uint]
-    user32.GetClipboardData.restype = ctypes.c_void_p
-    kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
-    kernel32.GlobalLock.restype = ctypes.c_void_p
-    kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
-    kernel32.GlobalUnlock.restype = ctypes.c_bool
-    try:
-        if not user32.OpenClipboard(None):
-            return ""
-        try:
-            handle = user32.GetClipboardData(13)  # CF_UNICODETEXT
-            if not handle:
-                return ""
-            locked = kernel32.GlobalLock(handle)
-            if not locked:
-                return ""
-            try:
-                return ctypes.wstring_at(locked) or ""
-            finally:
-                kernel32.GlobalUnlock(handle)
-        finally:
-            user32.CloseClipboard()
-    except Exception:
-        logger.exception("[VNSource] clipboard read failed")
-        return ""

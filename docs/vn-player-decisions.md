@@ -1,5 +1,19 @@
 # VN Player implementation decisions
 
+## 2026-09-25 — WebSocket-only Agent input in the initial PR
+
+The user approved resolving D5 before opening the draft PR. Remove automatic and
+explicit clipboard reads from the Agent adapter in this release. WebSocket is the
+default and sole transport; disconnection keeps the same source identity and
+reconnects with visible status. Former clipboard/hybrid modes report unsupported
+instead of silently selecting another source. The launch-only probe switch is
+now named `bridgeText`, with its existing callers updated.
+
+Regression coverage uses a real loopback WebSocket: initial connection refusal,
+first text, disconnect, reconnect and a repeated line. The OS clipboard entry point
+must remain untouched throughout. Any future clipboard adapter requires explicit
+user selection; it must not be an implicit transport fallback.
+
 ## 2026-09-25 — Defer independent muting from the initial PR
 
 At the user's request, remove the session mute checkbox, saved speech preference,

@@ -207,7 +207,7 @@ class VNLaunchManager:
             raise ValueError(f"unknown VN text source: {source_name}")
         params = {
             "launchGame": profile.get("launchGame", True),
-            "attachHook": source_name == "agent", "bridgeClipboard": source_name == "agent",
+            "attachHook": source_name == "agent", "bridgeText": source_name == "agent",
             "launchOverlay": profile.get("launchOverlay", True),
             "stopWallpaper": profile.get("stopWallpaper", True), "lunaWsUrl": profile.get("lunaWsUrl", ""),
             **params,
@@ -685,7 +685,7 @@ class VNLaunchManager:
             "overlayHealthUrl": overlay_health_url,
             "overlayPort": overlay_port,
             "overlayImagesDir": str(overlay_images_dir),
-            "lineBridgeMode": "hybrid",
+            "lineBridgeMode": "websocket",
             "agentWsHost": agent_ws_host,
             "agentWsPort": agent_ws_port,
             "agentWsUrl": f"ws://{agent_ws_host}:{agent_ws_port}",

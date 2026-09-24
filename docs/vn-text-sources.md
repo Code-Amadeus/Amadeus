@@ -247,9 +247,12 @@ its own. The PARANORMASIGHT launch profile still looks for the separately instal
 Agent executable and game script from that directory. Amadeus does not install,
 update, or redistribute Agent or game files.
 
-The Agent adapter optionally launches the installed executable with its script,
-consumes `copyText` messages from its WebSocket, and uses the existing clipboard
-fallback when that connection is unavailable. Plain text is valid. A modified
+The Agent adapter optionally launches the installed executable with its script
+and consumes `copyText` messages from its WebSocket. The initial release supports
+WebSocket only: startup failure or disconnection reports the connection state and
+retries the same endpoint, without reading the system clipboard. Clipboard and
+hybrid modes are rejected explicitly. A future clipboard source would require an
+explicit user selection and its own input boundary. Plain text is valid. A modified
 game script may additionally supply `speaker` and `script_id` in JSON. The adapter
 passes them through `vn.line` without interpreting their story meaning.
 
@@ -287,8 +290,8 @@ state and the most recent text preview through `vn.launch.status`.
 
 The adapters never deduplicate by text or by an unverified Agent message ID. A
 text-only stream cannot reliably distinguish a replay from a real repeated line;
-both are forwarded. Agent hybrid mode keeps only one live transport active at a
-time, avoiding routine WebSocket/clipboard double delivery. Source-specific
+both are forwarded, including after a WebSocket reconnect. Agent uses one transport
+and does not switch to another input source when disconnected. Source-specific
 replay suppression can be added when the external transport supplies a verified
 event identity.
 

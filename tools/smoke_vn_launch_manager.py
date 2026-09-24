@@ -64,7 +64,7 @@ async def main() -> int:
         "launchGame": False,
         "attachHook": False,
         "launchOverlay": False,
-        "bridgeClipboard": False,
+        "bridgeText": False,
     })
     assert started["status"] == "active"
     assert started["profileId"] == "paranormasight"
@@ -90,7 +90,7 @@ async def main() -> int:
         "launchGame": False,
         "attachHook": False,
         "launchOverlay": False,
-        "bridgeClipboard": False,
+        "bridgeText": False,
     })
     assert not any(name == "before_external_launch" for name, _ in calls)
     await manager.stop({"reason": "smoke_runtime_only"})

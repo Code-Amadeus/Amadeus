@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import json
+import socket
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -16,6 +19,70 @@ from server.handlers.vn_player_handler import VNPlayerHandler
 from server.protocol import Method
 from server.vn_text_sources import AgentVNTextSource, LunaVNTextSource, _matching_agent_pids_sync
 from vn_player.runtime import VNPlayerRuntime
+
+
+def test_agent_default_reconnect_never_reads_clipboard_and_preserves_repetition(monkeypatch) -> None:
+    clipboard = Mock(side_effect=AssertionError("VN must not open the system clipboard"))
+    user32 = Mock(OpenClipboard=clipboard)
+    monkeypatch.setattr(ctypes, "windll", SimpleNamespace(user32=user32, kernel32=Mock()), raising=False)
+
+    async def run():
+        received, states = [], []
+        waiting, first, repeated, disconnect = (asyncio.Event() for _ in range(4))
+        async def on_line(payload):
+            received.append(payload)
+            (first if len(received) == 1 else repeated).set()
+            return {"status": "accepted"}
+        async def on_status(_hook, bridge):
+            states.append(bridge)
+            if bridge["status"] == "waiting":
+                waiting.set()
+        source = AgentVNTextSource(on_line, on_status)
+        # Reserve a port without listening to reproduce initial unavailability.
+        reservation = socket.socket()
+        reservation.bind(("127.0.0.1", 0))
+        port = reservation.getsockname()[1]
+        try:
+            await source.start({}, {"agentWsPort": port}, target_pid=None)
+            await asyncio.wait_for(waiting.wait(), 3)
+            assert received == []
+            clipboard.assert_not_called()
+            reservation.close()
+            connections = 0
+            async def stream(ws):
+                nonlocal connections
+                connections += 1
+                await ws.send(json.dumps({"type": "copyText", "sentence": "同一句真正再次出现的台词。"}))
+                if connections == 1:
+                    await disconnect.wait()
+                    await ws.close(code=1012, reason="test source restart")
+                else:
+                    await ws.wait_closed()
+            async with websockets.serve(stream, "127.0.0.1", port):
+                await asyncio.wait_for(first.wait(), 4)
+                waiting.clear()
+                disconnect.set()
+                await asyncio.wait_for(waiting.wait(), 3)
+                clipboard.assert_not_called()
+                await asyncio.wait_for(repeated.wait(), 4)
+                assert [line["text"] for line in received] == ["同一句真正再次出现的台词。"] * 2
+                assert all(state["source"] == "agent_websocket" for state in states)
+                assert source.status()[1]["lineCount"] == 2
+                await source.stop()
+        finally:
+            reservation.close()
+            await source.stop()
+        clipboard.assert_not_called()
+        assert source._ws_task is None
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("mode", ["clipboard", "clip", "hybrid", "auto", "both", "unknown"])
+def test_agent_rejects_unsupported_transport_instead_of_falling_back(mode):
+    source = AgentVNTextSource(AsyncMock(), AsyncMock())
+    with pytest.raises(ValueError, match="WebSocket only"):
+        source._start_bridge({}, {"bridgeMode": mode})
+    assert source._ws_task is None
 
 
 def test_agent_preserves_identical_lines_even_when_message_id_repeats() -> None:
@@ -134,7 +201,7 @@ def test_agent_adapter_launches_selected_script_and_stops_only_its_process(tmp_p
              patch("server.vn_text_sources._matching_agent_pids", new_callable=AsyncMock, return_value=[]) as existing:
             await source.start(
                 {"agentExe": str(executable), "hookHelper": str(script)},
-                {"attachHook": True, "bridgeClipboard": False}, target_pid=42,
+                {"attachHook": True, "bridgeText": False}, target_pid=42,
             )
             args = spawn.call_args.args[0]
             assert args == [str(executable), "--pname=42", f"--script={script}"]
@@ -157,7 +224,7 @@ def test_agent_adapter_does_not_replace_an_external_process(tmp_path: Path) -> N
              patch("server.vn_text_sources._spawn") as spawn:
             with pytest.raises(RuntimeError, match="already running"):
                 await source.start({"agentExe": str(executable), "hookHelper": str(script)},
-                                   {"attachHook": True, "bridgeClipboard": False}, target_pid=42)
+                                   {"attachHook": True, "bridgeText": False}, target_pid=42)
             spawn.assert_not_called()
 
     asyncio.run(run())
