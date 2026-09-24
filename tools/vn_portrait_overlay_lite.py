@@ -5,7 +5,7 @@ import argparse
 from pathlib import Path
 import sys
 
-from PIL import Image, ImageColor
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -21,7 +21,6 @@ def overlay_class(shell=vn_overlay_window):
             self._lite_dir, self._static_idle = lite_dir, static_idle
             self._lite = None
             self._atlas_timer = self._return_timer = None
-            self._sentence_id = ""
             try:
                 super().__init__(*args, **kwargs)
             except Exception:
@@ -32,13 +31,6 @@ def overlay_class(shell=vn_overlay_window):
                 if getattr(self, "root", None):
                     self.root.destroy()
                 raise
-            # Preserve the existing sweep/path/cadence, with one quarter of its RGB
-            # distance from the card background. Decoration should not compete with text.
-            background = ImageColor.getrgb(shell.CARD_BG)
-            for line in self._scan_lines:
-                foreground = ImageColor.getrgb(self.frame.itemcget(line, "fill"))
-                muted = tuple(round(bg + (fg - bg) * 0.25) for bg, fg in zip(background, foreground))
-                self.frame.itemconfigure(line, fill="#{:02x}{:02x}{:02x}".format(*muted))
             self.root.bind("<Unmap>", self._visibility, add="+")
             self.root.bind("<Map>", self._visibility, add="+")
             self.root.bind("<Destroy>", self._dispose, add="+")

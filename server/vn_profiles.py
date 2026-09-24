@@ -9,9 +9,15 @@ import tempfile
 import uuid
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlsplit
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+def validate_luna_ws_url(value: str) -> None:
+    url = urlparse(value)
+    if url.scheme not in {"ws", "wss"} or not url.hostname or url.path != "/api/ws/text/origin":
+        raise ValueError("Luna original-text WebSocket URL must end in /api/ws/text/origin (ws:// or wss://).")
 
 
 def inspect_game(executable: str) -> dict[str, str]:
@@ -75,9 +81,7 @@ class LaunchProfile(BaseModel):
             if not self.gameExe or not self.hookHelper:
                 raise ValueError("Choose the game executable and its Agent hook script.")
         else:
-            url = urlsplit(self.lunaWsUrl)
-            if url.scheme not in {"ws", "wss"} or not url.hostname:
-                raise ValueError("Enter Luna's original-text WebSocket URL.")
+            validate_luna_ws_url(self.lunaWsUrl)
         if self.launchGame and not self.gameExe:
             raise ValueError("Choose the game executable or start the game manually.")
         if self.launchGame and self.launchMethod == "steam" and not self.steamAppId:
@@ -91,18 +95,6 @@ class ProfileFile(BaseModel):
     version: Literal[1] = 1
     agentExe: str = ""
     profiles: list[LaunchProfile] = Field(default_factory=list)
-
-    @model_validator(mode="before")
-    @classmethod
-    def migrate_capability_switches(cls, data):
-        # The previous editor saved independent switches. Game type now owns
-        # this policy; discard only this superseded field when loading files.
-        if isinstance(data, dict) and isinstance(data.get("profiles"), list):
-            data = {**data, "profiles": [
-                {k: v for k, v in item.items() if k != "capabilities"} if isinstance(item, dict) else item
-                for item in data["profiles"]
-            ]}
-        return data
 
 
 class VNProfileStore:

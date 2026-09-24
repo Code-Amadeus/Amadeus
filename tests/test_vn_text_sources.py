@@ -8,12 +8,13 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+import psutil
 import websockets
 
 from server.vn_launch_manager import VNLaunchManager
 from server.handlers.vn_player_handler import VNPlayerHandler
 from server.protocol import Method
-from server.vn_text_sources import AgentVNTextSource, LunaVNTextSource
+from server.vn_text_sources import AgentVNTextSource, LunaVNTextSource, _matching_agent_pids_sync
 from vn_player.runtime import VNPlayerRuntime
 
 
@@ -160,6 +161,39 @@ def test_agent_adapter_does_not_replace_an_external_process(tmp_path: Path) -> N
             spawn.assert_not_called()
 
     asyncio.run(run())
+
+
+def test_matching_agent_process_requires_exact_executable_script_and_switch(tmp_path: Path) -> None:
+    executable = tmp_path / "agent.exe"
+    script = tmp_path / "script.js"
+
+    def process(pid, exe, args):
+        item = Mock(pid=pid)
+        item.info = {"name": "agent.exe"}
+        item.exe.return_value = str(exe)
+        item.cmdline.return_value = args
+        return item
+
+    candidates = [
+        process(1, executable, [str(executable), "--pname=42", f"--script={script}"]),
+        process(2, tmp_path / "other" / "agent.exe", [str(executable), "--pname=42", f"--script={script}"]),
+        process(3, executable, [str(executable), "--pname=42", "--script=other.js"]),
+        process(4, executable, [str(executable), str(script)]),
+    ]
+    wrong_name = process(5, executable, [str(executable), "--pname=42", f"--script={script}"])
+    wrong_name.info["name"] = "other.exe"
+    candidates.append(wrong_name)
+    with patch("server.vn_text_sources.psutil.process_iter", return_value=candidates):
+        assert _matching_agent_pids_sync(executable, script) == [1]
+
+
+def test_matching_agent_process_inspection_failure_is_not_treated_as_no_match(tmp_path: Path) -> None:
+    candidate = Mock(pid=1)
+    candidate.info = {"name": "agent.exe"}
+    candidate.exe.side_effect = psutil.AccessDenied(pid=1)
+    with patch("server.vn_text_sources.psutil.process_iter", return_value=[candidate]):
+        with pytest.raises(psutil.AccessDenied):
+            _matching_agent_pids_sync(tmp_path / "agent.exe", tmp_path / "script.js")
 
 
 def test_luna_original_text_is_forwarded_as_plain_vn_lines_even_when_repeated() -> None:

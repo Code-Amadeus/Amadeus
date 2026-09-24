@@ -183,10 +183,12 @@ export function useBackend() {
         return
       }
       const id = crypto.randomUUID()
+      // Steam discovery alone can take 60 s; startup continues with window
+      // preparation and text-source checks after the game is found.
       const timer = setTimeout(() => {
         pendingRef.current.delete(id)
         reject(new Error('timeout'))
-      }, 30000)
+      }, method === 'vn.launch.start' ? 75_000 : 30_000)
       pendingRef.current.set(id, { resolve, reject, timer })
       ws.send(JSON.stringify({ type: 'req', id, method, params }))
     })

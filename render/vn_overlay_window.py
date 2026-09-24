@@ -34,7 +34,7 @@ def infer_emotion(text: str, explicit: str = "") -> tuple[str, int]:
         if match[2]:
             try:
                 duration_ms = max(1000, int(float(match[2]) * 1000))
-            except ValueError:
+            except (ValueError, OverflowError):
                 pass
     return EMOTION_ALIASES.get(emotion, emotion or "normal"), duration_ms
 
@@ -51,11 +51,11 @@ class PortraitOverlayTk:
         self.root.geometry(f"440x192+{x}+{y}")
         self.visible = True
         self.avatar_size = 144
+        self._sentence_id = ""
         self._current_emotion, self._current_state = "normal", "idle"
         self._active_until = self._idle_deadline = 0.0
         self.frame = tk.Canvas(self.root, bg=CARD_BG, highlightthickness=1, highlightbackground="#3a6268")
         self.frame.pack(fill="both", expand=True)
-        self._scan_lines: list[int] = []
         self._signal_label = self.frame.create_text(174, 23, text="AMADEUS · VN", fill="#8fb4b8", anchor="w", font=("Segoe UI", 9))
         self.avatar_label = tk.Label(self.frame, bg=CARD_BG, borderwidth=0)
         self.frame.create_window(12, 30, window=self.avatar_label, anchor="nw", width=self.avatar_size, height=self.avatar_size)
@@ -106,6 +106,10 @@ class PortraitOverlayTk:
                         raise ValueError("expected object")
                     if self.path == "/visibility" and not isinstance(payload.get("visible"), bool):
                         raise ValueError("visible must be a boolean")
+                    if self.path == "/reaction" and payload.get("duration_ms") is not None and (
+                        isinstance(payload["duration_ms"], bool) or not isinstance(payload["duration_ms"], int)
+                    ):
+                        raise ValueError("duration_ms must be an integer")
                     shell._messages.put_nowait((self.path, payload))
                 except (ValueError, queue.Full) as exc:
                     self.reply(400, {"error": str(exc)})

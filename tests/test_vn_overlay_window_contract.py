@@ -1,5 +1,8 @@
 """The native VN shell keeps the established caption, emotion and duration contract."""
+import http.client
+import json
 from types import SimpleNamespace
+from unittest.mock import MagicMock, Mock, patch
 
 from render.vn_overlay_window import PortraitOverlayTk, clean_display_text, infer_emotion
 from tools.vn_portrait_overlay_lite import overlay_class
@@ -13,6 +16,7 @@ def test_presentation_tags_and_installed_emotion_aliases():
     assert infer_emotion("", "surprise") == ("sided_surprised", 6500)
     assert infer_emotion("", "serious_speaking") == ("sided_thinking", 6500)
     assert infer_emotion("[EMO preset=shy dur=.2s]") == ("blush", 1000)
+    assert infer_emotion("[EMO preset=sad dur=" + "9" * 400 + "s]") == ("sad", 6500)
 
 
 def test_missing_art_shell_keeps_captions_clean():
@@ -57,3 +61,38 @@ def test_non_playback_reactions_use_explicit_duration_then_tag_duration():
     assert values[-1] == "Again"
     assert poses[-1] == ("sad", "speaking")
     assert delays[-1] == 3000
+
+
+def test_invalid_reaction_is_rejected_before_queue_and_next_reaction_is_polled():
+    root = MagicMock()
+    root.after.return_value = 1
+    with patch("render.vn_overlay_window.tk.Tk", return_value=root), \
+         patch("render.vn_overlay_window.tk.Canvas", return_value=MagicMock()), \
+         patch("render.vn_overlay_window.tk.Label", return_value=MagicMock()), \
+         patch("render.vn_overlay_window.tk.Button", return_value=MagicMock()), \
+         patch("render.vn_overlay_window.tk.StringVar", return_value=MagicMock()):
+        shell = PortraitOverlayTk(port=0)
+    try:
+        assert shell._sentence_id == ""
+        shell.apply_reaction = Mock()
+        port = shell._server.server_address[1]
+
+        def post(payload):
+            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+            try:
+                connection.request("POST", "/reaction", json.dumps(payload), {"Content-Type": "application/json"})
+                response = connection.getresponse()
+                response.read()
+                return response.status
+            finally:
+                connection.close()
+
+        assert post({"text": "bad", "duration_ms": "forever"}) == 400
+        assert post({"text": "good", "duration_ms": 1200}) == 200
+        shell._poll()
+        shell.apply_reaction.assert_called_once_with({"text": "good", "duration_ms": 1200})
+        assert root.after.call_count == 2
+    finally:
+        shell._server.shutdown()
+        shell._server.server_close()
+        shell._thread.join(timeout=2)

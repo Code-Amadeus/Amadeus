@@ -82,9 +82,30 @@ when those capabilities are requested; explicit environment/parameter model
 disables still apply. Mystery retains its existing lane defaults. The existing
 low-level runtime API retains capability overrides for isolated probes and existing
 headless callers. Saved launch profiles no longer accept overrides; the launch
-facade always derives them from the selected type. Old persisted capability maps
-are discarded during load and removed on the next save. Type and voice preferences
-are retained; switching General → Mystery enables the entire Mystery preset.
+facade always derives them from the selected type. Saved profiles reject individual
+capability maps. Type and voice preferences are retained; switching General →
+Mystery enables the entire Mystery preset. The low-level `lookahead_enabled` input
+alias remains supported for the existing replay/live runner, while serialized
+profiles use only `capabilities.lookahead`. `status.llm.lookahead_llm_enabled`
+identifies the model lane separately.
+
+### Background summary and reflection
+
+Immediate reactions still enter their model flow per line, in order, when enabled
+(a context request can require a second model call). Model-backed
+summary/reflection jobs run outside the text-ingress chain. Each lane has one
+worker processing trigger-time snapshots in order; new triggers queue without
+concurrent model calls in that lane. Base defaults trigger summaries every 12
+lines and reflection from line 40, then every 40 lines. The trigger count is
+reserved when queued so completion latency cannot shift those intervals.
+Stop/restart cancels queued and in-flight jobs; late responses cannot update
+another session. Unhandled job errors emit `vn.error` and do not stop the lane;
+existing invalid-model-response handling is retained.
+
+Model-backed summary/reflection no longer return in that line's synchronous
+response: consume `vn.summary`/`vn.context.updated` or the context store. Offline
+evaluators may call `wait_for_context_updates()` before reading a chunk snapshot.
+Rule-based paths remain synchronous, preserving the existing Mystery replay.
 
 ### Session controls and activity
 
@@ -96,7 +117,8 @@ runtime cadence; quiet/frequent adjust its line cooldown and per-minute ceiling.
 Pausing spontaneous comments keeps story recording, summary work and direct
 player questions active. A pending model comment is checked again before delivery.
 **Read upcoming replies aloud** controls future speech submissions; existing audio
-has the separate **Stop speech** action. Text replies remain visible.
+has the separate **Stop speech** action. Text replies remain visible in VN activity
+history. Portrait captions currently follow actual speech playback.
 
 The renderer reads production event shapes: `vn.line.line`,
 `vn.reaction.reaction.speak`, `vn.summary.scene_summary` and `vn.player.event.event`.

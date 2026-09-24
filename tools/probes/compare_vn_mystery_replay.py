@@ -97,7 +97,7 @@ def canonical(value):
 
 
 def main(args) -> None:
-    output = ROOT / "output" / "diagnostics" / ("vn-mystery-model-ab" if args.llm else "vn-mystery-replay")
+    output = Path(args.output_dir) if args.output_dir else ROOT / "output" / "diagnostics" / ("vn-mystery-model-ab" if args.llm else "vn-mystery-replay")
     output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="vn-mystery-baseline-") as temporary:
         temp = Path(temporary)
@@ -138,5 +138,6 @@ if __name__ == "__main__":
     parser.add_argument("--package-root")
     parser.add_argument("--workspace")
     parser.add_argument("--output")
+    parser.add_argument("--output-dir", help="Keep a separate parent comparison artifact")
     args = parser.parse_args()
     asyncio.run(child(args)) if args.arm else main(args)

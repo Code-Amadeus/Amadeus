@@ -218,8 +218,13 @@ class ConnectionManager:
                         await self._send_error(send_json, "invalid request envelope", req_id)
                         continue
                     method = msg.get("method", "")
-                    if method in {Method.CHAT_ABORT, Method.TTS_INTERRUPT, Method.VN_LAUNCH_STOP,
-                                  Method.VN_INPUT_SET, Method.VN_MODE_SET}:
+                    if method in {Method.VN_LAUNCH_STOP, Method.VN_INPUT_SET, Method.VN_MODE_SET}:
+                        # These controls can wait on startup, capture, or ASR.
+                        # Keep receiving explicit interrupts while they run, and
+                        # drain them with the ordinary worker on connection close.
+                        group.create_task(dispatch(msg))
+                        continue
+                    if method in {Method.CHAT_ABORT, Method.TTS_INTERRUPT}:
                         cancelled_queued = False
                         if method == Method.CHAT_ABORT:
                             target = str(msg.get("params", {}).get("turn_id") or "").strip()

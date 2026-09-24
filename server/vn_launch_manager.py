@@ -58,6 +58,7 @@ class VNLaunchManager:
         self.project_root = Path(project_root)
         self.vn_root = self.project_root.parent / "visual novel player"
         self._profiles = VNProfileStore(self.project_root)
+        self._status_profiles: list[dict[str, Any]] | None = None
         self._lifecycle_lock = asyncio.Lock()
         self._start_task: asyncio.Task | None = None
         self._monitor_task: asyncio.Task | None = None
@@ -110,7 +111,8 @@ class VNLaunchManager:
                               ("hookHelper", "hookExists"), ("scriptPath", "scriptExists"),
                               ("overlayHelper", "overlayExists")):
                 profile[flag] = bool(profile.get(key)) and Path(profile[key]).is_file()
-        return {"profiles": list(profiles.values()), "agentExe": agent_exe,
+        self._status_profiles = list(profiles.values())
+        return {"profiles": self._status_profiles, "agentExe": agent_exe,
                 "overlayAvailable": Path(builtin["overlayHelper"]).is_file(),
                 "capabilityPresets": {kind: resolve_capability_defaults(kind) for kind in ("base", "mystery")}}
 
@@ -128,11 +130,12 @@ class VNLaunchManager:
         self._profiles.save(profile, agent_exe=str(params.get("agentExe", existing["agentExe"])).strip())
         return {**self.profiles(), "profileId": profile.id}
 
-    async def status(self) -> dict[str, Any]:
+    async def status(self, *, refresh_profiles: bool = True) -> dict[str, Any]:
         self._refresh_process_state()
         return {
             **self._state,
-            "profiles": self.profiles()["profiles"],
+            "profiles": (self.profiles()["profiles"] if refresh_profiles or self._status_profiles is None
+                         else self._status_profiles),
             "runtime": await self._safe_runtime_status(),
         }
 
@@ -384,6 +387,7 @@ class VNLaunchManager:
         if self._runtime_owned:
             runtime = await self._runtime_stop({"reason": str(params.get("reason") or "launch_stop")})
             self._runtime_owned = False
+        game_alive = self._process_alive(self._game_proc)
         self._state.update(
             {
                 "status": "idle",
@@ -391,8 +395,8 @@ class VNLaunchManager:
                 "sessionId": "",
                 "updatedAt": _now_ms(),
                 "game": {
-                    "status": "not_started" if self._game_proc is None else "running",
-                    "pid": self._game_proc.pid if self._process_alive(self._game_proc) else None,
+                    "status": "running" if game_alive else "not_started",
+                    "pid": self._game_proc.pid if game_alive else None,
                     "path": "",
                 },
                 "hook": {"status": "not_started", "pid": None, "helper": ""},
@@ -406,7 +410,7 @@ class VNLaunchManager:
         return payload
 
     async def _publish_status(self) -> None:
-        await bus.emit(Method.VN_LAUNCH_STATUS, await self.status())
+        await bus.emit(Method.VN_LAUNCH_STATUS, await self.status(refresh_profiles=False))
 
     async def _monitor_processes(self) -> None:
         """Publish process exits even when a silent game emits no transport events."""

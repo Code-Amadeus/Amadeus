@@ -323,6 +323,37 @@ def test_explicit_audio_interrupt_keeps_existing_domain_semantics(context):
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("control", [Method.VN_LAUNCH_STOP, Method.VN_INPUT_SET, Method.VN_MODE_SET])
+@pytest.mark.parametrize("urgent", [Method.TTS_INTERRUPT, Method.CHAT_ABORT])
+def test_vn_control_wait_does_not_block_interrupt_and_drains_on_close(context, control, urgent):
+    async def run():
+        manager, socket = ConnectionManager(), Socket()
+        entered, release, finished = (asyncio.Event() for _ in range(3))
+
+        async def handle(method, _params):
+            if method == control:
+                entered.set()
+                await release.wait()
+                finished.set()
+                return {"status": "done"}
+            return {"status": "interrupted"}
+
+        manager.register_handler(SimpleNamespace(methods=[control, urgent], handle=handle))
+        reader = asyncio.create_task(manager._read_loop(socket, "vn-control", socket.send_json))
+        socket.put("control", control)
+        await asyncio.wait_for(entered.wait(), 2)
+        socket.put("urgent", urgent)
+        assert (await socket.response("urgent"))["status"] == "interrupted"
+        socket.incoming.put_nowait(None)
+        await asyncio.sleep(0)
+        assert not reader.done() and not finished.is_set()
+        release.set()
+        await asyncio.wait_for(reader, 2)
+        assert finished.is_set()
+
+    asyncio.run(run())
+
+
 def test_handler_self_cancellation_cannot_leave_a_live_receiver_without_worker(context):
     async def run():
         manager, socket = ConnectionManager(), Socket()

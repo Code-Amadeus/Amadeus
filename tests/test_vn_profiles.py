@@ -317,23 +317,48 @@ def test_pre_semantics_saved_builtin_profile_keeps_mystery_defaults(tmp_path: Pa
     assert loaded["capabilities"]["reasoning"] is True
 
 
-def test_saved_legacy_switches_migrate_to_game_type(tmp_path: Path) -> None:
+def test_new_profile_rejects_capability_switches(tmp_path: Path) -> None:
     instance = manager(tmp_path)
     request = game_settings(tmp_path)
-    request["profile"]["promptPack"] = "mystery"
-    game_id = instance.save_profile(request)["profileId"]
-    path = VNProfileStore(tmp_path).path
-    data = json.loads(path.read_text())
-    data["profiles"][0]["capabilities"] = {"immediate": False, "lookahead": False, "reasoning": False}
-    path.write_text(json.dumps(data), encoding="utf-8")
-    loaded = manager(tmp_path)
-    assert all(loaded._profile_by_id(game_id)["capabilities"].values())
-    request["profile"]["id"] = game_id
-    loaded.save_profile(request)
-    assert "capabilities" not in json.loads(path.read_text())["profiles"][0]
     request["profile"]["capabilities"] = {"reasoning": False}
     with pytest.raises(ValueError):
-        loaded.save_profile(request)
+        instance.save_profile(request)
+
+
+def test_luna_url_is_checked_when_saving(tmp_path: Path) -> None:
+    instance = manager(tmp_path)
+    for url in ("http://127.0.0.1/api/ws/text/origin", "ws://127.0.0.1/api/ws/text"):
+        with pytest.raises(ValueError, match="/api/ws/text/origin"):
+            instance.save_profile({"profile": {"name": "Luna", "textSource": "luna", "lunaWsUrl": url}})
+    assert not VNProfileStore(tmp_path).path.exists()
+
+
+def test_status_events_reuse_profiles_but_explicit_refresh_checks_installation(tmp_path: Path) -> None:
+    async def run():
+        instance = manager(tmp_path)
+        request = game_settings(tmp_path)
+        game_id = instance.save_profile(request)["profileId"]
+        with patch.object(instance._profiles, "load", wraps=instance._profiles.load) as load:
+            await instance._source_status_changed({"status": "running"}, {"status": "running"})
+            assert load.call_count == 0
+            (tmp_path / "hook.js").unlink()
+            profile = next(p for p in (await instance.status())["profiles"] if p["id"] == game_id)
+            assert profile["hookExists"] is False
+            assert load.call_count == 1
+            VNProfileStore(tmp_path).path.write_text("broken", encoding="utf-8")
+            with pytest.raises(ValueError):
+                await instance.status()
+    asyncio.run(run())
+
+
+def test_stop_reports_owned_game_that_already_exited_as_not_started(tmp_path: Path) -> None:
+    async def run():
+        instance = manager(tmp_path)
+        instance._game_proc = Mock(pid=123)
+        instance._game_proc.poll.return_value = 1
+        result = await instance.stop()
+        assert result["game"] == {"status": "not_started", "pid": None, "path": ""}
+    asyncio.run(run())
 
 
 def test_steam_launch_binds_game_not_steam_and_closes_only_owned_game(tmp_path: Path) -> None:

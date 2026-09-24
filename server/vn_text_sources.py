@@ -14,7 +14,10 @@ import re
 import subprocess
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Protocol
-from urllib.parse import urlparse
+
+import psutil
+
+from server.vn_profiles import validate_luna_ws_url
 
 VNLine = Callable[[dict[str, Any]], Awaitable[dict[str, Any] | None]]
 StatusChanged = Callable[[dict[str, Any], dict[str, Any]], Awaitable[None]]
@@ -262,9 +265,7 @@ class LunaVNTextSource:
         if _truthy(params.get("attachHook") or params.get("attach_hook") or params.get("openHookAgent") or params.get("open_hook_agent")):
             raise ValueError("Luna text source connects to an already configured LunaTranslator; it does not attach Agent.")
         self._url = str(params.get("lunaWsUrl") or params.get("luna_ws_url") or "").strip()
-        parsed = urlparse(self._url)
-        if parsed.scheme not in {"ws", "wss"} or not parsed.hostname or parsed.path != "/api/ws/text/origin":
-            raise ValueError("Luna original-text WebSocket URL must end in /api/ws/text/origin (ws:// or wss://).")
+        validate_luna_ws_url(self._url)
         self._count = 0
         self._bridge = {"status": "connecting", "lineCount": 0, "source": "luna_original_text", "url": self._url}
         self._task = asyncio.create_task(self._loop())
@@ -421,34 +422,28 @@ async def _terminate_proc(proc: subprocess.Popen[Any]) -> None:
 async def _matching_agent_pids(executable: Path, script: Path) -> list[int]:
     if os.name != "nt":
         return []
-    code = (
-        "$items = Get-CimInstance Win32_Process -Filter \"Name='" + executable.name.replace("'", "''") + "'\" "
-        "| Select-Object ProcessId,ExecutablePath,CommandLine; $items | ConvertTo-Json -Compress"
-    )
     try:
-        completed = await asyncio.to_thread(
-            subprocess.run, ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", code],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=4, check=False,
-        )
-        if completed.returncode:
-            raise RuntimeError(completed.stderr.strip() or "process inspection failed")
-        if not completed.stdout.strip():
-            return []
-        parsed = json.loads(completed.stdout)
-        if parsed is None:
-            return []
-        pids: list[int] = []
-        for item in ([parsed] if isinstance(parsed, dict) else parsed):
-            path = str(item.get("ExecutablePath") or "")
-            command = str(item.get("CommandLine") or "")
-            if not path or Path(path).resolve() != executable.resolve() or str(script).lower() not in command.lower():
-                continue
-            pid = int(item.get("ProcessId") or 0)
-            if pid > 0 and ("--pname" in command.lower() or "--script" in command.lower()):
-                pids.append(pid)
-        return pids
+        return await asyncio.wait_for(asyncio.to_thread(_matching_agent_pids_sync, executable, script), timeout=4)
     except Exception as exc:
         raise RuntimeError("Cannot inspect existing Agent processes before attaching.") from exc
+
+
+def _matching_agent_pids_sync(executable: Path, script: Path) -> list[int]:
+    executable = executable.resolve()
+    script_text = str(script).lower()
+    pids: list[int] = []
+    for process in psutil.process_iter(["pid", "name"]):
+        try:
+            if str(process.info.get("name") or "").lower() != executable.name.lower():
+                continue
+            path = process.exe()
+            command = " ".join(process.cmdline()).lower()
+            if (path and Path(path).resolve() == executable and script_text in command
+                    and ("--pname" in command or "--script" in command)):
+                pids.append(process.pid)
+        except psutil.NoSuchProcess:
+            continue
+    return pids
 
 
 def _clipboard_text() -> str:

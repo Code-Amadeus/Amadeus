@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from copy import deepcopy
+from functools import partial
 import inspect
 import logging
 import os
@@ -113,6 +114,8 @@ class VNPlayerRuntime:
         self._activity: deque[dict[str, Any]] = deque(maxlen=200)
         self._activity_seq = 0
         self._commentary_paused = False
+        self._context_tasks: dict[str, asyncio.Task] = {}
+        self._context_queues: dict[str, deque[Callable[[], Awaitable[Any]]]] = {}
 
         self._llm_enabled = _env_bool("VN_LLM_ENABLED", True)
         self._immediate_llm_enabled = _env_bool("VN_IMMEDIATE_LLM_ENABLED", self._llm_enabled)
@@ -174,6 +177,7 @@ class VNPlayerRuntime:
                 minimum=0,
             )
 
+            self._cancel_context_tasks()
             self.profile = profile
             self.store = VNContextStore(self.project_root, profile)
             self.script_index = index
@@ -221,6 +225,7 @@ class VNPlayerRuntime:
         async with self._lock:
             self.enabled = False
             self._cancel_lookahead_task()
+            self._cancel_context_tasks()
             if self.store is not None:
                 self.store.record_runtime_event("vn.stop", dict(params or {}))
             result = self.status()
@@ -248,7 +253,7 @@ class VNPlayerRuntime:
                 "configured": bool(self.llm and self.llm.configured()),
                 "enabled": self._llm_enabled,
                 "immediate_enabled": self._immediate_llm_enabled,
-                "lookahead_enabled": self._lookahead_llm_enabled,
+                "lookahead_llm_enabled": self._lookahead_llm_enabled,
                 "lookahead_max_calls": self._lookahead_max_calls,
                 "lookahead_calls_used": self._lookahead_llm_call_count,
                 "reasoner_enabled": self._reasoner_llm_enabled,
@@ -630,6 +635,52 @@ class VNPlayerRuntime:
         if task is not None and not task.done():
             task.cancel()
         self._lookahead_task = None
+
+    def _owns_context(self, profile: VNProfile, store: VNContextStore) -> bool:
+        return self.enabled and self.profile is profile and self.store is store
+
+    def _cancel_context_tasks(self) -> None:
+        for task in self._context_tasks.values():
+            task.cancel()
+        for queue in self._context_queues.values():
+            queue.clear()
+        self._context_tasks.clear()
+        self._context_queues.clear()
+
+    def _schedule_context_work(self, lane: str, work: Callable[[], Awaitable[Any]]) -> None:
+        """Keep every trigger snapshot, with one ordered model worker per lane."""
+        assert self.profile is not None and self.store is not None
+        queue = self._context_queues.setdefault(lane, deque())
+        queue.append(work)
+        if lane not in self._context_tasks:
+            self._context_tasks[lane] = asyncio.create_task(
+                self._run_context_queue(lane, queue, self.profile, self.store))
+
+    async def _run_context_queue(self, lane: str, queue: deque[Callable[[], Awaitable[Any]]],
+                                 owner_profile: VNProfile, owner_store: VNContextStore) -> None:
+        try:
+            while queue and self._owns_context(owner_profile, owner_store):
+                work = queue.popleft()
+                try:
+                    await work()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    logger.exception("VN %s background work failed", lane)
+                    if self._owns_context(owner_profile, owner_store):
+                        payload = {"error": str(exc), "source": lane}
+                        owner_store.record_runtime_event("vn.error", payload)
+                        await self._emit(VN_EVENT_ERROR, payload)
+        finally:
+            if self._context_tasks.get(lane) is asyncio.current_task():
+                self._context_tasks.pop(lane, None)
+                self._context_queues.pop(lane, None)
+
+    async def wait_for_context_updates(self) -> None:
+        """Offline evaluators can await context results without blocking live ingress."""
+        tasks = list(self._context_tasks.values())
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     def _script_order(self, script_id: str) -> int | None:
         line = self.script_index._by_id.get(str(script_id or ""))
@@ -1175,10 +1226,28 @@ class VNPlayerRuntime:
         if summary_route == "skip" or not should_append:
             return None
 
-        if self._llm_enabled and self._summary_llm_enabled and self.llm is not None:
-            messages = summary_prompt(self.profile, context_pack)
-            parsed, raw = await self.llm.complete_json(messages, lane="summary", max_tokens=900, temperature=0.25)
-            self.store.record_model_call(
+        use_model = self._llm_enabled and self._summary_llm_enabled and self.llm is not None
+        work = partial(self._complete_summary, deepcopy(context_pack), deepcopy(line_event),
+                       deepcopy(self.store.short_memory()), self._line_count, use_model)
+        if use_model:
+            # Reserve the trigger count now; model latency must not shift cadence.
+            self._last_summary_line_count = self._line_count
+            self._schedule_context_work("summary", work)
+            return None
+        return await work()
+
+    async def _complete_summary(self, context_pack: dict[str, Any], line_event: dict[str, Any],
+                                recent_lines: list[dict[str, Any]], trigger_count: int,
+                                use_model: bool) -> dict[str, Any] | None:
+        profile, store, llm = self.profile, self.store, self.llm
+        assert profile is not None and store is not None
+        if use_model:
+            assert llm is not None
+            messages = summary_prompt(profile, context_pack)
+            parsed, raw = await llm.complete_json(messages, lane="summary", max_tokens=900, temperature=0.25)
+            if not self._owns_context(profile, store):
+                return None
+            store.record_model_call(
                 "summary",
                 {"context_metrics": _context_metrics(context_pack), "context_pack": _compact_context_for_log(context_pack)},
                 parsed or raw,
@@ -1187,54 +1256,58 @@ class VNPlayerRuntime:
             if parsed:
                 response = sanitize_response(parsed)
                 patches, verification = self._verify_context_patches(response.get("context_patches") or [], line_event)
-                applied = self.store.apply_context_patches(patches, source_line=line_event)
+                applied = store.apply_context_patches(patches, source_line=line_event)
                 if applied:
                     await self._emit(
                         VN_EVENT_CONTEXT_UPDATED,
                         {
-                            "session_id": self.profile.session_id,
+                            "session_id": profile.session_id,
                             "source_line": _line_ref(line_event),
                             "applied": applied,
                             "lane": "summary",
                         },
                     )
+                if not self._owns_context(profile, store):
+                    return None
                 await self._emit(
                     VN_EVENT_SUMMARY,
                     {
-                        "session_id": self.profile.session_id,
+                        "session_id": profile.session_id,
                         "source_line": _line_ref(line_event),
-                        "scene_summary": self.store.scene_summary(),
+                        "scene_summary": store.scene_summary(),
                     },
                 )
-                self._last_summary_line_count = self._line_count
                 return {"lane": "summary", "response": response, "applied": applied, "verification": verification}
 
         patch = (
-            base_policy.summary_patch(self.store.short_memory(), line_event)
-            if self.profile.prompt_pack == "base"
-            else _rule_scene_summary_patch(self.store.short_memory(), line_event)
+            base_policy.summary_patch(recent_lines, line_event)
+            if profile.prompt_pack == "base"
+            else _rule_scene_summary_patch(recent_lines, line_event)
         )
         patches, verification = self._verify_context_patches([patch], line_event)
-        applied = self.store.apply_context_patches(patches, source_line=line_event)
+        applied = store.apply_context_patches(patches, source_line=line_event)
         if applied:
             await self._emit(
                 VN_EVENT_CONTEXT_UPDATED,
                 {
-                    "session_id": self.profile.session_id,
+                    "session_id": profile.session_id,
                     "source_line": _line_ref(line_event),
                     "applied": applied,
                     "lane": "summary_rules",
                 },
             )
+        if not self._owns_context(profile, store):
+            return None
         await self._emit(
             VN_EVENT_SUMMARY,
             {
-                "session_id": self.profile.session_id,
+                "session_id": profile.session_id,
                 "source_line": _line_ref(line_event),
-                "scene_summary": self.store.scene_summary(),
+                "scene_summary": store.scene_summary(),
             },
         )
-        self._last_summary_line_count = self._line_count
+        if not use_model and self._owns_context(profile, store):
+            self._last_summary_line_count = trigger_count
         return {"lane": "summary_rules", "applied": applied, "verification": verification}
 
     async def _maybe_run_retrospective(
@@ -1249,34 +1322,51 @@ class VNPlayerRuntime:
         pack = self._build_retrospective_pack(line_event, immediate_response)
         self.store.write_context_pack("retrospective", pack)
 
+        use_model = self._llm_enabled and self._retrospective_llm_enabled and self.llm is not None
+        work = partial(self._complete_retrospective, deepcopy(pack), deepcopy(line_event), self._line_count, use_model)
+        if use_model:
+            self._last_retrospective_line_count = self._line_count
+            self._schedule_context_work("retrospective", work)
+            return None
+        return await work()
+
+    async def _complete_retrospective(self, pack: dict[str, Any], line_event: dict[str, Any],
+                                      trigger_count: int, use_model: bool) -> dict[str, Any] | None:
+        profile, store, llm = self.profile, self.store, self.llm
+        assert profile is not None and store is not None
+
         bias: dict[str, Any] | None = None
         lane = "retrospective_rules"
         raw: dict[str, Any] | str | None = None
         ok = True
-        if self._llm_enabled and self._retrospective_llm_enabled and self.llm is not None:
-            messages = retrospective_prompt(self.profile, pack)
-            parsed, raw_text = await self.llm.complete_json(messages, lane="retrospective", max_tokens=1100, temperature=0.25)
+        if use_model:
+            assert llm is not None
+            messages = retrospective_prompt(profile, pack)
+            parsed, raw_text = await llm.complete_json(messages, lane="retrospective", max_tokens=1100, temperature=0.25)
+            if not self._owns_context(profile, store):
+                return None
             raw = parsed or raw_text
             ok = parsed is not None
-            self.store.record_model_call(
+            store.record_model_call(
                 "retrospective",
                 {"context_metrics": _retrospective_metrics(pack), "context_pack": _compact_retrospective_for_log(pack)},
                 raw,
                 ok=ok,
             )
             if parsed:
-                bias = _normalize_retrospective_bias(parsed, self._line_count, source="llm")
+                bias = _normalize_retrospective_bias(parsed, trigger_count, source="llm")
                 lane = "retrospective"
 
         if bias is None:
-            if self.profile.prompt_pack == "base":
-                self.store.record_runtime_event("vn.retrospective.unavailable", {"line": _line_ref(line_event), "reason": "model_failed"})
+            if profile.prompt_pack == "base":
+                store.record_runtime_event("vn.retrospective.unavailable", {"line": _line_ref(line_event), "reason": "model_failed"})
                 return {"lane": "retrospective", "status": "unavailable", "reason": "model_failed"}
-            bias = _rule_retrospective_bias(pack, self._line_count, self._retrospective_window_lines, _normalize_retrospective_bias)
+            bias = _rule_retrospective_bias(pack, trigger_count, self._retrospective_window_lines, _normalize_retrospective_bias)
 
-        self.store.save_retrospective_bias(bias)
-        self._last_retrospective_line_count = self._line_count
-        self.store.record_runtime_event(
+        store.save_retrospective_bias(bias)
+        if not use_model:
+            self._last_retrospective_line_count = trigger_count
+        store.record_runtime_event(
             "vn.retrospective",
             {
                 "line": _line_ref(line_event),

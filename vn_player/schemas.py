@@ -111,7 +111,6 @@ class VNProfile:
     base_url: str = ""
     overlay_url: str = ""
     short_memory_lines: int = 50
-    lookahead_enabled: bool = True
     lookahead_min_lines: int = 20
     lookahead_max_lines: int = 50
     lookahead_spoiler_policy: str = "abstract_only"
@@ -147,7 +146,6 @@ class VNProfile:
             base_url=str(data.get("base_url") or ""),
             overlay_url=str(data.get("overlay_url") or data.get("overlayUrl") or ""),
             short_memory_lines=int(data.get("short_memory_lines") or 50),
-            lookahead_enabled=capabilities["lookahead"],
             lookahead_min_lines=int(data.get("lookahead_min_lines") or 20),
             lookahead_max_lines=int(data.get("lookahead_max_lines") or 50),
             lookahead_spoiler_policy=str(data.get("lookahead_spoiler_policy") or "abstract_only"),
@@ -171,7 +169,6 @@ class VNProfile:
             "base_url": self.base_url,
             "overlay_url": self.overlay_url,
             "short_memory_lines": self.short_memory_lines,
-            "lookahead_enabled": self.lookahead_enabled,
             "lookahead_min_lines": self.lookahead_min_lines,
             "lookahead_max_lines": self.lookahead_max_lines,
             "lookahead_spoiler_policy": self.lookahead_spoiler_policy,
