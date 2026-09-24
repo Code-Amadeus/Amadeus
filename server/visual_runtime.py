@@ -307,6 +307,39 @@ def capture_visual_context(
 
     image, region, actual_scope = _capture_image(requested_scope)
 
+    return _encode_visual_context(image, region, requested_scope=requested_scope, actual_scope=actual_scope,
+                                  provider=provider, mode=mode, reason=reason)
+
+
+def capture_game_window(pid: int, executable: str) -> dict[str, Any]:
+    """Capture only the verified game's window, without changing global vision settings."""
+    if os.name != "nt":
+        raise RuntimeError("Game-window capture currently requires Windows.")
+    import psutil
+    from PIL import ImageGrab
+
+    actual = psutil.Process(pid).exe()
+    if os.path.normcase(os.path.realpath(actual)) != os.path.normcase(os.path.realpath(executable)):
+        raise RuntimeError("The game process changed. Reconnect before capturing its window.")
+    windows = [window for window in list_capture_windows(limit=120) if window["pid"] == pid]
+    if len(windows) != 1:
+        raise RuntimeError("The game must have exactly one visible window before capturing.")
+    window = windows[0]
+    hwnd = _parse_hwnd(window["hwnd"])
+    if _window_pid(hwnd) != pid:
+        raise RuntimeError("The game window changed. Try capturing again.")
+    # Pillow's window capture targets the HWND. Never fall back to the foreground
+    # window or desktop: other applications may contain unrelated private content.
+    image = ImageGrab.grab(window=hwnd).convert("RGB")
+    result = _encode_visual_context(image, window["rect"], requested_scope="game_window", actual_scope="game_window",
+                                    provider="auto", mode="on_demand", reason="vn_player")
+    result["game"] = {"pid": pid, "title": window["title"], "executable": executable}
+    return result
+
+
+def _encode_visual_context(image, region: dict[str, Any], *, requested_scope: str, actual_scope: str,
+                           provider: str, mode: str, reason: str) -> dict[str, Any]:
+
     resized = _resize_for_provider(image, max_long_side=max(320, int(_config.max_long_side or 960)))
     buffer = io.BytesIO()
     quality = max(35, min(92, int(_config.jpeg_quality or 68)))

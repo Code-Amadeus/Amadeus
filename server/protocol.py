@@ -127,6 +127,7 @@ class Method(StrEnum):
     VN_LAUNCH_START      = "vn.launch.start"
     VN_LAUNCH_STOP       = "vn.launch.stop"
     VN_LAUNCH_STATUS     = "vn.launch.status"
+    VN_LAUNCH_CAPTURE    = "vn.launch.capture"
 
     # Generic providers and future AUIP apps
     PROVIDER_RUN         = "provider.run"

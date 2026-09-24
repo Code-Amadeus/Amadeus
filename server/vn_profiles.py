@@ -27,6 +27,10 @@ class LaunchProfile(BaseModel):
     launchOverlay: bool = False
     stopWallpaper: bool = True
     closeGameOnStop: bool = False
+    # None preserves the preset for profiles saved before companion settings existed.
+    promptPack: Literal["base", "mystery"] | None = None
+    capabilities: dict[Literal["immediate", "interaction", "summary", "retrospective", "lookahead", "reasoning"], bool] = Field(default_factory=dict)
+    voiceInput: bool | None = None
 
     @field_validator("gameExe", "hookHelper", "scriptPath")
     @classmethod
@@ -45,7 +49,6 @@ class LaunchProfile(BaseModel):
             if url.scheme not in {"ws", "wss"} or not url.hostname:
                 raise ValueError("Enter Luna's original-text WebSocket URL.")
             self.launchGame = False
-            self.launchOverlay = False
         return self
 
 

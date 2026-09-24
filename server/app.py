@@ -1449,25 +1449,7 @@ async def bootstrap(port: int = 17777) -> None:
         if not isinstance(source_payload, dict):
             source_payload = {}
         kind = str(source_payload.get("kind") or "ask").strip().lower()
-        params = {
-            "text": text,
-            "source": "asr",
-            "metadata": {
-                "source": "vn_player_asr",
-                "asr": {
-                    "is_final": bool(payload.get("is_final", True)),
-                    "source_payload": source_payload,
-                },
-            },
-        }
-        if kind == "note":
-            result = await vn_h.handle(Method.VN_PLAYER_NOTE, params)
-        elif kind == "pin":
-            result = await vn_h.handle(Method.VN_PLAYER_PIN, params)
-        elif kind == "choice":
-            result = await vn_h.handle(Method.VN_CHOICE_ASK, params)
-        else:
-            result = await vn_h.handle(Method.VN_PLAYER_ASK, params)
+        result = await vn_h.handle_asr(payload)
         try:
             await bus.emit(
                 Method.ASR_STATUS,

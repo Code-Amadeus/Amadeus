@@ -68,10 +68,61 @@ additional non-mystery game from verified available Agent scripts and legal game
 sources before adding further semantic types. Do not predesign romance/horror
 modules solely from genre names.
 
-## Remaining product work
+## 2026-09-24 — Semantic acceptance and product interaction
 
-After semantic integration, organize the UI around game setup, companion settings,
-current play, and diagnostics. Connect the existing companion window, speech input,
-speech output and visual context with explicit status and user controls. These
-are separate from the game's text source. Preserve the established PARANORMASIGHT
-experience while making optional capabilities and unavailable dependencies clear.
+**Implemented:** The profile editor separates game connection and companion
+settings. The primary play feed shows game text and companion replies; raw protocol
+events remain in collapsed diagnostics. Capability states explain missing scripts,
+alignment or model availability. Voice input is explicit and session-bound. The
+existing companion helper remains the presentation surface. Game-view attachment
+is one user-requested snapshot, with a thumbnail and remove action before sending.
+
+**Vision decision:** Capture the process already bound by the launcher, verify
+executable path and window ownership again, and never expand to the foreground
+window or desktop. Use the existing multimodal attachment helper in the same
+completion. No image-description intermediary and no permanent screenshot memory.
+For an external Luna stream, an optional game executable supplies the capture target.
+
+**Acceptance evidence:**
+
+- Archived `d3b42f4` versus the new Mystery runtime on 80 unique-script observations
+  from a local real-game trace: no differences in per-line decisions, attention,
+  lookahead, summary or reflection outputs after timestamp normalization. Genuine
+  repeated IDs are covered separately as the intentional correction.
+- A bounded real-model A/B on six of those observations: both arms spoke only on
+  the same fourth observation; wording, confidence and model patches varied.
+  Five of six decision labels matched; `silence` versus `hold` on the first line
+  produced no speech in either arm. This is a limited compatibility check, not a
+  claim of deterministic model wording or a complete story playthrough.
+- Base real-model run on 40 synthetic ordinary dialogue observations without a
+  script: three model summaries, one model reflection, and a grounded player answer
+  about weekend plans. No detective evidence or hypothesis nodes were created.
+- Deferred-answer regression: an answer started in session A cannot write or speak
+  in session B. ASR uses the same active-session identity rule.
+- Actual PARANORMASIGHT window capture returned the correct 960×540 title screen
+  from the bound game process. An early attempt captured the game's temporary
+  startup window; the settled window was then verified visually. Snapshot previews
+  remain explicit so the user can inspect what will be attached. Evidence:
+  `output/diagnostics/vn-game-visual-live/`. No desktop capture fallback was used.
+
+The current workspace's existing PARANORMASIGHT paths and launch preferences are
+saved in its ignored `.amadeus/vn-profiles.json`. Existing operator capability
+defaults remain inherited until the user explicitly changes the switches.
+
+Local reports are under `output/diagnostics/vn-mystery-replay/`,
+`vn-mystery-model-ab/`, and `vn-base-model-20260924-234656/`.
+The final focused suite passed 55 tests covering profiles, semantic contracts,
+ASR/vision boundaries, text adapters, overlay continuity and speech delivery.
+The Electron production build and headless UI acceptance probe passed.
+Real microphone recognition accuracy was not requalified; the existing ASR
+pipeline is reused and the new routing/lifecycle boundaries are tested.
+
+## Further game coverage
+
+Base is the common interpretation mode; no romance/horror pack is introduced
+without a demonstrated semantic need. A concrete additional test candidate is
+[Kemono Teatime's official demo](https://store.steampowered.com/app/3345060/),
+with an existing [upstream Agent script](https://github.com/0xDC00/scripts/blob/main/PC_Steam_Unity_Kemono_Teatime.js).
+The script identifies the full Steam game, so demo/version compatibility remains
+unverified. This is a candidate, not a claim of supported extraction. No game
+purchase or new demo installation was performed during this implementation.

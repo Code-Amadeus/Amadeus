@@ -3,8 +3,9 @@
 VN Player accepts live displayed text through the existing `vn.line` method.
 `AgentVNTextSource` and `LunaVNTextSource` translate their external transports into
 that input; they do not choose reactions, alter VN memory, or interpret the story.
-The current VN runtime and game profile remain PARANORMASIGHT-oriented. Connecting
-another game's text does not yet qualify its semantic behavior.
+The shared runtime supports Base VN and Mystery VN independently of the source.
+PARANORMASIGHT retains its established Mystery preset. Connecting another game's
+text alone does not qualify its extraction quality or semantic behavior.
 
 ## Game profiles in VN Player
 
@@ -34,10 +35,53 @@ executable and start the game externally before attaching.
 session is stopped. **Stop** disconnects capture and stops the Agent process
 launched by VN Player. Closing a game is opt-in and applies only to the game
 process owned by VN Player; externally started games remain open. Newly added
-games currently start in capture mode. The existing PARANORMASIGHT profile retains
-its companion runtime; its full-script and overlay settings are under the editor's
-**Existing companion settings**. These runtime semantics are not inherited by
-new games.
+games default to Base companion mode without requiring a complete script. The
+existing PARANORMASIGHT profile retains its Mystery preset. The editor separates
+**Game connection** from **Companion** settings so changing text source does not
+implicitly change interpretation or enable every capability.
+
+## Companion type and capabilities
+
+`promptPack` selects `base` or `mystery` in a launch profile; it maps to the existing
+runtime `prompt_pack`. The independent `capabilities` object accepts these switches:
+
+| Capability | Base default | Mystery default | Prerequisites |
+| --- | --- | --- | --- |
+| `immediate` — commentary | On | On | A configured model for Base; existing rule path retained in Mystery |
+| `interaction` — player questions | On | On | Active VN session; configured model for Base |
+| `summary` — story summaries | On | On | Displayed history; neutral rule summary remains possible without a model |
+| `retrospective` — reflection | On | On | Enough displayed history; Base needs its model lane |
+| `lookahead` | Off | On | Complete script and verified alignment; Base also needs its model lane |
+| `reasoning` — detective reasoning | Off | On | Mystery type |
+
+Disabled capabilities stop their work; input recording continues. Runtime status
+reports requested, available and enabled states with a reason. Base does not infer
+clues using PARANORMASIGHT keyword rules, and never implicitly loads its script.
+An explicitly empty `scriptPath` also means text-only for a new Mystery game.
+Unverified upstream IDs, ambiguous identical text and fuzzy matches do not establish
+a usable lookahead position. Future script content remains planner-only.
+
+Base enables the existing summary/reflection/lookahead model lanes by default
+when those capabilities are requested; explicit environment/parameter model
+disables still apply. Mystery retains its existing lane defaults. The existing
+`lookahead_enabled` runtime input remains an alias; explicit capability overrides
+take precedence. Old saved profiles retain the original type and voice preference.
+
+### Voice, companion window and game view
+
+The profile's `voiceInput` controls whether listening starts with play. The live
+microphone button can change it for the current session. ASR input stays in the
+owning VN session; late results and answers finishing after stop/restart are
+discarded. **Stop speech** uses the existing speech interrupt path. The companion
+overlay uses the existing helper and speech delivery integration; availability is
+shown in settings.
+
+**Attach game view** captures one frame from the bound game's window and displays
+a thumbnail before sending it with a question. This requires an active interaction
+lane and an image-capable configured model. It does not enable continuous watching,
+alter global vision settings or fall back to capturing the desktop. The image is
+attached to the existing completion, and is not stored in VN history or promoted
+to script evidence. Luna can optionally specify the game executable for this use.
 
 Luna profiles save the original-text WebSocket URL. Start Luna, configure its
 extraction and start the game externally; VN Player then connects using the saved
@@ -47,12 +91,15 @@ URL. Luna extraction compatibility still needs validation for each game.
 
 - `vn.launch.profiles` returns profiles, file availability and the shared `agentExe`.
 - `vn.launch.profile.save` accepts `{profile: {name, gameExe, hookHelper, ...}, agentExe}`;
-  omit `profile.id` to create, or supply an existing ID to edit. Runtime presets
-  and live process IDs are not editable profile fields.
+  omit `profile.id` to create, or supply an existing ID to edit. `promptPack`,
+  `capabilities` and `voiceInput` configure the companion. Live process IDs and
+  arbitrary runtime implementation fields are not editable profile fields.
 - `vn.launch.start` accepts `{profileId}` to use saved settings, or
   `{profileId, captureOnly: true}` to test extraction without companion responses.
 - `vn.launch.status` includes `captureOnly`, `capturedLines` and source connection
   status. `vn.launch.stop` uses the saved game-close preference unless overridden.
+- `vn.launch.capture` returns a transient `visual_context` for a question. Submit
+  it on `vn.player.ask` or `vn.choice.ask`; unsupported models fail visibly.
 
 Run `python -m pytest tests/test_vn_profiles.py tests/test_vn_text_sources.py` for
 storage, source, process ownership and runtime isolation checks. For a browser
@@ -117,8 +164,6 @@ time, avoiding routine WebSocket/clipboard double delivery. Source-specific
 replay suppression can be added when the external transport supplies a verified
 event identity.
 
-The current PARANORMASIGHT VN runtime still ignores a second observation with
-the same `script_id` during one session. That is a VN semantic limitation, not
-transport deduplication: revisiting a branch may legitimately show the same
-script line again. Keep source acceptance and runtime behavior as separate
-validation results until that rule is revised.
+The VN runtime preserves repeated observations even when they share a script ID.
+Branch revisits are legitimate input. Transport replay suppression must be owned
+by a source adapter with verified event identity; script IDs are not that identity.

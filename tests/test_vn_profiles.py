@@ -47,7 +47,9 @@ def test_profile_save_edit_and_shared_agent_survive_manager_restart(tmp_path: Pa
     loaded = second._profile_by_id(game_id)
     assert loaded["gameExe"] == request["profile"]["gameExe"]
     assert loaded["launchGame"] is True
-    assert loaded["runtimeSupported"] is False
+    assert loaded["runtimeSupported"] is True
+    assert loaded["promptPack"] == "base"
+    assert loaded["capabilities"]["reasoning"] is False
     assert loaded["agentExists"] is True
     request["profile"].update(id=game_id, name="Renamed", launchGame=False, closeGameOnStop=True)
     updated = second.save_profile(request)
@@ -113,7 +115,7 @@ def test_saved_profile_starts_agent_with_fresh_pid_and_stops_owned_agent_only(tm
              patch.object(instance, "_launch_game", new_callable=AsyncMock) as launch_game, \
              patch.object(instance, "_terminate_proc", new_callable=AsyncMock) as stop_game:
             for pid in (101, 202):
-                result = await instance.start({"profileId": game_id})
+                result = await instance.start({"profileId": game_id, "captureOnly": True})
                 assert result["captureOnly"] is True
                 assert result["game"]["owned"] is False
                 assert spawn.call_args.args[0] == [request["agentExe"], f"--pname={pid}", f"--script={request['profile']['hookHelper']}"]
@@ -227,7 +229,7 @@ def test_luna_saved_url_reaches_capture_preview_over_real_websocket(tmp_path: Pa
                                             "lunaWsUrl": f"ws://127.0.0.1:{port}/api/ws/text/origin"}})["profileId"]
             instance = manager(tmp_path)
             try:
-                await instance.start({"profileId": game_id})
+                await instance.start({"profileId": game_id, "captureOnly": True})
                 async with asyncio.timeout(3):
                     while (await instance.status())["bridge"].get("lineCount", 0) < 2:
                         await asyncio.sleep(.01)
@@ -261,3 +263,33 @@ def test_save_profile_api_routes_to_store(tmp_path: Path) -> None:
     result = asyncio.run(handler.handle(Method.VN_LAUNCH_PROFILE_SAVE, game_settings(tmp_path)))
     assert result["profileId"]
     assert VNProfileStore(tmp_path).load().profiles[0].name == "New game"
+
+
+def test_start_passes_saved_type_and_capabilities_to_runtime(tmp_path: Path) -> None:
+    async def run():
+        instance = manager(tmp_path)
+        request = game_settings(tmp_path)
+        request["profile"].update(promptPack="base", capabilities={"immediate": False, "summary": True}, voiceInput=False)
+        game_id = instance.save_profile(request)["profileId"]
+        with patch("server.vn_launch_manager._find_game_pid", return_value=42), \
+             patch("server.vn_launch_manager.AgentVNTextSource", Source):
+            await instance.start({"profileId": game_id})
+            params = instance._runtime_start.await_args.args[0]
+            assert params["prompt_pack"] == "base"
+            assert params["capabilities"]["immediate"] is False
+            assert params["capabilities"]["summary"] is True
+            assert params["script_path"] == ""
+            assert params["game_id"] == game_id
+            await instance.stop()
+    asyncio.run(run())
+
+
+def test_pre_semantics_saved_builtin_profile_keeps_mystery_defaults(tmp_path: Path) -> None:
+    instance = manager(tmp_path)
+    request = game_settings(tmp_path)
+    request["profile"]["id"] = "paranormasight"
+    instance.save_profile(request)
+    loaded = manager(tmp_path)._profile_by_id("paranormasight")
+    assert loaded["promptPack"] == "mystery"
+    assert loaded["voiceInput"] is True
+    assert loaded["capabilities"]["reasoning"] is True

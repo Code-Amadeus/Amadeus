@@ -26,6 +26,7 @@ from server.event_bus import bus
 from server.protocol import Method
 from server.vn_text_sources import AgentVNTextSource, LunaVNTextSource, VNTextSourceAdapter
 from server.vn_profiles import LaunchProfile, VNProfileStore
+from vn_player.schemas import new_id, resolve_capability_defaults
 
 RuntimeStart = Callable[[dict[str, Any]], Awaitable[dict[str, Any] | None]]
 RuntimeStop = Callable[[dict[str, Any]], Awaitable[dict[str, Any] | None]]
@@ -89,7 +90,17 @@ class VNLaunchManager:
             profiles[item.id] = {**profiles.get(item.id, {}), **item.model_dump()}
         for profile in profiles.values():
             profile["agentExe"] = agent_exe
-            profile["runtimeSupported"] = bool(profile.get("runtime"))
+            preset = profile.get("runtime", {})
+            profile["promptPack"] = profile.get("promptPack") or preset.get("prompt_pack", "base")
+            overrides = dict(profile.get("capabilities") or {})
+            profile["runtime"] = {**preset, "capabilities": overrides}
+            profile["capabilities"] = resolve_capability_defaults(profile["promptPack"], overrides)
+            if profile.get("voiceInput") is None:
+                profile["voiceInput"] = profile["id"] == "paranormasight"
+            profile["runtimeSupported"] = True
+            # The existing companion window is a shared presentation surface.
+            for key in ("overlayHelper", "overlayUrl", "overlayHealthUrl", "overlayPort", "overlayImagesDir"):
+                profile.setdefault(key, builtin[key])
             for key, flag in (("gameExe", "gameExists"), ("agentExe", "agentExists"),
                               ("hookHelper", "hookExists"), ("scriptPath", "scriptExists"),
                               ("overlayHelper", "overlayExists")):
@@ -107,8 +118,6 @@ class VNLaunchManager:
         if isinstance(params.get("profile"), dict) and params["profile"].get("id"):
             if profile.id not in {p["id"] for p in existing["profiles"]}:
                 raise ValueError(f"Unknown VN profile: {profile.id}")
-        if profile.launchOverlay and profile.id != "paranormasight":
-            raise ValueError("The current companion overlay is only configured for PARANORMASIGHT.")
         self._profiles.save(profile, agent_exe=str(params.get("agentExe", existing["agentExe"])).strip())
         return {**self.profiles(), "profileId": profile.id}
 
@@ -119,6 +128,30 @@ class VNLaunchManager:
             "profiles": self.profiles()["profiles"],
             "runtime": await self._safe_runtime_status(),
         }
+
+    async def capture(self) -> dict[str, Any]:
+        async with self._lifecycle_lock:
+            if self._state["status"] != "active" or self._state.get("captureOnly"):
+                raise RuntimeError("Start a companion session before attaching a game view.")
+            runtime = await self._safe_runtime_status() or {}
+            if not (runtime.get("visual") or {}).get("supported"):
+                raise RuntimeError((runtime.get("visual") or {}).get("reason") or "The current VN model does not support images.")
+            if not (runtime.get("capabilities", {}).get("interaction") or {}).get("enabled"):
+                raise RuntimeError("Enable player interaction before attaching a game view.")
+            profile = self._profile_by_id(self._state["profileId"])
+            executable = str(profile.get("gameExe") or "")
+            if not executable:
+                raise RuntimeError("Select the game executable in its profile before capturing.")
+            # Agent already bound this session to a specific process. Preserve
+            # that identity even if another instance appears afterwards.
+            pid = self._state.get("game", {}).get("pid")
+            if pid is None:
+                pid = await asyncio.to_thread(_find_game_pid, executable)
+            if pid is None:
+                raise RuntimeError("The configured game is not running.")
+            from server.visual_runtime import capture_game_window
+            visual = await asyncio.to_thread(capture_game_window, pid, executable)
+            return {"status": "ok", "visual_context": visual}
 
     async def start(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
         async with self._lifecycle_lock:
@@ -140,19 +173,24 @@ class VNLaunchManager:
         params = {
             "launchGame": profile.get("launchGame", True) if source_name == "agent" else False,
             "attachHook": source_name == "agent", "bridgeClipboard": source_name == "agent",
-            "launchOverlay": profile.get("launchOverlay", False) if source_name == "agent" else False,
+            "launchOverlay": profile.get("launchOverlay", False),
             "stopWallpaper": profile.get("stopWallpaper", True), "lunaWsUrl": profile.get("lunaWsUrl", ""),
             **params,
         }
-        capture_only = _truthy(params.get("captureOnly")) or not profile["runtimeSupported"]
+        capture_only = _truthy(params.get("captureOnly"))
         if capture_only:
             params["launchOverlay"] = False
         session_id = str(params.get("session_id") or params.get("sessionId") or "").strip()
         if not session_id:
-            session_id = f"live_{profile_id}_{time.strftime('%Y%m%d_%H%M%S')}"
+            session_id = new_id(f"live_{profile_id}")
 
         runtime_params = {
             **profile.get("runtime", {}),
+            "game_id": profile.get("runtime", {}).get("game_id", profile_id),
+            "game_title": profile.get("name") or profile_id,
+            "game_genre": "mystery" if profile["promptPack"] == "mystery" else "visual_novel",
+            "prompt_pack": profile["promptPack"],
+            "capabilities": profile["runtime"]["capabilities"],
             "session_id": session_id,
             "script_path": profile.get("scriptPath", ""),
         }

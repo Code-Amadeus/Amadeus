@@ -17,6 +17,7 @@ class VNLaunchHandler(RequestHandler):
         Method.VN_LAUNCH_START,
         Method.VN_LAUNCH_STOP,
         Method.VN_LAUNCH_STATUS,
+        Method.VN_LAUNCH_CAPTURE,
     ]
 
     def __init__(self) -> None:
@@ -55,4 +56,6 @@ class VNLaunchHandler(RequestHandler):
             return await manager.stop(params)
         if method == Method.VN_LAUNCH_STATUS:
             return await manager.status()
+        if method == Method.VN_LAUNCH_CAPTURE:
+            return await manager.capture()
         return None

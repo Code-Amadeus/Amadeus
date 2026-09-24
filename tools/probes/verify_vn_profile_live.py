@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -20,6 +21,7 @@ from playwright.async_api import async_playwright, expect
 
 from server.handlers.vn_launch_handler import VNLaunchHandler
 from tools.probes.verify_vn_profiles_ui import HTML
+from vn_player.runtime import VNPlayerRuntime
 
 
 async def run(args) -> None:
@@ -31,16 +33,22 @@ async def run(args) -> None:
         if not Path(path).is_file():
             raise FileNotFoundError(path)
 
-    async def no_runtime(*_args):
-        raise AssertionError("Capture must not call the story runtime")
+    # This acceptance measures local launch/ingress; semantic model comparisons
+    # are a separate, explicitly enabled experiment.
+    for name in ("VN_LLM_ENABLED", "VN_IMMEDIATE_LLM_ENABLED", "VN_LOOKAHEAD_LLM_ENABLED",
+                 "VN_REASONER_LLM_ENABLED", "VN_SUMMARY_LLM_ENABLED", "VN_RETROSPECTIVE_LLM_ENABLED"):
+        os.environ[name] = "0"
 
-    async def runtime_status():
-        return {"status": "stopped"}
+    runtime = None
 
     def new_handler():
+        nonlocal runtime
+        runtime = VNPlayerRuntime(workspace)
+        async def runtime_status():
+            return runtime.status()
         handler = VNLaunchHandler()
-        handler.configure(workspace, runtime_start=no_runtime, runtime_stop=no_runtime,
-                          runtime_status=runtime_status, runtime_line=no_runtime)
+        handler.configure(workspace, runtime_start=runtime.start, runtime_stop=runtime.stop,
+                          runtime_status=runtime_status, runtime_line=runtime.ingest_line)
         return handler
 
     handler = new_handler()
@@ -98,7 +106,12 @@ setInterval(async () => { const status = await send('vn.launch.status', {}); lis
                     await asyncio.sleep(.5)
                 else:
                     raise TimeoutError(f"Phase {attempt}: did not receive {args.lines} game observations")
-                await expect(page.get_by_role("region", name="Captured text")).to_contain_text(state["capturedLines"][-1]["text"])
+                if attempt == 1:
+                    assert not runtime.enabled
+                    await expect(page.get_by_role("region", name="Captured text")).to_contain_text(state["capturedLines"][-1]["text"])
+                else:
+                    assert runtime.enabled
+                    state["runtimeObservations"] = runtime.store.short_memory()
                 await page.screenshot(path=str(output / f"capture-{attempt}.png"))
                 reports.append({"phase": attempt, "state": state})
                 (output / f"capture-{attempt}.json").write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")

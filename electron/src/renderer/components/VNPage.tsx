@@ -75,7 +75,23 @@ type VNEvent = {
   method: string
   text: string
   detail?: string
+  raw: string
   time: string
+}
+
+type CapabilityState = { requested?: boolean; available?: boolean; enabled?: boolean; reason?: string }
+type RuntimeState = Record<string, unknown> & {
+  status?: string
+  session_id?: string
+  capabilities?: Record<string, CapabilityState>
+  visual?: { supported?: boolean; reason?: string }
+}
+type VisualAttachment = {
+  frame: { dataUrl: string; mime: string; width: number; height: number }
+  capturedAt: string
+  actualScope: string
+  game?: { pid?: number; title?: string }
+  [key: string]: unknown
 }
 
 function textFromPayload(payload: Record<string, unknown>): string {
@@ -137,12 +153,15 @@ export default function VNPage({ send, subscribe, connected }: Props) {
   const [agentExe, setAgentExe] = useState('')
   const [editor, setEditor] = useState<{ initial?: VNProfile } | null>(null)
   const [launch, setLaunch] = useState<LaunchStatus>({ status: 'idle' })
-  const [runtime, setRuntime] = useState<Record<string, unknown> | null>(null)
+  const [runtime, setRuntime] = useState<RuntimeState | null>(null)
   const [events, setEvents] = useState<VNEvent[]>([])
   const [lineText, setLineText] = useState('这里……是什么地方？')
   const [playerText, setPlayerText] = useState('')
   const [playerMode, setPlayerMode] = useState<'ask' | 'note' | 'choice' | 'pin'>('ask')
   const [playerListening, setPlayerListening] = useState(false)
+  const [voiceWanted, setVoiceWanted] = useState(false)
+  const [visualAttachment, setVisualAttachment] = useState<VisualAttachment | null>(null)
+  const [visualBusy, setVisualBusy] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -153,6 +172,12 @@ export default function VNPage({ send, subscribe, connected }: Props) {
   const runtimeStatus = launch.captureOnly ? 'not_started' : String((runtime?.status as string | undefined) || 'unknown')
   const runtimeSessionId = launch.sessionId || String(runtime?.session_id || '')
   const playerAsrRequestKeyRef = useRef<string | null>(null)
+  const playerAsrOwnedRef = useRef(false)
+  const playerAsrQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const sessionRef = useRef('')
+  const interaction = runtime?.capabilities?.interaction
+  const interactionEnabled = runtimeStatus === 'active' && !launch.captureOnly && interaction?.enabled === true
+  const visualSupported = runtime?.visual?.supported === true
 
   const pushEvent = useCallback((method: string, payload: Record<string, unknown>) => {
     const detail = typeof payload.reason_label === 'string'
@@ -165,6 +190,7 @@ export default function VNPage({ send, subscribe, connected }: Props) {
       method,
       text: textFromPayload(payload),
       detail,
+      raw: JSON.stringify(payload, (key, value) => key === 'dataUrl' ? '[image omitted]' : value),
       time: new Date().toLocaleTimeString(),
     }
     setEvents(prev => [item, ...prev].slice(0, 24))
@@ -183,7 +209,9 @@ export default function VNPage({ send, subscribe, connected }: Props) {
       setAgentExe(String(profileRes.agentExe || ''))
       if (statusRes.profileId) setSelectedProfile(String(statusRes.profileId))
       if (statusRes.runtime && typeof statusRes.runtime === 'object') {
-        setRuntime(statusRes.runtime as Record<string, unknown>)
+        setRuntime(statusRes.runtime as RuntimeState)
+      } else {
+        setRuntime(null)
       }
       if (loadedProfiles.length && !loadedProfiles.some(profile => profile.id === selectedProfile)) {
         setSelectedProfile(loadedProfiles[0].id)
@@ -202,11 +230,11 @@ export default function VNPage({ send, subscribe, connected }: Props) {
     const unsubLaunch = subscribe('vn.launch.status', payload => {
       setLaunch(payload as LaunchStatus)
       if (payload.runtime && typeof payload.runtime === 'object') {
-        setRuntime(payload.runtime as Record<string, unknown>)
+        setRuntime(payload.runtime as RuntimeState)
       }
     })
     const unsubStatus = subscribe('vn.status', payload => {
-      setRuntime(payload)
+      setRuntime(payload as RuntimeState)
       pushEvent('vn.status', payload)
     })
     const unsubLine = subscribe('vn.line', payload => pushEvent('vn.line', payload))
@@ -218,10 +246,14 @@ export default function VNPage({ send, subscribe, connected }: Props) {
     })
     const unsubAsrRecognized = subscribe('asr.recognized', payload => {
       if (payload.source !== 'vn_player') return
+      const sourcePayload = payload.source_payload as Record<string, unknown> | undefined
+      if (sourcePayload?.session_id && sourcePayload.session_id !== sessionRef.current) return
       pushEvent('vn.player.asr', payload)
     })
     const unsubAsrStatus = subscribe('asr.status', payload => {
       if (payload.source !== 'vn_player') return
+      const sourcePayload = payload.source_payload as Record<string, unknown> | undefined
+      if (sourcePayload?.session_id && sourcePayload.session_id !== sessionRef.current) return
       const status = String(payload.status || '')
       if (['listening', 'loading', 'paused_tts', 'routed'].includes(status)) {
         setPlayerListening(true)
@@ -243,32 +275,58 @@ export default function VNPage({ send, subscribe, connected }: Props) {
   }, [pushEvent, subscribe])
 
   useEffect(() => {
-    const shouldListen = connected && runtimeStatus === 'active'
-    const requestKey = `${runtimeSessionId || 'vn'}:${playerMode}`
-
-    if (!shouldListen) {
-      if (playerListening || playerAsrRequestKeyRef.current) {
-        send('asr.stop', { source: 'vn_player' }).catch(() => {})
-      }
-      playerAsrRequestKeyRef.current = null
-      return
-    }
-
+    const shouldListen = connected && interactionEnabled && voiceWanted && !!runtimeSessionId
+    const requestKey = shouldListen ? `${runtimeSessionId}:${playerMode}` : null
     if (playerAsrRequestKeyRef.current === requestKey) return
     playerAsrRequestKeyRef.current = requestKey
-    send('asr.start', {
-      source: 'vn_player',
-      one_shot: false,
-      finish_after_turn_complete: false,
-      source_payload: {
-        kind: playerMode,
-        session_id: runtimeSessionId,
-      },
+    if (!requestKey) setPlayerListening(false)
+    playerAsrQueueRef.current = playerAsrQueueRef.current.then(async () => {
+      if (playerAsrOwnedRef.current) {
+        await send('asr.stop', { source: 'vn_player' })
+        playerAsrOwnedRef.current = false
+      }
+      if (!requestKey || playerAsrRequestKeyRef.current !== requestKey) return
+      const result = await send('asr.start', {
+        source: 'vn_player',
+        one_shot: false,
+        finish_after_turn_complete: false,
+        source_payload: { kind: playerMode, session_id: runtimeSessionId },
+      })
+      const status = String(result.status || '')
+      if (!['listening', 'awake', 'starting'].includes(status) || (result.source && result.source !== 'vn_player')) {
+        throw new Error(status === 'already_listening'
+          ? t('Microphone is busy in another session.')
+          : String(result.error || result.reason || t('Microphone could not start.')))
+      }
+      if (playerAsrRequestKeyRef.current === requestKey) {
+        playerAsrOwnedRef.current = true
+        setPlayerListening(true)
+      } else {
+        await send('asr.stop', { source: 'vn_player' })
+      }
     }).catch(err => {
-      playerAsrRequestKeyRef.current = null
-      setError(err instanceof Error ? err.message : String(err))
+      if (playerAsrRequestKeyRef.current === requestKey) {
+        playerAsrRequestKeyRef.current = null
+        setPlayerListening(false)
+        setVoiceWanted(false)
+        setError(err instanceof Error ? err.message : String(err))
+      }
     })
-  }, [connected, playerListening, playerMode, runtimeSessionId, runtimeStatus, send])
+  }, [connected, interactionEnabled, voiceWanted, playerMode, runtimeSessionId, send, t])
+
+  useEffect(() => {
+    if (runtimeSessionId === sessionRef.current) return
+    sessionRef.current = runtimeSessionId
+    setVisualAttachment(null)
+    setVoiceWanted(runtimeSessionId && !launch.captureOnly && activeProfile?.voiceInput === true ? true : false)
+  }, [runtimeSessionId, launch.captureOnly, activeProfile?.voiceInput])
+
+  useEffect(() => () => {
+    playerAsrRequestKeyRef.current = null
+    playerAsrQueueRef.current.then(() => {
+      if (playerAsrOwnedRef.current) return send('asr.stop', { source: 'vn_player' })
+    }).catch(() => {})
+  }, [send])
 
   const startProfile = async (profileId: string, captureOnly = false) => {
     setBusy(true)
@@ -277,7 +335,7 @@ export default function VNPage({ send, subscribe, connected }: Props) {
     try {
       const res = await send('vn.launch.start', { profileId, captureOnly })
       setLaunch(res as LaunchStatus)
-      setRuntime(res.runtime && typeof res.runtime === 'object' ? res.runtime as Record<string, unknown> : null)
+      setRuntime(res.runtime && typeof res.runtime === 'object' ? res.runtime as RuntimeState : null)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -299,16 +357,20 @@ export default function VNPage({ send, subscribe, connected }: Props) {
     setBusy(true)
     setError('')
     try {
-      if (playerListening) {
+      if (playerAsrOwnedRef.current) {
         await send('asr.stop', { source: 'vn_player' })
+        playerAsrOwnedRef.current = false
+        playerAsrRequestKeyRef.current = null
         setPlayerListening(false)
       }
+      setVoiceWanted(false)
+      setVisualAttachment(null)
       const res = await send('vn.launch.stop', {
         reason: 'electron_vn_page',
       })
       setLaunch(res as LaunchStatus)
       if (res.runtime && typeof res.runtime === 'object') {
-        setRuntime(res.runtime as Record<string, unknown>)
+        setRuntime(res.runtime as RuntimeState)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -330,16 +392,38 @@ export default function VNPage({ send, subscribe, connected }: Props) {
     setBusy(true)
     setError('')
     try {
-      await send(routePlayerMethod(playerMode), {
+      const method = routePlayerMethod(playerMode)
+      await send(method, {
         text,
         source: 'electron_vn_page',
         metadata: { source: 'vn_player_panel', mode: playerMode },
+        ...((method === 'vn.player.ask' || method === 'vn.choice.ask') && visualAttachment ? { visual_context: visualAttachment } : {}),
       })
       setPlayerText('')
+      setVisualAttachment(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setBusy(false)
+    }
+  }
+
+  const attachGameView = async () => {
+    const captureSessionId = runtimeSessionId
+    setVisualBusy(true)
+    setError('')
+    try {
+      const res = await send('vn.launch.capture', {})
+      if (res.status !== 'ok' || !res.visual_context || typeof res.visual_context !== 'object') {
+        throw new Error(String(res.error || res.reason || t('Game view is unavailable.')))
+      }
+      const context = res.visual_context as VisualAttachment
+      if (!context.frame?.dataUrl) throw new Error(t('Game view is unavailable.'))
+      if (captureSessionId === sessionRef.current) setVisualAttachment(context)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setVisualBusy(false)
     }
   }
 
@@ -363,6 +447,30 @@ export default function VNPage({ send, subscribe, connected }: Props) {
   const overlayStatus = String(launch.overlay?.status || 'not_started')
   const bridgeStatus = String(launch.bridge?.status || 'not_started')
   const isActive = ['active', 'starting', 'stopping'].includes(launchStatus)
+  const storyEvents = events.filter(item => ['vn.line', 'vn.reaction', 'vn.summary', 'vn.error'].includes(item.method))
+  const capabilityNames: Record<string, string> = {
+    immediate: 'Immediate commentary', interaction: 'Player interaction', summary: 'Story summaries',
+    retrospective: 'Reflection', lookahead: 'Lookahead', reasoning: 'Detective reasoning',
+  }
+  const eventNames: Record<string, string> = {
+    'vn.line': 'Game text', 'vn.reaction': 'Companion', 'vn.summary': 'Story summary', 'vn.error': 'Companion error',
+  }
+  const reasonNames: Record<string, string> = {
+    disabled_by_profile: 'Turn this on in Companion settings.',
+    ready: 'Available now',
+    rules_only: 'Available through built-in story rules.',
+    model_unavailable: 'The companion model is unavailable.',
+    immediate_model_disabled: 'The commentary model is turned off.',
+    retrospective_model_unavailable: 'The reflection model is unavailable.',
+    lookahead_model_unavailable: 'The lookahead model is unavailable.',
+    script_unavailable: 'Add a full script in Companion settings.',
+    alignment_unavailable: 'Waiting for the script to align with the game.',
+    semantic_type_unsupported: 'This companion type does not support this ability.',
+    model_unsupported: 'The selected model does not support this ability.',
+    model_unconfigured: 'Choose a model to use this ability.',
+  }
+  const reasonText = (reason: string | undefined, enabled = false) =>
+    t(reason ? (reasonNames[reason] || (enabled ? 'Available now' : 'Unavailable now')) : (enabled ? 'Available now' : 'Unavailable now'))
   const controlButtonStyle = {
     height: 34,
     padding: '0 12px',
@@ -405,7 +513,16 @@ export default function VNPage({ send, subscribe, connected }: Props) {
         <button onClick={stop} disabled={!connected || busy || launchStatus === 'idle'} style={controlButtonStyle}>{t('Stop')}</button>
       </div>
 
-      {activeProfile && !activeProfile.runtimeSupported && <p style={{ margin: '0 0 8px', color: 'var(--muted)', fontSize: 12 }}>{t('This game starts in text capture mode. Companion behavior is not configured yet.')}</p>}
+      <div className="vn-session-banner" role="status">
+        <strong>{t(!connected ? 'Desktop connection unavailable' : launch.captureOnly ? 'Text capture test' : launchStatus === 'active' ? 'Companion is live' : launchStatus === 'starting' ? 'Connecting to game…' : launchStatus === 'error' ? 'Game connection failed' : 'Ready to connect')}</strong>
+        <span>{!connected ? t('Reconnect to the desktop service to manage VN Player.') : launch.error || (launch.captureOnly
+          ? t('Advance the game to check captured text. The companion is paused during this test.')
+          : bridgeStatus === 'waiting' && launch.bridge?.error
+            ? launch.bridge.error
+            : launch.bridge?.lastTextPreview
+              ? `${t('Latest game text')}: ${launch.bridge.lastTextPreview}`
+              : t(launchStatus === 'active' ? 'Waiting for the next game line.' : 'Choose a game and press Start.'))}</span>
+      </div>
       <div className="flex items-center flex-wrap gap-1.5 shrink-0" style={{ marginBottom: 9 }}>
         {!launch.captureOnly && <RuntimeChip label="Runtime" status={runtimeStatus} />}
         <RuntimeChip label="Game" status={gameStatus} detail={launch.game?.pid ? `pid ${launch.game.pid}` : undefined} />
@@ -413,35 +530,35 @@ export default function VNPage({ send, subscribe, connected }: Props) {
         {!launch.captureOnly && <RuntimeChip label="Overlay" status={overlayStatus} detail={launch.overlay?.pid ? `pid ${launch.overlay.pid}` : undefined} />}
         <RuntimeChip label="Bridge" status={bridgeStatus} detail={`${launch.bridge?.lineCount || 0} lines`} />
       </div>
-      {(bridgeStatus === 'waiting' || bridgeStatus === 'error') && launch.bridge?.error ? (
-        <div role="status" style={{ marginBottom: 9, color: '#C42B1C', fontSize: 10.5 }}>{launch.bridge.error}</div>
-      ) : !launch.captureOnly && launch.bridge?.lastTextPreview ? (
-        <div style={{ marginBottom: 9, color: 'var(--muted)', fontSize: 10.5 }}>
-          {t('Last VN line')}: {launch.bridge.lastTextPreview}
-        </div>
-      ) : null}
+      {!launch.captureOnly && runtime?.capabilities && <div className="vn-live-capabilities" aria-label={t('Companion abilities')}>
+        {Object.entries(runtime.capabilities).map(([key, state]) => <span key={key}
+          className={state.enabled ? 'vn-ability enabled' : 'vn-ability'}
+          title={reasonText(state.reason, state.enabled)}>
+          {t(capabilityNames[key] || key)} · {t(state.enabled ? 'On' : state.requested ? 'Waiting' : 'Off')}
+        </span>)}
+      </div>}
 
       <section aria-label={t(launch.captureOnly ? 'Captured text' : 'VN activity')} className="flex-1 flex flex-col min-h-0" style={{ border: '1px solid var(--border)', borderRadius: 11, overflow: 'hidden', background: 'var(--surface)' }}>
         <div className="flex items-center gap-2 shrink-0" style={{ minHeight: 41, padding: '6px 10px 6px 13px', borderBottom: '1px solid var(--border)' }}>
           <h3 style={{ margin: 0, color: 'var(--text)', fontSize: 13, fontWeight: 650 }}>{t(launch.captureOnly ? 'Captured text' : 'VN activity')}</h3>
-          <span style={{ color: 'var(--faint)', fontSize: 10 }}>{launch.captureOnly ? (launch.capturedLines?.length || 0) : events.length} {t('recent')}</span>
+          <span style={{ color: 'var(--faint)', fontSize: 10 }}>{launch.captureOnly ? (launch.capturedLines?.length || 0) : storyEvents.length} {t('recent')}</span>
           <span className="flex-1" />
           {!launch.captureOnly && <button onClick={() => setEvents([])} disabled={events.length === 0} style={{ ...controlButtonStyle, height: 28, color: 'var(--muted)', opacity: events.length ? 1 : 0.4 }}>{t('Clear')}</button>}
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto" style={{ padding: launch.captureOnly || events.length ? '4px 14px 12px' : 0 }}>
+        <div className="flex-1 min-h-0 overflow-y-auto" style={{ padding: launch.captureOnly || storyEvents.length ? '4px 14px 12px' : 0 }}>
           {launch.captureOnly ? <>
             <p style={{ margin: '8px 0 12px', color: 'var(--muted)', fontSize: 12 }}>{t('Advance a few lines in the game and compare them here. Receiving text does not automatically confirm extraction quality.')}</p>
             {!launch.capturedLines?.length && <p style={{ color: 'var(--muted)', fontSize: 12 }}>{t('Waiting for game text…')}</p>}
             {launch.capturedLines?.map((line, index) => <div key={`${line.receivedAt}-${index}`} style={{ borderTop: '1px solid var(--border)', padding: '10px 0', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', color: 'var(--text)', fontSize: 13 }}>
               <span style={{ color: 'var(--muted)', marginRight: 8 }}>{index + 1}.</span>{line.speaker ? `${line.speaker}: ` : ''}{line.text}
             </div>)}
-          </> : events.length === 0 ? (
-            <div className="flex items-center justify-center h-full" style={{ color: 'var(--muted)', fontSize: 12 }}>{t('No VN activity yet.')}</div>
-          ) : events.map(item => (
-            <article key={item.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+          </> : storyEvents.length === 0 ? (
+            <div className="flex items-center justify-center h-full" style={{ color: 'var(--muted)', fontSize: 12 }}>{t('Your game text and companion responses will appear here.')}</div>
+          ) : storyEvents.map(item => (
+            <article key={item.id} className={`vn-story-item ${item.method === 'vn.line' ? 'game-line' : 'companion-line'}`}>
               <div className="flex items-center gap-2">
-                <span style={{ color: 'var(--accent)', fontSize: 10.5, fontWeight: 700 }}>{item.method}</span>
+                <span style={{ color: 'var(--accent)', fontSize: 10.5, fontWeight: 700 }}>{t(eventNames[item.method] || item.method)}</span>
                 {item.detail ? <span style={{ color: 'var(--muted)', fontSize: 10 }}>{item.detail}</span> : null}
                 <span className="ml-auto" style={{ color: 'var(--faint)', fontSize: 10 }}>{item.time}</span>
               </div>
@@ -455,15 +572,23 @@ export default function VNPage({ send, subscribe, connected }: Props) {
         {!launch.captureOnly && <div className="shrink-0" style={{ padding: '10px 12px 11px', borderTop: '1px solid var(--border)', background: 'var(--surface-alt)' }}>
           <div className="flex items-center gap-2" style={{ marginBottom: 7 }}>
             <span style={{ color: 'var(--text)', fontSize: 11, fontWeight: 650 }}>{t('Player intervention')}</span>
+            <button type="button" onClick={() => setVoiceWanted(previous => !previous)}
+              disabled={!interactionEnabled}
+              aria-pressed={voiceWanted} className="vn-mic-button">
+              {t(voiceWanted ? 'Stop microphone' : 'Start microphone')}
+            </button>
             <span style={{ color: playerListening ? '#107C10' : 'var(--muted)', fontSize: 10 }}>
-              {t(runtimeStatus === 'active' ? (playerListening ? 'voice lane active' : 'arming voice lane') : 'starts with runtime')}
+              {t(playerListening ? 'Listening' : voiceWanted ? 'Starting microphone…' : 'Microphone off')}
             </span>
+            <span className="flex-1" />
+            <button type="button" onClick={() => void send('tts.interrupt', {}).catch(err => setError(err instanceof Error ? err.message : String(err)))}
+              disabled={!interactionEnabled} className="vn-mic-button">{t('Stop speech')}</button>
           </div>
           <div className="flex items-stretch gap-2">
             <select
               value={playerMode}
               onChange={event => setPlayerMode(event.target.value as typeof playerMode)}
-              disabled={busy}
+              disabled={busy || !interactionEnabled}
               style={{ width: 104, minHeight: 40, borderRadius: 8, border: '1px solid var(--border)', color: 'var(--text)', background: 'var(--surface)', padding: '0 8px', fontSize: 11 }}
             >
               <option value="ask">{t('Ask')}</option>
@@ -476,12 +601,22 @@ export default function VNPage({ send, subscribe, connected }: Props) {
               onChange={event => setPlayerText(event.target.value)}
               rows={2}
               placeholder={t('Ask about the current line, add a note, or inspect a choice...')}
+              disabled={!interactionEnabled}
               style={{ minWidth: 0, flex: 1, resize: 'none', borderRadius: 8, border: '1px solid var(--border)', color: 'var(--text)', background: 'var(--surface)', padding: '8px 10px', fontSize: 12, lineHeight: 1.4 }}
             />
-            <button onClick={sendPlayerIntervention} disabled={!connected || busy || runtimeStatus !== 'active' || !playerText.trim()} style={{ ...controlButtonStyle, alignSelf: 'stretch', height: 'auto', color: 'var(--accent)', fontWeight: 650 }}>{t('Send')}</button>
+            <button onClick={sendPlayerIntervention} disabled={!connected || busy || !interactionEnabled || !playerText.trim()} style={{ ...controlButtonStyle, alignSelf: 'stretch', height: 'auto', color: 'var(--accent)', fontWeight: 650 }}>{t('Send')}</button>
           </div>
-          <div style={{ marginTop: 5, color: playerListening ? '#107C10' : 'var(--faint)', fontSize: 9.5 }}>
-            {t(playerListening ? 'Speech is routed to VN runtime only.' : 'Player speech never enters main chat.')}
+          <div className="vn-visual-controls">
+            <button type="button" onClick={() => void attachGameView()}
+              disabled={!interactionEnabled || !visualSupported || visualBusy || busy || !['ask', 'choice'].includes(playerMode)}
+              className="vn-mic-button">{t(visualBusy ? 'Capturing game view…' : 'Attach game view')}</button>
+            {!visualSupported && <span>{reasonText(runtime?.visual?.reason)}</span>}
+            {!interactionEnabled && <span>{interaction?.reason ? reasonText(interaction.reason) : t('Start the companion and enable Player interaction to attach a game view.')}</span>}
+            {visualAttachment && <div className="vn-visual-attachment">
+              <img src={visualAttachment.frame.dataUrl} alt={t('Attached game view')} />
+              <span>{t('Game view attached for next question')}</span>
+              <button type="button" onClick={() => setVisualAttachment(null)}>{t('Remove')}</button>
+            </div>}
           </div>
         </div>}
       </section>
@@ -516,8 +651,16 @@ export default function VNPage({ send, subscribe, connected }: Props) {
             <button onClick={sendLine} disabled={!connected || busy || runtimeStatus !== 'active'} style={{ ...controlButtonStyle, marginTop: 7 }}>{t('Send line')}</button>
           </div>
         </div>
+        <div className="vn-raw-events">
+          <strong>{t('Raw events')}</strong>
+          {events.length === 0 ? <p>{t('No events received.')}</p> : events.map(item => <div key={item.id}>
+            <time>{item.time}</time> <code>{item.method}</code> {item.detail && <small>{item.detail}</small>}
+            <pre>{item.raw}</pre>
+          </div>)}
+        </div>
       </details>
-      {editor && <VNProfileEditor initial={editor.initial} agentExe={agentExe} onClose={() => setEditor(null)} onSave={saveProfile} />}
+      {editor && <VNProfileEditor initial={editor.initial} overlayAvailable={profiles.some(profile => profile.overlayExists)}
+        agentExe={agentExe} onClose={() => setEditor(null)} onSave={saveProfile} />}
     </div>
   )
 }

@@ -81,17 +81,17 @@ def test_mystery_alignment_repetition_and_menu_routing(tmp_path: Path, monkeypat
         assert aligned["line"]["script_id"] == "chapter_1_a"
 
         duplicate = await runtime.ingest_line({"script_id": "chapter_1_a", "text": "钥匙藏在抽屉里。"})
-        assert duplicate["status"] == "ignored"
-        assert duplicate["reason"] == "duplicate_exact_script_id"
+        # Intentional correction: revisiting a branch can display the same ID
+        # again, and the VN runtime must retain that observation.
+        assert duplicate["status"] == "ok"
         assert [line["script_id"] for line in runtime.store.short_memory()] == [
-            "chapter_1_menu", "chapter_1_a"
+            "chapter_1_menu", "chapter_1_a", "chapter_1_a"
         ]
 
         repeated = await runtime.ingest_line({"text": "钥匙藏在抽屉里。", "line_id": "live_repeat"})
         assert repeated["status"] == "ok"
         assert repeated["line"]["match"]["type"] == "hash"
-        # Hash matching can reuse the previous script ID; only an explicitly
-        # supplied exact ID is suppressed as a duplicate.
+        # Hash matching can reuse the previous script ID as well.
         assert repeated["line"]["script_id"] == "chapter_1_a"
         assert [line["text"] for line in runtime.store.short_memory()][-2:] == [
             "钥匙藏在抽屉里。", "钥匙藏在抽屉里。"

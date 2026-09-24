@@ -58,3 +58,25 @@ class VNPlayerHandler(RequestHandler):
             # switching can be layered on top without changing vn.line.
             return await runtime.player_intervention("mode", params)
         return None
+
+    async def handle_asr(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Route speech only to the still-active VN session that requested it."""
+        runtime = self._runtime
+        source = payload.get("source_payload")
+        if not isinstance(source, dict):
+            source = {}
+        if (runtime is None or not runtime.enabled or runtime.profile is None
+                or source.get("session_id") != runtime.profile.session_id):
+            return {"status": "ignored", "reason": "inactive_or_changed_vn_session"}
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            return {"status": "ignored", "reason": "empty_text"}
+        kind = str(source.get("kind") or "ask").strip().lower()
+        if kind not in {"ask", "note", "pin", "choice"}:
+            kind = "ask"
+        return await runtime.player_intervention(kind, {
+            "text": text, "source": "asr",
+            "metadata": {"source": "vn_player_asr", "asr": {
+                "is_final": bool(payload.get("is_final", True)), "source_payload": source,
+            }},
+        })
