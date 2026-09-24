@@ -108,6 +108,11 @@ separate. General Settings now states this scope explicitly. Images remain
 transient question context, not persistent story facts. Luna may specify its game
 executable for the same bounded capture.
 
+**General vision (excluding VN)** is not a master switch for VN: General off / VN
+on still captures for VN questions; General on / VN off does not enable VN
+question capture. VN also owns its current image encoding defaults (960px long
+edge, JPEG quality 68); General image sizing and quality apply only to its callers.
+
 The present control surface is the VN page's always-visible session toolbar. The
 existing companion presentation windows are not given an independent input state;
 a later small-window control surface must use this same session API.

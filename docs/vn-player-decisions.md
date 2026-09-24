@@ -266,3 +266,13 @@ overlay. The editor selects it when the helper is available and retains explicit
 saved off preferences. A selected but unavailable overlay can still be unchecked.
 The local Kemono demo profile, previously created with the old off default, is now
 enabled; PARANORMASIGHT was already enabled. Capture-only tests remain overlay-free.
+
+### General vision excludes VN
+
+The user explicitly confirmed General vision should govern non-VN scenes only.
+The Settings toggle now says "General vision (excluding VN)". Inspection confirmed
+the enable/mode boundary, and found shared image encoding still read General size
+and JPEG settings. Encoding now takes explicit parameters: General passes its own
+settings, while VN retains 960px / quality 68. Regression checks cover General
+on/off against VN question capture on/off, verified game-window capture with
+General disabled, and preservation of General's independent image sizing.

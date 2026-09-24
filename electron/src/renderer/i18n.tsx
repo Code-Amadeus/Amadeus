@@ -486,6 +486,8 @@ const ZH_CN: Record<string, string> = {
   "Voice recognition is unavailable.": "语音识别当前不可用。",
   'Voice input when play starts': '游玩开始时开启语音输入',
   'General chat and desktop capture use these settings. VN vision is controlled separately in its game session.': '这些设置用于通用聊天与桌面取图。VN 视觉在对应游戏会话中单独控制。',
+  'General vision (excluding VN)': '通用视觉（不含 VN）',
+  'Controls vision outside VN. Each VN session has its own vision setting.': '控制 VN 以外场景的视觉。每个 VN 会话使用自己的视觉设置。',
   'You can also start or stop the microphone during play.': '游玩时也可随时开启或关闭麦克风。',
   'Overlay helper is unavailable for this game.': '此游戏无法使用浮层助手。',
   'Game executable (optional for game view)': '游戏程序（附加游戏画面时需要）',

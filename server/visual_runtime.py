@@ -84,7 +84,7 @@ def get_config() -> dict[str, Any]:
 
 
 def set_config(values: dict[str, Any]) -> list[str]:
-    """Update visual runtime config from system.set_config values."""
+    """Update non-VN visual config from system.set_config values."""
 
     updated: list[str] = []
     aliases = {
@@ -308,7 +308,8 @@ def capture_visual_context(
     image, region, actual_scope = _capture_image(requested_scope)
 
     return _encode_visual_context(image, region, requested_scope=requested_scope, actual_scope=actual_scope,
-                                  provider=provider, mode=mode, reason=reason)
+                                  provider=provider, mode=mode, reason=reason,
+                                  max_long_side=_config.max_long_side, jpeg_quality=_config.jpeg_quality)
 
 
 def capture_game_window(pid: int, executable: str) -> dict[str, Any]:
@@ -332,17 +333,19 @@ def capture_game_window(pid: int, executable: str) -> dict[str, Any]:
     # window or desktop: other applications may contain unrelated private content.
     image = ImageGrab.grab(window=hwnd).convert("RGB")
     result = _encode_visual_context(image, window["rect"], requested_scope="game_window", actual_scope="game_window",
-                                    provider="auto", mode="on_demand", reason="vn_player")
+                                    provider="auto", mode="on_demand", reason="vn_player",
+                                    max_long_side=960, jpeg_quality=68)
     result["game"] = {"pid": pid, "title": window["title"], "executable": executable}
     return result
 
 
 def _encode_visual_context(image, region: dict[str, Any], *, requested_scope: str, actual_scope: str,
-                           provider: str, mode: str, reason: str) -> dict[str, Any]:
+                           provider: str, mode: str, reason: str,
+                           max_long_side: int, jpeg_quality: int) -> dict[str, Any]:
 
-    resized = _resize_for_provider(image, max_long_side=max(320, int(_config.max_long_side or 960)))
+    resized = _resize_for_provider(image, max_long_side=max(320, int(max_long_side or 960)))
     buffer = io.BytesIO()
-    quality = max(35, min(92, int(_config.jpeg_quality or 68)))
+    quality = max(35, min(92, int(jpeg_quality or 68)))
     resized.save(buffer, format="JPEG", quality=quality, optimize=True)
     jpg = buffer.getvalue()
     b64 = base64.b64encode(jpg).decode("ascii")

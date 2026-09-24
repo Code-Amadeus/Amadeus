@@ -1,6 +1,16 @@
 import pytest
+from PIL import Image
 
 from server import visual_runtime
+
+
+def test_general_capture_keeps_its_own_image_size_settings(monkeypatch) -> None:
+    monkeypatch.setattr(visual_runtime, "_config", visual_runtime.VisionConfig(max_long_side=320, jpeg_quality=35))
+    monkeypatch.setattr(visual_runtime, "_capture_image", lambda _scope: (
+        Image.new("RGB", (1600, 900)), {"left": 0, "top": 0, "width": 1600, "height": 900}, "full_screen",
+    ))
+    result = visual_runtime.capture_visual_context()
+    assert (result["frame"]["width"], result["frame"]["height"]) == (320, 180)
 
 
 def test_disabling_visual_context_preserves_the_selected_mode_for_reenable() -> None:

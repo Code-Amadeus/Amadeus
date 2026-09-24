@@ -39,19 +39,25 @@ def test_late_asr_cannot_cross_vn_session_boundary() -> None:
 
 
 @pytest.mark.skipif(visual_runtime.os.name != "nt", reason="Windows window capture")
-def test_visual_capture_is_game_window_only_and_does_not_change_global_config(tmp_path: Path) -> None:
+@pytest.mark.parametrize("general_enabled", [False, True])
+def test_visual_capture_is_game_window_only_and_does_not_change_global_config(tmp_path: Path, monkeypatch, general_enabled) -> None:
     game = str(tmp_path / "game.exe")
+    monkeypatch.setattr(visual_runtime, "_config", visual_runtime.VisionConfig(
+        enabled=general_enabled, mode="watching" if general_enabled else "off",
+        max_long_side=320, jpeg_quality=35,
+    ))
     original = visual_runtime.get_config()
-    window = {"pid": 42, "hwnd": "0x1234", "title": "Game", "rect": {"left": 100, "top": 100, "width": 80, "height": 60}}
+    window = {"pid": 42, "hwnd": "0x1234", "title": "Game", "rect": {"left": 100, "top": 100, "width": 1600, "height": 900}}
     with patch("psutil.Process", return_value=Mock(exe=Mock(return_value=game))), \
          patch.object(visual_runtime, "list_capture_windows", return_value=[window]), \
          patch.object(visual_runtime, "_window_pid", return_value=42), \
-         patch("PIL.ImageGrab.grab", return_value=Image.new("RGB", (80, 60))) as grab:
+         patch("PIL.ImageGrab.grab", return_value=Image.new("RGB", (1600, 900))) as grab:
         result = visual_runtime.capture_game_window(42, game)
         grab.assert_called_once_with(window=0x1234)
         assert result["actualScope"] == "game_window"
         assert result["frame"]["dataUrl"].startswith("data:image/jpeg;base64,")
         assert result["game"]["pid"] == 42
+        assert (result["frame"]["width"], result["frame"]["height"]) == (960, 540)
     assert visual_runtime.get_config() == original
 
 

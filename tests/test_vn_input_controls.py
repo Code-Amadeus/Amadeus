@@ -74,7 +74,9 @@ def test_voice_requires_interaction_even_for_notes_and_stops_when_unavailable():
     asyncio.run(run())
 
 
-def test_vn_visual_mode_is_independent_of_general_vision_and_shared_by_text_and_voice(monkeypatch):
+@pytest.mark.parametrize("general_enabled", [False, True])
+def test_vn_visual_mode_is_independent_of_general_vision_and_shared_by_text_and_voice(monkeypatch, general_enabled):
+    monkeypatch.setattr(visual_runtime, "_config", visual_runtime.VisionConfig(enabled=general_enabled, mode="watching"))
     # Any attempt to consult or change the general capture policy is a regression.
     monkeypatch.setattr(visual_runtime, "get_config", Mock(side_effect=AssertionError("general vision consulted")))
     monkeypatch.setattr(visual_runtime, "set_config", Mock(side_effect=AssertionError("general vision changed")))
