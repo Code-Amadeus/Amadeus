@@ -26,26 +26,35 @@ can repeat this check for any saved profile, including PARANORMASIGHT.
 **Start** uses the selected game's saved settings. Agent is automatically launched
 with the game's current PID and Hook script. VN Player reuses a running game by
 its exact executable path; if it is absent, the saved **Launch game if it is not
-running** setting decides whether to launch it or ask the user to start it.
+running** preference is represented by **Launch game with**: direct executable,
+Steam, or **I will start the game**.
 Multiple matching instances produce an explicit error. PID values are never
-saved. If a launcher starts a different executable, select the actual game
-executable and start the game externally before attaching.
+saved. For Steam, select the actual game executable for binding and enter the app ID
+from its store URL (demos have their own IDs). VN Player opens the registered
+`steam://rungameid/<id>` link, waits up to 60 seconds for the exact executable, then
+injects Agent. It does not launch the exe with fabricated Steam environment values.
+A running game is reused without reopening Steam. Missing Steam, a wrong ID/path,
+or multiple matching processes fail visibly. Steam itself is never owned or closed.
+Other launchers currently require starting the game externally.
 
 **Edit game profile** updates the saved paths and launch preferences while the
 session is stopped. **Stop** disconnects capture and stops the Agent process
 launched by VN Player. Closing a game is opt-in and applies only to the game
 process owned by VN Player; externally started games remain open. Newly added
 games default to Base companion mode without requiring a complete script. The
-existing PARANORMASIGHT profile retains its Mystery preset. The editor separates
-**Game connection** from **Companion** settings so changing text source does not
-implicitly change interpretation or enable every capability.
+existing PARANORMASIGHT profile retains its Mystery preset. The editor groups game identity/type, text connection, and optional play preferences.
+Shared Agent setup is collapsed once configured. After previewing text, **Text looks
+right — start companion** switches to play while keeping the game open. This button
+is the user's quality check, not an automatic certification of extraction.
 
 ## Companion type and capabilities
 
 `promptPack` selects `base` or `mystery` in a launch profile; it maps to the existing
-runtime `prompt_pack`. The independent `capabilities` object accepts these switches:
+runtime `prompt_pack`. Game type owns the following fixed capability presets;
+the editor and play sidebar display abilities without editable switches. The host
+returns `capabilityPresets` so the renderer does not maintain a separate policy.
 
-| Capability | Base default | Mystery default | Prerequisites |
+| Capability | General VN | Mystery VN | Prerequisites |
 | --- | --- | --- | --- |
 | `immediate` — commentary | On | On | A configured model for Base; existing rule path retained in Mystery |
 | `interaction` — player questions | On | On | Active VN session; configured model for Base |
@@ -54,7 +63,7 @@ runtime `prompt_pack`. The independent `capabilities` object accepts these switc
 | `lookahead` | Off | On | Complete script and verified alignment; Base also needs its model lane |
 | `reasoning` — detective reasoning | Off | On | Mystery type |
 
-Disabled capabilities stop their work; input recording continues. Runtime status
+Abilities outside a type do not run; input recording continues. Runtime status
 reports requested, available and enabled states with a reason. Base does not infer
 clues using PARANORMASIGHT keyword rules, and never implicitly loads its script.
 An explicitly empty `scriptPath` also means text-only for a new Mystery game.
@@ -64,8 +73,11 @@ a usable lookahead position. Future script content remains planner-only.
 Base enables the existing summary/reflection/lookahead model lanes by default
 when those capabilities are requested; explicit environment/parameter model
 disables still apply. Mystery retains its existing lane defaults. The existing
-`lookahead_enabled` runtime input remains an alias; explicit capability overrides
-take precedence. Old saved profiles retain the original type and voice preference.
+low-level runtime API retains capability overrides for isolated probes and existing
+headless callers. Saved launch profiles no longer accept overrides; the launch
+facade always derives them from the selected type. Old persisted capability maps
+are discarded during load and removed on the next save. Type and voice preferences
+are retained; switching General → Mystery enables the entire Mystery preset.
 
 ### Voice, companion window and game view
 
@@ -89,10 +101,11 @@ URL. Luna extraction compatibility still needs validation for each game.
 
 ### API and verification
 
-- `vn.launch.profiles` returns profiles, file availability and the shared `agentExe`.
+- `vn.launch.profiles` returns profiles, file availability, the shared `agentExe`, and `capabilityPresets`.
 - `vn.launch.profile.save` accepts `{profile: {name, gameExe, hookHelper, ...}, agentExe}`;
   omit `profile.id` to create, or supply an existing ID to edit. `promptPack`,
-  `capabilities` and `voiceInput` configure the companion. Live process IDs and
+  `voiceInput` and overlay preferences configure the companion. `launchMethod`
+  (`exe` or `steam`), `steamAppId` and `launchGame` configure startup. Live process IDs and
   arbitrary runtime implementation fields are not editable profile fields.
 - `vn.launch.start` accepts `{profileId}` to use saved settings, or
   `{profileId, captureOnly: true}` to test extraction without companion responses.

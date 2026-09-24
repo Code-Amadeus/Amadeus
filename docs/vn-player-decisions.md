@@ -162,3 +162,46 @@ hook change or injected Steam environment variables.
 The live probe now supports `--attach-running` explicitly and reports progress
 counts. Its status subscription was updated to the shared UI fixture's listener
 contract, fixing a test-instrument mismatch introduced when that fixture changed.
+
+## 2026-09-25 — Game-type policy and VN interaction redesign
+
+User correction: semantic capabilities belong to the game type, and should be
+displayed rather than configured as independent UI switches. General VN includes
+commentary, player interaction, summaries and reflection. Mystery VN includes all
+six capabilities, adding lookahead and detective reasoning. Availability still
+depends on actual model/script/alignment prerequisites.
+
+The launch facade now resolves this policy from the existing semantic presets;
+the renderer receives that same map for previews. Old saved per-ability overrides
+are dropped during load and removed on the next save. New profile saves reject
+these overrides. Low-level runtime switches remain for existing headless callers
+and isolated experiments, but do not override the selected launch profile's type.
+
+The main page prioritizes the chosen game, a single Start/Stop action, story feed
+and a read-only capability panel. Process details and raw protocol events are
+collapsed. The editor groups game identity/type, connection, and optional play
+preferences; shared Agent setup is collapsed after configuration. Its scrollable
+body keeps Save/Test actions visible. A successful text preview offers an explicit
+user action to begin companion play while keeping the game open. Messages display
+in chronological order, with automatic following only while near the feed's end.
+Chinese copy and narrow layouts are included.
+
+Steam profiles now save `launchMethod: steam` and a numeric `steamAppId`. Start
+opens the registered Steam game URI and waits for the configured exact executable;
+it never attaches to or closes Steam itself. Existing game processes remain
+external. Newly launched game processes use psutil identity checks for lifecycle
+handling. Missing Steam, invalid IDs, ambiguous processes and a launch timeout are
+explicit failures. The local Kemono demo profile now selects Steam app `3345060`.
+
+Validation: 58 focused backend tests passed; the production build passed with the
+existing bundle-size warning. The actual React form/handler/store acceptance
+passed type switching, Steam setting persistence, preview-to-play transition,
+model availability, microphone lifecycle, game-view attachment, and Chinese/narrow
+layout checks. Screenshots: `output/diagnostics/vn-profiles-ui/`.
+
+Steam live run `vn-profile-live-20260925-003820` reached game PID `30612` and Agent
+PID `28636` automatically, then timed out with no text observations. The desktop
+could not activate the game and capture showed a lock-screen-like background;
+UI control was stopped and the user was asked to unlock. Both owned processes
+were cleaned up. This proves dispatch/binding, not the full Steam-to-dialogue
+acceptance. The two-run real text gate remains pending an unlocked desktop.

@@ -65,7 +65,7 @@ class VNLaunchManager:
         self._runtime_status = runtime_status
         self._runtime_line = runtime_line
         self._before_external_launch = before_external_launch
-        self._game_proc: subprocess.Popen[Any] | None = None
+        self._game_proc: subprocess.Popen[Any] | psutil.Process | None = None
         self._overlay_proc: subprocess.Popen[Any] | None = None
         self._text_source: VNTextSourceAdapter | None = None
         self._state: dict[str, Any] = {
@@ -92,9 +92,8 @@ class VNLaunchManager:
             profile["agentExe"] = agent_exe
             preset = profile.get("runtime", {})
             profile["promptPack"] = profile.get("promptPack") or preset.get("prompt_pack", "base")
-            overrides = dict(profile.get("capabilities") or {})
-            profile["runtime"] = {**preset, "capabilities": overrides}
-            profile["capabilities"] = resolve_capability_defaults(profile["promptPack"], overrides)
+            profile["capabilities"] = resolve_capability_defaults(profile["promptPack"])
+            profile["runtime"] = {**preset, "capabilities": profile["capabilities"]}
             if profile.get("voiceInput") is None:
                 profile["voiceInput"] = profile["id"] == "paranormasight"
             profile["runtimeSupported"] = True
@@ -105,7 +104,8 @@ class VNLaunchManager:
                               ("hookHelper", "hookExists"), ("scriptPath", "scriptExists"),
                               ("overlayHelper", "overlayExists")):
                 profile[flag] = bool(profile.get(key)) and Path(profile[key]).is_file()
-        return {"profiles": list(profiles.values()), "agentExe": agent_exe}
+        return {"profiles": list(profiles.values()), "agentExe": agent_exe,
+                "capabilityPresets": {kind: resolve_capability_defaults(kind) for kind in ("base", "mystery")}}
 
     def save_profile(self, params: dict[str, Any]) -> dict[str, Any]:
         if self._state["status"] in {"starting", "active", "stopping"}:
@@ -196,6 +196,9 @@ class VNLaunchManager:
         }
         if isinstance(params.get("runtime"), dict):
             runtime_params.update(params["runtime"])  # type: ignore[arg-type]
+        # The product's game type is authoritative even if an older caller sends
+        # a stale runtime capability map. Direct runtime probes remain separate.
+        runtime_params.update(prompt_pack=profile["promptPack"], capabilities=profile["capabilities"])
         launch_game = _truthy(params.get("launchGame") or params.get("launch_game"))
         attach_hook = _truthy(params.get("attachHook") or params.get("attach_hook"))
         stop_wallpaper = _truthy(params.get("stopWallpaper") if "stopWallpaper" in params else launch_game)
@@ -492,12 +495,35 @@ class VNLaunchManager:
         if self._game_path == str(game_exe) and self._process_alive(self._game_proc):
             self._state["game"] = {"status": "running", "pid": self._game_proc.pid, "path": str(game_exe)}
             return
-        self._game_proc = self._spawn([str(game_exe)], cwd=game_exe.parent, hidden=False)
+        if profile.get("launchMethod") == "steam":
+            self._state["game"] = {"status": "waiting_for_steam", "pid": None, "path": str(game_exe)}
+            await self._publish_status()
+            await asyncio.to_thread(_open_steam_game, str(profile.get("steamAppId") or ""))
+            self._game_proc = await self._wait_for_steam_game(str(game_exe))
+        else:
+            self._game_proc = self._spawn([str(game_exe)], cwd=game_exe.parent, hidden=False)
         self._game_path = str(game_exe)
-        self._state["game"] = {"status": "running", "pid": self._game_proc.pid, "path": str(game_exe)}
+        self._state["game"] = {"status": "running", "pid": self._game_proc.pid, "path": str(game_exe), "owned": True}
         await self._publish_status()
         await asyncio.sleep(2.4)
         await asyncio.to_thread(_bring_process_window_to_front, self._game_proc.pid)
+
+    async def _wait_for_steam_game(self, executable: str, *, timeout: float = 60) -> psutil.Process:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            pid = await asyncio.to_thread(_find_game_pid, executable)
+            if pid is not None:
+                try:
+                    process = psutil.Process(pid)
+                    # Cache process identity before adopting it; psutil's mutation
+                    # methods protect against PID reuse when this game exits.
+                    process.create_time()
+                    if _same_executable(process.exe(), executable):
+                        return process
+                except psutil.NoSuchProcess:
+                    pass
+            await asyncio.sleep(.5)
+        raise TimeoutError("Steam did not start the configured game. Check Steam's launch window, the app ID and the selected game executable, then retry.")
 
     def _spawn(self, args: list[str], *, cwd: Path, hidden: bool) -> subprocess.Popen[Any]:
         kwargs: dict[str, Any] = {
@@ -517,7 +543,7 @@ class VNLaunchManager:
         logger.info("[VNLaunch] spawn: %s", " ".join(args))
         return subprocess.Popen(args, **kwargs)
 
-    async def _terminate_proc(self, label: str, proc: subprocess.Popen[Any] | None) -> None:
+    async def _terminate_proc(self, label: str, proc: subprocess.Popen[Any] | psutil.Process | None) -> None:
         if not self._process_alive(proc):
             return
         assert proc is not None
@@ -547,7 +573,9 @@ class VNLaunchManager:
             self._state["overlay"] = overlay
 
     @staticmethod
-    def _process_alive(proc: subprocess.Popen[Any] | None) -> bool:
+    def _process_alive(proc: subprocess.Popen[Any] | psutil.Process | None) -> bool:
+        if isinstance(proc, psutil.Process):
+            return proc.is_running()
         return proc is not None and proc.poll() is None
 
     def _profile_by_id(self, profile_id: str) -> dict[str, Any]:
@@ -658,12 +686,26 @@ def _http_health(url: str, timeout: float) -> bool:
         return False
 
 
+def _open_steam_game(app_id: str) -> None:
+    if not app_id.isascii() or not app_id.isdecimal() or not 0 < int(app_id) <= 9999999999:
+        raise ValueError("Enter a valid numeric Steam app ID.")
+    if os.name != "nt":
+        raise RuntimeError("Steam game launch is currently available on Windows.")
+    try:
+        os.startfile(f"steam://rungameid/{app_id}")
+    except OSError as exc:
+        raise RuntimeError("Steam could not open. Install or repair the Steam desktop client, then retry.") from exc
+
+
+def _same_executable(actual: str, expected: str) -> bool:
+    return os.path.normcase(os.path.realpath(actual)) == os.path.normcase(os.path.realpath(expected))
+
+
 def _find_game_pid(executable: str) -> int | None:
-    expected = os.path.normcase(os.path.realpath(executable))
     matches = []
     for process in psutil.process_iter(["pid", "exe"]):
         actual = process.info.get("exe")
-        if actual and os.path.normcase(os.path.realpath(actual)) == expected:
+        if actual and _same_executable(actual, executable):
             matches.append(process.info["pid"])
     if len(matches) > 1:
         raise RuntimeError("Multiple instances of this game are running. Keep one open before attaching Agent.")

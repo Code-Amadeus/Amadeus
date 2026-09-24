@@ -24,12 +24,13 @@ class LaunchProfile(BaseModel):
     scriptPath: str = ""
     lunaWsUrl: str = ""
     launchGame: bool = True
+    launchMethod: Literal["exe", "steam"] = "exe"
+    steamAppId: str = Field(default="", pattern=r"^(?:[1-9][0-9]{0,9})?$")
     launchOverlay: bool = False
     stopWallpaper: bool = True
     closeGameOnStop: bool = False
     # None preserves the preset for profiles saved before companion settings existed.
     promptPack: Literal["base", "mystery"] | None = None
-    capabilities: dict[Literal["immediate", "interaction", "summary", "retrospective", "lookahead", "reasoning"], bool] = Field(default_factory=dict)
     voiceInput: bool | None = None
 
     @field_validator("gameExe", "hookHelper", "scriptPath")
@@ -44,6 +45,8 @@ class LaunchProfile(BaseModel):
         if self.textSource == "agent":
             if not self.gameExe or not self.hookHelper:
                 raise ValueError("Choose the game executable and its Agent hook script.")
+            if self.launchGame and self.launchMethod == "steam" and not self.steamAppId:
+                raise ValueError("Enter the Steam app ID for this game.")
         else:
             url = urlsplit(self.lunaWsUrl)
             if url.scheme not in {"ws", "wss"} or not url.hostname:
@@ -58,6 +61,18 @@ class ProfileFile(BaseModel):
     version: Literal[1] = 1
     agentExe: str = ""
     profiles: list[LaunchProfile] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_capability_switches(cls, data):
+        # The previous editor saved independent switches. Game type now owns
+        # this policy; discard only this superseded field when loading files.
+        if isinstance(data, dict) and isinstance(data.get("profiles"), list):
+            data = {**data, "profiles": [
+                {k: v for k, v in item.items() if k != "capabilities"} if isinstance(item, dict) else item
+                for item in data["profiles"]
+            ]}
+        return data
 
 
 class VNProfileStore:

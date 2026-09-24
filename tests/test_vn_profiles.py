@@ -6,11 +6,12 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+import psutil
 import websockets
 
 from server.handlers.vn_launch_handler import VNLaunchHandler
 from server.protocol import Method
-from server.vn_launch_manager import VNLaunchManager, _find_game_pid
+from server.vn_launch_manager import VNLaunchManager, _find_game_pid, _open_steam_game
 from server.vn_profiles import VNProfileStore
 
 
@@ -265,21 +266,27 @@ def test_save_profile_api_routes_to_store(tmp_path: Path) -> None:
     assert VNProfileStore(tmp_path).load().profiles[0].name == "New game"
 
 
-def test_start_passes_saved_type_and_capabilities_to_runtime(tmp_path: Path) -> None:
+def test_game_type_owns_capabilities_even_with_stale_start_overrides(tmp_path: Path) -> None:
     async def run():
         instance = manager(tmp_path)
         request = game_settings(tmp_path)
-        request["profile"].update(promptPack="base", capabilities={"immediate": False, "summary": True}, voiceInput=False)
+        request["profile"].update(promptPack="base", voiceInput=False)
         game_id = instance.save_profile(request)["profileId"]
         with patch("server.vn_launch_manager._find_game_pid", return_value=42), \
              patch("server.vn_launch_manager.AgentVNTextSource", Source):
-            await instance.start({"profileId": game_id})
+            await instance.start({"profileId": game_id, "runtime": {"prompt_pack": "mystery", "capabilities": {"immediate": False}}})
             params = instance._runtime_start.await_args.args[0]
             assert params["prompt_pack"] == "base"
-            assert params["capabilities"]["immediate"] is False
+            assert params["capabilities"]["immediate"] is True
             assert params["capabilities"]["summary"] is True
+            assert params["capabilities"]["reasoning"] is False
             assert params["script_path"] == ""
             assert params["game_id"] == game_id
+            await instance.stop()
+            request["profile"].update(id=game_id, promptPack="mystery")
+            instance.save_profile(request)
+            await instance.start({"profileId": game_id})
+            assert all(instance._runtime_start.await_args.args[0]["capabilities"].values())
             await instance.stop()
     asyncio.run(run())
 
@@ -293,3 +300,114 @@ def test_pre_semantics_saved_builtin_profile_keeps_mystery_defaults(tmp_path: Pa
     assert loaded["promptPack"] == "mystery"
     assert loaded["voiceInput"] is True
     assert loaded["capabilities"]["reasoning"] is True
+
+
+def test_saved_legacy_switches_migrate_to_game_type(tmp_path: Path) -> None:
+    instance = manager(tmp_path)
+    request = game_settings(tmp_path)
+    request["profile"]["promptPack"] = "mystery"
+    game_id = instance.save_profile(request)["profileId"]
+    path = VNProfileStore(tmp_path).path
+    data = json.loads(path.read_text())
+    data["profiles"][0]["capabilities"] = {"immediate": False, "lookahead": False, "reasoning": False}
+    path.write_text(json.dumps(data), encoding="utf-8")
+    loaded = manager(tmp_path)
+    assert all(loaded._profile_by_id(game_id)["capabilities"].values())
+    request["profile"]["id"] = game_id
+    loaded.save_profile(request)
+    assert "capabilities" not in json.loads(path.read_text())["profiles"][0]
+    request["profile"]["capabilities"] = {"reasoning": False}
+    with pytest.raises(ValueError):
+        loaded.save_profile(request)
+
+
+def test_steam_launch_binds_game_not_steam_and_closes_only_owned_game(tmp_path: Path) -> None:
+    async def run():
+        instance = manager(tmp_path)
+        request = game_settings(tmp_path)
+        request["profile"].update(launchMethod="steam", steamAppId="3345060", closeGameOnStop=True)
+        game_id = instance.save_profile(request)["profileId"]
+        game = Mock(spec=psutil.Process)
+        game.pid = 555
+        game.is_running.return_value = True
+        with patch("server.vn_launch_manager._find_game_pid", return_value=None), \
+             patch("server.vn_launch_manager._open_steam_game") as launch_steam, \
+             patch.object(instance, "_wait_for_steam_game", new_callable=AsyncMock, return_value=game), \
+             patch("server.vn_launch_manager.asyncio.sleep", new_callable=AsyncMock), \
+             patch("server.vn_launch_manager._bring_process_window_to_front"), \
+             patch("server.vn_launch_manager.AgentVNTextSource", Source), \
+             patch.object(instance, "_spawn") as spawn:
+            result = await instance.start({"profileId": game_id, "captureOnly": True})
+            launch_steam.assert_called_once_with("3345060")
+            spawn.assert_not_called()
+            assert result["game"]["pid"] == 555
+            assert result["game"]["owned"] is True
+            assert instance._text_source.start.await_args.kwargs["target_pid"] == 555
+            await instance.stop()
+            game.terminate.assert_called_once()
+    asyncio.run(run())
+
+
+def test_steam_reuses_existing_game_and_timeout_never_injects(tmp_path: Path) -> None:
+    async def run():
+        instance = manager(tmp_path)
+        request = game_settings(tmp_path)
+        request["profile"].update(launchMethod="steam", steamAppId="3345060", closeGameOnStop=True)
+        game_id = instance.save_profile(request)["profileId"]
+        with patch("server.vn_launch_manager._find_game_pid", return_value=42), \
+             patch("server.vn_launch_manager._open_steam_game") as launch_steam, \
+             patch("server.vn_launch_manager.AgentVNTextSource", Source):
+            result = await instance.start({"profileId": game_id})
+            assert result["game"]["owned"] is False
+            await instance.stop()
+            launch_steam.assert_not_called()
+        with patch("server.vn_launch_manager._find_game_pid", return_value=None), \
+             patch("server.vn_launch_manager._open_steam_game"), \
+             patch.object(instance, "_wait_for_steam_game", side_effect=TimeoutError("Steam timeout")), \
+             patch("server.vn_launch_manager.AgentVNTextSource") as source:
+            with pytest.raises(TimeoutError):
+                await instance.start({"profileId": game_id})
+            source.assert_not_called()
+            assert (await instance.status())["status"] == "error"
+            assert instance._game_proc is None
+        with pytest.raises(TimeoutError, match="configured game"):
+            await instance._wait_for_steam_game(request["profile"]["gameExe"], timeout=0)
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("app_id", ["", "0", "123/console", "1 -evil", "１２３"])
+def test_steam_launch_rejects_non_app_ids_before_dispatch(app_id: str) -> None:
+    with patch("server.vn_launch_manager.os.startfile", create=True) as dispatch:
+        with pytest.raises(ValueError):
+            _open_steam_game(app_id)
+        dispatch.assert_not_called()
+
+
+def test_steam_dispatch_and_profile_validation(tmp_path: Path) -> None:
+    with patch("server.vn_launch_manager.os.name", "nt"), patch("server.vn_launch_manager.os.startfile", create=True) as dispatch:
+        _open_steam_game("3345060")
+        dispatch.assert_called_once_with("steam://rungameid/3345060")
+        dispatch.side_effect = OSError("no registered handler")
+        with pytest.raises(RuntimeError, match="Steam could not open"):
+            _open_steam_game("3345060")
+    instance = manager(tmp_path)
+    request = game_settings(tmp_path)
+    request["profile"]["launchMethod"] = "steam"
+    with pytest.raises(ValueError, match="Steam app ID"):
+        instance.save_profile(request)
+
+
+def test_steam_wait_revalidates_process_identity(tmp_path: Path) -> None:
+    async def run():
+        instance = manager(tmp_path)
+        executable = str(tmp_path / "game.exe")
+        stale = Mock()
+        stale.exe.return_value = str(tmp_path / "other.exe")
+        right = Mock()
+        right.exe.return_value = executable
+        with patch("server.vn_launch_manager._find_game_pid", side_effect=[None, 12, 13]), \
+             patch("server.vn_launch_manager.psutil.Process", side_effect=[stale, right]), \
+             patch("server.vn_launch_manager.asyncio.sleep", new_callable=AsyncMock):
+            assert await instance._wait_for_steam_game(executable) is right
+            right.create_time.assert_called_once()
+    asyncio.run(run())

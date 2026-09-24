@@ -79,13 +79,21 @@ window.amadeus =""")
             await page.get_by_role("button", name="Add game", exact=True).click()
             form = page.get_by_role("dialog")
             await form.get_by_label("Game name", exact=True).fill(args.name)
-            for button in await form.get_by_role("button", name="Browse", exact=True).all():
-                await button.click()
+            for label in ("Game executable", "Game hook script (.js)"):
+                await form.get_by_role("button", name=f"Browse: {label}", exact=True).click()
+            agent_details = form.locator("details").filter(has=page.get_by_label("Agent installation (shared by all games)", exact=True))
+            if await agent_details.get_attribute("open") is None:
+                await agent_details.locator("summary").click()
+            await form.get_by_role("button", name="Browse: Agent installation (shared by all games)", exact=True).click()
+            await form.locator("details").filter(has=page.get_by_label("Exit wallpaper before game")).locator("summary").click()
             await form.get_by_label("Exit wallpaper before game").uncheck()
             if args.attach_running:
-                await form.get_by_label("Launch game if it is not running").uncheck()
+                await form.get_by_label("Launch game with").select_option("manual")
             else:
                 await form.get_by_label("Close games launched by VN Player on stop").check()
+                if args.steam_app_id:
+                    await form.get_by_label("Launch game with").select_option("steam")
+                    await form.get_by_label("Steam app ID").fill(args.steam_app_id)
             await page.screenshot(path=str(output / "saved-settings.png"))
             await form.get_by_role("button", name="Save and test text", exact=True).click()
 
@@ -152,5 +160,6 @@ if __name__ == "__main__":
     parser.add_argument("--hook", required=True)
     parser.add_argument("--lines", type=int, default=3)
     parser.add_argument("--attach-running", action="store_true", help="Validate a game already started by its storefront; does not qualify automatic game launch")
+    parser.add_argument("--steam-app-id", default="", help="Start this Steam app through the saved profile")
     parser.add_argument("--timeout", type=int, default=180)
     asyncio.run(run(parser.parse_args()))
