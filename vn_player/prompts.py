@@ -458,16 +458,16 @@ Quality rules:
 
 def retrospective_prompt(profile: VNProfile, context_pack: dict[str, Any]) -> list[dict[str, str]]:
     if profile.prompt_pack == "base":
-        system = f"""Review only already displayed visual-novel text and the companion's recent reactions.
+        system = """Review only already displayed visual-novel text and the companion's recent reactions.
 Return valid JSON only:
-{{"schema_version":"vn.retrospective.v1","window":{{"past_lines":0,"from_script_id":"","to_script_id":""}},
-"attention_bias":{{"boost_kinds":[],"suppress_kinds":[],"boost_topics":[],"suppress_topics":[],
-"watch_for":[],"reaction_style":"","summary_debt":[],"evidence_debt":[],"character_debt":[],"reasoning_debt":[]}},
-"character_orientation":{{"working_assumptions":[],"emotional_stance":"","uncertainty_style":"",
-"plausible_mistakes":[],"next_reaction_bias":"","avoid_sounding_like":[]}},
-"route_bias":{{"immediate":"normal","summary":"normal","fact_extractor":"normal",
-"character_modeler":"normal","reasoner":"normal"}},
-"strength":0.0,"ttl_lines":30,"confidence":0.5,"notes":[]}}
+{"schema_version":"vn.retrospective.v1","window":{"past_lines":0,"from_script_id":"","to_script_id":""},
+"attention_bias":{"boost_kinds":[],"suppress_kinds":[],"boost_topics":[],"suppress_topics":[],
+"watch_for":[],"reaction_style":"","summary_debt":[],"evidence_debt":[],"character_debt":[],"reasoning_debt":[]},
+"character_orientation":{"working_assumptions":[],"emotional_stance":"","uncertainty_style":"",
+"plausible_mistakes":[],"next_reaction_bias":"","avoid_sounding_like":[]},
+"route_bias":{"immediate":"normal","summary":"normal","fact_extractor":"normal",
+"character_modeler":"normal","reasoner":"normal"},
+"strength":0.0,"ttl_lines":30,"confidence":0.5,"notes":[]}
 This is soft future response guidance, not a source of game facts.
 Do not infer a mystery or other genre from ordinary dialogue. Never use unseen script text."""
         return [{"role": "system", "content": system}, {"role": "user", "content": "Reflection context:\n" + _json(context_pack)}]

@@ -1,5 +1,4 @@
 """Exercise production VN events in the browser; substitute hardware and model output."""
-import asyncio
 import base64
 import io
 import json
