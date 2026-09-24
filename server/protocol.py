@@ -123,6 +123,7 @@ class Method(StrEnum):
     VN_CHOICE_ASK        = "vn.choice.ask"
     VN_MODE_SET          = "vn.mode.set"
     VN_LAUNCH_PROFILES   = "vn.launch.profiles"
+    VN_LAUNCH_PROFILE_SAVE = "vn.launch.profile.save"
     VN_LAUNCH_START      = "vn.launch.start"
     VN_LAUNCH_STOP       = "vn.launch.stop"
     VN_LAUNCH_STATUS     = "vn.launch.status"

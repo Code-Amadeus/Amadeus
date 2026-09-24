@@ -2256,6 +2256,23 @@ ipcMain.handle('project-directory.select', async (event) => {
     detail: result.canceled ? '' : selectedPath ? '' : 'No Project directory was selected.',
   }
 })
+ipcMain.handle('vn-file.select', async (event, kind: unknown) => {
+  if (!isTrustedAmadeusRenderer(event.sender)) {
+    return { ok: false, cancelled: false, path: '', detail: 'Untrusted VN file requester.' }
+  }
+  if (kind !== 'game' && kind !== 'agent' && kind !== 'hook' && kind !== 'script') {
+    return { ok: false, cancelled: false, path: '', detail: 'Unknown VN file type.' }
+  }
+  const options: Electron.OpenDialogOptions = {
+    title: 'VN Player', properties: ['openFile'],
+    filters: kind === 'hook' ? [{ name: 'Agent hook script', extensions: ['js'] }]
+      : kind === 'script' ? [{ name: 'Game script', extensions: ['txt', 'json'] }]
+      : [{ name: 'Executable', extensions: ['exe'] }],
+  }
+  const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
+  const selectedPath = result.filePaths[0] || ''
+  return { ok: !result.canceled && Boolean(selectedPath), cancelled: result.canceled, path: selectedPath, detail: '' }
+})
 ipcMain.handle('work-preview.open', (event, rawDescriptor: unknown) => {
   if (!isTrustedAmadeusRenderer(event.sender)) return { ok: false, detail: 'Untrusted preview opener.' }
   const descriptor = normalizeWorkPreviewDescriptor(rawDescriptor)

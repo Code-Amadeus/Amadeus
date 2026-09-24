@@ -13,6 +13,7 @@ from server.ws_handler import RequestHandler
 class VNLaunchHandler(RequestHandler):
     methods = [
         Method.VN_LAUNCH_PROFILES,
+        Method.VN_LAUNCH_PROFILE_SAVE,
         Method.VN_LAUNCH_START,
         Method.VN_LAUNCH_STOP,
         Method.VN_LAUNCH_STATUS,
@@ -46,6 +47,8 @@ class VNLaunchHandler(RequestHandler):
             raise RuntimeError("VN launch handler is not configured")
         if method == Method.VN_LAUNCH_PROFILES:
             return manager.profiles()
+        if method == Method.VN_LAUNCH_PROFILE_SAVE:
+            return manager.save_profile(params)
         if method == Method.VN_LAUNCH_START:
             return await manager.start(params)
         if method == Method.VN_LAUNCH_STOP:

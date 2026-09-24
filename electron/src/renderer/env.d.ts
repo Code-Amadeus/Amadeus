@@ -72,6 +72,7 @@ export declare global {
       avatars?: { user: string; assistant: string }
     }>
     focusMainWindow: () => Promise<boolean>
+    selectVNFile: (kind: 'game' | 'agent' | 'hook' | 'script') => Promise<{ ok: boolean; cancelled: boolean; path: string; detail: string }>
     selectProjectDirectory: () => Promise<{
       ok: boolean
       cancelled: boolean

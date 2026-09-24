@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useI18n } from '../i18n'
+import VNProfileEditor, { type VNProfileSettings } from './VNProfileEditor'
 
 type BackendSend = (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
 type BackendSubscribe = (method: string, fn: (p: Record<string, unknown>) => void) => () => void
@@ -10,7 +11,8 @@ interface Props {
   connected: boolean
 }
 
-type VNProfile = {
+type VNProfile = Partial<VNProfileSettings> & {
+  runtimeSupported?: boolean
   id: string
   name: string
   description?: string
@@ -62,6 +64,8 @@ type LaunchStatus = {
   hook?: ProcessStatus
   overlay?: ProcessStatus
   bridge?: BridgeStatus
+  captureOnly?: boolean
+  capturedLines?: Array<{ text: string; speaker: string; script_id: string; receivedAt: number }>
   runtime?: Record<string, unknown> | null
   profiles?: VNProfile[]
 }
@@ -102,45 +106,6 @@ function boolLabel(value?: boolean): string {
   return value ? 'ready' : 'missing'
 }
 
-function Toggle({
-  checked,
-  disabled,
-  label,
-  detail,
-  onChange,
-}: {
-  checked: boolean
-  disabled?: boolean
-  label: string
-  detail?: string
-  onChange: (checked: boolean) => void
-}) {
-  const { t } = useI18n()
-  return (
-    <label
-      className="flex items-start gap-2"
-      style={{
-        color: disabled ? 'var(--muted)' : 'var(--text)',
-        fontSize: 12,
-        lineHeight: 1.35,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-      }}
-    >
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={event => onChange(event.target.checked)}
-        style={{ marginTop: 2 }}
-      />
-      <span>
-        <span style={{ fontWeight: 650 }}>{t(label)}</span>
-        {detail && <span style={{ color: 'var(--muted)' }}> · {t(detail)}</span>}
-      </span>
-    </label>
-  )
-}
-
 function RuntimeChip({ label, status, detail }: { label: string; status: string; detail?: string }) {
   const { t } = useI18n()
   return (
@@ -169,8 +134,8 @@ export default function VNPage({ send, subscribe, connected }: Props) {
   const { t } = useI18n()
   const [profiles, setProfiles] = useState<VNProfile[]>([])
   const [selectedProfile, setSelectedProfile] = useState('paranormasight')
-  const [textSource, setTextSource] = useState<'agent' | 'luna'>('agent')
-  const [lunaWsUrl, setLunaWsUrl] = useState('')
+  const [agentExe, setAgentExe] = useState('')
+  const [editor, setEditor] = useState<{ initial?: VNProfile } | null>(null)
   const [launch, setLaunch] = useState<LaunchStatus>({ status: 'idle' })
   const [runtime, setRuntime] = useState<Record<string, unknown> | null>(null)
   const [events, setEvents] = useState<VNEvent[]>([])
@@ -178,12 +143,6 @@ export default function VNPage({ send, subscribe, connected }: Props) {
   const [playerText, setPlayerText] = useState('')
   const [playerMode, setPlayerMode] = useState<'ask' | 'note' | 'choice' | 'pin'>('ask')
   const [playerListening, setPlayerListening] = useState(false)
-  const [launchGame, setLaunchGame] = useState(false)
-  const [attachHook, setAttachHook] = useState(false)
-  const [launchOverlay, setLaunchOverlay] = useState(true)
-  const [bridgeClipboard, setBridgeClipboard] = useState(true)
-  const [stopWallpaper, setStopWallpaper] = useState(true)
-  const [closeGameOnStop, setCloseGameOnStop] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -191,7 +150,7 @@ export default function VNPage({ send, subscribe, connected }: Props) {
     () => profiles.find(profile => profile.id === selectedProfile) || profiles[0],
     [profiles, selectedProfile],
   )
-  const runtimeStatus = String((runtime?.status as string | undefined) || 'unknown')
+  const runtimeStatus = launch.captureOnly ? 'not_started' : String((runtime?.status as string | undefined) || 'unknown')
   const runtimeSessionId = launch.sessionId || String(runtime?.session_id || '')
   const playerAsrRequestKeyRef = useRef<string | null>(null)
 
@@ -221,9 +180,8 @@ export default function VNPage({ send, subscribe, connected }: Props) {
       const loadedProfiles = Array.isArray(profileRes.profiles) ? profileRes.profiles as VNProfile[] : []
       setProfiles(loadedProfiles)
       setLaunch(statusRes as LaunchStatus)
-      if (statusRes.textSource === 'luna' || statusRes.textSource === 'agent') {
-        setTextSource(statusRes.textSource)
-      }
+      setAgentExe(String(profileRes.agentExe || ''))
+      if (statusRes.profileId) setSelectedProfile(String(statusRes.profileId))
       if (statusRes.runtime && typeof statusRes.runtime === 'object') {
         setRuntime(statusRes.runtime as Record<string, unknown>)
       }
@@ -312,38 +270,29 @@ export default function VNPage({ send, subscribe, connected }: Props) {
     })
   }, [connected, playerListening, playerMode, runtimeSessionId, runtimeStatus, send])
 
-  const startWithOptions = async (options?: Partial<{
-    launchGame: boolean
-    attachHook: boolean
-    launchOverlay: boolean
-    bridgeClipboard: boolean
-    stopWallpaper: boolean
-  }>) => {
-    const usingLuna = textSource === 'luna'
-    const nextLaunchGame = usingLuna ? false : (options?.launchGame ?? launchGame)
-    const payload = {
-      profileId: selectedProfile,
-      textSource,
-      ...(usingLuna ? { lunaWsUrl: lunaWsUrl.trim() } : {}),
-      launchGame: nextLaunchGame,
-      attachHook: usingLuna ? false : (options?.attachHook ?? attachHook),
-      launchOverlay: usingLuna ? false : (options?.launchOverlay ?? launchOverlay),
-      bridgeClipboard: usingLuna ? false : (options?.bridgeClipboard ?? bridgeClipboard),
-      stopWallpaper: options?.stopWallpaper ?? (nextLaunchGame ? stopWallpaper : false),
-    }
+  const startProfile = async (profileId: string, captureOnly = false) => {
     setBusy(true)
     setError('')
+    setEvents([])
     try {
-      const res = await send('vn.launch.start', payload)
+      const res = await send('vn.launch.start', { profileId, captureOnly })
       setLaunch(res as LaunchStatus)
-      if (res.runtime && typeof res.runtime === 'object') {
-        setRuntime(res.runtime as Record<string, unknown>)
-      }
+      setRuntime(res.runtime && typeof res.runtime === 'object' ? res.runtime as Record<string, unknown> : null)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setBusy(false)
     }
+  }
+
+  const saveProfile = async (profile: VNProfileSettings, sharedAgent: string, test: boolean) => {
+    const res = await send('vn.launch.profile.save', { profile, agentExe: sharedAgent })
+    setProfiles(res.profiles as VNProfile[])
+    setAgentExe(String(res.agentExe || ''))
+    const id = String(res.profileId)
+    setSelectedProfile(id)
+    setEditor(null)
+    if (test) await startProfile(id, true)
   }
 
   const stop = async () => {
@@ -356,7 +305,6 @@ export default function VNPage({ send, subscribe, connected }: Props) {
       }
       const res = await send('vn.launch.stop', {
         reason: 'electron_vn_page',
-        closeGame: closeGameOnStop,
       })
       setLaunch(res as LaunchStatus)
       if (res.runtime && typeof res.runtime === 'object') {
@@ -414,7 +362,7 @@ export default function VNPage({ send, subscribe, connected }: Props) {
   const hookStatus = String(launch.hook?.status || 'not_started')
   const overlayStatus = String(launch.overlay?.status || 'not_started')
   const bridgeStatus = String(launch.bridge?.status || 'not_started')
-  const isActive = launchStatus === 'active' || launchStatus === 'starting'
+  const isActive = ['active', 'starting', 'stopping'].includes(launchStatus)
   const controlButtonStyle = {
     height: 34,
     padding: '0 12px',
@@ -426,7 +374,7 @@ export default function VNPage({ send, subscribe, connected }: Props) {
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0" style={{ padding: '16px 18px 18px', backgroundColor: 'var(--bg)' }}>
+    <div className="vn-player flex-1 flex flex-col min-h-0" style={{ padding: '16px 18px 18px', backgroundColor: 'var(--bg)' }}>
       <header className="flex items-start gap-4 shrink-0" style={{ marginBottom: 12 }}>
         <div className="min-w-0 flex-1">
           <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 20, fontWeight: 700, lineHeight: '26px' }}>{t('VN Player — Experimental')}</h2>
@@ -449,36 +397,46 @@ export default function VNPage({ send, subscribe, connected }: Props) {
           {profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
         </select>
         <span style={{ color: statusColor(launchStatus), fontSize: 10.5, fontWeight: 650 }}>{launchStatus.replaceAll('_', ' ')}</span>
+        <button onClick={() => setEditor({})} disabled={!connected || busy || isActive} style={controlButtonStyle}>{t('Add game')}</button>
+        <button onClick={() => setEditor({ initial: activeProfile })} disabled={!connected || busy || isActive || !activeProfile} style={controlButtonStyle}>{t('Edit game profile')}</button>
         <span className="flex-1" />
-        <button onClick={() => startWithOptions()} disabled={!connected || busy || isActive} style={{ ...controlButtonStyle, borderColor: 'var(--accent)', color: 'var(--accent)', fontWeight: 650 }}>{t('Start')}</button>
+        <button onClick={() => void startProfile(activeProfile.id, true)} disabled={!connected || busy || isActive || !activeProfile} style={controlButtonStyle}>{t('Test text capture')}</button>
+        <button onClick={() => void startProfile(activeProfile.id)} disabled={!connected || busy || isActive || !activeProfile} style={{ ...controlButtonStyle, borderColor: 'var(--accent)', color: 'var(--accent)', fontWeight: 650 }}>{t('Start')}</button>
         <button onClick={stop} disabled={!connected || busy || launchStatus === 'idle'} style={controlButtonStyle}>{t('Stop')}</button>
       </div>
 
+      {activeProfile && !activeProfile.runtimeSupported && <p style={{ margin: '0 0 8px', color: 'var(--muted)', fontSize: 12 }}>{t('This game starts in text capture mode. Companion behavior is not configured yet.')}</p>}
       <div className="flex items-center flex-wrap gap-1.5 shrink-0" style={{ marginBottom: 9 }}>
-        <RuntimeChip label="Runtime" status={runtimeStatus} />
+        {!launch.captureOnly && <RuntimeChip label="Runtime" status={runtimeStatus} />}
         <RuntimeChip label="Game" status={gameStatus} detail={launch.game?.pid ? `pid ${launch.game.pid}` : undefined} />
         <RuntimeChip label="Text source" status={hookStatus} detail={launch.hook?.pid ? `pid ${launch.hook.pid}` : undefined} />
-        <RuntimeChip label="Overlay" status={overlayStatus} detail={launch.overlay?.pid ? `pid ${launch.overlay.pid}` : undefined} />
+        {!launch.captureOnly && <RuntimeChip label="Overlay" status={overlayStatus} detail={launch.overlay?.pid ? `pid ${launch.overlay.pid}` : undefined} />}
         <RuntimeChip label="Bridge" status={bridgeStatus} detail={`${launch.bridge?.lineCount || 0} lines`} />
       </div>
       {(bridgeStatus === 'waiting' || bridgeStatus === 'error') && launch.bridge?.error ? (
         <div role="status" style={{ marginBottom: 9, color: '#C42B1C', fontSize: 10.5 }}>{launch.bridge.error}</div>
-      ) : launch.bridge?.lastTextPreview ? (
+      ) : !launch.captureOnly && launch.bridge?.lastTextPreview ? (
         <div style={{ marginBottom: 9, color: 'var(--muted)', fontSize: 10.5 }}>
           {t('Last VN line')}: {launch.bridge.lastTextPreview}
         </div>
       ) : null}
 
-      <section className="flex-1 flex flex-col min-h-0" style={{ border: '1px solid var(--border)', borderRadius: 11, overflow: 'hidden', background: 'var(--surface)' }}>
+      <section aria-label={t(launch.captureOnly ? 'Captured text' : 'VN activity')} className="flex-1 flex flex-col min-h-0" style={{ border: '1px solid var(--border)', borderRadius: 11, overflow: 'hidden', background: 'var(--surface)' }}>
         <div className="flex items-center gap-2 shrink-0" style={{ minHeight: 41, padding: '6px 10px 6px 13px', borderBottom: '1px solid var(--border)' }}>
-          <h3 style={{ margin: 0, color: 'var(--text)', fontSize: 13, fontWeight: 650 }}>{t('VN activity')}</h3>
-          <span style={{ color: 'var(--faint)', fontSize: 10 }}>{events.length} {t('recent')}</span>
+          <h3 style={{ margin: 0, color: 'var(--text)', fontSize: 13, fontWeight: 650 }}>{t(launch.captureOnly ? 'Captured text' : 'VN activity')}</h3>
+          <span style={{ color: 'var(--faint)', fontSize: 10 }}>{launch.captureOnly ? (launch.capturedLines?.length || 0) : events.length} {t('recent')}</span>
           <span className="flex-1" />
-          <button onClick={() => setEvents([])} disabled={events.length === 0} style={{ ...controlButtonStyle, height: 28, color: 'var(--muted)', opacity: events.length ? 1 : 0.4 }}>{t('Clear')}</button>
+          {!launch.captureOnly && <button onClick={() => setEvents([])} disabled={events.length === 0} style={{ ...controlButtonStyle, height: 28, color: 'var(--muted)', opacity: events.length ? 1 : 0.4 }}>{t('Clear')}</button>}
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto" style={{ padding: events.length ? '4px 14px 12px' : 0 }}>
-          {events.length === 0 ? (
+        <div className="flex-1 min-h-0 overflow-y-auto" style={{ padding: launch.captureOnly || events.length ? '4px 14px 12px' : 0 }}>
+          {launch.captureOnly ? <>
+            <p style={{ margin: '8px 0 12px', color: 'var(--muted)', fontSize: 12 }}>{t('Advance a few lines in the game and compare them here. Receiving text does not automatically confirm extraction quality.')}</p>
+            {!launch.capturedLines?.length && <p style={{ color: 'var(--muted)', fontSize: 12 }}>{t('Waiting for game text…')}</p>}
+            {launch.capturedLines?.map((line, index) => <div key={`${line.receivedAt}-${index}`} style={{ borderTop: '1px solid var(--border)', padding: '10px 0', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', color: 'var(--text)', fontSize: 13 }}>
+              <span style={{ color: 'var(--muted)', marginRight: 8 }}>{index + 1}.</span>{line.speaker ? `${line.speaker}: ` : ''}{line.text}
+            </div>)}
+          </> : events.length === 0 ? (
             <div className="flex items-center justify-center h-full" style={{ color: 'var(--muted)', fontSize: 12 }}>{t('No VN activity yet.')}</div>
           ) : events.map(item => (
             <article key={item.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
@@ -494,7 +452,7 @@ export default function VNPage({ send, subscribe, connected }: Props) {
 
         {error ? <div role="status" style={{ padding: '7px 12px', borderTop: '1px solid rgba(196,43,28,0.2)', color: '#C42B1C', background: 'rgba(196,43,28,0.04)', fontSize: 10.5 }}>{error}</div> : null}
 
-        <div className="shrink-0" style={{ padding: '10px 12px 11px', borderTop: '1px solid var(--border)', background: 'var(--surface-alt)' }}>
+        {!launch.captureOnly && <div className="shrink-0" style={{ padding: '10px 12px 11px', borderTop: '1px solid var(--border)', background: 'var(--surface-alt)' }}>
           <div className="flex items-center gap-2" style={{ marginBottom: 7 }}>
             <span style={{ color: 'var(--text)', fontSize: 11, fontWeight: 650 }}>{t('Player intervention')}</span>
             <span style={{ color: playerListening ? '#107C10' : 'var(--muted)', fontSize: 10 }}>
@@ -525,12 +483,12 @@ export default function VNPage({ send, subscribe, connected }: Props) {
           <div style={{ marginTop: 5, color: playerListening ? '#107C10' : 'var(--faint)', fontSize: 9.5 }}>
             {t(playerListening ? 'Speech is routed to VN runtime only.' : 'Player speech never enters main chat.')}
           </div>
-        </div>
+        </div>}
       </section>
 
       <details className="shrink-0" style={{ marginTop: 9, border: '1px solid var(--border)', borderRadius: 9, background: 'var(--surface)' }}>
         <summary className="cursor-pointer select-none" style={{ padding: '9px 12px', color: 'var(--muted)', fontSize: 11, fontWeight: 600 }}>
-          {t('Advanced launch options and line test')}
+          {t('Diagnostics and manual line test')}
         </summary>
         <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18, padding: '12px 14px 14px', borderTop: '1px solid var(--border)' }}>
           <div>
@@ -541,32 +499,7 @@ export default function VNPage({ send, subscribe, connected }: Props) {
                 <div className="truncate" title={activeProfile.scriptPath || ''}>{activeProfile.scriptPath || 'No script path'}</div>
               </div>
             ) : null}
-            <div className="grid gap-2">
-              <label style={{ color: 'var(--text)', fontSize: 11 }}>
-                {t('Text source')}
-                <select value={textSource} onChange={event => setTextSource(event.target.value as 'agent' | 'luna')} disabled={busy || isActive} style={{ display: 'block', width: '100%', marginTop: 5, height: 34, borderRadius: 8, border: '1px solid var(--border)', color: 'var(--text)', background: 'var(--bg)', padding: '0 9px' }}>
-                  <option value="agent">0xDC00 Agent</option>
-                  <option value="luna">LunaTranslator original text</option>
-                </select>
-              </label>
-              {textSource === 'luna' ? (
-                <label style={{ color: 'var(--text)', fontSize: 11 }}>
-                  {t('Luna WebSocket URL')}
-                  <input value={lunaWsUrl} onChange={event => setLunaWsUrl(event.target.value)} disabled={busy || isActive} placeholder="ws://127.0.0.1:<port>/api/ws/text/origin" style={{ display: 'block', width: '100%', marginTop: 5, height: 34, borderRadius: 8, border: '1px solid var(--border)', color: 'var(--text)', background: 'var(--bg)', padding: '0 9px' }} />
-                  <span style={{ display: 'block', marginTop: 5, color: 'var(--muted)' }}>{t('Connects to Luna text only; VN behavior still uses the selected experimental profile.')}</span>
-                </label>
-              ) : (
-                <>
-                  <Toggle checked={launchGame} disabled={busy || isActive} label="Launch game process" detail="PARANORMASIGHT.exe" onChange={setLaunchGame} />
-                  <Toggle checked={attachHook} disabled={busy || isActive} label="Attach hook agent" detail="0xDC00 Agent + script" onChange={setAttachHook} />
-                  <Toggle checked={launchOverlay} disabled={busy || isActive} label="Portrait overlay" detail="avatar + subtitle box" onChange={setLaunchOverlay} />
-                  <Toggle checked={bridgeClipboard} disabled={busy || isActive} label="Enable line bridge" detail="agent websocket -> vn.line" onChange={setBridgeClipboard} />
-                  <Toggle checked={stopWallpaper} disabled={busy || isActive || !launchGame} label="Exit wallpaper before game" detail="keeps game focus clean" onChange={setStopWallpaper} />
-                </>
-              )}
-              <Toggle checked={closeGameOnStop} disabled={busy} label="Close game on stop" detail="off keeps the game open" onChange={setCloseGameOnStop} />
-            </div>
-            {textSource === 'agent' && <button onClick={() => startWithOptions({ launchGame: true, attachHook: true, launchOverlay: true, bridgeClipboard: true, stopWallpaper: true })} disabled={!connected || busy || isActive} style={{ ...controlButtonStyle, marginTop: 10 }}>{t('Start full stack')}</button>}
+            <p style={{ color: 'var(--muted)', fontSize: 12 }}>{t('Start uses this game’s saved settings. Edit the profile to change its script or launch behavior.')}</p>
           </div>
 
           <div>
@@ -584,6 +517,7 @@ export default function VNPage({ send, subscribe, connected }: Props) {
           </div>
         </div>
       </details>
+      {editor && <VNProfileEditor initial={editor.initial} agentExe={agentExe} onClose={() => setEditor(null)} onSave={saveProfile} />}
     </div>
   )
 }

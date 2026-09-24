@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import ctypes
-import csv
 import json
 import logging
 import os
@@ -20,9 +19,13 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 from urllib import request
 
+import psutil
+from pydantic import ValidationError
+
 from server.event_bus import bus
 from server.protocol import Method
 from server.vn_text_sources import AgentVNTextSource, LunaVNTextSource, VNTextSourceAdapter
+from server.vn_profiles import LaunchProfile, VNProfileStore
 
 RuntimeStart = Callable[[dict[str, Any]], Awaitable[dict[str, Any] | None]]
 RuntimeStop = Callable[[dict[str, Any]], Awaitable[dict[str, Any] | None]]
@@ -52,6 +55,10 @@ class VNLaunchManager:
     ) -> None:
         self.project_root = Path(project_root)
         self.vn_root = self.project_root.parent / "visual novel player"
+        self._profiles = VNProfileStore(self.project_root)
+        self._lifecycle_lock = asyncio.Lock()
+        self._runtime_owned = False
+        self._game_path = ""
         self._runtime_start = runtime_start
         self._runtime_stop = runtime_stop
         self._runtime_status = runtime_status
@@ -74,8 +81,36 @@ class VNLaunchManager:
         }
 
     def profiles(self) -> dict[str, Any]:
-        profiles = [self._paranormasight_profile()]
-        return {"profiles": profiles}
+        saved = self._profiles.load()
+        builtin = self._paranormasight_profile()
+        agent_exe = saved.agentExe or builtin["agentExe"]
+        profiles = {builtin["id"]: builtin}
+        for item in saved.profiles:
+            profiles[item.id] = {**profiles.get(item.id, {}), **item.model_dump()}
+        for profile in profiles.values():
+            profile["agentExe"] = agent_exe
+            profile["runtimeSupported"] = bool(profile.get("runtime"))
+            for key, flag in (("gameExe", "gameExists"), ("agentExe", "agentExists"),
+                              ("hookHelper", "hookExists"), ("scriptPath", "scriptExists"),
+                              ("overlayHelper", "overlayExists")):
+                profile[flag] = bool(profile.get(key)) and Path(profile[key]).is_file()
+        return {"profiles": list(profiles.values()), "agentExe": agent_exe}
+
+    def save_profile(self, params: dict[str, Any]) -> dict[str, Any]:
+        if self._state["status"] in {"starting", "active", "stopping"}:
+            raise RuntimeError("Stop text capture before editing game settings.")
+        try:
+            profile = LaunchProfile.model_validate(params.get("profile"))
+        except ValidationError as exc:
+            raise ValueError("\n".join(error["msg"].removeprefix("Value error, ") for error in exc.errors())) from exc
+        existing = self.profiles()
+        if isinstance(params.get("profile"), dict) and params["profile"].get("id"):
+            if profile.id not in {p["id"] for p in existing["profiles"]}:
+                raise ValueError(f"Unknown VN profile: {profile.id}")
+        if profile.launchOverlay and profile.id != "paranormasight":
+            raise ValueError("The current companion overlay is only configured for PARANORMASIGHT.")
+        self._profiles.save(profile, agent_exe=str(params.get("agentExe", existing["agentExe"])).strip())
+        return {**self.profiles(), "profileId": profile.id}
 
     async def status(self) -> dict[str, Any]:
         self._refresh_process_state()
@@ -86,22 +121,40 @@ class VNLaunchManager:
         }
 
     async def start(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        async with self._lifecycle_lock:
+            return await self._start(params)
+
+    async def _start(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
         params = params or {}
         if self._text_source is not None:
             raise RuntimeError("VN launch session is already active; stop it before starting another.")
-        source_name = str(params.get("textSource") or params.get("text_source") or "agent").strip().lower()
-        if source_name not in {"agent", "luna"}:
-            raise ValueError(f"unknown VN text source: {source_name}")
         profile_id = str(params.get("profile_id") or params.get("profileId") or "paranormasight").strip()
         profile = self._profile_by_id(profile_id)
+        # Explicit API options still work; ordinary Start uses the saved game settings.
+        aliases = {"text_source": "textSource", "launch_game": "launchGame", "attach_hook": "attachHook",
+                   "launch_overlay": "launchOverlay", "luna_ws_url": "lunaWsUrl"}
+        params = {aliases.get(key, key): value for key, value in params.items()}
+        source_name = str(params.get("textSource", profile.get("textSource", "agent"))).strip().lower()
+        if source_name not in {"agent", "luna"}:
+            raise ValueError(f"unknown VN text source: {source_name}")
+        params = {
+            "launchGame": profile.get("launchGame", True) if source_name == "agent" else False,
+            "attachHook": source_name == "agent", "bridgeClipboard": source_name == "agent",
+            "launchOverlay": profile.get("launchOverlay", False) if source_name == "agent" else False,
+            "stopWallpaper": profile.get("stopWallpaper", True), "lunaWsUrl": profile.get("lunaWsUrl", ""),
+            **params,
+        }
+        capture_only = _truthy(params.get("captureOnly")) or not profile["runtimeSupported"]
+        if capture_only:
+            params["launchOverlay"] = False
         session_id = str(params.get("session_id") or params.get("sessionId") or "").strip()
         if not session_id:
             session_id = f"live_{profile_id}_{time.strftime('%Y%m%d_%H%M%S')}"
 
         runtime_params = {
-            **profile["runtime"],
+            **profile.get("runtime", {}),
             "session_id": session_id,
-            "script_path": profile["scriptPath"],
+            "script_path": profile.get("scriptPath", ""),
         }
         if isinstance(params.get("runtime"), dict):
             runtime_params.update(params["runtime"])  # type: ignore[arg-type]
@@ -112,11 +165,16 @@ class VNLaunchManager:
         launch_overlay = _truthy(overlay_param) if overlay_param is not None else (launch_game or attach_hook)
         if source_name == "luna" and (launch_game or attach_hook):
             raise ValueError("Luna text source connects to an external game and LunaTranslator; Agent launch options are unavailable.")
+        if self._game_path != str(profile.get("gameExe") or ""):
+            self._game_proc = None
 
         self._state.update(
             {
                 "status": "starting",
                 "textSource": source_name,
+                "captureOnly": capture_only,
+                "capturedLines": [],
+                "closeGameOnStop": profile.get("closeGameOnStop", False),
                 "profileId": profile_id,
                 "sessionId": session_id,
                 "startedAt": _now_ms(),
@@ -144,8 +202,22 @@ class VNLaunchManager:
         await self._publish_status()
 
         runtime_started = False
+        game_started = False
         try:
-            if launch_game and stop_wallpaper:
+            # Resolve the exact executable each session. Never bind a saved PID or
+            # choose the first of several identically named processes.
+            target_pid = None
+            if source_name == "agent" and (launch_game or attach_hook):
+                for key, label in (("gameExe", "game executable"), ("agentExe", "Agent executable"), ("hookHelper", "hook script")):
+                    if not profile.get(key) or not Path(profile[key]).is_file():
+                        raise FileNotFoundError(f"VN {label} not found: {profile.get(key) or '(not configured)'}")
+                target_pid = await asyncio.to_thread(_find_game_pid, profile["gameExe"])
+                if target_pid is None and not launch_game:
+                    raise RuntimeError("The configured game is not running. Start it first or enable Launch game in its settings.")
+            if self._game_proc is not None and self._game_proc.pid != target_pid:
+                # A game kept open from another profile is no longer this session's process.
+                self._game_proc = None
+            if launch_game and target_pid is None and stop_wallpaper:
                 await self._run_before_external_launch(
                     {
                         "reason": "vn_launch_game",
@@ -155,31 +227,28 @@ class VNLaunchManager:
                 )
             if launch_overlay:
                 runtime_params["overlay_url"] = await self._launch_overlay(profile, params)
-            runtime = await self._runtime_start(runtime_params)
-            runtime_started = True
-            if launch_game:
+            runtime = None
+            if not capture_only:
+                runtime = await self._runtime_start(runtime_params)
+                runtime_started = self._runtime_owned = True
+            if launch_game and target_pid is None:
+                game_started = True
                 await self._launch_game(profile)
-            elif attach_hook:
+                target_pid = self._game_proc.pid if self._process_alive(self._game_proc) else None
+            elif target_pid is not None:
+                owned = self._process_alive(self._game_proc) and self._game_proc.pid == target_pid
                 self._state["game"] = {
-                    **dict(self._state.get("game") or {}),
-                    "status": "manual_required",
-                    "path": profile.get("gameExe") or "",
+                    "status": "running" if owned else "external_running", "pid": target_pid,
+                    "path": profile.get("gameExe") or "", "owned": owned,
                 }
+            on_line = self._capture_line if capture_only else self._runtime_line
             self._text_source = (
-                AgentVNTextSource(self._runtime_line, self._source_status_changed)
-                if source_name == "agent" else LunaVNTextSource(self._runtime_line, self._source_status_changed)
+                AgentVNTextSource(on_line, self._source_status_changed)
+                if source_name == "agent" else LunaVNTextSource(on_line, self._source_status_changed)
             )
-            target_pid = self._game_proc.pid if self._process_alive(self._game_proc) else None
-            if attach_hook and target_pid is None:
-                target_pid = _find_windows_pid(str(profile.get("processName") or ""))
-                if target_pid is not None:
-                    self._state["game"] = {
-                        "status": "external_running", "pid": target_pid,
-                        "path": profile.get("gameExe") or "", "owned": False,
-                    }
             await self._text_source.start(profile, params, target_pid=target_pid)
         except Exception as exc:
-            await self._cleanup_failed_start(runtime_started=runtime_started, close_game=launch_game)
+            await self._cleanup_failed_start(runtime_started=runtime_started, close_game=game_started)
             self._state.update({"status": "error", "updatedAt": _now_ms(), "error": str(exc)})
             await self._publish_status()
             raise
@@ -191,6 +260,10 @@ class VNLaunchManager:
         return payload
 
     async def stop(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        async with self._lifecycle_lock:
+            return await self._stop(params)
+
+    async def _stop(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
         params = params or {}
         self._state.update({"status": "stopping", "updatedAt": _now_ms(), "error": ""})
         await self._publish_status()
@@ -199,10 +272,13 @@ class VNLaunchManager:
             self._text_source = None
         await self._terminate_proc("overlay", self._overlay_proc)
         self._overlay_proc = None
-        if _truthy(params.get("closeGame") or params.get("close_game")):
+        if _truthy(params.get("closeGame", params.get("close_game", self._state.get("closeGameOnStop", False)))):
             await self._terminate_proc("game", self._game_proc)
             self._game_proc = None
-        runtime = await self._runtime_stop({"reason": str(params.get("reason") or "launch_stop")})
+        runtime = None
+        if self._runtime_owned:
+            runtime = await self._runtime_stop({"reason": str(params.get("reason") or "launch_stop")})
+            self._runtime_owned = False
         self._state.update(
             {
                 "status": "idle",
@@ -227,6 +303,15 @@ class VNLaunchManager:
     async def _publish_status(self) -> None:
         await bus.emit(Method.VN_LAUNCH_STATUS, await self.status())
 
+    async def _capture_line(self, payload: dict[str, Any]) -> dict[str, Any]:
+        # Diagnostic preview: preserve order and genuine repetitions, without
+        # starting the story runtime, indexing a script, or invoking an LLM.
+        self._state["capturedLines"] = [*self._state.get("capturedLines", []), {
+            "text": str(payload.get("text") or ""), "speaker": str(payload.get("speaker") or ""),
+            "script_id": str(payload.get("script_id") or ""), "receivedAt": _now_ms(),
+        }][-20:]
+        return {"status": "ok", "line": payload}
+
     async def _source_status_changed(self, hook: dict[str, Any], bridge: dict[str, Any]) -> None:
         self._state["hook"] = hook
         self._state["bridge"] = bridge
@@ -246,6 +331,7 @@ class VNLaunchManager:
             self._state["game"] = {"status": "not_started", "pid": None, "path": ""}
         self._state["bridge"] = {"status": "not_started", "lineCount": self._state["bridge"].get("lineCount", 0), "source": "line_bridge"}
         if runtime_started:
+            self._runtime_owned = False
             try:
                 await self._runtime_stop({"reason": "launch_error"})
             except Exception:
@@ -365,10 +451,11 @@ class VNLaunchManager:
         game_exe = Path(str(profile.get("gameExe") or ""))
         if not game_exe.is_file():
             raise FileNotFoundError(f"VN game executable not found: {game_exe}")
-        if self._process_alive(self._game_proc):
+        if self._game_path == str(game_exe) and self._process_alive(self._game_proc):
             self._state["game"] = {"status": "running", "pid": self._game_proc.pid, "path": str(game_exe)}
             return
         self._game_proc = self._spawn([str(game_exe)], cwd=game_exe.parent, hidden=False)
+        self._game_path = str(game_exe)
         self._state["game"] = {"status": "running", "pid": self._game_proc.pid, "path": str(game_exe)}
         await self._publish_status()
         await asyncio.sleep(2.4)
@@ -407,7 +494,7 @@ class VNLaunchManager:
                 logger.exception("[VNLaunch] failed to kill %s pid=%s", label, proc.pid)
 
     def _refresh_process_state(self) -> None:
-        if self._game_proc is not None:
+        if self._game_proc is not None and self._state["game"].get("pid") == self._game_proc.pid:
             game = dict(self._state.get("game") or {})
             game["status"] = "running" if self._process_alive(self._game_proc) else "exited"
             game["pid"] = self._game_proc.pid
@@ -448,6 +535,11 @@ class VNLaunchManager:
         return {
             "id": "paranormasight",
             "name": "PARANORMASIGHT",
+            "textSource": "agent",
+            "launchGame": True,
+            "launchOverlay": True,
+            "stopWallpaper": True,
+            "closeGameOnStop": False,
             "description": "Mystery VN profile with bounded lookahead and evidence-aware Kurisu reactions.",
             "scriptPath": str(script_path),
             "scriptExists": script_path.is_file(),
@@ -528,30 +620,16 @@ def _http_health(url: str, timeout: float) -> bool:
         return False
 
 
-def _find_windows_pid(image_name: str) -> int | None:
-    if os.name != "nt" or not image_name:
-        return None
-    kwargs: dict[str, Any] = {"capture_output": True, "text": True, "encoding": "utf-8", "errors": "replace"}
-    creation_no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    if creation_no_window:
-        kwargs["creationflags"] = creation_no_window
-    try:
-        result = subprocess.run(
-            ["tasklist", "/FI", f"IMAGENAME eq {image_name}", "/FO", "CSV", "/NH"],
-            **kwargs,
-            timeout=3,
-            check=False,
-        )
-    except Exception:
-        logger.exception("[VNLaunch] failed to inspect process list for %s", image_name)
-        return None
-    for row in csv.reader(result.stdout.splitlines()):
-        if len(row) >= 2 and row[0].lower() == image_name.lower():
-            try:
-                return int(row[1])
-            except ValueError:
-                return None
-    return None
+def _find_game_pid(executable: str) -> int | None:
+    expected = os.path.normcase(os.path.realpath(executable))
+    matches = []
+    for process in psutil.process_iter(["pid", "exe"]):
+        actual = process.info.get("exe")
+        if actual and os.path.normcase(os.path.realpath(actual)) == expected:
+            matches.append(process.info["pid"])
+    if len(matches) > 1:
+        raise RuntimeError("Multiple instances of this game are running. Keep one open before attaching Agent.")
+    return matches[0] if matches else None
 
 
 def _bring_process_window_to_front(pid: int) -> bool:
