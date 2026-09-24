@@ -79,19 +79,22 @@ window.amadeus =""")
             await page.get_by_role("button", name="Add game", exact=True).click()
             form = page.get_by_role("dialog")
             await form.get_by_label("Game name", exact=True).fill(args.name)
+            await form.get_by_role("tab", name="Text connection", exact=True).click()
             for label in ("Game executable", "Game hook script (.js)"):
                 await form.get_by_role("button", name=f"Browse: {label}", exact=True).click()
             agent_details = form.locator("details").filter(has=page.get_by_label("Agent installation (shared by all games)", exact=True))
             if await agent_details.get_attribute("open") is None:
                 await agent_details.locator("summary").click()
             await form.get_by_role("button", name="Browse: Agent installation (shared by all games)", exact=True).click()
-            await form.locator("details").filter(has=page.get_by_label("Exit wallpaper before game")).locator("summary").click()
+            await form.get_by_role("tab", name="Play preferences", exact=True).click()
             await form.get_by_label("Exit wallpaper before game").uncheck()
             if args.attach_running:
+                await form.get_by_role("tab", name="Text connection", exact=True).click()
                 await form.get_by_label("Launch game with").select_option("manual")
             else:
                 await form.get_by_label("Close games launched by VN Player on stop").check()
                 if args.steam_app_id:
+                    await form.get_by_role("tab", name="Text connection", exact=True).click()
                     await form.get_by_label("Launch game with").select_option("steam")
                     await form.get_by_label("Steam app ID").fill(args.steam_app_id)
             await page.screenshot(path=str(output / "saved-settings.png"))

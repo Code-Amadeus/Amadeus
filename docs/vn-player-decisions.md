@@ -205,3 +205,22 @@ could not activate the game and capture showed a lock-screen-like background;
 UI control was stopped and the user was asked to unlock. Both owned processes
 were cleaned up. This proves dispatch/binding, not the full Steam-to-dialogue
 acceptance. The two-run real text gate remains pending an unlocked desktop.
+
+### Settings design alignment
+
+Following the user's reference to the existing Settings page, VN now shares its
+`GroupTitle`, `SettingsGroup`, `CardShell`, `CardIcon` and `StatusPill` primitives.
+Their Settings behavior and styling are retained. VN uses the same page/panel
+typography, Fluent icons, semantic theme tokens and card grouping.
+
+The profile editor uses three navigable sections: Game and companion, Text
+connection, and Play preferences. Tabs support arrow/Home/End keyboard movement.
+Saving validates the first invalid field, opens its section, and focuses it;
+required fields on another panel cannot become an invisible submission failure.
+The action footer stays visible while individual panels scroll. Capabilities
+remain read-only and type-bound. At narrow widths the navigation becomes a row.
+
+Production build and the UI acceptance probe passed. Inspected Chinese game,
+connection, preferences, dark-theme preferences and 480px editor screenshots in
+`output/diagnostics/vn-profiles-ui/`. Theme screenshots wait for CSS transitions
+to finish so an intermediate color frame is not mistaken for the final design.

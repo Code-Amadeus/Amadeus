@@ -1,23 +1,21 @@
 @import "tailwindcss";
 
-.vn-player { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 16px; padding: 26px 28px 18px; overflow: auto; background: var(--bg); color: var(--text); font-family: var(--font), 'Microsoft YaHei UI', sans-serif; font-size: 13px; }
+.vn-player { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 16px; padding: 20px 24px 18px; overflow: auto; background: var(--bg); color: var(--text); font-family: var(--font), 'Microsoft YaHei UI', sans-serif; font-size: 13px; }
 .vn-player button, .vn-profile-dialog button { min-height: 36px; padding: 7px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; transition: background .15s, border-color .15s; }
 .vn-player button:hover:not(:disabled), .vn-profile-dialog button:hover:not(:disabled) { background: var(--hover); border-color: var(--border-strong); }
 .vn-player button:disabled, .vn-profile-dialog button:disabled { opacity: .45; cursor: not-allowed; }
-.vn-player .vn-primary, .vn-profile-dialog .vn-primary { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
-.vn-player .vn-primary:hover:not(:disabled), .vn-profile-dialog .vn-primary:hover:not(:disabled) { background: var(--accent-hover); color: var(--bg); }
+.vn-player .vn-primary, .vn-profile-dialog .vn-primary { background: var(--accent); border-color: var(--accent); color: white; font-weight: 600; }
+.vn-player .vn-primary:hover:not(:disabled), .vn-profile-dialog .vn-primary:hover:not(:disabled) { background: var(--accent-hover); color: white; }
 .vn-player :is(input:not([type=checkbox]):not([type=radio]), select, textarea), .vn-profile-dialog :is(input:not([type=checkbox]):not([type=radio]), select, textarea) { width: 100%; min-width: 0; min-height: 38px; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
 .vn-player :is(button, input, select, textarea, summary):focus-visible, .vn-profile-dialog :is(button, input, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .vn-page-heading, .vn-game-bar, .vn-editor-heading, .vn-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.vn-eyebrow { font-size: 10px; font-weight: 650; letter-spacing: .1em; color: var(--muted); }
-.vn-page-heading h2 { margin: 5px 0; font-size: 27px; font-weight: 650; letter-spacing: -.04em; }
-.vn-page-heading p, .vn-editor-heading p { margin: 0; color: var(--muted); font-size: 13px; }
-.vn-experimental { font-size: 11px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 5px; color: var(--muted); }
+.vn-editor-heading p { margin: 4px 0 0; color: var(--muted); font-size: 11px; line-height: 16px; }
 .vn-game-bar { padding: 16px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
 .vn-game-select { display: grid; grid-template-columns: minmax(160px, 290px) auto; align-items: center; gap: 6px 12px; min-width: 0; }
 .vn-game-select label { grid-column: 1 / -1; font-size: 11px; color: var(--muted); }
 .vn-game-select > span { font-size: 11px; color: var(--muted); }
 .vn-game-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.vn-game-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .vn-session-banner { display: flex; align-items: center; gap: 12px; padding: 0 3px; }
 .vn-session-banner > div { flex: 1; min-width: 0; }
 .vn-session-banner strong { font-weight: 600; font-size: 13px; }
@@ -43,16 +41,11 @@
 .vn-journey small { display: block; margin-top: 3px; line-height: 1.5; }
 .vn-companion-panel { align-self: start; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
 .vn-abilities { list-style: none; margin: 0; padding: 4px 16px; }
-.vn-abilities li { display: flex; gap: 8px; padding: 12px 0; align-items: baseline; border-bottom: 1px solid var(--border); }
+.vn-abilities li { display: flex; gap: 8px; padding: 12px 0; align-items: start; border-bottom: 1px solid var(--border); }
 .vn-abilities li:last-child { border: 0; }
 .vn-abilities li > div { flex: 1; }
-.vn-abilities strong { font-size: 12px; font-weight: 550; }
-.vn-abilities small { display: block; margin-top: 4px; font-size: 11px; color: var(--muted); line-height: 1.5; }
+.vn-abilities small { display: block; margin-top: 4px; }
 .vn-abilities .excluded { color: var(--muted); }
-.vn-ability-dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
-.available .vn-ability-dot { background: var(--success); }
-.vn-ability-state { font-size: 10px; color: var(--muted); white-space: nowrap; }
-.available .vn-ability-state { color: var(--success); }
 .vn-sidebar-note { margin: 0; padding: 12px 16px; border-top: 1px solid var(--border); color: var(--muted); background: var(--surface-alt); font-size: 11px; line-height: 1.6; }
 .vn-story-item { margin: 0 0 14px; padding: 12px 14px; border-radius: 9px; background: var(--surface-alt); border: 1px solid var(--border); }
 .vn-story-item header { display: flex; justify-content: space-between; gap: 12px; font-size: 10px; color: var(--muted); }
@@ -79,25 +72,31 @@
 .vn-raw-events pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .vn-raw-events > div { margin: 12px 0; }
 .vn-page-error { padding: 10px 14px; border: 1px solid var(--danger); border-radius: 8px; }
-.vn-profile-dialog { margin: auto; width: min(720px, calc(100vw - 32px)); max-height: 92vh; padding: 0; border: 1px solid var(--border); border-radius: 16px; color: var(--text); background: var(--surface); box-shadow: 0 20px 80px #0003; }
+.vn-profile-dialog { margin: auto; width: min(880px, calc(100vw - 32px)); max-height: 92vh; padding: 0; border: 1px solid var(--border); border-radius: 16px; color: var(--text); background: var(--surface); box-shadow: 0 20px 80px #0003; }
 .vn-profile-dialog::backdrop { background: #10182870; backdrop-filter: blur(3px); }
-.vn-profile-dialog form { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: min(950px, 92vh); }
+.vn-profile-dialog form { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: min(800px, 92vh); }
 .vn-editor-heading { padding: 20px 24px; border-bottom: 1px solid var(--border); }
-.vn-editor-heading h2 { margin: 0 0 5px; font-size: 20px; font-weight: 650; }
 .vn-profile-dialog .vn-icon-button { border: 0; font-size: 23px; }
 .vn-editor-fields { display: contents; font-size: 13px; }
-.vn-editor-body { overflow-y: auto; min-height: 0; padding: 22px 24px; display: grid; gap: 22px; }
-.vn-editor-section { display: grid; gap: 13px; }
-.vn-editor-section h3 { display: flex; align-items: center; gap: 9px; margin: 0 0 3px; font-weight: 600; font-size: 14px; }
-.vn-editor-section h3 > span { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--surface-alt); border: 1px solid var(--border); font-size: 11px; color: var(--muted); }
+.vn-editor-layout { display: grid; grid-template-columns: 158px minmax(0, 1fr); min-height: 0; background: var(--bg); }
+.vn-editor-nav { display: flex; flex-direction: column; gap: 4px; padding: 18px 10px; border-right: 1px solid var(--divider); }
+.vn-profile-dialog .vn-editor-nav button { display: flex; align-items: center; gap: 8px; text-align: left; min-height: 34px; padding: 7px 10px; border: 0; background: transparent; color: var(--muted); font-size: 11.5px; }
+.vn-profile-dialog .vn-editor-nav button[aria-selected=true] { background: var(--selected-fill); color: var(--text); font-weight: 650; }
+.vn-editor-body { overflow-y: auto; min-height: 0; padding: 20px; }
+.vn-editor-panel[hidden] { display: none; }
+.vn-editor-panel .settings-group-body { gap: 10px; }
+.vn-editor-panel .settings-field-label { font-size: 12px; }
+.vn-editor-panel .vn-field > input, .vn-editor-panel .vn-field select { background: var(--surface-alt); }
+.vn-editor-panel .vn-editor-details { padding: 12px; border: 1px solid var(--card-border); border-radius: 11px; background: var(--surface); }
+.vn-preference-row { display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 12px; border: 1px solid var(--card-border); border-radius: 11px; background: var(--surface); cursor: pointer; }
 .vn-field { display: grid; gap: 6px; min-width: 0; }
 .vn-field small { font-size: 11px; line-height: 1.5; color: var(--muted); }
 .vn-file-field { display: flex; gap: 8px; }
 .vn-file-field > button { flex-shrink: 0; }
 .vn-type-picker { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .vn-type-picker legend { margin-bottom: 7px; }
-.vn-type-picker label { display: flex; align-items: start; gap: 9px; padding: 12px; border: 1px solid var(--border); border-radius: 9px; cursor: pointer; }
-.vn-type-picker label.selected { border-color: var(--accent); background: var(--surface-alt); }
+.vn-type-picker label { background: var(--surface); display: flex; align-items: start; gap: 9px; padding: 12px; border: 1px solid var(--border); border-radius: 9px; cursor: pointer; }
+.vn-type-picker label.selected { border-color: var(--accent); background: var(--selected-fill); }
 .vn-type-picker input { margin-top: 3px; accent-color: var(--accent); }
 .vn-type-picker strong { font-size: 13px; font-weight: 600; }
 .vn-type-picker small { display: block; color: var(--muted); font-size: 11px; line-height: 1.5; margin-top: 4px; }
@@ -125,6 +124,9 @@
 }
 @media (max-width: 520px) {
   .vn-type-picker { grid-template-columns: 1fr; }
+  .vn-editor-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .vn-editor-nav { flex-direction: row; padding: 8px; border-right: 0; border-bottom: 1px solid var(--divider); gap: 2px; }
+  .vn-profile-dialog .vn-editor-nav button { flex: 1; padding: 8px 5px; justify-content: center; }
   .vn-editor-body, .vn-editor-heading, .vn-editor-actions { padding: 16px; }
   .vn-editor-actions p { display: none; }
   .vn-game-select { grid-template-columns: 1fr; width: 100%; }

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useI18n } from '../i18n'
 import VNProfileEditor, { type VNProfileSettings } from './VNProfileEditor'
 import VNAbilities, { capabilityReason, type CapabilityState, type VNCapabilities, type VNCapabilityPresets } from './VNAbilities'
+import FluentIcon from './FluentIcon'
+import { StatusPill } from './SettingsPrimitives'
 
 type BackendSend = (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
 type BackendSubscribe = (method: string, fn: (p: Record<string, unknown>) => void) => () => void
@@ -486,9 +488,8 @@ export default function VNPage({ send, subscribe, connected }: Props) {
 
   return <div className="vn-player">
     <header className="vn-page-heading">
-      <div><div className="vn-eyebrow">AMADEUS / {t('Game companion')}</div>
-        <h2>{t('VN Player')}</h2><p>{t('Stay in the story. Your companion follows along.')}</p></div>
-      <span className="vn-experimental">{t('Experimental')}</span>
+      <div><h2 className="settings-page-title">{t('VN Player')}</h2><p className="settings-page-context">{t('Stay in the story. Your companion follows along.')}</p></div>
+      <StatusPill ok={false} tone="neutral">{t('Experimental')}</StatusPill>
     </header>
     <section className="vn-game-bar" aria-label={t('Selected game')}>
       <div className="vn-game-select"><label htmlFor="vn-game-select">{t('Your game')}</label>
@@ -500,8 +501,8 @@ export default function VNPage({ send, subscribe, connected }: Props) {
       </div>
       <div className="vn-game-actions">
         <button onClick={() => setEditor({})} disabled={!connected || busy || isActive}>{t('Add game')}</button>
-        <button onClick={() => setEditor({ initial: activeProfile })} disabled={!connected || busy || isActive || !activeProfile}>{t('Edit game profile')}</button>
-        {!isActive && <button className="vn-primary" onClick={() => void startProfile(activeProfile.id)} disabled={!connected || busy || !sourceReady}>{t('Start')}</button>}
+        <button onClick={() => setEditor({ initial: activeProfile })} disabled={!connected || busy || isActive || !activeProfile}><FluentIcon name="Setting" size={14} aria-hidden="true" />{t('Edit game profile')}</button>
+        {!isActive && <button className="vn-primary" onClick={() => void startProfile(activeProfile.id)} disabled={!connected || busy || !sourceReady}><FluentIcon name="Play" size={14} aria-hidden="true" />{t('Start')}</button>}
         {isActive && <button onClick={stop} disabled={!connected || busy}>{t('Stop')}</button>}
       </div>
     </section>
@@ -527,7 +528,7 @@ export default function VNPage({ send, subscribe, connected }: Props) {
               <header><span>{t('Game text')} {index + 1}</span></header><p>{line.speaker ? `${line.speaker}: ` : ''}{line.text}</p>
             </article>)}
           </> : !storyEvents.length ? <div className="vn-empty">
-            <div className="vn-empty-symbol" aria-hidden="true">文</div>
+            <div className="vn-empty-symbol" aria-hidden="true"><FluentIcon name="Movie" size={24} /></div>
             <h4>{t(isPlaying ? 'Waiting for the story to begin' : 'A companion for your next story')}</h4>
             <p>{t(isPlaying ? 'Advance the game. Dialogue and responses will appear here.' : 'Set up your game, check its text, then settle in and play.')}</p>
             {!isActive && <ol className="vn-journey">

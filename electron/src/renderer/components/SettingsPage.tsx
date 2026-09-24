@@ -1,6 +1,7 @@
 import { DEFAULT_WINDOWS_STARTUP_MODE } from '../../main/startupMode'
 import { useState, useEffect, useCallback, useMemo, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import FluentIcon, { type FluentIconName } from './FluentIcon'
+import { GroupTitle, CardShell, CardIcon, StatusPill, SettingsGroup } from './SettingsPrimitives'
 import McpConnections, { type McpConnectionSummary } from './McpConnections'
 import ChatAvatarSettings from './ChatAvatarSettings'
 import AcpProviders, { type AcpConfiguration } from './AcpProviders'
@@ -159,33 +160,6 @@ function asConfigurationGroups(value: unknown): ConfigurationGroup[] {
   return Array.isArray(value) ? value as ConfigurationGroup[] : []
 }
 
-function GroupTitle({ children, detail }: { children: string; detail?: string }) {
-  const { t } = useI18n()
-  return (
-    <div>
-      <h3 className="settings-group-title">{t(children)}</h3>
-      {detail ? <div className="settings-group-description">{t(detail)}</div> : null}
-    </div>
-  )
-}
-
-function CardShell({ children, vertical = false }: { children: ReactNode; vertical?: boolean }) {
-  return (
-    <div
-      className={`setting-card flex ${vertical ? 'flex-col items-stretch' : 'items-center'}`}
-      style={{
-        minHeight: vertical ? undefined : 64,
-        backgroundColor: 'var(--surface)',
-        border: '1px solid var(--card-border)',
-        borderRadius: 11,
-        padding: 12,
-        boxShadow: '0 1px 2px color-mix(in srgb, var(--shadow-color) 25%, transparent)',
-      }}
-    >
-      {children}
-    </div>
-  )
-}
 
 type ComboOption = string | { value: string; label: string }
 
@@ -216,17 +190,6 @@ function ComboCard({ icon, title, content, value, onChange, options, disabled }:
         })}
       </select>
     </CardShell>
-  )
-}
-
-function CardIcon({ name }: { name: FluentIconName }) {
-  return (
-    <>
-      <div className="shrink-0 flex items-center justify-center" style={{ width: 24, color: 'var(--muted)' }}>
-        <FluentIcon name={name} size={17} />
-      </div>
-      <div style={{ width: 11, flexShrink: 0 }} />
-    </>
   )
 }
 
@@ -299,18 +262,6 @@ function RoleAssignmentCard({
         </div>
       </div>
     </div>
-  )
-}
-
-function StatusPill({ ok, tone, children }: { ok: boolean; tone?: 'success' | 'warning' | 'neutral'; children: ReactNode }) {
-  const resolvedTone = tone || (ok ? 'success' : 'warning')
-  return (
-    <span
-      className="settings-status-pill text-[10px] font-[700] rounded-full px-2.5 py-1 shrink-0"
-      data-tone={resolvedTone}
-    >
-      {children}
-    </span>
   )
 }
 
@@ -597,15 +548,6 @@ function CapabilityCard({ contribution, packageInfo, consumers }: {
         <div><span className="font-[600]">{t('Source')}:</span> {packageInfo.source} · {packageInfo.trust}</div>
       </div>
     </CardShell>
-  )
-}
-
-function SettingsGroup({ title, detail, children }: { title: string; detail?: string; children: ReactNode }) {
-  return (
-    <section>
-      <GroupTitle detail={detail}>{title}</GroupTitle>
-      <div className="settings-group-body">{children}</div>
-    </section>
   )
 }
 

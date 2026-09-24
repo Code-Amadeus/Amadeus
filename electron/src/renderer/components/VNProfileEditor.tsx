@@ -1,5 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { flushSync } from 'react-dom'
 import { useI18n } from '../i18n'
+import FluentIcon, { type FluentIconName } from './FluentIcon'
+import { CardShell, SettingsGroup } from './SettingsPrimitives'
 import VNAbilities, { type VNCapabilityPresets } from './VNAbilities'
 
 export type VNProfileSettings = {
@@ -8,6 +11,12 @@ export type VNProfileSettings = {
   launchOverlay: boolean; stopWallpaper: boolean; closeGameOnStop: boolean
   promptPack: 'base' | 'mystery'; voiceInput: boolean
 }
+type EditorSection = 'game' | 'connection' | 'preferences'
+const sections: Array<{ id: EditorSection; title: string; icon: FluentIconName }> = [
+  { id: 'game', title: 'Game and companion', icon: 'Movie' },
+  { id: 'connection', title: 'Text connection', icon: 'CommandPrompt' },
+  { id: 'preferences', title: 'Play preferences', icon: 'Setting' },
+]
 type Props = {
   initial?: Partial<VNProfileSettings> & { overlayExists?: boolean }
   overlayAvailable?: boolean; capabilityPresets: VNCapabilityPresets
@@ -23,6 +32,7 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
     stopWallpaper: true, closeGameOnStop: false, voiceInput: false,
     promptPack: initial?.id === 'paranormasight' ? 'mystery' : 'base', ...initial,
   }))
+  const [section, setSection] = useState<EditorSection>('game')
   const [agent, setAgent] = useState(agentExe)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -40,19 +50,34 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
       else if (!result.cancelled) throw new Error(result.detail)
     } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
   }
+  const moveSection = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? sections.length - 1
+      : ['ArrowDown', 'ArrowRight'].includes(event.key) ? (index + 1) % sections.length
+      : ['ArrowUp', 'ArrowLeft'].includes(event.key) ? (index + sections.length - 1) % sections.length : -1
+    if (next < 0) return
+    event.preventDefault()
+    setSection(sections[next].id)
+    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role=tab]')[next]?.focus()
+  }
   const fileField = (label: string, kind: 'game' | 'agent' | 'hook' | 'script', value: string, update: (path: string) => void, required = true) => (
-    <div className="vn-field"><label htmlFor={`vn-file-${kind}`}>{t(label)}</label><div className="vn-file-field">
+    <CardShell vertical><div className="vn-field"><label className="settings-field-label" htmlFor={`vn-file-${kind}`}>{t(label)}</label><div className="vn-file-field">
       <input id={`vn-file-${kind}`} required={required} value={value} placeholder={t('Choose a file…')} onChange={e => update(e.target.value)} />
       <button type="button" aria-label={`${t('Browse')}: ${t(label)}`} onClick={() => void browse(kind, update)}>{t('Browse')}</button>
-    </div></div>
+    </div></div></CardShell>
   )
   return <dialog ref={dialog} className="vn-profile-dialog" aria-labelledby="vn-profile-title"
     onCancel={event => { event.preventDefault(); if (!busy) onClose() }}>
-    <form onInvalidCapture={event => {
-      const target = event.target as HTMLElement
-      target.closest('details')?.setAttribute('open', '')
-    }} onSubmit={async event => {
+    <form noValidate onSubmit={async event => {
       event.preventDefault()
+      const invalid = event.currentTarget.querySelector<HTMLInputElement | HTMLSelectElement>('input:invalid, select:invalid')
+      if (invalid) {
+        const panel = invalid.closest<HTMLElement>('[data-vn-panel]')?.dataset.vnPanel as EditorSection | undefined
+        if (panel) flushSync(() => setSection(panel))
+        invalid.closest('details')?.setAttribute('open', '')
+        invalid.focus()
+        invalid.reportValidity()
+        return
+      }
       const test = (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'test'
       setBusy(true); setError('')
       try {
@@ -63,15 +88,23 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
       finally { setBusy(false) }
     }}>
       <header className="vn-editor-heading">
-        <div><h2 id="vn-profile-title">{t(initial?.id ? 'Edit game profile' : 'Add game')}</h2>
+        <div><h2 id="vn-profile-title" className="settings-panel-title">{t(initial?.id ? 'Edit game profile' : 'Add game')}</h2>
           <p>{t('Set up once. Next time, just start playing.')}</p></div>
         <button type="button" className="vn-icon-button" aria-label={t('Close')} disabled={busy} onClick={onClose}>×</button>
       </header>
       <fieldset disabled={busy} className="vn-editor-fields">
-        <div className="vn-editor-body">
-          <section className="vn-editor-section" aria-labelledby="vn-game-heading">
-            <h3 id="vn-game-heading"><span>1</span>{t('Your game')}</h3>
-            <label className="vn-field">{t('Game name')}<input autoFocus required maxLength={120} value={profile.name} onChange={e => set('name', e.target.value)} /></label>
+        <div className="vn-editor-layout">
+          <nav className="settings-section-nav vn-editor-nav" role="tablist" aria-label={t('Profile settings')} aria-orientation="vertical">
+            {sections.map((item, index) => <button key={item.id} type="button" role="tab" id={`vn-tab-${item.id}`} aria-controls={`vn-panel-${item.id}`}
+              aria-selected={section === item.id} tabIndex={section === item.id ? 0 : -1} onKeyDown={event => moveSection(event, index)} onClick={() => setSection(item.id)}>
+              <FluentIcon name={item.icon} size={15} aria-hidden="true" />{t(item.title)}
+            </button>)}
+          </nav>
+          <div className="vn-editor-body settings-scroll-area">
+          <div className="vn-editor-panel" role="tabpanel" id="vn-panel-game" data-vn-panel="game" aria-labelledby="vn-tab-game" hidden={section !== 'game'}>
+          <SettingsGroup title="Game and companion" detail="Choose the game type. Its companion abilities are configured for you.">
+            <CardShell vertical>
+            <label className="vn-field">{t('Game name')}<input autoFocus required maxLength={120} value={profile.name} onChange={e => set('name', e.target.value)} /></label></CardShell>
             <fieldset className="vn-type-picker"><legend>{t('Game type')}</legend>
               {(['base', 'mystery'] as const).map(kind => <label key={kind} className={profile.promptPack === kind ? 'selected' : ''}>
                 <input type="radio" name="game-type" value={kind} checked={profile.promptPack === kind} onChange={() => set('promptPack', kind)} />
@@ -79,26 +112,27 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
                   <small>{t(kind === 'base' ? 'Follow the story, characters and everyday conversations.' : 'Follow the story and connect clues, hypotheses and earlier events.')}</small></span>
               </label>)}
             </fieldset>
-            <div className="vn-type-abilities"><p>{t('Companion abilities follow the game type automatically.')}</p>
-              <VNAbilities compact preset={capabilityPresets[profile.promptPack]} /></div>
-          </section>
-          <section className="vn-editor-section" aria-labelledby="vn-connection-heading">
-            <h3 id="vn-connection-heading"><span>2</span>{t('Connect game text')}</h3>
+            <CardShell vertical><div className="vn-type-abilities"><p>{t('Companion abilities follow the game type automatically.')}</p>
+              <VNAbilities compact preset={capabilityPresets[profile.promptPack]} /></div></CardShell>
+          </SettingsGroup></div>
+          <div className="vn-editor-panel" role="tabpanel" id="vn-panel-connection" data-vn-panel="connection" aria-labelledby="vn-tab-connection" hidden={section !== 'connection'}>
+          <SettingsGroup title="Text connection" detail="Use your existing extraction tool and a script that matches this game.">
+            <CardShell vertical>
             <label className="vn-field">{t('Text source')}<select value={profile.textSource} onChange={e => set('textSource', e.target.value as 'agent' | 'luna')}>
               <option value="agent">0xDC00 Agent</option><option value="luna">{t('Luna original text (experimental)')}</option>
-            </select></label>
+            </select></label></CardShell>
             {profile.textSource === 'agent' ? <>
               {fileField('Game executable', 'game', profile.gameExe, value => set('gameExe', value))}
-              <label className="vn-field">{t('Launch game with')}<select value={!profile.launchGame ? 'manual' : profile.launchMethod} onChange={e => setProfile(previous => ({ ...previous, launchGame: e.target.value !== 'manual', launchMethod: e.target.value === 'steam' ? 'steam' : 'exe' }))}>
+              <CardShell vertical><label className="vn-field">{t('Launch game with')}<select value={!profile.launchGame ? 'manual' : profile.launchMethod} onChange={e => setProfile(previous => ({ ...previous, launchGame: e.target.value !== 'manual', launchMethod: e.target.value === 'steam' ? 'steam' : 'exe' }))}>
                 <option value="exe">{t('Game executable')}</option><option value="steam">Steam</option><option value="manual">{t('I will start the game')}</option>
-              </select></label>
+              </select></label></CardShell>
               {profile.launchGame && profile.launchMethod === 'steam' && <label className="vn-field">{t('Steam app ID')}
                 <input required inputMode="numeric" pattern="[1-9][0-9]{0,9}" value={profile.steamAppId} onChange={e => set('steamAppId', e.target.value)} placeholder="3345060" />
                 <small>{t('The number in the game’s Steam store URL. Use the demo’s own ID when playing a demo.')}</small></label>}
               {!profile.launchGame && <p className="vn-help">{t('Start the game yourself. Agent will attach automatically when you click Start.')}</p>}
               {fileField('Game hook script (.js)', 'hook', profile.hookHelper, value => set('hookHelper', value))}
               <p className="vn-help">{t('Use the Agent script for this game. The full story script is a separate, optional file.')}</p>
-              <details className="vn-editor-details" open={!agent || undefined}>
+              <details className="vn-editor-details setting-card" open={!agent || undefined}>
                 <summary>{t('Agent installation')}<span>{t(agent ? 'Already configured · shared by all games' : 'Choose once for all games')}</span></summary>
                 {fileField('Agent installation (shared by all games)', 'agent', agent, setAgent)}
               </details>
@@ -107,23 +141,23 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
               <p className="vn-help">{t('Start the game and configure extraction in Luna first. VN Player connects to its original-text stream.')}</p>
               {fileField('Game executable (optional for game view)', 'game', profile.gameExe, value => set('gameExe', value), false)}
             </>}
-          </section>
-          <details className="vn-editor-details">
-            <summary>{t('Story script and play preferences')}<span>{t('Optional')}</span></summary>
+          </SettingsGroup></div>
+          <div className="vn-editor-panel" role="tabpanel" id="vn-panel-preferences" data-vn-panel="preferences" aria-labelledby="vn-tab-preferences" hidden={section !== 'preferences'}>
+          <SettingsGroup title="Play preferences" detail="Optional story context and controls for this game.">
             <div className="vn-preferences">
               {fileField('Full script for alignment', 'script', profile.scriptPath, value => set('scriptPath', value), false)}
               <p className="vn-help">{t('Live text is enough to begin. Mystery lookahead becomes available when a full script is aligned.')}</p>
-              <label><input type="checkbox" checked={profile.voiceInput} onChange={e => set('voiceInput', e.target.checked)} /> {t('Voice input when play starts')}</label>
-              <label><input type="checkbox" checked={profile.launchOverlay} disabled={!canLaunchOverlay} onChange={e => set('launchOverlay', e.target.checked)} /> {t('Portrait overlay')}</label>
+              <label className="vn-preference-row setting-card"><input type="checkbox" checked={profile.voiceInput} onChange={e => set('voiceInput', e.target.checked)} /> {t('Voice input when play starts')}</label>
+              <label className="vn-preference-row setting-card"><input type="checkbox" checked={profile.launchOverlay} disabled={!canLaunchOverlay} onChange={e => set('launchOverlay', e.target.checked)} /> {t('Portrait overlay')}</label>
               {!canLaunchOverlay && <p className="vn-help">{t('Overlay helper is unavailable for this game.')}</p>}
               {profile.textSource === 'agent' && <>
-                <label><input type="checkbox" checked={profile.stopWallpaper} onChange={e => set('stopWallpaper', e.target.checked)} /> {t('Exit wallpaper before game')}</label>
-                <label><input type="checkbox" checked={profile.closeGameOnStop} onChange={e => set('closeGameOnStop', e.target.checked)} /> {t('Close games launched by VN Player on stop')}</label>
+                <label className="vn-preference-row setting-card"><input type="checkbox" checked={profile.stopWallpaper} onChange={e => set('stopWallpaper', e.target.checked)} /> {t('Exit wallpaper before game')}</label>
+                <label className="vn-preference-row setting-card"><input type="checkbox" checked={profile.closeGameOnStop} onChange={e => set('closeGameOnStop', e.target.checked)} /> {t('Close games launched by VN Player on stop')}</label>
               </>}
             </div>
-          </details>
-          {error && <p role="alert" className="vn-error">{error}</p>}
-        </div>
+          </SettingsGroup></div>
+          {error && <p role="alert" className="vn-error settings-feedback">{error}</p>}
+        </div></div>
         <footer className="vn-editor-actions">
           <p>{t('Test a few lines before your first play session.')}</p>
           <button type="button" onClick={onClose}>{t('Cancel')}</button>

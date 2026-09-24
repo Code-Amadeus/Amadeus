@@ -1,4 +1,6 @@
 import { useI18n } from '../i18n'
+import FluentIcon, { type FluentIconName } from './FluentIcon'
+import { StatusPill } from './SettingsPrimitives'
 
 export type VNCapability = 'immediate' | 'interaction' | 'summary' | 'retrospective' | 'lookahead' | 'reasoning'
 export type VNCapabilities = Partial<Record<VNCapability, boolean>>
@@ -13,6 +15,10 @@ export const VN_ABILITIES: Array<{ key: VNCapability; title: string; detail: str
   { key: 'lookahead', title: 'Lookahead', detail: 'Requires a full script and verified alignment during play.' },
   { key: 'reasoning', title: 'Detective reasoning', detail: 'Reason about clues using the Mystery companion.' },
 ]
+const icons: Record<VNCapability, FluentIconName> = {
+  immediate: 'Chat', interaction: 'People', summary: 'Album',
+  retrospective: 'Sync', lookahead: 'RightArrow', reasoning: 'Work',
+}
 const reasons: Record<string, string> = {
   disabled_by_profile: 'Not used for this game type.',
   ready: 'Available now', rules_only: 'Available through built-in story rules.',
@@ -41,9 +47,9 @@ export default function VNAbilities({ preset, states, compact = false }: {
       const status = !included ? 'Not included' : state ? state.enabled ? 'Available now' : 'Waiting' : 'Included'
       const detail = !included ? 'Not used for this game type.' : state ? capabilityReason(state.reason, state.enabled) : ability.detail
       return <li key={ability.key} className={!included ? 'excluded' : state?.enabled ? 'available' : 'included'}>
-        <span className="vn-ability-dot" aria-hidden="true" />
-        <div><strong>{t(ability.title)}</strong>{!compact && <small>{t(detail)}</small>}</div>
-        {!compact && <span className="vn-ability-state">{t(status)}</span>}
+        <FluentIcon name={icons[ability.key]} size={compact ? 13 : 16} aria-hidden="true" />
+        <div><strong className={compact ? undefined : 'settings-card-title'}>{t(ability.title)}</strong>{!compact && <small className="settings-card-description">{t(detail)}</small>}</div>
+        {!compact && <StatusPill ok={!!state?.enabled} tone={!included || !state ? 'neutral' : undefined}>{t(status)}</StatusPill>}
       </li>
     })}
   </ul>
