@@ -1,7 +1,8 @@
 """Opt-in real-game acceptance of profile creation and subsequent saved Start.
 
-Requires Vite and installed game/Agent/script paths. Launches the game twice;
-advance dialogue when prompted. Only the native path picker is substituted.
+Requires Vite and installed game/Agent/script paths. Launches the game twice,
+or reattaches twice with --attach-running; advance dialogue when prompted.
+Only the native path picker is substituted.
 Settings and reports go to an isolated directory under output/diagnostics.
 """
 from __future__ import annotations
@@ -60,11 +61,12 @@ async def run(args) -> None:
             calls.append({"method": method, "params": params})
         return await handler.handle(method, params)
 
-    html = HTML.replace("const subscribe = () => () => {};", """
-const listeners = new Map();
-const subscribe = (method, fn) => { listeners.set(method, fn); return () => listeners.delete(method); };
-setInterval(async () => { const status = await send('vn.launch.status', {}); listeners.get('vn.launch.status')?.(status); }, 1000);
-""")
+    html = HTML.replace("window.amadeus =", """
+setInterval(async () => {
+  const status = await send('vn.launch.status', {});
+  for (const listener of window.vnSubscribers['vn.launch.status'] || []) listener(status);
+}, 1000);
+window.amadeus =""")
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(headless=True)
         page = await browser.new_page(viewport={"width": 1120, "height": 900})
@@ -80,7 +82,10 @@ setInterval(async () => { const status = await send('vn.launch.status', {}); lis
             for button in await form.get_by_role("button", name="Browse", exact=True).all():
                 await button.click()
             await form.get_by_label("Exit wallpaper before game").uncheck()
-            await form.get_by_label("Close games launched by VN Player on stop").check()
+            if args.attach_running:
+                await form.get_by_label("Launch game if it is not running").uncheck()
+            else:
+                await form.get_by_label("Close games launched by VN Player on stop").check()
             await page.screenshot(path=str(output / "saved-settings.png"))
             await form.get_by_role("button", name="Save and test text", exact=True).click()
 
@@ -93,6 +98,7 @@ setInterval(async () => { const status = await send('vn.launch.status', {}); lis
                 deadline = time.monotonic() + args.timeout
                 print(json.dumps({"phase": attempt, "action": "advance game dialogue", "output": str(output)}, ensure_ascii=False), flush=True)
                 last_status = ""
+                last_count = -1
                 while time.monotonic() < deadline:
                     state = await handler._manager.status()
                     status = state["status"]
@@ -101,7 +107,11 @@ setInterval(async () => { const status = await send('vn.launch.status', {}); lis
                     if status != last_status:
                         print(json.dumps({"phase": attempt, "status": status, "game": state["game"], "hook": state["hook"]}, ensure_ascii=False), flush=True)
                         last_status = status
-                    if state["bridge"].get("lineCount", 0) >= args.lines:
+                    count = state["bridge"].get("lineCount", 0)
+                    if count != last_count:
+                        print(json.dumps({"phase": attempt, "captured": count, "required": args.lines}), flush=True)
+                        last_count = count
+                    if count >= args.lines:
                         break
                     await asyncio.sleep(.5)
                 else:
@@ -118,8 +128,15 @@ setInterval(async () => { const status = await send('vn.launch.status', {}); lis
                 await page.get_by_role("button", name="Stop", exact=True).click()
                 await expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
                 print(json.dumps({"phase": attempt, "result": "passed", "count": state["bridge"]["lineCount"]}), flush=True)
-            assert reports[0]["state"]["game"]["pid"] != reports[1]["state"]["game"]["pid"]
-            print("PASS: saved profile reloaded in a new manager; ordinary Start launched and injected a fresh game process without manual Agent steps", flush=True)
+            first_pid = reports[0]["state"]["game"]["pid"]
+            second_pid = reports[1]["state"]["game"]["pid"]
+            if args.attach_running:
+                assert first_pid == second_pid
+                assert all(report["state"]["game"]["status"] == "external_running" for report in reports)
+                print("PASS: saved profile reloaded; ordinary Start reattached Agent to the externally launched game", flush=True)
+            else:
+                assert first_pid != second_pid
+                print("PASS: saved profile reloaded in a new manager; ordinary Start launched and injected a fresh game process without manual Agent steps", flush=True)
         finally:
             await handler._manager.stop({"closeGame": True, "reason": "profile_live_acceptance"})
             (output / "report.json").write_text(json.dumps({"phases": reports, "calls": calls}, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -134,5 +151,6 @@ if __name__ == "__main__":
     parser.add_argument("--agent", required=True)
     parser.add_argument("--hook", required=True)
     parser.add_argument("--lines", type=int, default=3)
+    parser.add_argument("--attach-running", action="store_true", help="Validate a game already started by its storefront; does not qualify automatic game launch")
     parser.add_argument("--timeout", type=int, default=180)
     asyncio.run(run(parser.parse_args()))

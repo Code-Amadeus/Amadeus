@@ -125,4 +125,40 @@ without a demonstrated semantic need. A concrete additional test candidate is
 with an existing [upstream Agent script](https://github.com/0xDC00/scripts/blob/main/PC_Steam_Unity_Kemono_Teatime.js).
 The script identifies the full Steam game, so demo/version compatibility remains
 unverified. This is a candidate, not a claim of supported extraction. No game
-purchase or new demo installation was performed during this implementation.
+purchase or new demo installation was performed during that implementation pass.
+
+## 2026-09-25 — Non-mystery game: Kemono Teatime Demo
+
+Downloaded the official free Steam demo (app `3345060`, build `21219052`,
+in-game version `1.0.1`) and tested its Simplified Chinese opening with the
+unmodified upstream `PC_Steam_Unity_Kemono_Teatime.js` (`1.0.0`). The bundled
+script matched the current upstream file after newline normalization.
+
+**Text-source acceptance passed:** The real profile form's Save and test text
+captured eight observations. A new launch manager reloaded the saved profile;
+ordinary Start automatically reattached Agent and delivered eight more observations
+to the Base VN runtime. No manual Agent process/script selection was needed.
+The running game was started through Steam and was correctly treated as external.
+Both phases used the Agent WebSocket. Evidence, UI screenshots and settings are in
+`output/diagnostics/vn-profile-live-20260925-001310/`.
+
+The sixteen observations include opening narration, unnamed speech, and named
+dialogue between the sisters. No observation supplied structured `speaker`,
+`script_id` or `scene_id`; speaker labels such as `【玛卡珑】` remained in the text.
+Base accepted the stream with an empty script index and reasoning/lookahead off.
+Model calls were disabled for this transport experiment, so this result does not
+qualify companion response quality, summaries or long-term interpretation. Choices,
+branch revisits, management screens and the full game remain outside this sample.
+
+**Automatic game launch did not pass:** Direct execution of the installed exe
+showed the game's own error dialog. The same failure reproduced with no Agent
+running, while Steam `-applaunch 3345060` reached normal gameplay. This isolates a
+storefront launch integration gap from extraction. The present local demo profile
+therefore has Launch game disabled: start it through Steam, then Start in VN Player
+automatically binds Agent. Supporting a Steam launch entry in the profile is the
+next launch-layer change; do not disguise this requirement with a game-specific
+hook change or injected Steam environment variables.
+
+The live probe now supports `--attach-running` explicitly and reports progress
+counts. Its status subscription was updated to the shared UI fixture's listener
+contract, fixing a test-instrument mismatch introduced when that fixture changed.
