@@ -31,6 +31,10 @@ const reasons: Record<string, string> = {
   semantic_type_unsupported: 'Not used for this game type.',
   model_unsupported: 'The selected model does not support this ability.',
   model_unconfigured: 'Choose a model to use this ability.',
+  inactive_vn_session: 'Start a VN companion session first.',
+  interaction_unavailable: 'Player interaction must be available to use this input.',
+  asr_unavailable: 'Voice recognition is unavailable.',
+  game_view_unavailable: 'Game view is unavailable.',
 }
 export function capabilityReason(reason?: string, enabled = false): string {
   return reason && reasons[reason] || (enabled ? 'Available now' : 'Unavailable now')

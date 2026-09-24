@@ -224,3 +224,37 @@ Production build and the UI acceptance probe passed. Inspected Chinese game,
 connection, preferences, dark-theme preferences and 480px editor screenshots in
 `output/diagnostics/vn-profiles-ui/`. Theme screenshots wait for CSS transitions
 to finish so an intermediate color frame is not mistaken for the final design.
+
+## 2026-09-25 — Session voice and scoped visual input
+
+User distinction: game type owns semantic abilities; ASR and vision are separately
+controlled input choices during play. ASR requires player interaction. Visual
+behavior is a VN setting, with current options Off and When I ask, and must not
+compete with General Settings' visual controls.
+
+`VNPlayerHandler` now owns current input state. `vn.input.set` checks the active
+session identity and publishes the result on existing `vn.status`. The VN page
+has a persistent session toolbar; reloading it reads the actual state instead of
+restarting ASR. `voiceInput` and `visionMode` remain saved startup defaults, while
+live changes leave the profile unchanged. Stop resets inputs and closes only the
+matching VN listener. Each listener has a fresh input generation so recognition
+from a disabled or restarted listener is rejected even within the same session.
+Losing player interaction also stops VN listening, including note/pin modes.
+
+Typed and spoken questions share the same visual path: When I ask captures one
+fresh bound game-window image immediately before the existing model completion.
+Notes and pins do not capture. Preview is explicitly a preview; its image is not
+reused for later questions. Failed captures are visible. Late captures cannot
+cross VN sessions, revive disabled ASR, or attach images after vision is turned off.
+No general visual configuration is read or changed, no general watching starts,
+and no desktop fallback is added. Settings and VN both explain the scope.
+
+The existing companion presentation windows have not acquired a second controller.
+A later small-window entry must use this same API/state. The current entry is the
+VN page's session toolbar. Tests cover global-policy isolation, ASR ownership,
+late results, capability loss, pending microphone startup, typed/voice fresh
+frames, profile defaults, and stale capture results. 81 focused tests, Python
+compile checks, production build and the real React/handler/store UI probe passed.
+Screenshot: `output/diagnostics/vn-profiles-ui/session-inputs-zh.png`. Hardware
+microphone recognition and real-model visual answers were not requalified in
+this control-layer change; the earlier Steam dialogue gate remains pending.

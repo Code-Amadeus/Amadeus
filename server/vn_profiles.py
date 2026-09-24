@@ -32,6 +32,7 @@ class LaunchProfile(BaseModel):
     # None preserves the preset for profiles saved before companion settings existed.
     promptPack: Literal["base", "mystery"] | None = None
     voiceInput: bool | None = None
+    visionMode: Literal["off", "on_question"] = "off"
 
     @field_validator("gameExe", "hookHelper", "scriptPath")
     @classmethod

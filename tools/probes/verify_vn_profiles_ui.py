@@ -15,6 +15,7 @@ import json
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -24,6 +25,8 @@ from playwright.sync_api import expect, sync_playwright
 from PIL import Image, ImageDraw
 
 from server.handlers.vn_launch_handler import VNLaunchHandler
+from server.handlers.vn_player_handler import VNPlayerHandler
+from server.protocol import Method
 from server.vn_text_sources import AgentVNTextSource
 
 
@@ -87,12 +90,18 @@ def main() -> None:
         for file in files.values():
             Path(file).touch()
         handler = VNLaunchHandler()
+        vn_handler = VNPlayerHandler()
+        fake_runtime = SimpleNamespace(enabled=False, profile=None)
+        asr_state = {"active": False, "source": "", "source_payload": {}}
+        asr_response = {"status": "listening", "source": "vn_player"}
 
         runtime_state = {"status": "stopped"}
         model_available = True
         async def start_runtime(params):
             nonlocal runtime_state
             calls.append({"runtime_start": params})
+            fake_runtime.enabled = True
+            fake_runtime.profile = SimpleNamespace(session_id=params["session_id"])
             runtime_state = {
                 "status": "active", "session_id": params["session_id"],
                 "capabilities": {
@@ -108,24 +117,45 @@ def main() -> None:
         async def stop_runtime(_params):
             nonlocal runtime_state
             runtime_state = {"status": "stopped"}
+            fake_runtime.enabled = False
 
-        async def runtime_status():
-            return runtime_state
+        async def asr_control(method, params):
+            calls.append({"method": method, "params": params})
+            if method == Method.ASR_START:
+                if asr_response["status"] == "listening":
+                    asr_state.update(active=True, source="vn_player", source_payload=params["source_payload"])
+                return asr_response
+            if asr_state["source_payload"].get("input_id") == params.get("input_id"):
+                asr_state.update(active=False, source="", source_payload={})
+            return {"status": "stopped"}
+
+        async def intervention(kind, params):
+            calls.append({"intervention": kind, "params": params})
+            return {"status": "ok"}
+
+        fake_runtime.start = start_runtime
+        fake_runtime.stop = stop_runtime
+        fake_runtime.status = lambda: runtime_state
+        fake_runtime.player_intervention = intervention
+        vn_handler._runtime = fake_runtime
+        vn_handler._asr_control = asr_control
+        vn_handler._asr_state = lambda: asr_state
+        vn_handler._capture_game_view = lambda: handler.handle(Method.VN_LAUNCH_CAPTURE, {})
 
         def configure():
-            handler.configure(root, runtime_start=start_runtime,
-                              runtime_stop=stop_runtime, runtime_status=runtime_status,
+            handler.configure(root, runtime_start=lambda params: vn_handler.handle(Method.VN_START, params),
+                              runtime_stop=lambda params: vn_handler.handle(Method.VN_STOP, params),
+                              runtime_status=lambda: vn_handler.handle(Method.VN_STATUS, {}),
                               runtime_line=AsyncMock(return_value={}))
 
         configure()
-        asr_response = {"status": "listening", "source": "vn_player"}
 
         async def backend(method, params):
             calls.append({"method": method, "params": params})
-            if method == "asr.start":
-                return asr_response
-            if method in {"asr.stop", "vn.player.ask", "vn.choice.ask", "tts.interrupt"}:
+            if method == "tts.interrupt":
                 return {"status": "ok"}
+            if method in vn_handler.methods:
+                return await vn_handler.handle(method, params)
             return await handler.handle(method, params)
 
         with patch("server.vn_launch_manager._find_game_pid", return_value=12345), \
@@ -216,26 +246,40 @@ def main() -> None:
                           ["vn.reaction", {"text": "Let's see what waits inside."}])
             expect(page.get_by_role("region", name="VN activity")).to_contain_text("The door creaks open.")
             expect(page.get_by_role("region", name="VN activity")).to_contain_text("Let's see what waits inside.")
-            expect(page.get_by_role("button", name="Start microphone")).to_be_enabled()
+            expect(page.get_by_role("switch", name="Voice input (ASR)")).to_be_enabled()
             assert len([call for call in calls if call.get("method") == "asr.start"]) == 0
-            page.get_by_role("button", name="Start microphone").click()
-            expect(page.get_by_role("button", name="Stop microphone")).to_be_visible()
-            expect(page.get_by_text("Listening", exact=True)).to_be_visible()
-            page.get_by_role("button", name="Attach game view").click()
+            page.get_by_role("switch", name="Voice input (ASR)").click()
+            expect(page.get_by_role("switch", name="Voice input (ASR)")).to_be_visible()
+            expect(page.get_by_role("switch", name="Voice input (ASR)")).to_be_checked()
+            page.get_by_label("VN vision", exact=True).select_option("on_question")
+            page.reload()
+            expect(page.get_by_role("switch", name="Voice input (ASR)")).to_be_checked()
+            expect(page.get_by_label("VN vision", exact=True)).to_have_value("on_question")
+            page.get_by_role("button", name="Preview game view").click()
             expect(page.get_by_alt_text("Attached game view")).to_be_visible()
             page.screenshot(path=str(output / "companion-live-attachment.png"))
             page.get_by_placeholder("Ask about the current line, add a note, or inspect a choice...").fill("What happened?")
             page.get_by_role("button", name="Send", exact=True).click()
             expect(page.get_by_alt_text("Attached game view")).to_have_count(0)
             asks = [call for call in calls if call.get("method") == "vn.player.ask"]
-            assert asks and asks[-1]["params"]["visual_context"]["game"]["pid"] == 12345
+            assert asks and "visual_context" not in asks[-1]["params"]
+            replies = [call for call in calls if call.get("intervention") == "ask"]
+            assert replies[-1]["params"]["visual_context"]["game"]["pid"] == 12345
+            page.get_by_label("VN vision", exact=True).select_option("off")
+            expect(page.get_by_role("switch", name="Voice input (ASR)")).to_be_checked()
+            expect(page.get_by_role("button", name="Preview game view")).to_be_disabled()
+            page.get_by_placeholder("Ask about the current line, add a note, or inspect a choice...").fill("Text only now")
+            page.get_by_role("button", name="Send", exact=True).click()
+            expect(page.get_by_placeholder("Ask about the current line, add a note, or inspect a choice...")).to_have_value("")
+            replies = [call for call in calls if call.get("intervention") == "ask"]
+            assert "visual_context" not in replies[-1]["params"]
             assert len([call for call in calls if call.get("method") == "asr.start"]) == 1
-            page.get_by_role("button", name="Stop microphone").click()
-            expect(page.get_by_role("button", name="Start microphone")).to_be_visible()
+            page.get_by_role("switch", name="Voice input (ASR)").click()
+            expect(page.get_by_role("switch", name="Voice input (ASR)")).to_be_visible()
             asr_response = {"status": "already_listening"}
-            page.get_by_role("button", name="Start microphone").click()
-            expect(page.get_by_text("Microphone is busy in another session.")).to_be_visible()
-            expect(page.get_by_role("button", name="Start microphone")).to_be_visible()
+            page.get_by_role("switch", name="Voice input (ASR)").click()
+            expect(page.get_by_text("Microphone is busy in another session.").first).to_be_visible()
+            expect(page.get_by_role("switch", name="Voice input (ASR)")).to_be_visible()
             asr_stop_count = len([call for call in calls if call.get("method") == "asr.stop"])
             starts = [call for call in calls if "runtime_start" in call]
             assert len(starts) == 1 and starts[0]["runtime_start"]["prompt_pack"] == "base"
@@ -256,9 +300,9 @@ def main() -> None:
             form.get_by_role("button", name="Cancel", exact=True).click()
             model_available = False
             page.get_by_role("button", name="Start", exact=True).click()
-            expect(page.get_by_role("button", name="Start microphone")).to_be_disabled()
-            expect(page.get_by_role("button", name="Attach game view")).to_be_disabled()
-            expect(page.get_by_text("Game view: Choose a model to use this ability.")).to_be_visible()
+            expect(page.get_by_role("switch", name="Voice input (ASR)")).to_be_disabled()
+            expect(page.get_by_role("button", name="Preview game view")).to_be_disabled()
+            expect(page.get_by_label("VN vision", exact=True)).to_be_disabled()
             expect(page.get_by_text("The companion model is unavailable.").first).to_be_visible()
             expect(page.get_by_text("model_unconfigured")).to_have_count(0)
             page.screenshot(path=str(output / "interaction-disabled.png"))
@@ -272,12 +316,27 @@ def main() -> None:
             page.wait_for_selector("#vn-game-select")
             page.get_by_label("我的游戏", exact=True).select_option(label="Renamed game")
             page.screenshot(path=str(output / "home-zh.png"))
+            model_available = True
+            asr_response = {"status": "listening", "source": "vn_player"}
+            page.get_by_role("button", name="启动", exact=True).click()
+            page.get_by_role("switch", name="语音提问（ASR）", exact=True).click()
+            page.get_by_label("VN 视觉", exact=True).select_option("on_question")
+            expect(page.get_by_role("switch", name="语音提问（ASR）", exact=True)).to_be_checked()
+            expect(page.get_by_role("switch", name="语音提问（ASR）", exact=True)).to_be_enabled()
+            page.evaluate("([method, payload]) => window.vnSubscribers[method].forEach(fn => fn(payload))",
+                          ["vn.line", {"text": "海边的咖啡馆今天重新开门。"}])
+            page.mouse.move(0, 0)
+            page.evaluate("async () => { await Promise.all(document.getAnimations().map(animation => animation.finished.catch(() => {}))) }")
+            page.screenshot(path=str(output / "session-inputs-zh.png"))
+            page.get_by_role("button", name="停止", exact=True).click()
             page.get_by_role("button", name="编辑游戏配置", exact=True).click()
             form.get_by_role("radio", name="推理视觉小说", exact=False).check()
             page.screenshot(path=str(output / "editor-zh.png"))
             form.get_by_role("tab", name="取文连接", exact=True).click()
             page.screenshot(path=str(output / "connection-zh.png"))
             form.get_by_role("tab", name="游玩偏好", exact=True).click()
+            expect(form.get_by_label("VN 启动时的视觉方式", exact=True)).to_have_value("off")
+            expect(form.get_by_label("游玩开始时开启语音输入", exact=True)).not_to_be_checked()
             page.screenshot(path=str(output / "preferences-zh.png"))
             page.evaluate("document.documentElement.dataset.theme = 'wallpaper-slice'")
             page.mouse.move(0, 0)

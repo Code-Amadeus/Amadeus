@@ -81,19 +81,36 @@ are retained; switching General → Mystery enables the entire Mystery preset.
 
 ### Voice, companion window and game view
 
-The profile's `voiceInput` controls whether listening starts with play. The live
-microphone button can change it for the current session. ASR input stays in the
-owning VN session; late results and answers finishing after stop/restart are
-discarded. **Stop speech** uses the existing speech interrupt path. The companion
-overlay uses the existing helper and speech delivery integration; availability is
-shown in settings.
+The profile's `voiceInput` and `visionMode` (`off` / `on_question`) are startup
+defaults. The live **This play session** controls change voice and vision
+independently without editing the profile. Their state belongs to the backend VN
+session, so reloading or navigating away from VN does not restart the microphone.
+Stopping VN ends its own listener and resets the session input settings.
 
-**Attach game view** captures one frame from the bound game's window and displays
-a thumbnail before sending it with a question. This requires an active interaction
-lane and an image-capable configured model. It does not enable continuous watching,
-alter global vision settings or fall back to capturing the desktop. The image is
-attached to the existing completion, and is not stored in VN history or promoted
-to script evidence. Luna can optionally specify the game executable for this use.
+ASR requires the active session's player-interaction capability, including when
+spoken text is routed as a note or pin. Each listener carries both a session ID
+and an input generation. Disabling/restarting it rejects late recognition from
+the previous generation. Session-specific stop cannot shut down another scene's
+or a newer VN listener. **Stop speech** still uses the existing speech interrupt.
+
+With **When I ask** enabled, both typed and spoken questions (ask/choice) capture
+a fresh frame from the already bound game window and pass it to the existing VN
+model completion. Notes/pins remain text-only. **Preview game view** displays a
+preview; the next question captures again, so a stale preview is not sent as a
+current game view. A capture failure is reported instead of silently answering a
+visual question without an image. Late capture results cannot cross sessions or
+revive disabled voice input.
+
+VN controls do not consult or mutate the general visual capture policy, enable
+general watching, or fall back to the desktop. The shared multimodal model/capture
+implementation is reused, while the scene's input policy and capture target remain
+separate. General Settings now states this scope explicitly. Images remain
+transient question context, not persistent story facts. Luna may specify its game
+executable for the same bounded capture.
+
+The present control surface is the VN page's always-visible session toolbar. The
+existing companion presentation windows are not given an independent input state;
+a later small-window control surface must use this same session API.
 
 Luna profiles save the original-text WebSocket URL. Start Luna, configure its
 extraction and start the game externally; VN Player then connects using the saved
@@ -104,15 +121,19 @@ URL. Luna extraction compatibility still needs validation for each game.
 - `vn.launch.profiles` returns profiles, file availability, the shared `agentExe`, and `capabilityPresets`.
 - `vn.launch.profile.save` accepts `{profile: {name, gameExe, hookHelper, ...}, agentExe}`;
   omit `profile.id` to create, or supply an existing ID to edit. `promptPack`,
-  `voiceInput` and overlay preferences configure the companion. `launchMethod`
+  `voiceInput`, `visionMode` and overlay preferences configure the companion. `launchMethod`
   (`exe` or `steam`), `steamAppId` and `launchGame` configure startup. Live process IDs and
   arbitrary runtime implementation fields are not editable profile fields.
 - `vn.launch.start` accepts `{profileId}` to use saved settings, or
   `{profileId, captureOnly: true}` to test extraction without companion responses.
 - `vn.launch.status` includes `captureOnly`, `capturedLines` and source connection
   status. `vn.launch.stop` uses the saved game-close preference unless overridden.
-- `vn.launch.capture` returns a transient `visual_context` for a question. Submit
-  it on `vn.player.ask` or `vn.choice.ask`; unsupported models fail visibly.
+- `vn.input.set` accepts the active `session_id` plus `voice`, `vision_mode` or
+  input `kind`; it returns enriched `vn.status` including `inputs`. Changes are
+  broadcast through the existing `vn.status` event.
+- `vn.launch.capture` returns a transient `visual_context` for explicit previews
+  or low-level question attachment. Normal typed/ASR requests acquire their fresh
+  game frame at the shared VN player handler according to `vision_mode`.
 
 Run `python -m pytest tests/test_vn_profiles.py tests/test_vn_text_sources.py` for
 storage, source, process ownership and runtime isolation checks. For a browser

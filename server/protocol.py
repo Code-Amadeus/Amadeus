@@ -122,6 +122,7 @@ class Method(StrEnum):
     VN_PLAYER_PIN        = "vn.player.pin"
     VN_CHOICE_ASK        = "vn.choice.ask"
     VN_MODE_SET          = "vn.mode.set"
+    VN_INPUT_SET         = "vn.input.set"
     VN_LAUNCH_PROFILES   = "vn.launch.profiles"
     VN_LAUNCH_PROFILE_SAVE = "vn.launch.profile.save"
     VN_LAUNCH_START      = "vn.launch.start"

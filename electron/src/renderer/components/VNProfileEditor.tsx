@@ -9,7 +9,7 @@ export type VNProfileSettings = {
   id?: string; name: string; textSource: 'agent' | 'luna'; gameExe: string; hookHelper: string
   scriptPath: string; lunaWsUrl: string; launchGame: boolean; launchMethod: 'exe' | 'steam'; steamAppId: string
   launchOverlay: boolean; stopWallpaper: boolean; closeGameOnStop: boolean
-  promptPack: 'base' | 'mystery'; voiceInput: boolean
+  promptPack: 'base' | 'mystery'; voiceInput: boolean; visionMode: 'off' | 'on_question'
 }
 type EditorSection = 'game' | 'connection' | 'preferences'
 const sections: Array<{ id: EditorSection; title: string; icon: FluentIconName }> = [
@@ -29,7 +29,7 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
   const [profile, setProfile] = useState<VNProfileSettings>(() => ({
     name: '', textSource: 'agent', gameExe: '', hookHelper: '', scriptPath: '', lunaWsUrl: '',
     launchGame: true, launchMethod: 'exe', steamAppId: '', launchOverlay: false,
-    stopWallpaper: true, closeGameOnStop: false, voiceInput: false,
+    stopWallpaper: true, closeGameOnStop: false, voiceInput: false, visionMode: 'off',
     promptPack: initial?.id === 'paranormasight' ? 'mystery' : 'base', ...initial,
   }))
   const [section, setSection] = useState<EditorSection>('game')
@@ -82,8 +82,8 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
       setBusy(true); setError('')
       try {
         // Send editable settings only; capabilities are derived by the host.
-        const { id, name, textSource, gameExe, hookHelper, scriptPath, lunaWsUrl, launchGame, launchMethod, steamAppId, launchOverlay, stopWallpaper, closeGameOnStop, promptPack, voiceInput } = profile
-        await onSave({ ...(id ? { id } : {}), name, textSource, gameExe, hookHelper, scriptPath, lunaWsUrl, launchGame, launchMethod, steamAppId, launchOverlay, stopWallpaper, closeGameOnStop, promptPack, voiceInput }, agent, test)
+        const { id, name, textSource, gameExe, hookHelper, scriptPath, lunaWsUrl, launchGame, launchMethod, steamAppId, launchOverlay, stopWallpaper, closeGameOnStop, promptPack, voiceInput, visionMode } = profile
+        await onSave({ ...(id ? { id } : {}), name, textSource, gameExe, hookHelper, scriptPath, lunaWsUrl, launchGame, launchMethod, steamAppId, launchOverlay, stopWallpaper, closeGameOnStop, promptPack, voiceInput, visionMode }, agent, test)
       } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
       finally { setBusy(false) }
     }}>
@@ -148,6 +148,11 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
               {fileField('Full script for alignment', 'script', profile.scriptPath, value => set('scriptPath', value), false)}
               <p className="vn-help">{t('Live text is enough to begin. Mystery lookahead becomes available when a full script is aligned.')}</p>
               <label className="vn-preference-row setting-card"><input type="checkbox" checked={profile.voiceInput} onChange={e => set('voiceInput', e.target.checked)} /> {t('Voice input when play starts')}</label>
+              <CardShell vertical><div className="vn-field"><label htmlFor="vn-start-vision">{t('VN vision at session start')}</label>
+                <select id="vn-start-vision" value={profile.visionMode} onChange={e => set('visionMode', e.target.value as 'off' | 'on_question')}>
+                  <option value="off">{t('Off')}</option><option value="on_question">{t('Read the game view when I ask')}</option>
+                </select></div><p className="vn-help">{t('VN only. Typed and spoken questions use a fresh game-window image. General vision settings stay separate.')}</p></CardShell>
+              <p className="vn-help">{t('These are startup defaults. Voice and vision can be changed independently during each play session.')}</p>
               <label className="vn-preference-row setting-card"><input type="checkbox" checked={profile.launchOverlay} disabled={!canLaunchOverlay} onChange={e => set('launchOverlay', e.target.checked)} /> {t('Portrait overlay')}</label>
               {!canLaunchOverlay && <p className="vn-help">{t('Overlay helper is unavailable for this game.')}</p>}
               {profile.textSource === 'agent' && <>

@@ -270,7 +270,7 @@ def test_game_type_owns_capabilities_even_with_stale_start_overrides(tmp_path: P
     async def run():
         instance = manager(tmp_path)
         request = game_settings(tmp_path)
-        request["profile"].update(promptPack="base", voiceInput=False)
+        request["profile"].update(promptPack="base", voiceInput=False, visionMode="on_question")
         game_id = instance.save_profile(request)["profileId"]
         with patch("server.vn_launch_manager._find_game_pid", return_value=42), \
              patch("server.vn_launch_manager.AgentVNTextSource", Source):
@@ -280,6 +280,8 @@ def test_game_type_owns_capabilities_even_with_stale_start_overrides(tmp_path: P
             assert params["capabilities"]["immediate"] is True
             assert params["capabilities"]["summary"] is True
             assert params["capabilities"]["reasoning"] is False
+            assert params["voice_input"] is False
+            assert params["vision_mode"] == "on_question"
             assert params["script_path"] == ""
             assert params["game_id"] == game_id
             await instance.stop()

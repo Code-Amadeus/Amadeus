@@ -83,9 +83,15 @@ type VNEvent = {
   time: string
 }
 
+type VNInputs = {
+  session_id: string; kind: 'ask' | 'note' | 'choice' | 'pin'
+  voice: { enabled: boolean; available: boolean; listening: boolean; starting: boolean; reason: string; error?: string }
+  vision: { mode: 'off' | 'on_question'; enabled: boolean; available: boolean; reason: string }
+}
 type RuntimeState = Record<string, unknown> & {
   status?: string
   session_id?: string
+  inputs?: VNInputs
   capabilities?: Record<string, CapabilityState>
   visual?: { supported?: boolean; reason?: string }
 }
@@ -157,9 +163,7 @@ export default function VNPage({ send, subscribe, connected }: Props) {
   const [events, setEvents] = useState<VNEvent[]>([])
   const [lineText, setLineText] = useState('')
   const [playerText, setPlayerText] = useState('')
-  const [playerMode, setPlayerMode] = useState<'ask' | 'note' | 'choice' | 'pin'>('ask')
-  const [playerListening, setPlayerListening] = useState(false)
-  const [voiceWanted, setVoiceWanted] = useState(false)
+  const [inputsBusy, setInputsBusy] = useState(false)
   const [visualAttachment, setVisualAttachment] = useState<VisualAttachment | null>(null)
   const [visualBusy, setVisualBusy] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -171,15 +175,17 @@ export default function VNPage({ send, subscribe, connected }: Props) {
   )
   const runtimeStatus = launch.captureOnly ? 'not_started' : String((runtime?.status as string | undefined) || 'unknown')
   const runtimeSessionId = launch.sessionId || String(runtime?.session_id || '')
-  const playerAsrRequestKeyRef = useRef<string | null>(null)
-  const playerAsrOwnedRef = useRef(false)
-  const playerAsrQueueRef = useRef<Promise<void>>(Promise.resolve())
   const sessionRef = useRef('')
   const feedRef = useRef<HTMLDivElement>(null)
   const followFeedRef = useRef(true)
   const interaction = runtime?.capabilities?.interaction
   const interactionEnabled = runtimeStatus === 'active' && !launch.captureOnly && interaction?.enabled === true
-  const visualSupported = runtime?.visual?.supported === true
+  const inputs = runtime?.inputs
+  const playerMode = inputs?.kind || 'ask'
+  const voiceEnabled = inputs?.voice.enabled === true
+  const visionEnabled = inputs?.vision.enabled === true
+  const inputsRef = useRef(inputs)
+  inputsRef.current = inputs
 
   const pushEvent = useCallback((method: string, payload: Record<string, unknown>) => {
     const detail = typeof payload.reason_label === 'string'
@@ -248,22 +254,10 @@ export default function VNPage({ send, subscribe, connected }: Props) {
       setError(textFromPayload(payload))
     })
     const unsubAsrRecognized = subscribe('asr.recognized', payload => {
-      if (payload.source !== 'vn_player') return
+      if (payload.source !== 'vn_player' || !inputsRef.current?.voice.enabled) return
       const sourcePayload = payload.source_payload as Record<string, unknown> | undefined
       if (sourcePayload?.session_id && sourcePayload.session_id !== sessionRef.current) return
       pushEvent('vn.player.asr', payload)
-    })
-    const unsubAsrStatus = subscribe('asr.status', payload => {
-      if (payload.source !== 'vn_player') return
-      const sourcePayload = payload.source_payload as Record<string, unknown> | undefined
-      if (sourcePayload?.session_id && sourcePayload.session_id !== sessionRef.current) return
-      const status = String(payload.status || '')
-      if (['listening', 'loading', 'paused_tts', 'routed'].includes(status)) {
-        setPlayerListening(true)
-      }
-      if (['idle', 'unloaded', 'error'].includes(status)) {
-        setPlayerListening(false)
-      }
     })
     return () => {
       unsubLaunch()
@@ -273,63 +267,23 @@ export default function VNPage({ send, subscribe, connected }: Props) {
       unsubSummary()
       unsubError()
       unsubAsrRecognized()
-      unsubAsrStatus()
     }
   }, [pushEvent, subscribe])
 
   useEffect(() => {
-    const shouldListen = connected && interactionEnabled && voiceWanted && !!runtimeSessionId
-    const requestKey = shouldListen ? `${runtimeSessionId}:${playerMode}` : null
-    if (playerAsrRequestKeyRef.current === requestKey) return
-    playerAsrRequestKeyRef.current = requestKey
-    if (!requestKey) setPlayerListening(false)
-    playerAsrQueueRef.current = playerAsrQueueRef.current.then(async () => {
-      if (playerAsrOwnedRef.current) {
-        await send('asr.stop', { source: 'vn_player' })
-        playerAsrOwnedRef.current = false
-      }
-      if (!requestKey || playerAsrRequestKeyRef.current !== requestKey) return
-      const result = await send('asr.start', {
-        source: 'vn_player',
-        one_shot: false,
-        finish_after_turn_complete: false,
-        source_payload: { kind: playerMode, session_id: runtimeSessionId },
-      })
-      const status = String(result.status || '')
-      if (!['listening', 'awake', 'starting'].includes(status) || (result.source && result.source !== 'vn_player')) {
-        throw new Error(status === 'already_listening'
-          ? t('Microphone is busy in another session.')
-          : String(result.error || result.reason || t('Microphone could not start.')))
-      }
-      if (playerAsrRequestKeyRef.current === requestKey) {
-        playerAsrOwnedRef.current = true
-        setPlayerListening(true)
-      } else {
-        await send('asr.stop', { source: 'vn_player' })
-      }
-    }).catch(err => {
-      if (playerAsrRequestKeyRef.current === requestKey) {
-        playerAsrRequestKeyRef.current = null
-        setPlayerListening(false)
-        setVoiceWanted(false)
-        setError(err instanceof Error ? err.message : String(err))
-      }
-    })
-  }, [connected, interactionEnabled, voiceWanted, playerMode, runtimeSessionId, send, t])
-
-  useEffect(() => {
-    if (runtimeSessionId === sessionRef.current) return
     sessionRef.current = runtimeSessionId
     setVisualAttachment(null)
-    setVoiceWanted(runtimeSessionId && !launch.captureOnly && activeProfile?.voiceInput === true ? true : false)
-  }, [runtimeSessionId, launch.captureOnly, activeProfile?.voiceInput])
+  }, [runtimeSessionId, inputs?.vision.mode])
 
-  useEffect(() => () => {
-    playerAsrRequestKeyRef.current = null
-    playerAsrQueueRef.current.then(() => {
-      if (playerAsrOwnedRef.current) return send('asr.stop', { source: 'vn_player' })
-    }).catch(() => {})
-  }, [send])
+  const setInputs = async (patch: { voice?: boolean; vision_mode?: 'off' | 'on_question'; kind?: VNInputs['kind'] }) => {
+    const session = runtimeSessionId
+    setInputsBusy(true); setError('')
+    try {
+      const result = await send('vn.input.set', { session_id: session, ...patch })
+      if (session === sessionRef.current) setRuntime(result as RuntimeState)
+    } catch (err) { setError(t(err instanceof Error ? err.message : String(err))) }
+    finally { setInputsBusy(false) }
+  }
 
   const startProfile = async (profileId: string, captureOnly = false) => {
     setBusy(true)
@@ -361,13 +315,6 @@ export default function VNPage({ send, subscribe, connected }: Props) {
     setBusy(true)
     setError('')
     try {
-      if (playerAsrOwnedRef.current) {
-        await send('asr.stop', { source: 'vn_player' })
-        playerAsrOwnedRef.current = false
-        playerAsrRequestKeyRef.current = null
-        setPlayerListening(false)
-      }
-      setVoiceWanted(false)
       setVisualAttachment(null)
       const res = await send('vn.launch.stop', {
         reason: 'electron_vn_page',
@@ -399,9 +346,8 @@ export default function VNPage({ send, subscribe, connected }: Props) {
       const method = routePlayerMethod(playerMode)
       const response = await send(method, {
         text,
-        source: 'electron_vn_page',
+        source: 'electron_vn_page', session_id: runtimeSessionId,
         metadata: { source: 'vn_player_panel', mode: playerMode },
-        ...((method === 'vn.player.ask' || method === 'vn.choice.ask') && visualAttachment ? { visual_context: visualAttachment } : {}),
       })
       if (response.status === 'unavailable' || response.error) throw new Error(String(response.error || t(capabilityReason(String(response.reason || '')))))
       pushEvent('vn.player', { text })
@@ -425,7 +371,7 @@ export default function VNPage({ send, subscribe, connected }: Props) {
       }
       const context = res.visual_context as VisualAttachment
       if (!context.frame?.dataUrl) throw new Error(t('Game view is unavailable.'))
-      if (captureSessionId === sessionRef.current) setVisualAttachment(context)
+      if (captureSessionId === sessionRef.current && inputsRef.current?.vision.enabled) setVisualAttachment(context)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -512,6 +458,29 @@ export default function VNPage({ send, subscribe, connected }: Props) {
       {isActive && <span className="vn-line-count">{lineCount} {t('lines received')}</span>}
     </div>
     {error && <div role="alert" className="vn-error vn-page-error">{error}</div>}
+    {isPlaying && <section className="vn-session-inputs" aria-label={t('Session input controls')}>
+      <header><strong>{t('This play session')}</strong><span>{t('Changes here do not alter the saved game profile.')}</span></header>
+      <div className="vn-input-options">
+        <div className="vn-input-option">
+          <FluentIcon name="Microphone" size={18} aria-hidden="true" />
+          <div><strong>{t('Voice input (ASR)')}</strong><p>{t(inputs?.voice.starting ? 'Starting microphone…' : voiceEnabled ? 'Speak to ask your companion.' : 'Microphone off')}
+            {!inputs?.voice.available && ` · ${reasonText(inputs?.voice.reason)}`}</p></div>
+          <button type="button" role="switch" aria-label={t('Voice input (ASR)')} aria-checked={voiceEnabled} className="vn-input-switch"
+            disabled={inputsBusy || (!inputs?.voice.available && !voiceEnabled)} onClick={() => void setInputs({ voice: !voiceEnabled })}><span aria-hidden="true" /></button>
+          <span className="vn-input-value">{t(voiceEnabled ? 'On' : 'Off')}</span>
+        </div>
+        <div className="vn-input-option">
+          <FluentIcon name="Camera" size={18} aria-hidden="true" />
+          <div><label htmlFor="vn-vision-mode">{t('VN vision')}</label><p>{t('Only the bound game window. Separate from General vision settings.')}</p></div>
+          <select id="vn-vision-mode" value={inputs?.vision.mode || 'off'} disabled={inputsBusy || (!inputs?.vision.available && inputs?.vision.mode !== 'on_question')}
+            onChange={e => void setInputs({ vision_mode: e.target.value as 'off' | 'on_question' })}>
+            <option value="off">{t('Off')}</option><option value="on_question" disabled={!inputs?.vision.available}>{t('When I ask')}</option>
+          </select>
+        </div>
+      </div>
+      {inputs?.voice.error && <p className="vn-error">{t(inputs.voice.error)}</p>}
+      {inputs?.vision.mode === 'on_question' && !visionEnabled && <p className="vn-help">{reasonText(inputs.vision.reason)}</p>}
+    </section>}
     <div className="vn-workspace">
       <section className="vn-conversation" aria-label={t(isTesting ? 'Captured text' : 'VN activity')}>
         <header className="vn-section-heading"><div><h3>{t(isTesting ? 'Captured text' : 'Your play session')}</h3>
@@ -543,21 +512,19 @@ export default function VNPage({ send, subscribe, connected }: Props) {
         {isPlaying && <div className="vn-composer">
           <div className="vn-composer-tools">
             <label className="sr-only" htmlFor="vn-player-mode">{t('Message type')}</label>
-            <select id="vn-player-mode" value={playerMode} onChange={e => setPlayerMode(e.target.value as typeof playerMode)} disabled={busy || !interactionEnabled}>
+            <select id="vn-player-mode" value={playerMode} onChange={e => void setInputs({ kind: e.target.value as typeof playerMode })} disabled={busy || inputsBusy || !interactionEnabled}>
               <option value="ask">{t('Ask')}</option><option value="note">{t('Note')}</option><option value="choice">{t('Choice')}</option><option value="pin">{t('Pin')}</option>
             </select>
-            <button onClick={() => setVoiceWanted(previous => !previous)} disabled={!interactionEnabled} aria-pressed={voiceWanted}>{t(voiceWanted ? 'Stop microphone' : 'Start microphone')}</button>
-            {voiceWanted && <span>{t(playerListening ? 'Listening' : 'Starting microphone…')}</span>}
-            <button onClick={() => void attachGameView()} disabled={!interactionEnabled || !visualSupported || visualBusy || busy || !['ask', 'choice'].includes(playerMode)}>{t(visualBusy ? 'Capturing game view…' : 'Attach game view')}</button>
+            <button onClick={() => void attachGameView()} disabled={!visionEnabled || visualBusy || busy || inputsBusy}>{t(visualBusy ? 'Capturing game view…' : 'Preview game view')}</button>
             <button onClick={() => void send('tts.interrupt', {}).catch(err => setError(String(err)))} disabled={!interactionEnabled}>{t('Stop speech')}</button>
           </div>
-          {visualAttachment && <div className="vn-visual-attachment"><img src={visualAttachment.frame.dataUrl} alt={t('Attached game view')} /><span>{t('Game view attached for next question')}</span><button onClick={() => setVisualAttachment(null)}>{t('Remove')}</button></div>}
+          {visualAttachment && <div className="vn-visual-attachment"><img src={visualAttachment.frame.dataUrl} alt={t('Attached game view')} /><span>{t('Preview only. Each question captures a fresh game frame.')}</span><button onClick={() => setVisualAttachment(null)}>{t('Remove')}</button></div>}
           <div className="vn-compose-row"><textarea aria-label={t('Message to companion')} value={playerText} onChange={e => setPlayerText(e.target.value)} rows={2}
             placeholder={t('Ask about the current line, add a note, or inspect a choice...')} disabled={!interactionEnabled}
-            onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !e.nativeEvent.isComposing && !busy && playerText.trim()) void sendPlayerIntervention() }} />
-            <button className="vn-primary" onClick={sendPlayerIntervention} disabled={!connected || busy || !interactionEnabled || !playerText.trim()}>{t('Send')}</button></div>
+            onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !e.nativeEvent.isComposing && !busy && !inputsBusy && playerText.trim()) void sendPlayerIntervention() }} />
+            <button className="vn-primary" onClick={sendPlayerIntervention} disabled={!connected || busy || inputsBusy || !interactionEnabled || !playerText.trim()}>{t('Send')}</button></div>
           {!interactionEnabled && <p className="vn-help">{reasonText(interaction?.reason)}</p>}
-          {!visualSupported && <p className="vn-help">{t('Game view')}: {reasonText(runtime?.visual?.reason)}</p>}
+          {visionEnabled && <p className="vn-help">{t('Typed and spoken questions include a fresh game image. Notes and pins remain text-only.')}</p>}
         </div>}
       </section>
       <aside className="vn-companion-panel" aria-label={t('Game type and abilities')}>

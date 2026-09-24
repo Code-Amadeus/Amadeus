@@ -193,6 +193,8 @@ class VNLaunchManager:
             "capabilities": profile["runtime"]["capabilities"],
             "session_id": session_id,
             "script_path": profile.get("scriptPath", ""),
+            "voice_input": profile.get("voiceInput", False),
+            "vision_mode": profile.get("visionMode", "off"),
         }
         if isinstance(params.get("runtime"), dict):
             runtime_params.update(params["runtime"])  # type: ignore[arg-type]

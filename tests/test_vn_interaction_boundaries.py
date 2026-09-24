@@ -16,15 +16,19 @@ from server.vn_launch_manager import VNLaunchManager
 def test_late_asr_cannot_cross_vn_session_boundary() -> None:
     handler = VNPlayerHandler()
     runtime = SimpleNamespace(enabled=True, profile=SimpleNamespace(session_id="current"),
-                              player_intervention=AsyncMock(return_value={"status": "ok"}))
+                              player_intervention=AsyncMock(return_value={"status": "ok"}),
+                              status=lambda: {"capabilities": {"interaction": {"enabled": True}}})
     handler._runtime = runtime
+    handler._voice_id = "input_current"
+    handler._asr_control = AsyncMock()
+    handler._asr_state = lambda: {"active": True, "source": "vn_player", "source_payload": {"session_id": "current", "input_id": "input_current"}}
 
     async def run():
         for session in ("previous", "", None):
             result = await handler.handle_asr({"text": "用户的问题", "source_payload": {"session_id": session, "kind": "ask"}})
             assert result["status"] == "ignored"
         runtime.player_intervention.assert_not_awaited()
-        result = await handler.handle_asr({"text": "用户的问题", "source_payload": {"session_id": "current", "kind": "ask"}})
+        result = await handler.handle_asr({"text": "用户的问题", "source_payload": {"session_id": "current", "input_id": "input_current", "kind": "ask"}})
         assert result["status"] == "ok"
         assert runtime.player_intervention.await_args.args[0] == "ask"
         runtime.enabled = False
