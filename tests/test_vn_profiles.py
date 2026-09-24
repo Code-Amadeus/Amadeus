@@ -25,7 +25,7 @@ def game_settings(root: Path, name: str = "New game") -> dict:
     root.mkdir(parents=True, exist_ok=True)
     for filename in ("game.exe", "agent.exe", "hook.js"):
         (root / filename).touch()
-    return {"profile": {"name": name, "gameExe": str(root / "game.exe"), "hookHelper": str(root / "hook.js")},
+    return {"profile": {"name": name, "gameExe": str(root / "game.exe"), "hookHelper": str(root / "hook.js"), "launchOverlay": False},
             "agentExe": str(root / "agent.exe")}
 
 
@@ -42,22 +42,25 @@ class Source:
 def test_profile_save_edit_and_shared_agent_survive_manager_restart(tmp_path: Path) -> None:
     first = manager(tmp_path)
     request = game_settings(tmp_path)
+    del request["profile"]["launchOverlay"]
     saved = first.save_profile(request)
     game_id = saved["profileId"]
     second = manager(tmp_path)
     loaded = second._profile_by_id(game_id)
     assert loaded["gameExe"] == request["profile"]["gameExe"]
     assert loaded["launchGame"] is True
+    assert loaded["launchOverlay"] is True
     assert loaded["runtimeSupported"] is True
     assert loaded["promptPack"] == "base"
     assert loaded["capabilities"]["reasoning"] is False
     assert loaded["agentExists"] is True
-    request["profile"].update(id=game_id, name="Renamed", launchGame=False, closeGameOnStop=True)
+    request["profile"].update(id=game_id, name="Renamed", launchGame=False, closeGameOnStop=True, launchOverlay=False)
     updated = second.save_profile(request)
     assert len(updated["profiles"]) == 2
     third = manager(tmp_path)
     assert third._profile_by_id(game_id)["name"] == "Renamed"
     assert third._profile_by_id(game_id)["launchGame"] is False
+    assert third._profile_by_id(game_id)["launchOverlay"] is False
     assert third._profile_by_id("paranormasight")["agentExe"] == request["agentExe"]
     stored = json.loads(VNProfileStore(tmp_path).path.read_text(encoding="utf-8"))
     assert "runtime" not in stored["profiles"][0]

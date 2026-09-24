@@ -173,7 +173,7 @@ class VNLaunchManager:
         params = {
             "launchGame": profile.get("launchGame", True) if source_name == "agent" else False,
             "attachHook": source_name == "agent", "bridgeClipboard": source_name == "agent",
-            "launchOverlay": profile.get("launchOverlay", False),
+            "launchOverlay": profile.get("launchOverlay", True),
             "stopWallpaper": profile.get("stopWallpaper", True), "lunaWsUrl": profile.get("lunaWsUrl", ""),
             **params,
         }

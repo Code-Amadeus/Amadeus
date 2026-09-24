@@ -258,3 +258,11 @@ compile checks, production build and the real React/handler/store UI probe passe
 Screenshot: `output/diagnostics/vn-profiles-ui/session-inputs-zh.png`. Hardware
 microphone recognition and real-model visual answers were not requalified in
 this control-layer change; the earlier Steam dialogue gate remains pending.
+
+### Portrait overlay default
+
+At the user's request, new launch profiles now default to enabling the portrait
+overlay. The editor selects it when the helper is available and retains explicitly
+saved off preferences. A selected but unavailable overlay can still be unchecked.
+The local Kemono demo profile, previously created with the old off default, is now
+enabled; PARANORMASIGHT was already enabled. Capture-only tests remain overlay-free.

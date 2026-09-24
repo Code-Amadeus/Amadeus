@@ -26,7 +26,7 @@ class LaunchProfile(BaseModel):
     launchGame: bool = True
     launchMethod: Literal["exe", "steam"] = "exe"
     steamAppId: str = Field(default="", pattern=r"^(?:[1-9][0-9]{0,9})?$")
-    launchOverlay: bool = False
+    launchOverlay: bool = True
     stopWallpaper: bool = True
     closeGameOnStop: bool = False
     # None preserves the preset for profiles saved before companion settings existed.

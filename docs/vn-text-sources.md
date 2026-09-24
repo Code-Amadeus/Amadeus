@@ -112,6 +112,10 @@ The present control surface is the VN page's always-visible session toolbar. The
 existing companion presentation windows are not given an independent input state;
 a later small-window control surface must use this same session API.
 
+New games enable the portrait overlay by default when its helper is installed.
+An explicitly saved off preference remains off. Text-capture-only tests still do
+not launch the overlay. An unavailable helper can be disabled in preferences.
+
 Luna profiles save the original-text WebSocket URL. Start Luna, configure its
 extraction and start the game externally; VN Player then connects using the saved
 URL. Luna extraction compatibility still needs validation for each game.

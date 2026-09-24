@@ -28,7 +28,7 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
   const { t } = useI18n()
   const [profile, setProfile] = useState<VNProfileSettings>(() => ({
     name: '', textSource: 'agent', gameExe: '', hookHelper: '', scriptPath: '', lunaWsUrl: '',
-    launchGame: true, launchMethod: 'exe', steamAppId: '', launchOverlay: false,
+    launchGame: true, launchMethod: 'exe', steamAppId: '', launchOverlay: overlayAvailable,
     stopWallpaper: true, closeGameOnStop: false, voiceInput: false, visionMode: 'off',
     promptPack: initial?.id === 'paranormasight' ? 'mystery' : 'base', ...initial,
   }))
@@ -153,7 +153,7 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
                   <option value="off">{t('Off')}</option><option value="on_question">{t('Read the game view when I ask')}</option>
                 </select></div><p className="vn-help">{t('VN only. Typed and spoken questions use a fresh game-window image. General vision settings stay separate.')}</p></CardShell>
               <p className="vn-help">{t('These are startup defaults. Voice and vision can be changed independently during each play session.')}</p>
-              <label className="vn-preference-row setting-card"><input type="checkbox" checked={profile.launchOverlay} disabled={!canLaunchOverlay} onChange={e => set('launchOverlay', e.target.checked)} /> {t('Portrait overlay')}</label>
+              <label className="vn-preference-row setting-card"><input type="checkbox" checked={profile.launchOverlay} disabled={!canLaunchOverlay && !profile.launchOverlay} onChange={e => set('launchOverlay', e.target.checked)} /> {t('Portrait overlay')}</label>
               {!canLaunchOverlay && <p className="vn-help">{t('Overlay helper is unavailable for this game.')}</p>}
               {profile.textSource === 'agent' && <>
                 <label className="vn-preference-row setting-card"><input type="checkbox" checked={profile.stopWallpaper} onChange={e => set('stopWallpaper', e.target.checked)} /> {t('Exit wallpaper before game')}</label>
