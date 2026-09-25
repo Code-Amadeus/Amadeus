@@ -36,6 +36,7 @@ class VNLaunchHandler(RequestHandler):
         runtime_line,
         before_external_launch=None,
         runtime_overlay=None,
+        backend_url: str = "",
     ) -> None:
         self._manager = VNLaunchManager(
             project_root,
@@ -45,6 +46,7 @@ class VNLaunchHandler(RequestHandler):
             runtime_line=runtime_line,
             before_external_launch=before_external_launch,
             runtime_overlay=runtime_overlay,
+            backend_url=backend_url,
         )
 
     async def handle(self, method: str, params: dict[str, Any]) -> dict[str, Any] | None:

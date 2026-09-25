@@ -203,6 +203,24 @@ and captions. An invalid installed pack reports an error rather than silently
 substituting unrelated assets. **Show/Hide portrait** changes this session only;
 incoming reactions do not reopen a hidden window.
 
+The portrait card retains its original 470×226 logical-pixel composition, rounded
+translucent frame, colors, caption typography and subdued scan sweep. It renders
+at native Windows DPI; the frame is supersampled to avoid enlarging a low-resolution
+outline. Tk's outer transparency is still a color-key cutout, not desktop per-pixel alpha.
+
+Hover over the card to reveal microphone and question-time vision icons in the
+header. They disappear when the pointer leaves, leaving the original layout intact.
+The microphone toggles this VN session's ASR. The camera toggles **When I ask**;
+enabling it does not capture an image immediately or enable General vision.
+Tooltips show the current state and errors without replacing the dialogue caption.
+The icons and VN page use the same `vn.status` / `vn.input.set` contract and session
+identity. Changes do not alter saved profiles. Pending changes disable the icons;
+disconnection disables them and reconnect reads current state without replaying clicks.
+The launcher supplies its actual local backend endpoint; the native client uses
+the inherited desktop authentication credential in a header, never command arguments.
+A standalone portrait without `--backend-url` still displays captions, with controls
+unavailable until it is launched by the VN player with its backend connection.
+
 Luna profiles save the original-text WebSocket URL. Start Luna, configure its
 extraction; VN Player can launch the game through its shared exe/Steam launcher or
 connect to a game started manually. Luna's service remains externally owned.

@@ -10,7 +10,7 @@ def test_launcher_uses_repository_owned_overlay_without_external_helper(tmp_path
     helper.parent.mkdir()
     helper.touch()
     manager = VNLaunchManager(tmp_path, runtime_start=AsyncMock(), runtime_stop=AsyncMock(),
-                              runtime_status=AsyncMock(), runtime_line=AsyncMock())
+                              runtime_status=AsyncMock(), runtime_line=AsyncMock(), backend_url="ws://127.0.0.1:17779/ws")
     manager._publish_status = AsyncMock()
     process = Mock(pid=123, poll=Mock(return_value=None))
     manager._spawn = Mock(return_value=process)
@@ -21,6 +21,7 @@ def test_launcher_uses_repository_owned_overlay_without_external_helper(tmp_path
     assert "--legacy-helper" not in args
     assert args[args.index("--lite-dir") + 1] == str(tmp_path / "assets/companion/kurisu")
     assert not any("electron" in arg.lower() for arg in args)
+    assert args[args.index("--backend-url") + 1] == "ws://127.0.0.1:17779/ws"
 
 
 def test_only_vn_playback_is_projected_and_audio_edges_keep_order():
