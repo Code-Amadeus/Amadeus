@@ -55,3 +55,11 @@ D5 随后由用户确认在草稿 PR 前处理：初版 Agent 仅使用 WebSocke
 - Agent WebSocket 独立 smoke 通过。
 
 这些是本地证据，不代替远端完整 CI。草稿阶段尚未关联设计 Issue，按 `CONTRIBUTING.md` 在准备合并前补齐；真实语音、Luna 逐游戏取文质量与长期语义验收仍按前文保留范围。
+
+## 草稿 PR 首轮 CI 修复
+
+[Python Windows 首轮运行](https://github.com/Code-Amadeus/Amadeus/actions/runs/36032679871) 仅 `test_cross_scene_narration_baseline.py` 中的 VN 语音 payload 测试失败；`cpu-model-less` 因依赖该测试分片而连带失败，其他检查通过。
+
+这是测试初始化遗漏：测试直接设置 profile，没有启动会话，因此被运行期新增的“停止后禁止发声”约束拦截。本地已复现。测试改用临时目录和实际 `start` / `stop` 生命周期，保持原 payload 的完整断言，并验证停止后主动评论和玩家提问回复都不会再提交语音。生产代码和生命周期约束不变。
+
+修复后，跨场景语音、VN 产品合同和后台上下文三个测试文件共 23 项通过；该文件 Ruff 和 `git diff --check` 通过。完整远端 CI 以修复提交的新运行为准。
