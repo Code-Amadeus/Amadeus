@@ -216,8 +216,11 @@ Tooltips show the current state and errors without replacing the dialogue captio
 The icons and VN page use the same `vn.status` / `vn.input.set` contract and session
 identity. Changes do not alter saved profiles. Pending changes disable the icons;
 disconnection disables them and reconnect reads current state without replaying clicks.
-The launcher supplies its actual local backend endpoint; the native client uses
-the inherited desktop authentication credential in a header, never command arguments.
+The launcher supplies its actual local backend endpoint and passes the retained
+desktop authentication policy only to the repository-owned overlay's child
+environment. Bootstrap clears process-wide credentials before external tools
+start. The native client sends the credential in a header; credentials are never
+included in command arguments, profiles or launch status, or restored globally.
 A standalone portrait without `--backend-url` still displays captions, with controls
 unavailable until it is launched by the VN player with its backend connection.
 

@@ -176,7 +176,7 @@ def test_visual_client_attaches_image_to_the_same_completion(monkeypatch) -> Non
     visual = {"frame": {"dataBase64": "dGVzdA==", "mime": "image/jpeg"}, "scope": "game_window"}
     raw = client._complete_sync(
         [{"role": "system", "content": "Instructions"}, {"role": "user", "content": "What is visible?"}],
-        max_tokens=100, temperature=0.1, visual_context=visual,
+        lane="immediate", max_tokens=100, temperature=0.1, visual_context=visual,
     )
     assert raw == '{"decision":"silence"}'
     messages = chat.chat.completions.create.call_args.kwargs["messages"]

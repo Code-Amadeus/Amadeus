@@ -845,7 +845,9 @@ class VNPlayerRuntime:
             self._lookahead_llm_call_count += 1
             messages = lookahead_prompt(profile, planner_context)
             try:
-                parsed, raw = await self.llm.complete_json(messages, lane="lookahead", max_tokens=650, temperature=0.2)
+                # A 50-line window produces several plan entries. The old 650
+                # token ceiling truncated otherwise valid plans mid-JSON.
+                parsed, raw = await self.llm.complete_json(messages, lane="lookahead", max_tokens=2200, temperature=0.2)
             except Exception as exc:
                 store.record_model_call(
                     "lookahead",

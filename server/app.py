@@ -2615,6 +2615,7 @@ async def bootstrap(port: int = 17777) -> None:
         before_external_launch=_prepare_for_external_vn_launch,
         runtime_overlay=vn_h.set_overlay_url,
         backend_url=f"ws://127.0.0.1:{port}/ws",
+        auth_policy=auth_policy,
     )
 
     # Start only after dependency configuration, inside the owning teardown scope.

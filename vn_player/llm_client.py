@@ -55,6 +55,7 @@ class VNLLMClient:
             raw = await asyncio.to_thread(
                 self._complete_sync,
                 messages,
+                lane=lane,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 visual_context=visual_context,
@@ -67,7 +68,7 @@ class VNLLMClient:
             return None, raw
         return parsed, raw
 
-    def _complete_sync(self, messages: list[dict[str, Any]], *, max_tokens: int, temperature: float, visual_context: dict[str, Any] | None = None) -> str:
+    def _complete_sync(self, messages: list[dict[str, Any]], *, lane: str, max_tokens: int, temperature: float, visual_context: dict[str, Any] | None = None) -> str:
         provider, model = self._provider_model()
         if provider not in {"deepseek", "openai"}:
             raise RuntimeError(f"VN MVP only supports deepseek/openai-compatible providers, got {provider}")
@@ -101,7 +102,15 @@ class VNLLMClient:
         response = client.chat.completions.create(**kwargs)
         if not response.choices:
             raise RuntimeError("empty LLM response")
-        return response.choices[0].message.content or ""
+        choice = response.choices[0]
+        usage = response.usage
+        log = logger.warning if choice.finish_reason == "length" else logger.info
+        log(
+            "VN LLM %s completed: model=%s finish_reason=%s completion_tokens=%s max_tokens=%s",
+            lane, response.model, choice.finish_reason,
+            usage.completion_tokens if usage else None, max_tokens,
+        )
+        return choice.message.content or ""
 
 
 def _parse_json_object(text: str) -> dict[str, Any] | None:
