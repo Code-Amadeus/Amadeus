@@ -104,11 +104,13 @@ class VNPlayerRuntime:
         event_emit: EventEmitter | None = None,
         speak_callback: SpeakCallback | None = None,
         speech_epoch: Callable[[], int] | None = None,
+        speech_finished: Callable[[str, bool], None] | None = None,
     ) -> None:
         self.project_root = Path(project_root)
         self.event_emit = event_emit
         self.speak_callback = speak_callback
         self.speech_epoch = speech_epoch
+        self.speech_finished = speech_finished
 
         self.profile: VNProfile | None = None
         self.store: VNContextStore | None = None
@@ -537,7 +539,9 @@ class VNPlayerRuntime:
         async def submit(speak):
             timing.setdefault("speech_submitted_at_ms", now_ms())
             segment_index = speak.pop("vn_speech_segment")
-            return await self._speak(speak, line, player_requested=player_requested, segment_index=segment_index)
+            utterance_id = speak.pop("vn_speech_id")
+            return await self._speak(speak, line, player_requested=player_requested,
+                                     segment_index=segment_index, utterance_id=utterance_id)
 
         return VNSpeechStream(
             authorize=authorize,
@@ -545,6 +549,7 @@ class VNPlayerRuntime:
             submit=submit, normalize=_normalize_speak_text, previous=previous, lock=self._speech_lock,
             early_cut=int(getattr(settings, "FIRST_SENTENCE_EARLY_CUT_CHARS", 11)),
             language="英文" if profile.output_language.lower().startswith("en") else "日文",
+            on_finished=self.speech_finished,
         )
 
     def _merge_streamed_delivery(self, response, speech, line_event):
@@ -2063,13 +2068,14 @@ class VNPlayerRuntime:
         return True
 
     async def _speak(self, speak: dict[str, Any], line_event: dict[str, Any], *, player_requested: bool = False,
-                     segment_index: int | None = None) -> Any:
+                     segment_index: int | None = None, utterance_id: str = "") -> Any:
         if not self.enabled or not self.profile:
             return
         if self._commentary_paused and not player_requested:
             return
         payload = dict(speak)
         payload.pop("vn_speech_segment", None)
+        payload["vn_speech_id"] = utterance_id or new_id("vn_speech")
         if segment_index is not None:
             payload["vn_speech_segment"] = segment_index
         payload["line"] = _line_ref(line_event)
@@ -2090,7 +2096,14 @@ class VNPlayerRuntime:
             # The stream holds the per-session utterance lock across segments.
             return await send()
         async with self._speech_lock:
-            return await send()
+            completed = False
+            try:
+                receipt = await send()
+                completed = not isinstance(receipt, dict) or receipt.get("status") == "queued"
+                return receipt
+            finally:
+                if self.speech_finished is not None:
+                    self.speech_finished(payload["vn_speech_id"], completed)
 
     async def _maybe_run_reasoner(
         self,

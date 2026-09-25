@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from server.vn_tts_bridge import submit_vn_tts_confirmed
+from server.vn_tts_bridge import submit_vn_tts_confirmed, finish_vn_speech
 from vn_player.llm_client import _speech_prefix, _string_prefix
 from vn_player.runtime import VNPlayerRuntime
 from vn_player.schemas import default_response
@@ -25,7 +25,8 @@ def content(text):
 
 async def make_runtime(path, monkeypatch, parts, submit, *, speech_epoch=None):
     sdk, _ = install(monkeypatch, [Stream(parts)])
-    runtime = VNPlayerRuntime(path, speak_callback=submit, speech_epoch=speech_epoch)
+    runtime = VNPlayerRuntime(path, speak_callback=submit, speech_epoch=speech_epoch,
+                              speech_finished=finish_vn_speech)
     runtime._llm_enabled = runtime._immediate_llm_enabled = True
     await runtime.start({"session_id": "segments", "prompt_pack": "base", "script_path": "",
                          "output_language": "ja", "summary_llm_enabled": False,

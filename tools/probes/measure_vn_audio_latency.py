@@ -124,7 +124,8 @@ async def run(args, output):
             raise AssertionError("No nonzero device-playback evidence; silence placeholders do not pass")
 
     workers = [asyncio.create_task(pipeline.play_sentence_worker()), asyncio.create_task(playback.run())]
-    runtime = VNPlayerRuntime(output / "state", speak_callback=speak, speech_epoch=pipeline.current_tts_epoch)
+    runtime = VNPlayerRuntime(output / "state", speak_callback=speak, speech_epoch=pipeline.current_tts_epoch,
+                              speech_finished=bridge.finish_vn_speech)
     try:
         current = {"label": "warmup", "started_at": time.time()}
         await speak({"text": "準備できたわ。"})

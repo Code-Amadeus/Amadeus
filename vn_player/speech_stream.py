@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 import logging
+from uuid import uuid4
 
 from llm.sentence_splitter import split_stream_buffer_for_first_sentence
 from llm.stream_parser import StreamTagParser
@@ -37,11 +38,13 @@ class VNSpeechStream:
     """
 
     def __init__(self, *, authorize, active, submit, normalize, previous=None,
-                 lock=None, early_cut=11, language="日文"):
+                 lock=None, early_cut=11, language="日文", on_finished=None):
         self.authorize, self.active, self.submit = authorize, active, submit
         self.normalize, self.previous = normalize, previous
         self.lock = lock
         self.early_cut, self.language = early_cut, language
+        self.utterance_id = uuid4().hex
+        self.on_finished = on_finished
         self.delivery = {}
         self.observed = False
         self.sent_text = ""
@@ -72,6 +75,7 @@ class VNSpeechStream:
 
     async def _run(self) -> None:
         locked = False
+        completed = False
         if self.previous is not None:
             await self.previous.wait()
         try:
@@ -118,7 +122,8 @@ class VNSpeechStream:
                         self.interruption = "revoked"
                         return
                     payload = {**self.delivery["speak"], "text": chunk,
-                               "vn_speech_segment": self._segment + 1}
+                               "vn_speech_segment": self._segment + 1,
+                               "vn_speech_id": self.utterance_id}
                     receipt = await self.submit(payload)
                     if isinstance(receipt, dict) and receipt.get("status") != "queued":
                         self.interruption = str(receipt.get("reason") or receipt.get("status") or "tts_unavailable")
@@ -131,6 +136,7 @@ class VNSpeechStream:
                     # Never flush a partial word/string after a broken stream.
                     if not complete and rest.strip():
                         self.interruption = "incomplete_text"
+                    completed = complete
                     return
         except asyncio.CancelledError:
             raise
@@ -140,3 +146,5 @@ class VNSpeechStream:
         finally:
             if locked:
                 self.lock.release()
+            if self.on_finished is not None:
+                self.on_finished(self.utterance_id, completed and not self.interruption and self.active())

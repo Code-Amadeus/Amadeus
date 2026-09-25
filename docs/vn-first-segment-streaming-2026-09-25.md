@@ -1,5 +1,8 @@
 # VN first-segment speech delivery
 
+The subsequent [caption grouping change](vn-subtitle-grouping-2026-09-25.md)
+keeps subtitles in complete sentence groups while retaining these audio boundaries.
+
 ## Owning layer and contract
 
 The previous VN implementation streamed the network response but waited for the

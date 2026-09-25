@@ -247,6 +247,11 @@ playback metadata before speech text. Timing diagnostics and measurements are in
 [VN first-segment delivery](vn-first-segment-streaming-2026-09-25.md) and the
 [earlier concurrency report](vn-streaming-and-concurrency-2026-09-25.md).
 
+Captions use complete sentence groups independently of audio chunks. Several
+early audio fragments share one subtitle and one translation; incomplete source
+sentences wait without delaying speech. Late translations remain tied to current
+playback. See [VN caption grouping](vn-subtitle-grouping-2026-09-25.md).
+
 ### Prompt composition and optional terminology
 
 All games use the same composition path in `vn_player/prompt_layers`:

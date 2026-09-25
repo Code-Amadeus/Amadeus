@@ -83,6 +83,9 @@ def test_vn_director_payload_shape_is_stable_before_delivery_extraction(tmp_path
         await runtime._speak(request, line)
         await runtime.stop()
 
+        # Playback grouping adds a Host-owned identity; the authored narration
+        # and existing line/session attribution remain unchanged.
+        assert captured[0].pop("vn_speech_id")
         assert captured == [
             {
                 "text": "そこ、少し怪しいわね。",

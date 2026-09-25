@@ -763,6 +763,14 @@ async def bootstrap(port: int = 17777) -> None:
         # between Japanese, Chinese, bilingual, or hidden captions.
         wallpaper_subtitle_runtime.update(japanese_text, chinese_text)
 
+    def _update_playback_subtitle(japanese_text: str, chinese_text: str = "") -> None:
+        from server.vn_tts_bridge import update_playback_subtitle
+
+        update_playback_subtitle(
+            playback_manager.current_playing_id, japanese_text, chinese_text,
+            update=_update_wallpaper_subtitle,
+        )
+
     wallpaper_subtitle_runtime.set_renderer(lambda text: wallpaper_h.set_subtitle(text))
     presentation_runtime.set_renderer(
         lambda profile: wallpaper_h.set_canvas_presentation(profile)
@@ -828,36 +836,14 @@ async def bootstrap(port: int = 17777) -> None:
     async def _server_check_and_display_pre_translation(sentence_id: str, japanese_text: str) -> None:
         try:
             try:
-                from server.vn_tts_bridge import get_vn_subtitle, is_vn_sentence
+                from server.vn_tts_bridge import display_vn_subtitle, is_vn_sentence
 
                 if is_vn_sentence(sentence_id):
-                    cached = await get_vn_subtitle(sentence_id, japanese_text)
-                    if cached and cached.get("status") == "completed" and cached.get("chinese"):
-                        await _server_display_chinese_subtitle_with_text(
-                            sentence_id,
-                            japanese_text,
-                            str(cached.get("chinese") or ""),
-                        )
-                        return
-                    await _server_display_chinese_subtitle_with_text(
-                        sentence_id,
-                        japanese_text,
-                        "",
-                    )
-
-                    async def _wait_for_vn_subtitle() -> None:
-                        for _ in range(120):
-                            await asyncio.sleep(0.1)
-                            data = await get_vn_subtitle(sentence_id, japanese_text)
-                            if data and data.get("status") == "completed" and data.get("chinese"):
-                                await _server_display_chinese_subtitle_with_text(
-                                    sentence_id,
-                                    japanese_text,
-                                    str(data.get("chinese") or ""),
-                                )
-                                return
-
-                    asyncio.create_task(_wait_for_vn_subtitle())
+                    asyncio.create_task(display_vn_subtitle(
+                        sentence_id, japanese_text,
+                        display=_server_display_chinese_subtitle_with_text,
+                        is_current=playback_manager.is_current_playback_sentence,
+                    ))
                     return
             except Exception:
                 logger.debug("vn subtitle probe failed", exc_info=True)
@@ -900,7 +886,7 @@ async def bootstrap(port: int = 17777) -> None:
             get_translation=None,
             cache_lock=None,
             cache_ref=None,
-            update_subtitle_display=_update_wallpaper_subtitle,
+            update_subtitle_display=_update_playback_subtitle,
             subtitle_available=True,
         ),
     )
@@ -2603,9 +2589,12 @@ async def bootstrap(port: int = 17777) -> None:
     # both operations run only after the Observer has subscribed.
     await work_ledger.recover_pending_terminal_results()
     await work_ledger.replay_pending_terminal_notices()
+    from server.vn_tts_bridge import finish_vn_speech
+
     vn_h.configure(
         project_root=Path(ROOT), event_emit=bus.emit, speak_callback=_deliver_vn_narration,
         speech_epoch=_tts_pipeline.current_tts_epoch,
+        speech_finished=finish_vn_speech,
         asr_control=asr_h.handle, asr_state=lambda: asr_h.listening_state(include_context=True),
         capture_game_view=lambda: vn_launch_h.handle(Method.VN_LAUNCH_CAPTURE, {}),
     )
