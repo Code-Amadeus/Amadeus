@@ -13,14 +13,17 @@ import sys
 from threading import Event
 
 
-def capture_window_frame(hwnd: int, *, timeout: float = 8):
+def capture_window_frame(hwnd: int, *, timeout: float = 8, preserve_alpha: bool = False):
     """Isolate the native capture lifetime and faults from the long-running host."""
     from PIL import Image
     import psutil
 
     if not hwnd:
         raise RuntimeError("The game window is unavailable.")
-    process = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), str(hwnd)],
+    args = [sys.executable, str(Path(__file__).resolve()), str(hwnd)]
+    if preserve_alpha:
+        args.append("--preserve-alpha")
+    process = subprocess.Popen(args,
         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     try:
@@ -44,10 +47,10 @@ def capture_window_frame(hwnd: int, *, timeout: float = 8):
         detail = error.decode("utf-8", errors="replace").strip()[-500:]
         raise RuntimeError(f"Game-window capture failed ({process.returncode}). {detail}")
     with Image.open(io.BytesIO(data)) as image:
-        return image.convert("RGB")
+        return image.convert("RGBA" if preserve_alpha else "RGB")
 
 
-def _capture_frame(hwnd: int, *, timeout: float = 5):
+def _capture_frame(hwnd: int, *, timeout: float = 5, preserve_alpha: bool = False):
     from PIL import Image
     from windows_capture import WindowsCapture
 
@@ -61,7 +64,14 @@ def _capture_frame(hwnd: int, *, timeout: float = 5):
     def on_frame_arrived(frame, control):
         try:
             # Copy before releasing the native frame buffer.
-            result["image"] = Image.fromarray(frame.frame_buffer[:, :, 2::-1].copy())
+            pixels = frame.frame_buffer
+            if preserve_alpha:
+                # WGC supplies premultiplied BGRA. UI previews must retain alpha
+                # and undo premultiplication instead of turning transparent edges black.
+                with Image.frombytes("RGBa", (pixels.shape[1], pixels.shape[0]), pixels[:, :, [2, 1, 0, 3]].tobytes()) as rgba:
+                    result["image"] = rgba.convert("RGBA")
+            else:
+                result["image"] = Image.fromarray(pixels[:, :, 2::-1].copy())
         except Exception as exc:
             result["error"] = exc
         finally:
@@ -87,7 +97,7 @@ def _capture_frame(hwnd: int, *, timeout: float = 5):
 
 if __name__ == "__main__":
     try:
-        _capture_frame(int(sys.argv[1])).save(sys.stdout.buffer, format="PNG")
+        _capture_frame(int(sys.argv[1]), preserve_alpha="--preserve-alpha" in sys.argv[2:]).save(sys.stdout.buffer, format="PNG")
     except Exception as exc:
         print(str(exc), file=sys.stderr)
         sys.exit(1)

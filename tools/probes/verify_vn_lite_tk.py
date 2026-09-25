@@ -44,7 +44,7 @@ def screenshot(overlay, path):
     from server.window_capture import capture_window_frame
     hwnd = ctypes.windll.user32.GetAncestor(overlay.root.winfo_id(), 2)
     with ThreadPoolExecutor(max_workers=1) as executor:
-        pending = executor.submit(capture_window_frame, hwnd)
+        pending = executor.submit(capture_window_frame, hwnd, preserve_alpha=True)
         while not pending.done():
             pump(overlay, .02)
         with pending.result() as frame:

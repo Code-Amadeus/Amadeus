@@ -9,9 +9,9 @@ import pytest
 from server import window_capture
 
 
-def capture_fixture(monkeypatch, mode):
+def capture_fixture(monkeypatch, mode, pixel=(15, 45, 120, 255)):
     control = Mock()
-    pixels = np.array([[[15, 45, 120, 255]]], dtype=np.uint8)
+    pixels = np.array([[pixel]], dtype=np.uint8)
     class Capture:
         def __init__(self, **kwargs):
             self.options = kwargs
@@ -38,6 +38,32 @@ def test_exact_window_and_detached_frame(monkeypatch):
     assert captures[0].options == {"window_hwnd": 123, "cursor_capture": False, "secondary_window": False}
     assert frame.getpixel((0, 0)) == (120, 45, 15)
     control.stop.assert_called_once()
+
+
+def test_native_ui_preview_preserves_transparency_and_unpremultiplies_colors(monkeypatch):
+    capture_fixture(monkeypatch, "frame", pixel=(20, 40, 60, 128))
+    with window_capture._capture_frame(123, preserve_alpha=True) as frame:
+        assert frame.mode == "RGBA"
+        assert frame.getpixel((0, 0)) == (119, 79, 39, 128)
+    capture_fixture(monkeypatch, "frame", pixel=(0, 0, 0, 0))
+    with window_capture._capture_frame(123, preserve_alpha=True) as frame:
+        assert frame.getpixel((0, 0))[3] == 0
+
+
+@pytest.mark.parametrize("preserve_alpha,mode", [(False, "RGB"), (True, "RGBA")])
+def test_worker_roundtrip_keeps_game_rgb_default_and_optional_ui_alpha(monkeypatch, preserve_alpha, mode):
+    import io
+    from PIL import Image
+    data = io.BytesIO()
+    Image.new("RGBA", (1, 1), (119, 79, 39, 128)).save(data, format="PNG")
+    process = Mock(returncode=0)
+    process.communicate.return_value = (data.getvalue(), b"")
+    spawn = Mock(return_value=process)
+    monkeypatch.setattr(window_capture.subprocess, "Popen", spawn)
+    with window_capture.capture_window_frame(123, preserve_alpha=preserve_alpha) as frame:
+        assert frame.mode == mode
+        assert frame.getpixel((0, 0)) == ((119, 79, 39, 128) if preserve_alpha else (119, 79, 39))
+    assert ("--preserve-alpha" in spawn.call_args.args[0]) == preserve_alpha
 
 
 @pytest.mark.parametrize("mode,message", [("closed", "closed"), ("timeout", "in time")])

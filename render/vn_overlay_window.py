@@ -210,7 +210,6 @@ class PortraitOverlayTk:
         surface = Image.new("RGBA", (self._px(self.card_width) * 4, self._px(height) * 4))
         draw = ImageDraw.Draw(surface)
         stroke = max(1, round(resolution))
-        draw.rounded_rectangle(box(3, 5, self.card_width - 4, height - 2), radius=round(20 * resolution), fill="#0b282d")
         draw.rounded_rectangle(box(4, 3, self.card_width - 5, height - 6), radius=round(18 * resolution), fill=CARD_BG, outline=CARD_BORDER, width=stroke)
         draw.rounded_rectangle(box(6, 5, self.card_width - 7, height - 8), radius=round(16 * resolution), outline="#153b3a", width=stroke)
         draw.rounded_rectangle(box(18, 53, 160, 195), radius=round(15 * resolution), fill="#0b2a2e", outline="#28574f", width=stroke)
