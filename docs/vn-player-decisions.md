@@ -321,3 +321,46 @@ and JPEG settings. Encoding now takes explicit parameters: General passes its ow
 settings, while VN retains 960px / quality 68. Regression checks cover General
 on/off against VN question capture on/off, verified game-window capture with
 General disabled, and preservation of General's independent image sizing.
+
+### Restore the companion card and add hover controls
+
+The user clarified that moving the Tk shell into the repository did not require
+redesigning the card. Restore its original 470×226 logical layout, 0.88 opacity,
+rounded borders, typography, right-click close, and 25%-contrast outer scan sweep.
+Keep the shared Companion Lite portrait player and session/playback fixes.
+
+Only the microphone and question-time vision icons are added, in the header on
+hover; leaving the card hides them. They share the existing session API with the
+VN page, including availability, pending/error feedback and stale-session rejection.
+No additional semantic capabilities, general vision switches or profile fields are
+introduced. Reconnecting reads state and never retries an unacknowledged click.
+
+The first restored-window capture exposed Windows bitmap magnification: a 470×226
+96-DPI window became approximately 823×396 pixels at 175% display scaling. Native
+DPI layout and a supersampled frame remove that magnification while preserving
+logical size. The outside mask remains binary to avoid color-key fringes.
+
+Validation: authenticated loopback WebSocket with the production connection manager
+and VN handler; native Tk event/hover/layout/lifecycle probe and exact-window
+screenshots. Native widget inputs and ASR hardware are fixtures, not a new real
+microphone or game acceptance. The desktop automation tool could not initialize
+(`failed to write kernel assets`), so physical mouse automation was unavailable.
+
+### Compose prompts through one path for every game
+
+Per user clarification, compatibility means filling the original content into
+common, game-type and confirmed game-value layers and reproducing the original
+messages. It never means a PARANORMASIGHT ID exception or an old-prompt fallback.
+The same composer now builds every lane for every profile. Base and Mystery
+messages both match the pre-refactor full-message fixtures byte for byte.
+
+Unknown games use the selected name/type without a model initialization pass.
+Optional game terminology is empty by default and only supplied by the user;
+it enters reference data, not the system-rule layer. Keyword scoring is unchanged.
+Verification: 190 focused Python tests, 155 frontend tests and production build,
+the real profile-editor save/reopen/clear flow, and an 80-line model-off replay
+against pre-PR main `b90a5a1` with no rule/summary/retrospective differences.
+
+The user also confirmed retaining the original English prompt bodies. Japanese
+speech is selected by the existing output-language setting; prompt text is not
+translated as part of this refactor.

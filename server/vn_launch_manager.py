@@ -54,6 +54,7 @@ class VNLaunchManager:
         runtime_line: RuntimeLine,
         before_external_launch: BeforeExternalLaunch | None = None,
         runtime_overlay: Callable[[str], None] | None = None,
+        backend_url: str = "",
     ) -> None:
         self.project_root = Path(project_root)
         self.vn_root = self.project_root.parent / "visual novel player"
@@ -71,6 +72,7 @@ class VNLaunchManager:
         self._runtime_line = runtime_line
         self._before_external_launch = before_external_launch
         self._runtime_overlay = runtime_overlay
+        self._backend_url = backend_url
         self._game_proc: subprocess.Popen[Any] | psutil.Process | None = None
         self._overlay_proc: subprocess.Popen[Any] | None = None
         self._text_source: VNTextSourceAdapter | None = None
@@ -231,6 +233,7 @@ class VNLaunchManager:
             "voice_input": profile.get("voiceInput", False),
             "vision_mode": profile.get("visionMode", "off"),
             "commentary_frequency": profile.get("commentaryFrequency", "balanced"),
+            "terminology": profile.get("terminology", ""),
         }
         if isinstance(params.get("runtime"), dict):
             runtime_params.update(params["runtime"])  # type: ignore[arg-type]
@@ -522,6 +525,8 @@ class VNLaunchManager:
             "--y",
             str(_coerce_int(params.get("overlayY") or params.get("overlay_y"), 80)),
         ]
+        if self._backend_url:
+            args.extend(["--backend-url", self._backend_url])
         self._overlay_proc = self._spawn(args, cwd=self.project_root, hidden=True)
         self._state["overlay"] = {
             "status": "starting",

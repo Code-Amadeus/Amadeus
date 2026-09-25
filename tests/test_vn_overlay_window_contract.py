@@ -65,6 +65,7 @@ def test_non_playback_reactions_use_explicit_duration_then_tag_duration():
 
 def test_invalid_reaction_is_rejected_before_queue_and_next_reaction_is_polled():
     root = MagicMock()
+    root.winfo_fpixels.return_value = 96
     root.after.return_value = 1
     with patch("render.vn_overlay_window.tk.Tk", return_value=root), \
          patch("render.vn_overlay_window.tk.Canvas", return_value=MagicMock()), \
@@ -91,7 +92,7 @@ def test_invalid_reaction_is_rejected_before_queue_and_next_reaction_is_polled()
         assert post({"text": "good", "duration_ms": 1200}) == 200
         shell._poll()
         shell.apply_reaction.assert_called_once_with({"text": "good", "duration_ms": 1200})
-        assert root.after.call_count == 2
+        assert shell._messages.empty()
     finally:
         shell._server.shutdown()
         shell._server.server_close()

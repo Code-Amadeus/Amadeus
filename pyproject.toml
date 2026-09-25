@@ -227,6 +227,7 @@ packages = [
     "tools",
     "tts",
     "vn_player",
+    "vn_player.prompt_layers",
     "vts",
     "wallpaper",
 ]

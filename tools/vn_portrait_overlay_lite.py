@@ -154,11 +154,12 @@ def main():
     parser.add_argument("--static-idle", action="store_true")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8788)
+    parser.add_argument("--backend-url", default="", help="Local backend /ws endpoint for VN session controls")
     parser.add_argument("--x", type=int, default=60)
     parser.add_argument("--y", type=int, default=80)
     args = parser.parse_args()
     overlay = overlay_class()(lite_dir=args.lite_dir, static_idle=args.static_idle,
-                              host=args.host, port=args.port, x=args.x, y=args.y)
+                              host=args.host, port=args.port, x=args.x, y=args.y, backend_url=args.backend_url)
     return overlay.run()
 
 
