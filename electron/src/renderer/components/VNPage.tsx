@@ -199,12 +199,18 @@ export default function VNPage({ send, subscribe, connected }: Props) {
 
   const refresh = useCallback(async () => {
     if (!connected) return
+    const requestedSession = sessionRef.current
     try {
       const [profileRes, statusRes, runtimeRes] = await Promise.all([
         send('vn.launch.profiles', {}),
         send('vn.launch.status', {}),
         send('vn.status', { include_history: true }),
       ])
+      const refreshedSession = String(statusRes.sessionId || '')
+      // Accept a newly discovered session, unless a different session has
+      // already arrived while these requests were pending.
+      if (sessionRef.current !== requestedSession && sessionRef.current !== refreshedSession) return
+      sessionRef.current = refreshedSession
       const loadedProfiles = Array.isArray(profileRes.profiles) ? profileRes.profiles as VNProfile[] : []
       setProfiles(loadedProfiles)
       setLaunch(statusRes as LaunchStatus)
@@ -213,8 +219,10 @@ export default function VNPage({ send, subscribe, connected }: Props) {
       const history = (Array.isArray(runtimeRes.activity) ? runtimeRes.activity : []) as Array<{method: string; payload: Record<string, unknown>}>
       const restored = history.map(item => activityFromEvent(item.method, item.payload)).filter((item): item is VNActivity => !!item)
       const historySession = String((runtimeRes.profile as {session_id?: string} | undefined)?.session_id || '')
-      if (historySession && (!sessionRef.current || sessionRef.current === historySession)) {
+      if (historySession && (!refreshedSession || refreshedSession === historySession)) {
         setActivity(previous => mergeActivity(previous, restored, historySession))
+      } else {
+        setActivity(previous => mergeActivity(previous, [], refreshedSession))
       }
       if (profileRes.capabilityPresets) setCapabilityPresets(profileRes.capabilityPresets as VNCapabilityPresets)
       setSelectedProfile(previous => statusRes.profileId ? String(statusRes.profileId)
@@ -226,7 +234,7 @@ export default function VNPage({ send, subscribe, connected }: Props) {
       }
       setError('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      if (sessionRef.current === requestedSession) setError(err instanceof Error ? err.message : String(err))
     }
   }, [connected, send])
 
@@ -236,6 +244,7 @@ export default function VNPage({ send, subscribe, connected }: Props) {
 
   useEffect(() => {
     const unsubLaunch = subscribe('vn.launch.status', payload => {
+      sessionRef.current = String(payload.sessionId || '')
       setLaunch(payload as LaunchStatus)
       if (payload.runtime && typeof payload.runtime === 'object') {
         setRuntime(payload.runtime as RuntimeState)

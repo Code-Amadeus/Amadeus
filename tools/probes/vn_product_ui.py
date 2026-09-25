@@ -23,9 +23,10 @@ async def run(url):
     output = ROOT / "output/diagnostics/vn-profiles-ui"
     output.mkdir(parents=True, exist_ok=True)
     calls, errors, model_ready = [], [], [True]
+    publish_enabled = True
     page = None
     async def publish(method, payload):
-        if page and not page.is_closed():
+        if publish_enabled and page and not page.is_closed():
             await page.evaluate("([m,p]) => (window.vnSubscribers?.[m] || []).forEach(fn => fn(p))", [str(method), payload])
 
     class FixtureAgent(AgentVNTextSource):
@@ -146,6 +147,20 @@ async def run(url):
                     await expect(page.get_by_role("switch", name="Voice input (ASR)")).to_be_checked()
                     await expect(page.get_by_label("VN vision", exact=True)).to_have_value("on_question")
                     await expect(page.get_by_label("Commentary frequency", exact=True)).to_have_value("quiet")
+                    # A disconnected page can miss a complete session replacement.
+                    # Refresh must adopt both the new session and its history.
+                    publish_enabled = False
+                    try:
+                        await backend("vn.launch.stop", {"closeGame": False})
+                        await backend("vn.launch.start", {"profileId": launch._manager.profiles()["profiles"][0]["id"]})
+                    finally:
+                        publish_enabled = True
+                    await page.locator(".vn-diagnostics > summary").click()
+                    await page.get_by_role("button", name="Refresh", exact=True).click()
+                    await expect(feed.locator("article")).to_have_count(len(vn._runtime.activity()))
+                    await expect(feed.locator(".player-line")).to_have_count(0)
+                    await expect(page.locator(".vn-diagnostic-body > p").first).to_contain_text(vn._runtime.profile.session_id)
+                    await page.locator(".vn-diagnostics > summary").click()
                     await page.get_by_role("button", name="Hide portrait").click()
                     await expect(page.get_by_role("button", name="Show portrait")).to_be_visible()
                     await page.get_by_role("button", name="End session", exact=True).click()

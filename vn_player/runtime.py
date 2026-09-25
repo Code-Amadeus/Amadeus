@@ -506,13 +506,17 @@ class VNPlayerRuntime:
         if kind not in {"ask", "choice"} or not text:
             return {"status": "ok", "event": event}
 
+        # Publishing the player event can suspend across a stop or replacement.
+        # Validate ownership before reading context or submitting a model call.
+        if not self._owns_context(owner_profile, owner_store):
+            return {"status": "ignored", "reason": "session_changed", "event": event}
         last_line = (self.store.short_memory() or [{}])[-1]
         context_pack = self._build_context_pack(last_line, self._empty_lookahead(last_line), player_intervention=event)
         response = await self._immediate_response(
             context_pack, last_line, self._empty_lookahead(last_line), force_llm=True,
             visual_context=visual_context,
         )
-        if not self.enabled or self.profile is not owner_profile or self.store is not owner_store:
+        if not self._owns_context(owner_profile, owner_store):
             return {"status": "ignored", "reason": "session_changed", "event": event}
         response = self._postprocess_response(response, last_line, player_requested=True)
         if visual_context:
@@ -549,7 +553,7 @@ class VNPlayerRuntime:
             VN_EVENT_REACTION,
             {"session_id": owner_profile.session_id, "line": last_line, "reaction": response, "source": f"player.{kind}"},
         )
-        if not self.enabled or self.profile is not owner_profile or self.store is not owner_store:
+        if not self._owns_context(owner_profile, owner_store):
             return {"status": "ignored", "reason": "session_changed", "event": event}
         await self._speak(response["speak"], last_line, player_requested=True)
         event["answered_at_ms"] = now_ms()

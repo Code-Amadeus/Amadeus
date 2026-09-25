@@ -10,7 +10,9 @@ from PIL import Image
 
 from server import visual_runtime
 from server.handlers.vn_player_handler import VNPlayerHandler
+from server.protocol import Method
 from server.vn_launch_manager import VNLaunchManager
+from vn_player.llm_client import VNLLMClient
 
 
 def test_late_asr_cannot_cross_vn_session_boundary() -> None:
@@ -35,6 +37,63 @@ def test_late_asr_cannot_cross_vn_session_boundary() -> None:
         result = await handler.handle_asr({"text": "晚到的识别", "source_payload": {"session_id": "current"}})
         assert result["status"] == "ignored"
         assert runtime.player_intervention.await_count == 1
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("method", [Method.VN_PLAYER_ASK, Method.VN_CHOICE_ASK])
+@pytest.mark.parametrize("boundary", ["unchanged", "stop", "restart"])
+def test_player_event_publication_cannot_send_a_question_to_another_session(tmp_path, monkeypatch, method, boundary):
+    monkeypatch.setattr(VNLLMClient, "configured", lambda _: True)
+
+    async def run():
+        entered, release = asyncio.Event(), asyncio.Event()
+        emitted = []
+
+        async def emit(name, payload):
+            emitted.append((name, payload))
+            if name == Method.VN_PLAYER_EVENT:
+                entered.set()
+                await release.wait()
+
+        handler = VNPlayerHandler()
+        spoken = AsyncMock()
+        handler.configure(tmp_path, event_emit=emit, speak_callback=spoken)
+        runtime = handler._runtime
+        runtime._llm_enabled = runtime._immediate_llm_enabled = True
+        await handler.handle(Method.VN_START, {"session_id": "a", "prompt_pack": "base", "script_path": ""})
+        old_store, old_llm = runtime.store, runtime.llm
+        reply = ({"decision": "speak", "speak": {"text": "Answer for session A."}}, "{}")
+        old_llm.complete_json = AsyncMock(return_value=reply)
+        pending = asyncio.create_task(handler.handle(method, {"session_id": "a", "text": "Question for session A."}))
+        await asyncio.wait_for(entered.wait(), 2)
+        if boundary != "unchanged":
+            await handler.handle(Method.VN_STOP, {})
+        if boundary == "restart":
+            await handler.handle(Method.VN_START, {"session_id": "b", "prompt_pack": "base", "script_path": ""})
+            runtime.llm.complete_json = AsyncMock(return_value=reply)
+        current_store, current_llm = runtime.store, runtime.llm
+        release.set()
+        result = await pending
+        if boundary == "unchanged":
+            assert result["status"] == "ok"
+            old_llm.complete_json.assert_awaited_once()
+            spoken.assert_awaited_once()
+            assert spoken.await_args.args[0]["session_id"] == "a"
+        else:
+            assert result["status"] == "ignored" and result["reason"] == "session_changed"
+            old_llm.complete_json.assert_not_awaited()
+            current_llm.complete_json.assert_not_awaited()
+            spoken.assert_not_awaited()
+            assert not any(name == Method.VN_REACTION for name, _ in emitted)
+            for store in (old_store, current_store):
+                assert store.recent_reactions() == []
+                assert not (store.root / "model_calls.jsonl").exists()
+                assert not (store.context_pack_dir / "immediate.latest.json").exists()
+            if boundary == "restart":
+                assert runtime._recent_player_dialogue() == []
+                assert runtime.activity() == []
+        await handler.handle(Method.VN_STOP, {})
+
     asyncio.run(run())
 
 
