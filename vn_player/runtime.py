@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from copy import deepcopy
+from dataclasses import dataclass
 from functools import partial
 import inspect
 import logging
@@ -27,12 +28,13 @@ from .mystery_policy import (
 from .prompts import immediate_context_view, immediate_prompt, lookahead_prompt, reasoner_prompt, retrospective_prompt, summary_prompt
 from .schemas import VNProfile, default_response, new_id, now_ms, sanitize_response
 from .script_index import ScriptIndex
+from .speech_stream import VNSpeechStream
 from .text import looks_like_topic_label, strip_vn_tags, text_hash
 
 logger = logging.getLogger(__name__)
 
 EventEmitter = Callable[[str, dict[str, Any]], Awaitable[None] | None]
-SpeakCallback = Callable[[dict[str, Any]], Awaitable[None] | None]
+SpeakCallback = Callable[[dict[str, Any]], Awaitable[dict[str, Any] | None] | dict[str, Any] | None]
 
 VN_EVENT_LINE = "vn.line"
 VN_EVENT_REACTION = "vn.reaction"
@@ -42,6 +44,20 @@ VN_EVENT_ERROR = "vn.error"
 VN_EVENT_SUMMARY = "vn.summary"
 VN_EVENT_PLAYER = "vn.player.event"
 
+
+@dataclass
+class _LineTurn:
+    profile: VNProfile
+    store: VNContextStore
+    line: dict[str, Any]
+    match: dict[str, Any] | None
+    lookahead: dict[str, Any]
+    attention: dict[str, Any]
+    context: dict[str, Any]
+    history: list[dict[str, Any]]
+    previous: asyncio.Event
+    done: asyncio.Event
+    timing: dict[str, Any]
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -87,10 +103,14 @@ class VNPlayerRuntime:
         *,
         event_emit: EventEmitter | None = None,
         speak_callback: SpeakCallback | None = None,
+        speech_epoch: Callable[[], int] | None = None,
+        speech_finished: Callable[[str, bool], None] | None = None,
     ) -> None:
         self.project_root = Path(project_root)
         self.event_emit = event_emit
         self.speak_callback = speak_callback
+        self.speech_epoch = speech_epoch
+        self.speech_finished = speech_finished
 
         self.profile: VNProfile | None = None
         self.store: VNContextStore | None = None
@@ -104,6 +124,12 @@ class VNPlayerRuntime:
         self._last_script_order: int | None = None
         self._aligned_script_id = ""
         self._line_count = 0
+        self._session_start_seq = 0
+        self._line_slots = asyncio.Semaphore(3)
+        self._line_tasks: set[asyncio.Task] = set()
+        self._speech_lock = asyncio.Lock()
+        self._line_tail = asyncio.Event()
+        self._line_tail.set()
         self._recent_speaks: list[float] = []
         self._last_speak_line_count: int | None = None
         self._silence_pressure_count = 0
@@ -178,6 +204,8 @@ class VNPlayerRuntime:
             )
 
             self._cancel_context_tasks()
+            self._cancel_line_tasks()
+            old_llm = self.llm
             self.profile = profile
             self.store = VNContextStore(self.project_root, profile)
             self.script_index = index
@@ -186,6 +214,11 @@ class VNPlayerRuntime:
             self.verifier = EvidenceVerifier(self.store, self.script_index, hidden_probe=True) if self._verifier_enabled else None
             self.enabled = True
             self._line_count = 0
+            self._session_start_seq = self.store._seq
+            self._line_slots = asyncio.Semaphore(3)
+            self._speech_lock = asyncio.Lock()
+            self._line_tail = asyncio.Event()
+            self._line_tail.set()
             self._recent_speaks = []
             self._last_speak_line_count = None
             self._silence_pressure_count = 0
@@ -218,7 +251,10 @@ class VNPlayerRuntime:
                 },
             )
             result = self.status()
-        await self._emit(VN_EVENT_STATUS, result)
+        if isinstance(old_llm, VNLLMClient):
+            await old_llm.aclose()
+        if self.enabled and self.profile is profile:
+            await self._emit(VN_EVENT_STATUS, result)
         return result
 
     async def stop(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -226,10 +262,15 @@ class VNPlayerRuntime:
             self.enabled = False
             self._cancel_lookahead_task()
             self._cancel_context_tasks()
+            self._cancel_line_tasks()
+            old_llm = self.llm
             if self.store is not None:
                 self.store.record_runtime_event("vn.stop", dict(params or {}))
             result = self.status()
-        await self._emit(VN_EVENT_STATUS, result)
+        if isinstance(old_llm, VNLLMClient):
+            await old_llm.aclose()
+        if not self.enabled and self.llm is old_llm:
+            await self._emit(VN_EVENT_STATUS, result)
         return result
 
     def status(self) -> dict[str, Any]:
@@ -322,21 +363,63 @@ class VNPlayerRuntime:
     def _capability(self, name: str) -> bool:
         return bool(self._capability_status()[name]["enabled"])
 
+    def _cancel_line_tasks(self) -> None:
+        for task in self._line_tasks:
+            task.cancel()
+        self._line_tasks.clear()
+
+    async def drain_lines(self) -> None:
+        """Wait for admitted lines, useful for recorded-input runners and shutdown tests."""
+        while self._line_tasks:
+            await asyncio.gather(*list(self._line_tasks))
+
     async def ingest_line(self, params: dict[str, Any]) -> dict[str, Any]:
-        """Ingest one live VN line and optionally emit a Kurisu reaction."""
+        """Existing vn.line callers still receive the completed reaction."""
+        admitted, task = await self._admit_line(params)
+        if task is None:
+            return admitted
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if task.cancelled():
+                return {"status": "ignored", "reason": "session_changed"}
+            raise
+
+    async def submit_line(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Internal source handoff: admit through the same path without awaiting inference."""
+        admitted, _ = await self._admit_line(params)
+        return admitted
+
+    async def _admit_line(self, params: dict[str, Any]) -> tuple[dict[str, Any], asyncio.Task | None]:
+        received_at = now_ms()
         if self.profile is None or self.store is None:
             await self.start({})
         assert self.profile is not None
         assert self.store is not None
 
         if not self.enabled:
-            return {"status": "ignored", "reason": "inactive_vn_session"}
+            return {"status": "ignored", "reason": "inactive_vn_session"}, None
         owner_profile, owner_store = self.profile, self.store
         text = strip_vn_tags(str(params.get("text") or "")).strip()
         if not text:
-            return {**self.status(), "status": "ignored", "reason": "empty_text"}
+            return {**self.status(), "status": "ignored", "reason": "empty_text"}, None
 
+        slots = self._line_slots
+        await slots.acquire()
+        try:
+            return await self._admit_owned_line(params, text, owner_profile, owner_store, slots, received_at)
+        except BaseException:
+            slots.release()
+            raise
+
+    async def _admit_owned_line(
+        self, params: dict[str, Any], text: str, owner_profile: VNProfile,
+        owner_store: VNContextStore, slots: asyncio.Semaphore, received_at: int,
+    ) -> tuple[dict[str, Any], asyncio.Task | None]:
         async with self._lock:
+            if not self._owns_context(owner_profile, owner_store):
+                slots.release()
+                return {"status": "ignored", "reason": "session_changed"}, None
             supplied_script_id = str(params.get("script_id") or "").strip()
             supplied_line = self.script_index._by_id.get(supplied_script_id) if supplied_script_id else None
             if supplied_line is not None:
@@ -380,33 +463,142 @@ class VNPlayerRuntime:
                 params = {**params, "script_id": matched_script_id}
             line_event = self.store.record_line(params, match)
             self._line_count += 1
-
-        await self._emit(VN_EVENT_LINE, {"line": line_event, "match": match or {}})
-
-        try:
             lookahead = self._lookahead_for_immediate(line_event)
             self._schedule_lookahead_refresh(line_event, lookahead)
             retrospective_bias = self.store.retrospective_bias()
             attention = self._build_attention_route(line_event, lookahead, retrospective_bias=retrospective_bias)
+            context_attention = attention
             if self.profile.prompt_pack == "mystery":
-                attention = self._apply_silence_pressure_to_attention(attention, line_event)
-            context_pack = self._build_context_pack(line_event, lookahead, attention=attention)
+                context_attention = self._apply_silence_pressure_to_attention(attention, line_event)
+            context_pack = self._build_context_pack(line_event, lookahead, attention=context_attention)
+            turn = _LineTurn(
+                profile=owner_profile, store=owner_store, line=line_event, match=match,
+                lookahead=deepcopy(lookahead), attention=deepcopy(attention), context=deepcopy(context_pack),
+                history=deepcopy(self.store.short_memory()), previous=self._line_tail, done=asyncio.Event(),
+                timing={"received_at_ms": received_at, "admitted_at_ms": now_ms()},
+            )
+            self._line_tail = turn.done
+            task = asyncio.create_task(self._process_line(turn))
+            self._line_tasks.add(task)
+
+            def finished(completed):
+                self._line_tasks.discard(completed)
+                turn.done.set()
+                slots.release()
+
+            task.add_done_callback(finished)
+            return {"status": "accepted", "line": line_event}, task
+
+    def _prepare_immediate_delivery(self, response, line_event, attention):
+        response = self._postprocess_response(response, line_event)
+        if self._capability("immediate") and not self._commentary_paused:
+            response = self._apply_attention_guard(response, attention, line_event)
+            if self.profile.prompt_pack == "mystery":
+                response = self._apply_silence_pressure_guard(response, attention, line_event)
+            response = self._apply_line_budget_guard(response, attention, line_event)
+        if self._commentary_paused:
+            response = {**response, "decision": "silence", "speak": None, "reason_label": "commentary_paused"}
+        return response
+
+    def _speech_stream(self, profile, store, line, timing, *, attention=None, previous=None, player_requested=False):
+        from config import settings
+
+        utterance_epoch = None
+
+        def active():
+            return (self._owns_context(profile, store)
+                    and (player_requested or not self._commentary_paused)
+                    and (utterance_epoch is None or self.speech_epoch() == utterance_epoch))
+
+        def authorize(header, text_complete):
+            nonlocal utterance_epoch
+            if not player_requested and not text_complete:
+                key = _speech_repeat_key(_normalize_speak_text(header["speak"]["text"]))
+                # Preserve the existing 80-character repeat rule: defer while
+                # a previous reply is still indistinguishable from this prefix.
+                if len(key) < 80 and any(
+                    _speech_repeat_key(str(((item.get("response") or {}).get("speak") or {}).get("text") or "")).startswith(key)
+                    for item in store.recent_reactions(24)
+                    if (item.get("response") or {}).get("decision") == "speak"
+                ):
+                    return None
+            if player_requested:
+                response = self._postprocess_response(header, line, player_requested=True)
+            else:
+                if profile.prompt_pack == "mystery":
+                    attention.update(self._apply_silence_pressure_to_attention(attention, line))
+                response = self._prepare_immediate_delivery(header, line, attention)
+            if response.get("decision") == "speak":
+                timing.setdefault("speech_ready_at_ms", now_ms())
+                if self.speech_epoch is not None:
+                    # All segments belong to the same host playback generation.
+                    # A barge-in must not turn the remainder into fresh speech.
+                    utterance_epoch = self.speech_epoch()
+            return response
+
+        async def submit(speak):
+            timing.setdefault("speech_submitted_at_ms", now_ms())
+            segment_index = speak.pop("vn_speech_segment")
+            utterance_id = speak.pop("vn_speech_id")
+            return await self._speak(speak, line, player_requested=player_requested,
+                                     segment_index=segment_index, utterance_id=utterance_id)
+
+        return VNSpeechStream(
+            authorize=authorize,
+            active=active,
+            submit=submit, normalize=_normalize_speak_text, previous=previous, lock=self._speech_lock,
+            early_cut=int(getattr(settings, "FIRST_SENTENCE_EARLY_CUT_CHARS", 11)),
+            language="英文" if profile.output_language.lower().startswith("en") else "日文",
+            on_finished=self.speech_finished,
+        )
+
+    def _merge_streamed_delivery(self, response, speech, line_event):
+        response = self._postprocess_response(response, line_event)
+        delivery = speech.delivery
+        if not delivery or (delivery.get("decision") == "speak" and not speech.sent_text):
+            return {**response, "decision": "silence", "speak": None,
+                    "reason_label": speech.interruption or "empty_streamed_speech"}
+        if response.get("decision") != delivery["decision"]:
+            response.update(reason_label=delivery["reason_label"], lane_payload=delivery["lane_payload"])
+        response.update({key: delivery[key] for key in ("decision", "speak", "importance", "confidence", "line_refs")})
+        return response
+
+    async def _process_line(self, turn: _LineTurn) -> dict[str, Any]:
+        owner_profile, owner_store = turn.profile, turn.store
+        line_event, lookahead, attention, context_pack = turn.line, turn.lookahead, turn.attention, turn.context
+        speech = self._speech_stream(owner_profile, owner_store, line_event, turn.timing,
+                                     attention=attention, previous=turn.previous)
+
+        try:
+            await self._emit(VN_EVENT_LINE, {"line": line_event, "match": turn.match or {}})
+            if not self._owns_context(owner_profile, owner_store):
+                return {"status": "ignored", "reason": "session_changed"}
+            if not (self._llm_enabled and self._immediate_llm_enabled):
+                # Cheap rules use committed state; only inference runs ahead.
+                await turn.previous.wait()
+                if not self._owns_context(owner_profile, owner_store):
+                    return {"status": "ignored", "reason": "session_changed"}
+                turn.attention = self._build_attention_route(line_event, lookahead, retrospective_bias=self.store.retrospective_bias())
+                attention = turn.attention
+                if owner_profile.prompt_pack == "mystery":
+                    attention = self._apply_silence_pressure_to_attention(attention, line_event)
+                context_pack = self._build_context_pack(line_event, lookahead, attention=attention, recent_lines=turn.history)
             response = (
-                await self._immediate_response(context_pack, line_event, lookahead)
+                await self._immediate_response(context_pack, line_event, lookahead,
+                                               on_ready=speech.update, metrics=turn.timing)
                 if self._capability("immediate") and not self._commentary_paused
                 else default_response("silence", reason_label="capability_disabled")
             )
-            if not self.enabled or self.profile is not owner_profile or self.store is not owner_store:
+            await turn.previous.wait()
+            await speech.finish()
+            if not self._owns_context(owner_profile, owner_store):
                 return {"status": "ignored", "reason": "session_changed"}
-            response = self._postprocess_response(response, line_event)
-            if self._capability("immediate") and not self._commentary_paused:
-                response = self._apply_attention_guard(response, attention, line_event)
-                if self.profile.prompt_pack == "mystery":
-                    response = self._apply_silence_pressure_guard(response, attention, line_event)
-                response = self._apply_line_budget_guard(response, attention, line_event)
-            # Recheck after the model returns so pausing also revokes pending commentary.
-            if self._commentary_paused:
-                response = {**response, "decision": "silence", "speak": None, "reason_label": "commentary_paused"}
+            if speech.observed:
+                response = self._merge_streamed_delivery(response, speech, line_event)
+            else:
+                if owner_profile.prompt_pack == "mystery":
+                    attention = self._apply_silence_pressure_to_attention(turn.attention, line_event)
+                response = self._prepare_immediate_delivery(response, line_event, attention)
             self._update_silence_pressure(response)
 
             patches, verification = self._verify_context_patches(response.get("context_patches") or [], line_event)
@@ -422,6 +614,8 @@ class VNPlayerRuntime:
                     },
                 )
 
+            if not self._owns_context(owner_profile, owner_store):
+                return {"status": "ignored", "reason": "session_changed"}
             reaction_payload = {
                 "session_id": self.profile.session_id,
                 "line": line_event,
@@ -434,33 +628,51 @@ class VNPlayerRuntime:
             }
             await self._emit(VN_EVENT_REACTION, reaction_payload)
 
-            if response.get("decision") == "speak" and response.get("speak"):
+            if not self._owns_context(owner_profile, owner_store):
+                return {"status": "ignored", "reason": "session_changed"}
+            if not speech.observed and response.get("decision") == "speak" and response.get("speak"):
+                turn.timing["speech_submitted_at_ms"] = now_ms()
                 await self._speak(response["speak"], line_event)
+            if not self._owns_context(owner_profile, owner_store):
+                return {"status": "ignored", "reason": "session_changed"}
 
             fact_result = await self._maybe_run_fact_extractor(context_pack, line_event)
+            if not self._owns_context(owner_profile, owner_store):
+                return {"status": "ignored", "reason": "session_changed"}
             if fact_result:
                 reaction_payload["fact_extractor"] = fact_result
-                context_pack = self._build_context_pack(line_event, lookahead, attention=attention, write_immediate_view=False)
+                context_pack = self._build_context_pack(line_event, lookahead, attention=attention, write_immediate_view=False, recent_lines=turn.history)
 
             character_result = await self._maybe_run_character_modeler(context_pack, line_event)
+            if not self._owns_context(owner_profile, owner_store):
+                return {"status": "ignored", "reason": "session_changed"}
             if character_result:
                 reaction_payload["character_modeler"] = character_result
-                context_pack = self._build_context_pack(line_event, lookahead, attention=attention, write_immediate_view=False)
+                context_pack = self._build_context_pack(line_event, lookahead, attention=attention, write_immediate_view=False, recent_lines=turn.history)
 
             reasoner_result = await self._maybe_run_reasoner(context_pack, line_event, response)
+            if not self._owns_context(owner_profile, owner_store):
+                return {"status": "ignored", "reason": "session_changed"}
             if reasoner_result:
                 reaction_payload["reasoner"] = reasoner_result
 
-            summary_result = await self._maybe_run_summary(context_pack, line_event)
+            summary_result = await self._maybe_run_summary(context_pack, line_event, recent_lines=turn.history)
+            if not self._owns_context(owner_profile, owner_store):
+                return {"status": "ignored", "reason": "session_changed"}
             if summary_result:
                 reaction_payload["summary"] = summary_result
 
-            retrospective_result = await self._maybe_run_retrospective(line_event, response)
+            retrospective_result = await self._maybe_run_retrospective(line_event, response, recent_lines=turn.history)
             if retrospective_result:
                 reaction_payload["retrospective"] = retrospective_result
 
             return {"status": "ok", **reaction_payload}
+        except asyncio.CancelledError:
+            return {"status": "ignored", "reason": "session_changed"}
         except Exception as exc:
+            await turn.previous.wait()
+            if not self._owns_context(owner_profile, owner_store):
+                return {"status": "ignored", "reason": "session_changed"}
             logger.exception("VN line handling failed")
             payload = {"error": str(exc), "line": line_event}
             self.store.record_runtime_event("vn.error", payload)
@@ -468,6 +680,13 @@ class VNPlayerRuntime:
             fallback = default_response("silence", reason_label="runtime_error")
             self.store.record_reaction(fallback, line_event)
             return {"status": "error", "error": str(exc), "line": line_event, "reaction": fallback}
+        finally:
+            await speech.close()
+            if speech.interruption:
+                turn.timing["speech_interrupted"] = speech.interruption
+            if self._owns_context(owner_profile, owner_store):
+                turn.timing["committed_at_ms"] = now_ms()
+                owner_store.record_runtime_event("vn.line.timing", {"line": _line_ref(line_event), **turn.timing})
 
     async def player_intervention(self, kind: str, params: dict[str, Any]) -> dict[str, Any]:
         """Record player notes/questions and optionally ask Kurisu to answer."""
@@ -512,13 +731,21 @@ class VNPlayerRuntime:
             return {"status": "ignored", "reason": "session_changed", "event": event}
         last_line = (self.store.short_memory() or [{}])[-1]
         context_pack = self._build_context_pack(last_line, self._empty_lookahead(last_line), player_intervention=event)
-        response = await self._immediate_response(
-            context_pack, last_line, self._empty_lookahead(last_line), force_llm=True,
-            visual_context=visual_context,
-        )
+        timing = {"received_at_ms": event["recorded_at_ms"]}
+        speech = self._speech_stream(owner_profile, owner_store, last_line, timing, player_requested=True)
+
+        try:
+            response = await self._immediate_response(
+                context_pack, last_line, self._empty_lookahead(last_line), force_llm=True,
+                visual_context=visual_context, on_ready=speech.update, metrics=timing,
+            )
+            await speech.finish()
+        finally:
+            await speech.close()
         if not self._owns_context(owner_profile, owner_store):
             return {"status": "ignored", "reason": "session_changed", "event": event}
-        response = self._postprocess_response(response, last_line, player_requested=True)
+        response = (self._merge_streamed_delivery(response, speech, last_line) if speech.observed
+                    else self._postprocess_response(response, last_line, player_requested=True))
         if visual_context:
             # A one-turn image may inform the answer; it is not a displayed VN
             # line and cannot support durable candidate facts or evidence.
@@ -526,7 +753,7 @@ class VNPlayerRuntime:
                 patch for patch in response.get("context_patches") or []
                 if patch.get("layer") not in {"observed_fact", "candidate_fact", "evidence"}
             ]
-        if response.get("decision") != "speak":
+        if response.get("decision") != "speak" and not speech.observed:
             output_language = (self.profile.output_language or "ja").strip().lower()
             fallback_text = (
                 "\u5c11\u3057\u5f85\u3063\u3066\u3002[EMO preset=thinking dur=8s] "
@@ -555,8 +782,16 @@ class VNPlayerRuntime:
         )
         if not self._owns_context(owner_profile, owner_store):
             return {"status": "ignored", "reason": "session_changed", "event": event}
-        await self._speak(response["speak"], last_line, player_requested=True)
+        if not speech.observed:
+            timing["speech_submitted_at_ms"] = now_ms()
+            await self._speak(response["speak"], last_line, player_requested=True)
         event["answered_at_ms"] = now_ms()
+        if self._owns_context(owner_profile, owner_store):
+            if speech.interruption:
+                timing["speech_interrupted"] = speech.interruption
+            owner_store.record_runtime_event("vn.player.timing", {"event_id": event["id"], **timing})
+        if speech.observed and not speech.sent_text and speech.interruption:
+            return {"status": "error", "error": speech.interruption, "event": event, "reaction": response}
         return {"status": "ok", "event": event, "reaction": response}
 
     def _record_player_dialogue(self, event: dict[str, Any]) -> None:
@@ -845,7 +1080,9 @@ class VNPlayerRuntime:
             self._lookahead_llm_call_count += 1
             messages = lookahead_prompt(profile, planner_context)
             try:
-                parsed, raw = await self.llm.complete_json(messages, lane="lookahead", max_tokens=650, temperature=0.2)
+                # A 50-line window produces several plan entries. The old 650
+                # token ceiling truncated otherwise valid plans mid-JSON.
+                parsed, raw = await self.llm.complete_json(messages, lane="lookahead", max_tokens=2200, temperature=0.2)
             except Exception as exc:
                 store.record_model_call(
                     "lookahead",
@@ -1003,6 +1240,16 @@ class VNPlayerRuntime:
         plan["source"] = "llm"
         return plan
 
+    def _line_number(self, line_event: dict[str, Any]) -> int:
+        # Cadence follows the turn being committed, not the newest admitted line.
+        seq = line_event.get("seq")
+        return max(0, int(seq) - self._session_start_seq) if seq is not None else self._line_count
+
+    def _memory_through(self, line_event: dict[str, Any]) -> list[dict[str, Any]]:
+        seq = line_event.get("seq")
+        return [line for line in self.store.short_memory()
+                if seq is None or int(line.get("seq") or 0) <= int(seq)]
+
     def _build_attention_route(
         self,
         line_event: dict[str, Any],
@@ -1012,7 +1259,7 @@ class VNPlayerRuntime:
     ) -> dict[str, Any]:
         assert self.profile is not None
         if self.profile.prompt_pack == "base":
-            return base_policy.attention_route(line_event, self._line_count, self.profile.short_memory_lines)
+            return base_policy.attention_route(line_event, self._line_number(line_event), self.profile.short_memory_lines)
         current_score, current_kind = _score_line(line_event.get("text", ""))
         return build_attention_route(
             profile=self.profile,
@@ -1020,7 +1267,7 @@ class VNPlayerRuntime:
             lookahead=lookahead,
             current_score=current_score,
             current_kind=current_kind,
-            line_count=self._line_count,
+            line_count=self._line_number(line_event),
             retrospective_bias=retrospective_bias,
         )
 
@@ -1032,6 +1279,7 @@ class VNPlayerRuntime:
         attention: dict[str, Any] | None = None,
         player_intervention: dict[str, Any] | None = None,
         write_immediate_view: bool = True,
+        recent_lines: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         assert self.profile is not None and self.store is not None
         public_lookahead = self._public_lookahead(lookahead)
@@ -1052,7 +1300,7 @@ class VNPlayerRuntime:
                 "prompt_pack": self.profile.prompt_pack,
             },
             "current_line": line_event,
-            "short_memory": self.store.short_memory()[-max_context_lines:],
+            "short_memory": (recent_lines if recent_lines is not None else self._memory_through(line_event))[-max_context_lines:],
             "scene_summary": self.store.scene_summary(),
             "story_summary_log": self.store.story_summary_log()[-12:],
             "characters": self.store.characters(),
@@ -1095,11 +1343,20 @@ class VNPlayerRuntime:
         *,
         force_llm: bool = False,
         visual_context: dict[str, Any] | None = None,
+        on_ready: Callable[[dict[str, Any], bool], Awaitable[None]] | None = None,
+        metrics: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         assert self.profile is not None and self.store is not None
         profile = self.profile
         store = self.store
         llm = self.llm
+        committed = None
+
+        async def ready(header, text_complete=True):
+            nonlocal committed
+            committed = sanitize_response(header)
+            if on_ready is not None and self._owns_context(profile, store):
+                await on_ready(committed, text_complete)
         if (
             (self._immediate_llm_enabled or force_llm)
             and (self._llm_enabled or (force_llm and profile.prompt_pack == "mystery"))
@@ -1107,13 +1364,20 @@ class VNPlayerRuntime:
         ):
             messages = immediate_prompt(profile, context_pack)
             visual_kw = {"visual_context": visual_context} if visual_context else {}
+            if on_ready is not None:
+                visual_kw["on_ready"] = ready
+            if metrics is not None:
+                visual_kw["metrics"] = metrics
             parsed, raw = await llm.complete_json(messages, lane="immediate", max_tokens=800, temperature=0.55, **visual_kw)
             store.record_model_call(
                 "immediate",
-                {"context_metrics": _context_metrics(context_pack), "clean_context": immediate_context_view(context_pack)},
+                {"context_metrics": _context_metrics(context_pack), "clean_context": immediate_context_view(context_pack),
+                 **({"timing": dict(metrics)} if metrics is not None else {})},
                 parsed or raw,
                 ok=parsed is not None,
             )
+            if not self._owns_context(profile, store):
+                return default_response("silence", reason_label="session_changed")
             if parsed is not None:
                 response = sanitize_response(parsed)
                 if response.get("decision") == "context_request":
@@ -1124,16 +1388,34 @@ class VNPlayerRuntime:
                     context_pack["retrieved_context"] = expanded
                     store.write_context_pack("immediate.expanded", context_pack)
                     messages = immediate_prompt(profile, context_pack)
-                    parsed2, raw2 = await llm.complete_json(messages, lane="immediate_context_retry", max_tokens=800, temperature=0.5, **visual_kw)
+                    retry_kw = dict(visual_kw)
+                    retry_metrics = {}
+                    if metrics is not None:
+                        retry_kw["metrics"] = retry_metrics
+                    parsed2, raw2 = await llm.complete_json(messages, lane="immediate_context_retry", max_tokens=800, temperature=0.5, **retry_kw)
                     store.record_model_call(
                         "immediate_context_retry",
-                        {"context_metrics": _context_metrics(context_pack), "clean_context": immediate_context_view(context_pack)},
+                        {"context_metrics": _context_metrics(context_pack), "clean_context": immediate_context_view(context_pack),
+                         **({"timing": retry_metrics} if metrics is not None else {})},
                         parsed2 or raw2,
                         ok=parsed2 is not None,
                     )
+                    if metrics is not None:
+                        metrics["context_retry"] = retry_metrics
+                        for key in ("completed_at_ms", "speech_ready_at_ms"):
+                            if key in retry_metrics:
+                                metrics[key] = retry_metrics[key]
+                    if not self._owns_context(profile, store):
+                        return default_response("silence", reason_label="session_changed")
                     if parsed2 is not None:
                         response = sanitize_response(parsed2)
+                    elif committed is not None:
+                        store.record_runtime_event("vn.immediate.stream_incomplete", {"line": _line_ref(line_event)})
+                        return {**committed, "context_patches": []}
                 return response
+            if committed is not None:
+                store.record_runtime_event("vn.immediate.stream_incomplete", {"line": _line_ref(line_event)})
+                return {**committed, "context_patches": []}
         if profile.prompt_pack == "base":
             return default_response("silence", reason_label="model_unavailable")
         return self._rule_immediate(line_event, lookahead, context_pack.get("attention") or {})
@@ -1201,6 +1483,7 @@ class VNPlayerRuntime:
         self,
         context_pack: dict[str, Any],
         line_event: dict[str, Any],
+        *, recent_lines: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any] | None:
         assert self.profile is not None and self.store is not None
         if not self._capability("summary"):
@@ -1215,12 +1498,12 @@ class VNPlayerRuntime:
         except Exception:
             summary_cooldown = 5
         lines_since_summary = (
-            999999 if self._last_summary_line_count is None else self._line_count - self._last_summary_line_count
+            999999 if self._last_summary_line_count is None else self._line_number(line_event) - self._last_summary_line_count
         )
         event_append = summary_route == "append_now" and lines_since_summary >= summary_cooldown
         periodic_append = (
             summary_route != "append_now"
-            and self._line_count % summary_after == 0
+            and self._line_number(line_event) % summary_after == 0
             and lines_since_summary >= min(summary_cooldown, summary_after)
         )
         should_append = event_append or periodic_append
@@ -1229,10 +1512,10 @@ class VNPlayerRuntime:
 
         use_model = self._llm_enabled and self._summary_llm_enabled and self.llm is not None
         work = partial(self._complete_summary, deepcopy(context_pack), deepcopy(line_event),
-                       deepcopy(self.store.short_memory()), self._line_count, use_model)
+                       deepcopy(recent_lines if recent_lines is not None else self._memory_through(line_event)), self._line_number(line_event), use_model)
         if use_model:
             # Reserve the trigger count now; model latency must not shift cadence.
-            self._last_summary_line_count = self._line_count
+            self._last_summary_line_count = self._line_number(line_event)
             self._schedule_context_work("summary", work)
             return None
         return await work()
@@ -1315,18 +1598,19 @@ class VNPlayerRuntime:
         self,
         line_event: dict[str, Any],
         immediate_response: dict[str, Any],
+        *, recent_lines: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any] | None:
         assert self.profile is not None and self.store is not None
-        if not self._capability("retrospective") or not self._should_run_retrospective(line_event):
+        if not self._capability("retrospective") or not self._should_run_retrospective(line_event, recent_lines=recent_lines):
             return None
 
-        pack = self._build_retrospective_pack(line_event, immediate_response)
+        pack = self._build_retrospective_pack(line_event, immediate_response, recent_lines=recent_lines)
         self.store.write_context_pack("retrospective", pack)
 
         use_model = self._llm_enabled and self._retrospective_llm_enabled and self.llm is not None
-        work = partial(self._complete_retrospective, deepcopy(pack), deepcopy(line_event), self._line_count, use_model)
+        work = partial(self._complete_retrospective, deepcopy(pack), deepcopy(line_event), self._line_number(line_event), use_model)
         if use_model:
-            self._last_retrospective_line_count = self._line_count
+            self._last_retrospective_line_count = self._line_number(line_event)
             self._schedule_context_work("retrospective", work)
             return None
         return await work()
@@ -1381,14 +1665,14 @@ class VNPlayerRuntime:
         )
         return {"lane": lane, "bias": bias, "raw": raw if not ok else None}
 
-    def _should_run_retrospective(self, line_event: dict[str, Any]) -> bool:
+    def _should_run_retrospective(self, line_event: dict[str, Any], *, recent_lines=None) -> bool:
         if self.store is None:
             return False
-        if len(self.store.short_memory()) < min(20, self._retrospective_window_lines):
+        if len(recent_lines if recent_lines is not None else self._memory_through(line_event)) < min(20, self._retrospective_window_lines):
             return False
         if self._last_retrospective_line_count is None:
-            return self._line_count >= max(20, min(40, self._retrospective_window_lines // 2))
-        lines_since = self._line_count - self._last_retrospective_line_count
+            return self._line_number(line_event) >= max(20, min(40, self._retrospective_window_lines // 2))
+        lines_since = self._line_number(line_event) - self._last_retrospective_line_count
         if lines_since >= self._retrospective_every_lines:
             return True
         if self.profile and self.profile.prompt_pack == "base":
@@ -1402,9 +1686,10 @@ class VNPlayerRuntime:
         self,
         line_event: dict[str, Any],
         immediate_response: dict[str, Any],
+        *, recent_lines: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         assert self.profile is not None and self.store is not None
-        recent_lines = self.store.short_memory()[-self._retrospective_window_lines :]
+        recent_lines = (recent_lines if recent_lines is not None else self._memory_through(line_event))[-self._retrospective_window_lines :]
         return {
             "schema_version": "vn.retrospective_context.v1",
             "session_id": self.profile.session_id,
@@ -1564,7 +1849,7 @@ class VNPlayerRuntime:
         except Exception:
             score = 0.0
 
-        threshold = self._silence_pressure_opening_start if self._line_count <= self._silence_pressure_opening_lines else self._silence_pressure_start
+        threshold = self._silence_pressure_opening_start if self._line_number(line_event) <= self._silence_pressure_opening_lines else self._silence_pressure_start
         force_after = max(threshold + 1, self._silence_pressure_force_after)
         over_threshold = max(0, self._silence_pressure_count - threshold + 1)
         strength = min(1.0, over_threshold / max(1, force_after - threshold))
@@ -1722,7 +2007,7 @@ class VNPlayerRuntime:
             importance = 0.0
         if (
             self._last_speak_line_count is not None
-            and self._line_count - self._last_speak_line_count < cooldown
+            and self._line_number(line_event) - self._last_speak_line_count < cooldown
             and not (density == "high" and importance >= 0.8)
             and route.get("immediate") != "hold"
         ):
@@ -1769,7 +2054,7 @@ class VNPlayerRuntime:
             muted["context_patches"] = response.get("context_patches") or []
             muted["lane_payload"] = {"suppressed_decision": "speak", "reason": "rate_limited"}
             return muted
-        self._last_speak_line_count = self._line_count
+        self._last_speak_line_count = self._line_number(line_event)
         return response
 
     def _rate_allows_speak(self) -> bool:
@@ -1782,21 +2067,43 @@ class VNPlayerRuntime:
         self._recent_speaks.append(now)
         return True
 
-    async def _speak(self, speak: dict[str, Any], line_event: dict[str, Any], *, player_requested: bool = False) -> None:
+    async def _speak(self, speak: dict[str, Any], line_event: dict[str, Any], *, player_requested: bool = False,
+                     segment_index: int | None = None, utterance_id: str = "") -> Any:
         if not self.enabled or not self.profile:
             return
         if self._commentary_paused and not player_requested:
             return
         payload = dict(speak)
+        payload.pop("vn_speech_segment", None)
+        payload["vn_speech_id"] = utterance_id or new_id("vn_speech")
+        if segment_index is not None:
+            payload["vn_speech_segment"] = segment_index
         payload["line"] = _line_ref(line_event)
         payload["session_id"] = self.profile.session_id if self.profile else ""
         if self.profile and self.profile.overlay_url and not payload.get("overlay_url"):
             payload["overlay_url"] = self.profile.overlay_url
         if self.speak_callback is None:
             return
-        result = self.speak_callback(payload)
-        if inspect.isawaitable(result):
-            await result
+        profile = self.profile
+
+        async def send():
+            if not self.enabled or self.profile is not profile or (self._commentary_paused and not player_requested):
+                return {"status": "skipped", "reason": "speech_revoked"}
+            result = self.speak_callback(payload)
+            return await result if inspect.isawaitable(result) else result
+
+        if segment_index is not None:
+            # The stream holds the per-session utterance lock across segments.
+            return await send()
+        async with self._speech_lock:
+            completed = False
+            try:
+                receipt = await send()
+                completed = not isinstance(receipt, dict) or receipt.get("status") == "queued"
+                return receipt
+            finally:
+                if self.speech_finished is not None:
+                    self.speech_finished(payload["vn_speech_id"], completed)
 
     async def _maybe_run_reasoner(
         self,
@@ -1814,24 +2121,27 @@ class VNPlayerRuntime:
         reasoner_after = max(1, int(budget.get("next_reasoner_after_lines") or self._reasoner_every_lines))
         should_run = (
             reasoner_route in {"run_light", "run_deep"}
-            or self._line_count % reasoner_after == 0
+            or self._line_number(line_event) % reasoner_after == 0
             or float(immediate_response.get("importance") or 0.0) >= 0.65
             or bool(immediate_response.get("context_patches"))
         )
-        if reasoner_route == "skip" and not bool(immediate_response.get("context_patches")) and self._line_count % reasoner_after != 0:
+        if reasoner_route == "skip" and not bool(immediate_response.get("context_patches")) and self._line_number(line_event) % reasoner_after != 0:
             should_run = False
         if not should_run:
             return None
 
         if self._llm_enabled and self._reasoner_llm_enabled and self.llm is not None:
-            messages = reasoner_prompt(self.profile, context_pack)
-            parsed, raw = await self.llm.complete_json(messages, lane="reasoner", max_tokens=900, temperature=0.25)
-            self.store.record_model_call(
+            profile, store, llm = self.profile, self.store, self.llm
+            messages = reasoner_prompt(profile, context_pack)
+            parsed, raw = await llm.complete_json(messages, lane="reasoner", max_tokens=900, temperature=0.25)
+            store.record_model_call(
                 "reasoner",
                 {"context_metrics": _context_metrics(context_pack), "context_pack": _compact_context_for_log(context_pack)},
                 parsed or raw,
                 ok=parsed is not None,
             )
+            if not self._owns_context(profile, store):
+                return None
             if parsed:
                 response = sanitize_response(parsed)
                 patches, verification = self._verify_context_patches(response.get("context_patches") or [], line_event)
@@ -1969,8 +2279,6 @@ def _normalize_speak_text(text: str) -> str:
     if not value:
         return ""
     value = re.sub(r"\s+", " ", value)
-    if value.startswith("[EMO"):
-        value = "嗯，" + value
     return value
 
 

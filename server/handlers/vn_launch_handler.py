@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from server.protocol import Method
+from server.local_auth import LocalAuthPolicy
 from server.vn_launch_manager import VNLaunchManager
 from server.vn_profiles import inspect_game
 from server.ws_handler import RequestHandler
@@ -37,6 +38,7 @@ class VNLaunchHandler(RequestHandler):
         before_external_launch=None,
         runtime_overlay=None,
         backend_url: str = "",
+        auth_policy: LocalAuthPolicy | None = None,
     ) -> None:
         self._manager = VNLaunchManager(
             project_root,
@@ -47,6 +49,7 @@ class VNLaunchHandler(RequestHandler):
             before_external_launch=before_external_launch,
             runtime_overlay=runtime_overlay,
             backend_url=backend_url,
+            auth_policy=auth_policy,
         )
 
     async def handle(self, method: str, params: dict[str, Any]) -> dict[str, Any] | None:

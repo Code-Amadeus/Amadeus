@@ -216,8 +216,11 @@ Tooltips show the current state and errors without replacing the dialogue captio
 The icons and VN page use the same `vn.status` / `vn.input.set` contract and session
 identity. Changes do not alter saved profiles. Pending changes disable the icons;
 disconnection disables them and reconnect reads current state without replaying clicks.
-The launcher supplies its actual local backend endpoint; the native client uses
-the inherited desktop authentication credential in a header, never command arguments.
+The launcher supplies its actual local backend endpoint and passes the retained
+desktop authentication policy only to the repository-owned overlay's child
+environment. Bootstrap clears process-wide credentials before external tools
+start. The native client sends the credential in a header; credentials are never
+included in command arguments, profiles or launch status, or restored globally.
 A standalone portrait without `--backend-url` still displays captions, with controls
 unavailable until it is launched by the VN player with its backend connection.
 
@@ -225,6 +228,29 @@ Luna profiles save the original-text WebSocket URL. Start Luna, configure its
 extraction; VN Player can launch the game through its shared exe/Steam launcher or
 connect to a game started manually. Luna's service remains externally owned.
 Luna extraction compatibility still needs validation for each game.
+
+### VN response scheduling
+
+Agent and Luna share the runtime's bounded admission pipeline: up to three line
+turns may perform inference concurrently. Source status counts admitted lines;
+the existing public `vn.line` method still returns its completed reaction. At the
+limit, input waits rather than being silently discarded. Initial model context
+is a per-line snapshot and can lack an earlier in-flight model's memory patch.
+
+VN immediate responses and player questions stream. Once the decision, playback
+metadata and a safe first speech segment pass the existing runtime gates, audio
+may start before the remaining text or memory tail arrives. Story updates and
+ambient speech remain ordered. Pause/session checks apply to every segment;
+damaged tails cannot replay speech or update memory. Story rules and
+comment-frequency policy are unchanged; prompt output examples put decision and
+playback metadata before speech text. Timing diagnostics and measurements are in
+[VN first-segment delivery](vn-first-segment-streaming-2026-09-25.md) and the
+[earlier concurrency report](vn-streaming-and-concurrency-2026-09-25.md).
+
+Captions use complete sentence groups independently of audio chunks. Several
+early audio fragments share one subtitle and one translation; incomplete source
+sentences wait without delaying speech. Late translations remain tied to current
+playback. See [VN caption grouping](vn-subtitle-grouping-2026-09-25.md).
 
 ### Prompt composition and optional terminology
 
@@ -243,10 +269,13 @@ this profile setting. Empty terms are omitted from saved profiles; an older buil
 that predates the field cannot read a profile with nonempty `terminology` until it
 is cleared using the newer build.
 
-Tests compare complete assembled Base/Mystery messages to pre-refactor fixtures,
-including whitespace, and prove that changing only the game ID does not change
-the result. PARANORMASIGHT's original messages are reproduced through this same
-path. Existing game keyword scoring remains outside prompt composition.
+Tests compare assembled Base/Mystery messages to the original pre-refactor
+fixtures and prove that changing only the game ID does not change the result.
+For immediate responses, the comparison permits only the explicit streaming
+field-order instruction and JSON example key/whitespace ordering; all story
+prose, schema values and user context remain identical. Other lanes remain
+byte-for-byte identical. PARANORMASIGHT uses this same composition path.
+Existing game keyword scoring remains outside prompt composition.
 
 ### API and verification
 

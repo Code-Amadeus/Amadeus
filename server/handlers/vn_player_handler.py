@@ -30,12 +30,14 @@ class VNPlayerHandler(RequestHandler):
         self._input_kind = "ask"
 
     def configure(self, project_root: Path, *, event_emit=None, speak_callback=None,
-                  asr_control=None, asr_state=None, capture_game_view=None) -> None:
+                  speech_epoch=None, speech_finished=None, asr_control=None, asr_state=None, capture_game_view=None) -> None:
         self._event_emit = event_emit
         self._asr_control = asr_control
         self._asr_state = asr_state
         self._capture_game_view = capture_game_view
-        self._runtime = VNPlayerRuntime(project_root, event_emit=self._emit_runtime, speak_callback=speak_callback)
+        self._runtime = VNPlayerRuntime(project_root, event_emit=self._emit_runtime,
+                                        speak_callback=speak_callback, speech_epoch=speech_epoch,
+                                        speech_finished=speech_finished)
 
     def _session_id(self) -> str:
         runtime = self._runtime
@@ -141,6 +143,12 @@ class VNPlayerHandler(RequestHandler):
             await runtime.set_preferences(params)
             return self.status()
         return None
+
+    async def submit_source_line(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Internal adapter handoff; vn.line keeps its completed-response contract."""
+        if self._runtime is None:
+            raise RuntimeError("VN Player handler is not configured")
+        return await self._runtime.submit_line(params)
 
     async def set_inputs(self, params: dict[str, Any]) -> dict[str, Any]:
         async with self._input_lock:

@@ -1,4 +1,4 @@
-"""Final prompt equality is the compatibility contract, including whitespace."""
+"""Story rules and response shapes survive the streaming field-order change."""
 from dataclasses import replace
 import json
 from pathlib import Path
@@ -19,12 +19,38 @@ FIXTURE = json.loads((Path(__file__).parent / "fixtures/vn_prompt_messages.json"
 LANES = ("immediate", "lookahead", "reasoner", "summary", "retrospective")
 
 
+def semantic_prompt(messages, lane):
+    if lane != "immediate":
+        return messages
+    # Keep the original fixture: only the declared transport-order instruction
+    # and JSON object key/whitespace ordering may differ from its baseline.
+    text = messages[0]["content"].replace(
+        "For streaming, emit decision, importance, confidence, then speak before other top-level fields. "
+        "Inside speak, put text last, after all playback fields.\n", "")
+    decoder, parts, pos = json.JSONDecoder(), [], 0
+    while pos < len(text):
+        start = text.find("{", pos)
+        if start < 0:
+            parts.append(text[pos:])
+            break
+        parts.append(text[pos:start])
+        try:
+            value, end = decoder.raw_decode(text, start)
+        except json.JSONDecodeError:
+            parts.append("{")
+            pos = start + 1
+        else:
+            parts.append(json.dumps(value, ensure_ascii=False, sort_keys=True))
+            pos = end
+    return [{**messages[0], "content": "".join(parts)}, *messages[1:]]
+
+
 @pytest.mark.parametrize("case", FIXTURE["cases"], ids=["paranormasight", "base"])
 @pytest.mark.parametrize("lane", LANES)
 def test_empty_game_additions_preserve_complete_original_messages(case, lane):
     profile = VNProfile(**case["profile"])
-    assert getattr(prompts, lane + "_prompt")(profile, FIXTURE["context"]) == case["messages"][lane]
-    assert getattr(prompts, lane + "_prompt")(replace(profile, terminology=" \n"), FIXTURE["context"]) == case["messages"][lane]
+    assert semantic_prompt(getattr(prompts, lane + "_prompt")(profile, FIXTURE["context"]), lane) == semantic_prompt(case["messages"][lane], lane)
+    assert semantic_prompt(getattr(prompts, lane + "_prompt")(replace(profile, terminology=" \n"), FIXTURE["context"]), lane) == semantic_prompt(case["messages"][lane], lane)
 
 
 @pytest.mark.parametrize("case", FIXTURE["cases"], ids=["paranormasight", "base"])
@@ -33,7 +59,7 @@ def test_opt_in_terminology_is_game_data_and_never_changes_system_rules(case, la
     terms = '星灯：玩家指定的称谓\n${companion_identity} {"note": "reference only"}'
     profile = VNProfile(**case["profile"], terminology=terms)
     messages = getattr(prompts, lane + "_prompt")(profile, FIXTURE["context"])
-    assert messages[0] == case["messages"][lane][0]
+    assert semantic_prompt(messages, lane)[0] == semantic_prompt(case["messages"][lane], lane)[0]
     assert messages[1]["role"] == "user"
     assert json.dumps({"terminology": terms}, ensure_ascii=False) in messages[1]["content"]
     assert messages[1]["content"].endswith(case["messages"][lane][1]["content"])

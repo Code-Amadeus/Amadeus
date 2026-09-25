@@ -23,6 +23,10 @@ import psutil
 from pydantic import ValidationError
 
 from server.event_bus import bus
+from server.local_auth import (
+    AUTH_MODE_ENV, AUTH_TOKEN_ENV, INSTANCE_NONCE_ENV,
+    LocalAuthPolicy, clear_inherited_auth_environment,
+)
 from server.protocol import Method
 from server.vn_text_sources import AgentVNTextSource, LunaVNTextSource, VNTextSourceAdapter
 from server.vn_profiles import LaunchProfile, VNProfileStore
@@ -55,6 +59,7 @@ class VNLaunchManager:
         before_external_launch: BeforeExternalLaunch | None = None,
         runtime_overlay: Callable[[str], None] | None = None,
         backend_url: str = "",
+        auth_policy: LocalAuthPolicy | None = None,
     ) -> None:
         self.project_root = Path(project_root)
         self.vn_root = self.project_root.parent / "visual novel player"
@@ -73,6 +78,7 @@ class VNLaunchManager:
         self._before_external_launch = before_external_launch
         self._runtime_overlay = runtime_overlay
         self._backend_url = backend_url
+        self._auth_policy = auth_policy or LocalAuthPolicy.disabled()
         self._game_proc: subprocess.Popen[Any] | psutil.Process | None = None
         self._overlay_proc: subprocess.Popen[Any] | None = None
         self._text_source: VNTextSourceAdapter | None = None
@@ -527,7 +533,18 @@ class VNLaunchManager:
         ]
         if self._backend_url:
             args.extend(["--backend-url", self._backend_url])
-        self._overlay_proc = self._spawn(args, cwd=self.project_root, hidden=True)
+        # Bootstrap clears process-wide credentials before starting external
+        # tools. Only our own control surface needs the retained desktop token.
+        overlay_env = {AUTH_MODE_ENV: "disabled"}
+        if self._backend_url and self._auth_policy.required:
+            if helper.resolve() != (self.project_root / "tools/vn_portrait_overlay_lite.py").resolve():
+                raise ValueError("Desktop credentials require the repository-owned VN overlay")
+            overlay_env = {
+                AUTH_MODE_ENV: "required",
+                AUTH_TOKEN_ENV: self._auth_policy.token,
+                INSTANCE_NONCE_ENV: self._auth_policy.instance_nonce,
+            }
+        self._overlay_proc = self._spawn(args, cwd=self.project_root, hidden=True, env=overlay_env)
         self._state["overlay"] = {
             "status": "starting",
             "pid": self._overlay_proc.pid,
@@ -592,13 +609,19 @@ class VNLaunchManager:
             await asyncio.sleep(.5)
         raise TimeoutError("Steam did not start the configured game. Check Steam's launch window, the app ID and the selected game executable, then retry.")
 
-    def _spawn(self, args: list[str], *, cwd: Path, hidden: bool) -> subprocess.Popen[Any]:
+    def _spawn(self, args: list[str], *, cwd: Path, hidden: bool,
+               env: dict[str, str] | None = None) -> subprocess.Popen[Any]:
+        child_env = os.environ.copy()
+        clear_inherited_auth_environment(child_env)
+        if env is not None:
+            child_env.update(env)
         kwargs: dict[str, Any] = {
             "cwd": str(cwd),
             "stdin": subprocess.DEVNULL,
             "stdout": subprocess.DEVNULL,
             "stderr": subprocess.DEVNULL,
             "shell": False,
+            "env": child_env,
         }
         if os.name == "nt":
             startup = subprocess.STARTUPINFO()

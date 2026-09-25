@@ -170,14 +170,19 @@ def test_visual_client_attaches_image_to_the_same_completion(monkeypatch) -> Non
 
     monkeypatch.setattr(settings, "OPENAI_API_KEY", "offline-test")
     chat = Mock()
-    chat.chat.completions.create.return_value.choices = [Mock(message=Mock(content='{"decision":"silence"}'))]
-    monkeypatch.setattr(openai, "OpenAI", Mock(return_value=chat))
+    stream = AsyncMock()
+    stream.__aiter__.return_value = [Mock(model="test", choices=[Mock(
+        delta=Mock(content='{"decision":"silence"}'), finish_reason="stop")])]
+    chat.chat.completions.create = AsyncMock(return_value=stream)
+    chat.with_options.return_value = chat
+    chat.close = AsyncMock()
+    monkeypatch.setattr(openai, "AsyncOpenAI", Mock(return_value=chat))
     client = VNLLMClient(VNProfile(session_id="visual", provider="openai", model="gpt-4o"))
     visual = {"frame": {"dataBase64": "dGVzdA==", "mime": "image/jpeg"}, "scope": "game_window"}
-    raw = client._complete_sync(
+    _, raw = asyncio.run(client.complete_json(
         [{"role": "system", "content": "Instructions"}, {"role": "user", "content": "What is visible?"}],
-        max_tokens=100, temperature=0.1, visual_context=visual,
-    )
+        lane="immediate", max_tokens=100, temperature=0.1, visual_context=visual,
+    ))
     assert raw == '{"decision":"silence"}'
     messages = chat.chat.completions.create.call_args.kwargs["messages"]
     assert messages[-1]["content"][0]["type"] == "text"
