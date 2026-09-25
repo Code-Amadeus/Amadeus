@@ -2,7 +2,7 @@
 import asyncio
 import logging
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -25,9 +25,9 @@ def test_completion_metadata_preserves_parse_result_without_logging_content(
         model="test-model", usage=SimpleNamespace(completion_tokens=123),
         choices=[SimpleNamespace(finish_reason=finish_reason, message=SimpleNamespace(content=content))],
     )
-    create = Mock(return_value=response)
-    monkeypatch.setattr(openai, "OpenAI", Mock(return_value=SimpleNamespace(
-        chat=SimpleNamespace(completions=SimpleNamespace(create=create)),
+    create = AsyncMock(return_value=response)
+    monkeypatch.setattr(openai, "AsyncOpenAI", Mock(return_value=SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create)), close=AsyncMock(),
     )))
     client = VNLLMClient(VNProfile(session_id="diagnostics", provider="deepseek"))
     with caplog.at_level(logging.INFO, logger="vn_player.llm_client"):

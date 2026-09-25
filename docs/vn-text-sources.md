@@ -229,6 +229,22 @@ extraction; VN Player can launch the game through its shared exe/Steam launcher 
 connect to a game started manually. Luna's service remains externally owned.
 Luna extraction compatibility still needs validation for each game.
 
+### VN response scheduling
+
+Agent and Luna share the runtime's bounded admission pipeline: up to three line
+turns may perform inference concurrently. Source status counts admitted lines;
+the existing public `vn.line` method still returns its completed reaction. At the
+limit, input waits rather than being silently discarded. Initial model context
+is a per-line snapshot and can lack an earlier in-flight model's memory patch.
+
+VN immediate responses and player questions stream. After complete speech fields
+pass the existing runtime gates, audio may start while the model finishes its
+memory tail. Story updates and ambient speech remain ordered. Pause/session
+checks apply before delivery; damaged tails cannot replay speech or update memory.
+Prompt bodies and comment-frequency policy are unchanged. Timing diagnostics
+and reproducible measurements are documented in
+[VN streaming and bounded inference](vn-streaming-and-concurrency-2026-09-25.md).
+
 ### Prompt composition and optional terminology
 
 All games use the same composition path in `vn_player/prompt_layers`:

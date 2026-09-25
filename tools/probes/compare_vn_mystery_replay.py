@@ -75,10 +75,14 @@ async def child(args) -> None:
                          "lookahead_llm_enabled": False, "max_reactions_per_minute": 1000})
     results = []
     try:
-        for index, observation in enumerate(observations):
-            results.append(semantic_result(await runtime.ingest_line(observation)))
-            if args.llm:
-                print(f"{args.arm}: {index + 1}/{len(observations)}", flush=True)
+        if args.concurrent_current and args.arm == "current":
+            completed = await asyncio.gather(*(runtime.ingest_line(observation) for observation in observations))
+            results = [semantic_result(result) for result in completed]
+        else:
+            for index, observation in enumerate(observations):
+                results.append(semantic_result(await runtime.ingest_line(observation)))
+                if args.llm:
+                    print(f"{args.arm}: {index + 1}/{len(observations)}", flush=True)
         store = runtime.store
         report = {"observations": results, "story_summary": store.story_summary_log(),
                   "retrospective": store.retrospective_bias()}
@@ -112,12 +116,15 @@ def main(args) -> None:
                        "--trace", args.trace, "--script", args.script, "--limit", str(args.limit)]
             if args.llm:
                 command.append("--llm")
+            if args.concurrent_current:
+                command.append("--concurrent-current")
             subprocess.run(command, cwd=ROOT, check=True)
     before = canonical(json.loads((output / "baseline.json").read_text(encoding="utf-8")))
     after = canonical(json.loads((output / "current.json").read_text(encoding="utf-8")))
     differences = [{"index": index + 1, "fields": [key for key in old if old[key] != new.get(key)]}
                    for index, (old, new) in enumerate(zip(before["observations"], after["observations"])) if old != new]
     summary = {"baseline_ref": args.baseline_ref, "model_calls_enabled": args.llm,
+               "current_concurrent": args.concurrent_current,
                "observations": len(before["observations"]), "differences": differences,
                "summary_equal": before["story_summary"] == after["story_summary"],
                "retrospective_equal": before["retrospective"] == after["retrospective"]}
@@ -134,6 +141,7 @@ if __name__ == "__main__":
     parser.add_argument("--script", required=True)
     parser.add_argument("--limit", type=int, default=80)
     parser.add_argument("--llm", action="store_true")
+    parser.add_argument("--concurrent-current", action="store_true", help="Submit current-runtime lines concurrently; baseline stays serial")
     parser.add_argument("--arm", default="")
     parser.add_argument("--package-root")
     parser.add_argument("--workspace")

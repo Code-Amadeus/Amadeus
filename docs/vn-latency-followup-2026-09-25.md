@@ -1,5 +1,9 @@
 # VN latency investigation and targeted fixes
 
+Subsequent implementation and measurements:
+[VN streaming and bounded inference](vn-streaming-and-concurrency-2026-09-25.md).
+The findings below describe the pre-streaming baseline and its first fixes.
+
 ## Recorded session
 
 The latest inspected PARANORMASIGHT run contained 69 accepted lines and 68

@@ -1,6 +1,7 @@
 """Background context preserves trigger snapshots without delaying either source."""
 import asyncio
 import json
+import re
 from unittest.mock import AsyncMock
 
 import pytest
@@ -49,7 +50,7 @@ def test_slow_context_lanes_preserve_cadence_snapshot_and_immediate_order(tmp_pa
         calls = {lane: [] for lane in entered}
         async def model(messages, *, lane, **kwargs):
             if lane == "immediate":
-                immediate.append(runtime._line_count)
+                immediate.append(int(re.search(r"咖啡馆的第 (\d+) 句", messages[-1]["content"])[1]))
                 await asyncio.sleep(0)
                 return default_response("silence"), "{}"
             content = messages[-1]["content"]
@@ -69,7 +70,7 @@ def test_slow_context_lanes_preserve_cadence_snapshot_and_immediate_order(tmp_pa
             for line in lines:
                 await ws.send(json.dumps({"type": "copyText", "sentence": line}) if source_name == "agent" else line)
             await ws.wait_closed()
-        source = (AgentVNTextSource if source_name == "agent" else LunaVNTextSource)(runtime.ingest_line, AsyncMock())
+        source = (AgentVNTextSource if source_name == "agent" else LunaVNTextSource)(runtime.submit_line, AsyncMock())
         async with websockets.serve(stream, "127.0.0.1", 0) as server:
             port = server.sockets[0].getsockname()[1]
             params = {"bridgeMode": "websocket", "agentWsPort": port, "lunaWsUrl": f"ws://127.0.0.1:{port}/api/ws/text/origin"}
@@ -79,6 +80,7 @@ def test_slow_context_lanes_preserve_cadence_snapshot_and_immediate_order(tmp_pa
                 await asyncio.gather(*(event.wait() for event in entered.values()))
                 assert shown == lines
                 assert not summaries, "a model result must not be fabricated while blocked"
+                await runtime.drain_lines()
                 release.set()
                 await asyncio.wait_for(runtime.wait_for_context_updates(), 5)
                 assert immediate == list(range(1, 82))
@@ -88,6 +90,7 @@ def test_slow_context_lanes_preserve_cadence_snapshot_and_immediate_order(tmp_pa
                     for pack in snapshots:
                         recent = pack["short_memory" if lane == "summary" else "recent_lines"]
                         assert max(row["seq"] for row in recent) == pack["current_line"]["seq"]
+                        assert len(recent) == min(pack["current_line"]["seq"], runtime.profile.short_memory_lines)
                 assert len(summaries) == 6 and len(runtime.store.story_summary_log()) == 6
                 assert runtime.store.retrospective_bias()["expires_at_line_count"] == 110
             finally:

@@ -142,6 +142,12 @@ class VNPlayerHandler(RequestHandler):
             return self.status()
         return None
 
+    async def submit_source_line(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Internal adapter handoff; vn.line keeps its completed-response contract."""
+        if self._runtime is None:
+            raise RuntimeError("VN Player handler is not configured")
+        return await self._runtime.submit_line(params)
+
     async def set_inputs(self, params: dict[str, Any]) -> dict[str, Any]:
         async with self._input_lock:
             session_id = str(params.get("session_id") or "")
