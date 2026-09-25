@@ -1,8 +1,10 @@
 """Opt-in VN question → production bridge/TTS → real audio-device timing.
 
 Runs in an isolated process with no game, microphone, desktop host or providers.
-Uses the configured local TTS and VN model. Plays one warmup and four short
-Japanese answers (ABBA); excludes warmup and disables sentence-audio caching.
+Uses the configured local TTS and VN model. Plays one warmup and four Japanese
+answers or recorded-input comments (ABBA); excludes warmup and disables audio caching.
+--baseline-delivery whole-speak isolates waiting for the complete speech body
+from first-segment delivery, with identical prompts and streaming in both arms.
 Reports device-write timing and nonzero audio evidence, not a microphone loopback.
 """
 from __future__ import annotations
@@ -122,7 +124,7 @@ async def run(args, output):
             raise AssertionError("No nonzero device-playback evidence; silence placeholders do not pass")
 
     workers = [asyncio.create_task(pipeline.play_sentence_worker()), asyncio.create_task(playback.run())]
-    runtime = VNPlayerRuntime(output / "state", speak_callback=speak)
+    runtime = VNPlayerRuntime(output / "state", speak_callback=speak, speech_epoch=pipeline.current_tts_epoch)
     try:
         current = {"label": "warmup", "started_at": time.time()}
         await speak({"text": "準備できたわ。"})
@@ -143,13 +145,20 @@ async def run(args, output):
                 if recorded:
                     messages = recorded["messages"]
                 if not _stream:
-                    kwargs.pop("on_ready", None)
-                    lane = "benchmark_full_json"
+                    callback = kwargs.pop("on_ready", None)
+                    if args.baseline_delivery == "whole-speak":
+                        async def whole_speak(header, text_complete=True):
+                            if text_complete and callback is not None:
+                                await callback(header, True)
+                        kwargs["on_ready"] = whole_speak
+                    else:
+                        lane = "benchmark_full_json"
                 parsed, raw = await _complete(messages, lane=lane, **kwargs)
                 current["model_decision"] = (parsed or {}).get("decision")
                 return parsed, raw
             runtime.llm.complete_json = measured
-            current = {"label": f"trial_{index}", "stream": stream, "started_at": time.time()}
+            current = {"label": f"trial_{index}", "stream": stream or args.baseline_delivery == "whole-speak",
+                       "delivery_mode": "first-segment" if stream else args.baseline_delivery, "started_at": time.time()}
             result = await runtime.ingest_line(recorded["lines"][-1]) if recorded else await runtime.player_intervention("ask", {
                 "text": "音声確認のため、感情タグを使わず「聞こえているわ。」とだけ答えて。",
             })
@@ -184,6 +193,7 @@ if __name__ == "__main__":
     parser.add_argument("--live-model-and-audio", action="store_true")
     parser.add_argument("--output", default="output/diagnostics/vn-audio-latency")
     parser.add_argument("--session", help="Replay the first recorded spoken comment with its identical model prompt")
+    parser.add_argument("--baseline-delivery", choices=("full-json", "whole-speak"), default="full-json")
     args = parser.parse_args()
     if not args.live_model_and_audio:
         raise SystemExit("Supply --live-model-and-audio to run models and play real audio.")

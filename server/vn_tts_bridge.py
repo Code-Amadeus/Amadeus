@@ -164,6 +164,7 @@ def submit_vn_tts(
         "narration_session_id": str(delivery.get("session_id") or "").strip(),
         "narration_request_id": str(delivery.get("request_id") or "").strip(),
         "narration_complete_turn": payload.get("complete_turn") is True,
+        **({"vn_speech_segment": int(payload["vn_speech_segment"])} if payload.get("vn_speech_segment") is not None else {}),
     }
     try:
         from tts.pipeline import current_tts_epoch
@@ -221,11 +222,13 @@ async def submit_vn_tts_confirmed(
         confirmed = await asyncio.wait_for(asyncio.shield(receipt), timeout=timeout_s)
         if not isinstance(confirmed, dict):
             return {"status": "error", "reason": "invalid_enqueue_receipt"}
-        if payload.get("complete_turn") is True:
+        if payload.get("complete_turn") is True or payload.get("vn_speech_segment") is not None:
             # Direct host answers own a complete conversational turn.  Wait
             # only for the bridge to enqueue all of its logical sentences so
             # the caller can mark the real last sentence; audio playback stays
             # asynchronous as before.
+            # VN segments also wait for all their queue entries, preserving
+            # segment order without joining the direct-conversation turn gate.
             completed = await asyncio.wait_for(
                 asyncio.shield(task),
                 timeout=timeout_s,
@@ -315,7 +318,7 @@ class _StreamingSentenceDispatcher:
         self.pending_sentence_items = pending_sentence_items
         self.metadata = dict(metadata or {})
         self.current_sentence = ""
-        self.is_first = True
+        self.is_first = int(self.metadata.get("vn_speech_segment") or 1) == 1
         self.enqueue_receipt = enqueue_receipt
         self.last_enqueue_failure = "no_speakable_sentence"
         self.last_sentence_id = ""

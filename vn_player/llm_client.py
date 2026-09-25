@@ -59,12 +59,12 @@ class VNLLMClient:
         max_tokens: int = 700,
         temperature: float = 0.45,
         visual_context: dict[str, Any] | None = None,
-        on_ready: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        on_ready: Callable[[dict[str, Any], bool], Awaitable[None]] | None = None,
         metrics: dict[str, Any] | None = None,
     ) -> tuple[dict[str, Any] | None, str]:
         timing = metrics if metrics is not None else {}
         timing["started_at_ms"] = round(time.time() * 1000)
-        raw, committed = "", None
+        raw, committed, text_complete = "", None, False
         try:
             from openai import AsyncOpenAI
 
@@ -97,12 +97,16 @@ class VNLLMClient:
                         timing["model"] = chunk.model
                         if choice.finish_reason:
                             timing["finish_reason"] = choice.finish_reason
-                        if on_ready is not None and committed is None:
-                            header = _speech_header(raw)
-                            if header is not None:
-                                committed = header
-                                timing["speech_ready_at_ms"] = round(time.time() * 1000)
-                                await on_ready(deepcopy(header))
+                        if on_ready is not None:
+                            prefix = _speech_prefix(raw)
+                            if prefix is not None:
+                                header, closed = prefix
+                                if committed is not None and not _extends_speech(committed, header):
+                                    raise ValueError("Stream revised committed speech")
+                                if header != committed or closed != text_complete:
+                                    committed, text_complete = header, closed
+                                    timing.setdefault("speech_prefix_at_ms", round(time.time() * 1000))
+                                    await on_ready(deepcopy(header), closed)
             else:
                 if not response.choices:
                     raise RuntimeError("empty LLM response")
@@ -121,7 +125,7 @@ class VNLLMClient:
                 lane, timing.get("model"), timing.get("finish_reason"), timing.get("completion_tokens"),
                 max_tokens, timing["completed_at_ms"] - timing["started_at_ms"])
         parsed = _parse_json_object(raw)
-        if committed is not None and (parsed is None or any(parsed.get(k) != v for k, v in committed.items())):
+        if committed is not None and (parsed is None or not _extends_speech(committed, parsed)):
             # Already delivered speech is immutable; a corrupt/revised tail has
             # no authority to rewrite it or contribute memory patches.
             return None, raw
@@ -168,8 +172,110 @@ def _unique_object(pairs):
     return result
 
 
-def _speech_header(text: str) -> dict[str, Any] | None:
-    """Read complete top-level values, never authorize speech from a text fragment."""
+_PLAYBACK_FIELDS = {"priority", "interrupt", "expires_after_lines", "target_line_id", "target_script_id", "emotion_intent"}
+
+
+def _extends_speech(previous: dict, current: dict) -> bool:
+    for key, value in previous.items():
+        if key != "speak":
+            if current.get(key) != value:
+                return False
+            continue
+        speak = current.get("speak")
+        if not isinstance(speak, dict):
+            return False
+        if not isinstance(speak.get("text"), str) or not speak["text"].startswith(value["text"]):
+            return False
+        if any(speak.get(field) != item for field, item in value.items() if field != "text"):
+            return False
+    return True
+
+
+def _string_prefix(text: str, pos: int) -> tuple[str, int, bool]:
+    """Decode only complete JSON characters; never repair escapes or split a surrogate pair."""
+    if pos >= len(text) or text[pos] != '"':
+        raise ValueError("Speech text must be a JSON string")
+    chars, pos = [], pos + 1
+    escapes = {'"': '"', '\\': '\\', '/': '/', 'b': '\b', 'f': '\f', 'n': '\n', 'r': '\r', 't': '\t'}
+    while pos < len(text):
+        char = text[pos]
+        if char == '"':
+            return "".join(chars), pos + 1, True
+        if char == '\\':
+            if pos + 1 >= len(text):
+                break
+            escape = text[pos + 1]
+            if escape == 'u':
+                if pos + 6 > len(text):
+                    break
+                code = int(text[pos + 2:pos + 6], 16)
+                consumed = 6
+                if 0xD800 <= code <= 0xDBFF:
+                    if pos + 12 > len(text):
+                        break
+                    low = int(text[pos + 8:pos + 12], 16)
+                    if text[pos + 6:pos + 8] != '\\u' or not 0xDC00 <= low <= 0xDFFF:
+                        raise ValueError("Invalid JSON surrogate pair")
+                    code = 0x10000 + ((code - 0xD800) << 10) + low - 0xDC00
+                    consumed = 12
+                elif 0xDC00 <= code <= 0xDFFF:
+                    raise ValueError("Unpaired JSON surrogate")
+                chars.append(chr(code))
+                pos += consumed
+                continue
+            if escape not in escapes:
+                raise ValueError("Invalid JSON escape")
+            chars.append(escapes[escape])
+            pos += 2
+            continue
+        if ord(char) < 0x20 or 0xD800 <= ord(char) <= 0xDFFF:
+            raise ValueError("Invalid character in JSON speech")
+        chars.append(char)
+        pos += 1
+    return "".join(chars), pos, False
+
+
+def _partial_speak(text: str, pos: int, decoder) -> tuple[dict, bool]:
+    fields, closed = {}, False
+    if pos >= len(text) or text[pos] != "{":
+        return fields, closed
+    pos += 1
+    while pos < len(text):
+        try:
+            while pos < len(text) and text[pos].isspace():
+                pos += 1
+            key, pos = decoder.raw_decode(text, pos)
+            while pos < len(text) and text[pos].isspace():
+                pos += 1
+            if not isinstance(key, str) or pos >= len(text) or text[pos] != ":":
+                break
+            if key in fields:
+                raise ValueError(f"duplicate JSON field: {key}")
+            pos += 1
+            while pos < len(text) and text[pos].isspace():
+                pos += 1
+            if pos >= len(text):
+                break
+            if key == "text":
+                value, pos, closed = _string_prefix(text, pos)
+                fields[key] = value
+                if not closed:
+                    break
+            else:
+                value, pos = decoder.raw_decode(text, pos)
+                fields[key] = value
+            while pos < len(text) and text[pos].isspace():
+                pos += 1
+            if pos >= len(text) or text[pos] != ",":
+                break
+            pos += 1
+        except json.JSONDecodeError:
+            break
+    return fields, closed
+
+
+def _speech_prefix(text: str) -> tuple[dict[str, Any], bool] | None:
+    """Complete decision/playback fields plus an append-only decoded speech prefix."""
     text = text.lstrip()
     if text.startswith("```json"):
         text = text[7:].lstrip()
@@ -191,24 +297,38 @@ def _speech_header(text: str) -> dict[str, Any] | None:
             pos += 1
             while pos < len(text) and text[pos].isspace():
                 pos += 1
-            value, pos = decoder.raw_decode(text, pos)
-            while pos < len(text) and text[pos].isspace():
-                pos += 1
-            if pos >= len(text) or text[pos] not in ",}":
-                return None
             if key in fields:
                 raise ValueError(f"duplicate JSON field: {key}")
+            complete_object, text_closed = True, True
+            try:
+                value, end = decoder.raw_decode(text, pos)
+            except json.JSONDecodeError:
+                if key != "speak":
+                    return None
+                value, text_closed = _partial_speak(text, pos, decoder)
+                if not _PLAYBACK_FIELDS.issubset(value):
+                    return None
+                end, complete_object = len(text), False
+            pos = end
             fields[key] = value
+            while pos < len(text) and text[pos].isspace():
+                pos += 1
+            if complete_object and ((pos >= len(text) and key != "speak")
+                                    or (pos < len(text) and text[pos] not in ",}")):
+                return None
         except json.JSONDecodeError:
             return None
         if all(key in fields for key in ("decision", "importance", "confidence", "speak")):
             if (fields["decision"] != "speak" or not isinstance(fields["speak"], dict)
                     or not isinstance(fields["speak"].get("text"), str) or not fields["speak"]["text"].strip()
+                    or any(0xD800 <= ord(char) <= 0xDFFF for char in fields["speak"]["text"])
                     or any(type(fields[k]) not in {int, float} or not math.isfinite(fields[k])
                            or not 0 <= fields[k] <= 1 for k in ("importance", "confidence"))):
                 return None
-            return fields
-        if text[pos] == "}":
+            return fields, text_closed
+        if not complete_object:
+            return None
+        if pos >= len(text) or text[pos] == "}":
             return None
         pos += 1
 

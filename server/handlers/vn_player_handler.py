@@ -30,12 +30,13 @@ class VNPlayerHandler(RequestHandler):
         self._input_kind = "ask"
 
     def configure(self, project_root: Path, *, event_emit=None, speak_callback=None,
-                  asr_control=None, asr_state=None, capture_game_view=None) -> None:
+                  speech_epoch=None, asr_control=None, asr_state=None, capture_game_view=None) -> None:
         self._event_emit = event_emit
         self._asr_control = asr_control
         self._asr_state = asr_state
         self._capture_game_view = capture_game_view
-        self._runtime = VNPlayerRuntime(project_root, event_emit=self._emit_runtime, speak_callback=speak_callback)
+        self._runtime = VNPlayerRuntime(project_root, event_emit=self._emit_runtime,
+                                        speak_callback=speak_callback, speech_epoch=speech_epoch)
 
     def _session_id(self) -> str:
         runtime = self._runtime

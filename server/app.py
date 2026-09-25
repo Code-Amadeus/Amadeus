@@ -2063,6 +2063,8 @@ async def bootstrap(port: int = 17777) -> None:
         script_id = str(line.get("script_id") or "").strip()
         source_id = session_id or script_id or line_id or f"vn-{time.time_ns()}"
         identity = "-".join(part for part in (session_id, script_id, line_id) if part)
+        if payload.get("vn_speech_segment") is not None:
+            identity += f"-segment-{int(payload['vn_speech_segment'])}"
         receipt = await deliver_narration(
             NarrationRequest(
                 request_id=f"vn-narration-{identity or time.time_ns()}",
@@ -2603,6 +2605,7 @@ async def bootstrap(port: int = 17777) -> None:
     await work_ledger.replay_pending_terminal_notices()
     vn_h.configure(
         project_root=Path(ROOT), event_emit=bus.emit, speak_callback=_deliver_vn_narration,
+        speech_epoch=_tts_pipeline.current_tts_epoch,
         asr_control=asr_h.handle, asr_state=lambda: asr_h.listening_state(include_context=True),
         capture_game_view=lambda: vn_launch_h.handle(Method.VN_LAUNCH_CAPTURE, {}),
     )

@@ -237,13 +237,15 @@ the existing public `vn.line` method still returns its completed reaction. At th
 limit, input waits rather than being silently discarded. Initial model context
 is a per-line snapshot and can lack an earlier in-flight model's memory patch.
 
-VN immediate responses and player questions stream. After complete speech fields
-pass the existing runtime gates, audio may start while the model finishes its
-memory tail. Story updates and ambient speech remain ordered. Pause/session
-checks apply before delivery; damaged tails cannot replay speech or update memory.
-Prompt bodies and comment-frequency policy are unchanged. Timing diagnostics
-and reproducible measurements are documented in
-[VN streaming and bounded inference](vn-streaming-and-concurrency-2026-09-25.md).
+VN immediate responses and player questions stream. Once the decision, playback
+metadata and a safe first speech segment pass the existing runtime gates, audio
+may start before the remaining text or memory tail arrives. Story updates and
+ambient speech remain ordered. Pause/session checks apply to every segment;
+damaged tails cannot replay speech or update memory. Story rules and
+comment-frequency policy are unchanged; prompt output examples put decision and
+playback metadata before speech text. Timing diagnostics and measurements are in
+[VN first-segment delivery](vn-first-segment-streaming-2026-09-25.md) and the
+[earlier concurrency report](vn-streaming-and-concurrency-2026-09-25.md).
 
 ### Prompt composition and optional terminology
 
@@ -262,10 +264,13 @@ this profile setting. Empty terms are omitted from saved profiles; an older buil
 that predates the field cannot read a profile with nonempty `terminology` until it
 is cleared using the newer build.
 
-Tests compare complete assembled Base/Mystery messages to pre-refactor fixtures,
-including whitespace, and prove that changing only the game ID does not change
-the result. PARANORMASIGHT's original messages are reproduced through this same
-path. Existing game keyword scoring remains outside prompt composition.
+Tests compare assembled Base/Mystery messages to the original pre-refactor
+fixtures and prove that changing only the game ID does not change the result.
+For immediate responses, the comparison permits only the explicit streaming
+field-order instruction and JSON example key/whitespace ordering; all story
+prose, schema values and user context remain identical. Other lanes remain
+byte-for-byte identical. PARANORMASIGHT uses this same composition path.
+Existing game keyword scoring remains outside prompt composition.
 
 ### API and verification
 

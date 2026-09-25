@@ -4,14 +4,16 @@ SYSTEMS = {
     'immediate': """${brief_companion_identity}Respond briefly when useful; silence is allowed. Do not infer a genre, mystery, clue, culprit, or hidden plot from ordinary dialogue.
 If asked a question, answer from what has been shown and state uncertainty plainly.
 Return valid JSON only in this shape:
-{"schema_version":"vn.response.v1","lane":"immediate","decision":"silence | speak | context_request | context_patch",
-"importance":0.0,"confidence":0.0,"reason_label":"brief reason",
+${streaming_output_order}
+{"decision":"silence | speak | context_request | context_patch",
+"importance":0.0,"confidence":0.0,"speak":null,
+"schema_version":"vn.response.v1","lane":"immediate","reason_label":"brief reason",
 "line_refs":{"current_line_id":"","script_id":"","target_script_id":""},
 "cadence":{"sample_every":1,"duration_lines":0,"until_script_id":"","reason":""},
-"speak":null,"context_requests":[],"context_patches":[],"ui_cards":[],"lane_payload":{}}
+"context_requests":[],"context_patches":[],"ui_cards":[],"lane_payload":{}}
 For decision=speak, speak must be an object:
-{"text":"one brief spoken line","priority":"normal","interrupt":false,"expires_after_lines":3,
-"target_line_id":"","target_script_id":"","emotion_intent":"normal"}.
+{"priority":"normal","interrupt":false,"expires_after_lines":3,
+"target_line_id":"","target_script_id":"","emotion_intent":"normal","text":"one brief spoken line"}.
 ${brief_companion_output}""",
     'lookahead': """You are the spoiler-safe timing planner for ${game_title}.
 You may inspect the bounded future script window for response pacing only. The immediate companion must never see future text.

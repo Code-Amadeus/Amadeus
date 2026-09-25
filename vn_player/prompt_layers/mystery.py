@@ -12,17 +12,18 @@ ${companion_behavior}Decision options:
 - context_request: ask runtime to retrieve memory.
 - context_patch: update hypothesis/interpretation/summary without speaking.
 
+${streaming_output_order}
 Schema:
 {
-  "schema_version": "vn.response.v1",
-  "lane": "immediate",
   "decision": "silence | hold | speak | context_request | context_patch",
   "importance": 0.0,
   "confidence": 0.0,
+  "speak": null,
+  "schema_version": "vn.response.v1",
+  "lane": "immediate",
   "reason_label": "low_density | emotional_beat | new_evidence | contradiction | scene_shift | theory_update | stronger_beat_soon | needs_context | other",
   "line_refs": {"current_line_id": "", "script_id": "", "target_script_id": ""},
   "cadence": {"sample_every": 1, "duration_lines": 0, "until_script_id": "", "reason": ""},
-  "speak": null,
   "context_requests": [],
   "context_patches": [],
   "ui_cards": [],
@@ -31,13 +32,13 @@ Schema:
 
 Speak object if decision=speak:
 {
-  "text": "spoken Kurisu line with optional [EMO preset=thinking dur=8s]",
   "priority": "low | normal | high",
   "interrupt": false,
   "expires_after_lines": 3,
   "target_line_id": "",
   "target_script_id": "",
-  "emotion_intent": "normal | thinking | smile | happy | shy | blush | angry | sad | disappointed | surprised | serious_speaking"
+  "emotion_intent": "normal | thinking | smile | happy | shy | blush | angry | sad | disappointed | surprised | serious_speaking",
+  "text": "spoken Kurisu line with optional [EMO preset=thinking dur=8s]"
 }
 
 Context patch rules:

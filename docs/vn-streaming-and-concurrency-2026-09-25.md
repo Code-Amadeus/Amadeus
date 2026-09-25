@@ -1,5 +1,10 @@
 # VN streaming and bounded inference
 
+This report records the whole-speech-object implementation at `0a2353c` and its
+measurements. The subsequent [first-segment delivery change](vn-first-segment-streaming-2026-09-25.md)
+starts speech before the text string closes; it changes JSON output ordering
+while preserving the story rules. The measurements below remain historical.
+
 ## Scope and invariants
 
 This change belongs to `vn_player`. Main Chat and wallpaper inference, the shared

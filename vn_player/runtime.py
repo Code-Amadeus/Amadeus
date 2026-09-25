@@ -28,12 +28,13 @@ from .mystery_policy import (
 from .prompts import immediate_context_view, immediate_prompt, lookahead_prompt, reasoner_prompt, retrospective_prompt, summary_prompt
 from .schemas import VNProfile, default_response, new_id, now_ms, sanitize_response
 from .script_index import ScriptIndex
+from .speech_stream import VNSpeechStream
 from .text import looks_like_topic_label, strip_vn_tags, text_hash
 
 logger = logging.getLogger(__name__)
 
 EventEmitter = Callable[[str, dict[str, Any]], Awaitable[None] | None]
-SpeakCallback = Callable[[dict[str, Any]], Awaitable[None] | None]
+SpeakCallback = Callable[[dict[str, Any]], Awaitable[dict[str, Any] | None] | dict[str, Any] | None]
 
 VN_EVENT_LINE = "vn.line"
 VN_EVENT_REACTION = "vn.reaction"
@@ -102,10 +103,12 @@ class VNPlayerRuntime:
         *,
         event_emit: EventEmitter | None = None,
         speak_callback: SpeakCallback | None = None,
+        speech_epoch: Callable[[], int] | None = None,
     ) -> None:
         self.project_root = Path(project_root)
         self.event_emit = event_emit
         self.speak_callback = speak_callback
+        self.speech_epoch = speech_epoch
 
         self.profile: VNProfile | None = None
         self.store: VNContextStore | None = None
@@ -122,6 +125,7 @@ class VNPlayerRuntime:
         self._session_start_seq = 0
         self._line_slots = asyncio.Semaphore(3)
         self._line_tasks: set[asyncio.Task] = set()
+        self._speech_lock = asyncio.Lock()
         self._line_tail = asyncio.Event()
         self._line_tail.set()
         self._recent_speaks: list[float] = []
@@ -210,6 +214,7 @@ class VNPlayerRuntime:
             self._line_count = 0
             self._session_start_seq = self.store._seq
             self._line_slots = asyncio.Semaphore(3)
+            self._speech_lock = asyncio.Lock()
             self._line_tail = asyncio.Event()
             self._line_tail.set()
             self._recent_speaks = []
@@ -493,8 +498,61 @@ class VNPlayerRuntime:
             response = {**response, "decision": "silence", "speak": None, "reason_label": "commentary_paused"}
         return response
 
-    def _merge_streamed_delivery(self, response, delivery, line_event):
+    def _speech_stream(self, profile, store, line, timing, *, attention=None, previous=None, player_requested=False):
+        from config import settings
+
+        utterance_epoch = None
+
+        def active():
+            return (self._owns_context(profile, store)
+                    and (player_requested or not self._commentary_paused)
+                    and (utterance_epoch is None or self.speech_epoch() == utterance_epoch))
+
+        def authorize(header, text_complete):
+            nonlocal utterance_epoch
+            if not player_requested and not text_complete:
+                key = _speech_repeat_key(_normalize_speak_text(header["speak"]["text"]))
+                # Preserve the existing 80-character repeat rule: defer while
+                # a previous reply is still indistinguishable from this prefix.
+                if len(key) < 80 and any(
+                    _speech_repeat_key(str(((item.get("response") or {}).get("speak") or {}).get("text") or "")).startswith(key)
+                    for item in store.recent_reactions(24)
+                    if (item.get("response") or {}).get("decision") == "speak"
+                ):
+                    return None
+            if player_requested:
+                response = self._postprocess_response(header, line, player_requested=True)
+            else:
+                if profile.prompt_pack == "mystery":
+                    attention.update(self._apply_silence_pressure_to_attention(attention, line))
+                response = self._prepare_immediate_delivery(header, line, attention)
+            if response.get("decision") == "speak":
+                timing.setdefault("speech_ready_at_ms", now_ms())
+                if self.speech_epoch is not None:
+                    # All segments belong to the same host playback generation.
+                    # A barge-in must not turn the remainder into fresh speech.
+                    utterance_epoch = self.speech_epoch()
+            return response
+
+        async def submit(speak):
+            timing.setdefault("speech_submitted_at_ms", now_ms())
+            segment_index = speak.pop("vn_speech_segment")
+            return await self._speak(speak, line, player_requested=player_requested, segment_index=segment_index)
+
+        return VNSpeechStream(
+            authorize=authorize,
+            active=active,
+            submit=submit, normalize=_normalize_speak_text, previous=previous, lock=self._speech_lock,
+            early_cut=int(getattr(settings, "FIRST_SENTENCE_EARLY_CUT_CHARS", 11)),
+            language="英文" if profile.output_language.lower().startswith("en") else "日文",
+        )
+
+    def _merge_streamed_delivery(self, response, speech, line_event):
         response = self._postprocess_response(response, line_event)
+        delivery = speech.delivery
+        if not delivery or (delivery.get("decision") == "speak" and not speech.sent_text):
+            return {**response, "decision": "silence", "speak": None,
+                    "reason_label": speech.interruption or "empty_streamed_speech"}
         if response.get("decision") != delivery["decision"]:
             response.update(reason_label=delivery["reason_label"], lane_payload=delivery["lane_payload"])
         response.update({key: delivery[key] for key in ("decision", "speak", "importance", "confidence", "line_refs")})
@@ -503,24 +561,8 @@ class VNPlayerRuntime:
     async def _process_line(self, turn: _LineTurn) -> dict[str, Any]:
         owner_profile, owner_store = turn.profile, turn.store
         line_event, lookahead, attention, context_pack = turn.line, turn.lookahead, turn.attention, turn.context
-        delivery, early_task = {}, None
-
-        async def deliver(header):
-            nonlocal attention
-            await turn.previous.wait()
-            if not self._owns_context(owner_profile, owner_store):
-                return
-            if owner_profile.prompt_pack == "mystery":
-                attention = self._apply_silence_pressure_to_attention(turn.attention, line_event)
-            delivery.update(self._prepare_immediate_delivery(header, line_event, attention))
-            if delivery.get("decision") == "speak" and delivery.get("speak"):
-                turn.timing["speech_submitted_at_ms"] = now_ms()
-                await self._speak(delivery["speak"], line_event)
-
-        async def on_ready(header):
-            nonlocal early_task
-            # Keep consuming the network stream while ordered delivery waits.
-            early_task = asyncio.create_task(deliver(header))
+        speech = self._speech_stream(owner_profile, owner_store, line_event, turn.timing,
+                                     attention=attention, previous=turn.previous)
 
         try:
             await self._emit(VN_EVENT_LINE, {"line": line_event, "match": turn.match or {}})
@@ -538,17 +580,16 @@ class VNPlayerRuntime:
                 context_pack = self._build_context_pack(line_event, lookahead, attention=attention, recent_lines=turn.history)
             response = (
                 await self._immediate_response(context_pack, line_event, lookahead,
-                                               on_ready=on_ready, metrics=turn.timing)
+                                               on_ready=speech.update, metrics=turn.timing)
                 if self._capability("immediate") and not self._commentary_paused
                 else default_response("silence", reason_label="capability_disabled")
             )
             await turn.previous.wait()
-            if early_task is not None:
-                await early_task
+            await speech.finish()
             if not self._owns_context(owner_profile, owner_store):
                 return {"status": "ignored", "reason": "session_changed"}
-            if delivery:
-                response = self._merge_streamed_delivery(response, delivery, line_event)
+            if speech.observed:
+                response = self._merge_streamed_delivery(response, speech, line_event)
             else:
                 if owner_profile.prompt_pack == "mystery":
                     attention = self._apply_silence_pressure_to_attention(turn.attention, line_event)
@@ -584,7 +625,7 @@ class VNPlayerRuntime:
 
             if not self._owns_context(owner_profile, owner_store):
                 return {"status": "ignored", "reason": "session_changed"}
-            if not delivery and response.get("decision") == "speak" and response.get("speak"):
+            if not speech.observed and response.get("decision") == "speak" and response.get("speak"):
                 turn.timing["speech_submitted_at_ms"] = now_ms()
                 await self._speak(response["speak"], line_event)
             if not self._owns_context(owner_profile, owner_store):
@@ -635,9 +676,9 @@ class VNPlayerRuntime:
             self.store.record_reaction(fallback, line_event)
             return {"status": "error", "error": str(exc), "line": line_event, "reaction": fallback}
         finally:
-            if early_task is not None and not early_task.done():
-                early_task.cancel()
-                await asyncio.gather(early_task, return_exceptions=True)
+            await speech.close()
+            if speech.interruption:
+                turn.timing["speech_interrupted"] = speech.interruption
             if self._owns_context(owner_profile, owner_store):
                 turn.timing["committed_at_ms"] = now_ms()
                 owner_store.record_runtime_event("vn.line.timing", {"line": _line_ref(line_event), **turn.timing})
@@ -685,33 +726,20 @@ class VNPlayerRuntime:
             return {"status": "ignored", "reason": "session_changed", "event": event}
         last_line = (self.store.short_memory() or [{}])[-1]
         context_pack = self._build_context_pack(last_line, self._empty_lookahead(last_line), player_intervention=event)
-        delivery, early_task = {}, None
         timing = {"received_at_ms": event["recorded_at_ms"]}
-
-        async def deliver(header):
-            if self._owns_context(owner_profile, owner_store):
-                delivery.update(self._postprocess_response(header, last_line, player_requested=True))
-                timing["speech_submitted_at_ms"] = now_ms()
-                await self._speak(delivery["speak"], last_line, player_requested=True)
-
-        async def ready(header):
-            nonlocal early_task
-            early_task = asyncio.create_task(deliver(header))
+        speech = self._speech_stream(owner_profile, owner_store, last_line, timing, player_requested=True)
 
         try:
             response = await self._immediate_response(
                 context_pack, last_line, self._empty_lookahead(last_line), force_llm=True,
-                visual_context=visual_context, on_ready=ready, metrics=timing,
+                visual_context=visual_context, on_ready=speech.update, metrics=timing,
             )
-            if early_task is not None:
-                await early_task
+            await speech.finish()
         finally:
-            if early_task is not None and not early_task.done():
-                early_task.cancel()
-                await asyncio.gather(early_task, return_exceptions=True)
+            await speech.close()
         if not self._owns_context(owner_profile, owner_store):
             return {"status": "ignored", "reason": "session_changed", "event": event}
-        response = (self._merge_streamed_delivery(response, delivery, last_line) if delivery
+        response = (self._merge_streamed_delivery(response, speech, last_line) if speech.observed
                     else self._postprocess_response(response, last_line, player_requested=True))
         if visual_context:
             # A one-turn image may inform the answer; it is not a displayed VN
@@ -720,7 +748,7 @@ class VNPlayerRuntime:
                 patch for patch in response.get("context_patches") or []
                 if patch.get("layer") not in {"observed_fact", "candidate_fact", "evidence"}
             ]
-        if response.get("decision") != "speak":
+        if response.get("decision") != "speak" and not speech.observed:
             output_language = (self.profile.output_language or "ja").strip().lower()
             fallback_text = (
                 "\u5c11\u3057\u5f85\u3063\u3066\u3002[EMO preset=thinking dur=8s] "
@@ -749,12 +777,16 @@ class VNPlayerRuntime:
         )
         if not self._owns_context(owner_profile, owner_store):
             return {"status": "ignored", "reason": "session_changed", "event": event}
-        if not delivery:
+        if not speech.observed:
             timing["speech_submitted_at_ms"] = now_ms()
             await self._speak(response["speak"], last_line, player_requested=True)
         event["answered_at_ms"] = now_ms()
         if self._owns_context(owner_profile, owner_store):
+            if speech.interruption:
+                timing["speech_interrupted"] = speech.interruption
             owner_store.record_runtime_event("vn.player.timing", {"event_id": event["id"], **timing})
+        if speech.observed and not speech.sent_text and speech.interruption:
+            return {"status": "error", "error": speech.interruption, "event": event, "reaction": response}
         return {"status": "ok", "event": event, "reaction": response}
 
     def _record_player_dialogue(self, event: dict[str, Any]) -> None:
@@ -1306,7 +1338,7 @@ class VNPlayerRuntime:
         *,
         force_llm: bool = False,
         visual_context: dict[str, Any] | None = None,
-        on_ready: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        on_ready: Callable[[dict[str, Any], bool], Awaitable[None]] | None = None,
         metrics: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         assert self.profile is not None and self.store is not None
@@ -1315,11 +1347,11 @@ class VNPlayerRuntime:
         llm = self.llm
         committed = None
 
-        async def ready(header):
+        async def ready(header, text_complete=True):
             nonlocal committed
             committed = sanitize_response(header)
             if on_ready is not None and self._owns_context(profile, store):
-                await on_ready(committed)
+                await on_ready(committed, text_complete)
         if (
             (self._immediate_llm_enabled or force_llm)
             and (self._llm_enabled or (force_llm and profile.prompt_pack == "mystery"))
@@ -2030,21 +2062,35 @@ class VNPlayerRuntime:
         self._recent_speaks.append(now)
         return True
 
-    async def _speak(self, speak: dict[str, Any], line_event: dict[str, Any], *, player_requested: bool = False) -> None:
+    async def _speak(self, speak: dict[str, Any], line_event: dict[str, Any], *, player_requested: bool = False,
+                     segment_index: int | None = None) -> Any:
         if not self.enabled or not self.profile:
             return
         if self._commentary_paused and not player_requested:
             return
         payload = dict(speak)
+        payload.pop("vn_speech_segment", None)
+        if segment_index is not None:
+            payload["vn_speech_segment"] = segment_index
         payload["line"] = _line_ref(line_event)
         payload["session_id"] = self.profile.session_id if self.profile else ""
         if self.profile and self.profile.overlay_url and not payload.get("overlay_url"):
             payload["overlay_url"] = self.profile.overlay_url
         if self.speak_callback is None:
             return
-        result = self.speak_callback(payload)
-        if inspect.isawaitable(result):
-            await result
+        profile = self.profile
+
+        async def send():
+            if not self.enabled or self.profile is not profile or (self._commentary_paused and not player_requested):
+                return {"status": "skipped", "reason": "speech_revoked"}
+            result = self.speak_callback(payload)
+            return await result if inspect.isawaitable(result) else result
+
+        if segment_index is not None:
+            # The stream holds the per-session utterance lock across segments.
+            return await send()
+        async with self._speech_lock:
+            return await send()
 
     async def _maybe_run_reasoner(
         self,
@@ -2220,8 +2266,6 @@ def _normalize_speak_text(text: str) -> str:
     if not value:
         return ""
     value = re.sub(r"\s+", " ", value)
-    if value.startswith("[EMO"):
-        value = "嗯，" + value
     return value
 
 

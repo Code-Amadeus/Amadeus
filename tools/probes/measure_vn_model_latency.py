@@ -21,6 +21,8 @@ sys.path.insert(0, str(ROOT))
 from vn_player.llm_client import VNLLMClient
 from vn_player.prompt_layers import compose_messages
 from vn_player.schemas import VNProfile
+from vn_player.speech_stream import VNSpeechStream
+from vn_player.runtime import _normalize_speak_text
 
 
 async def arm(profile, prompts, *, stream, parallel, interval, repeat):
@@ -33,23 +35,23 @@ async def arm(profile, prompts, *, stream, parallel, interval, repeat):
     async def one(index, messages):
         await asyncio.sleep(max(0, origin + interval * index - time.perf_counter()))
         received = time.perf_counter()
-        metrics, delivery = {}, None
+        metrics = {}
         row = {"sample": index + 1, "repeat": repeat, "stream": stream, "concurrency": 3 if parallel else 1}
 
-        async def ready(header):
-            nonlocal delivery
-            async def ordered():
-                if index:
-                    await commits[index - 1].wait()
-                row["delivery_ready_ms"] = round((time.perf_counter() - received) * 1000)
-            if header.get("decision") == "speak" and header.get("speak"):
-                delivery = asyncio.create_task(ordered())
+        async def submit(_payload):
+            row.setdefault("delivery_ready_ms", round((time.perf_counter() - received) * 1000))
+
+        speech = VNSpeechStream(
+            authorize=lambda header, closed: header, active=lambda: True, submit=submit,
+            normalize=_normalize_speak_text, previous=commits[index - 1] if index else None,
+            language="英文" if profile.output_language.lower().startswith("en") else "日文",
+        )
 
         async with slots:
             row["queue_ms"] = round((time.perf_counter() - received) * 1000)
             parsed, _ = await client.complete_json(
                 messages, lane="immediate" if stream else "benchmark_full_json",
-                max_tokens=800, temperature=.55, on_ready=ready if stream else None, metrics=metrics,
+                max_tokens=800, temperature=.55, on_ready=speech.update if stream else None, metrics=metrics,
             )
             row["response_ready_ms"] = round((time.perf_counter() - received) * 1000)
             row.update(valid=parsed is not None, decision=(parsed or {}).get("decision"),
@@ -58,12 +60,11 @@ async def arm(profile, prompts, *, stream, parallel, interval, repeat):
                        model_ms=metrics["completed_at_ms"] - metrics["started_at_ms"])
             if metrics.get("first_token_at_ms"):
                 row["first_token_ms"] = metrics["first_token_at_ms"] - metrics["started_at_ms"]
-            if delivery is None and parsed is not None:
-                await ready(parsed)
+            if not speech.observed and parsed is not None and parsed.get("decision") == "speak":
+                await speech.update(parsed, True)
             if index:
                 await commits[index - 1].wait()
-            if delivery is not None:
-                await delivery
+            await speech.finish()
             commits[index].set()
         rows.append(row)
     try:
