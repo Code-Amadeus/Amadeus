@@ -360,3 +360,7 @@ it enters reference data, not the system-rule layer. Keyword scoring is unchange
 Verification: 190 focused Python tests, 155 frontend tests and production build,
 the real profile-editor save/reopen/clear flow, and an 80-line model-off replay
 against pre-PR main `b90a5a1` with no rule/summary/retrospective differences.
+
+The user also confirmed retaining the original English prompt bodies. Japanese
+speech is selected by the existing output-language setting; prompt text is not
+translated as part of this refactor.
