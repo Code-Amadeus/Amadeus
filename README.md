@@ -506,8 +506,12 @@ actions remain blocked, and Settings displays the missing capability.
 
 ### VN Player setup (Windows, experimental)
 
-VN Player needs a separately installed text extractor and a compatible game. For
-the Agent route, **the hook script is the game's extraction `.js` file**;
+VN Player needs a separately installed text extractor and a compatible game.
+Choose either **0xDC00 Agent** or **LunaTranslator** and follow its setup below.
+
+#### 0xDC00 Agent
+
+For this route, **the hook script is the game's extraction `.js` file**;
 **Full script for alignment** is a separate, optional story-text file and can be
 left empty. Amadeus does not install Agent, game scripts, or games for you.
 
@@ -530,10 +534,34 @@ left empty. Amadeus does not install Agent, game scripts, or games for you.
    use **Text looks right — start companion**. Configure the connection used by
    **VN companion** in Settings for model replies; subsequent sessions use **Start**.
 
-Already using LunaTranslator? Follow the [Luna setup](docs/vn-text-sources.md#lunatranslator):
-configure extraction in Luna, enable its network service, and supply its original-text
-WebSocket URL. Agent and its `.js` scripts are not required for that route.
-For missing text, script dependencies, and connection failures, see
+#### LunaTranslator
+
+Use the full LunaTranslator application for this route. **Agent and its `.js`
+scripts are not required**; standalone LunaHook does not provide this integration's
+original-text network service by itself.
+
+1. Follow [LunaTranslator's official download guide](https://docs.lunatranslator.org/en/README.html),
+   extract the complete package, and run `LunaTranslator.exe`.
+2. Start the game. In Luna's **HOOK mode**, select its process, advance dialogue,
+   and choose the text stream matching the game in the text-selection window.
+   Confirm original text continues to arrive; see the [official HOOK tutorial](https://docs.lunatranslator.org/en/basicuse.html).
+3. Enable [Luna's network service](https://docs.lunatranslator.org/en/apiservice.html)
+   and note its configured port. Keep Luna and the service running while playing.
+4. In **VN Player → Add game**, select **Luna original text (experimental)**. Set
+   **Luna WebSocket URL** to `ws://127.0.0.1:<port>/api/ws/text/origin`, replacing
+   `<port>` with the service's actual port. Use the original-text endpoint, not
+   `/api/ws/text/trans` or a web-page address.
+5. Choose **I will start the game** to manage startup externally; the game executable
+   can then be empty. Supply the actual game `.exe` for automatic exe/Steam startup
+   or game-window vision. **Full script for alignment** remains optional.
+6. Use **Save and test text**, advance dialogue, and compare the preview before
+   selecting **Text looks right — start companion**. Capture testing makes no model
+   calls; replies require the connection used by **VN companion** in Settings.
+
+Amadeus does not launch Luna or select its hooks. **End session** disconnects the
+stream without closing Luna. See the [Luna integration details](docs/vn-text-sources.md#lunatranslator).
+
+For either source's missing text, script dependencies, and connection failures, see
 [troubleshooting](docs/vn-text-sources.md#setup-troubleshooting).
 
 ## Compatibility routes

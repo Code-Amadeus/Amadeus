@@ -335,6 +335,8 @@ does not terminate externally started Agent processes.
 
 ## LunaTranslator
 
+For a complete Chinese walkthrough, see [Luna 安装与首次取文](../README_ZH.md#lunatranslator).
+
 Amadeus only needs the extracted original text from Luna's hook workflow; it
 does not consume translated text or control Luna's other features. The current adapter
 connects to the network service hosted by the running LunaTranslator app.
