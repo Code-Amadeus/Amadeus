@@ -454,6 +454,35 @@ LaunchAgent 安装步骤见 [macOS 壁纸自启动](docs/macos_wallpaper_startup
 动作模型凭据时，Chat 和 Settings 仍可启动；应用动作保持 fail-closed，
 Settings 会明确显示缺少的能力。
 
+### VN Player 安装与首次取文
+
+以下是 Windows 上的实验性 VN Player 流程，需要另外安装取文工具，并使用适配当前游戏的脚本。
+**Hook 脚本是负责取文的 `.js` 文件**；页面中的**用于对齐的完整剧本**是另一份可选的
+剧情文本，首次使用可以留空。
+Amadeus 不会自动下载 Agent、游戏脚本或游戏。
+
+1. 从 [0xDC00 Agent 官方发布页](https://github.com/0xDC00/agent/releases) 下载 Windows
+   版本并完整解压，保留 `agent.exe` 旁的 `data` 目录，不要只复制一个 exe。
+2. 在 Agent 的脚本选择菜单中使用 **update scripts** 同步
+   [官方脚本库](https://github.com/0xDC00/scripts)，按游戏名称、平台和版本选择脚本。
+   保留 `data/scripts` 内的共享库；某些游戏脚本依赖 `libMono.js` 等文件，不能只下载单个
+   `.js`。手动安装时，可下载脚本库 ZIP，把其中的仓库内容放入 `data/scripts`，保留目录结构。
+3. 在 Agent 设置中启用 **WebSocket**，地址设为 `127.0.0.1:9001`，与桌面配置预期一致。
+   可先在 Agent 中选择运行中的游戏进程和对应脚本，点击 **Attach**，确认推进对话时能收到
+   正确文本；之后关闭手动打开的 Agent，再交给 Amadeus 启动。当前不使用剪贴板取文。
+4. 打开 **VN Player → 添加游戏**，选择游戏类型和 **0xDC00 Agent**，分别选择游戏实际的
+   `.exe`、**游戏 Hook 脚本（.js）**和 **Agent 程序（所有游戏共用）**。需要通过 Steam
+   启动的游戏选 **Steam**；其他启动器可选**我自行启动游戏**。完整剧情剧本可留空。
+5. 点击**保存并测试取文**，推进几句对话，检查预览是否与游戏一致，包含选项和真实重复的
+   台词。这个测试不调用模型。确认后点击**取文正确，开始陪玩**；模型回复需在 Settings
+   中配置 **VN 伴侣**使用的模型连接。之后直接点击**启动**即可复用配置。
+
+已有 LunaTranslator 的用户可走 [Luna 原文流接入](docs/vn-text-sources.md#lunatranslator)：
+先在 Luna 中配置取文、开启[网络服务](https://docs.lunatranslator.org/zh/apiservice.html)，
+再填写 `ws://127.0.0.1:<Luna端口>/api/ws/text/origin`，将占位符替换为实际端口；这条路线
+不需要 Agent 或 Agent 的 `.js` 脚本。连接失败、缺依赖或没有文本时，见
+[详细安装与排查说明](docs/vn-text-sources.md#setup-troubleshooting)。
+
 ## 兼容路径
 
 ### 可选本地 LLM
@@ -653,7 +682,7 @@ Settings 不会回写 `.env`。普通模型、语音、麦克风、Provider/MCP�
 | Docker | 不是支持的桌面安装路径 |
 | SpriteForge 角色包 | 外部分发；缺包仍可启动 |
 | VTS | 默认关闭的兼容旁路 |
-| VN Player | Experimental |
+| VN Player | 实验性；[安装与首次取文](#vn-player-安装与首次取文) |
 | 壁纸宿主 | Windows 使用 Lively / Wallpaper Engine；macOS Electron 宿主已有社区实机验证 |
 | PyQt / 旧壁纸 host | 已退出公开主线 |
 | Claude CLI Provider | 已确定的后续主线 Provider；当前没有 live caller |

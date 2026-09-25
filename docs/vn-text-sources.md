@@ -7,6 +7,10 @@ The shared runtime supports Base VN and Mystery VN independently of the source.
 PARANORMASIGHT retains its established Mystery preset. Connecting another game's
 text alone does not qualify its extraction quality or semantic behavior.
 
+For your first game, start with the [Agent installation steps](#0xdc00-agent) or
+the [LunaTranslator setup](#lunatranslator), then use **Save and test text**.
+The [Chinese README](../README_ZH.md#vn-player-安装与首次取文) also has a quick start.
+
 ## Game profiles in VN Player
 
 Use **Add game** to name a game, choose its type and select a text source. Agent
@@ -239,13 +243,82 @@ loopback Agent and Luna streams plus direct recorded input against the same runt
 
 ## 0xDC00 Agent
 
-Install [0xDC00 Agent](https://github.com/0xDC00/agent/releases) and select a
-compatible script from its [script collection](https://github.com/0xDC00/scripts)
-before connecting Amadeus. First confirm that Agent captures the game's text on
-its own. The PARANORMASIGHT launch profile still looks for the separately installed
-`visual novel player` directory beside the Amadeus checkout. It uses the local
-Agent executable and game script from that directory. Amadeus does not install,
-update, or redistribute Agent or game files.
+These steps cover native Windows PC games. This branch's real-game checks used
+Agent v0.1.4; a script's existence does not guarantee compatibility with every
+game update, language patch, demo, or storefront edition.
+
+### Install the extractor and scripts
+
+1. Download the Windows archive from [Agent's official releases](https://github.com/0xDC00/agent/releases)
+   and extract it completely to a stable folder. Select the extracted `agent.exe`
+   later; keep its supporting files and `data` directory with it.
+2. Open Agent. Its script selector's **update scripts** action synchronizes the
+   [official script repository](https://github.com/0xDC00/scripts) into `data/scripts`.
+   For manual installation, use the repository's **Code → Download ZIP**, extract
+   it, and place its contents directly under `data/scripts`, preserving subfolders.
+   Avoid an extra `data/scripts/scripts-main` nesting level. Keep any custom scripts
+   separately backed up when updating.
+3. Search the collection for the game and read the script's header and instructions.
+   Match the PC version you actually run; a script for an emulated console edition
+   is not interchangeable. Select the game's `.js`, not a shared `lib*.js` file.
+   Preserve its dependencies: for example, the upstream
+   [Kemono Teatime script](https://github.com/0xDC00/scripts/blob/main/PC_Steam_Unity_Kemono_Teatime.js)
+   imports `libUI.js` and `libMono.js` from the same directory.
+
+Illustrative layout; the game script's filename depends on the game:
+
+```text
+Agent/
+  agent.exe
+  ...other files from the Agent archive...
+  data/
+    scripts/
+      PC_Your_Game.js
+      libMono.js
+      libUI.js
+      ...other repository files and subfolders...
+```
+
+The [upstream Agent guide](https://github.com/0xDC00/agent#quickstart) describes its
+folder layout. No separate hook DLL needs to be selected in Amadeus's Agent profile;
+Agent loads the selected extraction script. If no compatible script exists, this
+route cannot extract that game's text merely by selecting its executable.
+
+### Check extraction and WebSocket output
+
+Start the game, select its running process and the matching script in Agent, and
+use **Attach**. Advance dialogue and confirm Agent displays the expected text.
+In Agent's settings, enable **WebSocket** and use host `127.0.0.1`, port `9001`.
+The ordinary desktop profile connects to `ws://127.0.0.1:9001`; if you previously
+customized Agent's endpoint, restore these values for this walkthrough. The profile
+editor currently has no Agent host/port field. Clipboard output is not an input to
+Amadeus and does not substitute for WebSocket output.
+
+Close the manually opened Agent before starting a VN Player session; Amadeus launches
+its own Agent instance. The game can stay open. In **VN Player → Add game**, fill in:
+
+| Field | What to select |
+| --- | --- |
+| **Game executable** | The actual game process's `.exe`, not `steam.exe` or a launcher shortcut |
+| **Game hook script (.js)** | The compatible extraction script in `Agent/data/scripts` |
+| **Agent installation (shared by all games)** | The extracted `agent.exe`; configure once for your game profiles |
+| **Launch game with** | Direct executable, **Steam**, or **I will start the game**; Steam demos need their own app ID |
+| **Full script for alignment** | Optional story text for alignment/lookahead; leave empty unless you have a supported script file. Do not put the hook `.js` here |
+
+Choose **General VN** or **Mystery VN** for the companion's behavior; this does not
+choose or install an extraction script. Click **Save and test text**, advance several
+lines, and compare dialogue, choices, and repeated text with the game. The preview
+does not invoke a model. Then use **Text looks right — start companion**. For model
+replies, configure the model connection selected by **VN companion** in Settings
+(DeepSeek or OpenAI-compatible), applying backend restarts when prompted. Later,
+**Start** reuses the saved profile and attaches Agent automatically.
+
+Amadeus does not install, update, or redistribute Agent, game scripts, or game files.
+Use **Add game** with your own paths; you do not need the developer's directory
+layout. The optional built-in PARANORMASIGHT profile is offered only when its
+separately installed game is found under the sibling `visual novel player` directory.
+
+### Adapter contract
 
 The Agent adapter optionally launches the installed executable with its script
 and consumes `copyText` messages from its WebSocket. The initial release supports
@@ -268,11 +341,21 @@ connects to the network service hosted by the running LunaTranslator app.
 LunaHook can be used separately, but a standalone LunaHook setup would need a
 host/output bridge for Amadeus; it does not use this WebSocket adapter as-is.
 
-Configure text extraction and enable [LunaTranslator's network service](https://docs.lunatranslator.org/en/apiservice.html) in Luna.
-In VN Player, add or edit a game profile, select **Luna original text (experimental)**,
-enter the WebSocket URL shown by Luna with the path `/api/ws/text/origin`, save,
-and start the session. Amadeus connects to Luna's already-running original-text stream. It does
-not launch Luna, select hooks, change Luna settings, or consume translations.
+1. Install LunaTranslator using its [official download guide](https://docs.lunatranslator.org/en/README.html).
+   Start the game and follow Luna's [HOOK setup](https://docs.lunatranslator.org/en/basicuse.html)
+   to select the process and a text stream that matches the displayed dialogue.
+   Confirm extraction works in Luna first. Agent's `.js` scripts are not needed here.
+2. Enable [Luna's network service](https://docs.lunatranslator.org/en/apiservice.html)
+   and note its configured port. Keep Luna running during the VN session.
+3. In **VN Player → Add game**, choose **Luna original text (experimental)** and enter
+   `ws://127.0.0.1:<port>/api/ws/text/origin`, replacing `<port>` with Luna's actual
+   service port. Use the original-text endpoint, not `/api/ws/text/trans` or a web-page URL.
+4. Choose **I will start the game** if it is already managed externally, or configure
+   the shared exe/Steam launcher. Use **Save and test text** and compare several
+   lines before starting the companion.
+
+Amadeus connects to Luna's already-running original-text stream. It does not launch
+Luna, select hooks, change Luna settings, or consume translations.
 The original-text stream supplies text; speaker, script ID, choices, and scene
 metadata are not assumed. Repeated text is forwarded as repeated observations.
 
@@ -281,6 +364,21 @@ When using the API, first save a Luna profile with `textSource: "luna"`,
 game launch preference. Pass its `profileId` to `vn.launch.start`. The port comes
 from the user's Luna network-service configuration. Stop with `vn.launch.stop`;
 stopping disconnects Amadeus without stopping Luna.
+
+## Setup troubleshooting
+
+Open **Connection details and diagnostics** in VN Player to see game, text-source,
+and bridge status. A connected bridge alone does not establish that extraction works.
+
+| Symptom | Check |
+| --- | --- |
+| Agent reports a missing `lib*.js` module | Update/install the complete script collection and preserve its relative layout, rather than copying only the game `.js` |
+| Agent already running / port already used | Close the Agent opened for manual testing and retry. Amadeus does not terminate an externally started Agent |
+| Agent captures text, but VN Player stays connecting or waiting | Enable Agent's WebSocket output at `127.0.0.1:9001`; clipboard copying is not enough. Check the bridge error shown in diagnostics |
+| Bridge connects, but advancing dialogue produces no text, or text is wrong | Test the same process/script in Agent or the selected text stream in Luna. Check game version, language patch, and script compatibility; Amadeus cannot repair extraction by changing the companion model |
+| Direct exe launch fails for a Steam game | Select **Steam**, confirm the actual game executable and app ID, or start it in Steam first and choose **I will start the game** |
+| Luna fails to connect | Keep Luna and its network service running; check the port and exact `/api/ws/text/origin` path |
+| Text preview works, but model replies are unavailable | Configure the connection used by **VN companion** in Settings. Capture-only testing intentionally does not produce companion replies |
 
 ## Current boundary
 

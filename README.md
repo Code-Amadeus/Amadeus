@@ -504,6 +504,38 @@ The default B2 AppSession action path does not block first-time setup. Chat and
 Settings still start without supported AUIP action-model credentials; application
 actions remain blocked, and Settings displays the missing capability.
 
+### VN Player setup (Windows, experimental)
+
+VN Player needs a separately installed text extractor and a compatible game. For
+the Agent route, **the hook script is the game's extraction `.js` file**;
+**Full script for alignment** is a separate, optional story-text file and can be
+left empty. Amadeus does not install Agent, game scripts, or games for you.
+
+1. Download the Windows build from [0xDC00 Agent releases](https://github.com/0xDC00/agent/releases)
+   and extract the whole archive. Keep `agent.exe` and its `data` folder together.
+2. In Agent's script selector, use **update scripts** to obtain the
+   [official script collection](https://github.com/0xDC00/scripts). Choose the
+   script matching your game's platform and version; keep its shared libraries in
+   `data/scripts`. The [installation guide](docs/vn-text-sources.md#0xdc00-agent)
+   also explains manual installation and how to check the script first.
+3. Enable Agent's **WebSocket** output at `127.0.0.1:9001`, the desktop profile's
+   expected endpoint. Close any manually opened Agent before starting it through
+   Amadeus. Clipboard output is not used.
+4. Open **VN Player → Add game**. Choose a game type, select **0xDC00 Agent**, then
+   browse to the game's actual `.exe`, its hook `.js`, and `agent.exe`. Choose
+   **Steam** if the game needs Steam startup, or **I will start the game** for
+   another launcher. Leave the full story script empty to begin with live text.
+5. Click **Save and test text**, advance several dialogue lines, and compare the
+   preview with the game. This test requires no model call. Once it looks right,
+   use **Text looks right — start companion**. Configure the connection used by
+   **VN companion** in Settings for model replies; subsequent sessions use **Start**.
+
+Already using LunaTranslator? Follow the [Luna setup](docs/vn-text-sources.md#lunatranslator):
+configure extraction in Luna, enable its network service, and supply its original-text
+WebSocket URL. Agent and its `.js` scripts are not required for that route.
+For missing text, script dependencies, and connection failures, see
+[troubleshooting](docs/vn-text-sources.md#setup-troubleshooting).
+
 ## Compatibility routes
 
 ### Optional local LLM
@@ -728,7 +760,7 @@ advanced diagnostics, experimental thresholds, and test-only flags remain in
 | Docker | Not a supported desktop installation path |
 | SpriteForge character pack | Externally distributed; source starts without it |
 | VTS | Disabled-by-default compatibility route |
-| VN Player | Experimental; [text-source setup](docs/vn-text-sources.md) |
+| VN Player | Experimental; [installation and first text capture](#vn-player-setup-windows-experimental) |
 | Wallpaper hosts | Lively / Wallpaper Engine on Windows; the macOS Electron host has community real-device verification as noted above |
 | PyQt / old wallpaper hosts | Retired from public mainline |
 | Claude CLI Provider | Committed future mainline Provider; no live caller yet |
