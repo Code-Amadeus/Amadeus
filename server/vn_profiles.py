@@ -12,6 +12,7 @@ from typing import Literal
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from vn_player.schemas import MAX_TERMINOLOGY_LENGTH
 
 
 def validate_luna_ws_url(value: str) -> None:
@@ -64,6 +65,7 @@ class LaunchProfile(BaseModel):
     voiceInput: bool | None = None
     visionMode: Literal["off", "on_question"] = "off"
     commentaryFrequency: Literal["quiet", "balanced", "frequent"] = "balanced"
+    terminology: str = Field(default="", max_length=MAX_TERMINOLOGY_LENGTH)
 
     @field_validator("gameExe", "hookHelper", "scriptPath")
     @classmethod
@@ -114,11 +116,16 @@ class VNProfileStore:
             raise ValueError("Choose agent.exe. This installation is shared by your game profiles.")
         data.agentExe = agent_exe
         data.profiles = [p for p in data.profiles if p.id != profile.id] + [profile]
+        document = data.model_dump()
+        # Empty optional terminology keeps saved profiles readable by older builds.
+        for item in document["profiles"]:
+            if not item["terminology"]:
+                item.pop("terminology")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         fd, temporary = tempfile.mkstemp(prefix="vn-profiles-", suffix=".tmp", dir=self.path.parent)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                json.dump(data.model_dump(), stream, ensure_ascii=False, indent=2)
+                json.dump(document, stream, ensure_ascii=False, indent=2)
                 stream.write("\n")
                 stream.flush()
                 os.fsync(stream.fileno())

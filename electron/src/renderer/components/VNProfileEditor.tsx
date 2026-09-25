@@ -11,6 +11,7 @@ export type VNProfileSettings = {
   launchOverlay: boolean; stopWallpaper: boolean; closeGameOnStop: boolean
   promptPack: 'base' | 'mystery'; voiceInput: boolean; visionMode: 'off' | 'on_question'
   commentaryFrequency: 'quiet' | 'balanced' | 'frequent'
+  terminology: string
 }
 type EditorSection = 'game' | 'connection' | 'preferences'
 const sections: Array<{ id: EditorSection; title: string; icon: FluentIconName }> = [
@@ -32,7 +33,7 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
     name: '', textSource: 'agent', gameExe: '', hookHelper: '', scriptPath: '', lunaWsUrl: '',
     launchGame: true, launchMethod: 'exe', steamAppId: '', launchOverlay: overlayAvailable,
     stopWallpaper: true, closeGameOnStop: false, voiceInput: false, visionMode: 'off',
-    commentaryFrequency: 'balanced',
+    commentaryFrequency: 'balanced', terminology: '',
     promptPack: initial?.id === 'paranormasight' ? 'mystery' : 'base', ...initial,
   }))
   const [section, setSection] = useState<EditorSection>('game')
@@ -90,7 +91,7 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
     onCancel={event => { event.preventDefault(); if (!busy) onClose() }}>
     <form noValidate onSubmit={async event => {
       event.preventDefault()
-      const invalid = event.currentTarget.querySelector<HTMLInputElement | HTMLSelectElement>('input:invalid, select:invalid')
+      const invalid = event.currentTarget.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input:invalid, select:invalid, textarea:invalid')
       if (invalid) {
         const panel = invalid.closest<HTMLElement>('[data-vn-panel]')?.dataset.vnPanel as EditorSection | undefined
         if (panel) flushSync(() => setSection(panel))
@@ -103,8 +104,8 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
       setBusy(true); setError('')
       try {
         // Send editable settings only; capabilities are derived by the host.
-        const { id, name, textSource, gameExe, hookHelper, scriptPath, lunaWsUrl, launchGame, launchMethod, steamAppId, launchOverlay, stopWallpaper, closeGameOnStop, promptPack, voiceInput, visionMode, commentaryFrequency } = profile
-        await onSave({ ...(id ? { id } : {}), name, textSource, gameExe, hookHelper, scriptPath, lunaWsUrl, launchGame, launchMethod, steamAppId, launchOverlay, stopWallpaper, closeGameOnStop, promptPack, voiceInput, visionMode, commentaryFrequency }, agent, test)
+        const { id, name, textSource, gameExe, hookHelper, scriptPath, lunaWsUrl, launchGame, launchMethod, steamAppId, launchOverlay, stopWallpaper, closeGameOnStop, promptPack, voiceInput, visionMode, commentaryFrequency, terminology } = profile
+        await onSave({ ...(id ? { id } : {}), name, textSource, gameExe, hookHelper, scriptPath, lunaWsUrl, launchGame, launchMethod, steamAppId, launchOverlay, stopWallpaper, closeGameOnStop, promptPack, voiceInput, visionMode, commentaryFrequency, terminology }, agent, test)
       } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
       finally { setBusy(false) }
     }}>
@@ -135,6 +136,12 @@ export default function VNProfileEditor({ initial, overlayAvailable = false, cap
             </fieldset>
             <CardShell vertical><div className="vn-type-abilities"><p>{t('Companion abilities follow the game type automatically.')}</p>
               <VNAbilities compact preset={capabilityPresets[profile.promptPack]} /></div></CardShell>
+            <details className="vn-editor-details"><summary>{t('Game terminology (optional)')}</summary>
+              <label className="vn-field">{t('Terms and preferred names')}
+                <textarea rows={4} maxLength={2000} value={profile.terminology} onChange={e => set('terminology', e.target.value)} />
+                <small>{t('Optional naming references for this game. Terms are never generated automatically or treated as facts about story events.')}</small>
+              </label>
+            </details>
           </SettingsGroup></div>
           <div className="vn-editor-panel" role="tabpanel" id="vn-panel-connection" data-vn-panel="connection" aria-labelledby="vn-tab-connection" hidden={section !== 'connection'}>
           <SettingsGroup title="Text connection" detail="Use your existing extraction tool and a script that matches this game.">

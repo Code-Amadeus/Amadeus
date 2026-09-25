@@ -112,6 +112,9 @@ async def run(url):
                     await expect(form.get_by_role("list", name="Companion abilities").locator("li")).to_have_count(6)
                     await form.get_by_role("radio", name="General VN", exact=False).check()
                     await expect(form.get_by_role("list", name="Companion abilities").locator("li")).to_have_count(4)
+                    await form.locator("summary", has_text="Game terminology (optional)").click()
+                    await expect(form.get_by_label("Terms and preferred names")).to_have_value("")
+                    await form.get_by_label("Terms and preferred names").fill("星灯：玩家指定的称谓")
                     await form.get_by_role("tab", name="Text connection").click()
                     for label in ("Game executable", "Game hook script (.js)", "Agent installation (shared by all games)"):
                         await form.get_by_role("button", name=f"Browse: {label}", exact=True).click()
@@ -124,6 +127,7 @@ async def run(url):
                     assert not vn._runtime.enabled
                     await page.get_by_role("button", name="Text looks right — start companion").click()
                     await expect(page.get_by_text("Following your game", exact=True)).to_be_visible()
+                    assert vn._runtime.profile.terminology == "星灯：玩家指定的称谓"
                     feed = page.locator(".vn-feed")
                     await expect(feed.locator(".game-line")).to_have_count(3)
                     await expect(feed.locator(".companion-line")).to_have_count(1)
@@ -168,6 +172,7 @@ async def run(url):
                     assert not asr["active"]
                     saved = launch._manager._profiles.load().profiles[0]
                     assert saved.commentaryFrequency == "balanced" and saved.voiceInput is False and saved.visionMode == "off"
+                    assert saved.terminology == "星灯：玩家指定的称谓"
                     model_ready[0] = False
                     await page.get_by_role("button", name="Start", exact=True).click()
                     await expect(page.get_by_text("Following text · model unavailable", exact=True)).to_be_visible()
@@ -191,7 +196,13 @@ async def run(url):
                     await expect(page.get_by_role("button", name="启动", exact=True)).to_be_enabled()
                     await page.set_viewport_size({"width": 1120, "height": 940})
                     await page.get_by_role("button", name="编辑游戏配置", exact=True).click()
+                    await form.locator("summary", has_text="游戏术语（可选）").click()
+                    await expect(form.get_by_label("术语与偏好称谓")).to_have_value("星灯：玩家指定的称谓")
                     await page.screenshot(path=str(output / "editor-zh.png"))
+                    await form.get_by_label("术语与偏好称谓").fill("")
+                    await form.get_by_role("button", name="保存", exact=True).click()
+                    assert launch._manager._profiles.load().profiles[0].terminology == ""
+                    await page.get_by_role("button", name="编辑游戏配置", exact=True).click()
                     await form.get_by_role("tab", name="取文连接", exact=True).click()
                     await page.screenshot(path=str(output / "connection-zh.png"))
                     await form.get_by_role("tab", name="游玩偏好", exact=True).click()

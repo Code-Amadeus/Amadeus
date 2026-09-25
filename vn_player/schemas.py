@@ -56,6 +56,7 @@ VALID_EMOTIONS: set[str] = {
 }
 
 CAPABILITY_NAMES = ("immediate", "interaction", "summary", "retrospective", "lookahead", "reasoning")
+MAX_TERMINOLOGY_LENGTH = 2000
 
 
 def resolve_capability_defaults(prompt_pack: str, overrides: dict[str, Any] | None = None) -> dict[str, bool]:
@@ -116,6 +117,7 @@ class VNProfile:
     lookahead_spoiler_policy: str = "abstract_only"
     max_reactions_per_minute: int = 8
     commentary_frequency: str = "balanced"
+    terminology: str = ""
     schema_modules: list[str] = field(
         default_factory=lambda: ["characters", "timeline", "evidence_map", "reasoning_graph", "open_questions"]
     )
@@ -133,6 +135,9 @@ class VNProfile:
         frequency = str(data.get("commentary_frequency", "balanced"))
         if frequency not in {"quiet", "balanced", "frequent"}:
             raise ValueError("Unsupported VN commentary frequency")
+        terminology = data.get("terminology", "")
+        if not isinstance(terminology, str) or len(terminology) > MAX_TERMINOLOGY_LENGTH:
+            raise ValueError(f"VN terminology must be text of at most {MAX_TERMINOLOGY_LENGTH} characters.")
         return cls(
             session_id=session_id,
             game_id=str(data.get("game_id") or "unknown_vn"),
@@ -150,6 +155,7 @@ class VNProfile:
             lookahead_spoiler_policy=str(data.get("lookahead_spoiler_policy") or "abstract_only"),
             max_reactions_per_minute=int(data.get("max_reactions_per_minute") or 8),
             commentary_frequency=frequency,
+            terminology=terminology.strip(),
             schema_modules=list(data.get("schema_modules") or ["characters", "timeline", "evidence_map", "reasoning_graph", "open_questions"]),
             capabilities=capabilities,
         )
@@ -172,6 +178,7 @@ class VNProfile:
             "lookahead_spoiler_policy": self.lookahead_spoiler_policy,
             "max_reactions_per_minute": self.max_reactions_per_minute,
             "commentary_frequency": self.commentary_frequency,
+            **({"terminology": self.terminology} if self.terminology else {}),
             "schema_modules": self.schema_modules,
             "capabilities": self.capabilities,
         }

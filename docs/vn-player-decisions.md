@@ -345,3 +345,18 @@ and VN handler; native Tk event/hover/layout/lifecycle probe and exact-window
 screenshots. Native widget inputs and ASR hardware are fixtures, not a new real
 microphone or game acceptance. The desktop automation tool could not initialize
 (`failed to write kernel assets`), so physical mouse automation was unavailable.
+
+### Compose prompts through one path for every game
+
+Per user clarification, compatibility means filling the original content into
+common, game-type and confirmed game-value layers and reproducing the original
+messages. It never means a PARANORMASIGHT ID exception or an old-prompt fallback.
+The same composer now builds every lane for every profile. Base and Mystery
+messages both match the pre-refactor full-message fixtures byte for byte.
+
+Unknown games use the selected name/type without a model initialization pass.
+Optional game terminology is empty by default and only supplied by the user;
+it enters reference data, not the system-rule layer. Keyword scoring is unchanged.
+Verification: 190 focused Python tests, 155 frontend tests and production build,
+the real profile-editor save/reopen/clear flow, and an 80-line model-off replay
+against pre-PR main `b90a5a1` with no rule/summary/retrospective differences.
