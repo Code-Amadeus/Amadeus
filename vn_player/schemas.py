@@ -55,6 +55,40 @@ VALID_EMOTIONS: set[str] = {
     "serious_speaking",
 }
 
+CAPABILITY_NAMES = ("immediate", "interaction", "summary", "retrospective", "lookahead", "reasoning")
+
+
+def resolve_capability_defaults(prompt_pack: str, overrides: dict[str, Any] | None = None) -> dict[str, bool]:
+    """Resolve the six requested switches for a saved semantic preset."""
+    if prompt_pack not in {"base", "mystery"}:
+        raise ValueError(f"Unsupported VN semantic type: {prompt_pack}")
+    requested = {name: True for name in CAPABILITY_NAMES}
+    if prompt_pack == "base":
+        requested["lookahead"] = False
+        requested["reasoning"] = False
+    for name in CAPABILITY_NAMES:
+        if isinstance(overrides, dict) and name in overrides:
+            requested[name] = bool(overrides[name])
+    return requested
+
+
+def _capabilities(data: dict[str, Any], params: dict[str, Any], prompt_pack: str) -> dict[str, bool]:
+    requested = resolve_capability_defaults(prompt_pack, data.get("capabilities"))
+    override = params.get("capabilities")
+    if isinstance(override, dict):
+        for name in CAPABILITY_NAMES:
+            if name in override:
+                requested[name] = bool(override[name])
+    # The original lookahead switch remains an input alias, with the new
+    # capability map taking precedence when both are supplied.
+    if "lookahead" not in (override if isinstance(override, dict) else {}):
+        source = params if any(alias in params for alias in ("lookahead_enabled", "lookaheadEnabled")) else (data if prompt_pack == "mystery" else {})
+        for alias in ("lookahead_enabled", "lookaheadEnabled"):
+            if alias in source:
+                requested["lookahead"] = bool(source[alias])
+                break
+    return requested
+
 
 def now_ms() -> int:
     return int(time.time() * 1000)
@@ -77,38 +111,47 @@ class VNProfile:
     base_url: str = ""
     overlay_url: str = ""
     short_memory_lines: int = 50
-    lookahead_enabled: bool = True
     lookahead_min_lines: int = 20
     lookahead_max_lines: int = 50
     lookahead_spoiler_policy: str = "abstract_only"
     max_reactions_per_minute: int = 8
+    commentary_frequency: str = "balanced"
     schema_modules: list[str] = field(
         default_factory=lambda: ["characters", "timeline", "evidence_map", "reasoning_graph", "open_questions"]
     )
+    capabilities: dict[str, bool] = field(default_factory=dict)
 
     @classmethod
     def from_params(cls, params: dict[str, Any], defaults: dict[str, Any] | None = None) -> "VNProfile":
         data = dict(defaults or {})
         data.update({k: v for k, v in (params or {}).items() if v is not None})
         session_id = str(data.get("session_id") or new_id("vn_session"))
+        prompt_pack = str(data.get("prompt_pack") or data.get("game_genre") or "mystery").strip().lower()
+        if prompt_pack not in {"base", "mystery"}:
+            raise ValueError(f"Unsupported VN semantic type: {prompt_pack}")
+        capabilities = _capabilities(data, params or {}, prompt_pack)
+        frequency = str(data.get("commentary_frequency", "balanced"))
+        if frequency not in {"quiet", "balanced", "frequent"}:
+            raise ValueError("Unsupported VN commentary frequency")
         return cls(
             session_id=session_id,
             game_id=str(data.get("game_id") or "unknown_vn"),
             game_title=str(data.get("game_title") or data.get("game_id") or "Unknown VN"),
             game_genre=str(data.get("game_genre") or "mystery"),
-            prompt_pack=str(data.get("prompt_pack") or data.get("game_genre") or "mystery"),
+            prompt_pack=prompt_pack,
             output_language=str(data.get("output_language") or "ja"),
             provider=str(data.get("provider") or "deepseek"),
             model=str(data.get("model") or ""),
             base_url=str(data.get("base_url") or ""),
             overlay_url=str(data.get("overlay_url") or data.get("overlayUrl") or ""),
             short_memory_lines=int(data.get("short_memory_lines") or 50),
-            lookahead_enabled=bool(data.get("lookahead_enabled", True)),
             lookahead_min_lines=int(data.get("lookahead_min_lines") or 20),
             lookahead_max_lines=int(data.get("lookahead_max_lines") or 50),
             lookahead_spoiler_policy=str(data.get("lookahead_spoiler_policy") or "abstract_only"),
             max_reactions_per_minute=int(data.get("max_reactions_per_minute") or 8),
+            commentary_frequency=frequency,
             schema_modules=list(data.get("schema_modules") or ["characters", "timeline", "evidence_map", "reasoning_graph", "open_questions"]),
+            capabilities=capabilities,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -124,12 +167,13 @@ class VNProfile:
             "base_url": self.base_url,
             "overlay_url": self.overlay_url,
             "short_memory_lines": self.short_memory_lines,
-            "lookahead_enabled": self.lookahead_enabled,
             "lookahead_min_lines": self.lookahead_min_lines,
             "lookahead_max_lines": self.lookahead_max_lines,
             "lookahead_spoiler_policy": self.lookahead_spoiler_policy,
             "max_reactions_per_minute": self.max_reactions_per_minute,
+            "commentary_frequency": self.commentary_frequency,
             "schema_modules": self.schema_modules,
+            "capabilities": self.capabilities,
         }
 
 

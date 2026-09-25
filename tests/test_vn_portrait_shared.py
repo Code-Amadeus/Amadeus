@@ -3,10 +3,11 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 
-def test_launcher_keeps_tk_helper_and_only_inserts_portrait_adapter(tmp_path: Path):
+def test_launcher_uses_repository_owned_overlay_without_external_helper(tmp_path: Path):
     from server.vn_launch_manager import VNLaunchManager
 
-    helper = tmp_path / "vn_portrait_overlay_tk.py"
+    helper = tmp_path / "tools/vn_portrait_overlay_lite.py"
+    helper.parent.mkdir()
     helper.touch()
     manager = VNLaunchManager(tmp_path, runtime_start=AsyncMock(), runtime_stop=AsyncMock(),
                               runtime_status=AsyncMock(), runtime_line=AsyncMock())
@@ -17,7 +18,7 @@ def test_launcher_keeps_tk_helper_and_only_inserts_portrait_adapter(tmp_path: Pa
         asyncio.run(manager._launch_overlay({"overlayHelper": str(helper)}, {}))
     args = manager._spawn.call_args.args[0]
     assert args[1] == str(tmp_path / "tools/vn_portrait_overlay_lite.py")
-    assert args[args.index("--legacy-helper") + 1] == str(helper)
+    assert "--legacy-helper" not in args
     assert args[args.index("--lite-dir") + 1] == str(tmp_path / "assets/companion/kurisu")
     assert not any("electron" in arg.lower() for arg in args)
 

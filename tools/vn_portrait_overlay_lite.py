@@ -1,45 +1,36 @@
-"""Keep the original VN Tk window; replace only its portrait renderer when Lite is installed."""
+"""Standalone VN portrait window using the bundled Companion Lite assets."""
 from __future__ import annotations
 
 import argparse
-import importlib.util
 from pathlib import Path
 import sys
 
-from PIL import Image, ImageColor
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from render.companion_atlas_tk import AtlasPlayer  # noqa: E402
+from render import vn_overlay_window  # noqa: E402
 
 
-def load_legacy(helper: Path):
-    helper = helper.resolve(strict=True)
-    # The existing VN helper imports its own portrait assets module.
-    sys.path.insert(0, str(helper.parent))
-    spec = importlib.util.spec_from_file_location("vn_portrait_original", helper)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def overlay_class(legacy):
-    class LitePortraitOverlay(legacy.PortraitOverlayTk):
+def overlay_class(shell=vn_overlay_window):
+    class LitePortraitOverlay(shell.PortraitOverlayTk):
         def __init__(self, *args, lite_dir: Path, static_idle: bool = False, **kwargs):
             self._lite_dir, self._static_idle = lite_dir, static_idle
             self._lite = None
             self._atlas_timer = self._return_timer = None
-            self._sentence_id = ""
-            super().__init__(*args, **kwargs)
-            # Preserve the existing sweep/path/cadence, with one quarter of its RGB
-            # distance from the card background. Decoration should not compete with text.
-            background = ImageColor.getrgb(legacy.CARD_BG)
-            for line in self._scan_lines:
-                foreground = ImageColor.getrgb(self.frame.itemcget(line, "fill"))
-                muted = tuple(round(bg + (fg - bg) * 0.25) for bg, fg in zip(background, foreground))
-                self.frame.itemconfigure(line, fill="#{:02x}{:02x}{:02x}".format(*muted))
+            try:
+                super().__init__(*args, **kwargs)
+            except Exception:
+                # A present but invalid pack is an error, not the missing-art mode.
+                # Tk may already have created the root when atlas validation fails.
+                if self._lite:
+                    self._lite.close()
+                if getattr(self, "root", None):
+                    self.root.destroy()
+                raise
             self.root.bind("<Unmap>", self._visibility, add="+")
             self.root.bind("<Map>", self._visibility, add="+")
             self.root.bind("<Destroy>", self._dispose, add="+")
@@ -48,13 +39,12 @@ def overlay_class(legacy):
             if (self._lite_dir / "manifest.json").is_file():
                 self._lite = AtlasPlayer(self._lite_dir)
             else:
-                # The pack is optional; the original cache/legacy behavior remains unchanged.
                 super()._load_frames()
 
         def _resolve_key(self, emotion):
             if not self._lite:
                 return super()._resolve_key(emotion)
-            key = legacy.EMOTION_ALIASES.get(emotion, emotion or "normal")
+            key = super()._resolve_key(emotion)
             return key if key in self._lite.emotions else "normal"
 
         def _set_emotion(self, emotion, state="idle", *, advance_variant=False):
@@ -114,7 +104,7 @@ def overlay_class(legacy):
             if playback and payload.get("speaking") is True:
                 self._sentence_id = sentence
             raw = str(payload.get("text") or payload.get("speak") or "")
-            text = str(payload.get("display_text") or "").strip() or legacy.clean_display_text(raw)
+            text = shell.clean_display_text(payload.get("display_text")) or shell.clean_display_text(raw)
             if text:
                 self.text_var.set(text)
             if subtitle:
@@ -126,9 +116,9 @@ def overlay_class(legacy):
             if self._return_timer is not None:
                 self.root.after_cancel(self._return_timer)
                 self._return_timer = None
-            emotion, duration = legacy.infer_emotion(raw, str(payload.get("emotion") or ""))
+            emotion, duration = shell.infer_emotion(raw, str(payload.get("emotion") or ""))
             speaking = payload.get("speaking")
-            state = str(payload.get("portrait_state") or payload.get("state") or "")
+            state = str(payload.get("portrait_state") or payload.get("state") or "").strip().lower()
             if state not in {"idle", "speaking"}:
                 state = "idle" if speaking is False else "speaking"
             def neutral():
@@ -151,29 +141,24 @@ def overlay_class(legacy):
             elif not playback:
                 duration = max(350, min(60000, int(payload.get("duration_ms") or duration)))
                 self._return_timer = self.root.after(duration, neutral)
-            self.root.deiconify()
-            self.root.lift()
+            if getattr(self, "visible", True):
+                self.root.deiconify()
+                self.root.lift()
 
     return LitePortraitOverlay
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--legacy-helper", type=Path, required=True)
     parser.add_argument("--lite-dir", type=Path, default=ROOT / "assets/companion/kurisu")
     parser.add_argument("--static-idle", action="store_true")
-    parser.add_argument("--images-dir", type=Path, required=True)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8788)
     parser.add_argument("--x", type=int, default=60)
     parser.add_argument("--y", type=int, default=80)
-    parser.add_argument("--crop-side-ratio", type=float, default=0.74)
-    parser.add_argument("--crop-y-ratio", type=float, default=0.035)
     args = parser.parse_args()
-    legacy = load_legacy(args.legacy_helper)
-    overlay = overlay_class(legacy)(args.images_dir, lite_dir=args.lite_dir, static_idle=args.static_idle,
-        cache_dir=legacy.DEFAULT_CACHE_DIR, host=args.host, port=args.port, x=args.x, y=args.y,
-        crop_side_ratio=args.crop_side_ratio, crop_y_ratio=args.crop_y_ratio)
+    overlay = overlay_class()(lite_dir=args.lite_dir, static_idle=args.static_idle,
+                              host=args.host, port=args.port, x=args.x, y=args.y)
     return overlay.run()
 
 

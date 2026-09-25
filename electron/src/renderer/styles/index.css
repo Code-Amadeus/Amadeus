@@ -1,5 +1,170 @@
 @import "tailwindcss";
 
+.vn-player { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 16px; padding: 20px 24px 18px; overflow: auto; background: var(--bg); color: var(--text); font-family: var(--font), 'Microsoft YaHei UI', sans-serif; font-size: 13px; }
+.vn-player button, .vn-profile-dialog button { min-height: 36px; padding: 7px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; transition: background .15s, border-color .15s; }
+.vn-player button:hover:not(:disabled), .vn-profile-dialog button:hover:not(:disabled) { background: var(--hover); border-color: var(--border-strong); }
+.vn-player button:disabled, .vn-profile-dialog button:disabled { opacity: .45; cursor: not-allowed; }
+.vn-player .vn-primary, .vn-profile-dialog .vn-primary { background: var(--accent); border-color: var(--accent); color: white; font-weight: 600; }
+.vn-player .vn-primary:hover:not(:disabled), .vn-profile-dialog .vn-primary:hover:not(:disabled) { background: var(--accent-hover); color: white; }
+.vn-player :where(input:not([type=checkbox]):not([type=radio]), select, textarea), .vn-profile-dialog :where(input:not([type=checkbox]):not([type=radio]), select, textarea) { width: 100%; min-width: 0; min-height: 38px; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
+.vn-player :is(button, input, select, textarea, summary):focus-visible, .vn-profile-dialog :is(button, input, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.vn-page-heading, .vn-game-bar, .vn-editor-heading, .vn-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.vn-editor-heading p { margin: 4px 0 0; color: var(--muted); font-size: 11px; line-height: 16px; }
+.vn-game-bar { padding: 16px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.vn-game-select { display: grid; grid-template-columns: minmax(160px, 290px) auto; align-items: center; gap: 6px 12px; min-width: 0; }
+.vn-game-select label { grid-column: 1 / -1; font-size: 11px; color: var(--muted); }
+.vn-game-select > span { font-size: 11px; color: var(--muted); }
+.vn-game-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.vn-game-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.vn-session-banner { display: flex; align-items: center; gap: 12px; padding: 0 3px; }
+.vn-session-banner > div { flex: 1; min-width: 0; }
+.vn-session-banner strong { font-weight: 600; font-size: 13px; }
+.vn-session-banner p { margin: 3px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+.vn-session-banner.has-error strong, .vn-error { color: var(--danger); }
+.vn-status-dot { width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; background: var(--muted); }
+.vn-status-dot.live { background: var(--success); box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 10%, transparent); }
+.vn-line-count { color: var(--muted); font-size: 11px; }
+.vn-session-inputs { border: 1px solid var(--card-border); background: var(--surface); border-radius: 11px; padding: 12px 14px; }
+.vn-session-inputs > header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+.vn-session-inputs > header strong { font-size: 12px; font-weight: 600; }
+.vn-session-inputs > header span { color: var(--muted); font-size: 11px; }
+.vn-input-options { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.vn-input-option { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-alt); }
+.vn-input-option > div { flex: 1; min-width: 0; }
+.vn-input-option strong, .vn-input-option label { font-size: 12px; font-weight: 600; }
+.vn-input-option p { margin: 4px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.vn-input-option select { width: auto; max-width: 150px; flex-shrink: 0; font-size: 12px; }
+.vn-input-value { font-size: 11px; color: var(--muted); min-width: 20px; }
+.vn-player .vn-input-switch { width: 36px; min-height: 20px; height: 20px; flex-shrink: 0; padding: 0; border: 0; border-radius: 999px; background: var(--border-strong); }
+.vn-player .vn-input-switch[aria-checked=true] { background: var(--accent); }
+.vn-player .vn-input-switch:hover:not(:disabled) { background: var(--border-strong); }
+.vn-player .vn-input-switch[aria-checked=true]:hover:not(:disabled) { background: var(--accent-hover); }
+.vn-input-switch span { display: block; width: 14px; height: 14px; margin-left: 3px; border-radius: 50%; background: white; transition: transform .15s; }
+.vn-input-switch[aria-checked=true] span { transform: translateX(16px); }
+.vn-session-inputs > .vn-error, .vn-session-inputs > .vn-help { margin-top: 9px; }
+.vn-player > :not(.vn-workspace) { flex-shrink: 0; }
+.vn-workspace { flex: 1 0 430px; min-height: 430px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.vn-conversation > .vn-section-heading, .vn-composer { flex-shrink: 0; }
+.vn-status-dot.waiting { background: #b77916; }
+.vn-status-dot.error { background: var(--danger); }
+.vn-session-inputs > header { flex-wrap: wrap; }
+.vn-session-inputs > header > button { margin-left: auto; }
+.vn-capabilities { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 12px 16px; }
+.vn-capabilities > summary, .vn-message-actions > summary { cursor: pointer; font-size: 12px; }
+.vn-capabilities .vn-abilities { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; padding: 8px 0; }
+.vn-message-actions select { margin-top: 6px; }
+.vn-conversation { display: flex; flex-direction: column; min-height: 0; min-width: 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface); }
+.vn-section-heading { padding: 15px 18px; border-bottom: 1px solid var(--border); }
+.vn-section-heading h3 { margin: 0; font-weight: 600; font-size: 14px; }
+.vn-section-heading p { margin: 4px 0 0; font-size: 11px; color: var(--muted); line-height: 1.5; }
+.vn-feed { flex: 1; min-height: 200px; overflow-y: auto; padding: 18px; scroll-behavior: smooth; }
+.vn-empty { max-width: 390px; margin: auto; padding: 20px 8px; color: var(--muted); }
+.vn-empty-symbol { display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-alt); color: var(--text); font-size: 20px; }
+.vn-empty h4 { font-size: 17px; margin: 0 0 7px; color: var(--text); font-weight: 600; }
+.vn-empty p { margin: 0; font-size: 12px; line-height: 1.65; }
+.vn-journey { padding: 0; margin: 24px 0 0; list-style: none; display: grid; gap: 16px; }
+.vn-journey li { display: flex; align-items: start; gap: 12px; }
+.vn-journey li > span { display: grid; place-items: center; width: 24px; height: 24px; flex-shrink: 0; border: 1px solid var(--border); border-radius: 50%; font-size: 11px; }
+.vn-journey strong { color: var(--text); font-size: 12px; font-weight: 550; }
+.vn-journey small { display: block; margin-top: 3px; line-height: 1.5; }
+.vn-companion-panel { align-self: start; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.vn-abilities { list-style: none; margin: 0; padding: 4px 16px; }
+.vn-abilities li { display: flex; gap: 8px; padding: 12px 0; align-items: start; border-bottom: 1px solid var(--border); }
+.vn-abilities li:last-child { border: 0; }
+.vn-abilities li > div { flex: 1; }
+.vn-abilities small { display: block; margin-top: 4px; }
+.vn-abilities .excluded { color: var(--muted); }
+.vn-sidebar-note { margin: 0; padding: 12px 16px; border-top: 1px solid var(--border); color: var(--muted); background: var(--surface-alt); font-size: 11px; line-height: 1.6; }
+.vn-story-item { margin: 0 0 14px; padding: 12px 14px; border-radius: 9px; background: var(--surface-alt); border: 1px solid var(--border); }
+.vn-story-item header { display: flex; justify-content: space-between; gap: 12px; font-size: 10px; color: var(--muted); }
+.vn-story-item header > span { font-weight: 650; }
+.vn-story-item p { margin: 6px 0 0; font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.vn-story-item.companion-line { background: var(--surface); border-left: 3px solid var(--accent); }
+.vn-story-item.player-line { margin-left: 32px; background: var(--selection-bg); }
+.vn-composer { border-top: 1px solid var(--border); padding: 12px; }
+.vn-composer-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 9px; }
+.vn-composer-tools select { width: auto; }
+.vn-composer-tools button, .vn-composer-tools select { min-height: 30px; padding: 4px 8px; font-size: 11px; }
+.vn-composer-tools > span { font-size: 10px; color: var(--muted); }
+.vn-compose-row { display: flex; gap: 8px; align-items: stretch; }
+.vn-compose-row textarea { flex: 1; resize: vertical; min-height: 62px; }
+.vn-help { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 0; }
+.vn-composer .vn-help { margin-top: 8px; }
+.vn-visual-attachment { display: flex; align-items: center; gap: 10px; padding: 8px; margin-bottom: 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); font-size: 11px; }
+.vn-visual-attachment img { width: 100px; max-height: 65px; object-fit: contain; border-radius: 5px; background: #000; }
+.vn-visual-attachment button { margin-left: auto; }
+.vn-diagnostics { font-size: 11px; color: var(--muted); }
+.vn-diagnostics summary { cursor: pointer; padding: 4px 0; }
+.vn-diagnostic-body { margin-top: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; }
+.vn-diagnostic-status { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.vn-raw-events pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.vn-raw-events > div { margin: 12px 0; }
+.vn-page-error { padding: 10px 14px; border: 1px solid var(--danger); border-radius: 8px; }
+.vn-profile-dialog { margin: auto; width: min(880px, calc(100vw - 32px)); max-height: 92vh; padding: 0; border: 1px solid var(--border); border-radius: 16px; color: var(--text); background: var(--surface); box-shadow: 0 20px 80px #0003; }
+.vn-profile-dialog::backdrop { background: #10182870; backdrop-filter: blur(3px); }
+.vn-profile-dialog form { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: min(800px, 92vh); }
+.vn-editor-heading { padding: 20px 24px; border-bottom: 1px solid var(--border); }
+.vn-profile-dialog .vn-icon-button { border: 0; font-size: 23px; }
+.vn-editor-fields { display: contents; font-size: 13px; }
+.vn-editor-layout { display: grid; grid-template-columns: 158px minmax(0, 1fr); min-height: 0; background: var(--bg); }
+.vn-editor-nav { display: flex; flex-direction: column; gap: 4px; padding: 18px 10px; border-right: 1px solid var(--divider); }
+.vn-profile-dialog .vn-editor-nav button { display: flex; align-items: center; gap: 8px; text-align: left; min-height: 34px; padding: 7px 10px; border: 0; background: transparent; color: var(--muted); font-size: 11.5px; }
+.vn-profile-dialog .vn-editor-nav button[aria-selected=true] { background: var(--selected-fill); color: var(--text); font-weight: 650; }
+.vn-editor-body { overflow-y: auto; min-height: 0; padding: 20px; }
+.vn-editor-panel[hidden] { display: none; }
+.vn-editor-panel .settings-group-body { gap: 10px; }
+.vn-editor-panel .settings-field-label { font-size: 12px; }
+.vn-editor-panel .vn-field > input, .vn-editor-panel .vn-field select { background: var(--surface-alt); }
+.vn-editor-panel .vn-editor-details { padding: 12px; border: 1px solid var(--card-border); border-radius: 11px; background: var(--surface); }
+.vn-preference-row { display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 12px; border: 1px solid var(--card-border); border-radius: 11px; background: var(--surface); cursor: pointer; }
+.vn-field { display: grid; gap: 6px; min-width: 0; }
+.vn-field small { font-size: 11px; line-height: 1.5; color: var(--muted); }
+.vn-file-field { display: flex; gap: 8px; }
+.vn-file-field > button { flex-shrink: 0; }
+.vn-type-picker { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.vn-type-picker legend { margin-bottom: 7px; }
+.vn-type-picker label { background: var(--surface); display: flex; align-items: start; gap: 9px; padding: 12px; border: 1px solid var(--border); border-radius: 9px; cursor: pointer; }
+.vn-type-picker label.selected { border-color: var(--accent); background: var(--selected-fill); }
+.vn-type-picker input { margin-top: 3px; accent-color: var(--accent); }
+.vn-type-picker strong { font-size: 13px; font-weight: 600; }
+.vn-type-picker small { display: block; color: var(--muted); font-size: 11px; line-height: 1.5; margin-top: 4px; }
+.vn-type-abilities p { color: var(--muted); font-size: 11px; margin: 0 0 8px; }
+.vn-ability-tags { display: flex; flex-wrap: wrap; gap: 5px; padding: 0; margin: 0; list-style: none; }
+.vn-ability-tags li { display: flex; gap: 6px; align-items: center; padding: 4px 8px; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 5px; }
+.vn-ability-tags strong { font-size: 11px; font-weight: 450; }
+.vn-editor-details { border-top: 1px solid var(--border); padding-top: 12px; }
+.vn-editor-details summary { cursor: pointer; font-size: 12px; }
+.vn-editor-details summary > span { color: var(--muted); margin-left: 8px; font-size: 11px; }
+.vn-editor-details > .vn-field, .vn-preferences { margin-top: 14px; }
+.vn-preferences { display: grid; gap: 12px; }
+.vn-preferences input[type=checkbox] { accent-color: var(--accent); margin-right: 6px; }
+.vn-editor-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 16px 24px; border-top: 1px solid var(--border); background: var(--surface); }
+.vn-editor-actions p { margin: 0 auto 0 0; max-width: 180px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.vn-error { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+@media (max-width: 920px) {
+  .vn-input-options { grid-template-columns: 1fr; }
+  .vn-session-inputs > header { flex-wrap: wrap; gap: 4px; }
+  .vn-player { padding: 20px 16px; }
+  .vn-workspace { grid-template-columns: minmax(0, 1fr); flex: none; }
+  .vn-feed { max-height: 480px; }
+  .vn-abilities { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+  .vn-game-bar { align-items: start; flex-direction: column; }
+  .vn-game-actions { width: 100%; }
+  .vn-game-actions .vn-primary { margin-left: auto; }
+}
+@media (max-width: 520px) {
+  .vn-type-picker { grid-template-columns: 1fr; }
+  .vn-editor-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .vn-editor-nav { flex-direction: row; padding: 8px; border-right: 0; border-bottom: 1px solid var(--divider); gap: 2px; }
+  .vn-profile-dialog .vn-editor-nav button { flex: 1; padding: 8px 5px; justify-content: center; }
+  .vn-editor-body, .vn-editor-heading, .vn-editor-actions { padding: 16px; }
+  .vn-editor-actions p { display: none; }
+  .vn-game-select { grid-template-columns: 1fr; width: 100%; }
+  .vn-abilities { grid-template-columns: 1fr; }
+  .vn-section-heading { flex-wrap: wrap; }
+  .vn-page-heading { align-items: start; }
+}
+
 /* ── Desktop light palette ── */
 :root {
   --bg: #F6F7F9;

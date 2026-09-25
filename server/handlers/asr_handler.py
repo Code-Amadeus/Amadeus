@@ -113,9 +113,12 @@ class AsrHandler(RequestHandler):
     async def _start(self, params: dict[str, Any]) -> dict[str, Any]:
         return await self.start_listening(params)
 
-    def listening_state(self) -> dict[str, Any]:
-        return {"active": self._active, "source": self._source,
-                "continuous": self._active and self._continuous_awake}
+    def listening_state(self, *, include_context: bool = False) -> dict[str, Any]:
+        state = {"active": self._active, "source": self._source,
+                 "continuous": self._active and self._continuous_awake}
+        if include_context:
+            state["source_payload"] = dict(self._source_payload)
+        return state
 
     async def start_listening(self, params: dict[str, Any] | None = None) -> dict[str, Any]:
         params = params or {}
@@ -167,6 +170,12 @@ class AsrHandler(RequestHandler):
         expected_source = str((params or {}).get("source") or "")
         if expected_source and expected_source != self._source:
             return {"status": "ignored", "source": self._source, "expected_source": expected_source}
+        expected_session = str((params or {}).get("session_id") or "")
+        if expected_session and expected_session != self._source_payload.get("session_id"):
+            return {"status": "ignored", "reason": "changed_asr_session"}
+        expected_input = str((params or {}).get("input_id") or "")
+        if expected_input and expected_input != self._source_payload.get("input_id"):
+            return {"status": "ignored", "reason": "changed_asr_input"}
         return await self.stop_listening()
 
     async def stop_listening(self) -> dict[str, Any]:

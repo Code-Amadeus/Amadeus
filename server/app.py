@@ -1449,25 +1449,7 @@ async def bootstrap(port: int = 17777) -> None:
         if not isinstance(source_payload, dict):
             source_payload = {}
         kind = str(source_payload.get("kind") or "ask").strip().lower()
-        params = {
-            "text": text,
-            "source": "asr",
-            "metadata": {
-                "source": "vn_player_asr",
-                "asr": {
-                    "is_final": bool(payload.get("is_final", True)),
-                    "source_payload": source_payload,
-                },
-            },
-        }
-        if kind == "note":
-            result = await vn_h.handle(Method.VN_PLAYER_NOTE, params)
-        elif kind == "pin":
-            result = await vn_h.handle(Method.VN_PLAYER_PIN, params)
-        elif kind == "choice":
-            result = await vn_h.handle(Method.VN_CHOICE_ASK, params)
-        else:
-            result = await vn_h.handle(Method.VN_PLAYER_ASK, params)
+        result = await vn_h.handle_asr(payload)
         try:
             await bus.emit(
                 Method.ASR_STATUS,
@@ -1609,6 +1591,7 @@ async def bootstrap(port: int = 17777) -> None:
             logger.exception("failed to pause wake service after awake ASR became ready")
 
     async def _handle_asr_listening_stopped(payload: dict) -> None:
+        await vn_h.asr_stopped(payload)
         try:
             from server.speculative_turn import get_speculative_launcher
 
@@ -2618,7 +2601,11 @@ async def bootstrap(port: int = 17777) -> None:
     # both operations run only after the Observer has subscribed.
     await work_ledger.recover_pending_terminal_results()
     await work_ledger.replay_pending_terminal_notices()
-    vn_h.configure(project_root=Path(ROOT), event_emit=bus.emit, speak_callback=_deliver_vn_narration)
+    vn_h.configure(
+        project_root=Path(ROOT), event_emit=bus.emit, speak_callback=_deliver_vn_narration,
+        asr_control=asr_h.handle, asr_state=lambda: asr_h.listening_state(include_context=True),
+        capture_game_view=lambda: vn_launch_h.handle(Method.VN_LAUNCH_CAPTURE, {}),
+    )
     vn_launch_h.configure(
         project_root=Path(ROOT),
         runtime_start=lambda params: vn_h.handle(Method.VN_START, params),
@@ -2626,6 +2613,7 @@ async def bootstrap(port: int = 17777) -> None:
         runtime_status=lambda: vn_h.handle(Method.VN_STATUS, {}),
         runtime_line=lambda params: vn_h.handle(Method.VN_LINE, params),
         before_external_launch=_prepare_for_external_vn_launch,
+        runtime_overlay=vn_h.set_overlay_url,
     )
 
     # Start only after dependency configuration, inside the owning teardown scope.

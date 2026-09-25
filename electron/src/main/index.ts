@@ -2,7 +2,7 @@
  * Electron main process - spawns Python backend and creates the app window.
  */
 
-import { app, BrowserWindow, Menu, WebContentsView, dialog, ipcMain, screen } from 'electron'
+import { app, BrowserWindow, Menu, WebContentsView, dialog, ipcMain, screen, shell } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import { randomBytes } from 'crypto'
 import http from 'http'
@@ -2255,6 +2255,30 @@ ipcMain.handle('project-directory.select', async (event) => {
     path: selectedPath,
     detail: result.canceled ? '' : selectedPath ? '' : 'No Project directory was selected.',
   }
+})
+ipcMain.handle('vn-help.open', async (event, page: unknown) => {
+  if (!isTrustedAmadeusRenderer(event.sender)) throw new Error('Untrusted VN help requester.')
+  const url = page === 'agent' ? 'https://github.com/0xDC00/agent/releases' : page === 'scripts' ? 'https://github.com/0xDC00/scripts' : ''
+  if (!url) throw new Error('Unknown VN help page.')
+  await shell.openExternal(url)
+})
+ipcMain.handle('vn-file.select', async (event, kind: unknown, startPath: unknown) => {
+  if (!isTrustedAmadeusRenderer(event.sender)) {
+    return { ok: false, cancelled: false, path: '', detail: 'Untrusted VN file requester.' }
+  }
+  if (kind !== 'game' && kind !== 'agent' && kind !== 'hook' && kind !== 'script') {
+    return { ok: false, cancelled: false, path: '', detail: 'Unknown VN file type.' }
+  }
+  const options: Electron.OpenDialogOptions = {
+    title: 'VN Player', properties: ['openFile'],
+    defaultPath: typeof startPath === 'string' && path.isAbsolute(startPath) ? startPath : undefined,
+    filters: kind === 'hook' ? [{ name: 'Agent hook script', extensions: ['js'] }]
+      : kind === 'script' ? [{ name: 'Game script', extensions: ['txt', 'json'] }]
+      : [{ name: 'Executable', extensions: ['exe'] }],
+  }
+  const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
+  const selectedPath = result.filePaths[0] || ''
+  return { ok: !result.canceled && Boolean(selectedPath), cancelled: result.canceled, path: selectedPath, detail: '' }
 })
 ipcMain.handle('work-preview.open', (event, rawDescriptor: unknown) => {
   if (!isTrustedAmadeusRenderer(event.sender)) return { ok: false, detail: 'Untrusted preview opener.' }
