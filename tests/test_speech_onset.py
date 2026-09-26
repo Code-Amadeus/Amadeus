@@ -59,10 +59,9 @@ def test_audio_voiced_from_the_start_is_not_trimmed() -> None:
     assert speech_start(audio, RATE) == 0
 
 
-@pytest.mark.parametrize("chunk_seconds", [0.1, 0.35, 0.8, 2.0])
-def test_gate_matches_whole_item_trimming_for_any_chunking(chunk_seconds: float) -> None:
+@pytest.mark.parametrize("size", [2400, 8400, 19200, 48000, 256, 2048, 8448])
+def test_gate_matches_whole_item_trimming_for_any_chunking(size: int) -> None:
     audio, _onset = _generated_item()
-    size = int(RATE * chunk_seconds)
     gate = SpeechOnsetGate(RATE)
 
     emitted = [gate.push(audio[i : i + size]) for i in range(0, audio.size, size)]
@@ -82,4 +81,44 @@ def test_gate_releases_a_silent_item_unchanged() -> None:
 
     assert [gate.push(silent[i : i + 4800]) for i in range(0, silent.size, 4800)] == [None] * 5
     np.testing.assert_array_equal(gate.flush(), silent)
+    assert gate.flush() is None
+
+
+@pytest.mark.parametrize("has_speech", [False, True])
+def test_gate_waits_for_complete_frame_before_classifying_a_transient(has_speech: bool) -> None:
+    # The v3 producer rounds a 0.35 s chunk to 33 mel frames of 256 samples.
+    # Its last 48 samples exceed the threshold alone, but the complete 10 ms
+    # frame is below it. Opening here would leave 450 ms of extra silence.
+    size = 33 * 256
+    audio = np.zeros(RATE, dtype=np.float32)
+    audio[8400:size] = 0.006
+    if has_speech:
+        audio[19200:] = 0.1
+    gate = SpeechOnsetGate(RATE)
+
+    assert gate.push(audio[:size]) is None
+    emitted = [gate.push(audio[i:i + size]) for i in range(size, audio.size, size)]
+    tail = gate.flush()
+    streamed = np.concatenate([piece for piece in [*emitted, tail] if piece is not None])
+
+    expected_start = 18000 if has_speech else 0
+    assert speech_start(audio, RATE) == expected_start
+    np.testing.assert_array_equal(streamed, audio[expected_start:])
+
+
+@pytest.mark.parametrize("size", [113, 2048, 8448, 24000])
+@pytest.mark.parametrize("lead_samples", [0, 19200])
+def test_gate_classifies_final_partial_frame_at_end_of_item(size: int, lead_samples: int) -> None:
+    audio = np.zeros(lead_samples + 48, dtype=np.float32)
+    audio[lead_samples:] = 0.1
+    gate = SpeechOnsetGate(RATE)
+
+    # Only the final, incomplete frame is voiced. It cannot be classified
+    # until EOF proves that no further samples belong to this frame.
+    for i in range(0, audio.size, size):
+        assert gate.push(audio[i:i + size]) is None
+
+    expected_start = max(0, lead_samples - PREROLL)
+    assert speech_start(audio, RATE) == expected_start
+    np.testing.assert_array_equal(gate.flush(), audio[expected_start:])
     assert gate.flush() is None

@@ -63,7 +63,11 @@ class SpeechOnsetGate:
             return chunk
         self._held.append(np.asarray(chunk, dtype=np.float32).reshape(-1))
         pending = np.concatenate(self._held)
-        onset = first_voiced_sample(pending, self._sample_rate)
+        # A producer chunk can end inside a 10 ms frame. Its RMS is not final
+        # until the rest arrives; only EOF makes a partial frame authoritative.
+        frame = max(1, int(round(self._sample_rate * _FRAME_SECONDS)))
+        complete_samples = pending.size // frame * frame
+        onset = first_voiced_sample(pending[:complete_samples], self._sample_rate)
         if onset is None:
             return None
         self._open = True
@@ -71,10 +75,10 @@ class SpeechOnsetGate:
         return pending[_preroll_start(onset, self._sample_rate):]
 
     def flush(self) -> np.ndarray | None:
-        """Release an item that never became voiced, unchanged."""
+        """Finish onset detection, including the item's final partial frame."""
 
         if self._open or not self._held:
             return None
         pending = np.concatenate(self._held)
         self._held = []
-        return pending
+        return pending[speech_start(pending, self._sample_rate):]

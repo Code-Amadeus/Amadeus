@@ -58,7 +58,8 @@ rollback, use a separate checkout of `v0.15.1-alpha.0`.
 ## Validation scope
 
 - Tests cover the voiced-frame boundary, chunked-stream equivalence with
-  whole-unit trimming, the adapter trim on arrays and tensors, the first-sound
+  whole-unit trimming (including unaligned chunks, weak transients and a voiced
+  final partial frame), the adapter trim on arrays and tensors, the first-sound
   marker on both the streaming and complete-audio playback paths, and rejection
   of the previous cache revision.
 - Real-model check on an RTX 4070 Ti SUPER (CUDA): the table above; the

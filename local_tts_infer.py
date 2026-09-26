@@ -2024,10 +2024,10 @@ class TTSInferencer:
                             else:
                                 cfm_resss.append(cfm_res)
 
-                        # A streamed item that never became voiced is released unchanged.
-                        silent_item = onset_gate.flush()
-                        if silent_item is not None:
-                            yield sr, silent_item, text_item if text_pending else ""
+                        # Finish the last partial onset frame; a never-voiced item stays whole.
+                        final_item = onset_gate.flush()
+                        if final_item is not None:
+                            yield sr, final_item, text_item if text_pending else ""
 
                         if not stream_v3_chunks:
                             # synthesis failed
