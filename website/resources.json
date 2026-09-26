@@ -1,0 +1,98 @@
+[
+  {
+    "id": "asr-qwen3-0.6b",
+    "category": "voice",
+    "visual": "asr",
+    "label": "QWEN3 / ASR",
+    "title": { "zh": "语音识别模型", "en": "Speech recognition" },
+    "description": {
+      "zh": "让 Amadeus 听见你。Qwen3-ASR 0.6B 本地识别模型，将语音输入转为文字。",
+      "en": "Let Amadeus hear you. The local Qwen3-ASR 0.6B model turns spoken input into text."
+    },
+    "detail": {
+      "zh": "本地识别 · 需匹配本地模型依赖",
+      "en": "Local ASR · Requires local model dependencies"
+    },
+    "mirrors": { "baidu": null, "quark": null, "mega": null, "google": null }
+  },
+  {
+    "id": "voice-kurisu-gpt-sovits-v3",
+    "category": "voice",
+    "visual": "voice",
+    "label": "GPT-SOVITS / V3",
+    "title": { "zh": "Kurisu 语音包", "en": "Kurisu voice pack" },
+    "description": {
+      "zh": "让文字成为声音。包含 GPT-SoVITS v3 运行权重与参考音频，用于本地语音合成。",
+      "en": "Give words a voice. GPT-SoVITS v3 runtime weights and reference audio for local speech synthesis."
+    },
+    "detail": {
+      "zh": "默认本地语音配置 · GPT-SoVITS v3",
+      "en": "Default local voice profile · GPT-SoVITS v3"
+    },
+    "mirrors": { "baidu": null, "quark": null, "mega": null, "google": null }
+  },
+  {
+    "id": "character-kurisu",
+    "category": "art",
+    "visual": "character",
+    "label": "SPRITEFORGE / CHARACTER",
+    "title": { "zh": "Kurisu 角色动画", "en": "Kurisu character" },
+    "description": {
+      "zh": "为桌面带来角色表现。SpriteForge 运行时角色包，包含 KTX2 动画与行为、口型配置。",
+      "en": "Bring character presence to your desktop. A SpriteForge runtime pack with KTX2 animation, behavior and mouth configuration."
+    },
+    "detail": {
+      "zh": "可选角色资源 · 不含创作工程",
+      "en": "Optional character pack · Runtime assets only"
+    },
+    "mirrors": { "baidu": null, "quark": null, "mega": null, "google": null }
+  },
+  {
+    "id": "visual-runtime",
+    "category": "art",
+    "visual": "scene",
+    "label": "VISUAL / SCENES",
+    "title": { "zh": "场景与氛围资源", "en": "Scenes & atmosphere" },
+    "description": {
+      "zh": "让桌面多一点氛围。提供壁纸效果、活动场景、字幕视觉与键盘音效等运行素材。",
+      "en": "Set the atmosphere with wallpaper effects, activity scenes, subtitle visuals and keyboard sound effects."
+    },
+    "detail": {
+      "zh": "可选美术资源 · 独立于角色包安装",
+      "en": "Optional visual resources · Installed separately"
+    },
+    "mirrors": { "baidu": null, "quark": null, "mega": null, "google": null }
+  },
+  {
+    "id": "companion-kurisu",
+    "category": "art",
+    "visual": "portrait",
+    "label": "COMPANION / LITE",
+    "title": { "zh": "Companion 轻量头像", "en": "Companion portraits" },
+    "description": {
+      "zh": "轻量，也有陪伴感。用于 Companion 的小型 WebP 头像资源，可独立于完整角色包使用。",
+      "en": "A lighter kind of presence. Small WebP portraits for Companion, usable without the full character pack."
+    },
+    "detail": {
+      "zh": "轻量美术资源 · 无需完整壁纸角色包",
+      "en": "Lightweight portraits · No full character pack needed"
+    },
+    "mirrors": { "baidu": null, "quark": null, "mega": null, "google": null }
+  },
+  {
+    "id": "voice-kurisu-gpt-sovits-v2pro-experimental",
+    "category": "voice",
+    "visual": "experimental",
+    "label": "GPT-SOVITS / V2PRO",
+    "title": { "zh": "v2Pro 实验语音附加包", "en": "v2Pro voice add-on" },
+    "description": {
+      "zh": "探索另一种语音表现。提供 v2Pro 语音与说话人编码器权重，复用 v3 包的共享资源。",
+      "en": "Explore an alternative voice profile. v2Pro voice and speaker-encoder weights reuse the v3 pack’s shared resources."
+    },
+    "detail": {
+      "zh": "实验性 · 需先安装 v3 语音包",
+      "en": "Experimental · Install the v3 voice pack first"
+    },
+    "mirrors": { "baidu": null, "quark": null, "mega": null, "google": null }
+  }
+]

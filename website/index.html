@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#101b17" />
+    <meta
+      name="description"
+      content="Code Amadeus：实时多模态桌面智能体。探索项目、从源码开始，获取语音、角色与场景资源。"
+    />
+    <meta property="og:title" content="Code Amadeus — 不止陪伴，更能并肩。" />
+    <meta
+      property="og:description"
+      content="实时对话、角色呈现与任务协作。Amadeus 项目与资源中心。"
+    />
+    <meta property="og:type" content="website" />
+    <title>Code Amadeus — 项目与资源中心</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script id="resource-data" type="application/json">
+      __RESOURCE_DATA__
+    </script>
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main" data-i18n="skip">跳到主要内容</a>
+    <header class="site-header">
+      <div class="shell nav-inner">
+        <a class="brand" href="#" aria-label="Code Amadeus"
+          ><span class="brand-mark" aria-hidden="true">A<span>·</span></span
+          ><span>CODE <strong>AMADEUS</strong></span></a
+        >
+        <nav aria-label="主导航" data-i18n-aria="navigation">
+          <a href="#experience" data-i18n="navExperience">认识 Amadeus</a>
+          <a href="#resources" data-i18n="navResources">资源中心</a>
+          <a href="#start" data-i18n="navStart">开始使用</a>
+        </nav>
+        <div class="nav-tools">
+          <button
+            id="language-toggle"
+            class="language-toggle"
+            type="button"
+            aria-label="Switch to English"
+          >
+            EN <span aria-hidden="true">↗</span></button
+          ><a class="github-link" href="https://github.com/Code-Amadeus/Amadeus"
+            >GitHub <span aria-hidden="true">↗</span></a
+          >
+        </div>
+      </div>
+    </header>
+    <main id="main">
+      <section class="hero shell" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <div class="eyebrow">
+            <span class="status-dot"></span> REAL-TIME MULTIMODAL AGENT
+          </div>
+          <h1 id="hero-title">
+            <span data-i18n="heroFirst">不止陪伴，</span><br /><span
+              class="accent"
+              data-i18n="heroSecond"
+              >更能并肩。</span
+            >
+          </h1>
+          <p class="hero-description" data-i18n="heroDescription">
+            在你的桌面，对话、陪伴，也一起完成工作。让实时语音、角色表现与智能体协作，发生在同一个空间。
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="#resources"
+              ><span data-i18n="exploreResources">探索资源</span
+              ><span aria-hidden="true">↗</span></a
+            ><a
+              class="button secondary"
+              href="https://www.bilibili.com/video/BV1783G6hEYY/"
+              ><span class="play" aria-hidden="true">▷</span
+              ><span data-i18n="watchDemo">观看演示</span></a
+            >
+          </div>
+          <div class="hero-note">
+            <span class="mono">SOURCE ALPHA / __AMADEUS_VERSION__</span
+            ><span data-i18n="sourceAvailable">源码开放 · 持续构建中</span>
+          </div>
+        </div>
+        <figure class="hero-art">
+          <div class="art-coordinate mono" aria-hidden="true">
+            PRESENCE SIGNAL / 001
+          </div>
+          <img
+            src="./assets/character.png"
+            width="1511"
+            height="1041"
+            fetchpriority="high"
+            alt="以薄荷绿点阵呈现的 Amadeus 角色品牌插画"
+            data-i18n-alt="heroAlt"
+          />
+          <figcaption>
+            <span class="signal-bars" aria-hidden="true"
+              ><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span
+            ><span class="mono">VOICE · PRESENCE · ACTION</span
+            ><span class="art-label" data-i18n="brandArtwork">品牌视觉</span>
+          </figcaption>
+        </figure>
+      </section>
+      <div
+        class="principles shell"
+        aria-label="核心体验"
+        data-i18n-aria="coreExperience"
+      >
+        <span><b>01</b> TALK <em data-i18n="principleTalk">自然交流</em></span
+        ><span
+          ><b>02</b> EMBODY <em data-i18n="principleEmbody">角色在场</em></span
+        ><span><b>03</b> ACT <em data-i18n="principleAct">委派工作</em></span
+        ><span
+          ><b>04</b> CONTROL
+          <em data-i18n="principleControl">始终可控</em></span
+        >
+      </div>
+
+      <section
+        id="experience"
+        class="experience shell section-space"
+        aria-labelledby="experience-title"
+      >
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">01 / THE EXPERIENCE</p>
+            <h2 id="experience-title" data-i18n="experienceTitle">
+              不止于对话。
+            </h2>
+          </div>
+          <p data-i18n="experienceIntro">
+            从一句话，到一起完成一件事。<br />看得见过程，也随时握有控制权。
+          </p>
+        </div>
+        <div class="experience-grid">
+          <a
+            class="demo-frame"
+            href="https://www.bilibili.com/video/BV1783G6hEYY/"
+            aria-label="在 Bilibili 观看 Amadeus 演示"
+            data-i18n-aria="demoAria"
+          >
+            <div class="frame-bar">
+              <span><i></i><i></i><i></i></span
+              ><span class="mono">AMADEUS / WORKSPACE</span
+              ><span aria-hidden="true">↗</span>
+            </div>
+            <img
+              src="./assets/workspace.jpg"
+              alt="Amadeus 工作区中的角色、任务进度与执行结果"
+              data-i18n-alt="workspaceAlt"
+              width="1600"
+              height="900"
+              loading="lazy"
+            />
+            <div class="demo-caption">
+              <span
+                ><span class="play" aria-hidden="true">▷</span>
+                <span data-i18n="fullDemo">观看完整演示</span></span
+              ><span class="mono">10 MIN / BILIBILI ↗</span>
+            </div>
+          </a>
+          <div class="feature-list">
+            <article>
+              <span class="feature-number">01</span>
+              <div>
+                <h3 data-i18n="featureVoice">像聊天一样自然</h3>
+                <p data-i18n="featureVoiceBody">
+                  语音与文字自然切换。支持打断，字幕、口型与表情跟随实际语音播放。
+                </p>
+              </div>
+            </article>
+            <article>
+              <span class="feature-number">02</span>
+              <div>
+                <h3 data-i18n="featureWork">随时了解任务进展</h3>
+                <p data-i18n="featureWorkBody">
+                  把任务交给专业的执行智能体，在同一个工作区查看进度、产物和结果。
+                </p>
+              </div>
+            </article>
+            <article>
+              <span class="feature-number">03</span>
+              <div>
+                <h3 data-i18n="featureControl">由你掌控每一步</h3>
+                <p data-i18n="featureControlBody">
+                  权限请求清楚可见。继续、重试或接管，让协作保持在你的掌控之中。
+                </p>
+              </div>
+            </article>
+          </div>
+        </div>
+        <p class="section-footnote" data-i18n="demoNote">
+          画面来自项目原型演示；当前界面持续迭代，具体功能与配置以文档为准。
+        </p>
+      </section>
+
+      <section
+        id="resources"
+        class="resource-section section-space"
+        aria-labelledby="resources-title"
+      >
+        <div class="shell">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">02 / RESOURCE LIBRARY</p>
+              <h2 id="resources-title" data-i18n="resourcesTitle">
+                为你的 Amadeus，<br />添一份声音与色彩。
+              </h2>
+            </div>
+            <p data-i18n="resourcesIntro">
+              按需选择语音、角色与场景资源。<br />从轻量文字体验开始，逐步丰富你的桌面。
+            </p>
+          </div>
+          <div class="library-notice">
+            <span class="notice-icon" aria-hidden="true">i</span>
+            <p data-i18n="resourcesNotice">
+              资源入口准备中。网盘链接将陆续补充；此处提供独立资源包，不包含桌面安装程序。
+            </p>
+            <a
+              href="https://github.com/Code-Amadeus/Amadeus/blob/main/docs/external_asset_bundles.md"
+              ><span data-i18n="installGuide">安装说明</span> ↗</a
+            >
+          </div>
+          <div class="library-toolbar">
+            <div
+              class="filters"
+              role="group"
+              aria-label="按资源类型筛选"
+              data-i18n-aria="filterAria"
+            >
+              <button
+                type="button"
+                data-filter="all"
+                aria-pressed="true"
+                data-i18n="filterAll"
+              >
+                全部资源</button
+              ><button
+                type="button"
+                data-filter="voice"
+                aria-pressed="false"
+                data-i18n="filterVoice"
+              >
+                语音与模型</button
+              ><button
+                type="button"
+                data-filter="art"
+                aria-pressed="false"
+                data-i18n="filterArt"
+              >
+                角色与美术
+              </button>
+            </div>
+            <span
+              id="resource-count"
+              class="mono"
+              role="status"
+              aria-live="polite"
+            ></span>
+          </div>
+          <div
+            id="resource-grid"
+            class="resource-grid"
+            aria-label="资源列表"
+            data-i18n-aria="resourceList"
+          ></div>
+          <noscript
+            ><p>
+              请启用 JavaScript
+              查看资源分类与网盘入口。所有链接尚待补充，现可阅读<a
+                href="https://github.com/Code-Amadeus/Amadeus/blob/main/docs/external_asset_bundles.md"
+                >资源安装说明</a
+              >。
+            </p></noscript
+          >
+          <p class="resource-footnote" data-i18n="resourceNote">
+            所有资源均为可选项。没有角色包，也可以使用文字 Chat 与
+            Work；本地语音还需要相应依赖与硬件配置。
+          </p>
+          <aside
+            class="rights-notice"
+            id="rights-notice"
+            aria-labelledby="rights-title"
+          >
+            <h3 id="rights-title" data-i18n="rightsTitle">
+              Kurisu 角色与语音使用声明
+            </h3>
+            <p data-i18n="rightsOwnership">
+              牧濑红莉栖（Kurisu）出自《STEINS;GATE》。原作版权署名为
+              ©MAGES./NITRO
+              PLUS；角色设定、形象及相关美术素材的权利归各自原权利人所有。原作语音、录音及表演相关权利归相应权利人所有。
+            </p>
+            <p data-i18n="rightsUsage">
+              本项目涉及的 Kurisu
+              角色与语音内容仅供非商业的技术学习、研究与演示参考。禁止第三方将相关角色素材、语音资源及其衍生内容用于售卖、付费分发、商业推广或其他营利性传播。
+            </p>
+            <p data-i18n="rightsScope">
+              本项目为非官方项目，不代表原作权利方或配音演员，亦不表示获得其授权或背书。本声明不构成素材授权，学习或非商业用途也不等于已获授权；使用与再分发须遵守原权利人的许可及适用法律。上述素材不属于
+              Amadeus 代码开源许可证的授权范围。
+            </p>
+            <a
+              href="https://steinsgate.jp/reboot/ja-jp/"
+              data-i18n="rightsSource"
+              >原作官方版权署名 ↗</a
+            >
+          </aside>
+        </div>
+      </section>
+
+      <section
+        id="start"
+        class="getting-started shell section-space"
+        aria-labelledby="start-title"
+      >
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">03 / GET STARTED</p>
+            <h2 id="start-title" data-i18n="startTitle">从这里，建立连接。</h2>
+          </div>
+          <p data-i18n="startIntro">
+            当前提供 Source Alpha 源码体验。<br />先运行基础功能，再添加你需要的能力。
+          </p>
+        </div>
+        <div class="steps">
+          <article>
+            <span class="step-number">01 /</span>
+            <h3 data-i18n="stepOne">运行基础项目</h3>
+            <p data-i18n="stepOneBody">
+              根据系统完成源码安装。先从 L1 文字聊天与 Work
+              开始，再按需配置模型和执行 Provider。
+            </p>
+            <a
+              href="https://github.com/Code-Amadeus/Amadeus/blob/main/README_ZH.md#快速开始"
+              data-doc="quickstart"
+              ><span data-i18n="quickstart">快速开始</span> ↗</a
+            >
+          </article>
+          <article>
+            <span class="step-number">02 /</span>
+            <h3 data-i18n="stepTwo">选择体验与资源</h3>
+            <p data-i18n="stepTwoBody">
+              需要语音时选择对应安装配置。语音包、角色包与场景包各自独立，按需添加。
+            </p>
+            <a
+              href="https://github.com/Code-Amadeus/Amadeus/blob/main/docs/install_profiles.md"
+              ><span data-i18n="profiles">查看安装配置</span> ↗</a
+            >
+          </article>
+          <article>
+            <span class="step-number">03 /</span>
+            <h3 data-i18n="stepThree">安装后，开始对话</h3>
+            <p data-i18n="stepThreeBody">
+              在项目目录校验并安装资源包，再进入 Settings
+              检查模型、语音与角色状态。
+            </p>
+            <a
+              href="https://github.com/Code-Amadeus/Amadeus/blob/main/docs/external_asset_bundles.md"
+              ><span data-i18n="assetGuide">资源安装指南</span> ↗</a
+            >
+          </article>
+        </div>
+        <div class="install-terminal">
+          <div>
+            <span class="eyebrow">RESOURCE INSTALLATION</span>
+            <p data-i18n="terminalDescription">
+              将 asset-bundle.zip 替换为下载的资源包路径，在项目根目录执行。
+            </p>
+          </div>
+          <div class="terminal-code">
+            <div class="terminal-top">
+              <span class="mono" data-i18n="terminalLabel"
+                >已完成基础环境安装后</span
+              ><button id="copy-command" type="button" data-i18n="copy">
+                复制命令
+              </button>
+            </div>
+            <pre><code id="install-command">python tools/external_assets.py verify "asset-bundle.zip"
+python tools/external_assets.py install "asset-bundle.zip"
+python tools/external_assets.py status</code></pre>
+            <span id="copy-status" role="status" aria-live="polite"></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="community shell" aria-labelledby="community-title">
+        <div>
+          <p class="eyebrow">BUILT IN THE OPEN</p>
+          <h2 id="community-title" data-i18n="communityTitle">
+            一起，让它成为可能。
+          </h2>
+          <p data-i18n="communityBody">
+            阅读源码、分享反馈，或开始制作自己的角色资源。
+          </p>
+        </div>
+        <div class="community-links">
+          <a href="https://github.com/Code-Amadeus/Amadeus"
+            ><span data-i18n="sourceCode">探索源码</span> ↗</a
+          ><a href="https://github.com/Code-Amadeus/Amadeus/issues"
+            ><span data-i18n="feedback">问题与反馈</span> ↗</a
+          ><a href="https://github.com/Code-Amadeus/Amadeus-SpriteForge"
+            ><span>SpriteForge</span> ↗</a
+          ><a
+            href="https://github.com/Code-Amadeus/Amadeus/blob/main/docs/character_pack_authoring.md"
+            ><span data-i18n="authoring">角色包制作指南</span> ↗</a
+          >
+        </div>
+      </section>
+    </main>
+    <footer class="site-footer shell">
+      <div>
+        <a class="footer-brand" href="#">CODE AMADEUS<span>·</span></a
+        ><span class="mono">VOICE / PRESENCE / ACTION</span>
+      </div>
+      <p data-i18n="licenseNote">
+        第一方代码采用
+        AGPL-3.0。角色、声音、模型与演示素材遵循各自条款，代码开源许可不包含这些素材的使用或再分发授权。
+      </p>
+      <a
+        href="https://github.com/Code-Amadeus/Amadeus/blob/main/LICENSE"
+        data-i18n="license"
+        >代码许可证 ↗</a
+      >
+    </footer>
+  </body>
+</html>
