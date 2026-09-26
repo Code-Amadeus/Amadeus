@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "amadeus"
-version = "0.15.0a0"
+version = "0.15.1a0"
 description = "Amadeus runtime: voice, chat runtime, provider host, and work ledger."
 requires-python = ">=3.12,<3.13"
 

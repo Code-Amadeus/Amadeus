@@ -9,6 +9,9 @@ on:
       - THIRD_PARTY_NOTICES.md
       - pyproject.toml
       - uv.lock
+      - electron/package.json
+      - electron/package-lock.json
+      - scripts/**
       - tools/build_source_release.py
       - tools/check_third_party_provenance.py
       - tests/test_release_tooling.py
@@ -24,7 +27,7 @@ permissions:
 jobs:
   source-archive:
     runs-on: windows-2025
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v7
@@ -49,6 +52,71 @@ jobs:
         run: |
           $hash = (Get-FileHash -Algorithm SHA256 dist/amadeus-source.zip).Hash.ToLowerInvariant()
           "$hash  amadeus-source.zip" | Set-Content -Encoding ascii dist/SHA256SUMS.txt
+
+      # Repository builds cannot detect files missing from the allowlisted ZIP.
+      # Install and launch the packaged frontend using only extracted sources.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22.21.1"
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Install pinned uv
+        run: python -m pip install uv==0.12.8
+
+      - name: Extract the release archive
+        shell: pwsh
+        run: |
+          Expand-Archive -LiteralPath dist/amadeus-source.zip -DestinationPath build/source-smoke
+          $manifest = Get-Content build/release/source-manifest.json -Raw | ConvertFrom-Json
+          $sourceRoot = Join-Path $PWD "build/source-smoke/amadeus-$($manifest.version)"
+          "SOURCE_ROOT=$sourceRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Install Python from extracted sources
+        working-directory: ${{ env.SOURCE_ROOT }}
+        run: uv sync --locked --extra dev
+
+      - name: Verify extracted Python environment
+        working-directory: ${{ env.SOURCE_ROOT }}
+        run: uv run --locked --no-sync python tools/verify_python_environment.py --profile ci
+
+      - name: Install Electron and Pi from extracted sources
+        working-directory: ${{ env.SOURCE_ROOT }}/electron
+        run: npm ci
+
+      - name: Build extracted Electron sources
+        working-directory: ${{ env.SOURCE_ROOT }}/electron
+        run: npm run build
+
+      - name: Verify previous-release settings upgrade
+        working-directory: ${{ env.SOURCE_ROOT }}/electron
+        run: >-
+          node -e "require('node:child_process').execFileSync(require('electron'),
+          ['scripts/smoke-settings-upgrade.cjs', 'v0.15.0-alpha.0'],
+          {stdio: 'inherit', windowsHide: true, timeout: 45000})"
+
+      - name: Package extracted Windows sources
+        working-directory: ${{ env.SOURCE_ROOT }}/electron
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder --win --x64 --dir --publish never
+
+      - name: Launch packaged application from the source archive
+        working-directory: ${{ env.SOURCE_ROOT }}
+        run: >-
+          uv run --locked --no-sync python -X utf8 tools/smoke_electron_model_less.py
+          --packaged-executable electron/build/win-unpacked/amadeus-desktop.exe
+          --report-dir build/source-release-smoke
+
+      - name: Upload archive smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: source-release-smoke
+          path: build/source-smoke/**/build/source-release-smoke/**
+          if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v6
         with:
