@@ -1003,8 +1003,10 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     } : base
   })
   const primaryVoiceIds = new Set(['conversation_asr', 'speech_synthesis', 'wake_asr', 'acoustic_pipeline'])
+  const remoteVoiceIds = new Set(['asr_remote', 'tts_remote', 'tts_mimo'])
   const primaryVoiceConfiguration = voiceConfiguration.filter(group => primaryVoiceIds.has(group.id))
-  const advancedVoiceConfiguration = voiceConfiguration.filter(group => !primaryVoiceIds.has(group.id))
+  const remoteVoiceConfiguration = voiceConfiguration.filter(group => remoteVoiceIds.has(group.id))
+  const advancedVoiceConfiguration = voiceConfiguration.filter(group => !primaryVoiceIds.has(group.id) && !remoteVoiceIds.has(group.id))
   const visionWindowHandle = String(config.vision_window_handle
     ?? (desktop?.sources?.AMADEUS_VISION_WINDOW_HANDLE === 'user' ? desktop.values.AMADEUS_VISION_WINDOW_HANDLE : ''))
   const visionWindowOptions: ComboOption[] = [
@@ -1102,7 +1104,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
             {([
               ['capabilities', 'Capabilities', 'Tiles'],
               ['general', 'General', 'Setting'],
-              ['graphics', 'Graphics & performance', 'Video'],
+              ['graphics', 'Graphics', 'Video'],
               ['models', 'Models', 'Robot'],
               ['voice', 'Voice', 'Microphone'],
               ['providers', 'Providers', 'Work'],
@@ -1120,7 +1122,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
 
             {section === 'graphics' ? (
               <div className="flex flex-col gap-5">
-                <BoundaryNote title="Graphics & performance">
+                <BoundaryNote title="Graphics">
                   {t('Applies to character rendering and wallpapers, not model inference or voice processing. Restart the backend after saving, then reopen existing character and wallpaper windows.')}
                 </BoundaryNote>
                 {graphicsRuntime ? <BoundaryNote title="Current backend limits">
@@ -1162,9 +1164,6 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                 </SettingsGroup>
                 <SettingsGroup title="Chat appearance" detail="Local presentation only; avatar images are never sent to the model.">
                   <ChatAvatarSettings />
-                </SettingsGroup>
-                <SettingsGroup title="Avatar compatibility" detail="Optional output paths are disabled unless explicitly enabled.">
-                  {avatarConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} />)}
                 </SettingsGroup>
                 <div id="settings-language"><SettingsGroup title="Language & captions" detail="Desktop settings are saved across restarts and applied to the current runtime immediately when possible.">
                   <ComboCard
@@ -1209,6 +1208,9 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                   <ComboCard icon="Photo" title="Vision Image Size" content="Maximum long edge sent to the model" value={val('vision_max_long_side', '960')} onChange={value => handleChange('vision_max_long_side', Number(value))} options={['640', '960', '1280', '1600']} disabled={!bool('vision_enabled')} />
                   <ComboCard icon="Photo" title="Vision JPEG Quality" content="Higher quality increases request payload size" value={val('vision_jpeg_quality', '68')} onChange={value => handleChange('vision_jpeg_quality', Number(value))} options={['50', '68', '80', '90']} disabled={!bool('vision_enabled')} />
                 </SettingsGroup></div>
+                <SettingsGroup title="Avatar compatibility" detail="Optional output paths are disabled unless explicitly enabled.">
+                  {avatarConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} />)}
+                </SettingsGroup>
               </div>
             ) : null}
 
@@ -1316,19 +1318,22 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                 <SettingsGroup title="Voice backends" detail="Startup configuration. Secrets are encrypted by the operating system and never returned to this page.">
                   {primaryVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible optionalWhenInactive />)}
                 </SettingsGroup>
+                <SettingsGroup title="Remote voice services" detail="Configure credentials and endpoints for remote transcription and speech synthesis.">
+                  {remoteVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible defaultOpen={Boolean(group.active)} optionalWhenInactive />)}
+                </SettingsGroup>
                 <SettingsGroup title="Speech language" detail="User-facing language for generated speech.">
                   <ComboCard icon="Language" title="TTS output language" content="Language used for sentence splitting and the matching voice reference." value={val('tts_output_language', 'ja')} onChange={value => handleChange('tts_output_language', value)} options={[{ value: 'ja', label: 'Japanese' }, { value: 'en', label: 'English' }]} />
                 </SettingsGroup>
                 <details className="model-advanced-roles">
                   <summary>
                     <span>{t('Advanced voice settings')}</span>
-                    <small>{t('Engine paths, remote endpoints, and performance')}</small>
+                    <small>{t('Local engine paths and performance')}</small>
                   </summary>
                   <div className="flex flex-col gap-5">
                     <SettingsGroup title="Local speech performance" detail="Performance tuning for the embedded GPT-SoVITS engine.">
                       <ComboCard icon="Tiles" title="Local TTS inference mode" content="Choose standard single synthesis, CUDA Graph, or explicit parallel generation while speech is idle." value={val('tts_mode', 'parallel')} onChange={value => handleChange('tts_mode', value)} options={[{ value: 'parallel', label: 'Standard ×1' }, { value: 'cuda_graph', label: 'CUDA Graph ×1' }, { value: 'parallel2', label: 'Parallel ×2' }]} disabled={val('tts_backend', 'gpt_sovits') !== 'gpt_sovits'} />
                     </SettingsGroup>
-                    <SettingsGroup title="Voice implementation details" detail="Paths, reference audio, and endpoint settings for the implementations selected above.">
+                    <SettingsGroup title="Voice implementation details" detail="Model paths and reference audio for local speech synthesis.">
                       {advancedVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible optionalWhenInactive />)}
                     </SettingsGroup>
                   </div>
