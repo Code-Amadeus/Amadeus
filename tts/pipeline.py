@@ -638,27 +638,28 @@ async def speak_stream_graph_serial(
         return
     if graph_tts_lock is None:
         graph_tts_lock = asyncio.Lock()
-    logger.info(f"[Graph Serial] waiting for serial inference lock: {sentence_id}")
-    await graph_tts_lock.acquire()
-    start_time = time.time()
-    if _is_interrupted(interrupt_epoch):
-        logger.info("[TTS-INTERRUPT] skip stale job after graph lock: %s", sentence_id)
-        graph_tts_lock.release()
-        _release_task_semaphore(task_semaphore, sentence_id)
-        return
-    logger.info(f"[Graph Serial] lock acquired, starting serial inference: {sentence_id}")
-    if is_first_sentence:
-        log_latency_marker(logger, "first_graph_lock", id=sentence_id)
+    lock = graph_tts_lock
+    lock_held = False
+    start_time = 0.0
 
-    _lock_released = False
+    async def _acquire_lock():
+        nonlocal lock_held, start_time
+        logger.info(f"[Graph Serial] waiting for serial inference lock: {sentence_id}")
+        await lock.acquire()
+        lock_held = True
+        start_time = time.time()
+        logger.info(f"[Graph Serial] lock acquired, starting serial inference: {sentence_id}")
+        if is_first_sentence:
+            log_latency_marker(logger, "first_graph_lock", id=sentence_id)
+
     def _release_lock():
-        nonlocal _lock_released
-        if _lock_released:
+        nonlocal lock_held
+        if not lock_held:
             return
-        _lock_released = True
+        lock_held = False
         elapsed = time.time() - start_time
         logger.info(f"[Graph Serial] released serial inference lock: {sentence_id}, TTS elapsed {elapsed:.2f}s")
-        graph_tts_lock.release()
+        lock.release()
 
     _stream_to_player = stream_tts if stream_tts is not None else is_first_sentence
     try:
@@ -667,6 +668,7 @@ async def speak_stream_graph_serial(
             sentence_id,
             is_first_sentence=is_first_sentence,
             force_graph=True,
+            on_synthesis_start=_acquire_lock,
             on_synthesis_done=_release_lock,
             chunk_size_seconds=None,
             stream_to_player=_stream_to_player,
@@ -854,7 +856,7 @@ async def speak_stream_enhanced(
 
 async def speak_stream_enhanced_asyncio_queue(
     text, sentence_id, is_first_sentence=False, *, force_graph: bool = False,
-    on_synthesis_done=None, stream_to_player: bool = False,
+    on_synthesis_start=None, on_synthesis_done=None, stream_to_player: bool = False,
     chunk_size_seconds: float = None,
     segments=None,
     interrupt_epoch: int | None = None,
@@ -983,6 +985,14 @@ async def speak_stream_enhanced_asyncio_queue(
                 )
             return
 
+    # Cached audio does not touch the inference engine. Acquire its serial
+    # ownership only on a cache miss, then recheck the turn after the wait.
+    if on_synthesis_start is not None:
+        try:
+            await on_synthesis_start()
+        except BaseException:
+            _release_now()
+            raise
     if _is_interrupted(interrupt_epoch):
         logger.info("[TTS-INTERRUPT] skip stale job before producer submit: %s", sentence_id)
         _release_now()

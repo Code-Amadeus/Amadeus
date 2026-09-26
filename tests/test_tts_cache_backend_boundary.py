@@ -2,6 +2,8 @@
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import numpy as np
 import pytest
@@ -61,3 +63,125 @@ async def test_local_audio_cache_boundary(monkeypatch, streaming, backend_id, ca
     else:
         assert calls == ["synthesize"]
         assert actual == [0.25]
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("cached", [False, True])
+async def test_graph_lock_guards_inference_not_cached_playback(monkeypatch, streaming, cached):
+    from tts import pipeline
+
+    checked = asyncio.Event()
+    played = asyncio.Event()
+    calls, audio = [], []
+    lock = asyncio.Lock()
+    await lock.acquire()  # An earlier sentence still owns the inference engine.
+
+    def lookup(*_args):
+        checked.set()
+        return (24000, np.array([0.75], dtype=np.float32)) if cached else None
+
+    def infer_stream(**kwargs):
+        calls.append("synthesize")
+        assert lock.locked()
+        yield 24000, np.array([0.25], dtype=np.float32), kwargs["text"]
+
+    class Playback:
+        async def add_to_playlist(self, data, *_args, **_kwargs):
+            audio.extend(data)
+            played.set()
+
+        async def play_s1_stream(self, queue, *_args, **_kwargs):
+            while (item := await queue.get()) is not None:
+                audio.extend(item[1])
+            played.set()
+
+    monkeypatch.setattr(pipeline, "graph_tts_lock", lock)
+    monkeypatch.setattr(pipeline, "_tts_runtime", SimpleNamespace(
+        backend_id="gpt_sovits", infer_stream=infer_stream))
+    monkeypatch.setattr(pipeline, "_playback_manager", Playback())
+    monkeypatch.setattr(pipeline, "get_first_sentence_audio_cache", lambda: SimpleNamespace(
+        lookup=lookup, store=lambda *_args, **_kwargs: None))
+    permit = asyncio.BoundedSemaphore(1)
+    await permit.acquire()
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        monkeypatch.setattr(pipeline, "_tts_executor", executor)
+        task = asyncio.create_task(pipeline.speak_stream_graph_serial(
+            "Hello", "sentence_1_lock_boundary", True,
+            stream_tts=streaming, task_semaphore=permit))
+        try:
+            await asyncio.wait_for(checked.wait(), 1)
+            if cached:
+                await asyncio.wait_for(played.wait(), 1)
+                await task
+                assert lock.locked(), "A cache hit must not release another producer's lock"
+                assert calls == []
+                assert audio == [0.75]
+            else:
+                assert not task.done() and not played.is_set()
+                assert calls == []
+                lock.release()
+                await asyncio.wait_for(task, 2)
+                await asyncio.wait_for(played.wait(), 1)
+                assert calls == ["synthesize"] and audio == [0.25]
+                assert not lock.locked()
+            await asyncio.wait_for(permit.acquire(), 1)
+            permit.release()
+        finally:
+            if lock.locked():
+                lock.release()
+            await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.parametrize("outcome", ["stale_cache", "stale_waiter", "cancel_waiter"])
+async def test_cache_and_graph_waiters_preserve_epoch_and_lock_ownership(monkeypatch, outcome):
+    from tts import pipeline
+
+    checked = asyncio.Event()
+    lock = asyncio.Lock()
+    await lock.acquire()
+    playback = SimpleNamespace(add_to_playlist=AsyncMock(), play_s1_stream=AsyncMock())
+    monkeypatch.setattr(pipeline, "graph_tts_lock", lock)
+    monkeypatch.setattr(pipeline, "_tts_interrupt_epoch", 10)
+    monkeypatch.setattr(pipeline, "_playback_manager", playback)
+
+    def infer_stream(**_kwargs):
+        raise AssertionError("An invalidated turn must not start inference")
+
+    def lookup(*_args):
+        checked.set()
+        if outcome == "stale_cache":
+            pipeline._tts_interrupt_epoch = 11
+            return 24000, np.ones(4, dtype=np.float32)
+        return None
+
+    monkeypatch.setattr(pipeline, "_tts_runtime", SimpleNamespace(
+        backend_id="gpt_sovits", infer_stream=infer_stream))
+    monkeypatch.setattr(pipeline, "get_first_sentence_audio_cache", lambda: SimpleNamespace(lookup=lookup))
+    permit = asyncio.BoundedSemaphore(1)
+    await permit.acquire()
+    task = asyncio.create_task(pipeline.speak_stream_graph_serial(
+        "Hello", "sentence_1_invalidated_cache", True,
+        stream_tts=True, interrupt_epoch=10, task_semaphore=permit))
+    try:
+        await asyncio.wait_for(checked.wait(), 1)
+        if outcome == "cancel_waiter":
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            assert lock.locked()
+        elif outcome == "stale_waiter":
+            pipeline._tts_interrupt_epoch = 11
+            lock.release()
+            await asyncio.wait_for(task, 1)
+            assert not lock.locked()
+        else:
+            await asyncio.wait_for(task, 1)
+            assert lock.locked()
+        playback.add_to_playlist.assert_not_called()
+        playback.play_s1_stream.assert_not_called()
+        await asyncio.wait_for(permit.acquire(), 1)
+        permit.release()
+    finally:
+        if lock.locked():
+            lock.release()
+        await asyncio.gather(task, return_exceptions=True)
