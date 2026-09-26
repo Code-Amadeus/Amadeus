@@ -39,8 +39,9 @@ _KEY_FIELDS = (
 
 _CACHE_SCHEMA = "first_sentence_audio_cache.v1"
 # Earlier entries could be written by a remote backend under this local-only
-# fingerprint. They cannot prove which voice produced them; regenerate once.
-_SYNTHESIS_REVISION = "gsv_static_kv_mask_semantic_guard.local_only.v2"
+# fingerprint, or still open with the model's generated pause before speech
+# onset (trimmed since this revision). Neither is reusable; regenerate once.
+_SYNTHESIS_REVISION = "gsv_static_kv_mask_semantic_guard.local_only.speech_onset.v3"
 
 
 def _portable_basename(value: Any) -> str:
