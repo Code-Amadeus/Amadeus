@@ -22,6 +22,44 @@ from tools.check_third_party_provenance import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_source_archive_contains_desktop_setup_entrypoints_and_user_guides(tmp_path: Path):
+    policy_path = ROOT / "release/source_release_policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    package = json.loads((ROOT / "electron/package.json").read_text(encoding="utf-8"))
+    # Files consumed by packaging must also be present when building from a ZIP.
+    required = {
+        item["from"].removeprefix("../")
+        for item in package["build"]["win"]["extraResources"]
+        if item["from"].startswith("../scripts/")
+    }
+    required.update({
+        "scripts/build_macos_wallpaper_app.sh",
+        "scripts/launcher.c",
+        "scripts/setup_autostart.sh",
+        "scripts/start_wallpaper.sh",
+        "scripts/write_macos_wallpaper_plist.py",
+        "docs/pi-rpc-provider.md",
+        "docs/vn-text-sources.md",
+        "docs/fish_audio_websocket.md",
+        "docs/macos_wallpaper_startup.md",
+        "docs/windows_wallpaper_lifecycle.md",
+    })
+    selected, excluded = select_paths(required, policy)
+    assert not excluded, f"Source users would be missing: {excluded}"
+    assert required <= set(policy["required_files"])
+    report = {
+        "release_ready": True,
+        "version": "test",
+        "source_date_epoch": 1700000000,
+        "selected_files": [{"path": path} for path in selected],
+    }
+    output = tmp_path / "desktop-source.zip"
+    create_archive(root=ROOT, output=output, report=report, policy=policy, modes={})
+    with zipfile.ZipFile(output) as archive:
+        for path in required:
+            assert archive.read(f"amadeus-test/{path}") == (ROOT / path).read_bytes()
+
+
 def test_companion_code_ships_but_optional_media_does_not():
     policy = json.loads((ROOT / "release/source_release_policy.json").read_text(encoding="utf-8"))
     code = ["render/companion_pack.py", "render/web/companion_atlas.js",
