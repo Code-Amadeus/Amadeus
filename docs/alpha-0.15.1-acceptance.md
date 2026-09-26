@@ -15,9 +15,14 @@ The release PR's head SHA and CI checks identify the final candidate.
    had different slugs. C1 correctly refused the inconsistent workspace.
    The coordinator now uses the accepted title for both allocation and the
    Work record. Authority checks remain unchanged. Regression tests cover
-   Japanese, English and mixed-language titles, execution and replay.
-   The new English case failed before the fix; all 93 related tests passed
-   after it (`test_cooperative_planned_work.py`,
+   Japanese, English and mixed-language titles, execution and replay across
+   none/read/write workspace access. The contextual news request and its
+   confirmation also cover a Chinese task with an AI-bearing display title:
+   all six combinations reproduce the same workspace conflict on the old
+   implementation and pass with the repair. Provider access requirements and
+   write intent remain unchanged, and its cwd matches the Work workspace.
+   The new English case also failed before the fix; all 105 related tests passed
+   after the expanded coverage (`test_cooperative_planned_work.py`,
    `test_work_effect_executor.py`, `test_work_ledger_coordinator.py`).
 3. Live timing isolated approximately 490ms of avoidable waiting: a cached Chat
    opening waited for an earlier Work utterance's CUDA Graph inference lock.
