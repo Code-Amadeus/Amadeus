@@ -24,6 +24,7 @@ from tts.semantic_stability import (
     SemanticGenerationError,
     assess_semantic_candidate,
 )
+from tts.speech_onset import SpeechOnsetGate, speech_start
 
 
 def _iter_segment_text_lang(text: str):
@@ -1372,7 +1373,7 @@ class TTSInferencer:
                         audio = audio / max_audio
 
                     # 添加到输出列表
-                    audio_outputs.append(audio)
+                    audio_outputs.append(self._trim_generated_lead(audio, sr))
                     audio_outputs.append(zero_wav)  # 句间停顿
 
                 else:
@@ -1493,7 +1494,7 @@ class TTSInferencer:
                         audio = audio / max_audio
 
                     # 添加到输出列表
-                    audio_outputs.append(audio)
+                    audio_outputs.append(self._trim_generated_lead(audio, sr))
                     audio_outputs.append(zero_wav)  # 句间停顿
 
             # 合并所有音频片段
@@ -1824,6 +1825,7 @@ class TTSInferencer:
                     # 确保音频数据是float32类型
                     if hasattr(audio_chunk, 'dtype') and 'float16' in str(audio_chunk.dtype):
                         audio_chunk = audio_chunk.astype(np.float32)
+                    audio_chunk = self._trim_generated_lead(audio_chunk, sr)
 
                     # 句尾淡出，消除突然截断的爆音感
                     audio_chunk = self._apply_fade_out(audio_chunk, sr)
@@ -1925,6 +1927,8 @@ class TTSInferencer:
                         idx = 0
                         total_todo_frames = fea_todo.shape[2]
                         stream_chunk_index = 0
+                        onset_gate = SpeechOnsetGate(sr)
+                        text_pending = True
                         while True:
                             chunk_end = min(total_todo_frames, idx + chunk_len)
                             fea_todo_chunk = fea_todo[:, :, idx:chunk_end]
@@ -2007,16 +2011,23 @@ class TTSInferencer:
                                 if max_audio > 1:
                                     audio = audio / max_audio
 
-                                audio_chunk = self._finalize_stream_chunk(
+                                audio_chunk = onset_gate.push(self._finalize_stream_chunk(
                                     audio,
                                     sr,
                                     if_sr=if_sr,
                                     is_last_chunk=is_last_stream_chunk,
                                     apply_fade_in=(stream_chunk_index > 1),
-                                )
-                                yield sr, audio_chunk, text_item if stream_chunk_index == 1 else ""
+                                ))
+                                if audio_chunk is not None:
+                                    yield sr, audio_chunk, text_item if text_pending else ""
+                                    text_pending = False
                             else:
                                 cfm_resss.append(cfm_res)
+
+                        # A streamed item that never became voiced is released unchanged.
+                        silent_item = onset_gate.flush()
+                        if silent_item is not None:
+                            yield sr, silent_item, text_item if text_pending else ""
 
                         if not stream_v3_chunks:
                             # synthesis failed
@@ -2062,11 +2073,14 @@ class TTSInferencer:
                             if max_audio > 1:
                                 audio = audio / max_audio
 
-                            audio_chunk = self._finalize_stream_chunk(
-                                audio,
+                            audio_chunk = self._trim_generated_lead(
+                                self._finalize_stream_chunk(
+                                    audio,
+                                    sr,
+                                    if_sr=if_sr,
+                                    is_last_chunk=True,
+                                ),
                                 sr,
-                                if_sr=if_sr,
-                                is_last_chunk=True,
                             )
 
                             # audio saved toaudio saved toaudio saved tosynthesis failed
@@ -2083,6 +2097,19 @@ class TTSInferencer:
             logger.error(traceback.format_exc())
             # 返回一个空音频块，避免生成器中断
             yield sr if 'sr' in locals() else 24000, np.zeros(16000, dtype=np.float32), ""
+
+    def _trim_generated_lead(self, audio, sr: int):
+        """Start one synthesized item at its speech onset.
+
+        The model opens every item with a generated pause (~0.8-1.0 s); the
+        silence between items is the caller's ``pause_second``. The cut lands
+        on the silence floor before the onset rise, so no fade is needed.
+        """
+        samples = audio.detach().float().cpu().numpy() if torch.is_tensor(audio) else audio
+        start = speech_start(samples, sr)
+        if start:
+            logger.debug("trimmed generated lead: %.3fs", start / float(sr))
+        return audio[start:] if start else audio
 
     def _apply_fade_out(self, audio: np.ndarray, sr: int, duration_ms: int = 15) -> np.ndarray:
         """对音频末尾做线性淡出，避免句尾突然截断产生的爆音感。

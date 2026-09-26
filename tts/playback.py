@@ -35,6 +35,7 @@ from tts.aec_debug_capture import get_aec_debug_capture
 from tts.aec_realtime import get_realtime_aec_processor
 from tts.latency_clock import log_latency_marker
 from tts.mouth_signal import MouthSignalSink
+from tts.speech_onset import first_voiced_sample
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +136,7 @@ class StreamPlayer:
         sample_rate: int | None = None,
         first_mouth_minimum: float | None = None,
         after_first_write: Callable[[], None] | None = None,
+        before_window: Callable[[np.ndarray], None] | None = None,
     ) -> None:
         if loop is None:
             loop = asyncio.get_running_loop()
@@ -149,6 +151,7 @@ class StreamPlayer:
                 mouth_envelope=mouth_envelope,
                 first_mouth_minimum=first_mouth_minimum,
                 is_current=is_current,
+                before_window=before_window,
                 after_first_write=after_first_write,
             )
             if (is_current is None or is_current()) and after_write is not None:
@@ -889,7 +892,9 @@ class PlaybackManager:
             player = self.player
             player.mouth_sink.publish_mouth_value(0.0)
             loop = asyncio.get_running_loop()
-            first_sound_logged = [False]
+            first_chunk_started = [False]
+            first_voice_logged = [False]
+            samples_before_voice = [0]
             first_audio_written = [False]
             current_sample_rate = None
             aec_capture = get_aec_debug_capture()
@@ -947,7 +952,7 @@ class PlaybackManager:
                     # ── 句间 fade-in / fade-out，消除硬切换爆破音 ──────────
                     _FADE_MS = 10  # ms，10ms ≈ 240 samples @24kHz
                     _fade_n = int(_FADE_MS * 0.001 * (player.sample_rate or 24000))
-                    _is_first_chunk = not first_sound_logged[0]
+                    _is_first_chunk = not first_chunk_started[0]
                     if _is_first_chunk or eof_in_drain:
                         merged = merged.copy()
                         if _is_first_chunk:
@@ -958,31 +963,41 @@ class PlaybackManager:
                             merged[-_fn:] *= np.linspace(1.0, 0.0, _fn, dtype=np.float32)
 
                     _chunk = merged
-                    _first_mouth_minimum = 0.12 if not first_sound_logged[0] else None
+                    _first_mouth_minimum = 0.12 if not first_chunk_started[0] else None
 
-                    def _before_write(chunk=_chunk):
-                        if not first_sound_logged[0]:
-                            first_sound_logged[0] = True
-                            _stream_mode = (
-                                "s1_stream" if sentence_seq == 1 else f"s{sentence_seq}_stream"
-                            )
-                            _lat_ms = log_latency_marker(
-                                self.logger,
-                                "first_play",
-                                clear=(sentence_seq == 1),
-                                id=sentence_id,
-                                samples=len(chunk),
-                                mode=_stream_mode,
-                            )
-                            _lat_part = (
-                                f" | api_to_first_sound_ms={_lat_ms:.1f}"
-                                if _lat_ms is not None
-                                else ""
-                            )
-                            self.logger.info(
-                                f"[PLAYBACK-STREAM] first sound started seq={sentence_seq}: {sentence_id} "
-                                f"(first_frame={len(chunk)} samples){_lat_part}"
-                            )
+                    def _before_write():
+                        first_chunk_started[0] = True
+
+                    def _before_window(window):
+                        # First sound is the first voiced sample written, not the
+                        # first write: synthesized audio may open with silence.
+                        if first_voice_logged[0]:
+                            return
+                        if first_voiced_sample(window, _sample_rate) is None:
+                            samples_before_voice[0] += len(window)
+                            return
+                        first_voice_logged[0] = True
+                        _stream_mode = (
+                            "s1_stream" if sentence_seq == 1 else f"s{sentence_seq}_stream"
+                        )
+                        _lead_ms = samples_before_voice[0] * 1000.0 / _sample_rate
+                        _lat_ms = log_latency_marker(
+                            self.logger,
+                            "first_play",
+                            clear=(sentence_seq == 1),
+                            id=sentence_id,
+                            lead_ms=f"{_lead_ms:.0f}",
+                            mode=_stream_mode,
+                        )
+                        _lat_part = (
+                            f" | api_to_first_sound_ms={_lat_ms:.1f}"
+                            if _lat_ms is not None
+                            else ""
+                        )
+                        self.logger.info(
+                            f"[PLAYBACK-STREAM] first sound started seq={sentence_seq}: {sentence_id} "
+                            f"(after {_lead_ms:.0f} ms of written silence){_lat_part}"
+                        )
 
                     def _after_first_write():
                         if not first_audio_written[0]:
@@ -1011,6 +1026,7 @@ class PlaybackManager:
                         sample_rate=_sample_rate,
                         first_mouth_minimum=_first_mouth_minimum,
                         after_first_write=_after_first_write if not first_audio_written[0] else None,
+                        before_window=_before_window,
                     )
                     self.logger.debug(
                         f"[Streaming] chunk playback completed seq={sentence_seq}: {len(merged)} samples "
@@ -1383,7 +1399,8 @@ class StreamPlayerWithBuffer(StreamPlayer):
             def sync_play_and_lipsync(player_instance, _loop):
                 if is_current is not None and not is_current():
                     return
-                first_write = True
+                first_voice_pending = _parse_sentence_seq(sentence_id) == 1
+                samples_before_voice = 0
                 player_instance.logger.info(
                     f"[Monitor] physical playback and lip sync started: {sentence_id}"
                 )
@@ -1393,21 +1410,26 @@ class StreamPlayerWithBuffer(StreamPlayer):
                 player_instance.mouth_sink.publish_mouth_value(0.0)
 
                 def before_window(chunk):
-                    nonlocal first_write
-                    if first_write and _parse_sentence_seq(sentence_id) == 1:
-                        _lat_ms = log_latency_marker(
-                            player_instance.logger,
-                            "first_play",
-                            clear=True,
-                            id=sentence_id,
-                            samples=len(chunk),
-                            mode="full_audio",
-                        )
-                        if _lat_ms is not None:
-                            player_instance.logger.info(
-                                f"[PLAYBACK] first_play_e2e_ms={_lat_ms:.1f} id={sentence_id}"
+                    # First sound is the first voiced sample written, not the
+                    # first write: synthesized audio may open with silence.
+                    nonlocal first_voice_pending, samples_before_voice
+                    if first_voice_pending:
+                        if first_voiced_sample(chunk, sample_rate) is None:
+                            samples_before_voice += len(chunk)
+                        else:
+                            first_voice_pending = False
+                            _lat_ms = log_latency_marker(
+                                player_instance.logger,
+                                "first_play",
+                                clear=True,
+                                id=sentence_id,
+                                lead_ms=f"{samples_before_voice * 1000.0 / sample_rate:.0f}",
+                                mode="full_audio",
                             )
-                    first_write = False
+                            if _lat_ms is not None:
+                                player_instance.logger.info(
+                                    f"[PLAYBACK] first_play_e2e_ms={_lat_ms:.1f} id={sentence_id}"
+                                )
                     get_realtime_aec_processor().push_reference(chunk, sample_rate)
                     aec_capture.push_reference(chunk, sample_rate, sentence_id)
 

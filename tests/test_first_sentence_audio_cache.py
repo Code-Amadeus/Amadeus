@@ -162,7 +162,11 @@ def test_previous_synthesis_revisions_are_not_reused(
     params = _current_params()
     text = "うーん……"
     audio = np.ones(2400, dtype=np.float32) * 0.05
-    for previous_revision in (None, "gsv_static_kv_mask_semantic_guard.v1"):
+    for previous_revision in (
+        None,
+        "gsv_static_kv_mask_semantic_guard.v1",
+        "gsv_static_kv_mask_semantic_guard.local_only.v2",
+    ):
         old_payload = cache.key_payload(text, params)
         if previous_revision is None:
             old_payload.pop("synthesis_revision")

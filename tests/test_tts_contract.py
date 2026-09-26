@@ -803,6 +803,7 @@ def test_shared_stream_playback_feeds_aec_and_mouth_signals() -> None:
             sample_rate=None,
             first_mouth_minimum=None,
             after_first_write=None,
+            before_window=None,
         ) -> None:
             del loop
             if is_current is not None and not is_current():
@@ -814,6 +815,8 @@ def test_shared_stream_playback_feeds_aec_and_mouth_signals() -> None:
                 window_samples = max(self.chunk_size, int(round(rate * self.send_interval)))
                 for offset in range(0, len(audio), window_samples):
                     segment = audio[offset : offset + window_samples]
+                    if before_window is not None:
+                        before_window(segment)
                     value = min(1.0, float(np.sqrt(np.mean(segment ** 2))) * self.volume_multiplier)
                     if offset == 0 and first_mouth_minimum is not None and value > 0.0:
                         value = max(float(first_mouth_minimum), value)
@@ -822,6 +825,8 @@ def test_shared_stream_playback_feeds_aec_and_mouth_signals() -> None:
                     if offset == 0 and after_first_write is not None:
                         after_first_write()
             else:
+                if before_window is not None:
+                    before_window(audio)
                 self.writes.append(audio.copy())
                 if len(audio) and after_first_write is not None:
                     after_first_write()
