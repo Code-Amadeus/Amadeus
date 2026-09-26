@@ -474,7 +474,6 @@ html[data-theme='wallpaper-slice'] .settings-field-row {
 html[data-theme='wallpaper-slice'] .settings-section-nav > button[aria-current='page'] {
   color: var(--text) !important;
   background: var(--selected-fill) !important;
-  box-shadow: inset 2px 0 0 rgba(113, 255, 222, 0.56);
 }
 
 html[data-theme='wallpaper-slice'] .capability-scene-item {

@@ -177,7 +177,7 @@ const TITLE_BAR_THEMES = {
 
 function setMainWindowTheme(theme: unknown): boolean {
   if (!mainWindow || process.platform !== 'win32') return false
-  const key = theme === 'wallpaper-slice' ? 'wallpaper-slice' : 'classic'
+  const key = theme === 'classic' ? 'classic' : 'wallpaper-slice'
   mainWindow.setTitleBarOverlay(TITLE_BAR_THEMES[key])
   return true
 }
@@ -549,6 +549,8 @@ function guardTrustedRendererShell(window: BrowserWindow): void {
 
 function createWindow(): void {
   const isWallpaperOnly = wantsWallpaper()
+  const values = desktopSettings.snapshot(process.env).values as Record<string, string>
+  const theme = values.AMADEUS_UI_THEME === 'classic' ? 'classic' : 'wallpaper-slice'
   mainWindow = new BrowserWindow({
     width: 1100,
     height: 800,
@@ -558,7 +560,8 @@ function createWindow(): void {
     title: '',
     frame: true,
     titleBarStyle: process.platform === 'win32' ? 'hidden' : 'default',
-    titleBarOverlay: process.platform === 'win32' ? TITLE_BAR_THEMES.classic : undefined,
+    titleBarOverlay: process.platform === 'win32' ? TITLE_BAR_THEMES[theme] : undefined,
+    backgroundColor: TITLE_BAR_THEMES[theme].color,
     show: !isWallpaperOnly,
     autoHideMenuBar: true,
     webPreferences: {
@@ -569,7 +572,7 @@ function createWindow(): void {
       webSecurity: false,   // allow file:// iframe for PixiJS renderer
     },
   })
-  setMainWindowTheme('classic')
+  setMainWindowTheme(theme)
   mainWindow.setMenuBarVisibility(false)
   mainWindow.setTitle('')
   guardTrustedRendererShell(mainWindow)

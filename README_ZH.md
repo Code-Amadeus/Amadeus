@@ -10,7 +10,7 @@
 <p>
   <a href="https://www.bilibili.com/video/BV1783G6hEYY/"><img src="https://img.shields.io/badge/demo-Bilibili-46745c?labelColor=16291f&amp;logo=bilibili&amp;logoColor=b4e4c4" alt="Bilibili demo"/></a>
   <a href="#系统架构"><img src="https://img.shields.io/badge/architecture-current-46745c?labelColor=16291f" alt="系统架构"/></a>
-  <a href="./docs/alpha-0.15.md"><img src="https://img.shields.io/badge/version-0.15_Alpha-46745c?labelColor=16291f" alt="0.15 Alpha"/></a>
+  <a href="./docs/alpha-0.15.1.md"><img src="https://img.shields.io/badge/version-0.15.1_Alpha-46745c?labelColor=16291f" alt="0.15.1 Alpha"/></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-58625c?labelColor=16291f" alt="AGPL-3.0 license"/></a>
   <br/>
   <a href="#快速开始"><img src="https://img.shields.io/badge/Windows-reference-46745c?labelColor=16291f" alt="Windows — 参考平台"/></a>
@@ -23,7 +23,7 @@
 <p>
   <sub><strong>本地模型:</strong> <a href="./docs/install_profiles.md">NVIDIA CUDA cu124</a> &nbsp;·&nbsp; <a href="./tools/rocm_sidecar/README.md">AMD ROCm / Windows (实验性)</a> &nbsp;·&nbsp; <a href="./docs/torch27_candidates.md">Apple MPS</a></sub>
   <br/>
-  <sub><a href="#快速开始">快速开始</a> &nbsp;·&nbsp; <a href="./docs/install_profiles.md">安装配置</a> &nbsp;·&nbsp; <a href="#开发与贡献">参与开发</a></sub>
+  <sub><a href="#快速开始">快速开始</a> &nbsp;·&nbsp; <a href="https://code-amadeus.github.io/">官网与资源</a> &nbsp;·&nbsp; <a href="./docs/install_profiles.md">安装配置</a> &nbsp;·&nbsp; <a href="#开发与贡献">参与开发</a></sub>
 </p>
 
 </div>
@@ -49,7 +49,7 @@ Amadeus 试图把这些体验连成一个闭环：
 持久化与恢复。
 
 > [!IMPORTANT]
-> 本仓库包含可构建、可运行的公开源码，本分支为 **0.15 Alpha 候选版**，
+> 本仓库包含可构建、可运行的公开源码，本分支为 **0.15.1 Alpha 候选版**，
 > 不是带安装器的正式桌面发行版。Amadeus 第一方代码依据
 > [GNU Affero General Public License v3.0（AGPL-3.0）](LICENSE) 开源。
 > 第三方代码与外部资产保留各自条款。
@@ -570,6 +570,8 @@ FISH_TTS_LATENCY=balanced
 
 模型权重、参考音频、角色包及大型/版权敏感素材独立分发；源码仓库只保留
 必要图标、默认壁纸、schema、validator 和安装工具。
+
+可用资源的入口与下载信息见 [Code Amadeus 资源中心](https://code-amadeus.github.io/#resources)。
 
 本地语音的目录合同包括 `asr-qwen3-0.6b`、`voice-kurisu-gpt-sovits-v3`，以及可选的
 `voice-kurisu-gpt-sovits-v2pro-experimental` 附加包。v3 包提供附加包所需的共享资源。

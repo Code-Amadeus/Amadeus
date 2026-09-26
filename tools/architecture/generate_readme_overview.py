@@ -72,7 +72,7 @@ COPY = {
         "apps": ["Attached AUIP Applications", "Verified Artifact entry", "Declared state / events · bounded actions", "Application receipts · visible disconnects", "Separate from Work Providers"],
         "providers": "Work Providers",
         "provider_subtitle": "Separate transports and capabilities",
-        "provider_details": [["Browser", "Playwright", "Scoped session"], ["Codex", "App Server", "or Direct"], ["OpenClaw", "Optional", "gateway"]],
+        "provider_details": [["Browser", "Playwright", "Scoped session"], ["Codex", "App Server", "or Direct"], ["Pi", "Native RPC", "Daily tasks"]],
         "capabilities": "MCP / Skills · compatible Providers only",
         "planned": "Planned: Claude CLI direct Provider",
         "input": ["Input / consent"], "ws": ["Auth.", "WebSocket"],
@@ -105,7 +105,7 @@ COPY = {
         "apps": ["已挂接的 AUIP 应用", "已核验的产物入口 · 声明状态 / 事件", "有界动作 · 应用回执", "断连状态可见，不是工作执行器"],
         "providers": "工作执行器",
         "provider_subtitle": "各自独立的传输与能力范围",
-        "provider_details": [["Browser", "Playwright", "限定会话"], ["Codex", "App Server", "或 Direct"], ["OpenClaw", "可选", "外部网关"]],
+        "provider_details": [["Browser", "Playwright", "限定会话"], ["Codex", "App Server", "或 Direct"], ["Pi", "原生 RPC", "日常任务"]],
         "capabilities": "MCP / Skills · 仅授予兼容执行器",
         "planned": "规划中：Claude CLI 直接接入",
         "input": ["输入 / 授权"], "ws": ["已认证的", "WebSocket"],
@@ -208,8 +208,7 @@ def render(lang: str) -> str:
     text(x + 22, y + 68, c["provider_subtitle"], "note")
     for i, words in enumerate(c["provider_details"]):
         px, py = x + 18 + i * 164, y + 86
-        dash = ' stroke-dasharray="6 5"' if words[0] == "OpenClaw" else ""
-        out.append(f'<rect x="{px}" y="{py}" width="146" height="98" rx="9" fill="#30281a" stroke="#9e8454"{dash}/>')
+        out.append(f'<rect x="{px}" y="{py}" width="146" height="98" rx="9" fill="#30281a" stroke="#9e8454"/>')
         text(px + 12, py + 29, words[0], "mini-title")
         text(px + 12, py + 59, words[1], "provider-detail")
         text(px + 12, py + 84, words[2], "provider-detail")

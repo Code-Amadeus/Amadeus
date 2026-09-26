@@ -132,7 +132,7 @@ CODEX_APP_SERVER_MANIFEST = ProviderManifest(
 
 
 PI_MANIFEST = ProviderManifest(
-    provider_id="pi", display_name="Pi (experimental)", runtime_kind="agent",
+    provider_id="pi", display_name="Pi", runtime_kind="agent",
     contract_version="0.3", selection_priority=60,
     capabilities=ProviderCapabilities(
         task_kinds=("general", "research", "external_action", "workspace_read", "workspace_mutation"),

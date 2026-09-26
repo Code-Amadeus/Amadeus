@@ -162,10 +162,10 @@
 <text x="1424" y="609" class="mini-title" text-anchor="start">Codex</text>
 <text x="1424" y="639" class="provider-detail" text-anchor="start">App Server</text>
 <text x="1424" y="664" class="provider-detail" text-anchor="start">or Direct</text>
-<rect x="1576" y="580" width="146" height="98" rx="9" fill="#30281a" stroke="#9e8454" stroke-dasharray="6 5"/>
-<text x="1588" y="609" class="mini-title" text-anchor="start">OpenClaw</text>
-<text x="1588" y="639" class="provider-detail" text-anchor="start">Optional</text>
-<text x="1588" y="664" class="provider-detail" text-anchor="start">gateway</text>
+<rect x="1576" y="580" width="146" height="98" rx="9" fill="#30281a" stroke="#9e8454"/>
+<text x="1588" y="609" class="mini-title" text-anchor="start">Pi</text>
+<text x="1588" y="639" class="provider-detail" text-anchor="start">Native RPC</text>
+<text x="1588" y="664" class="provider-detail" text-anchor="start">Daily tasks</text>
 <rect x="1248" y="690" width="474" height="32" rx="8" fill="#102c1f" stroke="#456d55"/>
 <text x="1485.0" y="713" class="note" text-anchor="middle">MCP / Skills · compatible Providers only</text>
 <text x="1250" y="747" class="mini" text-anchor="start">Planned: Claude CLI direct Provider</text>

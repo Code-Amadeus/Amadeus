@@ -1368,6 +1368,13 @@ class WorkLedgerCoordinator:
                 metadata["source_context_base_turn_id"] = base_turn_id[:200]
         ensured_workspace: dict[str, Any] | None = None
         work_item_id_for_create = ""
+        # The accepted title owns both the Draft directory and the Work row.
+        # Re-deriving only the directory from the full task breaks C1 binding
+        # whenever the planner's title has a different filesystem slug.
+        new_item_title = self._task_title(
+            str(incoming_work.get("title") or request.task)
+            if intake_authority is not None else request.task
+        )
         # The container needs turning into a real per-task directory; a draft
         # directory already is one. Testing for any scratch path instead of the
         # container itself sent same-session continuation -- the host resolves
@@ -1389,7 +1396,7 @@ class WorkLedgerCoordinator:
             )
             try:
                 scratch_cwd = create_scratch_workspace(
-                    self._task_title(request.task),
+                    new_item_title,
                     unique_id=work_item_id_for_create,
                 )
             except ScratchUnavailable as exc:
@@ -1490,10 +1497,7 @@ class WorkLedgerCoordinator:
                 )
             new_item_kwargs = dict(
                 project_id=project.project_id,
-                title=self._task_title(
-                    str(incoming_work.get("title") or request.task)
-                    if intake_authority is not None else request.task
-                ),
+                title=new_item_title,
                 goal=request.task,
                 workspace_mode=workspace_mode,
                 workspace_path=workspace_path,

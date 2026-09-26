@@ -10,7 +10,7 @@
 <p>
   <a href="https://www.bilibili.com/video/BV1783G6hEYY/"><img src="https://img.shields.io/badge/demo-Bilibili-46745c?labelColor=16291f&amp;logo=bilibili&amp;logoColor=b4e4c4" alt="Bilibili demo"/></a>
   <a href="#architecture"><img src="https://img.shields.io/badge/architecture-current-46745c?labelColor=16291f" alt="Current architecture"/></a>
-  <a href="./docs/alpha-0.15.md"><img src="https://img.shields.io/badge/version-0.15_Alpha-46745c?labelColor=16291f" alt="0.15 Alpha"/></a>
+  <a href="./docs/alpha-0.15.1.md"><img src="https://img.shields.io/badge/version-0.15.1_Alpha-46745c?labelColor=16291f" alt="0.15.1 Alpha"/></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-58625c?labelColor=16291f" alt="AGPL-3.0 license"/></a>
   <br/>
   <a href="#quick-start"><img src="https://img.shields.io/badge/Windows-reference-46745c?labelColor=16291f" alt="Windows — reference platform"/></a>
@@ -23,7 +23,7 @@
 <p>
   <sub><strong>Local models:</strong> <a href="./docs/install_profiles.md">NVIDIA CUDA cu124</a> &nbsp;·&nbsp; <a href="./tools/rocm_sidecar/README.md">AMD ROCm / Windows (experimental)</a> &nbsp;·&nbsp; <a href="./docs/torch27_candidates.md">Apple MPS</a></sub>
   <br/>
-  <sub><a href="#quick-start">Quick start</a> &nbsp;·&nbsp; <a href="./docs/install_profiles.md">Installation profiles</a> &nbsp;·&nbsp; <a href="#development-and-contribution">Contribute</a></sub>
+  <sub><a href="#quick-start">Quick start</a> &nbsp;·&nbsp; <a href="https://code-amadeus.github.io/">Website &amp; resources</a> &nbsp;·&nbsp; <a href="./docs/install_profiles.md">Installation profiles</a> &nbsp;·&nbsp; <a href="#development-and-contribution">Contribute</a></sub>
 </p>
 
 </div>
@@ -51,7 +51,7 @@ the Host owns identity, state, permissions, persistence, and recovery.
 
 > [!IMPORTANT]
 > This repository contains buildable, runnable source. This branch targets
-> **0.15 Alpha**, not a packaged desktop release.
+> **0.15.1 Alpha**, not a packaged desktop release.
 > Amadeus first-party code is open-source under the
 > [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
 > Third-party code and external assets retain their own terms.
@@ -629,6 +629,9 @@ See [Fish Audio setup, chunk probes, and audio checks](docs/fish_audio_websocket
 Model weights, reference audio, character packs, and large or copyright-
 sensitive media are distributed separately. The source repository keeps the
 required icons, default wallpaper, schemas, validators, and installation tool.
+
+Visit the [Code Amadeus resource hub](https://code-amadeus.github.io/#resources)
+for available resource links and download information.
 
 The local-voice directory contracts are `asr-qwen3-0.6b` and
 `voice-kurisu-gpt-sovits-v3`, with the optional

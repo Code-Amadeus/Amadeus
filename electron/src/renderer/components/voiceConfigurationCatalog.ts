@@ -128,6 +128,7 @@ export function buildVoiceConfigurationCatalog(
       status_ok: ttsBackend === 'disabled',
       fields: [field('TTS_BACKEND', 'Backend', 'select', ttsBackend, [
         { value: 'gpt_sovits', label: 'GPT-SoVITS · Amadeus' },
+        { value: 'fish_audio', label: 'Fish Audio' },
         { value: 'openai_compatible', label: 'OpenAI-compatible API' },
         { value: 'mimo', label: 'MiMo TTS (Xiaomi)' },
         { value: 'disabled', label: 'Disabled' },
@@ -165,6 +166,22 @@ export function buildVoiceConfigurationCatalog(
         field('TTS_REF_TEXT_JA', 'Japanese reference transcript', 'text', value('TTS_REF_TEXT_JA')),
         field('TTS_REF_AUDIO_EN', 'English reference audio', 'path', value('TTS_REF_AUDIO_EN', './assets/audio/reference/english_recording.wav')),
         field('TTS_REF_TEXT_EN', 'English reference transcript', 'text', value('TTS_REF_TEXT_EN')),
+      ],
+    },
+    {
+      id: 'tts_fish_audio',
+      label: 'Fish Audio speech API',
+      description: 'WebSocket streaming speech with a hosted voice. Voice reference ID selects the voice; model selects the inference engine.',
+      active: ttsBackend === 'fish_audio',
+      configured: secret('FISH_TTS_API_KEY'),
+      status: ttsBackend === 'fish_audio' ? (secret('FISH_TTS_API_KEY') ? unknown : 'Needs setup') : 'Optional',
+      status_ok: false,
+      fields: [
+        field('FISH_TTS_WS_URL', 'WebSocket URL', 'url', value('FISH_TTS_WS_URL', 'wss://api.fish.audio/v1/tts/live')),
+        field('FISH_TTS_API_KEY', 'API key', 'secret'),
+        field('FISH_TTS_MODEL', 'Inference model', 'text', value('FISH_TTS_MODEL', 's2.1-pro-free')),
+        field('FISH_TTS_REFERENCE_ID', 'Voice reference ID', 'text', value('FISH_TTS_REFERENCE_ID', 'b450b19370434173b121446057622e9b')),
+        field('FISH_TTS_LATENCY', 'Latency mode', 'select', value('FISH_TTS_LATENCY', 'balanced'), ['normal', 'balanced', 'low']),
       ],
     },
     {

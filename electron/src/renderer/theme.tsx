@@ -11,12 +11,12 @@ interface ThemeContextValue {
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
-  theme: 'classic',
+  theme: 'wallpaper-slice',
   setTheme: async () => {},
 })
 
 function normalizeTheme(value: unknown): UiTheme {
-  return value === 'wallpaper-slice' ? 'wallpaper-slice' : 'classic'
+  return value === 'classic' ? 'classic' : 'wallpaper-slice'
 }
 
 function applyTheme(theme: UiTheme): void {
