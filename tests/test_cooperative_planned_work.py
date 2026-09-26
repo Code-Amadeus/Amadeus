@@ -160,16 +160,20 @@ async def test_new_turn_expires_waiting_professional_plan_without_execution(pend
     assert context.manager.ingresses[context.session_id].receipts["coarse-new"]["state"] == "no_action"
 
 
+@pytest.mark.parametrize(("text", "title"), [
+    ("量子誤り訂正の比較メモを新しく作って。", "量子誤り訂正の比較メモ"),
+    ("Create a release-check.txt note and read it back.", "Release verification"),
+    ("创建 release-check.txt 并读取确认，不创建项目。", "发布检查 Alpha 0.15.1"),
+])
 async def test_role_send_new_goal_uses_professional_execute_and_replays_once(
-        pending_host):
+        pending_host, text, title):
     context = pending_host
-    text = "量子誤り訂正の比較メモを新しく作って。"
     planner_calls = []
 
     async def planner(_ingress, _turn, receipt, _admission):
         planner_calls.append(dict(receipt))
         return planned(context.manager.provider, text, text, "execute", one_off=True,
-            _host_display_title="量子誤り訂正の比較メモ")
+            _host_display_title=title)
 
     configure_professional_planner(context, planner, work_texts={text})
     original_query = context.manager.query
@@ -186,7 +190,7 @@ async def test_role_send_new_goal_uses_professional_execute_and_replays_once(
     assert len(planner_calls) == context.host.adapter.calls == 1
     assert planner_calls[0]["provider_message_action"] == {"op":"send"}
     item = context.host.work.get_work_item(result["work_item_id"])
-    assert item.title == "量子誤り訂正の比較メモ"
+    assert item.title == title
     assert item.goal == text
     assert context.host.work.get_project(item.project_id).metadata["scratch"] is True
     request = context.host.adapter.requests[0]["request"]
