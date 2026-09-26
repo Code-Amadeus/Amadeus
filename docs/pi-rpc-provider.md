@@ -1,8 +1,8 @@
-# Experimental Pi daily-task provider
+# Pi daily-task provider
 
 Pi is the default daily-task agent reached through its native stdin/stdout JSONL RPC.
-It is not an ACP bridge and does not replace the Python Host. The experimental
-runtime is pinned to `@earendil-works/pi-coding-agent@0.86.1`.
+It is not an ACP bridge and does not replace the Python Host. The runtime is
+pinned to `@earendil-works/pi-coding-agent@0.86.1`.
 
 ## Install and configure
 

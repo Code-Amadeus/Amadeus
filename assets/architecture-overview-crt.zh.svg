@@ -161,10 +161,10 @@
 <text x="1424" y="609" class="mini-title" text-anchor="start">Codex</text>
 <text x="1424" y="639" class="provider-detail" text-anchor="start">App Server</text>
 <text x="1424" y="664" class="provider-detail" text-anchor="start">或 Direct</text>
-<rect x="1576" y="580" width="146" height="98" rx="9" fill="#30281a" stroke="#9e8454" stroke-dasharray="6 5"/>
-<text x="1588" y="609" class="mini-title" text-anchor="start">OpenClaw</text>
-<text x="1588" y="639" class="provider-detail" text-anchor="start">可选</text>
-<text x="1588" y="664" class="provider-detail" text-anchor="start">外部网关</text>
+<rect x="1576" y="580" width="146" height="98" rx="9" fill="#30281a" stroke="#9e8454"/>
+<text x="1588" y="609" class="mini-title" text-anchor="start">Pi</text>
+<text x="1588" y="639" class="provider-detail" text-anchor="start">原生 RPC</text>
+<text x="1588" y="664" class="provider-detail" text-anchor="start">日常任务</text>
 <rect x="1248" y="690" width="474" height="32" rx="8" fill="#102c1f" stroke="#456d55"/>
 <text x="1485.0" y="713" class="note" text-anchor="middle">MCP / Skills · 仅授予兼容执行器</text>
 <text x="1250" y="747" class="mini" text-anchor="start">规划中：Claude CLI 直接接入</text>

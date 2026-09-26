@@ -118,7 +118,7 @@ export function buildWorkProviderCatalog(
   const connections: ModelConnectionCatalogGroup[] = [
     {
       id: 'pi',
-      label: 'Pi · Experimental',
+      label: 'Pi',
       description: 'Default daily agent over native RPC. Desktop setup installs its pinned runtime; known model providers reuse credentials configured in Models.',
       active: assigned('pi'),
       configured: piEnabled && piCredentialReady,
