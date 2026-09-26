@@ -210,3 +210,60 @@ def test_interrupt_during_window_preparation_drops_its_mouth_and_pcm(player_fact
         before_window=lambda _chunk: current.__setitem__(0, False),
     )
     assert device.events == []
+
+
+def _record_first_sound(monkeypatch, device):
+    marks = []
+
+    def mark(_logger, stage, clear=False, **fields):
+        marks.append((stage, device.position, fields))
+        return 0.0
+
+    monkeypatch.setattr(playback, "log_latency_marker", mark)
+    return marks
+
+
+def _opens_with_silence(rate, silence_seconds=0.9, speech_seconds=0.3):
+    return np.concatenate([
+        np.zeros(int(rate * silence_seconds), dtype=np.float32),
+        np.full(int(rate * speech_seconds), 0.2, dtype=np.float32),
+    ])
+
+
+def test_full_audio_first_sound_marks_the_first_voiced_window(player_factory, monkeypatch) -> None:
+    rate = 24000
+    player, device = player_factory(rate)
+    marks = _record_first_sound(monkeypatch, device)
+
+    async def run():
+        await player.play_full_audio_and_signal_completion(
+            _opens_with_silence(rate), rate, "sentence_1_first", "", asyncio.Event(),
+        )
+
+    asyncio.run(run())
+
+    assert [(stage, position) for stage, position, _fields in marks] == [("first_play", int(rate * 0.9))]
+    assert marks[0][2]["lead_ms"] == "900"
+
+
+def test_stream_first_sound_marks_the_first_voiced_window(player_factory, monkeypatch) -> None:
+    rate = 24000
+    player, device = player_factory(rate)
+    monkeypatch.setattr(playback.time, "monotonic", lambda: device.position / rate, raising=False)
+    marks = _record_first_sound(monkeypatch, device)
+    audio = _opens_with_silence(rate)
+
+    async def run():
+        manager = playback.PlaybackManager(player)
+        chunks: asyncio.Queue = asyncio.Queue()
+        await chunks.put((rate, audio[: int(rate * 0.5)]))
+        await chunks.put((rate, audio[int(rate * 0.5) :]))
+        await chunks.put(None)
+        await manager.play_s1_stream(
+            chunks, "sentence_1_first", "", playback_epoch=manager.playback_epoch,
+        )
+
+    asyncio.run(run())
+
+    assert [(stage, position) for stage, position, _fields in marks] == [("first_play", int(rate * 0.9))]
+    assert marks[0][2]["lead_ms"] == "900"
