@@ -23,7 +23,7 @@
 <p>
   <sub><strong>本地模型:</strong> <a href="./docs/install_profiles.md">NVIDIA CUDA cu124</a> &nbsp;·&nbsp; <a href="./tools/rocm_sidecar/README.md">AMD ROCm / Windows (实验性)</a> &nbsp;·&nbsp; <a href="./docs/torch27_candidates.md">Apple MPS</a></sub>
   <br/>
-  <sub><a href="#快速开始">快速开始</a> &nbsp;·&nbsp; <a href="./docs/install_profiles.md">安装配置</a> &nbsp;·&nbsp; <a href="#开发与贡献">参与开发</a></sub>
+  <sub><a href="#快速开始">快速开始</a> &nbsp;·&nbsp; <a href="https://code-amadeus.github.io/">官网与资源</a> &nbsp;·&nbsp; <a href="./docs/install_profiles.md">安装配置</a> &nbsp;·&nbsp; <a href="#开发与贡献">参与开发</a></sub>
 </p>
 
 </div>
@@ -570,6 +570,8 @@ FISH_TTS_LATENCY=balanced
 
 模型权重、参考音频、角色包及大型/版权敏感素材独立分发；源码仓库只保留
 必要图标、默认壁纸、schema、validator 和安装工具。
+
+可用资源的入口与下载信息见 [Code Amadeus 资源中心](https://code-amadeus.github.io/#resources)。
 
 本地语音的目录合同包括 `asr-qwen3-0.6b`、`voice-kurisu-gpt-sovits-v3`，以及可选的
 `voice-kurisu-gpt-sovits-v2pro-experimental` 附加包。v3 包提供附加包所需的共享资源。

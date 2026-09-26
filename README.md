@@ -23,7 +23,7 @@
 <p>
   <sub><strong>Local models:</strong> <a href="./docs/install_profiles.md">NVIDIA CUDA cu124</a> &nbsp;·&nbsp; <a href="./tools/rocm_sidecar/README.md">AMD ROCm / Windows (experimental)</a> &nbsp;·&nbsp; <a href="./docs/torch27_candidates.md">Apple MPS</a></sub>
   <br/>
-  <sub><a href="#quick-start">Quick start</a> &nbsp;·&nbsp; <a href="./docs/install_profiles.md">Installation profiles</a> &nbsp;·&nbsp; <a href="#development-and-contribution">Contribute</a></sub>
+  <sub><a href="#quick-start">Quick start</a> &nbsp;·&nbsp; <a href="https://code-amadeus.github.io/">Website &amp; resources</a> &nbsp;·&nbsp; <a href="./docs/install_profiles.md">Installation profiles</a> &nbsp;·&nbsp; <a href="#development-and-contribution">Contribute</a></sub>
 </p>
 
 </div>
@@ -629,6 +629,9 @@ See [Fish Audio setup, chunk probes, and audio checks](docs/fish_audio_websocket
 Model weights, reference audio, character packs, and large or copyright-
 sensitive media are distributed separately. The source repository keeps the
 required icons, default wallpaper, schemas, validators, and installation tool.
+
+Visit the [Code Amadeus resource hub](https://code-amadeus.github.io/#resources)
+for available resource links and download information.
 
 The local-voice directory contracts are `asr-qwen3-0.6b` and
 `voice-kurisu-gpt-sovits-v3`, with the optional
