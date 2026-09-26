@@ -1003,7 +1003,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     } : base
   })
   const primaryVoiceIds = new Set(['conversation_asr', 'speech_synthesis', 'wake_asr', 'acoustic_pipeline'])
-  const remoteVoiceIds = new Set(['asr_remote', 'tts_remote', 'tts_mimo'])
+  const remoteVoiceIds = new Set(['asr_remote', 'tts_fish_audio', 'tts_remote'])
   const primaryVoiceConfiguration = voiceConfiguration.filter(group => primaryVoiceIds.has(group.id))
   const remoteVoiceConfiguration = voiceConfiguration.filter(group => remoteVoiceIds.has(group.id))
   const advancedVoiceConfiguration = voiceConfiguration.filter(group => !primaryVoiceIds.has(group.id) && !remoteVoiceIds.has(group.id))
@@ -1327,13 +1327,13 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                 <details className="model-advanced-roles">
                   <summary>
                     <span>{t('Advanced voice settings')}</span>
-                    <small>{t('Local engine paths and performance')}</small>
+                    <small>{t('Engine paths, performance, and other services')}</small>
                   </summary>
                   <div className="flex flex-col gap-5">
                     <SettingsGroup title="Local speech performance" detail="Performance tuning for the embedded GPT-SoVITS engine.">
                       <ComboCard icon="Tiles" title="Local TTS inference mode" content="Choose standard single synthesis, CUDA Graph, or explicit parallel generation while speech is idle." value={val('tts_mode', 'parallel')} onChange={value => handleChange('tts_mode', value)} options={[{ value: 'parallel', label: 'Standard ×1' }, { value: 'cuda_graph', label: 'CUDA Graph ×1' }, { value: 'parallel2', label: 'Parallel ×2' }]} disabled={val('tts_backend', 'gpt_sovits') !== 'gpt_sovits'} />
                     </SettingsGroup>
-                    <SettingsGroup title="Voice implementation details" detail="Model paths and reference audio for local speech synthesis.">
+                    <SettingsGroup title="Voice implementation details" detail="Model paths, reference audio, and additional voice services.">
                       {advancedVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible optionalWhenInactive />)}
                     </SettingsGroup>
                   </div>
