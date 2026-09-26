@@ -1512,28 +1512,22 @@ async def bootstrap(port: int = 17777) -> None:
 
             completed_text = str(payload.get("completed_text") or "").strip()
             accumulated_text = str(payload.get("accumulated_text") or "").strip()
-            interrupted_prefix = completed_text or accumulated_text
             marker = "[interrupted by user]"
-            interrupted_text = f"{interrupted_prefix} {marker}".strip() if interrupted_prefix else marker
-            dialog = getattr(sm.conversation_history, "dialog", [])
-            had_assistant = any(
-                message.get("role") == "assistant"
-                for message in dialog
-                if isinstance(message, dict)
-            )
             turn_id = str(payload.get("turn_id") or "")
-            changed = sm.conversation_history.mark_last_assistant_interrupted(
-                interrupted_prefix,
-                marker=marker,
-                turn_id=turn_id or None,
-            )
-            if not had_assistant:
-                sm.conversation_history.add_assistant(
-                    interrupted_text,
-                    turn_id=turn_id or None,
-                )
-                changed = True
             sid = sm.get_current_session_id()
+            interrupted_prefix = sm.project_interrupt_heard_content(
+                completed_text or accumulated_text,
+            )
+            interrupted_text = (
+                f"{interrupted_prefix} {marker}".strip()
+                if interrupted_prefix else marker
+            )
+            changed = sm.persist_interrupted_assistant_turn(
+                sid,
+                turn_id=turn_id,
+                heard_content=completed_text or accumulated_text,
+                marker=marker,
+            )
             if sid and changed:
                 sm.save_session(sid, enable_conversation=True)
             logger.info(

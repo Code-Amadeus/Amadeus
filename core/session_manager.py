@@ -91,7 +91,11 @@ class ConversationHistory:
                 None,
             )
         if target is None and assistants:
-            target = assistants[0]
+            # Legacy rows without turn_id remain interruptible by unknown ids.
+            # Never rewrite a different identified cooperative turn.
+            candidate = assistants[0]
+            if not turn_id or not str(candidate.get("turn_id") or "").strip():
+                target = candidate
         if target is not None:
             recorded_controls = self._recorded_control_text(
                 str(target.get("content") or "")
@@ -108,6 +112,17 @@ class ConversationHistory:
             target["content"] = content
             return True
         return False
+
+    def has_assistant_turn(self, turn_id: str) -> bool:
+        requested = str(turn_id or "").strip()
+        if not requested:
+            return False
+        return any(
+            isinstance(message, dict)
+            and message.get("role") == "assistant"
+            and str(message.get("turn_id") or "") == requested
+            for message in self.dialog
+        )
 
     @staticmethod
     def _recorded_control_text(content: str) -> str:
@@ -174,6 +189,139 @@ class ConversationHistory:
             parts.append(current_turn_system)
         parts.append(f"質問:{latest_user}")
         return "\n\n".join(parts)
+
+
+def project_interrupt_heard_content(raw: str) -> str:
+    """Project partial cooperative or chat output into durable history text."""
+
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    if text.lstrip().startswith("{"):
+        try:
+            from server.cooperative_delivery import (
+                ConversationSayDecoder,
+                load_consistent_json,
+                normalize_coordination_root,
+            )
+
+            try:
+                say = str(
+                    normalize_coordination_root(load_consistent_json(text)).get("say") or "",
+                ).strip()
+                if say:
+                    text = say
+            except (TypeError, ValueError):
+                decoder = ConversationSayDecoder(allow_work_proposal=True)
+                decoder.feed(text)
+                say = str(decoder.text or "").strip()
+                if say:
+                    text = say
+        except Exception:
+            logger.debug("could not project cooperative interrupt JSON", exc_info=True)
+    try:
+        from core.chat_history_projection import project_completed_role_history
+
+        projected = str(project_completed_role_history(text) or "").strip()
+        if projected:
+            text = projected
+    except Exception:
+        pass
+    try:
+        from server.handlers.session_handler import _display_text
+
+        text = str(_display_text(text) or "").strip()
+    except Exception:
+        text = text.strip()
+    return text
+
+
+def session_has_assistant_turn(session_id: str, turn_id: str) -> bool:
+    """Return whether one Session already has an assistant row for turn_id."""
+
+    tid = str(turn_id or "").strip()
+    sid = str(session_id or "").strip()
+    if not tid or not sid:
+        return False
+    try:
+        if sid == _CURRENT_SESSION_ID:
+            return conversation_history.has_assistant_turn(tid)
+        history, _ = _read_session_history(sid)
+        return history.has_assistant_turn(tid)
+    except Exception:
+        logger.exception(
+            "failed to inspect Session %r for assistant turn %r", sid, tid,
+        )
+        return False
+
+
+def _persist_assistant_turn_if_missing(
+    session_id: str | None,
+    *,
+    turn_id: str,
+    content: str,
+) -> bool:
+    tid = str(turn_id or "").strip()
+    sid = str(session_id or "").strip() or None
+    text = str(content or "").strip()
+    if not tid or not text:
+        return False
+    if sid and session_has_assistant_turn(sid, tid):
+        return False
+    if sid:
+        if append_session_message(
+            sid, role="assistant", content=text, turn_id=tid,
+        ):
+            return True
+    if conversation_history.has_assistant_turn(tid):
+        return False
+    conversation_history.add_assistant(text, turn_id=tid)
+    return True
+
+
+def persist_unpublished_assistant_turn(
+    session_id: str | None,
+    *,
+    turn_id: str = "",
+    heard_content: str = "",
+) -> bool:
+    """Persist streamed role speech when Host publish never completed."""
+
+    heard = project_interrupt_heard_content(heard_content)
+    return _persist_assistant_turn_if_missing(
+        session_id, turn_id=turn_id, content=heard,
+    )
+
+
+def persist_interrupted_assistant_turn(
+    session_id: str | None,
+    *,
+    turn_id: str = "",
+    heard_content: str = "",
+    marker: str = "[interrupted by user]",
+) -> bool:
+    """Persist a partial assistant reply when publish never completed."""
+
+    marker = (marker or "[interrupted by user]").strip()
+    heard = project_interrupt_heard_content(heard_content)
+    content = f"{heard} {marker}".strip() if heard else marker
+    tid = str(turn_id or "").strip()
+    sid = str(session_id or "").strip() or None
+
+    if tid and sid and not session_has_assistant_turn(sid, tid):
+        if _persist_assistant_turn_if_missing(sid, turn_id=tid, content=content):
+            return True
+
+    changed = conversation_history.mark_last_assistant_interrupted(
+        heard, marker=marker, turn_id=tid or None,
+    )
+    if not changed and not any(
+        isinstance(message, dict) and message.get("role") == "assistant"
+        for message in conversation_history.dialog
+    ):
+        conversation_history.add_assistant(content, turn_id=tid or None)
+        changed = True
+    return changed
 
 
 # 全局单例

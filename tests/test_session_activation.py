@@ -107,6 +107,63 @@ def test_file_payload_cannot_relabel_the_requested_session(sessions):
     assert state() == before
 
 
+def test_unpublished_cooperative_stream_persists_heard_say(sessions):
+    sm.append_session_message("A", role="user", content="scan d drive", turn_id="stream-run")
+    assert sm.persist_unpublished_assistant_turn(
+        "A",
+        turn_id="stream-run",
+        heard_content='{"action":{"op":"work"},"say":"Get-ChildItem D:\\\\"}',
+    )
+    data = json.loads(Path(sm._session_path("A")).read_text(encoding="utf-8"))
+    assert data["dialog"][-1] == {
+        "role": "assistant",
+        "content": "Get-ChildItem D:\\",
+        "turn_id": "stream-run",
+    }
+
+
+def test_interrupted_cooperative_turn_persists_before_publish(sessions):
+    sm.append_session_message("A", role="user", content="follow up", turn_id="interrupted-run")
+    assert sm.persist_interrupted_assistant_turn(
+        "A",
+        turn_id="interrupted-run",
+        heard_content='{"action":null,"say":"前半。後半"}',
+    )
+    data = json.loads(Path(sm._session_path("A")).read_text(encoding="utf-8"))
+    assert data["dialog"][-2:] == [
+        {"role": "user", "content": "follow up", "turn_id": "interrupted-run"},
+        {
+            "role": "assistant",
+            "content": "前半。後半 [interrupted by user]",
+            "turn_id": "interrupted-run",
+        },
+    ]
+    assert sm.conversation_history.dialog[-1]["content"] == "前半。後半 [interrupted by user]"
+
+
+def test_interrupted_turn_does_not_rewrite_prior_identified_assistant(sessions):
+    sm.append_session_message(
+        "A", role="assistant", content="earlier reply", turn_id="prior-run",
+    )
+    sm.append_session_message("A", role="user", content="next", turn_id="new-run")
+    assert sm.persist_interrupted_assistant_turn(
+        "A",
+        turn_id="new-run",
+        heard_content="partial reply",
+    )
+    data = json.loads(Path(sm._session_path("A")).read_text(encoding="utf-8"))
+    assert data["dialog"][-2:] == [
+        {"role": "user", "content": "next", "turn_id": "new-run"},
+        {
+            "role": "assistant",
+            "content": "partial reply [interrupted by user]",
+            "turn_id": "new-run",
+        },
+    ]
+    prior = next(row for row in data["dialog"] if row.get("turn_id") == "prior-run")
+    assert prior["content"] == "earlier reply"
+
+
 def test_correlated_append_targets_original_session_without_selecting_it(sessions):
     sm.create_session("B")
     sm.conversation_history.add_user("UNSAVED_B")

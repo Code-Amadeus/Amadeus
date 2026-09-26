@@ -683,7 +683,12 @@ class ChatHandler(RequestHandler):
                 return
             from server.handlers.session_handler import _display_text
 
+            streamed_fallback = str(self._active_accumulated_text or "").strip()
             visible_full = str(_display_text(full) or "")
+            if not visible_full.strip() and streamed_fallback:
+                visible_full = str(
+                    _display_text(streamed_fallback) or streamed_fallback,
+                ).strip()
             self._active_accumulated_text = visible_full
             self._last_assistant_turn_id = turn_id
             self._last_assistant_text = visible_full
@@ -691,6 +696,13 @@ class ChatHandler(RequestHandler):
                 try:
                     os.environ.setdefault("AMADEUS_HEADLESS", "1")
                     from core import session_manager as sm
+                    if (visible_full
+                            and not sm.session_has_assistant_turn(session_id, turn_id)):
+                        sm.persist_unpublished_assistant_turn(
+                            session_id,
+                            turn_id=turn_id,
+                            heard_content=visible_full,
+                        )
                     sm.save_session(session_id, enable_conversation=True)
                     if sm.get_session_title(session_id) == session_id:
                         title = text.strip().replace("\n", " ")[:30]
