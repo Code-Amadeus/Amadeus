@@ -1,6 +1,6 @@
 <div align="center">
 
-<p><img src="./assets/demo/amadeus-header-layered.png" width="1100" alt="Amadeus — 实时多模态桌面交互 AI Agent。薄荷绿色字符投影的二次元角色，搭配珊瑚红色点阵头发。"/></p>
+<p><img src="./assets/demo/amadeus-header-layered.png" width="1100" alt="Amadeus — 实时多模态桌面交互 AI Agent。薄荷绿色点阵标题与二次元角色、柔和珊瑚红色头发，搭配近黑色背景。"/></p>
 
 <p><picture>
   <source media="(max-width: 600px)" srcset="./assets/header-strip.zh.mobile.svg"/>
