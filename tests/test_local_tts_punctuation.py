@@ -8,7 +8,7 @@ if os.environ.get("AMADEUS_E2E_NO_TTS", "").lower() in {"1", "true", "yes", "on"
     pytest.skip("local TTS dependencies are disabled", allow_module_level=True)
 torch = pytest.importorskip("torch")
 pytest.importorskip("librosa")
-from local_tts_infer import TTSInferencer  # noqa: E402
+from local_tts_infer import TTSInferencer, cut1, cut2, cut4, cut5, split  # noqa: E402
 
 
 class FrontendReached(BaseException):
@@ -17,7 +17,7 @@ class FrontendReached(BaseException):
 
 @pytest.mark.parametrize("stream", [False, True])
 @pytest.mark.parametrize("cut", ["不切", "按标点符号切"])
-@pytest.mark.parametrize("ending", ["、", ",", "，", "。", "？", "！", ""])
+@pytest.mark.parametrize("ending", ["、", ",", "，", "。", "?", "？", "！", ""])
 def test_existing_punctuation_is_preserved_before_phoneme_conversion(stream, cut, ending):
     engine = TTSInferencer.__new__(TTSInferencer)
     engine.i18n = lambda text: text
@@ -53,3 +53,38 @@ def test_existing_punctuation_is_preserved_before_phoneme_conversion(stream, cut
             engine.infer(**kwargs)
     assert observed == [text if ending else text + "。"]
     assert references == [prompt if ending else prompt + "。"]
+
+
+@pytest.mark.parametrize("splitter,text,expected", [
+    (split, "This is a test.", ["This is a test."]),
+    (split, "ssss", ["ssss。"]),
+    (split, "Is this safe? Yes.", ["Is this safe?", " Yes."]),
+    (split, "First?! Next.", ["First?", "!", " Next."]),
+    (split, "最初です？次です！", ["最初です？", "次です！"]),
+    (cut5, "This is a test.", "This is a test."),
+    (cut5, "ssss", "ssss"),
+    (cut5, "Sss sss.", "Sss sss."),
+    (cut5, "Is this safe? Yes.", "Is this safe?\n Yes."),
+    (cut5, "This is 1.25? Yes, it is.", "This is 1.25?\n Yes,\n it is."),
+    (cut5, "First?! Next...", "First?\n Next."),
+    (cut5, "最初です？次です！", "最初です？\n次です！"),
+    (cut4, "First. Second.", "First\n Second"),
+    (cut4, "Value 1.25 is fine. Next.", "Value 1.25 is fine\n Next"),
+    (cut4, "3.1415", "3.1415"),
+    (cut4, "First... Second.", "First\n Second"),
+    (cut1, "This is a simple sentence, so this is a second sentence.",
+           "This is a simple sentence, so this is a second sentence."),
+])
+def test_splitters_recognize_punctuation_instead_of_letters(splitter, text, expected):
+    assert splitter(text) == expected
+
+
+def test_four_sentence_grouping_keeps_words_with_s_intact():
+    sentences = [f"Sentence {index} stays." for index in range(9)]
+    assert cut1(" ".join(sentences)) == " ".join(sentences[:4]) + "\n " + " ".join(sentences[4:])
+
+
+def test_fifty_character_grouping_cuts_at_punctuation_not_inside_words():
+    first = "This sentence stays intact while its words contain several lowercase esses."
+    second = "Another sentence also stays intact because letters are not punctuation."
+    assert cut2(first + " " + second) == first + "\n " + second
