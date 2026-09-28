@@ -514,6 +514,7 @@ def get_sovits_params(text: str, is_first_sentence: bool = False):
     """根据文本长度和是否为首句返回合适的推理参数。
 
     CUDA Graph 开关仅由环境变量 ENABLE_CUDA_GRAPH 控制，静态 KV Cache 始终开启。
+    各句末尾统一追加 400 ms 停顿，不改变首句起音前的缓冲。
     """
     length = len(text.strip())
     cuda_graph_enabled = os.environ.get("ENABLE_CUDA_GRAPH", "0") == "1"
@@ -529,8 +530,8 @@ def get_sovits_params(text: str, is_first_sentence: bool = False):
             "sample_steps": 4,
             "if_sr": False,
             "how_to_cut": "不切",
-            "speed": 1.1,
-            "pause_second": 0.05,
+            "speed": 1.067,
+            "pause_second": 0.4,
             "if_freeze": False,
             "enable_cuda_graph": cuda_graph_enabled,
             "enable_static_kv": True,
@@ -547,8 +548,8 @@ def get_sovits_params(text: str, is_first_sentence: bool = False):
             "sample_steps": 16,
             "if_sr": False,
             "how_to_cut": "不切",
-            "speed": 1,
-            "pause_second": 0.05,
+            "speed": 0.97,
+            "pause_second": 0.4,
             "if_freeze": False,
             "enable_cuda_graph": cuda_graph_enabled,
             "enable_static_kv": True,
@@ -563,8 +564,8 @@ def get_sovits_params(text: str, is_first_sentence: bool = False):
         "sample_steps": 32,
         "if_sr": False,
         "how_to_cut": "凑四句一切",
-        "speed": 1,
-        "pause_second": 0.12,
+        "speed": 0.97,
+        "pause_second": 0.4,
         "if_freeze": False,
         "enable_cuda_graph": cuda_graph_enabled,
         "enable_static_kv": True,
