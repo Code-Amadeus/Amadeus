@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 250" width="620" height="250" role="img" aria-label="Interruptible voice · Speech-synced presence · Delegated execution · Resume · Take over">
+<title>Amadeus — Talk / Embody / Act / Control</title>
+<defs>
+    <linearGradient id="s_panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b1711"/>
+      <stop offset="1" stop-color="#061710"/>
+    </linearGradient>
+    <linearGradient id="s_hair" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#a8cdb8" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#a8cdb8" stop-opacity=".03"/>
+    </linearGradient>
+    <radialGradient id="s_wash" cx="6%" cy="0%" r="52%">
+      <stop offset="0" stop-color="#39c98d" stop-opacity=".14"/>
+      <stop offset="1" stop-color="#39c98d" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="s_tung" cx="97%" cy="110%" r="46%">
+      <stop offset="0" stop-color="#d7a95f" stop-opacity=".10"/>
+      <stop offset="1" stop-color="#d7a95f" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="s_scan" width="3" height="3" patternUnits="userSpaceOnUse">
+      <rect width="3" height="1" fill="#b6f9d5" opacity=".05"/>
+    </pattern>
+    <filter id="s_soft" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+
+    <style>
+      .mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"DejaVu Sans Mono",monospace}
+      .sans{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+      .rec{animation:rec 2.2s ease-in-out infinite}
+      @keyframes rec{0%,100%{opacity:1}50%{opacity:.25}}
+      @media (prefers-reduced-motion:reduce){.rec{animation:none}}
+    </style>
+  </defs>
+<rect x="1" y="1" width="618" height="248" rx="8" fill="url(#s_panel)" stroke="#2f624a"/>
+<rect x="1" y="1" width="618" height="248" rx="8" fill="url(#s_wash)"/>
+<rect x="1" y="1" width="618" height="248" rx="8" fill="url(#s_scan)"/>
+<rect x="1" y="8" width="3" height="234" fill="#61eeb6" opacity=".8"/>
+<text class="mono" x="28" y="37" font-size="12" letter-spacing="2" fill="#83d7aa">AMADEUS // INTERACTION</text>
+<text class="mono" x="590" y="37" text-anchor="end" font-size="11" letter-spacing="1" fill="#d7a95f">SOURCE ALPHA</text>
+<path d="M28 57H592 M28 151H592 M304 75V231" stroke="#46745d" opacity=".3"/>
+<text class="mono" x="28" y="97" font-size="12" letter-spacing="2.4" fill="#82aa92">TALK</text><text class="sans" x="28" y="128" font-size="21" font-weight="600" fill="#d9f7e6">Interruptible voice</text>
+<text class="mono" x="324" y="97" font-size="12" letter-spacing="2.4" fill="#82aa92">EMBODY</text><text class="sans" x="324" y="128" font-size="21" font-weight="600" fill="#d9f7e6">Speech-synced presence</text>
+<text class="mono" x="28" y="190" font-size="12" letter-spacing="2.4" fill="#82aa92">ACT</text><text class="sans" x="28" y="221" font-size="21" font-weight="600" fill="#d9f7e6">Delegated execution</text>
+<text class="mono" x="324" y="190" font-size="12" letter-spacing="2.4" fill="#82aa92">CONTROL</text><text class="sans" x="324" y="221" font-size="21" font-weight="600" fill="#d9f7e6">Resume · Take over</text>
+</svg>

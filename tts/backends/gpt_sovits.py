@@ -1,4 +1,4 @@
-"""Adapter for Amadeus's embedded, v3-only GPT-SoVITS inference rewrite."""
+"""Adapter for Amadeus's embedded GPT-SoVITS inference pipeline."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ _SIDECAR_SCRIPT = _PROJECT_ROOT / "tts" / "gpt_sovits_sidecar.py"
 
 
 class GPTSoVITSBackend(BaseTTSBackend):
-    """Run GPT-SoVITS v3 checkpoints through the Amadeus low-latency pipeline."""
+    """Run supported GPT-SoVITS checkpoints through the low-latency pipeline."""
 
     backend_id = "gpt_sovits"
     deployment = "embedded"
@@ -45,6 +45,16 @@ class GPTSoVITSBackend(BaseTTSBackend):
         self._stderr_tail: deque[str] = deque(maxlen=50)
         self._ready_info: dict[str, Any] = {}
 
+    @property
+    def is_rocm(self) -> bool:
+        if self.deployment == "subprocess":
+            return bool(
+                self._ready_info.get("hip")
+                and self._ready_info.get("cuda_available")
+                and str(self._ready_info.get("device", "")).lower().startswith("cuda")
+            )
+        return bool(getattr(self._inferencer, "is_rocm", False))
+
     @staticmethod
     def _sidecar_enabled() -> bool:
         # Direct backend users may not have imported config.settings yet.  Load
@@ -53,9 +63,16 @@ class GPTSoVITSBackend(BaseTTSBackend):
 
         load_project_environment(_PROJECT_ROOT)
         mode = os.environ.get("TTS_MODE", "").strip().lower()
-        return mode in {"sidecar", "subprocess", "process"} or bool(
+        if mode in {"sidecar", "subprocess", "process"} or bool(
             os.environ.get("TTS_PYTHON", "").strip()
-        )
+        ):
+            return True
+        from config import settings
+
+        # ASR/VAD dependencies change process-wide PyTorch CPU thread settings.
+        # Keep CPU synthesis in the existing worker process, including when
+        # device=auto resolves to CPU (Intel macOS).
+        return str(settings.TTS_DEVICE).strip().lower().split(":", 1)[0] == "cpu"
 
     def load(self) -> None:
         if self._inferencer is not None or self._is_running():

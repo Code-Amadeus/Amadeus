@@ -6,10 +6,13 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agent_host.provider_types import ProviderSessionHandle
+from agent_host.provider_types import ProviderRecoveryContext, ProviderSessionHandle
 from agent_host.work_ledger_store import WorkLedgerConflict
 from agent_host.work_ledger_types import RunAttemptRecord
-from server.provider_session_binding import resolve_provider_session_attachment
+from server.provider_session_binding import (
+    ProviderSessionAttachment,
+    resolve_provider_session_attachment,
+)
 
 
 def _attempt(*, provider: str = "locus", metadata: dict | None = None) -> RunAttemptRecord:
@@ -103,6 +106,87 @@ def test_progress_only_retry_may_attach_but_an_ordinary_retry_may_not() -> None:
         "previous_attempt_id": previous.attempt_id,
         "recovery_reason": "progress_only_completion",
     }
+
+
+def test_typed_auip_retry_attaches_only_to_its_exact_same_provider_predecessor() -> None:
+    previous = _attempt(metadata={"provider_session": _handle()})
+    recovery = ProviderRecoveryContext(
+        reason="auip_validation_failed",
+        root_attempt_id="attempt-root",
+        predecessor_attempt_id=previous.attempt_id,
+        feedback="The registered application action failed preflight validation.",
+    )
+    attached = resolve_provider_session_attachment(
+        has_existing_item=True,
+        previous_attempt=previous,
+        continuation="retry",
+        provider_capabilities={"resume":"attach"},
+        request_provider="locus",
+        recovery=recovery,
+    )
+    assert attached.session == ProviderSessionHandle.from_dict(_handle())
+    assert attached.audit == {
+        "state":"attached",
+        "provider":"locus",
+        "previous_attempt_id":previous.attempt_id,
+        "recovery_reason":"auip_validation_failed",
+    }
+
+    string_only = resolve_provider_session_attachment(
+        has_existing_item=True,
+        previous_attempt=previous,
+        continuation="retry",
+        provider_capabilities={"resume":"attach"},
+        request_provider="locus",
+        recovery_reason="auip_validation_failed",
+    )
+    wrong_predecessor = resolve_provider_session_attachment(
+        has_existing_item=True,
+        previous_attempt=previous,
+        continuation="retry",
+        provider_capabilities={"resume":"attach"},
+        request_provider="locus",
+        recovery=ProviderRecoveryContext(
+            reason="auip_validation_failed",
+            root_attempt_id="attempt-root",
+            predecessor_attempt_id="attempt-other",
+            feedback="The application failed validation.",
+        ),
+    )
+    cross_provider = resolve_provider_session_attachment(
+        has_existing_item=True,
+        previous_attempt=previous,
+        continuation="retry",
+        provider_capabilities={"resume":"attach"},
+        request_provider="openclaw",
+        recovery=recovery,
+    )
+    bad_scope_previous = _attempt(metadata={"provider_session": _handle(scope="attempt")})
+    bad_scope = resolve_provider_session_attachment(
+        has_existing_item=True,
+        previous_attempt=bad_scope_previous,
+        continuation="retry",
+        provider_capabilities={"resume":"attach"},
+        request_provider="locus",
+        recovery=recovery,
+    )
+    assert (string_only == wrong_predecessor == cross_provider == bad_scope
+        == ProviderSessionAttachment())
+    stored_cross_provider = _attempt(
+        metadata={"provider_session":_handle(provider="openclaw")})
+    try:
+        resolve_provider_session_attachment(
+            has_existing_item=True,
+            previous_attempt=stored_cross_provider,
+            continuation="retry",
+            provider_capabilities={"resume":"attach"},
+            request_provider="locus",
+            recovery=recovery,
+        )
+    except WorkLedgerConflict:
+        pass
+    else:
+        raise AssertionError("AUIP retry must reject a cross-Provider stored session")
 
 
 def test_attachment_reads_the_canonical_result_fallback() -> None:

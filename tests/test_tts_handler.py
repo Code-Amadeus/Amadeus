@@ -65,7 +65,22 @@ def test_tts_mode_method_applies_real_pipeline_mode() -> None:
             result = await handler.handle(Method.TTS_SET_MODE, {"mode": "cuda_graph"})
             assert result == {"mode": "cuda_graph"}
             assert pipeline.current_tts_mode() == "cuda_graph"
+            result = await handler.handle(Method.TTS_SET_MODE, {"mode": "parallel2"})
+            assert result == {"mode": "parallel2"}
+            assert pipeline.current_tts_mode() == "parallel2"
+            result = await handler.handle(Method.TTS_SET_MODE, {"mode": "parallel"})
+            assert result == {"mode": "parallel"}
+            assert pipeline.current_tts_mode() == "parallel"
         finally:
             pipeline.reconfigure_tts_mode_name(old_mode)
 
     asyncio.run(run())
+
+
+def test_configured_tts_concurrency_stays_within_selectable_modes() -> None:
+    import tts.pipeline as pipeline
+
+    assert [
+        pipeline.selectable_tts_concurrency(value) for value in (0, 1, "2", 4, "four")
+    ] == [1, 1, 2, pipeline.MAX_SELECTABLE_TTS_CONCURRENCY, 1]
+    assert pipeline.MAX_SELECTABLE_TTS_CONCURRENCY == 2

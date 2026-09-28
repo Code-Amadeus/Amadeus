@@ -13,6 +13,11 @@ test('macOS uses a desktop-level full-scene host', () => {
       focusable: false,
       hiddenInMissionControl: true,
     },
+    canvasConstructorOptions: {
+      type: 'normal',
+      focusable: true,
+      hiddenInMissionControl: false,
+    },
     hostMode: 'scene',
     joinAllWorkspaces: true,
     interactiveLevel: { level: 'normal', relativeLevel: MACOS_WINDOW_LEVELS.canvas },
@@ -32,10 +37,19 @@ test('macOS levels preserve the desktop interaction invariant', () => {
 test('Windows keeps the existing shaped interactive slice policy', () => {
   assert.deepEqual(wallpaperWindowPolicy('win32'), {
     constructorOptions: { focusable: true },
+    canvasConstructorOptions: { focusable: true },
     hostMode: 'slice',
     joinAllWorkspaces: false,
     interactiveLevel: null,
     visibleLevel: null,
     supportsWindowShape: true,
   })
+})
+
+test('macOS keeps the scene passive and the input canvas focusable', () => {
+  const policy = wallpaperWindowPolicy('darwin')
+  assert.equal(policy.constructorOptions.type, 'desktop')
+  assert.equal(policy.constructorOptions.focusable, false)
+  assert.equal(policy.canvasConstructorOptions.type, 'normal')
+  assert.equal(policy.canvasConstructorOptions.focusable, true)
 })

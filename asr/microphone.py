@@ -10,6 +10,7 @@ from dataclasses import dataclass, asdict
 from typing import Any
 
 import pyaudio
+from core.pyaudio_lifecycle import initialize_pyaudio, terminate_pyaudio
 
 logger = logging.getLogger(__name__)
 
@@ -79,12 +80,7 @@ class MicDeviceDescriptor:
 
 def classify_device(name: str, host_api: str = "") -> str:
     text = f"{name or ''} {host_api or ''}".lower()
-    if (
-        "bluetooth" in text
-        or "hands-free" in text
-        or "handsfree" in text
-        or re.search(r"\bbt\b", text)
-    ):
+    if any(part in text for part in _BLUETOOTH_MIC_PARTS) or re.search(r"\bbt\b", text):
         return "bluetooth"
     if any(part in text for part in ("realtek", "internal", "内置", "microphone array")):
         return "internal"
@@ -132,7 +128,7 @@ def device_descriptor_for_index(index: int | None, pa: pyaudio.PyAudio | None = 
         )
     owned_pa = pa is None
     if pa is None:
-        pa = pyaudio.PyAudio()
+        pa = initialize_pyaudio(pyaudio.PyAudio)
     try:
         info = pa.get_device_info_by_index(int(index))
         host_api_index = int(info.get("hostApi", -1))
@@ -154,7 +150,7 @@ def device_descriptor_for_index(index: int | None, pa: pyaudio.PyAudio | None = 
         )
     finally:
         if owned_pa:
-            pa.terminate()
+            terminate_pyaudio(pa)
 
 
 def configured_device_index() -> int | None:
@@ -223,7 +219,7 @@ def _is_virtual_input(name: str) -> bool:
 def _device_name_for_index(index: int | None) -> tuple[str, str]:
     if index is None:
         return "", ""
-    pa = pyaudio.PyAudio()
+    pa = initialize_pyaudio(pyaudio.PyAudio)
     try:
         info = pa.get_device_info_by_index(int(index))
         host_api_index = int(info.get("hostApi", -1))
@@ -237,7 +233,7 @@ def _device_name_for_index(index: int | None) -> tuple[str, str]:
     except Exception:
         return "", ""
     finally:
-        pa.terminate()
+        terminate_pyaudio(pa)
 
 
 def _default_input_device_index(pa: pyaudio.PyAudio) -> int | None:
@@ -251,8 +247,6 @@ def _default_input_device_index(pa: pyaudio.PyAudio) -> int | None:
 
 def _host_api_priority(host_api: str) -> int:
     lower = host_api.lower()
-    if "directsound" in lower:
-        return 4
     if "wasapi" in lower:
         return 3
     if "mme" in lower:
@@ -260,6 +254,26 @@ def _host_api_priority(host_api: str) -> int:
     if "wdm-ks" in lower:
         return 1
     return 0
+
+
+def _blocking_input_unsupported_reason(host_api: str) -> str:
+    # PortAudio v19.7 pa_win_ds.c ReadStream is an unimplemented success stub.
+    # Its callback interface is separate; this restriction is for blocking I/O.
+    if host_api.strip().casefold() in {"directsound", "windows directsound"}:
+        return "DirectSound does not support PortAudio blocking microphone reads"
+    return ""
+
+
+def _require_blocking_input_device(pa: pyaudio.PyAudio, index: int | None) -> int:
+    info = (pa.get_default_input_device_info() if index is None
+        else pa.get_device_info_by_index(index))
+    host = pa.get_host_api_info_by_index(int(info["hostApi"]))
+    reason = _blocking_input_unsupported_reason(str(host.get("name", "")))
+    if host.get("type") == pyaudio.paDirectSound:
+        reason = _blocking_input_unsupported_reason("DirectSound")
+    if reason:
+        raise RuntimeError(reason)
+    return int(info["index"])
 
 
 def classify_microphone_for_aec(name: str, host_api: str = "") -> str:
@@ -272,6 +286,7 @@ def _measure_rms(pa: pyaudio.PyAudio, index: int, seconds: float = 0.35) -> int:
     chunks = max(1, int(seconds * _SAMPLE_RATE / frames_per_buffer))
     stream = None
     try:
+        index = _require_blocking_input_device(pa, index)
         stream = pa.open(
             format=pyaudio.paInt16,
             channels=1,
@@ -298,7 +313,7 @@ def _measure_rms(pa: pyaudio.PyAudio, index: int, seconds: float = 0.35) -> int:
 def list_microphones(sample_seconds: float = 0.35) -> list[MicrophoneInfo]:
     preferred_name = configured_preferred_name().lower()
     selected_index = configured_device_index()
-    pa = pyaudio.PyAudio()
+    pa = initialize_pyaudio(pyaudio.PyAudio)
     devices: list[MicrophoneInfo] = []
     try:
         host_apis = {
@@ -312,6 +327,8 @@ def list_microphones(sample_seconds: float = 0.35) -> list[MicrophoneInfo]:
                 if channels <= 0:
                     continue
                 name = str(info.get("name", f"Device {i}"))
+                host_api = str(host_apis.get(int(info.get("hostApi", -1)), ""))
+                unsupported = _blocking_input_unsupported_reason(host_api)
                 rms = _measure_rms(pa, i, sample_seconds)
                 is_virtual = _is_virtual_input(name)
                 preferred = bool(preferred_name and preferred_name in name.lower())
@@ -326,11 +343,13 @@ def list_microphones(sample_seconds: float = 0.35) -> list[MicrophoneInfo]:
                 if selected_index == i:
                     score += 10000000.0
                     reason = "manual_index"
+                if unsupported:
+                    reason = unsupported
                 devices.append(
                     MicrophoneInfo(
                         index=i,
                         name=name,
-                        host_api=str(host_apis.get(int(info.get("hostApi", -1)), "")),
+                        host_api=host_api,
                         max_input_channels=channels,
                         default_sample_rate=float(info.get("defaultSampleRate", 0.0) or 0.0),
                         rms=rms,
@@ -343,7 +362,7 @@ def list_microphones(sample_seconds: float = 0.35) -> list[MicrophoneInfo]:
             except Exception:
                 continue
     finally:
-        pa.terminate()
+        terminate_pyaudio(pa)
 
     chosen = choose_microphone(devices=devices, log=False)
     if chosen is not None:
@@ -355,7 +374,7 @@ def list_microphones(sample_seconds: float = 0.35) -> list[MicrophoneInfo]:
 def list_microphone_devices() -> list[MicDeviceDescriptor]:
     """Enumerate input devices without opening them or sampling microphone audio."""
 
-    pa = pyaudio.PyAudio()
+    pa = initialize_pyaudio(pyaudio.PyAudio)
     devices: list[MicDeviceDescriptor] = []
     try:
         host_apis = {
@@ -376,7 +395,7 @@ def list_microphone_devices() -> list[MicDeviceDescriptor]:
             except Exception:
                 continue
     finally:
-        pa.terminate()
+        terminate_pyaudio(pa)
     return devices
 
 
@@ -387,9 +406,11 @@ def choose_microphone(
     log: bool = True,
 ) -> MicrophoneInfo | None:
     devices = list_microphones(sample_seconds) if devices is None else devices
+    devices = [device for device in devices
+        if not _blocking_input_unsupported_reason(device.host_api)]
     if not devices:
         if log:
-            logger.warning("[Mic] no input microphone devices found")
+            logger.warning("[Mic] no input microphone devices supporting blocking reads found")
         return None
     chosen = max(devices, key=lambda item: item.score)
     if log:
@@ -421,6 +442,12 @@ def open_input_stream_with_fallback(
 
     attempts: list[tuple[int | None, str]] = []
     seen: set[int | None] = set()
+    configured_index = configured_device_index()
+    strict_preferred = (
+        preferred_index is not None
+        and configured_index is not None
+        and preferred_index == configured_index
+    )
 
     def add(index: int | None, reason: str) -> None:
         if index in seen:
@@ -428,7 +455,38 @@ def open_input_stream_with_fallback(
         seen.add(index)
         attempts.append((index, reason))
 
-    add(preferred_index, "preferred")
+    if preferred_index is not None:
+        add(preferred_index, "preferred")
+
+    devices = list_microphones(0.1)
+
+    def add_same_name(index: int | None) -> None:
+        original = next((device for device in devices if device.index == index), None)
+        if original is None:
+            return
+        alternatives = [device for device in devices
+            if device.index != index and device.name.casefold() == original.name.casefold()
+            and not device.is_virtual and device.rms >= 0
+            and not _blocking_input_unsupported_reason(device.host_api)]
+        alternatives.sort(key=lambda device:(_host_api_priority(device.host_api), device.rms),
+            reverse=True)
+        for device in alternatives:
+            add(device.index, f"same_device_name:{device.name}")
+
+    if not strict_preferred:
+        add_same_name(preferred_index)
+    preferred_name = configured_preferred_name().lower()
+    if preferred_name and not strict_preferred:
+        named_preferred = [d for d in devices
+            if (preferred_name in d.name.lower()
+                or preferred_name in d.host_api.lower())
+            and not d.is_virtual and d.index != preferred_index and d.rms >= 0]
+        named_preferred.sort(
+            key=lambda d: (_host_api_priority(d.host_api), d.rms, d.score),
+            reverse=True,
+        )
+        for device in named_preferred:
+            add(device.index, f"preferred_name:{device.name}")
 
     fallback_index = configured_fallback_device_index()
     if fallback_index is not None:
@@ -436,7 +494,7 @@ def open_input_stream_with_fallback(
 
     fallback_name = configured_fallback_name().lower()
     if fallback_name:
-        pa_devices = list_microphones(0.1)
+        pa_devices = devices
         named_fallbacks = [
             d
             for d in pa_devices
@@ -456,33 +514,62 @@ def open_input_stream_with_fallback(
         for device in named_fallbacks:
             add(device.index, f"configured_fallback_name:{device.name}")
 
-    default_index = _default_input_device_index(pa)
-    if default_index is not None:
-        add(default_index, "windows_default")
-    add(None, "system_default")
-    devices = pa_devices if fallback_name else list_microphones(0.1)
-    usable = [d for d in devices if d.rms >= 0 and not d.is_virtual and d.index != preferred_index]
-    usable.sort(key=lambda d: (d.preferred, d.rms, d.score), reverse=True)
-    for device in usable:
-        add(device.index, f"fallback:{device.name}")
+    if not strict_preferred:
+        default_index = _default_input_device_index(pa)
+        if default_index is not None:
+            add(default_index, "windows_default")
+            add_same_name(default_index)
+        add(None, "system_default")
+        usable = [
+            d
+            for d in devices
+            if d.rms >= 0 and not d.is_virtual and d.index != preferred_index
+        ]
+        usable.sort(key=lambda d: (d.preferred, d.rms, d.score), reverse=True)
+        for device in usable:
+            add(device.index, f"fallback:{device.name}")
 
     last_error: Exception | None = None
     for index, reason in attempts:
         try:
-            stream = pa.open(
-                format=pyaudio.paInt16,
-                channels=1,
-                rate=sample_rate,
-                input=True,
-                input_device_index=index,
-                frames_per_buffer=frames_per_buffer,
-            )
-            if index != preferred_index:
-                logger.warning("%s opened fallback microphone index=%s (%s)", log_label, index, reason)
-            return stream, index
+            resolved_index = _require_blocking_input_device(pa, index)
         except Exception as exc:
             last_error = exc
-            logger.warning("%s microphone open failed index=%s (%s): %s", log_label, index, reason, exc)
+            logger.warning("%s microphone unavailable index=%s (%s): %s",
+                log_label, index, reason, exc)
+            continue
+        open_attempts = 3 if strict_preferred and index == preferred_index else 1
+        for attempt in range(1, open_attempts + 1):
+            try:
+                stream = pa.open(
+                    format=pyaudio.paInt16,
+                    channels=1,
+                    rate=sample_rate,
+                    input=True,
+                    input_device_index=resolved_index,
+                    frames_per_buffer=frames_per_buffer,
+                )
+                if index != preferred_index:
+                    logger.warning(
+                        "%s opened fallback microphone index=%s (%s)",
+                        log_label,
+                        index,
+                        reason,
+                    )
+                return stream, resolved_index
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "%s microphone open failed index=%s (%s) attempt=%s/%s: %s",
+                    log_label,
+                    index,
+                    reason,
+                    attempt,
+                    open_attempts,
+                    exc,
+                )
+                if attempt < open_attempts:
+                    time.sleep(0.2)
 
     if last_error is not None:
         raise last_error
@@ -490,9 +577,10 @@ def open_input_stream_with_fallback(
 
 
 def monitor_microphone(index: int, seconds: float = 5.0, interval: float = 0.25) -> None:
-    pa = pyaudio.PyAudio()
+    pa = initialize_pyaudio(pyaudio.PyAudio)
     stream = None
     try:
+        index = _require_blocking_input_device(pa, index)
         stream = pa.open(
             format=pyaudio.paInt16,
             channels=1,
@@ -514,4 +602,4 @@ def monitor_microphone(index: int, seconds: float = 5.0, interval: float = 0.25)
                 stream.close()
             except Exception:
                 pass
-        pa.terminate()
+        terminate_pyaudio(pa)

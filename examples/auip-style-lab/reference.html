@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>光谱实验台 · Amadeus style study</title>
+<link rel="stylesheet" href="base.css">
+<style>
+body { margin: 0; }
+.instrument { max-width: 1380px; margin: auto; padding: 40px 48px 24px; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding-bottom: 24px; border-bottom: 1px solid var(--am-line); }
+h1 { font-size: 30px; line-height: 1.25; font-weight: 500; margin: 8px 0; letter-spacing: -.03em; }
+header p { margin: 0; color: var(--am-muted); font-size: 14px; }
+.serial { font: 13px var(--am-mono); color: var(--am-accent); }
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 40px; padding: 32px 0; }
+.plot-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.figure { margin: 0; }
+.spectrum { position: relative; padding: 12px 0; background: #071216; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+.spectrum::before, .spectrum::after { content: ''; position: absolute; width: 16px; height: 16px; pointer-events: none; border-color: var(--am-accent); border-style: solid; }
+.spectrum::before { left: 0; top: 0; border-width: 1px 0 0 1px; }
+.spectrum::after { right: 0; bottom: 0; border-width: 0 1px 1px 0; }
+figcaption { display: flex; justify-content: space-between; color: var(--am-muted); font: 12px var(--am-mono); margin: 14px 0 28px; gap: 12px; }
+.observation { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--am-line); padding-top: 24px; gap: 20px; }
+.reading { font: 38px/1.3 var(--am-mono); margin: 8px 0; }
+.reading small { font-size: 14px; color: var(--am-muted); }
+.note { font-size: 15px; margin: 8px 0; }
+aside { border-left: 1px solid var(--am-line); padding-left: 28px; }
+aside h2 { font-size: 17px; font-weight: 500; margin: 0 0 24px; }
+.field { margin-bottom: 28px; }
+.field label { display: block; margin-bottom: 12px; font-size: 14px; }
+.field select, .field input { width: 100%; }
+.scale { display: flex; justify-content: space-between; }
+.sample { height: 76px; background: #eca761; margin: 12px 0; border-radius: 4px; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+footer { border-top: 1px solid var(--am-line); padding-top: 16px; display: flex; justify-content: space-between; gap: 16px; }
+.study-link { color: var(--am-muted); }
+@media(max-width: 760px) { .instrument { padding: 24px 20px; } .workspace { grid-template-columns: 1fr; gap: 28px; } aside { padding: 24px 0 0; border-left: 0; border-top: 1px solid var(--am-line); } header { align-items: start; } .am-app header .am-status { display: none; } .observation { grid-template-columns: 1fr; gap: 8px; } footer { flex-wrap: wrap; } h1 { font-size: 26px; } svg text { font-size: 28px; } svg text:nth-child(1), svg text:nth-child(2), svg text:nth-child(4), svg text:nth-child(6) { display: none; } }
+</style>
+<body class="am-app">
+<main class="instrument">
+  <header><div><div class="serial">AMADEUS / OPTICS — 01</div><h1>光谱实验台</h1><p>改变光的温度，观察颜色如何相遇。</p></div><span class="am-status" data-active>交互示意 · 本地计算</span></header>
+  <div class="workspace">
+    <section aria-label="光谱观察">
+      <div class="plot-heading"><span class="am-label">相对强度 / 示意曲线</span><span class="am-label" id="plot-source">连续光源</span></div>
+      <figure class="figure"><div class="spectrum"><svg viewBox="0 0 800 360" role="img" aria-label="随色温变化的可见光谱示意图">
+      <defs><linearGradient id="rainbow"><stop stop-color="#9478e8"/><stop offset=".22" stop-color="#72a9ee"/><stop offset=".43" stop-color="#8ac5b3"/><stop offset=".63" stop-color="#ddd58c"/><stop offset=".8" stop-color="#e8a678"/><stop offset="1" stop-color="#d77672"/></linearGradient><linearGradient id="fade" x2="0" y2="1"><stop stop-color="#9fc2c0" stop-opacity=".18"/><stop offset="1" stop-color="#9fc2c0" stop-opacity="0"/></linearGradient></defs>
+      <g stroke="#224044" stroke-width="1"><path d="M48 50H776M48 120H776M48 190H776M48 260H776"/><path d="M48 28V290M230 28V290M412 28V290M594 28V290M776 28V290" stroke-dasharray="2 6"/></g>
+      <g fill="#9cb9b4" font-family="Consolas,monospace" font-size="12"><text x="12" y="54">1.0</text><text x="12" y="194">0.4</text><text x="38" y="337">380</text><text x="217" y="337">480</text><text x="399" y="337">580</text><text x="581" y="337">680</text><text x="751" y="337">780</text></g>
+      <path id="area" fill="url(#fade)"/><path id="curve" stroke="url(#rainbow)" stroke-width="3" fill="none"/>
+      <rect x="48" y="298" width="728" height="9" rx="2" fill="url(#rainbow)" opacity=".85"/>
+      </svg></div><figcaption><span>可见光波长 / nm</span><span>非测量数据</span></figcaption></figure>
+      <div class="observation"><div><span class="am-label">当前色温</span><div class="reading"><output id="temperature">4200</output> <small>K</small></div></div><div><span class="am-label">观察笔记</span><p class="note" id="note">暖白与冷白之间，色彩保持柔和的平衡。</p></div></div>
+    </section>
+    <aside aria-label="实验参数"><h2>调整光源</h2><div class="field"><label for="source">光谱形态</label><select id="source" class="am-select"><option value="continuous">连续光源</option><option value="band">窄带光源</option></select></div><div class="field"><label for="kelvin">色温</label><input id="kelvin" type="range" min="1800" max="9000" step="100" value="4200"><div class="scale am-label"><span>1800 K</span><span>9000 K</span></div></div><div class="field"><label for="gain">相对强度 <output id="gain-label" class="am-number">70%</output></label><input id="gain" type="range" min="10" max="100" value="70"></div><span class="am-label">光色印象 · 艺术化映射</span><div class="sample" id="sample"></div><div class="actions"><button class="am-button" data-primary id="save">记录观察</button><button class="am-button" id="reset">重置</button></div><p class="am-label" role="status" id="saved">尚未记录</p></aside>
+  </div>
+  <footer><span class="am-label">视觉研究 v0 · 内容保留自己的颜色</span><a class="am-label study-link" href="index.html" target="_top">返回实验对照</a></footer>
+</main>
+<script>
+const el = id => document.getElementById(id);
+let records = 0;
+function render() {
+ const k = Number(el('kelvin').value), gain = Number(el('gain').value)/100, t=(k-1800)/7200, band=el('source').value==='band';
+ const points=Array.from({length:101},(_,i)=>{const x=i/100, center=.87-t*.72, sigma=band?.09:.37, y=Math.exp(-.5*((x-center)/sigma)**2)*gain;return [48+x*728,280-y*235];});
+ const d=points.map(([x,y],i)=>(i?'L':'M')+x.toFixed(1)+' '+y.toFixed(1)).join(' ');
+ el('curve').setAttribute('d',d); el('area').setAttribute('d',d+' L776 290 L48 290Z');
+ el('temperature').textContent=k; el('gain-label').textContent=Math.round(gain*100)+'%';
+ el('plot-source').textContent=band?'窄带光源':'连续光源';
+ el('sample').style.background=`rgb(${Math.round(243-t*95)} ${Math.round(163+t*47)} ${Math.round(91+t*145)})`;
+ el('note').textContent=k<3500?'暖色占据画面，像傍晚落在桌面的光。':k>6000?'蓝色成分更醒目，画面逐渐显得清冷。':'暖白与冷白之间，色彩保持柔和的平衡。';
+}
+['kelvin','gain','source'].forEach(id=>el(id).addEventListener('input',render));
+el('save').onclick=()=>{records++;el('saved').textContent=`第 ${records} 条观察：${el('kelvin').value} K / ${el('gain').value}%`;};
+el('reset').onclick=()=>{el('kelvin').value=4200;el('gain').value=70;el('source').value='continuous';render();el('saved').textContent='参数已重置；已记录 '+records+' 条观察';};
+render();
+</script>
+</body></html>

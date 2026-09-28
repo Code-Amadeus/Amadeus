@@ -111,10 +111,13 @@ contract before it can become an AUIP attachment candidate.
 
 ## Developer status
 
-The v0 protocol and runtime are implemented inside this repository. The
-separate [Code-Amadeus/auip](https://github.com/Code-Amadeus/auip) repository is
-currently a public namespace placeholder. This release does not claim a
-standalone SDK, reviewed reference application set, or conformance suite.
+The experimental v0 protocol and runtime are implemented inside this
+repository, alongside the [Web SDK](../sdk/auip-web/),
+[Managed Core](../sdk/auip-core/), application examples, and integration tests.
+The separate [Code-Amadeus/AUIP](https://github.com/Code-Amadeus/AUIP)
+repository documents current status, implementation entry points, and
+proposed SDK release criteria. An independently versioned SDK and a standalone
+conformance suite have not been released.
 
 Relevant implementation entry points:
 

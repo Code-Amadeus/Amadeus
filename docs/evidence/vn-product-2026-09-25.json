@@ -1,0 +1,114 @@
+{
+  "date": "2026-09-25",
+  "scope": "launch, ingress, runtime presentation and session controls",
+  "games": [
+    {
+      "title": "Kemono Teatime product acceptance",
+      "game_type": "base",
+      "launch_method": "steam",
+      "report": "output/diagnostics/vn-profile-live-20260925-021526/report.json",
+      "phases": [
+        {
+          "phase": 1,
+          "capture_only": true,
+          "game_pid": 7692,
+          "bridge_lines_at_checkpoint": 3,
+          "source": "agent_websocket",
+          "overlay": "not_started",
+          "indexed_script_lines": 0,
+          "model_configured": false,
+          "visible_game_lines": 0,
+          "player_answers": 0,
+          "visible_reactions": 0
+        },
+        {
+          "phase": 2,
+          "capture_only": false,
+          "game_pid": 22988,
+          "bridge_lines_at_checkpoint": 3,
+          "source": "agent_websocket",
+          "overlay": "running",
+          "indexed_script_lines": 0,
+          "model_configured": true,
+          "visible_game_lines": 4,
+          "player_answers": 1,
+          "visible_reactions": 2
+        }
+      ]
+    },
+    {
+      "title": "PARANORMASIGHT product acceptance",
+      "game_type": "mystery",
+      "launch_method": "exe",
+      "report": "output/diagnostics/vn-profile-live-20260925-022118/report.json",
+      "phases": [
+        {
+          "phase": 1,
+          "capture_only": true,
+          "game_pid": 30988,
+          "bridge_lines_at_checkpoint": 3,
+          "source": "agent_websocket",
+          "overlay": "not_started",
+          "indexed_script_lines": 0,
+          "model_configured": false,
+          "visible_game_lines": 0,
+          "player_answers": 0,
+          "visible_reactions": 0
+        },
+        {
+          "phase": 2,
+          "capture_only": false,
+          "game_pid": 29288,
+          "bridge_lines_at_checkpoint": 3,
+          "source": "agent_websocket",
+          "overlay": "running",
+          "indexed_script_lines": 12072,
+          "model_configured": true,
+          "visible_game_lines": 3,
+          "player_answers": 1,
+          "visible_reactions": 1
+        }
+      ]
+    }
+  ],
+  "automated": {
+    "python_tests": 107,
+    "frontend_contract_tests": 3,
+    "browser_ui": "passed with production runtime events; hardware and model completion substituted",
+    "native_overlay": "passed; production Tk and atlas, HTTP reaction/visibility, optional-art absence",
+    "electron_build": "passed (existing bundle-size warning)",
+    "window_capture": "passed: overlapping real windows; exact HWND; native fault and timeout isolation contracts"
+  },
+  "not_qualified": [
+    "Luna extraction quality in either real game",
+    "Live microphone recognition: awaiting user participation",
+    "TTS audio playback: CUDA inference failure; investigation deferred at user request",
+    "Long-session story understanding, save/load and branch-revisit semantics"
+  ],
+  "host_vision": [
+    {
+      "game": "kemono",
+      "report": "output/diagnostics/vn-host-vision-kemono-isolated-20260925/report.json",
+      "game_pid": 11560,
+      "frame": "output/diagnostics/vn-host-vision-kemono-isolated-20260925/game-window.jpg",
+      "preview_and_automatic_question_capture": true,
+      "manual_visual_review": "passed: image contains game only; answer identifies visible menu",
+      "session_stopped_and_microphone_off": true
+    },
+    {
+      "game": "pns",
+      "report": "output/diagnostics/vn-host-vision-pns-isolated-20260925/report.json",
+      "game_pid": 19988,
+      "frame": "output/diagnostics/vn-host-vision-pns-isolated-20260925/game-window.jpg",
+      "preview_and_automatic_question_capture": true,
+      "manual_visual_review": "passed: image contains game only; answer identifies visible menu",
+      "session_stopped_and_microphone_off": true
+    }
+  ],
+  "invalidated_probe_results": [
+    {
+      "report": "output/diagnostics/vn-host-io-pns-20260925/report.json",
+      "reason": "Original passed result invalidated: TTS emitted silent fallback after CUDA error; old window capture included occluding surfaces."
+    }
+  ]
+}

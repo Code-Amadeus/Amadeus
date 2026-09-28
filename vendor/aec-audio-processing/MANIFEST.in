@@ -1,0 +1,25 @@
+include README.md
+include LICENSE
+include setup.py
+include setup.cfg
+include pyproject.toml
+
+# Include all source files
+recursive-include src *.py *.cpp *.h *.i
+recursive-include src/lib *.so *.dylib
+
+# Include all WebRTC files
+recursive-include webrtc-audio-processing *
+recursive-include webrtc-audio-processing/webrtc *.c *.cc *.h *.cpp *.i *.S
+recursive-include webrtc-audio-processing/subprojects *
+
+# Exclude the C++ build artifacts from the source distribution
+prune webrtc-audio-processing/build
+prune webrtc-audio-processing/install
+
+# Exclude unnecessary files
+global-exclude .DS_Store
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude *.so
+global-exclude .git*

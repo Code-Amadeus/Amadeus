@@ -251,7 +251,7 @@ def test_pending_chat_visible_only_after_confirmed():
             assert events == [
                 (
                     Method.CHAT_COMPLETE,
-                    {"turn_id": "spec_visible", "full_text": "draft final"},
+                    {"turn_id": "spec_visible", "session_id": "spec-visible-session", "full_text": "draft final"},
                 )
             ]
         finally:

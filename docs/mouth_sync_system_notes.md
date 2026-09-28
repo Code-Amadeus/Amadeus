@@ -1,7 +1,7 @@
 # Mouth Sync System Notes
 
 Date: 2026-05-23
-Updated: 2026-08-29
+Updated: 2026-09-27
 
 This note records the current SpriteForge mouth-sync implementation, the failed paths we hit, and the reasoning behind the final conservative design.
 
@@ -29,7 +29,7 @@ The primary signal is derived from the PCM that physical playback is about to
 write. VTS remains an optional compatibility sink:
 
 ```text
-PCM playback window (about 50 ms)
+PCM playback window (10 ms)
   -> RMS * volume multiplier
   -> MouthSignalRouter primary sink
   -> render.mouth event
@@ -43,6 +43,36 @@ into envelope windows internally. Each mouth value is published immediately
 before the corresponding PCM window is written. Publishing only after a whole
 merged write would leave the renderer displaying the previous window's value
 while audible speech is already playing.
+
+Complete/cached audio and the chunk playback APIs use the same
+`StreamPlayer._write_audio_sync` primitive as the streaming writer. There is no
+wall-clock throttle or separate write-then-publish loop: every nonempty 10 ms PCM
+window publishes its own RMS value before that window's device write. Window
+length follows the actual sample rate; it is not rounded up to a fixed 512-sample
+buffer. The final partial window is written without dropping or padding samples.
+All windows in a job run on its writer thread without an asyncio handoff between
+writes. Interrupt ownership is checked between windows and again before writing.
+
+The August 29 fix only covered streaming playback. Complete-audio playback had
+retained first-window priming followed by write-then-publish updates about every
+50 ms. At 24 kHz that was typically every third 512-sample write (64 ms). It also
+sampled only that last block, so short pauses could be missed. Streaming's 50 ms
+RMS average could itself erase a pause spanning two partially voiced windows.
+The September 27 change removes that path difference and uses 10 ms windows.
+
+This is a PCM submission-order contract, not a fixed one-display-frame advance
+or a measurement of acoustic/video presentation. PyAudio/OS/device buffering,
+event transport, and display refresh still contribute to perceived A/V offset.
+In particular, Bluetooth output latency must not be treated as a measured visual
+delay and blindly subtracted. Precise output compensation needs end-to-end
+measurement against the playback device and the renderer.
+
+Regression coverage in `tests/test_playback_mouth_timing.py` exercises 25 ms and
+70 ms pauses, reopening, leading/trailing silence, irregular producer chunks,
+partial final windows, device failure, and interruption across all playback
+entry points at 16/24/32/44.1/48 kHz. Its fake device measures PCM submission
+positions, not acoustic latency. Tests reproduce the old late/missing close
+signals and bound the new envelope transitions to one 10 ms analysis window.
 
 The router also fans out to an optional VTS compatibility path. A failure in
 that side path cannot block local rendering or physical audio playback.
@@ -60,6 +90,7 @@ MouthSignalRouter
 Relevant code:
 
 - `tts/playback.py::StreamPlayer.write_audio_async`
+- `tts/playback.py::StreamPlayer._write_audio_sync`
 - `tts/mouth_signal.py::MouthSignalRouter`
 - `render/headless_bridge.py::HeadlessRenderBridge`
 - `render/spriteforge_animator.py::set_mouth_value`

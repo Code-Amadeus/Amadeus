@@ -1293,6 +1293,36 @@ class WorkObserverCoordinator:
             },
         )
 
+    async def begin_external_result(self, run_id: str) -> None:
+        """Retire one native run's progress before its own role presents the result."""
+        target = str(run_id or "").strip()
+        if not target:
+            return
+        self._closed_runs[target] = time.time()
+        session = self._sessions.pop(target, None)
+        if session is not None:
+            session.close()
+        self._narration_governor.drop(target)
+        task = self._narration_tasks.pop(target, None)
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        from server.vn_tts_bridge import cancel_pending_vn_tts
+        from tts.pipeline import discard_pending_tts
+
+        cancel_pending_vn_tts(source="work_observer", run_id=target, nonterminal_only=True)
+        discard_pending_tts(source="work_observer", run_id=target, nonterminal_only=True)
+
+    async def finish_external_presentation(self, run_id: str) -> None:
+        """Use the existing bounded output/release boundary for another narrator.
+
+        This does not create an Observer session, note, model call or Work fact.
+        """
+        try:
+            await self._wait_for_terminal_output_idle()
+        finally:
+            await self._release_character_runtime(run_id)
+
     async def _release_character_runtime(self, run_id: str) -> None:
         try:
             if self._release_work is not None:
@@ -1807,6 +1837,7 @@ class WorkObserverCoordinator:
             "turn_id": line_id,
             "complete_turn": True,
             "source": "work_observer",
+            "run_id": run_id,
             "action": action,
             "terminal": bool(decision.get("terminal")),
             "work_item_id": str(decision.get("work_item_id") or ""),
@@ -1936,19 +1967,83 @@ class WorkObserverCoordinator:
         language = str(display_language or "").strip().lower()
         if language == "japanese":
             if body and not text_matches_assistant_language(body, language):
+                # The result card and the role report have separate language
+                # contracts. Preserve a concrete result excerpt inside a
+                # Japanese frame when the Narrator cannot localize provider
+                # prose; silently collapsing it to "the task finished" loses
+                # the only fact the user was waiting for.
+                excerpt = self._terminal_result_excerpt(summary)
+                if excerpt:
+                    return (
+                        "作業は完了したわ。最終報告では"
+                        f"「{excerpt}」という結果になっている。"
+                        "詳しい内容はカードに残してある。"
+                    )
                 body = ""
             if not body:
                 return "こちらで確認したわ。この作業は終わっている。"
             return f"こちらで確認したわ。この作業は終わった。概要は「{body}」。詳しい根拠はカードに残してある。"
         if language == "english":
             if body and not text_matches_assistant_language(body, language):
-                body = ""
+                excerpt = self._terminal_result_excerpt(summary)
+                if excerpt and text_matches_assistant_language(excerpt, language):
+                    return f"The task is finished. The final report says: “{excerpt}”. I kept the details on the card."
+                return (
+                    "The task is finished, but I could not safely translate the concrete result into English. "
+                    "The original report is preserved on the card."
+                )
             if not body:
                 return "I checked it. This background task is finished."
             return f"I checked it. The task is finished. Briefly: {body}. I kept the details on the card."
+        if body and not text_matches_assistant_language(body, language):
+            return "任务已经结束，但具体结果未能安全转换成中文；原始报告已保留在卡片中。"
         if not body:
             return "我这边确认好了，这轮后台工作已经结束。"
         return f"我这边确认好了，这轮后台工作已经结束。简要结果是：{body}。详细来源我保留在卡片里。"
+
+    @staticmethod
+    def _terminal_result_excerpt(summary: str, *, limit: int = 140) -> str:
+        """Keep one concrete provider finding for a cross-language fallback."""
+
+        raw = str(summary or "").strip()
+        if not raw:
+            return ""
+        lines = [line.strip() for line in raw.splitlines() if line.strip()]
+        inline_numbered = re.search(
+            r"(?:^|\s)\*{1,2}\d+[.)]\s+(.+?)\*{1,2}(?=\s|$)",
+            raw,
+        )
+        numbered = (
+            inline_numbered.group(1).strip()
+            if inline_numbered is not None
+            else next(
+            (
+                match.group(1).strip()
+                for line in lines
+                if (
+                    match := re.match(
+                        r"^(?:#+\s*)?(?:\*{1,2})?\d+[.)]\s+(.+?)(?:\*{1,2})?$",
+                        line,
+                    )
+                )
+            ),
+            "",
+            )
+        )
+        candidate = numbered or next(
+            (
+                line
+                for line in lines
+                if line.lstrip("#*- ").strip().casefold()
+                not in {"result", "results", "summary", "top stories"}
+            ),
+            "",
+        )
+        candidate = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", candidate)
+        candidate = re.sub(r"^[#*\-\s]+|[#*\-\s]+$", "", candidate)
+        candidate = candidate.replace("`", "").strip()
+        candidate = WorkObserverCoordinator._strip_private_locations(candidate)
+        return WorkObserverCoordinator._trim(candidate, limit)
 
     @staticmethod
     def _blocking_summary(summary: str, display_language: str) -> str:

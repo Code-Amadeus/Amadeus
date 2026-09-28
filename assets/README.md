@@ -28,8 +28,10 @@ copy continues to live below `assets/`.
 | --- | --- | --- |
 | `visual-runtime` | ambient/subtitle images, scenario runtime, keyboard SFX | Optional wallpaper effects and activities |
 | `character-kurisu` | `spriteforge/runtime/kurisu/` | Optional manifest-indexed KTX2 animation |
+| `companion-kurisu` | `companion/kurisu/` | Derived small WebP portraits; usable without the full wallpaper pack |
 | `asr-qwen3-0.6b` | `models/asr/qwen3-asr-0.6b/` | Offline Qwen3-ASR conversation model |
 | `voice-kurisu-gpt-sovits-v3` | GPT-SoVITS v3 runtime weights and reference audio | Optional embedded Kurisu voice |
+| `voice-kurisu-gpt-sovits-v2pro-experimental` | GPT-SoVITS v2Pro voice and speaker-encoder weights | Optional experimental Kurisu voice |
 
 All packs are optional at application startup. Without them, the built-in
 wallpaper, text Chat, Work, and headless startup remain available; Settings
@@ -58,15 +60,31 @@ python tools/external_assets.py build visual-runtime `
 python tools/external_assets.py build character-kurisu `
   --output output\amadeus-character-kurisu.zip
 
+python tools/external_assets.py build companion-kurisu `
+  --output output\amadeus-companion-kurisu.zip
+
 python tools/external_assets.py build asr-qwen3-0.6b `
   --output output\amadeus-asr-qwen3-0.6b.zip
 
 python tools/external_assets.py build voice-kurisu-gpt-sovits-v3 `
   --output output\amadeus-voice-kurisu-gpt-sovits-v3.zip
 
+python tools/external_assets.py build voice-kurisu-gpt-sovits-v2pro-experimental `
+  --output output\amadeus-voice-kurisu-gpt-sovits-v2pro-experimental.zip
+
 python tools/external_assets.py build visual-runtime character-kurisu `
   --output output\amadeus-runtime-assets.zip
 ```
+
+Ship `amadeus-companion-kurisu.zip` beside the existing art archives as an optional
+download. It needs neither of the other art packs; those packs remain valid
+without it. To intentionally include it in a combined archive, append
+`companion-kurisu` to that build command. A combined archive installs all its
+declared packs, so separate archives are preferred for optional components.
+
+Companion build/verify/install/status validate manifest-indexed files, animation
+timelines, decoded-memory limits, sizes, and hashes. Uninstalled is allowed;
+corrupt selected packs are rejected before installation.
 
 The archive stores repository-relative `assets/...` paths, streams large files,
 uses ZIP64, and records size and SHA-256 for every member. The installer rejects
@@ -86,3 +104,18 @@ unexpected overwrites before committing files.
   manifest, graph, mouth config, and indexed KTX2 textures.
 - Model families keep their existing directories under `models/`; model files
   and reference voices remain separately supplied.
+
+## Repository Star History
+
+The README loads the chart from the generated `star-history` branch. The
+`Update star history` workflow refreshes it daily, on manual dispatch, and
+when its workflow or generator changes on `main`. It publishes only
+`star-history.svg` and skips commits when the chart content is unchanged.
+The protected `main` branch does not receive automated chart commits.
+`assets/star-history.svg` is the local snapshot; scheduled updates are served
+from the generated branch. GitHub's image cache may briefly delay display.
+
+The generator owns the near-square, pen-style presentation (including dark
+mode). Its monotone curve passes through every daily cumulative total; the
+subpixel ink texture does not alter the data. Counts describe current
+stargazers grouped by their original star dates, not an archive of past totals.

@@ -31,6 +31,7 @@ from config.asset_packages import (  # noqa: E402
     path_belongs_to_pack,
 )
 from render.character_pack import CharacterPackError, load_character_pack  # noqa: E402
+from render.companion_pack import CompanionPackError, load_companion_pack  # noqa: E402
 
 
 BUNDLE_MANIFEST_NAME = "ASSET_BUNDLE_MANIFEST.json"
@@ -84,7 +85,12 @@ def _resolved_source_files(
     spec: AssetPackSpec,
 ) -> tuple[Path, ...]:
     asset_root = project_root / "assets"
-    if spec.validator == "character_pack":
+    if spec.validator == "companion_pack":
+        try:
+            files = set(load_companion_pack(asset_path(asset_root, spec.trees[0])))
+        except CompanionPackError as exc:
+            raise AssetPackageError(f"{spec.id}: {exc}") from exc
+    elif spec.validator == "character_pack":
         if len(spec.trees) != 1:
             raise AssetPackageError("character pack requires exactly one runtime tree")
         pack = load_character_pack(asset_path(asset_root, spec.trees[0]))

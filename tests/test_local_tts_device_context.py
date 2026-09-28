@@ -114,6 +114,90 @@ def test_rocm_uses_torch_cuda_api_without_enabling_nvidia_extensions(
     assert _allows_nvidia_cuda_extensions(uses_torch_cuda_api) is False
 
 
+def test_rocm_stream_vocoder_reuses_final_chunk_shape() -> None:
+    inferencer = _inferencer("cpu", uses_torch_cuda_api=False)
+    shapes = []
+
+    class Vocoder:
+        def __call__(self, mel):
+            shapes.append(tuple(mel.shape))
+            return torch.ones((1, 1, mel.shape[-1] * 4)),
+
+    inferencer.bigvgan_model = Vocoder()
+    first = inferencer._run_bigvgan_stream_chunk(torch.ones((1, 100, 8)), target_frames=8)
+    last = inferencer._run_bigvgan_stream_chunk(torch.ones((1, 100, 3)), target_frames=8)
+
+    assert shapes == [(1, 100, 8), (1, 100, 8)]
+    assert first.shape[-1] == 32
+    assert last.shape[-1] == 12
+
+
+@pytest.mark.parametrize("value", ["", "80.0", "eighty"])
+def test_malformed_stream_bucket_setting_keeps_the_default(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    from local_tts_infer import _stream_bucket_mels
+
+    monkeypatch.setenv("TTS_BIGVGAN_STREAM_BUCKET_MELS", value)
+
+    assert _stream_bucket_mels() == 80
+
+
+def test_stream_bucket_setting_is_a_positive_frame_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from local_tts_infer import _stream_bucket_mels
+
+    monkeypatch.setenv("TTS_BIGVGAN_STREAM_BUCKET_MELS", "96")
+    assert _stream_bucket_mels() == 96
+    monkeypatch.setenv("TTS_BIGVGAN_STREAM_BUCKET_MELS", "0")
+    assert _stream_bucket_mels() == 1
+
+
+def test_cfm_omits_only_unneeded_padding_masks() -> None:
+    from GPT_SoVITS.module.models import CFM
+
+    observed = []
+
+    class Estimator(torch.nn.Module):
+        def forward(self, x, *_args, use_padding_mask=True, **_kwargs):
+            observed.append(use_padding_mask)
+            return x.transpose(2, 1)
+
+    cfm = CFM(2, Estimator())
+    prompt = torch.zeros((1, 2, 1))
+    for length in (4, 3):
+        cfm.inference(torch.zeros((1, 4, 2)), torch.tensor([length]), prompt, n_timesteps=2)
+    cfm.inference(
+        torch.zeros((2, 4, 2)), torch.tensor([4, 4]), torch.zeros((2, 2, 1)), n_timesteps=1
+    )
+
+    # Unpadded single sample, padded single sample, then a batch.
+    assert observed == [False, False, True, True, True]
+
+
+def test_unpadded_dit_output_matches_full_mask() -> None:
+    from GPT_SoVITS.f5_tts.model.backbones.dit import DiT
+
+    torch.manual_seed(1)
+    model = DiT(
+        dim=16, depth=1, heads=2, dim_head=8,
+        mel_dim=4, text_dim=4, dropout=0,
+    ).eval()
+    noise = torch.randn(1, 4, 5)
+    condition = torch.randn(1, 4, 5)
+    text = torch.randn(1, 4, 5)
+    arguments = (
+        noise, condition, torch.tensor([5]),
+        torch.tensor([0.5]), torch.tensor([0.1]), text,
+    )
+    with torch.inference_mode():
+        masked = model(*arguments, use_padding_mask=True)
+        unmasked = model(*arguments, use_padding_mask=False)
+
+    torch.testing.assert_close(unmasked, masked)
+
+
 def test_nvidia_cuda_device_allows_nvidia_extensions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

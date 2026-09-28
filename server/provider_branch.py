@@ -9,6 +9,7 @@ into the main conversation.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 import uuid
@@ -180,12 +181,15 @@ class ProviderBranchStore:
         branch_id: str | None = None,
     ) -> ProviderBranch:
         bid = branch_id or f"{provider}_{uuid.uuid4().hex[:10]}"
+        storage_key = hashlib.sha256(
+            str(bid).encode("utf-8", errors="replace")
+        ).hexdigest()
         branch = ProviderBranch(
             branch_id=bid,
             parent_session_id=str(parent_session_id or ""),
             provider=str(provider or "provider"),
             goal=str(goal or ""),
-            store_path=self.root / f"{bid}.json",
+            store_path=self.root / f"branch_{storage_key}.json",
         )
         self._branches[bid] = branch
         return branch

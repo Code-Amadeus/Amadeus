@@ -232,6 +232,7 @@ def test_repository_catalog_keeps_built_in_art_outside_external_packs() -> None:
     character = specs["character-kurisu"]
     qwen = specs["asr-qwen3-0.6b"]
     voice = specs["voice-kurisu-gpt-sovits-v3"]
+    voice_v2pro = specs["voice-kurisu-gpt-sovits-v2pro-experimental"]
 
     assert not path_belongs_to_pack(
         PurePosixPath("images/amadeus_desktop_wallpaper.png"), visual
@@ -249,6 +250,10 @@ def test_repository_catalog_keeps_built_in_art_outside_external_packs() -> None:
     )
     assert path_belongs_to_pack(
         PurePosixPath("models/gpt-sovits/pretrained/s2Gv3.pth"), voice
+    )
+    assert path_belongs_to_pack(
+        PurePosixPath("models/gpt-sovits/weights/sovits/v2Pro/kurisu_v2pro.pth"),
+        voice_v2pro,
     )
 
 

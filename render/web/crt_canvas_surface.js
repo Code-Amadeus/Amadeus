@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   "use strict";
 
   function escapeHtml(value) {
@@ -1168,6 +1168,19 @@
         border-color: rgba(127, 245, 224, 0.24);
         background: rgba(4, 24, 29, 0.68);
         font-size: 9px;
+        cursor: pointer;
+      }
+
+      .crt-canvas-actions button:hover:not(:disabled) {
+        border-color: rgba(145, 223, 204, 0.7);
+        background: rgba(10, 42, 50, 0.85);
+        color: #c5fff0;
+      }
+
+      .crt-canvas-actions [data-action="companion"][aria-pressed="true"] {
+        color: #c5fff0;
+        background: rgba(80, 185, 156, 0.25);
+        border-color: rgba(145, 223, 204, 0.8);
       }
 
       .crt-canvas-pane {
@@ -3028,6 +3041,15 @@
       };
     }
 
+    let companionPanelOpen = false;
+    let companionPanelPending = false;
+    function companionPanelButton() {
+      if (!window.amadeus || !window.amadeus.toggleCompanionPanel) return "";
+      const title = companionPanelOpen ? "收起头像面板" : "打开头像与说话卡片";
+      return '<button type="button" data-action="companion" title="' + title + '" aria-label="' + title + '" aria-pressed="' + companionPanelOpen + '"' + (companionPanelPending ? ' disabled' : '') + '>'
+        + '<svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="10" cy="6" r="3"/><path d="M4 17v-2a6 6 0 0 1 12 0v2"/></svg></button>';
+    }
+
     function workPreviewLaunchButton() {
       const target = selectedWorkPreviewTarget();
       const title = target.ready
@@ -3389,7 +3411,8 @@
       const selected = projection && projection.selected && typeof projection.selected === "object"
         ? projection.selected
         : null;
-      if (selected && state.permissionRequest && state.permissionRequest.id) {
+      if (selected && state.permissionRequest && state.permissionRequest.id
+          && state.permissionRequest.ownerKind !== "cooperative_run") {
         const recovery = Array.isArray(state.permissionRequest.options)
           && state.permissionRequest.options.some((option) => option === "retry_export" || option === "abandon_export");
         const currentId = String(
@@ -3428,12 +3451,16 @@
           sizeBytes: nonNegativeCount(item.sizeBytes == null ? item.size_bytes : item.sizeBytes),
           sha256: compactText(item.sha256, 128),
         }))
-        .filter((item) => item.path && item.status === "binary_identity" && item.sha256)
+        .filter((item) => item.path && ["binary_identity", "truncated_text"].includes(item.status) && item.sha256)
         .slice(0, 128);
       return {
         id: compactText(value.id || value.requestId || value.request_id, 240),
+        ownerKind: compactText(value.ownerKind || value.owner_kind, 40).toLowerCase(),
         workItemId: compactText(value.workItemId || value.work_item_id, 160),
         attemptId: compactText(value.attemptId || value.attempt_id, 160),
+        sessionId: compactText(value.sessionId || value.session_id, 160),
+        runId: compactText(value.runId || value.run_id || value.providerRunId || value.provider_run_id, 200),
+        providerRequestId: compactText(value.providerRequestId || value.provider_request_id, 240),
         capability: compactText(value.capability || "permission", 120),
         action: compactText(value.action || "scoped_action", 120),
         scope,
@@ -4379,17 +4406,26 @@
             : "<p class=\"crt-canvas-permission-scope-note\">This request covers all " + targetCount + " listed target" + (targetCount === 1 ? "" : "s") + ".</p>")
           + "<ul aria-label=\"Exact permission targets\">" + request.scope.map((path) => "<li><code>" + escapeHtml(path) + "</code></li>").join("") + "</ul>"
         : "<p class=\"crt-canvas-permission-scope-note\">The provider did not report exact path targets. No path scope can be verified from this request.</p>";
-      const binaryPreviews = request.previewComplete === true && Array.isArray(request.previews)
+      const filePreviews = (request.previewComplete === true || request.previewVersion === 3) && Array.isArray(request.previews)
         ? request.previews
         : [];
-      const previewRows = binaryPreviews.length
-        ? "<p>Binary files are approved by immutable identity; their bytes are rechecked before publication.</p>"
-          + "<ul aria-label=\"Binary export identities\">"
-          + binaryPreviews.map((preview) => [
+      const truncated = filePreviews.some((preview) => preview.status === "truncated_text");
+      const previewRows = filePreviews.length
+        ? (truncated
+            ? "<p><strong>Text preview truncated.</strong> Approval covers the complete files. Show a file in its folder to inspect it before approving.</p>"
+            : "<p>Binary files are approved by immutable identity; their bytes are rechecked before publication.</p>")
+          + "<ul aria-label=\"Export file identities\">"
+          + filePreviews.map((preview) => [
             "<li><code>", escapeHtml(preview.path), "</code><br>",
             escapeHtml(preview.mediaType || "application/octet-stream"), " · ",
             escapeHtml(String(preview.sizeBytes || 0)), " bytes · SHA-256 <code>",
-            escapeHtml(preview.sha256), "</code></li>",
+            escapeHtml(preview.sha256), "</code>",
+            preview.status === "truncated_text"
+              ? "<br><button type=\"button\" data-permission-action=\"review_file\" data-export-relative-path=\""
+                + escapeAttr(preview.path.replace(/^Desktop\//, "")) + "\""
+                + (state.permissionSubmitting ? " disabled" : "") + ">Show complete file in folder</button>"
+              : "",
+            "</li>",
           ].join("")).join("")
           + "</ul>"
         : "";
@@ -4423,22 +4459,40 @@
     async function handlePermissionAction(button) {
       const action = String(button && button.getAttribute("data-permission-action") || "");
       const request = state.permissionRequest;
-      if (!request || !request.id || !["allow_once", "deny", "retry_export", "abandon_export"].includes(action)) {
+      if (!request || !request.id || !["allow_once", "deny", "retry_export", "abandon_export", "review_file"].includes(action)) {
         state.permissionError = "Permission request is incomplete. Refresh the task card and try again.";
         render();
         return;
       }
-      if (!Array.isArray(request.options) || !request.options.includes(action)) return;
+      const reviewing = action === "review_file";
+      if (!reviewing && (!Array.isArray(request.options) || !request.options.includes(action))) return;
       state.permissionSubmitting = true;
       state.permissionError = "";
       render();
       try {
-        await postCanvasAction("permission", action, workItemActionPayload({
-          permission_request_id: request.id,
-          work_item_id: request.workItemId || String(state.workContext && state.workContext.workItemId || ""),
-          attempt_id: request.attemptId || String(state.workContext && state.workContext.attemptId || ""),
-        }));
-        if (state.permissionRequest && state.permissionRequest.id === request.id) {
+        const actionPayload = request.ownerKind === "cooperative_run"
+          ? {
+            owner_kind: request.ownerKind,
+            permission_request_id: request.id,
+            session_id: request.sessionId,
+            run_id: request.runId,
+            provider_request_id: request.providerRequestId,
+          }
+          : workItemActionPayload({
+            owner_kind: request.ownerKind,
+            permission_request_id: request.id,
+            work_item_id: request.workItemId || String(state.workContext && state.workContext.workItemId || ""),
+            attempt_id: request.attemptId || String(state.workContext && state.workContext.attemptId || ""),
+          });
+        if (reviewing) actionPayload.relative_path = String(button.getAttribute("data-export-relative-path") || "");
+        await postCanvasAction("permission", action, actionPayload);
+        if (reviewing) {
+          state.permissionSubmitting = false;
+          render();
+          return;
+        }
+        if (state.permissionRequest && state.permissionRequest.id === request.id
+            && state.permissionRequest.ownerKind === request.ownerKind) {
           state.permissionVisible = false;
           state.permissionRequest = null;
         }
@@ -4636,6 +4690,7 @@
         "<div class=\"crt-canvas-semantic-header\"><span>" + escapeHtml(surfaceKicker()) + "</span><strong>" + escapeHtml(surfaceTitle()) + "</strong></div>",
         "<div class=\"crt-canvas-actions crt-canvas-overlay-controls\">",
         workPreviewLaunchButton(),
+        companionPanelButton(),
         "<button type=\"button\" data-action=\"preset\" aria-label=\"Toggle canvas size\">[]</button>",
         "<button type=\"button\" data-action=\"fold\" aria-label=\"Fold canvas\">&times;</button>",
         "</div>",
@@ -4709,6 +4764,18 @@
       card.querySelectorAll("[data-work-preview-item-id]").forEach((button) => {
         button.addEventListener("click", () => {
           handleWorkItemPreview(button);
+        });
+      });
+      card.querySelectorAll('[data-action="companion"]').forEach((button) => {
+        button.addEventListener("click", async () => {
+          if (companionPanelPending) return;
+          companionPanelPending = true;
+          render();
+          try {
+            companionPanelOpen = await window.amadeus.toggleCompanionPanel(selectedWorkPreviewTarget().workItemId);
+          } catch (error) {
+            state.workActionError = String(error && error.message || error);
+          } finally { companionPanelPending = false; render(); }
         });
       });
       card.querySelectorAll("[data-work-disposition-toggle]").forEach((button) => {
@@ -4823,6 +4890,10 @@
     root.appendChild(status);
     root.appendChild(card);
     host.appendChild(root);
+    if (window.amadeus && window.amadeus.onCompanionPanelState) {
+      window.amadeus.onCompanionPanelState((open) => { companionPanelOpen = open; render(); });
+      window.amadeus.getCompanionPanelState().then((open) => { companionPanelOpen = open; render(); });
+    }
     if (typeof ResizeObserver === "function") {
       resizeObserver = new ResizeObserver(() => {
         if (!state.expanded) return;
@@ -5083,18 +5154,28 @@
         else if (typeof data.open === "boolean") state.expanded = data.open;
         else if (data.visible !== false) state.expanded = true;
         if (data.visible === false || data.action === "fold") state.expanded = false;
-        if (own(data, "permissionRequest")) {
-          state.permissionRequest = normalizePermissionRequest(data.permissionRequest);
-          state.permissionSubmitting = false;
-          state.permissionError = "";
-        }
-        if (typeof data.permissionVisible === "boolean") {
-          state.permissionVisible = data.permissionVisible;
-          if (!state.permissionVisible) {
+        const incomingPermission = own(data, "permissionRequest")
+          ? normalizePermissionRequest(data.permissionRequest)
+          : undefined;
+        if (data.permissionVisible === false) {
+          const currentPermission = state.permissionRequest;
+          const samePermission = !currentPermission || (incomingPermission
+            ? incomingPermission.id === currentPermission.id
+              && incomingPermission.ownerKind === currentPermission.ownerKind
+            : currentPermission.ownerKind !== "cooperative_run");
+          if (samePermission) {
+            state.permissionVisible = false;
             state.permissionRequest = null;
             state.permissionSubmitting = false;
             state.permissionError = "";
           }
+        } else {
+          if (incomingPermission !== undefined) {
+            state.permissionRequest = incomingPermission;
+            state.permissionSubmitting = false;
+            state.permissionError = "";
+          }
+          if (data.permissionVisible === true) state.permissionVisible = true;
         }
         if (preservedView) {
           state.mode = preservedView.mode;

@@ -6,6 +6,20 @@ Snapshot date: 2026-07-22
 
 ## Views
 
+- The README overview is generated in English (`assets/architecture-overview-crt.svg`)
+  and Chinese (`assets/architecture-overview-crt.zh.svg`) from the shared layout and
+  localized copy in `tools/architecture/generate_readme_overview.py`. Regenerate it
+  with `python tools/architecture/generate_readme_overview.py`, or verify it with
+  `--check`. The overview summarizes the ownership boundaries in `ARCHITECTURE.md`,
+  `workspace.dsl`, and `docs/auip_application_sessions.md`; it is separate from the
+  detailed YAML-driven views below. Solid arrows show requests/control, dashed
+  arrows show returned state/results, and amber arrows show Artifact/application
+  actions. MCP/Skills are shown inside the Provider capability scope, and the API
+  client enters the Host boundary rather than a particular domain component.
+  The compact overview also includes a dashed Memory & Persona Runtime in the
+  right runtime column. Its two-way dotted connection represents proposed context
+  retrieval and updates with Main Chat. Storage, memory formation, persona updates,
+  and lifecycle mechanisms are not yet specified by this overview.
 - `workspace.dsl` — Structurizr/C4 model of the system, containers, backend components, external providers, and the major runtime relationships.
 - `model/states.yaml` — canonical visualization input for WorkItem, RunAttempt, PermissionRequest, and observer narration state.
 - `model/permissions.yaml` — current authority/capability boundaries and their guards.

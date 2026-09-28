@@ -83,6 +83,10 @@ class TTSRuntimeAdapter:
     def supports_streaming(self) -> bool:
         return bool(self.backend.supports_streaming)
 
+    @property
+    def is_rocm(self) -> bool:
+        return bool(getattr(self.backend, "is_rocm", False))
+
     @staticmethod
     def _request(
         *,

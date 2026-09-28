@@ -1,0 +1,225 @@
+{
+  "status": "experimental",
+  "date": "2026-09-16",
+  "baselineRevision": "c86177c",
+  "environment": {
+    "os": "Windows",
+    "electron": "44.0.0",
+    "gpu": "AMD Radeon 780M / ANGLE D3D11",
+    "host": "hardware-accelerated Electron offscreen; no voice models"
+  },
+  "notes": [
+    "Private commit is not physical working set. CPU buffers are part of renderer memory, not additional memory.",
+    "60 FPS is an exploratory unpaired sample with the earlier fixed-graph driver.",
+    "Measurements precede the review follow-up for cold hold/fallback source indices; that follow-up has targeted regression coverage."
+  ],
+  "arms": {
+    "baseline30": {
+      "frames": 6048,
+      "cpuBufferMiB": 4671.062057495117,
+      "rendererPrivateMiB": 5093.5625,
+      "allPrivateMiB": 6124.7109375,
+      "holds": [
+        {
+          "t": 145857.50000000047,
+          "phase": "speech-stop",
+          "active": true,
+          "label": "speaking_long",
+          "source": 304
+        },
+        {
+          "t": 146873.6000000001,
+          "phase": "speech-stop",
+          "active": false,
+          "label": "idle",
+          "source": 1
+        }
+      ],
+      "phases": {
+        "startup": {
+          "ticks": 4138,
+          "changes": 4095,
+          "meanMs": 33.96321894635096,
+          "p95Ms": 35.10000000009313,
+          "p99Ms": 50.299999999813735,
+          "over50ms": 71,
+          "over100ms": 0,
+          "missingTextureRequests": 44
+        },
+        "first-speech": {
+          "ticks": 147,
+          "changes": 147,
+          "meanMs": 34.01564625850214,
+          "p95Ms": 34.700000000186265,
+          "p99Ms": 50,
+          "over50ms": 2,
+          "over100ms": 0,
+          "missingTextureRequests": 0
+        },
+        "speech-stop": {
+          "ticks": 89,
+          "changes": 60,
+          "meanMs": 33.888764044939634,
+          "p95Ms": 34.799999999813735,
+          "p99Ms": 50.59999999962747,
+          "over50ms": 2,
+          "over100ms": 0,
+          "missingTextureRequests": 0
+        },
+        "first-smile": {
+          "ticks": 147,
+          "changes": 3,
+          "meanMs": 34.01020408163265,
+          "p95Ms": 35.19999999925494,
+          "p99Ms": 50.200000000186265,
+          "over50ms": 3,
+          "over100ms": 0,
+          "missingTextureRequests": 31
+        },
+        "warm-idle": {
+          "ticks": 295,
+          "changes": 295,
+          "meanMs": 33.95593220338983,
+          "p95Ms": 34.89999999944121,
+          "p99Ms": 50.700000000186265,
+          "over50ms": 5,
+          "over100ms": 0,
+          "missingTextureRequests": 0
+        }
+      }
+    },
+    "sampled30": {
+      "frames": 3007,
+      "cpuBufferMiB": 2324.1527709960938,
+      "rendererPrivateMiB": 2531.07421875,
+      "allPrivateMiB": 3618.96484375,
+      "holds": [
+        {
+          "t": 95566.20000000019,
+          "phase": "speech-stop",
+          "active": true,
+          "label": "speaking_long",
+          "source": 304
+        },
+        {
+          "t": 96582.20000000019,
+          "phase": "speech-stop",
+          "active": false,
+          "label": "idle",
+          "source": 1
+        }
+      ],
+      "phases": {
+        "startup": {
+          "ticks": 2656,
+          "changes": 2638,
+          "meanMs": 33.96690512048214,
+          "p95Ms": 34.90000000037253,
+          "p99Ms": 50.700000000186265,
+          "over50ms": 50,
+          "over100ms": 0,
+          "missingTextureRequests": 16
+        },
+        "first-speech": {
+          "ticks": 148,
+          "changes": 148,
+          "meanMs": 33.96081081081207,
+          "p95Ms": 34.5,
+          "p99Ms": 50,
+          "over50ms": 2,
+          "over100ms": 0,
+          "missingTextureRequests": 0
+        },
+        "speech-stop": {
+          "ticks": 88,
+          "changes": 59,
+          "meanMs": 33.899999999991536,
+          "p95Ms": 34.299999999813735,
+          "p99Ms": 50.09999999962747,
+          "over50ms": 2,
+          "over100ms": 0,
+          "missingTextureRequests": 0
+        },
+        "first-smile": {
+          "ticks": 148,
+          "changes": 16,
+          "meanMs": 34.00540540541044,
+          "p95Ms": 34.5,
+          "p99Ms": 49.700000000186265,
+          "over50ms": 2,
+          "over100ms": 0,
+          "missingTextureRequests": 1
+        },
+        "warm-idle": {
+          "ticks": 294,
+          "changes": 294,
+          "meanMs": 33.955102040815696,
+          "p95Ms": 34.69999999925494,
+          "p99Ms": 50.30000000074506,
+          "over50ms": 7,
+          "over100ms": 0,
+          "missingTextureRequests": 0
+        }
+      }
+    },
+    "sampled60": {
+      "frames": 5599,
+      "cpuBufferMiB": 4334.757385253906,
+      "rendererPrivateMiB": 4753.90234375,
+      "allPrivateMiB": 5636.0546875,
+      "holds": null,
+      "phases": {
+        "startup": {
+          "ticks": 7662,
+          "changes": 6037,
+          "meanMs": 17.052793004437483,
+          "p95Ms": 18.100000000093132,
+          "p99Ms": 33.39999999990687,
+          "over50ms": 1,
+          "over100ms": 0,
+          "missingTextureRequests": 81
+        },
+        "first-speech": {
+          "ticks": 294,
+          "changes": 257,
+          "meanMs": 17.06088435374118,
+          "p95Ms": 18,
+          "p99Ms": 33.799999999813735,
+          "over50ms": 0,
+          "over100ms": 0,
+          "missingTextureRequests": 0
+        },
+        "speech-stop": {
+          "ticks": 177,
+          "changes": 141,
+          "meanMs": 17.046327683616873,
+          "p95Ms": 18,
+          "p99Ms": 33.3000000002794,
+          "over50ms": 0,
+          "over100ms": 0,
+          "missingTextureRequests": 0
+        },
+        "first-smile": {
+          "ticks": 294,
+          "changes": 7,
+          "meanMs": 17.064965986394874,
+          "p95Ms": 18,
+          "p99Ms": 33.3000000002794,
+          "over50ms": 0,
+          "over100ms": 0,
+          "missingTextureRequests": 36
+        },
+        "warm-idle": {
+          "ticks": 588,
+          "changes": 472,
+          "meanMs": 17.032653061224014,
+          "p95Ms": 18,
+          "p99Ms": 33.10000000009313,
+          "over50ms": 0,
+          "over100ms": 0,
+          "missingTextureRequests": 0
+        }
+      }
+    }
+  }
+}

@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 from dataclasses import dataclass
+from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from server.delegate_dispatch import DelegateDispatchPlan, build_delegate_metadata
+from server.delegate_dispatch import (
+    DelegateDispatchPlan,
+    build_delegate_metadata,
+    dispatch_delegate,
+)
 from agent_host.provider_identity import MAIN_ROLE_NAME_METADATA_KEY
 from server.inherited_role_prompt import MAIN_CONVERSATION_ROLE_NAME
 
@@ -25,6 +34,8 @@ def _plan(**overrides) -> DelegateDispatchPlan:
     values = {
         "task_text": "Apply the requested change.",
         "attrs": {"intent": "execute"},
+        "session_id": "session-default",
+        "admission_id": "ibr-admission-test",
         "provider": "locus",
         "requirements": _Envelope("requirements"),
         "selection": _Envelope("selection"),
@@ -41,6 +52,24 @@ def _plan(**overrides) -> DelegateDispatchPlan:
     }
     values.update(overrides)
     return DelegateDispatchPlan(**values)
+
+
+@pytest.mark.parametrize("intent", ["message", "report", "retract", "focus", "exectue"])
+def test_non_work_intent_cannot_become_execution_or_start_admission(intent) -> None:
+    async def scenario():
+        runtime = SimpleNamespace(reserve_start_admission=AsyncMock(), start=AsyncMock())
+        with patch("agent_host.provider_runtime.runtime", runtime):
+            with pytest.raises(ValueError, match="cannot be lowered"):
+                await dispatch_delegate(_plan(attrs={"intent": intent}), announce_start_failure=AsyncMock())
+        runtime.reserve_start_admission.assert_not_called()
+        runtime.start.assert_not_called()
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("attrs,expected", [({}, "execute"), ({"intent": ""}, "execute"),
+                                         ({"intent": "execute"}, "execute"), ({"intent": "amend"}, "amend")])
+def test_work_and_legacy_intents_keep_their_existing_meaning(attrs, expected) -> None:
+    assert build_delegate_metadata(_plan(attrs=attrs), session_id="session-one")["intent"] == expected
 
 
 def test_metadata_contains_only_adjudicated_control_and_public_attrs() -> None:
@@ -73,6 +102,81 @@ def test_metadata_contains_only_adjudicated_control_and_public_attrs() -> None:
     assert metadata["project_source_amend"] is True
     assert metadata["focus_applied"] is True
     assert "_host_turn_id" not in metadata["delegate_attrs"]
+
+
+def test_model_supplied_host_admission_token_is_ignored() -> None:
+    metadata = build_delegate_metadata(
+        _plan(
+            admission_id="host-generated-token",
+            attrs={
+                "intent": "execute",
+                "_host_interaction_branch_admission_id": "forged-token",
+                "_host_interaction_branch_routing_lease": {
+                    "state": "absent",
+                    "parent_session_id": "session-default",
+                },
+            },
+        ),
+        session_id="session-default",
+    )
+
+    assert metadata["interaction_branch_admission_id"] == "host-generated-token"
+
+
+def test_active_amendment_runs_inside_frozen_admission_reservation() -> None:
+    async def run() -> None:
+        class Runtime:
+            def __init__(self) -> None:
+                self.reserved = False
+                self.released = False
+
+            async def reserve_start_admission(self, request) -> None:
+                self.reserved = True
+                assert request.metadata["session_id"] == "session-origin"
+
+            async def release_start_admission(self, request) -> None:
+                self.released = True
+                assert request.metadata["session_id"] == "session-origin"
+
+            async def start(self, _request):
+                raise AssertionError("handled amendment must not start a new run")
+
+        runtime = Runtime()
+
+        async def route_amendment(**kwargs):
+            assert runtime.reserved is True
+            assert kwargs["session_id"] == "session-origin"
+            return {"handled": True, "message": "[amend] active run steered"}
+
+        plan = _plan(
+            session_id="session-origin",
+            admission_id="host-admission-origin",
+            attrs={
+                "intent": "amend",
+                "workspace_ref": "work-active",
+                "_host_interaction_branch_routing_lease": {
+                    "state": "absent",
+                    "parent_session_id": "session-origin",
+                },
+            },
+        )
+        with (
+            patch("agent_host.provider_runtime.runtime", runtime),
+            patch(
+                "server.work_ledger_coordinator.get_work_ledger_coordinator",
+                return_value=object(),
+            ),
+        ):
+            result = await dispatch_delegate(
+                plan,
+                announce_start_failure=AsyncMock(),
+                route_amendment=route_amendment,
+            )
+
+        assert result == "[amend] active run steered"
+        assert runtime.released is True
+
+    asyncio.run(run())
 
 
 def test_workspace_less_provider_keeps_workitem_identity_without_fake_cwd() -> None:
@@ -277,6 +381,16 @@ def test_same_turn_auip_creation_has_a_host_observed_outcome_contract() -> None:
         "facet": "auip.application",
         "expected": {"current_attempt_contribution": True},
     }
+
+
+@pytest.mark.parametrize("source", ["auip_create", "auip_prepare"])
+def test_accepted_auip_mode_is_separate_from_provider_execution_mode(source):
+    plan = _plan(attrs={"intent":"amend", "_host_dispatch_source":source,
+        "_host_auip_mode":"collaborate"}, delegate_mode="agent")
+    metadata = build_delegate_metadata(plan, session_id="auip-mode")
+    assert metadata["host_outcome_requirement"]["expected"]["engagement_mode"] == "collaborate"
+    assert plan.delegate_mode == "agent"
+    assert "_host_auip_mode" not in metadata["delegate_attrs"]
 
 
 def _main() -> None:

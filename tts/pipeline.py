@@ -19,6 +19,7 @@ import logging
 import os
 import re
 import sys
+import threading
 import time
 import traceback
 
@@ -39,7 +40,6 @@ from config.settings import (
 from tools.text_utils import (
     _compute_text_sha1,
     _parse_sentence_seq,
-    async_generator_from_sync,
 )
 from tools.tts_text_processor import correct_pronunciation_for_tts
 from tts.contract import TTSRequest
@@ -50,6 +50,20 @@ from tts.utterance_scheduler import TTSUtteranceScheduler
 
 logger = logging.getLogger(__name__)
 _utterance_scheduler = TTSUtteranceScheduler(logger=logger)
+
+# Settings offers standard ×1, CUDA Graph ×1 and Parallel ×2. A runtime mode
+# switch only replaces the semaphore, so the TTS worker pool is sized for the
+# most parallel selectable mode and configured values stay within that range.
+MAX_SELECTABLE_TTS_CONCURRENCY = 2
+
+
+def selectable_tts_concurrency(value) -> int:
+    """Clamp a configured synthesis concurrency to the modes Settings offers."""
+    try:
+        return min(MAX_SELECTABLE_TTS_CONCURRENCY, max(1, int(value)))
+    except (TypeError, ValueError):
+        return 1
+
 
 # ===== 运行时状态（供外部模块读写）=====
 exp_tts_semaphore = None
@@ -64,7 +78,7 @@ _player = None
 _pending_sentence_items = None
 _llm_warmup_fn = None   # remote_llm_query，供 warmup_graph_pipeline 使用
 _exp_tts_semaphore = None  # 并发合成信号量，由 main.py 创建后注入
-_exp_tts_concurrency = EXP_TTS_MAX_CONCURRENCY
+_exp_tts_concurrency = selectable_tts_concurrency(EXP_TTS_MAX_CONCURRENCY)
 _RTF_EMA_ALPHA = 0.3
 _rtf_ema = max(0.001, float(TTS_RTF_INITIAL))
 _tts_interrupt_epoch: int = 0
@@ -184,21 +198,24 @@ def reconfigure_tts_language_code(value: str) -> str:
 def reconfigure_tts_mode(cuda_graph: bool, concurrency: int) -> None:
     """热更新 TTS 推理模式（GUI 切换时调用，当前无任务时最安全）。
 
-    cuda_graph=True  + concurrency=1 → CUDA Graph 串行模式（首句更快）
-    cuda_graph=False + concurrency=2 → 并行模式（吞吐量优先）
+    cuda_graph=True  + concurrency=1 → CUDA Graph 串行模式
+    cuda_graph=False + concurrency=1 → 常规串行模式
+    cuda_graph=False + concurrency=2 → 显式并行模式
     """
     global _exp_tts_semaphore, _exp_tts_concurrency
     os.environ['ENABLE_CUDA_GRAPH'] = '1' if cuda_graph else '0'
-    _exp_tts_concurrency = max(1, int(concurrency))
-    _exp_tts_semaphore = asyncio.Semaphore(concurrency)
+    _exp_tts_concurrency = selectable_tts_concurrency(concurrency)
+    _exp_tts_semaphore = asyncio.Semaphore(_exp_tts_concurrency)
     logger.info(
         f"[TTS Mode] switched -> CUDA_Graph={'ON' if cuda_graph else 'OFF'}, "
-        f"semaphore={concurrency}"
+        f"semaphore={_exp_tts_concurrency}"
     )
 
 
 def current_tts_mode() -> str:
-    return "cuda_graph" if os.environ.get("ENABLE_CUDA_GRAPH", "0") == "1" else "parallel"
+    if os.environ.get("ENABLE_CUDA_GRAPH", "0") == "1":
+        return "cuda_graph"
+    return "parallel2" if _exp_tts_concurrency > 1 else "parallel"
 
 
 def reconfigure_tts_mode_name(value: str) -> str:
@@ -208,7 +225,8 @@ def reconfigure_tts_mode_name(value: str) -> str:
         "cuda graph ×1": "cuda_graph",
         "graph": "cuda_graph",
         "parallel": "parallel",
-        "parallel ×2": "parallel",
+        "parallel2": "parallel2",
+        "parallel ×2": "parallel2",
     }
     mode = aliases.get(raw)
     if mode is None:
@@ -216,7 +234,10 @@ def reconfigure_tts_mode_name(value: str) -> str:
     if mode == "cuda_graph":
         reconfigure_tts_mode(cuda_graph=True, concurrency=1)
     else:
-        reconfigure_tts_mode(cuda_graph=False, concurrency=2)
+        reconfigure_tts_mode(
+            cuda_graph=False,
+            concurrency=MAX_SELECTABLE_TTS_CONCURRENCY if mode == "parallel2" else 1,
+        )
     return mode
 
 
@@ -387,6 +408,7 @@ def discard_pending_tts(
     *,
     source: str,
     work_item_id: str = "",
+    run_id: str = "",
     nonterminal_only: bool = False,
 ) -> int:
     """Drop queued, not-yet-playing speech made stale by a newer user read.
@@ -397,12 +419,15 @@ def discard_pending_tts(
 
     target_source = str(source or "").strip()
     target_work_item = str(work_item_id or "").strip()
+    target_run = str(run_id or "").strip()
 
     def matches(request) -> bool:
         if target_source and str(request.source or "") != target_source:
             return False
         metadata = request.metadata if isinstance(request.metadata, dict) else {}
         if target_work_item and str(metadata.get("work_item_id") or "") != target_work_item:
+            return False
+        if target_run and str(metadata.get("run_id") or "") != target_run:
             return False
         if nonterminal_only and metadata.get("terminal") is True:
             return False
@@ -476,10 +501,9 @@ def configure(
         _llm_warmup_fn = llm_warmup_fn
     if exp_tts_semaphore is not None:
         _exp_tts_semaphore = exp_tts_semaphore
-        try:
-            _exp_tts_concurrency = max(1, int(os.environ.get("EXP_TTS_MAX_CONCURRENCY", str(EXP_TTS_MAX_CONCURRENCY))))
-        except Exception:
-            _exp_tts_concurrency = EXP_TTS_MAX_CONCURRENCY
+        _exp_tts_concurrency = selectable_tts_concurrency(
+            os.environ.get("EXP_TTS_MAX_CONCURRENCY", EXP_TTS_MAX_CONCURRENCY)
+        )
 
 
 # =============================================================================
@@ -563,27 +587,26 @@ _REF_AUDIO = TTS_REF_AUDIO_JA
 _REF_TEXT  = TTS_REF_TEXT_JA
 
 
-_FIRST_SENTENCE_STREAM_MIN_CHUNK_SEC = 0.35
-_FIRST_SENTENCE_STREAM_MAX_CHUNK_SEC = 0.80
-_FIRST_SENTENCE_STREAM_TARGET_CHUNKS = 3
+_STREAM_MIN_CHUNK_SEC = 0.35
+_STREAM_MAX_CHUNK_SEC = 0.80
+_STREAM_TARGET_CHUNKS = 3
 
 
-def _compute_first_sentence_stream_chunk_seconds(text: str, params: dict) -> float:
-    """按首句长度估算一个更稳的 chunk 时长，目标约 3 段，避免切得过碎。"""
+def _compute_stream_chunk_seconds(text: str, params: dict) -> float:
+    """按句子长度估算 chunk 时长，目标约 3 段，避免切得过碎。"""
     stripped = (text or "").strip()
     length = len(stripped)
     speed = float(params.get("speed", 1.0) or 1.0)
 
     # 这里不用 max_sec_override，它对首句有 3.5s 下限，会让极短句估计严重失真。
     estimated_sec = max(0.9, min(3.0, (length * 0.11 + 0.25) / max(speed, 0.6)))
-    estimated_sec = max(0.9, min(3.0, (length * 0.11 + 0.25) / max(speed, 0.6)))
     if length <= 8:
         return 0.40
-    target_chunks = 2.5 if length <= 16 else float(_FIRST_SENTENCE_STREAM_TARGET_CHUNKS)
+    target_chunks = 2.5 if length <= 16 else float(_STREAM_TARGET_CHUNKS)
     chunk_sec = estimated_sec / target_chunks
     return max(
-        _FIRST_SENTENCE_STREAM_MIN_CHUNK_SEC,
-        min(_FIRST_SENTENCE_STREAM_MAX_CHUNK_SEC, chunk_sec),
+        _STREAM_MIN_CHUNK_SEC,
+        min(_STREAM_MAX_CHUNK_SEC, chunk_sec),
     )
 
 
@@ -615,27 +638,28 @@ async def speak_stream_graph_serial(
         return
     if graph_tts_lock is None:
         graph_tts_lock = asyncio.Lock()
-    logger.info(f"[Graph Serial] waiting for serial inference lock: {sentence_id}")
-    await graph_tts_lock.acquire()
-    start_time = time.time()
-    if _is_interrupted(interrupt_epoch):
-        logger.info("[TTS-INTERRUPT] skip stale job after graph lock: %s", sentence_id)
-        graph_tts_lock.release()
-        _release_task_semaphore(task_semaphore, sentence_id)
-        return
-    logger.info(f"[Graph Serial] lock acquired, starting serial inference: {sentence_id}")
-    if is_first_sentence:
-        log_latency_marker(logger, "first_graph_lock", id=sentence_id)
+    lock = graph_tts_lock
+    lock_held = False
+    start_time = 0.0
 
-    _lock_released = False
+    async def _acquire_lock():
+        nonlocal lock_held, start_time
+        logger.info(f"[Graph Serial] waiting for serial inference lock: {sentence_id}")
+        await lock.acquire()
+        lock_held = True
+        start_time = time.time()
+        logger.info(f"[Graph Serial] lock acquired, starting serial inference: {sentence_id}")
+        if is_first_sentence:
+            log_latency_marker(logger, "first_graph_lock", id=sentence_id)
+
     def _release_lock():
-        nonlocal _lock_released
-        if _lock_released:
+        nonlocal lock_held
+        if not lock_held:
             return
-        _lock_released = True
+        lock_held = False
         elapsed = time.time() - start_time
         logger.info(f"[Graph Serial] released serial inference lock: {sentence_id}, TTS elapsed {elapsed:.2f}s")
-        graph_tts_lock.release()
+        lock.release()
 
     _stream_to_player = stream_tts if stream_tts is not None else is_first_sentence
     try:
@@ -644,6 +668,7 @@ async def speak_stream_graph_serial(
             sentence_id,
             is_first_sentence=is_first_sentence,
             force_graph=True,
+            on_synthesis_start=_acquire_lock,
             on_synthesis_done=_release_lock,
             chunk_size_seconds=None,
             stream_to_player=_stream_to_player,
@@ -653,6 +678,42 @@ async def speak_stream_graph_serial(
         )
     finally:
         _release_lock()  # 兜底：异常时也确保锁被释放
+
+
+def _start_tts_producer(stream_factory, sentence_id, interrupt_epoch):
+    """Consume and close a synchronous stream entirely on the TTS executor."""
+    loop = asyncio.get_running_loop()
+    queue = asyncio.Queue()
+    stop = threading.Event()
+
+    def stopped():
+        return stop.is_set() or _is_interrupted(interrupt_epoch)
+
+    def produce():
+        stream = None
+        try:
+            if stopped():
+                return
+            logger.info("[WorkerThread] TTS producer started: %s", sentence_id)
+            stream = stream_factory()
+            for item in stream:
+                if stopped():
+                    break
+                loop.call_soon_threadsafe(queue.put_nowait, item)
+            logger.info("[WorkerThread] TTS producer completed: %s", sentence_id)
+        except Exception as exc:
+            logger.exception("[WorkerThread] TTS producer failed (%s)", sentence_id)
+            loop.call_soon_threadsafe(queue.put_nowait, ("__ERROR__", exc))
+        finally:
+            close = getattr(stream, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    logger.debug("[WorkerThread] TTS stream close failed: %s", sentence_id, exc_info=True)
+            loop.call_soon_threadsafe(queue.put_nowait, ("__DONE__", None))
+
+    return queue, loop.run_in_executor(_tts_executor, produce), stop
 
 
 async def speak_stream_enhanced(
@@ -678,6 +739,7 @@ async def speak_stream_enhanced(
 
     if _tts_runtime is None:
         logger.error("TTS backend is not initialized; cannot generate speech")
+        _release_task_semaphore(task_semaphore, sentence_id)
         return
 
     overall_start = time.time()
@@ -698,6 +760,7 @@ async def speak_stream_enhanced(
     params['ref_audio_path'] = _get_ref_audio(tts_text)
     params['prompt_text'] = _get_ref_text(tts_text)
 
+    producer_stop = None
     try:
         first_chunk = True
         audio_chunks = []
@@ -726,10 +789,21 @@ async def speak_stream_enhanced(
                 max_sec_override=params.get("max_sec_override"),
             )
 
-        async for sr, audio_chunk, text_item in async_generator_from_sync(create_stream_generator):
+        queue, _producer_future, producer_stop = _start_tts_producer(
+            create_stream_generator, sentence_id, interrupt_epoch,
+        )
+        while True:
+            item = await queue.get()
             if _is_interrupted(interrupt_epoch):
                 logger.info("[TTS-INTERRUPT] drop streaming synthesis result: %s", sentence_id)
                 return
+            if isinstance(item[0], str):
+                signal, data = item
+                if signal == "__DONE__":
+                    break
+                if signal == "__ERROR__":
+                    raise data
+            sr, audio_chunk, text_item = item
             if first_chunk:
                 first_chunk = False
                 logger.info(f"[StreamingPlayback] starting streaming synthesis for first sentence: {sentence_id}")
@@ -773,12 +847,16 @@ async def speak_stream_enhanced(
         logger.info("[StreamingPlayback] first-sentence streaming synthesis completed; playback handled by PlaybackManager")
     except Exception as e:
         logger.error(f"streaming processing failed: {e}\n{traceback.format_exc()}")
+    finally:
+        if producer_stop is not None:
+            producer_stop.set()
+        _release_task_semaphore(task_semaphore, sentence_id)
     logger.info(f"streaming processing completed, total time: {time.time() - overall_start:.2f}s")
 
 
 async def speak_stream_enhanced_asyncio_queue(
     text, sentence_id, is_first_sentence=False, *, force_graph: bool = False,
-    on_synthesis_done=None, stream_to_player: bool = False,
+    on_synthesis_start=None, on_synthesis_done=None, stream_to_player: bool = False,
     chunk_size_seconds: float = None,
     segments=None,
     interrupt_epoch: int | None = None,
@@ -794,6 +872,19 @@ async def speak_stream_enhanced_asyncio_queue(
         _sha = _compute_text_sha1(text)
     except Exception:
         _sha = "sha_err"
+    if _tts_runtime is None:
+        logger.error("TTS backend is not initialized; cannot generate speech")
+        _release_task_semaphore(task_semaphore, sentence_id)
+        return
+
+    rocm = bool(getattr(_tts_runtime, "is_rocm", False))
+    # ROCm starts each utterance from its first vocoder block. A merged
+    # utterance keeps playlist playback: play_s1_stream carries one logical
+    # sentence, while the playlist advances the shared sentence sequence past,
+    # and closes, every sentence the audio contains.
+    rocm_stream = rocm and bool(_tts_runtime.supports_streaming) and not segments
+    if rocm_stream:
+        stream_to_player = True
     logger.info(
         f"[TTS-FUNC-ENTER] func=speak_stream_enhanced_asyncio_queue "
         f"id={sentence_id} sha1={_sha} first={is_first_sentence} stream={stream_to_player}"
@@ -801,48 +892,13 @@ async def speak_stream_enhanced_asyncio_queue(
     if is_first_sentence:
         log_latency_marker(logger, "first_tts_enter", id=sentence_id, stream=int(bool(stream_to_player)))
 
-    if _tts_runtime is None:
-        logger.error("TTS backend is not initialized; cannot generate speech")
-        return
-
-    def tts_producer(loop, queue, producer_text, producer_params, producer_epoch):
-        stream = None
-        try:
-            if _is_interrupted(producer_epoch):
-                logger.info("[TTS-INTERRUPT] producer skipped before infer_stream: %s", sentence_id)
-                return
-            logger.info(f"[WorkerThread] TTS producer started: {sentence_id}")
-            stream = _tts_runtime.infer_stream(text=producer_text, **producer_params)
-            for item in stream:
-                if _is_interrupted(producer_epoch):
-                    logger.info("[TTS-INTERRUPT] producer stopped after interrupt: %s", sentence_id)
-                    break
-                loop.call_soon_threadsafe(queue.put_nowait, item)
-            logger.info(f"[WorkerThread] TTS producer completed: {sentence_id}")
-        except Exception as e:
-            logger.error(f"[WorkerThread] TTS producer failed ({sentence_id}): {e}")
-            logger.error(f"--- worker thread traceback ---\n{traceback.format_exc()}")
-            loop.call_soon_threadsafe(queue.put_nowait, ("__ERROR__", e))
-        finally:
-            close = getattr(stream, "close", None)
-            if callable(close):
-                try:
-                    close()
-                except Exception:
-                    logger.debug(
-                        "[WorkerThread] TTS stream close failed: %s",
-                        sentence_id,
-                        exc_info=True,
-                    )
-            loop.call_soon_threadsafe(queue.put_nowait, ("__DONE__", None))
-
-    loop = asyncio.get_running_loop()
-    queue: asyncio.Queue = asyncio.Queue()
     synthesis_start = time.time()
     tts_text = _strip_tts_fullwidth_parentheses(text)
     if tts_text != text:
         logger.info(f"[TTS-TEXT-FILTER] removed full-width parentheses: {sentence_id}")
     params = get_sovits_params(tts_text, is_first_sentence)
+    if rocm and params["sample_steps"] > 16:
+        params["sample_steps"] = 16
     if force_graph:
         params["enable_cuda_graph"] = True
         params["enable_static_kv"] = True
@@ -851,8 +907,10 @@ async def speak_stream_enhanced_asyncio_queue(
     params["prompt_text"] = _get_ref_text(tts_text)
     processed_text = correct_pronunciation_for_tts(tts_text)
 
+    if rocm_stream and not chunk_size_seconds:
+        chunk_size_seconds = _compute_stream_chunk_seconds(processed_text, params)
     producer_chunk_size_seconds = (
-        chunk_size_seconds if (stream_to_player and is_first_sentence) else None
+        chunk_size_seconds if (stream_to_player and (is_first_sentence or rocm_stream)) else None
     )
     params["chunk_size_seconds"] = producer_chunk_size_seconds
     # TTS producer is started after the first-sentence audio cache check below.
@@ -870,7 +928,12 @@ async def speak_stream_enhanced_asyncio_queue(
             task_semaphore.release()
             logger.debug(f"[Semaphore] released experimental TTS permit: {sentence_id}")
 
-    if is_first_sentence and _playback_manager is not None:
+    # This cache fingerprints GPT/SoVITS weights and reference files only. Remote
+    # model/voice identities are absent, so their audio must not read or write it.
+    cache_first_sentence = (
+        is_first_sentence and getattr(_tts_runtime, "backend_id", None) == "gpt_sovits"
+    )
+    if cache_first_sentence and _playback_manager is not None:
         try:
             cached = get_first_sentence_audio_cache().lookup(processed_text, params)
         except Exception as exc:
@@ -922,17 +985,21 @@ async def speak_stream_enhanced_asyncio_queue(
                 )
             return
 
+    # Cached audio does not touch the inference engine. Acquire its serial
+    # ownership only on a cache miss, then recheck the turn after the wait.
+    if on_synthesis_start is not None:
+        try:
+            await on_synthesis_start()
+        except BaseException:
+            _release_now()
+            raise
     if _is_interrupted(interrupt_epoch):
         logger.info("[TTS-INTERRUPT] skip stale job before producer submit: %s", sentence_id)
         _release_now()
         return
-    producer_future = loop.run_in_executor(
-        _tts_executor,
-        tts_producer,
-        loop,
-        queue,
-        processed_text,
-        params,
+    queue, producer_future, _producer_stop = _start_tts_producer(
+        lambda: _tts_runtime.infer_stream(text=processed_text, **params),
+        sentence_id,
         interrupt_epoch,
     )
     logger.info(f"[Monitor] TTS producer task submitted: {sentence_id}")
@@ -982,7 +1049,7 @@ async def speak_stream_enhanced_asyncio_queue(
                 if audio_chunk is not None and len(audio_chunk) > 0:
                     stream_total_samples += len(audio_chunk)
                     stream_sample_rate = sr
-                    if is_first_sentence:
+                    if cache_first_sentence:
                         cache_chunks.append(audio_chunk)
                         cache_sr = sr
                     chunk_count += 1
@@ -1078,7 +1145,7 @@ async def speak_stream_enhanced_asyncio_queue(
                 sample_rate or 24000,
                 sentence_id,
             )
-            if is_first_sentence:
+            if cache_first_sentence:
                 get_first_sentence_audio_cache().store(
                     processed_text,
                     params,
@@ -1148,8 +1215,9 @@ async def _synthesize_experimental(
     task_semaphore,
 ):
     runtime = _tts_runtime
-    # Embedded synthesis modes retain their established playback policy. A
-    # remote backend that already yields native audio chunks must not have that
+    # Embedded synthesis modes retain their established playback policy, except
+    # that ROCm streams single-sentence jobs (speak_stream_enhanced_asyncio_queue).
+    # A remote backend that already yields native audio chunks must not have that
     # stream buffered merely because the local experimental scheduler is active.
     stream_to_player = bool(
         stream_tts

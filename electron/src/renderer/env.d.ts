@@ -35,10 +35,13 @@ export declare global {
     } | null>
     restartBackend: () => Promise<boolean>
     getDesktopSettings: () => Promise<Record<string, unknown> | null>
+    setTitleBarTheme: (theme: 'classic' | 'wallpaper-slice') => Promise<boolean>
+    getCompanionPortraitStatus: () => Promise<Record<string, unknown> | null>
     updateDesktopSettings: (update: {
       values?: Record<string, string | boolean | null>
       secrets?: Record<string, string | null>
     }) => Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }>
+    markDesktopSettingsApplied: (revisions: Record<string, number>) => Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }>
     upsertMcpConnection: (update: {
       connection: {
         id?: string
@@ -69,14 +72,16 @@ export declare global {
       avatars?: { user: string; assistant: string }
     }>
     focusMainWindow: () => Promise<boolean>
+    selectVNFile: (kind: 'game' | 'agent' | 'hook' | 'script', startPath?: string) => Promise<{ ok: boolean; cancelled: boolean; path: string; detail: string }>
+    openVNHelp: (page: 'agent' | 'scripts') => Promise<void>
     selectProjectDirectory: () => Promise<{
       ok: boolean
       cancelled: boolean
       path: string
       detail: string
     }>
-    openElectronSlice: (bridge: { assetPort: number; bridgePort: number; assetVersion?: string; sliceBounds?: { x: number; y: number; width: number; height: number } }) => Promise<boolean>
-    closeElectronSlice: () => Promise<boolean>
+    openElectronSlice: (bridge: { assetPort: number; bridgePort: number; assetVersion?: string; graphicsProfile: string; renderMaxFps: number; renderTextureSampling?: boolean; renderMaxResolution: number | null; sliceBounds?: { x: number; y: number; width: number; height: number } }) => Promise<boolean>
+    closeElectronSlice: (backendStopError?: string) => Promise<boolean>
     openAuipApp: (launchUrl: string, hostSurfaceId?: string, workItemId?: string) => Promise<{ ok: boolean; detail: string }>
     closeAuipApp: (hostSurfaceId: string, appSessionId?: string) => Promise<{ ok: boolean; status: string; detail: string }>
     openWorkPreview: (descriptor: Record<string, unknown>) => Promise<WorkPreviewIpcResult>

@@ -1,0 +1,6 @@
+syntax = "proto3";
+package Lively.Grpc.Common.Proto.Commands;
+option csharp_namespace = "Amadeus.Wallpaper.Protocol.Commands";
+import "google/protobuf/empty.proto";
+service CommandsService { rpc AutomationCommand(AutomationCommandRequest) returns (google.protobuf.Empty); }
+message AutomationCommandRequest { repeated string args = 1; }

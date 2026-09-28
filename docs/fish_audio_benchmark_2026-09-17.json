@@ -1,0 +1,394 @@
+{
+  "date": "2026-09-17",
+  "model": "s2.1-pro-free",
+  "reference_id": "b450b19370434173b121446057622e9b",
+  "tts_trials": [
+    {
+      "model": "s2.1-pro-free",
+      "reference_id": "b450b19370434173b121446057622e9b",
+      "latency": "balanced",
+      "flush_each_chunk": false,
+      "input_gap_seconds": 0,
+      "sentence_sessions": false,
+      "status": "ok",
+      "text_chunk_available_seconds": [
+        0.5929018000024371
+      ],
+      "first_audio_seconds": 1.2044915000005858,
+      "first_signal_audio_offset_seconds": 0.0,
+      "first_signal_available_seconds": 1.2044915000005858,
+      "estimated_immediate_playback_first_sound_seconds": 1.2044915000005858,
+      "estimated_immediate_playback_underrun_seconds": 0.0,
+      "audio_before_input_complete": false,
+      "audio_chunks": 7,
+      "audio_seconds": 10.495419501133787,
+      "elapsed_seconds": 3.276125200001843,
+      "output": "whole-1.wav",
+      "mode": "whole",
+      "repeat": 1,
+      "text_chunks": [
+        "量子もつれの実験データを確認してみたけど、やっぱり予想通りの結果ね。結論を急ぐ前に、もう一度実験の条件を確かめましょう。"
+      ]
+    },
+    {
+      "model": "s2.1-pro-free",
+      "reference_id": "b450b19370434173b121446057622e9b",
+      "latency": "balanced",
+      "flush_each_chunk": true,
+      "input_gap_seconds": 0.2,
+      "sentence_sessions": false,
+      "status": "ok",
+      "text_chunk_available_seconds": [
+        0.49037460000181454,
+        0.7056607000013173,
+        0.8956571000016993
+      ],
+      "first_audio_seconds": 1.0234746000023733,
+      "first_signal_audio_offset_seconds": 0.07,
+      "first_signal_available_seconds": 1.0234746000023733,
+      "estimated_immediate_playback_first_sound_seconds": 1.0934746000023734,
+      "estimated_immediate_playback_underrun_seconds": 0.0,
+      "audio_before_input_complete": false,
+      "audio_chunks": 14,
+      "audio_seconds": 9.798820861678005,
+      "elapsed_seconds": 3.4308529000009003,
+      "output": "duplex_chunks-1.wav",
+      "mode": "duplex_chunks",
+      "repeat": 1,
+      "text_chunks": [
+        "量子もつれの実験データを確認してみたけど、",
+        "やっぱり予想通りの結果ね。",
+        "結論を急ぐ前に、もう一度実験の条件を確かめましょう。"
+      ]
+    },
+    {
+      "model": "s2.1-pro-free",
+      "reference_id": "b450b19370434173b121446057622e9b",
+      "latency": "balanced",
+      "flush_each_chunk": true,
+      "input_gap_seconds": 0,
+      "sentence_sessions": true,
+      "status": "ok",
+      "text_chunk_available_seconds": [
+        0.0011295000003883615,
+        1.5245381999993697,
+        3.3015808000018296
+      ],
+      "first_audio_seconds": 1.084003500000108,
+      "first_signal_audio_offset_seconds": 0.08,
+      "first_signal_available_seconds": 1.084003500000108,
+      "estimated_immediate_playback_first_sound_seconds": 1.164003500000108,
+      "estimated_immediate_playback_underrun_seconds": 0.0,
+      "audio_before_input_complete": true,
+      "audio_chunks": 14,
+      "audio_seconds": 10.12390022675737,
+      "elapsed_seconds": 5.169474499998614,
+      "output": "sentence_chunks-1.wav",
+      "mode": "sentence_chunks",
+      "repeat": 1,
+      "text_chunks": [
+        "量子もつれの実験データを確認してみたけど、",
+        "やっぱり予想通りの結果ね。",
+        "結論を急ぐ前に、もう一度実験の条件を確かめましょう。"
+      ]
+    },
+    {
+      "model": "s2.1-pro-free",
+      "reference_id": "b450b19370434173b121446057622e9b",
+      "latency": "balanced",
+      "flush_each_chunk": false,
+      "input_gap_seconds": 0,
+      "sentence_sessions": false,
+      "status": "ok",
+      "text_chunk_available_seconds": [
+        0.500717099999747
+      ],
+      "first_audio_seconds": 1.4129113999988476,
+      "first_signal_audio_offset_seconds": 0.1,
+      "first_signal_available_seconds": 1.4129113999988476,
+      "estimated_immediate_playback_first_sound_seconds": 1.5129113999988477,
+      "estimated_immediate_playback_underrun_seconds": 0.0,
+      "audio_before_input_complete": false,
+      "audio_chunks": 7,
+      "audio_seconds": 11.331337868480725,
+      "elapsed_seconds": 4.189065999999002,
+      "output": "whole-2.wav",
+      "mode": "whole",
+      "repeat": 2,
+      "text_chunks": [
+        "量子もつれの実験データを確認してみたけど、やっぱり予想通りの結果ね。結論を急ぐ前に、もう一度実験の条件を確かめましょう。"
+      ]
+    },
+    {
+      "model": "s2.1-pro-free",
+      "reference_id": "b450b19370434173b121446057622e9b",
+      "latency": "balanced",
+      "flush_each_chunk": true,
+      "input_gap_seconds": 0.2,
+      "sentence_sessions": false,
+      "status": "ok",
+      "text_chunk_available_seconds": [
+        0.49868189999688184,
+        0.7124737999984063,
+        0.9001975999999559
+      ],
+      "first_audio_seconds": 0.9578595999992103,
+      "first_signal_audio_offset_seconds": 0.08,
+      "first_signal_available_seconds": 0.9578595999992103,
+      "estimated_immediate_playback_first_sound_seconds": 1.0378595999992104,
+      "estimated_immediate_playback_underrun_seconds": 0.0,
+      "audio_before_input_complete": false,
+      "audio_chunks": 14,
+      "audio_seconds": 9.659501133786849,
+      "elapsed_seconds": 3.3770087999982934,
+      "output": "duplex_chunks-2.wav",
+      "mode": "duplex_chunks",
+      "repeat": 2,
+      "text_chunks": [
+        "量子もつれの実験データを確認してみたけど、",
+        "やっぱり予想通りの結果ね。",
+        "結論を急ぐ前に、もう一度実験の条件を確かめましょう。"
+      ]
+    },
+    {
+      "model": "s2.1-pro-free",
+      "reference_id": "b450b19370434173b121446057622e9b",
+      "latency": "balanced",
+      "flush_each_chunk": true,
+      "input_gap_seconds": 0,
+      "sentence_sessions": true,
+      "status": "ok",
+      "text_chunk_available_seconds": [
+        0.000894600001629442,
+        1.619897900000069,
+        3.0702487000016845
+      ],
+      "first_audio_seconds": 1.1184100999998918,
+      "first_signal_audio_offset_seconds": 0.13,
+      "first_signal_available_seconds": 1.1184100999998918,
+      "estimated_immediate_playback_first_sound_seconds": 1.2484100999998917,
+      "estimated_immediate_playback_underrun_seconds": 0.0,
+      "audio_before_input_complete": true,
+      "audio_chunks": 14,
+      "audio_seconds": 10.12390022675737,
+      "elapsed_seconds": 4.907976500002405,
+      "output": "sentence_chunks-2.wav",
+      "mode": "sentence_chunks",
+      "repeat": 2,
+      "text_chunks": [
+        "量子もつれの実験データを確認してみたけど、",
+        "やっぱり予想通りの結果ね。",
+        "結論を急ぐ前に、もう一度実験の条件を確かめましょう。"
+      ]
+    },
+    {
+      "model": "s2.1-pro-free",
+      "reference_id": "b450b19370434173b121446057622e9b",
+      "latency": "balanced",
+      "flush_each_chunk": false,
+      "input_gap_seconds": 0,
+      "sentence_sessions": false,
+      "status": "ok",
+      "text_chunk_available_seconds": [
+        0.4905637999981991
+      ],
+      "first_audio_seconds": 0.9625481000002765,
+      "first_signal_audio_offset_seconds": 0.1,
+      "first_signal_available_seconds": 0.9625481000002765,
+      "estimated_immediate_playback_first_sound_seconds": 1.0625481000002766,
+      "estimated_immediate_playback_underrun_seconds": 0.0,
+      "audio_before_input_complete": false,
+      "audio_chunks": 7,
+      "audio_seconds": 10.681179138321996,
+      "elapsed_seconds": 3.3818329999994603,
+      "output": "whole-3.wav",
+      "mode": "whole",
+      "repeat": 3,
+      "text_chunks": [
+        "量子もつれの実験データを確認してみたけど、やっぱり予想通りの結果ね。結論を急ぐ前に、もう一度実験の条件を確かめましょう。"
+      ]
+    },
+    {
+      "model": "s2.1-pro-free",
+      "reference_id": "b450b19370434173b121446057622e9b",
+      "latency": "balanced",
+      "flush_each_chunk": true,
+      "input_gap_seconds": 0.2,
+      "sentence_sessions": false,
+      "status": "ok",
+      "text_chunk_available_seconds": [
+        0.5267445999998017,
+        0.7315912000012759,
+        0.9278696000001219
+      ],
+      "first_audio_seconds": 1.1185899000010977,
+      "first_signal_audio_offset_seconds": 0.09,
+      "first_signal_available_seconds": 1.1185899000010977,
+      "estimated_immediate_playback_first_sound_seconds": 1.2085899000010978,
+      "estimated_immediate_playback_underrun_seconds": 0.0,
+      "audio_before_input_complete": false,
+      "audio_chunks": 14,
+      "audio_seconds": 10.170340136054422,
+      "elapsed_seconds": 3.22680820000096,
+      "output": "duplex_chunks-3.wav",
+      "mode": "duplex_chunks",
+      "repeat": 3,
+      "text_chunks": [
+        "量子もつれの実験データを確認してみたけど、",
+        "やっぱり予想通りの結果ね。",
+        "結論を急ぐ前に、もう一度実験の条件を確かめましょう。"
+      ]
+    },
+    {
+      "model": "s2.1-pro-free",
+      "reference_id": "b450b19370434173b121446057622e9b",
+      "latency": "balanced",
+      "flush_each_chunk": true,
+      "input_gap_seconds": 0,
+      "sentence_sessions": true,
+      "status": "ok",
+      "text_chunk_available_seconds": [
+        0.001063100000465056,
+        1.5303323999978602,
+        2.980761700000585
+      ],
+      "first_audio_seconds": 1.0696389000004274,
+      "first_signal_audio_offset_seconds": 0.11,
+      "first_signal_available_seconds": 1.0696389000004274,
+      "estimated_immediate_playback_first_sound_seconds": 1.1796389000004275,
+      "estimated_immediate_playback_underrun_seconds": 0.0,
+      "audio_before_input_complete": true,
+      "audio_chunks": 14,
+      "audio_seconds": 10.263219954648527,
+      "elapsed_seconds": 5.343973200000619,
+      "output": "sentence_chunks-3.wav",
+      "mode": "sentence_chunks",
+      "repeat": 3,
+      "text_chunks": [
+        "量子もつれの実験データを確認してみたけど、",
+        "やっぱり予想通りの結果ね。",
+        "結論を急ぐ前に、もう一度実験の条件を確かめましょう。"
+      ]
+    }
+  ],
+  "quality_checks": [
+    {
+      "mode": "whole",
+      "transcript": "両氏も連の実験データを確認してみたけど、やっぱり予想通りの結果ね。結論を急ぐ前に、もう一度実験の条件を確かめましょう。",
+      "language": "Japanese",
+      "asr_seconds": 5.633445600000414,
+      "peak": 0.575164794921875,
+      "clipped_samples": 0,
+      "silence_runs_over_100ms_at_minus45dbfs": [
+        {
+          "start_seconds": 2.94,
+          "duration_seconds": 0.49
+        },
+        {
+          "start_seconds": 5.28,
+          "duration_seconds": 0.84
+        },
+        {
+          "start_seconds": 7.55,
+          "duration_seconds": 0.46
+        },
+        {
+          "start_seconds": 10.34,
+          "duration_seconds": 0.16
+        }
+      ]
+    },
+    {
+      "mode": "duplex_chunks",
+      "transcript": "両氏も連れの実験データを確認してみたけどやっぱり予想通りの結果ね。結論を急ぐ前にもう一度実験の条件を確かめましょう。",
+      "language": "Japanese",
+      "asr_seconds": 1.739387400000851,
+      "peak": 0.566864013671875,
+      "clipped_samples": 0,
+      "silence_runs_over_100ms_at_minus45dbfs": [
+        {
+          "start_seconds": 2.85,
+          "duration_seconds": 0.23
+        },
+        {
+          "start_seconds": 4.95,
+          "duration_seconds": 0.16
+        },
+        {
+          "start_seconds": 6.59,
+          "duration_seconds": 0.68
+        },
+        {
+          "start_seconds": 9.63,
+          "duration_seconds": 0.17
+        }
+      ]
+    },
+    {
+      "mode": "sentence_chunks",
+      "transcript": "両氏も連の実験データを確認してみたけどやっぱり予想通りの結果ね。結論を急ぐ前にもう一度実験の条件を確かめましょう。",
+      "language": "Japanese",
+      "asr_seconds": 1.7269736000016565,
+      "peak": 0.664031982421875,
+      "clipped_samples": 0,
+      "silence_runs_over_100ms_at_minus45dbfs": [
+        {
+          "start_seconds": 2.84,
+          "duration_seconds": 0.22
+        },
+        {
+          "start_seconds": 5.24,
+          "duration_seconds": 0.1
+        },
+        {
+          "start_seconds": 6.8,
+          "duration_seconds": 0.71
+        },
+        {
+          "start_seconds": 9.91,
+          "duration_seconds": 0.22
+        }
+      ]
+    }
+  ],
+  "e2e": {
+    "prompt": "红莉栖，晚上好。请用一两句日语说说你今天在实验室做了什么。",
+    "llm": "deepseek-v4-flash",
+    "cooperative_chat": true,
+    "subtitle_language": "zh",
+    "tts_output_language": "ja",
+    "enable_cuda_graph": true,
+    "first_sentence_early_cut_chars": 11,
+    "clock": "Cross-process time.perf_counter; immediately before chat.send to PortAudio write call. Browser click dispatch and acoustic loopback excluded.",
+    "audio_cache": "Remote synthesis bypasses local GPT-SoVITS cache. Every first sentence invoked Fish.",
+    "trials": [
+      {
+        "attempt": 1,
+        "first_local_sentence_seconds": 1.910055,
+        "fish_start_seconds": 2.436736,
+        "fish_first_audio_seconds": 3.526379,
+        "first_device_write_seconds": 3.579501,
+        "first_signal_write_seconds": 3.697288,
+        "driver_output_latency_seconds": 0.09142857142857143
+      },
+      {
+        "attempt": 2,
+        "first_local_sentence_seconds": 1.16955,
+        "fish_start_seconds": 1.173832,
+        "fish_first_audio_seconds": 3.244255,
+        "first_device_write_seconds": 3.288057,
+        "first_signal_write_seconds": 3.507505,
+        "driver_output_latency_seconds": 0.09142857142857143
+      },
+      {
+        "attempt": 3,
+        "first_local_sentence_seconds": 1.508911,
+        "fish_start_seconds": 1.512937,
+        "fish_first_audio_seconds": 3.527632,
+        "first_device_write_seconds": 3.572265,
+        "first_signal_write_seconds": 3.742808,
+        "driver_output_latency_seconds": 0.09142857142857143
+      }
+    ]
+  }
+}

@@ -45,8 +45,10 @@ async def continue_branch_and_wait(
         task=text,
         turn_id=turn_id,
     )
-    assert started is not None, "active Browser branch did not accept branch=continue"
-    record = runtime.get_run(str(started.get("run_id") or ""))
+    assert started is not None and started.accepted, (
+        "active Browser branch did not accept branch=continue"
+    )
+    record = runtime.get_run(str(started.run.get("run_id") or ""))
     assert record is not None, started
     if record.task_handle is not None:
         await record.task_handle
@@ -103,10 +105,13 @@ def assert_truthful_branch_narration(
         assert display_text == report, (display_text, report, decision)
     else:
         assert not report or report not in display_text, (display_text, report, decision)
-        assert branch.title in display_text, (display_text, branch.title, decision)
+        assert display_text == str(decision.get("summary") or "").strip(), (
+            display_text,
+            decision,
+        )
 
 
-async def main() -> None:
+async def _run_scene() -> None:
     if not has_browser_branch_llm_config():
         print("browser real scene set skipped: no browser branch LLM config")
         return
@@ -234,14 +239,23 @@ async def main() -> None:
     )
     assert unrelated is None, unrelated
 
-    branch_files = sorted((ROOT / "runtime" / "provider_branches").glob("browser_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-    latest_branch = branch_files[0] if branch_files else None
-    if latest_branch:
-        payload = latest_branch.read_text(encoding="utf-8")
-        assert "DOCTYPE" in payload.upper() or "<html" in payload.lower(), latest_branch
-        main_context = render_active_provider_context(session_id=SESSION_ID)
-        assert "<html" not in main_context.lower(), main_context[:1000]
-        print("[real] latest provider branch store:", latest_branch)
+    branch_store_path = str(
+        back_run.get("metadata", {})
+        .get("provider_branch", {})
+        .get("branch_store_path")
+        or ""
+    ).strip()
+    assert branch_store_path, back_run
+    latest_branch = Path(branch_store_path)
+    assert latest_branch.is_file(), latest_branch
+    latest_branch.resolve().relative_to(
+        (ROOT / "runtime" / "provider_branches").resolve()
+    )
+    payload = latest_branch.read_text(encoding="utf-8")
+    assert "DOCTYPE" in payload.upper() or "<html" in payload.lower(), latest_branch
+    main_context = render_active_provider_context(session_id=SESSION_ID)
+    assert "<html" not in main_context.lower(), main_context[:1000]
+    print("[real] latest provider branch store:", latest_branch)
 
     assert any(item.get("activity") == "work" for item in captured["activity"]), captured["activity"]
     assert captured["activity"][-1].get("activity") == "", captured["activity"][-1]
@@ -249,15 +263,20 @@ async def main() -> None:
     notes = recent_work_notes(session_id=SESSION_ID, limit=12)
     assert any(str(item.get("source") or "") == "interaction_branch" for item in notes), notes
 
-    adapter = runtime.get_adapter("browser")
-    shutdown = getattr(adapter, "shutdown", None)
-    if callable(shutdown):
-        await shutdown()
-
     print("browser real scene set smoke ok")
     print("canvas updates:", len(captured["canvas"]))
     print("provider results:", len(captured["provider_result"]))
     print("work notes:", len(captured["work_note"]))
+
+
+async def main() -> None:
+    try:
+        await _run_scene()
+    finally:
+        adapter = runtime.get_adapter("browser")
+        shutdown = getattr(adapter, "shutdown", None)
+        if callable(shutdown):
+            await shutdown()
 
 
 if __name__ == "__main__":

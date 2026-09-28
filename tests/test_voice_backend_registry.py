@@ -54,7 +54,7 @@ def _wav_bytes(*, sample_rate: int = 24000) -> bytes:
 def test_builtin_voice_registries_keep_embedded_defaults_and_remote_sidepaths() -> None:
     assert asr_backend_ids()[:2] == ("qwen3_asr", "sense_voice")
     assert "openai_compatible" in asr_backend_ids()
-    assert tts_backend_ids() == ("gpt_sovits", "openai_compatible", "mimo", "disabled")
+    assert tts_backend_ids() == ("gpt_sovits", "openai_compatible", "mimo", "fish_audio", "disabled")
 
     remote_asr = create_asr_backend("openai_compatible")
     assert remote_asr.deployment == "remote"
@@ -63,8 +63,9 @@ def test_builtin_voice_registries_keep_embedded_defaults_and_remote_sidepaths() 
     tts_statuses = tts_backend_statuses()
     assert any(item["state"] == "disabled" for item in tts_statuses)
     embedded_tts = next(item for item in tts_statuses if item["id"] == "gpt_sovits")
-    assert "v3" in embedded_tts["label"]
-    assert "only GPT-SoVITS v3 checkpoints" in embedded_tts["summary"]
+    assert embedded_tts["label"] == "GPT-SoVITS · Amadeus"
+    assert "v2Pro" in embedded_tts["summary"]
+    assert "v3" in embedded_tts["summary"]
 
 
 def test_qwen_conversation_language_maps_iso_codes_and_auto_detection() -> None:
@@ -418,7 +419,9 @@ def test_runtime_adapter_preserves_existing_pipeline_tuple_contract() -> None:
     assert streamed[0][2] == "hello"
 
 
-def test_embedded_tts_adapter_preserves_local_inference_options() -> None:
+def test_embedded_tts_adapter_preserves_local_inference_options(monkeypatch) -> None:
+    # This test injects an embedded inferencer; local sidecar preferences are unrelated.
+    monkeypatch.setattr(GPTSoVITSBackend, "_sidecar_enabled", staticmethod(lambda: False))
     calls: list[tuple[str, dict]] = []
 
     class FakeInferencer:

@@ -25,6 +25,7 @@ from agent_host.provider_progress import (
     with_progress_contract,
 )
 from agent_host.provider_authoring import (
+    required_auip_engagement_mode,
     requires_auip_authoring,
     with_host_authoring_capabilities,
 )
@@ -292,12 +293,13 @@ class DirectCodexAdapter:
                             metadata=request.metadata,
                             execution_provider=self.provider_id,
                         ),
-                        require_auip_preparation=requires_auip_authoring(
-                            (request.metadata or {}).get("source")
-                        ),
+                        require_auip_preparation=requires_auip_authoring(request.metadata or {}),
                         authoring_skill_path=str(
                             (request.metadata or {}).get("auip_authoring_skill_path")
                             or ""
+                        ),
+                        required_auip_mode=required_auip_engagement_mode(
+                            request.metadata or {}
                         ),
                     ),
                     presentation_locale=(request.metadata or {}).get("presentation_locale"),

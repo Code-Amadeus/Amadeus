@@ -183,6 +183,23 @@ def test_notify_never_raises_and_thread_safe():
     assert snap["counters"]["stale_drops"] == 1200
 
 
+def test_first_sentence_playback_keeps_origin_turn_identity():
+    c = TurnCoordinator()
+    c.on_chat_turn_started(turn_id="turn-origin", chat_epoch=1)
+    c.on_first_sentence_enqueued(
+        turn_id="turn-origin",
+        sentence_id="sentence-1",
+    )
+    c.on_sentence_playback_started(sentence_id="sentence-1")
+
+    transitions = c.snapshot()["recent_transitions"]
+    playback = [
+        item for item in transitions if item["event"] == "sentence_playback_started"
+    ][-1]
+    assert playback["turn_id"] == "turn-origin"
+    assert playback["first_sentence"] is True
+
+
 def _main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

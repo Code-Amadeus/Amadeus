@@ -1588,7 +1588,7 @@ def test_roster_offers_a_recency_ordered_candidate_set() -> None:
     assert "Withdrawing what is already running" in without
     assert "currently has 1 queued/running WorkItem" in without
     assert "adds, removes, or changes a requirement" in without
-    assert "Unique active goal text" in without
+    assert "Unique active Work context excerpts" in without
     assert "existing lawn-defense game" in without
     assert "work_bbbbb" not in without
     assert len(without) < len(block)

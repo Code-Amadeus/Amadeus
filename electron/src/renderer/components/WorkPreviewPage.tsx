@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useBackend } from '../hooks/useBackend'
 import '../styles/workPreview.css'
+import { useI18n } from '../i18n'
 
 type PreviewLoadState = {
   status: 'idle' | 'loading' | 'loaded' | 'failed'
@@ -37,6 +38,7 @@ function statusTone(status: string): string {
 }
 
 export default function WorkPreviewPage() {
+  const { t } = useI18n()
   const { send, subscribe, connected } = useBackend()
   const previewId = useMemo(
     () => new URLSearchParams(window.location.search).get('previewId') || '',
@@ -273,7 +275,7 @@ export default function WorkPreviewPage() {
           <span className={`work-preview-status-dot ${tone}`} />
           <div>
             <small>{surfaceLabel} / {lifecycle.toUpperCase()} / {status.toUpperCase()}</small>
-            <strong>{descriptor?.title || 'Preparing preview…'}</strong>
+            <strong>{descriptor?.title || t('Preparing preview…')}</strong>
           </div>
         </div>
         <div className="work-preview-window-actions">
@@ -285,32 +287,32 @@ export default function WorkPreviewPage() {
             type="button"
             onClick={reload}
             disabled={reloadLocked}
-            aria-label="Reload preview"
-            title={reloadLocked ? `Reload unavailable while ${lifecycle}` : 'Reload preview'}
+            aria-label={t('Reload preview')}
+            title={reloadLocked ? `${t('Reload unavailable while')} ${lifecycle}` : t('Reload preview')}
           >↻</button>
-          <button type="button" className="close" onClick={close} aria-label="Close preview" title="Close preview">×</button>
+          <button type="button" className="close" onClick={close} aria-label={t('Close preview')} title={t('Close preview')}>×</button>
         </div>
       </header>
 
-      <section className="work-preview-frame" aria-label="Sandboxed web preview">
+      <section className="work-preview-frame" aria-label={t('Sandboxed web preview')}>
         <div className="work-preview-corner top-left" aria-hidden="true" />
         <div className="work-preview-corner top-right" aria-hidden="true" />
         <div className="work-preview-corner bottom-left" aria-hidden="true" />
         <div className="work-preview-corner bottom-right" aria-hidden="true" />
         <div ref={viewportRef} className="work-preview-viewport">
           <div className="work-preview-placeholder">
-            <span>AWAITING LOCAL RENDER SURFACE</span>
+            <span>{t('AWAITING LOCAL RENDER SURFACE')}</span>
           </div>
           {auipTransition && (
             <div className="work-preview-auip-stage" aria-live="polite">
               <div className="work-preview-auip-mark" aria-hidden="true">
                 <span>A</span>
               </div>
-              <strong>{lifecycle === 'handoff' ? 'AUIP ATTACHING' : 'AUIP ASSEMBLING'}</strong>
+              <strong>{t(lifecycle === 'handoff' ? 'AUIP ATTACHING' : 'AUIP ASSEMBLING')}</strong>
               <small>
                 {lifecycle === 'handoff'
-                  ? 'Validating the application in an isolated surface'
-                  : 'Preparing the final interactive application'}
+                  ? t('Validating the application in an isolated surface')
+                  : t('Preparing the final interactive application')}
               </small>
             </div>
           )}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from html.parser import HTMLParser
 from pathlib import Path
@@ -9,9 +10,14 @@ from typing import Any
 from urllib.parse import unquote, urlsplit
 
 from agent_host.provider_authoring import official_auip_runtime_assets
-from server.auip_contract import AuipProtocolError
+from server.auip_contract import AuipProtocolError, available_engagement_modes
 from tools.sync_auip_manifest import sync_manifest
+from tools.validate_auip_entry import validate_entry
 from tools.validate_auip_manifest import validate_file
+
+
+class AuipHostMaterializationError(AuipProtocolError):
+    """A Host-owned SDK receipt or materialized byte invariant failed."""
 
 
 class _ScriptCollector(HTMLParser):
@@ -36,6 +42,8 @@ def finalize_staged_auip_web_bundle(
     *,
     entry_filename: str = "",
     materialized_files: list[str] | tuple[str, ...] = (),
+    expected_assets: dict[str, Any] | None = None,
+    include_supported_modes: bool = False,
 ) -> dict[str, Any]:
     """Apply Host-owned generated synchronization, then validate the bundle."""
 
@@ -47,6 +55,8 @@ def finalize_staged_auip_web_bundle(
         bundle_root,
         entry_filename=entry_path.name,
         materialized_files=materialized_files,
+        expected_assets=expected_assets,
+        include_supported_modes=include_supported_modes,
     )
     return {
         **result,
@@ -59,6 +69,8 @@ def validate_staged_auip_web_bundle(
     *,
     entry_filename: str = "",
     materialized_files: list[str] | tuple[str, ...] = (),
+    expected_assets: dict[str, Any] | None = None,
+    include_supported_modes: bool = False,
 ) -> dict[str, Any]:
     """Validate protocol packaging without trusting Provider prose or tools."""
 
@@ -91,24 +103,30 @@ def validate_staged_auip_web_bundle(
             raise AuipProtocolError("auip_controller_asset_not_referenced")
 
     official = official_auip_runtime_assets()
+    expected = official if expected_assets is None else expected_assets
     verified_assets: list[str] = []
     for filename in sorted({str(value) for value in materialized_files if str(value)}):
         identity = official.get(filename)
         if identity is None:
-            raise AuipProtocolError("unknown_host_runtime_asset", filename)
+            raise AuipHostMaterializationError("unknown_host_runtime_asset", filename)
+        recorded = expected.get(filename)
+        if not isinstance(recorded, dict) or not recorded.get("sha256"):
+            raise AuipHostMaterializationError(
+                "auip_runtime_asset_receipt_missing", filename)
         candidate = (bundle_root / filename).resolve()
         if (
             bundle_root not in candidate.parents
             or candidate.is_symlink()
             or not candidate.is_file()
         ):
-            raise AuipProtocolError("auip_runtime_asset_missing", filename)
+            raise AuipHostMaterializationError("auip_runtime_asset_missing", filename)
         try:
             digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
         except OSError as exc:
-            raise AuipProtocolError("auip_runtime_asset_unreadable", filename) from exc
-        if digest != identity["sha256"]:
-            raise AuipProtocolError("auip_runtime_asset_modified", filename)
+            raise AuipHostMaterializationError(
+                "auip_runtime_asset_unreadable", filename) from exc
+        if digest != recorded["sha256"]:
+            raise AuipHostMaterializationError("auip_runtime_asset_modified", filename)
         verified_assets.append(filename)
 
     required_references = ["managed-v0.js", "auip-v0.js"]
@@ -120,18 +138,23 @@ def validate_staged_auip_web_bundle(
             for relative in verified_assets
             if Path(relative).name.casefold() == basename.casefold()
         ]
-        if len(matching_assets) != 1 or _source_asset_index(
+        if len(matching_assets) != 1:
+            raise AuipHostMaterializationError(
+                "auip_runtime_asset_reference_mismatch",
+                basename,
+            )
+        if _source_asset_index(
             sources,
             entry_path=entry_path,
             bundle_root=bundle_root,
-            relative_asset=matching_assets[0] if matching_assets else "",
+            relative_asset=matching_assets[0],
         ) < 0:
             raise AuipProtocolError(
                 "auip_runtime_asset_reference_mismatch",
                 basename,
             )
 
-    return {
+    result = {
         "verified": True,
         "binding": "web/v0",
         "app_id": str(canonical["app"]["id"]),
@@ -144,6 +167,161 @@ def validate_staged_auip_web_bundle(
             "runtime_asset_integrity",
             "entry_wiring",
         ],
+    }
+    if include_supported_modes:
+        result["supported_modes"] = available_engagement_modes(
+            canonical.get("stances") or ()
+        )
+    return result
+
+
+async def validate_auip_web_bundle_execution(
+    root: Path,
+    *,
+    entry_filename: str = "",
+    materialized_files: list[str] | tuple[str, ...] = (),
+    expected_assets: dict[str, Any] | None = None,
+    finalize: bool = False,
+    required_mode: str = "",
+) -> dict[str, Any]:
+    """Run the existing static bundle owner, then the shared real boot probe.
+
+    ``finalize`` selects the existing Host-generated manifest synchronization
+    path used by Desktop export. This verifies packaging and isolated startup;
+    it does not establish live Attach, Controller/gameplay behavior, receipts,
+    or full application acceptance.
+    """
+
+    bundle_root = Path(root).resolve()
+    clean_required_mode = str(required_mode or "").strip().lower()
+    validator = (finalize_staged_auip_web_bundle
+        if finalize else validate_staged_auip_web_bundle)
+    try:
+        static = await asyncio.to_thread(
+            validator,
+            bundle_root,
+            entry_filename=entry_filename,
+            materialized_files=materialized_files,
+            expected_assets=expected_assets,
+            include_supported_modes=bool(clean_required_mode),
+        )
+    except AuipHostMaterializationError as exc:
+        failure = _execution_failure(
+            "host_materialization_error", exc.code, exc.detail)
+        return _mode_static_failure(failure, clean_required_mode)
+    except AuipProtocolError as exc:
+        kind = "tool_error" if isinstance(exc.__cause__, OSError) else "app_error"
+        return _mode_static_failure(
+            _execution_failure(kind, exc.code, exc.detail), clean_required_mode)
+    except (OSError, PermissionError) as exc:
+        return _mode_static_failure(
+            _execution_failure(
+                "tool_error", "auip_bundle_validation_io_failed", str(exc)
+            ),
+            clean_required_mode,
+        )
+    except Exception as exc:
+        return _mode_static_failure(
+            _execution_failure(
+                "tool_error",
+                "auip_bundle_validation_failed",
+                f"{type(exc).__name__}: {exc}",
+            ),
+            clean_required_mode,
+        )
+
+    manifest_path = bundle_root / str(static["manifest"])
+    entry_path = bundle_root / str(static["entry"])
+    supported_modes = [
+        str(value)
+        for value in static.get("supported_modes") or []
+        if str(value)
+    ]
+    mode_supported = True
+    mode_detail = ""
+    if clean_required_mode:
+        mode_supported = clean_required_mode in supported_modes
+        if not mode_supported:
+            actual = ", ".join(supported_modes) or "none"
+            mode_detail = (
+                f"required engagement mode {clean_required_mode!r} is unsupported; "
+                f"supported modes: {actual}"
+            )
+    boot = await validate_entry(
+        manifest_path,
+        entry_path,
+        timeout_seconds=10.0,
+        settle_milliseconds=300,
+    )
+    if boot.get("ok") is not True:
+        if clean_required_mode and not mode_supported:
+            boot = {
+                **boot,
+                "diagnostics": [
+                    *(boot.get("diagnostics") or []),
+                    {
+                        "source": "host_mode_validation",
+                        "code": "auip_engagement_mode_unsupported",
+                        "message": mode_detail,
+                    },
+                ],
+            }
+        diagnostics = boot.get("diagnostics")
+        first = diagnostics[0] if isinstance(diagnostics, list) and diagnostics else {}
+        code = str(first.get("code") or "auip_entry_boot_failed")
+        detail = str(first.get("message") or "")
+        result = {
+            **static,
+            "verified": False,
+            "kind": str(boot.get("kind") or "tool_error"),
+            "code": code,
+            "detail": detail,
+            "boot": boot,
+        }
+        if clean_required_mode:
+            result.update(
+                {
+                    "required_mode": clean_required_mode,
+                    "supported_modes": supported_modes,
+                }
+            )
+        return result
+    result = {
+        **static,
+        "verified": mode_supported,
+        "kind": "ok" if mode_supported else "app_error",
+        "code": "ok" if mode_supported else "auip_engagement_mode_unsupported",
+        "detail": "" if mode_supported else mode_detail,
+        "checks": [*static.get("checks", []), "entry_boot"],
+        "boot": boot,
+    }
+    if clean_required_mode:
+        result.update(
+            {
+                "required_mode": clean_required_mode,
+                "supported_modes": supported_modes,
+            }
+        )
+    return result
+
+
+def _mode_static_failure(
+    failure: dict[str, Any],
+    required_mode: str,
+) -> dict[str, Any]:
+    if required_mode:
+        failure["required_mode"] = required_mode
+    return failure
+
+
+def _execution_failure(kind: str, code: str, detail: str) -> dict[str, Any]:
+    return {
+        "verified": False,
+        "kind": kind,
+        "code": str(code or "auip_bundle_validation_failed"),
+        "detail": str(detail or ""),
+        "checks": [],
+        "boot": None,
     }
 
 

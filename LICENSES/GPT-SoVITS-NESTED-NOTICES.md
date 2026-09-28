@@ -21,6 +21,10 @@ alone. It is an engineering provenance record, not legal advice.
   an unmodified upstream snapshot.
 - `LICENSES/GPT-SoVITS-MIT.txt` has the same Git blob as the license at the
   verified baseline.
+- The later v2Pro support is a scoped update from RVC-Boss/GPT-SoVITS commit
+  `08d627c3338173c3229286d8787060d6559fe0f8` (2026-04-30): the ERes2NetV2
+  speaker encoder, its feature helpers, and the v2Pro conditioning contract.
+  The external model weights are not covered by this source inventory.
 
 The comparison identifies the closest reproducible base; it does not claim
 that the 18 non-identical/local-only files came from that commit without

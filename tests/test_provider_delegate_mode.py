@@ -10,6 +10,7 @@ from agent_host.provider_catalog import (
     BROWSER_MANIFEST,
     CODEX_APP_SERVER_MANIFEST,
     OPENCLAW_MANIFEST,
+    PI_MANIFEST,
 )
 from server.app import (
     _delegate_mode_for_provider,
@@ -32,6 +33,15 @@ def _provider(task: str, attrs: dict) -> str:
         attrs,
         manifests=_ROUTING_MANIFESTS,
     )
+
+
+def test_daily_default_is_pi_while_explicit_openclaw_remains_available(monkeypatch):
+    monkeypatch.setattr(settings, "PROVIDER_DELEGATE_DEFAULT_PROVIDER", "pi")
+    manifests = (*_ROUTING_MANIFESTS, PI_MANIFEST)
+    _, daily = _delegate_provider_selection("Find a public article", {}, manifests=manifests)
+    _, explicit = _delegate_provider_selection("Find a public article", {"provider": "openclaw"}, manifests=manifests)
+    assert daily.provider_id == "pi"
+    assert explicit.provider_id == "openclaw"
 
 
 def test_provider_mode_preserves_explicit_actions_without_transport_special_cases() -> None:

@@ -21,6 +21,7 @@ import {
   workItemCapsuleTone,
   workItemBelongsToCurrentSession,
   workItemBelongsToHistory,
+  workItemAttentionActionLabel,
   workItemIsClosed,
   workItemNeedsAttention,
 } from './work/workProjection'
@@ -34,6 +35,7 @@ import {
   toolCount,
 } from './work/workState'
 import { isVisibleProviderEvent } from './work/providerEventVisibility'
+import { useI18n } from '../i18n'
 
 type DisplayNarrationItem = {
   label: string
@@ -128,7 +130,7 @@ function workItemContextLabel(item: WorkDockItem, selected: boolean, history: bo
   else if (item.activity?.phase === 'cancelling') labels.push('Stopping')
   else if (item.activity?.phase === 'queued') labels.push('Queued')
   else if (['queued', 'running'].includes(item.execution)) labels.push('Working')
-  if (workItemNeedsAttention(item)) labels.push(attentionActionLabel(item.attention))
+  if (workItemNeedsAttention(item)) labels.push(workItemAttentionActionLabel(item))
   if (history) labels.push('History')
   else if (workItemIsClosed(item)) labels.push(item.state === 'archived' ? 'Archived' : 'Accepted')
   if (labels.length === 0) labels.push('Current')
@@ -154,6 +156,7 @@ function consumeWorkFocusRequest() {
 }
 
 export default function WorkPage({ send, subscribe, connected }: WorkPageProps) {
+  const { t } = useI18n()
   const searchParams = new URLSearchParams(window.location.search)
   const desktopProjection = searchParams.get('desktopProjection') === '1'
   const sliceWindow = searchParams.get('sliceWindow') === '1'
@@ -249,6 +252,8 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
     ? {
         label: workItemIsClosed(activeWorkItem)
           ? activeWorkItem.state === 'archived' ? 'Archived' : 'Accepted'
+          : activeWorkItem.execution === 'orphaned'
+            ? 'Outcome unknown / reconciliation required'
           : activeLiveness === 'stalled'
             ? `Stalled / ${formatQuietSeconds(activeSilentForSeconds)} quiet`
             : activeLiveness === 'cancel_pending'
@@ -258,7 +263,7 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
               ? `${activeWorkItem.activity.phase} / ${formatQuietSeconds(activeWorkItem.activity.elapsedSeconds)} elapsed`
               : `Running / ${activeWorkItem.completion}`
             : workItemNeedsAttention(activeWorkItem)
-              ? `${attentionActionLabel(activeWorkItem.attention)} / ${activeWorkItem.completion}`
+              ? `${workItemAttentionActionLabel(activeWorkItem)} / ${activeWorkItem.completion}`
               : `${activeWorkItem.execution} / ${activeWorkItem.completion}`,
         tone: workItemNeedsAttention(activeWorkItem)
           ? 'risk'
@@ -643,7 +648,7 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
         setProvider(current => preserveOrChooseProvider(
           current,
           nextProviders,
-          res.provider_manifests,
+          String(res.default_provider || ''),
         ))
       }
       if (Array.isArray(res.runs)) {
@@ -994,7 +999,7 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
 
   const submit = useCallback(async () => {
     const prompt = task.trim()
-    if (!connected || !prompt || workAction) return
+    if (!connected || !prompt || !provider || workAction) return
     setSubmitting(true)
     try {
       const routedCwd = workProjection?.workspaceFocusMode === 'pinned'
@@ -1073,7 +1078,8 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
     activeRun?.status === 'queued'
     || activeRun?.status === 'running'
     || activeWorkItem?.execution === 'queued'
-    || activeWorkItem?.execution === 'running',
+    || activeWorkItem?.execution === 'orphaned'
+    || activeWorkItem?.execution === 'running'
   )
   const completionHistory = Array.isArray(workItemDetail?.completionHistory) ? workItemDetail.completionHistory : []
   const canAcceptWork = Boolean(
@@ -1112,8 +1118,12 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
         activeWorkItem.selectionReason ? `Reason: ${activeWorkItem.selectionReason}` : '',
         activeWorkItem.artifactCount !== undefined ? `Artifacts: ${activeWorkItem.artifactCount}` : '',
         '',
-        activeWorkItem.canResume
-          ? 'An interrupted provider run can be resumed from its checkpoint.'
+        activeWorkItem.execution === 'orphaned'
+          ? activeWorkItem.canResume
+            ? 'Provider outcome is unknown. Reconcile it before using the verified resume checkpoint.'
+            : 'Provider outcome is unknown. Reconcile it before retrying or starting replacement work.'
+          : activeWorkItem.canResume
+            ? 'An interrupted provider run can be resumed from its checkpoint.'
           : activeWorkItem.canRetry
             ? 'The failed provider run can be retried with the same instruction.'
             : 'New instructions start a separate WorkItem.',
@@ -1142,7 +1152,7 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
       <div className={`crt-popover crt-popover-${overlay}`}>
         <div className="crt-popover-head">
           <span>{overlay}</span>
-          <button onClick={() => setOverlay('none')}>Close</button>
+          <button onClick={() => setOverlay('none')}>{t('Close')}</button>
         </div>
         <div className="crt-popover-body">
           {overlay === 'canvas' && diffPreview && (
@@ -1183,16 +1193,16 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
                     onClick={() => { void resolveAttention(activeAttention.id, option.id) }}
                   >
                     <span className="crt-attention-kind">
-                      {option.entityKind === 'project'
+                      {t(option.entityKind === 'project'
                         ? 'PROJECT'
                         : option.entityKind === 'work_item'
                           ? option.parentLabel ? 'WORKITEM IN PROJECT' : 'SESSION DRAFT'
-                          : 'CHOICE'}
+                          : 'CHOICE')}
                     </span>
                     <strong>{option.label}</strong>
                     {option.parentLabel && <small>↳ {option.parentLabel}</small>}
                     {option.description && <p>{option.description}</p>}
-                    {attentionResolving === option.id && <em>Applying…</em>}
+                    {attentionResolving === option.id && <em>{t('Applying…')}</em>}
                   </button>
                 ))}
               </div>
@@ -1200,9 +1210,9 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
           )}
           {overlay === 'attention' && !activeAttention && attentionError && (
             <div className="crt-attention-card" role="alert">
-              <h3>Selection could not be applied</h3>
+              <h3>{t('Selection could not be applied')}</h3>
               <p className="crt-attention-error">{attentionError}</p>
-              <p>The original operation was not started again. You can repeat the request in Chat.</p>
+              <p>{t('The original operation was not started again. You can repeat the request in Chat.')}</p>
             </div>
           )}
           {overlay === 'permission' && (
@@ -1212,21 +1222,21 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
                 <button
                   onClick={() => refreshDiff()}
                   disabled={!activeWorkRunId}
-                >Load Diff</button>
-                <button onClick={refreshStatus} disabled={!activeRun}>Git Status</button>
+                >{t('Load Diff')}</button>
+                <button onClick={refreshStatus} disabled={!activeRun}>{t('Git Status')}</button>
                 <button onClick={() => { void acceptWorkItem() }} disabled={!canAcceptWork || !!workAction}>
-                  {workAction === 'accept' ? 'Accepting' : 'Accept WorkItem'}
+                  {t(workAction === 'accept' ? 'Accepting' : 'Accept WorkItem')}
                 </button>
                 <button onClick={() => { void archiveWorkItem() }} disabled={!canArchiveWork || !!workAction}>
-                  {workAction === 'archive' ? 'Archiving' : 'Archive WorkItem'}
+                  {t(workAction === 'archive' ? 'Archiving' : 'Archive WorkItem')}
                 </button>
-                <button onClick={() => { void reopenWorkItem() }} disabled={!selectedWorkClosed || !!workAction}>Reopen WorkItem</button>
+                <button onClick={() => { void reopenWorkItem() }} disabled={!selectedWorkClosed || !!workAction}>{t('Reopen WorkItem')}</button>
                 <button
                   onClick={() => { void promoteWorkItem() }}
                   disabled={!activeWorkItem?.canPromoteToProject || !!workAction}
                   title="Keep this scratch task as a project so later instructions can be sent to it by name."
                 >
-                  {workAction === 'promote' ? 'Keeping' : 'Keep as project'}
+                  {t(workAction === 'promote' ? 'Keeping' : 'Keep as project')}
                 </button>
                 {activeWorkItem?.projectState === 'retired'
                   ? (
@@ -1235,7 +1245,7 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
                       disabled={!!workAction}
                       title="Offer this project again as somewhere to send new work."
                     >
-                      {workAction === 'project' ? 'Restoring' : 'Restore project'}
+                      {t(workAction === 'project' ? 'Restoring' : 'Restore project')}
                     </button>
                   )
                   : (
@@ -1244,7 +1254,7 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
                       disabled={!activeWorkItem?.projectId || !activeWorkItem?.projectState || !!workAction}
                       title="Stop offering this project for new work. Its files, tasks and history all stay."
                     >
-                      {workAction === 'project' ? 'Retiring' : 'Retire project'}
+                      {t(workAction === 'project' ? 'Retiring' : 'Retire project')}
                     </button>
                   )}
               </div>
@@ -1263,9 +1273,9 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
         <div className="crt-scanlines" />
         <div className="crt-projection-content" ref={projectionPanelRef}>
           <header className="crt-topbar" onPointerDown={startSlicePanelDrag}>
-            <span>AMADEUS AI WORK INTERFACE</span>
+            <span>{t('AMADEUS AI WORK INTERFACE')}</span>
             <span className="crt-topbar-right">
-              {connected ? 'ACTIVE SESSION' : 'BACKEND OFFLINE'} <span className="crt-dot" /> {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {t(connected ? 'ACTIVE SESSION' : 'BACKEND OFFLINE')} <span className="crt-dot" /> {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
           </header>
 
@@ -1299,14 +1309,14 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
           <main className="crt-focus-layout">
         <section
           className={`crt-task-dock ${planDockOpen ? 'open' : ''}`}
-          aria-label="Plan drawer"
+          aria-label={t('Plan drawer')}
           onMouseEnter={() => setPlanDockOpen(true)}
           onMouseLeave={() => setPlanDockOpen(false)}
           onFocus={() => setPlanDockOpen(true)}
           onBlur={() => setPlanDockOpen(false)}
         >
           <div className="crt-panel crt-timeline-compact">
-            <div className="crt-panel-label">Dynamic Timeline</div>
+            <div className="crt-panel-label">{t('Dynamic Timeline')}</div>
             <div className="crt-taskline">
               {TASK_STEPS.map((step, index) => {
                 const state = inferStepState(activeRun, index)
@@ -1314,8 +1324,8 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
                   <div key={step.key} className={`crt-task-step ${state}`}>
                     <span className="crt-task-index">{index + 1}</span>
                     <div>
-                      <strong>{step.label}</strong>
-                      <small>{state === 'complete' ? 'Done' : state === 'active' ? 'Now' : 'Next'}</small>
+                      <strong>{t(step.label)}</strong>
+                      <small>{t(state === 'complete' ? 'Done' : state === 'active' ? 'Now' : 'Next')}</small>
                     </div>
                   </div>
                 )
@@ -1337,16 +1347,16 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
             <button
               className={hasAttention ? 'attention icon-only' : 'icon-only'}
               onClick={() => setOverlay(activeAttention ? 'attention' : 'permission')}
-              title={activeAttention ? 'Needs your choice' : hasAttention ? 'Intervention' : 'Permissions'}
-              aria-label={activeAttention ? 'Needs your choice' : hasAttention ? 'Intervention' : 'Permissions'}
+              title={t(activeAttention ? 'Needs your choice' : hasAttention ? 'Intervention' : 'Permissions')}
+              aria-label={t(activeAttention ? 'Needs your choice' : hasAttention ? 'Intervention' : 'Permissions')}
             >
               <FluentIcon name="Pin" size={15} />
             </button>
           </div>
 
           <div className="crt-turn-title-ribbon plan">
-            <span>{workProjection ? 'Work Items' : 'Project Map'}</span>
-            <strong>{activeWorkItem?.title || 'Turn Timeline / Work Plan'}</strong>
+            <span>{t(workProjection ? 'Work Items' : 'Project Map')}</span>
+            <strong>{activeWorkItem?.title || t('Turn Timeline / Work Plan')}</strong>
             <small>{workCountSummary}</small>
           </div>
 
@@ -1362,7 +1372,7 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
                       onClick={() => setWorkListFilter(filter)}
                       title={`Show ${filter === 'projects' ? 'projects' : `${filter} tasks`}`}
                     >
-                      {filter[0].toUpperCase() + filter.slice(1)}
+                      {t(filter[0].toUpperCase() + filter.slice(1))}
                     </button>
                   ))}
                   {workListFilter === 'projects' ? visibleProjects.map(project => {
@@ -1405,7 +1415,7 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
                       ? `Workspace routing is locked to ${workspaceFocusPath || 'the pinned task directory'}. Click to unlock.`
                       : `Restore ${activeWorkItem?.workspacePath || 'the selected historical task directory'} as the workspace for future work.`}
                   >
-                    {workAction === 'focus' ? 'Updating' : workspaceFocusLocked ? 'Unlock workspace' : 'Restore workspace'}
+                    {t(workAction === 'focus' ? 'Updating' : workspaceFocusLocked ? 'Unlock workspace' : 'Restore workspace')}
                   </button>
                 </>
               ) : projectMap.turns.slice(-5).map(node => (
@@ -1415,15 +1425,15 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
                   className={`crt-turn-capsule ${node.id === projectMap.currentTurnId ? 'current' : ''} ${node.status}`}
                   onClick={() => setSelectedRunId(node.id)}
                 >
-                  {node.title || 'Turn'}
+                  {node.title || t('Turn')}
                 </button>
               ))}
             </div>
             <button
               className="crt-map-expand"
               onClick={() => setMapExpanded(value => !value)}
-              title={mapExpanded ? 'Hide project map' : 'Expand project map'}
-              aria-label={mapExpanded ? 'Hide project map' : 'Expand project map'}
+              title={t(mapExpanded ? 'Hide project map' : 'Expand project map')}
+              aria-label={t(mapExpanded ? 'Hide project map' : 'Expand project map')}
             >
               <span />
             </button>
@@ -1455,7 +1465,7 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
                       disabled={workAction === 'focus'}
                       title={[item.workspacePath || item.workspaceLabel, item.branch ? `Git branch ${item.branch}` : '', item.isolation, item.selectionReason].filter(Boolean).join(' / ') || item.updatedAt}
                     >
-                      {item.title} - {item.state ? `${item.state} / ` : ''}{item.execution} / {item.completion}{item.attention !== 'none' ? ` / ${item.attention}` : ''}{item.canResume ? ' / resume interrupted run' : item.canRetry ? ' / retry failed run' : ''}
+                      {item.title} - {item.state ? `${item.state} / ` : ''}{item.execution} / {item.completion}{item.execution === 'orphaned' ? ' / outcome unknown' : item.attention !== 'none' ? ` / ${item.attention}` : ''}{item.canResume ? ' / resume after reconciliation' : item.canRetry ? ' / retry failed run' : ''}
                     </button>
                   ))}
                 </div>
@@ -1680,6 +1690,9 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
             retryBusy={workAction === 'retry'}
             setOverlay={setOverlay}
             workItemDetail={workItemDetail}
+            send={send}
+            subscribe={subscribe}
+            connected={connected}
           />
           {renderOverlay()}
         </section>
@@ -1693,9 +1706,10 @@ export default function WorkPage({ send, subscribe, connected }: WorkPageProps) 
                 onChange={event => setTask(event.target.value)}
                 placeholder="Describe the next instruction; it starts a new WorkItem"
               />
-              <button onClick={submit} disabled={!connected || submitting || !!workAction || !task.trim()}>{submitting ? 'Starting' : activeWorkItem ? 'New' : 'Run'}</button>
+              <button onClick={submit} disabled={!connected || submitting || !!workAction || !task.trim() || !provider}>{submitting ? 'Starting' : activeWorkItem ? 'New' : 'Run'}</button>
             </div>
             <select value={provider} onChange={event => setProvider(event.target.value)}>
+              <option value="" disabled>Select a provider</option>
               {providers.map(item => <option key={item} value={item}>{item}</option>)}
             </select>
             <input

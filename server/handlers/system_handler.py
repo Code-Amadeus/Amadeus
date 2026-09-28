@@ -71,6 +71,10 @@ def _voice_configuration(settings: Any) -> list[dict[str, Any]]:
         (item for item in tts_statuses if item["id"] == "mimo"),
         {},
     )
+    fish_tts_status = next(
+        (item for item in tts_statuses if item["id"] == "fish_audio"),
+        {},
+    )
     reference_consumers = [
         str(item.get("label") or item.get("id") or "")
         for item in tts_statuses
@@ -296,7 +300,7 @@ def _voice_configuration(settings: Any) -> list[dict[str, Any]]:
         {
             "id": "speech_synthesis",
             "label": "Speech synthesis",
-            "description": "The embedded default is Amadeus's low-latency GPT-SoVITS v3 rewrite and accepts v3 checkpoints only. Remote audio enters the same playback, subtitle, AEC, and mouth-signal pipeline.",
+            "description": "The embedded default is Amadeus's low-latency GPT-SoVITS runtime and accepts v1, v2, v2Pro, v2ProPlus, and v3 checkpoints. Remote audio enters the same playback, subtitle, AEC, and mouth-signal pipeline.",
             "active": tts_selected != "disabled",
             "configured": bool(tts_status.get("available")),
             "status": str(tts_status.get("state") or "unavailable"),
@@ -315,8 +319,8 @@ def _voice_configuration(settings: Any) -> list[dict[str, Any]]:
         },
         {
             "id": "tts_embedded_v3",
-            "label": "Embedded GPT-SoVITS v3 model",
-            "description": "Checkpoint pair for the Amadeus low-latency rewrite. v1 and v2 checkpoints are not supported by this runtime.",
+            "label": "Embedded GPT-SoVITS model",
+            "description": "Checkpoint pair for the Amadeus low-latency runtime. The SoVITS checkpoint header selects the v1, v2, v2Pro, v2ProPlus, or v3 decoder.",
             "active": tts_selected == "gpt_sovits",
             "configured": bool(embedded_tts_status.get("available")),
             "status": str(embedded_tts_status.get("state") or "not_installed"),
@@ -324,18 +328,29 @@ def _voice_configuration(settings: Any) -> list[dict[str, Any]]:
             "status_detail": str(embedded_tts_status.get("detail") or ""),
             "fields": [
                 _startup_field(
+                    "TTS_VOICE_PROFILE", "Voice checkpoint profile",
+                    settings.TTS_VOICE_PROFILE,
+                    field_type="select",
+                    options=(
+                        {"value": "kurisu_v3", "label": "Kurisu v3"},
+                        {"value": "kurisu_v2pro", "label": "Kurisu v2Pro · experimental"},
+                        {"value": "custom", "label": "Custom checkpoint pair"},
+                    ),
+                    description="Named profiles select compatible GPT and SoVITS paths together. Restart the voice runtime after changing this setting.",
+                ),
+                _startup_field(
                     "TTS_DEVICE", "Inference device", settings.TTS_DEVICE,
                     description="auto/cuda, cuda:N, or cpu. Used only by the embedded backend.",
                 ),
                 _startup_field(
-                    "TTS_GPT_MODEL_PATH", "GPT semantic checkpoint (v3)",
+                    "TTS_GPT_MODEL_PATH", "Custom GPT semantic checkpoint",
                     settings.TTS_GPT_MODEL_PATH,
-                    description="Path to a GPT-SoVITS v3 .ckpt file; relative paths resolve from the repository root.",
+                    description="Used only with the Custom checkpoint pair profile; relative paths resolve from the repository root.",
                 ),
                 _startup_field(
-                    "TTS_SOVITS_MODEL_PATH", "SoVITS acoustic checkpoint (v3)",
+                    "TTS_SOVITS_MODEL_PATH", "Custom SoVITS acoustic checkpoint",
                     settings.TTS_SOVITS_MODEL_PATH,
-                    description="Path to a GPT-SoVITS v3 .pth file; relative paths resolve from the repository root.",
+                    description="Used only with the Custom checkpoint pair profile; relative paths resolve from the repository root.",
                 ),
             ],
         },
@@ -381,7 +396,44 @@ def _voice_configuration(settings: Any) -> list[dict[str, Any]]:
                 _startup_field("MIMO_TTS_VOICE", "Voice", settings.MIMO_TTS_VOICE),
             ],
         },
+        {
+            "id": "tts_fish_audio",
+            "label": "Fish Audio speech API",
+            "description": "WebSocket streaming speech with a hosted voice. Voice reference ID selects the voice; model selects the inference engine.",
+            "active": tts_selected == "fish_audio",
+            "configured": bool(fish_tts_status.get("available")),
+            "status": str(fish_tts_status.get("state") or "unavailable"),
+            "status_ok": bool(fish_tts_status.get("available")),
+            "status_detail": str(fish_tts_status.get("detail") or ""),
+            "fields": [
+                _startup_field("FISH_TTS_WS_URL", "WebSocket URL", settings.FISH_TTS_WS_URL, field_type="url"),
+                _startup_field("FISH_TTS_API_KEY", "API key", field_type="secret", secret_configured=bool(settings.FISH_TTS_API_KEY)),
+                _startup_field("FISH_TTS_MODEL", "Inference model", settings.FISH_TTS_MODEL),
+                _startup_field("FISH_TTS_REFERENCE_ID", "Voice reference ID", settings.FISH_TTS_REFERENCE_ID),
+                _startup_field(
+                    "FISH_TTS_LATENCY", "Latency mode", settings.FISH_TTS_LATENCY,
+                    field_type="select",
+                    options=tuple({"value": mode, "label": mode} for mode in ("normal", "balanced", "low")),
+                ),
+            ],
+        },
     ]
+
+
+def _artifact_configuration(settings: Any) -> list[dict[str, Any]]:
+    return [{
+        "id": "auip_artifact_style",
+        "label": "Artifact appearance",
+        "configured": True,
+        "status_ok": True,
+        "status": "enabled" if settings.AUIP_ARTIFACT_STYLE_ENABLED else "disabled",
+        "description": "A shared visual language for newly authored AUIP apps; each app keeps its own content and layout.",
+        "fields": [_startup_field(
+            "AUIP_ARTIFACT_STYLE_ENABLED", "Use Amadeus style",
+            settings.AUIP_ARTIFACT_STYLE_ENABLED, field_type="boolean",
+            description="After a backend restart, provide the style guide and CSS for future AUIP creation. Existing apps keep their design; explicit user design requests take priority.",
+        )],
+    }]
 
 
 def _avatar_configuration(settings: Any) -> list[dict[str, Any]]:
@@ -655,7 +707,7 @@ def _model_connections(
         {
             "id": "hybrid_local",
             "label": "Hybrid local head",
-            "description": "Dedicated OpenAI-compatible endpoint used only for the fast first sentence in hybrid profiles. The optional Hybrid BAT launcher shares the llama.cpp executable and GGUF settings above.",
+            "description": "Shared fast first-sentence endpoint. Hybrid pairs it with Bedrock, Hybrid2 with DeepSeek, and Hybrid3 with OpenAI-compatible. The optional Hybrid BAT launcher shares the llama.cpp executable and GGUF settings above.",
             "active": "hybrid_local" in active_connections,
             "configured": bool(hybrid_status.get("configured")),
             "status": str(hybrid_status.get("state") or "unavailable"),
@@ -676,6 +728,8 @@ def _model_connections(
 
 
 def _model_role_configuration(settings: Any) -> list[dict[str, Any]]:
+    import os
+
     from server.auip_b2 import b2_runtime_unavailable_reason
     from server.auip_b2_role_llm import has_b2_role_model_config
 
@@ -704,7 +758,58 @@ def _model_role_configuration(settings: Any) -> list[dict[str, Any]]:
     else:
         b2_status_detail = "B2 is not selected; this action role is optional."
 
+    vn_provider_override = os.environ.get("VN_LLM_PROVIDER", "").strip().lower()
+    vn_provider = vn_provider_override or "deepseek"
+    vn_model_override = os.environ.get("VN_LLM_MODEL", "").strip()
+    vn_configured = bool(
+        settings.OPENAI_API_KEY if vn_provider == "openai" else settings.DEEPSEEK_API_KEY
+    )
+
     return [
+        {
+            "id": "vn_companion",
+            "label": "VN companion",
+            "description": "Dedicated VN reasoning and reaction role. DeepSeek is the recommended default; OpenAI-compatible is also supported.",
+            "active": True,
+            "configured": vn_configured,
+            "status": "needs_setup" if not vn_configured else "override" if vn_provider_override or vn_model_override else "recommended",
+            "status_ok": vn_configured,
+            "fields": [
+                _startup_field(
+                    "VN_LLM_PROVIDER", "Model connection",
+                    vn_provider,
+                    field_type="select",
+                    options=(
+                        {"value": "deepseek", "label": "DeepSeek · Recommended"},
+                        {"value": "openai", "label": "OpenAI-compatible"},
+                    ),
+                ),
+                _startup_field(
+                    "VN_LLM_MODEL", "Model override",
+                    vn_model_override,
+                    description="Optional. Leave blank to use the model from the selected connection.",
+                ),
+            ],
+        },
+        {
+            "id": "work_planner",
+            "label": "Work planner / router",
+            "description": "Plans and routes cooperative Work; an empty model inherits the main conversation model on the existing backend.",
+            "active": bool(
+                getattr(settings, "COOPERATIVE_CHAT_ENABLED", False)
+                and getattr(settings, "COOPERATIVE_WORK_PLANNER_ENABLED", False)
+            ),
+            "configured": True,
+            "status": "override" if settings.COOPERATIVE_WORK_PLANNER_MODEL else "inherited",
+            "status_ok": True,
+            "fields": [
+                _startup_field(
+                    "COOPERATIVE_WORK_PLANNER_MODEL", "Model override",
+                    settings.COOPERATIVE_WORK_PLANNER_MODEL,
+                    description="Leave empty to inherit the main conversation model.",
+                ),
+            ],
+        },
         {
             "id": "work_observer",
             "label": "Work observer",
@@ -713,6 +818,31 @@ def _model_role_configuration(settings: Any) -> list[dict[str, Any]]:
             "fields": [
                 _startup_field("WORK_OBSERVER_PROVIDER", "Provider override", settings.WORK_OBSERVER_PROVIDER),
                 _startup_field("WORK_OBSERVER_MODEL", "Model override", settings.WORK_OBSERVER_MODEL),
+            ],
+        },
+        {
+            "id": "browser_branch_planner",
+            "label": "Browser branch planner",
+            "description": "Chooses bounded browser branches; inherits a supported main provider and its model when left blank.",
+            "configured": True,
+            "status": "override" if os.environ.get("BROWSER_BRANCH_PROVIDER") or os.environ.get("BROWSER_BRANCH_MODEL") else "inherited",
+            "status_ok": True,
+            "fields": [
+                _startup_field(
+                    "BROWSER_BRANCH_PROVIDER", "Provider override",
+                    os.environ.get("BROWSER_BRANCH_PROVIDER", ""),
+                    field_type="select",
+                    options=(
+                        {"value": "", "label": "Inherit supported main provider"},
+                        {"value": "deepseek", "label": "DeepSeek"},
+                        {"value": "openai", "label": "OpenAI-compatible"},
+                    ),
+                ),
+                _startup_field(
+                    "BROWSER_BRANCH_MODEL", "Model override",
+                    os.environ.get("BROWSER_BRANCH_MODEL", ""),
+                    description="Leave empty to use the selected provider's configured model.",
+                ),
             ],
         },
         {
@@ -749,6 +879,67 @@ def _model_role_configuration(settings: Any) -> list[dict[str, Any]]:
                 ),
             ],
         },
+        {
+            "id": "vn_subtitle_translation",
+            "label": "VN subtitle translation",
+            "description": "Translates Japanese game dialogue into Simplified Chinese for display.",
+            "configured": True,
+            "status": "override" if os.environ.get("VN_SUBTITLE_TRANSLATE_PROVIDER") or os.environ.get("VN_SUBTITLE_TRANSLATE_MODEL") else "inherited",
+            "status_ok": True,
+            "fields": [
+                _startup_field(
+                    "VN_SUBTITLE_TRANSLATE_PROVIDER", "Provider override",
+                    os.environ.get("VN_SUBTITLE_TRANSLATE_PROVIDER", ""),
+                    field_type="select",
+                    options=(
+                        {"value": "", "label": "DeepSeek default"},
+                        {"value": "deepseek", "label": "DeepSeek"},
+                        {"value": "openai", "label": "OpenAI-compatible"},
+                    ),
+                ),
+                _startup_field(
+                    "VN_SUBTITLE_TRANSLATE_MODEL", "Model override",
+                    os.environ.get("VN_SUBTITLE_TRANSLATE_MODEL", ""),
+                    description="Leave empty to use the selected provider's configured model.",
+                ),
+            ],
+        },
+        {
+            "id": "vn_speech_translation",
+            "label": "VN speech translation",
+            "description": "Translates Chinese companion reactions into Japanese before speech synthesis.",
+            "configured": True,
+            "status": "override" if os.environ.get("VN_TTS_TRANSLATE_PROVIDER") or os.environ.get("VN_TTS_TRANSLATE_MODEL") else "inherited",
+            "status_ok": True,
+            "fields": [
+                _startup_field(
+                    "VN_TTS_TRANSLATE_PROVIDER", "Provider override",
+                    os.environ.get("VN_TTS_TRANSLATE_PROVIDER", ""),
+                    field_type="select",
+                    options=(
+                        {"value": "", "label": "DeepSeek default"},
+                        {"value": "deepseek", "label": "DeepSeek"},
+                        {"value": "openai", "label": "OpenAI-compatible"},
+                    ),
+                ),
+                _startup_field(
+                    "VN_TTS_TRANSLATE_MODEL", "Model override",
+                    os.environ.get("VN_TTS_TRANSLATE_MODEL", ""),
+                    description="Leave empty to use the selected provider's configured model.",
+                ),
+            ],
+        },
+    ]
+
+
+def _acp_credentials() -> list[dict[str, Any]]:
+    import os
+
+    return [
+        _startup_field("ANTHROPIC_API_KEY", "Anthropic API key", field_type="secret",
+                       secret_configured=bool(os.environ.get("ANTHROPIC_API_KEY"))),
+        _startup_field("DEEPSEEK_API_KEY", "DeepSeek API key", field_type="secret",
+                       secret_configured=bool(os.environ.get("DEEPSEEK_API_KEY"))),
     ]
 
 
@@ -758,7 +949,93 @@ def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
         else "direct" if settings.DIRECT_CODEX_PROVIDER_ENABLED
         else "disabled"
     )
+    codex_auth_mode = str(
+        getattr(settings, "CODEX_APP_SERVER_AUTH_MODE", "model_api") or "model_api"
+    ).strip().lower()
+    codex_model_provider = str(
+        getattr(settings, "CODEX_APP_SERVER_MODEL_PROVIDER", "deepseek") or "deepseek"
+    ).strip().lower()
+    codex_connection_options = []
+    if bool(getattr(settings, "DEEPSEEK_API_KEY", "")) or codex_model_provider == "deepseek":
+        codex_connection_options.append({
+            "value": "deepseek",
+            "label": "DeepSeek" if getattr(settings, "DEEPSEEK_API_KEY", "") else "DeepSeek · Not configured",
+        })
+    if bool(getattr(settings, "OPENAI_API_KEY", "")) or codex_model_provider == "openai":
+        codex_connection_options.append({
+            "value": "openai",
+            "label": "OpenAI-compatible" if getattr(settings, "OPENAI_API_KEY", "") else "OpenAI-compatible · Not configured",
+        })
+    codex_fields = [
+        _startup_field(
+            "CODEX_PROVIDER_TRANSPORT", "Transport", codex_transport,
+            field_type="select", options=("app_server", "direct", "disabled"),
+        ),
+    ]
+    if codex_transport == "app_server":
+        codex_fields.extend([
+            _startup_field(
+            "CODEX_APP_SERVER_CODEX_BIN", "App Server executable",
+            settings.CODEX_APP_SERVER_CODEX_BIN, field_type="path",
+            ),
+            _startup_field(
+            "CODEX_APP_SERVER_AUTH_MODE", "App Server authentication",
+            codex_auth_mode, field_type="select", options=(
+                {"value": "chatgpt", "label": "ChatGPT subscription"},
+                {"value": "model_api", "label": "Model API connection"},
+            ),
+            description="Run `codex login` once for subscription use. Model API reuses a connection from Models.",
+            ),
+        ])
+        if codex_auth_mode == "chatgpt":
+            codex_fields.append(_startup_field(
+                "CODEX_APP_SERVER_CHATGPT_MODEL", "Subscription model override",
+                settings.CODEX_APP_SERVER_CHATGPT_MODEL,
+                description="Optional. Leave blank to use the model selected by the signed-in Codex client.",
+            ))
+        else:
+            codex_fields.extend([
+            _startup_field(
+                "CODEX_APP_SERVER_MODEL_PROVIDER", "Model API connection",
+                settings.CODEX_APP_SERVER_MODEL_PROVIDER,
+                field_type="select", options=tuple(codex_connection_options),
+                description="Reuses the API key and endpoint configured in Models.",
+            ),
+            _startup_field(
+                "CODEX_APP_SERVER_MODEL", "Model", settings.CODEX_APP_SERVER_MODEL,
+                description="Defaults to the model from the selected Models connection.",
+            ),
+            ])
+        codex_fields.extend([
+            _startup_field(
+            "CODEX_APP_SERVER_REASONING_EFFORT", "Reasoning effort",
+            settings.CODEX_APP_SERVER_REASONING_EFFORT, field_type="select",
+            options=("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"),
+            ),
+            _startup_field(
+            "CODEX_APP_SERVER_SERVICE_TIER", "Service tier",
+            settings.CODEX_APP_SERVER_SERVICE_TIER, field_type="select",
+            options=("", "auto", "default", "flex", "priority", "fast", "ultrafast"),
+            ),
+        ])
+    elif codex_transport == "direct":
+        codex_fields.append(_startup_field(
+            "DIRECT_CODEX_CLI_PATH", "Direct CLI executable",
+            settings.DIRECT_CODEX_CLI_PATH, field_type="path",
+            description="Direct CLI uses the existing local `codex login` session.",
+        ))
     return [
+        {
+            "id": "pi", "label": "Pi",
+            "description": "Default daily agent using the desktop-installed native RPC runtime and shared Models credentials; Work role assignment is independent.",
+            "fields": [
+                _startup_field("PI_PROVIDER_ENABLED", "Enable Pi", settings.PI_PROVIDER_ENABLED, field_type="boolean"),
+                _startup_field("PI_NODE_PATH", "Node executable", settings.PI_NODE_PATH, field_type="path"),
+                _startup_field("PI_AGENT_DIR", "Pi configuration and sessions", settings.PI_AGENT_DIR, field_type="path"),
+                _startup_field("PI_MODEL_PROVIDER", "Pi model provider", settings.PI_MODEL_PROVIDER),
+                _startup_field("PI_MODEL", "Pi model", settings.PI_MODEL),
+            ],
+        },
         {
             "id": "browser",
             "label": "Browser",
@@ -768,7 +1045,7 @@ def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
         {
             "id": "openclaw",
             "label": "OpenClaw",
-            "description": "Remote agent Gateway used only after the main role delegates work.",
+            "description": "Optional Gateway provider; Work role assignment is independent. Existing sessions remain supported.",
             "fields": [
                 _startup_field(
                     "OPENCLAW_BASE_URL", "Gateway URL", settings.OPENCLAW_BASE_URL,
@@ -788,39 +1065,7 @@ def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
             "id": "codex",
             "label": "Codex",
             "description": "Coding Provider. Exactly one App Server or Direct transport may own this id.",
-            "fields": [
-                _startup_field(
-                    "CODEX_PROVIDER_TRANSPORT", "Transport", codex_transport,
-                    field_type="select", options=("app_server", "direct", "disabled"),
-                ),
-                _startup_field(
-                    "CODEX_APP_SERVER_CODEX_BIN", "App Server executable",
-                    settings.CODEX_APP_SERVER_CODEX_BIN, field_type="path",
-                ),
-                _startup_field(
-                    "CODEX_APP_SERVER_MODEL_PROVIDER", "Model provider",
-                    settings.CODEX_APP_SERVER_MODEL_PROVIDER,
-                ),
-                _startup_field(
-                    "CODEX_APP_SERVER_PROVIDER_BASE_URL", "Provider base URL",
-                    settings.CODEX_APP_SERVER_PROVIDER_BASE_URL, field_type="url",
-                ),
-                _startup_field("CODEX_APP_SERVER_MODEL", "Model", settings.CODEX_APP_SERVER_MODEL),
-                _startup_field(
-                    "CODEX_APP_SERVER_REASONING_EFFORT", "Reasoning effort",
-                    settings.CODEX_APP_SERVER_REASONING_EFFORT, field_type="select",
-                    options=("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"),
-                ),
-                _startup_field(
-                    "CODEX_APP_SERVER_SERVICE_TIER", "Service tier",
-                    settings.CODEX_APP_SERVER_SERVICE_TIER, field_type="select",
-                    options=("", "auto", "default", "flex", "priority", "fast", "ultrafast"),
-                ),
-                _startup_field(
-                    "DIRECT_CODEX_CLI_PATH", "Direct CLI executable",
-                    settings.DIRECT_CODEX_CLI_PATH, field_type="path",
-                ),
-            ],
+            "fields": codex_fields,
         },
     ]
 
@@ -883,6 +1128,7 @@ class SystemHandler(RequestHandler):
         # read from existing config/settings.py constants
         from config import settings
         import llm.client as llm_client
+        from llm.visual_context import provider_supports_direct_image
         from server import visual_runtime
         from server import presentation_runtime
         from server import chat_translation_runtime
@@ -910,6 +1156,9 @@ class SystemHandler(RequestHandler):
         )
         return {
             "vts_ws_url": getattr(settings, 'VTS_WS_URL', ''),
+            "chat_supports_images": provider_supports_direct_image(
+                active_provider, llm_client.DEEPSEEK_MODEL_NAME,
+            ),
             "llm_provider": active_provider,
             "tts_device": getattr(settings, 'TTS_DEVICE', ''),
             "tts_mode": tts_pipeline.current_tts_mode(),
@@ -935,6 +1184,16 @@ class SystemHandler(RequestHandler):
             ),
             "model_roles": _model_role_configuration(settings),
             "work_provider_configuration": _work_provider_configuration(settings),
+            "graphics": {
+                "profile": settings.GRAPHICS_PROFILE,
+                "custom_max_fps": settings.RENDER_MAX_FPS,
+                "custom_max_resolution": settings.RENDER_MAX_RESOLUTION,
+                "texture_sampling": settings.RENDER_TEXTURE_SAMPLING,
+                "effective_max_fps": settings.RENDER_EFFECTIVE_MAX_FPS,
+                "effective_max_resolution": settings.RENDER_EFFECTIVE_MAX_RESOLUTION,
+            },
+            "acp_credentials": _acp_credentials(),
+            "artifact_configuration": _artifact_configuration(settings),
             "voice_configuration": voice_configuration,
             "avatar_configuration": _avatar_configuration(settings),
             "asr_backends": asr_backend_statuses(asr_backend),
@@ -958,6 +1217,33 @@ class SystemHandler(RequestHandler):
                 if getattr(chat_runtime, "_control_proposal_observer", None) is not None
                 else "disabled"
             ),
+            "cooperative_chat_enabled": bool(
+                getattr(settings, "COOPERATIVE_CHAT_ENABLED", False)
+            ),
+            "cooperative_work_planner_enabled": bool(
+                getattr(settings, "COOPERATIVE_CHAT_ENABLED", False)
+                and getattr(settings, "COOPERATIVE_WORK_PLANNER_ENABLED", False)
+            ),
+            "cooperative_work_planner_model": str(
+                getattr(settings, "COOPERATIVE_WORK_PLANNER_MODEL", "") or ""
+            ),
+            "cooperative_chat_input_capabilities": {
+                "typed_text": True,
+                "confirmed_transcript_text": True,
+                "visual_attachment": True,
+                "speculative_voice": False,
+                "physical_voice_validated": False,
+            },
+            "cooperative_chat_provider": str(
+                getattr(settings, "COOPERATIVE_CHAT_PROVIDER", "") or ""
+            ),
+            "work_coding_provider": settings.WORK_CODING_PROVIDER,
+            "work_execution_provider": settings.WORK_EXECUTION_PROVIDER,
+            "cooperative_permission_policy": (
+                str(getattr(settings, "COOPERATIVE_CHAT_PERMISSION_POLICY", "") or "")
+                if bool(getattr(settings, "COOPERATIVE_CHAT_ENABLED", False))
+                else "disabled"
+            ),
         }
 
     async def _set_config(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -965,6 +1251,7 @@ class SystemHandler(RequestHandler):
         if not isinstance(values, dict) or not values:
             raise ValueError("system.set_config requires a non-empty values object")
 
+        from config import settings
         from server import presentation_runtime
         from server import chat_translation_runtime
         from server import visual_runtime
@@ -980,7 +1267,6 @@ class SystemHandler(RequestHandler):
             "vision_enabled",
             "vision_mode",
             "vision_scope",
-            "vision_provider",
             "vision_max_long_side",
             "vision_jpeg_quality",
             "vision_region",
@@ -1008,7 +1294,7 @@ class SystemHandler(RequestHandler):
                 raise ValueError(f"unsupported local LLM type: {local_type!r}")
         if "tts_mode" in values:
             mode = str(values["tts_mode"] or "").strip().lower()
-            if mode not in {"cuda_graph", "parallel", "cuda graph ×1", "parallel ×2", "graph"}:
+            if mode not in {"cuda_graph", "parallel", "parallel2", "cuda graph ×1", "parallel ×2", "graph"}:
                 raise ValueError(f"unsupported TTS mode: {values['tts_mode']!r}")
         if "tts_output_language" in values:
             language = str(values["tts_output_language"] or "").strip().lower()

@@ -49,6 +49,7 @@ def test_settings_connection_descriptors_never_return_secret_values() -> None:
         "ASR_API_KEY",
         "TTS_API_KEY",
         "MIMO_TTS_API_KEY",
+        "FISH_TTS_API_KEY",
     }
 
 
@@ -105,6 +106,7 @@ def test_user_managed_voice_and_avatar_startup_controls_are_grouped_by_owner() -
         "AEC_REALTIME_DELAY_MS",
     }
     assert "TTS_DEVICE" in embedded
+    assert "TTS_VOICE_PROFILE" in embedded
     assert references == {
         "TTS_REF_AUDIO_JA",
         "TTS_REF_TEXT_JA",
@@ -123,6 +125,7 @@ def test_settings_only_publish_composed_work_providers() -> None:
     from config import settings
 
     assert {group["id"] for group in _work_provider_configuration(settings)} == {
+        "pi",
         "browser",
         "openclaw",
         "codex",
@@ -182,6 +185,22 @@ def test_system_settings_report_optional_character_pack_status() -> None:
     asyncio.run(run())
 
 
+def test_graphics_status_distinguishes_saved_custom_limits_from_applied_preset(monkeypatch):
+    from config import settings
+
+    monkeypatch.setattr(settings, "GRAPHICS_PROFILE", "standard")
+    monkeypatch.setattr(settings, "RENDER_MAX_FPS", 48)
+    monkeypatch.setattr(settings, "RENDER_MAX_RESOLUTION", 1.25)
+    fps, resolution = settings._resolve_graphics_profile("standard", 48, 1.25)
+    monkeypatch.setattr(settings, "RENDER_EFFECTIVE_MAX_FPS", fps)
+    monkeypatch.setattr(settings, "RENDER_EFFECTIVE_MAX_RESOLUTION", resolution)
+    monkeypatch.setattr(settings, "RENDER_TEXTURE_SAMPLING", False)
+    result = asyncio.run(SystemHandler()._get_config({}))
+    assert result["graphics"] == {"profile": "standard", "custom_max_fps": 48,
+        "custom_max_resolution": 1.25, "texture_sampling": False,
+        "effective_max_fps": 60, "effective_max_resolution": None}
+
+
 def test_system_settings_report_optional_visual_asset_pack_status() -> None:
     async def run() -> None:
         handler = SystemHandler()
@@ -196,6 +215,58 @@ def test_system_settings_report_optional_visual_asset_pack_status() -> None:
         assert result["visual_asset_pack"] == expected
 
     asyncio.run(run())
+
+
+def test_cooperative_settings_preserve_all_existing_role_backend_choices() -> None:
+    async def run() -> None:
+        from config import settings
+        import llm.client as llm_client
+        from core.chat_runtime import get_chat_runtime
+
+        handler = SystemHandler()
+        runtime = get_chat_runtime()
+        old_provider = runtime.provider
+        with (
+            patch.object(settings, "COOPERATIVE_CHAT_ENABLED", True),
+            patch.object(llm_client, "LLM_PROVIDER", "deepseek"),
+            patch.object(llm_client, "DEEPSEEK_MODEL_NAME", "deepseek-v4-pro"),
+            patch("server.handlers.system_handler.bus.emit", new=AsyncMock()),
+        ):
+            try:
+                result = await handler._get_config({})
+                assert result["llm_provider"] == "deepseek"
+                assert result["chat_supports_images"] is False
+                assert result["cooperative_chat_input_capabilities"] == {
+                    "typed_text":True, "confirmed_transcript_text":True,
+                    "visual_attachment":True, "speculative_voice":False,
+                    "physical_voice_validated":False}
+                changed = await handler._set_config(
+                    {"values":{"llm_provider":"gemini"}})
+                assert changed["values"]["llm_provider"] == "gemini"
+                assert changed["values"]["chat_supports_images"] is True
+                assert runtime.provider == "gemini"
+            finally:
+                runtime.set_provider(old_provider)
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("provider,model,supported", [
+    ("deepseek", "deepseek-flash", True),
+    ("deepseek", "deepseek-v4-flash", True),
+    ("hybrid2", "deepseek-flash", True),
+    ("deepseek", "deepseek-v4-pro", False),
+    ("local", "deepseek-flash", False),
+])
+def test_chat_image_capability_is_published_from_the_selected_model(provider, model, supported):
+    import llm.client as llm_client
+
+    with (
+        patch.object(llm_client, "LLM_PROVIDER", provider),
+        patch.object(llm_client, "DEEPSEEK_MODEL_NAME", model),
+    ):
+        config = asyncio.run(SystemHandler()._get_config({}))
+    assert config["chat_supports_images"] is supported
 
 
 def test_voice_settings_keep_wake_and_conversation_recognition_independent() -> None:
@@ -216,10 +287,12 @@ def test_voice_settings_keep_wake_and_conversation_recognition_independent() -> 
         "available",
         "disabled",
     }
-    assert "v3 checkpoints only" in groups["speech_synthesis"]["description"]
+    assert "v2Pro" in groups["speech_synthesis"]["description"]
+    assert "v3" in groups["speech_synthesis"]["description"]
     embedded_tts = groups["tts_embedded_v3"]
-    assert "v1 and v2 checkpoints are not supported" in embedded_tts["description"]
+    assert "checkpoint header selects" in embedded_tts["description"]
     assert {field["key"] for field in embedded_tts["fields"]} == {
+        "TTS_VOICE_PROFILE",
         "TTS_GPT_MODEL_PATH",
         "TTS_SOVITS_MODEL_PATH",
         "TTS_DEVICE",
@@ -236,6 +309,10 @@ def test_voice_settings_keep_wake_and_conversation_recognition_independent() -> 
         "MIMO_TTS_API_KEY",
         "MIMO_TTS_MODEL",
         "MIMO_TTS_VOICE",
+    }
+    assert {field["key"] for field in groups["tts_fish_audio"]["fields"]} == {
+        "FISH_TTS_WS_URL", "FISH_TTS_API_KEY", "FISH_TTS_MODEL",
+        "FISH_TTS_REFERENCE_ID", "FISH_TTS_LATENCY",
     }
 
 
@@ -346,7 +423,7 @@ def test_system_settings_reject_llm_routing_change_during_active_chat() -> None:
         handler = SystemHandler()
         handler.configure(is_chat_busy=lambda: True)
         with pytest.raises(RuntimeError, match="active chat turn"):
-            await handler._set_config({"values": {"llm_provider": "local"}})
+            await handler._set_config({"values": {"llm_provider": "openai"}})
 
     asyncio.run(run())
 
@@ -460,6 +537,7 @@ def test_runtime_provider_switch_keeps_managed_llama_server_lifecycle_aligned() 
             settings.LOCAL_LLM_LAUNCH_MODE = "managed"
             runtime.set_local_llm_type("llama_server")
             with (
+                patch.object(settings, "COOPERATIVE_CHAT_ENABLED", False),
                 patch("server.handlers.system_handler.bus.emit", new=AsyncMock()),
                 patch("llm.llama_server.start_llama_server", new=start),
                 patch("llm.llama_server.warmup_local_llm_cache", new=warmup),

@@ -2,13 +2,15 @@
  * Electron main process - spawns Python backend and creates the app window.
  */
 
-import { app, BrowserWindow, Menu, WebContentsView, dialog, ipcMain, screen } from 'electron'
+import { app, BrowserWindow, Menu, WebContentsView, dialog, ipcMain, screen, shell } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import { randomBytes } from 'crypto'
 import http from 'http'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
+import { CompanionPanel } from './companionPanel.js'
+import { companionPortraitStatus } from './companionPortraits.js'
 import {
   DesktopSettingsStore,
   type DesktopSettingsUpdate,
@@ -21,8 +23,13 @@ import {
 } from './wallpaperCanvasLifecycle.js'
 import { desktopPointHitsWindowRegions } from './wallpaperHitTesting.js'
 import { wallpaperWindowPolicy } from './wallpaperWindowPolicy.js'
+import { isWallpaperStartup } from './startupMode.js'
+import { managesWindowsWallpaper, recoverWindowsWallpaperHostExit, WINDOWS_WALLPAPER_STOP_TIMEOUT_MS, stopWallpaperForRenderer, WindowsWallpaperSession, windowsWallpaperDependencies } from './windowsWallpaper.js'
+import { WindowsWallpaperTray } from './windowsWallpaperTray.js'
+import { ApplicationLifecycle } from './appLifecycle.js'
 import { applicationMenuTemplate } from './applicationMenu.js'
 import { defaultMpsFallbackEnvironment } from './mpsFallbackPolicy.js'
+import { auipStoragePartition } from './auipStorage.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -58,8 +65,19 @@ Menu.setApplicationMenu(menuTemplate ? Menu.buildFromTemplate(menuTemplate) : nu
 // development port. NODE_ENV is not guaranteed to be set by electron-builder,
 // so packaging identity is the owning security boundary.
 const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production'
+const windowsWallpaper = managesWindowsWallpaper(process.platform, process.env)
+  ? new WindowsWallpaperSession({
+      ...windowsWallpaperDependencies(PROJECT_ROOT, process.resourcesPath, app.isPackaged),
+      status: status => {
+        windowsWallpaperTray?.setStatus(status)
+        mainWindow?.setProgressBar(['preparing', 'mounting', 'restoring'].includes(status) ? 2 : -1)
+      },
+      exited: error => { void handleWindowsWallpaperHostExit(error) },
+    })
+  : null
 
 let mainWindow: BrowserWindow | null = null
+let windowsWallpaperTray: WindowsWallpaperTray | null = null
 let workGlowWindow: BrowserWindow | null = null
 let workPanelWindow: BrowserWindow | null = null
 let electronSliceWindow: BrowserWindow | null = null
@@ -149,13 +167,43 @@ type WorkPreviewSurface = {
 }
 const workPreviewSurfaces = new Map<string, WorkPreviewSurface>()
 const workPreviewIdsByWorkItem = new Map<string, string>()
+let companionBridge: WallpaperBridgeDescriptor | null = null
+const COMPANION_PORTRAIT_CACHE = process.env.AMADEUS_COMPANION_PORTRAIT_CACHE || ''
+const COMPANION_PORTRAIT_DIR = path.join(PROJECT_ROOT, 'assets', 'companion', 'kurisu')
+const TITLE_BAR_THEMES = {
+  classic: { color: '#F6F7F9', symbolColor: '#202124', height: 48 },
+  'wallpaper-slice': { color: '#061116', symbolColor: '#D4F8EF', height: 48 },
+} as const
+
+function setMainWindowTheme(theme: unknown): boolean {
+  if (!mainWindow || process.platform !== 'win32') return false
+  const key = theme === 'classic' ? 'classic' : 'wallpaper-slice'
+  mainWindow.setTitleBarOverlay(TITLE_BAR_THEMES[key])
+  return true
+}
+
+const companionPanel = new CompanionPanel({
+  userDataDir: USER_DATA_DIR,
+  preload: path.join(__dirname, '..', 'preload', 'companion.cjs'),
+  // Explicit legacy PNG override; the default Lite pack is served under assets/.
+  portraitCacheDir: COMPANION_PORTRAIT_CACHE,
+  bridge: () => companionBridge,
+  slice: () => [
+    electronCanvasLifecycle.window?.webContents,
+    electronSliceWindow?.webContents,
+  ],
+  target: workItemId => {
+    const id = workPreviewIdsByWorkItem.get(workItemId)
+    return (id ? workPreviewSurfaces.get(id)?.window : null) || null
+  },
+})
 let workOverlayHitTestTimer: NodeJS.Timeout | null = null
 let workOverlayIgnoringMouse = false
 let workOverlayPanelBounds: Electron.Rectangle | null = null
 let workOverlayHitRegions: Electron.Rectangle[] = []
 let pythonProcess: ChildProcess | null = null
 let backendStopping: Promise<void> | null = null
-let quittingAfterBackendStop = false
+const applicationLifecycle = new ApplicationLifecycle()
 let backendOwned = false
 
 const BACKEND_PORT = 17777
@@ -182,6 +230,10 @@ type WallpaperBridgeDescriptor = {
   assetPort: number
   bridgePort: number
   assetVersion: string
+  graphicsProfile: 'standard' | 'power_saving' | 'custom'
+  renderMaxFps: number
+  renderTextureSampling: boolean
+  renderMaxResolution: number | null
   sliceBounds: { x: number; y: number; width: number; height: number }
 }
 
@@ -192,6 +244,17 @@ function getAppIconPath(): string | undefined {
 
 function wantsWorkOverlay(args = process.argv): boolean {
   return args.includes('--work-overlay') || process.env.AMADEUS_WORK_OVERLAY === '1'
+}
+
+let wallpaperStartup: boolean | undefined
+function wantsWallpaper(): boolean {
+  // Resolve once per launch; changing the GUI preference must not alter the
+  // current window's close behavior or activate wallpaper halfway through use.
+  if (wallpaperStartup === undefined) {
+    const values = desktopSettings.snapshot(process.env).values as Record<string, string>
+    wallpaperStartup = isWallpaperStartup(process.argv, process.env, process.platform, values.AMADEUS_WINDOWS_STARTUP_MODE)
+  }
+  return wallpaperStartup
 }
 
 // Python backend management.
@@ -310,15 +373,15 @@ async function waitForBackendReady(timeoutMs = 120_000): Promise<void> {
   throw new Error(`backend did not become ready within ${timeoutMs}ms`)
 }
 
-function requestBackendShutdown(): Promise<boolean> {
+function requestBackendAction(endpoint: string, timeoutMs: number): Promise<boolean> {
   return new Promise((resolve) => {
     const req = http.request(
       {
         hostname: '127.0.0.1',
         port: BACKEND_PORT,
-        path: '/shutdown',
+        path: endpoint,
         method: 'POST',
-        timeout: 900,
+        timeout: timeoutMs,
         headers: { [BACKEND_TOKEN_HEADER]: BACKEND_TOKEN },
       },
       (res) => {
@@ -376,7 +439,11 @@ async function startBackend(): Promise<void> {
   console.log(`[electron] starting backend: ${python} -m server.app --port ${BACKEND_PORT}`)
   console.log(`[electron] project root: ${PROJECT_ROOT}`)
 
+  const launchPendingRevisions = desktopSettings.pendingRevisionSnapshot()
   const backendEnvironment = desktopSettings.backendEnvironment(process.env, {
+    // Enable standby when Wallpaper is selected later too; this flag does not
+    // start the wake service during ordinary console startup. Explicit settings win.
+    ...(process.platform === 'win32' ? { WAKE_ENABLED: '1' } : {}),
     AEC_REALTIME_ENABLED: '1',
     AEC_REALTIME_BARGE_IN: '1',
     AEC_REALTIME_DELAY_MS: '280',
@@ -411,8 +478,10 @@ async function startBackend(): Promise<void> {
     console.log(`[electron] backend exited with code ${code}`)
     pythonProcess = null
     backendOwned = false
+    void windowsWallpaper?.stop().catch(error => console.error('[windows-wallpaper] backend exit cleanup:', error))
   })
   await waitForBackendReady()
+  desktopSettings.markApplied(process.env, launchPendingRevisions)
 }
 
 async function stopBackend(): Promise<void> {
@@ -421,7 +490,7 @@ async function stopBackend(): Promise<void> {
   if (!proc) return
 
   backendStopping = (async () => {
-    const requested = await requestBackendShutdown()
+    const requested = await requestBackendAction('/shutdown', 900)
     const exited = requested ? await waitForProcessExit(proc, 2500) : false
     if (!exited && proc.exitCode === null && proc.signalCode === null) {
       proc.kill()
@@ -433,6 +502,16 @@ async function stopBackend(): Promise<void> {
     backendStopping = null
   })
   return backendStopping
+}
+
+function handleWindowsWallpaperHostExit(error?: unknown): Promise<boolean> {
+  return recoverWindowsWallpaperHostExit(error, {
+    closeSurface: closeElectronSliceWindow,
+    showMainWindow: () => { mainWindow?.show() },
+    requestStop: () => requestBackendAction('/wallpaper/stop', WINDOWS_WALLPAPER_STOP_TIMEOUT_MS),
+    stopBackend,
+    reportError: message => dialog.showErrorBox('Amadeus wallpaper recovery', message),
+  })
 }
 
 // window management.
@@ -469,6 +548,9 @@ function guardTrustedRendererShell(window: BrowserWindow): void {
 }
 
 function createWindow(): void {
+  const isWallpaperOnly = wantsWallpaper()
+  const values = desktopSettings.snapshot(process.env).values as Record<string, string>
+  const theme = values.AMADEUS_UI_THEME === 'classic' ? 'classic' : 'wallpaper-slice'
   mainWindow = new BrowserWindow({
     width: 1100,
     height: 800,
@@ -477,6 +559,10 @@ function createWindow(): void {
     icon: getAppIconPath(),
     title: '',
     frame: true,
+    titleBarStyle: process.platform === 'win32' ? 'hidden' : 'default',
+    titleBarOverlay: process.platform === 'win32' ? TITLE_BAR_THEMES[theme] : undefined,
+    backgroundColor: TITLE_BAR_THEMES[theme].color,
+    show: !isWallpaperOnly,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.mjs'),
@@ -486,6 +572,7 @@ function createWindow(): void {
       webSecurity: false,   // allow file:// iframe for PixiJS renderer
     },
   })
+  setMainWindowTheme(theme)
   mainWindow.setMenuBarVisibility(false)
   mainWindow.setTitle('')
   guardTrustedRendererShell(mainWindow)
@@ -495,17 +582,30 @@ function createWindow(): void {
   })
 
   // load from vite dev server or built files
+  const rendererQuery = { mainWindow: '1', ...(wantsWallpaper() ? { wallpaper: '1' } : {}) }
+  const query = new URLSearchParams(rendererQuery)
+  const queryParam = `?${query.toString()}`
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173')
+    mainWindow.loadURL(`http://localhost:5173${queryParam}`)
       .catch(() => {
         // fallback: try built files
         const p = path.join(__dirname, '..', 'renderer', 'index.html')
-        if (fs.existsSync(p)) mainWindow?.loadFile(p)
+        if (fs.existsSync(p)) mainWindow?.loadFile(p, { query: rendererQuery })
       })
   } else {
-    mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'))
+    mainWindow.loadFile(
+      path.join(__dirname, '..', 'renderer', 'index.html'),
+      { query: rendererQuery }
+    )
   }
 
+  mainWindow.on('close', (event) => {
+    const liveWindowsWallpaper = process.platform === 'win32' && Boolean(windowsWallpaper?.active || electronSliceWindow)
+    if (applicationLifecycle.shouldHideWallpaperWindow(wantsWallpaper() || liveWindowsWallpaper)) {
+      event.preventDefault()
+      mainWindow?.hide()
+    }
+  })
   mainWindow.on('closed', () => { mainWindow = null })
 }
 
@@ -518,7 +618,21 @@ function normalizeWallpaperBridge(raw: unknown): WallpaperBridgeDescriptor | nul
   const value = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
   const assetPort = normalizeLocalPort(value.assetPort)
   const bridgePort = normalizeLocalPort(value.bridgePort)
-  if (assetPort < 0 || bridgePort < 0) return null
+  const graphicsProfile = String(value.graphicsProfile || '')
+  const renderMaxFps = Number(value.renderMaxFps)
+  const renderMaxResolution = value.renderMaxResolution == null
+    ? null
+    : Number(value.renderMaxResolution)
+  if (
+    assetPort < 0
+    || bridgePort < 0
+    || !['standard', 'power_saving', 'custom'].includes(graphicsProfile)
+    || !Number.isFinite(renderMaxFps)
+    || renderMaxFps <= 0
+    || (renderMaxResolution !== null && (
+      !Number.isFinite(renderMaxResolution) || renderMaxResolution <= 0
+    ))
+  ) return null
   const rawBounds = value.sliceBounds && typeof value.sliceBounds === 'object'
     ? value.sliceBounds as Record<string, unknown>
     : {}
@@ -537,6 +651,10 @@ function normalizeWallpaperBridge(raw: unknown): WallpaperBridgeDescriptor | nul
     assetPort,
     bridgePort,
     assetVersion: String(value.assetVersion || ''),
+    graphicsProfile: graphicsProfile as WallpaperBridgeDescriptor['graphicsProfile'],
+    renderMaxFps,
+    renderTextureSampling: value.renderTextureSampling === true,
+    renderMaxResolution,
     sliceBounds,
   }
 }
@@ -563,12 +681,19 @@ function electronSliceUrl(bridge: WallpaperBridgeDescriptor): string {
   const query = new URLSearchParams({
     bridgePort: String(bridge.bridgePort),
     assetVersion: bridge.assetVersion,
+    graphicsProfile: bridge.graphicsProfile,
+    renderMaxFps: String(bridge.renderMaxFps),
+    renderTextureSampling: bridge.renderTextureSampling ? '1' : '0',
   })
+  if (bridge.renderMaxResolution !== null) {
+    query.set('renderMaxResolution', String(bridge.renderMaxResolution))
+  }
   if (wallpaperWindowPolicy(process.platform).hostMode === 'scene') {
     query.set('host', 'electron')
     query.set('sliceHost', 'electron')
     return `http://127.0.0.1:${bridge.assetPort}/render/web/wallpaper_engine.html?${query.toString()}`
   }
+  if (process.platform === 'win32') query.set('windowsComposer', '1')
   return `http://127.0.0.1:${bridge.assetPort}/render/web/electron_slice.html?${query.toString()}`
 }
 
@@ -577,6 +702,7 @@ function electronCanvasUrl(bridge: WallpaperBridgeDescriptor): string {
     bridgePort: String(bridge.bridgePort),
     assetVersion: bridge.assetVersion,
   })
+  if (process.platform === 'win32') query.set('windowsComposer', '1')
   return `http://127.0.0.1:${bridge.assetPort}/render/web/electron_slice.html?${query.toString()}`
 }
 
@@ -617,8 +743,7 @@ function createElectronCanvasWindow(bridge: WallpaperBridgeDescriptor, bridgeKey
     skipTaskbar: true,
     alwaysOnTop: false,
     autoHideMenuBar: true,
-    ...platformPolicy.constructorOptions,
-    focusable: true,
+    ...platformPolicy.canvasConstructorOptions,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'slice.cjs'),
       contextIsolation: true,
@@ -793,6 +918,8 @@ function updateElectronSliceBounds(): void {
 }
 
 function closeElectronSliceWindow(): void {
+  void companionPanel.close()
+  companionBridge = null
   stopElectronSliceDesktopMonitor()
   closeElectronCanvasWindow()
   electronSliceWindow?.close()
@@ -807,6 +934,10 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
   const bridge = normalizeWallpaperBridge(rawBridge)
   if (!bridge) return false
   const platformPolicy = wallpaperWindowPolicy(process.platform)
+  if (companionBridge && (companionBridge.bridgePort !== bridge.bridgePort || companionBridge.assetPort !== bridge.assetPort)) {
+    void companionPanel.close()
+  }
+  companionBridge = bridge
   electronSliceLayout = bridge.sliceBounds
   const bridgeKey = `${bridge.assetPort}:${bridge.bridgePort}:${bridge.assetVersion}:${JSON.stringify(bridge.sliceBounds)}`
   if (electronSliceWindow && !electronSliceWindow.isDestroyed()) {
@@ -1631,6 +1762,7 @@ function createWorkPreviewSurface(descriptor: WorkPreviewDescriptor): {
     destroyWorkPreviewSurface(descriptor.previewId)
   })
   loadWorkPreviewContent(surface)
+  companionPanel.attachPreview(window, descriptor.workItemId)
   return { ok: true, detail: '', descriptor: projectedWorkPreviewDescriptor(surface) }
 }
 
@@ -1889,14 +2021,13 @@ async function openAuipInWorkPreview(
     return { ok: false, detail: error instanceof Error ? error.message : String(error) }
   }
 
-  const partitionToken = workPreviewPartitionToken(`${surface.descriptor.previewId}-auip`)
   const appView = new WebContentsView({
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
-      partition: `auip-work-preview-${partitionToken}`,
+      partition: auipStoragePartition(surface.descriptor.workItemId, policy.entryPath),
     },
   })
   appView.setBackgroundColor('#050708')
@@ -1910,6 +2041,13 @@ async function openAuipInWorkPreview(
   })
   configureWorkPreviewSession(appView.webContents.session)
   restrictAuipContentNetwork(appView.webContents.session, policy)
+
+  const diagnostics: string[] = []
+  appView.webContents.on('console-message', (_event, level, message) => {
+    if (level < 2 || !message || diagnostics.includes(message.slice(0, 300))) return
+    diagnostics.push(message.slice(0, 300))
+    if (diagnostics.length > 3) diagnostics.shift()
+  })
 
   return await new Promise(resolve => {
     const pending: PendingAuipHandoff = {
@@ -1926,7 +2064,10 @@ async function openAuipInWorkPreview(
           detail: 'Host did not commit AUIP Attach before the handoff deadline.',
         })
       }, 65_000),
-      resolve,
+      resolve: result => resolve(result.ok || diagnostics.length === 0 ? result : {
+        ...result,
+        detail: `${result.detail} Application diagnostic: ${diagnostics.join(' | ')}`,
+      }),
     }
     surface.pendingAuip = pending
     publishWorkPreviewPresentation(surface, 'auip-preloading')
@@ -1978,12 +2119,36 @@ ipcMain.handle('desktop-settings.get', (event) => {
   if (!isTrustedBackendRenderer(event.sender)) return null
   return desktopSettings.snapshot(process.env)
 })
+ipcMain.handle('window-theme.set', (event, theme: unknown) => {
+  if (!isTrustedBackendRenderer(event.sender)) return false
+  return setMainWindowTheme(theme)
+})
+ipcMain.handle('companion-portraits.status', (event) => {
+  if (!isTrustedBackendRenderer(event.sender)) return null
+  return companionPortraitStatus(COMPANION_PORTRAIT_DIR)
+})
 ipcMain.handle('desktop-settings.update', (event, update: DesktopSettingsUpdate) => {
   if (!isTrustedBackendRenderer(event.sender)) {
     return { ok: false, error: 'Untrusted desktop settings requester.' }
   }
   try {
     return { ok: true, settings: desktopSettings.update(process.env, update || {}) }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+})
+ipcMain.handle('desktop-settings.mark-applied', (event, revisions: Record<string, number>) => {
+  if (!isTrustedBackendRenderer(event.sender)) {
+    return { ok: false, error: 'Untrusted desktop settings requester.' }
+  }
+  try {
+    return { ok: true, settings: desktopSettings.markApplied(
+      process.env,
+      revisions && typeof revisions === 'object' && !Array.isArray(revisions) ? revisions : {},
+    ) }
   } catch (error) {
     return {
       ok: false,
@@ -2065,7 +2230,9 @@ ipcMain.handle('chat-avatars.clear', (event, role: ChatAvatarRole) => {
   }
 })
 ipcMain.handle('main-window.focus', (event) => {
-  if (!isTrustedBackendRenderer(event.sender)) return false
+  const isWindowsSlice = process.platform === 'win32'
+    && (event.sender === electronSliceWindow?.webContents || event.sender === electronCanvasLifecycle.window?.webContents)
+  if (!isTrustedBackendRenderer(event.sender) && !isWindowsSlice) return false
   if (!mainWindow) return false
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
@@ -2091,6 +2258,30 @@ ipcMain.handle('project-directory.select', async (event) => {
     path: selectedPath,
     detail: result.canceled ? '' : selectedPath ? '' : 'No Project directory was selected.',
   }
+})
+ipcMain.handle('vn-help.open', async (event, page: unknown) => {
+  if (!isTrustedAmadeusRenderer(event.sender)) throw new Error('Untrusted VN help requester.')
+  const url = page === 'agent' ? 'https://github.com/0xDC00/agent/releases' : page === 'scripts' ? 'https://github.com/0xDC00/scripts' : ''
+  if (!url) throw new Error('Unknown VN help page.')
+  await shell.openExternal(url)
+})
+ipcMain.handle('vn-file.select', async (event, kind: unknown, startPath: unknown) => {
+  if (!isTrustedAmadeusRenderer(event.sender)) {
+    return { ok: false, cancelled: false, path: '', detail: 'Untrusted VN file requester.' }
+  }
+  if (kind !== 'game' && kind !== 'agent' && kind !== 'hook' && kind !== 'script') {
+    return { ok: false, cancelled: false, path: '', detail: 'Unknown VN file type.' }
+  }
+  const options: Electron.OpenDialogOptions = {
+    title: 'VN Player', properties: ['openFile'],
+    defaultPath: typeof startPath === 'string' && path.isAbsolute(startPath) ? startPath : undefined,
+    filters: kind === 'hook' ? [{ name: 'Agent hook script', extensions: ['js'] }]
+      : kind === 'script' ? [{ name: 'Game script', extensions: ['txt', 'json'] }]
+      : [{ name: 'Executable', extensions: ['exe'] }],
+  }
+  const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
+  const selectedPath = result.filePaths[0] || ''
+  return { ok: !result.canceled && Boolean(selectedPath), cancelled: result.canceled, path: selectedPath, detail: '' }
 })
 ipcMain.handle('work-preview.open', (event, rawDescriptor: unknown) => {
   if (!isTrustedAmadeusRenderer(event.sender)) return { ok: false, detail: 'Untrusted preview opener.' }
@@ -2176,14 +2367,38 @@ ipcMain.handle('work-preview.set-bounds', (event, rawPreviewId: unknown, rawBoun
   }
   return true
 })
-ipcMain.handle('electron-slice.open', (event, bridge: unknown) => {
+ipcMain.handle('electron-slice.open', async (event, bridge: unknown) => {
   if (!isMainRenderer(event.sender)) return false
+  if (process.platform === 'win32') ensureWindowsWallpaperTray()
+  if (windowsWallpaper) {
+    const descriptor = normalizeWallpaperBridge(bridge)
+    if (!descriptor) return false
+    try {
+      await windowsWallpaper.start(`http://127.0.0.1:${descriptor.assetPort}/wallpaper/lively/index.html`)
+    } catch (error) {
+      await handleWindowsWallpaperHostExit(error)
+      console.error('[windows-wallpaper] start failed:', error)
+      return false
+    }
+  }
   return createElectronSliceWindow(bridge)
 })
-ipcMain.handle('electron-slice.close', (event) => {
+ipcMain.handle('electron-slice.close', async (event, backendStopError?: unknown) => {
   if (!isMainRenderer(event.sender)) return false
-  closeElectronSliceWindow()
-  return true
+  // Explicit user stop has no helper 'exited' callback. Route a failed RPC
+  // through the same Windows voice cleanup before restoring the desktop.
+  let backendStopped = true
+  if (process.platform === 'win32' && typeof backendStopError === 'string') {
+    backendStopped = await handleWindowsWallpaperHostExit(new Error(`Backend wallpaper stop failed: ${backendStopError}`))
+  } else {
+    closeElectronSliceWindow()
+  }
+  const restored = await stopWallpaperForRenderer(windowsWallpaper, error => {
+    console.error('[windows-wallpaper] close cleanup failed:', error)
+    mainWindow?.show()
+    dialog.showErrorBox('Amadeus wallpaper recovery', `Wallpaper restoration failed. Recovery will resume on the next wallpaper start.\n${String(error)}`)
+  })
+  return backendStopped && restored
 })
 ipcMain.handle('electron-slice.set-shape', (event, boundsList: Electron.Rectangle[]) => {
   const canvasWindow = electronCanvasLifecycle.window
@@ -2457,25 +2672,63 @@ app.on('second-instance', (_event, commandLine) => {
     createWorkOverlayWindow()
     return
   }
+  const request = applicationLifecycle.requestMainWindow(Boolean(mainWindow && !mainWindow.isDestroyed()))
+  if (request === 'defer') return
+  if (request === 'create') {
+    createWindow()
+  }
   if (!mainWindow) return
+  mainWindow.show()
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.focus()
 })
 
+function ensureWindowsWallpaperTray(): void {
+  if (windowsWallpaperTray) return
+  const showMain = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+    if (mainWindow?.isMinimized()) mainWindow.restore()
+    mainWindow?.show()
+    mainWindow?.focus()
+  }
+  windowsWallpaperTray = new WindowsWallpaperTray(APP_ICON_PATH, showMain, () => app.quit())
+}
+
 app.whenReady().then(async () => {
+  // This change owns Windows startup only; retain the existing non-Windows
+  // second-instance lifecycle until that path is qualified independently.
+  if (process.platform === 'win32' && !gotSingleInstanceLock) return
+  if (process.platform === 'win32' && wantsWallpaper()) {
+    ensureWindowsWallpaperTray()
+  }
+  let backendStartFailed = false
   try {
     await startBackend()
   } catch (error) {
+    backendStartFailed = true
     console.error('[electron] backend failed to become ready', error)
   }
   createWindow()
+  if (process.platform === 'win32' && (backendStartFailed || windowsWallpaperTray?.hasIcon === false)) mainWindow?.show()
+  if (applicationLifecycle.completeStartup()) {
+    mainWindow?.show()
+    mainWindow?.focus()
+  }
   if (wantsWorkOverlay()) createWorkOverlayWindow()
   screen.on('display-metrics-changed', updateElectronSliceBounds)
   screen.on('display-added', updateElectronSliceBounds)
   screen.on('display-removed', updateElectronSliceBounds)
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show()
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+    } else {
+      createWindow()
+      mainWindow?.show()
+      mainWindow?.focus()
+    }
   })
 })
 
@@ -2490,10 +2743,16 @@ app.on('before-quit', (event) => {
   for (const appWindow of auipAppWindows) appWindow.close()
   auipAppWindows.clear()
   auipAppSurfacesById.clear()
-  if (quittingAfterBackendStop || !pythonProcess) return
+  if (!applicationLifecycle.beginQuit(Boolean(pythonProcess) || windowsWallpaper !== null)) return
   event.preventDefault()
-  quittingAfterBackendStop = true
-  void stopBackend().finally(() => {
+  void (async () => {
+    try { await windowsWallpaper?.stop() }
+    catch (error) {
+      console.error('[windows-wallpaper] exit cleanup failed:', error)
+      dialog.showErrorBox('Amadeus wallpaper recovery', `Wallpaper restoration failed. Recovery will resume on the next wallpaper start.\n${String(error)}`)
+    }
+    await stopBackend()
+  })().finally(() => {
     app.quit()
   })
 })

@@ -360,5 +360,28 @@ assert.throws(
   }),
   error=>error.code === 'controller_idle_policy_invalid'
 );
+const {createReactiveController} = require(require('path').join(
+  require('path').dirname(process.argv[1]), 'controller-v0.js'));
+let cleared = false;
+const controller = createReactiveController({
+  observe:()=>({values:[2,1]}),
+  decide:({observation})=>observation.values.sort(),
+  apply:()=>({accepted:true,effects:{}}),
+  clearIntent:()=>{cleared=true;},
+});
+controller.activate({
+  lease:{lease_id:'blocked-projection', principal:'kurisu', executor:'app_controller',
+    issued_at_ms:1000, expires_at_ms:31000, max_action_rate_hz:10,
+    takeover:'immediate', generation:1, policy_revision:1},
+  actionType:'game.assist', policy:{mode:'assist'}, policySummary:'Assist',
+});
+assert.equal(controller.step({nowMs:1100}).code, 'controller_decision_failed');
+assert.equal(cleared, true);
+const blocked = controllerSituation(controller.status());
+assert.equal(blocked.status, 'blocked');
+assert.equal(blocked.policyAction, null);
+assert.equal(blocked.policyRevision, null);
+assert.match(blocked.reason, /controller_decision_failed/);
+assert.equal(controller.step({nowMs:1200}).code, 'controller_blocked');
 """
     )

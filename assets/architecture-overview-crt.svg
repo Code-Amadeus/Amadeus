@@ -1,257 +1,220 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1120" viewBox="0 0 1800 1120" role="img" aria-labelledby="title desc">
-  <title id="title">Amadeus current public architecture</title>
-  <desc id="desc">Electron surfaces connect to an authenticated Python Host. Main Chat delegates through the Host-owned Work control plane to Browser, Codex, or optional OpenClaw Providers, with Claude CLI planned as a future direct Provider. MCP and Skills remain Provider-scoped. Verified Artifacts may attach to bounded AUIP AppSessions. Voice and SpriteForge presentation remain separate from execution authority.</desc>
-
-  <defs>
-    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#020b08"/>
-      <stop offset="0.52" stop-color="#061710"/>
-      <stop offset="1" stop-color="#0b1711"/>
-    </linearGradient>
-    <linearGradient id="hostGlow" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#09251b"/>
-      <stop offset="1" stop-color="#0b1b15"/>
-    </linearGradient>
-    <linearGradient id="workGlow" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#16271d"/>
-      <stop offset="1" stop-color="#181b14"/>
-    </linearGradient>
-    <linearGradient id="auipGlow" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#241d14"/>
-      <stop offset="1" stop-color="#171712"/>
-    </linearGradient>
-    <radialGradient id="screenGlow" cx="50%" cy="38%" r="72%">
-      <stop offset="0" stop-color="#65f2b1" stop-opacity="0.07"/>
-      <stop offset="0.64" stop-color="#163d2b" stop-opacity="0.025"/>
-      <stop offset="1" stop-color="#000000" stop-opacity="0.28"/>
-    </radialGradient>
-    <pattern id="grid" width="42" height="42" patternUnits="userSpaceOnUse">
-      <path d="M 42 0 L 0 0 0 42" fill="none" stroke="#78e5ad" stroke-width="1" opacity="0.055"/>
-    </pattern>
-    <pattern id="scanlines" width="6" height="6" patternUnits="userSpaceOnUse">
-      <rect width="6" height="1" fill="#b6f9d5" opacity="0.022"/>
-    </pattern>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000604" flood-opacity="0.62"/>
-    </filter>
-    <filter id="phosphor" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="3" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-    <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#61eeb6"/>
-    </marker>
-    <marker id="arrowMint" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#82f5b8"/>
-    </marker>
-    <marker id="arrowAmber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#efbd68"/>
-    </marker>
-    <style>
-      .title { font: 700 44px "Cascadia Mono", "Microsoft YaHei", "PingFang SC", monospace; letter-spacing: 0.4px; fill: #eafff2; }
-      .subtitle { font: 400 21px Inter, "Microsoft YaHei", "PingFang SC", sans-serif; fill: #91bca5; }
-      .column-title { font: 700 21px "Cascadia Mono", "Microsoft YaHei", "PingFang SC", monospace; letter-spacing: 2px; fill: #83d7aa; }
-      .card-title { font: 700 24px Inter, "Microsoft YaHei", "PingFang SC", sans-serif; fill: #effff5; }
-      .card-subtitle { font: 650 16px "Cascadia Mono", "Microsoft YaHei", "PingFang SC", monospace; fill: #d9f7e6; }
-      .body { font: 400 17px Inter, "Microsoft YaHei", "PingFang SC", sans-serif; fill: #b2d2bf; }
-      .small { font: 500 14.5px "Cascadia Mono", "Microsoft YaHei", "PingFang SC", monospace; fill: #82aa92; }
-      .chip { font: 650 15px "Cascadia Mono", "Microsoft YaHei", "PingFang SC", monospace; fill: #ddf9e8; }
-      .flow { font: 600 14px "Cascadia Mono", "Microsoft YaHei", "PingFang SC", monospace; fill: #a8cdb8; }
-      .invariant { font: 650 15px "Cascadia Mono", "Microsoft YaHei", "PingFang SC", monospace; fill: #c8ead7; }
-    </style>
-  </defs>
-
-  <rect width="1800" height="1120" rx="34" fill="url(#background)"/>
-  <rect width="1800" height="1120" rx="34" fill="url(#grid)"/>
-  <rect width="1800" height="1120" rx="34" fill="url(#scanlines)"/>
-  <rect width="1800" height="1120" rx="34" fill="url(#screenGlow)"/>
-  <circle cx="140" cy="60" r="180" fill="#39c98d" opacity="0.055"/>
-  <circle cx="1640" cy="980" r="260" fill="#d39c49" opacity="0.045"/>
-  <circle cx="1730" cy="64" r="6" fill="#79f2b8" opacity="0.9" filter="url(#phosphor)"/>
-  <circle cx="1752" cy="64" r="6" fill="#79f2b8" opacity="0.42"/>
-  <circle cx="1774" cy="64" r="6" fill="#d7a95f" opacity="0.7"/>
-
-  <text x="70" y="72" class="title">Amadeus · Current Public Architecture</text>
-  <text x="72" y="108" class="subtitle">Host 持有身份、状态与执行权；Chat、Provider、AUIP 和角色呈现保持清晰边界</text>
-
-  <text x="70" y="157" class="column-title">USER &amp; SURFACES</text>
-  <text x="470" y="157" class="column-title">HOST-OWNED AUTHORITY</text>
-  <text x="1210" y="157" class="column-title">BOUNDED RUNTIMES</text>
-
-  <!-- User and product surfaces -->
-  <g filter="url(#shadow)">
-    <rect x="70" y="185" width="330" height="122" rx="22" fill="#0a281d" stroke="#61eeb6" stroke-width="2"/>
-    <text x="100" y="226" class="card-title">用户</text>
-    <text x="100" y="258" class="body">语音 · 文字 · 点击 · 授权</text>
-    <text x="100" y="285" class="small">可随时插话、改变目标或接管</text>
-  </g>
-
-  <path d="M 235 307 L 235 340" fill="none" stroke="#61eeb6" stroke-width="3.5" marker-end="url(#arrowGreen)"/>
-  <text x="253" y="329" class="flow">input / consent</text>
-
-  <g filter="url(#shadow)">
-    <rect x="70" y="340" width="330" height="206" rx="22" fill="#081b14" stroke="#335f4b" stroke-width="1.5"/>
-    <text x="100" y="382" class="card-title">Electron Desktop</text>
-    <text x="100" y="416" class="body">Chat · Projects · Drafts · Artifacts</text>
-    <text x="100" y="445" class="body">Work · Settings · Backend</text>
-    <text x="100" y="474" class="body">VN Player <tspan fill="#d7a95f">(experimental)</tspan></text>
-    <rect x="100" y="497" width="183" height="28" rx="14" fill="#123b2b"/>
-    <text x="117" y="517" class="chip">durable control UI</text>
-  </g>
-
-  <g filter="url(#shadow)">
-    <rect x="70" y="590" width="330" height="176" rx="22" fill="#081b14" stroke="#335f4b" stroke-width="1.5"/>
-    <text x="100" y="632" class="card-title">Presentation Surface</text>
-    <text x="100" y="666" class="body">Wallpaper · SpriteForge / PixiJS</text>
-    <text x="100" y="695" class="body">字幕 · 口型 · 表情 · 场景行为</text>
-    <text x="100" y="727" class="small">可选 KTX2 角色包；缺包不影响 Chat</text>
-    <rect x="100" y="738" width="172" height="25" rx="12" fill="#123b2b"/>
-    <text x="117" y="756" class="small">presentation only</text>
-  </g>
-
-  <g filter="url(#shadow)">
-    <rect x="70" y="808" width="330" height="132" rx="22" fill="#071812" stroke="#294d3d" stroke-width="1.5" stroke-dasharray="8 7"/>
-    <text x="100" y="849" class="card-title">Headless / API Clients</text>
-    <text x="100" y="882" class="body">无角色包、无本地模型也可启动</text>
-    <text x="100" y="912" class="small">authenticated local server boundary</text>
-  </g>
-
-  <!-- Host boundary -->
-  <rect x="470" y="175" width="650" height="800" rx="30" fill="url(#hostGlow)" stroke="#2f624a" stroke-width="2"/>
-  <text x="500" y="211" class="small">Python · FastAPI · authenticated WebSocket · durable stores</text>
-
-  <g filter="url(#shadow)">
-    <rect x="500" y="235" width="590" height="154" rx="22" fill="#0b2c21" stroke="#61eeb6" stroke-width="2"/>
-    <text x="530" y="276" class="card-title">Main Chat &amp; Turn Authority</text>
-    <text x="530" y="309" class="body">Session context · LLM profiles · visual context</text>
-    <text x="530" y="337" class="body">TurnCoordinator · stream lifecycle · interruption epochs</text>
-    <rect x="530" y="352" width="154" height="25" rx="12" fill="#15513a"/>
-    <text x="548" y="370" class="chip">conversation only</text>
-    <rect x="699" y="352" width="191" height="25" rx="12" fill="#113d2d"/>
-    <text x="717" y="370" class="chip">no direct MCP tools</text>
-  </g>
-
-  <g filter="url(#shadow)">
-    <rect x="500" y="425" width="590" height="215" rx="22" fill="url(#workGlow)" stroke="#82f5b8" stroke-width="2"/>
-    <text x="530" y="467" class="card-title">Work Control Plane</text>
-    <text x="530" y="500" class="body">Project · Draft · WorkItem / Attempt · permissions</text>
-    <text x="530" y="529" class="body">Provider selection · run / cancel / continue / retry</text>
-    <text x="530" y="558" class="body">Ledger · Artifact Registry · Diff · completion · recovery</text>
-    <text x="530" y="588" class="small">模型翻译是证据；Host identity 与执行事实才是权威</text>
-    <rect x="530" y="601" width="118" height="25" rx="12" fill="#184b36"/>
-    <text x="548" y="619" class="chip">persistent</text>
-    <rect x="662" y="601" width="111" height="25" rx="12" fill="#184b36"/>
-    <text x="680" y="619" class="chip">auditable</text>
-    <rect x="787" y="601" width="151" height="25" rx="12" fill="#184b36"/>
-    <text x="805" y="619" class="chip">artifact-owned</text>
-  </g>
-
-  <g filter="url(#shadow)">
-    <rect x="500" y="675" width="590" height="128" rx="22" fill="url(#auipGlow)" stroke="#efbd68" stroke-width="2"/>
-    <text x="530" y="716" class="card-title">AUIP Session Authority</text>
-    <text x="530" y="748" class="body">attach ticket · AppSession identity · revision · typed action</text>
-    <text x="530" y="776" class="small">只投影声明状态与 receipt；不授予 Work / Provider / TTS 权限</text>
-  </g>
-
-  <g filter="url(#shadow)">
-    <rect x="500" y="838" width="590" height="105" rx="22" fill="#0c2a20" stroke="#46745d" stroke-width="1.7"/>
-    <text x="530" y="879" class="card-title">Voice &amp; Embodiment Pipeline</text>
-    <text x="530" y="911" class="body">Wake / Conversation ASR · TTS · playback · mouth / render events</text>
-  </g>
-
-  <!-- Bounded runtimes -->
-  <g filter="url(#shadow)">
-    <rect x="1210" y="185" width="520" height="145" rx="22" fill="#091d16" stroke="#46745d" stroke-width="1.5"/>
-    <text x="1240" y="226" class="card-title">Model &amp; Voice Endpoints</text>
-    <text x="1240" y="259" class="body">Main Chat profiles · local / hybrid model servers</text>
-    <text x="1240" y="288" class="body">local ASR/TTS · explicit remote ASR/TTS</text>
-    <text x="1240" y="314" class="small">CUDA 12.4 local baseline · remote compatibility is explicit</text>
-  </g>
-
-  <g filter="url(#shadow)">
-    <rect x="1210" y="365" width="520" height="280" rx="24" fill="#201b13" stroke="#d7a95f" stroke-width="2"/>
-    <text x="1240" y="407" class="card-title">Work Providers</text>
-    <text x="1240" y="438" class="body">每个 Provider 拥有自己的 transport 与 capability</text>
-
-    <rect x="1240" y="466" width="140" height="105" rx="16" fill="#302719" stroke="#e4bd79" stroke-width="1.4"/>
-    <text x="1260" y="499" class="card-subtitle">Browser</text>
-    <text x="1260" y="528" class="small">Playwright</text>
-    <text x="1260" y="552" class="small">scoped session</text>
-
-    <rect x="1395" y="466" width="150" height="105" rx="16" fill="#302719" stroke="#e4bd79" stroke-width="1.4"/>
-    <text x="1415" y="499" class="card-subtitle">Codex</text>
-    <text x="1415" y="528" class="small">App Server</text>
-    <text x="1415" y="552" class="small">or Direct</text>
-
-    <rect x="1560" y="466" width="140" height="105" rx="16" fill="#302719" stroke="#e4bd79" stroke-width="1.4" stroke-dasharray="7 6"/>
-    <text x="1580" y="499" class="card-subtitle">OpenClaw</text>
-    <text x="1580" y="528" class="small">optional</text>
-    <text x="1580" y="552" class="small">gateway</text>
-
-    <text x="1240" y="606" class="small">Provider events / results return to the Host-owned Ledger</text>
-    <rect x="1240" y="615" width="306" height="22" rx="11" fill="#44351f"/>
-    <text x="1257" y="631" class="small">planned: Claude CLI direct Provider</text>
-  </g>
-
-  <g filter="url(#shadow)">
-    <rect x="1210" y="680" width="520" height="110" rx="22" fill="#10261c" stroke="#61eeb6" stroke-width="1.7"/>
-    <text x="1240" y="721" class="card-title">Provider-scoped Capabilities</text>
-    <text x="1240" y="752" class="body">MCP connections · Skills · Provider-specific tools</text>
-    <text x="1240" y="777" class="small">shared registry ≠ Main Chat authority</text>
-  </g>
-
-  <g filter="url(#shadow)">
-    <rect x="1210" y="825" width="520" height="140" rx="22" fill="#2a2116" stroke="#efbd68" stroke-width="2"/>
-    <text x="1240" y="866" class="card-title">Attached AUIP Applications</text>
-    <text x="1240" y="899" class="body">declared state/events · bounded typed actions</text>
-    <text x="1240" y="928" class="body">verified Artifact entry · visible disconnect state</text>
-    <text x="1240" y="951" class="small">application session, not an execution Provider</text>
-  </g>
-
-  <!-- Primary control and evidence flows -->
-  <path d="M 400 430 C 443 430, 454 310, 500 310" fill="none" stroke="#61eeb6" stroke-width="4" marker-end="url(#arrowGreen)"/>
-  <text x="411" y="403" class="flow">authenticated WS</text>
-
-  <path d="M 1090 286 C 1140 286, 1160 258, 1210 258" fill="none" stroke="#61eeb6" stroke-width="3.5" marker-end="url(#arrowGreen)"/>
-  <text x="1120" y="244" class="flow">inference</text>
-
-  <path d="M 795 389 L 795 425" fill="none" stroke="#82f5b8" stroke-width="3.5" marker-end="url(#arrowMint)"/>
-  <text x="813" y="414" class="flow">delegate</text>
-
-  <path d="M 1090 508 C 1140 508, 1160 503, 1210 503" fill="none" stroke="#efbd68" stroke-width="4" marker-end="url(#arrowAmber)"/>
-  <text x="1122" y="487" class="flow">run control</text>
-
-  <path d="M 1210 570 C 1162 570, 1142 574, 1090 574" fill="none" stroke="#82f5b8" stroke-width="3" stroke-dasharray="10 8" marker-end="url(#arrowMint)"/>
-  <text x="1120" y="598" class="flow">evidence return</text>
-
-  <path d="M 1470 645 L 1470 680" fill="none" stroke="#61eeb6" stroke-width="3.5" marker-end="url(#arrowGreen)"/>
-  <text x="1488" y="668" class="flow">scoped grant</text>
-
-  <path d="M 795 640 L 795 675" fill="none" stroke="#efbd68" stroke-width="3.5" marker-end="url(#arrowAmber)"/>
-  <text x="813" y="665" class="flow">verified Artifact</text>
-
-  <path d="M 1090 736 C 1147 736, 1155 876, 1210 876" fill="none" stroke="#efbd68" stroke-width="4" marker-end="url(#arrowAmber)"/>
-  <text x="1118" y="813" class="flow">attach / action</text>
-
-  <path d="M 1210 928 C 1157 928, 1145 780, 1090 780" fill="none" stroke="#82f5b8" stroke-width="3" stroke-dasharray="10 8" marker-end="url(#arrowMint)"/>
-  <text x="1128" y="932" class="flow">state / receipt</text>
-
-  <path d="M 520 355 C 478 392, 474 830, 520 886" fill="none" stroke="#61eeb6" stroke-width="3.2" marker-end="url(#arrowGreen)"/>
-
-  <path d="M 500 890 C 455 877, 446 682, 400 682" fill="none" stroke="#61eeb6" stroke-width="3.5" marker-end="url(#arrowGreen)"/>
-
-  <path d="M 500 625 C 455 625, 445 518, 400 518" fill="none" stroke="#82f5b8" stroke-width="3" stroke-dasharray="10 8" marker-end="url(#arrowMint)"/>
-  <text x="412" y="584" class="flow">Work projection</text>
-
-  <!-- Invariant footer -->
-  <rect x="70" y="1010" width="1660" height="64" rx="20" fill="#06130e" stroke="#29523f" stroke-width="1.5"/>
-  <circle cx="104" cy="1042" r="6" fill="#61eeb6"/>
-  <text x="121" y="1048" class="invariant">Main Chat ≠ Provider ≠ AUIP application</text>
-  <circle cx="635" cy="1042" r="6" fill="#61eeb6"/>
-  <text x="652" y="1048" class="invariant">MCP / Skills → compatible Providers only</text>
-  <circle cx="1161" cy="1042" r="6" fill="#efbd68"/>
-  <text x="1178" y="1048" class="invariant">identity · permission · Artifact · receipt → Host-owned</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1120" viewBox="0 0 1800 1120" role="img" aria-labelledby="title desc" xml:lang="en">
+<!-- Generated by tools/architecture/generate_readme_overview.py. -->
+<title id="title">Amadeus · Public Architecture</title><desc id="desc">An overview of the Host authority boundary, user surfaces, delegated Providers, bounded AUIP applications, and voice presentation. Solid arrows show requests; dashed arrows show returned state or evidence.</desc>
+<defs>
+  <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#040e0a"/><stop offset="1" stop-color="#091b13"/></linearGradient>
+  <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#8bd8af" opacity=".035"/></pattern>
+  <marker id="control" viewBox="0 0 10 10" refX="10" refY="5" markerUnits="userSpaceOnUse" markerWidth="13" markerHeight="13" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#72dfad"/></marker>
+  <marker id="return" viewBox="0 0 10 10" refX="10" refY="5" markerUnits="userSpaceOnUse" markerWidth="13" markerHeight="13" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#b4dcc7"/></marker>
+  <marker id="artifact" viewBox="0 0 10 10" refX="10" refY="5" markerUnits="userSpaceOnUse" markerWidth="13" markerHeight="13" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#e5bc79"/></marker>
+  <marker id="planned" viewBox="0 0 10 10" refX="10" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#a4b9a9"/></marker>
+  <style>
+    text{font-family:"Segoe UI","Microsoft YaHei",Arial,sans-serif}
+    .title{font-size:38px;font-weight:700;fill:#edf8f0}
+    .subtitle{font-size:20px;fill:#a5c5b2}
+    .column{font-size:17px;letter-spacing:1px;font-weight:700;fill:#89c9a8}
+    .card-title{font-size:27px;font-weight:650;fill:#effaf3}
+    .body{font-size:23px;fill:#c0d6c9}
+    .note{font-size:19px;fill:#a6c5b3}
+    .flow{font-size:16px;font-weight:600;fill:#cce7d7;paint-order:stroke;stroke:#081b13;stroke-width:6;stroke-linejoin:round}
+    .mini-title{font-size:23px;font-weight:650;fill:#f5e7ce}
+    .mini{font-size:20px;fill:#cfccb7}
+    .provider-detail{font-size:18px;fill:#cfccb7}
+    .footer{font-size:19px;font-weight:600;fill:#c7e5d3}
+    .planned-title{font-size:27px;font-weight:650;fill:#d8ddcd}
+    #node-user .body,#node-desktop .body,#node-surface .body,#node-headless .body{font-size:21px}
+    #node-user .card-title,#node-desktop .card-title,#node-surface .card-title,#node-headless .card-title{font-size:25px}
+  </style>
+</defs>
+<rect width="1800" height="1120" rx="24" fill="url(#bg)"/>
+<rect width="1800" height="1120" rx="24" fill="url(#grid)"/>
+<text x="48" y="66" class="title" text-anchor="start">Amadeus · Public Architecture</text>
+<text x="48" y="105" class="subtitle" text-anchor="start">One Host owns identity, permissions and durable work; conversation, execution and presentation stay distinct.</text>
+<path d="M60 130H124" fill="none" stroke="#72dfad" stroke-width="2.5" marker-end="url(#control)"/>
+<text x="140" y="136" class="note" text-anchor="start">Requests / control</text>
+<path d="M480 130H544" fill="none" stroke="#b4dcc7" stroke-width="2.5" marker-end="url(#return)" stroke-dasharray="7 6"/>
+<text x="560" y="136" class="note" text-anchor="start">State / results</text>
+<path d="M880 130H944" fill="none" stroke="#e5bc79" stroke-width="2.5" marker-end="url(#artifact)"/>
+<text x="960" y="136" class="note" text-anchor="start">Artifact / application actions</text>
+<rect x="1370" y="117" width="24" height="18" rx="3" fill="none" stroke="#a4b9a9" stroke-dasharray="4 3"/>
+<text x="1406" y="136" class="note" text-anchor="start">Planned extension</text>
+<text x="60" y="160" class="column" text-anchor="start">USER &amp; SURFACES</text>
+<text x="500" y="160" class="column" text-anchor="start">HOST · AUTHORITY &amp; DURABLE STATE</text>
+<text x="1230" y="160" class="column" text-anchor="start">BOUNDED RUNTIMES</text>
+<g id="node-host" data-node="host"><rect x="470" y="175" width="650" height="809" rx="22" fill="#0a2017" stroke="#355f49" stroke-width="1.5"/></g>
+<text x="500" y="202" class="note" text-anchor="start">Python · FastAPI · authenticated interfaces · durable stores</text>
+<g data-edge="user-desktop" data-from="user" data-to="desktop"><title>Input / consent</title>
+<path d="M225 305 L225 350" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
+<path class="connector" d="M225 305 L225 350" fill="none" stroke="#72dfad" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#control)"/></g>
+<g data-edge="desktop-chat" data-from="desktop" data-to="chat"><title>Auth. / WebSocket</title>
+<path d="M390 418 L438 418 L438 292 L500 292" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
+<path class="connector" d="M390 418 L438 418 L438 292 L500 292" fill="none" stroke="#72dfad" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#control)"/></g>
+<g data-edge="chat-models" data-from="chat" data-to="models"><title>Inference</title>
+<path d="M1090 260 L1230 260" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
+<path class="connector" d="M1090 260 L1230 260" fill="none" stroke="#72dfad" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#control)"/></g>
+<g data-edge="chat-memory" data-from="chat" data-to="memory"><title>Context / exchange</title>
+<path d="M1090 334 L1148 334 L1148 412 L1230 412" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
+<path class="connector" d="M1090 334 L1148 334 L1148 412 L1230 412" fill="none" stroke="#a4b9a9" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#planned)" marker-start="url(#planned)" stroke-dasharray="2 5"/></g>
+<g data-edge="chat-work" data-from="chat" data-to="work"><title>Delegate</title>
+<path d="M795 368 L795 406" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
+<path class="connector" d="M795 368 L795 406" fill="none" stroke="#72dfad" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#control)"/></g>
+<g data-edge="chat-voice" data-from="chat" data-to="voice"><title>Chat speech</title>
+<path d="M500 332 L482 332 L482 876 L500 876" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
+<path class="connector" d="M500 332 L482 332 L482 876 L500 876" fill="none" stroke="#72dfad" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#control)"/></g>
+<g data-edge="work-providers" data-from="work" data-to="providers"><title>Run / cancel</title>
+<path d="M1090 484 L1176 484 L1176 548 L1230 548" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
+<path class="connector" d="M1090 484 L1176 484 L1176 548 L1230 548" fill="none" stroke="#72dfad" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#control)"/></g>
+<g data-edge="providers-work" data-from="providers" data-to="work"><title>Events / results</title>
+<path d="M1230 626 L1144 626 L1144 578 L1090 578" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
+<path class="connector" d="M1230 626 L1144 626 L1144 578 L1090 578" fill="none" stroke="#b4dcc7" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#return)" stroke-dasharray="8 6"/></g>
+<g data-edge="work-desktop" data-from="work" data-to="desktop"><title>Work-state / projection</title>
+<path d="M500 574 L416 574 L416 506 L390 506" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
+<path class="connector" d="M500 574 L416 574 L416 506 L390 506" fill="none" stroke="#b4dcc7" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#return)" stroke-dasharray="8 6"/></g>
+<g data-edge="work-auip" data-from="work" data-to="auip"><title>Verified Artifact</title>
+<path d="M795 616 L795 658" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
+<path class="connector" d="M795 616 L795 658" fill="none" stroke="#e5bc79" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#artifact)"/></g>
+<g data-edge="headless-host" data-from="headless" data-to="host"><title>API access</title>
+<path d="M390 864 L470 864" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
+<path class="connector" d="M390 864 L470 864" fill="none" stroke="#72dfad" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#control)"/></g>
+<g data-edge="auip-apps" data-from="auip" data-to="apps"><title>Attach / action</title>
+<path d="M1090 704 L1160 704 L1160 832 L1230 832" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
+<path class="connector" d="M1090 704 L1160 704 L1160 832 L1230 832" fill="none" stroke="#e5bc79" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#artifact)"/></g>
+<g data-edge="apps-auip" data-from="apps" data-to="auip"><title>State / receipts</title>
+<path d="M1230 910 L1196 910 L1196 760 L1090 760" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
+<path class="connector" d="M1230 910 L1196 910 L1196 760 L1090 760" fill="none" stroke="#b4dcc7" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#return)" stroke-dasharray="8 6"/></g>
+<g data-edge="voice-surface" data-from="voice" data-to="surface"><title>Playback / / render events</title>
+<path d="M500 904 L448 904 L448 652 L390 652" fill="none" stroke="#081b13" stroke-width="8" stroke-linejoin="round"/>
+<path class="connector" d="M500 904 L448 904 L448 652 L390 652" fill="none" stroke="#72dfad" stroke-width="2.5" stroke-linejoin="round" marker-end="url(#control)"/></g>
+<g id="node-user" data-node="user"><rect x="30" y="185" width="360" height="120" rx="16" fill="#0c241a" stroke="#67c599" stroke-width="1.6"/>
+<text x="52" y="222" class="card-title" text-anchor="start">User</text>
+<text x="52" y="256" class="body" text-anchor="start">Voice · text · clicks · consent</text>
+<text x="52" y="289" class="note" text-anchor="start">Interrupt, redirect or take over</text>
+</g>
+<g id="node-desktop" data-node="desktop"><rect x="30" y="350" width="360" height="180" rx="16" fill="#0c241a" stroke="#456d55" stroke-width="1.6"/>
+<text x="52" y="387" class="card-title" text-anchor="start">Electron Desktop</text>
+<text x="52" y="421" class="body" text-anchor="start">Chat · Projects · Drafts</text>
+<text x="52" y="453" class="body" text-anchor="start">Work · Artifacts · Settings</text>
+<text x="52" y="485" class="body" text-anchor="start">Backend status · VN Player</text>
+<text x="52" y="514" class="note" text-anchor="start">VN Player remains experimental</text>
+</g>
+<g id="node-headless" data-node="headless"><rect x="30" y="798" width="360" height="132" rx="16" fill="#0c241a" stroke="#456d55" stroke-width="1.6"/>
+<text x="52" y="835" class="card-title" text-anchor="start">Headless / API Clients</text>
+<text x="52" y="869" class="body" text-anchor="start">No character / model required</text>
+<text x="52" y="914" class="note" text-anchor="start">Same authenticated Host boundary</text>
+</g>
+<g id="node-surface" data-node="surface"><rect x="30" y="570" width="360" height="158" rx="16" fill="#0c241a" stroke="#456d55" stroke-width="1.6"/>
+<text x="52" y="607" class="card-title" text-anchor="start">Character Presentation</text>
+<text x="52" y="641" class="body" text-anchor="start">Wallpaper · SpriteForge / PixiJS</text>
+<text x="52" y="673" class="body" text-anchor="start">Subtitles · lips · emotion · scene</text>
+<text x="52" y="712" class="note" text-anchor="start">Character packs are optional</text>
+</g>
+<g id="node-chat" data-node="chat"><rect x="500" y="220" width="590" height="148" rx="16" fill="#0c241a" stroke="#67c599" stroke-width="1.6"/>
+<text x="522" y="257" class="card-title" text-anchor="start">Main Chat &amp; Turn Control</text>
+<text x="522" y="291" class="body" text-anchor="start">Sessions · models · visual context</text>
+<text x="522" y="323" class="body" text-anchor="start">Streams · interruption epochs</text>
+<text x="522" y="352" class="note" text-anchor="start">Conversation only · no MCP tools</text>
+</g>
+<g id="node-work" data-node="work"><rect x="500" y="406" width="590" height="210" rx="16" fill="#0c241a" stroke="#67c599" stroke-width="1.6"/>
+<text x="522" y="443" class="card-title" text-anchor="start">Work Control Plane</text>
+<text x="522" y="477" class="body" text-anchor="start">Projects · Drafts · WorkItems / Attempts</text>
+<text x="522" y="509" class="body" text-anchor="start">Provider selection · run / cancel</text>
+<text x="522" y="541" class="body" text-anchor="start">Continue / retry · permissions · Artifacts</text>
+<text x="522" y="573" class="body" text-anchor="start">Ledger · diffs · completion · recovery</text>
+<text x="522" y="600" class="note" text-anchor="start">Host verifies identity and execution facts</text>
+</g>
+<g id="node-auip" data-node="auip"><rect x="500" y="658" width="590" height="146" rx="16" fill="#201e15" stroke="#cfa566" stroke-width="1.6"/>
+<text x="522" y="695" class="card-title" text-anchor="start">AUIP Session Authority</text>
+<text x="522" y="729" class="body" text-anchor="start">Attach tickets · session identity · revisions</text>
+<text x="522" y="761" class="body" text-anchor="start">Action authorization · declared state · receipts</text>
+<text x="522" y="788" class="note" text-anchor="start">No Work / Provider / TTS authority granted</text>
+</g>
+<g id="node-voice" data-node="voice"><rect x="500" y="824" width="590" height="148" rx="16" fill="#0c241a" stroke="#456d55" stroke-width="1.6"/>
+<text x="522" y="861" class="card-title" text-anchor="start">Voice &amp; Embodiment</text>
+<text x="522" y="895" class="body" text-anchor="start">Wake / chat ASR · local or remote ASR / TTS</text>
+<text x="522" y="927" class="body" text-anchor="start">Playback · mouth / render events</text>
+<text x="522" y="956" class="note" text-anchor="start">Presentation stays separate from execution</text>
+</g>
+<g id="node-models" data-node="models"><rect x="1230" y="185" width="510" height="140" rx="16" fill="#0c241a" stroke="#456d55" stroke-width="1.6"/>
+<text x="1252" y="222" class="card-title" text-anchor="start">Main Chat Model Endpoints</text>
+<text x="1252" y="256" class="body" text-anchor="start">Local / remote / hybrid inference</text>
+<text x="1252" y="309" class="note" text-anchor="start">Remote services are explicitly configured</text>
+</g>
+<g id="node-apps" data-node="apps"><rect x="1230" y="790" width="510" height="182" rx="16" fill="#201e15" stroke="#cfa566" stroke-width="1.6"/>
+<text x="1252" y="827" class="card-title" text-anchor="start">Attached AUIP Applications</text>
+<text x="1252" y="861" class="body" text-anchor="start">Verified Artifact entry</text>
+<text x="1252" y="893" class="body" text-anchor="start">Declared state / events · bounded actions</text>
+<text x="1252" y="925" class="body" text-anchor="start">Application receipts · visible disconnects</text>
+<text x="1252" y="956" class="note" text-anchor="start">Separate from Work Providers</text>
+</g>
+<g id="node-memory" data-node="memory" data-status="planned"><rect x="1230" y="351" width="510" height="115" rx="12" fill="#14221b" stroke="#a4b9a9" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text x="1252" y="388" class="planned-title" text-anchor="start">Memory &amp; Persona Runtime</text>
+<text x="1252" y="420" class="note" text-anchor="start">Retrieval / updates · lifecycle design pending</text>
+<text x="1252" y="449" class="mini" text-anchor="start">PLANNED · interface not finalized</text>
+</g>
+<g id="node-providers" data-node="providers"><rect x="1230" y="494" width="510" height="270" rx="16" fill="#231f15" stroke="#cfa566" stroke-width="1.6"/>
+<text x="1252" y="531" class="card-title" text-anchor="start">Work Providers</text>
+<text x="1252" y="562" class="note" text-anchor="start">Separate transports and capabilities</text>
+<rect x="1248" y="580" width="146" height="98" rx="9" fill="#30281a" stroke="#9e8454"/>
+<text x="1260" y="609" class="mini-title" text-anchor="start">Browser</text>
+<text x="1260" y="639" class="provider-detail" text-anchor="start">Playwright</text>
+<text x="1260" y="664" class="provider-detail" text-anchor="start">Scoped session</text>
+<rect x="1412" y="580" width="146" height="98" rx="9" fill="#30281a" stroke="#9e8454"/>
+<text x="1424" y="609" class="mini-title" text-anchor="start">Codex</text>
+<text x="1424" y="639" class="provider-detail" text-anchor="start">App Server</text>
+<text x="1424" y="664" class="provider-detail" text-anchor="start">or Direct</text>
+<rect x="1576" y="580" width="146" height="98" rx="9" fill="#30281a" stroke="#9e8454"/>
+<text x="1588" y="609" class="mini-title" text-anchor="start">Pi</text>
+<text x="1588" y="639" class="provider-detail" text-anchor="start">Native RPC</text>
+<text x="1588" y="664" class="provider-detail" text-anchor="start">Daily tasks</text>
+<rect x="1248" y="690" width="474" height="32" rx="8" fill="#102c1f" stroke="#456d55"/>
+<text x="1485.0" y="713" class="note" text-anchor="middle">MCP / Skills · compatible Providers only</text>
+<text x="1250" y="747" class="mini" text-anchor="start">Planned: Claude CLI direct Provider</text>
+</g>
+<g data-label="input">
+<text x="310" y="334" class="flow" text-anchor="middle">Input / consent</text>
+</g>
+<g data-label="ws">
+<text x="440" y="366" class="flow" text-anchor="middle">Auth.</text>
+<text x="440" y="386" class="flow" text-anchor="middle">WebSocket</text>
+</g>
+<g data-label="infer">
+<text x="1160" y="236" class="flow" text-anchor="middle">Inference</text>
+</g>
+<g data-label="retrieve">
+<text x="1160" y="370" class="flow" text-anchor="middle">Context</text>
+<text x="1160" y="390" class="flow" text-anchor="middle">exchange</text>
+</g>
+<g data-label="delegate">
+<text x="730" y="391" class="flow" text-anchor="middle">Delegate</text>
+</g>
+<g data-label="run">
+<text x="1160" y="463" class="flow" text-anchor="middle">Run / cancel</text>
+</g>
+<g data-label="results">
+<text x="1160" y="653" class="flow" text-anchor="middle">Events / results</text>
+</g>
+<g data-label="projection">
+<text x="440" y="538" class="flow" text-anchor="middle">Work-state</text>
+<text x="440" y="558" class="flow" text-anchor="middle">projection</text>
+</g>
+<g data-label="artifact">
+<text x="921" y="645" class="flow" text-anchor="middle">Verified Artifact</text>
+</g>
+<g data-label="api">
+<text x="430" y="835" class="flow" text-anchor="middle">API access</text>
+</g>
+<g data-label="action">
+<text x="1160" y="690" class="flow" text-anchor="middle">Attach / action</text>
+</g>
+<g data-label="receipts">
+<text x="1160" y="940" class="flow" text-anchor="middle">State / receipts</text>
+</g>
+<g data-label="playback">
+<text x="440" y="733" class="flow" text-anchor="middle">Playback /</text>
+<text x="440" y="753" class="flow" text-anchor="middle">render events</text>
+</g>
+<rect x="60" y="1010" width="1680" height="64" rx="14" fill="#06140e" stroke="#355f49"/>
+<text x="80" y="1048" class="footer" text-anchor="start">Main Chat ≠ Provider ≠ AUIP app</text>
+<text x="650" y="1048" class="footer" text-anchor="start">MCP / Skills stay Provider-scoped</text>
+<text x="1160" y="1048" class="footer" text-anchor="start">Identity · permissions · Artifacts → Host</text>
 </svg>

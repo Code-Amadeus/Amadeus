@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Callable, Coroutine, Iterable
 
 import numpy as np
+from core.pyaudio_lifecycle import initialize_pyaudio, terminate_pyaudio
 
 from config.log_privacy import protected_text
 
@@ -34,8 +35,19 @@ from tts.aec_debug_capture import get_aec_debug_capture
 from tts.aec_realtime import get_realtime_aec_processor
 from tts.latency_clock import log_latency_marker
 from tts.mouth_signal import MouthSignalSink
+from tts.speech_onset import first_voiced_sample
 
 logger = logging.getLogger(__name__)
+
+
+def _observe_audio_write_completed(sentence_id: str) -> None:
+    try:
+        from core.turn_coordinator import get_turn_coordinator
+
+        get_turn_coordinator().on_sentence_audio_written(sentence_id=sentence_id)
+    except Exception:
+        # Observability must not fail or perform logging on the writer thread.
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -69,22 +81,20 @@ class SubtitleHooks:
 class StreamPlayer:
     def __init__(self, mouth_sink: MouthSignalSink):
         self.mouth_sink = mouth_sink
-        self.chunk_size = 512
         self.volume_multiplier = 3.75
-        self.send_interval = 0.05
+        # PCM-time envelope windows, not a wall-clock send throttle. A 50ms RMS
+        # window can straddle and erase a whole short pause between syllables.
+        self.send_interval = 0.01
         self.is_playing = False
         self.pyaudio_instance = None
         self.stream = None
-        self.last_send_time = 0
         self._stream_lock = threading.RLock()
         self._audio_write_queue: queue.Queue = queue.Queue()
-        self._audio_writer_stop = threading.Event()
         self._audio_writer_thread: threading.Thread | None = None
 
     def _ensure_audio_writer(self) -> None:
         if self._audio_writer_thread is not None and self._audio_writer_thread.is_alive():
             return
-        self._audio_writer_stop.clear()
         self._audio_writer_thread = threading.Thread(
             target=self._audio_writer_loop,
             name="tts-audio-writer",
@@ -98,47 +108,21 @@ class StreamPlayer:
             if job is None:
                 break
 
-            mouth_segments = None
-            if len(job) == 7:
-                data, loop, future, before_write, after_write, is_current, mouth_segments = job
-            elif len(job) == 6:
-                data, loop, future, before_write, after_write, is_current = job
-            else:
-                data, loop, future, before_write, after_write = job
-                is_current = None
+            write, loop, future = job
             error = None
             try:
-                if is_current is None or is_current():
-                    if before_write is not None:
-                        before_write()
-                if mouth_segments is None:
-                    mouth_segments = ((data, None),)
-                for segment_data, mouth_value in mouth_segments:
-                    if is_current is not None and not is_current():
-                        break
-                    if mouth_value is not None:
-                        self.mouth_sink.publish_mouth_value(float(mouth_value))
-                        self.last_send_time = time.time()
-                    with self._stream_lock:
-                        if is_current is not None and not is_current():
-                            break
-                        if self.stream is None or not self.is_playing:
-                            raise RuntimeError("audio stream is not initialized")
-                        self.stream.write(segment_data)
-                if is_current is None or is_current():
-                    if after_write is not None:
-                        after_write()
+                write()
             except Exception as exc:
                 error = exc
 
             if future is not None and loop is not None and not loop.is_closed():
                 if error is None:
                     loop.call_soon_threadsafe(
-                        lambda fut=future: None if fut.cancelled() else fut.set_result(None)
+                        lambda fut=future: None if fut.done() else fut.set_result(None)
                     )
                 else:
                     loop.call_soon_threadsafe(
-                        lambda fut=future, err=error: None if fut.cancelled() else fut.set_exception(err)
+                        lambda fut=future, err=error: None if fut.done() else fut.set_exception(err)
                     )
 
     async def write_audio_async(
@@ -151,43 +135,88 @@ class StreamPlayer:
         mouth_envelope: bool = False,
         sample_rate: int | None = None,
         first_mouth_minimum: float | None = None,
+        after_first_write: Callable[[], None] | None = None,
+        before_window: Callable[[np.ndarray], None] | None = None,
     ) -> None:
         if loop is None:
             loop = asyncio.get_running_loop()
-        if _is_tensor_like(audio_chunk):
-            audio_chunk = audio_chunk.cpu().detach().numpy()
-        if audio_chunk.dtype != np.float32:
-            audio_chunk = audio_chunk.astype(np.float32)
-        mouth_segments = None
-        if mouth_envelope:
-            rate = int(sample_rate or getattr(self, "_current_rate", None) or 24000)
-            window_samples = max(self.chunk_size, int(round(rate * self.send_interval)))
-            mouth_segments = []
-            for offset in range(0, len(audio_chunk), window_samples):
-                segment = audio_chunk[offset : offset + window_samples]
-                if len(segment) == 0:
-                    continue
-                minimum = first_mouth_minimum if offset == 0 else None
-                mouth_segments.append(
-                    (segment.tobytes(), self._mouth_value_for_audio(segment, minimum=minimum))
-                )
+        def write():
+            if is_current is not None and not is_current():
+                return
+            if before_write is not None:
+                before_write()
+            self._write_audio_sync(
+                audio_chunk,
+                sample_rate=sample_rate,
+                mouth_envelope=mouth_envelope,
+                first_mouth_minimum=first_mouth_minimum,
+                is_current=is_current,
+                before_window=before_window,
+                after_first_write=after_first_write,
+            )
+            if (is_current is None or is_current()) and after_write is not None:
+                after_write()
+
         self._ensure_audio_writer()
         future = loop.create_future()
-        self._audio_write_queue.put(
-            (
-                audio_chunk.tobytes(),
-                loop,
-                future,
-                before_write,
-                after_write,
-                is_current,
-                mouth_segments,
-            )
-        )
+        self._audio_write_queue.put((write, loop, future))
         await future
 
+    def _write_audio_sync(
+        self,
+        audio_chunk,
+        *,
+        sample_rate: int | None = None,
+        mouth_envelope: bool = True,
+        first_mouth_minimum: float | None = None,
+        is_current: Callable[[], bool] | None = None,
+        before_window: Callable[[np.ndarray], None] | None = None,
+        after_first_write: Callable[[], None] | None = None,
+    ) -> None:
+        """Publish each PCM window's mouth value immediately before its write.
+
+        Used by both the streaming writer and complete/cached audio playback.
+        Keep the job on its writer thread: yielding to asyncio between windows
+        would reintroduce scheduling gaps/underruns. This orders submissions; it
+        does not claim to measure when the speaker or display presents them.
+        """
+        if _is_tensor_like(audio_chunk):
+            audio_chunk = audio_chunk.cpu().detach().numpy()
+        audio_chunk = np.asarray(audio_chunk, dtype=np.float32)
+        rate = int(sample_rate or getattr(self, "_current_rate", None) or 24000)
+        window_samples = (
+            max(1, int(round(rate * self.send_interval)))
+            if mouth_envelope else max(1, len(audio_chunk))
+        )
+        for offset in range(0, len(audio_chunk), window_samples):
+            if is_current is not None and not is_current():
+                break
+            chunk = audio_chunk[offset : offset + window_samples]
+            with self._stream_lock:
+                if not self.is_playing or (is_current is not None and not is_current()):
+                    break
+                if self.stream is None:
+                    raise RuntimeError("audio stream is not initialized")
+                if before_window is not None:
+                    before_window(chunk)
+                if not self.is_playing or (is_current is not None and not is_current()):
+                    break
+                if mouth_envelope:
+                    minimum = first_mouth_minimum if offset == 0 else None
+                    self._emit_mouth_value_for_audio(chunk, minimum=minimum)
+                if not self.is_playing or (is_current is not None and not is_current()):
+                    break
+                try:
+                    self.stream.write(chunk.tobytes())
+                except Exception:
+                    if mouth_envelope and (is_current is None or is_current()):
+                        self.mouth_sink.publish_mouth_value(0.0)
+                    raise
+            if after_first_write is not None:
+                after_first_write()
+                after_first_write = None
+
     def _stop_audio_writer(self) -> None:
-        self._audio_writer_stop.set()
         if self._audio_writer_thread is not None and self._audio_writer_thread.is_alive():
             self._audio_write_queue.put(None)
             self._audio_writer_thread.join(timeout=1.0)
@@ -213,18 +242,16 @@ class StreamPlayer:
     def _emit_mouth_value_for_audio(self, audio_chunk, minimum: float | None = None) -> float:
         mouth_value = self._mouth_value_for_audio(audio_chunk, minimum=minimum)
         self.mouth_sink.publish_mouth_value(mouth_value)
-        self.last_send_time = time.time()
         return mouth_value
 
     def initialize(self, sample_rate: int) -> None:
         import pyaudio
 
         if self.pyaudio_instance is None:
-            self.pyaudio_instance = pyaudio.PyAudio()
+            self.pyaudio_instance = initialize_pyaudio(pyaudio.PyAudio)
 
         current_rate = getattr(self, "_current_rate", None)
         if self.stream is not None and self.is_playing and current_rate == sample_rate:
-            self.last_send_time = time.time()
             return
 
         if self.stream is not None:
@@ -239,7 +266,6 @@ class StreamPlayer:
             )
         self._current_rate = sample_rate
         self.is_playing = True
-        self.last_send_time = time.time()
 
     def prewarm(self, sample_rate: int, silence_ms: int = 80) -> bool:
         """Open the output stream early and keep the device path warm."""
@@ -256,7 +282,6 @@ class StreamPlayer:
                 with self._stream_lock:
                     self.stream.write(silence.tobytes())
             self.mouth_sink.publish_mouth_value(0.0)
-            self.last_send_time = time.time()
             return True
         except Exception as exc:
             logger.warning(f"Audio prewarm failed: {exc}")
@@ -265,35 +290,13 @@ class StreamPlayer:
     def play_chunk(self, audio_chunk) -> None:
         if not self.is_playing or self.stream is None:
             return
-
-        if _is_tensor_like(audio_chunk):
-            audio_chunk = audio_chunk.cpu().detach().numpy()
-        if audio_chunk.dtype != np.float32:
-            audio_chunk = audio_chunk.astype(np.float32)
-
-        first_chunk = True
-        for i in range(0, len(audio_chunk), self.chunk_size):
-            if not self.is_playing:
-                break
-            chunk = audio_chunk[i : i + self.chunk_size]
-            if len(chunk) == 0:
-                break
-            if first_chunk:
-                first_chunk = False
-                self._emit_mouth_value_for_audio(chunk, minimum=0.12)
-            get_realtime_aec_processor().push_reference(
-                chunk,
-                getattr(self, "_current_rate", None) or getattr(self, "sample_rate", None) or 24000,
-            )
-            with self._stream_lock:
-                self.stream.write(chunk.tobytes())
-
-            current_time = time.time()
-            if current_time - self.last_send_time >= self.send_interval:
-                rms = np.sqrt(np.mean(chunk ** 2))
-                mouth_value = min(1.0, rms * self.volume_multiplier)
-                self.mouth_sink.publish_mouth_value(mouth_value)
-                self.last_send_time = current_time
+        rate = getattr(self, "_current_rate", None) or getattr(self, "sample_rate", None) or 24000
+        self._write_audio_sync(
+            audio_chunk,
+            sample_rate=rate,
+            first_mouth_minimum=0.12,
+            before_window=lambda chunk: get_realtime_aec_processor().push_reference(chunk, rate),
+        )
 
     def stop(self) -> None:
         self.is_playing = False
@@ -321,15 +324,21 @@ class StreamPlayer:
     def _drain_audio_writer_queue(self) -> None:
         while True:
             try:
-                self._audio_write_queue.get_nowait()
+                job = self._audio_write_queue.get_nowait()
             except queue.Empty:
                 break
+            if job is not None:
+                _, loop, future = job
+                if not loop.is_closed():
+                    loop.call_soon_threadsafe(
+                        lambda fut=future: None if fut.done() else fut.set_result(None)
+                    )
 
     def cleanup(self) -> None:
         self._stop_audio_writer()
         self.stop()
         if self.pyaudio_instance is not None:
-            self.pyaudio_instance.terminate()
+            terminate_pyaudio(self.pyaudio_instance)
             self.pyaudio_instance = None
 
 
@@ -882,9 +891,11 @@ class PlaybackManager:
             # ── 初始化 pyaudio stream ─────────────────────────────────────
             player = self.player
             player.mouth_sink.publish_mouth_value(0.0)
-            player.last_send_time = time.time()
             loop = asyncio.get_running_loop()
-            first_sound_logged = [False]
+            first_chunk_started = [False]
+            first_voice_logged = [False]
+            samples_before_voice = [0]
+            first_audio_written = [False]
             current_sample_rate = None
             aec_capture = get_aec_debug_capture()
             aec_capture.start(sentence_id)
@@ -910,7 +921,7 @@ class PlaybackManager:
                         sample_rate, audio_chunk = 24000, item
 
                     if current_sample_rate != sample_rate:
-                        self.player.initialize(sample_rate)
+                        await asyncio.to_thread(self.player.initialize, sample_rate)
                         current_sample_rate = sample_rate
 
                     if audio_chunk.dtype != np.float32:
@@ -941,7 +952,7 @@ class PlaybackManager:
                     # ── 句间 fade-in / fade-out，消除硬切换爆破音 ──────────
                     _FADE_MS = 10  # ms，10ms ≈ 240 samples @24kHz
                     _fade_n = int(_FADE_MS * 0.001 * (player.sample_rate or 24000))
-                    _is_first_chunk = not first_sound_logged[0]
+                    _is_first_chunk = not first_chunk_started[0]
                     if _is_first_chunk or eof_in_drain:
                         merged = merged.copy()
                         if _is_first_chunk:
@@ -952,31 +963,46 @@ class PlaybackManager:
                             merged[-_fn:] *= np.linspace(1.0, 0.0, _fn, dtype=np.float32)
 
                     _chunk = merged
-                    _first_mouth_minimum = 0.12 if not first_sound_logged[0] else None
+                    _first_mouth_minimum = 0.12 if not first_chunk_started[0] else None
 
-                    def _before_write(chunk=_chunk):
-                        if not first_sound_logged[0]:
-                            first_sound_logged[0] = True
-                            _stream_mode = (
-                                "s1_stream" if sentence_seq == 1 else f"s{sentence_seq}_stream"
-                            )
-                            _lat_ms = log_latency_marker(
-                                self.logger,
-                                "first_play",
-                                clear=(sentence_seq == 1),
-                                id=sentence_id,
-                                samples=len(chunk),
-                                mode=_stream_mode,
-                            )
-                            _lat_part = (
-                                f" | api_to_first_sound_ms={_lat_ms:.1f}"
-                                if _lat_ms is not None
-                                else ""
-                            )
-                            self.logger.info(
-                                f"[PLAYBACK-STREAM] first sound started seq={sentence_seq}: {sentence_id} "
-                                f"(first_frame={len(chunk)} samples){_lat_part}"
-                            )
+                    def _before_write():
+                        first_chunk_started[0] = True
+
+                    def _before_window(window):
+                        # First sound is the first voiced sample written, not the
+                        # first write: synthesized audio may open with silence.
+                        if first_voice_logged[0]:
+                            return
+                        if first_voiced_sample(window, _sample_rate) is None:
+                            samples_before_voice[0] += len(window)
+                            return
+                        first_voice_logged[0] = True
+                        _stream_mode = (
+                            "s1_stream" if sentence_seq == 1 else f"s{sentence_seq}_stream"
+                        )
+                        _lead_ms = samples_before_voice[0] * 1000.0 / _sample_rate
+                        _lat_ms = log_latency_marker(
+                            self.logger,
+                            "first_play",
+                            clear=(sentence_seq == 1),
+                            id=sentence_id,
+                            lead_ms=f"{_lead_ms:.0f}",
+                            mode=_stream_mode,
+                        )
+                        _lat_part = (
+                            f" | api_to_first_sound_ms={_lat_ms:.1f}"
+                            if _lat_ms is not None
+                            else ""
+                        )
+                        self.logger.info(
+                            f"[PLAYBACK-STREAM] first sound started seq={sentence_seq}: {sentence_id} "
+                            f"(after {_lead_ms:.0f} ms of written silence){_lat_part}"
+                        )
+
+                    def _after_first_write():
+                        if not first_audio_written[0]:
+                            first_audio_written[0] = True
+                            _observe_audio_write_completed(sentence_id)
 
                     if not player.is_playing:
                         break
@@ -999,6 +1025,8 @@ class PlaybackManager:
                         mouth_envelope=True,
                         sample_rate=_sample_rate,
                         first_mouth_minimum=_first_mouth_minimum,
+                        after_first_write=_after_first_write if not first_audio_written[0] else None,
+                        before_window=_before_window,
                     )
                     self.logger.debug(
                         f"[Streaming] chunk playback completed seq={sentence_seq}: {len(merged)} samples "
@@ -1371,7 +1399,8 @@ class StreamPlayerWithBuffer(StreamPlayer):
             def sync_play_and_lipsync(player_instance, _loop):
                 if is_current is not None and not is_current():
                     return
-                first_write = True
+                first_voice_pending = _parse_sentence_seq(sentence_id) == 1
+                samples_before_voice = 0
                 player_instance.logger.info(
                     f"[Monitor] physical playback and lip sync started: {sentence_id}"
                 )
@@ -1379,48 +1408,39 @@ class StreamPlayerWithBuffer(StreamPlayer):
                     f"[PLAYBACK-PHYSICAL] physical playback and lip sync started: {sentence_id}"
                 )
                 player_instance.mouth_sink.publish_mouth_value(0.0)
-                player_instance.last_send_time = time.time()
 
-                for i in range(0, len(full_audio_data), player_instance.chunk_size):
-                    if is_current is not None and not is_current():
-                        break
-                    chunk = full_audio_data[i : i + player_instance.chunk_size]
-                    if len(chunk) == 0:
-                        break
-                    if not player_instance.is_playing or player_instance.stream is None:
-                        break
-                    first_mouth_prime = first_write
-                    if first_write and _parse_sentence_seq(sentence_id) == 1:
-                        first_write = False
-                        _lat_ms = log_latency_marker(
-                            player_instance.logger,
-                            "first_play",
-                            clear=True,
-                            id=sentence_id,
-                            samples=len(chunk),
-                            mode="full_audio",
-                        )
-                        if _lat_ms is not None:
-                            player_instance.logger.info(
-                                f"[PLAYBACK] first_play_e2e_ms={_lat_ms:.1f} id={sentence_id}"
+                def before_window(chunk):
+                    # First sound is the first voiced sample written, not the
+                    # first write: synthesized audio may open with silence.
+                    nonlocal first_voice_pending, samples_before_voice
+                    if first_voice_pending:
+                        if first_voiced_sample(chunk, sample_rate) is None:
+                            samples_before_voice += len(chunk)
+                        else:
+                            first_voice_pending = False
+                            _lat_ms = log_latency_marker(
+                                player_instance.logger,
+                                "first_play",
+                                clear=True,
+                                id=sentence_id,
+                                lead_ms=f"{samples_before_voice * 1000.0 / sample_rate:.0f}",
+                                mode="full_audio",
                             )
-                    if first_mouth_prime:
-                        first_write = False
-                        player_instance._emit_mouth_value_for_audio(chunk, minimum=0.12)
-                    if is_current is not None and not is_current():
-                        break
+                            if _lat_ms is not None:
+                                player_instance.logger.info(
+                                    f"[PLAYBACK] first_play_e2e_ms={_lat_ms:.1f} id={sentence_id}"
+                                )
                     get_realtime_aec_processor().push_reference(chunk, sample_rate)
                     aec_capture.push_reference(chunk, sample_rate, sentence_id)
-                    with player_instance._stream_lock:
-                        if is_current is not None and not is_current():
-                            break
-                        player_instance.stream.write(chunk.tobytes())
-                    current_time = time.time()
-                    if current_time - player_instance.last_send_time >= player_instance.send_interval:
-                        rms = np.sqrt(np.mean(chunk ** 2))
-                        mouth_value = min(1.0, rms * player_instance.volume_multiplier)
-                        player_instance.mouth_sink.publish_mouth_value(mouth_value)
-                        player_instance.last_send_time = current_time
+
+                player_instance._write_audio_sync(
+                    full_audio_data,
+                    sample_rate=sample_rate,
+                    first_mouth_minimum=0.12,
+                    is_current=is_current,
+                    before_window=before_window,
+                    after_first_write=lambda: _observe_audio_write_completed(sentence_id),
+                )
 
                 player_instance.mouth_sink.publish_mouth_value(0.0)
                 player_instance.logger.info(
@@ -1480,34 +1500,19 @@ class StreamPlayerWithBuffer(StreamPlayer):
                     f"[PLAYBACK-PHYSICAL] physical playback and lip sync started: {sentence_id}"
                 )
                 player_instance.mouth_sink.publish_mouth_value(0.0)
-                player_instance.last_send_time = time.time()
 
-                first_mouth_prime = True
-                for i in range(0, len(audio_chunk), player_instance.chunk_size):
-                    if is_current is not None and not is_current():
-                        break
-                    chunk = audio_chunk[i : i + player_instance.chunk_size]
-                    if len(chunk) == 0:
-                        break
-                    if not player_instance.is_playing or player_instance.stream is None:
-                        break
-                    if first_mouth_prime:
-                        first_mouth_prime = False
-                        player_instance._emit_mouth_value_for_audio(chunk, minimum=0.12)
-                    if is_current is not None and not is_current():
-                        break
+                def before_window(chunk):
                     get_realtime_aec_processor().push_reference(chunk, sample_rate)
                     aec_capture.push_reference(chunk, sample_rate, sentence_id)
-                    with player_instance._stream_lock:
-                        if is_current is not None and not is_current():
-                            break
-                        player_instance.stream.write(chunk.tobytes())
-                    current_time = time.time()
-                    if current_time - player_instance.last_send_time >= player_instance.send_interval:
-                        rms = np.sqrt(np.mean(chunk ** 2))
-                        mouth_value = min(1.0, rms * player_instance.volume_multiplier)
-                        player_instance.mouth_sink.publish_mouth_value(mouth_value)
-                        player_instance.last_send_time = current_time
+
+                player_instance._write_audio_sync(
+                    audio_chunk,
+                    sample_rate=sample_rate,
+                    first_mouth_minimum=0.12,
+                    is_current=is_current,
+                    before_window=before_window,
+                    after_first_write=lambda: _observe_audio_write_completed(sentence_id),
+                )
 
                 player_instance.mouth_sink.publish_mouth_value(0.0)
                 player_instance.logger.info(
@@ -1720,37 +1725,6 @@ class StreamPlayerWithBuffer(StreamPlayer):
                     delattr(self, "_pending_sentence_id")
 
         super().play_chunk(combined)
-
-    def play_chunk(self, audio_chunk) -> None:
-        if not self.is_playing or self.stream is None:
-            return
-        if _is_tensor_like(audio_chunk):
-            audio_chunk = audio_chunk.cpu().detach().numpy()
-        if audio_chunk.dtype != np.float32:
-            audio_chunk = audio_chunk.astype(np.float32)
-
-        first_chunk = True
-        for i in range(0, len(audio_chunk), self.chunk_size):
-            if not self.is_playing:
-                break
-            chunk = audio_chunk[i : i + self.chunk_size]
-            if len(chunk) == 0:
-                break
-            if first_chunk:
-                first_chunk = False
-                self._emit_mouth_value_for_audio(chunk, minimum=0.12)
-            get_realtime_aec_processor().push_reference(
-                chunk,
-                getattr(self, "_current_rate", None) or getattr(self, "sample_rate", None) or 24000,
-            )
-            with self._stream_lock:
-                self.stream.write(chunk.tobytes())
-            current_time = time.time()
-            if current_time - self.last_send_time >= self.send_interval:
-                rms = np.sqrt(np.mean(chunk ** 2))
-                mouth_value = min(1.0, rms * self.volume_multiplier)
-                self.mouth_sink.publish_mouth_value(mouth_value)
-                self.last_send_time = current_time
 
     def _update_subtitle_display(self, current_time: float) -> None:
         hooks = self._hooks

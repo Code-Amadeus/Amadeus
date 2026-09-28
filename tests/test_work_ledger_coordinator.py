@@ -348,6 +348,7 @@ def test_explicit_amendment_does_not_bypass_an_execution_permission() -> None:
             assert len(store.list_attempts(item_id)) == 1
 
 
+@patch("server.work_ledger_coordinator.app_settings.AUIP_ARTIFACT_STYLE_ENABLED", True)
 def test_code_provider_receives_attempt_local_auip_authoring_inputs() -> None:
     with tempfile.TemporaryDirectory(prefix="work_coordinator_authoring_inputs_") as temp:
         root = Path(temp)
@@ -384,7 +385,9 @@ def test_code_provider_receives_attempt_local_auip_authoring_inputs() -> None:
             assert (workspace / "sdk" / "auip-web" / "auip-v0.js").is_file()
             assert (workspace / "sdk" / "auip-core" / "managed-v0.js").is_file()
             metrics = prepared.metadata["auip_authoring_inputs"]
-            assert metrics["required_read_file_count"] == 2
+            assert metrics["required_read_file_count"] == 3
+            assert (skill.parent / "references" / "artifact-style.md").is_file()
+            assert (skill.parent / "assets" / "amadeus-v1.css").is_file()
             assert metrics["required_read_bytes"] < metrics["staged_bytes"]
             attempt = store.get_attempt(prepared.metadata["work"]["attempt_id"])
             assert attempt is not None
@@ -484,7 +487,8 @@ def test_cancelled_auip_preparation_keeps_cancellation_as_terminal_truth() -> No
             root = Path(temp)
             workspace = root / "project"
             workspace.mkdir()
-            with WorkLedgerStore(root / "ledger.sqlite3") as store:
+            with (WorkLedgerStore(root / "ledger.sqlite3") as store,
+                  patch("config.settings.WORK_PROJECT_ALLOWLIST", str(workspace))):
                 coordinator = WorkLedgerCoordinator(store)
                 original = coordinator.prepare_request(
                     ProviderRunRequest(
@@ -879,7 +883,8 @@ def test_progressive_auip_prepare_uses_current_attempt_despite_role_rename() -> 
             desktop = root / "Desktop"
             workspace.mkdir()
             desktop.mkdir()
-            with WorkLedgerStore(root / "ledger.sqlite3") as store:
+            with (WorkLedgerStore(root / "ledger.sqlite3") as store,
+                  patch("config.settings.WORK_PROJECT_ALLOWLIST", str(workspace))):
                 coordinator = WorkLedgerCoordinator(
                     store,
                     export_service=WorkExportService(store, desktop_path=desktop),
@@ -1797,6 +1802,8 @@ def test_runtime_recovery_is_idempotent_and_orphan_needs_attention() -> None:
             assert interrupted_projection["canResume"] is False
             project = store.get_project(store.get_work_item(orphan_attempt.work_item_id).project_id)  # type: ignore[union-attr]
             assert project is not None and project.state == "active"
+            assert orphan_attempt.metadata["runtime_resumable"] is False
+            assert orphan_projection["canResume"] is False
 
 
 def test_restart_reconciles_bound_running_attempt_to_resumable_orphan() -> None:
@@ -1822,6 +1829,7 @@ def test_restart_reconciles_bound_running_attempt_to_resumable_orphan() -> None:
                         "run_id": "codex_restart_orphan",
                         "cwd": str(workspace),
                         "status": "orphaned",
+                        "metadata": {"runtime_resumable": True},
                     },
                 ]
             )
@@ -1833,6 +1841,182 @@ def test_restart_reconciles_bound_running_attempt_to_resumable_orphan() -> None:
             projection = coordinator.detail(item_id)
             assert projection["execution"] == "orphaned"
             assert projection["canResume"] is True
+
+
+def test_restart_keeps_unknown_nonresumable_writer_fenced() -> None:
+    with tempfile.TemporaryDirectory(prefix="work_coordinator_restart_unknown_") as temp:
+        root = Path(temp)
+        workspace = root / "project"
+        workspace.mkdir()
+        with WorkLedgerStore(root / "ledger.sqlite3") as store:
+            coordinator = WorkLedgerCoordinator(store)
+            _, item_id, attempt_id = _prepare(
+                coordinator,
+                cwd=workspace,
+                task="Do not replay this uncertain native submission",
+            )
+            store.bind_provider_run(attempt_id, "codex_restart_unknown")
+            store.update_attempt(attempt_id, execution_status="running")
+            assert store.get_writer_lease(attempt_id).status == "active"  # type: ignore[union-attr]
+
+            coordinator.adopt_runtime_records(
+                [
+                    {
+                        "provider": "codex",
+                        "run_id": "codex_restart_unknown",
+                        "cwd": str(workspace),
+                        "status": "orphaned",
+                        "metadata": {"runtime_resumable": False},
+                    },
+                ]
+            )
+
+            attempt = store.get_attempt(attempt_id)
+            assert attempt is not None and attempt.execution_status == "orphaned"
+            assert attempt.metadata["runtime_resumable"] is False
+            assert store.get_writer_lease(attempt_id).status == "active"  # type: ignore[union-attr]
+            projection = coordinator.detail(item_id)
+            assert projection["execution"] == "orphaned"
+            assert projection["canResume"] is False
+
+
+def test_process_restart_without_runtime_snapshot_keeps_unknown_writer_fenced() -> None:
+    with tempfile.TemporaryDirectory(prefix="work_coordinator_restart_empty_") as temp:
+        root = Path(temp)
+        workspace = root / "project"
+        workspace.mkdir()
+        database = root / "ledger.sqlite3"
+
+        with WorkLedgerStore(database) as store:
+            coordinator = WorkLedgerCoordinator(store)
+            _, item_id, attempt_id = _prepare(
+                coordinator,
+                cwd=workspace,
+                task="Preserve the writer fence across a real Host restart",
+            )
+            store.bind_provider_run(attempt_id, "codex_restart_missing_runtime")
+            store.update_attempt(attempt_id, execution_status="running")
+            assert store.get_writer_lease(attempt_id).status == "active"  # type: ignore[union-attr]
+
+        with WorkLedgerStore(database) as reopened_store:
+            reopened = WorkLedgerCoordinator(reopened_store)
+            reopened.adopt_runtime_records([])
+
+            attempt = reopened_store.get_attempt(attempt_id)
+            assert attempt is not None and attempt.execution_status == "orphaned"
+            assert attempt.metadata["runtime_resumable"] is False
+            assert reopened_store.get_writer_lease(attempt_id).status == "active"  # type: ignore[union-attr]
+            detail = reopened.detail(item_id)
+            assert detail["execution"] == "orphaned"
+            assert detail["canResume"] is False
+
+
+def test_orphaned_attempt_blocks_disposition_promotion_and_new_attempt() -> None:
+    async def run() -> None:
+        with tempfile.TemporaryDirectory(prefix="work_coordinator_orphan_guard_") as temp:
+            root = Path(temp)
+            workspace = root / "project"
+            workspace.mkdir()
+            with WorkLedgerStore(root / "ledger.sqlite3") as store:
+                coordinator = WorkLedgerCoordinator(store)
+                _, item_id, attempt_id = _prepare(
+                    coordinator,
+                    cwd=workspace,
+                    task="Apply an uncertain native mutation",
+                )
+                store.bind_provider_run(attempt_id, "run-unknown-guard")
+                store.update_attempt(
+                    attempt_id,
+                    execution_status="orphaned",
+                    metadata={"runtime_resumable": False},
+                )
+                operation_count = len(store.list_operations(item_id))
+                attempt_count = len(store.list_attempts(item_id))
+
+                for action in ("accept", "archive"):
+                    try:
+                        await coordinator.dispose_work_item(
+                            item_id,
+                            action=action,
+                            rationale="Must remain unknown.",
+                        )
+                    except WorkLedgerConflict as exc:
+                        assert "unresolved attempt" in str(exc)
+                    else:
+                        raise AssertionError(f"{action} must not hide an unknown outcome")
+
+                try:
+                    coordinator.promote_work_item_to_project(item_id)
+                except WorkLedgerConflict as exc:
+                    assert "unresolved attempt" in str(exc)
+                else:
+                    raise AssertionError("promotion must not mutate an unresolved workspace")
+
+                try:
+                    _prepare(
+                        coordinator,
+                        cwd=workspace,
+                        task="Apply a replacement mutation",
+                        work_item_id=item_id,
+                        continuation="amend",
+                    )
+                except WorkLedgerConflict as exc:
+                    assert "unresolved attempt" in str(exc)
+                else:
+                    raise AssertionError("unknown work must not start a second attempt")
+
+                assert len(store.list_operations(item_id)) == operation_count
+                assert len(store.list_attempts(item_id)) == attempt_count
+                assert store.latest_completion(item_id) is None
+                assert store.get_work_item(item_id).state == "open"  # type: ignore[union-attr]
+                assert store.get_writer_lease(attempt_id).status == "active"  # type: ignore[union-attr]
+
+    asyncio.run(run())
+
+
+def test_orphaned_permission_resolution_does_not_create_terminal_completion() -> None:
+    async def run() -> None:
+        with tempfile.TemporaryDirectory(prefix="work_coordinator_orphan_permission_") as temp:
+            root = Path(temp)
+            workspace = root / "project"
+            workspace.mkdir()
+            with WorkLedgerStore(root / "ledger.sqlite3") as store:
+                coordinator = WorkLedgerCoordinator(store)
+                _, item_id, attempt_id = _prepare(
+                    coordinator,
+                    cwd=workspace,
+                    task="Await a local approval with unknown native outcome",
+                )
+                store.bind_provider_run(attempt_id, "run-unknown-permission")
+                store.update_attempt(
+                    attempt_id,
+                    execution_status="orphaned",
+                    metadata={"runtime_resumable": False},
+                )
+                permission = store.create_permission_request(
+                    item_id,
+                    attempt_id=attempt_id,
+                    capability="host.setting",
+                    action="apply_once",
+                    reason="Host-owned bounded approval.",
+                    options=["allow_once", "deny"],
+                    metadata={"host_seeded": True},
+                )
+
+                result = await coordinator.resolve_permission(
+                    permission.request_id,
+                    allow=False,
+                    work_item_id=item_id,
+                    attempt_id=attempt_id,
+                )
+
+                assert result["permission"]["status"] == "denied"
+                assert store.latest_completion(item_id) is None
+                attempt = store.get_attempt(attempt_id)
+                assert attempt is not None and attempt.execution_status == "orphaned"
+                assert store.get_writer_lease(attempt_id).status == "active"  # type: ignore[union-attr]
+
+    asyncio.run(run())
 
 
 def test_restart_terminal_journal_closes_attempt_and_releases_writer() -> None:
@@ -1853,7 +2037,7 @@ def test_restart_terminal_journal_closes_attempt_and_releases_writer() -> None:
             coordinator.adopt_runtime_records(
                 [
                     {
-                        "provider": "codex",
+                        "provider": "fake",
                         "run_id": "codex_restart_done",
                         "cwd": str(workspace),
                         "status": "done",
@@ -1912,6 +2096,10 @@ def _main() -> None:
     test_write_tool_path_hint_registers_external_output_as_conflict()
     test_runtime_recovery_is_idempotent_and_orphan_needs_attention()
     test_restart_reconciles_bound_running_attempt_to_resumable_orphan()
+    test_restart_keeps_unknown_nonresumable_writer_fenced()
+    test_process_restart_without_runtime_snapshot_keeps_unknown_writer_fenced()
+    test_orphaned_attempt_blocks_disposition_promotion_and_new_attempt()
+    test_orphaned_permission_resolution_does_not_create_terminal_completion()
     test_restart_terminal_journal_closes_attempt_and_releases_writer()
     test_structured_task_completion_precedes_legacy_prose_fallback()
     print("ok: work ledger coordinator keeps task identity, evidence, writer, and focus boundaries")

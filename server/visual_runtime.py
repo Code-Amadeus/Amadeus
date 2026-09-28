@@ -84,7 +84,7 @@ def get_config() -> dict[str, Any]:
 
 
 def set_config(values: dict[str, Any]) -> list[str]:
-    """Update visual runtime config from system.set_config values."""
+    """Update non-VN visual config from system.set_config values."""
 
     updated: list[str] = []
     aliases = {
@@ -111,11 +111,8 @@ def set_config(values: dict[str, Any]) -> list[str]:
         else:
             setattr(_config, key, str(value or "").strip())
         updated.append(str(raw_key))
-    if "vision_enabled" in updated:
-        if _config.enabled and _config.mode == "off":
-            _config.mode = "on_demand"
-        elif not _config.enabled:
-            _config.mode = "off"
+    if "vision_enabled" in updated and _config.enabled and _config.mode == "off":
+        _config.mode = "on_demand"
     if updated:
         logger.info("[VisionRuntime] updated config: %s", {k: getattr(_config, aliases[k]) for k in updated if k in aliases})
     return updated
@@ -310,9 +307,45 @@ def capture_visual_context(
 
     image, region, actual_scope = _capture_image(requested_scope)
 
-    resized = _resize_for_provider(image, max_long_side=max(320, int(_config.max_long_side or 960)))
+    return _encode_visual_context(image, region, requested_scope=requested_scope, actual_scope=actual_scope,
+                                  provider=provider, mode=mode, reason=reason,
+                                  max_long_side=_config.max_long_side, jpeg_quality=_config.jpeg_quality)
+
+
+def capture_game_window(pid: int, executable: str) -> dict[str, Any]:
+    """Capture only the verified game's window, without changing global vision settings."""
+    if os.name != "nt":
+        raise RuntimeError("Game-window capture currently requires Windows.")
+    import psutil
+    from server.window_capture import capture_window_frame
+
+    actual = psutil.Process(pid).exe()
+    if os.path.normcase(os.path.realpath(actual)) != os.path.normcase(os.path.realpath(executable)):
+        raise RuntimeError("The game process changed. Reconnect before capturing its window.")
+    windows = [window for window in list_capture_windows(limit=120) if window["pid"] == pid]
+    if len(windows) != 1:
+        raise RuntimeError("The game must have exactly one visible window before capturing.")
+    window = windows[0]
+    hwnd = _parse_hwnd(window["hwnd"])
+    if _window_pid(hwnd) != pid:
+        raise RuntimeError("The game window changed. Try capturing again.")
+    image = capture_window_frame(hwnd)
+    if _window_pid(hwnd) != pid:
+        raise RuntimeError("The game window changed during capture. Try capturing again.")
+    result = _encode_visual_context(image, window["rect"], requested_scope="game_window", actual_scope="game_window",
+                                    provider="auto", mode="on_demand", reason="vn_player",
+                                    max_long_side=960, jpeg_quality=68)
+    result["game"] = {"pid": pid, "title": window["title"], "executable": executable}
+    return result
+
+
+def _encode_visual_context(image, region: dict[str, Any], *, requested_scope: str, actual_scope: str,
+                           provider: str, mode: str, reason: str,
+                           max_long_side: int, jpeg_quality: int) -> dict[str, Any]:
+
+    resized = _resize_for_provider(image, max_long_side=max(320, int(max_long_side or 960)))
     buffer = io.BytesIO()
-    quality = max(35, min(92, int(_config.jpeg_quality or 68)))
+    quality = max(35, min(92, int(jpeg_quality or 68)))
     resized.save(buffer, format="JPEG", quality=quality, optimize=True)
     jpg = buffer.getvalue()
     b64 = base64.b64encode(jpg).decode("ascii")
@@ -350,7 +383,7 @@ def _resolve_capture_region(scope: str, monitor_all: dict[str, int]) -> dict[str
         if parsed:
             parsed["_actual_scope"] = "region"
             return parsed
-        logger.warning("[VisionRuntime] vision_region is invalid; falling back to full_screen")
+        raise RuntimeError("Vision region is missing or invalid; choose the region again before capturing")
 
     if scope in {"selected_window", "window"}:
         rect = _configured_window_rect()
@@ -359,7 +392,7 @@ def _resolve_capture_region(scope: str, monitor_all: dict[str, int]) -> dict[str
             if clamped:
                 clamped["_actual_scope"] = "selected_window"
                 return clamped
-        logger.warning("[VisionRuntime] selected window capture unavailable; falling back to full_screen")
+        raise RuntimeError("The selected vision window is missing or no longer available; choose a window again")
 
     if scope in {"current_window", "browser_view"}:
         rect = _foreground_window_rect()
@@ -368,13 +401,17 @@ def _resolve_capture_region(scope: str, monitor_all: dict[str, int]) -> dict[str
             if clamped:
                 clamped["_actual_scope"] = "current_window"
                 return clamped
-        logger.warning("[VisionRuntime] active window capture unavailable; falling back to full_screen")
+        raise RuntimeError("The active window could not be resolved; focus a window and try again")
 
     if scope == "wallpaper_surface":
         parsed = _parse_region(_config.region)
         if parsed:
             parsed["_actual_scope"] = "wallpaper_surface"
             return parsed
+        raise RuntimeError("The wallpaper capture surface is not available")
+
+    if scope not in {"full_screen", "screen"}:
+        raise RuntimeError(f"Unsupported vision capture scope: {scope}")
 
     region = {
         "left": int(monitor_all.get("left", 0)),
@@ -447,6 +484,17 @@ def _capture_image(requested_scope: str):
         image = ImageGrab.grab(bbox=bbox, all_screens=True).convert("RGB")
         parsed["_actual_scope"] = normalized_scope
         return image, parsed, normalized_scope
+
+    if normalized_scope not in {"full_screen", "screen"}:
+        if normalized_scope in {"selected_window", "window"}:
+            raise RuntimeError("The selected vision window is missing or no longer available; choose a window again")
+        if normalized_scope in {"current_window", "browser_view"}:
+            raise RuntimeError("The active window could not be resolved; focus a window and try again")
+        if normalized_scope == "region":
+            raise RuntimeError("Vision region is missing or invalid; choose the region again before capturing")
+        if normalized_scope == "wallpaper_surface":
+            raise RuntimeError("The wallpaper capture surface is not available")
+        raise RuntimeError(f"Unsupported vision capture scope: {normalized_scope}")
 
     image = ImageGrab.grab(all_screens=True).convert("RGB")
     region = {"left": 0, "top": 0, "width": image.width, "height": image.height, "_actual_scope": "full_screen"}

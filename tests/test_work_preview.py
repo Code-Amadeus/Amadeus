@@ -821,6 +821,194 @@ def test_auip_handoff_opens_the_shared_surface_and_app_close_freezes_it() -> Non
     asyncio.run(run())
 
 
+def test_attached_auip_surface_keeps_its_attempt_until_exact_close() -> None:
+    async def run() -> None:
+        with tempfile.TemporaryDirectory(prefix="work_preview_owned_attempt_") as temp:
+            workspace = Path(temp) / "project"
+            workspace.mkdir()
+            (workspace / "index.html").write_text("FIRST APP", encoding="utf-8")
+            (workspace / "auip.manifest.json").write_text("{}", encoding="utf-8")
+            authoring = {
+                "auip_authoring_skill_path": str(workspace / "SKILL.md"),
+                "auip_authoring_bundle_mode": "lean_host_managed",
+            }
+            with WorkLedgerStore(Path(temp) / "ledger.sqlite3") as store:
+                work_item_id, first_attempt_id = _ledger_item(
+                    store,
+                    workspace,
+                    attempt_metadata=authoring,
+                )
+                manager = WorkPreviewManager(
+                    store,
+                    publisher=lambda _method, _params: asyncio.sleep(0),
+                    poll_interval=0.03,
+                    debounce=0.03,
+                )
+                await manager.open(
+                    work_item_id,
+                    expected_attempt_id=first_attempt_id,
+                )
+                first_source = {
+                    "work_item_id": work_item_id,
+                    "attempt_id": first_attempt_id,
+                    "artifact_ref": "artifact:interactive-app@1",
+                    "host_surface_id": "surface-1",
+                }
+                await manager.begin_auip_handoff(first_source)
+                await manager.on_auip_updated(
+                    {
+                        "artifact_ref": first_source["artifact_ref"],
+                        "app_session_id": "app-1",
+                        "host_surface_id": first_source["host_surface_id"],
+                        "status": "active",
+                    }
+                )
+                attached = await manager.get(work_item_id)
+                assert attached["lifecycle"] == "attached"
+
+                store.update_attempt(first_attempt_id, execution_status="succeeded")
+                second_attempt = store.create_attempt(
+                    work_item_id,
+                    provider="codex",
+                    task="Revise the interactive app",
+                    metadata=authoring,
+                )
+                second_root = (
+                    workspace
+                    / ".amadeus"
+                    / "proposed_exports"
+                    / second_attempt.attempt_id
+                )
+                second_root.mkdir(parents=True)
+                (second_root / "index.html").write_text("SECOND APP", encoding="utf-8")
+                store.update_attempt(
+                    second_attempt.attempt_id,
+                    metadata={
+                        **authoring,
+                        "export_plan": {
+                            "kind": "desktop",
+                            "staging_root": str(second_root),
+                            "requested_filename": "",
+                        },
+                    },
+                )
+
+                # The watcher observes the newer Work Attempt, but the existing
+                # AppSession still owns the exact preview surface and content.
+                await asyncio.sleep(0.12)
+                watcher_held = await manager.get(work_item_id)
+                assert watcher_held["attemptId"] == first_attempt_id
+                assert watcher_held["appSessionId"] == "app-1"
+                assert watcher_held["artifactRef"] == first_source["artifact_ref"]
+                assert watcher_held["hostSurfaceId"] == first_source["host_surface_id"]
+
+                # Stale UI validation still checks the actual latest ledger Attempt.
+                try:
+                    await manager.open(
+                        work_item_id,
+                        expected_attempt_id=first_attempt_id,
+                    )
+                except WorkPreviewError as exc:
+                    assert exc.code == "work_attempt_not_current"
+                else:
+                    raise AssertionError("stale preview open was accepted")
+
+                foregrounded = await manager.open(
+                    work_item_id,
+                    expected_attempt_id=second_attempt.attempt_id,
+                )
+                assert foregrounded["attemptId"] == first_attempt_id
+                assert foregrounded["appSessionId"] == "app-1"
+
+                second_source = {
+                    "work_item_id": work_item_id,
+                    "attempt_id": second_attempt.attempt_id,
+                    "artifact_ref": "artifact:interactive-app@2",
+                    "host_surface_id": "surface-2",
+                }
+                ignored_handoff = await manager.begin_auip_handoff(second_source)
+                assert ignored_handoff["attemptId"] == first_attempt_id
+                assert ignored_handoff["appSessionId"] == "app-1"
+
+                for status, surface_close_status in (
+                    ("completed", "not_requested"),
+                    ("closed", "pending"),
+                    ("closed", "failed"),
+                ):
+                    await manager.on_auip_updated(
+                        {
+                            "artifact_ref": first_source["artifact_ref"],
+                            "app_session_id": "app-1",
+                            "host_surface_id": first_source["host_surface_id"],
+                            "status": status,
+                            "surface_close_status": surface_close_status,
+                        }
+                    )
+                    await asyncio.sleep(0.08)
+                    still_owned = await manager.get(work_item_id)
+                    assert still_owned["lifecycle"] == "attached"
+                    assert still_owned["attemptId"] == first_attempt_id
+                    assert still_owned["appSessionId"] == "app-1"
+
+                await manager.on_auip_updated(
+                    {
+                        "artifact_ref": first_source["artifact_ref"],
+                        "app_session_id": "app-wrong",
+                        "host_surface_id": first_source["host_surface_id"],
+                        "status": "closed",
+                        "surface_close_status": "closed",
+                    }
+                )
+                assert (await manager.get(work_item_id))["attemptId"] == first_attempt_id
+
+                await manager.on_auip_updated(
+                    {
+                        "artifact_ref": first_source["artifact_ref"],
+                        "app_session_id": "app-1",
+                        "host_surface_id": first_source["host_surface_id"],
+                        "status": "closed",
+                        "surface_close_status": "closed",
+                    }
+                )
+                # The result can request Attach in the same event cycle as the
+                # exact close receipt, before the polling watcher adopts Work.
+                adopted = await manager.begin_auip_handoff(second_source)
+                assert adopted["attemptId"] == second_attempt.attempt_id
+                assert adopted["lifecycle"] == "handoff"
+                assert "appSessionId" not in adopted
+                await manager.on_auip_updated(
+                    {
+                        "artifact_ref": second_source["artifact_ref"],
+                        "app_session_id": "app-2",
+                        "host_surface_id": second_source["host_surface_id"],
+                        "status": "active",
+                    }
+                )
+                successor = await manager.get(work_item_id)
+                assert successor["lifecycle"] == "attached"
+                assert successor["attemptId"] == second_attempt.attempt_id
+                assert successor["appSessionId"] == "app-2"
+
+                # A late terminal receipt from the former exact binding cannot
+                # freeze or otherwise disturb its successor.
+                await manager.on_auip_updated(
+                    {
+                        "artifact_ref": first_source["artifact_ref"],
+                        "app_session_id": "app-1",
+                        "host_surface_id": first_source["host_surface_id"],
+                        "status": "closed",
+                        "surface_close_status": "closed",
+                    }
+                )
+                unchanged = await manager.get(work_item_id)
+                assert unchanged["lifecycle"] == "attached"
+                assert unchanged["attemptId"] == second_attempt.attempt_id
+                assert unchanged["appSessionId"] == "app-2"
+                await manager.close_all()
+
+    asyncio.run(run())
+
+
 def test_waiting_preview_adopts_first_entry_without_reopening_surface() -> None:
     async def run() -> None:
         with tempfile.TemporaryDirectory(prefix="work_preview_waiting_") as temp:

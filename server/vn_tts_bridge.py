@@ -34,6 +34,40 @@ _SEMAPHORES: dict[int, asyncio.Semaphore] = {}
 _SUBTITLE_SEMAPHORES: dict[int, asyncio.Semaphore] = {}
 _SENTENCE_META: dict[str, dict[str, Any]] = {}
 _VN_SUBTITLE_CACHE: dict[str, dict[str, str]] = {}
+_OVERLAY_LOCKS: dict[int, asyncio.Lock] = {}
+
+
+class _SubtitleStream:
+    """Several accepted audio chunks share one immutable, completed caption."""
+
+    def __init__(self) -> None:
+        self.text = ""
+        self.caption = {"japanese": "", "status": "buffering"}
+
+    def append(self, text: str) -> None:
+        self.text += text
+        if re.search(r'[。！？!?\.][」』）)\]"\u201d\u2019]*\s*$', self.text):
+            self.finish(True)
+
+    def finish(self, completed: bool) -> None:
+        text = self.text.strip()
+        if text and completed:
+            self.caption.update(japanese=text, status="ready")
+            _start_vn_subtitle_translation("", text, {})
+        else:
+            self.caption["status"] = "cancelled"
+        self.text = ""
+        self.caption = {"japanese": "", "status": "buffering"}
+
+
+_SUBTITLE_STREAMS: dict[str, _SubtitleStream] = {}
+
+
+def finish_vn_speech(utterance_id: str, completed: bool) -> None:
+    """Close subtitle input independently of audio playback or translation."""
+    stream = _SUBTITLE_STREAMS.pop(utterance_id, None)
+    if stream is not None:
+        stream.finish(completed)
 
 
 def is_vn_sentence(sentence_id: str) -> bool:
@@ -45,7 +79,7 @@ def get_vn_sentence_metadata(sentence_id: str) -> dict[str, Any] | None:
     """Return a bounded copy of host playback identity for one queued line."""
 
     metadata = _SENTENCE_META.get(str(sentence_id or ""))
-    return dict(metadata) if isinstance(metadata, dict) else None
+    return {key: value for key, value in metadata.items() if key != "_subtitle"} if isinstance(metadata, dict) else None
 
 
 def is_vn_tts_busy() -> bool:
@@ -57,17 +91,21 @@ def cancel_pending_vn_tts(
     *,
     source: str,
     work_item_id: str = "",
+    run_id: str = "",
     nonterminal_only: bool = False,
 ) -> int:
     """Cancel bridge jobs that have not finished enqueueing stale speech."""
 
     target_source = str(source or "").strip()
     target_work_item = str(work_item_id or "").strip()
+    target_run = str(run_id or "").strip()
     cancelled = 0
     for task, metadata in tuple(_TASK_META.items()):
         if target_source and str(metadata.get("source") or "") != target_source:
             continue
         if target_work_item and str(metadata.get("work_item_id") or "") != target_work_item:
+            continue
+        if target_run and str(metadata.get("run_id") or "") != target_run:
             continue
         if nonterminal_only and metadata.get("terminal") is True:
             continue
@@ -80,6 +118,12 @@ def cancel_pending_vn_tts(
 async def get_vn_subtitle(sentence_id: str, japanese_text: str) -> dict[str, str] | None:
     """Return the VN-only subtitle cache entry for the currently playing sentence."""
     meta = _SENTENCE_META.get(str(sentence_id or ""), {})
+    subtitle = meta.get("_subtitle")
+    if subtitle is not None:
+        source = str(subtitle.get("japanese") or "")
+        if not source:
+            return {**subtitle, "chinese": ""}
+        return {**(_VN_SUBTITLE_CACHE.get(source) or {"status": "translating"}), "japanese": source}
     display_text = str(meta.get("display_text") or "").strip()
     if display_text and _is_completed_display_subtitle(display_text, meta.get("display_language")):
         return {"chinese": display_text, "status": "completed", "source": "vn_sentence_meta"}
@@ -90,6 +134,30 @@ async def get_vn_subtitle(sentence_id: str, japanese_text: str) -> dict[str, str
     if cached:
         return dict(cached)
     return None
+
+
+async def display_vn_subtitle(sentence_id, japanese_text, *, display, is_current) -> None:
+    """Follow playback identity while a full caption and its translation arrive."""
+    previous = None
+    for _ in range(120):
+        if not is_current(sentence_id):
+            return
+        data = await get_vn_subtitle(sentence_id, japanese_text) or {}
+        source = str(data.get("japanese", japanese_text))
+        translated = str(data.get("chinese") or "")
+        value = (source, translated)
+        if source and value != previous:
+            await display(sentence_id, source, translated)
+            previous = value
+        if data.get("status") in {"completed", "failed", "cancelled"}:
+            return
+        await asyncio.sleep(0.1)
+
+
+def update_playback_subtitle(sentence_id, japanese_text, chinese_text, *, update) -> None:
+    """Grouped VN captions own their updates; ordinary playback keeps its hook."""
+    if "_subtitle" not in _SENTENCE_META.get(str(sentence_id or ""), {}):
+        update(japanese_text, chinese_text)
 
 _STRONG_ENDINGS = {"\u3002", "\uff01", "\uff1f", "!", "?", "\n"}
 _WEAK_ENDINGS = {"\u3001", "\uff0c", ",", "\uff1b", ";", "\uff1a", ":"}
@@ -147,16 +215,20 @@ def submit_vn_tts(
         "emotion": str(payload.get("emotion") or payload.get("emotion_intent") or "").strip(),
         "duration_ms": int(payload.get("duration_ms") or 6500),
         "line_id": str(payload.get("line_id") or "").strip(),
+        "turn_id": str(payload.get("turn_id") or "").strip(),
         "script_id": str(payload.get("script_id") or "").strip(),
         "action": str(payload.get("action") or "").strip(),
         "terminal": payload.get("terminal") is True,
         "work_item_id": str(payload.get("work_item_id") or "").strip(),
+        "run_id": str(payload.get("run_id") or "").strip(),
         "attempt_id": str(payload.get("attempt_id") or "").strip(),
         "narration_source_kind": str(delivery.get("source_kind") or "").strip(),
         "narration_source_id": str(delivery.get("source_id") or "").strip(),
         "narration_session_id": str(delivery.get("session_id") or "").strip(),
         "narration_request_id": str(delivery.get("request_id") or "").strip(),
         "narration_complete_turn": payload.get("complete_turn") is True,
+        **({"vn_speech_segment": int(payload["vn_speech_segment"])} if payload.get("vn_speech_segment") is not None else {}),
+        **({"vn_speech_id": str(payload["vn_speech_id"])} if payload.get("vn_speech_id") else {}),
     }
     try:
         from tts.pipeline import current_tts_epoch
@@ -168,7 +240,7 @@ def submit_vn_tts(
     task = asyncio.create_task(
         _run_vn_tts_job(
             display_text=display_text,
-            voice_text=voice_text,
+            voice_text=_clean_text(payload.get("text") or voice_text, strip=False) if payload.get("vn_speech_id") else voice_text,
             pending_sentence_items=pending_sentence_items,
             metadata=metadata,
             enqueue_receipt=_enqueue_receipt,
@@ -214,11 +286,13 @@ async def submit_vn_tts_confirmed(
         confirmed = await asyncio.wait_for(asyncio.shield(receipt), timeout=timeout_s)
         if not isinstance(confirmed, dict):
             return {"status": "error", "reason": "invalid_enqueue_receipt"}
-        if payload.get("complete_turn") is True:
+        if payload.get("complete_turn") is True or payload.get("vn_speech_id") or payload.get("vn_speech_segment") is not None:
             # Direct host answers own a complete conversational turn.  Wait
             # only for the bridge to enqueue all of its logical sentences so
             # the caller can mark the real last sentence; audio playback stays
             # asynchronous as before.
+            # VN segments also wait for all their queue entries, preserving
+            # segment order without joining the direct-conversation turn gate.
             completed = await asyncio.wait_for(
                 asyncio.shield(task),
                 timeout=timeout_s,
@@ -248,12 +322,15 @@ async def _run_vn_tts_job(
 ) -> dict[str, Any]:
     loop = asyncio.get_running_loop()
     sem = _get_loop_semaphore(loop)
+    speech_id = metadata.get("vn_speech_id")
+    subtitle_stream = _SUBTITLE_STREAMS.setdefault(speech_id, _SubtitleStream()) if speech_id else None
     async with sem:
         dispatcher = _StreamingSentenceDispatcher(
             display_text=display_text,
             pending_sentence_items=pending_sentence_items,
             metadata=metadata,
             enqueue_receipt=enqueue_receipt,
+            subtitle_stream=subtitle_stream,
         )
         try:
             if voice_text:
@@ -303,15 +380,17 @@ class _StreamingSentenceDispatcher:
         pending_sentence_items: asyncio.Queue,
         metadata: dict[str, Any],
         enqueue_receipt: asyncio.Future | None = None,
+        subtitle_stream: _SubtitleStream | None = None,
     ) -> None:
         self.display_text = display_text
         self.pending_sentence_items = pending_sentence_items
         self.metadata = dict(metadata or {})
         self.current_sentence = ""
-        self.is_first = True
+        self.is_first = int(self.metadata.get("vn_speech_segment") or 1) == 1
         self.enqueue_receipt = enqueue_receipt
         self.last_enqueue_failure = "no_speakable_sentence"
         self.last_sentence_id = ""
+        self.subtitle_stream = subtitle_stream
 
     async def feed(self, text_piece: str, *, allow_early_cut: bool = True) -> None:
         if not text_piece:
@@ -327,6 +406,9 @@ class _StreamingSentenceDispatcher:
     async def flush(self) -> None:
         if self.current_sentence.strip():
             await self._dispatch_current()
+        elif self.current_sentence and self.subtitle_stream is not None:
+            self.subtitle_stream.append(self.current_sentence)
+            self.current_sentence = ""
 
     def finish_receipt(self) -> None:
         if self.enqueue_receipt is not None and not self.enqueue_receipt.done():
@@ -366,6 +448,7 @@ class _StreamingSentenceDispatcher:
         return sentence_len >= max_chars
 
     async def _dispatch_current(self) -> None:
+        raw_text = self.current_sentence
         text = _clean_text(self.current_sentence)
         self.current_sentence = ""
         if not text or _is_punctuation_only(text):
@@ -375,7 +458,9 @@ class _StreamingSentenceDispatcher:
         _SENTENCE_META[sentence_id] = dict(self.metadata)
         display_text = self.display_text.strip()
         display_language = self.metadata.get("display_language")
-        if display_text and _is_completed_display_subtitle(display_text, display_language):
+        if self.subtitle_stream is not None:
+            _SENTENCE_META[sentence_id]["_subtitle"] = self.subtitle_stream.caption
+        elif display_text and _is_completed_display_subtitle(display_text, display_language):
             _SENTENCE_META[sentence_id]["display_text"] = display_text
             if _should_seed_display_translation(display_language):
                 await _seed_display_translation(text, display_text)
@@ -405,8 +490,32 @@ class _StreamingSentenceDispatcher:
         )
         try:
             put_timeout = max(0.1, _env_float("VN_TTS_QUEUE_PUT_TIMEOUT", 3.0))
-            await asyncio.wait_for(self.pending_sentence_items.put(item), timeout=put_timeout)
+            # Keep acceptance and identity observation in the same coroutine:
+            # a separate wait_for task can release the TTS consumer first.
+            async with asyncio.timeout(put_timeout):
+                await self.pending_sentence_items.put(item)
+            if self.subtitle_stream is not None:
+                self.subtitle_stream.append(raw_text)
             self.last_sentence_id = sentence_id
+            if self.is_first and self.metadata.get("narration_complete_turn"):
+                # Only direct conversational answers carry a turn identity.
+                # Background narration line ids must not join an active turn.
+                try:
+                    from core.turn_coordinator import get_turn_coordinator
+                    from server.turn_decision_shadow import get_enabled_turn_decision_shadow_observer
+
+                    turn_id = str(self.metadata.get("turn_id") or "")
+                    get_turn_coordinator().on_first_sentence_enqueued(
+                        turn_id=turn_id, sentence_id=sentence_id,
+                    )
+                    observer = get_enabled_turn_decision_shadow_observer()
+                    if observer is not None:
+                        observer.record_event(
+                            turn_id, stage="first_sentence_enqueued",
+                            origin_kind="direct_answer", origin_id=sentence_id,
+                        )
+                except Exception:
+                    logger.debug("direct answer timing observation failed", exc_info=True)
             logger.info(
                 "[VN TTS] enqueue id=%s first=%s sha1=%s text='%s'",
                 sentence_id,
@@ -566,7 +675,29 @@ async def publish_overlay_subtitle(sentence_id: str, japanese_text: str, chinese
         display_text=str(chinese_text or "").strip(),
         raw_text=str(chinese_text or japanese_text or "").strip(),
         source="vn_pretranslation",
+        sentence_id=sentence_id,
     )
+
+
+def schedule_overlay_playback(sentence_id: str, speaking: bool, loop: asyncio.AbstractEventLoop):
+    """Queue audio identity before subtitle tasks created next on the same host loop."""
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        current_loop = None
+    event = publish_overlay_playback(sentence_id, speaking)
+    if current_loop is loop:
+        return loop.create_task(event)
+    return asyncio.run_coroutine_threadsafe(event, loop)
+
+
+async def publish_overlay_playback(sentence_id: str, speaking: bool) -> None:
+    """Project only real VN audio boundaries, never main-chat speech, to its overlay."""
+    meta = _SENTENCE_META.get(str(sentence_id or ""))
+    if not meta or not meta.get("overlay_url"):
+        return
+    await _publish_overlay(meta, display_text=str(meta.get("display_text") or "") if speaking else "",
+                           raw_text="", source="vn_playback", sentence_id=sentence_id, speaking=speaking)
 
 
 async def _publish_overlay(
@@ -575,6 +706,8 @@ async def _publish_overlay(
     display_text: str,
     raw_text: str,
     source: str,
+    sentence_id: str = "",
+    speaking: bool | None = None,
 ) -> None:
     url = str((meta or {}).get("overlay_url") or "").strip()
     if not url:
@@ -587,9 +720,16 @@ async def _publish_overlay(
         "line_id": str((meta or {}).get("line_id") or ""),
         "script_id": str((meta or {}).get("script_id") or ""),
         "source": source,
+        "sentence_id": sentence_id,
     }
+    if speaking is not None:
+        payload["speaking"] = speaking
     try:
-        await asyncio.to_thread(_post_json, url, payload, 0.25)
+        # Preserve audio start/end order while the blocking HTTP calls run off-loop.
+        loop_id = id(asyncio.get_running_loop())
+        lock = _OVERLAY_LOCKS.setdefault(loop_id, asyncio.Lock())
+        async with lock:
+            await asyncio.to_thread(_post_json, url, payload, 0.25)
     except Exception:
         logger.debug("[VN TTS] overlay publish failed: %s", url, exc_info=True)
 
@@ -731,13 +871,14 @@ def _next_or_sentinel(iterator) -> tuple[bool, Any]:
         return False, None
 
 
-def _clean_text(text: Any) -> str:
+def _clean_text(text: Any, *, strip: bool = True) -> str:
     value = str(text or "")
     try:
         value, _actions = parse_tags_and_clean(value)
     except Exception:
         value = re.sub(r"\[(?:PARAM|EXPR|HOTKEY|EMO|ANIM|DELEGATE)(?:[^\]]*)\]", "", value, flags=re.IGNORECASE)
-    return re.sub(r"\s+", " ", value).strip()
+    value = re.sub(r"\s+", " ", value)
+    return value.strip() if strip else value
 
 
 def _strip_translation_noise(text: str) -> str:

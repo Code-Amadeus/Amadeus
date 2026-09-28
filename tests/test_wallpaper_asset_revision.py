@@ -5,11 +5,13 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import AsyncMock, patch as mock_patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from server.handlers import session_handler as session_handler_module
+from server.handlers.chat_handler import ChatHandler
 from server.handlers.session_handler import SessionHandler
 from server.handlers.wallpaper_handler import WallpaperHandler
 from server.protocol import Method
@@ -108,8 +110,21 @@ def test_electron_slice_uses_normalized_crt_geometry_and_shared_canvas_channel()
     host._asset_port = 17778
     host._bridge_port = 17797
     host._slice_host = "electron"
-    assert host.url.endswith("&host=webwallpaper&sliceHost=electron")
-    assert host.lively_url.endswith("&bridgePort=17797&sliceHost=electron")
+    render_query = parse_qs(urlparse(host.url).query)
+    lively_query = parse_qs(urlparse(host.lively_url).query)
+    expected = {
+        "graphicsProfile": [wallpaper_engine_bridge.GRAPHICS_PROFILE],
+        "renderMaxFps": [str(wallpaper_engine_bridge.RENDER_EFFECTIVE_MAX_FPS)],
+        "renderTextureSampling": [str(int(wallpaper_engine_bridge.RENDER_TEXTURE_SAMPLING))],
+        "bridgePort": ["17797"],
+        "sliceHost": ["electron"],
+    }
+    if wallpaper_engine_bridge.RENDER_EFFECTIVE_MAX_RESOLUTION is not None:
+        expected["renderMaxResolution"] = [
+            str(wallpaper_engine_bridge.RENDER_EFFECTIVE_MAX_RESOLUTION)
+        ]
+    assert render_query == {**expected, "host": ["webwallpaper"]}
+    assert lively_query == {**expected, "assetPort": ["17778"]}
 
 
 def test_electron_slice_encloses_the_separate_input_toggle_and_composer() -> None:
@@ -151,7 +166,6 @@ def test_electron_slice_assets_reuse_the_wallpaper_surface_without_a_second_ui()
     assert '<script src="/render/web/crt_canvas_surface.js"></script>' in html
     assert '<script src="/render/web/electron_keyboard_composer.js"></script>' in html
     assert "createCrtCanvasSurface()" in host
-    assert 'bridgeEndpoint("canvas-state")' in host
     assert 'bridgeEndpoint("canvas-events")' in host
     assert "setElectronSliceShape" in host
     assert "shapeFlushTimer" in host
@@ -159,6 +173,7 @@ def test_electron_slice_assets_reuse_the_wallpaper_surface_without_a_second_ui()
     assert "shapeRetryTimer" in host
     assert "accepted === true" in host
     assert "setCanvasPresentation" in host
+    assert "setCanvasPresentation(profile) { desktopScene.setCanvasPresentation(profile || {}); }" in wallpaper_scene
     assert "setAttention" in host
     assert "keyboardInputToggleBounds" in host
     assert "keyboardComposerBounds" in host
@@ -230,14 +245,23 @@ def test_shared_canvas_and_slice_host_are_javascript_syntax_valid() -> None:
 
 
 def test_wallpaper_keyboard_submit_reuses_the_chat_transport() -> None:
-    submitted: list[tuple[str, str]] = []
+    submitted: list[dict] = []
 
     async def ensure_session() -> dict:
         return {"ok": True, "current_session_id": "wallpaper-session"}
 
-    async def send_chat(text: str, session_id: str) -> dict:
-        submitted.append((text, session_id))
-        return {"status": "ok", "turn_id": "turn-1"}
+    chat = ChatHandler()
+
+    async def capture_send(params: dict) -> dict:
+        submitted.append(params)
+        return {"status": "ok", "turn_id": params["turn_id"]}
+
+    chat._handle_send = capture_send
+
+    async def send_chat(text: str, session_id: str, visual: dict | None) -> dict:
+        return await chat.send_text(
+            text, session_id=session_id, source="wallpaper_keyboard", visual=visual,
+        )
 
     handler = WallpaperHandler()
     handler.configure(
@@ -246,10 +270,18 @@ def test_wallpaper_keyboard_submit_reuses_the_chat_transport() -> None:
         ensure_chat_session_fn=ensure_session,
     )
 
-    result = asyncio.run(handler._route_chat_submit({"text": "  type on the desk  "}))
+    text_result = asyncio.run(handler._route_chat_submit({"text": "  type on the desk  "}))
+    visual = {"request": True, "mode": "attachment"}
+    image_result = asyncio.run(handler._route_chat_submit({"text": "look", "visual": visual}))
 
-    assert submitted == [("type on the desk", "wallpaper-session")]
-    assert result == {"ok": True, "status": "ok", "turn_id": "turn-1"}
+    assert [item["text"] for item in submitted] == ["type on the desk", "look"]
+    assert all(item["session_id"] == "wallpaper-session" for item in submitted)
+    assert all(item["source"] == "wallpaper_keyboard" for item in submitted)
+    assert [item["visual"] for item in submitted] == [None, visual]
+    assert submitted[0]["turn_id"] and submitted[1]["turn_id"]
+    assert submitted[0]["turn_id"] != submitted[1]["turn_id"]
+    assert text_result == {"ok": True, "status": "ok", "turn_id": submitted[0]["turn_id"]}
+    assert image_result == {"ok": True, "status": "ok", "turn_id": submitted[1]["turn_id"]}
 
 
 def test_wallpaper_keyboard_creates_a_session_only_when_one_is_absent() -> None:
@@ -425,7 +457,7 @@ const context = {
     fetchCalls.push({ url, options });
     return {
       ok: true,
-      json: async () => ({ assetPort: 17778, bridgePort: 17797 }),
+      json: async () => ({ assetPort: 17778, bridgePort: 17797, graphicsProfile: "standard", renderMaxFps: 60, renderMaxResolution: null }),
     };
   },
   document: {
@@ -468,7 +500,7 @@ const context = {
     assert result["events"] == ["bridge-info", "iframe-src"]
     assert result["iframeSrc"] == (
         "http://127.0.0.1:17778/render/web/wallpaper_engine.html"
-        "?bridgePort=17797&host=lively"
+        "?bridgePort=17797&host=lively&renderMaxFps=60&graphicsProfile=standard&renderTextureSampling=0"
     )
 
 
@@ -488,7 +520,7 @@ if (!scriptMatch) {
 
 const bridgeResponses = [
   { running: false },
-  { running: true, assetPort: 17778, bridgePort: 17797 },
+  { running: true, assetPort: 17778, bridgePort: 17797, graphicsProfile: "standard", renderMaxFps: 60, renderMaxResolution: null, renderTextureSampling: true },
 ];
 const events = [];
 const fetchCalls = [];
@@ -621,7 +653,7 @@ const context = {
     ]
     assert result["iframeAssignments"] == [
         "http://127.0.0.1:17778/render/web/wallpaper_engine.html"
-        "?bridgePort=17797&host=lively"
+        "?bridgePort=17797&host=lively&renderMaxFps=60&graphicsProfile=standard&renderTextureSampling=1"
     ]
     assert result["iframeSrc"] == result["iframeAssignments"][0]
 

@@ -124,7 +124,24 @@ CODEX_APP_SERVER_MANIFEST = ProviderManifest(
         cancellation="confirmed",
         interaction="bidirectional",
         event_model="canonical+native",
+        submission_reconciliation="query",
+        append_input=True,
         capability_projections=("agent_skill", "mcp_connection"),
+    ),
+)
+
+
+PI_MANIFEST = ProviderManifest(
+    provider_id="pi", display_name="Pi", runtime_kind="agent",
+    contract_version="0.3", selection_priority=60,
+    capabilities=ProviderCapabilities(
+        task_kinds=("general", "research", "external_action", "workspace_read", "workspace_mutation"),
+        workspace_access="write", workspace_ownership="caller",
+        durability="host_restart", resume="attach", cancellation="confirmed",
+        # Pi queues additional messages at tool boundaries. This does not promise
+        # the Host's latest-revision-wins replacement steering contract.
+        steering="next_turn", append_input=True, interaction="bidirectional",
+        event_model="canonical+native",
     ),
 )
 
@@ -133,4 +150,5 @@ KNOWN_PROVIDER_MANIFESTS: tuple[ProviderManifest, ...] = (
     BROWSER_MANIFEST,
     DIRECT_CODEX_MANIFEST,
     OPENCLAW_MANIFEST,
+    PI_MANIFEST,
 )

@@ -1,19 +1,16 @@
-"""Characterize the two existing narration payloads before extraction."""
+"""Current narration payload contracts at the shared delivery boundary."""
 
 from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from server.work_observer import WorkObserverCoordinator
 from vn_player.runtime import VNPlayerRuntime
-from vn_player.schemas import VNProfile
 
 
-ROOT = Path(__file__).resolve().parents[1]
-
-
-def test_work_observer_payload_shape_is_stable_before_delivery_extraction() -> None:
+def test_work_observer_payload_preserves_run_identity_and_delivery_fields() -> None:
     async def run() -> dict:
         observer = WorkObserverCoordinator()
         observer.configure(display_language=lambda: "japanese")
@@ -50,6 +47,7 @@ def test_work_observer_payload_shape_is_stable_before_delivery_extraction() -> N
         "turn_id": "work-observer-run-1-final_report-4",
         "complete_turn": True,
         "source": "work_observer",
+        "run_id": "run-1",
         "action": "final_report",
         "terminal": True,
         "work_item_id": "work-1",
@@ -58,7 +56,7 @@ def test_work_observer_payload_shape_is_stable_before_delivery_extraction() -> N
     }
 
 
-def test_vn_director_payload_shape_is_stable_before_delivery_extraction() -> None:
+def test_vn_director_payload_shape_is_stable_before_delivery_extraction(tmp_path: Path) -> None:
     async def run() -> None:
         captured: list[dict] = []
 
@@ -66,23 +64,28 @@ def test_vn_director_payload_shape_is_stable_before_delivery_extraction() -> Non
             captured.append(payload)
             return {"status": "queued", "sentence_id": "sentence-1"}
 
-        runtime = VNPlayerRuntime(ROOT, speak_callback=speak)
-        runtime.profile = VNProfile(
-            session_id="vn-session-1",
-            game_id="game-1",
-            game_title="Game",
-            output_language="ja",
-            overlay_url="http://127.0.0.1:8788/reaction",
-        )
-        await runtime._speak(
-            {
-                "text": "そこ、少し怪しいわね。",
-                "priority": "normal",
-                "emotion_intent": "thinking",
-            },
-            {"line_id": "line-7", "script_id": "script-7"},
-        )
+        runtime = VNPlayerRuntime(tmp_path, speak_callback=speak)
+        await runtime.start({
+            "session_id": "vn-session-1",
+            "game_id": "game-1",
+            "game_title": "Game",
+            "prompt_pack": "base",
+            "script_path": "",
+            "output_language": "ja",
+            "overlay_url": "http://127.0.0.1:8788/reaction",
+        })
+        request = {
+            "text": "そこ、少し怪しいわね。",
+            "priority": "normal",
+            "emotion_intent": "thinking",
+        }
+        line = {"line_id": "line-7", "script_id": "script-7"}
+        await runtime._speak(request, line)
+        await runtime.stop()
 
+        # Playback grouping adds a Host-owned identity; the authored narration
+        # and existing line/session attribution remain unchanged.
+        assert captured[0].pop("vn_speech_id")
         assert captured == [
             {
                 "text": "そこ、少し怪しいわね。",
@@ -100,10 +103,16 @@ def test_vn_director_payload_shape_is_stable_before_delivery_extraction() -> Non
             }
         ]
 
+        # A stopped session must reject both comments and player-requested speech.
+        for player_requested in (False, True):
+            await runtime._speak(request, line, player_requested=player_requested)
+            assert len(captured) == 1
+
     asyncio.run(run())
 
 
 if __name__ == "__main__":
-    test_work_observer_payload_shape_is_stable_before_delivery_extraction()
-    test_vn_director_payload_shape_is_stable_before_delivery_extraction()
+    test_work_observer_payload_preserves_run_identity_and_delivery_fields()
+    with TemporaryDirectory() as directory:
+        test_vn_director_payload_shape_is_stable_before_delivery_extraction(Path(directory))
     print("ok: Work and VN narration payload baselines are explicit")

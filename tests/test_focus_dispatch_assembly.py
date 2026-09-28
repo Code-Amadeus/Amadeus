@@ -15,6 +15,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent_host.work_ledger_store import WorkLedgerStore
@@ -91,6 +93,100 @@ async def _taskless_focus_from_raw_tag() -> None:
 def test_taskless_focus_runs_through_the_real_tag_dispatch_chain() -> None:
     asyncio.run(_taskless_focus_from_raw_tag())
     print("ok: raw taskless focus reaches the host and refreshes the projection")
+
+
+@pytest.mark.parametrize("modifier", ["clear", "set"])
+@pytest.mark.parametrize("resumed", [False, True])
+@pytest.mark.parametrize("switch_during_publish", [False, True])
+def test_overlapping_focus_spellings_apply_and_publish_once(
+    modifier, resumed, switch_during_publish,
+) -> None:
+    """Canonical taskless clear contains both spellings of one operation."""
+
+    from server.control_decision import (
+        ControlDecision, ControlDecisionEntry, reconcile_control_decision,
+    )
+    from server.host_action_dispatcher import HostDispatchBlocked
+
+    async def run():
+        with tempfile.TemporaryDirectory(prefix="focus_single_apply_") as temp:
+            root = Path(temp)
+            project_path = root / "project"
+            project_path.mkdir()
+            store = WorkLedgerStore(root / "ledger.sqlite3")
+            coordinator = WorkLedgerCoordinator(store)
+            coordinator.configure()
+            project = store.create_or_get_project(project_path, name="Project")
+            session_id = "single-focus-session"
+            active_session = session_id
+            if modifier == "clear":
+                store.update_session_context(session_id, project_id=project.project_id)
+                controls, notes = reconcile_control_decision(
+                    ({},),
+                    ControlDecision(status="ok", entries=(ControlDecisionEntry(
+                        proposal_index=0,
+                        control={"provider": "codex", "intent": "focus"},
+                        reference_candidates=None, work_placement="not_applicable",
+                        session_context="clear",
+                    ),)),
+                    provider_ids={"codex"},
+                )
+                assert notes == [] and len(controls) == 1
+                attrs = dict(controls[0])
+                assert attrs["intent"] == "focus" and attrs["focus"] == "clear"
+            else:
+                # Structurally accepted raw/internal form. Normal canonical
+                # taskless set intentionally omits the redundant modifier.
+                attrs = {"provider": "codex", "intent": "focus", "focus": "set", "project_id": project.project_id}
+            if resumed:
+                attrs["_host_reference_selection_resumed"] = True
+
+            async def reference(task, values, **_kwargs):
+                return "bypass", task, values
+
+            original_publish = coordinator.publish_snapshot
+
+            async def publish_and_maybe_switch(**kwargs):
+                nonlocal active_session
+                await original_publish(**kwargs)
+                if switch_during_publish:
+                    active_session = "other-session"
+
+            try:
+                with (
+                    patch("core.session_manager.get_current_session_id", side_effect=lambda: active_session),
+                    patch("config.settings.DELEGATE_INTENT_ATTRIBUTE", True),
+                    patch("config.settings.DELEGATE_FOCUS_INTENT", True),
+                    patch("config.settings.WORK_PROJECT_ALLOWLIST", str(project_path)),
+                    patch.object(server_app, "_consume_captured_interaction_branch_intent", new=AsyncMock(return_value=False)),
+                    patch.object(server_app, "_adjudicate_delegate_reference", side_effect=reference),
+                    patch.object(server_app, "_schedule_focus_confirmation") as confirmation,
+                    patch.object(store, "update_session_context", wraps=store.update_session_context) as update,
+                    patch.object(coordinator, "publish_snapshot", side_effect=publish_and_maybe_switch) as publish,
+                    patch.object(provider_runtime, "start", new=AsyncMock()) as start,
+                ):
+                    result = await server_app._handle_delegate("", attrs)
+                    # The context write happened in A, but a Session switch
+                    # during publication must still stop this control batch.
+                    assert isinstance(result, HostDispatchBlocked) is switch_during_publish
+                    assert update.call_count == 1
+                    publish.assert_awaited_once()
+                    assert confirmation.call_count == (0 if resumed else 1)
+                    if confirmation.called:
+                        # Scheduling is not delivery; the existing presentation
+                        # boundary revalidates this original Session separately.
+                        assert confirmation.call_args.kwargs["session_id"] == session_id
+                    start.assert_not_awaited()
+                assert store.list_work_items() == []
+                binding = store.get_conversation_binding(session_id)
+                if modifier == "clear":
+                    assert binding is None
+                else:
+                    assert binding.project_id == project.project_id
+            finally:
+                coordinator.close()
+
+    asyncio.run(run())
 
 
 async def _resolved_focus_confirmation_has_one_owner() -> None:

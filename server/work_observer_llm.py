@@ -16,6 +16,7 @@ from typing import Any
 from openai import OpenAI
 
 from config import settings
+from server.assistant_language import text_matches_assistant_language
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ Rules:
 - Use "final_report" only when current_note.phase is Result. Progress, checkpoint, blocking, urgent, and error importance do not end a run; use speak or ask_user for those.
 - A current_note terminal_truth/completeness value other than complete means the requested outcome is not verified. Describe only the host-observed current state; never turn it into a successful search, click, navigation, or file result.
 - For final_report, display_text/main_chat_entry must summarize the concrete outcome from current_note.summary or signals. Do not produce a line whose main content is only "look at the card", "see the left card", or similar.
+- A status-only terminal line such as "the task is finished" is invalid when current_note.summary contains a concrete result. State at least one actual finding, delivered capability, validation result, or limitation in display_language.
 - A merged final summary may contain an important fix or failed validation discovered immediately before the terminal event. Preserve that fact in the final report instead of replacing it with a generic completion sentence.
 - recent_spoken_updates contains lines this same work Attempt already sent to TTS. Do not repeat their content. A terminal report is still owed, but it should add only the newly established validation, limitation, blocker, or final state needed to close the work naturally.
 - For research/search tasks, mention the top finding, answer, or 1-2 representative sources if available. Keep links, long tables, and exact evidence on the canvas card.
@@ -163,7 +165,123 @@ def _decide_sync(
     data = _parse_json_object(content)
     if not isinstance(data, dict):
         return None
-    return _normalize_decision(data, note, display_language)
+    decision = _normalize_decision(data, note, display_language)
+    if not _terminal_report_needs_repair(decision, note, display_language):
+        return decision
+
+    logger.warning(
+        "terminal Work report missed the %s semantic-language contract; retrying a bounded repair",
+        _normalize_display_language(display_language),
+    )
+    try:
+        repaired = _repair_terminal_report(
+            client=client,
+            provider=provider,
+            model=model,
+            note=note,
+            display_language=display_language,
+        )
+    except Exception:
+        logger.exception("terminal Work report language repair failed")
+        return None
+    if repaired is not None and not _terminal_report_needs_repair(
+        repaired,
+        note,
+        display_language,
+    ):
+        return repaired
+    logger.warning("terminal Work report repair remained invalid; using the Host semantic fallback")
+    return None
+
+
+def _terminal_report_needs_repair(
+    decision: dict[str, Any],
+    note: dict[str, Any],
+    display_language: str,
+) -> bool:
+    if str(note.get("phase") or "").strip().lower() != "result":
+        return False
+    text = str(
+        decision.get("display_text")
+        or decision.get("main_chat_entry")
+        or ""
+    ).strip()
+    if not text_matches_assistant_language(text, display_language):
+        return True
+    summary = " ".join(str(note.get("summary") or "").split()).strip()
+    if len(summary) < 32:
+        return False
+    compact = re.sub(r"[\s。！？!?.,，；;：:]", "", text).casefold()
+    generic_markers = (
+        "この作業は終わっている",
+        "作業は完了した",
+        "thetaskisfinished",
+        "thebackgroundtaskisfinished",
+        "任务已经完成",
+        "工作已经结束",
+    )
+    return len(compact) < 48 and any(marker in compact for marker in generic_markers)
+
+
+def _repair_terminal_report(
+    *,
+    client: OpenAI,
+    provider: str,
+    model: str,
+    note: dict[str, Any],
+    display_language: str,
+) -> dict[str, Any] | None:
+    language = _normalize_display_language(display_language)
+    payload = {
+        "display_language": language,
+        "result_summary": _trim(str(note.get("summary") or ""), 1200),
+        "terminal_truth": _compact_note(note).get("terminal_truth", {}),
+        "output_schema": {
+            "display_text": "one to three concise Kurisu sentences in display_language",
+            "main_chat_entry": "the same concrete report in display_language",
+        },
+    }
+    request_kwargs = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "Repair a terminal Work report. Return JSON only. Translate or naturally "
+                    "paraphrase the supplied result into the requested display_language. State "
+                    "at least one concrete finding, delivered capability, validation result, or "
+                    "limitation; a status-only sentence such as 'the task is finished' is invalid. "
+                    "Keep proper nouns and identifiers unchanged. Do not invent facts."
+                ),
+            },
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ],
+        "stream": False,
+        "timeout": 8,
+        **_extra_kwargs(provider),
+    }
+    if provider == "openai":
+        request_kwargs["max_completion_tokens"] = 280
+    else:
+        request_kwargs["temperature"] = 0.1
+        request_kwargs["max_tokens"] = 280
+    response = client.chat.completions.create(**request_kwargs)
+    content = ""
+    if response and getattr(response, "choices", None):
+        content = str(response.choices[0].message.content or "")
+    data = _parse_json_object(content)
+    if not isinstance(data, dict):
+        return None
+    return _normalize_decision(
+        {
+            **data,
+            "action": "final_report",
+            "append_to_main_chat": True,
+            "speak": True,
+        },
+        note,
+        language,
+    )
 
 
 def _normalize_decision(data: dict[str, Any], note: dict[str, Any], display_language: str) -> dict[str, Any]:

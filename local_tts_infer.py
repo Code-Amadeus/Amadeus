@@ -24,6 +24,7 @@ from tts.semantic_stability import (
     SemanticGenerationError,
     assess_semantic_candidate,
 )
+from tts.speech_onset import SpeechOnsetGate, speech_start
 
 
 def _iter_segment_text_lang(text: str):
@@ -75,6 +76,16 @@ def _allows_nvidia_cuda_extensions(uses_torch_cuda_api: bool) -> bool:
     """NVIDIA CUDA extensions are incompatible with PyTorch ROCm/HIP builds."""
     return uses_torch_cuda_api and not bool(getattr(torch.version, "hip", None))
 
+
+def _stream_bucket_mels() -> int:
+    """Minimum ROCm BigVGAN stream mel length; a bad tuning value keeps 80."""
+    raw = os.environ.get("TTS_BIGVGAN_STREAM_BUCKET_MELS", "80")
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        logger.warning("invalid TTS_BIGVGAN_STREAM_BUCKET_MELS=%r; using 80", raw)
+        return 80
+
 # 获取当前项目根目录
 root_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, root_dir)
@@ -97,7 +108,7 @@ try:
 
     """加载SoVITS模型"""
     from GPT_SoVITS.module.models import SynthesizerTrn, SynthesizerTrnV3
-    from GPT_SoVITS.process_ckpt import load_sovits_new
+    from GPT_SoVITS.process_ckpt import get_sovits_version_from_path_fast, load_sovits_new
     from peft import LoraConfig, get_peft_model
 
     from GPT_SoVITS.text.LangSegmenter import LangSegmenter
@@ -139,6 +150,8 @@ class TTSInferencer:
             self.device = device
             device_name = str(device).lower()
             self._uses_torch_cuda_api = _uses_torch_cuda_device_api(device_name)
+            self.is_rocm = self._uses_torch_cuda_api and bool(getattr(torch.version, "hip", None))
+            self._rocm_bigvgan_bucket_mels = _stream_bucket_mels() if self.is_rocm else 80
             self._allows_nvidia_cuda_extensions = _allows_nvidia_cuda_extensions(
                 self._uses_torch_cuda_api
             )
@@ -168,6 +181,15 @@ class TTSInferencer:
             default_gpt_path = os.path.join(base_dir, "assets/models/gpt-sovits/weights/gpt/v3", "xxx-e15.ckpt")
             default_sovits_path = os.path.join(base_dir, "assets/models/gpt-sovits/weights/sovits/v3", "xxx_e2_s174_l32.pth")
             default_sovits_pretrain_path = os.path.join(base_dir, "assets", "models", "gpt-sovits", "pretrained", "s2Gv3.pth")
+            default_sv_model_path = os.path.join(
+                base_dir,
+                "assets",
+                "models",
+                "gpt-sovits",
+                "pretrained",
+                "sv",
+                "pretrained_eres2netv2w24s4ep4.ckpt",
+            )
             default_bert_path = os.path.join(base_dir, "assets", "models", "gpt-sovits", "pretrained",
                                              "chinese-roberta-wwm-ext-large")
             default_cnhubert_path = os.path.join(base_dir, "assets", "models", "gpt-sovits", "pretrained", "chinese-hubert-base")
@@ -178,6 +200,7 @@ class TTSInferencer:
             self.bert_path = bert_path or default_bert_path
             self.cnhubert_path = cnhubert_path or default_cnhubert_path
             self.sovits_pretrain_path = default_sovits_pretrain_path
+            self.sv_model_path = default_sv_model_path
 
             # 检查必要文件是否存在
             for path, desc in [
@@ -245,6 +268,25 @@ class TTSInferencer:
         if self._uses_torch_cuda_api:
             return torch.cuda.device(self._tts_device_idx)
         return nullcontext()
+
+    def _run_bigvgan_stream_chunk(self, mel, *, target_frames: int):
+        """Vocode a ROCm stream chunk at a stable mel length, then trim it.
+
+        MIOpen runs an expensive solver search the first time BigVGAN sees a
+        mel length. Every chunk shorter than the bucket, including each
+        sentence's final chunk, repeats its last frame up to that length.
+        """
+        actual_frames = int(mel.shape[-1])
+        padded_frames = max(actual_frames, target_frames)
+        if padded_frames > actual_frames:
+            tail = mel[..., -1:].expand(*mel.shape[:-1], padded_frames - actual_frames)
+            mel = torch.cat((mel, tail), dim=-1)
+        with self._device_context(), torch.inference_mode():
+            audio = self.bigvgan_model(mel)[0][0]
+        if padded_frames > actual_frames:
+            samples = max(1, round(audio.shape[-1] * actual_frames / padded_frames))
+            audio = audio[..., :samples]
+        return audio
 
     def _synchronize_device(self):
         if self._uses_torch_cuda_api:
@@ -480,14 +522,29 @@ class TTSInferencer:
             self.i18n("多语种混合(粤语)"): "auto_yue",
         }
 
-        self.dict_language = dict_language_v2 if self.model_version in ["v2", "v3"] else dict_language_v1
+        self.dict_language = dict_language_v2 if self.model_version in ["v2", "v3", "v2Pro", "v2ProPlus"] else dict_language_v1
         self.splits = {"，", "。", "？", "！", ",", ".", "?", "!", "~", ":", "：", "—", "…"}
 
     def _detect_model_version(self):
         """检测模型版本"""
-        # 简单版本检测，可根据文件名或其他特征判断
+        # New-format checkpoints encode their exact architecture in the first two
+        # bytes.  This matters for v2Pro: treating it as ordinary v2 produces a
+        # 512/1024-channel mismatch in MRTE.
+        try:
+            semantic_version, model_version, if_lora = get_sovits_version_from_path_fast(self.sovits_path)
+            self.sovits_version = semantic_version
+            self._detected_lora = if_lora
+            return model_version
+        except (FileNotFoundError, KeyError, OSError):
+            logger.warning("Could not read SoVITS checkpoint metadata; falling back to path-based detection")
+
+        # Compatibility fallback for old checkpoints without an architecture header.
         if "v3" in self.sovits_path or "v3" in self.gpt_path:
             return "v3"
+        elif "v2proplus" in self.sovits_path.lower() or "v2proplus" in self.gpt_path.lower():
+            return "v2ProPlus"
+        elif "v2pro" in self.sovits_path.lower() or "v2pro" in self.gpt_path.lower():
+            return "v2Pro"
         elif "v2" in self.sovits_path or "v2" in self.gpt_path:
             return "v2"
         else:
@@ -612,8 +669,11 @@ class TTSInferencer:
         self.hps = DictToAttrRecursive(dict_s2["config"])
         self.hps.model.semantic_frame_rate = "25hz"
 
-        # 确定SoVITS版本
-        if 'enc_p.text_embedding.weight' not in dict_s2['weight']:
+        # 确定SoVITS版本。v2Pro/Plus share the v2 text symbols but require their
+        # own SynthesizerTrn conditioning layers, so preserve the architecture tag.
+        if self.model_version in {"v2Pro", "v2ProPlus"}:
+            self.hps.model.version = self.model_version
+        elif 'enc_p.text_embedding.weight' not in dict_s2['weight']:
             self.hps.model.version = "v2"  # v3model,v2symbols
         elif dict_s2['weight']['enc_p.text_embedding.weight'].shape[0] == 322:
             self.hps.model.version = "v1"
@@ -621,6 +681,7 @@ class TTSInferencer:
             self.hps.model.version = "v2"
 
         self.sovits_version = self.hps.model.version
+        self.is_v2pro = self.model_version in {"v2Pro", "v2ProPlus"}
         logger.info(f"SoVITS version: {self.sovits_version}, model version: {self.model_version}")
 
         # 根据模型版本创建模型
@@ -695,6 +756,15 @@ class TTSInferencer:
             # 合并LoRA权重
             self.vq_model.cfm = self.vq_model.cfm.merge_and_unload()
             self.vq_model.eval()
+
+        self.sv_model = None
+        if self.is_v2pro:
+            if not os.path.exists(self.sv_model_path):
+                raise FileNotFoundError(f"v2Pro speaker encoder weight is missing: {self.sv_model_path}")
+            from GPT_SoVITS.sv import SV
+
+            logger.info(f"Loading v2Pro speaker encoder: {self.sv_model_path}")
+            self.sv_model = SV(self.device, self.is_half, model_path=self.sv_model_path)
 
 
     def _load_bigvgan_model(self):
@@ -845,6 +915,12 @@ class TTSInferencer:
             else:
                 refer = refer.float()
             cache_item["refer_spec"] = refer
+
+            # v2Pro adds an ERes2Net speaker embedding to the reference style
+            # conditioning.  Cache it alongside the spectrum so the unchanged
+            # session/streaming pipeline does not recompute it per sentence.
+            if self.is_v2pro:
+                cache_item["sv_embedding"] = self._get_sv_embedding(ref_audio_path)
 
             # 4) v3 额外缓存：ref_audio 24k 的 mel2（归一化后）
             if self.model_version == "v3":
@@ -1051,6 +1127,15 @@ class TTSInferencer:
 
         return spec
 
+    def _get_sv_embedding(self, filename):
+        """Extract the 16 kHz ERes2Net embedding required by v2Pro/Plus."""
+        if not self.is_v2pro or self.sv_model is None:
+            return None
+        audio, _ = librosa.load(filename, sr=16000, mono=True)
+        audio = torch.from_numpy(audio).unsqueeze(0).to(self.device)
+        audio = audio.half() if self.is_half else audio.float()
+        return self.sv_model.compute_embedding3(audio)
+
     def infer(self,
               text,
               ref_audio_path,
@@ -1243,6 +1328,7 @@ class TTSInferencer:
                     # v1/v2模型解码
                     # 处理多个参考音频
                     refers = []
+                    sv_embeddings = [] if self.is_v2pro else None
                     if inp_refs:
                         for ref_path in inp_refs:
                             try:
@@ -1253,7 +1339,11 @@ class TTSInferencer:
                                     refer = refer.half()
                                 else:
                                     refer = refer.float()
+                                if self.is_v2pro:
+                                    speaker_embedding = self._get_sv_embedding(ref_path)
                                 refers.append(refer)
+                                if self.is_v2pro:
+                                    sv_embeddings.append(speaker_embedding)
                                 logger.info(f"loading extra reference audio: {ref_path}")
                             except Exception as e:
                                 logger.warning(f"failed to load extra reference audio: {e}")
@@ -1265,13 +1355,19 @@ class TTSInferencer:
                             refer = self.get_spepc(ref_audio_path).to(self.device)
                             refer = refer.half() if self.is_half else refer.float()
                         refers = [refer]
+                        if self.is_v2pro:
+                            speaker_embedding = sess.get("sv_embedding")
+                            if speaker_embedding is None:
+                                speaker_embedding = self._get_sv_embedding(ref_audio_path)
+                            sv_embeddings = [speaker_embedding]
 
                     # 解码
                     audio = self.vq_model.decode(
                         pred_semantic,
                         torch.LongTensor(phones2).to(self.device).unsqueeze(0),
                         refers,
-                        speed=speed
+                        speed=speed,
+                        sv_emb=sv_embeddings,
                     )[0][0]
 
                     # 防止爆音
@@ -1280,7 +1376,7 @@ class TTSInferencer:
                         audio = audio / max_audio
 
                     # 添加到输出列表
-                    audio_outputs.append(audio)
+                    audio_outputs.append(self._trim_generated_lead(audio, sr))
                     audio_outputs.append(zero_wav)  # 句间停顿
 
                 else:
@@ -1401,7 +1497,7 @@ class TTSInferencer:
                         audio = audio / max_audio
 
                     # 添加到输出列表
-                    audio_outputs.append(audio)
+                    audio_outputs.append(self._trim_generated_lead(audio, sr))
                     audio_outputs.append(zero_wav)  # 句间停顿
 
             # 合并所有音频片段
@@ -1679,6 +1775,7 @@ class TTSInferencer:
                     # v1/v2模型解码
                     # 处理多个参考音频
                     refers = []
+                    sv_embeddings = [] if self.is_v2pro else None
                     if inp_refs:
                         for ref_path in inp_refs:
                             try:
@@ -1689,7 +1786,11 @@ class TTSInferencer:
                                     refer = refer.half()
                                 else:
                                     refer = refer.float()
+                                if self.is_v2pro:
+                                    speaker_embedding = self._get_sv_embedding(ref_path)
                                 refers.append(refer)
+                                if self.is_v2pro:
+                                    sv_embeddings.append(speaker_embedding)
                                 logger.info(f"loading extra reference audio: {ref_path}")
                             except Exception as e:
                                 logger.warning(f"failed to load extra reference audio: {e}")
@@ -1701,13 +1802,19 @@ class TTSInferencer:
                             refer = self.get_spepc(ref_audio_path).to(self.device)
                             refer = refer.half() if self.is_half else refer.float()
                         refers = [refer]
+                        if self.is_v2pro:
+                            speaker_embedding = sess.get("sv_embedding")
+                            if speaker_embedding is None:
+                                speaker_embedding = self._get_sv_embedding(ref_audio_path)
+                            sv_embeddings = [speaker_embedding]
 
                     # 解码
                     audio = self.vq_model.decode(
                         pred_semantic,
                         torch.LongTensor(phones2).to(self.device).unsqueeze(0),
                         refers,
-                        speed=speed
+                        speed=speed,
+                        sv_emb=sv_embeddings,
                     )[0][0]
 
                     # 防止爆音
@@ -1721,6 +1828,7 @@ class TTSInferencer:
                     # 确保音频数据是float32类型
                     if hasattr(audio_chunk, 'dtype') and 'float16' in str(audio_chunk.dtype):
                         audio_chunk = audio_chunk.astype(np.float32)
+                    audio_chunk = self._trim_generated_lead(audio_chunk, sr)
 
                     # 句尾淡出，消除突然截断的爆音感
                     audio_chunk = self._apply_fade_out(audio_chunk, sr)
@@ -1822,6 +1930,8 @@ class TTSInferencer:
                         idx = 0
                         total_todo_frames = fea_todo.shape[2]
                         stream_chunk_index = 0
+                        onset_gate = SpeechOnsetGate(sr)
+                        text_pending = True
                         while True:
                             chunk_end = min(total_todo_frames, idx + chunk_len)
                             fea_todo_chunk = fea_todo[:, :, idx:chunk_end]
@@ -1873,10 +1983,14 @@ class TTSInferencer:
                                 if self._sovits_sync_timing_enabled:
                                     self._sync_sovits_timing()
                                 _t1 = time.perf_counter()
-                                with self._device_context():
-                                    with torch.inference_mode():
-                                        wav_gen = self.bigvgan_model(chunk_mel)
-                                        audio = wav_gen[0][0]
+                                if self.is_rocm:
+                                    audio = self._run_bigvgan_stream_chunk(
+                                        chunk_mel,
+                                        target_frames=max(chunk_len, self._rocm_bigvgan_bucket_mels),
+                                    )
+                                else:
+                                    with self._device_context(), torch.inference_mode():
+                                        audio = self.bigvgan_model(chunk_mel)[0][0]
                                 if self._sovits_sync_timing_enabled:
                                     self._sync_sovits_timing()
                                 if self._sovits_sync_timing_enabled:
@@ -1900,16 +2014,23 @@ class TTSInferencer:
                                 if max_audio > 1:
                                     audio = audio / max_audio
 
-                                audio_chunk = self._finalize_stream_chunk(
+                                audio_chunk = onset_gate.push(self._finalize_stream_chunk(
                                     audio,
                                     sr,
                                     if_sr=if_sr,
                                     is_last_chunk=is_last_stream_chunk,
                                     apply_fade_in=(stream_chunk_index > 1),
-                                )
-                                yield sr, audio_chunk, text_item if stream_chunk_index == 1 else ""
+                                ))
+                                if audio_chunk is not None:
+                                    yield sr, audio_chunk, text_item if text_pending else ""
+                                    text_pending = False
                             else:
                                 cfm_resss.append(cfm_res)
+
+                        # Finish the last partial onset frame; a never-voiced item stays whole.
+                        final_item = onset_gate.flush()
+                        if final_item is not None:
+                            yield sr, final_item, text_item if text_pending else ""
 
                         if not stream_v3_chunks:
                             # synthesis failed
@@ -1955,11 +2076,14 @@ class TTSInferencer:
                             if max_audio > 1:
                                 audio = audio / max_audio
 
-                            audio_chunk = self._finalize_stream_chunk(
-                                audio,
+                            audio_chunk = self._trim_generated_lead(
+                                self._finalize_stream_chunk(
+                                    audio,
+                                    sr,
+                                    if_sr=if_sr,
+                                    is_last_chunk=True,
+                                ),
                                 sr,
-                                if_sr=if_sr,
-                                is_last_chunk=True,
                             )
 
                             # audio saved toaudio saved toaudio saved tosynthesis failed
@@ -1976,6 +2100,19 @@ class TTSInferencer:
             logger.error(traceback.format_exc())
             # 返回一个空音频块，避免生成器中断
             yield sr if 'sr' in locals() else 24000, np.zeros(16000, dtype=np.float32), ""
+
+    def _trim_generated_lead(self, audio, sr: int):
+        """Start one synthesized item at its speech onset.
+
+        The model opens every item with a generated pause (~0.8-1.0 s); the
+        silence between items is the caller's ``pause_second``. The cut lands
+        on the silence floor before the onset rise, so no fade is needed.
+        """
+        samples = audio.detach().float().cpu().numpy() if torch.is_tensor(audio) else audio
+        start = speech_start(samples, sr)
+        if start:
+            logger.debug("trimmed generated lead: %.3fs", start / float(sr))
+        return audio[start:] if start else audio
 
     def _apply_fade_out(self, audio: np.ndarray, sr: int, duration_ms: int = 15) -> np.ndarray:
         """对音频末尾做线性淡出，避免句尾突然截断产生的爆音感。

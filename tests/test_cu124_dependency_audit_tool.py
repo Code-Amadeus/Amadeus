@@ -117,6 +117,25 @@ def test_pyproject_expansion_respects_platform_markers(tmp_path: Path) -> None:
     assert all(row["active"] for row in rows)
 
 
+def test_pyproject_audit_expands_selected_shared_capability_on_its_platform(tmp_path: Path):
+    from tools.audit_cu124_dependencies import parse_pyproject_dependencies
+
+    path = tmp_path / "pyproject.toml"
+    path.write_text(
+        '[project]\nname = "demo"\ndependencies = ["idna==3.10"]\n'
+        '[project.optional-dependencies]\n'
+        'models = ["librosa==0.11.0"]\n'
+        'gpu = ["demo[models]; sys_platform == \'win32\'", "torch==2.7.0"]\n',
+        encoding="utf-8",
+    )
+    for platform in ("win32", "darwin"):
+        rows = parse_pyproject_dependencies(path, {"sys_platform": platform}, active_extras=("gpu",))
+        by_name = {row["canonical_name"]: row for row in rows}
+        assert "demo" not in by_name
+        assert by_name["librosa"]["active"] == (platform == "win32")
+        assert by_name["torch"]["active"]
+
+
 def test_pip_audit_parser_normalizes_findings(tmp_path: Path) -> None:
     source = tmp_path / "pip-audit.json"
     source.write_text(

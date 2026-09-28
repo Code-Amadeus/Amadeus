@@ -11,17 +11,23 @@ chat to guess from a thin provider handle.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
+import math
 import re
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Literal, Mapping, TYPE_CHECKING
 from urllib.parse import urlparse
 
+if TYPE_CHECKING:
+    from server.turn_admission import TurnAdmissionRecord
+
 from server.event_bus import bus
+from core.turn_coordinator import require_legacy_turn_authority
 from server.protocol import Method
 from agent_host.provider_outcome import (
     OUTCOME_EVIDENCE_METADATA_KEY,
@@ -36,8 +42,16 @@ from server.outcome_verification import (
 logger = logging.getLogger(__name__)
 
 
+def _nonnegative_int(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
 ProviderRunCallable = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 ProviderSteerCallable = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
+ProviderCancelCallable = Callable[..., Awaitable[Any]]
 
 
 @dataclass(slots=True)
@@ -75,12 +89,109 @@ class InteractionBranchState:
     work_item_id: str = ""
     operation_id: str = ""
     instruction_revision: int = 0
+    accepted_instruction_revision: int = 0
     applied_instruction_revision: int = 0
     latest_instruction: str = ""
     # squash-merge 区间起点：分支创建时主对话 dialog 的长度。
     # 关闭时从此索引起扫描带本分支 branch_id 标记的条目做坍缩。
     region_start_index: int = -1
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class InteractionBranchRoutingLease:
+    """Immutable turn-start claim over the existing branch authority owner."""
+
+    branch_id: str
+    parent_session_id: str
+    provider: str
+    instruction_revision: int
+    expires_at: float
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_mapping(
+        cls,
+        value: Any,
+    ) -> InteractionBranchRoutingLease | None:
+        if not isinstance(value, dict):
+            return None
+        try:
+            lease = cls(
+                branch_id=str(value.get("branch_id") or "").strip(),
+                parent_session_id=str(
+                    value.get("parent_session_id") or ""
+                ).strip(),
+                provider=str(value.get("provider") or "").strip().lower(),
+                instruction_revision=int(value.get("instruction_revision") or 0),
+                expires_at=float(value.get("expires_at") or 0.0),
+            )
+        except (TypeError, ValueError):
+            return None
+        if not lease.branch_id or not lease.parent_session_id or not lease.provider:
+            return None
+        if not math.isfinite(lease.expires_at) or lease.expires_at <= 0:
+            return None
+        return lease
+
+
+@dataclass(frozen=True, slots=True)
+class InteractionBranchContinuationReceipt:
+    """Host receipt for one attempted continuation against an exact branch."""
+
+    disposition: Literal["accepted", "deferred", "failed", "superseded"]
+    reason: str
+    branch_id: str
+    instruction_revision: int
+    run: Mapping[str, Any] = field(default_factory=dict)
+    execution_started: bool | None = None
+
+    @property
+    def accepted(self) -> bool:
+        return self.disposition == "accepted"
+
+
+class InteractionBranchRunStopUnconfirmed(RuntimeError):
+    """An exact branch retired, but its underlying Provider run may still act."""
+
+    def __init__(self, *, branch_id: str, run_id: str, reason: str) -> None:
+        self.branch_id = str(branch_id or "")
+        self.run_id = str(run_id or "")
+        self.reason = str(reason or "run_stop_unconfirmed")
+        super().__init__(
+            f"browser run stop was not confirmed: {self.reason} "
+            f"(branch={self.branch_id}, run={self.run_id})"
+        )
+
+
+class InteractionBranchRoutingLeaseStale(RuntimeError):
+    """A turn may not retire or replace a newer branch generation."""
+
+    def __init__(self, lease: InteractionBranchRoutingLease) -> None:
+        self.branch_id = lease.branch_id
+        self.reason = "stale_turn_start_lease"
+        super().__init__(
+            "captured Browser routing lease is no longer current "
+            f"(branch={lease.branch_id}, revision={lease.instruction_revision})"
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _PendingBranchTermination:
+    branch_id: str
+    run_id: str
+    reason: str
+    observed_at: float
+
+
+@dataclass(frozen=True, slots=True)
+class _ProviderAdmissionReservation:
+    reservation_id: str
+    provider: str
+    observed_at: float
+    run_id: str = ""
 
 
 class InteractionBranchCoordinator:
@@ -97,18 +208,29 @@ class InteractionBranchCoordinator:
         *,
         provider_run: ProviderRunCallable,
         provider_steer: ProviderSteerCallable | None = None,
+        provider_cancel: ProviderCancelCallable | None = None,
         root: str | Path = Path("runtime") / "interaction_branches",
         ttl_seconds: float = 900.0,
         display_language: Callable[[], str] | None = None,
     ) -> None:
         self.provider_run = provider_run
         self.provider_steer = provider_steer
+        self.provider_cancel = provider_cancel
         self.root = Path(root)
         self.ttl_seconds = max(60.0, float(ttl_seconds))
         self._get_display_language = display_language
         self._active_by_session: dict[str, InteractionBranchState] = {}
         self._branch_locks: dict[str, asyncio.Lock] = {}
         self._closed_run_until: dict[str, float] = {}
+        self._closed_branch_until: dict[str, float] = {}
+        self._termination_pending_by_session: dict[
+            str,
+            dict[str, _PendingBranchTermination],
+        ] = {}
+        self._provider_admission_by_session: dict[
+            str,
+            _ProviderAdmissionReservation,
+        ] = {}
         self._subscribed = False
 
     def configure(self) -> None:
@@ -141,19 +263,311 @@ class InteractionBranchCoordinator:
             return None
         return branch
 
-    def close_active_branch(self, session_id: str, *, reason: str = "llm_close") -> bool:
-        """主 LLM 发出 branch=close：关闭当前会话的活跃分支。"""
+    def capture_routing_lease(
+        self,
+        session_id: str,
+    ) -> InteractionBranchRoutingLease | None:
+        """Freeze the live branch identity seen by one admitted user turn."""
+
         branch = self.active_branch_for_session(session_id)
+        if branch is None or branch.provider != "browser" or not (
+            branch.browser_session_id or branch.active_run_id
+        ):
+            return None
+        if not math.isfinite(branch.expires_at) or branch.expires_at <= 0:
+            return None
+        return InteractionBranchRoutingLease(
+            branch_id=branch.branch_id,
+            parent_session_id=branch.parent_session_id,
+            provider=branch.provider,
+            instruction_revision=branch.instruction_revision,
+            expires_at=branch.expires_at,
+        )
+
+    def resolve_routing_lease(
+        self,
+        lease: InteractionBranchRoutingLease,
+    ) -> InteractionBranchState | None:
+        """Resolve only the exact still-current branch generation."""
+
+        if not isinstance(lease, InteractionBranchRoutingLease):
+            return None
+        branch = self.active_branch_for_session(lease.parent_session_id)
         if branch is None:
+            return None
+        now = time.time()
+        if (
+            branch.branch_id != lease.branch_id
+            or branch.provider != lease.provider
+            or branch.instruction_revision != lease.instruction_revision
+            or not math.isfinite(lease.expires_at)
+            or lease.expires_at <= now
+            or not math.isfinite(branch.expires_at)
+            or branch.expires_at <= now
+            or not (branch.browser_session_id or branch.active_run_id)
+        ):
+            return None
+        return branch
+
+    async def validate_routing_lease(
+        self,
+        lease: InteractionBranchRoutingLease,
+    ) -> bool:
+        """Revalidate one captured generation under the owning Session lock."""
+
+        lock = self._branch_locks.setdefault(lease.parent_session_id, asyncio.Lock())
+        async with lock:
+            return bool(
+                not self.termination_pending_for_session(lease.parent_session_id)
+                and self.resolve_routing_lease(lease) is not None
+            )
+
+    async def validate_absent_routing_scope(self, session_id: str) -> bool:
+        """Confirm that no branch appeared after an admitted empty snapshot."""
+
+        sid = str(session_id or "").strip()
+        if not sid:
             return False
-        self._close_branch(branch, status="closed", reason=reason)
+        lock = self._branch_locks.setdefault(sid, asyncio.Lock())
+        async with lock:
+            return bool(
+                self.active_branch_for_session(sid) is None
+                and not self.termination_pending_for_session(sid)
+                and self.provider_admission_for_session(sid) is None
+            )
+
+    async def provider_start_admission(
+        self,
+        scope: Mapping[str, Any],
+        *,
+        session_id: str,
+        provider: str,
+        reservation_id: str,
+        run_id: str = "",
+        phase: str,
+    ) -> tuple[bool, str]:
+        """Reserve/validate one short final-Provider admission window."""
+
+        sid = str(session_id or "").strip()
+        token = str(reservation_id or "").strip()
+        selected = str(provider or "").strip().lower()
+        step = str(phase or "").strip().lower()
+        scope_sid = str(scope.get("parent_session_id") or "").strip()
+        state = str(scope.get("state") or "bound").strip().lower()
+        if not sid or scope_sid != sid or not token or not selected:
+            return False, "invalid_provider_admission_identity"
+        lock = self._branch_locks.setdefault(sid, asyncio.Lock())
+        async with lock:
+            existing = self.provider_admission_for_session(sid)
+            if step == "release":
+                if existing is not None and existing.reservation_id == token:
+                    self._provider_admission_by_session.pop(sid, None)
+                return True, "provider_admission_released"
+            if self.termination_pending_for_session(sid):
+                return False, "prior_browser_run_stop_unconfirmed"
+            if state != "absent":
+                return False, "provider_admission_requires_absent_browser_scope"
+            branch = self.active_branch_for_session(sid)
+            if step == "reserve":
+                if existing is not None and existing.reservation_id != token:
+                    return False, "provider_admission_already_reserved"
+                if existing is not None and existing.provider != selected:
+                    return False, "provider_admission_provider_mismatch"
+                if branch is not None:
+                    return False, "browser_branch_appeared_before_provider_admission"
+                self._provider_admission_by_session[sid] = (
+                    _ProviderAdmissionReservation(
+                        reservation_id=token,
+                        provider=selected,
+                        observed_at=time.time(),
+                    )
+                )
+                return True, "provider_admission_reserved"
+            if existing is None or existing.reservation_id != token:
+                return False, "provider_admission_reservation_lost"
+            if existing.provider != selected:
+                return False, "provider_admission_provider_mismatch"
+            if step == "created":
+                exact_run_id = str(run_id or "").strip()
+                if not exact_run_id:
+                    return False, "provider_admission_run_id_missing"
+                self._provider_admission_by_session[sid] = (
+                    _ProviderAdmissionReservation(
+                        reservation_id=existing.reservation_id,
+                        provider=existing.provider,
+                        observed_at=existing.observed_at,
+                        run_id=exact_run_id,
+                    )
+                )
+                return True, "provider_admission_run_bound"
+            own_browser_run = bool(
+                selected == "browser"
+                and str(run_id or "").strip()
+                and branch is not None
+                and branch.active_run_id == str(run_id or "").strip()
+                and existing.run_id == str(run_id or "").strip()
+            )
+            if branch is not None and not own_browser_run:
+                return False, "browser_branch_appeared_during_provider_admission"
+            if step == "commit":
+                self._provider_admission_by_session.pop(sid, None)
+                return True, "provider_admission_committed"
+            return False, "invalid_provider_admission_phase"
+
+    def provider_admission_for_session(
+        self,
+        session_id: str,
+    ) -> _ProviderAdmissionReservation | None:
+        sid = str(session_id or "").strip()
+        reservation = self._provider_admission_by_session.get(sid)
+        if reservation is not None and (
+            time.time() - reservation.observed_at
+        ) > max(300.0, self.ttl_seconds * 2.0):
+            logger.error(
+                "expiring orphaned provider admission reservation session=%s token=%s",
+                sid,
+                reservation.reservation_id,
+            )
+            self._provider_admission_by_session.pop(sid, None)
+            return None
+        return reservation
+
+    async def close_from_routing_lease(
+        self,
+        lease: InteractionBranchRoutingLease,
+        *,
+        reason: str,
+        admission_check: Callable[[], None] | None = None,
+    ) -> bool:
+        """Close the exact captured branch; never a later replacement."""
+
+        lock = self._branch_locks.setdefault(lease.parent_session_id, asyncio.Lock())
+        cancel_args: tuple[str, str, str, int] | None = None
+        async with lock:
+            if admission_check is not None:
+                admission_check()
+            pending = self.termination_pending_for_session(
+                lease.parent_session_id
+            )
+            if pending:
+                first = pending[0]
+                raise InteractionBranchRunStopUnconfirmed(
+                    branch_id=first.branch_id,
+                    run_id=first.run_id,
+                    reason=first.reason,
+                )
+            branch = self.resolve_routing_lease(lease)
+            if branch is None:
+                return False
+            active_run_id = str(branch.active_run_id or "").strip()
+            browser_session_id = branch.browser_session_id
+            self._close_branch(
+                branch,
+                status="closed",
+                reason=reason,
+                queue_stop=False,
+            )
+            if active_run_id:
+                cancel_args = (
+                    branch.branch_id,
+                    browser_session_id,
+                    active_run_id,
+                    branch.instruction_revision,
+                )
+                self._mark_termination_pending(
+                    session_id=lease.parent_session_id,
+                    branch_id=branch.branch_id,
+                    run_id=active_run_id,
+                    reason=f"termination_in_progress:{reason}",
+                )
+        if cancel_args is not None:
+            branch_id, browser_session_id, run_id, revision = cancel_args
+            confirmed, stop_reason, _before_execution = await self._cancel_stale_run_identity(
+                session_id=lease.parent_session_id,
+                branch_id=branch_id,
+                browser_session_id=browser_session_id,
+                run_id=run_id,
+                revision=revision,
+                reason=reason,
+            )
+            if not confirmed:
+                raise InteractionBranchRunStopUnconfirmed(
+                    branch_id=branch_id,
+                    run_id=run_id,
+                    reason=stop_reason,
+                )
         return True
 
-    def close_for_provider_handoff(
+    async def close_active_branch(
+        self,
+        session_id: str,
+        *,
+        reason: str = "llm_close",
+    ) -> bool:
+        """主 LLM 发出 branch=close：关闭当前会话的活跃分支。"""
+        sid = str(session_id or "").strip()
+        if not sid:
+            return False
+        lock = self._branch_locks.setdefault(sid, asyncio.Lock())
+        cancel_args: tuple[str, str, str, int] | None = None
+        async with lock:
+            pending = self.termination_pending_for_session(sid)
+            if pending:
+                first = pending[0]
+                raise InteractionBranchRunStopUnconfirmed(
+                    branch_id=first.branch_id,
+                    run_id=first.run_id,
+                    reason=first.reason,
+                )
+            branch = self.active_branch_for_session(sid)
+            if branch is None:
+                return False
+            active_run_id = str(branch.active_run_id or "").strip()
+            browser_session_id = branch.browser_session_id
+            self._close_branch(
+                branch,
+                status="closed",
+                reason=reason,
+                queue_stop=False,
+            )
+            if active_run_id:
+                cancel_args = (
+                    branch.branch_id,
+                    browser_session_id,
+                    active_run_id,
+                    branch.instruction_revision,
+                )
+                self._mark_termination_pending(
+                    session_id=sid,
+                    branch_id=branch.branch_id,
+                    run_id=active_run_id,
+                    reason=f"termination_in_progress:{reason}",
+                )
+        if cancel_args is not None:
+            branch_id, browser_session_id, run_id, revision = cancel_args
+            confirmed, stop_reason, _before_execution = await self._cancel_stale_run_identity(
+                session_id=sid,
+                branch_id=branch_id,
+                browser_session_id=browser_session_id,
+                run_id=run_id,
+                revision=revision,
+                reason=reason,
+            )
+            if not confirmed:
+                raise InteractionBranchRunStopUnconfirmed(
+                    branch_id=branch_id,
+                    run_id=run_id,
+                    reason=stop_reason,
+                )
+        return True
+
+    async def close_for_provider_handoff(
         self,
         session_id: str,
         *,
         next_provider: str,
+        routing_lease: InteractionBranchRoutingLease | None = None,
+        replace_same_provider: bool = False,
     ) -> bool:
         """Retire a live branch when canonical control selects another Provider.
 
@@ -163,15 +577,70 @@ class InteractionBranchCoordinator:
         Same-provider work remains on the normal continue/new/close lifecycle.
         """
 
-        branch = self.active_branch_for_session(session_id)
+        sid = str(session_id or "").strip()
         selected = str(next_provider or "").strip().lower()
-        if branch is None or not selected or branch.provider == selected:
+        if not sid or not selected:
             return False
-        self._close_branch(
-            branch,
-            status="superseded",
-            reason=f"provider_handoff:{selected}",
-        )
+        lock = self._branch_locks.setdefault(sid, asyncio.Lock())
+        cancel_args: tuple[str, str, str, int] | None = None
+        async with lock:
+            pending = self.termination_pending_for_session(sid)
+            if pending:
+                first = pending[0]
+                raise InteractionBranchRunStopUnconfirmed(
+                    branch_id=first.branch_id,
+                    run_id=first.run_id,
+                    reason=first.reason,
+                )
+            if routing_lease is not None:
+                if routing_lease.parent_session_id != sid:
+                    raise InteractionBranchRoutingLeaseStale(routing_lease)
+                branch = self.resolve_routing_lease(routing_lease)
+                if branch is None:
+                    raise InteractionBranchRoutingLeaseStale(routing_lease)
+            else:
+                branch = self.active_branch_for_session(sid)
+            if branch is None or (
+                branch.provider == selected and not replace_same_provider
+            ):
+                return False
+            active_run_id = str(branch.active_run_id or "").strip()
+            browser_session_id = branch.browser_session_id
+            self._close_branch(
+                branch,
+                status="superseded",
+                reason=f"provider_handoff:{selected}",
+                queue_stop=False,
+            )
+            if active_run_id:
+                cancel_args = (
+                    branch.branch_id,
+                    browser_session_id,
+                    active_run_id,
+                    branch.instruction_revision,
+                )
+                self._mark_termination_pending(
+                    session_id=sid,
+                    branch_id=branch.branch_id,
+                    run_id=active_run_id,
+                    reason=f"termination_in_progress:provider_handoff:{selected}",
+                )
+        if cancel_args is not None:
+            branch_id, browser_session_id, run_id, revision = cancel_args
+            confirmed, stop_reason, _before_execution = await self._cancel_stale_run_identity(
+                session_id=sid,
+                branch_id=branch_id,
+                browser_session_id=browser_session_id,
+                run_id=run_id,
+                revision=revision,
+                reason=f"provider_handoff:{selected}",
+            )
+            if not confirmed:
+                raise InteractionBranchRunStopUnconfirmed(
+                    branch_id=branch_id,
+                    run_id=run_id,
+                    reason=stop_reason,
+                )
         return True
 
     async def continue_from_delegate(
@@ -181,7 +650,9 @@ class InteractionBranchCoordinator:
         task: str,
         source_user_text: str = "",
         turn_id: str = "",
-    ) -> dict[str, Any] | None:
+        routing_lease: InteractionBranchRoutingLease | None = None,
+        admission_check: Callable[[], None] | None = None,
+    ) -> InteractionBranchContinuationReceipt | None:
         """主 LLM 发出 branch=continue：在活跃分支内后台执行规范化指令。
 
         与旧的同步路由不同：不 await run 完成——发标签的那轮对话已经给了
@@ -189,10 +660,21 @@ class InteractionBranchCoordinator:
         仍保持静音，后续读取只能使用经过宿主事实约束的 visible_summary。
         返回 run 信息；无活跃分支时返回 None（调用方按 branch=new 处理）。
         """
-        branch = self.active_branch_for_session(session_id)
+        sid = str(session_id or "").strip()
+        if self.termination_pending_for_session(sid):
+            return None
+        if routing_lease is not None and sid != routing_lease.parent_session_id:
+            return None
+        branch = (
+            self.resolve_routing_lease(routing_lease)
+            if routing_lease is not None
+            else self.active_branch_for_session(sid)
+        )
         if branch is None or branch.provider != "browser" or not (
             branch.browser_session_id or branch.active_run_id
         ):
+            return None
+        if not math.isfinite(branch.expires_at) or branch.expires_at <= time.time():
             return None
         # The model-authored task is an execution proposal.  The exact source
         # turn owns the branch goal and visible transcript; otherwise one bad
@@ -201,120 +683,404 @@ class InteractionBranchCoordinator:
         user_text = str(source_user_text or task or "").strip()
         if not user_text:
             return None
-        self._append_branch_message(
-            branch,
-            role="user",
-            content=user_text,
-            visibility="visible",
-            source=(
-                "main_chat_intervention"
-                if str(source_user_text or "").strip()
-                else "legacy_llm_branch_continue"
-            ),
-            metadata={"turn_id": turn_id},
-        )
-        branch.status = "active"
-        if not branch.pending_goal:
-            branch.pending_goal = self._trim(user_text, 700)
-        branch.updated_at = time.time()
-        branch.expires_at = branch.updated_at + self.ttl_seconds
-        self._persist(branch)
-        logger.info(
-            "llm-routed branch continuation session=%s branch=%s task=%r",
-            session_id,
-            branch.branch_id,
-            user_text[:60],
-        )
-        return await self._start_or_steer(
+        return await self._continue_branch(
             branch,
             user_text,
             turn_id=turn_id,
             route_reason="llm_branch_continue",
+            message_source=(
+                "main_chat_intervention"
+                if str(source_user_text or "").strip()
+                else "legacy_llm_branch_continue"
+            ),
+            routing_lease=routing_lease,
+            admission_check=admission_check,
         )
 
-    async def _start_or_steer(
+    async def start_from_turn(
+        self,
+        *,
+        session_id: str,
+        source_user_text: str,
+        target_url: str,
+        turn_id: str,
+        routing_scope: Mapping[str, Any],
+        admission_check: Callable[[], None] | None = None,
+    ) -> InteractionBranchContinuationReceipt | None:
+        """Start one Browser branch only from an exact admitted absent scope."""
+
+        sid = str(session_id or "").strip()
+        text = str(source_user_text or "").strip()
+        url = str(target_url or "").strip()
+        parsed = urlparse(url)
+        if (not sid or not text or parsed.scheme not in {"http", "https"}
+                or not parsed.netloc
+                or str(routing_scope.get("state") or "") != "absent"
+                or str(routing_scope.get("parent_session_id") or "") != sid):
+            return None
+        if not await self.validate_absent_routing_scope(sid):
+            return None
+        if admission_check is not None:
+            admission_check()
+        from server.provider_requirements import (
+            DelegateRequirementFacts,
+            compile_delegate_requirements,
+        )
+
+        branch_id = f"ibr_browser_{uuid.uuid4().hex[:16]}"
+        admission_id = f"browser-admission-{uuid.uuid4().hex}"
+        requirements = compile_delegate_requirements(
+            DelegateRequirementFacts(
+                requested_provider="browser",
+                required_interaction="bidirectional",
+            )
+        )
+        response = await self.provider_run({"provider":"browser",
+            "task":text, "mode":"open", "requirements":requirements.to_dict(),
+            "metadata":{"source":"llm_delegate", "session_id":sid,
+                "turn_id":str(turn_id or ""), "source_user_text":text,
+                "browser_action":"open", "browser_mode":"open", "url":url,
+                "provider_branch":True, "branch_intent":"new",
+                "interaction_branch_id":branch_id,
+                "branch_instruction_revision":1,
+                "interaction_branch_routing_scope":dict(routing_scope),
+                "interaction_branch_admission_id":admission_id,
+                "max_branch_actions":0}})
+        run = response.get("run") if isinstance(response, dict) else {}
+        run = dict(run) if isinstance(run, dict) else {}
+        if not str(run.get("run_id") or ""):
+            return InteractionBranchContinuationReceipt(
+                disposition="failed", reason="provider_start_receipt_missing",
+                branch_id=branch_id, instruction_revision=1,
+                execution_started=None)
+        return InteractionBranchContinuationReceipt(
+            disposition="accepted", reason="provider_run_started",
+            branch_id=branch_id, instruction_revision=1, run=run)
+
+    async def _continue_branch(
         self,
         branch: InteractionBranchState,
         user_text: str,
         *,
         turn_id: str,
         route_reason: str,
-    ) -> dict[str, Any]:
-        """Serialize one branch and reuse its active run when steerable."""
+        message_source: str,
+        routing_lease: InteractionBranchRoutingLease | None = None,
+        admission_check: Callable[[], None] | None = None,
+    ) -> InteractionBranchContinuationReceipt | None:
+        """Reserve under the session lock, await Provider I/O, then finalize."""
 
         lock = self._branch_locks.setdefault(branch.parent_session_id, asyncio.Lock())
         async with lock:
-            branch.instruction_revision += 1
-            branch.latest_instruction = self._trim(user_text, 700)
-            revision = branch.instruction_revision
+            if admission_check is not None:
+                admission_check()
+            if self.termination_pending_for_session(branch.parent_session_id):
+                return None
+            current = (
+                self.resolve_routing_lease(routing_lease)
+                if routing_lease is not None
+                else self.active_branch_for_session(branch.parent_session_id)
+            )
+            if current is None or current.branch_id != branch.branch_id:
+                return None
+            self._append_branch_message(
+                current,
+                role="user",
+                content=user_text,
+                visibility="visible",
+                source=message_source,
+                metadata={"turn_id": turn_id},
+            )
+            current.status = "active"
+            if not current.pending_goal:
+                current.pending_goal = self._trim(user_text, 700)
+            current.updated_at = time.time()
+            current.expires_at = current.updated_at + self.ttl_seconds
+            current.instruction_revision += 1
+            current.latest_instruction = self._trim(user_text, 700)
+            revision = current.instruction_revision
             params = self._build_continue_params(
-                branch,
+                current,
                 user_text,
                 turn_id=turn_id,
                 route_reason=route_reason,
             )
-            if branch.active_run_id and self.provider_steer is not None:
+            active_run_id = str(current.active_run_id or "")
+            self._persist(current)
+            logger.info(
+                "routing branch continuation session=%s branch=%s reason=%s task=%r",
+                current.parent_session_id,
+                current.branch_id,
+                route_reason,
+                user_text[:60],
+            )
+        return await self._start_or_steer(
+                current,
+                params,
+                turn_id=turn_id,
+                revision=revision,
+                active_run_id=active_run_id,
+            )
+
+    async def _start_or_steer(
+        self,
+        branch: InteractionBranchState,
+        params: dict[str, Any],
+        *,
+        turn_id: str,
+        revision: int,
+        active_run_id: str,
+    ) -> InteractionBranchContinuationReceipt:
+        """Run Provider calls outside the lock and commit only the reservation."""
+
+        lock = self._branch_locks.setdefault(branch.parent_session_id, asyncio.Lock())
+        if active_run_id and self.provider_steer is None:
+            async with lock:
+                if self._reservation_is_current(branch, revision):
+                    branch.metadata = {
+                        **branch.metadata,
+                        "steering": {
+                            "state": "failed",
+                            "revision": revision,
+                            "run_id": active_run_id,
+                            "reason": "provider_steering_unavailable",
+                        },
+                    }
+                    self._persist(branch)
+            return InteractionBranchContinuationReceipt(
+                disposition="failed",
+                reason="provider_steering_unavailable",
+                branch_id=branch.branch_id,
+                instruction_revision=revision,
+                run={
+                    "run_id": active_run_id,
+                    "provider": branch.provider,
+                    "status": "running",
+                },
+            )
+        if active_run_id and self.provider_steer is not None:
+            try:
                 steer_result = await self.provider_steer(
                     {
-                        "run_id": branch.active_run_id,
+                        "run_id": active_run_id,
                         "task": params["task"],
                         "revision": revision,
                         "metadata": dict(params["metadata"]),
                     }
                 )
-                if isinstance(steer_result, dict) and steer_result.get("accepted") is True:
+            except Exception as exc:
+                logger.exception("failed to steer browser interaction branch")
+                return InteractionBranchContinuationReceipt(
+                    disposition="failed",
+                    reason=f"provider_steer_failed:{type(exc).__name__}",
+                    branch_id=branch.branch_id,
+                    instruction_revision=revision,
+                )
+            async with lock:
+                if not self._reservation_is_current(branch, revision):
+                    return InteractionBranchContinuationReceipt(
+                        disposition="superseded",
+                        reason="branch_generation_superseded_during_steer",
+                        branch_id=branch.branch_id,
+                        instruction_revision=revision,
+                        run=(
+                            dict(steer_result.get("run"))
+                            if isinstance(steer_result, dict)
+                            and isinstance(steer_result.get("run"), dict)
+                            else {}
+                        ),
+                    )
+                if (
+                    isinstance(steer_result, dict)
+                    and steer_result.get("accepted") is True
+                ):
+                    branch.accepted_instruction_revision = max(
+                        branch.accepted_instruction_revision,
+                        revision,
+                    )
                     branch.metadata = {
                         **branch.metadata,
                         "steering": {
                             "state": "queued",
                             "revision": revision,
-                            "run_id": branch.active_run_id,
+                            "run_id": active_run_id,
                             "turn_id": turn_id,
                         },
                     }
                     branch.updated_at = time.time()
                     self._persist(branch)
-                    run = steer_result.get("run")
-                    return dict(run) if isinstance(run, dict) else {
-                        "run_id": branch.active_run_id,
-                        "provider": branch.provider,
-                        "status": "running",
-                    }
+                    supplied_run = steer_result.get("run")
+                    run = (
+                        dict(supplied_run)
+                        if isinstance(supplied_run, dict)
+                        else {
+                            "run_id": active_run_id,
+                            "provider": branch.provider,
+                            "status": "running",
+                        }
+                    )
+                    return InteractionBranchContinuationReceipt(
+                        disposition="accepted",
+                        reason="steer_accepted",
+                        branch_id=branch.branch_id,
+                        instruction_revision=revision,
+                        run=run,
+                    )
 
                 reason = str(
-                    steer_result.get("reason") if isinstance(steer_result, dict) else ""
+                    steer_result.get("reason")
+                    if isinstance(steer_result, dict)
+                    else ""
                 )
-                run = steer_result.get("run") if isinstance(steer_result, dict) else {}
-                run_status = str(run.get("status") if isinstance(run, dict) else "").lower()
+                supplied_run = (
+                    steer_result.get("run")
+                    if isinstance(steer_result, dict)
+                    else {}
+                )
+                run = dict(supplied_run) if isinstance(supplied_run, dict) else {}
+                run_status = str(run.get("status") or "").lower()
                 if reason not in {"already_finished", "not_found"} and run_status in {
                     "queued",
                     "running",
                 }:
                     # Never start a second run against the same Playwright
-                    # session. A rejection this late is an audit-visible
-                    # next-turn deferral; the caller may retry once terminal.
+                    # session. Rejection is a visible next-turn deferral, not
+                    # a successful continuation receipt.
                     branch.metadata = {
                         **branch.metadata,
                         "steering": {
                             "state": "deferred",
                             "revision": revision,
-                            "run_id": branch.active_run_id,
+                            "run_id": active_run_id,
                             "reason": reason or "active_run_rejected_steer",
                         },
                     }
                     self._persist(branch)
-                    return dict(run)
+                    return InteractionBranchContinuationReceipt(
+                        disposition="deferred",
+                        reason=reason or "active_run_rejected_steer",
+                        branch_id=branch.branch_id,
+                        instruction_revision=revision,
+                        run=run,
+                    )
                 branch.active_run_id = ""
+                self._persist(branch)
 
+        try:
             response = await self.provider_run(params)
-            run = response.get("run") if isinstance(response, dict) else {}
-            if not isinstance(run, dict):
-                run = {}
-            branch.active_run_id = str(run.get("run_id") or "")
-            branch.status = "active"
-            branch.updated_at = time.time()
-            self._persist(branch)
-            return run
+        except Exception as exc:
+            logger.exception("failed to start browser interaction branch continuation")
+            return InteractionBranchContinuationReceipt(
+                disposition="failed",
+                reason=f"provider_start_failed:{type(exc).__name__}",
+                branch_id=branch.branch_id,
+                instruction_revision=revision,
+            )
+        run = response.get("run") if isinstance(response, dict) else {}
+        if not isinstance(run, dict):
+            run = {}
+        run_id = str(run.get("run_id") or "")
+        retained_original_run = False
+        before_execution: bool | None = None
+        async with lock:
+            if not self._reservation_is_current(branch, revision):
+                current = self._active_by_session.get(branch.parent_session_id)
+                same_run_in_newer_generation = bool(
+                    current is not None
+                    and current.branch_id == branch.branch_id
+                    and current.active_run_id == run_id
+                    and current.instruction_revision > revision
+                    and not self._branch_was_semantically_closed(branch.branch_id)
+                )
+                adopted_by_newer_generation = bool(
+                    same_run_in_newer_generation
+                    and current is not None
+                    and current.accepted_instruction_revision > revision
+                )
+                retained_original_run = bool(
+                    same_run_in_newer_generation
+                    and not adopted_by_newer_generation
+                )
+                cancel_stale = bool(
+                    not retained_original_run
+                    and not adopted_by_newer_generation
+                    and not self._run_was_semantically_closed(run_id)
+                )
+                if cancel_stale:
+                    self._mark_run_semantically_closed(run_id)
+                    self._mark_termination_pending(
+                        session_id=branch.parent_session_id,
+                        branch_id=branch.branch_id,
+                        run_id=run_id,
+                        reason=(
+                            "termination_in_progress:"
+                            "branch_generation_superseded_during_start"
+                        ),
+                    )
+                stale = not retained_original_run
+            else:
+                branch.active_run_id = run_id
+                branch.status = "active"
+                branch.accepted_instruction_revision = max(
+                    branch.accepted_instruction_revision,
+                    revision,
+                )
+                branch.updated_at = time.time()
+                self._persist(branch)
+                stale = False
+        if retained_original_run:
+            return InteractionBranchContinuationReceipt(
+                disposition="accepted",
+                reason="provider_run_retained_after_newer_continuation_rejected",
+                branch_id=branch.branch_id,
+                instruction_revision=revision,
+                run=dict(run),
+            )
+        if stale:
+            if cancel_stale:
+                confirmed, stop_reason, before_execution = await self._cancel_stale_run(
+                    branch,
+                    run_id=run_id,
+                    revision=revision + 1,
+                    reason="branch_generation_superseded_during_start",
+                )
+                if not confirmed:
+                    return InteractionBranchContinuationReceipt(
+                        disposition="failed",
+                        reason=f"run_stop_unconfirmed:{stop_reason}",
+                        branch_id=branch.branch_id,
+                        instruction_revision=revision,
+                        run=dict(run),
+                        execution_started=None,
+                    )
+            return InteractionBranchContinuationReceipt(
+                disposition="superseded",
+                reason="branch_generation_superseded_during_start",
+                branch_id=branch.branch_id,
+                instruction_revision=revision,
+                run=dict(run),
+                execution_started=(False if before_execution is True else None),
+            )
+        return InteractionBranchContinuationReceipt(
+            disposition="accepted",
+            reason="provider_run_started",
+            branch_id=branch.branch_id,
+            instruction_revision=revision,
+            run=dict(run),
+        )
+
+    def _reservation_is_current(
+        self,
+        branch: InteractionBranchState,
+        revision: int,
+    ) -> bool:
+        current = self._active_by_session.get(branch.parent_session_id)
+        return bool(
+            current is not None
+            and current.branch_id == branch.branch_id
+            and current.instruction_revision == revision
+            and not self._branch_was_semantically_closed(branch.branch_id)
+        )
 
     def _build_continue_params(
         self,
@@ -377,55 +1143,173 @@ class InteractionBranchCoordinator:
         text: str,
         session_id: str,
         turn_id: str = "",
+        routing_scope: Mapping[str, Any] | None = None,
+        turn_admission: TurnAdmissionRecord | None = None,
     ) -> dict[str, Any] | None:
         """Route a user turn into the active branch when it is a continuation."""
 
+        require_legacy_turn_authority(turn_admission)
+        if turn_admission is not None:
+            session_id = turn_admission.session_id
         user_text = str(text or "").strip()
         sid = str(session_id or "").strip()
         if not user_text or not sid:
             return None
-        branch = self.active_branch_for_session(sid)
+        if self.termination_pending_for_session(sid):
+            return None
+        routing_lease: InteractionBranchRoutingLease | None = None
+        if routing_scope is not None:
+            scope_state = str(routing_scope.get("state") or "").strip().lower()
+            if scope_state != "bound":
+                # An admitted absence/quarantine is evidence, not permission to
+                # adopt a branch that appeared while this turn was in flight.
+                return None
+            routing_lease = InteractionBranchRoutingLease.from_mapping(routing_scope)
+            if routing_lease is None or routing_lease.parent_session_id != sid:
+                return None
+            branch = self.resolve_routing_lease(routing_lease)
+        else:
+            # Compatibility for direct callers predating turn-start capture.
+            # Production ChatHandler always supplies the admitted scope.
+            branch = self.active_branch_for_session(sid)
         if branch is None:
             return None
         if branch.provider != "browser" or not (
             branch.browser_session_id or branch.active_run_id
         ):
             return None
+        if not math.isfinite(branch.expires_at) or branch.expires_at <= time.time():
+            return None
         # 三条结构性快通道（按分支状态/显式结构触发，不查词表）。
         # 其余一切消息返回 None → 落回主对话，由主 LLM 借助分支状态块
         # 决定 branch=continue/new/close（单脑路由）。
         route_kind, route_reason = self._structural_fast_path(branch, user_text)
         if route_kind == "retarget":
-            self._close_branch(branch, status="superseded", reason=route_reason)
-            return None
+            lock = self._branch_locks.setdefault(sid, asyncio.Lock())
+            cancel_args: tuple[str, str, str, int] | None = None
+            transitioned_branch_id = ""
+            async with lock:
+                current = (
+                    self.resolve_routing_lease(routing_lease)
+                    if routing_lease is not None
+                    else self._active_by_session.get(sid)
+                )
+                if current is not None and current.branch_id == branch.branch_id:
+                    transitioned_branch_id = current.branch_id
+                    active_run_id = str(current.active_run_id or "").strip()
+                    browser_session_id = current.browser_session_id
+                    self._close_branch(
+                        current,
+                        status="superseded",
+                        reason=route_reason,
+                        queue_stop=False,
+                    )
+                    if active_run_id:
+                        cancel_args = (
+                            current.branch_id,
+                            browser_session_id,
+                            active_run_id,
+                            current.instruction_revision,
+                        )
+                        self._mark_termination_pending(
+                            session_id=sid,
+                            branch_id=current.branch_id,
+                            run_id=active_run_id,
+                            reason=f"termination_in_progress:{route_reason}",
+                        )
+            if cancel_args is not None:
+                branch_id, browser_session_id, run_id, revision = cancel_args
+                confirmed, stop_reason, _before_execution = await self._cancel_stale_run_identity(
+                    session_id=sid,
+                    branch_id=branch_id,
+                    browser_session_id=browser_session_id,
+                    run_id=run_id,
+                    revision=revision,
+                    reason=route_reason,
+                )
+                if not confirmed:
+                    return {
+                        "handled": True,
+                        "route_kind": "browser_retarget_blocked",
+                        "branch_id": "",
+                        "blocked_branch_id": branch_id,
+                        "provider": "browser",
+                        "display_text": (
+                            "I could not confirm that the previous browser action stopped, "
+                            "so I did not start the new page request."
+                        ),
+                        "voice_text_ja": (
+                            "前のブラウザ操作が停止したことを確認できなかったため、"
+                            "新しいページ操作は開始していないわ。"
+                        ),
+                        "speak": True,
+                        "continuation_disposition": "failed",
+                        "continuation_reason": (
+                            f"run_stop_unconfirmed:{stop_reason}"
+                        ),
+                    }
+            if not transitioned_branch_id:
+                return None
+            return {
+                "handled": False,
+                "route_kind": "browser_retarget_released",
+                "provider": "browser",
+                "routing_scope_transition": {
+                    "state": "absent",
+                    "parent_session_id": sid,
+                    "captured_at": time.time(),
+                    "transitioned_from_branch_id": transitioned_branch_id,
+                },
+            }
         if route_kind != "continue":
             return None
 
-        self._append_branch_message(
-            branch,
-            role="user",
-            content=user_text,
-            visibility="visible",
-            source="branch_followup",
-            metadata={"turn_id": turn_id},
-        )
-        branch.status = "active"
-        if not branch.pending_goal:
-            branch.pending_goal = self._trim(user_text, 700)
-        branch.updated_at = time.time()
-        branch.expires_at = branch.updated_at + self.ttl_seconds
-        self._persist(branch)
-        logger.info(
-            "routing chat turn into browser interaction branch session=%s branch=%s",
-            sid,
-            branch.branch_id,
-        )
-        run = await self._start_or_steer(
+        receipt = await self._continue_branch(
             branch,
             user_text,
             turn_id=turn_id,
             route_reason=route_reason,
+            message_source="branch_followup",
+            routing_lease=routing_lease,
         )
+        if receipt is None:
+            return None
+        run = dict(receipt.run)
+        if not receipt.accepted:
+            execution_uncertain = receipt.execution_started is not False
+            return {
+                "handled": True,
+                "route_kind": "browser_continuation_blocked",
+                "branch_id": receipt.branch_id,
+                "provider": "browser",
+                "display_text": (
+                    "I could not confirm whether the current browser transition "
+                    "had already begun, so I blocked any replacement action."
+                    if execution_uncertain
+                    else (
+                        "I could not apply that instruction to the current browser run. "
+                        "Nothing new was started; please try again after the current step finishes."
+                    )
+                ),
+                "voice_text_ja": (
+                    "現在のブラウザ遷移がすでに始まっていたか確認できなかったため、"
+                    "代わりの操作は開始せずに止めたわ。"
+                    if execution_uncertain
+                    else (
+                        "いまのブラウザ操作にはその指示を適用できなかったわ。"
+                        "新しい処理は開始していないから、現在の操作が終わってからもう一度頼んで。"
+                    )
+                ),
+                "speak": True,
+                "run": run,
+                "continuation_disposition": receipt.disposition,
+                "continuation_reason": receipt.reason,
+                **(
+                    {"execution_uncertain": True}
+                    if execution_uncertain
+                    else {"execution_started": False}
+                ),
+            }
 
         try:
             from agent_host.provider_runtime import runtime
@@ -444,7 +1328,9 @@ class InteractionBranchCoordinator:
         except Exception:
             logger.exception("failed waiting for branch provider run")
 
-        self._update_from_run(run, fallback_session_id=sid, user_text=user_text)
+        lock = self._branch_locks.setdefault(sid, asyncio.Lock())
+        async with lock:
+            self._update_from_run(run, fallback_session_id=sid, user_text=user_text)
         display_text = self._display_text_for_run(run, branch)
         return {
             "handled": True,
@@ -458,7 +1344,53 @@ class InteractionBranchCoordinator:
         }
 
     async def _on_provider_result(self, _method: str, params: dict[str, Any]) -> None:
-        if isinstance(params, dict):
+        if not isinstance(params, dict):
+            return
+        session_id = self._run_session_id(params)
+        if not session_id:
+            return
+        lock = self._branch_locks.setdefault(session_id, asyncio.Lock())
+        async with lock:
+            run_id = str(params.get("run_id") or "").strip()
+            status = str(params.get("status") or "").strip().lower()
+            if run_id and status in {"done", "error", "cancelled", "canceled"}:
+                # A terminal fact releases an earlier stop-uncertainty
+                # quarantine even when the run itself is tombstoned. Never let
+                # the tombstone suppress liveness recovery.
+                self._clear_termination_pending(session_id, run_id)
+
+            if str(params.get("provider") or "").strip().lower() != "browser":
+                return
+            metadata = (
+                params.get("metadata")
+                if isinstance(params.get("metadata"), dict)
+                else {}
+            )
+            provider_branch = (
+                metadata.get("provider_branch")
+                if isinstance(metadata.get("provider_branch"), dict)
+                else {}
+            )
+            declared_branch_id = str(
+                metadata.get("interaction_branch_id")
+                or provider_branch.get("branch_id")
+                or ""
+            ).strip()
+            branch = self._active_by_session.get(session_id)
+            if branch is None:
+                # Production registration happens on run.created. A bare
+                # terminal result cannot manufacture a new branch after the
+                # originating generation has disappeared.
+                return
+            if declared_branch_id and declared_branch_id != branch.branch_id:
+                return
+            known_run_ids = {
+                str(branch.active_run_id or "").strip(),
+                str(branch.last_run_id or "").strip(),
+            }
+            known_run_ids.discard("")
+            if not run_id or run_id not in known_run_ids:
+                return
             self._update_from_run(params)
 
     async def _on_provider_event(self, _method: str, params: dict[str, Any]) -> None:
@@ -482,102 +1414,356 @@ class InteractionBranchCoordinator:
                     break
         if not session_id:
             return
-        source = str(metadata.get("source") or "").strip().lower()
-        is_branch_run = bool(
-            metadata.get("provider_branch")
-            or metadata.get("interaction_branch_id")
-            or source in {"llm_delegate", "browser_branch"}
-        )
-        branch = self._active_by_session.get(session_id)
-        work = metadata.get("work") if isinstance(metadata.get("work"), dict) else {}
-        incoming_work_item_id = str(
-            work.get("work_item_id") or work.get("workItemId") or ""
-        ).strip()
-        incoming_operation_id = str(
-            work.get("operation_id") or work.get("operationId") or ""
-        ).strip()
-
-        if event_type == "run.created":
-            if not is_branch_run or not run_id:
-                return
-            incoming_branch_id = str(metadata.get("interaction_branch_id") or run_id)
-            if branch is not None and branch.branch_id != incoming_branch_id:
-                self._close_branch(
-                    branch,
-                    status="superseded",
-                    reason="new_browser_run_created",
-                )
-                branch = None
-            now = time.time()
-            if branch is None:
-                initial_instruction = str(
-                    metadata.get("branch_user_message")
-                    or metadata.get("source_user_text")
-                    or payload.get("task")
-                    or ""
-                ).strip()
-                branch = InteractionBranchState(
-                    branch_id=incoming_branch_id,
-                    parent_session_id=session_id,
-                    provider="browser",
-                    status="active",
-                    goal=initial_instruction,
-                    checkpoint=self._checkpoint_for_session(
-                        session_id=session_id,
-                        user_intent=initial_instruction,
-                        turn_id=str(metadata.get("turn_id") or ""),
-                    ),
-                    latest_instruction=initial_instruction,
-                    created_at=now,
-                    work_item_id=incoming_work_item_id,
-                    operation_id=incoming_operation_id,
-                )
-            else:
-                if incoming_work_item_id:
-                    branch.work_item_id = incoming_work_item_id
-                if incoming_operation_id:
-                    branch.operation_id = incoming_operation_id
-            branch.active_run_id = run_id
-            branch.status = "active"
-            branch.instruction_revision = max(
-                branch.instruction_revision,
-                int(metadata.get("branch_instruction_revision") or 0),
+        stale_start: tuple[str, str, str, int, str] | None = None
+        replaced_run: tuple[str, str, str, int] | None = None
+        lock = self._branch_locks.setdefault(session_id, asyncio.Lock())
+        async with lock:
+            source = str(metadata.get("source") or "").strip().lower()
+            is_branch_run = bool(
+                metadata.get("provider_branch")
+                or metadata.get("interaction_branch_id")
+                or source in {"llm_delegate", "browser_branch"}
             )
-            branch.updated_at = now
-            branch.expires_at = now + self.ttl_seconds
-            branch.metadata = {
-                **branch.metadata,
-                "active_run_id": run_id,
-                "active_run_status": "created",
-            }
-            self._active_by_session[session_id] = branch
-            self._persist(branch)
-            return
+            branch = self._active_by_session.get(session_id)
+            work = metadata.get("work") if isinstance(metadata.get("work"), dict) else {}
+            incoming_work_item_id = str(
+                work.get("work_item_id") or work.get("workItemId") or ""
+            ).strip()
+            incoming_operation_id = str(
+                work.get("operation_id") or work.get("operationId") or ""
+            ).strip()
+            declared_event_branch_id = str(
+                metadata.get("interaction_branch_id") or ""
+            ).strip()
 
-        if branch is None or (branch.active_run_id and branch.active_run_id != run_id):
-            return
-        browser_session_id = str(payload.get("browser_session_id") or "").strip()
-        if browser_session_id:
-            branch.browser_session_id = browser_session_id
-        if event_type == "run.status":
-            stage = str(payload.get("stage") or "").strip().lower()
-            if stage == "steer_applied":
-                revision = max(0, int(payload.get("revision") or 0))
-                branch.applied_instruction_revision = max(
-                    branch.applied_instruction_revision,
-                    revision,
-                )
-                branch.metadata = {
-                    **branch.metadata,
-                    "steering": {
-                        "state": "applied",
-                        "revision": revision,
-                        "run_id": run_id,
-                    },
+            if event_type in {"run.finished", "run.failed", "run.cancelled"}:
+                # Clear exact stop uncertainty before a semantic tombstone can
+                # intentionally suppress this late event's state projection.
+                self._clear_termination_pending(session_id, run_id)
+
+            if event_type != "run.created":
+                if self._run_was_semantically_closed(run_id):
+                    return
+                if branch is None:
+                    return
+                if (
+                    declared_event_branch_id
+                    and declared_event_branch_id != branch.branch_id
+                ):
+                    return
+                known_run_ids = {
+                    str(branch.active_run_id or "").strip(),
+                    str(branch.last_run_id or "").strip(),
                 }
-        branch.updated_at = time.time()
-        branch.expires_at = branch.updated_at + self.ttl_seconds
-        self._persist(branch)
+                known_run_ids.discard("")
+                if not run_id or run_id not in known_run_ids:
+                    return
+
+            if event_type == "run.created":
+                if not run_id:
+                    return
+                incoming_branch_id = str(metadata.get("interaction_branch_id") or run_id)
+                incoming_revision = max(
+                    0,
+                    _nonnegative_int(
+                        metadata.get("branch_instruction_revision")
+                    ),
+                )
+                pending_termination = self.termination_pending_for_session(session_id)
+                admitted_scope = (
+                    metadata.get("interaction_branch_routing_scope")
+                    if isinstance(
+                        metadata.get("interaction_branch_routing_scope"),
+                        dict,
+                    )
+                    else None
+                )
+                admitted_scope_stale = False
+                if admitted_scope is not None:
+                    admitted_state = str(
+                        admitted_scope.get("state") or "bound"
+                    ).strip().lower()
+                    admitted_sid = str(
+                        admitted_scope.get("parent_session_id") or ""
+                    ).strip()
+                    admitted_scope_stale = bool(
+                        admitted_sid != session_id
+                        or admitted_state != "absent"
+                        or (
+                            branch is not None
+                            and branch.active_run_id != run_id
+                        )
+                    )
+                active_admission = self.provider_admission_for_session(session_id)
+                admission_conflict = bool(
+                    active_admission is not None
+                    and active_admission.run_id != run_id
+                )
+                active_run_conflict = bool(
+                    branch is not None
+                    and str(branch.active_run_id or "").strip()
+                    and branch.active_run_id != run_id
+                    and branch.branch_id == incoming_branch_id
+                )
+                stale_generation = bool(
+                    branch is not None
+                    and branch.branch_id == incoming_branch_id
+                    and incoming_revision < branch.instruction_revision
+                )
+                if (
+                    pending_termination
+                    or admitted_scope_stale
+                    or admission_conflict
+                    or active_run_conflict
+                ):
+                    # No Browser action may start while an earlier exact run in
+                    # this Session still has unconfirmed termination. Mark and
+                    # cancel this queued record before ProviderRuntime can
+                    # schedule its adapter.
+                    self._mark_run_semantically_closed(run_id)
+                    stale_start = (
+                        incoming_branch_id,
+                        str(metadata.get("browser_session_id") or ""),
+                        run_id,
+                        incoming_revision + 1,
+                        (
+                            "prior_browser_run_stop_unconfirmed"
+                            if pending_termination
+                            else "turn_start_routing_scope_stale"
+                            if admitted_scope_stale
+                            else "provider_admission_reserved_by_another_turn"
+                            if admission_conflict
+                            else "branch_active_run_conflict"
+                        ),
+                    )
+                    self._mark_termination_pending(
+                        session_id=session_id,
+                        branch_id=incoming_branch_id,
+                        run_id=run_id,
+                        reason=(
+                            "termination_in_progress:prior_browser_run_stop_unconfirmed"
+                            if pending_termination
+                            else "termination_in_progress:turn_start_routing_scope_stale"
+                            if admitted_scope_stale
+                            else (
+                                "termination_in_progress:"
+                                "provider_admission_reserved_by_another_turn"
+                            )
+                            if admission_conflict
+                            else "termination_in_progress:branch_active_run_conflict"
+                        ),
+                    )
+                elif not is_branch_run:
+                    return
+                elif self._branch_was_semantically_closed(incoming_branch_id) or stale_generation:
+                    self._mark_run_semantically_closed(run_id)
+                    stale_start = (
+                        incoming_branch_id,
+                        str(metadata.get("browser_session_id") or ""),
+                        run_id,
+                        incoming_revision + 1,
+                        "stale_branch_run_created",
+                    )
+                    self._mark_termination_pending(
+                        session_id=session_id,
+                        branch_id=incoming_branch_id,
+                        run_id=run_id,
+                        reason="termination_in_progress:stale_branch_run_created",
+                    )
+                else:
+                    if branch is not None and branch.branch_id != incoming_branch_id:
+                        replaced_active_run_id = str(branch.active_run_id or "").strip()
+                        replaced_browser_session_id = branch.browser_session_id
+                        self._close_branch(
+                            branch,
+                            status="superseded",
+                            reason="new_browser_run_created",
+                            queue_stop=False,
+                        )
+                        if replaced_active_run_id:
+                            replaced_run = (
+                                branch.branch_id,
+                                replaced_browser_session_id,
+                                replaced_active_run_id,
+                                branch.instruction_revision,
+                            )
+                            self._mark_termination_pending(
+                                session_id=session_id,
+                                branch_id=branch.branch_id,
+                                run_id=replaced_active_run_id,
+                                reason="termination_in_progress:new_browser_run_created",
+                            )
+                        branch = None
+                    now = time.time()
+                    if branch is None:
+                        initial_instruction = str(
+                            metadata.get("branch_user_message")
+                            or metadata.get("source_user_text")
+                            or payload.get("task")
+                            or ""
+                        ).strip()
+                        branch = InteractionBranchState(
+                            branch_id=incoming_branch_id,
+                            parent_session_id=session_id,
+                            provider="browser",
+                            status="active",
+                            goal=initial_instruction,
+                            checkpoint=self._checkpoint_for_session(
+                                session_id=session_id,
+                                user_intent=initial_instruction,
+                                turn_id=str(metadata.get("turn_id") or ""),
+                            ),
+                            latest_instruction=initial_instruction,
+                            created_at=now,
+                            work_item_id=incoming_work_item_id,
+                            operation_id=incoming_operation_id,
+                        )
+                    else:
+                        if incoming_work_item_id:
+                            branch.work_item_id = incoming_work_item_id
+                        if incoming_operation_id:
+                            branch.operation_id = incoming_operation_id
+                    branch.active_run_id = run_id
+                    branch.status = "active"
+                    branch.instruction_revision = max(
+                        branch.instruction_revision,
+                        incoming_revision,
+                    )
+                    branch.accepted_instruction_revision = max(
+                        branch.accepted_instruction_revision,
+                        incoming_revision,
+                    )
+                    branch.updated_at = now
+                    branch.expires_at = now + self.ttl_seconds
+                    branch.metadata = {
+                        **branch.metadata,
+                        "active_run_id": run_id,
+                        "active_run_status": "created",
+                    }
+                    self._active_by_session[session_id] = branch
+                    self._persist(branch)
+            elif branch is not None and not (
+                branch.active_run_id and branch.active_run_id != run_id
+            ):
+                browser_session_id = str(payload.get("browser_session_id") or "").strip()
+                if browser_session_id:
+                    branch.browser_session_id = browser_session_id
+                if event_type == "run.status":
+                    stage = str(payload.get("stage") or "").strip().lower()
+                    if stage == "steer_applied":
+                        revision = _nonnegative_int(payload.get("revision"))
+                        if revision < branch.accepted_instruction_revision:
+                            return
+                        branch.applied_instruction_revision = max(
+                            branch.applied_instruction_revision,
+                            revision,
+                        )
+                        branch.metadata = {
+                            **branch.metadata,
+                            "steering": {
+                                "state": "applied",
+                                "revision": revision,
+                                "run_id": run_id,
+                            },
+                        }
+                branch.updated_at = time.time()
+                branch.expires_at = branch.updated_at + self.ttl_seconds
+                self._persist(branch)
+        if stale_start is not None:
+            branch_id, browser_session_id, stale_run_id, revision, stale_reason = (
+                stale_start
+            )
+            confirmed, stop_reason, _before_execution = await self._cancel_stale_run_identity(
+                session_id=session_id,
+                branch_id=branch_id,
+                browser_session_id=browser_session_id,
+                run_id=stale_run_id,
+                revision=revision,
+                reason=stale_reason,
+            )
+            if not confirmed:
+                logger.error(
+                    "stale browser run could not be stopped before scheduling run=%s reason=%s",
+                    stale_run_id,
+                    stop_reason,
+                )
+        if replaced_run is not None:
+            old_branch_id, old_browser_session_id, old_run_id, old_revision = replaced_run
+            confirmed, stop_reason, _before_execution = await self._cancel_stale_run_identity(
+                session_id=session_id,
+                branch_id=old_branch_id,
+                browser_session_id=old_browser_session_id,
+                run_id=old_run_id,
+                revision=old_revision,
+                reason="new_browser_run_created",
+            )
+            if not confirmed:
+                # Starting the replacement while the old run may still act
+                # would create two Browser authorities. Cancel the just-created
+                # queued run before this event callback lets Runtime schedule it.
+                async with lock:
+                    current = self._active_by_session.get(session_id)
+                    if current is not None and current.active_run_id == run_id:
+                        new_browser_session_id = current.browser_session_id
+                        self._close_branch(
+                            current,
+                            status="superseded",
+                            reason="prior_browser_run_stop_unconfirmed",
+                            queue_stop=False,
+                        )
+                    else:
+                        new_browser_session_id = str(
+                            metadata.get("browser_session_id") or ""
+                        )
+                    self._mark_run_semantically_closed(run_id)
+                new_confirmed, new_stop_reason, _new_before_execution = (
+                    await self._cancel_stale_run_identity(
+                        session_id=session_id,
+                        branch_id=str(
+                            metadata.get("interaction_branch_id") or run_id
+                        ),
+                        browser_session_id=new_browser_session_id,
+                        run_id=run_id,
+                        revision=max(
+                            1,
+                            _nonnegative_int(
+                                metadata.get("branch_instruction_revision")
+                            )
+                            + 1,
+                        ),
+                        reason="prior_browser_run_stop_unconfirmed",
+                    )
+                )
+                logger.error(
+                    "browser replacement blocked because prior run stop was unconfirmed "
+                    "old_run=%s old_reason=%s new_run=%s new_cancelled=%s new_reason=%s",
+                    old_run_id,
+                    stop_reason,
+                    run_id,
+                    new_confirmed,
+                    new_stop_reason,
+                )
+
+    def _run_session_id(
+        self,
+        run: Mapping[str, Any],
+        *,
+        fallback_session_id: str = "",
+    ) -> str:
+        metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
+        browser = metadata.get("browser") if isinstance(metadata.get("browser"), dict) else {}
+        session_id = str(
+            metadata.get("session_id")
+            or browser.get("chat_session_id")
+            or fallback_session_id
+            or ""
+        ).strip()
+        run_id = str(run.get("run_id") or "").strip()
+        if not session_id and run_id:
+            for candidate_session, candidate in self._active_by_session.items():
+                if run_id in {candidate.active_run_id, candidate.last_run_id}:
+                    return candidate_session
+        return session_id
 
     def _update_from_run(
         self,
@@ -596,8 +1782,20 @@ class InteractionBranchCoordinator:
         metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
         work = metadata.get("work") if isinstance(metadata.get("work"), dict) else {}
         browser = metadata.get("browser") if isinstance(metadata.get("browser"), dict) else {}
-        browser_session_id = str(browser.get("browser_session_id") or metadata.get("browser_session_id") or "").strip()
-        if not browser_session_id:
+        provider_branch = metadata.get("provider_branch") if isinstance(metadata.get("provider_branch"), dict) else {}
+        declared_branch_id = str(
+            metadata.get("interaction_branch_id")
+            or provider_branch.get("branch_id")
+            or ""
+        ).strip()
+        if declared_branch_id and self._branch_was_semantically_closed(declared_branch_id):
+            if run_id:
+                self._mark_run_semantically_closed(run_id)
+            logger.info(
+                "ignore result from semantically closed browser branch=%s run=%s",
+                declared_branch_id,
+                run_id,
+            )
             return None
         session_id = str(
             metadata.get("session_id")
@@ -608,16 +1806,33 @@ class InteractionBranchCoordinator:
         if not session_id:
             return None
 
+        existing = self._active_by_session.get(session_id)
+        browser_session_id = str(
+            browser.get("browser_session_id")
+            or metadata.get("browser_session_id")
+            or (existing.browser_session_id if existing is not None else "")
+            or ""
+        ).strip()
         status = str(run.get("status") or "").strip().lower()
         if browser.get("closed"):
-            existing = self._active_by_session.get(session_id)
             if existing is not None:
                 self._close_branch(existing, status="closed", reason="browser_closed")
             return None
         if status in {"cancelled", "canceled"}:
-            existing = self._active_by_session.get(session_id)
             if existing is not None:
+                if not browser_session_id:
+                    # A run cancelled before adapter execution has no reusable
+                    # page context. Keeping it bound would advertise a Browser
+                    # authority that never actually existed.
+                    self._close_branch(
+                        existing,
+                        status="cancelled",
+                        reason="cancelled_before_browser_session",
+                        queue_stop=False,
+                    )
+                    return None
                 now = time.time()
+                existing.browser_session_id = browser_session_id
                 existing.status = "idle"
                 existing.updated_at = now
                 existing.expires_at = now + self.ttl_seconds
@@ -662,7 +1877,16 @@ class InteractionBranchCoordinator:
                 return existing
             return None
 
-        provider_branch = metadata.get("provider_branch") if isinstance(metadata.get("provider_branch"), dict) else {}
+        if not browser_session_id:
+            if existing is not None and status in {"done", "error"}:
+                self._close_branch(
+                    existing,
+                    status=status,
+                    reason=f"{status}_before_browser_session",
+                    queue_stop=False,
+                )
+            return None
+
         actions = provider_branch.get("actions") if isinstance(provider_branch.get("actions"), list) else []
         next_state = provider_branch.get("next_state") if isinstance(provider_branch.get("next_state"), dict) else {}
         title = str(
@@ -676,7 +1900,6 @@ class InteractionBranchCoordinator:
             urls = browser.get("urls") if isinstance(browser.get("urls"), list) else []
             url = str(urls[-1] if urls else "").strip()
 
-        existing = self._active_by_session.get(session_id)
         run_id = str(run.get("run_id") or "")
         if existing is not None and self._should_start_new_branch(
             existing,
@@ -733,9 +1956,14 @@ class InteractionBranchCoordinator:
         if branch.active_run_id == run_id:
             branch.active_run_id = ""
         steering = metadata.get("steering") if isinstance(metadata.get("steering"), dict) else {}
+        steering_revision = _nonnegative_int(steering.get("revision"))
+        branch.accepted_instruction_revision = max(
+            branch.accepted_instruction_revision,
+            steering_revision,
+        )
         branch.applied_instruction_revision = max(
             branch.applied_instruction_revision,
-            int(steering.get("revision") or 0),
+            steering_revision,
         )
         branch.updated_at = now
         branch.expires_at = now + self.ttl_seconds
@@ -773,25 +2001,38 @@ class InteractionBranchCoordinator:
         self._publish_hidden_summary(branch)
         return branch
 
-    def _close_branch(self, branch: InteractionBranchState, *, status: str, reason: str) -> None:
+    def _close_branch(
+        self,
+        branch: InteractionBranchState,
+        *,
+        status: str,
+        reason: str,
+        queue_stop: bool = True,
+    ) -> None:
+        branch.instruction_revision += 1
+        revision = branch.instruction_revision
+        self._mark_branch_semantically_closed(branch.branch_id)
         active_run_id = str(branch.active_run_id or "").strip()
         if active_run_id:
-            branch.instruction_revision += 1
-            revision = branch.instruction_revision
-            self._closed_run_until[active_run_id] = time.time() + self.ttl_seconds
-            self._queue_active_run_stop(
-                branch,
-                run_id=active_run_id,
-                revision=revision,
-                status=status,
-                reason=reason,
-            )
+            self._mark_run_semantically_closed(active_run_id)
+            if queue_stop:
+                self._queue_active_run_stop(
+                    branch,
+                    run_id=active_run_id,
+                    revision=revision,
+                    status=status,
+                    reason=reason,
+                )
             branch.active_run_id = ""
         branch.status = "closed"
         branch.updated_at = time.time()
         branch.metadata = {**branch.metadata, "closed_status": status, "closed_reason": reason}
         self._persist(branch)
-        self._active_by_session.pop(branch.parent_session_id, None)
+        current = self._active_by_session.get(branch.parent_session_id)
+        if current is branch or (
+            current is not None and current.branch_id == branch.branch_id
+        ):
+            self._active_by_session.pop(branch.parent_session_id, None)
         # squash-merge：分支区间坍缩为一条 summary 胶囊（用户设计语义：
         # 高分辨率操作区间打标，完成后区间内容以 summary 合并回主对话）
         try:
@@ -866,15 +2107,221 @@ class InteractionBranchCoordinator:
         except Exception:
             logger.exception("failed to stop active browser plan run=%s", run_id)
 
-    def _run_was_semantically_closed(self, run_id: str) -> bool:
+    async def _cancel_stale_run(
+        self,
+        branch: InteractionBranchState,
+        *,
+        run_id: str,
+        revision: int,
+        reason: str,
+    ) -> tuple[bool, str, bool | None]:
+        return await self._cancel_stale_run_identity(
+            session_id=branch.parent_session_id,
+            branch_id=branch.branch_id,
+            browser_session_id=branch.browser_session_id,
+            run_id=run_id,
+            revision=revision,
+            reason=reason,
+        )
+
+    async def _cancel_stale_run_identity(
+        self,
+        *,
+        session_id: str,
+        branch_id: str,
+        browser_session_id: str,
+        run_id: str,
+        revision: int,
+        reason: str,
+    ) -> tuple[bool, str, bool | None]:
+        """Cancel a run that lost its reserved branch generation."""
+
+        clean_run_id = str(run_id or "").strip()
+        if not clean_run_id:
+            return True, "no_run_id", True
+        self._mark_termination_pending(
+            session_id=session_id,
+            branch_id=branch_id,
+            run_id=clean_run_id,
+            reason=f"termination_in_progress:{reason}",
+        )
+
+        def unconfirmed(detail: str) -> tuple[bool, str, bool | None]:
+            self._mark_termination_pending(
+                session_id=session_id,
+                branch_id=branch_id,
+                run_id=clean_run_id,
+                reason=detail,
+            )
+            return False, detail, None
+
+        cancel_reason = "provider_cancel_unavailable"
+        if self.provider_cancel is not None:
+            try:
+                outcome = await self.provider_cancel(
+                    clean_run_id,
+                    reason=reason,
+                    metadata={
+                        "source": "interaction_branch",
+                        "session_id": session_id,
+                        "interaction_branch_id": branch_id,
+                        "browser_session_id": browser_session_id,
+                        "branch_instruction_revision": max(1, int(revision)),
+                    },
+                )
+                if isinstance(outcome, Mapping):
+                    run = outcome.get("run")
+                    run_status = str(
+                        run.get("status")
+                        if isinstance(run, Mapping)
+                        else ""
+                    ).strip().lower()
+                    cancel_reason = str(
+                        outcome.get("reason") or "cancel_unconfirmed"
+                    ).strip()
+                    if outcome.get("cancelled") is True or run_status in {
+                        "done",
+                        "error",
+                        "cancelled",
+                        "canceled",
+                    }:
+                        before_execution = outcome.get("before_execution")
+                        if not isinstance(before_execution, bool):
+                            before_execution = self._cancel_was_before_execution(
+                                outcome
+                            )
+                        if run_status in {"done", "error"}:
+                            before_execution = False
+                        self._clear_termination_pending(session_id, clean_run_id)
+                        return (
+                            True,
+                            cancel_reason or "cancelled",
+                            before_execution,
+                        )
+                else:
+                    cancel_reason = "invalid_provider_cancel_receipt"
+            except Exception:
+                logger.exception("failed to cancel stale browser run=%s", clean_run_id)
+                cancel_reason = "provider_cancel_failed"
+        if self.provider_steer is None:
+            return unconfirmed(cancel_reason)
+        try:
+            steer_outcome = await self.provider_steer(
+                {
+                    "run_id": clean_run_id,
+                    "task": "Stop the stale browser plan and preserve the browser session.",
+                    "revision": max(1, int(revision)),
+                    "metadata": {
+                        "source": "interaction_branch",
+                        "session_id": session_id,
+                        "interaction_branch_id": branch_id,
+                        "branch_control": "supersede",
+                        "branch_close_reason": reason,
+                        "browser_session_id": browser_session_id,
+                        "branch_instruction_revision": max(1, int(revision)),
+                    },
+                }
+            )
+            steer_reason = str(
+                steer_outcome.get("reason")
+                if isinstance(steer_outcome, Mapping)
+                else ""
+            ).strip()
+            if isinstance(steer_outcome, Mapping) and steer_outcome.get("accepted") is True:
+                return unconfirmed(f"{cancel_reason}; stop_steer_accepted")
+            return unconfirmed(
+                f"{cancel_reason}; {steer_reason or 'stop_steer_unconfirmed'}"
+            )
+        except Exception:
+            logger.exception("failed to stop stale browser run=%s", clean_run_id)
+            return unconfirmed(f"{cancel_reason}; stop_steer_failed")
+
+    @staticmethod
+    def _cancel_was_before_execution(outcome: Mapping[str, Any]) -> bool | None:
+        run = outcome.get("run")
+        if not isinstance(run, Mapping):
+            return None
+        events = run.get("events")
+        if not isinstance(events, list):
+            return None
+        for event in reversed(events):
+            if not isinstance(event, Mapping):
+                continue
+            if str(event.get("type") or "").strip().lower() != "run.cancelled":
+                continue
+            payload = event.get("payload")
+            if isinstance(payload, Mapping) and isinstance(
+                payload.get("before_execution"),
+                bool,
+            ):
+                return bool(payload.get("before_execution"))
+            return None
+        return None
+
+    def _prune_semantic_tombstones(self) -> None:
         now = time.time()
-        expired = [
-            key for key, expires_at in self._closed_run_until.items()
-            if expires_at <= now
-        ]
-        for key in expired:
-            self._closed_run_until.pop(key, None)
-        return self._closed_run_until.get(str(run_id or ""), 0.0) > now
+        for registry in (self._closed_run_until, self._closed_branch_until):
+            expired = [key for key, expires_at in registry.items() if expires_at <= now]
+            for key in expired:
+                registry.pop(key, None)
+
+    def _mark_run_semantically_closed(self, run_id: str) -> None:
+        clean = str(run_id or "").strip()
+        if clean:
+            self._closed_run_until[clean] = time.time() + self.ttl_seconds
+
+    def _mark_branch_semantically_closed(self, branch_id: str) -> None:
+        clean = str(branch_id or "").strip()
+        if clean:
+            self._closed_branch_until[clean] = time.time() + self.ttl_seconds
+
+    def _mark_termination_pending(
+        self,
+        *,
+        session_id: str,
+        branch_id: str,
+        run_id: str,
+        reason: str,
+    ) -> None:
+        sid = str(session_id or "").strip()
+        rid = str(run_id or "").strip()
+        if not sid or not rid:
+            return
+        pending = self._termination_pending_by_session.setdefault(sid, {})
+        pending[rid] = _PendingBranchTermination(
+            branch_id=str(branch_id or ""),
+            run_id=rid,
+            reason=str(reason or "run_stop_unconfirmed"),
+            observed_at=time.time(),
+        )
+
+    def _clear_termination_pending(self, session_id: str, run_id: str) -> None:
+        sid = str(session_id or "").strip()
+        rid = str(run_id or "").strip()
+        pending = self._termination_pending_by_session.get(sid)
+        if pending is None:
+            return
+        pending.pop(rid, None)
+        if not pending:
+            self._termination_pending_by_session.pop(sid, None)
+
+    def termination_pending_for_session(
+        self,
+        session_id: str,
+    ) -> tuple[_PendingBranchTermination, ...]:
+        pending = self._termination_pending_by_session.get(
+            str(session_id or "").strip(),
+            {},
+        )
+        return tuple(pending.values())
+
+    def _branch_was_semantically_closed(self, branch_id: str) -> bool:
+        self._prune_semantic_tombstones()
+        return self._closed_branch_until.get(str(branch_id or ""), 0.0) > time.time()
+
+    def _run_was_semantically_closed(self, run_id: str) -> bool:
+        self._prune_semantic_tombstones()
+        return self._closed_run_until.get(str(run_id or ""), 0.0) > time.time()
 
     def _squash_region_into_main(self, branch: InteractionBranchState, *, close_status: str) -> None:
         """把主对话中标记为本分支的散落条目坍缩为一条 [BRANCH_SUMMARY] 胶囊。
@@ -993,7 +2440,7 @@ class InteractionBranchCoordinator:
         incoming_branch_id = str(metadata.get("interaction_branch_id") or provider_branch.get("branch_id") or "").strip()
         if incoming_branch_id and incoming_branch_id == branch.branch_id:
             return False
-        if run_id and run_id == branch.last_run_id:
+        if run_id and run_id in {branch.active_run_id, branch.last_run_id}:
             return False
         if incoming_branch_id and incoming_branch_id != branch.branch_id:
             return True
@@ -1427,12 +2874,22 @@ class InteractionBranchCoordinator:
             logger.exception("failed to publish interaction branch work context")
 
     def _is_expired(self, branch: InteractionBranchState) -> bool:
-        return bool(branch.expires_at and time.time() > branch.expires_at)
+        # A live Provider run owns its liveness/cancellation lifecycle. Expiring
+        # the conversation projection synchronously while that run is active
+        # could let a new route overlap it before exact cancellation completes.
+        return bool(
+            not branch.active_run_id
+            and branch.expires_at
+            and time.time() > branch.expires_at
+        )
 
     def _persist(self, branch: InteractionBranchState) -> None:
         try:
             self.root.mkdir(parents=True, exist_ok=True)
-            path = self.root / f"{branch.branch_id}.json"
+            storage_key = hashlib.sha256(
+                str(branch.branch_id or "").encode("utf-8", errors="replace")
+            ).hexdigest()
+            path = self.root / f"branch_{storage_key}.json"
             path.write_text(json.dumps(asdict(branch), ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
             logger.exception("failed to persist interaction branch %s", branch.branch_id)
@@ -1499,3 +2956,53 @@ _current_coordinator: InteractionBranchCoordinator | None = None
 
 def get_interaction_branch_coordinator() -> InteractionBranchCoordinator | None:
     return _current_coordinator
+
+
+def capture_interaction_branch_routing_scope(session_id: str) -> dict[str, Any]:
+    """Freeze either the exact branch generation or its explicit absence."""
+
+    sid = str(session_id or "").strip()
+    if not sid:
+        return {
+            "state": "invalid",
+            "parent_session_id": "",
+            "reason": "routing_scope_session_unavailable",
+            "captured_at": time.time(),
+        }
+    coordinator = get_interaction_branch_coordinator()
+    if coordinator is None:
+        return {
+            "state": "invalid",
+            "parent_session_id": sid,
+            "reason": "interaction_coordinator_unavailable",
+            "captured_at": time.time(),
+        }
+    pending = coordinator.termination_pending_for_session(sid)
+    if pending:
+        first = pending[0]
+        return {
+            "state": "quarantined",
+            "parent_session_id": sid,
+            "branch_id": first.branch_id,
+            "run_id": first.run_id,
+            "reason": first.reason,
+            "pending_run_count": len(pending),
+            "captured_at": time.time(),
+        }
+    reservation = coordinator.provider_admission_for_session(sid)
+    if reservation is not None:
+        return {
+            "state": "reserved",
+            "parent_session_id": sid,
+            "reason": "provider_admission_in_progress",
+            "provider": reservation.provider,
+            "captured_at": time.time(),
+        }
+    lease = coordinator.capture_routing_lease(sid)
+    if lease is not None:
+        return {"state": "bound", **lease.as_dict()}
+    return {
+        "state": "absent",
+        "parent_session_id": sid,
+        "captured_at": time.time(),
+    }

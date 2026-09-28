@@ -482,7 +482,7 @@ def test_start_retry_and_resume_have_distinct_attempt_semantics() -> None:
     asyncio.run(run())
 
 
-def test_resume_requires_live_checkpoint_and_rolls_back_failed_writer_lease() -> None:
+def test_resume_requires_live_checkpoint_and_preserves_unknown_writer_fence() -> None:
     async def run() -> None:
         with tempfile.TemporaryDirectory(prefix="work_handler_resume_guard_") as temp:
             root = Path(temp)
@@ -503,7 +503,7 @@ def test_resume_requires_live_checkpoint_and_rolls_back_failed_writer_lease() ->
                 assert attempt is not None and attempt.execution_status == "orphaned"
                 assert attempt.metadata["runtime_resumable"] is False
                 assert coordinator.detail(item_id)["canResume"] is False
-                assert store.get_writer_lease(attempt_id).status == "stale"  # type: ignore[union-attr]
+                assert store.get_writer_lease(attempt_id).status == "active"  # type: ignore[union-attr]
 
                 calls = 0
 
@@ -521,9 +521,10 @@ def test_resume_requires_live_checkpoint_and_rolls_back_failed_writer_lease() ->
                     raise AssertionError("an unregistered orphan must not advertise Resume")
                 assert calls == 0
 
-                # A checkpoint can disappear after startup discovery.  The
-                # failed provider call must not leave the reacquired writer
-                # lease active and poison the workspace.
+                # A checkpoint can disappear after startup discovery. The
+                # original unknown may still own native side effects, so a
+                # failed resume must revoke Resume without releasing its
+                # existing writer fence.
                 store.update_attempt(
                     attempt_id,
                     metadata={"runtime_resumable": True},
@@ -535,7 +536,7 @@ def test_resume_requires_live_checkpoint_and_rolls_back_failed_writer_lease() ->
                 else:
                     raise AssertionError("the simulated runtime failure must propagate")
                 assert calls == 1
-                assert store.get_writer_lease(attempt_id).status == "stale"  # type: ignore[union-attr]
+                assert store.get_writer_lease(attempt_id).status == "active"  # type: ignore[union-attr]
                 assert store.get_attempt(attempt_id).metadata["runtime_resumable"] is False  # type: ignore[union-attr]
                 assert coordinator.detail(item_id)["canResume"] is False
 
@@ -1158,7 +1159,7 @@ def _main() -> None:
     test_canvas_route_binds_selection_focus_and_execution_to_canonical_task()
     test_accept_reopen_archive_and_continue_is_not_a_followup_path()
     test_start_retry_and_resume_have_distinct_attempt_semantics()
-    test_resume_requires_live_checkpoint_and_rolls_back_failed_writer_lease()
+    test_resume_requires_live_checkpoint_and_preserves_unknown_writer_fence()
     test_retry_amendments_compose_and_preserve_lineage()
     test_denied_codex_permission_requires_explicit_bounded_authorized_retry()
     test_active_provider_permission_resumes_through_the_runtime_contract()

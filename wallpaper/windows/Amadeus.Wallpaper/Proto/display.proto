@@ -1,0 +1,7 @@
+syntax = "proto3";
+package Lively.Grpc.Common.Proto.Display;
+option csharp_namespace = "Amadeus.Wallpaper.Protocol.Display";
+import "google/protobuf/empty.proto";
+service DisplayService { rpc GetScreens(google.protobuf.Empty) returns (Screens); }
+message Screens { repeated Screen screens = 1; }
+message Screen { string device_id = 1; bool is_primary = 6; }

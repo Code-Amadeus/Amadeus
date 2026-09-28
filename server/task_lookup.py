@@ -543,6 +543,7 @@ def current_status_facts(
         "terminal": "已结束",
         "failed": "执行失败",
         "cancelled": "已取消",
+        "orphaned": "执行结果尚未确认",
         "idle": "尚未执行",
     }
     stages_ja = {
@@ -557,6 +558,7 @@ def current_status_facts(
         "terminal": "終了",
         "failed": "実行失敗",
         "cancelled": "取消済み",
+        "orphaned": "実行結果の確認待ち",
         "idle": "未実行",
     }
     stage_zh = stages_zh.get(stage_key, stages_zh.get(execution, stage_key or "未知"))
@@ -637,8 +639,14 @@ def current_status_facts(
         "cancellation_not_yet_confirmed": ("取消尚未得到确认", "取消はまだ確認されていません"),
         "steer_not_applied": ("新的修改指令尚未应用", "新しい変更指示はまだ適用されていません"),
         "provider_action_denied": ("有操作被 Provider 策略拒绝", "Provider ポリシーに拒否された操作があります"),
+        "native_outcome_unknown": ("Provider 提交或执行结果尚未确认", "Provider の送信または実行結果はまだ確認できていません"),
     }.get(uncertainty)
-    if not blocker_zh and uncertainty_text:
+    if execution == "orphaned":
+        blocker_zh, blocker_ja = uncertainty_text or (
+            "Provider 提交或执行结果尚未确认",
+            "Provider の送信または実行結果はまだ確認できていません",
+        )
+    elif not blocker_zh and uncertainty_text:
         blocker_zh, blocker_ja = uncertainty_text
     if not blocker_zh:
         blocker_zh, blocker_ja = "没有已知阻碍", "既知の障害はありません"
@@ -646,7 +654,12 @@ def current_status_facts(
     completion = str(row.get("completion") or "unknown").strip().lower()
     if attention == "permission" or phase == "waiting_for_user":
         next_zh, next_ja = "处理当前确认后继续", "現在の確認を処理してから続行します"
-    elif execution in {"failed", "cancelled", "orphaned"}:
+    elif execution == "orphaned":
+        next_zh, next_ja = (
+            "先对账原执行，再决定恢复或隔离处理",
+            "元の実行を照合してから、再開または隔離対応を判断します",
+        )
+    elif execution in {"failed", "cancelled"}:
         next_zh, next_ja = "处理失败原因后再决定是否重试", "失敗原因を確認してから再試行を判断します"
     elif execution in {"queued", "running"}:
         if milestone_kind == "validation":
@@ -904,7 +917,7 @@ def status_query_narration_note(
     visible_terminal = " ".join(visible_terminal.split())[:600]
     outcome_verdict = row.get("outcome_verdict")
     outcome_verdict = outcome_verdict if isinstance(outcome_verdict, dict) else {}
-    is_terminal = execution in {"succeeded", "failed", "cancelled", "orphaned"}
+    is_terminal = execution in {"succeeded", "failed", "cancelled"}
     fact_verified = False
     fact_source = ""
     fact_observed_at = 0.0

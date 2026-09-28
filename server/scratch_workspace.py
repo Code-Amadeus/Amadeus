@@ -101,13 +101,18 @@ def slugify(title: str) -> str:
     return slug[:_MAX_SLUG_LENGTH].strip("-")
 
 
+def scratch_workspace_path(title: str, *, unique_id: str) -> Path:
+    """Derive the existing per-Work address without allocating it."""
+    suffix = str(unique_id or "").strip()[-8:] or "task"
+    stem = slugify(title)
+    return scratch_root() / (f"{stem}-{suffix}" if stem else suffix)
+
+
 def create_scratch_workspace(title: str, *, unique_id: str) -> Path:
     """Create and initialise one task's own scratch repository."""
 
-    root = ensure_scratch_root()
-    suffix = str(unique_id or "").strip()[-8:] or "task"
-    stem = slugify(title)
-    directory = root / (f"{stem}-{suffix}" if stem else suffix)
+    ensure_scratch_root()
+    directory = scratch_workspace_path(title, unique_id=unique_id)
     try:
         directory.mkdir(parents=True, exist_ok=False)
     except FileExistsError:

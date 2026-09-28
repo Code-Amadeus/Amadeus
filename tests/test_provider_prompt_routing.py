@@ -43,15 +43,15 @@ def test_delegate_prompts_follow_live_provider_registration() -> None:
         assert "Currently registered provider ids: browser, codex, openclaw" in prompt, name
         assert 'provider="codex"' in prompt, name
         assert 'provider="locus"' not in prompt, name
-        assert "Codex App Server" in prompt, name
+        assert 'Coding role: provider="codex"' in prompt, name
 
     representative = codex_only["runtime_with_delegate"]
-    assert "default local code provider" in representative
+    assert 'Coding role: provider="codex"' in representative
     assert 'force_provider="user"' in representative
     assert "explicitly chooses one registered provider" in representative
     assert "Never infer force_provider" in representative
     assert "live page state must be retained or manipulated" in representative
-    assert "web research, source discovery, comparison, and synthesis" in representative
+    assert "Host-configured role assignments" in representative
     assert "Never invent a URL merely to select Browser" in representative
     assert "without that evidence is Agent research" in representative
     assert "continues the export-owning WorkItem" in representative
@@ -103,12 +103,11 @@ def test_provider_routing_wording_tracks_the_output_language() -> None:
         english = prompts.get_system_prompt("with_delegate")
 
     assert "現在登録されている provider id" in japanese
-    assert "Codex App Server" in japanese
+    assert 'Coding 担当: provider="codex"' in japanese
     assert "legacy code provider" not in japanese
     assert "Currently registered provider ids" not in japanese
     assert "Currently registered provider ids" in english
-    assert "Codex App Server" in english
-    assert "default local code provider" in english
+    assert 'Coding role: provider="codex"' in english
     assert "現在登録されている provider id" not in english
     for prompt in (japanese, english):
         assert 'provider="codex"' in prompt

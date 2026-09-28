@@ -130,6 +130,14 @@ def _parse_delegate_attrs(attr_text: str) -> dict:
     return attrs
 
 
+def _parse_tag_attrs(tag_type: str, attr_text: str) -> dict:
+    """Normalize compact EMO into the existing action shape at both parse ports."""
+    if tag_type.upper() == "EMO" and re.fullmatch(r"\s*[A-Za-z_][A-Za-z0-9_-]*\s*", attr_text):
+        return {"preset": attr_text.strip()}
+    return (_parse_delegate_attrs(attr_text) if tag_type.upper() == "DELEGATE"
+            else _parse_attr_kv(attr_text))
+
+
 def parse_tags_and_clean(text: str):
     """
     提取文本中的 VTS/OpenClaw 控制标签，返回 (clean_text, actions)。
@@ -146,7 +154,7 @@ def parse_tags_and_clean(text: str):
     def repl(match: re.Match) -> str:
         tag_type  = match.group(1).upper()
         attr_text = match.group(2) or ""
-        attrs = _parse_delegate_attrs(attr_text) if tag_type == "DELEGATE" else _parse_attr_kv(attr_text)
+        attrs = _parse_tag_attrs(tag_type, attr_text)
         actions.append({"type": tag_type, "attrs": attrs, "raw": match.group(0)})
         return ""
 

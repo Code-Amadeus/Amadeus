@@ -286,6 +286,13 @@ MIMO_TTS_API_KEY = _secret("MIMO_TTS_API_KEY", "")
 MIMO_TTS_MODEL = _str("MIMO_TTS_MODEL", "mimo-v2.5-tts")
 MIMO_TTS_VOICE = _str("MIMO_TTS_VOICE", "冰糖")
 
+# Fish Audio: the voice reference ID is distinct from the inference model header.
+FISH_TTS_WS_URL = _str("FISH_TTS_WS_URL", "wss://api.fish.audio/v1/tts/live")
+FISH_TTS_API_KEY = _secret("FISH_TTS_API_KEY", "")
+FISH_TTS_MODEL = _str("FISH_TTS_MODEL", "s2.1-pro-free")
+FISH_TTS_REFERENCE_ID = _str("FISH_TTS_REFERENCE_ID", "b450b19370434173b121446057622e9b")
+FISH_TTS_LATENCY = _str("FISH_TTS_LATENCY", "balanced")
+
 
 def _resolve_tts_device() -> str:
     """
@@ -317,9 +324,38 @@ def _resolve_tts_device() -> str:
 
 
 TTS_DEVICE = _resolve_tts_device()
-# v3 模型权重路径（相对于项目根或绝对路径，写在 .env 中）
-TTS_GPT_MODEL_PATH    = _str("TTS_GPT_MODEL_PATH")
-TTS_SOVITS_MODEL_PATH = _str("TTS_SOVITS_MODEL_PATH")
+
+_TTS_VOICE_PROFILE_PATHS = {
+    "kurisu_v3": (
+        "assets/models/gpt-sovits/weights/gpt/v3/xxx-e15.ckpt",
+        "assets/models/gpt-sovits/weights/sovits/v3/xxx_e2_s174_l32.pth",
+    ),
+    "kurisu_v2pro": (
+        "assets/models/gpt-sovits/weights/gpt/v2Pro/kurisu_v2pro-e15.ckpt",
+        "assets/models/gpt-sovits/weights/sovits/v2Pro/kurisu_v2pro.pth",
+    ),
+}
+
+
+def _resolve_tts_voice_paths(profile: str, gpt_path: str, sovits_path: str) -> tuple[str, str]:
+    selected = str(profile or "custom").strip().lower()
+    if selected == "custom":
+        return str(gpt_path or "").strip(), str(sovits_path or "").strip()
+    try:
+        return _TTS_VOICE_PROFILE_PATHS[selected]
+    except KeyError as exc:
+        supported = ", ".join(("custom", *_TTS_VOICE_PROFILE_PATHS))
+        raise ValueError(f"Unsupported TTS_VOICE_PROFILE={profile!r}; expected one of {supported}") from exc
+
+
+# A named profile keeps compatible GPT/SoVITS pairs atomic. `custom` preserves
+# existing installations that provide explicit relative or absolute paths.
+TTS_VOICE_PROFILE = _str("TTS_VOICE_PROFILE", "custom").strip().lower()
+TTS_GPT_MODEL_PATH, TTS_SOVITS_MODEL_PATH = _resolve_tts_voice_paths(
+    TTS_VOICE_PROFILE,
+    _str("TTS_GPT_MODEL_PATH"),
+    _str("TTS_SOVITS_MODEL_PATH"),
+)
 
 # 输出语言："日文" | "英文"（对应 dict_language 中的键名）
 # 切换此项即可在日文 LoRA 管线和英文 base 管线之间手动选择
@@ -342,7 +378,7 @@ TTS_RTF_INITIAL = _float("TTS_RTF_INITIAL", 0.6)
 TTS_CHARS_PER_SEC = _float("TTS_CHARS_PER_SEC", 7.5)
 SEGMENT_CHAR_LIMIT           = _int("SEGMENT_CHAR_LIMIT", 140)
 USE_EXPERIMENTAL_TTS_STREAM  = _bool("USE_EXPERIMENTAL_TTS_STREAM", True)
-EXP_TTS_MAX_CONCURRENCY      = _int("EXP_TTS_MAX_CONCURRENCY", 2)
+EXP_TTS_MAX_CONCURRENCY      = _int("EXP_TTS_MAX_CONCURRENCY", 1)
 USE_FIRST_SENTENCE_SPRINT    = _bool("USE_FIRST_SENTENCE_SPRINT", False)
 DISPLAY_FALLBACK_WINDOW_SEC  = _float("DISPLAY_FALLBACK_WINDOW_SEC", 1.5)
 PLAYBACK_PREWARM_AUDIO       = _bool("PLAYBACK_PREWARM_AUDIO", True)
@@ -420,6 +456,42 @@ ASR_SPECULATIVE_END_MS = _int("ASR_SPECULATIVE_END_MS", 160)
 # 仅对本地首句链路（hybrid/hybrid2/hybrid3）生效——远程单链有计费与幂等成本。
 ASR_SPECULATIVE_LLM_START = _bool("ASR_SPECULATIVE_LLM_START", True)
 
+# Global PixiJS render budget shared by the chat and wallpaper surfaces.
+GRAPHICS_PROFILES = frozenset({"standard", "power_saving", "custom"})
+GRAPHICS_PROFILE = _str("GRAPHICS_PROFILE", "standard").strip().lower()
+RENDER_MAX_FPS = _int("RENDER_MAX_FPS", 30)
+RENDER_MAX_RESOLUTION = _float("RENDER_MAX_RESOLUTION", 1.5)
+RENDER_TEXTURE_SAMPLING = _bool("RENDER_TEXTURE_SAMPLING", False)
+
+
+def _resolve_graphics_profile(
+    profile: str,
+    custom_max_fps: int,
+    custom_max_resolution: float,
+) -> tuple[int, float | None]:
+    if profile not in GRAPHICS_PROFILES:
+        raise ValueError(
+            "GRAPHICS_PROFILE must be one of "
+            + ", ".join(sorted(GRAPHICS_PROFILES))
+            + f"; observed {profile!r}"
+        )
+    if not 10 <= custom_max_fps <= 240:
+        raise ValueError("RENDER_MAX_FPS must be between 10 and 240")
+    if not 0.25 <= custom_max_resolution <= 4.0:
+        raise ValueError("RENDER_MAX_RESOLUTION must be between 0.25 and 4.0")
+    if profile == "standard":
+        return 60, None
+    if profile == "power_saving":
+        return 30, 1.5
+    return custom_max_fps, custom_max_resolution
+
+
+RENDER_EFFECTIVE_MAX_FPS, RENDER_EFFECTIVE_MAX_RESOLUTION = _resolve_graphics_profile(
+    GRAPHICS_PROFILE,
+    RENDER_MAX_FPS,
+    RENDER_MAX_RESOLUTION,
+)
+
 # Wallpaper diagnostics. keyboard_sfx.gate is a high-frequency client-side
 # gate snapshot; keep it out of WARNING unless explicitly diagnosing SFX.
 WALLPAPER_SFX_GATE_LOG = _bool("WALLPAPER_SFX_GATE_LOG", False)
@@ -441,13 +513,21 @@ BRANCH_SQUASH_MERGE = _bool("BRANCH_SQUASH_MERGE", True)
 # ===========================================================================
 # Execution providers
 # ===========================================================================
-PROVIDER_DELEGATE_DEFAULT_PROVIDER = _str("PROVIDER_DELEGATE_DEFAULT_PROVIDER", "openclaw").strip().lower()
+WORK_CODING_PROVIDER = _str("WORK_CODING_PROVIDER", "codex").strip().lower()
+WORK_EXECUTION_PROVIDER = _str("WORK_EXECUTION_PROVIDER", "pi", aliases=(
+    "COOPERATIVE_CHAT_PROVIDER", "PROVIDER_DELEGATE_DEFAULT_PROVIDER",
+)).strip().lower()
+# Existing routing callers retain their names; both read the execution role.
+# Legacy startup keys are migration aliases, not independent assignments.
+PROVIDER_DELEGATE_DEFAULT_PROVIDER = WORK_EXECUTION_PROVIDER
 # Exactly one Codex transport may own the stable ``codex`` Provider id.  The
 # official persistent SDK/App Server transport is the local product default;
 # the turn-scoped CLI remains an explicit compatibility transport.
 CODEX_APP_SERVER_PROVIDER_ENABLED = _bool("CODEX_APP_SERVER_PROVIDER_ENABLED", True)
 CODEX_APP_SERVER_CODEX_BIN = _str("CODEX_APP_SERVER_CODEX_BIN", "")
-CODEX_APP_SERVER_MODEL = _str("CODEX_APP_SERVER_MODEL", "deepseek-v4-flash")
+CODEX_APP_SERVER_AUTH_MODE = _str("CODEX_APP_SERVER_AUTH_MODE", "model_api").strip().lower()
+if CODEX_APP_SERVER_AUTH_MODE not in {"model_api", "chatgpt"}:
+    raise ValueError("CODEX_APP_SERVER_AUTH_MODE must be model_api or chatgpt")
 # Provider-native execution settings belong to the Provider adapter, not to
 # the user's Codex Desktop profile.  Keeping all four values explicit prevents
 # an unrelated Desktop model/effort change from silently changing Amadeus work.
@@ -455,6 +535,18 @@ CODEX_APP_SERVER_MODEL_PROVIDER = _str(
     "CODEX_APP_SERVER_MODEL_PROVIDER",
     "deepseek",
 ).strip().lower()
+_CODEX_CONNECTION_DEFAULTS = {
+    "deepseek": (DEEPSEEK_BASE_URL, DEEPSEEK_MODEL_NAME, "DEEPSEEK_API_KEY"),
+    "openai": (OPENAI_BASE_URL, OPENAI_MODEL_NAME, "OPENAI_API_KEY"),
+}
+_CODEX_PROVIDER_BASE_DEFAULT, _CODEX_MODEL_DEFAULT, _CODEX_API_KEY_ENV_DEFAULT = (
+    _CODEX_CONNECTION_DEFAULTS.get(
+        CODEX_APP_SERVER_MODEL_PROVIDER,
+        (DEEPSEEK_BASE_URL, DEEPSEEK_MODEL_NAME, "DEEPSEEK_API_KEY"),
+    )
+)
+CODEX_APP_SERVER_MODEL = _str("CODEX_APP_SERVER_MODEL", _CODEX_MODEL_DEFAULT)
+CODEX_APP_SERVER_CHATGPT_MODEL = _str("CODEX_APP_SERVER_CHATGPT_MODEL", "").strip()
 CODEX_APP_SERVER_REASONING_EFFORT = _str(
     "CODEX_APP_SERVER_REASONING_EFFORT",
     "max",
@@ -465,11 +557,11 @@ CODEX_APP_SERVER_SERVICE_TIER = _str(
 ).strip().lower()
 CODEX_APP_SERVER_PROVIDER_BASE_URL = _str(
     "CODEX_APP_SERVER_PROVIDER_BASE_URL",
-    "https://api.deepseek.com",
+    _CODEX_PROVIDER_BASE_DEFAULT,
 ).strip()
 CODEX_APP_SERVER_PROVIDER_API_KEY_ENV = _str(
     "CODEX_APP_SERVER_PROVIDER_API_KEY_ENV",
-    "DEEPSEEK_API_KEY",
+    _CODEX_API_KEY_ENV_DEFAULT,
 ).strip()
 # Persist only the non-secret provider definition into the Codex user profile
 # so Desktop can resume Amadeus-created threads. Authentication remains backed
@@ -497,10 +589,44 @@ DIRECT_CODEX_PREFLIGHT_TIMEOUT_S = _int("DIRECT_CODEX_PREFLIGHT_TIMEOUT_S", 8)
 DIRECT_CODEX_TIMEOUT_S = _int("DIRECT_CODEX_TIMEOUT_S", 7200)
 DIRECT_CODEX_EVENT_SILENCE_WARN_S = _int("DIRECT_CODEX_EVENT_SILENCE_WARN_S", 60)
 DIRECT_CODEX_STDERR_CAP_BYTES = _int("DIRECT_CODEX_STDERR_CAP_BYTES", 12000)
+# Optional pinned Pi CLI; RPC controls execution while the Host owns Work.
+PI_PROVIDER_ENABLED = _bool("PI_PROVIDER_ENABLED", True)
+PI_NODE_PATH = _str("PI_NODE_PATH", "node")
+PI_AGENT_DIR = _str("PI_AGENT_DIR", "runtime/pi")
+PI_MODEL_PROVIDER = _str("PI_MODEL_PROVIDER", "deepseek")
+PI_MODEL = _str("PI_MODEL", DEEPSEEK_MODEL_NAME)
+PI_EXTENSIONS_JSON = _str("PI_EXTENSIONS_JSON", "[]")
+PI_TIMEOUT_S = _int("PI_TIMEOUT_S", 1800)
 PROVIDER_RUN_EVENT_CAP = _int("PROVIDER_RUN_EVENT_CAP", 500)
 PROVIDER_WORK_HEARTBEAT_S = _int("PROVIDER_WORK_HEARTBEAT_S", 45)
 PROVIDER_WORK_QUIET_NOTICE_S = _int("PROVIDER_WORK_QUIET_NOTICE_S", 90)
 PROVIDER_WORK_QUIET_REPEAT_S = _int("PROVIDER_WORK_QUIET_REPEAT_S", 300)
+# Whole-instance routing selector. Keep both routing strategies and share their
+# execution/presentation facilities; false selects the original Chat authority
+# at restart. The JSON is a Host-authored ProviderRequirements contract, not a
+# capability inference.
+COOPERATIVE_CHAT_ENABLED = _bool("COOPERATIVE_CHAT_ENABLED", True)
+# Professional cooperative routing is the default. False selects basic cooperative
+# routing; the whole-instance selector above restores original Chat at restart.
+# A failed professional decision never falls back to a different route.
+COOPERATIVE_WORK_PLANNER_ENABLED = _bool("COOPERATIVE_WORK_PLANNER_ENABLED", True)
+# Optional model on the existing LLM backend; empty inherits the role model.
+COOPERATIVE_WORK_PLANNER_MODEL = _str("COOPERATIVE_WORK_PLANNER_MODEL", "").strip()
+COOPERATIVE_CHAT_PROVIDER = WORK_EXECUTION_PROVIDER
+COOPERATIVE_CHAT_REQUIREMENTS_JSON = _str(
+    "COOPERATIVE_CHAT_REQUIREMENTS_JSON",
+    "{}",
+)
+COOPERATIVE_CHAT_ADDITIONAL_REQUIREMENTS_JSON = _str(
+    "COOPERATIVE_CHAT_ADDITIONAL_REQUIREMENTS_JSON", "{}",
+)
+COOPERATIVE_CHAT_QUERY_TIMEOUT_S = _float("COOPERATIVE_CHAT_QUERY_TIMEOUT_S", 45.0)
+COOPERATIVE_CHAT_QUERY_MAX_TOKENS = _int("COOPERATIVE_CHAT_QUERY_MAX_TOKENS", 900)
+COOPERATIVE_CHAT_PERMISSION_POLICY = _str(
+    "COOPERATIVE_CHAT_PERMISSION_POLICY", "ask",
+).strip().lower()
+if COOPERATIVE_CHAT_PERMISSION_POLICY not in {"deny", "ask"}:
+    raise ValueError("COOPERATIVE_CHAT_PERMISSION_POLICY supports deny or ask")
 # Host-owned Project trust roots. Project/Scratch/focus routing and Host diff
 # inspection read only this setting; retired Provider settings cannot widen it.
 WORK_PROJECT_ALLOWLIST = _str("WORK_PROJECT_ALLOWLIST", "")
@@ -685,6 +811,12 @@ COMPOUND_CONTROL_SHADOW_ENABLED = _bool(
     "COMPOUND_CONTROL_SHADOW_ENABLED", False
 )
 
+# Observe how the existing Work/AUIP/Browser witnesses converge for one origin
+# turn.  This adds no planner call and owns no dispatch: it records immutable
+# provenance plus a read-only ShadowTurnDecision so cardinality and cross-axis
+# relations can be replayed before any production authority migration.
+TURN_DECISION_SHADOW_ENABLED = _bool("TURN_DECISION_SHADOW_ENABLED", True)
+
 # AUIP action existence has a source-local decision axis because an AppSession
 # is neither Provider Work nor a Project/WorkItem.  When enabled, the role
 # prompt no longer carries a duplicate AUIP tag contract: the role speaks
@@ -695,6 +827,9 @@ COMPOUND_CONTROL_SHADOW_ENABLED = _bool(
 # authority; setting the flag false restores the legacy inline-role proposal
 # for bounded rollback.
 AUIP_CONTROL_DECISION_ENABLED = _bool("AUIP_CONTROL_DECISION_ENABLED", True)
+
+# Generation preference; never restyles existing artifacts or overrides user design.
+AUIP_ARTIFACT_STYLE_ENABLED = _bool("AUIP_ARTIFACT_STYLE_ENABLED", True)
 
 # Resolve the entity of an already-proposed Project focus against complete
 # host catalogs.  Genuine ambiguity becomes a one-shot Slice selection before

@@ -102,8 +102,12 @@ def build_reference_messages(
         for message in history
         if str(message.get("role") or "") in {"user", "assistant"}
     ][-8:]
+    execution_context = (
+        "\nexecutionはHostが接納した一つの実行タスクです。同じ交流コンテキストでも別の実行は別の対象です。"
+        "終了したタスクを、その後の実行に置き換えてはいけません。WorkItemは既存の成果タスクを指します。"
+        if any(candidate.kind == "execution" for candidate in candidates) else "")
     return [
-        {"role": "system", "content": _REFERENCE_SYSTEM},
+        {"role": "system", "content": _REFERENCE_SYSTEM + execution_context},
         *prior,
         {
             "role": "user",

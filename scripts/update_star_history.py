@@ -17,12 +17,12 @@ from urllib.request import Request, urlopen
 
 
 API_VERSION = "2026-03-10"
-WIDTH = 900
-HEIGHT = 280
-LEFT = 72
-RIGHT = 28
-TOP = 54
-BOTTOM = 48
+WIDTH = 760
+HEIGHT = 620
+LEFT = 80
+RIGHT = 58
+TOP = 138
+BOTTOM = 100
 
 
 def fetch_star_dates(repository: str, token: str) -> list[date]:
@@ -79,14 +79,14 @@ def nice_step(maximum: int, tick_count: int = 4) -> int:
     magnitude = 10 ** math.floor(math.log10(rough))
     normalized = rough / magnitude
     factor = 1 if normalized <= 1 else 2 if normalized <= 2 else 5 if normalized <= 5 else 10
-    return factor * magnitude
+    return max(1, int(factor * magnitude))
 
 
 def render_svg(repository: str, star_dates: list[date]) -> str:
     counts = Counter(star_dates)
     if star_dates:
-        start = star_dates[0]
-        end = star_dates[-1]
+        start = min(star_dates)
+        end = max(star_dates)
     else:
         start = end = date.today()
 
@@ -111,10 +111,16 @@ def render_svg(repository: str, star_dates: list[date]) -> str:
     if events:
         first_x = x_position(events[0][0])
         commands = [f"M {first_x:.1f} {y_position(0):.1f}"]
-        for day, value in events:
-            x = x_position(day)
-            y = y_position(value)
-            commands.append(f"L {x:.1f} {y:.1f}")
+        first_y = y_position(events[0][1])
+        commands.append(f"L {first_x:.1f} {first_y:.1f}")
+        points = [(x_position(day), y_position(value)) for day, value in events]
+        for (x0, y0), (x1, y1) in zip(points, points[1:]):
+            # Horizontal endpoint tangents keep the curve smooth and monotone.
+            # Every daily total remains on the curve; no overshoot or fake noise.
+            third = (x1 - x0) / 3
+            commands.append(
+                f"C {x0 + third:.1f} {y0:.1f} {x1 - third:.1f} {y1:.1f} {x1:.1f} {y1:.1f}"
+            )
         line_path = " ".join(commands)
         final_x = x_position(events[-1][0])
         final_y = y_position(events[-1][1])
@@ -123,7 +129,7 @@ def render_svg(repository: str, star_dates: list[date]) -> str:
         final_x = LEFT + plot_width
         final_y = y_position(0)
 
-    x_tick_offsets = sorted({round(span_days * index / 4) for index in range(5)})
+    x_tick_offsets = sorted({round((end - start).days * index / 3) for index in range(4)})
     y_ticks = list(range(0, y_max + 1, step))
     if y_ticks[-1] != y_max:
         y_ticks.append(y_max)
@@ -132,14 +138,29 @@ def render_svg(repository: str, star_dates: list[date]) -> str:
         '<svg xmlns="http://www.w3.org/2000/svg" role="img" '
         f'aria-labelledby="title desc" viewBox="0 0 {WIDTH} {HEIGHT}">',
         "<title id=\"title\">Amadeus star history</title>",
-        "<desc id=\"desc\">Cumulative GitHub stars over time. No user data is stored.</desc>",
+        '<desc id="desc">Cumulative counts of current GitHub stargazers by star date. '
+        'The curve passes through every daily total. No user identities are stored.</desc>',
+        '<defs><filter id="pen" x="-2%" y="-2%" width="104%" height="104%">',
+        '<feTurbulence type="fractalNoise" baseFrequency=".035 .14" numOctaves="1" seed="7" result="grain"/>',
+        '<feDisplacementMap in="SourceGraphic" in2="grain" scale="1.1" xChannelSelector="R" yChannelSelector="G"/>',
+        '</filter></defs>',
         "<style>",
-        ".background{fill:#ffffff}.grid{stroke:#d8dee4;stroke-width:1}.axis{fill:#57606a;font:12px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.heading{fill:#24292f;font:600 16px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.meta{fill:#6e7781;font:12px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.line{fill:none;stroke:#2f81f7;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}.endpoint{fill:#2f81f7}",
-        "@media(prefers-color-scheme:dark){.background{fill:#0d1117}.grid{stroke:#30363d}.axis{fill:#8b949e}.heading{fill:#e6edf3}.meta{fill:#8b949e}.line{stroke:#58a6ff}.endpoint{fill:#58a6ff}}",
+        ".background{fill:#fcfcf8;stroke:#e2e8df}.grid{stroke:#dce4dc;stroke-width:1;stroke-dasharray:3 7}"
+        ".axis{fill:#53675d;font:15px 'Segoe Print','Comic Sans MS',cursive}"
+        ".heading{fill:#203c2e;font:700 30px 'Segoe Print','Comic Sans MS',cursive}"
+        ".total{fill:#286749;font:700 28px 'Segoe Print','Comic Sans MS',cursive}"
+        ".meta{fill:#64756c;font:14px 'Segoe UI',sans-serif}"
+        ".line{fill:none;stroke:#348663;stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round;filter:url(#pen)}"
+        ".baseline{fill:none;stroke:#6b8072;stroke-width:1.5;stroke-linecap:round;filter:url(#pen)}"
+        ".endpoint{fill:#348663;stroke:#fcfcf8;stroke-width:2}",
+        "@media(prefers-color-scheme:dark){.background{fill:#0d1712;stroke:#2d4034}.grid{stroke:#304238}"
+        ".axis,.meta{fill:#a1b7a9}.heading{fill:#e2eee5}.total{fill:#9bd8b6}"
+        ".line{stroke:#83cba5}.endpoint{fill:#83cba5;stroke:#0d1712}.baseline{stroke:#819c8a}}",
         "</style>",
         f'<rect class="background" x="0.5" y="0.5" width="{WIDTH - 1}" height="{HEIGHT - 1}" rx="12"/>',
-        f'<text class="heading" x="{LEFT}" y="25">Star growth · {len(star_dates)}</text>',
-        f'<text class="meta" x="{LEFT}" y="43">{escape(repository)} · latest star {end.isoformat()}</text>',
+        f'<text class="heading" x="{LEFT - 22}" y="59">Star History</text>',
+        f'<text class="total" x="{WIDTH - RIGHT}" y="59" text-anchor="end">{len(star_dates)} stars</text>',
+        f'<text class="meta" x="{LEFT - 22}" y="89">{escape(repository)}</text>',
     ]
 
     for value in y_ticks:
@@ -156,11 +177,17 @@ def render_svg(repository: str, star_dates: list[date]) -> str:
         x = LEFT + (offset / span_days) * plot_width
         anchor = "start" if offset == 0 else "end" if offset == span_days else "middle"
         lines.append(
-            f'<text class="axis" x="{x:.1f}" y="{HEIGHT - 18}" text-anchor="{anchor}">{day.isoformat()}</text>'
+            f'<text class="axis" x="{x:.1f}" y="{HEIGHT - BOTTOM + 32}" text-anchor="{anchor}">{day.isoformat()}</text>'
         )
 
+    lines.append(
+        f'<path class="baseline" d="M {LEFT} {TOP - 8} V {HEIGHT - BOTTOM} H {WIDTH - RIGHT + 8}"/>'
+    )
     lines.append(f'<path class="line" d="{line_path}"/>')
-    lines.append(f'<circle class="endpoint" cx="{final_x:.1f}" cy="{final_y:.1f}" r="4"/>')
+    lines.append(f'<circle class="endpoint" cx="{final_x:.1f}" cy="{final_y:.1f}" r="5"/>')
+    caption = f"Latest star · {end.isoformat()}" if star_dates else "No stars yet"
+    lines.append(f'<text class="meta" x="{LEFT}" y="{HEIGHT - 36}">Cumulative count of current stargazers</text>')
+    lines.append(f'<text class="meta" x="{WIDTH - RIGHT}" y="{HEIGHT - 36}" text-anchor="end">{caption}</text>')
     lines.append("</svg>")
     return "\n".join(lines) + "\n"
 

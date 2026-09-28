@@ -142,6 +142,7 @@ class DiT(nn.Module):
         ###no-use
         drop_audio_cond=False,  # cfg for cond audio
         drop_text=False,  # cfg for text
+        use_padding_mask=True,
         # mask: bool["b n"] | None = None,  # noqa: F722
         
     ):
@@ -149,7 +150,7 @@ class DiT(nn.Module):
         x=x0.transpose(2,1)
         cond=cond0.transpose(2,1)
         text=text0.transpose(2,1)
-        mask = sequence_mask(x_lens,max_length=x.size(1)).to(x.device)
+        mask = sequence_mask(x_lens,max_length=x.size(1)).to(x.device) if use_padding_mask else None
 
         batch, seq_len = x.shape[0], x.shape[1]
         if time.ndim == 0:

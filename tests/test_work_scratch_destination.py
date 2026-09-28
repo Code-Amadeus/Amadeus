@@ -621,6 +621,29 @@ def test_retiring_a_project_takes_it_off_the_menu_and_nothing_else() -> None:
                     pass
                 _finish(store, task)
 
+                _, unknown_task = _prepare(
+                    coordinator,
+                    task="Apply a mutation whose native outcome is unknown",
+                    cwd=project,
+                    session_id="monday",
+                )
+                unknown_attempt = store.list_attempts(unknown_task)[-1]
+                store.update_attempt(
+                    unknown_attempt.attempt_id,
+                    execution_status="orphaned",
+                    metadata={"runtime_resumable": False},
+                )
+                try:
+                    coordinator.set_project_retired(project_id, retired=True)
+                    raise AssertionError("must refuse while work outcome is unknown")
+                except WorkLedgerConflict:
+                    pass
+                store.update_attempt(
+                    unknown_attempt.attempt_id,
+                    execution_status="succeeded",
+                )
+                store.release_writer_lease(unknown_attempt.attempt_id)
+
                 retired = coordinator.set_project_retired(project_id, retired=True)
                 assert retired["state"] == "retired"
                 assert coordinator.workspace_routing_context()["candidates"] == []

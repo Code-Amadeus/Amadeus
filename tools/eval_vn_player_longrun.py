@@ -88,7 +88,6 @@ def _compact_reaction(result: dict[str, Any]) -> dict[str, Any]:
         "fact_extractor_applied": (result.get("fact_extractor") or {}).get("applied", []),
         "character_modeler_applied": (result.get("character_modeler") or {}).get("applied", []),
         "reasoner_applied": (result.get("reasoner") or {}).get("applied", []),
-        "summary_applied": (result.get("summary") or {}).get("applied", []),
     }
 
 
@@ -99,6 +98,7 @@ def _snapshot(runtime: VNPlayerRuntime, chunk_results: list[dict[str, Any]], chu
         "chunk_lines": [_compact_line(line) for line in chunk_lines],
         "chunk_reactions": [_compact_reaction(result) for result in chunk_results],
         "runtime_scene_summary": store.scene_summary(),
+        "runtime_retrospective_bias": store.retrospective_bias(),
         "runtime_story_summary_log": store.story_summary_log()[-8:],
         "runtime_evidence_nodes": store.evidence_nodes()[-12:],
         "runtime_verifier_feedback": store.verifier_feedback()[-12:],
@@ -451,6 +451,9 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
         chunk_line_events.append(result.get("line") or {})
 
         if idx % args.chunk_size == 0 or idx == len(selected_lines):
+            # Live ingestion stays nonblocking; the offline observer needs the
+            # completed summary/reflection state for this chunk's verdict.
+            await runtime.wait_for_context_updates()
             chunk_index = len(chunks) + 1
             snap = _snapshot(runtime, chunk_results, chunk_line_events)
             observer = await _observe_chunk(runtime, snap, chunk_index, args.observer_llm and not args.no_llm)

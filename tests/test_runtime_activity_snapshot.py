@@ -193,6 +193,54 @@ def test_dynamic_activity_time_is_computed_at_read_time() -> None:
     print("ok: elapsed and silence are materialised without periodic ledger writes")
 
 
+def test_orphaned_activity_stays_nonterminal_until_reconciled() -> None:
+    working = {
+        "phase": "working",
+        "revision": 3,
+        "startedAt": 1_000.0,
+        "latestSemanticSummary": "The workspace mutation may have started.",
+    }
+    from_status = project_activity_event(
+        working,
+        _event(4, "run.status", {"status": "orphaned"}, at=1_020.0),
+        execution_status="orphaned",
+        now=1_020.0,
+    )
+    assert from_status["phase"] == "orphaned"
+    assert from_status["uncertainty"] == "native_outcome_unknown"
+    assert "finishedAt" not in from_status
+
+    orphaned = project_activity_result(
+        from_status,
+        status="orphaned",
+        observed_at=1_025.0,
+    )
+    assert orphaned["phase"] == "orphaned"
+    assert orphaned["uncertainty"] == "native_outcome_unknown"
+    assert "finishedAt" not in orphaned
+
+    restored = activity_report_fields(
+        {"phase": "working"},
+        execution_status="orphaned",
+        created_at=1_000.0,
+        started_at=1_005.0,
+        finished_at=None,
+        now=1_030.0,
+    )
+    assert restored["activity_phase"] == "orphaned"
+    assert restored["activity_uncertainty"] == "native_outcome_unknown"
+
+    reconciled = project_activity_result(
+        orphaned,
+        status="succeeded",
+        observed_at=1_040.0,
+    )
+    assert reconciled["phase"] == "review"
+    assert reconciled["finishedAt"] == 1_040.0
+    assert reconciled["uncertainty"] == ""
+    assert reconciled["liveness"]["state"] == "terminal"
+
+
 def test_retrospective_permission_is_denied_activity_not_waiting_for_user() -> None:
     snapshot = project_activity_event(
         {"phase": "working", "revision": 2},
@@ -724,7 +772,8 @@ def test_confirmed_cancel_restarts_same_work_item_with_lineage() -> None:
 
             bus.on(Method.CHAT_WORK_NOTE, capture)
             try:
-                with patch.object(settings, "WORK_LEDGER_OWNS_TERMINAL_NARRATION", True):
+                with (patch.object(settings, "WORK_LEDGER_OWNS_TERMINAL_NARRATION", True),
+                      patch.object(settings, "WORK_PROJECT_ALLOWLIST", str(workspace))):
                     first = await runtime.start(_replacement_request(workspace))
                     await asyncio.wait_for(adapter.started_event.wait(), timeout=2.0)
                     binding = dict(first.metadata["work"])
@@ -896,6 +945,77 @@ def test_replacement_predecessor_has_no_terminal_activity_report() -> None:
 
     asyncio.run(run())
     print("ok: replacement predecessor event and result stay silent in WorkActivity")
+
+
+def test_orphaned_result_releases_local_activity_without_terminal_report() -> None:
+    async def run() -> None:
+        activity = WorkActivityCoordinator()
+        canvases: list[dict] = []
+        notes: list[dict] = []
+
+        async def capture_canvas(_method: str, params: dict) -> None:
+            canvases.append(params)
+
+        async def capture_note(_method: str, params: dict) -> None:
+            notes.append(params)
+
+        bus.on(Method.WALLPAPER_CANVAS, capture_canvas)
+        bus.on(Method.CHAT_WORK_NOTE, capture_note)
+        try:
+            activity._active_runs.add("unknown-run")
+            await activity._on_provider_result(
+                Method.PROVIDER_RESULT,
+                {
+                    "provider": "codex",
+                    "run_id": "unknown-run",
+                    "status": "orphaned",
+                    "result": "",
+                    "error": "native submission acknowledgement is unknown",
+                    "metadata": {
+                        "session_id": "unknown-session",
+                        "work": {
+                            "work_item_id": "unknown-work",
+                            "attempt_id": "unknown-attempt",
+                        },
+                    },
+                },
+            )
+            assert activity._runs["unknown-run"]["status"] == "orphaned"
+            assert "unknown-run" not in activity._active_runs
+            assert canvases == []
+            assert notes == []
+
+            with patch.object(activity, "_schedule_observer_release_fallback"):
+                await activity._on_provider_result(
+                    Method.PROVIDER_RESULT,
+                    {
+                        "provider": "codex",
+                        "run_id": "unknown-run",
+                        "status": "succeeded",
+                        "result": "",
+                        "error": "",
+                        "metadata": {
+                            "session_id": "unknown-session",
+                            "work": {
+                                "work_item_id": "unknown-work",
+                                "attempt_id": "unknown-attempt",
+                            },
+                        },
+                    },
+                )
+            assert activity._runs["unknown-run"]["status"] == "succeeded"
+            assert activity._runs["unknown-run"]["result"] == ""
+            assert activity._runs["unknown-run"]["error"] == ""
+            assert len(canvases) == 1
+            assert canvases[0]["phase"] == "Result"
+            assert canvases[0]["progress"] == 100
+            assert notes == []
+        finally:
+            bus.off(Method.WALLPAPER_CANVAS, capture_canvas)
+            bus.off(Method.CHAT_WORK_NOTE, capture_note)
+
+    asyncio.run(run())
+    print("ok: unknown outcome stays nonterminal on the presentation surface")
 
 
 def test_provider_snapshot_projection_is_burst_coalesced() -> None:

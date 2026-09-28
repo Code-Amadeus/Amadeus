@@ -1,0 +1,19 @@
+// Wire-compatible subset of Lively 2.2.1.0's desktop service.
+// These declarations describe the external IPC boundary, not a wallpaper host.
+syntax = "proto3";
+package Lively.Grpc.Common.Proto.Desktop;
+option csharp_namespace = "Amadeus.Wallpaper.Protocol.Desktop";
+import "google/protobuf/empty.proto";
+service DesktopService {
+  rpc GetWallpapers(google.protobuf.Empty) returns (stream Wallpaper);
+  rpc SetWallpaper(SetWallpaperRequest) returns (google.protobuf.Empty);
+  rpc CloseWallpaperLibrary(CloseRequest) returns (google.protobuf.Empty);
+  rpc GetCoreStats(google.protobuf.Empty) returns (CoreStats);
+  rpc TakeScreenshot(ScreenshotRequest) returns (google.protobuf.Empty);
+}
+message Screen { string device_id = 1; bool is_primary = 6; }
+message Wallpaper { string lively_info_path = 1; Screen screen = 2; }
+message SetWallpaperRequest { string lively_info_path = 1; string monitor_id = 2; }
+message CloseRequest { string lively_info_path = 2; }
+message CoreStats { string base_directory = 1; string assembly_version = 2; bool is_core_initialized = 3; }
+message ScreenshotRequest { string monitor_id = 1; string save_path = 2; }

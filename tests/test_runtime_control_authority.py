@@ -400,7 +400,7 @@ def test_compound_authority_dispatches_only_the_ordered_compound_capture() -> No
             def capture(self, _batch):
                 raise AssertionError("single A capture ran beside compound authority")
 
-            def capture_compound_shadow(self, batch):
+            def capture_compound(self, batch):
                 captures.append(batch)
 
                 async def decide():
@@ -449,6 +449,19 @@ def test_compound_authority_dispatches_only_the_ordered_compound_capture() -> No
         assert st.control_authority_resolved is True
         assert st.history_response.count("[DELEGATE") == 2
 
+        # The live parser admitted one role gate; Host composition produced
+        # two records. Audible interruption must not reapply that one-gate
+        # parser policy to the completed canonical history.
+        from core.session_manager import ConversationHistory
+
+        history = ConversationHistory()
+        history.add_assistant(st.history_response, turn_id=st.turn_id)
+        assert history.mark_last_assistant_interrupted("", turn_id=st.turn_id)
+        recorded = history.dialog[0]["content"]
+        assert recorded.count("[DELEGATE") == 2
+        assert recorded.index('intent="amend"') < recorded.index('intent="report"')
+        assert len(dispatched) == 2
+
     asyncio.run(run())
 
 
@@ -460,7 +473,7 @@ def test_compound_authority_uses_only_the_first_streamed_proposal_gate() -> None
             def capture(self, _batch):
                 raise AssertionError("single A capture ran beside compound authority")
 
-            def capture_compound_shadow(self, batch):
+            def capture_compound(self, batch):
                 captures.append(batch)
 
                 async def decide():
@@ -512,7 +525,7 @@ def test_compound_authority_failure_never_uses_the_single_proposal_fallback() ->
             def capture(self, _batch):
                 raise AssertionError("single A capture ran beside compound authority")
 
-            def capture_compound_shadow(self, _batch):
+            def capture_compound(self, _batch):
                 raise RuntimeError("decomposition offline")
 
         blocked = []

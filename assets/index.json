@@ -19,6 +19,17 @@
   ],
   "external_packs": [
     {
+      "id": "companion-kurisu",
+      "display_name": "Kurisu Companion Lite",
+      "spec_version": 1,
+      "paths": [],
+      "trees": ["companion/kurisu"],
+      "required": [
+        "companion/kurisu/manifest.json"
+      ],
+      "validator": "companion_pack"
+    },
+    {
       "id": "visual-runtime",
       "display_name": "Visual Runtime Pack",
       "spec_version": 1,
@@ -110,6 +121,23 @@
         "models/gpt-sovits/weights/sovits/v3/xxx_e2_s174_l32.pth",
         "audio/reference/kurisu_reference.wav",
         "audio/reference/english_recording.wav"
+      ],
+      "validator": "required_files"
+    },
+    {
+      "id": "voice-kurisu-gpt-sovits-v2pro-experimental",
+      "display_name": "Kurisu GPT-SoVITS v2Pro Experimental Voice Pack",
+      "spec_version": 1,
+      "paths": [
+        "models/gpt-sovits/pretrained/sv/pretrained_eres2netv2w24s4ep4.ckpt",
+        "models/gpt-sovits/weights/gpt/v2Pro/kurisu_v2pro-e15.ckpt",
+        "models/gpt-sovits/weights/sovits/v2Pro/kurisu_v2pro.pth"
+      ],
+      "trees": [],
+      "required": [
+        "models/gpt-sovits/pretrained/sv/pretrained_eres2netv2w24s4ep4.ckpt",
+        "models/gpt-sovits/weights/gpt/v2Pro/kurisu_v2pro-e15.ckpt",
+        "models/gpt-sovits/weights/sovits/v2Pro/kurisu_v2pro.pth"
       ],
       "validator": "required_files"
     }

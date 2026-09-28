@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { useI18n } from '../i18n'
+import FluentIcon from './FluentIcon'
 
 type ChatAvatarRole = 'user' | 'assistant'
 type ChatAvatars = { user: string; assistant: string }
@@ -12,7 +14,7 @@ function AvatarPreview({ src, fallback }: { src: string; fallback: string }) {
         height: 38,
         borderRadius: 19,
         color: 'var(--accent)',
-        background: '#EEF2F6',
+        background: 'var(--surface-alt)',
         border: '1px solid var(--border)',
         fontSize: 12,
         fontWeight: 650,
@@ -24,6 +26,7 @@ function AvatarPreview({ src, fallback }: { src: string; fallback: string }) {
 }
 
 export default function ChatAvatarSettings() {
+  const { t } = useI18n()
   const [avatars, setAvatars] = useState<ChatAvatars>({ user: '', assistant: '' })
   const [busy, setBusy] = useState<ChatAvatarRole | ''>('')
   const [error, setError] = useState('')
@@ -70,23 +73,33 @@ export default function ChatAvatarSettings() {
   ]
 
   return (
-    <div className="setting-card" style={{ background: 'var(--surface)', border: '1px solid rgba(17,24,39,0.085)', borderRadius: 11, padding: '2px 14px', boxShadow: '0 1px 2px rgba(17,24,39,0.025)' }}>
+    <div className="setting-card" style={{ background: 'var(--surface)', border: '1px solid var(--card-border)', borderRadius: 11, padding: '4px 12px', boxShadow: '0 1px 2px color-mix(in srgb, var(--shadow-color) 25%, transparent)' }}>
       {rows.map((item, index) => {
         const src = avatars[item.role]
+        const uploadLabel = busy === item.role ? 'Opening…' : src ? 'Replace image' : 'Upload image'
         return (
-          <div key={item.role} className="flex items-center gap-3" style={{ minHeight: 66, borderTop: index ? '1px solid rgba(17,24,39,0.075)' : 'none' }}>
+          <div key={item.role} className="flex items-center gap-3" style={{ minHeight: 66, borderTop: index ? '1px solid var(--divider)' : 'none' }}>
             <AvatarPreview src={src} fallback={item.fallback} />
             <div className="flex-1 min-w-0">
-              <div className="text-[13px] font-[600]" style={{ color: 'var(--text)', lineHeight: '18px' }}>{item.title}</div>
-              <div className="text-[11px] mt-0.5" style={{ color: 'var(--muted)', lineHeight: '16px' }}>{item.detail}</div>
+              <div className="settings-card-title">{t(item.title)}</div>
+              <div className="settings-card-description">{t(item.detail)}</div>
             </div>
-            <button onClick={() => void choose(item.role)} disabled={Boolean(busy)} className="text-[10.5px] rounded-md px-2.5 disabled:opacity-40" style={{ height: 30, color: 'var(--text)', background: 'rgba(17,24,39,0.045)', border: 0 }}>{busy === item.role ? 'Opening…' : src ? 'Replace' : 'Choose image'}</button>
-            {src ? <button onClick={() => void clear(item.role)} disabled={Boolean(busy)} title={`Restore default ${item.title}`} aria-label={`Restore default ${item.title}`} className="text-[18px] rounded-md disabled:opacity-35" style={{ width: 28, height: 28, color: 'var(--muted)', background: 'transparent', border: 0, lineHeight: 1 }}>×</button> : null}
+            <button
+              onClick={() => void choose(item.role)}
+              disabled={Boolean(busy)}
+              title={`${t(uploadLabel)} · ${t(item.title)}`}
+              aria-label={`${t(uploadLabel)} · ${t(item.title)}`}
+              aria-busy={busy === item.role}
+              className="avatar-upload-button flex items-center justify-center rounded-md disabled:opacity-40"
+            >
+              <FluentIcon name="PhotoUpload" size={18} className={busy === item.role ? 'animate-pulse' : undefined} />
+            </button>
+            {src ? <button onClick={() => void clear(item.role)} disabled={Boolean(busy)} title={`${t('Restore default')} ${t(item.title)}`} aria-label={`${t('Restore default')} ${t(item.title)}`} className="text-[18px] rounded-md disabled:opacity-35" style={{ width: 28, height: 28, color: 'var(--muted)', background: 'transparent', border: 0, lineHeight: 1 }}>×</button> : null}
           </div>
         )
       })}
-      <div className="text-[10px] pb-2" style={{ color: 'var(--muted)', lineHeight: '15px' }}>A centered PNG copy is stored in the app's local assets. The original file is never modified.</div>
-      {error ? <div className="text-[10.5px] pb-2" style={{ color: '#b42318' }}>{error}</div> : null}
+      <div className="text-[10px] pb-2" style={{ color: 'var(--muted)', lineHeight: '15px' }}>{t("A centered PNG copy is stored in the app's local assets. The original file is never modified.")}</div>
+      {error ? <div className="text-[10.5px] pb-2" style={{ color: 'var(--danger)' }}>{error}</div> : null}
     </div>
   )
 }

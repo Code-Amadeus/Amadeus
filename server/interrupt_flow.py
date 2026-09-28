@@ -25,6 +25,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from core.turn_coordinator import TurnAuthorityError
+
 logger = logging.getLogger("interrupt_flow")
 
 
@@ -48,17 +50,28 @@ class MainTurnInterruptFlow:
         *,
         source: str,
         annotate_history: bool = True,
+        turn_id: str = "",
     ) -> dict[str, Any]:
         """执行复合打断，返回 {turn_id, accumulated_text}。
 
         任何一步失败都继续后续步骤（与原 barge-in 内联序列一致）；
-        本方法自身绝不抛异常。
+        Host 授权失败在完成清理后向上传播，不能被新轮次当成成功失效。
         """
         from core.turn_coordinator import get_turn_coordinator
         from server.protocol import Method
 
+        # The bracket itself discards pending Core turns and releases playback.
+        # A setup-only or stale targeted abort must not enter it or global TTS.
+        if turn_id:
+            if self._chat_handler is None:
+                raise TurnAuthorityError("targeted interruption has no Chat owner")
+            if self._chat_handler.foreground_turn_id != turn_id:
+                return await self._chat_handler.handle(Method.CHAT_ABORT,
+                    {"turn_id": turn_id, "stop_execution": False})
+
         aborted_turn_id = ""
         aborted_text = ""
+        authority_error = None
 
         try:
             get_turn_coordinator().on_interrupt_begin(source=source)
@@ -70,9 +83,14 @@ class MainTurnInterruptFlow:
             # 保证后续 TTS 排干期间不再有新句子入队。
             if self._chat_handler is not None:
                 try:
-                    abort_result = await self._chat_handler.handle(Method.CHAT_ABORT, {})
+                    abort_result = await self._chat_handler.handle(
+                        Method.CHAT_ABORT, {"turn_id": turn_id, "stop_execution": False},
+                    )
                     aborted_turn_id = str((abort_result or {}).get("turn_id") or "")
                     aborted_text = str((abort_result or {}).get("accumulated_text") or "")
+                except TurnAuthorityError as exc:
+                    authority_error = exc
+                    logger.exception("%s Chat authority invalidation failed", source)
                 except Exception:
                     logger.exception("%s chat abort failed", source)
 
@@ -97,6 +115,8 @@ class MainTurnInterruptFlow:
             except Exception:
                 logger.debug("coordinator interrupt-end notify failed", exc_info=True)
 
+        if authority_error is not None:
+            raise authority_error
         return {"turn_id": aborted_turn_id, "accumulated_text": aborted_text}
 
 

@@ -117,6 +117,45 @@ def test_japanese_role_text_is_not_mistaken_for_a_translated_caption() -> None:
     assert _is_completed_display_subtitle("工作已经完成。", "simplified_chinese")
 
 
+def test_only_direct_turn_speech_joins_first_audio_timing_before_consumer_runs() -> None:
+    from core.turn_coordinator import TurnCoordinator
+    from server.turn_decision_shadow import TurnDecisionShadowObserver
+
+    async def run(complete_turn):
+        observer = TurnDecisionShadowObserver(enabled=True)
+        observer.admit_turn(utterance_id="voice", turn_id="direct-turn", session_id="s", transcript="hello")
+        coordinator = TurnCoordinator()
+        pending: asyncio.Queue = asyncio.Queue()
+
+        async def consume():
+            item = await pending.get()
+            coordinator.on_sentence_audio_written(sentence_id=item.sentence_id)
+            pending.task_done()
+
+        with (
+            patch("server.turn_decision_shadow.observer", observer),
+            patch("core.turn_coordinator.get_turn_coordinator", return_value=coordinator),
+        ):
+            consumer = asyncio.create_task(consume())
+            result = await submit_vn_tts_confirmed(
+                {"voice_text_ja": "終わったわ。", "display_language": "japanese",
+                 "line_id": "direct-branch-b1", "turn_id": "direct-turn",
+                 "complete_turn": complete_turn},
+                pending_sentence_items=pending,
+            )
+            await consumer
+            assert result["status"] == "queued"
+            timing = observer.snapshot()["recent"][0]["timing"]["elapsed_ms"]
+            if complete_turn:
+                assert timing["first_audio_write_completed"] >= timing["first_sentence_enqueued"]
+            else:
+                assert timing["first_audio_write_completed"] is None
+                assert timing["first_sentence_enqueued"] is None
+
+    asyncio.run(run(True))
+    asyncio.run(run(False))
+
+
 if __name__ == "__main__":
     test_confirmed_receipt_waits_for_the_sentence_queue()
     print("ok: confirmed VN receipt follows the real sentence queue")

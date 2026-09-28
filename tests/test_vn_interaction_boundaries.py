@@ -1,0 +1,155 @@
+from __future__ import annotations
+
+import asyncio
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
+from PIL import Image
+
+from server import visual_runtime
+from server.handlers.vn_player_handler import VNPlayerHandler
+from server.protocol import Method
+from server.vn_launch_manager import VNLaunchManager
+from vn_player.llm_client import VNLLMClient
+
+
+def test_late_asr_cannot_cross_vn_session_boundary() -> None:
+    handler = VNPlayerHandler()
+    runtime = SimpleNamespace(enabled=True, profile=SimpleNamespace(session_id="current"),
+                              player_intervention=AsyncMock(return_value={"status": "ok"}),
+                              status=lambda: {"capabilities": {"interaction": {"enabled": True}}})
+    handler._runtime = runtime
+    handler._voice_id = "input_current"
+    handler._asr_control = AsyncMock()
+    handler._asr_state = lambda: {"active": True, "source": "vn_player", "source_payload": {"session_id": "current", "input_id": "input_current"}}
+
+    async def run():
+        for session in ("previous", "", None):
+            result = await handler.handle_asr({"text": "用户的问题", "source_payload": {"session_id": session, "kind": "ask"}})
+            assert result["status"] == "ignored"
+        runtime.player_intervention.assert_not_awaited()
+        result = await handler.handle_asr({"text": "用户的问题", "source_payload": {"session_id": "current", "input_id": "input_current", "kind": "ask"}})
+        assert result["status"] == "ok"
+        assert runtime.player_intervention.await_args.args[0] == "ask"
+        runtime.enabled = False
+        result = await handler.handle_asr({"text": "晚到的识别", "source_payload": {"session_id": "current"}})
+        assert result["status"] == "ignored"
+        assert runtime.player_intervention.await_count == 1
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("method", [Method.VN_PLAYER_ASK, Method.VN_CHOICE_ASK])
+@pytest.mark.parametrize("boundary", ["unchanged", "stop", "restart"])
+def test_player_event_publication_cannot_send_a_question_to_another_session(tmp_path, monkeypatch, method, boundary):
+    monkeypatch.setattr(VNLLMClient, "configured", lambda _: True)
+
+    async def run():
+        entered, release = asyncio.Event(), asyncio.Event()
+        emitted = []
+
+        async def emit(name, payload):
+            emitted.append((name, payload))
+            if name == Method.VN_PLAYER_EVENT:
+                entered.set()
+                await release.wait()
+
+        handler = VNPlayerHandler()
+        spoken = AsyncMock()
+        handler.configure(tmp_path, event_emit=emit, speak_callback=spoken)
+        runtime = handler._runtime
+        runtime._llm_enabled = runtime._immediate_llm_enabled = True
+        await handler.handle(Method.VN_START, {"session_id": "a", "prompt_pack": "base", "script_path": ""})
+        old_store, old_llm = runtime.store, runtime.llm
+        reply = ({"decision": "speak", "speak": {"text": "Answer for session A."}}, "{}")
+        old_llm.complete_json = AsyncMock(return_value=reply)
+        pending = asyncio.create_task(handler.handle(method, {"session_id": "a", "text": "Question for session A."}))
+        await asyncio.wait_for(entered.wait(), 2)
+        if boundary != "unchanged":
+            await handler.handle(Method.VN_STOP, {})
+        if boundary == "restart":
+            await handler.handle(Method.VN_START, {"session_id": "b", "prompt_pack": "base", "script_path": ""})
+            runtime.llm.complete_json = AsyncMock(return_value=reply)
+        current_store, current_llm = runtime.store, runtime.llm
+        release.set()
+        result = await pending
+        if boundary == "unchanged":
+            assert result["status"] == "ok"
+            old_llm.complete_json.assert_awaited_once()
+            spoken.assert_awaited_once()
+            assert spoken.await_args.args[0]["session_id"] == "a"
+        else:
+            assert result["status"] == "ignored" and result["reason"] == "session_changed"
+            old_llm.complete_json.assert_not_awaited()
+            current_llm.complete_json.assert_not_awaited()
+            spoken.assert_not_awaited()
+            assert not any(name == Method.VN_REACTION for name, _ in emitted)
+            for store in (old_store, current_store):
+                assert store.recent_reactions() == []
+                assert not (store.root / "model_calls.jsonl").exists()
+                assert not (store.context_pack_dir / "immediate.latest.json").exists()
+            if boundary == "restart":
+                assert runtime._recent_player_dialogue() == []
+                assert runtime.activity() == []
+        await handler.handle(Method.VN_STOP, {})
+
+    asyncio.run(run())
+
+
+@pytest.mark.skipif(visual_runtime.os.name != "nt", reason="Windows window capture")
+@pytest.mark.parametrize("general_enabled", [False, True])
+def test_visual_capture_is_game_window_only_and_does_not_change_global_config(tmp_path: Path, monkeypatch, general_enabled) -> None:
+    game = str(tmp_path / "game.exe")
+    monkeypatch.setattr(visual_runtime, "_config", visual_runtime.VisionConfig(
+        enabled=general_enabled, mode="watching" if general_enabled else "off",
+        max_long_side=320, jpeg_quality=35,
+    ))
+    original = visual_runtime.get_config()
+    window = {"pid": 42, "hwnd": "0x1234", "title": "Game", "rect": {"left": 100, "top": 100, "width": 1600, "height": 900}}
+    with patch("psutil.Process", return_value=Mock(exe=Mock(return_value=game))), \
+         patch.object(visual_runtime, "list_capture_windows", return_value=[window]), \
+         patch.object(visual_runtime, "_window_pid", return_value=42), \
+         patch("server.window_capture.capture_window_frame", return_value=Image.new("RGB", (1600, 900))) as grab:
+        result = visual_runtime.capture_game_window(42, game)
+        grab.assert_called_once_with(0x1234)
+        assert result["actualScope"] == "game_window"
+        assert result["frame"]["dataUrl"].startswith("data:image/jpeg;base64,")
+        assert result["game"]["pid"] == 42
+        assert (result["frame"]["width"], result["frame"]["height"]) == (960, 540)
+    assert visual_runtime.get_config() == original
+
+
+@pytest.mark.skipif(visual_runtime.os.name != "nt", reason="Windows window capture")
+def test_visual_capture_rejects_changed_process_without_desktop_fallback(tmp_path: Path) -> None:
+    with patch("psutil.Process", return_value=Mock(exe=Mock(return_value=str(tmp_path / "other.exe")))), \
+         patch("PIL.ImageGrab.grab") as grab:
+        with pytest.raises(RuntimeError, match="process changed"):
+            visual_runtime.capture_game_window(42, str(tmp_path / "game.exe"))
+        grab.assert_not_called()
+
+
+def test_capture_requires_active_interaction_and_uses_profile_executable(tmp_path: Path) -> None:
+    async def run():
+        runtime_status = AsyncMock(return_value={"visual": {"supported": True}, "capabilities": {"interaction": {"enabled": True}}})
+        manager = VNLaunchManager(tmp_path, runtime_start=AsyncMock(), runtime_stop=AsyncMock(),
+                                  runtime_status=runtime_status, runtime_line=AsyncMock())
+        with pytest.raises(RuntimeError, match="Start a companion"):
+            await manager.capture()
+        manager._state.update(status="active", profileId="paranormasight", captureOnly=False)
+        with patch.object(manager, "_profile_by_id", return_value={"gameExe": str(tmp_path / "game.exe")}), \
+             patch("server.vn_launch_manager._find_game_pid", return_value=42) as find, \
+             patch.object(visual_runtime, "capture_game_window", return_value={"frame": {"dataUrl": "frame"}}) as capture:
+            result = await manager.capture()
+            assert result["visual_context"]["frame"]["dataUrl"] == "frame"
+            find.assert_called_once_with(str(tmp_path / "game.exe"))
+            capture.assert_called_once_with(42, str(tmp_path / "game.exe"))
+            find.reset_mock()
+            manager._state["game"]["pid"] = 42
+            await manager.capture()
+            find.assert_not_called()
+            runtime_status.return_value["capabilities"]["interaction"]["enabled"] = False
+            with pytest.raises(RuntimeError, match="Enable player interaction"):
+                await manager.capture()
+            assert capture.call_count == 2
+    asyncio.run(run())

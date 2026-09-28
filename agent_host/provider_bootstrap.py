@@ -7,6 +7,7 @@ this composition root, not routing, Work Ledger, UI, or ProviderRuntime.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from typing import Callable
 
 from agent_host.provider_types import ProviderAdapter
@@ -38,6 +39,14 @@ def _direct_codex_adapter() -> ProviderAdapter:
     from agent_host.adapters import DirectCodexAdapter
 
     adapter = DirectCodexAdapter()
+    adapter.require_startup_ready()
+    return adapter
+
+
+def _pi_adapter() -> ProviderAdapter:
+    from agent_host.adapters.pi import PiAdapter
+
+    adapter = PiAdapter()
     adapter.require_startup_ready()
     return adapter
 
@@ -74,9 +83,26 @@ def builtin_provider_specs(
     return (
         BuiltinProviderSpec("browser", _browser_branch_adapter, True),
         BuiltinProviderSpec("openclaw", _openclaw_adapter, True),
+        BuiltinProviderSpec("pi", _pi_adapter, bool(settings.PI_PROVIDER_ENABLED)),
         BuiltinProviderSpec(
             "codex",
             _codex_app_server_adapter if app_server_on else _direct_codex_adapter,
             app_server_on or codex_on,
         ),
     )
+
+
+def acp_provider_specs() -> tuple[BuiltinProviderSpec, ...]:
+    """User-configured external agents use the same composition/registration path."""
+    from agent_host.acp_configuration import load_acp_agents
+
+    return tuple(BuiltinProviderSpec(spec.provider_id, partial(_acp_adapter, spec), spec.enabled)
+                 for spec in load_acp_agents())
+
+
+def _acp_adapter(spec) -> ProviderAdapter:
+    from agent_host.adapters.acp import AcpProviderAdapter
+
+    adapter = AcpProviderAdapter(spec)
+    adapter.require_startup_ready()
+    return adapter

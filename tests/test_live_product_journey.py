@@ -16,6 +16,8 @@ from tools.e2e_live_product_journey import (
     WindowsLaunchIdentity,
     _available_choice_actions,
     _b2_automatic_presentation_summary,
+    _capture_final_runtime_status,
+    _chat_route_profile,
     _runtime_ready_for_live_journey,
     _compact_event,
     _controller_effect_timeout,
@@ -28,16 +30,19 @@ from tools.e2e_live_product_journey import (
     _first_accepted_situation,
     _finalize_product_run,
     _gomoku_interleave_binding_status,
+    _has_host_auip_preparation_context,
     _is_work_status_answer,
     _matching_controller_effect,
     _operator_failure_from_update,
     _populate_turn_timings,
     _provider_error,
+    _provider_message_query_evidence,
     _query_grounded_across_states,
     _query_metrics_grounded,
     _sequence_query_grounded,
     _receipt_bound_state,
     _require_windows_electron_profile,
+    _resolve_safe_permission,
     _semantic_review,
     _seed_verified_app,
     _nested_state_fact_matches,
@@ -53,6 +58,67 @@ from tools.e2e_real_work_conversation import EventRecord
 from tools.e2e_work_preview_auip_handoff import _native_app_surface_windows
 
 
+def test_permission_settlement_selects_only_the_card_being_approved(tmp_path) -> None:
+    import asyncio
+
+    rows = [
+        {"workItemId": key, "currentRunId": "run-" + key, "attemptId": "attempt-" + key,
+         "pendingPermissionRequestId": "permission-" + key}
+        for key in ("a", "b")
+    ]
+
+    class Probe:
+        def __init__(self):
+            self.calls = []
+            self.selected = rows[1]
+            self.revision = "revision-1"
+
+        async def request(self, method, params, **kwargs):
+            self.calls.append((method, params))
+            if method == "work.focus":
+                self.selected = next(row for row in rows
+                    if row["workItemId"] == params["work_item_id"])
+                self.revision = "revision-2"
+            if method in {"work.list", "work.focus"}:
+                return {"work": {"items": rows, "selected": self.selected,
+                        "selectedWorkItemId": self.selected["workItemId"],
+                        "revision": self.revision}}
+            if method == "work.get":
+                key = params["work_item_id"]
+                return {"item": {"workspacePath": str(tmp_path), "permissions": [{
+                    "request_id": "permission-" + key, "scope_paths": [str(tmp_path)],
+                    "options": ["allow_once"],
+                }]}}
+            assert method == "work.permission.resolve"
+            assert params["work_item_id"] == self.selected["workItemId"]
+            assert params["revision"] == self.revision
+            return {"ok": True}
+
+    class Product:
+        async def screenshot(self, label):
+            return tmp_path / "permission.png"
+
+    for run_id, expected in (("run-a", "a"), ("", "b"), ("run-missing", None)):
+        probe = Probe()
+        evidence = []
+        result = asyncio.run(_resolve_safe_permission(
+            product=Product(), probe=probe, run_root=tmp_path, seen=set(),
+            evidence=evidence, run_id=run_id,
+        ))
+        assert result is (expected is not None)
+        resolutions = [params for method, params in probe.calls
+                       if method == "work.permission.resolve"]
+        if expected:
+            assert resolutions == [{"permission_request_id": "permission-" + expected,
+                "work_item_id": expected, "attempt_id": "attempt-" + expected,
+                "revision": "revision-2" if expected == "a" else "revision-1",
+                "decision": "allow_once"}]
+        else:
+            assert resolutions == []
+        focuses = [params for method, params in probe.calls if method == "work.focus"]
+        assert focuses == ([{"work_item_id": "a"}] if expected == "a" else [])
+
+
 def _turn(label: str, start: int, end: int, *, runs=()) -> TurnEvidence:
     return TurnEvidence(
         label=label,
@@ -63,6 +129,7 @@ def _turn(label: str, start: int, end: int, *, runs=()) -> TurnEvidence:
         checks={
             "app_session_closed": label == "leave",
             "canonical_status_answer_visible": label == "status",
+            "provider_query_accepted_and_reply_visible": False,
             "same_work_item": label == "prepare",
             "expected_situation_kind_visible": label == "prepare",
             "engagement_mode_active": label in {"prepare", "launch"},
@@ -461,6 +528,180 @@ def test_turn_timing_uses_next_turn_boundary_for_direct_b2_tts() -> None:
         "first_tts_sentence_start_s": 2.4,
         "chat_complete_s": 2.1,
     }
+
+
+def test_active_query_accepts_exact_delivered_provider_message_without_new_work() -> None:
+    turn = TurnEvidence(
+        label="status",
+        text="问问写这个的，现在还差哪些？",
+        event_start=1,
+        turn_id="turn-status",
+        session_id="session-status",
+        reply="まだ作業中よ。確認できた範囲はここまで。",
+    )
+    before = {
+        "workItemId": "work-one",
+        "attemptId": "attempt-one",
+        "runId": "run-one",
+        "attempts": [{"attempt_id": "attempt-one"}],
+        "providerInputs": [],
+        "inputRequirements": [],
+    }
+    delivered = {
+        "input_id": "turn-status",
+        "attempt_id": "attempt-one",
+        "provider_run_id": "run-one",
+        "text": turn.text,
+        "state": "delivered",
+    }
+    after = {**before, "providerInputs": [delivered]}
+    dialog = [
+        {
+            "role": "assistant",
+            "content": turn.reply,
+            "turn_id": turn.turn_id,
+        }
+    ]
+
+    evidence = _provider_message_query_evidence(
+        turn=turn,
+        created_work_item_id="work-one",
+        created_attempt_id="attempt-one",
+        created_run_id="run-one",
+        before_item=before,
+        after_item=after,
+        dialog=dialog,
+    )
+
+    assert evidence["passed"] is True
+    assert all(evidence["checks"].values())
+
+
+def test_active_query_rejects_wrong_identity_source_or_unsettled_delivery() -> None:
+    turn = TurnEvidence(
+        label="status",
+        text="问问写这个的，现在还差哪些？",
+        event_start=1,
+        turn_id="turn-status",
+        session_id="session-status",
+        reply="進行中よ。",
+    )
+    before = {
+        "workItemId": "work-one",
+        "attemptId": "attempt-one",
+        "runId": "run-one",
+        "attempts": [{"attempt_id": "attempt-one"}],
+        "providerInputs": [],
+        "inputRequirements": [],
+    }
+    base_input = {
+        "input_id": turn.turn_id,
+        "attempt_id": "attempt-one",
+        "provider_run_id": "run-one",
+        "text": turn.text,
+        "state": "delivered",
+    }
+    dialog = [{"role": "assistant", "content": turn.reply, "turn_id": turn.turn_id}]
+    cases = (
+        ({**before, "workItemId": "work-other", "providerInputs": [base_input]}, "same_work"),
+        (
+            {
+                **before,
+                "providerInputs": [{**base_input, "input_id": "turn-other"}],
+            },
+            "one_delivered_input",
+        ),
+        (
+            {
+                **before,
+                "providerInputs": [{**base_input, "state": "unknown"}],
+            },
+            "one_delivered_input",
+        ),
+    )
+    for after, failed_check in cases:
+        evidence = _provider_message_query_evidence(
+            turn=turn,
+            created_work_item_id="work-one",
+            created_attempt_id="attempt-one",
+            created_run_id="run-one",
+            before_item=before,
+            after_item=after,
+            dialog=dialog,
+        )
+        assert evidence["passed"] is False
+        assert evidence["checks"][failed_check] is False
+
+
+def test_chat_route_profile_pins_both_authority_switches_or_inherits() -> None:
+    cooperative = _chat_route_profile("cooperative", {})
+    default = _chat_route_profile(
+        "default",
+        {
+            "COOPERATIVE_CHAT_ENABLED": "1",
+            "COOPERATIVE_WORK_PLANNER_ENABLED": "1",
+        },
+    )
+    inherited = _chat_route_profile(
+        "inherit",
+        {
+            "COOPERATIVE_CHAT_ENABLED": "1",
+            "COOPERATIVE_WORK_PLANNER_ENABLED": "0",
+        },
+    )
+
+    assert cooperative["environment_overrides"] == {
+        "COOPERATIVE_CHAT_ENABLED": "1",
+        "COOPERATIVE_WORK_PLANNER_ENABLED": "1",
+    }
+    assert cooperative["cooperative_chat_enabled"] is True
+    assert cooperative["cooperative_work_planner_enabled"] is True
+    assert default["environment_overrides"] == {
+        "COOPERATIVE_CHAT_ENABLED": "0",
+        "COOPERATIVE_WORK_PLANNER_ENABLED": "0",
+    }
+    assert default["cooperative_chat_enabled"] is False
+    assert default["cooperative_work_planner_enabled"] is False
+    assert inherited["environment_overrides"] == {}
+    assert inherited["source"] == "ambient"
+
+
+def test_natural_adaptation_authority_uses_host_contract_not_source_spelling() -> None:
+    metadata = {
+        "source": "control_work_effect",
+        "host_outcome_requirement": {
+            "operation": "prepare",
+            "facet": "auip.application",
+            "expected": {
+                "current_attempt_contribution": True,
+                "engagement_mode": "collaborate",
+            },
+        },
+        "auip_host_validates_bundle": True,
+        "auip_bundle_root": "C:/isolated/app",
+        "auip_host_materialized_files": [
+            "sdk/auip-core/managed-v0.js",
+            "sdk/auip-web/auip-v0.js",
+        ],
+        "auip_host_materialized_assets": {
+            "sdk/auip-core/managed-v0.js": {"sha256": "managed"},
+            "sdk/auip-web/auip-v0.js": {"sha256": "web"},
+        },
+        "auip_authoring_skill_path": "C:/isolated/skill/SKILL.md",
+        "auip_authoring_inputs": {"required_read_file_count": 2},
+    }
+
+    assert _has_host_auip_preparation_context(metadata, "collaborate") is True
+    assert _has_host_auip_preparation_context(
+        {**metadata, "source": "auip_prepare"}, "collaborate"
+    ) is True
+    assert _has_host_auip_preparation_context(
+        {**metadata, "host_outcome_requirement": {}}, "collaborate"
+    ) is False
+    assert _has_host_auip_preparation_context(metadata, "delegate") is False
+    assert _has_host_auip_preparation_context(
+        {**metadata, "auip_host_materialized_assets": {}}, "collaborate"
+    ) is False
 
 
 def test_live_product_review_rejects_a_query_that_secretly_acts() -> None:
@@ -2447,6 +2688,90 @@ def test_live_product_report_keeps_raw_event_coordinates_after_filtering() -> No
     assert compact["method"] == "chat.complete"
 
 
+def test_live_product_captures_final_shadow_status_without_full_runtime_dump() -> None:
+    import asyncio
+
+    class Probe:
+        requests: list[tuple[str, dict, float]] = []
+
+        async def request(
+            self,
+            method: str,
+            params: dict,
+            *,
+            timeout: float,
+        ) -> dict:
+            self.requests.append((method, params, timeout))
+            return {
+                "server": {
+                    "code_identity": {
+                        "commit_sha": "abc123",
+                        "workspace_dirty": True,
+                    }
+                },
+                "turn_decision_shadow": {
+                    "enabled": True,
+                    "mode": "observe_only",
+                    "authority": False,
+                    "schema_version": "amadeus.shadow-turn-decision.v1",
+                    "counters": {"admissions": 3, "decisions": 2},
+                    "recent": [{"lifecycle": "completed", "events": []}],
+                },
+                "provider": {"large_unrelated_section": "not retained"},
+            }
+
+    async def scenario() -> None:
+        report = {"status": "passed"}
+        probe = Probe()
+        await _capture_final_runtime_status(probe, report)  # type: ignore[arg-type]
+
+        assert probe.requests == [("runtime.status", {}, 20.0)]
+        assert report["status"] == "passed"
+        final = report["final_runtime_status"]
+        assert final["captured"] is True
+        assert final["transport"] == "websocket"
+        assert final["server_code_identity"]["commit_sha"] == "abc123"
+        assert final["turn_decision_shadow"]["counters"] == {
+            "admissions": 3,
+            "decisions": 2,
+        }
+        assert final["turn_decision_shadow"]["recent"] == [
+            {"lifecycle": "completed", "events": []}
+        ]
+        assert "provider" not in final
+
+    asyncio.run(scenario())
+
+
+def test_live_product_final_shadow_failure_is_non_authoritative_evidence() -> None:
+    import asyncio
+
+    class Probe:
+        async def request(
+            self,
+            _method: str,
+            _params: dict,
+            *,
+            timeout: float,
+        ) -> dict:
+            assert timeout == 20.0
+            raise ConnectionError("probe disconnected")
+
+    async def scenario() -> None:
+        report = {"status": "failed", "error": "original journey failure"}
+        await _capture_final_runtime_status(Probe(), report)  # type: ignore[arg-type]
+
+        assert report["status"] == "failed"
+        assert report["error"] == "original journey failure"
+        final = report["final_runtime_status"]
+        assert final["captured"] is False
+        assert final["instrumentation_error"] == (
+            "ConnectionError: probe disconnected"
+        )
+
+    asyncio.run(scenario())
+
+
 def test_live_product_finalizer_stops_product_when_screenshot_fails() -> None:
     import asyncio
 
@@ -2468,6 +2793,53 @@ def test_live_product_finalizer_stops_product_when_screenshot_fails() -> None:
             await _finalize_product_run(product, report, report_path)  # type: ignore[arg-type]
             assert product.stopped is True
             assert report_path.is_file()
+
+    asyncio.run(scenario())
+
+
+def test_live_product_exception_finalizer_recovers_status_over_http() -> None:
+    import asyncio
+
+    class Product:
+        page = None
+        stopped = False
+
+        async def runtime_status(self) -> dict:
+            return {
+                "server": {
+                    "code_identity": {
+                        "commit_sha": "exception-sha",
+                        "workspace_dirty": True,
+                    }
+                },
+                "turn_decision_shadow": {
+                    "enabled": True,
+                    "counters": {"decisions": 4},
+                    "recent": [],
+                },
+            }
+
+        async def stop(self) -> None:
+            self.stopped = True
+
+    async def scenario() -> None:
+        with tempfile.TemporaryDirectory(prefix="live_product_http_status_") as temp:
+            report_path = Path(temp) / "report.json"
+            product = Product()
+            report = {
+                "status": "failed",
+                "error": "original journey failure",
+                "paths": {},
+            }
+            await _finalize_product_run(product, report, report_path)  # type: ignore[arg-type]
+
+            assert product.stopped is True
+            assert report["status"] == "failed"
+            assert report["error"] == "original journey failure"
+            final = report["final_runtime_status"]
+            assert final["captured"] is True
+            assert final["transport"] == "authenticated_http"
+            assert final["server_code_identity"]["commit_sha"] == "exception-sha"
 
     asyncio.run(scenario())
 

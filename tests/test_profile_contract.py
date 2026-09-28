@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import shutil
+from itertools import combinations
 import subprocess
 import tomllib
 from pathlib import Path
 
 import pytest
 from packaging.markers import default_environment
-from packaging.requirements import Requirement
+from packaging.requirements import InvalidRequirement, Requirement
 
 ROOT = Path(__file__).resolve().parents[1]
 UV = shutil.which("uv")
@@ -29,7 +30,7 @@ def test_capability_declarations_do_not_choose_a_gpu_build() -> None:
     assert not _names(extras["voice"]) & {"torch", "torchaudio", "silero-vad"}
     assert "silero-vad" in _names(extras["vad"])
     assert "torch" not in _names(extras["vad"])
-    for build in ("torch-cpu", "local-cu124", "local-rocm"):
+    for build in ("torch-cpu", "local-cu124", "local-cu128", "local-mps", "local-rocm"):
         assert {"torch", "torchaudio"} <= _names(extras[build])
     assert {"torchvision", "rocm", "rocm-sdk-core"} <= _names(extras["local-rocm"])
     assert all("sys_platform == 'win32'" in item for item in extras["local-rocm"])
@@ -42,17 +43,78 @@ def _export(*extras: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=120)
 
 
-def _selected_requirements(output: str, platform: str) -> dict[str, Requirement]:
-    environment = {**default_environment(), "sys_platform": platform}
+def _selected_requirements(output: str, platform: str, *, root: Path = ROOT) -> dict[str, Requirement]:
+    environment = {
+        **default_environment(), "sys_platform": platform,
+        "platform_system": {"win32": "Windows", "linux": "Linux", "darwin": "Darwin"}[platform],
+        "platform_machine": {"win32": "AMD64", "linux": "x86_64", "darwin": "arm64"}[platform],
+    }
     requirements = {}
     for line in output.splitlines():
         line = line.strip()
         if not line or line.startswith(("#", "--")):
             continue
+        if line.startswith(("./", "../", "/")):
+            # uv exports directory sources as requirements-file paths, not
+            # PEP 508 strings. Read the declared name rather than guessing it
+            # from the directory, then retain the source URL and marker.
+            path, separator, marker = line.partition(" ; ")
+            project_dir = (root / path).resolve()
+            project = tomllib.loads(
+                (project_dir / "pyproject.toml").read_text(encoding="utf-8")
+            )["project"]
+            line = f"{project['name']} @ {project_dir.as_uri()}"
+            if separator:
+                line += f" ; {marker}"
         requirement = Requirement(line)
         if requirement.marker is None or requirement.marker.evaluate(environment):
             requirements[requirement.name] = requirement
     return requirements
+
+
+@pytest.mark.parametrize("platform", ["linux", "win32", "darwin"])
+def test_exported_local_source_keeps_package_identity_and_marker(tmp_path: Path, platform: str) -> None:
+    project_dir = tmp_path / "third party" / "echo"
+    project_dir.mkdir(parents=True)
+    (project_dir / "pyproject.toml").write_text(
+        '[project]\nname = "aec-audio-processing"\nversion = "1.0.1"\n', encoding="utf-8"
+    )
+    output = "\n".join([
+        "./third party/echo ; sys_platform == 'linux'",
+        "aec-audio-processing==1.0.1 ; sys_platform != 'linux'",
+        "aiohttp==3.14.3",
+    ])
+    selected = _selected_requirements(output, platform, root=tmp_path)
+    assert set(selected) == {"aec-audio-processing", "aiohttp"}
+    assert str(selected["aiohttp"].specifier) == "==3.14.3"
+    aec = selected["aec-audio-processing"]
+    if platform == "linux":
+        assert aec.url == project_dir.as_uri()
+    else:
+        assert aec.url is None
+        assert str(aec.specifier) == "==1.0.1"
+
+
+def test_exported_local_source_without_marker(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "local-package"\nversion = "1.0"\n', encoding="utf-8"
+    )
+    selected = _selected_requirements("./", "linux", root=tmp_path)
+    assert selected["local-package"].url == tmp_path.as_uri()
+
+
+@pytest.mark.parametrize("line", ["not a requirement", "aiohttp==3.14.3 ; invalid_marker"])
+def test_invalid_exported_registry_requirement_is_not_ignored(line: str) -> None:
+    with pytest.raises(InvalidRequirement):
+        _selected_requirements(line, "linux")
+
+
+def test_invalid_exported_local_marker_is_not_ignored(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "local-package"\nversion = "1.0"\n', encoding="utf-8"
+    )
+    with pytest.raises(InvalidRequirement):
+        _selected_requirements("./ ; invalid_marker", "linux", root=tmp_path)
 
 
 @pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
@@ -60,19 +122,20 @@ def _selected_requirements(output: str, platform: str) -> dict[str, Requirement]
 def test_core_and_voice_resolutions_remain_model_free(extras: tuple[str, ...]) -> None:
     result = _export(*extras)
     assert result.returncode == 0, result.stderr
-    for platform in ("win32", "darwin"):
+    for platform in ("win32", "darwin", "linux"):
         selected = _selected_requirements(result.stdout, platform)
         assert "aiohttp" in selected
         assert not selected.keys() & {
             "torch", "torchaudio", "silero-vad", "onnxruntime", "faiss-cpu", "sentence-transformers",
         }
         assert ("pyaudio" in selected) == ("voice" in extras)
+        assert ("aec-audio-processing" in selected) == ("voice" in extras)
 
 
 @pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
 @pytest.mark.parametrize(
     "build,version",
-    [("torch-cpu", "2.6.0+cpu"), ("local-cu124", "2.6.0+cu124")],
+    [("torch-cpu", "2.7.0+cpu"), ("local-cu124", "2.6.0+cu124")],
 )
 @pytest.mark.parametrize("rag", [False, True])
 def test_windows_index_torch_selection_matches_the_requested_build(
@@ -114,11 +177,7 @@ def test_windows_rocm_selection_uses_only_the_fixed_amd_wheels(rag: bool) -> Non
 @pytest.mark.skipif(UV is None, reason="uv is required to check conflicting selections")
 @pytest.mark.parametrize(
     "left,right",
-    [
-        ("torch-cpu", "local-cu124"),
-        ("torch-cpu", "local-rocm"),
-        ("local-cu124", "local-rocm"),
-    ],
+    list(combinations(("torch-cpu", "local-cu124", "local-cu128", "local-mps", "local-rocm"), 2)),
 )
 def test_torch_builds_cannot_be_selected_together(left: str, right: str) -> None:
     result = _export(left, right)
@@ -135,6 +194,38 @@ def test_verify_profiles_cover_the_capability_ladder() -> None:
     assert ladder["vad-cpu"] == ladder["vad"]
     assert set(vpe.LOCAL_MODEL_IMPORTS) <= set(ladder["cu124"]) - set(ladder["vad"])
     assert set(ladder["rocm"]) == set(ladder["cu124"]) | {"torchvision"}
+    assert ladder["cu128"] == ladder["mps"] == ladder["cu124"]
+
+
+@pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
+@pytest.mark.parametrize("rag", [False, True])
+@pytest.mark.parametrize("build,platform,version", [
+    ("torch-cpu", "linux", "2.7.0+cpu"),
+    ("local-cu128", "win32", "2.7.0+cu128"),
+    ("local-cu128", "linux", "2.7.0+cu128"),
+    ("local-mps", "darwin", "2.7.0"),
+])
+def test_candidate_lock_selects_matching_platform_build(build, platform, version, rag) -> None:
+    result = _export("voice", "vad", build, *(("rag",) if rag else ()))
+    assert result.returncode == 0, result.stderr
+    selected = _selected_requirements(result.stdout, platform)
+    for name in ("torch", "torchaudio"):
+        assert str(selected[name].specifier) == f"=={version}"
+    assert ("qwen-asr" in selected) == build.startswith("local-")
+    assert ("sentence-transformers" in selected) == rag
+    assert "flash-attn" not in selected
+
+
+@pytest.mark.skipif(UV is None, reason="uv is required to select lock branches")
+@pytest.mark.parametrize("build,platform", [
+    ("local-mps", "win32"), ("local-mps", "linux"), ("local-cu128", "darwin"),
+    ("local-rocm", "linux"), ("local-rocm", "darwin"),
+])
+def test_platform_specific_extra_does_not_leak_model_dependencies(build, platform) -> None:
+    result = _export(build)
+    assert result.returncode == 0, result.stderr
+    selected = _selected_requirements(result.stdout, platform)
+    assert not selected.keys() & {"torch", "torchaudio", "qwen-asr", "librosa"}
 
 
 @pytest.mark.skipif(UV is None, reason="uv is required for lock consistency")

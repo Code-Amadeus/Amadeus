@@ -1,11 +1,11 @@
 {
   "name": "amadeus-desktop",
-  "version": "0.1.0",
+  "version": "0.15.2-alpha.0",
   "description": "Amadeus AI Companion — Electron frontend",
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
-    "postinstall": "install-electron",
+    "postinstall": "install-electron && npm ci --ignore-scripts --prefix ../agent_host/pi_runtime",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
@@ -13,8 +13,16 @@
     "electron:build": "npm run build && electron-builder"
   },
   "build": {
+    "directories": { "output": "build" },
+    "files": ["dist/main/**/*", "dist/preload/**/*", "dist/renderer/**/*", "package.json"],
+    "beforePack": "scripts/build-windows-wallpaper.cjs",
     "win": {
-      "icon": "../assets/icons/app/app_icon.ico"
+      "icon": "../assets/icons/app/app_icon.ico",
+      "extraResources": [
+        { "from": "../assets/icons/app/app_icon.ico", "to": "assets/icons/app/app_icon.ico" },
+        { "from": "../build/windows-wallpaper/host", "to": "windows-wallpaper", "filter": ["**/*", "!*.pdb"] },
+        { "from": "../scripts/setup_windows_wallpaper.ps1", "to": "windows-wallpaper/setup_windows_wallpaper.ps1" }
+      ]
     }
   },
   "dependencies": {

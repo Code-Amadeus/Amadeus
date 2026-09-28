@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from tools import run_tests
 from tools.test_discovery import (
     collected_by_file,
     declared_module_tests,
@@ -121,3 +124,63 @@ def test_basetemp_is_created_beneath_the_canonical_parent(
 
     assert basetemp.parent == tmp_path.resolve()
     assert basetemp.is_dir()
+
+
+@pytest.fixture
+def runner_suites(monkeypatch, tmp_path: Path):
+    test_dir = tmp_path / "tests"
+    test_dir.mkdir()
+    paths = [test_dir / f"test_{index}.py" for index in range(7)]
+    for path in paths:
+        path.write_text("def test_example(): pass\n", encoding="utf-8")
+    collection = {
+        f"tests/{path.name}": [f"tests/{path.name}::test_example"]
+        for path in paths
+    }
+    executed = []
+
+    def run_suite(path, *, collected, basetemp_root):
+        executed.append(path)
+        return SuiteResult(path.name, 1, collected, 0.01, 0)
+
+    monkeypatch.setattr(run_tests, "ROOT", tmp_path)
+    monkeypatch.setattr(run_tests, "TEST_DIR", test_dir)
+    monkeypatch.setattr(run_tests, "_collect_tests", lambda: (collection, "", 0))
+    monkeypatch.setattr(run_tests, "_run_suite", run_suite)
+    return paths, collection, executed
+
+
+def test_shards_cover_every_suite_once_and_default_runs_all(runner_suites):
+    paths, _, executed = runner_suites
+    for index in range(3):
+        assert run_tests.main(["--shard-count", "3", "--shard-index", str(index)]) == 0
+    assert sorted(executed) == paths
+    executed.clear()
+    assert run_tests.main([]) == 0
+    assert executed == paths
+
+
+def test_shard_checks_discovery_even_in_another_partition(runner_suites):
+    _, collection, executed = runner_suites
+    collection.pop("tests/test_1.py")
+    assert run_tests.main(["--shard-count", "2", "--shard-index", "0"]) == 1
+    assert executed == []
+
+
+def test_shard_propagates_suite_failure(monkeypatch, runner_suites):
+    monkeypatch.setattr(
+        run_tests, "_run_suite",
+        lambda path, **kwargs: SuiteResult(path.name, 0, kwargs["collected"], 0.01, 1),
+    )
+    assert run_tests.main(["--shard-count", "2", "--shard-index", "0"]) == 1
+
+
+@pytest.mark.parametrize("count,index", [(0, 0), (2, -1), (2, 2)])
+def test_invalid_shard_arguments_fail(count, index):
+    with pytest.raises(SystemExit) as error:
+        run_tests.main(["--shard-count", str(count), "--shard-index", str(index)])
+    assert error.value.code == 2
+
+
+def test_empty_shard_fails(runner_suites):
+    assert run_tests.main(["--shard-count", "8", "--shard-index", "7"]) == 1

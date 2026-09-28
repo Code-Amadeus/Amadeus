@@ -23,8 +23,13 @@ from unittest.mock import AsyncMock, Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import config.settings as settings
+from llm import prompts
 from llm.prompts import get_system_prompt
-from server.app import _delegate_declared_retract, _handle_delegate
+from server.app import (
+    _delegate_declared_retract,
+    _handle_declared_retract,
+    _handle_delegate,
+)
 
 
 def _both_flags(value: bool = True):
@@ -72,10 +77,8 @@ def test_a_retraction_cancels_the_one_running_attempt_and_starts_nothing() -> No
         with (
             intent_flag,
             retract_flag,
-            patch.dict(
-                "sys.modules",
-                {"agent_host.provider_runtime": type("M", (), {"runtime": fake_runtime})},
-            ),
+            patch("agent_host.provider_runtime.runtime", fake_runtime),
+            patch("core.session_manager.get_current_session_id", return_value=""),
             patch("server.app._delegate_provider_for_task") as router,
         ):
             result = await _handle_delegate(
@@ -85,6 +88,55 @@ def test_a_retraction_cancels_the_one_running_attempt_and_starts_nothing() -> No
         cancel.assert_awaited_once_with("r1"), "the finished run must be left alone"
         router.assert_not_called(), "a withdrawal must never be routed to a provider"
         assert "cancelled" in result
+
+    asyncio.run(run())
+
+
+def test_exact_retraction_never_cancels_another_sessions_only_run() -> None:
+    async def run() -> None:
+        cancel = AsyncMock(return_value={"cancelled": True})
+        fake_runtime = type(
+            "R",
+            (),
+            {
+                "list_runs": staticmethod(
+                    lambda: [
+                        {
+                            "run_id": "run-a",
+                            "status": "running",
+                            "metadata": {
+                                "session_id": "session-a",
+                                "work": {"work_item_id": "work-a"},
+                            },
+                        },
+                        {
+                            "run_id": "run-b",
+                            "status": "running",
+                            "metadata": {
+                                "session_id": "session-b",
+                                "work": {"work_item_id": "work-b"},
+                            },
+                        },
+                    ]
+                ),
+                "cancel": cancel,
+            },
+        )()
+        with (
+            patch("agent_host.provider_runtime.runtime", fake_runtime),
+            patch(
+                "server.work_ledger_coordinator.get_work_ledger_coordinator",
+                return_value=None,
+            ),
+        ):
+            result = await _handle_declared_retract(
+                "stop work a",
+                {"workspace_ref": "work-a"},
+                session_id="session-a",
+            )
+
+        assert result == "[retract] cancelled"
+        cancel.assert_awaited_once_with("run-a")
 
     asyncio.run(run())
 
@@ -101,10 +153,8 @@ def test_an_unresolvable_retraction_says_so_and_never_guesses() -> None:
         with (
             intent_flag,
             retract_flag,
-            patch.dict(
-                "sys.modules",
-                {"agent_host.provider_runtime": type("M", (), {"runtime": fake_runtime})},
-            ),
+            patch("agent_host.provider_runtime.runtime", fake_runtime),
+            patch("core.session_manager.get_current_session_id", return_value=""),
             patch("server.app._announce_retract_outcome", new=AsyncMock()) as announced,
             patch("server.app._delegate_provider_for_task") as router,
         ):
@@ -149,10 +199,8 @@ def test_cancel_unconfirmed_waits_for_ledger_terminal_truth() -> None:
         with (
             intent_flag,
             retract_flag,
-            patch.dict(
-                "sys.modules",
-                {"agent_host.provider_runtime": type("M", (), {"runtime": fake_runtime})},
-            ),
+            patch("agent_host.provider_runtime.runtime", fake_runtime),
+            patch("core.session_manager.get_current_session_id", return_value=""),
             patch("server.app._announce_retract_outcome", new=AsyncMock()) as announced,
         ):
             result = await _handle_delegate(
@@ -194,10 +242,8 @@ def test_retraction_cancels_a_reserved_progress_recovery() -> None:
         with (
             intent_flag,
             retract_flag,
-            patch.dict(
-                "sys.modules",
-                {"agent_host.provider_runtime": type("M", (), {"runtime": fake_runtime})},
-            ),
+            patch("agent_host.provider_runtime.runtime", fake_runtime),
+            patch("core.session_manager.get_current_session_id", return_value=""),
             patch(
                 "server.work_ledger_coordinator.get_work_ledger_coordinator",
                 return_value=fake_coordinator,
@@ -262,10 +308,8 @@ def test_retraction_deduplicates_a_visible_recovery_successor() -> None:
         with (
             intent_flag,
             retract_flag,
-            patch.dict(
-                "sys.modules",
-                {"agent_host.provider_runtime": type("M", (), {"runtime": fake_runtime})},
-            ),
+            patch("agent_host.provider_runtime.runtime", fake_runtime),
+            patch("core.session_manager.get_current_session_id", return_value=""),
             patch(
                 "server.work_ledger_coordinator.get_work_ledger_coordinator",
                 return_value=fake_coordinator,
@@ -289,10 +333,8 @@ def test_the_verb_appears_in_the_prompt_only_while_the_host_acts_on_it() -> None
     with intent_flag, retract_flag:
         prompt = get_system_prompt("with_delegate")
     assert 'intent="retract"' in prompt
-    # Claiming the stop already happened is the failure this replaces.
-    assert "止めた" in prompt or "has been stopped" in prompt
-    assert "cancel_pending" in prompt
-    assert "not another retract" in prompt or "retract ではなく" in prompt
+    # The gated verb carries the shared Host-owned withdrawal contract.
+    assert prompts._JA_RETRACT_ADDON in prompt or prompts._EN_RETRACT_ADDON in prompt
     # The tie-break must survive the insertion.
     assert "既存台帳だけで足りるなら report" in prompt or "ledger facts are report" in prompt
 

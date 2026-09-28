@@ -122,7 +122,7 @@ def main() -> int:
         output_dir = ROOT / output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"[render] loading full v3 stack on {args.device}")
+    print(f"[render] loading configured GPT-SoVITS stack on {args.device}")
     inferencer = TTSInferencer(
         device=args.device,
         gpt_path=settings.TTS_GPT_MODEL_PATH or None,

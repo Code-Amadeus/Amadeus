@@ -1,6 +1,7 @@
 from agent_host.provider_handoff import (
     CODEX_HANDOFF_CONVERSATION_CONTRACT,
     codex_handoff_presentation,
+    provider_recovery_user_message,
 )
 
 
@@ -40,6 +41,38 @@ def test_hidden_contract_is_written_for_a_person_who_may_take_over() -> None:
     assert "JS REPL" in CODEX_HANDOFF_CONVERSATION_CONTRACT
     assert "writeFileSync" in CODEX_HANDOFF_CONVERSATION_CONTRACT
     assert "fresh block scope" in CODEX_HANDOFF_CONVERSATION_CONTRACT
+
+
+def test_default_progress_recovery_message_is_unchanged() -> None:
+    assert provider_recovery_user_message() == (
+        "Amadeus execution continuation\n\n"
+        "The preceding turn stopped after reporting progress and before any observable "
+        "execution. Continue the same already-authorized request from the current workspace "
+        "state. Do not broaden its scope or repeat completed work; report a concrete blocker "
+        "only if one actually prevents continuation."
+    )
+
+
+def test_auip_recovery_message_is_honest_without_internal_diagnostics() -> None:
+    message = provider_recovery_user_message(
+        presentation_locale="zh-CN",
+        reason="auip_validation_failed",
+    )
+    assert message.startswith("Amadeus 应用验证续接")
+    assert "上一轮已经产出应用" in message
+    assert "再次运行该验证" in message
+    assert "任何可观测执行前" not in message
+    assert "attempt" not in message.lower()
+    assert "error" not in message.lower()
+
+
+def test_recovery_message_rejects_an_unknown_reason() -> None:
+    try:
+        provider_recovery_user_message(reason="unknown")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("unknown recovery reason must not select visible prose")
 
 
 if __name__ == "__main__":

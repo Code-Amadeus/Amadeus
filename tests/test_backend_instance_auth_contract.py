@@ -53,6 +53,17 @@ def test_backend_keeps_desktop_and_auip_authentication_realms_separate() -> None
     assert "clear_inherited_auth_environment(os.environ)" in app
     assert "AUIP applications authenticate with a one-time attach ticket" in app
     assert "auth_policy=LocalAuthPolicy.disabled()" in app
+    assert 'async def runtime_status(request: Request):' in app
+    runtime_status_body = app.split(
+        'async def runtime_status(request: Request):',
+        1,
+    )[1].split('@app.post("/shutdown")', 1)[0]
+    assert "_http_request_authenticated(request.headers, auth_policy)" in (
+        runtime_status_body
+    )
+    assert "_http_request_origin_allowed(request.headers, backend_port=port)" in (
+        runtime_status_body
+    )
 
 
 def test_embedded_render_surface_reuses_the_authenticated_parent_socket() -> None:

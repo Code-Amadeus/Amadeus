@@ -8,6 +8,7 @@ mouth amplitude, SpriteForge intents, and semantic wallpaper activities.
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 from typing import Any
 from collections.abc import Callable
@@ -39,10 +40,12 @@ class WallpaperHandler(RequestHandler):
         self._wake_start_fn: Callable[[], Any] | None = None
         self._wake_stop_fn: Callable[[], Any] | None = None
         self._canvas_action_fn: Callable[[dict[str, Any]], Any] | None = None
-        self._chat_send_fn: Callable[[str, str], Any] | None = None
+        self._chat_send_fn: Callable[[str, str, dict | None], Any] | None = None
+        self._chat_control_fn: Callable[[dict], Any] | None = None
         self._ensure_chat_session_fn: Callable[[], Any] | None = None
         self._canvas_projector: Callable[[dict[str, Any]], dict[str, Any]] | None = None
         self._attention_snapshot: Callable[[], list[dict[str, Any]]] | None = None
+        self._current_activity: Callable[[], str] | None = None
         self._last_canvas_payload: dict[str, Any] | None = None
 
     def configure(
@@ -52,29 +55,37 @@ class WallpaperHandler(RequestHandler):
         wake_start_fn: Callable[[], Any] | None = None,
         wake_stop_fn: Callable[[], Any] | None = None,
         canvas_action_fn: Callable[[dict[str, Any]], Any] | None = None,
-        chat_send_fn: Callable[[str, str], Any] | None = None,
+        chat_send_fn: Callable[[str, str, dict | None], Any] | None = None,
         ensure_chat_session_fn: Callable[[], Any] | None = None,
+        chat_control_fn: Callable[[dict], Any] | None = None,
         canvas_projector: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         attention_snapshot: Callable[[], list[dict[str, Any]]] | None = None,
+        current_activity: Callable[[], str] | None = None,
     ) -> None:
         self._project_root = project_root
         self._render_bridge = render_bridge
         self._wake_start_fn = wake_start_fn
         self._wake_stop_fn = wake_stop_fn
         self._canvas_action_fn = canvas_action_fn
+        self._chat_control_fn = chat_control_fn
         self._chat_send_fn = chat_send_fn
         self._ensure_chat_session_fn = ensure_chat_session_fn
         self._canvas_projector = canvas_projector
         self._attention_snapshot = attention_snapshot
+        self._current_activity = current_activity
         if not self._subscribed:
             for method in self._render_event_methods():
                 bus.on(method, self._forward_render_event)
             bus.on(Method.WALLPAPER_ACTIVITY, self._forward_activity_event)
             bus.on(Method.WALLPAPER_CANVAS, self._forward_canvas_event)
             bus.on(Method.ASR_STATUS, self._forward_asr_event)
+            bus.on(Method.WAKE_STATUS, self._forward_composer_event)
             bus.on(Method.ATTENTION_UPDATED, self._forward_attention_event)
             bus.on(Method.SESSION_CHANGED, self._forward_attention_event)
             self._subscribed = True
+
+    def is_running(self) -> bool:
+        return self._wallpaper_host is not None
 
     async def handle(self, method: str, params: dict[str, Any]) -> dict[str, Any] | None:
         if method == Method.WALLPAPER_START:
@@ -109,6 +120,8 @@ class WallpaperHandler(RequestHandler):
             self._install_canvas_action_handler(self._wallpaper_host)
             self._install_chat_submit_handler(self._wallpaper_host)
             self._wallpaper_host.start()
+            if self._current_activity is not None:
+                self._apply_activity(self._current_activity())
             from server import presentation_runtime
 
             self._wallpaper_host.set_canvas_presentation(
@@ -149,6 +162,15 @@ class WallpaperHandler(RequestHandler):
         host.set_canvas_action_handler(_handler)
 
     async def _route_canvas_action(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if payload.get("target") == "presentation" and payload.get("action") == "companion":
+            active = payload.get("active")
+            if not isinstance(active, bool):
+                return {"ok": False, "error": "invalid_companion_visibility"}
+            host = self._wallpaper_host
+            if host is None:
+                return {"ok": False, "error": "wallpaper_not_running"}
+            host.set_companion_active(active)
+            return {"ok": True, "active": active}
         canvas_action = self._canvas_action_fn
         if canvas_action is None:
             return {"ok": False, "error": "canvas_action_router_unavailable"}
@@ -168,11 +190,20 @@ class WallpaperHandler(RequestHandler):
             future = asyncio.run_coroutine_threadsafe(
                 self._route_chat_submit(payload or {}), loop
             )
-            return future.result(timeout=10)
+            try:
+                return future.result(timeout=60 if payload.get("action") == "voice_start" else 10)
+            except TimeoutError:
+                future.cancel()
+                raise
 
         host.set_chat_submit_handler(_handler)
 
     async def _route_chat_submit(self, payload: dict[str, Any]) -> dict[str, Any]:
+        action = payload.get("action", "send")
+        if action != "send":
+            if action not in {"status", "new_chat", "voice_start", "voice_stop", "vision_toggle", "vision_windows", "vision_select"} or self._chat_control_fn is None:
+                return {"ok": False, "error": "unsupported_chat_action"}
+            return await self._chat_control_fn(payload)
         text = str(payload.get("text") or "").strip()
         if not text:
             return {"ok": False, "error": "empty_message"}
@@ -190,7 +221,7 @@ class WallpaperHandler(RequestHandler):
         session_id = str(session.get("current_session_id") or "").strip()
         if not session_id:
             return {"ok": False, "error": "wallpaper_session_unavailable"}
-        result = send_chat(text, session_id)
+        result = send_chat(text, session_id, payload.get("visual"))
         if hasattr(result, "__await__"):
             result = await result
         if isinstance(result, dict):
@@ -202,13 +233,19 @@ class WallpaperHandler(RequestHandler):
         return {"ok": True, "result": result}
 
     async def _stop(self, params: dict[str, Any]) -> dict[str, Any]:
+        host = self._wallpaper_host
+        self._wallpaper_host = None
         self._stop_wallpaper_animator()
-        if self._wallpaper_host:
+        if self._chat_control_fn:
             try:
-                self._wallpaper_host.stop()
+                await self._chat_control_fn({"action": "voice_stop"})
+            except Exception:
+                logger.exception("wallpaper voice stop failed")
+        if host:
+            try:
+                host.stop()
             except Exception:
                 logger.exception("wallpaper stop failed")
-            self._wallpaper_host = None
         if WAKE_ENABLED and WAKE_AUTO_START_WITH_WALLPAPER and self._wake_stop_fn:
             try:
                 result = self._wake_stop_fn()
@@ -251,6 +288,17 @@ class WallpaperHandler(RequestHandler):
 
     async def _forward_asr_event(self, _method: str, params: dict[str, Any]) -> None:
         self._apply_asr_status(params or {})
+        await self._forward_composer_event(_method, params)
+
+    async def _forward_composer_event(self, method: str, params: dict[str, Any]) -> None:
+        # Only the Windows composer opts into this projection. The shared
+        # wallpaper stream needs state indicators, not recognized wake text.
+        if self._chat_control_fn is None:
+            return
+        host = self._wallpaper_host
+        if host is not None and hasattr(host, "composer_event"):
+            state = {key: params[key] for key in ("status", "source", "running", "continuous") if key in params}
+            host.composer_event({"method": method, "params": state})
 
     async def _forward_attention_event(
         self, _method: str, _params: dict[str, Any]
@@ -297,7 +345,9 @@ class WallpaperHandler(RequestHandler):
         return True
 
     def _apply_canvas(self, payload: dict[str, Any]) -> bool:
-        projected = dict(payload or {})
+        # Preserve the existing owner's in-process projection provenance until
+        # its projector consumes it; the retained/rendered payload is plain data.
+        projected = copy.copy(payload or {})
         projector = self._canvas_projector
         if projector is not None:
             try:
@@ -345,6 +395,10 @@ class WallpaperHandler(RequestHandler):
             "assetPort": getattr(host, "asset_port", -1),
             "bridgePort": getattr(host, "bridge_port", -1),
             "assetVersion": getattr(host, "asset_version", ""),
+            "graphicsProfile": getattr(host, "graphics_profile", "standard"),
+            "renderMaxFps": getattr(host, "render_max_fps", None),
+            "renderMaxResolution": getattr(host, "render_max_resolution", None),
+            "renderTextureSampling": getattr(host, "render_texture_sampling", False),
             "sliceHost": getattr(host, "slice_host", "wallpaper"),
             "sliceBounds": getattr(host, "slice_bounds", {}),
             "canvasBounds": getattr(host, "canvas_bounds", {}),
@@ -370,6 +424,10 @@ class WallpaperHandler(RequestHandler):
             "bridgePort": getattr(host, "bridge_port", -1),
             "bridgeToken": getattr(host, "action_token", ""),
             "assetVersion": getattr(host, "asset_version", ""),
+            "graphicsProfile": getattr(host, "graphics_profile", "standard"),
+            "renderMaxFps": getattr(host, "render_max_fps", None),
+            "renderMaxResolution": getattr(host, "render_max_resolution", None),
+            "renderTextureSampling": getattr(host, "render_texture_sampling", False),
             "sliceHost": getattr(host, "slice_host", "wallpaper"),
             "sliceBounds": getattr(host, "slice_bounds", {}),
             "canvasBounds": getattr(host, "canvas_bounds", {}),

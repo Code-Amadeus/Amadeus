@@ -1,0 +1,472 @@
+{
+  "date": "2026-09-19",
+  "units": "MiB = 2^20 bytes; private committed process memory, not VRAM or working set. CPU percentages are Electron API values.",
+  "limitations": "Short runs on one machine; 1s samples miss brief peaks. Offscreen has readback overhead. Native runs include common rAF instrumentation. No game benchmark.",
+  "nativeRuns": [
+    {
+      "run": "2026-09-18T14-59-14.689Z-baseline-visible",
+      "variant": "baseline",
+      "offscreen": false,
+      "startupMs": 535.4,
+      "phases": {
+        "idle": {
+          "totalPrivateMiB": 210.38,
+          "pagePrivateMiB": 32.25,
+          "gpuPrivateMiB": 90.39,
+          "cpuReportedPercent": 0.631,
+          "cpuMillisecondsPerWallSecond": 236.58,
+          "portraitUpdatesPerSecond": 5.92,
+          "residentAtlasMiB": 0,
+          "sampleCount": 5
+        },
+        "normal-speaking": {
+          "totalPrivateMiB": 217.61,
+          "pagePrivateMiB": 38.39,
+          "gpuPrivateMiB": 90.09,
+          "cpuReportedPercent": 0.676,
+          "cpuMillisecondsPerWallSecond": 109.32,
+          "portraitUpdatesPerSecond": 5.94,
+          "residentAtlasMiB": 0,
+          "sampleCount": 8
+        },
+        "thinking-speaking": {
+          "totalPrivateMiB": 226.87,
+          "pagePrivateMiB": 44.61,
+          "gpuPrivateMiB": 94.43,
+          "cpuReportedPercent": 0.637,
+          "cpuMillisecondsPerWallSecond": 101.85,
+          "portraitUpdatesPerSecond": 5.97,
+          "residentAtlasMiB": 0,
+          "sampleCount": 8
+        },
+        "long-speaking": {
+          "totalPrivateMiB": 225.65,
+          "pagePrivateMiB": 49.91,
+          "gpuPrivateMiB": 94.25,
+          "cpuReportedPercent": 0.64,
+          "cpuMillisecondsPerWallSecond": 106.37,
+          "portraitUpdatesPerSecond": 5.74,
+          "residentAtlasMiB": 0,
+          "sampleCount": 6
+        },
+        "churn-1": {
+          "totalPrivateMiB": 211.94,
+          "pagePrivateMiB": 36.9,
+          "gpuPrivateMiB": 94.08,
+          "cpuReportedPercent": 0.722,
+          "cpuMillisecondsPerWallSecond": 115.58,
+          "portraitUpdatesPerSecond": 5.94,
+          "residentAtlasMiB": 0,
+          "sampleCount": 2
+        },
+        "churn-2": {
+          "totalPrivateMiB": 210.46,
+          "pagePrivateMiB": 35.32,
+          "gpuPrivateMiB": 94.08,
+          "cpuReportedPercent": 0.615,
+          "cpuMillisecondsPerWallSecond": 98.29,
+          "portraitUpdatesPerSecond": 5.92,
+          "residentAtlasMiB": 0,
+          "sampleCount": 2
+        },
+        "churn-3": {
+          "totalPrivateMiB": 212.26,
+          "pagePrivateMiB": 37.45,
+          "gpuPrivateMiB": 93.38,
+          "cpuReportedPercent": 0.696,
+          "cpuMillisecondsPerWallSecond": 111.44,
+          "portraitUpdatesPerSecond": 5.91,
+          "residentAtlasMiB": 0,
+          "sampleCount": 2
+        },
+        "standby": {
+          "totalPrivateMiB": 212.84,
+          "pagePrivateMiB": 37.84,
+          "gpuPrivateMiB": 93.38,
+          "cpuReportedPercent": 0.544,
+          "cpuMillisecondsPerWallSecond": 85.47,
+          "portraitUpdatesPerSecond": 5.59,
+          "residentAtlasMiB": 0,
+          "sampleCount": 4
+        }
+      },
+      "sampledPeakTotalPrivateMiB": 232.94,
+      "maxResidentAtlasMiB": 0
+    },
+    {
+      "run": "2026-09-18T15-01-30.398Z-baseline-visible",
+      "variant": "baseline",
+      "offscreen": false,
+      "startupMs": 305.1,
+      "phases": {
+        "idle": {
+          "totalPrivateMiB": 212.59,
+          "pagePrivateMiB": 34.02,
+          "gpuPrivateMiB": 90.8,
+          "cpuReportedPercent": 0.53,
+          "cpuMillisecondsPerWallSecond": 84.68,
+          "portraitUpdatesPerSecond": 5.94,
+          "residentAtlasMiB": 0,
+          "sampleCount": 5
+        },
+        "normal-speaking": {
+          "totalPrivateMiB": 220.74,
+          "pagePrivateMiB": 41.33,
+          "gpuPrivateMiB": 91.5,
+          "cpuReportedPercent": 0.763,
+          "cpuMillisecondsPerWallSecond": 124.62,
+          "portraitUpdatesPerSecond": 5.79,
+          "residentAtlasMiB": 0,
+          "sampleCount": 8
+        },
+        "thinking-speaking": {
+          "totalPrivateMiB": 230.1,
+          "pagePrivateMiB": 47.58,
+          "gpuPrivateMiB": 93.11,
+          "cpuReportedPercent": 0.71,
+          "cpuMillisecondsPerWallSecond": 114.37,
+          "portraitUpdatesPerSecond": 5.94,
+          "residentAtlasMiB": 0,
+          "sampleCount": 8
+        },
+        "long-speaking": {
+          "totalPrivateMiB": 238.27,
+          "pagePrivateMiB": 53.15,
+          "gpuPrivateMiB": 94.16,
+          "cpuReportedPercent": 0.678,
+          "cpuMillisecondsPerWallSecond": 107.68,
+          "portraitUpdatesPerSecond": 5.97,
+          "residentAtlasMiB": 0,
+          "sampleCount": 6
+        },
+        "churn-1": {
+          "totalPrivateMiB": 217.48,
+          "pagePrivateMiB": 39.61,
+          "gpuPrivateMiB": 94.51,
+          "cpuReportedPercent": 0.935,
+          "cpuMillisecondsPerWallSecond": 149.56,
+          "portraitUpdatesPerSecond": 5.94,
+          "residentAtlasMiB": 0,
+          "sampleCount": 2
+        },
+        "churn-2": {
+          "totalPrivateMiB": 215.77,
+          "pagePrivateMiB": 38.48,
+          "gpuPrivateMiB": 93.75,
+          "cpuReportedPercent": 0.736,
+          "cpuMillisecondsPerWallSecond": 117.76,
+          "portraitUpdatesPerSecond": 5.95,
+          "residentAtlasMiB": 0,
+          "sampleCount": 2
+        },
+        "churn-3": {
+          "totalPrivateMiB": 217.76,
+          "pagePrivateMiB": 40.36,
+          "gpuPrivateMiB": 93.75,
+          "cpuReportedPercent": 0.634,
+          "cpuMillisecondsPerWallSecond": 101.5,
+          "portraitUpdatesPerSecond": 5.93,
+          "residentAtlasMiB": 0,
+          "sampleCount": 2
+        },
+        "standby": {
+          "totalPrivateMiB": 215.94,
+          "pagePrivateMiB": 40.75,
+          "gpuPrivateMiB": 93.88,
+          "cpuReportedPercent": 0.466,
+          "cpuMillisecondsPerWallSecond": 79.65,
+          "portraitUpdatesPerSecond": 5.6,
+          "residentAtlasMiB": 0,
+          "sampleCount": 4
+        }
+      },
+      "sampledPeakTotalPrivateMiB": 241.53,
+      "maxResidentAtlasMiB": 0
+    },
+    {
+      "run": "2026-09-18T15-18-53.994Z-candidate132bcpu-thinking2-1",
+      "variant": "candidate132bcpu",
+      "offscreen": false,
+      "startupMs": 316.4,
+      "phases": {
+        "idle": {
+          "totalPrivateMiB": 203.36,
+          "pagePrivateMiB": 30.32,
+          "gpuPrivateMiB": 89.67,
+          "cpuReportedPercent": 0.666,
+          "cpuMillisecondsPerWallSecond": 104.57,
+          "portraitUpdatesPerSecond": 8.16,
+          "residentAtlasMiB": 1.6,
+          "sampleCount": 5
+        },
+        "normal-speaking": {
+          "totalPrivateMiB": 212.43,
+          "pagePrivateMiB": 38.46,
+          "gpuPrivateMiB": 89.27,
+          "cpuReportedPercent": 1.025,
+          "cpuMillisecondsPerWallSecond": 164.89,
+          "portraitUpdatesPerSecond": 24.01,
+          "residentAtlasMiB": 5.32,
+          "sampleCount": 8
+        },
+        "thinking-speaking": {
+          "totalPrivateMiB": 227.95,
+          "pagePrivateMiB": 51.52,
+          "gpuPrivateMiB": 85.61,
+          "cpuReportedPercent": 1.015,
+          "cpuMillisecondsPerWallSecond": 163.49,
+          "portraitUpdatesPerSecond": 24.16,
+          "residentAtlasMiB": 12.23,
+          "sampleCount": 8
+        },
+        "long-speaking": {
+          "totalPrivateMiB": 232.94,
+          "pagePrivateMiB": 53.63,
+          "gpuPrivateMiB": 85.64,
+          "cpuReportedPercent": 1.014,
+          "cpuMillisecondsPerWallSecond": 162.54,
+          "portraitUpdatesPerSecond": 24.12,
+          "residentAtlasMiB": 8.51,
+          "sampleCount": 6
+        },
+        "churn-1": {
+          "totalPrivateMiB": 241.45,
+          "pagePrivateMiB": 58,
+          "gpuPrivateMiB": 84.22,
+          "cpuReportedPercent": 1.072,
+          "cpuMillisecondsPerWallSecond": 171.51,
+          "portraitUpdatesPerSecond": 24.68,
+          "residentAtlasMiB": 8.51,
+          "sampleCount": 2
+        },
+        "churn-2": {
+          "totalPrivateMiB": 257.89,
+          "pagePrivateMiB": 60.51,
+          "gpuPrivateMiB": 84.22,
+          "cpuReportedPercent": 0.985,
+          "cpuMillisecondsPerWallSecond": 157.64,
+          "portraitUpdatesPerSecond": 24.63,
+          "residentAtlasMiB": 8.51,
+          "sampleCount": 2
+        },
+        "churn-3": {
+          "totalPrivateMiB": 222.37,
+          "pagePrivateMiB": 43.85,
+          "gpuPrivateMiB": 84.22,
+          "cpuReportedPercent": 0.977,
+          "cpuMillisecondsPerWallSecond": 156.26,
+          "portraitUpdatesPerSecond": 23.9,
+          "residentAtlasMiB": 8.51,
+          "sampleCount": 2
+        },
+        "standby": {
+          "totalPrivateMiB": 232.22,
+          "pagePrivateMiB": 45.77,
+          "gpuPrivateMiB": 89.96,
+          "cpuReportedPercent": 0.587,
+          "cpuMillisecondsPerWallSecond": 97.35,
+          "portraitUpdatesPerSecond": 8.26,
+          "residentAtlasMiB": 10.1,
+          "sampleCount": 4
+        },
+        "paused": {
+          "totalPrivateMiB": 220.03,
+          "pagePrivateMiB": 45.8,
+          "gpuPrivateMiB": 89.54,
+          "cpuReportedPercent": 0.438,
+          "cpuMillisecondsPerWallSecond": 70.03,
+          "portraitUpdatesPerSecond": 0,
+          "residentAtlasMiB": 10.1,
+          "sampleCount": 3
+        }
+      },
+      "sampledPeakTotalPrivateMiB": 257.89,
+      "maxResidentAtlasMiB": 12.23
+    },
+    {
+      "run": "2026-09-18T15-19-38.994Z-candidate132bcpu-thinking2-2",
+      "variant": "candidate132bcpu",
+      "offscreen": false,
+      "startupMs": 279.7,
+      "phases": {
+        "idle": {
+          "totalPrivateMiB": 203.25,
+          "pagePrivateMiB": 30.32,
+          "gpuPrivateMiB": 89.24,
+          "cpuReportedPercent": 0.585,
+          "cpuMillisecondsPerWallSecond": 94.85,
+          "portraitUpdatesPerSecond": 8.39,
+          "residentAtlasMiB": 1.6,
+          "sampleCount": 5
+        },
+        "normal-speaking": {
+          "totalPrivateMiB": 211.98,
+          "pagePrivateMiB": 38.41,
+          "gpuPrivateMiB": 88.73,
+          "cpuReportedPercent": 0.992,
+          "cpuMillisecondsPerWallSecond": 159.26,
+          "portraitUpdatesPerSecond": 24.01,
+          "residentAtlasMiB": 5.32,
+          "sampleCount": 8
+        },
+        "thinking-speaking": {
+          "totalPrivateMiB": 227.79,
+          "pagePrivateMiB": 51.59,
+          "gpuPrivateMiB": 85.25,
+          "cpuReportedPercent": 1.038,
+          "cpuMillisecondsPerWallSecond": 165.43,
+          "portraitUpdatesPerSecond": 24.14,
+          "residentAtlasMiB": 12.23,
+          "sampleCount": 8
+        },
+        "long-speaking": {
+          "totalPrivateMiB": 232.42,
+          "pagePrivateMiB": 53.65,
+          "gpuPrivateMiB": 85.31,
+          "cpuReportedPercent": 1,
+          "cpuMillisecondsPerWallSecond": 160.05,
+          "portraitUpdatesPerSecond": 24.12,
+          "residentAtlasMiB": 8.51,
+          "sampleCount": 6
+        },
+        "churn-1": {
+          "totalPrivateMiB": 241.66,
+          "pagePrivateMiB": 58.13,
+          "gpuPrivateMiB": 83.89,
+          "cpuReportedPercent": 1.051,
+          "cpuMillisecondsPerWallSecond": 168.06,
+          "portraitUpdatesPerSecond": 24.7,
+          "residentAtlasMiB": 8.51,
+          "sampleCount": 2
+        },
+        "churn-2": {
+          "totalPrivateMiB": 257.69,
+          "pagePrivateMiB": 60.48,
+          "gpuPrivateMiB": 83.89,
+          "cpuReportedPercent": 1.029,
+          "cpuMillisecondsPerWallSecond": 164.72,
+          "portraitUpdatesPerSecond": 23.83,
+          "residentAtlasMiB": 8.51,
+          "sampleCount": 2
+        },
+        "churn-3": {
+          "totalPrivateMiB": 221.36,
+          "pagePrivateMiB": 42.68,
+          "gpuPrivateMiB": 83.89,
+          "cpuReportedPercent": 1.039,
+          "cpuMillisecondsPerWallSecond": 166.15,
+          "portraitUpdatesPerSecond": 24.7,
+          "residentAtlasMiB": 8.51,
+          "sampleCount": 2
+        },
+        "standby": {
+          "totalPrivateMiB": 231.16,
+          "pagePrivateMiB": 44.43,
+          "gpuPrivateMiB": 89.62,
+          "cpuReportedPercent": 0.62,
+          "cpuMillisecondsPerWallSecond": 103.14,
+          "portraitUpdatesPerSecond": 8.21,
+          "residentAtlasMiB": 10.1,
+          "sampleCount": 4
+        },
+        "paused": {
+          "totalPrivateMiB": 218.94,
+          "pagePrivateMiB": 44.59,
+          "gpuPrivateMiB": 89.2,
+          "cpuReportedPercent": 0.498,
+          "cpuMillisecondsPerWallSecond": 79.62,
+          "portraitUpdatesPerSecond": 0,
+          "residentAtlasMiB": 10.1,
+          "sampleCount": 3
+        }
+      },
+      "sampledPeakTotalPrivateMiB": 257.69,
+      "maxResidentAtlasMiB": 12.23
+    }
+  ],
+  "pairedEdgeMetrics": {
+    "normal": {
+      "before": {
+        "edgeTemporalSecondDifference": 12.125061933719435,
+        "partialEdgePixels": 443
+      },
+      "alphaCorrect": {
+        "edgeTemporalSecondDifference": 8.847177554289141,
+        "partialEdgePixels": 443
+      },
+      "after": {
+        "edgeTemporalSecondDifference": 4.7694585954295805,
+        "partialEdgePixels": 443
+      },
+      "filteredPixelsAcrossFrames": 18281,
+      "opaquePixelsUnchangedByTemporalFilter": true
+    },
+    "sided_thinking": {
+      "before": {
+        "edgeTemporalSecondDifference": 10.902786237321415,
+        "partialEdgePixels": 431
+      },
+      "alphaCorrect": {
+        "edgeTemporalSecondDifference": 7.897180438436081,
+        "partialEdgePixels": 431
+      },
+      "after": {
+        "edgeTemporalSecondDifference": 4.2084977630187455,
+        "partialEdgePixels": 431
+      },
+      "filteredPixelsAcrossFrames": 27086,
+      "opaquePixelsUnchangedByTemporalFilter": true
+    }
+  },
+  "originalAnchorMaxPixelError": {
+    "normal": 0,
+    "sided_thinking": 0,
+    "sided_surprised": 0,
+    "happy": 0,
+    "blush": 0,
+    "angry": 0,
+    "sad": 0
+  },
+  "bundle": {
+    "file": "amadeus-companion-kurisu.zip",
+    "bytes": 11928363,
+    "sha256": "0a4b8cf3e3975be6ea980c3de1c8c46f612e723428feac22d706e300b591aaa8",
+    "files": 19
+  },
+  "productionSmoke": [
+    {
+      "ok": true,
+      "returnMs": 374,
+      "checks": [
+        "real Host and production panel",
+        "no Pixi",
+        "atlas speaking",
+        "350ms return",
+        "new expression cancels return",
+        "new speech cancels return",
+        "static idle",
+        "hidden pause/resume",
+        "renderer exits on close",
+        "missing pack fallback",
+        "legacy PNG override"
+      ]
+    },
+    {
+      "ok": true,
+      "returnMs": 380,
+      "checks": [
+        "real Host and production panel",
+        "no Pixi",
+        "atlas speaking",
+        "350ms return",
+        "new expression cancels return",
+        "new speech cancels return",
+        "static idle",
+        "hidden pause/resume",
+        "renderer exits on close",
+        "missing pack fallback",
+        "legacy PNG override"
+      ]
+    }
+  ]
+}

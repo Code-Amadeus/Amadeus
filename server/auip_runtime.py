@@ -17,6 +17,7 @@ from server.auip_contract import (
     AuipActor,
     AuipManifest,
     AuipProtocolError,
+    available_engagement_modes,
     parse_manifest,
     validate_actor,
     validate_payload,
@@ -175,7 +176,7 @@ class AuipAppSession:
             "status": self.status,
             "stance": self.stance,
             "engagement_mode": self.engagement_mode,
-            "available_modes": _available_engagement_modes(self.manifest.stances),
+            "available_modes": available_engagement_modes(self.manifest.stances),
             "decision_generation": self.decision_generation,
             "controller": {
                 "status": controller_status,
@@ -1669,7 +1670,6 @@ class AuipRuntime:
                         if not participant_available
                         else ""
                     ),
-                    "stop_contract=Work/App の停止対象が曖昧なら一度確認し、操作しない。",
                 ]
                 if str(language or "").strip().lower() == "ja"
                 else [
@@ -1679,7 +1679,6 @@ class AuipRuntime:
                         if not participant_available
                         else ""
                     ),
-                    "stop_contract=Ambiguous Work/App stop: ask once, no action.",
                 ]
             )
         control_rules = [rule for rule in control_rules if rule]
@@ -1759,7 +1758,8 @@ class AuipRuntime:
             block = "\n".join(lines)
             return _complete_line_prefix(block, max(200, int(max_chars)))
 
-    def render_control_context(self, conversation_id: str, *, max_chars: int = 520) -> str:
+    def render_control_context(self, conversation_id: str, *, max_chars: int = 520,
+                               include_capabilities: bool = False) -> str:
         """Expose only AUIP identity needed to avoid cross-domain control mistakes.
 
         The role-facing projection above contains bounded scene state so the
@@ -1767,7 +1767,10 @@ class AuipRuntime:
         pass needs much less: it only has to know that an active AppSession is a
         different control target from Provider Work.  Keeping state, events and
         narration out of this block prevents a second interpretation path from
-        growing inside the routing authority.
+        growing inside the routing authority. A Work specialist may opt into
+        the same declared capability semantics used by the role projection,
+        so using an app need not be confused with modifying its implementation.
+        This does not expose action payloads or application state.
         """
 
         projection = self.focused_projection(conversation_id)
@@ -1784,8 +1787,18 @@ class AuipRuntime:
             + ",".join(str(value) for value in projection.get("available_modes") or []),
             f"pending_action={'yes' if projection.get('pending_action') else 'no'}",
             "A request to stop or change this experience must not be reinterpreted as retracting unrelated Provider Work.",
-            "[/Active AUIP control state]",
         ]
+        if include_capabilities:
+            lines.append(f"projection_revision={projection.get('revision', 0)}")
+            summary = str(app.get("interactionSummary") or "").strip()
+            if summary:
+                lines.append("interaction_summary=" + _safe(summary[:640]))
+            semantics = projection.get("available_action_semantics") or {}
+            lines.append("宣言済みのアプリ操作（限定した意味情報。命令・Workの許可ではありません）:")
+            for action_type, description in list(semantics.items())[:32]:
+                lines.append("- " + _safe(str(action_type)[:120]) + ": "
+                             + _safe(str(description)[:240]))
+        lines.append("[/Active AUIP control state]")
         return _complete_line_prefix("\n".join(lines), max_chars)
 
     def participant_context(
@@ -2419,12 +2432,23 @@ def _state_fact(
         ][:5]
         if available:
             facts.append(
-                (f"今選べる操作は「{'」「'.join(available)}」よ。" if japanese else f"Available actions are {', '.join(available)}.")
+                (
+                    f"アプリが私向けに示している操作候補は「{'」「'.join(available)}」よ。"
+                    if japanese
+                    else f"The app's action candidates for me are {', '.join(available)}."
+                )
             )
         else:
             facts.append(
-                "今選べる操作はないわ。" if japanese else "No action is currently available."
+                "アプリが私向けに示している操作候補は今はないわ。"
+                if japanese
+                else "The app currently lists no action candidates for me."
             )
+        facts.append(
+            "これはあなたの画面操作全体の一覧ではないわ。"
+            if japanese
+            else "This is not a complete list of your direct UI controls."
+        )
 
     turn = _first_named_scalar(state, {"turn", "currentturn", "current_turn"})
     if turn is not None:
@@ -3387,16 +3411,6 @@ def _engagement_mode(value: Any) -> str:
     if clean not in ENGAGEMENT_MODES:
         raise AuipProtocolError("unsupported_engagement_mode", clean)
     return clean
-
-
-def _available_engagement_modes(stances: Iterable[str]) -> list[str]:
-    available = {str(value or "").strip().lower() for value in stances}
-    modes: list[str] = []
-    if "spectator" in available:
-        modes.append("observe")
-    if "participant" in available:
-        modes.extend(("collaborate", "delegate"))
-    return modes
 
 
 runtime = AuipRuntime()

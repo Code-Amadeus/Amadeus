@@ -2,9 +2,11 @@
   "use strict";
 
   const params = new URLSearchParams(window.location.search || "");
+  const windowsComposer = params.get("windowsComposer") === "1";
+  let initialCanvasPending = windowsComposer;
   const surface = window.createCrtCanvasSurface();
   const keyboardComposer = window.createWallpaperKeyboardComposer
-    ? window.createWallpaperKeyboardComposer()
+    ? window.createWallpaperKeyboardComposer({ startCollapsed: windowsComposer, controls: windowsComposer })
     : null;
   let bridgePort = normalizePort(params.get("bridgePort"));
   let sliceBounds = null;
@@ -60,7 +62,9 @@
   function applyCall(call) {
     if (!call || typeof call !== "object") return;
     if (call.method === "setCanvas") {
-      surface.setPayload((call.args && call.args[0]) || {});
+      const payload = (call.args && call.args[0]) || {};
+      surface.setPayload(initialCanvasPending ? { ...payload, expanded: false } : payload);
+      initialCanvasPending = false;
       scheduleShapeUpdate();
     } else if (call.method === "toggleCanvas") {
       surface.toggle();
@@ -68,6 +72,8 @@
     } else if (call.method === "setCanvasPresentation") {
       surface.setPresentation((call.args && call.args[0]) || {});
       scheduleShapeUpdate();
+    } else if (call.method === "composerEvent") {
+      if (keyboardComposer) keyboardComposer.onEvent((call.args && call.args[0]) || {});
     } else if (call.method === "setAttention") {
       surface.setAttention((call.args && call.args[0]) || {});
       scheduleShapeUpdate();
@@ -81,6 +87,7 @@
       { selector: ".crt-canvas-surface-card", padding: 52 },
       { selector: "#wallpaper-keyboard-toggle:not([hidden])", padding: 4 },
       { selector: "#wallpaper-keyboard-composer:not([hidden])", padding: 4 },
+      { selector: ".composer-window-picker:not([hidden])", padding: 4 },
     ];
     return targets.flatMap(({ selector, padding }) => (
       Array.from(document.querySelectorAll(selector)).map((element) => ({ element, padding }))
@@ -148,16 +155,17 @@
     layoutSurface();
   }
 
-  async function loadCanvasState() {
-    const response = await fetch(bridgeEndpoint("canvas-state"), { cache: "no-store" });
-    if (!response.ok) throw new Error("canvas state failed: HTTP " + response.status);
-    const state = await response.json();
-    (Array.isArray(state.calls) ? state.calls : []).forEach(applyCall);
-  }
-
   function connectCanvasEvents() {
     if (eventSource) eventSource.close();
     eventSource = new EventSource(bridgeEndpoint("canvas-events"));
+    eventSource.onerror = () => { window.__amadeusBridgeToken = ""; };
+    eventSource.onopen = async () => {
+      // A reopened backend may have a new action credential at the same port.
+      if (!window.__amadeusBridgeToken) {
+        try { await resolveBridge(); }
+        catch (error) { console.warn("[ElectronSlice] bridge rediscovery failed", error); }
+      }
+    };
     eventSource.onmessage = (event) => {
       try {
         applyCall(JSON.parse(event.data));
@@ -182,7 +190,7 @@
     }
     window.addEventListener("resize", layoutSurface, { passive: true });
     await resolveBridge();
-    await loadCanvasState();
+    // The subscription starts with current Canvas state, including reconnects.
     connectCanvasEvents();
     scheduleShapeUpdate();
   }
