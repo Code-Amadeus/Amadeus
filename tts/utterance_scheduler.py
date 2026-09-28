@@ -11,12 +11,12 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
 from tts.contract import TTSRequest
-from tts.deadline import deadline_budget_exceeded
+from tts.deadline import synthesis_slack_seconds
 
 
 _SENTENCE_ID_RE = re.compile(r"sentence_(\d+)_")
@@ -75,7 +75,7 @@ class TTSUtteranceScheduler:
     Environment switches:
       ENABLE_TTS_UTTERANCE_SCHEDULER=1 enables multi-sentence jobs.
       TTS_UTTERANCE_MIN_START_SEQ gates merging until playback has buffer.
-      TTS_UTTERANCE_MAX_SENTENCES caps sentences per job.
+      TTS_UTTERANCE_MAX_SENTENCES caps jobs without a usable deadline estimate.
       TTS_UTTERANCE_MAX_CHARS caps merged text length.
       TTS_UTTERANCE_FLUSH_TIMEOUT_MS controls how long to wait for lookahead.
       ENABLE_TTS_KV_WINDOW is reserved for future AR KV-window experiments.
@@ -87,6 +87,7 @@ class TTSUtteranceScheduler:
         *,
         cover_seconds_getter: Callable[[], float | None] | None = None,
         rtf_getter: Callable[[], float | None] | None = None,
+        last_synthesis_chars_getter: Callable[[], int | None] | None = None,
         deadline_enabled: bool | None = None,
         cover_safety_margin_sec: float | None = None,
         chars_per_sec: float | None = None,
@@ -95,6 +96,7 @@ class TTSUtteranceScheduler:
         self._buffer: list[Any] = []  # TTSRequest 或旧元组（过渡期）
         self._cover_seconds_getter = cover_seconds_getter
         self._rtf_getter = rtf_getter
+        self._last_synthesis_chars_getter = last_synthesis_chars_getter
         self._deadline_enabled = deadline_enabled
         self._cover_safety_margin_sec = cover_safety_margin_sec
         self._chars_per_sec = chars_per_sec
@@ -104,9 +106,11 @@ class TTSUtteranceScheduler:
         *,
         cover_seconds_getter: Callable[[], float | None] | None = None,
         rtf_getter: Callable[[], float | None] | None = None,
+        last_synthesis_chars_getter: Callable[[], int | None] | None = None,
     ) -> None:
         self._cover_seconds_getter = cover_seconds_getter
         self._rtf_getter = rtf_getter
+        self._last_synthesis_chars_getter = last_synthesis_chars_getter
 
     def clear(self) -> int:
         count = len(self._buffer)
@@ -149,15 +153,35 @@ class TTSUtteranceScheduler:
 
     @property
     def max_chars(self) -> int:
-        return max(1, _get_int_env("TTS_UTTERANCE_MAX_CHARS", 120))
+        limit = max(1, _get_int_env("TTS_UTTERANCE_MAX_CHARS", 120))
+        previous = self._last_synthesis_chars_getter() if self._last_synthesis_chars_getter else None
+        # A cost observed on a tiny request is not evidence that a much larger
+        # request has the same throughput (step profiles / graph keys change).
+        if previous is not None and previous > 0 and self._slack(0) is not None:
+            limit = min(limit, 2 * previous)
+        return limit
 
     @property
     def flush_timeout(self) -> float:
         return max(0.0, _get_int_env("TTS_UTTERANCE_FLUSH_TIMEOUT_MS", 120) / 1000.0)
 
-    async def next_job(self, queue: asyncio.Queue) -> UtteranceJob:
+    async def next_job(
+        self, queue: asyncio.Queue, *,
+        before_grouping: Callable[[UtteranceSegment], Awaitable[bool]] | None = None,
+    ) -> UtteranceJob:
         first_item = await self._get_next_item(queue)
         first_segment = self._to_segment(first_item)
+
+        # The host owns turn permission and the synthesis slot. Text can keep
+        # accumulating while it waits; only then choose the final utterance.
+        if before_grouping is not None:
+            try:
+                ready = await before_grouping(first_segment)
+            except BaseException:
+                self._buffer.insert(0, first_item)
+                raise
+            if not ready:
+                return self._make_job([first_segment])
 
         if not self._can_start_merge(first_segment):
             return self._make_job([first_segment])
@@ -165,14 +189,32 @@ class TTSUtteranceScheduler:
         deadline = asyncio.get_running_loop().time() + self.flush_timeout
         segments = [first_segment]
 
-        while len(segments) < self.max_sentences:
-            remaining = deadline - asyncio.get_running_loop().time()
-            if remaining <= 0:
+        while True:
+            chars = sum(len(segment.text.strip()) for segment in segments)
+            slack = self._slack(chars)
+            if slack is None and len(segments) >= self.max_sentences:
                 break
+            if slack is not None and slack <= 0:
+                break
+            if chars >= self.max_chars or self._is_hard_boundary(segments[-1].text):
+                break
+
+            # Ready text costs no lookahead time. A zero wait limit must not
+            # prevent batching text that arrived while the engine was busy.
             try:
-                item = await asyncio.wait_for(self._get_next_item(queue), timeout=remaining)
-            except asyncio.TimeoutError:
-                break
+                item = self._buffer.pop(0) if self._buffer else queue.get_nowait()
+            except asyncio.QueueEmpty:
+                if slack is not None and self._is_complete_sentence(segments[-1].text):
+                    break
+                remaining = deadline - asyncio.get_running_loop().time()
+                if slack is not None:
+                    remaining = min(remaining, slack)
+                if remaining <= 0:
+                    break
+                try:
+                    item = await asyncio.wait_for(self._get_next_item(queue), timeout=remaining)
+                except asyncio.TimeoutError:
+                    break
 
             segment = self._to_segment(item)
             if not self._can_append(segments, segment):
@@ -249,8 +291,14 @@ class TTSUtteranceScheduler:
         merged_len = sum(len(item.text.strip()) for item in current) + len(segment.text.strip())
         if merged_len > self.max_chars:
             return False
-        over_budget = deadline_budget_exceeded(
-            merged_len,
+        slack = self._slack(merged_len)
+        if slack is not None and slack < 0:
+            return False
+        return not self._is_hard_boundary(current[-1].text)
+
+    def _slack(self, chars: int) -> float | None:
+        return synthesis_slack_seconds(
+            chars,
             cover_seconds_getter=self._cover_seconds_getter,
             rtf_getter=self._rtf_getter,
             enabled=self._deadline_enabled,
@@ -258,16 +306,10 @@ class TTSUtteranceScheduler:
             chars_per_sec=self._chars_per_sec,
             logger=self.logger,
         )
-        if over_budget is True:
-            if self.logger is not None:
-                self.logger.info(
-                    "[UtteranceScheduler] deadline budget tight; refusing merge chars=%d",
-                    merged_len,
-                )
-            return False
-        if self._is_hard_boundary(current[-1].text):
-            return False
-        return True
+
+    @staticmethod
+    def _is_complete_sentence(text: str) -> bool:
+        return text.rstrip().endswith(("。", ".", "?", "!", "？", "！"))
 
     def _is_consecutive(self, prev: UtteranceSegment, nxt: UtteranceSegment) -> bool:
         if prev.seq <= 0 or nxt.seq <= 0:

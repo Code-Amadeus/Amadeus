@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from typing import Any
 
@@ -24,7 +25,7 @@ def estimate_synthesis_seconds(
     return (max(0, int(char_count)) / cps) * max(0.0, float(rtf))
 
 
-def deadline_budget_exceeded(
+def synthesis_slack_seconds(
     char_count: int,
     *,
     cover_seconds_getter: Callable[[], float | None] | None,
@@ -33,15 +34,15 @@ def deadline_budget_exceeded(
     cover_safety_margin_sec: float | None = None,
     chars_per_sec: float | None = None,
     logger: Any = None,
-) -> bool | None:
-    """Return True when estimated synthesis time exceeds current playback cover.
+) -> float | None:
+    """Seconds left for lookahead after reserving synthesis and playback margin.
 
     None means the required estimator was unavailable, so callers should keep
     their previous max_chars-only behavior.
     """
     is_enabled = TTS_DEADLINE_AGGREGATION if enabled is None else bool(enabled)
     if not is_enabled:
-        return False
+        return None
     if cover_seconds_getter is None:
         return None
 
@@ -78,4 +79,28 @@ def deadline_budget_exceeded(
         rtf=rtf,
         chars_per_sec=chars_per_sec,
     )
-    return est_synth > (cover - margin)
+    if not all(math.isfinite(value) for value in (cover, margin, rtf, est_synth)) or rtf <= 0:
+        return None
+    return cover - margin - est_synth
+
+
+def deadline_budget_exceeded(
+    char_count: int,
+    *,
+    cover_seconds_getter: Callable[[], float | None] | None,
+    rtf_getter: Callable[[], float | None] | None = None,
+    enabled: bool | None = None,
+    cover_safety_margin_sec: float | None = None,
+    chars_per_sec: float | None = None,
+    logger: Any = None,
+) -> bool | None:
+    """Check a candidate with the same budget used to bound lookahead waits."""
+    if not (TTS_DEADLINE_AGGREGATION if enabled is None else enabled):
+        return False
+    slack = synthesis_slack_seconds(
+        char_count, cover_seconds_getter=cover_seconds_getter,
+        rtf_getter=rtf_getter, enabled=enabled,
+        cover_safety_margin_sec=cover_safety_margin_sec,
+        chars_per_sec=chars_per_sec, logger=logger,
+    )
+    return None if slack is None else slack < 0

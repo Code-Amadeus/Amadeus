@@ -1222,8 +1222,8 @@ class PlaybackManager:
                         item_epoch = self._playback_epoch
                         full_audio_data, sample_rate, sentence_id, japanese_text = audio_item
                         segments = None
-                    del self.pending_audio[self.next_seq_to_play]
                     if not self.is_epoch_current(item_epoch):
+                        del self.pending_audio[self.next_seq_to_play]
                         self.logger.info(
                             "[TTS-INTERRUPT] drop stale pending playback: %s item_epoch=%s current_epoch=%s",
                             sentence_id,
@@ -1257,6 +1257,11 @@ class PlaybackManager:
                     continue
                 self.player_is_ready.clear()
                 async with self.play_condition:
+                    # Keep ready-but-waiting audio in the cover ledger until
+                    # it really becomes the current unit. Do not hide it while
+                    # waiting for the previous physical playback to finish.
+                    if self.pending_audio.get(sentence_seq) is audio_item:
+                        del self.pending_audio[sentence_seq]
                     if self._normal_waiting_seq == sentence_seq:
                         self._normal_waiting_seq = None
                     self.play_condition.notify_all()
