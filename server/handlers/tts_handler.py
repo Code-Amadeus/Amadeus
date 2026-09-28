@@ -82,6 +82,10 @@ class TtsHandler(RequestHandler):
         return {"mode": mode}
 
     async def _interrupt(self, params: dict[str, Any]) -> dict[str, Any]:
+        from core.session_manager import get_current_session_id
+
+        # Playback interruption yields; Session selection may change while it drains.
+        session_id = get_current_session_id()
         completed_text = ""
         if self._playback_manager and hasattr(self._playback_manager, "get_completed_turn_text"):
             try:
@@ -124,6 +128,7 @@ class TtsHandler(RequestHandler):
                     "completed_text": completed_text,
                     "accumulated_text": params.get("accumulated_text", ""),
                     "turn_id": params.get("turn_id", ""),
+                    "session_id": session_id or "",
                 }
             )
             if hasattr(result, "__await__"):

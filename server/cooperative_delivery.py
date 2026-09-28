@@ -10,12 +10,15 @@ import inspect
 import hashlib
 import asyncio
 import json
+import logging
 import re
 import threading
 from typing import Callable
 
 from server.narration_delivery import NarrationRequest, NarrationSink, deliver_narration
 from core.chat_history_projection import project_completed_role_history
+
+logger = logging.getLogger(__name__)
 
 
 def load_consistent_json(raw):
@@ -143,9 +146,10 @@ class _CooperativeReplyStream:
         self.delivery = delivery
         self.event = {"cause":cause, "session_id":delivery.session_id}
         self.gui_callback = gui_callback
+        self.presented_text = ""
         role_kwargs = {}
         if gui_callback is not None:
-            role_kwargs["gui_callback"] = gui_callback
+            role_kwargs["gui_callback"] = self._publish_gui
         if auip_background_capture_release is not None:
             role_kwargs["auip_background_capture_release"] = (
                 auip_background_capture_release)
@@ -153,6 +157,14 @@ class _CooperativeReplyStream:
         self.releases_auip_on_first_sentence = bool(
             getattr(self.role, "releases_auip_on_first_sentence", False))
         self.closed = False
+
+    def _publish_gui(self, text):
+        accepted = self.gui_callback(text)
+        if accepted is not False:
+            # The synchronous Host callback publishes before sentence dispatch.
+            # Keep that prefix even if dispatch is cancelled before feed returns.
+            self.presented_text = text
+        return accepted
 
     async def _check(self):
         if self.closed or not await self.delivery.allows(self.event):
@@ -164,7 +176,9 @@ class _CooperativeReplyStream:
         visible = await self.role.feed(text)
         await self._check()
         if visible and self.gui_callback is None:
-            await self.delivery.partial_display({**self.event, "text":visible})
+            accepted = await self.delivery.partial_display({**self.event, "text":visible})
+            if accepted is True:
+                self.presented_text = visible
 
     async def prepare(self):
         await self._check()
@@ -178,12 +192,31 @@ class _CooperativeReplyStream:
         narration = await self.role.finish()
         await self._check()
         accepted = await self.delivery._publish(event, narration_result=narration)
-        self.closed = True
+        if accepted is True:
+            self.closed = True
+        else:
+            self.abort()
         return accepted
 
     def abort(self):
+        if self.closed:
+            return
         self.closed = True
-        self.role.abort()
+        try:
+            if self.presented_text and self.delivery.record_display is not None:
+                receipt = {**self.event, "published":True, "partial":True,
+                    "history_recorded":False}
+                self.delivery.receipts.append(receipt)
+                # No message_id: an existing final/interrupted row for this turn
+                # wins. In particular a late cleanup cannot restore an unheard tail.
+                receipt["history_recorded"] = self.delivery.record_display(
+                    self.delivery.session_id, role="assistant",
+                    content=project_completed_role_history(self.presented_text),
+                    turn_id=self.event["cause"]) is True
+        except Exception:
+            logger.exception("failed to record interrupted cooperative presentation")
+        finally:
+            self.role.abort()
 
 
 class ConversationSayDecoder:

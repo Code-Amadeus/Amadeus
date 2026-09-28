@@ -72,6 +72,11 @@ class ConversationHistory:
         marker: str = "[interrupted by user]",
         turn_id: str | None = None,
     ) -> bool:
+        """Annotate the latest assistant row of exactly one identified turn.
+
+        Neither another turn's reply nor a row without turn identity can be
+        proven interrupted, so a missing or unknown turn id rewrites nothing.
+        """
         marker = (marker or "[interrupted by user]").strip()
         heard_content = (heard_content or "").strip()
         assistants = [
@@ -90,8 +95,6 @@ class ConversationHistory:
                 ),
                 None,
             )
-        if target is None and assistants:
-            target = assistants[0]
         if target is not None:
             recorded_controls = self._recorded_control_text(
                 str(target.get("content") or "")
@@ -174,6 +177,50 @@ class ConversationHistory:
             parts.append(current_turn_system)
         parts.append(f"質問:{latest_user}")
         return "\n\n".join(parts)
+
+
+def persist_interrupted_assistant_turn(
+    session_id: str | None,
+    *,
+    turn_id: str = "",
+    heard_content: str = "",
+    marker: str = "[interrupted by user]",
+) -> bool:
+    """Atomically annotate one interrupted turn in the Session that owns it.
+
+    The caller supplies the visible/playback prefix, already decoded by delivery.
+    A Session owns a turn once one of its rows carries that turn id; Cooperative
+    ingress records the user row at acceptance, so a reply interrupted before
+    final publication gains its assistant row. An unowned turn is never written:
+    its runtime kept it elsewhere (AppSession branch, save_history=False) or has
+    not committed it yet. Without a turn id no row is provably the interrupted one.
+    """
+    sid = str(session_id or "").strip()
+    tid = str(turn_id or "").strip()
+    if not sid or not tid:
+        return False
+    heard = str(heard_content or "").strip()
+    marker = (marker or "[interrupted by user]").strip()
+    content = f"{heard} {marker}".strip() if heard else marker
+    try:
+        history, enable = _read_session_history(sid)
+        if sid == _CURRENT_SESSION_ID:
+            history = conversation_history.snapshot()
+        owned = [row for row in history.dialog if row.get("turn_id") == tid]
+        if not owned:
+            logger.info("Session %r does not own interrupted turn %r; history unchanged", sid, tid)
+            return False
+        if not any(row.get("role") == "assistant" for row in owned):
+            history.add_assistant(content, turn_id=tid)
+        elif not history.mark_last_assistant_interrupted(heard, marker=marker, turn_id=tid):
+            return False
+        _persist_history(sid, history, enable_conversation=enable)
+        if sid == _CURRENT_SESSION_ID:
+            conversation_history.dialog = history.dialog
+        return True
+    except Exception:
+        logger.exception("failed to record interruption in Session %r", sid)
+        return False
 
 
 # 全局单例

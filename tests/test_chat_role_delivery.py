@@ -545,7 +545,7 @@ async def test_interrupted_stream_cannot_publish_or_enqueue_tail(streaming_role,
         assert host.emitted
         assert all(method == Method.CHAT_TOKEN
             and payload["token"] == "前句。" for method, payload in host.emitted)
-        host.history.assert_not_called()
+        host.history.assert_called_once_with("A", role="assistant", content="前句。", turn_id="reply")
         host.playback.mark_turn_last_sentence.assert_not_called()
         assert not host.display.receipts
     finally:
@@ -574,7 +574,7 @@ async def test_streamed_null_cannot_be_replaced_by_a_duplicate_action(streaming_
         assert str(raised.value.__cause__) == "invalid coordination JSON"
         assert isinstance(raised.value.__cause__.__cause__, ValueError)
         assert not loop.children and not loop.receipts
-        host.history.assert_not_called()
+        host.history.assert_called_once_with("A", role="assistant", content="暂时。", turn_id="reply")
     finally:
         await loop.close()
 
