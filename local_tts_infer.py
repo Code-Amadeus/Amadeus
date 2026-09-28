@@ -523,7 +523,7 @@ class TTSInferencer:
         }
 
         self.dict_language = dict_language_v2 if self.model_version in ["v2", "v3", "v2Pro", "v2ProPlus"] else dict_language_v1
-        self.splits = {"，", "。", "？", "！", ",", ".", "?", "!", "~", ":", "：", "—", "…"}
+        self.splits = {"、", "，", "。", "？", "！", ",", ".", "?", "!", "~", ":", "：", "—", "…"}
 
     def _detect_model_version(self):
         """检测模型版本"""
