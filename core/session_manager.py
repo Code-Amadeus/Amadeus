@@ -72,6 +72,11 @@ class ConversationHistory:
         marker: str = "[interrupted by user]",
         turn_id: str | None = None,
     ) -> bool:
+        """Annotate the latest assistant row of exactly one identified turn.
+
+        Neither another turn's reply nor a row without turn identity can be
+        proven interrupted, so a missing or unknown turn id rewrites nothing.
+        """
         marker = (marker or "[interrupted by user]").strip()
         heard_content = (heard_content or "").strip()
         assistants = [
@@ -90,12 +95,6 @@ class ConversationHistory:
                 ),
                 None,
             )
-        if target is None and assistants:
-            # Legacy rows without turn_id remain interruptible by unknown ids.
-            # Never rewrite a different identified cooperative turn.
-            candidate = assistants[0]
-            if not turn_id or not str(candidate.get("turn_id") or "").strip():
-                target = candidate
         if target is not None:
             recorded_controls = self._recorded_control_text(
                 str(target.get("content") or "")
@@ -112,17 +111,6 @@ class ConversationHistory:
             target["content"] = content
             return True
         return False
-
-    def has_assistant_turn(self, turn_id: str) -> bool:
-        requested = str(turn_id or "").strip()
-        if not requested:
-            return False
-        return any(
-            isinstance(message, dict)
-            and message.get("role") == "assistant"
-            and str(message.get("turn_id") or "") == requested
-            for message in self.dialog
-        )
 
     @staticmethod
     def _recorded_control_text(content: str) -> str:
@@ -198,15 +186,19 @@ def persist_interrupted_assistant_turn(
     heard_content: str = "",
     marker: str = "[interrupted by user]",
 ) -> bool:
-    """Atomically annotate delivered text in its originating Session only.
+    """Atomically annotate one interrupted turn in the Session that owns it.
 
     The caller supplies the visible/playback prefix, already decoded by delivery.
-    Missing identified turns are appended, never substituted for a prior reply.
+    A Session owns a turn once one of its rows carries that turn id; Cooperative
+    ingress records the user row at acceptance, so a reply interrupted before
+    final publication gains its assistant row. An unowned turn is never written:
+    its runtime kept it elsewhere (AppSession branch, save_history=False) or has
+    not committed it yet. Without a turn id no row is provably the interrupted one.
     """
     sid = str(session_id or "").strip()
-    if not sid:
-        return False
     tid = str(turn_id or "").strip()
+    if not sid or not tid:
+        return False
     heard = str(heard_content or "").strip()
     marker = (marker or "[interrupted by user]").strip()
     content = f"{heard} {marker}".strip() if heard else marker
@@ -214,13 +206,13 @@ def persist_interrupted_assistant_turn(
         history, enable = _read_session_history(sid)
         if sid == _CURRENT_SESSION_ID:
             history = conversation_history.snapshot()
-        if tid and not history.has_assistant_turn(tid):
+        owned = [row for row in history.dialog if row.get("turn_id") == tid]
+        if not owned:
+            logger.info("Session %r does not own interrupted turn %r; history unchanged", sid, tid)
+            return False
+        if not any(row.get("role") == "assistant" for row in owned):
             history.add_assistant(content, turn_id=tid)
-        elif not any(row.get("role") == "assistant" for row in history.dialog):
-            history.add_assistant(content, turn_id=tid or None)
-        elif not history.mark_last_assistant_interrupted(
-            heard, marker=marker, turn_id=tid or None,
-        ):
+        elif not history.mark_last_assistant_interrupted(heard, marker=marker, turn_id=tid):
             return False
         _persist_history(sid, history, enable_conversation=enable)
         if sid == _CURRENT_SESSION_ID:

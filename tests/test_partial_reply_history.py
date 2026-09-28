@@ -177,6 +177,8 @@ async def test_barge_in_preserves_prior_turn_and_adds_current(monkeypatch):
 async def test_partial_cleanup_never_restores_interrupted_tail(streaming_role, interrupt_first):
     host = streaming_role
     host.delivery.record_display = sm.append_session_message
+    # Cooperative ingress records the accepted user row before role output.
+    sm.append_session_message("A", role="user", content="Question", turn_id="interrupted")
     stream = host.delivery.begin_stream("interrupted")
     await stream.feed("Heard prefix. Unheard tail.")
 
@@ -330,3 +332,12 @@ async def test_handler_respects_runtime_history_scope(monkeypatch, branch_mode):
         assert assistant_rows() == [], "AppSession-local reply must not be copied into parent history"
     else:
         assert len(assistant_rows()) == 1
+
+    # Speech usually outlives its text. Barge in afterwards in interrupt_flow's
+    # order: Chat abort names the last reply, then TTS interruption annotates it.
+    aborted = await handler.handle(Method.CHAT_ABORT, {"turn_id": "", "stop_execution": False})
+    assert aborted["turn_id"] == "scope-turn"
+    await interrupt_callback(monkeypatch)({"session_id": "A", "turn_id": aborted["turn_id"],
+        "completed_text": "Synthetic displayed", "accumulated_text": aborted["accumulated_text"]})
+    assert [(row["turn_id"], row["content"]) for row in assistant_rows()] == (
+        [] if isolate_branch else [("scope-turn", "Synthetic displayed [interrupted by user]")])

@@ -250,11 +250,18 @@ Current policy:
 - Use the completed-playback prefix when available, otherwise the accumulated
   visible reply. The chatbox and persisted/provider history use that same text.
 - Append an interruption marker.
-- Update the exact interrupted turn in its originating Session. If final
-  publication never created its assistant row, append that turn; do not overwrite
-  a different identified turn. Capture the Session before playback cleanup yields.
+- Capture the Session before playback cleanup yields, and update only a turn that
+  Session owns: one of its rows carries the interrupted turn id. Cooperative
+  ingress records the user row at acceptance, so a reply interrupted before final
+  publication gains its assistant row. Never overwrite a different identified
+  turn or a row without turn identity; an interruption without a turn id writes
+  no history.
+- An unowned turn is not written. Its runtime may deliberately keep it elsewhere
+  (an AUIP AppSession branch or a `save_history=False` direct reply), or may not
+  have committed it yet (an original Chat turn before completion, an unconfirmed
+  pending turn). The chatbox still shows the interruption for such a turn.
 - Write the prepared history atomically before updating loaded memory. A missing,
-  invalid or unwritable originating Session never falls back to another Session.
+  invalid or unwritable Session never falls back to another Session.
 
 Conceptual shape:
 
@@ -274,8 +281,10 @@ keeps its existing history path, and a later partial cleanup cannot replace an
 already recorded final or interrupted turn. A transport failure alone does not add
 the user-interruption marker.
 
-ChatHandler does not infer a missing-history repair from an absent assistant row:
-the runtime may deliberately keep an AUIP interaction in its AppSession branch.
+Neither ChatHandler nor the interruption path infers a missing-history repair
+from an absent assistant row: the runtime may deliberately keep an AUIP
+interaction in its AppSession branch. Session ownership of the turn is the only
+evidence that its assistant row belongs in that Session.
 Cooperative JSON and inline controls are decoded at the existing presentation
 boundary, not parsed again by Session persistence.
 

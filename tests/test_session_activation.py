@@ -151,6 +151,7 @@ def test_interrupted_turn_does_not_rewrite_prior_identified_assistant(sessions):
 
 @pytest.mark.parametrize("already_recorded", [False, True])
 def test_interruption_persistence_failure_leaves_memory_and_disk_unchanged(sessions, monkeypatch, already_recorded):
+    assert sm.append_session_message("A", role="user", content="Question", turn_id="reply")
     if already_recorded:
         assert sm.append_session_message("A", role="assistant", content="Full reply", turn_id="reply")
     before, persisted = state(), Path(sm._session_path("A")).read_bytes()
@@ -169,8 +170,20 @@ def test_interruption_cannot_fall_back_from_an_unavailable_session(sessions, ses
     assert Path(sm._session_path("A")).read_bytes() == persisted
 
 
+@pytest.mark.parametrize("turn_id", ["", "kept-elsewhere"])
+def test_interruption_never_writes_a_turn_its_session_does_not_own(sessions, turn_id):
+    # An AppSession branch, save_history=False reply or uncommitted turn has no
+    # row here. Without a turn id, no row is provably the interrupted one.
+    assert sm.append_session_message("A", role="assistant", content="Owned reply", turn_id="owned")
+    before, persisted = state(), Path(sm._session_path("A")).read_bytes()
+    assert not sm.persist_interrupted_assistant_turn("A", turn_id=turn_id, heard_content="Other")
+    assert state() == before
+    assert Path(sm._session_path("A")).read_bytes() == persisted
+
+
 @pytest.mark.parametrize("already_recorded", [False, True])
 def test_interruption_updates_only_its_inactive_origin(sessions, already_recorded):
+    assert sm.append_session_message("A", role="user", content="Question", turn_id="reply")
     if already_recorded:
         assert sm.append_session_message("A", role="assistant", content="Original", turn_id="reply")
     sm.create_session("B")
