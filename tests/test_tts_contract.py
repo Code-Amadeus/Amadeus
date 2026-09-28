@@ -337,16 +337,19 @@ def test_stream_sequence_waits_for_a_dequeued_normal_sentence() -> None:
     async def run() -> None:
         manager = PlaybackManager(SimpleNamespace())
         manager.next_seq_to_play = 8
-        # Sequence 6 has already been removed from pending_audio and is waiting
+        # Sequence 6 is reserved in pending_audio and is waiting
         # to claim the physical player.  Advancing next_seq alone must not let
         # a later AUIP stream skip over it.
         manager._normal_waiting_seq = 6
+        manager.pending_audio[6] = (0, np.ones(24000), 24000, "sentence_6_test", "test", None)
         claim = asyncio.create_task(manager._claim_stream_sequence(8, 0))
         await asyncio.sleep(0)
         assert claim.done() is False
+        assert manager.estimate_cover_seconds() == 1.0
 
         async with manager.play_condition:
             manager._normal_waiting_seq = None
+            manager.pending_audio.pop(6)
             manager.play_condition.notify_all()
         assert await asyncio.wait_for(claim, timeout=1.0) is True
         assert manager._stream_claimed_seq == 8
