@@ -1479,7 +1479,6 @@ class CooperativeProviderLoop:
         decoder = ((DelegateRoleDecoder() if self.work_proposals_only
             else ConversationSayDecoder()) if stream is not None else None)
         delivery_owned = False
-        publish_state = {"committed": False}
 
         async def on_text(raw):
             nonlocal delivery_owned
@@ -1501,11 +1500,7 @@ class CooperativeProviderLoop:
             if decoder is None or not decoder.started:
                 return False
             try:
-                published = await self._deliver_locked(
-                    value["say"], cause=turn_id, stream=stream,
-                )
-                publish_state["committed"] = published is True
-                return published
+                return await self._deliver_locked(value["say"], cause=turn_id, stream=stream)
             finally:
                 if delivery_owned:
                     self._delivery_lock.release()
@@ -1522,16 +1517,6 @@ class CooperativeProviderLoop:
                 stream=stream, decoder=decoder, on_text=on_text if stream else None,
                 commit_role=commit_role)
         finally:
-            if (decoder is not None and decoder.started and decoder.text
-                    and not publish_state["committed"]
-                    and self._state is not None):
-                from core import session_manager as sm
-
-                sm.persist_unpublished_assistant_turn(
-                    self._state.session_id,
-                    turn_id=turn_id,
-                    heard_content=decoder.text,
-                )
             if stream is not None:
                 stream.abort()
             if delivery_owned:

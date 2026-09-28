@@ -247,18 +247,37 @@ conversation history should stay aligned.
 
 Current policy:
 
-- The chatbox displays the assistant text known at interrupt time.
-- The persisted/provider conversation history stores the same assistant text.
+- Use the completed-playback prefix when available, otherwise the accumulated
+  visible reply. The chatbox and persisted/provider history use that same text.
 - Append an interruption marker.
+- Update the exact interrupted turn in its originating Session. If final
+  publication never created its assistant row, append that turn; do not overwrite
+  a different identified turn. Capture the Session before playback cleanup yields.
+- Write the prepared history atomically before updating loaded memory. A missing,
+  invalid or unwritable originating Session never falls back to another Session.
 
 Conceptual shape:
 
 ```text
-assistant: <visible/generated assistant part> [interrupted by user]
+assistant: <completed-playback or visible assistant prefix> [interrupted by user]
 ```
 
 This preserves the user-visible transcript and prevents a split-brain state
 where the UI shows one conversation while the next provider call sees another.
+
+Cooperative reply streams can publish a prefix before final publication. If the
+stream fails or is cancelled, the delivery owner records its last accepted visible
+prefix in the original Session. Decoder output alone is not publication evidence.
+The existing GUI callback or partial-display receipt establishes the prefix; this
+does not claim physical playback or renderer acknowledgement. Final publication
+keeps its existing history path, and a later partial cleanup cannot replace an
+already recorded final or interrupted turn. A transport failure alone does not add
+the user-interruption marker.
+
+ChatHandler does not infer a missing-history repair from an absent assistant row:
+the runtime may deliberately keep an AUIP interaction in its AppSession branch.
+Cooperative JSON and inline controls are decoded at the existing presentation
+boundary, not parsed again by Session persistence.
 
 ### Prompt Cache / KV Cache Tradeoff
 

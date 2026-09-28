@@ -191,108 +191,6 @@ class ConversationHistory:
         return "\n\n".join(parts)
 
 
-def project_interrupt_heard_content(raw: str) -> str:
-    """Project partial cooperative or chat output into durable history text."""
-
-    text = str(raw or "").strip()
-    if not text:
-        return ""
-    if text.lstrip().startswith("{"):
-        try:
-            from server.cooperative_delivery import (
-                ConversationSayDecoder,
-                load_consistent_json,
-                normalize_coordination_root,
-            )
-
-            try:
-                say = str(
-                    normalize_coordination_root(load_consistent_json(text)).get("say") or "",
-                ).strip()
-                if say:
-                    text = say
-            except (TypeError, ValueError):
-                decoder = ConversationSayDecoder(allow_work_proposal=True)
-                decoder.feed(text)
-                say = str(decoder.text or "").strip()
-                if say:
-                    text = say
-        except Exception:
-            logger.debug("could not project cooperative interrupt JSON", exc_info=True)
-    try:
-        from core.chat_history_projection import project_completed_role_history
-
-        projected = str(project_completed_role_history(text) or "").strip()
-        if projected:
-            text = projected
-    except Exception:
-        pass
-    try:
-        from server.handlers.session_handler import _display_text
-
-        text = str(_display_text(text) or "").strip()
-    except Exception:
-        text = text.strip()
-    return text
-
-
-def session_has_assistant_turn(session_id: str, turn_id: str) -> bool:
-    """Return whether one Session already has an assistant row for turn_id."""
-
-    tid = str(turn_id or "").strip()
-    sid = str(session_id or "").strip()
-    if not tid or not sid:
-        return False
-    try:
-        if sid == _CURRENT_SESSION_ID:
-            return conversation_history.has_assistant_turn(tid)
-        history, _ = _read_session_history(sid)
-        return history.has_assistant_turn(tid)
-    except Exception:
-        logger.exception(
-            "failed to inspect Session %r for assistant turn %r", sid, tid,
-        )
-        return False
-
-
-def _persist_assistant_turn_if_missing(
-    session_id: str | None,
-    *,
-    turn_id: str,
-    content: str,
-) -> bool:
-    tid = str(turn_id or "").strip()
-    sid = str(session_id or "").strip() or None
-    text = str(content or "").strip()
-    if not tid or not text:
-        return False
-    if sid and session_has_assistant_turn(sid, tid):
-        return False
-    if sid:
-        if append_session_message(
-            sid, role="assistant", content=text, turn_id=tid,
-        ):
-            return True
-    if conversation_history.has_assistant_turn(tid):
-        return False
-    conversation_history.add_assistant(text, turn_id=tid)
-    return True
-
-
-def persist_unpublished_assistant_turn(
-    session_id: str | None,
-    *,
-    turn_id: str = "",
-    heard_content: str = "",
-) -> bool:
-    """Persist streamed role speech when Host publish never completed."""
-
-    heard = project_interrupt_heard_content(heard_content)
-    return _persist_assistant_turn_if_missing(
-        session_id, turn_id=turn_id, content=heard,
-    )
-
-
 def persist_interrupted_assistant_turn(
     session_id: str | None,
     *,
@@ -300,28 +198,37 @@ def persist_interrupted_assistant_turn(
     heard_content: str = "",
     marker: str = "[interrupted by user]",
 ) -> bool:
-    """Persist a partial assistant reply when publish never completed."""
+    """Atomically annotate delivered text in its originating Session only.
 
-    marker = (marker or "[interrupted by user]").strip()
-    heard = project_interrupt_heard_content(heard_content)
-    content = f"{heard} {marker}".strip() if heard else marker
+    The caller supplies the visible/playback prefix, already decoded by delivery.
+    Missing identified turns are appended, never substituted for a prior reply.
+    """
+    sid = str(session_id or "").strip()
+    if not sid:
+        return False
     tid = str(turn_id or "").strip()
-    sid = str(session_id or "").strip() or None
-
-    if tid and sid and not session_has_assistant_turn(sid, tid):
-        if _persist_assistant_turn_if_missing(sid, turn_id=tid, content=content):
-            return True
-
-    changed = conversation_history.mark_last_assistant_interrupted(
-        heard, marker=marker, turn_id=tid or None,
-    )
-    if not changed and not any(
-        isinstance(message, dict) and message.get("role") == "assistant"
-        for message in conversation_history.dialog
-    ):
-        conversation_history.add_assistant(content, turn_id=tid or None)
-        changed = True
-    return changed
+    heard = str(heard_content or "").strip()
+    marker = (marker or "[interrupted by user]").strip()
+    content = f"{heard} {marker}".strip() if heard else marker
+    try:
+        history, enable = _read_session_history(sid)
+        if sid == _CURRENT_SESSION_ID:
+            history = conversation_history.snapshot()
+        if tid and not history.has_assistant_turn(tid):
+            history.add_assistant(content, turn_id=tid)
+        elif not any(row.get("role") == "assistant" for row in history.dialog):
+            history.add_assistant(content, turn_id=tid or None)
+        elif not history.mark_last_assistant_interrupted(
+            heard, marker=marker, turn_id=tid or None,
+        ):
+            return False
+        _persist_history(sid, history, enable_conversation=enable)
+        if sid == _CURRENT_SESSION_ID:
+            conversation_history.dialog = history.dialog
+        return True
+    except Exception:
+        logger.exception("failed to record interruption in Session %r", sid)
+        return False
 
 
 # 全局单例

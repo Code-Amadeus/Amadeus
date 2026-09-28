@@ -107,27 +107,12 @@ def test_file_payload_cannot_relabel_the_requested_session(sessions):
     assert state() == before
 
 
-def test_unpublished_cooperative_stream_persists_heard_say(sessions):
-    sm.append_session_message("A", role="user", content="scan d drive", turn_id="stream-run")
-    assert sm.persist_unpublished_assistant_turn(
-        "A",
-        turn_id="stream-run",
-        heard_content='{"action":{"op":"work"},"say":"Get-ChildItem D:\\\\"}',
-    )
-    data = json.loads(Path(sm._session_path("A")).read_text(encoding="utf-8"))
-    assert data["dialog"][-1] == {
-        "role": "assistant",
-        "content": "Get-ChildItem D:\\",
-        "turn_id": "stream-run",
-    }
-
-
 def test_interrupted_cooperative_turn_persists_before_publish(sessions):
     sm.append_session_message("A", role="user", content="follow up", turn_id="interrupted-run")
     assert sm.persist_interrupted_assistant_turn(
         "A",
         turn_id="interrupted-run",
-        heard_content='{"action":null,"say":"前半。後半"}',
+        heard_content="前半。後半",
     )
     data = json.loads(Path(sm._session_path("A")).read_text(encoding="utf-8"))
     assert data["dialog"][-2:] == [
@@ -162,6 +147,41 @@ def test_interrupted_turn_does_not_rewrite_prior_identified_assistant(sessions):
     ]
     prior = next(row for row in data["dialog"] if row.get("turn_id") == "prior-run")
     assert prior["content"] == "earlier reply"
+
+
+@pytest.mark.parametrize("already_recorded", [False, True])
+def test_interruption_persistence_failure_leaves_memory_and_disk_unchanged(sessions, monkeypatch, already_recorded):
+    if already_recorded:
+        assert sm.append_session_message("A", role="assistant", content="Full reply", turn_id="reply")
+    before, persisted = state(), Path(sm._session_path("A")).read_bytes()
+    monkeypatch.setattr(sm.os, "replace", Mock(side_effect=PermissionError("write denied")))
+    assert not sm.persist_interrupted_assistant_turn("A", turn_id="reply", heard_content="Heard")
+    assert state() == before
+    assert Path(sm._session_path("A")).read_bytes() == persisted
+
+
+@pytest.mark.parametrize("session_id", [None, "missing", "mislabeled"])
+def test_interruption_cannot_fall_back_from_an_unavailable_session(sessions, session_id):
+    write_session("mislabeled", session_id="another")
+    before, persisted = state(), Path(sm._session_path("A")).read_bytes()
+    assert not sm.persist_interrupted_assistant_turn(session_id, turn_id="reply", heard_content="Other")
+    assert state() == before
+    assert Path(sm._session_path("A")).read_bytes() == persisted
+
+
+@pytest.mark.parametrize("already_recorded", [False, True])
+def test_interruption_updates_only_its_inactive_origin(sessions, already_recorded):
+    if already_recorded:
+        assert sm.append_session_message("A", role="assistant", content="Original", turn_id="reply")
+    sm.create_session("B")
+    sm.conversation_history.add_user("Unsaved B")
+    before = state()
+    assert sm.persist_interrupted_assistant_turn("A", turn_id="reply", heard_content="Heard")
+    assert not sm.persist_interrupted_assistant_turn("A", turn_id="reply", heard_content="Heard")
+    assert state() == before
+    data = json.loads(Path(sm._session_path("A")).read_text(encoding="utf-8"))
+    assert data["dialog"][-1]["content"] == "Heard [interrupted by user]"
+    assert data["last_summary"] == "SUMMARY_A"
 
 
 def test_correlated_append_targets_original_session_without_selecting_it(sessions):

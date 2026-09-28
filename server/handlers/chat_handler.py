@@ -457,16 +457,17 @@ class ChatHandler(RequestHandler):
         )
         self._observe_turn_admission(turn_admission)
 
-        def token_callback(accumulated: str) -> None:
+        def token_callback(accumulated: str) -> bool:
             if chat_epoch != self._chat_epoch or turn_id != self._active_turn_id:
-                return
+                return False
             if pending:
-                return
+                return False
             self._active_accumulated_text = str(accumulated or "")
             loop.create_task(
                 bus.emit(Method.CHAT_TOKEN, {"token": accumulated, "turn_id": turn_id,
                     "session_id": session_id})
             )
+            return True
 
         self._stream_task = asyncio.create_task(
             self._run_stream(
@@ -683,12 +684,7 @@ class ChatHandler(RequestHandler):
                 return
             from server.handlers.session_handler import _display_text
 
-            streamed_fallback = str(self._active_accumulated_text or "").strip()
             visible_full = str(_display_text(full) or "")
-            if not visible_full.strip() and streamed_fallback:
-                visible_full = str(
-                    _display_text(streamed_fallback) or streamed_fallback,
-                ).strip()
             self._active_accumulated_text = visible_full
             self._last_assistant_turn_id = turn_id
             self._last_assistant_text = visible_full
@@ -696,13 +692,6 @@ class ChatHandler(RequestHandler):
                 try:
                     os.environ.setdefault("AMADEUS_HEADLESS", "1")
                     from core import session_manager as sm
-                    if (visible_full
-                            and not sm.session_has_assistant_turn(session_id, turn_id)):
-                        sm.persist_unpublished_assistant_turn(
-                            session_id,
-                            turn_id=turn_id,
-                            heard_content=visible_full,
-                        )
                     sm.save_session(session_id, enable_conversation=True)
                     if sm.get_session_title(session_id) == session_id:
                         title = text.strip().replace("\n", " ")[:30]

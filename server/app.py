@@ -1514,10 +1514,8 @@ async def bootstrap(port: int = 17777) -> None:
             accumulated_text = str(payload.get("accumulated_text") or "").strip()
             marker = "[interrupted by user]"
             turn_id = str(payload.get("turn_id") or "")
-            sid = sm.get_current_session_id()
-            interrupted_prefix = sm.project_interrupt_heard_content(
-                completed_text or accumulated_text,
-            )
+            sid = str(payload.get("session_id") or "")
+            interrupted_prefix = completed_text or accumulated_text
             interrupted_text = (
                 f"{interrupted_prefix} {marker}".strip()
                 if interrupted_prefix else marker
@@ -1528,8 +1526,6 @@ async def bootstrap(port: int = 17777) -> None:
                 heard_content=completed_text or accumulated_text,
                 marker=marker,
             )
-            if sid and changed:
-                sm.save_session(sid, enable_conversation=True)
             logger.info(
                 "emitting chat.interrupted turn=%s text_len=%s completed_len=%s subscribers=%s source=%s",
                 payload.get("turn_id") or "",

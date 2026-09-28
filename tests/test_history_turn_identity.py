@@ -36,13 +36,6 @@ def test_interruption_targets_requested_turn_not_latest_assistant():
     assert history.dialog[1]["content"] == "later reply"
 
 
-def test_project_interrupt_heard_content_extracts_cooperative_json_say():
-    payload = json.dumps({"action": None, "say": "前半。後半"}, ensure_ascii=False)
-    partial = '{"action":null,"say":"途中'
-    assert sm.project_interrupt_heard_content(payload) == "前半。後半"
-    assert sm.project_interrupt_heard_content(partial) == "途中"
-
-
 def test_unknown_turn_id_does_not_overwrite_identified_assistant():
     history = ConversationHistory()
     history.add_assistant("identified", turn_id="turn_a")
