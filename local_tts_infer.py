@@ -2270,7 +2270,7 @@ def cut4(inp):
     """按英文句号切 - 按英文句号'.'分割"""
     import re
     inp = inp.strip("\n")
-    opts = re.split(r'(s<!\d)\.(s!\d)', inp.strip("."))
+    opts = re.split(r'(?<!\d)\.(?!\d)', inp.strip("."))
     opts = [item for item in opts if not set(item).issubset(punctuation)]
     return "\n".join(opts)
 
@@ -2279,7 +2279,7 @@ def cut5(inp):
     """按标点符号切 - 按各种标点符号分割"""
     import re
     inp = inp.strip("\n")
-    punds = {',', '.', ';', 's', '!', '、', '，', '。', '？', '！', ';', '：', '…'}
+    punds = {',', '.', ';', '?', '!', '、', '，', '。', '？', '！', ';', '：', '…'}
     mergeitems = []
     items = []
 
@@ -2303,8 +2303,7 @@ def cut5(inp):
 
 def split(todo_text):
     """将文本按标点符号分割成句子列表"""
-    splits = {"，", "。", "？", "！", ",", ".", "s", "!", "~", ":", "：", "—", "…"}
-    punctuation = set(['!', 's', '…', ',', '.', '-', " "])
+    splits = {"，", "。", "？", "！", ",", ".", "?", "!", "~", ":", "：", "—", "…"}
 
     todo_text = todo_text.replace("……", "。").replace("——", "，")
     if todo_text[-1] not in splits:
