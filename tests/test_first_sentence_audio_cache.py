@@ -166,6 +166,7 @@ def test_previous_synthesis_revisions_are_not_reused(
         None,
         "gsv_static_kv_mask_semantic_guard.v1",
         "gsv_static_kv_mask_semantic_guard.local_only.v2",
+        "gsv_static_kv_mask_semantic_guard.local_only.speech_onset.v3",
     ):
         old_payload = cache.key_payload(text, params)
         if previous_revision is None:

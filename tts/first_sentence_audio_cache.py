@@ -38,10 +38,10 @@ _KEY_FIELDS = (
 )
 
 _CACHE_SCHEMA = "first_sentence_audio_cache.v1"
-# Earlier entries could be written by a remote backend under this local-only
-# fingerprint, or still open with the model's generated pause before speech
-# onset (trimmed since this revision). Neither is reusable; regenerate once.
-_SYNTHESIS_REVISION = "gsv_static_kv_mask_semantic_guard.local_only.speech_onset.v3"
+# Earlier entries can contain the generated lead, an unverified remote voice,
+# or speech conditioned on an extra full stop after a Japanese comma.
+# Regenerate derived audio once after correcting that punctuation boundary.
+_SYNTHESIS_REVISION = "gsv_static_kv_mask_semantic_guard.local_only.speech_onset.punctuation.v4"
 
 
 def _portable_basename(value: Any) -> str:
