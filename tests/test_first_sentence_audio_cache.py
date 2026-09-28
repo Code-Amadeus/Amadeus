@@ -22,9 +22,9 @@ def _current_params() -> dict:
         "top_k": 5,
         "temperature": 0.6,
         "sample_steps": 4,
-        "speed": 1.1,
+        "speed": 1.067,
         "if_sr": False,
-        "pause_second": 0.05,
+        "pause_second": 0.4,
         "max_sec_override": 3.5,
     }
 
