@@ -632,6 +632,9 @@ class TTSInferencer:
                 **self.hps.model
             )
         else:
+            # 该字段是声学架构版本，不能被 v2 文字符号覆盖：上游 decode_encp 据此
+            # 选择上采样倍率（1.875 / 2）。符号版本已存于 self.sovits_version。
+            self.hps.model.version = self.model_version
             self.vq_model = SynthesizerTrnV3(
                 self.hps.data.filter_length // 2 + 1,
                 self.hps.train.segment_size // self.hps.data.hop_length,
