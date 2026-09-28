@@ -1,6 +1,6 @@
 # Bounded adaptive TTS aggregation
 
-Status: implementation and deterministic experiments, with a limited local
+Status: locally trialled candidate with deterministic experiments and a limited
 CUDA decoder probe. Not a cross-device acoustic or naturalness qualification.
 The existing `ENABLE_TTS_UTTERANCE_SCHEDULER` switch remains **off by default**.
 This work is separate from the speed/pause defaults in PR #130.
@@ -86,7 +86,7 @@ reference context, phonemes and generated semantic length also determine it.
 Command (the baseline is the pacing-only commit, before scheduler changes):
 
 ```console
-python -X utf8 tools/probes/simulate_tts_aggregation.py --baseline-ref bc145c3
+python -X utf8 tools/probes/simulate_tts_aggregation.py --baseline-ref 00e3864
 ```
 
 This is a synthetic ready-text burst: 96 eight-character fragments, an 0.8 s
@@ -155,6 +155,13 @@ package passed **410 tests**, with **3 existing optional-tier skips**. Ruff
 0.16.3 passed for changed Python files; `git diff --check` passed. An existing
 Python `audioop` deprecation warning remains. These are targeted tests, not the
 repository-wide suite or new live microphone acceptance.
+
+The maintainer subsequently tried the candidate through the normal Windows BAT
+launcher and reported a noticeable improvement. That listening checkout also
+retained separate Japanese-pronunciation changes and passed **435 tests**, with
+**3 skips** after integration. Those pronunciation changes are excluded from
+this contribution. The feedback supports the direction but is not a controlled
+acoustic A/B measurement or a qualification of other hardware/providers.
 
 Before broad activation, repeat live continuous-speech listening with the
 intended model/provider, and measure actual first-to-second and later gaps.
