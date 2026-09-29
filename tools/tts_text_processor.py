@@ -1,16 +1,21 @@
 ﻿"""
 TTS 专用文本处理模块。
 
-本模块所有函数均为无状态纯函数，不依赖任何全局变量，
-可被项目中任意模块安全导入。
+文本转换不修改调用方的原文、字幕或对话历史。
+英文发音资源按需加载并缓存，转换过程不访问网络。
 
 包含：
   - EMO_PRESETS                       情绪预设字典（标签名 → VTS 动作）
-  - convert_english_abbreviations_to_katakana  英文缩写 → 片假名
+  - convert_english_for_japanese_tts   英文整词 / 缩写 → 片假名
   - correct_pronunciation_for_tts     TTS 专用发音修正入口
 """
 
+import logging
 import re
+from functools import lru_cache
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # 情绪预设
@@ -47,7 +52,7 @@ _LETTER_TO_KATAKANA: dict[str, str] = {
     'Y': 'ワイ',   'Z': 'ゼット',
 }
 
-# 常见缩写 / 品牌名特殊映射（按长度降序排列，确保长的先匹配）
+# 既有的约定读音；匹配完整 token，不用逐词追加普通英文的修复个案。
 _SPECIAL_CASES: dict[str, str] = {
     # Consensus / distributed systems terms
     'Paxos': 'パクソス', 'PAXOS': 'パクソス', 'paxos': 'パクソス',
@@ -88,44 +93,83 @@ _SPECIAL_CASES: dict[str, str] = {
     'Figma': 'フィグマ', 'PS': 'ピーエス', 'AE': 'エーイー',
 }
 
-# 按长度降序排列，确保长缩写先匹配
-_SPECIAL_CASES_SORTED = sorted(_SPECIAL_CASES.items(), key=lambda x: len(x[0]), reverse=True)
+# Match Latin tokens independently of surrounding Japanese word characters.
+# Pronunciation overrides apply to whole tokens, never substrings of a word.
+_LATIN_TOKEN_PATTERN = re.compile(r"[A-Za-z]+(?:['’][A-Za-z]+)*(?:[0-9]+[A-Za-z]*)?")
+_LATIN_WORD_PATTERN = re.compile(r"[A-Za-z]+(?:['’][A-Za-z]+)*")
 
-# 通用大写缩写正则（2-6 个大写字母，可带数字后缀）
-_ABBR_PATTERN = re.compile(r'\b[A-Z]{2,6}(?:[0-9]+[A-Z]*)?\b')
+
+@lru_cache(maxsize=1)
+def _japanese_user_dictionary():
+    dictionary_dir = Path(__file__).resolve().parents[1] / "GPT_SoVITS/text/ja_userdic"
+    if not (dictionary_dir / "userdict.csv").is_file() and not (dictionary_dir / "user.dict").is_file():
+        return None
+    try:
+        # The Japanese frontend owns compilation and registration of this resource.
+        from GPT_SoVITS.text.japanese import dictionary_word_reading
+    except ModuleNotFoundError as exc:
+        if exc.name != "pyopenjtalk":
+            raise
+        logger.warning("Local Japanese dictionary requires the local-models profile")
+        return None
+    return dictionary_word_reading
 
 
-def convert_english_abbreviations_to_katakana(text: str) -> str:
-    """
-    将英文缩写转换为片假名，使 TTS 逐字母正确朗读。
+@lru_cache(maxsize=1)
+def _english_kana_resources():
+    from e2k import C2K, P2K
 
-    处理顺序：
-      1. 特殊映射（优先级最高，按长度降序）
-      2. 通用大写缩写（2-6 字母）逐字母转换
-    """
-    # 1. 特殊映射
-    for abbr, katakana in _SPECIAL_CASES_SORTED:
-        text = text.replace(abbr, katakana)
+    # Reuse the pronunciation lexicon already shipped with the English frontend.
+    dictionary_path = Path(__file__).resolve().parents[1] / "GPT_SoVITS/text/cmudict-fast.rep"
+    pronunciations = {}
+    with dictionary_path.open(encoding="utf-8") as source:
+        for line in source:
+            fields = line.split()
+            if fields:
+                word = fields[0].split("(", 1)[0].lower()
+                pronunciations.setdefault(word, fields[1:])
+    return pronunciations, P2K(max_len=64), C2K(max_len=64)
 
-    # 2. 通用大写缩写
+
+@lru_cache(maxsize=4096)
+def _english_word_to_katakana(word: str) -> str:
+    dictionary_reading = _japanese_user_dictionary()
+    if dictionary_reading is not None:
+        reading = dictionary_reading(word)
+        if reading is not None:
+            return reading
+    pronunciations, phonemes_to_kana, characters_to_kana = _english_kana_resources()
+    phones = pronunciations.get(word)
+    return phonemes_to_kana(phones) if phones else characters_to_kana(word)
+
+
+def convert_english_for_japanese_tts(text: str) -> str:
+    """Read ordinary words as Japanese loanwords and uppercase initials by letter name."""
+    def _read_word(match: re.Match) -> str:
+        word = match.group(0)
+        if word in _SPECIAL_CASES:
+            return _SPECIAL_CASES[word]
+        if word.isupper():
+            return "".join(_LETTER_TO_KATAKANA.get(ch, ch) for ch in word)
+        return _english_word_to_katakana(word.replace("’", "'").lower())
+
     def _convert(match: re.Match) -> str:
-        return "".join(
-            _LETTER_TO_KATAKANA.get(ch.upper(), ch) if ch.isalpha() else ch
-            for ch in match.group(0)
-        )
+        token = match.group(0)
+        return _SPECIAL_CASES.get(token) or _LATIN_WORD_PATTERN.sub(_read_word, token)
 
-    return _ABBR_PATTERN.sub(_convert, text)
+    return _LATIN_TOKEN_PATTERN.sub(_convert, text)
 
 
-def correct_pronunciation_for_tts(text: str) -> str:
+def correct_pronunciation_for_tts(text: str, output_language: str = "ja") -> str:
     """
     TTS 发音修正入口。
 
     当前修正内容：
       - 专有名词读音（如「牧瀬紅莉栖」→「牧瀬クリス」）
-      - 英文缩写 → 片假名（调用 convert_english_abbreviations_to_katakana）
+      - 日文输出中的英文整词 / 缩写 → 片假名
 
-    如需添加新的修正，在 replacements 字典中追加即可。
+    普通英文优先使用本机日文用户词典的整词读音；未完整收录的词
+    通过通用的发音 / 片假名转换处理。
     """
     replacements = {
         "牧瀬紅莉栖": "牧瀬クリス",
@@ -139,5 +183,6 @@ def correct_pronunciation_for_tts(text: str) -> str:
     for original, corrected in replacements.items():
         text = text.replace(original, corrected)
 
-    text = convert_english_abbreviations_to_katakana(text)
+    if str(output_language).strip().lower() in {"ja", "jp", "japanese", "日文"}:
+        text = convert_english_for_japanese_tts(text)
     return text

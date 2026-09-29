@@ -2,6 +2,11 @@
 import re
 import os
 import hashlib
+import logging
+import unicodedata
+
+logger = logging.getLogger(__name__)
+
 try:
     import pyopenjtalk
     current_file_path = os.path.dirname(__file__)
@@ -57,15 +62,32 @@ try:
                 f.write(get_hash(USERDIC_CSV_PATH))
 
     if os.path.exists(USERDIC_BIN_PATH):
-        pyopenjtalk.update_global_jtalk_with_user_dict(USERDIC_BIN_PATH)   
+        pyopenjtalk.update_global_jtalk_with_user_dict(USERDIC_BIN_PATH)
+        logger.info("Japanese user pronunciation dictionary loaded")
 except Exception as e:
-    # print(e)
     import pyopenjtalk
-    # failed to load user dictionary, ignore.
-    pass
+    logger.warning("Japanese user pronunciation dictionary could not be loaded: %s", e)
 
 
-from text.symbols import punctuation
+from .symbols import punctuation
+
+
+def dictionary_word_reading(word: str) -> str | None:
+    """Return a dictionary reading only when the entire Latin word is recognized.
+
+    Accepting partial matches would turn an unknown word such as ``proposer``
+    into ``propose`` followed by a letter name.
+    """
+    normalized = unicodedata.normalize("NFKC", word).lower()
+    features = pyopenjtalk.run_frontend(normalized)
+    if len(features) != 1:
+        return None
+    feature = features[0]
+    surface = unicodedata.normalize("NFKC", feature["string"]).lower()
+    reading = feature.get("read")
+    return reading if surface == normalized and reading and reading != "*" else None
+
+
 # Regular expression matching Japanese without punctuation marks:
 _japanese_characters = re.compile(
     r"[A-Za-z\d\u3005\u3040-\u30ff\u4e00-\u9fff\uff11-\uff19\uff21-\uff3a\uff41-\uff5a\uff66-\uff9d]"

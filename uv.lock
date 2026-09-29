@@ -201,6 +201,7 @@ dependencies = [
     { name = "aiohttp" },
     { name = "beautifulsoup4" },
     { name = "boto3" },
+    { name = "e2k" },
     { name = "fastapi" },
     { name = "google-genai" },
     { name = "httpx" },
@@ -472,6 +473,7 @@ requires-dist = [
     { name = "beautifulsoup4", specifier = "==4.14.3" },
     { name = "boto3", specifier = "==1.43.16" },
     { name = "cn2an", marker = "extra == 'local-models'", specifier = "==0.5.24" },
+    { name = "e2k", specifier = "==0.6.2" },
     { name = "faiss-cpu", marker = "extra == 'rag'", specifier = "==1.14.2" },
     { name = "fastapi", specifier = "==0.136.3" },
     { name = "ffmpeg-python", marker = "extra == 'voice'", specifier = "==0.2.0" },
@@ -1025,6 +1027,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/20/2e/25a78ba8dd9bc045811f78d656aba145900e1393bae1bfc1c6f93dbabb76/dyNET38-2.2-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:74d82985200bb8a557cbafc0865e16160bb34682b70608473b5cd88e56bd72ba", size = 7028081, upload-time = "2024-06-16T11:36:33.797Z" },
     { url = "https://files.pythonhosted.org/packages/69/35/dc76f2a745762caffa2326a50c2cf4eea06279f2fa03927e0d93f9c36e5a/dynet38-2.2-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:772c053aca8956d7e0ba5f463ed52435800482fb8e3c8cbb411cdffa8a9e90a2", size = 3643925, upload-time = "2025-12-30T19:08:24.37Z" },
     { url = "https://files.pythonhosted.org/packages/ff/4f/a5b22e11549f0a5dc6feccdb50414aaf3c05decf0d8ca29288984a21fc5a/dynet38-2.2-cp312-cp312-win_amd64.whl", hash = "sha256:fd9967ed3ec071cc4c0c084d758ab44dac34cb37beb625ea9fcf2221c2085975", size = 1299414, upload-time = "2025-12-29T12:14:44Z" },
+]
+
+[[package]]
+name = "e2k"
+version = "0.6.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b4/d5/8c4eae3fc1d70f0aff894e94ca93b77be40d52923684278bba1d0f95b25e/e2k-0.6.2.tar.gz", hash = "sha256:143d156d001a95fe3e19f1727a27b27d94177c66041f939508318f867b390339", size = 10054797, upload-time = "2025-05-12T16:57:21.805Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2d/bd/3313cc796e07e30934e532494d0741f0fd487c44643bfd56b9cc84bb1bfb/e2k-0.6.2-py3-none-any.whl", hash = "sha256:3ea7066558deaa8f531c9a9a3f9400871124e899ea58dff484cf6d5c2fc3b56d", size = 10047900, upload-time = "2025-05-12T16:57:14.154Z" },
 ]
 
 [[package]]

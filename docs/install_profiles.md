@@ -4,6 +4,21 @@ The project uses `pyproject.toml` for direct dependencies and `uv.lock` for
 resolved packages and builds. CI uses uv 0.12.8 and Python 3.12.10. The default
 desktop interpreter is the checkout's `.venv`; launchers do not install packages.
 
+Japanese speech preparation converts ordinary English words to Katakana readings
+and reads uppercase initialisms such as `MLP` by their letter names. This changes
+only the synthesis copy: replies, subtitles and conversation history retain the
+original text. If a local Japanese user dictionary is present under
+`GPT_SoVITS/text/ja_userdic`, its whole-word readings take priority. The Japanese
+frontend loads that resource using the existing `local-models` profile. Partial
+dictionary matches are not used to split an unknown English word. The pinned
+`e2k` dependency supplies the local NumPy conversion models for words without a
+complete dictionary reading, using the existing CMU pronunciation data for known
+words and whole-word conversion for words outside that lexicon. Its models are bundled in the package;
+speech preparation does not download resources or call a translation service.
+Unfamiliar names and existing user dictionary entries can still have approximate
+readings. The legacy user dictionary remains local and excluded from public
+source releases; its files are not included in this repository change.
+
 ## Capability and build selection
 
 Run one complete command for the environment you want:

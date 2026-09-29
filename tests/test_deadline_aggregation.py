@@ -14,7 +14,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tts.contract import TTSRequest
-from tts.deadline import deadline_budget_exceeded, estimate_synthesis_seconds
+from tts.deadline import playback_budget_seconds
 from tts.utterance_scheduler import TTSUtteranceScheduler
 
 
@@ -42,29 +42,6 @@ async def _two_segment_job(sched: TTSUtteranceScheduler):
     return await sched.next_job(q), q
 
 
-def test_deadline_math_boundaries():
-    assert estimate_synthesis_seconds(15, rtf=0.5, chars_per_sec=7.5) == 1.0
-    assert deadline_budget_exceeded(
-        15,
-        cover_seconds_getter=lambda: 10.0,
-        rtf_getter=lambda: 0.5,
-        cover_safety_margin_sec=1.5,
-        chars_per_sec=7.5,
-    ) is False
-    assert deadline_budget_exceeded(
-        1,
-        cover_seconds_getter=lambda: 0.0,
-        rtf_getter=lambda: 0.5,
-        cover_safety_margin_sec=1.5,
-        chars_per_sec=7.5,
-    ) is True
-    assert deadline_budget_exceeded(
-        300,
-        cover_seconds_getter=lambda: 3.0,
-        rtf_getter=lambda: 0.6,
-        cover_safety_margin_sec=1.5,
-        chars_per_sec=7.5,
-    ) is True
 
 
 def test_scheduler_merges_when_cover_is_sufficient():
@@ -73,10 +50,9 @@ def test_scheduler_merges_when_cover_is_sufficient():
         try:
             sched = TTSUtteranceScheduler(
                 cover_seconds_getter=lambda: 30.0,
-                rtf_getter=lambda: 0.5,
+                synthesis_seconds_getter=lambda text: len(text) * 0.5 / 7.5,
                 deadline_enabled=True,
                 cover_safety_margin_sec=1.5,
-                chars_per_sec=7.5,
             )
             job, _ = await _two_segment_job(sched)
             assert job.is_merged and job.consumed_count == 2
@@ -92,10 +68,9 @@ def test_scheduler_rejects_merge_when_cover_is_tight():
         try:
             sched = TTSUtteranceScheduler(
                 cover_seconds_getter=lambda: 0.2,
-                rtf_getter=lambda: 0.6,
+                synthesis_seconds_getter=lambda text: len(text) * 0.6 / 7.5,
                 deadline_enabled=True,
                 cover_safety_margin_sec=1.5,
-                chars_per_sec=7.5,
             )
             job1, q = await _two_segment_job(sched)
             assert not job1.is_merged and job1.utterance_id == "sentence_2_a"
@@ -113,7 +88,7 @@ def test_scheduler_degrades_when_estimator_unavailable():
         try:
             sched_none = TTSUtteranceScheduler(
                 cover_seconds_getter=lambda: None,
-                rtf_getter=lambda: 0.6,
+                synthesis_seconds_getter=lambda text: len(text) * 0.6 / 7.5,
                 deadline_enabled=True,
             )
             job_none, _ = await _two_segment_job(sched_none)
@@ -124,7 +99,7 @@ def test_scheduler_degrades_when_estimator_unavailable():
 
             sched_error = TTSUtteranceScheduler(
                 cover_seconds_getter=_boom,
-                rtf_getter=lambda: 0.6,
+                synthesis_seconds_getter=lambda text: len(text) * 0.6 / 7.5,
                 deadline_enabled=True,
             )
             job_error, _ = await _two_segment_job(sched_error)
@@ -141,7 +116,7 @@ def test_scheduler_switch_off_preserves_existing_merge():
         try:
             sched = TTSUtteranceScheduler(
                 cover_seconds_getter=lambda: 0.0,
-                rtf_getter=lambda: 10.0,
+                synthesis_seconds_getter=lambda text: len(text) * 10.0 / 7.5,
                 deadline_enabled=False,
             )
             job, _ = await _two_segment_job(sched)
@@ -179,3 +154,10 @@ def _main() -> None:
 
 if __name__ == "__main__":
     _main()
+
+
+def test_playback_budget_snapshot():
+    assert playback_budget_seconds(lambda: 2, enabled=True, cover_safety_margin_sec=0.5) == 1.5
+    assert playback_budget_seconds(lambda: 0, enabled=True, cover_safety_margin_sec=0.5) == -0.5
+    assert playback_budget_seconds(lambda: float('nan'), enabled=True) is None
+    assert playback_budget_seconds(lambda: 2, enabled=False) is None

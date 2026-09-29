@@ -43,13 +43,11 @@ from config.settings import (  # noqa: E402
     TTS_GPT_MODEL_PATH,
     TTS_SOVITS_MODEL_PATH,
 )
-from tools.tts_text_processor import correct_pronunciation_for_tts  # noqa: E402
 from tts.first_sentence_audio_cache import get_first_sentence_audio_cache  # noqa: E402
 from tts.pipeline import (  # noqa: E402
     _get_ref_audio,
     _get_ref_text,
-    _strip_tts_fullwidth_parentheses,
-    get_sovits_params,
+    _prepare_synthesis_request,
 )
 
 
@@ -384,12 +382,10 @@ class CacheItem:
 
 
 def _prepare_item(text: str) -> CacheItem:
-    tts_text = _strip_tts_fullwidth_parentheses(text.strip())
-    params = get_sovits_params(tts_text, is_first_sentence=True)
-    params["ref_audio_path"] = _get_ref_audio(tts_text)
-    params["prompt_text"] = _get_ref_text(tts_text)
+    processed_text, params = _prepare_synthesis_request(text, is_first_sentence=True)
+    params["ref_audio_path"] = _get_ref_audio(text)
+    params["prompt_text"] = _get_ref_text(text)
     params["chunk_size_seconds"] = None
-    processed_text = correct_pronunciation_for_tts(tts_text)
 
     cache = get_first_sentence_audio_cache()
     cache_path = cache.path_for(processed_text, params)

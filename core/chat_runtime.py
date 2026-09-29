@@ -83,7 +83,7 @@ from llm.sentence_splitter import (
 from llm.stream_parser import StreamTagParser, clean_sentence_for_tts
 from server.control_proposal import ControlProposalBatch, seal_control_proposals
 from server.auip_control_decision import auip_decision_preserves_main_context
-from tools.text_utils import _compute_text_sha1, strip_tags
+from tools.text_utils import STRONG_SENTENCE_ENDINGS, _compute_text_sha1, strip_tags
 from tts.contract import TTSRequest
 from tts.latency_clock import mark_llm_stream_request_sent, log_latency_marker
 from tts.sentence_state import sentence_state_manager, pre_translation_cache
@@ -260,9 +260,8 @@ _CONTROL_AUTHORITY_CALLBACK_UNSET = object()
 _AUIP_CONTROL_CALLBACK_UNSET = object()
 _AUIP_CONTROL_DECIDER_UNSET = object()
 
-_STRONG_ENDINGS = {".", "!", "?", "。", "！", "？", "\n"}
 _WEAK_ENDINGS = {"，", ",", "、", "；", ";"}
-_SENTENCE_ENDINGS = _STRONG_ENDINGS | _WEAK_ENDINGS
+_SENTENCE_ENDINGS = STRONG_SENTENCE_ENDINGS | _WEAK_ENDINGS
 
 # ── FROZEN marker tables ─────────────────────────────────────────────────────
 # These substring tables approximate a semantic judgement the main LLM already

@@ -337,16 +337,19 @@ def test_stream_sequence_waits_for_a_dequeued_normal_sentence() -> None:
     async def run() -> None:
         manager = PlaybackManager(SimpleNamespace())
         manager.next_seq_to_play = 8
-        # Sequence 6 has already been removed from pending_audio and is waiting
+        # Sequence 6 is reserved in pending_audio and is waiting
         # to claim the physical player.  Advancing next_seq alone must not let
         # a later AUIP stream skip over it.
         manager._normal_waiting_seq = 6
+        manager.pending_audio[6] = (0, np.ones(24000), 24000, "sentence_6_test", "test", None)
         claim = asyncio.create_task(manager._claim_stream_sequence(8, 0))
         await asyncio.sleep(0)
         assert claim.done() is False
+        assert manager.estimate_cover_seconds() == 1.0
 
         async with manager.play_condition:
             manager._normal_waiting_seq = None
+            manager.pending_audio.pop(6)
             manager.play_condition.notify_all()
         assert await asyncio.wait_for(claim, timeout=1.0) is True
         assert manager._stream_claimed_seq == 8
@@ -445,7 +448,7 @@ def test_backend_stream_uses_shared_first_sentence_playback_path() -> None:
                 patch.object(
                     pipeline,
                     "correct_pronunciation_for_tts",
-                    side_effect=lambda value: value,
+                    side_effect=lambda value, **_kwargs: value,
                 ),
             ):
                 await pipeline.speak_stream_enhanced_asyncio_queue(
@@ -561,7 +564,7 @@ def test_rocm_later_sentence_plays_before_synthesis_finishes() -> None:
             pipeline._tts_runtime = Runtime()
             pipeline._tts_executor = executor
             pipeline._playback_manager = Playback()
-            with patch.object(pipeline, "correct_pronunciation_for_tts", side_effect=lambda value: value):
+            with patch.object(pipeline, "correct_pronunciation_for_tts", side_effect=lambda value, **_kwargs: value):
                 synthesis = asyncio.create_task(
                     pipeline.speak_stream_enhanced_asyncio_queue(
                         "long text " * 6, "sentence_2_rocm", stream_to_player=False,
@@ -652,14 +655,14 @@ def test_rocm_merged_utterance_keeps_every_sentence_in_the_playback_sequence() -
         executor = ThreadPoolExecutor(max_workers=1)
         playback = asyncio.create_task(manager.run())
         previous = (
-            pipeline._tts_runtime, pipeline._tts_executor, pipeline._playback_manager, pipeline._rtf_ema,
+            pipeline._tts_runtime, pipeline._tts_executor, pipeline._playback_manager, pipeline._synthesis_cost,
         )
         try:
             pipeline._tts_runtime = runtime
             pipeline._tts_executor = executor
             pipeline._playback_manager = manager
             manager.mark_turn_last_sentence("sentence_4_d", "turn-merged")
-            with patch.object(pipeline, "correct_pronunciation_for_tts", side_effect=lambda value: value):
+            with patch.object(pipeline, "correct_pronunciation_for_tts", side_effect=lambda value, **_kwargs: value):
                 await pipeline.speak_stream_enhanced_asyncio_queue("one.", "sentence_1_a")
                 await pipeline.speak_stream_enhanced_asyncio_queue(
                     "two, three. " * 5,
@@ -675,7 +678,7 @@ def test_rocm_merged_utterance_keeps_every_sentence_in_the_playback_sequence() -
             playback.cancel()
             await asyncio.gather(playback, return_exceptions=True)
             (
-                pipeline._tts_runtime, pipeline._tts_executor, pipeline._playback_manager, pipeline._rtf_ema,
+                pipeline._tts_runtime, pipeline._tts_executor, pipeline._playback_manager, pipeline._synthesis_cost,
             ) = previous
             executor.shutdown(wait=True)
         return runtime.requests, completed, turns
