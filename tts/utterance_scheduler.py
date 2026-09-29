@@ -18,9 +18,13 @@ from typing import Any
 
 from tts.contract import TTSRequest
 from tts.deadline import playback_budget_seconds
+from tools.text_utils import STRONG_SENTENCE_ENDINGS
 
 
 _SENTENCE_ID_RE = re.compile(r"sentence_(\d+)_")
+_SENTENCE_END_RE = re.compile(
+    "[" + re.escape("".join(sorted(STRONG_SENTENCE_ENDINGS))) + r'''][\s"'”’」』）)\]】]*$'''
+)
 _PUNCT_RE = re.compile(r"^[\s,.;:!?，。！？、…「」『』（）()［］\[\]【】\-ー~～]+$")
 
 
@@ -140,7 +144,7 @@ class TTSUtteranceScheduler:
 
     @property
     def max_sentences(self) -> int | None:
-        if "TTS_UTTERANCE_MAX_SENTENCES" not in os.environ:
+        if not os.environ.get("TTS_UTTERANCE_MAX_SENTENCES", "").strip():
             return None
         return max(1, _get_int_env("TTS_UTTERANCE_MAX_SENTENCES", 3))
 
@@ -161,15 +165,22 @@ class TTSUtteranceScheduler:
         before_grouping: Callable[[UtteranceSegment], Awaitable[bool]] | None = None,
     ) -> UtteranceJob:
         first_item = await self._get_next_item(queue)
-        first_segment = self._to_segment(first_item)
+        try:
+            first_segment = self._to_segment(first_item)
+        except (TypeError, ValueError):
+            queue.task_done()
+            raise
 
         # The host owns turn permission and the synthesis slot. Text can keep
         # accumulating while it waits; only then choose the final utterance.
         if before_grouping is not None:
             try:
                 ready = await before_grouping(first_segment)
-            except BaseException:
+            except asyncio.CancelledError:
                 self._buffer.insert(0, first_item)
+                raise
+            except Exception:
+                queue.task_done()
                 raise
             if not ready:
                 return self._make_job([first_segment])
@@ -221,31 +232,39 @@ class TTSUtteranceScheduler:
                     except asyncio.TimeoutError:
                         reason = "lookahead_limit"
                         break
+                try:
+                    segment = self._to_segment(item)
+                except (TypeError, ValueError):
+                    # A malformed item is rejected once; valid earlier items
+                    # remain recoverable without requeuing the poison item.
+                    queue.task_done()
+                    self._buffer[0:0] = owned_items
+                    raise
                 owned_items.append(item)
-                segment = self._to_segment(item)
                 candidate = text + segment.text.strip()
-                candidate_cost = self._predict(candidate) if finish_deadline is not None else None
                 if not self._can_append(segments, segment):
                     reason = "identity_boundary"
                 elif len(candidate) > char_limit:
                     reason = "character_limit"
-                elif finish_deadline is not None and (
-                    candidate_cost is None or loop.time() + candidate_cost > finish_deadline
-                ):
-                    reason = "synthesis_budget"
                 else:
-                    segments.append(segment)
-                    text, predicted = candidate, candidate_cost
-                    continue
+                    candidate_cost = self._predict(candidate) if finish_deadline is not None else None
+                    if finish_deadline is not None and (
+                        candidate_cost is None or loop.time() + candidate_cost > finish_deadline
+                    ):
+                        reason = "synthesis_budget"
+                    else:
+                        segments.append(segment)
+                        text, predicted = candidate, candidate_cost
+                        continue
                 self._buffer.insert(0, owned_items.pop())
                 break
-        except BaseException:
+        except asyncio.CancelledError:
             self._buffer[0:0] = owned_items
             raise
 
         job = self._make_job(segments)
         if self.logger is not None:
-            self.logger.debug(
+            self.logger.info(
                 "[UtteranceScheduler] reason=%s fragments=%d chars=%d predicted=%s budget=%s",
                 reason, len(segments), len(text), predicted, budget,
             )
@@ -270,6 +289,8 @@ class TTSUtteranceScheduler:
 
     def _to_segment(self, item: Any) -> UtteranceSegment:
         request = TTSRequest.from_queue_item(item)
+        if not isinstance(request.sentence_id, str) or not isinstance(request.text, str):
+            raise TypeError("TTS queue item requires string identity and text")
         return UtteranceSegment(
             sentence_id=request.sentence_id,
             text=request.text,
@@ -330,7 +351,7 @@ class TTSUtteranceScheduler:
         return not text.strip() or bool(_PUNCT_RE.match(text.strip()))
 
     def _is_hard_boundary(self, text: str) -> bool:
-        return bool(re.search(r'[.。!?！？\n][\s\"\'”’」』）)\]】]*$', text))
+        return bool(_SENTENCE_END_RE.search(text))
 
 
 def _get_int_env(name: str, default: int) -> int:

@@ -98,8 +98,7 @@ def main():
         consumed, audio_parts, rows = 0, [], []
         while consumed < len(texts):
             job = await sched.next_job(queue)
-            prepared = pipeline._prepare_synthesis_text(job.text)
-            params = pipeline.get_sovits_params(prepared, job.is_first)
+            prepared, params = pipeline._prepare_synthesis_request(job.text, job.is_first)
             attempts = []
             torch.manual_seed(1729 + consumed)
             torch.cuda.manual_seed_all(1729 + consumed)

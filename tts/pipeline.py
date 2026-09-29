@@ -95,6 +95,23 @@ def _prepare_synthesis_text(text: str) -> str:
     return correct_pronunciation_for_tts(_strip_tts_fullwidth_parentheses(text)).strip()
 
 
+def _prepare_synthesis_request(text: str, is_first_sentence: bool = False, *, enhanced: bool = False):
+    """Share preparation without changing the existing mode-specific profiles.
+
+    The buffered/graph path (including its prebuilt opening cache) selects its
+    profile before pronunciation expansion. The legacy enhanced path appends a
+    terminal mark and selects after expansion. Both remain live selectable modes.
+    """
+    if enhanced and text and text[-1] not in ',.!?。！？、，':
+        text += '。'
+    raw = _strip_tts_fullwidth_parentheses(text)
+    prepared = _prepare_synthesis_text(raw)
+    params = get_sovits_params(prepared if enhanced else raw, is_first_sentence)
+    if not enhanced and getattr(_tts_runtime, "is_rocm", False):
+        params["sample_steps"] = min(16, params["sample_steps"])
+    return prepared, params
+
+
 def _cost_profile(params: dict) -> tuple:
     backend = getattr(_tts_runtime, "backend_id", "gpt_sovits")
     if getattr(_tts_runtime, "deployment", "embedded") == "remote":
@@ -104,8 +121,8 @@ def _cost_profile(params: dict) -> tuple:
 
 
 def predict_synthesis_seconds(text: str) -> float:
-    prepared = _prepare_synthesis_text(text)
-    params = get_sovits_params(prepared)
+    backend, _ = select_synthesis(None, backends=_SYNTHESIS_BACKENDS)
+    prepared, params = _prepare_synthesis_request(text, enhanced=backend == "enhanced")
     steps_ratio = (1.0 if getattr(_tts_runtime, "deployment", "embedded") == "remote"
                    else params["sample_steps"] / 16)
     return _synthesis_cost.predict(
@@ -525,8 +542,6 @@ def get_sovits_params(text: str, is_first_sentence: bool = False):
 
     long_text = length >= 45
     steps = 4 if is_first_sentence else (32 if long_text else 16)
-    if getattr(_tts_runtime, "is_rocm", False):
-        steps = min(16, steps)
     params = {
         "text_language": TTS_OUTPUT_LANGUAGE,
         "prompt_language": TTS_OUTPUT_LANGUAGE,
@@ -717,14 +732,13 @@ async def speak_stream_enhanced(
 
     overall_start = time.time()
     tts_text = _strip_tts_fullwidth_parentheses(text)
-    processed_text = _prepare_synthesis_text(text)
+    processed_text, params = _prepare_synthesis_request(text, is_first_sentence, enhanced=True)
 
     logger.info(
         "starting streaming text processing: %s (first_sentence=%s)",
         protected_text(text, limit=50),
         is_first_sentence,
     )
-    params = get_sovits_params(processed_text, is_first_sentence)
     params['ref_audio_path'] = _get_ref_audio(tts_text)
     params['prompt_text'] = _get_ref_text(tts_text)
 
@@ -853,8 +867,7 @@ async def speak_stream_enhanced_asyncio_queue(
         log_latency_marker(logger, "first_tts_enter", id=sentence_id, stream=int(bool(stream_to_player)))
 
     tts_text = _strip_tts_fullwidth_parentheses(text)
-    processed_text = _prepare_synthesis_text(text)
-    params = get_sovits_params(processed_text, is_first_sentence)
+    processed_text, params = _prepare_synthesis_request(text, is_first_sentence)
     if force_graph:
         params["enable_cuda_graph"] = True
         params["enable_static_kv"] = True

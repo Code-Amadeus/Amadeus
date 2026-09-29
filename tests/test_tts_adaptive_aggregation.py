@@ -234,3 +234,52 @@ def test_cancellation_restores_every_consumed_fragment():
             queue.task_done()
         await asyncio.wait_for(queue.join(), 1)
     asyncio.run(run())
+
+
+@pytest.mark.parametrize('blank', ['', '   '])
+def test_blank_fragment_limit_is_unset(monkeypatch, blank):
+    monkeypatch.setenv('TTS_UTTERANCE_MAX_SENTENCES', blank)
+    async def run():
+        queue = ReadyOnlyQueue()
+        for seq in range(2, 7):
+            queue.put_nowait(request(seq, '説明、' if seq < 6 else '終わり。'))
+        assert (await scheduler(cover=100).next_job(queue)).consumed_count == 5
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('bad', [object(), TTSRequest(sentence_id='invalid', text=None)])
+@pytest.mark.parametrize('after_valid', [False, True])
+def test_malformed_item_is_rejected_once_and_does_not_poison_the_buffer(bad, after_valid):
+    async def run():
+        queue = asyncio.Queue()
+        if after_valid:
+            queue.put_nowait(request(2, '説明、'))
+        queue.put_nowait(bad)
+        queue.put_nowait(request(3, '終わり。'))
+        sched = scheduler()
+        with pytest.raises(TypeError):
+            await sched.next_job(queue)
+        job = await sched.next_job(queue)
+        assert [s.seq for s in job.segments] == ([2, 3] if after_valid else [3])
+        for _ in job.segments:
+            queue.task_done()
+        await asyncio.wait_for(queue.join(), 1)
+    asyncio.run(run())
+
+
+def test_rejected_identity_does_not_prepare_candidate_text():
+    async def run():
+        prepared = []
+        sched = TTSUtteranceScheduler(
+            cover_seconds_getter=lambda: 100,
+            synthesis_seconds_getter=lambda text: prepared.append(text) or .1,
+            deadline_enabled=True,
+        )
+        queue = ReadyOnlyQueue()
+        queue.put_nowait(request(2, '説明、'))
+        other = request(3, '別のターン。')
+        other.turn_id = 'other'
+        queue.put_nowait(other)
+        assert (await sched.next_job(queue)).consumed_count == 1
+        assert prepared == ['説明、']
+    asyncio.run(run())

@@ -82,7 +82,7 @@ async def simulate(strategy, sched_class, *, rate=.6, long_factor=2, overhead=.0
         if strategy == 'original_pr':
             kwargs['last_synthesis_chars_getter'] = lambda: last_chars
     sched = sched_class(**kwargs)
-    rows, count = [], 0
+    rows, count, gap_events = [], 0, []
     try:
         while count < 96:
             advance(now)
@@ -95,6 +95,10 @@ async def simulate(strategy, sched_class, *, rate=.6, long_factor=2, overhead=.0
             elapsed = overhead + duration * actual_rate * (long_factor if chars >= 45 else 1)
             advance(now + elapsed)
             gap = max(0, now - playback_end)
+            if gap > 1e-9:
+                gap_events.append(dict(unit=len(rows) + 2, preceding_fragments=count,
+                                       actual_rate=actual_rate, chars=chars,
+                                       gap_seconds=round(gap, 4)))
             playback_end = max(now, playback_end) + duration + .4
             if strategy == 'revised':
                 model.observe(32 if chars >= 45 else 16, chars, elapsed)
@@ -112,7 +116,8 @@ async def simulate(strategy, sched_class, *, rate=.6, long_factor=2, overhead=.0
         loop.time, asyncio.wait_for = old_time, old_wait
     return dict(jobs=len(rows), second_unit_gap=rows[0]['gap'],
                 total_gap=round(sum(r['gap'] for r in rows), 4),
-                max_chars=max(r['chars'] for r in rows), groups=[r['fragments'] for r in rows])
+                max_chars=max(r['chars'] for r in rows), groups=[r['fragments'] for r in rows],
+                gap_events=gap_events)
 
 
 def main():

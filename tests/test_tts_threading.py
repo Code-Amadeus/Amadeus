@@ -74,7 +74,8 @@ def test_cost_observations_exclude_openings_and_ignore_padding(
         assert len(observations) == 1
         elapsed, prepared, params, sid = observations[0]
         assert elapsed == 2.0
-        assert prepared == pipeline._prepare_synthesis_text(text)
+        expected = "hello." if text == "hello." else ("hello。" if mode == "enhanced" else "hello")
+        assert prepared == expected
         assert params['sample_steps'] == 16
         assert sid == "sentence_2_test"
 

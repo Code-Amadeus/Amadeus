@@ -26,7 +26,7 @@ TTS_UTTERANCE_FLUSH_TIMEOUT_MS=350
 An explicitly set `TTS_UTTERANCE_MAX_SENTENCES` is always a hard fragment-count
 limit, regardless of available cover. Fragments may be comma clauses. Invalid
 values retain the historical fallback of three; values below one clamp to one.
-If the setting is absent, usable timing enables adaptive grouping; without
+If the setting is absent or blank, usable timing enables adaptive grouping; without
 timing (including disabled deadline aggregation), the fallback is three.
 
 `TTS_UTTERANCE_FLUSH_TIMEOUT_MS=0` retains its previous meaning: no grouping,
@@ -57,13 +57,28 @@ sample steps (including the ROCm cap), splitter and graph mode. Remote backends
 do not inherit fictional local 16/32-step tiers. Runtime replacement clears
 observations; ordinary turn changes retain performance knowledge.
 
-Each profile holds five recent successful later-unit observations. After at
-least three samples, median residuals estimate fixed overhead; after five,
-median pairwise slopes estimate per-character work. Coefficients are nonnegative.
-Identical-length samples cannot identify both terms: the initial slope is retained
-unless it alone exceeds the typical measured total. One cold/outlier request is
-not adopted as the entire steady-state rate. Five samples provide tolerance for
-one outlier with less slowdown lag than the evaluated nine-sample window.
+Each profile holds five recent successful later-unit observations. An affine fit
+is only identifiable when there are five samples and the second-longest length is
+at least twice the second-shortest: two samples at each end must support the
+length difference. Median pairwise slopes and median residuals then estimate
+variable and fixed cost; nonpositive slopes are rejected. Fitting happens when an
+observation arrives, not once per grouping candidate.
+
+Otherwise, after three samples, use the median of `t * max(1, m/n)` for a request
+of length `m` and observed time/length `(t,n)`. For a stable nonnegative affine
+cost `a+b*n`, this bounds both shorter and longer requests without guessing which
+part of the measured time was fixed overhead. An accepted affine fit is used for
+interpolation; extrapolation beyond the observed maximum must also satisfy this
+envelope. Below the measured minimum, do not predict less than the fitted minimum
+request cost. Robust medians address isolated noise, but are not a statistical
+guarantee under arbitrary timing noise, nonlinear cost or changing performance.
+
+The old repeated-short-unit test encoded an unsupported assumption about fixed
+overhead. Both fixed .4 seconds and .1 seconds/character explain .4 seconds at
+four characters; neither supports predicting 40 characters in 1.12 seconds.
+The regression now covers the slower explanation too. The reviewed .5 + .2*n
+example changes from 6.1 seconds predicted for 40 characters to 9 seconds, against
+8.5 seconds actual in that synthetic model.
 
 Unobserved profiles start from `TTS_RTF_INITIAL / TTS_CHARS_PER_SEC`, scaled by the
 effective local sample-step ratio relative to 16. This is a bootstrap assumption,
@@ -72,9 +87,12 @@ The clock covers work inside the producer thread; queue/player waits, openings,
 cache hits, errors and cancellations do not train the model. Appended silence
 does not reduce measured cost. The global previous-length growth cap is removed.
 
-The scheduler emits a debug decision record with reason, count, characters,
+The scheduler emits an INFO decision record with reason, count, characters,
 predicted time and budget, without conversation text. Cover is scanned once per
 job, rather than repeatedly per candidate.
+Identity/character-limit rejects do not run candidate text preparation. A malformed
+queue item is rejected once with queue accounting completed; cancellation still
+restores valid items. Chat splitting and grouping share the strong boundary set.
 
 ## Engine boundaries
 
@@ -88,9 +106,24 @@ Speed stays at the existing 0.97 multiplier (first profile 1.067), with 400 ms
 appended pause. Static KV/graph reuse within a decode is unchanged. This feature
 does not implement cross-request semantic/KV continuation.
 
+The initial revision inadvertently changed profile selection when pronunciation
+expanded the text. This is now restored: buffered/graph synthesis selects using
+the pre-expansion text; the legacy enhanced mode retains its post-expansion
+selection and terminal-mark insertion. The existing ROCm 16-step cap remains on
+the buffered/graph path. Prediction uses the selected mode's same preparation
+helper; these behavior differences are pre-existing, not new policy choices.
+
+Prebuilding and runtime opening lookup share `_prepare_synthesis_request`. The
+13-character input containing `AI` expands to 15 characters but retains the
+buffered mode's 3.5-second duration override in both paths. The regression test
+stores prebuilt audio and proves runtime uses it without invoking inference.
+No cache schema or identity has changed, so bumping the version would invalidate
+valid entries unnecessarily; entries generated with different parameters already
+have different keys.
+
 ## Deterministic and synthetic evidence
 
-Windows/Python 3.12 model-less TTS tests: **448 passed, 3 skipped** at this revision.
+Windows/Python 3.12 model-less TTS tests: **466 passed, 3 skipped** at this revision.
 Coverage includes explicit/absent limits, zero flush, sentence/quote boundaries,
 short openings, lookahead reserves, cancellation, retained playback cover,
 prepared-text consistency, effective 44/45-character profiles, outliers and
@@ -115,15 +148,19 @@ model the vocoder's internal splitting or physical speaker.
 | Fast (rate .15) | 0 s / 49 | 0 s / 11 | 0 s / 20 |
 | Medium (.6) | 0 s / 50 | 1.9467 s / 20 | 0 s / 25 |
 | Slow (1.2) | .56 s / 71 | .56 s / 73 | .56 s / 73 |
-| Audit long sentence (.6) | 0 s / 50 | 1.9467 s / 20 | 0 s / 20 |
+| Audit long sentence (.6) | 0 s / 50 | 1.9467 s / 20 | 0 s / 19 |
 | Fixed overhead .5 s | 0 s / 50 | 0 s / 12 | 0 s / 21 |
 | Text arriving every .45 s | .22 s / 50 | 4.1834 s / 19 | 0 s / 25 |
 | Abrupt .15 -> 1.2 slowdown | 0 s / 49 | 22.8533 s / 35 | 6 s / 44 |
 
 The abrupt-slowdown regression relative to main is real in this model. The
 revised scheduler limits the effect compared with the old PR but cannot predict
-an unseen slowdown. The nine-sample fit produced 6.64 seconds in this case;
-five samples produced 6, with the other table outcomes unchanged. Fewer groups
+an unseen slowdown, and profile-local histories can lag changes already observed
+in another profile. The new trace records 5.68 seconds at unit 10 (48 characters,
+after 24 input fragments) and .32 seconds at unit 13 (40 characters, after 36
+fragments). It is therefore not valid to dismiss all six seconds as one
+unavoidable first surprise. The nine-sample fit previously produced 6.64 seconds;
+both the previous five-sample fit and the corrected envelope produce 6. Fewer groups
 also insert less tail silence, so fewer pauses must not be confused with higher
 synthesis throughput. This is not a universal-optimality or no-underrun claim.
 
@@ -142,7 +179,7 @@ graph-key counts. It does not play audio or measure the physical speaker.
 The first round is fixed/revised; the second is revised/fixed to expose warm-order
 effects. GPU/runtime conditions still limit generalization.
 
-Local v3hc run on 2026-09-29, 16 fragments and identical model/reference/dictionary
+Prior revision `c143a38` local v3hc run on 2026-09-29, 16 fragments and identical model/reference/dictionary
 for both strategies, using the installation's existing Python environment and
 BigVGAN CUDA binary cache:
 
@@ -169,6 +206,9 @@ these cases; it is not proof of better prosody or performance on another device.
 Human listening and actual application playback remain required before promoting
 this policy from Draft. Earlier local listening feedback mixed policy changes
 with independent pronunciation work and is not isolated A/B evidence.
+The full GPU A/B above has not been rerun for the extrapolation/cache revision.
+The remaining slowdown tradeoff needs explicit maintainer acceptance or a further
+policy change; fixing the three new correctness bugs alone is not a merge gate.
 
 ## Audit disposition
 
