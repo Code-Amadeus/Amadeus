@@ -65,6 +65,8 @@ def inferencer_type(base):
     """Isolate the cache composition from the supported inference implementation."""
     class WindowsV3EmotionInferencer(base):
         def __init__(self, *args, **kwargs):
+            # Base initialization warms its cache through this overridden method.
+            self.experimental_emotion_enabled = False
             super().__init__(*args, **kwargs)
             self.experimental_emotion_enabled = bool(
                 requested() and self.model_version == "v3"

@@ -35,6 +35,7 @@ def engine(monkeypatch, tmp_path):
             self.sovits_path = "kurisu_v3hc_ja_e3_s3861_l32.pth" if weights else "different-v3.pth"
             self.splits = set("。！？")
             self.cache = {}
+            self._build_session_cache('default.wav', 'default', 'all_ja')
 
         def _build_session_cache(self, audio, text, lang):
             if audio not in self.cache:
