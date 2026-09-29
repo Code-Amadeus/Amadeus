@@ -8,8 +8,7 @@ commit can be reviewed independently of that baseline.
 `ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING=0` is the default. Set it to `1` in this
 checkout's local `.env` and restart the desktop app to opt in. Set it back to `0`
 and restart to return to the normal path. The experiment only activates for the
-embedded GPT-SoVITS backend, Windows CUDA (not ROCm/CPU), the current hc3 V3
-weights (`kurisu_v3hc_ja-e13.ckpt`, `kurisu_v3hc_ja_e3_s3861_l32.pth`), and Japanese
+embedded GPT-SoVITS backend, Windows CUDA (not ROCm/CPU), V3 checkpoints (including the default `kurisu_v3` profile and hc3), and Japanese
 speech. Remote backends and other OS/model profiles keep their previous behavior.
 
 ## One conditioning decision per queued text span
@@ -83,3 +82,7 @@ synthetic prompt and test evidence local; never persist or print desktop tokens.
 The local synthetic prompt, filtered events and verified counters are in
 `.cache/emotion-live-integration/`. This is one functional live trial, not proof
 of stable subjective prosody across arbitrary text or hardware.
+
+## Portable reproduction / 可移植复现
+
+See [the bilingual reproduction guide](windows_v3_emotion_reproduction.md) for assets, commands, on/off behavior, evidence and limitations. Checkpoint filenames do not control activation; the loaded V3 architecture does.

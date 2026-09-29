@@ -71,8 +71,6 @@ def inferencer_type(base):
             self.experimental_emotion_enabled = bool(
                 requested() and self.model_version == "v3"
                 and not self.is_rocm and str(self.device).startswith("cuda")
-                and Path(self.gpt_path).name == "kurisu_v3hc_ja-e13.ckpt"
-                and Path(self.sovits_path).name == "kurisu_v3hc_ja_e3_s3861_l32.pth"
             )
             self._emotion_references: dict[str, Reference] = {}
             if self.experimental_emotion_enabled:

@@ -48,10 +48,23 @@ def engine(monkeypatch, tmp_path):
     return lab.inferencer_type(Base)
 
 
-@pytest.mark.parametrize("kwargs", [{"version":"v2ProPlus"},{"device":"cpu"},{"rocm":True},{"weights":False}])
+@pytest.mark.parametrize("kwargs", [{"version":"v2ProPlus"},{"device":"cpu"},{"rocm":True}])
 def test_other_model_device_profiles_do_not_route(engine, kwargs):
     infer = engine(**kwargs)
     assert not infer.experimental_emotion_enabled
+
+
+def test_v3_routing_does_not_depend_on_checkpoint_filename(engine):
+    assert engine(weights=False).experimental_emotion_enabled
+
+
+def test_disabled_inferencer_does_not_require_emotion_assets(engine, monkeypatch):
+    (lab.ROOT / 'assets/audio/reference/emotions/sad.txt').unlink()
+    monkeypatch.setattr(lab, 'requested', lambda: False)
+    infer = engine()
+    assert not infer.experimental_emotion_enabled
+    result = list(lab.stream(runtime_for(infer), 'sad', ref_audio_path='default.wav', prompt_text='default'))[0]
+    assert result is infer.cache['default.wav']
 
 
 def runtime_for(infer):
