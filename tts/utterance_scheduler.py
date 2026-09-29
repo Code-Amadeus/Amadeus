@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -155,9 +155,23 @@ class TTSUtteranceScheduler:
     def flush_timeout(self) -> float:
         return max(0.0, _get_int_env("TTS_UTTERANCE_FLUSH_TIMEOUT_MS", 120) / 1000.0)
 
-    async def next_job(self, queue: asyncio.Queue) -> UtteranceJob:
+    async def next_job(
+        self, queue: asyncio.Queue, *,
+        before_grouping: Callable[[UtteranceSegment], Awaitable[bool]] | None = None,
+    ) -> UtteranceJob:
         first_item = await self._get_next_item(queue)
         first_segment = self._to_segment(first_item)
+
+        # The host owns turn permission and the synthesis slot. Text can keep
+        # accumulating while it waits; only then choose the final utterance.
+        if before_grouping is not None:
+            try:
+                ready = await before_grouping(first_segment)
+            except BaseException:
+                self._buffer.insert(0, first_item)
+                raise
+            if not ready:
+                return self._make_job([first_segment])
 
         if not self._can_start_merge(first_segment):
             return self._make_job([first_segment])
