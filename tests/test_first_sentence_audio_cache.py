@@ -1,11 +1,52 @@
 from __future__ import annotations
 
 import json
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 import numpy as np
 
 from tts import first_sentence_audio_cache as cache_module
 from tts.first_sentence_audio_cache import FirstSentenceAudioCache
+
+
+def test_prebuilt_expanding_pronunciation_hits_runtime_cache(tmp_path, monkeypatch):
+    from tts import pipeline
+    from tools import prebuild_first_sentence_audio_cache as prebuild
+
+    cache = FirstSentenceAudioCache(tmp_path)
+    monkeypatch.setattr(cache_module, "FIRST_SENTENCE_AUDIO_CACHE_ENABLED", True)
+    monkeypatch.setattr(prebuild, "get_first_sentence_audio_cache", lambda: cache)
+    monkeypatch.setattr(pipeline, "get_first_sentence_audio_cache", lambda: cache)
+    monkeypatch.setattr(pipeline, "TTS_OUTPUT_LANGUAGE", "日文")
+    monkeypatch.setattr(pipeline, "_tts_interrupt_epoch", 7)
+    inferred, played = [], []
+
+    def infer_stream(**kwargs):
+        inferred.append(kwargs)
+        yield 24000, np.ones(2400, dtype=np.float32), kwargs['text']
+
+    async def play(audio, *_args, **_kwargs):
+        played.append(audio)
+
+    monkeypatch.setattr(pipeline, "_tts_runtime", SimpleNamespace(
+        backend_id="gpt_sovits", infer_stream=infer_stream,
+    ))
+    monkeypatch.setattr(pipeline, "_playback_manager", SimpleNamespace(add_to_playlist=play))
+    raw = "あ" * 10 + "AI。"
+    item = prebuild._prepare_item(raw)
+    assert len(raw) == 13 and len(item.processed_text) == 15
+    audio = np.full(2400, .25, dtype=np.float32)
+    cache.store(item.processed_text, item.params, 24000, audio, raw_text=raw, source="prebuild")
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        monkeypatch.setattr(pipeline, "_tts_executor", executor)
+        asyncio.run(pipeline.speak_stream_enhanced_asyncio_queue(
+            raw, "sentence_1_cache_regression", True, interrupt_epoch=7,
+        ))
+    assert inferred == [], "a matching prebuilt first sentence must not run inference"
+    assert len(played) == 1
+    np.testing.assert_array_equal(played[0], audio)
 
 
 def _current_params() -> dict:

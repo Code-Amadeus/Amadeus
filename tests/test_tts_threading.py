@@ -53,7 +53,7 @@ def test_cost_observations_exclude_openings_and_ignore_padding(
         yield 24000, np.zeros(int(24000 * pause_seconds), dtype=np.float32), ""
 
     monkeypatch.setattr(pipeline.time, "perf_counter", lambda: clock[0])
-    monkeypatch.setattr(pipeline, "_update_rtf_ema", lambda *args: observations.append(args))
+    monkeypatch.setattr(pipeline, "_observe_synthesis", lambda *args: observations.append(args))
     monkeypatch.setattr(pipeline, "_tts_runtime", SimpleNamespace(infer_stream=infer_stream, deployment="embedded"))
 
     async def run():
@@ -68,7 +68,16 @@ def test_cost_observations_exclude_openings_and_ignore_padding(
                     segments=None, interrupt_epoch=7, task_semaphore=None)
 
     asyncio.run(run())
-    assert observations == ([] if first else [(2.0, len(text), "sentence_2_test")])
+    if first:
+        assert observations == []
+    else:
+        assert len(observations) == 1
+        elapsed, prepared, params, sid = observations[0]
+        assert elapsed == 2.0
+        expected = "hello." if text == "hello." else ("hello。" if mode == "enhanced" else "hello")
+        assert prepared == expected
+        assert params['sample_steps'] == 16
+        assert sid == "sentence_2_test"
 
 
 @pytest.mark.parametrize("mode", ["enhanced", "experimental", "graph"])

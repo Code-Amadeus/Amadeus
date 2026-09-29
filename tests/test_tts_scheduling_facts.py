@@ -23,8 +23,8 @@ def request(seq: int, text: str = "説明を続けると、") -> TTSRequest:
 
 def scheduler(cover=10.0, rtf=0.5):
     return TTSUtteranceScheduler(
-        cover_seconds_getter=lambda: cover, rtf_getter=lambda: rtf,
-        deadline_enabled=True, cover_safety_margin_sec=0.5, chars_per_sec=10.0,
+        cover_seconds_getter=lambda: cover, synthesis_seconds_getter=lambda text: len(text) * rtf / 10,
+        deadline_enabled=True, cover_safety_margin_sec=0.5,
     )
 
 

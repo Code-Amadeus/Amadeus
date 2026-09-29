@@ -655,7 +655,7 @@ def test_rocm_merged_utterance_keeps_every_sentence_in_the_playback_sequence() -
         executor = ThreadPoolExecutor(max_workers=1)
         playback = asyncio.create_task(manager.run())
         previous = (
-            pipeline._tts_runtime, pipeline._tts_executor, pipeline._playback_manager, pipeline._rtf_ema,
+            pipeline._tts_runtime, pipeline._tts_executor, pipeline._playback_manager, pipeline._synthesis_cost,
         )
         try:
             pipeline._tts_runtime = runtime
@@ -678,7 +678,7 @@ def test_rocm_merged_utterance_keeps_every_sentence_in_the_playback_sequence() -
             playback.cancel()
             await asyncio.gather(playback, return_exceptions=True)
             (
-                pipeline._tts_runtime, pipeline._tts_executor, pipeline._playback_manager, pipeline._rtf_ema,
+                pipeline._tts_runtime, pipeline._tts_executor, pipeline._playback_manager, pipeline._synthesis_cost,
             ) = previous
             executor.shutdown(wait=True)
         return runtime.requests, completed, turns
