@@ -1242,12 +1242,18 @@ class PlaybackManager:
                         f"next_seq_to_play updated to: {self.next_seq_to_play}"
                     )
 
-                await self.player_is_ready.wait()
-                if not self.is_epoch_current(item_epoch):
+                try:
+                    await self.player_is_ready.wait()
+                finally:
+                    # This iteration owns the reserved item even on cancellation
+                    # or failure. Retain its cover only while it can still play.
                     async with self.play_condition:
+                        if self.pending_audio.get(sentence_seq) is audio_item:
+                            del self.pending_audio[sentence_seq]
                         if self._normal_waiting_seq == sentence_seq:
                             self._normal_waiting_seq = None
                         self.play_condition.notify_all()
+                if not self.is_epoch_current(item_epoch):
                     self.logger.info(
                         "[TTS-INTERRUPT] stale playback skipped after ready wait: %s item_epoch=%s current_epoch=%s",
                         sentence_id,
@@ -1256,15 +1262,6 @@ class PlaybackManager:
                     )
                     continue
                 self.player_is_ready.clear()
-                async with self.play_condition:
-                    # Keep ready-but-waiting audio in the cover ledger until
-                    # it really becomes the current unit. Do not hide it while
-                    # waiting for the previous physical playback to finish.
-                    if self.pending_audio.get(sentence_seq) is audio_item:
-                        del self.pending_audio[sentence_seq]
-                    if self._normal_waiting_seq == sentence_seq:
-                        self._normal_waiting_seq = None
-                    self.play_condition.notify_all()
                 self.current_playing_id = sentence_id
                 self._current_playing_segment_ids = {
                     str(segment.get("sentence_id", ""))

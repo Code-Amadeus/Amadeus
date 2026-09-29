@@ -16,7 +16,6 @@
 
 import asyncio
 import logging
-import math
 import os
 import re
 import sys
@@ -44,6 +43,7 @@ from tools.text_utils import (
 )
 from tools.tts_text_processor import correct_pronunciation_for_tts
 from tts.contract import TTSRequest
+from tts.deadline import SynthesisCostModel
 from tts.first_sentence_audio_cache import get_first_sentence_audio_cache
 from tts.latency_clock import log_latency_marker
 from tts.synthesis_backend import SynthesisBackends, select_synthesis
@@ -80,9 +80,7 @@ _pending_sentence_items = None
 _llm_warmup_fn = None   # remote_llm_query，供 warmup_graph_pipeline 使用
 _exp_tts_semaphore = None  # 并发合成信号量，由 main.py 创建后注入
 _exp_tts_concurrency = selectable_tts_concurrency(EXP_TTS_MAX_CONCURRENCY)
-_RTF_EMA_ALPHA = 0.3
-_rtf_ema = max(0.001, float(TTS_RTF_INITIAL))
-_last_synthesis_chars: int | None = None
+_synthesis_cost = SynthesisCostModel()
 _tts_interrupt_epoch: int = 0
 _active_stream_queues: set[asyncio.Queue] = set()
 
@@ -93,42 +91,36 @@ def current_tts_epoch() -> int:
     return int(_tts_interrupt_epoch)
 
 
-def get_rtf_estimate() -> float:
-    return max(0.001, float(_rtf_ema))
+def _prepare_synthesis_text(text: str) -> str:
+    return correct_pronunciation_for_tts(_strip_tts_fullwidth_parentheses(text)).strip()
 
 
-def _update_rtf_ema(elapsed: float, char_count: int, sentence_id: str = "") -> None:
-    """Learn synthesis cost in the deadline estimator's text-duration units.
-
-    Prediction and observation both use chars / TTS_CHARS_PER_SEC, so appended
-    silence cannot make the engine appear faster. The opening sentence uses a
-    different low-cost inference profile and must not update this estimate.
-    """
-    global _rtf_ema, _last_synthesis_chars
-    try:
-        duration = char_count / max(0.001, float(TTS_CHARS_PER_SEC))
-        if elapsed <= 0 or duration <= 0:
-            return
-        rtf = float(elapsed) / duration
-        if not math.isfinite(rtf) or rtf <= 0:
-            return
-        # Shrink batches promptly when the engine slows down; grow gradually
-        # after faster observations rather than trusting one lucky run.
-        _rtf_ema = max(rtf, (_rtf_ema * (1.0 - _RTF_EMA_ALPHA)) + (rtf * _RTF_EMA_ALPHA))
-        _last_synthesis_chars = int(char_count)
-        logger.debug(
-            "[TTS-RTF] updated ema=%.3f sample=%.3f id=%s elapsed=%.3fs text_seconds=%.3fs",
-            _rtf_ema,
-            rtf,
-            sentence_id,
-            elapsed,
-            duration,
-        )
-    except Exception:
-        logger.debug("failed to update TTS RTF estimate", exc_info=True)
+def _cost_profile(params: dict) -> tuple:
+    backend = getattr(_tts_runtime, "backend_id", "gpt_sovits")
+    if getattr(_tts_runtime, "deployment", "embedded") == "remote":
+        return (backend, params["text_language"])
+    return (backend, params["text_language"], params["sample_steps"],
+            params["how_to_cut"], params["enable_cuda_graph"])
 
 
-_TTS_FULLWIDTH_PAREN_RE = re.compile(r"\uFF08[^\uFF08\uFF09]*\uFF09")
+def predict_synthesis_seconds(text: str) -> float:
+    prepared = _prepare_synthesis_text(text)
+    params = get_sovits_params(prepared)
+    steps_ratio = (1.0 if getattr(_tts_runtime, "deployment", "embedded") == "remote"
+                   else params["sample_steps"] / 16)
+    return _synthesis_cost.predict(
+        _cost_profile(params), len(prepared),
+        initial_seconds_per_char=float(TTS_RTF_INITIAL) / max(0.001, float(TTS_CHARS_PER_SEC)) * steps_ratio,
+    )
+
+
+def _observe_synthesis(elapsed: float, prepared: str, params: dict, sentence_id: str) -> None:
+    _synthesis_cost.observe(_cost_profile(params), len(prepared), elapsed)
+    logger.debug("[TTS-COST] id=%s chars=%d producer_seconds=%.3f profile=%s",
+                 sentence_id, len(prepared), elapsed, _cost_profile(params))
+
+
+_TTS_FULLWIDTH_PAREN_RE = re.compile(r"（[^（）]*）")
 
 
 def _strip_tts_fullwidth_parentheses(text: str) -> str:
@@ -489,6 +481,8 @@ def configure(
     global _pending_sentence_items, _llm_warmup_fn, _exp_tts_semaphore
     global _exp_tts_concurrency
     if tts_runtime is not None:
+        if tts_runtime is not _tts_runtime:
+            _synthesis_cost.clear()
         _tts_runtime = tts_runtime
     if tts_executor is not None:
         _tts_executor = tts_executor
@@ -501,8 +495,7 @@ def configure(
                 and hasattr(_playback_manager, "estimate_cover_seconds")
                 else None
             ),
-            rtf_getter=get_rtf_estimate,
-            last_synthesis_chars_getter=lambda: _last_synthesis_chars,
+            synthesis_seconds_getter=predict_synthesis_seconds,
         )
     if player is not None:
         _player = player
@@ -530,57 +523,23 @@ def get_sovits_params(text: str, is_first_sentence: bool = False):
     length = len(text.strip())
     cuda_graph_enabled = os.environ.get("ENABLE_CUDA_GRAPH", "0") == "1"
 
-    if is_first_sentence:
-        max_sec_override = max(3.5, min(8.0, length * 0.25 or 3.5))
-        return {
-            "text_language": TTS_OUTPUT_LANGUAGE,
-            "prompt_language": TTS_OUTPUT_LANGUAGE,
-            "top_k": 5,
-            "top_p": 1,
-            "temperature": 0.6,
-            "sample_steps": 4,
-            "if_sr": False,
-            "how_to_cut": "不切",
-            "speed": 1.067,
-            "pause_second": 0.4,
-            "if_freeze": False,
-            "enable_cuda_graph": cuda_graph_enabled,
-            "enable_static_kv": True,
-            "max_sec_override": max_sec_override,
-        }
-
-    if length < 45:
-        return {
-            "text_language": TTS_OUTPUT_LANGUAGE,
-            "prompt_language": TTS_OUTPUT_LANGUAGE,
-            "top_k": 5,
-            "top_p": 1,
-            "temperature": 0.6,
-            "sample_steps": 16,
-            "if_sr": False,
-            "how_to_cut": "不切",
-            "speed": 0.97,
-            "pause_second": 0.4,
-            "if_freeze": False,
-            "enable_cuda_graph": cuda_graph_enabled,
-            "enable_static_kv": True,
-        }
-
-    return {
+    long_text = length >= 45
+    steps = 4 if is_first_sentence else (32 if long_text else 16)
+    if getattr(_tts_runtime, "is_rocm", False):
+        steps = min(16, steps)
+    params = {
         "text_language": TTS_OUTPUT_LANGUAGE,
         "prompt_language": TTS_OUTPUT_LANGUAGE,
-        "top_k": 5,
-        "top_p": 1,
-        "temperature": 0.6,
-        "sample_steps": 32,
-        "if_sr": False,
-        "how_to_cut": "凑四句一切",
-        "speed": 0.97,
-        "pause_second": 0.4,
-        "if_freeze": False,
-        "enable_cuda_graph": cuda_graph_enabled,
-        "enable_static_kv": True,
+        "top_k": 5, "top_p": 1, "temperature": 0.6,
+        "sample_steps": steps, "if_sr": False,
+        "how_to_cut": "凑四句一切" if long_text and not is_first_sentence else "不切",
+        "speed": 1.067 if is_first_sentence else 0.97,
+        "pause_second": 0.4, "if_freeze": False,
+        "enable_cuda_graph": cuda_graph_enabled, "enable_static_kv": True,
     }
+    if is_first_sentence:
+        params["max_sec_override"] = max(3.5, min(8.0, length * 0.25 or 3.5))
+    return params
 
 
 # =============================================================================
@@ -757,23 +716,15 @@ async def speak_stream_enhanced(
         return
 
     overall_start = time.time()
-    if text and text[-1] not in {',', '.', ',', '.', '?', '!', '?', '!', '。', '！', '？', '、', '，'}:
-        text += "。"
     tts_text = _strip_tts_fullwidth_parentheses(text)
-    if tts_text != text:
-        logger.info(f"[TTS-TEXT-FILTER] removed full-width parentheses: {sentence_id}")
-    synthesis_char_count = len(tts_text.strip())
-    tts_text = correct_pronunciation_for_tts(tts_text)
-    processed_text = tts_text
+    processed_text = _prepare_synthesis_text(text)
 
     logger.info(
         "starting streaming text processing: %s (first_sentence=%s)",
         protected_text(text, limit=50),
         is_first_sentence,
     )
-    params = get_sovits_params(tts_text, is_first_sentence)
-    if segments and len(segments) > 1:
-        params["how_to_cut"] = "不切"  # the host has already planned this bounded utterance
+    params = get_sovits_params(processed_text, is_first_sentence)
     params['ref_audio_path'] = _get_ref_audio(tts_text)
     params['prompt_text'] = _get_ref_text(tts_text)
 
@@ -852,7 +803,7 @@ async def speak_stream_enhanced(
             logger.info("[StreamingPlayback] playing remaining audio chunks")
 
         if not is_first_sentence and chunk_count:
-            _update_rtf_ema(await _producer_future, synthesis_char_count, sentence_id)
+            _observe_synthesis(await _producer_future, processed_text, params, sentence_id)
         logger.info("[StreamingPlayback] first-sentence streaming synthesis completed; playback handled by PlaybackManager")
     except Exception as e:
         logger.error(f"streaming processing failed: {e}\n{traceback.format_exc()}")
@@ -902,20 +853,14 @@ async def speak_stream_enhanced_asyncio_queue(
         log_latency_marker(logger, "first_tts_enter", id=sentence_id, stream=int(bool(stream_to_player)))
 
     tts_text = _strip_tts_fullwidth_parentheses(text)
-    if tts_text != text:
-        logger.info(f"[TTS-TEXT-FILTER] removed full-width parentheses: {sentence_id}")
-    params = get_sovits_params(tts_text, is_first_sentence)
-    if segments and len(segments) > 1:
-        params["how_to_cut"] = "不切"
-    if rocm and params["sample_steps"] > 16:
-        params["sample_steps"] = 16
+    processed_text = _prepare_synthesis_text(text)
+    params = get_sovits_params(processed_text, is_first_sentence)
     if force_graph:
         params["enable_cuda_graph"] = True
         params["enable_static_kv"] = True
         logger.info(f"[Graph Serial] force-enabled CUDA Graph parameters: sentence_id={sentence_id}")
     params["ref_audio_path"] = _get_ref_audio(tts_text)
     params["prompt_text"] = _get_ref_text(tts_text)
-    processed_text = correct_pronunciation_for_tts(tts_text)
 
     if rocm_stream and not chunk_size_seconds:
         chunk_size_seconds = _compute_stream_chunk_seconds(processed_text, params)
@@ -1073,7 +1018,7 @@ async def speak_stream_enhanced_asyncio_queue(
                     await s1_queue.put((sr, audio_chunk))
 
             if not is_first_sentence and chunk_count:
-                _update_rtf_ema(await producer_future, len(tts_text.strip()), sentence_id)
+                _observe_synthesis(await producer_future, processed_text, params, sentence_id)
             _release_now()
             logger.info(f"[Streaming] inference completed, lock released, playback continues: {sentence_id}")
             if cache_chunks and cache_sr:
@@ -1142,7 +1087,7 @@ async def speak_stream_enhanced_asyncio_queue(
                 return
             full_audio_data = np.concatenate(audio_chunks)
             if not is_first_sentence:
-                _update_rtf_ema(await producer_future, len(tts_text.strip()), sentence_id)
+                _observe_synthesis(await producer_future, processed_text, params, sentence_id)
             if cache_first_sentence:
                 get_first_sentence_audio_cache().store(
                     processed_text,

@@ -350,7 +350,7 @@ async def test_bootstrap_role_publisher_uses_chat_runtime_speech(monkeypatch, vi
     playback.mark_turn_last_sentence.assert_called_once_with(items[-1].sentence_id, "role-turn")
     assert delivery.receipts[-1]["narration"]["accepted"] is True
 
-    # The real shared scheduler can aggregate the tail, unlike an all-streaming VN line.
+    # Shared scheduling preserves each complete sentence and the role turn.
     from tts.utterance_scheduler import TTSUtteranceScheduler
     monkeypatch.setenv("ENABLE_TTS_UTTERANCE_SCHEDULER", "1")
     monkeypatch.setenv("TTS_UTTERANCE_MIN_START_SEQ", "2")
@@ -361,8 +361,10 @@ async def test_bootstrap_role_publisher_uses_chat_runtime_speech(monkeypatch, vi
     first = await scheduler.next_job(queue)
     tail = await scheduler.next_job(queue)
     assert first.is_first and first.consumed_count == 1
-    assert not tail.is_first and tail.consumed_count == 2
-    assert tail.turn_id == "role-turn" and tail.text == "二。三。"
+    assert not tail.is_first and tail.consumed_count == 1
+    assert tail.turn_id == "role-turn" and tail.text == "二。"
+    last = await scheduler.next_job(queue)
+    assert last.turn_id == "role-turn" and last.text == "三。"
 
 
 @pytest.fixture

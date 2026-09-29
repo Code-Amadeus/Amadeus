@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import math
 
 import pytest
 
@@ -14,7 +13,7 @@ from tts.utterance_scheduler import TTSUtteranceScheduler
 def grouping_settings(monkeypatch):
     monkeypatch.setenv("ENABLE_TTS_UTTERANCE_SCHEDULER", "1")
     monkeypatch.setenv("TTS_UTTERANCE_MIN_START_SEQ", "2")
-    monkeypatch.setenv("TTS_UTTERANCE_MAX_SENTENCES", "2")
+    monkeypatch.delenv("TTS_UTTERANCE_MAX_SENTENCES", raising=False)
     monkeypatch.setenv("TTS_UTTERANCE_MAX_CHARS", "80")
     monkeypatch.setenv("TTS_UTTERANCE_FLUSH_TIMEOUT_MS", "350")
 
@@ -29,8 +28,8 @@ def request(seq: int, text: str = "説明を続けると、") -> TTSRequest:
 
 def scheduler(cover=10.0, rtf=0.5):
     return TTSUtteranceScheduler(
-        cover_seconds_getter=lambda: cover, rtf_getter=lambda: rtf,
-        deadline_enabled=True, cover_safety_margin_sec=0.5, chars_per_sec=10.0,
+        cover_seconds_getter=lambda: cover, synthesis_seconds_getter=lambda text: len(text) * rtf / 10,
+        deadline_enabled=True, cover_safety_margin_sec=0.5,
     )
 
 
@@ -88,13 +87,13 @@ def test_complete_sentence_does_not_wait_for_another_sentence():
     asyncio.run(run())
 
 
-def test_ready_text_is_consumed_even_when_lookahead_wait_is_disabled(monkeypatch):
+def test_zero_flush_preserves_no_merge_contract(monkeypatch):
     monkeypatch.setenv("TTS_UTTERANCE_FLUSH_TIMEOUT_MS", "0")
     async def run():
         queue = ReadyOnlyQueue()
         for seq in range(2, 6):
             queue.put_nowait(request(seq))
-        assert (await scheduler().next_job(queue)).consumed_count == 4
+        assert (await scheduler().next_job(queue)).consumed_count == 1
     asyncio.run(run())
 
 
@@ -113,25 +112,6 @@ def test_char_cap_still_bounds_fast_synthesis_and_preserves_overflow(monkeypatch
     asyncio.run(run())
 
 
-def test_batch_size_is_maximal_and_monotonic_across_synthesis_rates():
-    async def count(cover, rtf):
-        queue = ReadyOnlyQueue()
-        for seq in range(2, 42):
-            queue.put_nowait(request(seq))
-        return (await scheduler(cover, rtf).next_job(queue)).consumed_count
-
-    size = len(request(2).text)
-    previous_by_rate = {}
-    for cover in (0.2, 1.0, 3.0, 8.0, 30.0):
-        previous = math.inf
-        for rtf in (0.1, 0.2, 0.5, 0.9, 1.3):
-            actual = asyncio.run(count(cover, rtf))
-            expected = max(1, min(80 // size, math.floor((cover - 0.5) * 10 / rtf / size + 1e-9)))
-            assert actual == expected
-            assert actual <= previous  # a slower engine must not batch more
-            assert actual >= previous_by_rate.get(rtf, 1)
-            previous = actual
-            previous_by_rate[rtf] = actual
 
 
 def test_lookahead_wait_cannot_spend_the_synthesis_reserve(monkeypatch):
@@ -154,88 +134,14 @@ def test_lookahead_wait_cannot_spend_the_synthesis_reserve(monkeypatch):
     assert 0 < waits[0] <= 0.05000001
 
 
-def test_text_arriving_while_synthesis_slot_is_busy_can_join():
-    async def run():
-        queue = ReadyOnlyQueue()
-        queue.put_nowait(request(2))
-        entered, available = asyncio.Event(), asyncio.Event()
-
-        async def before_grouping(_segment):
-            entered.set()
-            await available.wait()
-            return True
-
-        task = asyncio.create_task(scheduler().next_job(queue, before_grouping=before_grouping))
-        await entered.wait()
-        for seq in range(3, 7):
-            queue.put_nowait(request(seq, "続けて説明すると、" if seq < 6 else "これで完成です。"))
-        available.set()
-        assert (await task).consumed_count == 5
-    asyncio.run(run())
 
 
-def test_cancelled_slot_wait_preserves_the_first_request():
-    async def run():
-        queue = ReadyOnlyQueue()
-        queue.put_nowait(request(2, "完成です。"))
-        entered = asyncio.Event()
-        sched = scheduler()
-
-        async def before_grouping(_segment):
-            entered.set()
-            await asyncio.Event().wait()
-
-        task = asyncio.create_task(sched.next_job(queue, before_grouping=before_grouping))
-        await entered.wait()
-        task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
-        assert (await sched.next_job(queue)).utterance_id == "sentence_2_test"
-    asyncio.run(run())
 
 
-def test_cost_estimate_reacts_to_slowdowns_and_recovers_gradually(monkeypatch):
-    from tts import pipeline
-    monkeypatch.setattr(pipeline, "TTS_CHARS_PER_SEC", 10)
-    monkeypatch.setattr(pipeline, "_rtf_ema", 0.5)
-    monkeypatch.setattr(pipeline, "_last_synthesis_chars", None)
-    pipeline._update_rtf_ema(2, 10)  # slowdown: 2 seconds per 10 chars
-    assert pipeline.get_rtf_estimate() == 2
-    pipeline._update_rtf_ema(0.2, 10)
-    assert 0.2 < pipeline.get_rtf_estimate() < 2
-    assert pipeline._last_synthesis_chars == 10
 
 
-def test_growth_is_bounded_by_measured_request_size_even_with_excess_cover():
-    async def run():
-        previous_chars = 8
-        sched = TTSUtteranceScheduler(
-            cover_seconds_getter=lambda: 100, rtf_getter=lambda: 0.1,
-            last_synthesis_chars_getter=lambda: previous_chars,
-        )
-        queue = ReadyOnlyQueue()
-        for seq in range(2, 40):
-            queue.put_nowait(request(seq))
-        sizes = []
-        for _ in range(4):
-            job = await sched.next_job(queue)
-            assert len(job.text) <= 2 * previous_chars
-            previous_chars = len(job.text)
-            sizes.append(previous_chars)
-        assert sizes == [16, 32, 64, 80]
-    asyncio.run(run())
 
 
-def test_disabled_adaptation_keeps_the_explicit_fragment_limit():
-    async def run():
-        sched = TTSUtteranceScheduler(
-            cover_seconds_getter=lambda: 100, rtf_getter=lambda: 0.1,
-            last_synthesis_chars_getter=lambda: 4, deadline_enabled=False,
-        )
-        queue = ReadyOnlyQueue()
-        for seq in range(2, 5):
-            queue.put_nowait(request(seq))
-        assert (await sched.next_job(queue)).consumed_count == 2
-    asyncio.run(run())
 
 
 def test_late_llm_fragment_can_complete_a_sentence_within_the_wait_budget():
@@ -251,72 +157,80 @@ def test_late_llm_fragment_can_complete_a_sentence_within_the_wait_budget():
     asyncio.run(run())
 
 
-def test_completed_audio_keeps_its_cover_while_waiting_for_playback():
-    import numpy as np
-    from tts.playback import PlaybackManager
-
+@pytest.mark.parametrize('ending', ['。', '.', '!', '?', '！', '？', '。』', '."', '。）」', '\n'])
+def test_sentence_end_stops_even_with_ready_next_sentence(ending):
     async def run():
-        manager = PlaybackManager(player_instance=object())
-        manager.player_is_ready.clear()
-        await manager.add_to_playlist(np.zeros(72000, dtype=np.float32), 24000,
-                                      'sentence_1_test', 'synthetic')
-        task = asyncio.create_task(manager.run())
-        try:
-            for _ in range(10):
-                if manager._normal_waiting_seq is not None:
-                    break
-                await asyncio.sleep(0)
-            assert manager._normal_waiting_seq == 1
-            assert manager.estimate_cover_seconds() == 3.0
-        finally:
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+        queue = ReadyOnlyQueue()
+        queue.put_nowait(request(2, '前半、'))
+        queue.put_nowait(request(3, '結論' + ending))
+        queue.put_nowait(request(4, '次の文。'))
+        sched = scheduler()
+        assert (await sched.next_job(queue)).consumed_count == 2
+        assert (await sched.next_job(queue)).utterance_id == 'sentence_4_test'
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("invalidate", [False, True])
-def test_worker_groups_after_permit_and_keeps_pre_wait_epoch(monkeypatch, invalidate):
-    from tts import pipeline
+@pytest.mark.parametrize('cap', ['1', '2', '3', 'invalid'])
+def test_explicit_fragment_cap_is_always_honored(monkeypatch, cap):
+    monkeypatch.setenv('TTS_UTTERANCE_MAX_SENTENCES', cap)
     async def run():
-        queue = asyncio.Queue()
-        permit = asyncio.BoundedSemaphore(1)
-        await permit.acquire()
+        queue = ReadyOnlyQueue()
+        for seq in range(2, 10):
+            queue.put_nowait(request(seq))
+        expected = 3 if cap == 'invalid' else int(cap)
+        assert (await scheduler(cover=100).next_job(queue)).consumed_count == expected
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('enabled,cover,predict', [(False, 100, lambda _: .1), (True, None, lambda _: .1),
+                                                 (True, 100, lambda _: None)])
+def test_unavailable_timing_uses_three_fragment_fallback(enabled, cover, predict):
+    async def run():
+        queue = ReadyOnlyQueue()
+        for seq in range(2, 10):
+            queue.put_nowait(request(seq))
+        sched = TTSUtteranceScheduler(cover_seconds_getter=lambda: cover,
+                                     synthesis_seconds_getter=predict, deadline_enabled=enabled)
+        assert (await sched.next_job(queue)).consumed_count == 3
+    asyncio.run(run())
+
+
+def test_cover_is_sampled_once_per_group():
+    observations = []
+    async def run():
+        def cover():
+            observations.append(1)
+            return 20
+        sched = TTSUtteranceScheduler(cover_seconds_getter=cover,
+                                     synthesis_seconds_getter=lambda _: .1, deadline_enabled=True)
+        queue = ReadyOnlyQueue()
+        for seq in range(2, 8):
+            queue.put_nowait(request(seq, '説明、' if seq < 7 else '終わり。'))
+        assert (await sched.next_job(queue)).consumed_count == 6
+    asyncio.run(run())
+    assert len(observations) == 1
+
+
+def test_cancellation_restores_every_consumed_fragment():
+    async def run():
         entered = asyncio.Event()
-        calls = []
-
-        async def gate(_turn):
-            entered.set()
-            return "go"
-
-        async def synth(text, _sid, _first, **kwargs):
-            calls.append(text)
-            kwargs['task_semaphore'].release()
-
-        monkeypatch.setattr(pipeline, "_tts_interrupt_epoch", 7)
-        monkeypatch.setattr(pipeline, "_exp_tts_semaphore", permit)
-        monkeypatch.setattr(pipeline, "_pending_sentence_items", queue)
-        monkeypatch.setattr(pipeline, "_utterance_scheduler", scheduler())
-        monkeypatch.setattr(pipeline, "_gate_job_turn", gate)
-        monkeypatch.setattr(pipeline, "select_synthesis", lambda *_, **__: ("test", synth))
-        queue.put_nowait(request(2, "続けて説明すると、"))
-        worker = asyncio.create_task(pipeline.play_sentence_worker())
-        try:
-            await entered.wait()
-            if invalidate:
-                pipeline._tts_interrupt_epoch = 8
-            else:
-                for seq in range(3, 7):
-                    queue.put_nowait(request(seq, "続けて説明すると、" if seq < 6 else "これで完成です。"))
-            permit.release()
-            await asyncio.wait_for(queue.join(), 1)
-            # Acquiring this proves that the child either released ownership
-            # after synthesis, or the stale-job path returned it to the pool.
-            await asyncio.wait_for(permit.acquire(), 1)
-            permit.release()
-            assert len(calls) == (0 if invalidate else 1)
-            if calls:
-                assert calls[0].count("続けて説明すると、") == 4
-        finally:
-            worker.cancel()
-            await asyncio.gather(worker, return_exceptions=True)
+        class Queue(asyncio.Queue):
+            async def get(self):
+                if self.empty():
+                    entered.set()
+                return await super().get()
+        queue = Queue()
+        queue.put_nowait(request(2))
+        queue.put_nowait(request(3))
+        sched = scheduler()
+        task = asyncio.create_task(sched.next_job(queue))
+        await entered.wait()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        queue.put_nowait(request(4, '完成です。'))
+        job = await sched.next_job(queue)
+        assert [s.seq for s in job.segments] == [2, 3, 4]
+        for _ in job.segments:
+            queue.task_done()
+        await asyncio.wait_for(queue.join(), 1)
     asyncio.run(run())

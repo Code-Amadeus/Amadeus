@@ -30,7 +30,6 @@ def voice_pipeline(monkeypatch):
         monkeypatch.setattr(pipeline, "_tts_executor", executor)
         monkeypatch.setattr(pipeline, "_playback_manager", playback)
         monkeypatch.setattr(pipeline, "_tts_interrupt_epoch", 7)
-        monkeypatch.setattr(pipeline, "_last_synthesis_chars", None)
         monkeypatch.setattr(pipeline, "correct_pronunciation_for_tts", lambda text: text)
         monkeypatch.setattr(pipeline, "get_first_sentence_audio_cache", lambda: SimpleNamespace(
             lookup=lambda *_: None, store=lambda *_, **__: None,
@@ -41,8 +40,9 @@ def voice_pipeline(monkeypatch):
 @pytest.mark.parametrize("mode", ["enhanced", "experimental", "graph"])
 @pytest.mark.parametrize("first", [False, True])
 @pytest.mark.parametrize("pause_seconds", [0.05, 0.4])
+@pytest.mark.parametrize("text", ["hello.", "（舞台指示）hello"])
 def test_cost_observations_exclude_openings_and_ignore_padding(
-    monkeypatch, voice_pipeline, mode, first, pause_seconds,
+    monkeypatch, voice_pipeline, mode, first, pause_seconds, text,
 ):
     clock = [100.0]
     observations = []
@@ -53,7 +53,7 @@ def test_cost_observations_exclude_openings_and_ignore_padding(
         yield 24000, np.zeros(int(24000 * pause_seconds), dtype=np.float32), ""
 
     monkeypatch.setattr(pipeline.time, "perf_counter", lambda: clock[0])
-    monkeypatch.setattr(pipeline, "_update_rtf_ema", lambda *args: observations.append(args))
+    monkeypatch.setattr(pipeline, "_observe_synthesis", lambda *args: observations.append(args))
     monkeypatch.setattr(pipeline, "_tts_runtime", SimpleNamespace(infer_stream=infer_stream, deployment="embedded"))
 
     async def run():
@@ -64,15 +64,23 @@ def test_cost_observations_exclude_openings_and_ignore_padding(
             None, cuda_graph_enabled=mode == "graph", experimental_enabled=mode == "experimental",
             backends=pipeline._SYNTHESIS_BACKENDS,
         )
-        await synth("hello.", "sentence_2_test", first, stream_tts=False,
+        await synth(text, "sentence_2_test", first, stream_tts=False,
                     segments=None, interrupt_epoch=7, task_semaphore=None)
 
     asyncio.run(run())
-    assert observations == ([] if first else [(2.0, 6, "sentence_2_test")])
+    if first:
+        assert observations == []
+    else:
+        assert len(observations) == 1
+        elapsed, prepared, params, sid = observations[0]
+        assert elapsed == 2.0
+        assert prepared == pipeline._prepare_synthesis_text(text)
+        assert params['sample_steps'] == 16
+        assert sid == "sentence_2_test"
 
 
 @pytest.mark.parametrize("mode", ["enhanced", "experimental", "graph"])
-def test_planned_utterance_is_not_split_again_by_the_adapter(monkeypatch, voice_pipeline, mode):
+def test_completed_utterance_is_queued_without_waiting_for_playback(monkeypatch, voice_pipeline, mode):
     requests = []
     def infer_stream(**kwargs):
         requests.append(kwargs)
@@ -92,7 +100,7 @@ def test_planned_utterance_is_not_split_again_by_the_adapter(monkeypatch, voice_
                     interrupt_epoch=7, task_semaphore=None)
     asyncio.run(run())
     assert len(requests) == 1
-    assert requests[0]['how_to_cut'] == '不切'
+    assert requests[0]['how_to_cut'] == '凑四句一切'
     assert voice_pipeline.audio
 
 
