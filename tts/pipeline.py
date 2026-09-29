@@ -43,6 +43,7 @@ from tools.text_utils import (
 )
 from tools.tts_text_processor import correct_pronunciation_for_tts
 from tts.contract import TTSRequest
+from tts import experimental_emotion
 from tts.deadline import SynthesisCostModel
 from tts.first_sentence_audio_cache import get_first_sentence_audio_cache
 from tts.latency_clock import log_latency_marker
@@ -83,6 +84,18 @@ _exp_tts_concurrency = selectable_tts_concurrency(EXP_TTS_MAX_CONCURRENCY)
 _synthesis_cost = SynthesisCostModel()
 _tts_interrupt_epoch: int = 0
 _active_stream_queues: set[asyncio.Queue] = set()
+
+
+def experimental_emotion_enabled() -> bool:
+    return experimental_emotion.active(_tts_runtime) and current_tts_language_code() == "ja"
+
+
+def _emotion_stream(emotion, sentence_id, **params):
+    selected = emotion if experimental_emotion_enabled() else ""
+    if selected:
+        logger.info("[EmotionLab] synthesis id=%s emo=%s semantic=%s acoustic=default",
+                    sentence_id, selected, experimental_emotion.voice_key(selected))
+    yield from experimental_emotion.stream(_tts_runtime, selected, **params)
 
 
 def current_tts_epoch() -> int:
@@ -622,6 +635,7 @@ async def speak_stream_graph_serial(
     segments=None,
     interrupt_epoch: int | None = None,
     task_semaphore=None,
+    emotion="",
 ):
     """Graph 模式专用：全局锁确保串行推理，合成完即释放锁让下一句并行合成。
     stream_tts: 若显式传入 bool，覆盖 is_first_sentence 对 stream_to_player 的默认推断。
@@ -671,6 +685,7 @@ async def speak_stream_graph_serial(
             segments=segments,
             interrupt_epoch=interrupt_epoch,
             task_semaphore=task_semaphore,
+            **({"emotion": emotion} if emotion else {}),
         )
     finally:
         _release_lock()  # 兜底：异常时也确保锁被释放
@@ -722,6 +737,7 @@ async def speak_stream_enhanced(
     segments=None,
     interrupt_epoch: int | None = None,
     task_semaphore=None,
+    emotion="",
 ):
     """增强的流式语音处理，支持状态管理和首句优化，第一句使用真正的流式播放。"""
     interrupt_epoch = _tts_interrupt_epoch if interrupt_epoch is None else interrupt_epoch
@@ -765,7 +781,8 @@ async def speak_stream_enhanced(
         chunk_flush_threshold = 1 if tracking_streaming else 2
 
         def create_stream_generator():
-            return _tts_runtime.infer_stream(
+            return _emotion_stream(
+                emotion, sentence_id,
                 text=processed_text,
                 ref_audio_path=params['ref_audio_path'],
                 prompt_text=params['prompt_text'],
@@ -849,6 +866,7 @@ async def speak_stream_enhanced_asyncio_queue(
     segments=None,
     interrupt_epoch: int | None = None,
     task_semaphore=None,
+    emotion="",
 ):
     """增强版异步队列 TTS，支持首句流式播放和 Graph 串行释放。"""
     interrupt_epoch = _tts_interrupt_epoch if interrupt_epoch is None else interrupt_epoch
@@ -918,6 +936,7 @@ async def speak_stream_enhanced_asyncio_queue(
     # model/voice identities are absent, so their audio must not read or write it.
     cache_first_sentence = (
         is_first_sentence and getattr(_tts_runtime, "backend_id", None) == "gpt_sovits"
+        and not (experimental_emotion_enabled() and experimental_emotion.voice_key(emotion) != "default")
     )
     if cache_first_sentence and _playback_manager is not None:
         try:
@@ -984,7 +1003,7 @@ async def speak_stream_enhanced_asyncio_queue(
         _release_now()
         return
     queue, producer_future, _producer_stop = _start_tts_producer(
-        lambda: _tts_runtime.infer_stream(text=processed_text, **params),
+        lambda: _emotion_stream(emotion, sentence_id, text=processed_text, **params),
         sentence_id,
         interrupt_epoch,
     )
@@ -1163,6 +1182,7 @@ async def _synthesize_cuda_graph(
     segments,
     interrupt_epoch,
     task_semaphore,
+    emotion="",
 ):
     await speak_stream_graph_serial(
         text,
@@ -1172,6 +1192,7 @@ async def _synthesize_cuda_graph(
         segments=segments,
         interrupt_epoch=interrupt_epoch,
         task_semaphore=task_semaphore,
+        **({"emotion": emotion} if emotion else {}),
     )
 
 
@@ -1184,6 +1205,7 @@ async def _synthesize_experimental(
     segments,
     interrupt_epoch,
     task_semaphore,
+    emotion="",
 ):
     runtime = _tts_runtime
     # Embedded synthesis modes retain their established playback policy, except
@@ -1204,6 +1226,7 @@ async def _synthesize_experimental(
         segments=segments,
         interrupt_epoch=interrupt_epoch,
         task_semaphore=task_semaphore,
+        **({"emotion": emotion} if emotion else {}),
     )
 
 
@@ -1216,6 +1239,7 @@ async def _synthesize_enhanced(
     segments,
     interrupt_epoch,
     task_semaphore,
+    emotion="",
 ):
     del stream_tts
     await speak_stream_enhanced(
@@ -1225,6 +1249,7 @@ async def _synthesize_enhanced(
         segments=segments,
         interrupt_epoch=interrupt_epoch,
         task_semaphore=task_semaphore,
+        **({"emotion": emotion} if emotion else {}),
     )
 
 
@@ -1360,6 +1385,7 @@ async def play_sentence_worker():
                 segments=playback_segments,
                 interrupt_epoch=job_epoch,
                 task_semaphore=task_semaphore,
+                **({"emotion": job.emotion} if job.emotion else {}),
             )
 
             asyncio.create_task(tts_coro)

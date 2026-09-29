@@ -39,7 +39,8 @@ class TTSRequest:
     # 后台生产者在异步工作开始时领取；None 保持旧消费侧盖章行为
     tts_epoch: int | None = None
     playback_epoch: int | None = None
-    # 预留：语音风格/情绪
+    # Opt-in Windows V3 experiment: immutable model-emitted emotion for this span.
+    # Empty keeps the established default synthesis path.
     emotion: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 

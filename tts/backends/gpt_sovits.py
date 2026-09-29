@@ -46,6 +46,10 @@ class GPTSoVITSBackend(BaseTTSBackend):
         self._ready_info: dict[str, Any] = {}
 
     @property
+    def experimental_emotion_enabled(self) -> bool:
+        return bool(getattr(self._inferencer, "experimental_emotion_enabled", False))
+
+    @property
     def is_rocm(self) -> bool:
         if self.deployment == "subprocess":
             return bool(
@@ -83,6 +87,10 @@ class GPTSoVITSBackend(BaseTTSBackend):
         self.deployment = "embedded"
         from config import settings
         from local_tts_infer import TTSInferencer
+
+        from tts.experimental_emotion import requested, inferencer_type
+        if requested():
+            TTSInferencer = inferencer_type(TTSInferencer)
 
         self._inferencer = TTSInferencer(
             device=settings.TTS_DEVICE,
