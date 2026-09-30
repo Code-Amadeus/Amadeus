@@ -5,13 +5,15 @@ Created with built-in ImageGen edits. First, the character from the
 was processed as the separate `amadeus-character-projection.png` panel,
 preserving source detail and distinguishing hair, face, headset and clothing.
 The approved panel was then combined with the dotted AMADEUS wordmark and
-Real-Time subtitle. After red/white and all-green color studies, the current
-revision refines the original red-haired design: muted coral hair, soft pale
-mint face/headset/clothing, and a cleaner dot matrix with restrained contrast.
-The final prompt requests stable material color levels and even mark size,
-spacing and coverage, especially across the face, instead of random highlights
-or density changes. The original red-haired banner is the edit target; the
-clean green study is a supporting texture reference. The green study drew on
+Real-Time subtitle. After red/white, all-green, and coral/mint color studies,
+the current revision uses vermilion-red hair, warm-white typography and
+face/headset/clothing, and a neutral near-black background. The header and
+adjacent capability strips share this red/black/white palette; CRT green
+remains in the architecture graphics further down the README.
+The red revision was produced with the built-in ImageGen tool using the
+previous coral/mint banner as its edit target. The final prompt is recorded
+below. It preserves the composition, dotted wordmark, character profile,
+headset, hair silhouette and intentional signal fragments. The green study drew on
 the [resource website artwork](https://code-amadeus.github.io/assets/character.png),
 which is identical to the retained `amadeus-character-projection.png` panel.
 The full banner layout, text and recognizable character drawing are retained.
@@ -20,6 +22,32 @@ superseded header concepts are not part of the published asset set.
 
 This is brand artwork, not an application screenshot. The source character's
 rights are unchanged. The existing `assets/demo/**` source-archive exclusion applies.
+
+## Current red / warm-white revision prompt
+
+Use case: precise-object-edit / style-transfer.
+Asset type: finished Amadeus GitHub README header, a complete wide 3:1 banner, preferably 2160x720.
+Input image 1 is the EDIT TARGET: the current mint-and-coral Amadeus header. Preserve its distinctive existing woman, composition, and dotted wordmark. The user wants one polished red / warm-white / neutral-black revision, visually consistent with the red Code Amadeus resource website.
+
+Replace the palette throughout:
+- Clean, flat neutral near-black background #0d0e10, no green tint or murky haze.
+- Hair is restrained deep vermilion / brick red, around #b94b43, with at most one quiet darker tone. Not orange, pink, pastel coral, neon, or glossy.
+- Entire face, circular headphones, neck, collar, shoulder and clothing are warm ivory #e8e2d4, never green. Preserve black seams and anatomy.
+- AMADEUS dotted wordmark is the same warm ivory, keeping its exact distinctive letter shapes and location. Make its tiny dots orderly, crisp and even with ample black air; no glow.
+- Subtitle stays warm light gray, slightly smaller and quieter than the source, keeping the two original lines and left alignment.
+- Footer is muted warm gray with a short vermilion rule. Arc and small technical marks on the right are very subdued dark red / warm gray.
+- Character signal fragments use warm ivory and restrained red; eliminate every green/cyan element.
+
+Preserve the exact recognizable bowed left-facing profile, closed eye, fringe, long flowing hair shapes, precise headphone geometry, shoulder detail, and purposeful horizontal disintegration. Keep fine uniform dot / halftone sampling and clear large black separations. No arbitrary speckle, no random bright dots, no large polka dots, no blurry edges. Hair darker than face; character must not overpower the wordmark.
+Keep overall 3:1 layout: ample quiet negative space around the left typography, roughly right 48% character, shoulder naturally cropped at lower edge. Do not add borders, buttons, badges, extra copy, symbols, or another figure.
+
+Text, verbatim and correctly spelled:
+AMADEUS
+Real-Time Multimodal AI Agent
+for Desktop Interaction
+VOICE / PRESENCE / ACTION
+
+Return one complete final banner image, edge to edge, no browser or presentation framing. This should feel calm and precise, like a finished restrained brand graphic. No lighting effects, green fog, scanline overlay, gradients, grain, or bloom.
 
 ## Character conversion prompt
 
