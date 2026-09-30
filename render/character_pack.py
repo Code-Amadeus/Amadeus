@@ -29,6 +29,18 @@ class CharacterPack:
     clip_paths: dict[str, tuple[Path, ...]]
     mouth_overlay_paths: dict[str, tuple[Path, ...]]
 
+    @property
+    def canvas_size(self) -> tuple[int, int] | None:
+        """The canvas every clip was authored on, recorded with the runtime mouth
+        profiles. A frame larger than it (hair blowing past its edge) extends past it,
+        centred at the bottom, and must not change how the character is fitted."""
+        raw = self.mouth_config.get("canvas_size")
+        if isinstance(raw, (list, tuple)) and len(raw) == 2 and all(
+            isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0 for value in raw
+        ):
+            return int(raw[0]), int(raw[1])
+        return None
+
 
 def _read_json(path: Path, *, code: str) -> dict[str, Any]:
     try:

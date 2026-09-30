@@ -45,7 +45,7 @@ class _EngineProbe:
         self.graph = payload
 
 
-def _write_pack(root: Path, *, omit_idle_frame: bool = False) -> None:
+def _write_pack(root: Path, *, omit_idle_frame: bool = False, canvas_size: list[int] | None = None) -> None:
     (root / "textures" / "idle").mkdir(parents=True)
     (root / "textures" / "speaking_short").mkdir(parents=True)
     if not omit_idle_frame:
@@ -60,6 +60,7 @@ def _write_pack(root: Path, *, omit_idle_frame: bool = False) -> None:
         "edges": [{"id": "edge", "from": "idle", "to": "speak", "prob": 1}],
     }
     mouth = {
+        **({"canvas_size": canvas_size} if canvas_size else {}),
         "expressions": {
             "neutral": {"cx": 4, "cy": -196, "width": 34, "height": 18, "curve": 0.2}
         },
@@ -200,6 +201,42 @@ def test_animator_registers_ktx2_directly_from_manifest(tmp_path: Path, monkeypa
     assert all(url.lower().endswith(".ktx2") for urls in engine.loaded.values() for url in urls)
     assert engine.mouth["speaking_short"]["frameUrls"][0].lower().endswith(".ktx2")
     assert engine.graph is not None
+
+
+class _ClipConfigProbe(_EngineProbe):
+    def __init__(self) -> None:
+        super().__init__()
+        self.clip_configs: dict[str, dict] = {}
+
+    def set_sprite_clip_config(self, label: str, config: dict) -> None:
+        self.clip_configs[label] = config
+
+
+def test_animator_fits_every_clip_by_the_pack_canvas(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "kurisu"
+    _write_pack(root, canvas_size=[764, 1028])
+    monkeypatch.setattr(animator_module, "SPRITEFORGE_RUNTIME_ROOT", root)
+    engine = _ClipConfigProbe()
+
+    assert SpriteForgeAnimator(engine).start() is True
+
+    assert load_character_pack(root).canvas_size == (764, 1028)
+    assert engine.clip_configs["idle"] == {"canvasWidth": 764, "canvasHeight": 1028}
+    assert engine.clip_configs["speaking_short"] == {"canvasWidth": 764, "canvasHeight": 1028}
+    assert SpriteForgeAnimator._clip_config({"loopMode": "once_then_hold"}, 8, (764, 1028)) == {
+        "loopMode": "once_then_hold", "frameIntervalMs": 8, "canvasWidth": 764, "canvasHeight": 1028}
+
+
+def test_packs_without_a_canvas_keep_frame_fitting(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "kurisu"
+    _write_pack(root)
+    monkeypatch.setattr(animator_module, "SPRITEFORGE_RUNTIME_ROOT", root)
+    engine = _ClipConfigProbe()
+
+    assert SpriteForgeAnimator(engine).start() is True
+
+    assert load_character_pack(root).canvas_size is None
+    assert engine.clip_configs == {}
 
 
 def test_animator_is_optional_when_character_pack_is_absent(tmp_path: Path, monkeypatch) -> None:
