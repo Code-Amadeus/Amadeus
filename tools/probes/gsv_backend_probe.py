@@ -401,10 +401,15 @@ def bench(args):
                 mx.eval(logits, [item for layer in cache.layers for item in layer])
                 prefill_ms = (time.perf_counter() - started) * 1000
                 started = time.perf_counter()
+                step_logits = []
                 for step in range(inputs["history"].shape[1]):
                     token = mlx_inputs["history"][:, step:step + 1]
                     logits, cache = model.decode_step(token, cache)
-                mx.eval(logits, [item for layer in cache.layers for item in layer])
+                    step_logits.append(logits)
+                # Torch eagerly runs the output projection at every step. Keep
+                # each lazy MLX logits result live while retaining one final
+                # synchronization boundary for the fixed decode workload.
+                mx.eval(step_logits, [item for layer in cache.layers for item in layer])
                 decode_ms = (time.perf_counter() - started) * 1000
                 _set_sampling_seed(trial_seed, mlx=True)
                 prediction, idx = decoder.infer_panel(
