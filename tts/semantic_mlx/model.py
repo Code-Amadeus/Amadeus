@@ -29,6 +29,11 @@ class T2SModel:
         if inference_dtype not in {"float32", "float16"}:
             raise ValueError("MLX inference dtype must be float32 or float16")
         self.config = config
+        self.head_dim = config.hidden_dim // config.num_heads
+        # MLX 0.32.2 Metal SDPA supports 64-wide heads, but not 32-wide
+        # heads. Zero feature lanes preserve attention with the logical
+        # scale below; storing them here doubles KV capacity for head_dim=32.
+        self.cache_head_dim = 64 if self.head_dim == 32 else self.head_dim
         self.inference_dtype = inference_dtype
         self.dtype = mx.float16 if inference_dtype == "float16" else mx.float32
         expected = config.expected_shapes()
@@ -109,15 +114,19 @@ class T2SModel:
                        self.weights[name + "self_attn.in_proj_weight"].T)
         q, k, v = mx.split(qkv, 3, axis=-1)
         heads = self.config.num_heads
-        dim = self.config.hidden_dim // heads
+        dim = self.head_dim
         q, k, v = [item.reshape(1, -1, heads, dim).transpose(0, 2, 1, 3) for item in (q, k, v)]
+        if self.cache_head_dim != dim:
+            # Pad only the new rows, before inserting K/V into the cache.
+            padding = [(0, 0), (0, 0), (0, 0), (0, self.cache_head_dim - dim)]
+            q, k, v = [mx.pad(item, padding) for item in (q, k, v)]
         if valid_length is None:
             raise ValueError("MLX attention requires a valid cache length")
         cached = self._cache_prefix(previous, k, v, valid_length)
         k, v = (item[:, :, :valid_length] for item in cached)
-        # MLX 0.32.2 falls back to a decomposed Metal path for head_dim=32.
         attention = mx.fast.scaled_dot_product_attention(
             q, k, v, scale=1 / math.sqrt(dim), mask=mask)
+        attention = attention[..., :dim]
         attention = attention.transpose(0, 2, 1, 3).reshape(1, -1, self.config.hidden_dim)
         value = self._norm(value + self._linear(attention, name + "self_attn.out_proj"), name + "norm1")
         feedforward = self._linear(mx.maximum(self._linear(value, name + "linear1"), 0), name + "linear2")

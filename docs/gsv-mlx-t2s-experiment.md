@@ -24,10 +24,16 @@ runtime upcast them to FP32. The revised manifest describes only the converted
 artifact. Actual inference dtype belongs in the decoder/probe report.
 
 Biased projections use `mx.addmm`, normalization uses `mx.fast.layer_norm`,
-and attention calls the SDPA API with the original text/audio mask. This is
-not evidence of fused attention on Metal: the locked MLX 0.32.2 Metal
+and attention calls the SDPA API with the original text/audio mask. The locked MLX 0.32.2 Metal
 [routing implementation](https://github.com/ml-explore/mlx/blob/v0.32.2/mlx/backend/metal/scaled_dot_product_attention.cpp#L619)
 does not provide a fused path for this model's head dimension of 32.
+The candidate pads Q/K/V with zeros to 64 features, keeps the original
+`1/sqrt(32)` scale, and crops the attention output back to 32 before merging
+heads. Padded K/V stay in the cache, so decode pads only the new rows.
+This makes the layout eligible for the existing Metal kernel; actual kernel
+execution and benefit still require a Mac. Weights are unchanged, while KV
+array capacity doubles (at 512 positions and 24 layers: FP16 24 to 48 MiB,
+FP32 48 to 96 MiB).
 Likewise, slice updates permit cache-buffer donation but do not prove that
 every update avoids copying on the untested Metal backend.
 

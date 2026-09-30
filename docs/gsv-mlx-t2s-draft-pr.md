@@ -11,8 +11,10 @@ checked against the selected GPT checkpoint before cache reuse.
 
 The revised MLX path uses biased projections, the fast normalization/SDPA
 APIs, chunked KV storage, partition-based top-k, and forward-only asynchronous
-lookahead. The locked MLX Metal implementation has no fused SDPA for this
-model's head dimension of 32, so API selection is not a fusion or speed claim.
+lookahead. Attention pads logical heads from 32 to 64 features to match an
+existing Metal kernel, retaining the original scale and cropping the output.
+Weights stay unchanged; KV capacity doubles. This is a kernel-routing
+candidate, not a measured Metal speed claim.
 First-sentence audio caching is shared again. Probes compare Torch/MLX FP32
 and FP16, preserve per-token raw measurements, and separate synchronized stage
 profiling from natural first-chunk latency. Mac results remain required.

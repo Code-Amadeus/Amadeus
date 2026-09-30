@@ -41,6 +41,7 @@ class MLXSemanticDecoder:
             "semantic_backend": "mlx", "mlx": importlib.metadata.version("mlx"),
             "dtype": model.inference_dtype,
             "cache_impl": "mlx_chunked_valid_prefix",
+            "head_dim": model.head_dim, "cache_head_dim": model.cache_head_dim,
             "cuda_graph": "not_applicable", "compile": False,
             "purpose": purpose, "mlx_device": "cpu" if device == mx.cpu else "metal",
         }

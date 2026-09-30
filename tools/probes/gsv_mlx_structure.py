@@ -45,7 +45,6 @@ def measure(model, arrays, *, chunked, warmup=1):
     import mlx.core as mx
     import numpy as np
 
-    config = model.config
     rows = []
     for trial in range(warmup + 1):
         logits, cache = model.prefill(arrays["phones"], arrays["prompt"], arrays["bert"])
@@ -67,7 +66,8 @@ def measure(model, arrays, *, chunked, warmup=1):
             if trial >= warmup:
                 # Logical array sizes only: donation, allocator copies and
                 # actual memory transactions require native backend profiling.
-                row_bytes = 2 * config.num_layers * config.hidden_dim * logits.itemsize
+                row_bytes = sum(item.shape[0] * item.shape[1] * item.shape[-1] * item.itemsize
+                                for layer in cache.layers for item in layer)
                 rows.append({
                     "step": step, "kv_valid_before": valid_before,
                     "kv_capacity_before": capacity_before,

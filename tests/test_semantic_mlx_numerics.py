@@ -1,6 +1,7 @@
 """Optional in core; the required numerical lane cannot silently skip MLX."""
 import os
 import json
+import math
 from types import SimpleNamespace
 import numpy as np
 import pytest
@@ -13,7 +14,7 @@ else:
     mx = pytest.importorskip("mlx.core")
 
 from tools.probes.gsv_semantic_reference import (
-    create_tiny_checkpoint, synthetic_inputs, validate_numerics,
+    create_tiny_checkpoint, decoder_type, synthetic_inputs, validate_numerics,
 )
 from tts.semantic_mlx.weights import export_checkpoint, validate_artifact
 from tts.semantic_mlx.generation import generate, logits_to_probs, sample
@@ -32,6 +33,62 @@ def tiny(tmp_path_factory):
     artifact = export_checkpoint(checkpoint, root / "cache")
     config, _ = validate_artifact(artifact)
     return checkpoint, artifact, config
+
+
+@pytest.fixture(scope="module")
+def head32(tmp_path_factory):
+    root = tmp_path_factory.mktemp("semantic-head32")
+    source_config = {
+        "model": {"hidden_dim": 64, "embedding_dim": 64, "head": 2,
+                  "n_layer": 2, "phoneme_vocab_size": 23, "vocab_size": 17,
+                  "EOS": 16, "dropout": 0},
+        "data": {"max_sec": 20},
+    }
+    torch.manual_seed(721)
+    model = decoder_type()(source_config).eval()
+    with torch.no_grad():
+        model.ar_text_position.alpha.fill_(0.7)
+        model.ar_audio_position.alpha.fill_(1.3)
+    checkpoint = root / "head32.ckpt"
+    torch.save({"config": source_config, "weight": {"model." + key: value
+                for key, value in model.state_dict().items()}}, checkpoint)
+    artifact = export_checkpoint(checkpoint, root / "cache")
+    config, _ = validate_artifact(artifact)
+    return checkpoint, artifact, config
+
+
+def test_head32_padding_matches_source_across_cache_growth(head32):
+    checkpoint, artifact, config = head32
+    inputs = synthetic_inputs(config, phone_length=127, prompt_length=128, steps=2)
+    report = validate_numerics(checkpoint, artifact, inputs, atol=1e-4, rtol=1e-4)
+    assert report["status"] == "passed", [row for row in report["rows"] if not row["passed"]]
+
+
+@pytest.mark.parametrize("dtype", ["float32", "float16"])
+def test_head32_padding_preserves_unpadded_attention_math(head32, monkeypatch, dtype):
+    _, artifact, config = head32
+    model = T2SModel.from_artifact(artifact, inference_dtype=dtype)
+    sdpa = mx.fast.scaled_dot_product_attention
+    tolerance = 1e-4 if dtype == "float32" else 1e-3
+
+    def checked_attention(q, k, v, *, scale, mask):
+        assert q.shape[-1] == k.shape[-1] == v.shape[-1] == 64
+        assert scale == 1 / math.sqrt(32)
+        for item in (q, k, v):
+            assert np.count_nonzero(np.array(item[..., 32:])) == 0
+        actual = sdpa(q, k, v, scale=scale, mask=mask)
+        expected = sdpa(q[..., :32], k[..., :32], v[..., :32], scale=scale, mask=mask)
+        np.testing.assert_allclose(np.array(actual[..., :32]), np.array(expected),
+                                   atol=tolerance, rtol=tolerance)
+        assert np.count_nonzero(np.array(actual[..., 32:])) == 0
+        return actual
+
+    monkeypatch.setattr(mx.fast, "scaled_dot_product_attention", checked_attention)
+    inputs = synthetic_inputs(config, phone_length=2, prompt_length=3, steps=1)
+    _, cache = model.prefill(mx.array(inputs["phones"].astype(np.int32)),
+                             mx.array(inputs["prompt"].astype(np.int32)), mx.array(inputs["bert"]))
+    logits, _ = model.decode_step(mx.array(inputs["history"].astype(np.int32)), cache)
+    assert np.isfinite(np.array(logits)).all()
 
 
 @pytest.mark.parametrize("phones,prompt", [(1, 1), (7, 9), (31, 33), (32, 32), (33, 31)])
@@ -70,6 +127,7 @@ def test_fast_mask_and_dtype_are_explicit(tiny):
         artifact, inference_dtype="float16")
     assert decoder.info["dtype"] == "float16"
     assert decoder.info["cache_impl"] == "mlx_chunked_valid_prefix"
+    assert decoder.info["head_dim"] == decoder.info["cache_head_dim"] == 8
     assert all(weight.dtype == mx.float16 for weight in decoder.model.weights.values())
     assert decoder.model.positions.dtype == mx.float16
     inputs = synthetic_inputs(config)
@@ -125,14 +183,18 @@ def test_cache_matches_source_at_real_prompt_lengths(tiny, prompt_length):
     assert report["status"] == "passed", [r for r in report["rows"] if not r["passed"]]
 
 
-def test_fast_attention_ignores_poisoned_unused_cache_capacity(tiny):
-    _, artifact, config = tiny
+@pytest.mark.parametrize("fixture_name,dtype", [
+    ("tiny", "float32"), ("head32", "float32"), ("head32", "float16"),
+])
+def test_fast_attention_ignores_poisoned_unused_cache_capacity(request, fixture_name, dtype):
+    _, artifact, config = request.getfixturevalue(fixture_name)
     short = synthetic_inputs(config, phone_length=2, prompt_length=3, steps=1)
-    short_model = T2SModel.from_artifact(artifact)
+    short_model = T2SModel.from_artifact(artifact, inference_dtype=dtype)
     short_inputs = [mx.array(short[key].astype(np.int32)) for key in ("phones", "prompt")]
     _, short_clean = short_model.prefill(*short_inputs, mx.array(short["bert"]))
     short_poisoned_layers = []
-    nan = mx.full((1, config.num_heads, 1, config.hidden_dim // config.num_heads), float("nan"))
+    nan = mx.full((1, config.num_heads, 1, short_model.cache_head_dim), float("nan"),
+                  dtype=short_model.dtype)
     for key, value in short_clean.layers:
         short_poisoned_layers.append((mx.slice_update(key, nan, mx.array([100]), axes=(2,)),
                                       mx.slice_update(value, nan, mx.array([100]), axes=(2,))))
@@ -144,12 +206,21 @@ def test_fast_attention_ignores_poisoned_unused_cache_capacity(tiny):
     np.testing.assert_allclose(np.array(short_actual), np.array(short_expected), atol=1e-4, rtol=1e-4)
 
     inputs = synthetic_inputs(config, phone_length=127, prompt_length=128, steps=2)
-    model = T2SModel.from_artifact(artifact)
+    model = T2SModel.from_artifact(artifact, inference_dtype=dtype)
+
+    def assert_cache_padding(cache):
+        for layer in cache.layers:
+            for item in layer:
+                assert item.dtype == model.dtype
+                assert item.shape[-1] == model.cache_head_dim
+                assert np.count_nonzero(np.array(item[..., model.head_dim:])) == 0
+
     phones = mx.array(inputs["phones"].astype(np.int32))
     prompt = mx.array(inputs["prompt"].astype(np.int32))
     bert = mx.array(inputs["bert"])
     _, clean = model.prefill(phones, prompt, bert)
     assert clean.text_length + clean.audio_length == 255
+    assert_cache_padding(clean)
     poisoned_layers = []
     for key, value in clean.layers:
         poisoned_layers.append((mx.slice_update(key, nan, mx.array([255]), axes=(2,)),
@@ -161,12 +232,14 @@ def test_fast_attention_ignores_poisoned_unused_cache_capacity(tiny):
     np.testing.assert_allclose(np.array(first_poisoned), np.array(first_clean), atol=1e-4, rtol=1e-4)
     assert clean.text_length + clean.audio_length == 256
     assert clean.layers[0][0].shape[2] == 256
+    assert_cache_padding(clean)
     token = mx.array(inputs["history"][:, 1:2].astype(np.int32))
     second_clean, clean = model.decode_step(token, clean)
     second_poisoned, poisoned = model.decode_step(token, poisoned)
     np.testing.assert_allclose(np.array(second_poisoned), np.array(second_clean), atol=1e-4, rtol=1e-4)
     assert clean.text_length + clean.audio_length == 257
     assert clean.layers[0][0].shape[2] == 512
+    assert_cache_padding(clean)
 
 
 @pytest.mark.parametrize("top_p", [0.6, 0.8, 1.0])
