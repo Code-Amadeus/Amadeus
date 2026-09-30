@@ -2,7 +2,7 @@ name: Experimental GPT-SoVITS MLX CPU numerics
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/gsv-mlx-t2s]
   pull_request:
   workflow_dispatch:
 
@@ -28,7 +28,7 @@ jobs:
       - name: Install locked Torch CPU and real MLX CPU runtime
         run: uv sync --locked --extra torch-cpu --group mlx-t2s-cpu --extra dev
       - name: Run required MLX CPU differential suite
-        run: uv run --locked --no-sync python -m pytest tests/test_semantic_mlx_numerics.py tests/test_semantic_mlx_control_flow.py tests/test_gsv_ab_acceptance.py -q -rs
+        run: uv run --locked --no-sync python -m pytest tests/test_semantic_mlx_numerics.py tests/test_semantic_mlx_control_flow.py tests/test_gsv_ab_acceptance.py tests/test_gsv_qualification_variants.py tests/test_gsv_mac_qualification.py -q -rs
       - name: Smoke doctor, conversion, and validation on synthetic source weights
         shell: bash
         run: |

@@ -153,7 +153,7 @@ def compare_logits(reference, candidate, *, atol, rtol):
 
 
 def validate_numerics(checkpoint, artifact, inputs, *, device="cpu", atol=1e-3, rtol=1e-3,
-                      inference_dtype="float32"):
+                      inference_dtype="float32", model_loader=None):
     import mlx.core as mx
     from tts.semantic_mlx.model import T2SModel
 
@@ -161,7 +161,7 @@ def validate_numerics(checkpoint, artifact, inputs, *, device="cpu", atol=1e-3, 
     mlx_device = mx.cpu if device == "cpu" else mx.gpu
     rows = []
     with mx.stream(mlx_device):
-        model = T2SModel.from_artifact(artifact, inference_dtype=inference_dtype)
+        model = (model_loader or T2SModel.from_artifact)(artifact, inference_dtype=inference_dtype)
         phones, prompt = (mx.array(inputs[key].astype(np.int32)) for key in ("phones", "prompt"))
         bert = mx.array(inputs["bert"])
         actual_trace = {}

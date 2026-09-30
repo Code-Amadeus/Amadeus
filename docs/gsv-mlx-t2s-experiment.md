@@ -56,6 +56,13 @@ restart. Existing Torch users do not need the MLX extra.
 
 ## Local probes
 
+For the complete volunteer run, use the one-command workflow in
+[`MAC_HANDOFF_ZH.md`](MAC_HANDOFF_ZH.md). It runs seven fixed-history variants,
+stage profiling, selected-candidate and padding-pair first-chunk comparisons,
+and persistent mixed-chain soak. The individual commands below remain useful
+for diagnosing a failed step. Windows uses CPU smoke only; CPU graph halving
+and no-regression performance gates were retired by the September 30 re-review.
+
 The probe writes JSON below `output/diagnostics/gsv-mlx-t2s/` unless given
 `--output`. It never starts the full app, records a microphone, plays audio,
 connects to a cloud speech service, or uploads results. Failure also writes a

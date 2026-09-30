@@ -53,6 +53,8 @@ def _identity():
 
 
 def _code_sha256():
+    from tools.probes.gsv_qualification_variants import bundled_source_paths
+
     paths = (
         "local_tts_infer.py", "tts/semantic_runtime.py",
         "tts/semantic_mlx/weights.py", "tts/semantic_mlx/model.py",
@@ -60,7 +62,7 @@ def _code_sha256():
         "tools/probes/gsv_backend_probe.py", "tts/pipeline.py",
         "tools/probes/gsv_semantic_reference.py", "GPT_SoVITS/AR/models/t2s_model.py",
         "GPT_SoVITS/AR/models/utils.py",
-    )
+    ) + bundled_source_paths()
     digest = hashlib.sha256()
     for relative in paths:
         digest.update(relative.encode("utf-8"))
@@ -265,6 +267,8 @@ def export(args):
 
 
 def validate(args):
+    from functools import partial
+    from tools.probes.gsv_qualification_variants import load_model, source_identity
     from tools.probes.gsv_semantic_reference import validate_numerics
 
     _qualify_device(args.device)
@@ -274,7 +278,8 @@ def validate(args):
     result = validate_numerics(args.checkpoint, artifact, inputs,
                                device="cpu" if args.device == "cpu" else "gpu",
                                atol=args.atol, rtol=args.rtol,
-                               inference_dtype=args.inference_dtype)
+                               inference_dtype=args.inference_dtype,
+                               model_loader=partial(load_model, mlx_revision=args.mlx_revision))
     failed = [row for row in result["rows"] if not row["passed"]]
     logits = [row for row in result["rows"] if row["tensor"] == "logits"]
     status = result["status"]
@@ -285,9 +290,12 @@ def validate(args):
     return _save(args, {
         "status": status, "strict_tolerance_status": result["status"],
         "purpose": "numerical_test" if args.device == "cpu" else "metal_numerical",
-        "mlx_device": args.device, "source_checkpoint_sha256": manifest["source_checkpoint_sha256"],
+        "backend": "mlx", "mlx_device": args.device,
+        "source_checkpoint_sha256": manifest["source_checkpoint_sha256"],
         "converted_weights_sha256": manifest["weights_sha256"], **fixture,
         "inference_dtype": args.inference_dtype,
+        "execution": {"inference_dtype": args.inference_dtype,
+                      **source_identity("mlx", args.mlx_revision)},
         "comparisons": result["comparisons"], "failed_comparisons": failed,
         "logit_steps": len(logits), "top1_agreements": sum(row["top1_agrees"] for row in logits),
         "max_logit_abs": max(row["max_abs"] for row in logits),
@@ -388,7 +396,10 @@ def _fixed_torch_work(oracle, inputs, args):
 
 def _fixed_mlx_work(model, inputs, args):
     import mlx.core as mx
-    from tts.semantic_mlx.generation import logits_to_probs, sample as mlx_sample
+    from tools.probes.gsv_qualification_variants import generation_module
+
+    revision = getattr(args, "mlx_revision", "current")
+    generation = generation_module(revision)
 
     started = time.perf_counter()
     logits, cache = model.prefill(inputs["phones"], inputs["prompt"], inputs["bert"])
@@ -401,15 +412,23 @@ def _fixed_mlx_work(model, inputs, args):
         started = time.perf_counter()
         fixed_token = inputs["history"][:, step:step + 1]
         candidate = logits[:, :-1] if step < 11 else logits
-        probs, penalized = logits_to_probs(candidate, history, top_k=args.top_k, top_p=args.top_p,
-                                           temperature=args.temperature, repetition_penalty=args.repetition_penalty)
-        sampled = mlx_sample(probs)
+        probs, penalized = generation.logits_to_probs(
+            candidate, history, top_k=args.top_k, top_p=args.top_p,
+            temperature=args.temperature, repetition_penalty=args.repetition_penalty)
+        sampled = generation.sample(probs)
         stop = (mx.argmax(penalized, axis=-1)[0] == model.config.eos) | (sampled[0, 0] == model.config.eos)
         history = mx.concatenate((history, fixed_token), axis=1)
-        mx.async_eval(sampled, stop, history, cache.layers)
-        logits, cache = model.decode_step(fixed_token, cache)
-        mx.async_eval(logits, cache.layers)
-        _ = bool(stop.item())
+        if revision == "audit":
+            # Preserve the audit loop's sync boundary before the scalar EOS
+            # observation and next forward. Fixed N still ignores EOS stops.
+            mx.eval(history, stop, [value for layer in cache.layers for value in layer])
+            _ = bool(stop.item())
+            logits, cache = model.decode_step(fixed_token, cache)
+        else:
+            mx.async_eval(sampled, stop, history, cache.layers)
+            logits, cache = model.decode_step(fixed_token, cache)
+            mx.async_eval(logits, cache.layers)
+            _ = bool(stop.item())
         samples.append(sampled)
         step_ms.append((time.perf_counter() - started) * 1000)
     drain_started = time.perf_counter()
@@ -424,7 +443,7 @@ def bench(args):
     import numpy as np
     import torch
     from tools.probes.gsv_semantic_reference import TorchTrace, load_reference
-    from tts.semantic_mlx.runtime import MLXSemanticDecoder
+    from tools.probes.gsv_qualification_variants import create_decoder, source_identity
 
     _qualify_device(args.device)
     artifact, config, manifest = _artifact(args)
@@ -447,59 +466,68 @@ def bench(args):
             _set_sampling_seed(trial_seed, mlx=False)
             fixed = _fixed_torch_work(
                 oracle, torch_inputs, args)
-            _set_sampling_seed(trial_seed, mlx=False)
-            started = time.perf_counter()
-            with torch.inference_mode():
-                prediction, idx = source.infer_panel(
-                    torch_inputs["phones"], lengths, torch_inputs["prompt"], torch_inputs["bert"],
-                    top_k=args.top_k, top_p=args.top_p, temperature=args.temperature,
-                    repetition_penalty=args.repetition_penalty, early_stop_num=args.budget,
-                    enable_cuda_graph=False, enable_static_kv=False)
-            if device.type == "mps":
-                torch.mps.synchronize()
-            free_ms = (time.perf_counter() - started) * 1000
+            free_timings = {}
+            if not args.fixed_only:
+                _set_sampling_seed(trial_seed, mlx=False)
+                started = time.perf_counter()
+                with torch.inference_mode():
+                    prediction, idx = source.infer_panel(
+                        torch_inputs["phones"], lengths, torch_inputs["prompt"], torch_inputs["bert"],
+                        top_k=args.top_k, top_p=args.top_p, temperature=args.temperature,
+                        repetition_penalty=args.repetition_penalty, early_stop_num=args.budget,
+                        enable_cuda_graph=False, enable_static_kv=False)
+                if device.type == "mps":
+                    torch.mps.synchronize()
+                free_timings = {"free_generation_ms": (time.perf_counter() - started) * 1000}
             if iteration >= args.warmup:
                 times.append({"prefill_ms": fixed["prefill_ms"], "fixed_ar_work_ms": fixed["fixed_ar_work_ms"],
-                              "free_generation_ms": free_ms})
-                raw_runs.append({"seed": trial_seed, **fixed, "free_generation_ms": free_ms})
-                output_tokens.append({"seed": trial_seed, "idx": int(idx),
-                                      "generated_tokens": int(idx),
-                                      "returned_tokens": int(prediction.shape[1]),
-                                      "budget_boundary_reached": (
-                                          args.budget != -1 and int(idx) >= args.budget)})
-    else:
-        with mx.stream(_device(args.device)):
-            mlx_inputs = {key: mx.array(value.astype(np.float32 if key == "bert" else np.int32))
-                          for key, value in inputs.items()}
-            decoder = MLXSemanticDecoder.for_numerical_test(
-                artifact, device=_device(args.device), inference_dtype=args.inference_dtype,
-                validated_config=config)
-            model = decoder.model
-            mx.eval(list(mlx_inputs.values()))
-            if device.type == "mps":
-                torch.mps.synchronize()
-            for iteration in range(args.runs + args.warmup):
-                trial_seed = _trial_seed(args, iteration)
-                _set_sampling_seed(trial_seed, mlx=True)
-                fixed = _fixed_mlx_work(
-                    model, mlx_inputs, args)
-                _set_sampling_seed(trial_seed, mlx=True)
-                prediction, idx = decoder.infer_panel(
-                    torch_inputs["phones"], lengths, torch_inputs["prompt"], torch_inputs["bert"],
-                    top_k=args.top_k, top_p=args.top_p, temperature=args.temperature,
-                    repetition_penalty=args.repetition_penalty, early_stop_num=args.budget)
-                if iteration >= args.warmup:
-                    times.append({"prefill_ms": fixed["prefill_ms"], "fixed_ar_work_ms": fixed["fixed_ar_work_ms"],
-                                  "free_generation_ms": decoder.last_timings["semantic_total_ms"],
-                                  **decoder.last_timings})
-                    raw_runs.append({"seed": trial_seed, **fixed,
-                                     "free_generation_ms": decoder.last_timings["semantic_total_ms"]})
+                              **free_timings})
+                raw_runs.append({"seed": trial_seed, **fixed, **free_timings})
+                if not args.fixed_only:
                     output_tokens.append({"seed": trial_seed, "idx": int(idx),
                                           "generated_tokens": int(idx),
                                           "returned_tokens": int(prediction.shape[1]),
                                           "budget_boundary_reached": (
                                               args.budget != -1 and int(idx) >= args.budget)})
-            decoder.close()
+    else:
+        with mx.stream(_device(args.device)):
+            mlx_inputs = {key: mx.array(value.astype(np.float32 if key == "bert" else np.int32))
+                          for key, value in inputs.items()}
+            decoder = create_decoder(
+                artifact, device=_device(args.device), inference_dtype=args.inference_dtype,
+                validated_config=config, mlx_revision=args.mlx_revision)
+            model = decoder.model
+            mx.eval(list(mlx_inputs.values()))
+            if device.type == "mps":
+                torch.mps.synchronize()
+            try:
+                for iteration in range(args.runs + args.warmup):
+                    trial_seed = _trial_seed(args, iteration)
+                    _set_sampling_seed(trial_seed, mlx=True)
+                    fixed = _fixed_mlx_work(model, mlx_inputs, args)
+                    free_timings = {}
+                    if not args.fixed_only:
+                        _set_sampling_seed(trial_seed, mlx=True)
+                        prediction, idx = decoder.infer_panel(
+                            torch_inputs["phones"], lengths, torch_inputs["prompt"], torch_inputs["bert"],
+                            top_k=args.top_k, top_p=args.top_p, temperature=args.temperature,
+                            repetition_penalty=args.repetition_penalty, early_stop_num=args.budget)
+                        free_timings = {"free_generation_ms": decoder.last_timings["semantic_total_ms"],
+                                        **decoder.last_timings}
+                    if iteration >= args.warmup:
+                        times.append({"prefill_ms": fixed["prefill_ms"], "fixed_ar_work_ms": fixed["fixed_ar_work_ms"],
+                                      **free_timings})
+                        raw_runs.append({"seed": trial_seed, **fixed,
+                                         **({"free_generation_ms": free_timings["free_generation_ms"]}
+                                            if free_timings else {})})
+                        if not args.fixed_only:
+                            output_tokens.append({"seed": trial_seed, "idx": int(idx),
+                                                  "generated_tokens": int(idx),
+                                                  "returned_tokens": int(prediction.shape[1]),
+                                                  "budget_boundary_reached": (
+                                                      args.budget != -1 and int(idx) >= args.budget)})
+            finally:
+                decoder.close()
     metrics = {key: _percentiles([row[key] for row in times]) for key in times[0]}
     return _save(args, {
         "status": "passed", "purpose": "numerical_test" if args.device == "cpu" else "model_only_benchmark",
@@ -508,6 +536,8 @@ def bench(args):
         "converted_weights_sha256": manifest["weights_sha256"], **fixture,
         "execution": {"cuda_graph": False, "static_kv": False, "compile": False,
                       "inference_dtype": args.inference_dtype,
+                      "fixed_only": args.fixed_only,
+                      **source_identity(args.backend, args.mlx_revision),
                       "sampler_dtype": "float32" if args.backend == "mlx" else args.inference_dtype,
                       "cache_impl": (decoder.info["cache_impl"] if args.backend == "mlx"
                                      else "torch_dynamic")},
@@ -517,7 +547,10 @@ def bench(args):
                                 "early_stop_num": args.budget},
         "timings_ms": metrics, "raw_fixed_runs": raw_runs,
         "fixed_protocol": ("prefill separately; N samples/EOS observations and N fixture-token forwards; "
-                           "MLX queues forward before EOS host read, Torch after; fixed N ignores EOS stop; "
+                           + ("audit MLX synchronizes before EOS read then forwards; "
+                              if args.backend == "mlx" and args.mlx_revision == "audit" else
+                              "MLX queues forward before EOS host read, Torch after; ")
+                           + "fixed N ignores EOS stop; "
                            "wall time includes final forward drain, per-step intervals are pipeline positions"),
         "free_generation_outputs": output_tokens,
         "warmup_runs_excluded": args.warmup,
@@ -673,23 +706,24 @@ def audio(args):
         raise ValueError("--probe-mlx-cpu requires --backend mlx and --acoustic-device cpu")
 
     class ProbeInferencer(local_tts_infer.TTSInferencer):
-        """Probe instrumentation; production load and generation stay unchanged."""
+        """Probe instrumentation and revision selection through the production bridge."""
 
         def _load_gpt_model(self):
             if args.backend == "mlx":
-                from tts.semantic_mlx.runtime import MLXSemanticDecoder
+                from tools.probes.gsv_qualification_variants import create_decoder
+                from tts.semantic_mlx.runtime import require_metal
                 from tts.semantic_mlx.weights import export_checkpoint
 
                 self.t2s_model = None
                 cache_root = ROOT / ".cache" / "gsv-mlx-t2s"
-                if args.probe_mlx_cpu:
-                    artifact, config = export_checkpoint(self.gpt_path, cache_root, return_config=True)
-                    self.semantic_decoder = MLXSemanticDecoder.for_numerical_test(
-                        artifact, inference_dtype=args.inference_dtype, validated_config=config)
-                else:
-                    self.semantic_decoder = MLXSemanticDecoder.from_checkpoint(
-                        self.gpt_path, acoustic_device=self.device, cache_root=cache_root,
-                        inference_dtype=args.inference_dtype)
+                if not args.probe_mlx_cpu:
+                    require_metal(self.device)
+                artifact, config = export_checkpoint(self.gpt_path, cache_root, return_config=True)
+                self.semantic_decoder = create_decoder(
+                    artifact, device=_device("cpu" if args.probe_mlx_cpu else "metal"),
+                    inference_dtype=args.inference_dtype, validated_config=config,
+                    mlx_revision=args.mlx_revision,
+                    purpose="numerical_test" if args.probe_mlx_cpu else "production_experiment")
                 self.gpt_config = None
                 self.hz = 50
                 self.max_sec = self.semantic_decoder.model.config.max_sec
@@ -837,6 +871,8 @@ def audio(args):
                     "semantic_tokens": sum(len(item["tokens"]) for item in inferencer.probe_tokens),
                     "semantic_attempts": sum(item["guard_attempts"] for item in inferencer.probe_tokens),
                     "semantic_segments": len(inferencer.probe_tokens),
+                    "semantic_budget_boundary_segments": sum(
+                        item["budget_boundary_reached"] for item in inferencer.probe_tokens),
                     "semantic_token_hashes": token_hashes,
                     "semantic_attempt_timings": list(inferencer.probe_attempts),
                     "semantic_total_ms": (sum(item["elapsed_sec"] * 1000 for item in inferencer.t2s_stats)
@@ -866,6 +902,8 @@ def audio(args):
         target = Path(args.token_output)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(private_tokens, separators=(",", ":")) + "\n", encoding="utf-8")
+    from tools.probes.gsv_qualification_variants import source_identity
+
     return _save(args, {
         "status": "passed", "purpose": "real_audio_local",
         "probe_only_cpu_mixed_chain": bool(args.probe_mlx_cpu),
@@ -878,6 +916,9 @@ def audio(args):
         "sampler_dtype": "float32" if args.backend == "mlx" else args.inference_dtype,
         "controlled_acoustic_rng": bool(args.controlled),
         "backend": inferencer.semantic_decoder.backend,
+        "execution": {"inference_dtype": args.inference_dtype,
+                      "sampler_dtype": "float32" if args.backend == "mlx" else args.inference_dtype,
+                      **source_identity(args.backend, args.mlx_revision)},
         "semantic": inferencer.semantic_decoder.info,
         "semantic_dtype": (str(next(inferencer.t2s_model.model.parameters()).dtype).removeprefix("torch.")
                            if inferencer.t2s_model is not None else inferencer.semantic_decoder.info["dtype"]),
@@ -916,6 +957,9 @@ def main(argv=None):
         if name in {"doctor", "validate", "bench", "soak", "audio"}:
             sub.add_argument("--inference-dtype", choices=("float32", "float16"),
                              default="float32")
+        if name in {"validate", "bench", "audio"}:
+            sub.add_argument("--mlx-revision", choices=("audit", "unpadded", "current"),
+                             default="current", help="Probe-only historical MLX implementation")
         if name in {"doctor", "validate", "bench", "soak"}:
             sub.add_argument("--device", choices=("cpu", "metal"), default="cpu")
         if name in {"export", "validate", "bench", "soak"}:
@@ -942,6 +986,8 @@ def main(argv=None):
                              help="FP16 only: record finite numerical differences without changing strict tolerances")
         if name == "bench":
             sub.add_argument("--backend", choices=("torch", "mlx"), required=True)
+            sub.add_argument("--fixed-only", action="store_true",
+                             help="Measure fixed teacher-forced work without additional free generation")
             sub.add_argument("--runs", type=int, default=3)
             sub.add_argument("--warmup", type=int, default=1)
         if name == "soak":
@@ -991,6 +1037,13 @@ def main(argv=None):
             sub.add_argument("--controlled", action="store_true",
                              help="Top-k=1 quality comparison; preserve acoustic Torch RNG around semantic generation")
     args = parser.parse_args(argv)
+    if args.command in {"validate", "bench", "audio"}:
+        from tools.probes.gsv_qualification_variants import validate_selection
+
+        try:
+            validate_selection(getattr(args, "backend", "mlx"), args.inference_dtype, args.mlx_revision)
+        except ValueError as exc:
+            parser.error(str(exc))
     if args.command in {"export", "validate", "bench", "soak", "inputs"} and not args.checkpoint:
         parser.error(f"{args.command} requires --checkpoint")
     if args.command == "bench" and (args.runs < 1 or args.warmup < 0):

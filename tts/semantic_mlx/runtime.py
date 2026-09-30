@@ -31,10 +31,11 @@ def require_metal(acoustic_device):
 class MLXSemanticDecoder:
     backend = "mlx"
 
-    def __init__(self, model, *, device, purpose):
+    def __init__(self, model, *, device, purpose, generation_fn=None):
         self.model = model
         self.device = device
         self.purpose = purpose
+        self._generation_fn = generation_fn
         self._lock = threading.Lock()
         self.last_timings = {}
         self.info = {
@@ -97,7 +98,7 @@ class MLXSemanticDecoder:
             arrays.append(mx.array(bert))
             mx.eval(arrays)
             bridged = time.perf_counter()
-            prediction, idx = generate(
+            prediction, idx = (self._generation_fn or generate)(
                 model, *arrays, top_k=top_k, top_p=top_p, temperature=temperature,
                 repetition_penalty=repetition_penalty, early_stop_num=early_stop_num,
             )

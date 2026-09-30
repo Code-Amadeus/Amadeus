@@ -53,8 +53,13 @@ The current `bf31a2c` CPU quick comparison (10 runs per variant, reversed
 process order, identical 32-token history including sampling/EOS work) found
 prefill-plus-decode p50 of 0.989 s for Torch FP32, 1.612 s for audited MLX
 FP32, 1.861 s for current MLX FP32, and 15.513 s for current MLX FP16.
-Current CPU execution is slower. See `docs/gsv-mlx-t2s-audit-response.md`
-for the pre-padding comparison, ranges, environment, and limitations.
+These are historical observations, not a stable regression finding. A later
+auditor-reported eight-round, same-process alternating-order FP32 comparison
+put MLX variant differences within -9% to +9% of the original, against about
+-15% to +15% variation within a variant. The earlier "15% slower" conclusion
+is withdrawn: CPU differences are within noise and cannot evaluate the
+Metal-targeted changes. CPU no-regression and halving graph-node gates are
+retired. See `docs/gsv-mlx-t2s-audit-response.md` for scope and attribution.
 
 Mac Metal numerics, mixed MPS/MLX speed and audio, blind human voice-quality
 review, first voiced device write, interruption, and long Mac memory behavior
