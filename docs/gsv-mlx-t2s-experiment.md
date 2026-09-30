@@ -124,6 +124,13 @@ uv run --locked --no-sync python tools/probes/gsv_backend_probe.py soak \
   --inputs output/diagnostics/private-gsv-inputs.npz --requests 100
 ```
 
+The commands above default to FP32. For the FP16 candidate, add
+`--inference-dtype float16` to `bench` or `audio` and use a distinct output
+path. Test both Torch and MLX at each precision. For FP16 numerical
+characterization, add `--inference-dtype float16 --characterize` to `validate`;
+this records deviations without treating them as passing FP32 tolerance.
+The application itself still selects FP32 when MLX is enabled.
+
 `soak` alternates short and long input shapes, reloads the decoder every 20
 requests by default, and records per-request latency, output count, RSS, MLX
 active/cache/peak memory, and Torch MPS allocation where available. It tests
@@ -182,6 +189,11 @@ uv run --locked --no-sync python tools/probes/gsv_ab_acceptance.py \
   --reference-audio /path/to/reference.wav \
   --reference-text '参考音声の書き起こし。'
 ```
+
+For an FP16 MLX audio candidate, add `--mlx-dtype float16`; the Torch side
+defaults to FP32 and can separately be selected with `--torch-dtype float16`.
+These options affect only the semantic model; the acoustic precision stays
+the same. Keep reports from different precision pairs in separate directories.
 
 All outputs stay in a new `output/diagnostics/gsv-ab/` run directory. The
 suite report records resolved parameters, backend order, checkpoint/reference

@@ -49,6 +49,13 @@ take precedence over the earlier microbenchmark headline. Different random
 output lengths and acoustic timing variation also limit end-to-end CPU
 comparisons. This is a correctness reference with no proven Metal speedup.
 
+The current `bf31a2c` CPU quick comparison (10 runs per variant, reversed
+process order, identical 32-token history including sampling/EOS work) found
+prefill-plus-decode p50 of 0.989 s for Torch FP32, 1.612 s for audited MLX
+FP32, 1.861 s for current MLX FP32, and 15.513 s for current MLX FP16.
+Current CPU execution is slower. See `docs/gsv-mlx-t2s-audit-response.md`
+for the pre-padding comparison, ranges, environment, and limitations.
+
 Mac Metal numerics, mixed MPS/MLX speed and audio, blind human voice-quality
 review, first voiced device write, interruption, and long Mac memory behavior
 remain unverified. **Both measured Mac speed and acceptable human-rated voice
