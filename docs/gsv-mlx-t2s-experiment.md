@@ -3,7 +3,7 @@
 This opt-in path replaces only GPT-SoVITS v3 T2S semantic autoregression. The
 Japanese/English frontend, reference extraction, SoVITS v3/CFM, BigVGAN, audio
 stream, onset gate, subtitles, and playback stay on the existing path. Torch is
-the default. The MLX implementation uses FP32 weights, POST-LayerNorm, ReLU,
+the default. The MLX implementation uses FP32 inference, POST-LayerNorm, ReLU,
 the source sampler, and a per-generation dynamic KV cache. It supports one
 referenced input at a time. It has no automatic Torch fallback.
 
@@ -101,8 +101,9 @@ uv run --locked --no-sync python tools/probes/gsv_backend_probe.py soak \
 
 `soak` alternates short and long input shapes, reloads the decoder every 20
 requests by default, and records per-request latency, output count, RSS, MLX
-active/cache/peak memory, and Torch MPS allocation where available. Its CPU
-mode is numerical only. It does not test application cancellation or playback.
+active/cache/peak memory, and Torch MPS allocation where available. It tests
+the semantic model only, not the full acoustic chain or player. Its CPU mode
+is numerical only; it does not test application cancellation or playback.
 
 For real audio, run each backend as a separate local process with the same
 model/reference, parameters, and text. `audio` repeats the same request after
@@ -209,19 +210,64 @@ docker build -f tools/probes/Dockerfile.gsv-mlx-cpu -t amadeus-gsv-mlx-cpu tools
 docker run --rm --mount type=bind,src="$(pwd)/output/diagnostics/gsv-source-tree/amadeus-0.15.2a0",dst=/workspace,readonly amadeus-gsv-mlx-cpu
 ```
 
-## Evidence and unrun gates
+## Measured CPU evidence and remaining gates
 
-Windows real MLX CPU numerical tests passed on a synthetic tiny checkpoint.
-A one-request Torch CPU v3/LoRA audio smoke also completed through the local
-probe with four CFM steps and no playback; it verifies the command and stream
-metadata/onset measurement, not sound quality or MLX acoustic integration.
-A local v3 checkpoint with the actual frontend and reference produced 350
-passing prefill/decode/cache comparisons over 120 phones, 191 reference
-semantic tokens, and 12 fixed history steps; the observed maximum absolute
-error was 0.000916. Those observations were made on an uncommitted experiment
-checkout and must be repeated against the reviewed candidate. Linux CI has
-an enforced real MLX CPU lane in `.github/workflows/gsv-mlx-t2s.yml`; its
-hosted result is not yet available. Metal numerical qualification, the
-Torch-MPS/MLX mixed audio path, audible quality, first voiced device write,
-and long Mac memory stability are **not run**. CPU timings are not a speedup
-claim.
+On clean candidate `c3450ea`, the actual v3 frontend/reference fixture passed
+350 Torch-to-MLX prefill, decode, and cache comparisons (120 phones, 191
+reference semantic IDs, 12 fixed history steps; maximum absolute difference
+0.00091552734375). The required real MLX CPU test suite also passed. This is
+numerical parity evidence, not a voice or Metal speed result.
+
+The separate-process Windows 11 CPU audio suite on candidate `2ffe02a` used
+Python 3.12.10, Torch/Torchaudio 2.7.0+cpu, MLX/MLX-CPU 0.32.2, FP32, and
+four configured CPU threads. Its five Japanese cases each had two AB/BA
+blocks and four paired normal samples per backend (20/backend total), with
+one warmup per process excluded. All 30 audio processes succeeded and
+produced 50 private PCM16 WAVs, including five controlled pairs. In all five
+controlled pairs the semantic IDs and saved PCM16 WAVs matched exactly;
+equality of the pre-encoding float waveform was not measured. A separate
+50-WAV audit found no silence, clipping, or generation-budget flags. Two
+continuous-token flags belonged to the **same** controlled short output on
+both backends, so they are not evidence of an MLX-specific repetition.
+
+Normal-sampling end-to-end synthesis p50, in seconds, was:
+
+| Case | Torch | MLX |
+|---|---:|---:|
+| Short first | 7.041 | 7.563 |
+| Medium follow-up | 32.986 | 31.305 |
+| Long follow-up | 131.433 | 137.247 |
+| Weak filler first | 7.193 | 7.717 |
+| Continuation follow-up | 61.101 | 50.885 |
+
+These are four paired observations per case; p95 is descriptive only. Normal
+sampling can produce different token counts and audio lengths, so these
+end-to-end values are not a fixed-workload engine speed comparison. The CPU
+results show no stable overall gain and cannot predict Metal benefit.
+
+Offline Qwen3-ASR-0.6B assessed all 50 WAVs after synthesis (zero failures;
+45 unique recordings) without the target text as ASR context. Among the 20
+paired normal samples per backend, micro CER was 4.7619% Torch versus
+5.4762% MLX; pyopenjtalk micro PER was 1.2972% versus 1.65094%. PER for
+the three content cases matched across backends; differences were mainly in
+short fillers. ASR is an intelligibility proxy and cannot approve timbre,
+prosody, or preference. Human blind listening remains pending.
+
+A corrected fixed-history benchmark on separate clean candidate `271027f`
+evaluated every MLX step's output projection. It used the same 104 phones,
+191 reference IDs, and 32 fixed decode steps, with five measured runs after
+one warmup. The earlier fixed-decode numbers embedded in the frozen audio
+suite are **not comparison evidence**.
+
+| Fixed CPU stage | Torch p50/p95 ms | MLX p50/p95 ms |
+|---|---:|---:|
+| Prefill | 239.361 / 247.494 | 688.391 / 789.524 |
+| Decode, same 32-token history | 873.780 / 877.121 | 750.757 / 1133.951 |
+
+MLX's local decode p50 was lower, while prefill and decode p95 were higher;
+there is no demonstrated overall CPU benefit. Metal numerical qualification,
+Mac mixed MPS/MLX audio and speed, human voice-quality approval, first voiced
+device write, interruption behavior, and long Mac memory stability are
+**not run**. Both final gates remain: measured Mac speed and acceptable voice
+quality from blind human listening. The Linux CI numerical lane is defined
+in `.github/workflows/gsv-mlx-t2s.yml`; a hosted result is not claimed here.
