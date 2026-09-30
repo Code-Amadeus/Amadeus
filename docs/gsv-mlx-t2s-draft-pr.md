@@ -20,3 +20,9 @@ write, cancellation, and memory soak remain unverified. The local doctor,
 validation, model-only benchmark, soak, and audio probes produce per-process
 reports; private fixtures and WAVs stay outside the PR. See
 `docs/gsv-mlx-t2s-experiment.md` for exact commands and rollback.
+
+The follow-up A/B suite adds a probe-only MLX CPU mixed audio route and
+separate-process AB/BA measurement. One short controlled CPU pair produced
+matching semantic IDs and bit-identical saved PCM16 WAVs. That observation
+does not certify production-like voice quality or Mac speed. The suite's
+blind review and both final gates remain pending.

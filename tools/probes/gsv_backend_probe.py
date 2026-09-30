@@ -47,8 +47,23 @@ def _identity():
         "base_sha": REFERENCE_SHA,
         "candidate_sha": candidate,
         "working_tree_dirty": dirty,
+        "code_sha256": _code_sha256(),
         "ominix_reference_sha": OMINIX_SHA,
     }
+
+
+def _code_sha256():
+    paths = (
+        "local_tts_infer.py", "tts/semantic_runtime.py",
+        "tts/semantic_mlx/weights.py", "tts/semantic_mlx/model.py",
+        "tts/semantic_mlx/generation.py", "tts/semantic_mlx/runtime.py",
+        "tools/probes/gsv_backend_probe.py", "tts/pipeline.py",
+    )
+    digest = hashlib.sha256()
+    for relative in paths:
+        digest.update(relative.encode("utf-8"))
+        digest.update(bytes.fromhex(_sha(ROOT / relative)))
+    return digest.hexdigest()
 
 
 def _output(args):
@@ -78,12 +93,18 @@ def _environment():
                                   capture_output=True, text=True, check=True).stdout.strip()
         except (OSError, subprocess.CalledProcessError):
             chip = platform.processor() or None
+    torch_module = sys.modules.get("torch")
     return {"os": platform.system(), "os_release": platform.release(),
             "architecture": platform.machine(), "chip": chip,
             "system_memory_bytes": memory_bytes,
             "python": platform.python_version(), "torch": version("torch"),
             "torchaudio": version("torchaudio"), "mlx": version("mlx"),
-            "mlx_metal": version("mlx-metal"), "mlx_cpu": version("mlx-cpu")}
+            "mlx_metal": version("mlx-metal"), "mlx_cpu": version("mlx-cpu"),
+            "torch_num_threads": (torch_module.get_num_threads()
+                                  if torch_module is not None else None),
+            "configured_thread_environment": {
+                key: os.environ.get(key) for key in
+                ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS")}}
 
 
 def _save(args, data):
@@ -112,6 +133,11 @@ def _failure_reason(exc):
     if isinstance(exc, (FileNotFoundError, KeyError, ValueError)):
         return "local_input_or_artifact_invalid", "Inspect the local console for the rejected checkpoint or fixture field"
     return "probe_failed", "Inspect the local console; no remote report was sent"
+
+
+def _validate_probe_mlx_cpu(args):
+    if args.probe_mlx_cpu and (args.backend != "mlx" or args.acoustic_device != "cpu"):
+        raise ValueError("--probe-mlx-cpu requires --backend mlx and --acoustic-device cpu")
 
 
 def _device(name):
@@ -547,24 +573,88 @@ def audio(args):
     import numpy as np
     import psutil
     import soundfile as sf
+    import torch
     from config import settings
     import local_tts_infer
 
     if args.assets_root:
         local_tts_infer.root_dir = str(Path(args.assets_root).resolve())
-    TTSInferencer = local_tts_infer.TTSInferencer
+    if args.probe_mlx_cpu and (args.backend != "mlx" or settings.TTS_DEVICE != "cpu"):
+        raise ValueError("--probe-mlx-cpu requires --backend mlx and --acoustic-device cpu")
+
+    class ProbeInferencer(local_tts_infer.TTSInferencer):
+        """Probe instrumentation; production load and generation stay unchanged."""
+
+        def _load_gpt_model(self):
+            if args.probe_mlx_cpu:
+                from tts.semantic_mlx.runtime import MLXSemanticDecoder
+                from tts.semantic_mlx.weights import export_checkpoint
+
+                artifact = export_checkpoint(self.gpt_path, ROOT / ".cache" / "gsv-mlx-t2s")
+                self.t2s_model = None
+                self.semantic_decoder = MLXSemanticDecoder.for_numerical_test(artifact)
+                self.gpt_config = None
+                self.hz = 50
+                self.max_sec = self.semantic_decoder.model.config.max_sec
+            else:
+                super()._load_gpt_model()
+            self.probe_attempts = []
+            self.probe_tokens = []
+            original = self.semantic_decoder.infer_panel
+
+            def traced_infer_panel(*call_args, **call_kwargs):
+                started = time.perf_counter()
+                prediction, idx = original(*call_args, **call_kwargs)
+                timing = {"elapsed_ms": (time.perf_counter() - started) * 1000}
+                if self.semantic_decoder.backend == "mlx":
+                    timing.update(self.semantic_decoder.last_timings)
+                self.probe_attempts.append(timing)
+                return prediction, idx
+
+            self.semantic_decoder.infer_panel = traced_infer_panel
+
+        def _infer_semantic_with_guard(self, **kwargs):
+            if args.controlled:
+                cpu_state = torch.random.get_rng_state()
+                device = torch.device(self.device)
+                if device.type == "mps":
+                    device_state = torch.mps.get_rng_state()
+                elif device.type == "cuda":
+                    device_state = torch.cuda.get_rng_state(device)
+                else:
+                    device_state = None
+            try:
+                prediction, idx, attempts = super()._infer_semantic_with_guard(**kwargs)
+            finally:
+                if args.controlled:
+                    torch.random.set_rng_state(cpu_state)
+                    if device.type == "mps":
+                        torch.mps.set_rng_state(device_state)
+                    elif device.type == "cuda":
+                        torch.cuda.set_rng_state(device_state, device)
+            tokens = prediction.detach().reshape(-1).cpu().long().tolist()
+            self.probe_tokens.append({"tokens": tokens, "idx": int(idx),
+                                      "guard_attempts": int(attempts),
+                                      "budget_boundary_reached": (
+                                          int(idx) >= int(self.hz * kwargs["effective_max_sec"]))})
+            return prediction, idx, attempts
 
     if settings.TTS_T2S_BACKEND != args.backend:
         raise RuntimeError("Resolved TTS_T2S_BACKEND differs from requested backend")
-    inferencer = TTSInferencer(device=settings.TTS_DEVICE,
-                              gpt_path=args.checkpoint or settings.TTS_GPT_MODEL_PATH,
-                              sovits_path=args.sovits or settings.TTS_SOVITS_MODEL_PATH)
+    inferencer = ProbeInferencer(device=settings.TTS_DEVICE,
+                                gpt_path=args.checkpoint or settings.TTS_GPT_MODEL_PATH,
+                                sovits_path=args.sovits or settings.TTS_SOVITS_MODEL_PATH)
+    if args.probe_mlx_cpu and inferencer.t2s_model is not None:
+        raise RuntimeError("Probe MLX CPU unexpectedly constructed a Torch T2S model")
     rows = []
+    private_tokens = []
     try:
         for iteration in range(args.runs + args.warmup):
             trial_seed = _trial_seed(args, iteration)
             _set_sampling_seed(trial_seed, mlx=args.backend == "mlx")
             inferencer.t2s_stats.clear()
+            inferencer.probe_attempts.clear()
+            inferencer.probe_tokens.clear()
             started = time.perf_counter()
             chunks, first_chunk_ms, sample_rate = [], None, None
             for rate, samples, _ in inferencer.infer_stream(
@@ -572,7 +662,10 @@ def audio(args):
                 prompt_text=args.reference_text, text_language="日文", prompt_language="日文",
                 top_k=args.top_k, top_p=args.top_p, temperature=args.temperature,
                 speed=args.speed, pause_second=args.pause_second,
-                chunk_size_seconds=args.chunk_seconds,
+                chunk_size_seconds=args.chunk_seconds if args.chunk_seconds > 0 else None,
+                how_to_cut=args.how_to_cut,
+                max_sec_override=args.max_sec_override,
+                enable_cuda_graph=False, enable_static_kv=True,
                 if_freeze=False, sample_steps=args.sample_steps,
                 collect_t2s_stats=True):
                 sample_rate = int(rate)
@@ -599,9 +692,12 @@ def audio(args):
                 target = Path(args.wav)
                 target = target.with_name(f"{target.stem}-{iteration - args.warmup + 1}{target.suffix}")
                 target.parent.mkdir(parents=True, exist_ok=True)
-                sf.write(target, waveform, sample_rate)
+                sf.write(target, waveform, sample_rate, subtype="PCM_16")
                 wav_sha = _sha(target)
             if iteration >= args.warmup:
+                token_hashes = [hashlib.sha256(np.asarray(item["tokens"], dtype="<i8").tobytes()).hexdigest()
+                                for item in inferencer.probe_tokens]
+                private_tokens.append({"seed": trial_seed, "segments": list(inferencer.probe_tokens)})
                 rows.append({
                     "seed": trial_seed,
                     "first_emitted_chunk_ms": first_chunk_ms,
@@ -613,15 +709,34 @@ def audio(args):
                     "semantic_tokens": sum(item["tokens"] for item in inferencer.t2s_stats),
                     "semantic_attempts": sum(item["semantic_attempts"] for item in inferencer.t2s_stats),
                     "semantic_segments": len(inferencer.t2s_stats),
+                    "semantic_token_hashes": token_hashes,
+                    "semantic_attempt_timings": list(inferencer.probe_attempts),
+                    "semantic_total_ms": sum(item["elapsed_ms"] for item in inferencer.probe_attempts),
+                    "bridge_in_ms": sum(item.get("bridge_in_ms", 0) for item in inferencer.probe_attempts),
+                    "bridge_out_ms": sum(item.get("bridge_out_ms", 0) for item in inferencer.probe_attempts),
+                    "peak_abs_sample": float(np.max(np.abs(waveform))),
+                    "rms": float(np.sqrt(np.mean(waveform.astype(np.float64) ** 2))),
+                    "clipping_fraction": float(np.mean(np.abs(waveform) >= 0.999)),
                     "rss_bytes": psutil.Process().memory_info().rss,
                     "wav_sha256": wav_sha,
+                    "wav_subtype": "PCM_16" if wav_sha else None,
                 })
     finally:
         inferencer.close()
+    if args.token_output:
+        target = Path(args.token_output)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(private_tokens, separators=(",", ":")) + "\n", encoding="utf-8")
     return _save(args, {
         "status": "passed", "purpose": "real_audio_local",
+        "probe_only_cpu_mixed_chain": bool(args.probe_mlx_cpu),
+        "controlled_acoustic_rng": bool(args.controlled),
         "backend": inferencer.semantic_decoder.backend,
         "semantic": inferencer.semantic_decoder.info,
+        "semantic_dtype": (str(next(inferencer.t2s_model.model.parameters()).dtype).removeprefix("torch.")
+                           if inferencer.t2s_model is not None else inferencer.semantic_decoder.info["dtype"]),
+        "acoustic_device": str(inferencer.device),
+        "acoustic_dtype": "float16" if inferencer.is_half else "float32",
         "source_checkpoint_sha256": _sha(args.checkpoint or settings.TTS_GPT_MODEL_PATH),
         "sovits_checkpoint_sha256": _sha(args.sovits or settings.TTS_SOVITS_MODEL_PATH),
         "reference_audio_sha256": _sha(args.reference_audio),
@@ -630,8 +745,11 @@ def audio(args):
         "parameters": {"top_k": args.top_k, "top_p": args.top_p,
                        "temperature": args.temperature, "speed": args.speed,
                        "pause_second": args.pause_second, "sample_steps": args.sample_steps,
-                       "chunk_seconds": args.chunk_seconds, "if_freeze": False,
+                       "chunk_seconds": args.chunk_seconds if args.chunk_seconds > 0 else None,
+                       "how_to_cut": args.how_to_cut,
+                       "max_sec_override": args.max_sec_override,
                        "semantic_guard": inferencer._semantic_guard_enabled()},
+        "private_token_trace_sha256": _sha(args.token_output) if args.token_output else None,
         "warmup_runs_excluded": args.warmup,
         "measured_seed_start": args.seed,
         "runs": rows,
@@ -700,10 +818,14 @@ def main(argv=None):
             sub.add_argument("--sovits", default="")
             sub.add_argument("--assets-root", default="")
             sub.add_argument("--acoustic-device", default="")
+            sub.add_argument("--probe-mlx-cpu", action="store_true",
+                             help="Probe-only: real MLX CPU semantics through Torch CPU v3 acoustic chain")
             sub.add_argument("--reference-audio", required=True)
             sub.add_argument("--reference-text", required=True)
             sub.add_argument("--text", required=True)
             sub.add_argument("--sample-steps", type=int, default=16)
+            sub.add_argument("--how-to-cut", default="按标点符号切")
+            sub.add_argument("--max-sec-override", type=float, default=None)
             sub.add_argument("--speed", type=float, default=1.0)
             sub.add_argument("--pause-second", type=float, default=0.3)
             sub.add_argument("--chunk-seconds", type=float, default=0.25)
@@ -711,6 +833,9 @@ def main(argv=None):
             sub.add_argument("--warmup", type=int, default=1)
             sub.add_argument("--seed", type=int, default=1000)
             sub.add_argument("--wav", default="")
+            sub.add_argument("--token-output", default="", help="Private semantic ID trace JSON")
+            sub.add_argument("--controlled", action="store_true",
+                             help="Top-k=1 quality comparison; preserve acoustic Torch RNG around semantic generation")
     args = parser.parse_args(argv)
     if args.command in {"export", "validate", "bench", "soak", "inputs"} and not args.checkpoint:
         parser.error(f"{args.command} requires --checkpoint")
@@ -722,6 +847,10 @@ def main(argv=None):
         parser.error("--history-steps must be positive")
     if args.command == "audio" and (args.runs < 1 or args.warmup < 0):
         parser.error("--runs must be positive and --warmup nonnegative")
+    if args.command == "audio" and args.controlled and args.top_k != 1:
+        parser.error("--controlled requires --top-k 1")
+    if args.command == "audio":
+        _validate_probe_mlx_cpu(args)
     if args.command in {"inputs", "audio"}:
         os.environ["TTS_BACKEND"] = "gpt_sovits"
         os.environ["TTS_T2S_BACKEND"] = "torch" if args.command == "inputs" else args.backend

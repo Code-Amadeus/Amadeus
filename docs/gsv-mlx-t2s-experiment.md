@@ -133,6 +133,66 @@ audible onset. Keep the first-sentence audio cache disabled in both A/B runs;
 MLX ignores its read and write paths automatically. Torch can disable it with
 `FIRST_SENTENCE_AUDIO_CACHE_ENABLED=0`.
 
+## Repeatable A/B speed and voice acceptance
+
+Run the suite as a single command after installing the full local voice stack
+and the optional MLX extra. It uses the actual
+`tts.pipeline.get_sovits_params` values from this branch for first and later
+sentences, including the 4/16/32 CFM step choices and length-dependent
+stop budget. The five fixed Japanese cases cover short, medium, long,
+weak-filler, and continuation text. Each case gets two sequential blocks:
+Torch then MLX, followed by MLX then Torch. Each backend exits before the
+next starts. The default one warmup plus two measured requests per process
+gives 20 measured production-like requests per backend across the five cases.
+The suite also runs one controlled `top_k=1` pair per case and a separate
+actual-frontend fixed-history model benchmark. It disables completed-audio
+cache use and semantic freeze. Reports retain failed runs and show paired
+same-seed timings separately from unpaired successful observations.
+
+```bash
+uv run --locked --no-sync python tools/probes/gsv_ab_acceptance.py \
+  --device metal --checkpoint /path/to/gpt-v3.ckpt \
+  --sovits /path/to/sovits-v3.pth \
+  --reference-audio /path/to/reference.wav \
+  --reference-text '参考音声の書き起こし。'
+```
+
+All outputs stay in a new `output/diagnostics/gsv-ab/` run directory. The
+suite report records resolved parameters, backend order, checkpoint/reference
+and code hashes, actual device/dtype, warmup and measured counts, per-case
+p50/p95 first emitted chunk and synthesis time, RTF, token/guard counts,
+bridge-inclusive semantic time, RSS, and audio quality flags. Fixed-history
+prefill/decode timings are separate from free-generation audio. CPU timings
+can expose cost but cannot establish a Metal speedup. The first emitted
+chunk is after the existing onset gate; it is not an audio-device write or a
+physical acoustic-onset measurement.
+
+The private blind kit contains anonymously assigned `pair_###_A/B.wav`
+files, `review-sheet.csv`, and a separate `answer-key.private.json`. Compare
+intelligibility, missed or repeated words, timbre, prosody, artifacts, and
+preference without opening the answer key first. The WAVs are saved as
+PCM16. A controlled waveform comparison is made only when semantic IDs
+match and the probe has restored Torch acoustic RNG around semantic
+generation. Bit-identical saved PCM16 WAVs do not prove equality before WAV
+encoding. Production-like `top_k=5` samples are independently random in
+Torch and MLX; judge them by the blind listening results, guard behavior,
+and objective flags, not waveform equality. ASR may help find omissions but
+cannot approve timbre or prosody.
+
+On Windows/Linux, `--device cpu` selects a **probe-only** MLX CPU decoder at
+the TTS model-load seam and routes its real semantic IDs through the normal
+Torch v3 acoustic and onset chain. Install the locked `torch-cpu`,
+`local-models`, `voice`, `mlx-t2s-cpu` group, and `dev` components in an
+isolated environment. Keep real voice assets private. This path does not
+relax the production Apple Silicon Metal requirement and its CPU latency is
+not the Mac speed gate.
+
+The two final gates are **a measured Mac speed result** and **acceptable
+voice quality from human listening**. The suite leaves both pending until
+those observations are entered and reviewed. The application playback's
+first voiced device write, interruption drain, and long Mac memory behavior
+still need separate product-level qualification.
+
 The Linux CI numerical lane uses the locked `mlx-t2s-cpu` dependency group.
 For an isolated Docker rerun, build the image from the small `tools/probes`
 context and mount a **sanitized, clean source-release archive** read-only as

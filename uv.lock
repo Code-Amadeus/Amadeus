@@ -466,6 +466,7 @@ mlx-t2s-cpu = [
     { name = "mlx", extra = ["cpu"], marker = "sys_platform == 'linux' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-cu128') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-mps') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-rocm') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-local-mps') or (extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-local-rocm') or (extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-mps' and extra == 'extra-7-amadeus-local-rocm') or (extra == 'extra-7-amadeus-local-mps' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-rocm' and extra == 'extra-7-amadeus-torch-cpu')" },
     { name = "mlx-cpu", marker = "sys_platform == 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-cu128') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-mps') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-rocm') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-local-mps') or (extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-local-rocm') or (extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-mps' and extra == 'extra-7-amadeus-local-rocm') or (extra == 'extra-7-amadeus-local-mps' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-rocm' and extra == 'extra-7-amadeus-torch-cpu')" },
     { name = "safetensors" },
+    { name = "soundfile" },
     { name = "torchmetrics" },
     { name = "tqdm" },
 ]
@@ -585,6 +586,7 @@ mlx-t2s-cpu = [
     { name = "mlx", extras = ["cpu"], marker = "sys_platform == 'linux'", specifier = "==0.32.2" },
     { name = "mlx-cpu", marker = "sys_platform == 'win32'", specifier = "==0.32.2" },
     { name = "safetensors", specifier = "==0.8.0" },
+    { name = "soundfile", specifier = "==0.13.1" },
     { name = "torchmetrics", specifier = "==1.5.0" },
     { name = "tqdm", specifier = "==4.67.3" },
 ]

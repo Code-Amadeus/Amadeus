@@ -157,3 +157,10 @@ def test_generation_budget_rejects_zero_steps(tiny):
         generate(model, mx.array(inputs["phones"].astype(np.int32)),
                  mx.array(inputs["prompt"].astype(np.int32)),
                  mx.array(inputs["bert"]), max_steps=0)
+
+
+def test_production_constructor_rejects_cpu_even_with_mlx_installed(tiny):
+    checkpoint, artifact, _ = tiny
+    with pytest.raises(RuntimeError, match="Apple Silicon|MLX Metal"):
+        MLXSemanticDecoder.from_checkpoint(
+            checkpoint, acoustic_device=torch.device("cpu"), cache_root=artifact.parent.parent)
