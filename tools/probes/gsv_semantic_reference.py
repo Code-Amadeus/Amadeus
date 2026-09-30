@@ -39,12 +39,16 @@ def create_tiny_checkpoint(path, *, layers=2, seed=719):
     return Path(path)
 
 
-def load_reference(checkpoint, device="cpu"):
+def load_reference(checkpoint, device="cpu", inference_dtype="float32"):
     # Independently read the source, not the new converter's output.
     source = torch.load(checkpoint, map_location="cpu", weights_only=True)
     model = decoder_type()(source["config"]).eval()
     model.load_state_dict({key.removeprefix("model."): value for key, value in source["weight"].items()}, strict=True)
     model = model.to(device)
+    if inference_dtype == "float16":
+        model = model.half()
+    elif inference_dtype != "float32":
+        raise ValueError("Unsupported Torch probe dtype")
     return model
 
 
@@ -70,7 +74,7 @@ class TorchTrace:
         m = self.model
         phones = torch.as_tensor(phones, dtype=torch.long, device=self.device)
         prompt = torch.as_tensor(prompt, dtype=torch.long, device=self.device)
-        bert = torch.as_tensor(bert, dtype=torch.float32, device=self.device)
+        bert = torch.as_tensor(bert, dtype=m.bert_proj.weight.dtype, device=self.device)
         text = m.ar_text_position(m.ar_text_embedding(phones) + m.bert_proj(bert.transpose(1, 2)))
         audio = m.ar_audio_position(m.ar_audio_embedding(prompt))
         value = torch.cat((text, audio), dim=1)
@@ -123,6 +127,7 @@ def compare_arrays(reference, candidate, *, atol, rtol):
     actual = np.asarray(candidate, dtype=np.float32)
     difference = actual.astype(np.float64) - expected.astype(np.float64)
     return {
+        "finite": bool(np.isfinite(actual).all() and np.isfinite(expected).all()),
         "passed": bool(np.isfinite(actual).all() and np.isfinite(expected).all()
                        and np.allclose(actual, expected, atol=atol, rtol=rtol)),
         "max_abs": float(np.max(np.abs(difference))),
@@ -147,7 +152,8 @@ def compare_logits(reference, candidate, *, atol, rtol):
     return result
 
 
-def validate_numerics(checkpoint, artifact, inputs, *, device="cpu", atol=1e-3, rtol=1e-3):
+def validate_numerics(checkpoint, artifact, inputs, *, device="cpu", atol=1e-3, rtol=1e-3,
+                      inference_dtype="float32"):
     import mlx.core as mx
     from tts.semantic_mlx.model import T2SModel
 
@@ -155,7 +161,7 @@ def validate_numerics(checkpoint, artifact, inputs, *, device="cpu", atol=1e-3, 
     mlx_device = mx.cpu if device == "cpu" else mx.gpu
     rows = []
     with mx.stream(mlx_device):
-        model = T2SModel.from_artifact(artifact)
+        model = T2SModel.from_artifact(artifact, inference_dtype=inference_dtype)
         phones, prompt = (mx.array(inputs[key].astype(np.int32)) for key in ("phones", "prompt"))
         bert = mx.array(inputs["bert"])
         actual_trace = {}
@@ -182,4 +188,6 @@ def validate_numerics(checkpoint, artifact, inputs, *, device="cpu", atol=1e-3, 
                 expected, state, expected_trace = oracle.decode_step(token, state)
     return {"status": "passed" if all(row["passed"] for row in rows) else "failed",
             "purpose": "numerical_test", "mlx_device": device,
-            "torch_device": "cpu", "comparisons": len(rows), "rows": rows}
+            "torch_device": "cpu",
+            "inference_dtype": inference_dtype,
+            "comparisons": len(rows), "rows": rows}

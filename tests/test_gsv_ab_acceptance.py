@@ -80,6 +80,19 @@ def test_pair_rejects_mislabeled_backend_and_changed_code():
         verify_pair_identity(torch, mlx, expected)
 
 
+def test_pair_accepts_requested_fp16_candidate_and_rejects_variant_mislabel():
+    torch, mlx = _identity("torch"), _identity("mlx")
+    expected = {key: torch[key] for key in (
+        "source_checkpoint_sha256", "sovits_checkpoint_sha256", "reference_audio_sha256",
+        "acoustic_device", "acoustic_dtype", "candidate_sha", "working_tree_dirty", "code_sha256")}
+    expected.update(mlx_dtype="float16")
+    mlx["semantic_dtype"] = "float16"
+    verify_pair_identity(torch, mlx, expected)
+    mlx["semantic_dtype"] = "float32"
+    with pytest.raises(ValueError, match="semantic dtype differs"):
+        verify_pair_identity(torch, mlx, expected)
+
+
 def test_controlled_audio_only_compares_waveforms_after_semantic_and_rng_match(tmp_path):
     sf = pytest.importorskip("soundfile")
     signal = np.sin(np.arange(512) * 0.04).astype(np.float32) * 0.2

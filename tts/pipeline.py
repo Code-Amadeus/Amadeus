@@ -31,7 +31,6 @@ from config.settings import (
     USE_EXPERIMENTAL_TTS_STREAM,
     EXP_TTS_MAX_CONCURRENCY,
     TTS_OUTPUT_LANGUAGE,
-    TTS_T2S_BACKEND,
     TTS_REF_AUDIO_JA,
     TTS_REF_TEXT_JA,
     TTS_REF_AUDIO_EN,
@@ -933,7 +932,6 @@ async def speak_stream_enhanced_asyncio_queue(
     # model/voice identities are absent, so their audio must not read or write it.
     cache_first_sentence = (
         is_first_sentence and getattr(_tts_runtime, "backend_id", None) == "gpt_sovits"
-        and TTS_T2S_BACKEND == "torch"
     )
     if cache_first_sentence and _playback_manager is not None:
         try:

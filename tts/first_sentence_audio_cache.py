@@ -13,7 +13,6 @@ import numpy as np
 from config.settings import (
     FIRST_SENTENCE_AUDIO_CACHE_DIR,
     FIRST_SENTENCE_AUDIO_CACHE_ENABLED,
-    TTS_T2S_BACKEND,
     FIRST_SENTENCE_AUDIO_CACHE_MAX_SECONDS,
     TTS_GPT_MODEL_PATH,
     TTS_OUTPUT_LANGUAGE,
@@ -190,7 +189,7 @@ class FirstSentenceAudioCache:
             return None
 
     def lookup(self, text: str, params: dict[str, Any]) -> tuple[int, np.ndarray] | None:
-        if not FIRST_SENTENCE_AUDIO_CACHE_ENABLED or TTS_T2S_BACKEND == "mlx":
+        if not FIRST_SENTENCE_AUDIO_CACHE_ENABLED:
             return None
         current_payload = self.key_payload(text, params)
         current_path = self._path_for_payload(current_payload)
@@ -249,7 +248,7 @@ class FirstSentenceAudioCache:
         raw_text: str | None = None,
         source: str = "runtime",
     ) -> bool:
-        if not FIRST_SENTENCE_AUDIO_CACHE_ENABLED or TTS_T2S_BACKEND == "mlx":
+        if not FIRST_SENTENCE_AUDIO_CACHE_ENABLED:
             return False
         if sr <= 0 or audio is None:
             return False

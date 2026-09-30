@@ -63,8 +63,10 @@ def verify_pair_identity(torch_report, mlx_report, expected):
         for key in ("candidate_sha", "working_tree_dirty", "code_sha256"):
             if item.get(key) != expected[key]:
                 raise ValueError(f"A/B child {key} differs from suite source identity")
-    if torch_report.get("semantic_dtype") != mlx_report.get("semantic_dtype"):
-        raise ValueError("A/B semantic inference dtype differs")
+    if torch_report.get("semantic_dtype") != expected.get("torch_dtype", "float32"):
+        raise ValueError("A/B Torch semantic dtype differs from requested execution")
+    if mlx_report.get("semantic_dtype") != expected.get("mlx_dtype", "float32"):
+        raise ValueError("A/B MLX semantic dtype differs from requested variant")
     fields = ("source_checkpoint_sha256", "sovits_checkpoint_sha256",
               "reference_audio_sha256", "text_sha256", "prompt_text_sha256")
     if any(torch_report.get(key) != mlx_report.get(key) for key in fields):
@@ -138,9 +140,14 @@ def controlled_comparison(torch_wav, mlx_wav, torch_tokens, mlx_tokens, torch_re
     left = [segment["tokens"] for segment in torch_tokens]
     right = [segment["tokens"] for segment in mlx_tokens]
     if left != right:
+        segment = next((i for i, (a, b) in enumerate(zip(left, right)) if a != b),
+                       min(len(left), len(right)))
+        a = left[segment] if segment < len(left) else []
+        b = right[segment] if segment < len(right) else []
+        token = next((i for i, (x, y) in enumerate(zip(a, b)) if x != y), min(len(a), len(b)))
         return {"semantic_ids_match": False, "waveform_comparison": "not_applicable_semantic_divergence",
-                "first_divergent_segment": next((i for i, (a, b) in enumerate(zip(left, right)) if a != b),
-                                                 min(len(left), len(right)))}
+                "first_divergent_segment": segment, "first_divergent_token": token,
+                "divergent_segment_token_counts": {"torch": len(a), "mlx": len(b)}}
     a, sr_a = sf.read(torch_wav, dtype="float32")
     b, sr_b = sf.read(mlx_wav, dtype="float32")
     subtype_a = sf.info(torch_wav).subtype
@@ -216,6 +223,7 @@ def _audio_command(args, case, profile, backend, phase, seed, report, token_outp
         command += ["--assets-root", str(Path(args.assets_root).resolve())]
     if args.device == "cpu" and backend == "mlx":
         command.append("--probe-mlx-cpu")
+    command += ["--inference-dtype", args.mlx_dtype if backend == "mlx" else args.torch_dtype]
     if phase == "controlled":
         command.append("--controlled")
     return command
@@ -260,8 +268,9 @@ def run(args):
                 "sovits_checkpoint_sha256": sha256(args.sovits),
                 "reference_audio_sha256": sha256(args.reference_audio),
                 "acoustic_device": "cpu" if args.device == "cpu" else "mps",
-                "acoustic_dtype": "float32", **_identity()}
-    report = {"schema": "amadeus.gsv_ab_acceptance.v1", "status": "running",
+                "acoustic_dtype": "float32", "torch_dtype": args.torch_dtype,
+                "mlx_dtype": args.mlx_dtype, **_identity()}
+    report = {"schema": "amadeus.gsv_ab_acceptance.v2", "status": "running",
               "purpose": "cpu_functional_quality" if args.device == "cpu" else "mac_metal_speed_and_quality",
               "device": args.device, "candidate_sha": expected["candidate_sha"],
               "working_tree_dirty": expected["working_tree_dirty"],
@@ -270,17 +279,23 @@ def run(args):
               "assets": {key: expected[key] for key in (
                   "source_checkpoint_sha256", "sovits_checkpoint_sha256", "reference_audio_sha256")},
               "expected_execution": {"acoustic_device": expected["acoustic_device"],
-                                     "acoustic_dtype": expected["acoustic_dtype"]},
+                                     "acoustic_dtype": expected["acoustic_dtype"],
+                                     "torch_dtype": args.torch_dtype,
+                                     "mlx_dtype": args.mlx_dtype,
+                                     "comparison_scope": ("engine_and_precision" if args.mlx_dtype != "float32"
+                                                          else "engine_only")},
               "reference_text_sha256": hashlib.sha256(args.reference_text.encode()).hexdigest(),
               "parameters": {"warmup_per_process": args.warmup, "blocks_per_case": args.blocks,
                              "measured_runs_per_block": args.runs_per_block,
                              "controlled_runs_per_case": args.controlled_runs,
+                             "fixed_blocks": args.fixed_blocks,
+                             "fixed_runs_per_backend_block": args.fixed_runs,
                              "chunk_seconds": args.chunk_seconds,
                              "completed_audio_cache": "not_used", "if_freeze": False},
               "cases": {}, "invocations": [], "failures": [],
               "fixed_model": None, "controlled_pairs": [], "blind_kit": {},
               "first_voiced_device_write_ms": None, "acoustic_onset_ms": None,
-              "human_listening": "pending"}
+              "human_listening": "pending", "quality_only": args.quality_only, "skip_normal": args.skip_normal}
     _save_suite(root, report)
     records = {}
     all_success = {}
@@ -291,7 +306,7 @@ def run(args):
         report["cases"][name] = {"text": text, "text_sha256": hashlib.sha256(text.encode()).hexdigest(),
                                   "first_sentence": is_first, "resolved_profile": profile,
                                   "backend_metrics": {}, "failures": []}
-        for phase, block_count in (("controlled", 1), ("production", args.blocks)):
+        for phase, block_count in (("controlled", 1), ("production", 0 if args.skip_normal else args.blocks)):
             for block in range(block_count):
                 pair = {}
                 order = backend_order(block if phase == "production" else case_index)
@@ -333,7 +348,8 @@ def run(args):
                                                    "reason": str(exc)})
                 _save_suite(root, report)
     _build_pair_results(args, root, report, records, all_success)
-    _run_fixed_model(args, root, report, selected[0])
+    if not args.quality_only:
+        _run_fixed_model(args, root, report, selected[0])
     report["status"] = "recorded_with_failures" if report["failures"] else "recorded_listening_pending"
     report["speed_gate"] = "not_run_cpu" if args.device == "cpu" else "measured_pending_review"
     report["voice_quality_gate"] = "human_listening_pending"
@@ -479,37 +495,79 @@ def _run_fixed_model(args, root, report, case):
     if child["exit_code"] != 0:
         report["failures"].append({"phase": "fixed_inputs", "reason": "frontend_fixture_failed"})
         return
-    fixed = {"fixture_sha256": sha256(fixture), "results": {}, "order": list(backend_order(0))}
-    for backend in backend_order(0):
-        result = folder / f"bench-{backend}.json"
-        command = _probe_command(args, "bench") + [
-            "--backend", backend, "--device", args.device,
-            "--checkpoint", str(Path(args.checkpoint).resolve()), "--inputs", str(fixture),
-            "--sovits", str(Path(args.sovits).resolve()),
-            "--reference-audio", str(Path(args.reference_audio).resolve()),
-            "--runs", str(args.fixed_runs), "--warmup", str(args.fixed_warmup),
-            "--budget", str(args.fixed_budget), "--output", str(result)]
-        child = _run_child(command, result, folder / f"bench-{backend}.log", timeout=args.timeout)
-        if child["exit_code"] != 0 or not child["report"] or child["report"].get("status") != "passed":
-            report["failures"].append({"phase": "fixed_bench", "backend": backend,
-                                       "reason": "model_benchmark_failed"})
-        else:
+    actual_steps = child["report"]["fixed_decode_steps"]
+    if actual_steps < 1:
+        report["failures"].append({"phase": "fixed_inputs", "reason": "empty_history"})
+        return
+    fixed = {"requested_steps": args.fixed_steps, "actual_steps": actual_steps, "fixture_sha256": sha256(fixture), "blocks": [],
+             "raw_samples": {"torch": [], "mlx": []}, "metrics": {},
+             "paired_comparable_runs_per_backend": 0, "sample_target_met": False}
+    for block in range(args.fixed_blocks):
+        order = backend_order(block)
+        pair = {}
+        block_record = {"block": block, "order": list(order), "results": {}}
+        for backend in order:
+            result = folder / f"bench-b{block}-{backend}.json"
+            command = _probe_command(args, "bench") + [
+                "--backend", backend, "--device", args.device,
+                "--checkpoint", str(Path(args.checkpoint).resolve()), "--inputs", str(fixture),
+                "--sovits", str(Path(args.sovits).resolve()),
+                "--reference-audio", str(Path(args.reference_audio).resolve()),
+                "--runs", str(args.fixed_runs), "--warmup", str(args.fixed_warmup),
+                "--seed", str(args.seed_start + block * 1000),
+                "--budget", str(args.fixed_budget), "--output", str(result)]
+            command += ["--inference-dtype", args.mlx_dtype if backend == "mlx" else args.torch_dtype]
+            child = _run_child(command, result, folder / f"bench-b{block}-{backend}.log",
+                               timeout=args.timeout)
+            if child["exit_code"] != 0 or not child["report"] or child["report"].get("status") != "passed":
+                report["failures"].append({"phase": "fixed_bench", "block": block,
+                                           "backend": backend, "reason": "model_benchmark_failed"})
+                continue
             item = child["report"]
+            expected_dtype = args.mlx_dtype if backend == "mlx" else args.torch_dtype
+            raw = item.get("raw_fixed_runs", [])
             if (item.get("backend") != backend
                     or item.get("candidate_sha") != report["candidate_sha"]
                     or item.get("working_tree_dirty") != report["working_tree_dirty"]
                     or item.get("code_sha256") != report["code_sha256"]
                     or item.get("source_checkpoint_sha256") != report["assets"]["source_checkpoint_sha256"]
-                    or item.get("inputs_sha256") != sha256(fixture)):
-                report["failures"].append({"phase": "fixed_bench", "backend": backend,
-                                           "reason": "model_benchmark_identity_mismatch"})
+                    or item.get("inputs_sha256") != sha256(fixture)
+                    or item.get("execution", {}).get("inference_dtype") != expected_dtype
+                    or len(raw) != args.fixed_runs
+                    or any(row.get("decode_calls") != actual_steps
+                           or row.get("sampler_calls") != actual_steps
+                           or row.get("final_audio_length") != item.get("reference_tokens") + actual_steps
+                           for row in raw)):
+                report["failures"].append({"phase": "fixed_bench", "block": block,
+                                           "backend": backend,
+                                           "reason": "model_benchmark_identity_or_work_mismatch"})
+                continue
+            pair[backend] = item
+            block_record["results"][backend] = {"report": result.name,
+                                                  "sha256": child["report_sha256"]}
+        if len(pair) == 2:
+            left, right = pair["torch"], pair["mlx"]
+            if (left.get("sampling_parameters") != right.get("sampling_parameters")
+                    or [row["seed"] for row in left["raw_fixed_runs"]]
+                    != [row["seed"] for row in right["raw_fixed_runs"]]):
+                report["failures"].append({"phase": "fixed_bench", "block": block,
+                                           "reason": "model_benchmark_parameters_or_seeds_mismatch"})
             else:
-                fixed["results"][backend] = item
-    if len(fixed["results"]) == 2 and (
-            fixed["results"]["torch"].get("sampling_parameters")
-            != fixed["results"]["mlx"].get("sampling_parameters")):
-        report["failures"].append({"phase": "fixed_bench",
-                                   "reason": "model_benchmark_parameters_mismatch"})
+                fixed["paired_comparable_runs_per_backend"] += args.fixed_runs
+                for backend in ("torch", "mlx"):
+                    fixed["raw_samples"][backend].extend(
+                        {"block": block, "order": list(order), **row}
+                        for row in pair[backend]["raw_fixed_runs"])
+        fixed["blocks"].append(block_record)
+    for backend in ("torch", "mlx"):
+        rows = fixed["raw_samples"][backend]
+        fixed["metrics"][backend] = {
+            "prefill_ms": percentile([row["prefill_ms"] for row in rows]),
+            "fixed_ar_work_ms": percentile([row["fixed_ar_work_ms"] for row in rows]),
+            "free_generation_ms": percentile([row["free_generation_ms"] for row in rows]),
+        }
+    fixed["sample_target_met"] = (args.fixed_blocks >= 2
+                                  and fixed["paired_comparable_runs_per_backend"] >= 20)
     report["fixed_model"] = fixed
 
 
@@ -517,6 +575,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--device", choices=("cpu", "metal"), default="metal")
+    parser.add_argument("--torch-dtype", choices=("float32", "float16"), default="float32")
+    parser.add_argument("--quality-only", action="store_true", help="Create voice prescreen samples; skip fixed timing benchmark")
+    parser.add_argument("--skip-normal", action="store_true", help="Only controlled top-k=1 voice pairs")
+    parser.add_argument("--mlx-dtype", choices=("float32", "float16"), default="float32")
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--sovits", required=True)
     parser.add_argument("--reference-audio", required=True)
@@ -532,13 +594,14 @@ def main(argv=None):
     parser.add_argument("--blind-seed", type=int, default=7831)
     parser.add_argument("--chunk-seconds", type=float, default=0.0)
     parser.add_argument("--fixed-steps", type=int, default=32)
-    parser.add_argument("--fixed-runs", type=int, default=5)
+    parser.add_argument("--fixed-blocks", type=int, default=2)
+    parser.add_argument("--fixed-runs", type=int, default=10)
     parser.add_argument("--fixed-warmup", type=int, default=1)
     parser.add_argument("--fixed-budget", type=int, default=400)
     parser.add_argument("--timeout", type=int, default=1200)
     args = parser.parse_args(argv)
     if min(args.blocks, args.runs_per_block, args.controlled_runs, args.fixed_steps,
-           args.fixed_runs, args.timeout) < 1 or args.warmup < 0 or args.fixed_warmup < 0:
+           args.fixed_blocks, args.fixed_runs, args.timeout) < 1 or args.warmup < 0 or args.fixed_warmup < 0:
         parser.error("counts and timeout must be positive; warmup may be zero")
     os.environ["TTS_BACKEND"] = "gpt_sovits"
     os.environ["TTS_DEVICE"] = "cpu" if args.device == "cpu" else "mps"

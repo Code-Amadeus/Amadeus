@@ -3,8 +3,11 @@
 This opt-in path replaces only GPT-SoVITS v3 T2S semantic autoregression. The
 Japanese/English frontend, reference extraction, SoVITS v3/CFM, BigVGAN, audio
 stream, onset gate, subtitles, and playback stay on the existing path. Torch is
-the default. The MLX implementation uses FP32 inference, POST-LayerNorm, ReLU,
-the source sampler, and a per-generation dynamic KV cache. It supports one
+the default. The MLX implementation uses POST-LayerNorm, ReLU,
+the source sampler, and a per-generation cache growing in 256-position chunks.
+The application keeps FP32; FP16 is a decoder/probe candidate pending Mac
+numerical and listening results, with no additional application setting.
+It supports one
 referenced input at a time. It has no automatic Torch fallback.
 
 The fixed behavior baseline is Amadeus
@@ -14,6 +17,19 @@ and trace strategy; Amadeus's actual `infer_panel_naive` remains the semantic
 authority. Converted weights are derived from the selected `TTS_GPT_MODEL_PATH`
 and cached by its SHA-256 under `.cache/gsv-mlx-t2s`; they are checked before
 reuse. The source checkpoint remains authoritative.
+
+The September 30 audit correctly separated weight conversion from runtime
+precision: conversion preserves the source FP16 tensors, while the original
+runtime upcast them to FP32. The revised manifest describes only the converted
+artifact. Actual inference dtype belongs in the decoder/probe report.
+
+Biased projections use `mx.addmm`, normalization uses `mx.fast.layer_norm`,
+and attention calls the SDPA API with the original text/audio mask. This is
+not evidence of fused attention on Metal: the locked MLX 0.32.2 Metal
+[routing implementation](https://github.com/ml-explore/mlx/blob/v0.32.2/mlx/backend/metal/scaled_dot_product_attention.cpp#L619)
+does not provide a fused path for this model's head dimension of 32.
+Likewise, slice updates permit cache-buffer donation but do not prove that
+every update avoids copying on the untested Metal backend.
 
 ## Install, select, and revert on Apple Silicon
 
@@ -75,8 +91,11 @@ a mismatched source, malformed token arrays, or nonfinite BERT values. The
 private NPZ still contains reference-derived features; keep it local.
 
 Run fixed-workload and free generation separately in the model-only benchmark.
-The fixed part uses the same saved token history and one synchronization after
-prefill and after the full decode sequence. The free part runs the source Torch
+The fixed part uses the same saved token history, performs sampling and the
+EOS decision at each position, and observes completion at every step.
+Prefill is reported separately. Fixed history deliberately ignores the stop
+decision to preserve the same work count; free generation exercises stopping.
+The free part runs the source Torch
 sampler or MLX sampler normally and reports its output length, so a shorter
 random output is visible. Warmup runs are excluded from measured summaries.
 Measured trials use the same reported seed schedule in each process; equal
@@ -130,9 +149,9 @@ still need a real Mac playback session. Compare warm first emitted chunk p50
 and p95, RTF, output duration, semantic tokens, guard retries, and memory;
 listen to randomly labeled WAV pairs for omissions, repeated syllables,
 noise, timbre, and endings. A faster AR stage alone does not establish faster
-audible onset. Keep the first-sentence audio cache disabled in both A/B runs;
-MLX ignores its read and write paths automatically. Torch can disable it with
-`FIRST_SENTENCE_AUDIO_CACHE_ENABLED=0`.
+audible onset. The application shares the first-sentence audio cache across
+Torch and MLX. Set `FIRST_SENTENCE_AUDIO_CACHE_ENABLED=0` for both A/B runs;
+selecting MLX must not disable ordinary cache hits for users.
 
 ## Repeatable A/B speed and voice acceptance
 
@@ -212,6 +231,13 @@ docker run --rm --mount type=bind,src="$(pwd)/output/diagnostics/gsv-source-tree
 
 ## Measured CPU evidence and remaining gates
 
+The original FP32 path through `a1873b7` was a correctness reference, with no
+demonstrated acceleration. The controlled audio pairs below are historical
+evidence for that implementation, not qualification of subsequent changes.
+They are the clearest existing
+CPU semantic-stage comparison: they use identical generated semantic IDs,
+and MLX was slower in every case. Metal performance remains unmeasured.
+
 On clean candidate `c3450ea`, the actual v3 frontend/reference fixture passed
 350 Torch-to-MLX prefill, decode, and cache comparisons (120 phones, 191
 reference semantic IDs, 12 fixed history steps; maximum absolute difference
@@ -229,6 +255,24 @@ equality of the pre-encoding float waveform was not measured. A separate
 50-WAV audit found no silence, clipping, or generation-budget flags. Two
 continuous-token flags belonged to the **same** controlled short output on
 both backends, so they are not evidence of an MLX-specific repetition.
+
+| Controlled case | Generated IDs | Torch semantic s | MLX semantic s | MLX time increase |
+|---|---:|---:|---:|---:|
+| Short first | 40 | 1.380 | 2.229 | 61.5% |
+| Weak filler first | 30 | 0.993 | 1.797 | 81.0% |
+| Medium follow-up | 88 | 2.964 | 4.043 | 36.4% |
+| Continuation follow-up | 156 | 5.478 | 7.126 | 30.1% |
+| Long follow-up | 239 | 7.705 | 10.068 | 30.7% |
+
+Each controlled pair has one measured request after warmup, not a latency
+distribution. Its identical tokens make the observed semantic costs easier
+to interpret than normal random generation, but repeated measurements are
+still needed. The exported trained artifact has 77,606,402 FP16 parameters:
+148.02 MiB of parameter arrays, versus 296.04 MiB after the reference
+runtime's FP32 cast. These are parameter bytes, not process memory or
+measured memory traffic. Upcasting preserves the source values exactly;
+FP32 arithmetic can still change accumulation error. Runtime precision
+must therefore be an explicit, tested choice rather than a converter claim.
 
 Normal-sampling end-to-end synthesis p50, in seconds, was:
 
@@ -264,8 +308,16 @@ suite are **not comparison evidence**.
 | Prefill | 239.361 / 247.494 | 688.391 / 789.524 |
 | Decode, same 32-token history | 873.780 / 877.121 | 750.757 / 1133.951 |
 
-MLX's local decode p50 was lower, while prefill and decode p95 were higher;
-there is no demonstrated overall CPU benefit. Metal numerical qualification,
+The apparent 14% decode reduction from these five historical observations
+is withdrawn as acceleration evidence: it has not been established as a
+reproducible gain, and the independent audit supplied by the user did not
+reproduce it. This benchmark evaluated all fixed-history outputs only at
+the end; it did not include the production sampler and host synchronization
+at each token. Its numbers are retained as historical observations only.
+Use repeated per-token sampling/synchronization measurements with fixed
+history, raw samples, and alternating backend order for the next comparison.
+The controlled CPU results above show a slower MLX semantic stage.
+Metal numerical qualification,
 Mac mixed MPS/MLX audio and speed, human voice-quality approval, first voiced
 device write, interruption behavior, and long Mac memory stability are
 **not run**. Both final gates remain: measured Mac speed and acceptable voice

@@ -25,6 +25,66 @@ pytestmark = pytest.mark.mlx_cpu
 mx.set_default_device(mx.cpu)
 
 
+def synchronous_reference(model, phones, prompt, bert, *, budget, steps):
+    """Pre-optimization scheduling oracle, kept only in tests."""
+    history = prompt
+    logits, cache = model.prefill(phones, prompt, bert)
+    for idx in range(steps):
+        if idx < 11:
+            logits = logits[:, :-1]
+        probs, penalized = generation.logits_to_probs(
+            logits, history, top_k=3, top_p=1.0, temperature=0.6, repetition_penalty=1.35)
+        token = generation.sample(probs)
+        stop = (mx.argmax(penalized, axis=-1)[0] == model.config.eos) | (token[0, 0] == model.config.eos)
+        history = mx.concatenate((history, token), axis=1)
+        mx.eval(history, stop, cache.layers)
+        if (budget != -1 and history.shape[1] - prompt.shape[1] > budget) or bool(stop.item()):
+            break
+        if idx + 1 < steps:
+            logits, cache = model.decode_step(token, cache)
+    return history[:, :-1], idx
+
+
+@pytest.mark.parametrize("budget,steps,eos_at", [(0, 15, None), (2, 15, None),
+                                                 (-1, 3, None), (-1, 15, 11)])
+def test_forward_lookahead_preserves_tokens_stop_and_rng(budget, steps, eos_at):
+    class Model:
+        config = SimpleNamespace(eos=5)
+
+        def prefill(self, *_):
+            self.step = 0
+            return self.value(), SimpleNamespace(layers=[])
+
+        def value(self):
+            return mx.array([[1.0, 2.0, 2.5, 1.4, 2.1,
+                              30.0 if eos_at is not None and self.step >= eos_at else -30.0]])
+
+        def decode_step(self, _token, cache):
+            self.step += 1
+            return self.value(), cache
+
+    args = (mx.array([[1, 2]]), mx.array([[2, 3]]), mx.zeros((1, 1024, 2)))
+    mx.random.seed(924)
+    expected, expected_idx = synchronous_reference(Model(), *args, budget=budget, steps=steps)
+    expected_rng = mx.random.uniform(shape=(10,))
+    mx.eval(expected, expected_rng)
+    mx.random.seed(924)
+    actual, idx = generation.generate(Model(), *args, top_k=3, top_p=1.0,
+                                      temperature=0.6, early_stop_num=budget, max_steps=steps)
+    actual_rng = mx.random.uniform(shape=(10,))
+    mx.eval(actual, actual_rng)
+    assert idx == expected_idx
+    np.testing.assert_array_equal(np.array(actual), np.array(expected))
+    np.testing.assert_array_equal(np.array(actual_rng), np.array(expected_rng))
+
+
+def test_partition_topk_keeps_all_pivot_ties_and_promotes_half_sampler():
+    probabilities, penalized = generation.logits_to_probs(
+        mx.array([[2.0, 2.0, 0.0]], dtype=mx.float16), top_k=1)
+    np.testing.assert_allclose(np.array(probabilities), [[0.5, 0.5, 0.0]])
+    assert probabilities.dtype == penalized.dtype == mx.float32
+
+
 @pytest.fixture
 def tiny(tmp_path):
     source = create_tiny_checkpoint(tmp_path / "tiny.ckpt")

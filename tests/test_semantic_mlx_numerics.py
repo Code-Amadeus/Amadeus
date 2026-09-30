@@ -1,6 +1,7 @@
 """Optional in core; the required numerical lane cannot silently skip MLX."""
 import os
 import json
+from types import SimpleNamespace
 import numpy as np
 import pytest
 
@@ -17,7 +18,7 @@ from tools.probes.gsv_semantic_reference import (
 from tts.semantic_mlx.weights import export_checkpoint, validate_artifact
 from tts.semantic_mlx.generation import generate, logits_to_probs, sample
 from tts.semantic_mlx.model import T2SModel
-from tts.semantic_mlx.runtime import MLXSemanticDecoder
+from tts.semantic_mlx.runtime import MLXSemanticDecoder, require_metal
 
 
 pytestmark = pytest.mark.mlx_cpu
@@ -39,6 +40,133 @@ def test_original_torch_blocks_and_cached_full_agree(tiny, phones, prompt):
     inputs = synthetic_inputs(config, phone_length=phones, prompt_length=prompt)
     report = validate_numerics(checkpoint, artifact, inputs, atol=1e-4, rtol=1e-4)
     assert report["status"] == "passed", [row for row in report["rows"] if not row["passed"]]
+
+
+@pytest.mark.parametrize("phones,prompt,steps", [(2, 3, 3), (7, 9, 5), (127, 128, 3)])
+def test_fast_fp32_matches_source_across_cache_growth(tiny, phones, prompt, steps):
+    checkpoint, artifact, config = tiny
+    inputs = synthetic_inputs(config, phone_length=phones, prompt_length=prompt, steps=steps)
+    report = validate_numerics(checkpoint, artifact, inputs,
+                               atol=1e-4, rtol=1e-4)
+    assert report["status"] == "passed", [row for row in report["rows"] if not row["passed"]]
+    model = T2SModel.from_artifact(artifact)
+    _, cache = model.prefill(mx.array(inputs["phones"].astype(np.int32)),
+                             mx.array(inputs["prompt"].astype(np.int32)), mx.array(inputs["bert"]))
+    assert cache.layers[0][0].shape[2] == 256
+    for step in range(steps):
+        _, cache = model.decode_step(mx.array(inputs["history"][:, step:step + 1].astype(np.int32)), cache)
+    assert cache.text_length + cache.audio_length == phones + prompt + steps
+    assert cache.layers[0][0].shape[2] == (512 if phones + prompt + steps > 256 else 256)
+
+
+def test_fast_mask_and_dtype_are_explicit(tiny):
+    _, artifact, config = tiny
+    allowed = np.array(T2SModel.attention_mask(2, 3))[0, 0]
+    np.testing.assert_array_equal(allowed, [
+        [1, 1, 0, 0, 0], [1, 1, 0, 0, 0], [1, 1, 1, 0, 0],
+        [1, 1, 1, 1, 0], [1, 1, 1, 1, 1],
+    ])
+    decoder = MLXSemanticDecoder.for_numerical_test(
+        artifact, inference_dtype="float16")
+    assert decoder.info["dtype"] == "float16"
+    assert decoder.info["cache_impl"] == "mlx_chunked_valid_prefix"
+    assert all(weight.dtype == mx.float16 for weight in decoder.model.weights.values())
+    assert decoder.model.positions.dtype == mx.float16
+    inputs = synthetic_inputs(config)
+    logits, cache = decoder.model.prefill(mx.array(inputs["phones"].astype(np.int32)),
+                                           mx.array(inputs["prompt"].astype(np.int32)),
+                                           mx.array(inputs["bert"]))
+    mx.eval(logits, [item for layer in cache.layers for item in layer])
+    assert logits.dtype == mx.float16
+    assert np.isfinite(np.array(logits)).all()
+    decoder.close()
+    with pytest.raises(ValueError, match="dtype"):
+        T2SModel.from_artifact(artifact, inference_dtype="float64")
+
+
+def test_fast_float16_rejects_overflow_on_finite_float32_source(tiny, tmp_path):
+    checkpoint, _, _ = tiny
+    source = torch.load(checkpoint, map_location="cpu", weights_only=True)
+    source["weight"]["model.bert_proj.weight"][0, 0] = 1_000_000.0
+    changed = tmp_path / "large-finite.ckpt"
+    torch.save(source, changed)
+    artifact = export_checkpoint(changed, tmp_path / "cache")
+    with pytest.raises(ValueError, match="float16 inference overflows"):
+        T2SModel.from_artifact(artifact, inference_dtype="float16")
+
+
+def test_fixed_benchmark_executes_every_decode_and_sampler_step(tiny):
+    from tools.probes.gsv_backend_probe import _fixed_torch_work, _fixed_mlx_work
+    from tools.probes.gsv_semantic_reference import TorchTrace, load_reference
+
+    checkpoint, artifact, config = tiny
+    inputs = synthetic_inputs(config, phone_length=7, prompt_length=9, steps=4)
+    args = SimpleNamespace(top_k=1, top_p=1.0, temperature=0.6,
+                           repetition_penalty=1.35)
+    torch_inputs = {key: torch.from_numpy(value) for key, value in inputs.items()}
+    oracle = TorchTrace(load_reference(checkpoint), capture_trace=False)
+    torch_result = _fixed_torch_work(oracle, torch_inputs, args)
+    mlx_inputs = {key: mx.array(value.astype(np.float32 if key == "bert" else np.int32))
+                  for key, value in inputs.items()}
+    model = T2SModel.from_artifact(artifact)
+    mlx_result = _fixed_mlx_work(model, mlx_inputs, args)
+    for result in (torch_result, mlx_result):
+        assert result["decode_calls"] == result["sampler_calls"] == inputs["history"].shape[1]
+        assert result["final_audio_length"] == inputs["prompt"].shape[1] + inputs["history"].shape[1]
+        assert result["fixed_ar_work_ms"] >= sum(result["fixed_step_ms"])
+    assert torch_result["sampled_ids_sha256"] == mlx_result["sampled_ids_sha256"]
+
+
+@pytest.mark.parametrize("prompt_length", [337, 345, 351])
+def test_cache_matches_source_at_real_prompt_lengths(tiny, prompt_length):
+    checkpoint, artifact, config = tiny
+    inputs = synthetic_inputs(config, phone_length=48, prompt_length=prompt_length, steps=3)
+    report = validate_numerics(checkpoint, artifact, inputs, atol=1e-4, rtol=1e-4)
+    assert report["status"] == "passed", [r for r in report["rows"] if not r["passed"]]
+
+
+def test_fast_attention_ignores_poisoned_unused_cache_capacity(tiny):
+    _, artifact, config = tiny
+    short = synthetic_inputs(config, phone_length=2, prompt_length=3, steps=1)
+    short_model = T2SModel.from_artifact(artifact)
+    short_inputs = [mx.array(short[key].astype(np.int32)) for key in ("phones", "prompt")]
+    _, short_clean = short_model.prefill(*short_inputs, mx.array(short["bert"]))
+    short_poisoned_layers = []
+    nan = mx.full((1, config.num_heads, 1, config.hidden_dim // config.num_heads), float("nan"))
+    for key, value in short_clean.layers:
+        short_poisoned_layers.append((mx.slice_update(key, nan, mx.array([100]), axes=(2,)),
+                                      mx.slice_update(value, nan, mx.array([100]), axes=(2,))))
+    short_poisoned = type(short_clean)(short_poisoned_layers,
+                                       short_clean.text_length, short_clean.audio_length)
+    short_token = mx.array(short["history"][:, :1].astype(np.int32))
+    short_expected, _ = short_model.decode_step(short_token, short_clean)
+    short_actual, _ = short_model.decode_step(short_token, short_poisoned)
+    np.testing.assert_allclose(np.array(short_actual), np.array(short_expected), atol=1e-4, rtol=1e-4)
+
+    inputs = synthetic_inputs(config, phone_length=127, prompt_length=128, steps=2)
+    model = T2SModel.from_artifact(artifact)
+    phones = mx.array(inputs["phones"].astype(np.int32))
+    prompt = mx.array(inputs["prompt"].astype(np.int32))
+    bert = mx.array(inputs["bert"])
+    _, clean = model.prefill(phones, prompt, bert)
+    assert clean.text_length + clean.audio_length == 255
+    poisoned_layers = []
+    for key, value in clean.layers:
+        poisoned_layers.append((mx.slice_update(key, nan, mx.array([255]), axes=(2,)),
+                                mx.slice_update(value, nan, mx.array([255]), axes=(2,))))
+    poisoned = type(clean)(poisoned_layers, clean.text_length, clean.audio_length)
+    token = mx.array(inputs["history"][:, :1].astype(np.int32))
+    first_clean, clean = model.decode_step(token, clean)
+    first_poisoned, poisoned = model.decode_step(token, poisoned)
+    np.testing.assert_allclose(np.array(first_poisoned), np.array(first_clean), atol=1e-4, rtol=1e-4)
+    assert clean.text_length + clean.audio_length == 256
+    assert clean.layers[0][0].shape[2] == 256
+    token = mx.array(inputs["history"][:, 1:2].astype(np.int32))
+    second_clean, clean = model.decode_step(token, clean)
+    second_poisoned, poisoned = model.decode_step(token, poisoned)
+    np.testing.assert_allclose(np.array(second_poisoned), np.array(second_clean), atol=1e-4, rtol=1e-4)
+    assert clean.text_length + clean.audio_length == 257
+    assert clean.layers[0][0].shape[2] == 512
 
 
 @pytest.mark.parametrize("top_p", [0.6, 0.8, 1.0])
@@ -74,7 +202,7 @@ def test_attention_mask_and_cache_requests_are_independent(tiny):
     _, artifact, config = tiny
     model = T2SModel.from_artifact(artifact)
     mask = np.array(model.attention_mask(2, 3))[0, 0]
-    np.testing.assert_array_equal(np.isneginf(mask), [
+    np.testing.assert_array_equal(~mask, [
         [0, 0, 1, 1, 1], [0, 0, 1, 1, 1], [0, 0, 0, 1, 1],
         [0, 0, 0, 0, 1], [0, 0, 0, 0, 0],
     ])
@@ -97,14 +225,37 @@ def test_existing_artifact_rejects_config_mutation(tiny):
         manifest = json.loads(original)
         manifest["config"]["max_sec"] = 21
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        with pytest.raises(ValueError, match="differs from source"):
+        with pytest.raises(ValueError, match="manifest checksum"):
             export_checkpoint(checkpoint, artifact.parent.parent)
         manifest["config"]["norm_eps"] = 1e-3
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-        with pytest.raises(ValueError, match="invalid"):
+        with pytest.raises(ValueError, match="manifest checksum"):
             validate_artifact(artifact)
     finally:
         manifest_path.write_bytes(original)
+
+
+def test_warm_artifact_load_avoids_checkpoint_deserialization_and_duplicate_validation(tiny, monkeypatch):
+    import tts.semantic_mlx.weights as weights
+    import tts.semantic_mlx.model as model_module
+
+    checkpoint, artifact, _ = tiny
+    calls = []
+    original = weights.validate_artifact
+
+    def checked(*args, **kwargs):
+        calls.append(True)
+        return original(*args, **kwargs)
+
+    def unexpected_load(*_args, **_kwargs):
+        pytest.fail("Warm artifact loading must not deserialize the source checkpoint")
+
+    monkeypatch.setattr(weights, "read_checkpoint", unexpected_load)
+    monkeypatch.setattr(weights, "validate_artifact", checked)
+    monkeypatch.setattr(model_module, "validate_artifact", checked)
+    directory, config = weights.export_checkpoint(checkpoint, artifact.parent.parent, return_config=True)
+    model_module.T2SModel.from_artifact(directory, validated_config=config)
+    assert len(calls) == 1
 
 
 def test_mlx_bridge_matches_actual_torch_greedy_generation(tiny):
@@ -164,3 +315,16 @@ def test_production_constructor_rejects_cpu_even_with_mlx_installed(tiny):
     with pytest.raises(RuntimeError, match="Apple Silicon|MLX Metal"):
         MLXSemanticDecoder.from_checkpoint(
             checkpoint, acoustic_device=torch.device("cpu"), cache_root=artifact.parent.parent)
+
+
+@pytest.mark.parametrize("device", ["mps", "mps:0", torch.device("mps:0")])
+def test_metal_device_normalization_accepts_mps_index(monkeypatch, device):
+    import tts.semantic_mlx.runtime as runtime
+
+    monkeypatch.setattr(runtime.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(runtime.platform, "machine", lambda: "arm64")
+    checked = []
+    monkeypatch.setattr(mx.metal, "is_available", lambda: checked.append(True) or False)
+    with pytest.raises(RuntimeError, match="MLX Metal"):
+        require_metal(device)
+    assert checked == [True]

@@ -242,6 +242,7 @@ class TTSInferencer:
                 or self._stream_sync_timing_enabled
             )
             self.t2s_stats = []
+            self.stage_timings = []
             if os.environ.get("TTS_RUNTIME_WARMUP", "1").strip().lower() not in {"0", "false", "off", "no"}:
                 self._warmup_runtime()
 
@@ -1024,7 +1025,20 @@ class TTSInferencer:
 
         return phone_level_feature.T
 
+    def _record_stage_timing(self, stage, elapsed_sec):
+        self.stage_timings.append({"stage": stage, "elapsed_ms": elapsed_sec * 1000.0})
+
     def get_phones_and_bert(self, text, language, final=False):
+        if not getattr(self, "_sovits_sync_timing_enabled", False):
+            return self._get_phones_and_bert(text, language, final)
+        self._sync_sovits_timing()
+        started = time.perf_counter()
+        result = self._get_phones_and_bert(text, language, final)
+        self._sync_sovits_timing()
+        self._record_stage_timing("frontend_bert", time.perf_counter() - started)
+        return result
+
+    def _get_phones_and_bert(self, text, language, final=False):
         """获取音素和BERT特征"""
         if language in {"en", "all_zh", "all_ja", "all_ko", "all_yue"}:
             formattext = text
@@ -1036,7 +1050,7 @@ class TTSInferencer:
 
                 formattext = re.sub(r'[a-z]', lambda x: x.group(0).upper(), formattext)
                 formattext = chinese.mix_text_normalize(formattext)
-                return self.get_phones_and_bert(formattext, "zh")
+                return self._get_phones_and_bert(formattext, "zh")
 
             phones, word2ph, norm_text = self.clean_text_inf(formattext, language)
 
@@ -1094,7 +1108,7 @@ class TTSInferencer:
         # 处理过短的内容
         dtype = torch.float16 if self.is_half else torch.float32
         if not final and len(phones) < 6:
-            return self.get_phones_and_bert("." + text, language, final=True)
+            return self._get_phones_and_bert("." + text, language, final=True)
 
         return phones, bert.to(dtype), norm_text
 
@@ -1993,6 +2007,7 @@ class TTSInferencer:
                             fea_ref = fea_todo_chunk[:, :, -T_min:]
                             if _t_cfm_chunk is not None:
                                 _t_cfm_total = _t_cfm_total + _t_cfm_chunk
+                                self._record_stage_timing("cfm", _t_cfm_chunk)
 
                             if stream_v3_chunks:
                                 stream_chunk_index += 1
@@ -2008,6 +2023,8 @@ class TTSInferencer:
                                     if self._sovits_sync_timing_enabled
                                     else None
                                 )
+                                if _t_denorm_chunk is not None:
+                                    self._record_stage_timing("denorm", _t_denorm_chunk)
                                 if self._sovits_sync_timing_enabled:
                                     self._sync_sovits_timing()
                                 _t1 = time.perf_counter()
@@ -2021,6 +2038,7 @@ class TTSInferencer:
                                         audio = self.bigvgan_model(chunk_mel)[0][0]
                                 if self._sovits_sync_timing_enabled:
                                     self._sync_sovits_timing()
+                                    self._record_stage_timing("bigvgan", time.perf_counter() - _t1)
                                 if self._sovits_sync_timing_enabled:
                                     logger.info(
                                         "[v3-stream] chunk=%s cfm=%.1fms denorm=%.1fms bigvgan=%.1fms mel_T=%s"
@@ -2074,6 +2092,8 @@ class TTSInferencer:
                                 if self._sovits_sync_timing_enabled
                                 else None
                             )
+                            if _t_denorm_total is not None:
+                                self._record_stage_timing("denorm", _t_denorm_total)
 
                             # BigVGANsynthesis failed
                             if self._sovits_sync_timing_enabled:
@@ -2085,6 +2105,7 @@ class TTSInferencer:
                                     audio = wav_gen[0][0]
                             if self._sovits_sync_timing_enabled:
                                 self._sync_sovits_timing()
+                                self._record_stage_timing("bigvgan", time.perf_counter() - _t1)
                                 print("[sovits-timing] cfm=%.1fms  denorm=%.1fms  bigvgan=%.1fms  mel_T=%s" % (
                                     _t_cfm_total * 1000.0,
                                     _t_denorm_total * 1000.0,

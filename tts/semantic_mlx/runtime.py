@@ -17,7 +17,9 @@ from .weights import export_checkpoint
 def require_metal(acoustic_device):
     if platform.system() != "Darwin" or platform.machine().lower() != "arm64":
         raise RuntimeError("TTS_T2S_BACKEND=mlx requires Apple Silicon macOS; use torch and restart")
-    if str(acoustic_device) != "mps" or not mx.metal.is_available():
+    import torch
+
+    if torch.device(acoustic_device).type != "mps" or not mx.metal.is_available():
         raise RuntimeError("MLX T2S requires MLX Metal and TTS_DEVICE=mps; use torch and restart")
     with mx.stream(mx.gpu):
         check = mx.sum(mx.ones((2, 2)) @ mx.ones((2, 2)))
@@ -37,23 +39,28 @@ class MLXSemanticDecoder:
         self.last_timings = {}
         self.info = {
             "semantic_backend": "mlx", "mlx": importlib.metadata.version("mlx"),
-            "dtype": "float32", "cache_impl": "mlx_dynamic_reference",
+            "dtype": model.inference_dtype,
+            "cache_impl": "mlx_chunked_valid_prefix",
             "cuda_graph": "not_applicable", "compile": False,
             "purpose": purpose, "mlx_device": "cpu" if device == mx.cpu else "metal",
         }
 
     @classmethod
-    def from_checkpoint(cls, checkpoint, *, acoustic_device, cache_root):
+    def from_checkpoint(cls, checkpoint, *, acoustic_device, cache_root,
+                        inference_dtype="float32"):
         require_metal(acoustic_device)
-        directory = export_checkpoint(checkpoint, cache_root)
+        directory, config = export_checkpoint(checkpoint, cache_root, return_config=True)
         with mx.stream(mx.gpu):
-            model = T2SModel.from_artifact(directory)
+            model = T2SModel.from_artifact(directory, validated_config=config,
+                                           inference_dtype=inference_dtype)
         return cls(model, device=mx.gpu, purpose="production_experiment")
 
     @classmethod
-    def for_numerical_test(cls, artifact, *, device=mx.cpu):
+    def for_numerical_test(cls, artifact, *, device=mx.cpu,
+                           inference_dtype="float32", validated_config=None):
         with mx.stream(device):
-            model = T2SModel.from_artifact(artifact)
+            model = T2SModel.from_artifact(artifact, inference_dtype=inference_dtype,
+                                          validated_config=validated_config)
         return cls(model, device=device, purpose="numerical_test")
 
     def infer_panel(self, x, x_lens, prompts, bert_feature, top_k=-100, top_p=100,

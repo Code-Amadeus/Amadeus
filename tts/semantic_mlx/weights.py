@@ -13,9 +13,9 @@ import tempfile
 
 REFERENCE_SHA = "77161583eb32b4ae6893289e1e020731b6ae0b5c"
 OMINIX_SHA = "4988a3fcfa48b8cb5d0780a501b92c6a41401523"
-CONVERTER_REVISION = "fp32-t2s-v1"
+CONVERTER_REVISION = "source-dtype-t2s-v2"
 CONTRACT_REVISION = "infer-panel-naive-v1"
-SCHEMA = "amadeus.gsv_t2s_conversion.v1"
+SCHEMA = "amadeus.gsv_t2s_conversion.v2"
 
 
 @dataclass(frozen=True)
@@ -122,7 +122,10 @@ def validate_artifact(directory, *, source_sha=None, source_config=None):
     from safetensors import safe_open
 
     directory = Path(directory)
-    manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+    manifest_path = directory / "manifest.json"
+    if file_sha256(manifest_path) != (directory / "manifest.sha256").read_text(encoding="ascii").strip():
+        raise ValueError("MLX conversion manifest checksum mismatch; artifact is damaged")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if (manifest["schema"] != SCHEMA
             or manifest["converter_revision"] != CONVERTER_REVISION
             or manifest["runtime_contract_revision"] != CONTRACT_REVISION
@@ -152,15 +155,21 @@ def validate_artifact(directory, *, source_sha=None, source_config=None):
     return config, manifest
 
 
-def export_checkpoint(checkpoint, cache_root):
+def export_checkpoint(checkpoint, cache_root, *, return_config=False):
     from safetensors.torch import save_file
 
-    config, weights, identity = read_checkpoint(checkpoint)
+    # The source digest names the conversion. On a warm cache hit, validating
+    # that digest and the artifact is sufficient; loading the full Torch
+    # checkpoint would duplicate work and memory before every MLX startup.
+    identity = file_sha256(checkpoint)
     parent = Path(cache_root) / identity
     target = parent / CONVERTER_REVISION
     if target.exists():
-        validate_artifact(target, source_sha=identity, source_config=config)
-        return target
+        config, _ = validate_artifact(target, source_sha=identity)
+        return (target, config) if return_config else target
+    config, weights, loaded_identity = read_checkpoint(checkpoint)
+    if loaded_identity != identity:
+        raise ValueError("T2S checkpoint changed during conversion")
     parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".conversion-", dir=parent))
     try:
@@ -175,11 +184,13 @@ def export_checkpoint(checkpoint, cache_root):
             "runtime_contract_revision": CONTRACT_REVISION,
             "config": asdict(config),
             "source_dtypes": sorted({str(value.dtype) for value in weights.values()}),
-            "inference_dtype": "float32", "weights_sha256": file_sha256(weights_path),
-            "validated_on": [],
+            "weights_sha256": file_sha256(weights_path),
         }
         (staging / "manifest.json").write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        (staging / "manifest.sha256").write_text(
+            file_sha256(staging / "manifest.json") + "\n", encoding="ascii"
         )
         validate_artifact(staging, source_sha=identity, source_config=config)
         try:
@@ -188,7 +199,7 @@ def export_checkpoint(checkpoint, cache_root):
             if not target.is_dir():
                 raise
             validate_artifact(target, source_sha=identity, source_config=config)
-        return target
+        return (target, config) if return_config else target
     finally:
         if staging.exists():
             shutil.rmtree(staging)

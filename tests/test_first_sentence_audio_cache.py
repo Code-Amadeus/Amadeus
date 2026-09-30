@@ -226,3 +226,47 @@ def test_current_cache_identity_takes_precedence_over_legacy(
 
     assert result is not None
     np.testing.assert_array_equal(result[1], current_audio)
+
+
+def test_local_semantic_backends_share_first_sentence_audio_cache(tmp_path, monkeypatch) -> None:
+    _configure_current_identity(monkeypatch)
+    from config import settings
+
+    cache = FirstSentenceAudioCache(tmp_path)
+    params = _current_params()
+    text = "私よ。"
+    audio = np.ones(800, dtype=np.float32) * 0.1
+    monkeypatch.setattr(cache_module, "FIRST_SENTENCE_AUDIO_CACHE_ENABLED", True)
+    monkeypatch.setattr(settings, "TTS_T2S_BACKEND", "torch")
+    torch_payload = cache.key_payload(text, params)
+    assert cache.store(text, params, 24000, audio)
+    torch_path = cache.path_for(text, params)
+    monkeypatch.setattr(settings, "TTS_T2S_BACKEND", "mlx")
+    assert cache.key_payload(text, params) == torch_payload
+    assert cache.path_for(text, params) == torch_path
+    np.testing.assert_array_equal(cache.lookup(text, params)[1], audio)
+
+
+def test_cache_global_disable(tmp_path, monkeypatch) -> None:
+    _configure_current_identity(monkeypatch)
+    cache = FirstSentenceAudioCache(tmp_path)
+    params = _current_params()
+    audio = np.ones(800, dtype=np.float32)
+    monkeypatch.setattr(cache_module, "FIRST_SENTENCE_AUDIO_CACHE_ENABLED", False)
+    assert cache.lookup("disabled", params) is None
+    assert cache.store("disabled", params, 24000, audio) is False
+
+
+def test_mlx_can_migrate_metadata_free_local_legacy_entry(tmp_path, monkeypatch) -> None:
+    _configure_current_identity(monkeypatch)
+    from config import settings
+
+    cache = FirstSentenceAudioCache(tmp_path)
+    params = _current_params()
+    legacy_torch = cache._legacy_key_payloads("legacy", params)[0]
+    _write_entry(cache, legacy_torch, np.ones(600, dtype=np.float32), metadata=False)
+    monkeypatch.setattr(settings, "TTS_T2S_BACKEND", "mlx")
+    result = cache.lookup("legacy", params)
+    assert result is not None
+    np.testing.assert_array_equal(result[1], np.ones(600, dtype=np.float32))
+    assert cache.path_for("legacy", params).exists()
