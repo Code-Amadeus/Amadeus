@@ -85,6 +85,30 @@ def test_partition_topk_keeps_all_pivot_ties_and_promotes_half_sampler():
     assert probabilities.dtype == penalized.dtype == mx.float32
 
 
+@pytest.mark.parametrize("dtype", ["float32", "float16"])
+def test_real_model_lookahead_matches_sync_across_cache_growth(tiny, dtype):
+    from tools.probes.gsv_semantic_reference import synthetic_inputs
+    from tts.semantic_mlx.model import T2SModel
+
+    _, artifact = tiny
+    model = T2SModel.from_artifact(artifact, inference_dtype=dtype)
+    data = synthetic_inputs(model.config, phone_length=127, prompt_length=128, steps=12)
+    args = (mx.array(data["phones"].astype(np.int32)),
+            mx.array(data["prompt"].astype(np.int32)), mx.array(data["bert"]))
+    mx.random.seed(791)
+    expected, expected_idx = synchronous_reference(model, *args, budget=12, steps=20)
+    expected_rng = mx.random.uniform(shape=(10,))
+    mx.eval(expected, expected_rng)
+    mx.random.seed(791)
+    actual, idx = generation.generate(model, *args, top_k=3, top_p=1.0,
+                                      temperature=0.6, early_stop_num=12, max_steps=20)
+    actual_rng = mx.random.uniform(shape=(10,))
+    mx.eval(actual, actual_rng)
+    assert idx == expected_idx
+    np.testing.assert_array_equal(np.array(actual), np.array(expected))
+    np.testing.assert_array_equal(np.array(actual_rng), np.array(expected_rng))
+
+
 @pytest.fixture
 def tiny(tmp_path):
     source = create_tiny_checkpoint(tmp_path / "tiny.ckpt")
