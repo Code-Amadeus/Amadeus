@@ -1,0 +1,65 @@
+name: Experimental GPT-SoVITS MLX CPU numerics
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mlx-cpu-numerics:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      AMADEUS_MLX_TESTS: "1"
+      TTS_DEVICE: cpu
+      TTS_T2S_BACKEND: torch
+      OMP_NUM_THREADS: "4"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12.10"
+      - name: Install pinned uv
+        run: python -m pip install uv==0.12.8
+      - name: Install locked Torch CPU and real MLX CPU runtime
+        run: uv sync --locked --extra torch-cpu --group mlx-t2s-cpu --extra dev
+      - name: Run required MLX CPU differential suite
+        run: uv run --locked --no-sync python -m pytest tests/test_semantic_mlx_numerics.py tests/test_semantic_mlx_control_flow.py -q -rs
+      - name: Smoke doctor, conversion, and validation on synthetic source weights
+        shell: bash
+        run: |
+          uv run --locked --no-sync python - <<'PYTHON'
+          import os
+          from pathlib import Path
+          from tools.probes.gsv_semantic_reference import create_tiny_checkpoint
+          create_tiny_checkpoint(Path(os.environ["RUNNER_TEMP"]) / "gsv-tiny.ckpt")
+          PYTHON
+          uv run --locked --no-sync python tools/probes/gsv_backend_probe.py doctor --device cpu --output "$RUNNER_TEMP/gsv-doctor.json"
+          uv run --locked --no-sync python tools/probes/gsv_backend_probe.py export --checkpoint "$RUNNER_TEMP/gsv-tiny.ckpt" --cache "$RUNNER_TEMP/gsv-cache" --output "$RUNNER_TEMP/gsv-export.json"
+          uv run --locked --no-sync python tools/probes/gsv_backend_probe.py validate --device cpu --checkpoint "$RUNNER_TEMP/gsv-tiny.ckpt" --cache "$RUNNER_TEMP/gsv-cache" --phones 7 --prompt 9 --steps 4 --atol 0.0001 --rtol 0.0001 --output "$RUNNER_TEMP/gsv-validate.json"
+      - name: Check wheel package and source release coverage
+        shell: bash
+        run: |
+          uv build --wheel --out-dir "$RUNNER_TEMP/gsv-dist"
+          python - <<'PYTHON'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import os
+          wheel = next((Path(os.environ["RUNNER_TEMP"]) / "gsv-dist").glob("*.whl"))
+          with ZipFile(wheel) as archive:
+              names = set(archive.namelist())
+          for required in (
+              "tts/semantic_runtime.py", "tts/semantic_mlx/__init__.py",
+              "tts/semantic_mlx/model.py", "tts/semantic_mlx/weights.py",
+              "tts/semantic_mlx/generation.py", "tts/semantic_mlx/runtime.py",
+          ):
+              assert required in names, required
+          PYTHON
+          python -m venv "$RUNNER_TEMP/gsv-wheel-env"
+          "$RUNNER_TEMP/gsv-wheel-env/bin/pip" install --no-deps "$RUNNER_TEMP"/gsv-dist/*.whl
+          (cd "$RUNNER_TEMP" && "$RUNNER_TEMP/gsv-wheel-env/bin/python" -c 'import tts.semantic_runtime, tts.semantic_mlx; assert "site-packages" in tts.semantic_runtime.__file__')
+          uv run --locked --no-sync python tools/build_source_release.py

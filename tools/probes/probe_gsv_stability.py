@@ -672,6 +672,9 @@ def main() -> int:
     from config import settings
     from local_tts_infer import TTSInferencer
 
+    if settings.TTS_T2S_BACKEND != "torch":
+        raise RuntimeError("probe_gsv_stability requires TTS_T2S_BACKEND=torch; use gsv_backend_probe for MLX")
+
     class SemanticOnlyInferencer(TTSInferencer):
         def _load_bigvgan_model(self) -> None:
             self.bigvgan_model = None

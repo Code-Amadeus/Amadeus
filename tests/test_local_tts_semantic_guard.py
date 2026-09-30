@@ -4,7 +4,6 @@ import os
 import sys
 from contextlib import contextmanager
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -55,7 +54,7 @@ def _inferencer(candidates: list[list[int]]) -> tuple[TTSInferencer, _FakeSemant
     decoder = _FakeSemanticDecoder(candidates)
     inferencer = TTSInferencer.__new__(TTSInferencer)
     inferencer.hz = 50
-    inferencer.t2s_model = SimpleNamespace(model=decoder)
+    inferencer.semantic_decoder = decoder
     return inferencer, decoder
 
 

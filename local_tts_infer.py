@@ -44,12 +44,14 @@ try:
     from config.settings import TTS_REF_AUDIO_EN as _TTS_REF_AUDIO_EN
     from config.settings import TTS_REF_TEXT_JA as _TTS_REF_TEXT_JA
     from config.settings import TTS_REF_TEXT_EN as _TTS_REF_TEXT_EN
+    from config.settings import TTS_T2S_BACKEND as _TTS_T2S_BACKEND
 except ImportError:
     _TTS_OUTPUT_LANGUAGE = "日文"
     _TTS_REF_AUDIO_JA = "./assets/audio/reference/kurisu_reference.wav"
     _TTS_REF_AUDIO_EN = "./assets/audio/reference/english_recording.wav"
     _TTS_REF_TEXT_JA = "そうやって全部私に頼るのね……まったく"
     _TTS_REF_TEXT_EN = ""
+    _TTS_T2S_BACKEND = "torch"
 
 def _default_lang_code() -> str:
     """返回当前语言对应的 GPT-SoVITS 内部语言代码（用于 fallback）。"""
@@ -218,6 +220,8 @@ class TTSInferencer:
 
             # 初始化语言字典
             self._init_language_dict()
+            if _TTS_T2S_BACKEND == "mlx" and self.model_version != "v3":
+                raise ValueError("Experimental MLX T2S supports GPT-SoVITS v3 only; use torch and restart")
 
             # 初始化BERT和SSL模型
             self._init_bert_model()
@@ -353,7 +357,7 @@ class TTSInferencer:
         last_assessment = None
 
         for attempt, repetition_penalty in enumerate(penalties, start=1):
-            prediction, idx = self.t2s_model.model.infer_panel(
+            prediction, idx = self.semantic_decoder.infer_panel(
                 all_phoneme_ids,
                 all_phoneme_len,
                 prompt,
@@ -592,6 +596,22 @@ class TTSInferencer:
         """加载GPT模型"""
 
         logger.info(f"Loading GPT model: {self.gpt_path}")
+        if _TTS_T2S_BACKEND == "mlx":
+            from tts.semantic_runtime import load_mlx_decoder
+
+            self.t2s_model = None
+            self.semantic_decoder = load_mlx_decoder(
+                self.gpt_path,
+                acoustic_device=self.device,
+                cache_root=Path(root_dir) / ".cache" / "gsv-mlx-t2s",
+            )
+            self.gpt_config = None
+            self.hz = 50
+            self.max_sec = self.semantic_decoder.model.config.max_sec
+            return
+
+        from tts.semantic_runtime import TorchSemanticDecoder
+
         dict_s1 = torch.load(self.gpt_path, map_location="cpu", weights_only=True)
         self.gpt_config = dict_s1["config"]
         self.hz = 50  # 默认值
@@ -604,8 +624,15 @@ class TTSInferencer:
             self.t2s_model = self.t2s_model.half()
         self.t2s_model = self.t2s_model.to(self.device)
         self.t2s_model.eval()
+        self.semantic_decoder = TorchSemanticDecoder(self.t2s_model.model)
 
         self._maybe_precapture_t2s_graph()
+
+    def close(self):
+        decoder = getattr(self, "semantic_decoder", None)
+        close = getattr(decoder, "close", None)
+        if close is not None:
+            close()
 
     def _maybe_precapture_t2s_graph(self):
         """根据环境变量可选地预捕获 T2S 阶段的 CUDA Graph"""
@@ -1213,6 +1240,8 @@ class TTSInferencer:
 
             # v3模型不支持ref_free模式
             if self.model_version == "v3" and ref_free:
+                if _TTS_T2S_BACKEND == "mlx":
+                    raise ValueError("Experimental MLX T2S requires reference text and audio")
                 logger.warning("v3 model does not support reference-free mode; forcing reference mode")
                 ref_free = False
 
@@ -1624,6 +1653,8 @@ class TTSInferencer:
 
             # v3模型不支持ref_free模式
             if self.model_version == "v3" and ref_free:
+                if _TTS_T2S_BACKEND == "mlx":
+                    raise ValueError("Experimental MLX T2S requires reference text and audio")
                 logger.warning("v3 model does not support reference-free mode; forcing reference mode")
                 ref_free = False
 

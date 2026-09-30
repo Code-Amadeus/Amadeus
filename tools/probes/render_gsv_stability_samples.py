@@ -102,6 +102,9 @@ def main() -> int:
     from config import settings
     from local_tts_infer import TTSInferencer
 
+    if settings.TTS_T2S_BACKEND != "torch":
+        raise RuntimeError("render_gsv_stability_samples requires TTS_T2S_BACKEND=torch")
+
     cases = {case.name: case for case in CASES}
     reference_audio = (
         settings.TTS_REF_AUDIO_EN

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import numpy as np
 import pytest
@@ -42,6 +42,10 @@ def test_embedded_backend_preserves_synthesis_request(monkeypatch):
     class FakeInferencer:
         def __init__(self, **kwargs):
             observed["init"] = kwargs
+            self.device = kwargs["device"]
+            self.semantic_decoder = SimpleNamespace(
+                backend="torch", info={"semantic_backend": "torch", "torch": "test"}
+            )
 
         def infer(self, **kwargs):
             observed["infer"] = kwargs
@@ -68,6 +72,7 @@ def test_embedded_backend_preserves_synthesis_request(monkeypatch):
     assert observed["infer"]["text"] == "hello"
     assert observed["infer"]["ref_audio_path"] == "reference.wav"
     assert observed["infer"]["top_k"] == 7
+    assert backend._ready_info["semantic"] == {"semantic_backend": "torch", "torch": "test"}
 
 
 def test_embedded_rocm_identity_comes_from_loaded_inferencer():
@@ -113,6 +118,8 @@ emit({
     "torch": "test+rocm",
     "hip": "7.test",
     "cuda_available": True,
+    "semantic_backend": "torch",
+    "semantic": {"semantic_backend": "torch", "torch": "test"},
 })
 for line in sys.stdin:
     message = json.loads(line)
@@ -166,6 +173,8 @@ def test_sidecar_round_trip_preserves_request_and_float32_audio(tmp_path, monkey
             "torch": "test+rocm",
             "hip": "7.test",
             "cuda_available": True,
+            "semantic_backend": "torch",
+            "semantic": {"semantic_backend": "torch", "torch": "test"},
         }
         assert backend.deployment == "subprocess"
         assert TTSRuntimeAdapter(backend).is_rocm is True

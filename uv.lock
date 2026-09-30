@@ -429,6 +429,10 @@ local-rocm = [
     { name = "wordsegment", marker = "sys_platform == 'win32'" },
     { name = "x-transformers", marker = "sys_platform == 'win32'" },
 ]
+mlx-t2s = [
+    { name = "mlx", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine != 'arm64' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-cu128') or (platform_machine != 'arm64' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-mps') or (platform_machine != 'arm64' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-rocm') or (platform_machine != 'arm64' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (platform_machine != 'arm64' and extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-local-mps') or (platform_machine != 'arm64' and extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-local-rocm') or (platform_machine != 'arm64' and extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-torch-cpu') or (platform_machine != 'arm64' and extra == 'extra-7-amadeus-local-mps' and extra == 'extra-7-amadeus-local-rocm') or (platform_machine != 'arm64' and extra == 'extra-7-amadeus-local-mps' and extra == 'extra-7-amadeus-torch-cpu') or (platform_machine != 'arm64' and extra == 'extra-7-amadeus-local-rocm' and extra == 'extra-7-amadeus-torch-cpu') or (sys_platform != 'darwin' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-cu128') or (sys_platform != 'darwin' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-mps') or (sys_platform != 'darwin' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-rocm') or (sys_platform != 'darwin' and extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (sys_platform != 'darwin' and extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-local-mps') or (sys_platform != 'darwin' and extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-local-rocm') or (sys_platform != 'darwin' and extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-torch-cpu') or (sys_platform != 'darwin' and extra == 'extra-7-amadeus-local-mps' and extra == 'extra-7-amadeus-local-rocm') or (sys_platform != 'darwin' and extra == 'extra-7-amadeus-local-mps' and extra == 'extra-7-amadeus-torch-cpu') or (sys_platform != 'darwin' and extra == 'extra-7-amadeus-local-rocm' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "safetensors" },
+]
 rag = [
     { name = "faiss-cpu" },
     { name = "huggingface-hub" },
@@ -454,6 +458,16 @@ voice = [
     { name = "pyaudio" },
     { name = "scipy" },
     { name = "soundfile" },
+]
+
+[package.dev-dependencies]
+mlx-t2s-cpu = [
+    { name = "mlx", marker = "sys_platform == 'linux' or sys_platform == 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-cu128') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-mps') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-rocm') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-local-mps') or (extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-local-rocm') or (extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-mps' and extra == 'extra-7-amadeus-local-rocm') or (extra == 'extra-7-amadeus-local-mps' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-rocm' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "mlx", extra = ["cpu"], marker = "sys_platform == 'linux' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-cu128') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-mps') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-rocm') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-local-mps') or (extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-local-rocm') or (extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-mps' and extra == 'extra-7-amadeus-local-rocm') or (extra == 'extra-7-amadeus-local-mps' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-rocm' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "mlx-cpu", marker = "sys_platform == 'win32' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-cu128') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-mps') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-rocm') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-local-mps') or (extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-local-rocm') or (extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-mps' and extra == 'extra-7-amadeus-local-rocm') or (extra == 'extra-7-amadeus-local-mps' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-rocm' and extra == 'extra-7-amadeus-torch-cpu')" },
+    { name = "safetensors" },
+    { name = "torchmetrics" },
+    { name = "tqdm" },
 ]
 
 [package.metadata]
@@ -490,6 +504,7 @@ requires-dist = [
     { name = "librosa", marker = "extra == 'local-models'", specifier = "==0.11.0" },
     { name = "matplotlib", marker = "extra == 'local-models'", specifier = "==3.10.9" },
     { name = "mcp", specifier = "==2.0.0" },
+    { name = "mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'mlx-t2s'", specifier = "==0.32.2" },
     { name = "msgpack", marker = "extra == 'local-models'", specifier = ">=1.2.1,<2" },
     { name = "msgpack", marker = "extra == 'voice'", specifier = ">=1.2.1,<2" },
     { name = "mss", specifier = "==10.2.0" },
@@ -523,6 +538,7 @@ requires-dist = [
     { name = "rocm-sdk-libraries-custom", marker = "sys_platform == 'win32' and extra == 'local-rocm'", url = "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_libraries_custom-7.2.1-py3-none-win_amd64.whl" },
     { name = "rotary-embedding-torch", marker = "extra == 'local-models'", specifier = "==0.8.9" },
     { name = "ruff", marker = "extra == 'dev'", specifier = "==0.16.3" },
+    { name = "safetensors", marker = "extra == 'mlx-t2s'", specifier = "==0.8.0" },
     { name = "scipy", marker = "extra == 'voice'", specifier = "==1.17.1" },
     { name = "sentence-transformers", marker = "extra == 'rag'", specifier = "==5.5.1" },
     { name = "sentencepiece", marker = "extra == 'local-models'", specifier = "==0.2.1" },
@@ -561,7 +577,17 @@ requires-dist = [
     { name = "wordsegment", marker = "extra == 'local-models'", specifier = "==1.3.1" },
     { name = "x-transformers", marker = "extra == 'local-models'", specifier = "==2.19.6" },
 ]
-provides-extras = ["acp", "rag", "voice", "vad", "torch-cpu", "local-models", "local-cu124", "local-cu128", "local-mps", "local-rocm", "dev"]
+provides-extras = ["mlx-t2s", "acp", "rag", "voice", "vad", "torch-cpu", "local-models", "local-cu124", "local-cu128", "local-mps", "local-rocm", "dev"]
+
+[package.metadata.requires-dev]
+mlx-t2s-cpu = [
+    { name = "mlx", marker = "sys_platform == 'win32'", specifier = "==0.32.2" },
+    { name = "mlx", extras = ["cpu"], marker = "sys_platform == 'linux'", specifier = "==0.32.2" },
+    { name = "mlx-cpu", marker = "sys_platform == 'win32'", specifier = "==0.32.2" },
+    { name = "safetensors", specifier = "==0.8.0" },
+    { name = "torchmetrics", specifier = "==1.5.0" },
+    { name = "tqdm", specifier = "==4.67.3" },
+]
 
 [[package]]
 name = "annotated-doc"
@@ -1963,6 +1989,49 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d6/54/cfe61301667036ec958cb99bd3efefba235e65cdeb9c84d24a8293ba1d90/mdurl-0.1.2.tar.gz", hash = "sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba", size = 8729, upload-time = "2022-08-14T12:40:10.846Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8", size = 9979, upload-time = "2022-08-14T12:40:09.779Z" },
+]
+
+[[package]]
+name = "mlx"
+version = "0.32.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mlx-metal", marker = "sys_platform == 'darwin' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-cu128') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-mps') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-rocm') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-local-mps') or (extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-local-rocm') or (extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-mps' and extra == 'extra-7-amadeus-local-rocm') or (extra == 'extra-7-amadeus-local-mps' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-rocm' and extra == 'extra-7-amadeus-torch-cpu')" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/38/f7/5664e13821491559c953494e6705c818203d6880d713a0c22e12bead9564/mlx-0.32.2-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:77217798a2b036bae9f213b851d4cde4581893787c9964458b7d471f86036bd6", size = 619370, upload-time = "2026-08-25T10:31:44.235Z" },
+    { url = "https://files.pythonhosted.org/packages/bc/be/c821eed5b7c13b42c114aec54c757545d6eeecce25d3212ea7d18dd79cfd/mlx-0.32.2-cp312-cp312-macosx_15_0_arm64.whl", hash = "sha256:cf63fd5c32258ab07523b06401c20ee2280bf56e26e991d05bf6fd8a4d42d1f6", size = 619376, upload-time = "2026-08-25T10:31:45.647Z" },
+    { url = "https://files.pythonhosted.org/packages/0b/eb/af6b1a8b45f24d22e4735c52e0696c66233bd477e1b9e9dbbef225bdf88b/mlx-0.32.2-cp312-cp312-macosx_26_0_arm64.whl", hash = "sha256:68560fd648c5bb900aa6f6765cd74c5a8abaf092d97d73584a57b7545966c227", size = 619488, upload-time = "2026-08-25T10:31:47.485Z" },
+    { url = "https://files.pythonhosted.org/packages/42/9c/1acf68f9d27d24bf1abeb0b2cff93155e93af81af2f3f08206f8a32bbf86/mlx-0.32.2-cp312-cp312-manylinux_2_35_aarch64.whl", hash = "sha256:48e8738b078eeb7bfde74931fc02d8aa9c32f05d3c0dbf97b5c3cbe0470fbddf", size = 680208, upload-time = "2026-08-25T10:31:48.93Z" },
+    { url = "https://files.pythonhosted.org/packages/e2/3b/d8cf1d13dd2d434095818cc6d28211e00b891a4a58a07b5ad5f0529a8162/mlx-0.32.2-cp312-cp312-manylinux_2_35_x86_64.whl", hash = "sha256:8d270ade1e48e006383a6b5f33a3a4ec5c265389299a60a60bf55165af1770d9", size = 743277, upload-time = "2026-08-25T10:31:50.351Z" },
+    { url = "https://files.pythonhosted.org/packages/11/3b/f191c8f7ed84d50370fa8e4d390ed747dddd148c03756c8b7d4f7feb9084/mlx-0.32.2-cp312-cp312-win_amd64.whl", hash = "sha256:6c615ad1c6877d7d38affe8526446955cd48d6796e871150f59145cf0d1a265d", size = 620981, upload-time = "2026-08-25T10:31:51.749Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/54/4b8b690a5322a92271214e49480d083f253ab48c81825ade92473828846f/mlx-0.32.2-cp312-cp312-win_arm64.whl", hash = "sha256:65beb9ce75153072808ef18913ecca3d929b87be5d7c1f57d9df391c04b6f957", size = 607910, upload-time = "2026-08-25T10:31:53.269Z" },
+]
+
+[package.optional-dependencies]
+cpu = [
+    { name = "mlx-cpu", marker = "sys_platform == 'linux' or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-cu128') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-mps') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-local-rocm') or (extra == 'extra-7-amadeus-local-cu124' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-local-mps') or (extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-local-rocm') or (extra == 'extra-7-amadeus-local-cu128' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-mps' and extra == 'extra-7-amadeus-local-rocm') or (extra == 'extra-7-amadeus-local-mps' and extra == 'extra-7-amadeus-torch-cpu') or (extra == 'extra-7-amadeus-local-rocm' and extra == 'extra-7-amadeus-torch-cpu')" },
+]
+
+[[package]]
+name = "mlx-cpu"
+version = "0.32.2"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/56/fa/4a37da905a3ea27bd5c041a26d8a5a58a35fb540b4c4de5a69c5e0173e29/mlx_cpu-0.32.2-py3-none-manylinux_2_35_aarch64.whl", hash = "sha256:d0f94625588b51a878786dd51cec5617894ce586cf3c94645ce1b64e24c27c0b", size = 8822016, upload-time = "2026-08-25T10:31:05.912Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/8b/2305637be752d0827594de266eaee3d282f780ba7877c0e15881cdf9da5e/mlx_cpu-0.32.2-py3-none-manylinux_2_35_x86_64.whl", hash = "sha256:fc5d31b90fc4f457b2f9614ed45651a567d22a6a11a03d114a90a4e10bdd8878", size = 10388414, upload-time = "2026-08-25T10:31:08.632Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/a1/6439ce76664975e7d32a106d73d8b81157fd106655127949445fe477e362/mlx_cpu-0.32.2-py3-none-win_amd64.whl", hash = "sha256:c1b5fbaa3e62334f33d686e1e46616aa90f2b3be4cdfb7a8fa658149ab1de087", size = 15568519, upload-time = "2026-08-25T10:31:11.116Z" },
+    { url = "https://files.pythonhosted.org/packages/89/94/cc4280cdcaf12fc1bbed22a8add837e09672c173e3ad0f220d749f18b732/mlx_cpu-0.32.2-py3-none-win_arm64.whl", hash = "sha256:f7c4915558f52e939d228800dbc8fe2275d10dfaa3b2a3463194e5e64b68e8d8", size = 7579380, upload-time = "2026-08-25T10:31:13.868Z" },
+]
+
+[[package]]
+name = "mlx-metal"
+version = "0.32.2"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f7/ab/ba1952908c5d2a5070cf1cfbfea0161c4751ea62299e2776819810917483/mlx_metal-0.32.2-py3-none-macosx_14_0_arm64.whl", hash = "sha256:3825fff379dbc107dd3413e564a06caeaa24819910ec49c0439e454c06a1b9b8", size = 42516623, upload-time = "2026-08-25T10:31:18.396Z" },
+    { url = "https://files.pythonhosted.org/packages/79/ec/34f37376e26d537fadffb99af3a760d6545e37f5e1a30a552baadf237fc5/mlx_metal-0.32.2-py3-none-macosx_15_0_arm64.whl", hash = "sha256:55a369250d220b2cf10213a87a2ac1b1a420608c5b35b1df4e7147ac8e32f121", size = 42512323, upload-time = "2026-08-25T10:31:22.673Z" },
+    { url = "https://files.pythonhosted.org/packages/dd/cd/4e50bf325100e7165e13d025f264362bf0009196269f9eaf87f2c6e738a2/mlx_metal-0.32.2-py3-none-macosx_26_0_arm64.whl", hash = "sha256:e6abeac9ac5265830c9c1541b6f96e9be37a85c2446763a46ad466c63a3837ab", size = 64367860, upload-time = "2026-08-25T10:31:28.056Z" },
 ]
 
 [[package]]

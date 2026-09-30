@@ -105,6 +105,13 @@ buffered WAV responses; `TTS_API_STREAM_PROTOCOL=openai_sse` explicitly enables
 PCM first-packet playback for endpoints that implement OpenAI speech SSE events.
 There is no automatic retry from a partial stream to a second billable request.
 `TTS_BACKEND=fish_audio` selects Fish Audio's MessagePack WebSocket transport.
+`TTS_T2S_BACKEND=torch|mlx` is a separate startup choice for the local
+GPT-SoVITS semantic decoder. `torch` is the default. The experimental `mlx`
+choice requires Apple Silicon, a working MLX Metal runtime, Torch MPS for the
+unchanged v3 acoustic chain, reference text and audio, and the locked `mlx-t2s`
+extra. Unsupported models or a missing runtime fail at load; change back to
+`torch` and restart to revert. It does not change `TTS_DEVICE` or remote TTS.
+See [the experiment and local probe](../docs/gsv-mlx-t2s-experiment.md).
 Set `FISH_TTS_API_KEY`, `FISH_TTS_MODEL` (for example `s2.1-pro-free`), and
 `FISH_TTS_REFERENCE_ID` (the hosted voice ID, not the inference model).
 The default reference is the public Japanese Makise Kurisu voice

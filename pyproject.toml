@@ -39,6 +39,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+mlx-t2s = [
+    "mlx==0.32.2; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "safetensors==0.8.0",
+]
 acp = ["agent-client-protocol==0.12.1"]
 # Optional character retrieval; select the existing torch-cpu build for CPU-only
 # use, or add rag to a complete local-cu124/local-rocm command. No voice required.
@@ -210,6 +214,21 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "mlx_cpu: actual MLX CPU numerical tests (AMADEUS_MLX_TESTS=1 makes missing dependencies fail)",
+    "mlx_metal: Apple Silicon Metal qualification",
+    "real_gsv: requires user-supplied local GPT-SoVITS assets",
+]
+
+[dependency-groups]
+mlx-t2s-cpu = [
+    "mlx[cpu]==0.32.2; sys_platform == 'linux'",
+    "mlx==0.32.2; sys_platform == 'win32'",
+    "mlx-cpu==0.32.2; sys_platform == 'win32'",
+    "safetensors==0.8.0",
+    "torchmetrics==1.5.0",
+    "tqdm==4.67.3",
+]
 
 [tool.setuptools]
 # Listed explicitly rather than auto-discovered. A flat layout invites
@@ -226,6 +245,7 @@ packages = [
     "server",
     "tools",
     "tts",
+    "tts.semantic_mlx",
     "vn_player",
     "vn_player.prompt_layers",
     "vts",

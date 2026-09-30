@@ -144,6 +144,8 @@ def main() -> None:
             "torch": torch_version,
             "hip": hip_version,
             "cuda_available": cuda_available,
+            "semantic_backend": inferencer.semantic_decoder.backend,
+            "semantic": inferencer.semantic_decoder.info,
         }
     )
 

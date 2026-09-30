@@ -1,0 +1,12 @@
+# Build context can be tools/probes only. Mount a sanitized source-release tree
+# read-only at /workspace when running; no model, voice, .env, or venv is copied.
+FROM python:3.12.10-slim-bookworm
+RUN python -m pip install --no-cache-dir uv==0.12.8
+ENV UV_PROJECT_ENVIRONMENT=/opt/gsv-venv \
+    UV_CACHE_DIR=/tmp/uv-cache \
+    PYTHONPATH=/workspace \
+    AMADEUS_MLX_TESTS=1 \
+    TTS_DEVICE=cpu \
+    TTS_T2S_BACKEND=torch
+WORKDIR /workspace
+CMD ["sh", "-c", "uv sync --locked --no-install-project --extra torch-cpu --group mlx-t2s-cpu --extra dev && uv run --locked --no-sync python -m pytest tests/test_semantic_mlx_numerics.py tests/test_semantic_mlx_control_flow.py -q -rs"]

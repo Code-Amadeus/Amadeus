@@ -10,12 +10,14 @@ import pytest
 
 
 @pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("t2s_backend", ["torch", "mlx"])
 @pytest.mark.parametrize(("backend_id", "cached"), [
     ("gpt_sovits", True), ("gpt_sovits", False), ("fish_audio", True),
     ("openai_compatible", True), ("mimo", True),
 ])
-async def test_local_audio_cache_boundary(monkeypatch, streaming, backend_id, cached):
+async def test_local_audio_cache_boundary(monkeypatch, streaming, t2s_backend, backend_id, cached):
     from tts import pipeline
+    monkeypatch.setattr(pipeline, "TTS_T2S_BACKEND", t2s_backend)
 
     calls = []
     actual = []
@@ -57,7 +59,7 @@ async def test_local_audio_cache_boundary(monkeypatch, streaming, backend_id, ca
             stream_to_player=streaming,
         )
         await asyncio.wait_for(done.wait(), 2)
-    if backend_id == "gpt_sovits":
+    if backend_id == "gpt_sovits" and t2s_backend == "torch":
         assert calls == (["lookup"] if cached else ["lookup", "synthesize", "store"])
         assert actual == ([0.75] if cached else [0.25])
     else:

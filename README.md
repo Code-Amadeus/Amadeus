@@ -404,6 +404,10 @@ Issue #67 reports standalone Qwen-ASR MPS results on an M4 Max; the application
 currently accepts only CPU/CUDA Qwen device selection. Installing `local-mps`
 does not enable application ASR MPS routing. GPT-SoVITS supports the MPS path
 through the `local-mps` environment.
+An opt-in Python MLX v3 semantic decoder experiment is documented in
+[the GPT-SoVITS MLX experiment guide](docs/gsv-mlx-t2s-experiment.md).
+Its default remains Torch; Metal performance and voice quality require
+separate Apple Silicon validation.
 
 RTX 50-series users should evaluate cu128; cu124 is not a Blackwell baseline.
 FlashAttention remains optional. Matching cp312/Torch 2.7/cu128 community Windows

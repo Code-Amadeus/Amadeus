@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
+import subprocess
+import sys
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -24,6 +27,18 @@ class _FakeASRManager:
 
     def close(self) -> None:
         self.closed = True
+
+
+def test_t2s_backend_rejects_unknown_startup_value() -> None:
+    env = os.environ.copy()
+    env["TTS_T2S_BACKEND"] = "unknown"
+    result = subprocess.run(
+        [sys.executable, "-c", "from config import settings"],
+        cwd=Path(__file__).resolve().parents[1], env=env,
+        capture_output=True, text=True,
+    )
+    assert result.returncode != 0
+    assert "TTS_T2S_BACKEND must be torch or mlx" in result.stderr
 
 
 def test_settings_connection_descriptors_never_return_secret_values() -> None:

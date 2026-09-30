@@ -16,6 +16,17 @@ the cu124 dependency audit and future SBOM rather than duplicated here.
 
 ## Verified for the stated disposition
 
+### OminiX-MLX T2S implementation reference
+
+- Source: <https://github.com/OminiX-ai/OminiX-MLX/tree/4988a3fcfa48b8cb5d0780a501b92c6a41401523/gpt-sovits-mlx>
+- Checked revision: `4988a3fcfa48b8cb5d0780a501b92c6a41401523`.
+- Its Cargo package declares `MIT OR Apache-2.0`; this source record uses the
+  MIT option and preserves upstream `LICENSE-MIT` in `LICENSES/OminiX-MLX-MIT.txt`.
+- The Python MLX T2S module uses its architecture and trace approach as a
+  reference. Amadeus's checked v3 Torch source determines weight shapes,
+  sampling, EOS, cache length, and output semantics. No Rust or acoustic VITS
+  implementation is included.
+
 ### aec-audio-processing (Linux source build)
 
 - Baseline: official PyPI `aec-audio-processing` 1.0.1 sdist.

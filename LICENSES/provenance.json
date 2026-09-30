@@ -1,6 +1,6 @@
 {
   "schema": "amadeus.third-party-provenance.v1",
-  "last_reviewed": "2026-09-21",
+  "last_reviewed": "2026-09-30",
   "inventory_roots": [
     "GPT_SoVITS",
     "tools/AP_BWE_main",
@@ -9,9 +9,29 @@
     "tools/uvr5",
     "render/web/vendor",
     "assets/audio/sfx",
-    "vendor/aec-audio-processing"
+    "vendor/aec-audio-processing",
+    "tts/semantic_mlx"
   ],
   "components": [
+    {
+      "id": "ominix-mlx-t2s-reference",
+      "name": "OminiX-MLX GPT-SoVITS T2S implementation reference",
+      "category": "implementation-reference",
+      "paths": [
+        "tts/semantic_mlx/**"
+      ],
+      "source_url": "https://github.com/OminiX-ai/OminiX-MLX/tree/4988a3fcfa48b8cb5d0780a501b92c6a41401523/gpt-sovits-mlx",
+      "source_revision": "4988a3fcfa48b8cb5d0780a501b92c6a41401523",
+      "declared_compatibility": "T2S structure and MLX layout reference only; Amadeus v3 source behavior is authoritative",
+      "license_expression": "MIT",
+      "license_evidence": [
+        "LICENSES/OminiX-MLX-MIT.txt"
+      ],
+      "modified": true,
+      "release_action": "include",
+      "gate_status": "ready",
+      "notes": "The OminiX gpt-sovits-mlx Cargo package declares MIT OR Apache-2.0; this record selects the MIT grant. Amadeus's Python MLX module was written for the existing v3 source weights and infer_panel semantics, informed by OminiX's T2S model, cache, sampler, and trace layout. No Rust crate, VITS path, model weights, or audio is vendored. The first-party integration and test code remains under the root Amadeus license."
+    },
     {
       "id": "gpt-sovits",
       "name": "GPT-SoVITS",

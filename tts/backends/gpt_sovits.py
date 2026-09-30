@@ -89,6 +89,11 @@ class GPTSoVITSBackend(BaseTTSBackend):
             gpt_path=settings.TTS_GPT_MODEL_PATH or None,
             sovits_path=settings.TTS_SOVITS_MODEL_PATH or None,
         )
+        self._ready_info = {
+            "type": "ready",
+            "device": str(self._inferencer.device),
+            "semantic": self._inferencer.semantic_decoder.info,
+        }
 
     def _is_running(self) -> bool:
         return self._proc is not None and self._proc.poll() is None
@@ -153,11 +158,12 @@ class GPTSoVITSBackend(BaseTTSBackend):
             self.deployment = "subprocess"
             logger.info(
                 "[TTS:GPT-SoVITS] sidecar ready "
-                "(device=%s, torch=%s, hip=%s, cuda_available=%s)",
+                "(device=%s, torch=%s, hip=%s, cuda_available=%s, semantic=%s)",
                 message.get("device", "?"),
                 message.get("torch", "?"),
                 message.get("hip"),
                 message.get("cuda_available", False),
+                message.get("semantic_backend", "?"),
             )
         except Exception:
             self._stop_sidecar(proc)
