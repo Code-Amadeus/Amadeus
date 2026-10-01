@@ -1,11 +1,11 @@
 # Main Chat character prompt
 
-Settings → General → Main Chat character previews the Japanese identity and
-personality currently used by Main Chat. Copy the built-in character into the
-editor to start from it, or enter a replacement in Japanese, then save.
+Settings → General → Main Chat character has one editor for a Japanese
+identity/personality override. When empty, the editor displays the built-in
+character as a placeholder. The placeholder is a hint, not editable content,
+and is never saved as the override. Enter a replacement in Japanese, then save.
 Clearing the editor and saving restores the built-in character. Whitespace-only
-input also restores it. The default remains in code and follows future updates;
-it is not copied into the saved override unless explicitly chosen for editing.
+input also restores it. The default remains in code and follows future updates.
 
 The override changes Japanese Main Chat identity/personality only. Language,
 reasoning disclosure, expression/TTS formatting, delegation, provider routing
@@ -18,7 +18,8 @@ Saving applies to subsequent Main Chat model requests, including existing
 Cooperative Chat sessions. Existing messages and history are not rewritten.
 Desktop settings persist across backend restarts. If the backend is disconnected
 or cannot apply the update, the UI reports that it is saved for the next start;
-the current-runtime preview requires a backend connection.
+the default placeholder is loaded from the backend and remains available
+while disconnected if it has already been loaded.
 
 The setting is `AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA` (maximum 8192 characters).
 An explicit parent-process value locks GUI editing, as for other desktop

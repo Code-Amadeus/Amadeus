@@ -1173,7 +1173,6 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                       ? desktop.values.AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA ?? ''
                       : String(config.main_chat_character_prompt_ja ?? '')}
                     preview={config.main_chat_character_prompt_preview}
-                    connected={connected}
                     canSave={connected || Boolean(desktop)}
                     locked={Boolean(desktop?.locked?.AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA)}
                     saving={saving === 'main_chat_character_prompt_ja'}

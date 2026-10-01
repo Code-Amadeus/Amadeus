@@ -6193,7 +6193,7 @@ input[type="range"]::-webkit-slider-thumb:hover { background: var(--focus-fill);
 
 .character-prompt-editor { display: flex; flex-direction: column; gap: 8px; width: 100%; min-width: 0; }
 .character-prompt-editor textarea { width: 100%; min-width: 0; padding: 10px; resize: vertical; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; font-size: 12px; line-height: 1.7; }
-.character-prompt-editor textarea[readonly] { background: var(--subtle-fill); }
+.character-prompt-editor textarea::placeholder { color: var(--muted); opacity: 1; }
 .character-prompt-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .character-prompt-actions button { padding: 7px 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 12px; cursor: pointer; }
 .character-prompt-actions button:disabled { opacity: 0.5; cursor: default; }

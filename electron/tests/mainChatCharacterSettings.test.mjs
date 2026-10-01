@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url)
 function compile(relativePath, dependencies = require) {
   const source = fs.readFileSync(new URL(relativePath, import.meta.url), 'utf8')
   const code = ts.transpileModule(source, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true, jsx: ts.JsxEmit.ReactJSX },
   }).outputText
   const exports = {}
   new Function('require', 'exports', code)(dependencies, exports)
@@ -67,3 +67,27 @@ test('launch environment keeps authority and invalid persona values do not persi
   }
   assert.equal(store.snapshot({}).values[key], undefined)
 })
+
+
+const React = require('react')
+const { renderToStaticMarkup } = require('react-dom/server')
+const { default: CharacterEditor } = compile('../src/renderer/components/MainChatCharacterSettings.tsx', name => {
+  if (name === '../i18n') return { useI18n: () => ({ t: value => value }) }
+  if (name === './SettingsPrimitives') return { CardShell: ({ children }) => React.createElement('div', null, children) }
+  return require(name)
+})
+
+for (const savedOverride of ['', '保存済みの人物設定']) {
+  test(`one editor keeps the default only in its placeholder (${savedOverride ? 'custom' : 'default'})`, () => {
+    const defaultPrompt = '内置の人物設定'
+    const html = renderToStaticMarkup(React.createElement(CharacterEditor, {
+      savedOverride, preview: { default: defaultPrompt, effective: savedOverride || defaultPrompt, active: true },
+      canSave: true, locked: false, saving: false, onSave: async () => true,
+    }))
+    const textareas = [...html.matchAll(/<textarea\b([^>]*)>([\s\S]*?)<\/textarea>/g)]
+    assert.equal(textareas.length, 1)
+    assert.ok(textareas[0][1].includes(`placeholder="${defaultPrompt}"`))
+    assert.equal(textareas[0][2], savedOverride)
+    assert.ok(!textareas[0][1].includes('readonly'))
+  })
+}
