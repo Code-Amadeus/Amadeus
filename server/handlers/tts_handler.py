@@ -101,12 +101,15 @@ class TtsHandler(RequestHandler):
 
         if self._playback_manager and hasattr(self._playback_manager, "interrupt"):
             await self._playback_manager.interrupt()
-        elif self._playback_manager:
-            try:
-                self._playback_manager.pending_audio.clear()
-                self._playback_manager.player_is_ready.set()
-            except Exception:
-                logger.exception("failed to clear playback manager during interrupt")
+        else:
+            if self._playback_manager:
+                try:
+                    self._playback_manager.pending_audio.clear()
+                    self._playback_manager.player_is_ready.set()
+                except Exception:
+                    logger.exception("failed to clear playback manager during interrupt")
+            if self._player:
+                self._player.stop()
 
         # PlaybackManager.reset_sequence and sentence-id allocation are the
         # two halves of one turn boundary.  Direct Chat branches do not enter
@@ -119,8 +122,8 @@ class TtsHandler(RequestHandler):
             except Exception:
                 logger.exception("failed to reset sentence sequence during interrupt")
 
-        if self._player:
-            self._player.stop()
+        # PlaybackManager owns stopping the device as well as invalidation;
+        # stopping it again here would destroy its idle-stream reuse.
         if params.get("annotate_history") and self._on_interrupt is not None:
             result = self._on_interrupt(
                 {

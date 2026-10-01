@@ -1848,8 +1848,12 @@ class ChatRuntime:
             not in {"1", "true", "yes", "on"}
         ):
             try:
+                started = time.perf_counter()
                 await asyncio.to_thread(player.initialize, 24000)
-                logger.info("pyaudio stream warmup completed (24000 Hz)")
+                logger.info(
+                    "pyaudio stream warmup completed (24000 Hz) turn=%s elapsed_ms=%.1f",
+                    turn_id, (time.perf_counter() - started) * 1000,
+                )
             except asyncio.CancelledError:
                 _observe_turn_terminal(turn_id, "cancelled", reason="audio_warmup_cancelled")
                 raise

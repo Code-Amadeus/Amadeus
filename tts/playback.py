@@ -782,7 +782,12 @@ class PlaybackManager:
         """Stop current playback and discard queued audio for the active turn."""
         self._playback_epoch = self._next_playback_epoch()
         epoch = self._playback_epoch
-        self.player.stop()
+        # Readiness means no playback owns the device. A new turn still
+        # invalidates queued producers, but must not close an idle warm stream
+        # only to reopen it before asking the LLM for its first sentence.
+        # player.is_playing also describes an open warm stream, not just speech.
+        if not self.player_is_ready.is_set():
+            self.player.stop()
         async with self.play_condition:
             self.pending_audio.clear()
             if reset_sequence:
