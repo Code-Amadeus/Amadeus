@@ -73,6 +73,9 @@ LOG_USER_CONTENT = _bool("LOG_USER_CONTENT", False)
 # ===========================================================================
 # Main Chat LLM routing — remote DeepSeek first-release baseline
 # ===========================================================================
+# Japanese Main Chat identity/personality only; empty uses the built-in role.
+MAIN_CHAT_CHARACTER_PROMPT_JA = _str("AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA", "")
+
 LLM_PROVIDER = _str("LLM_PROVIDER", "deepseek").strip().lower()
 LLM_PROVIDERS = frozenset(
     {"deepseek", "openai", "gemini", "bedrock", "local", "hybrid", "hybrid2", "hybrid3"}

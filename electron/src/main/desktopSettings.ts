@@ -51,6 +51,7 @@ type StoredMcpConnection = {
 }
 
 const VALUE_KEYS = new Set([
+  'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA',
   'AMADEUS_UI_LOCALE',
   'AMADEUS_UI_THEME',
   'AMADEUS_WINDOWS_STARTUP_MODE',
@@ -680,13 +681,18 @@ export class DesktopSettingsStore {
       if (explicitEnvironmentHas(environment, key)) {
         throw new Error(`${key} is locked by the parent process environment`)
       }
-      if (rawValue === null || rawValue === '') {
+      // Keep an explicit empty character prompt so restoring the built-in
+      // role also overrides any project .env value on the next start.
+      if (rawValue === null || (rawValue === '' && key !== 'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA')) {
         if (stored.values[key] !== undefined) changedKeys.add(key)
         delete stored.values[key]
         continue
       }
-      const value = typeof rawValue === 'boolean' ? (rawValue ? 'true' : 'false') : String(rawValue)
-      if (value.includes('\0') || value.length > (key === 'AMADEUS_ACP_PROVIDERS' ? 65536 : 4096)) throw new Error(`Invalid value for ${key}`)
+      if (key === 'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA' && typeof rawValue !== 'string') throw new Error('Character prompt must be a string')
+      const value = key === 'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA' ? String(rawValue).trim()
+        : typeof rawValue === 'boolean' ? (rawValue ? 'true' : 'false') : String(rawValue)
+      const maxLength = key === 'AMADEUS_ACP_PROVIDERS' ? 65536 : key === 'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA' ? 8192 : 4096
+      if (value.includes('\0') || String(rawValue).length > maxLength) throw new Error(`Invalid value for ${key}`)
       if (key === 'AMADEUS_ACP_PROVIDERS') validateAcpProviders(value)
       const choices = VALUE_CHOICES[key]
       if (choices && !choices.has(value)) throw new Error(`Invalid value for ${key}: ${value}`)

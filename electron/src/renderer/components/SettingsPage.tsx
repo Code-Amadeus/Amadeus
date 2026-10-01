@@ -4,6 +4,7 @@ import FluentIcon, { type FluentIconName } from './FluentIcon'
 import { GroupTitle, CardShell, CardIcon, StatusPill, SettingsGroup } from './SettingsPrimitives'
 import McpConnections, { type McpConnectionSummary } from './McpConnections'
 import ChatAvatarSettings from './ChatAvatarSettings'
+import MainChatCharacterSettings from './MainChatCharacterSettings'
 import AcpProviders, { type AcpConfiguration } from './AcpProviders'
 import CapabilitiesPanel, { type RuntimePackageStatus } from './CapabilitiesPanel'
 import { buildCapabilityProfiles, type SceneConfigureSection } from './sceneCapabilityProjection'
@@ -694,11 +695,15 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
       setConfig((response.values as Record<string, unknown>) ?? response)
       const applied = await markRuntimeSettingsApplied({ [key]: value }, saved.pendingRevisions)
       if (applied) setDesktop(applied as unknown as DesktopSettingsSnapshot)
+      if (key === 'main_chat_character_prompt_ja') setNotice('Character prompt saved. New Main Chat replies use the current setting.')
+      return true
     } catch (reason) {
       if (persisted) {
         setNotice('Saved for the next backend start; the current runtime did not change.')
+        return true
       } else {
         setError(reason instanceof Error ? reason.message : `Could not update ${key}`)
+        return false
       }
     } finally {
       setSaving(null)
@@ -1160,6 +1165,18 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                   <ThemePicker
                     value={theme}
                     onChange={value => void setTheme(value).catch(reason => setError(reason instanceof Error ? reason.message : 'Could not save interface theme'))}
+                  />
+                </SettingsGroup>
+                <SettingsGroup title="Main Chat character" detail="Override the Japanese identity and personality used by Main Chat. Language, expression, voice and agent rules are kept separately.">
+                  <MainChatCharacterSettings
+                    savedOverride={desktop?.sources?.AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA === 'user'
+                      ? desktop.values.AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA ?? ''
+                      : String(config.main_chat_character_prompt_ja ?? '')}
+                    preview={config.main_chat_character_prompt_preview}
+                    canSave={connected || Boolean(desktop)}
+                    locked={Boolean(desktop?.locked?.AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA)}
+                    saving={saving === 'main_chat_character_prompt_ja'}
+                    onSave={value => handleChange('main_chat_character_prompt_ja', value)}
                   />
                 </SettingsGroup>
                 <SettingsGroup title="Chat appearance" detail="Local presentation only; avatar images are never sent to the model.">
