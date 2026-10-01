@@ -1136,6 +1136,8 @@ class SystemHandler(RequestHandler):
         from config.asset_packages import external_asset_pack_status
         import tts.pipeline as tts_pipeline
         from core.chat_runtime import get_chat_runtime
+        from llm.prompts import get_character_prompt_config
+
         vision = visual_runtime.get_config()
         chat_runtime = get_chat_runtime()
         from asr.registry import asr_backend_statuses
@@ -1174,6 +1176,7 @@ class SystemHandler(RequestHandler):
             "wake_enabled": bool(getattr(settings, "WAKE_ENABLED", False)),
             "visual_asset_pack": external_asset_pack_status("visual-runtime"),
             "character_pack": character_pack_status(),
+            **get_character_prompt_config(),
             "settings_scope": "runtime_only",
             "model_connections": _model_connections(
                 settings,
@@ -1258,7 +1261,10 @@ class SystemHandler(RequestHandler):
         from server import wallpaper_subtitle_runtime
         import tts.pipeline as tts_pipeline
 
+        from llm.prompts import CHARACTER_PROMPT_SETTING, normalize_character_prompt, set_character_prompt
+
         allowed = {
+            CHARACTER_PROMPT_SETTING,
             "llm_provider",
             "local_llm_type",
             "tts_mode",
@@ -1280,6 +1286,9 @@ class SystemHandler(RequestHandler):
         if unknown:
             raise ValueError(f"unsupported runtime setting(s): {', '.join(unknown)}")
         values = {str(key): value for key, value in values.items()}
+
+        if CHARACTER_PROMPT_SETTING in values:
+            values[CHARACTER_PROMPT_SETTING] = normalize_character_prompt(values[CHARACTER_PROMPT_SETTING])
 
         if "llm_provider" in values:
             provider = str(values["llm_provider"] or "").strip().lower()
@@ -1367,6 +1376,8 @@ class SystemHandler(RequestHandler):
                     raise RuntimeError("wait for TTS playback to become idle before changing TTS settings")
 
         updated: list[str] = []
+        if CHARACTER_PROMPT_SETTING in values:
+            updated.extend(set_character_prompt(values[CHARACTER_PROMPT_SETTING]))
         if "asr_backend" in values:
             if self._asr_handler is None:
                 raise RuntimeError("ASR runtime is unavailable")

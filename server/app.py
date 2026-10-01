@@ -1757,7 +1757,7 @@ async def bootstrap(port: int = 17777) -> None:
             runtime=provider_runtime, context_requirements=context_requirements,
             allocate=lambda label, context_id:create_scratch_workspace(
                 label, unique_id=context_id), query=_query_cooperative_chat,
-            persona=get_system_prompt("base"), publish_factory=_cooperative_publisher,
+            persona=lambda: get_system_prompt("base"), publish_factory=_cooperative_publisher,
             role_provider_selector=_select_cooperative_role_provider,
             permission_policy=settings.COOPERATIVE_CHAT_PERMISSION_POLICY,
             permission_store=work_ledger_store,
