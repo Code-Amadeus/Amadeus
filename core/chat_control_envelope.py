@@ -28,6 +28,7 @@ class InlineControlChunk:
     control_error: str = ""
     explicit_no_control: bool = False
     history_control_text: str = ""
+    # text / action (presentation only) / control, in original stream order.
     ordered_parts: tuple[tuple[str, Any], ...] = ()
     had_actions: bool = False
 
@@ -48,14 +49,24 @@ def parse_inline_control_chunk(
             ordered_parts=tuple(ordered_parts),
         )
 
-    delegates = [action for action in actions if action.get("type") == "DELEGATE"]
-    controls = [action for action in actions if action.get("type") == "CONTROL"]
-    auip_actions = [action for action in actions if action.get("type") == "AUIP"]
-    expressions = [
-        action
-        for action in actions
-        if action.get("type") not in {"DELEGATE", "CONTROL", "AUIP"}
-    ]
+    delegates, controls, auip_actions, expressions = [], [], [], []
+    classified_parts = []
+    for kind, value in ordered_parts:
+        if kind == "text":
+            classified_parts.append((kind, value))
+            continue
+        action_type = value.get("type")
+        if action_type == "DELEGATE":
+            delegates.append(value)
+        elif action_type == "CONTROL":
+            controls.append(value)
+        elif action_type == "AUIP":
+            auip_actions.append(value)
+        else:
+            expressions.append(value)
+            classified_parts.append(("action", value))
+            continue
+        classified_parts.append(("control", value))
     control_seen = False
     control_valid = False
     control_error = ""
@@ -82,6 +93,6 @@ def parse_inline_control_chunk(
         control_error=control_error,
         explicit_no_control=explicit_no_control,
         history_control_text=history_control_text,
-        ordered_parts=tuple(ordered_parts),
+        ordered_parts=tuple(classified_parts),
         had_actions=True,
     )

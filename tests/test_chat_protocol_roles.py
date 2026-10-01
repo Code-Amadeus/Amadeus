@@ -47,6 +47,19 @@ def test_inline_no_control_is_history_evidence_not_an_action() -> None:
     assert parsed.history_control_text == '[CONTROL delegate="false"]'
 
 
+def test_inline_parser_classifies_ordered_controls_separately_from_expressions() -> None:
+    parser = StreamTagParser(control_envelope_enabled=True, stop_after_control=False)
+    parsed = parse_inline_control_chunk(parser,
+        '[EMO shy]前[AUIP action="launch"]中'
+        '[DELEGATE provider="codex" intent="execute" task="synthetic"]'
+        '[CONTROL delegate="false"][PARAM id="ParamAngleX" value="1"]後')
+    assert [kind for kind, _ in parsed.ordered_parts] == [
+        'action', 'text', 'control', 'text', 'control', 'control', 'action', 'text']
+    assert [value for kind, value in parsed.ordered_parts if kind == 'action'] == list(parsed.expression_actions)
+    assert [action['type'] for action in parsed.expression_actions] == ['EMO', 'PARAM']
+    assert project_inline_role_history(parsed.ordered_parts, policy='preserve') == '[EMO shy]前中後'
+
+
 def test_live_stream_keeps_its_single_control_gate_when_history_can_read_many() -> None:
     first = '[DELEGATE provider="codex" intent="amend" task="Change Game"]'
     second = '[DELEGATE provider="codex" intent="amend" task="Change Page"]'

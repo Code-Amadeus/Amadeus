@@ -158,6 +158,7 @@ class TTSRuntimeAdapter:
             enable_cuda_graph=enable_cuda_graph,
             enable_static_kv=enable_static_kv,
             max_sec_override=max_sec_override,
+            # Preserve the options shape for backends that do not use emotion.
             **({"emotion": emotion} if emotion else {}),
         )
         chunk = self.backend.synthesize(request)
@@ -210,6 +211,7 @@ class TTSRuntimeAdapter:
             chunk_size_seconds=chunk_size_seconds,
             max_sec_override=max_sec_override,
             collect_t2s_stats=collect_t2s_stats,
+            # Preserve the options shape for backends that do not use emotion.
             **({"emotion": emotion} if emotion else {}),
         )
         for chunk in self.backend.synthesize_stream(request):

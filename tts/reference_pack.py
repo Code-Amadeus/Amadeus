@@ -5,6 +5,8 @@ from dataclasses import dataclass
 import json
 from pathlib import Path, PurePosixPath
 
+from llm.emo_presets import EMOTION_DURATION_RANGES
+
 PACK_ID = "voice-kurisu-emotions"
 PACK_TREE = "audio/reference/emotions"
 MANIFEST_NAME = "references.json"
@@ -70,6 +72,8 @@ def load_reference_pack(root: Path) -> ReferencePack:
                 raise ReferencePackError("Invalid reference mapping")
             if emotion == "normal":
                 raise ReferencePackError("normal must retain the configured default reference")
+            if emotion not in EMOTION_DURATION_RANGES:
+                raise ReferencePackError(f"Unknown EMO preset: {emotion}")
             audio = _member(root, entry.get("audio"))
             transcript = _member(root, entry.get("transcript"))
             if audio.suffix.lower() not in {".wav", ".ogg", ".flac"} or transcript.suffix.lower() != ".txt":

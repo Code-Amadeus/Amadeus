@@ -116,8 +116,10 @@ def _emotion_stream(emotion, sentence_id, **params):
         logger.info("[TTS-EMOTION] synthesis id=%s reference=%s", sentence_id, selected)
     inner = _tts_runtime.infer_stream(**params)
     try:
-        yield from inner
+        for item in inner:
+            yield item
     finally:
+        # This wrapper owns closing on exhaustion, interruption and failure.
         close = getattr(inner, "close", None)
         if callable(close):
             close()
@@ -700,7 +702,7 @@ async def speak_stream_graph_serial(
             segments=segments,
             interrupt_epoch=interrupt_epoch,
             task_semaphore=task_semaphore,
-            **({"emotion": emotion} if emotion else {}),
+            emotion=emotion,
         )
     finally:
         _release_lock()  # 兜底：异常时也确保锁被释放
@@ -1199,7 +1201,7 @@ async def _synthesize_cuda_graph(
         segments=segments,
         interrupt_epoch=interrupt_epoch,
         task_semaphore=task_semaphore,
-        **({"emotion": emotion} if emotion else {}),
+        emotion=emotion,
     )
 
 
@@ -1233,7 +1235,7 @@ async def _synthesize_experimental(
         segments=segments,
         interrupt_epoch=interrupt_epoch,
         task_semaphore=task_semaphore,
-        **({"emotion": emotion} if emotion else {}),
+        emotion=emotion,
     )
 
 
@@ -1256,7 +1258,7 @@ async def _synthesize_enhanced(
         segments=segments,
         interrupt_epoch=interrupt_epoch,
         task_semaphore=task_semaphore,
-        **({"emotion": emotion} if emotion else {}),
+        emotion=emotion,
     )
 
 
@@ -1392,7 +1394,7 @@ async def play_sentence_worker():
                 segments=playback_segments,
                 interrupt_epoch=job_epoch,
                 task_semaphore=task_semaphore,
-                **({"emotion": job.emotion} if job.emotion else {}),
+                emotion=job.emotion,
             )
 
             asyncio.create_task(tts_coro)

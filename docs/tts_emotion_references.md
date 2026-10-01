@@ -60,13 +60,17 @@ Members are relative to the pack directory. Audio and UTF-8 TXT files must exist
 and transcripts must be non-empty. Paths cannot escape the directory. `normal`
 is reserved for the configured default pair. Unmapped EMO presets also use the
 default. Aliases of one audio/TXT pair share a single conditioning identity.
+Member paths use normalized forward slashes; backslashes are rejected.
+Mapping keys must be recognized EMO presets; misspelled or unknown keys are rejected.
 The builder includes only the manifest and referenced members, excluding saved
 alternative candidates or listening artifacts in the same local directory.
 
 文件路径相对于情绪包目录；音频和非空 UTF-8 原文必须配对存在，路径不能越界。
+成员路径使用规范化的正斜杠格式，不接受反斜杠。
 `normal` 始终使用配置的默认参考，未映射情绪也使用默认参考。
 同一音频／原文的别名共用一个条件标识。打包器仅打包清单引用的文件，
 不夹带本地备用候选和试听资料。
+映射键必须是有效的 EMO 预设；拼写错误或未知键会使资源包校验失败。
 
 ## Startup warmup / 启动预热
 
@@ -103,10 +107,14 @@ text and prevents merging across that reference boundary. Expression actions
 retain their original presets; `normal` → `thinking` and `shy` → `blush` do not
 create extra TTS boundaries when their references are identical. `dur` belongs
 to expression animation, not reference lifetime.
+When enabled, local LLMs use the same first-sentence splitting as remote providers,
+with 10 ms stream pacing and without the local first-sentence 50 ms read pause.
 
 沿用 LLM 的 EMO 解析，每轮从默认参考开始。实际参考改变时才提交此前缓冲文本、
 禁止跨参考合并。表情仍保留原标签，因此共用参考的表情变化不会额外切分 TTS。
 `dur` 控制表情，不控制参考的持续时间。
+启用后，本地 LLM 使用与远程提供方相同的首句切分，每块读流让出 10 ms，
+不再执行本地首句提交后的 50 ms 读流暂停。
 
 The resolved preset travels through the existing TTS request and backend options.
 GPT-SoVITS passes an explicit request-local semantic audio/text pair into inference.

@@ -3,7 +3,7 @@ import asyncio
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import numpy as np
 import pytest
@@ -31,9 +31,11 @@ def write_pack(root):
 source = ast.parse((ROOT / 'local_tts_infer.py').read_text(encoding='utf-8'))
 engine_class = next(node for node in source.body if isinstance(node, ast.ClassDef) and node.name == 'TTSInferencer')
 cache_methods = [node for node in engine_class.body if isinstance(node, ast.FunctionDef)
-                 and node.name in {'warm_reference_cache', '_build_synthesis_cache'}]
-scope = {}
-exec(compile(ast.Module(body=cache_methods, type_ignores=[]), 'local_tts_infer.py', 'exec'), scope)
+                 and node.name in {'_normalize_reference_prompt', 'warm_reference_cache', '_build_synthesis_cache'}]
+fallback_methods = [node for node in source.body if isinstance(node, ast.FunctionDef)
+                    and node.name in {'_default_lang_code', '_default_ref_free_prompt'}]
+scope = dict(_TTS_OUTPUT_LANGUAGE='日文', _TTS_REF_TEXT_JA='', _TTS_REF_TEXT_EN='')
+exec(compile(ast.Module(body=fallback_methods + cache_methods, type_ignores=[]), 'local_tts_infer.py', 'exec'), scope)
 
 
 class CacheEngine:
@@ -41,6 +43,8 @@ class CacheEngine:
     is_rocm = False
     device = 'cuda:0'
     splits = set('。！？.!?')
+    dict_language = {'日文': 'all_ja', '英文': 'en', '日英混合': 'ja'}
+    _normalize_reference_prompt = scope['_normalize_reference_prompt']
     warm_reference_cache = scope['warm_reference_cache']
     _build_synthesis_cache = scope['_build_synthesis_cache']
 
@@ -92,9 +96,10 @@ def test_enabled_startup_warms_unique_refs_and_live_cache_key_matches(backend):
     assert backend.emotion_reference_key('blush') == backend.emotion_reference_key('shy')
     assert backend.emotion_reference_key('thinking') == ''
     ref = backend._emotion_pack.references['shy']
-    engine._build_synthesis_cache('default.wav', 'Default。', 'all_ja', (str(ref.audio), ref.text, 'all_ja'))
+    normalized, language = engine._normalize_reference_prompt(settings.TTS_REF_TEXT_JA, settings.TTS_OUTPUT_LANGUAGE)
+    engine._build_synthesis_cache('default.wav', normalized, language, (str(ref.audio), ref.text, '日文'))
     assert len(engine.builds) == 3
-    engine._build_synthesis_cache('default.wav', 'Default。', 'all_ja', (str(ref.audio), ref.text, 'all_ja'))
+    engine._build_synthesis_cache('default.wav', normalized, language, (str(ref.audio), ref.text, '日文'))
     assert len(engine.builds) == 3
 
 
@@ -139,7 +144,7 @@ def test_semantic_pack_language_is_independent_of_default_acoustic_transcript(ba
     engine = backend._inferencer
     request = TTSSynthesisRequest('日本語。', language='ja', reference_language='en', options={'emotion': 'sad'})
     reference = backend._request_kwargs(request, streaming=True)['semantic_reference']
-    assert reference[-1] == 'all_ja'
+    assert reference[-1] == '日文'
     count = len(engine.builds)
     engine._build_synthesis_cache('default.wav', 'Default.', 'en', reference)
     assert len(engine.builds) == count + 1  # only the new acoustic-pair key
@@ -170,7 +175,7 @@ def test_adapter_routes_emotion_without_leaking_between_requests(backend, monkey
         assert 'emotion' not in request
         if enabled and language == '日文' and emotion:
             ref = backend._emotion_pack.references[emotion]
-            assert request['semantic_reference'] == (str(ref.audio), ref.text, 'all_ja')
+            assert request['semantic_reference'] == (str(ref.audio), ref.text, '日文')
         else:
             assert 'semantic_reference' not in request
     assert len(engine.requests) == 4
@@ -309,7 +314,7 @@ async def test_mixed_opening_bypasses_default_audio_cache_and_normal_reuses_it(b
         requests = backend._inferencer.requests
         assert len(requests) == 1
         ref = backend._emotion_pack.references['sad']
-        assert requests[0]['semantic_reference'] == (str(ref.audio), ref.text, 'all_ja')
+        assert requests[0]['semantic_reference'] == (str(ref.audio), ref.text, '日文')
         pipeline._playback_manager.add_to_playlist.assert_awaited_once()
         await pipeline.speak_stream_enhanced_asyncio_queue('声。', 'normal-id', True, interrupt_epoch=7)
         cache.lookup.assert_called_once()
@@ -323,3 +328,204 @@ def test_startup_gui_exposes_boolean_and_disabled_is_healthy(monkeypatch):
     assert group['status_ok'] and group['status'] == 'disabled'
     field = group['fields'][0]
     assert field['type'] == 'boolean' and field['value'] is False and field['restart_required']
+
+
+@pytest.mark.parametrize('streaming', [False, True])
+@pytest.mark.parametrize('version,output,text,language,expected,code', [
+    ('v3', '日文', '  参考です  ', '日文', '参考です。', 'all_ja'),
+    ('v2', '日文', '参照！', '日文', '参照！', 'all_ja'),
+    ('v3', '英文', '  Reference  ', '英文', 'Reference.', 'en'),
+    ('v3', '日文', 'Reference', 'en', 'Reference。', 'ja'),
+    ('v3', '英文', 'Reference', 'unknown', 'Reference。', 'en'),
+    ('v2', '日文', None, '日文', None, 'ja'),
+    ('v3', '日文', '', '日文', 'そうやって全部私に頼るのね……まったく', 'all_ja'),
+    ('v3', '日文', '  ', '日文', 'そうやって全部私に頼るのね……まったく', 'all_ja'),
+    ('v3', '英文', None, '日文', 'I see, let me think about that.', 'en'),
+])
+def test_warmup_and_public_inference_use_the_same_reference_key(monkeypatch, streaming, version, output, text, language, expected, code):
+    # Run both public methods up to their reference boundary without models.
+    monkeypatch.setitem(scope, '_TTS_OUTPUT_LANGUAGE', output)
+    live_scope = dict(scope, np=np, logger=Mock(), process_text=lambda lines: lines,
+        torch=SimpleNamespace(float16='half', float32='float',
+            zeros=lambda *args, **kwargs: SimpleNamespace(to=lambda device: None)))
+    methods = [node for node in engine_class.body if isinstance(node, ast.FunctionDef)
+               and node.name in {'infer', 'infer_stream'}]
+    exec(compile(ast.Module(body=methods, type_ignores=[]), 'local_tts_infer.py', 'exec'), live_scope)
+    engine = CacheEngine()
+    engine.model_version = version
+    engine.is_half = False
+    engine.hps = SimpleNamespace(data=SimpleNamespace(sampling_rate=24000))
+    engine.warm_reference_cache('default.wav', text, language)
+    assert engine.builds == [('default.wav', expected, code)]
+
+    class ReferenceReached(BaseException):
+        pass
+
+    def capture(audio, normalized, language_code, semantic_reference):
+        assert (audio, normalized, language_code) == engine.builds[0]
+        assert semantic_reference is None
+        raise ReferenceReached
+
+    engine._build_synthesis_cache = capture
+    with pytest.raises(ReferenceReached):
+        result = live_scope['infer_stream' if streaming else 'infer'](
+            engine, text='声。', ref_audio_path='default.wav', prompt_text=text,
+            prompt_language=language, how_to_cut='不切')
+        if streaming:
+            list(result)
+
+
+def test_empty_default_reference_text_still_prewarms_a_usable_pack(backend, monkeypatch):
+    monkeypatch.setattr(settings, 'TTS_REF_TEXT_JA', '')
+    backend._configure_emotion_references()
+    assert backend.emotion_reference_status['ready']
+    engine = backend._inferencer
+    normalized, code = engine._normalize_reference_prompt('', settings.TTS_OUTPUT_LANGUAGE)
+    ref = backend._emotion_pack.references['sad']
+    engine._build_synthesis_cache('default.wav', normalized, code, (str(ref.audio), ref.text, '日文'))
+    assert len(engine.builds) == 3
+
+
+@pytest.mark.parametrize('emotion,reason', [('suprised', 'Unknown EMO preset'), ('normal', 'normal must retain')])
+def test_invalid_presets_are_rejected_by_pack_status_and_startup(backend, emotion, reason):
+    from config.asset_packages import external_asset_pack_status
+    root = gpt_sovits._PROJECT_ROOT / 'assets' / PACK_TREE
+    raw = json.loads((root / 'references.json').read_text())
+    raw['references'][emotion] = raw['references'].pop('sad')
+    (root / 'references.json').write_text(json.dumps(raw))
+    with pytest.raises(ReferencePackError, match=reason):
+        load_reference_pack(root)
+    status = external_asset_pack_status(PACK_ID, asset_root=gpt_sovits._PROJECT_ROOT / 'assets', index_path=ROOT / 'assets/index.json')
+    assert status['state'] == 'invalid'
+    backend._configure_emotion_references()
+    assert backend.emotion_reference_status['state'] == 'invalid'
+    assert not backend._inferencer.builds
+
+
+def test_all_non_default_presets_are_valid_pack_aliases(tmp_path):
+    from llm.emo_presets import EMOTION_DURATION_RANGES
+    from llm.codex_role_contract import EMOTION_DURATION_RANGES as exported
+    assert exported is EMOTION_DURATION_RANGES
+    write_pack(tmp_path)
+    raw = json.loads((tmp_path / 'references.json').read_text())
+    raw['references'] = {key: dict(audio='sad.wav', transcript='sad.txt')
+                         for key in EMOTION_DURATION_RANGES if key != 'normal'}
+    (tmp_path / 'references.json').write_text(json.dumps(raw))
+    pack = load_reference_pack(tmp_path)
+    assert len(pack.distinct_references()) == 1
+    assert all(pack.key_for(key) for key in raw['references'])
+
+
+def test_pack_validation_import_does_not_initialize_runtime_settings():
+    import subprocess
+    import sys
+    subprocess.run([sys.executable, '-c',
+        "import sys; import tts.reference_pack; assert 'config.settings' not in sys.modules"],
+        cwd=ROOT, check=True, capture_output=True)
+
+
+@pytest.fixture
+def local_role_stream(backend, monkeypatch):
+    from core import chat_runtime as chat
+    from tts import pipeline
+    monkeypatch.setattr(pipeline, '_tts_runtime', TTSRuntimeAdapter(backend))
+    monkeypatch.setattr(pipeline, 'current_tts_language_code', lambda: 'ja')
+    monkeypatch.setattr(chat, '_pre_translation_enabled', lambda: False)
+    monkeypatch.setattr(chat, '_turn_system_prompt', lambda *args: 'Synthetic role')
+    monkeypatch.setattr(chat, '_wrap_user_message_for_language_lock', lambda text: text)
+    expression = Mock()
+    monkeypatch.setattr(chat, '_get_expr_ctrl', lambda: expression)
+    fallback = Mock(side_effect=AssertionError('Unexpected local fallback'))
+    monkeypatch.setattr(chat, 'local_llm_query', fallback)
+    sleep = AsyncMock()
+    monkeypatch.setattr(chat.asyncio, 'sleep', sleep)
+
+    async def run(local_type, chunks):
+        queue = asyncio.Queue()
+        queued_before_chunk = []
+
+        async def content():
+            for chunk in chunks:
+                queued_before_chunk.append(queue.qsize())
+                if local_type == 'ollama':
+                    payload = json.dumps({'message': {'content': chunk}})
+                else:
+                    payload = 'data: ' + json.dumps({'choices': [{'delta': {'content': chunk}}]})
+                yield (payload + '\n').encode()
+            if local_type == 'ollama':
+                yield b'{"done":true}\n'
+
+        class Session:
+            async def __aenter__(self): return self
+            async def __aexit__(self, *args): return None
+            def post(self, *args, **kwargs):
+                self.content = content()
+                return self
+            def raise_for_status(self): pass
+
+        monkeypatch.setattr(chat.aiohttp, 'ClientSession', Session)
+        runtime = chat.ChatRuntime()
+        runtime.configure(pending_sentence_items=queue)
+        runtime.local_llm_type = local_type
+        state = chat._TurnState(gui_callback=None, question='Synthetic question', turn_id='local-emotion')
+        await runtime._run_local(state, state.question, None, False, 'local')
+        fallback.assert_not_called()
+        items = []
+        while not queue.empty(): items.append(queue.get_nowait())
+        return items, queued_before_chunk, expression, sleep
+
+    return run
+
+
+@pytest.mark.parametrize('local_type', ['llama_server', 'lmstudio', 'ollama'])
+@pytest.mark.parametrize('chunk_size', [1, 7, 1000])
+async def test_local_llm_routes_emotions_and_flushes_trailing_text(backend, local_role_stream, local_type, chunk_size):
+    backend._configure_emotion_references()
+    text = '普通[EMO thinking]に続ける。[EMO shy]照れて[EMO blush]しまう。[EMO normal]戻る。末尾'
+    chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+    items, _, expression, sleep = await local_role_stream(local_type, chunks)
+    assert [(item.text, item.emotion) for item in items] == [
+        ('普通に続ける。', ''), ('照れてしまう。', 'shy'), ('戻る。', ''), ('末尾', '')]
+    actions = [action for call in expression.register_sentence_actions.call_args_list for action in call.args[1]]
+    assert [action['attrs']['preset'] for action in actions] == ['thinking', 'shy', 'blush', 'normal']
+    assert [call.args for call in sleep.await_args_list] == [(0.01,)] * len(chunks)
+
+
+@pytest.mark.parametrize('local_type', ['llama_server', 'lmstudio', 'ollama'])
+async def test_disabled_local_llm_keeps_first_chunk_boundary_policy(local_role_stream, local_type):
+    items, queued, expression, sleep = await local_role_stream(local_type, ['普通。[EMO shy]続き', 'です。', '末尾'])
+    assert queued == [0, 0, 1]
+    assert [(item.text, item.emotion) for item in items] == [('普通。続きです。', ''), ('末尾', '')]
+    assert expression.register_sentence_actions.call_args.args[1][0]['attrs']['preset'] == 'shy'
+    assert [call.args for call in sleep.await_args_list] == [(0.05,), (0.01,)]
+
+
+@pytest.mark.parametrize('finish', ['exhaust', 'close', 'error'])
+def test_emotion_stream_closes_inner_iterator_exactly_once(monkeypatch, finish):
+    from tts import pipeline
+
+    class Stream:
+        started = False
+        closed = 0
+        def __iter__(self): return self
+        def __next__(self):
+            if not self.started:
+                self.started = True
+                return 'chunk'
+            if finish == 'error':
+                raise ValueError('synthetic inference failure')
+            raise StopIteration
+        def close(self): self.closed += 1
+
+    inner = Stream()
+    monkeypatch.setattr(pipeline, '_tts_runtime', SimpleNamespace(infer_stream=lambda **kwargs: inner))
+    outer = pipeline._emotion_stream('', 'lifecycle')
+    assert next(outer) == 'chunk'
+    if finish == 'close':
+        outer.close()
+    elif finish == 'error':
+        with pytest.raises(ValueError, match='synthetic inference failure'):
+            next(outer)
+    else:
+        assert list(outer) == []
+    assert inner.closed == 1

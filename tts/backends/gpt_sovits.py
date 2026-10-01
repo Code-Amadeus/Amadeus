@@ -73,11 +73,11 @@ class GPTSoVITSBackend(BaseTTSBackend):
         try:
             pack = load_reference_pack(root)
             refs = pack.distinct_references()
-            default = infer.warm_reference_cache(settings.TTS_REF_AUDIO_JA, settings.TTS_REF_TEXT_JA, "all_ja")
+            default = infer.warm_reference_cache(settings.TTS_REF_AUDIO_JA, settings.TTS_REF_TEXT_JA, settings.TTS_OUTPUT_LANGUAGE)
             if any(default.get(key) is None for key in ("refer_spec", "prompt_fea_ref", "prompt_ge", "mel2_norm")):
                 raise ReferencePackError("Could not warm the configured default acoustic reference")
             for ref in refs:
-                cache = infer.warm_reference_cache(str(ref.audio), ref.text, "all_ja")
+                cache = infer.warm_reference_cache(str(ref.audio), ref.text, "日文")
                 if any(cache.get(key) is None for key in ("prompt", "phones1", "bert1")):
                     raise ReferencePackError(f"Could not warm semantic reference: {ref.audio.name}")
             infer._sync_sovits_timing()
@@ -378,7 +378,7 @@ class GPTSoVITSBackend(BaseTTSBackend):
         if self._emotion_pack and request.language == "ja":
             ref = self._emotion_pack.references.get(emotion)
             if ref:
-                kwargs["semantic_reference"] = (str(ref.audio), ref.text, "all_ja")
+                kwargs["semantic_reference"] = (str(ref.audio), ref.text, "日文")
                 logger.info("[TTS-EMOTION] semantic=%s acoustic=%s", ref.audio.name, Path(request.reference_audio).name)
         return kwargs
 

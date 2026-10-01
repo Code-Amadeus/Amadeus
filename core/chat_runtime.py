@@ -2319,12 +2319,12 @@ class ChatRuntime:
             if not st.tts_emotion_routing:
                 await text_piece(content)
                 return
-            from llm.codex_role_contract import EMOTION_DURATION_RANGES
+            from llm.emo_presets import EMOTION_DURATION_RANGES
             from tts.pipeline import emotion_reference_key
             for kind, value in st.tts_ordered_parts:
                 if kind == "text":
                     await text_piece(str(value))
-                elif value.get("type") not in {"DELEGATE", "CONTROL", "AUIP"}:
+                elif kind == "action":
                     if value.get("type") == "EMO":
                         preset = str(value.get("attrs", {}).get("preset", "normal")).lower()
                         preset = preset if preset in EMOTION_DURATION_RANGES else "normal"
@@ -4832,8 +4832,7 @@ class ChatRuntime:
                                 continue
 
                             if st.tts_emotion_routing:
-                                await self._accept_role_stream_text(st, raw_content)
-                                first_sentence_completed = not st.is_first
+                                await self._accept_role_stream_text(st, raw_content, pace_s=0.01)
                                 continue
                             content = self._consume_stream_chunk(st, raw_content)
                             st.full_response += content

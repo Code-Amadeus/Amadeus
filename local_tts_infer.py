@@ -970,11 +970,22 @@ class TTSInferencer:
             logger.warning(traceback.format_exc())
             return {}
 
-    def warm_reference_cache(self, audio_path: str, text: str, language_code: str):
+    def _normalize_reference_prompt(self, prompt_text, prompt_language):
+        """Resolve the reference exactly as live inference does, including V3 fallback."""
+        if prompt_text is None or not prompt_text.strip():
+            if self.model_version == "v3":
+                # Keep the established fallback verbatim; it is not punctuated
+                # a second time by either warmup or synthesis.
+                return _default_ref_free_prompt(), "en" if _TTS_OUTPUT_LANGUAGE == "英文" else "all_ja"
+            return prompt_text, _default_lang_code()
+        text = prompt_text.strip()
+        if text[-1] not in self.splits:
+            text += "." if prompt_language == "英文" else "。"
+        return text, self.dict_language.get(prompt_language, _default_lang_code())
+
+    def warm_reference_cache(self, audio_path: str, text: str, prompt_language: str):
         """Use the same normalized key for startup warmup and live synthesis."""
-        text = text.strip()
-        if text and text[-1] not in self.splits:
-            text += "." if language_code == "en" else "。"
+        text, language_code = self._normalize_reference_prompt(text, prompt_language)
         return self._build_session_cache(audio_path, text, language_code)
 
     def _build_synthesis_cache(self, audio_path, text, language_code, semantic_reference=None):
@@ -1226,28 +1237,16 @@ class TTSInferencer:
             if prompt_text is None or prompt_text.strip() == "":
                 ref_free = True
                 logger.info("no prompt text provided; using reference-free mode")
-            else:
-                prompt_text = prompt_text.strip()
-                # 确保参考文本以标点符号结尾
-                if prompt_text and prompt_text[-1] not in self.splits:
-                    prompt_text += "。" if prompt_language != "英文" else "."
-
-                if prompt_language in self.dict_language:
-                    prompt_language_code = self.dict_language[prompt_language]
-                else:
-                    prompt_language_code = _default_lang_code()
-
+            prompt_text, prompt_language_code = self._normalize_reference_prompt(
+                prompt_text, prompt_language,
+            )
+            if not ref_free:
                 logger.info(f"prompt text: '{prompt_text}'")
 
             # v3模型不支持ref_free模式
             if self.model_version == "v3" and ref_free:
                 logger.warning("v3 model does not support reference-free mode; forcing reference mode")
                 ref_free = False
-
-                # 如果没有参考文本，使用当前语言的默认文本
-                if not prompt_text:
-                    prompt_text = _default_ref_free_prompt()
-                    prompt_language_code = "en" if _TTS_OUTPUT_LANGUAGE == "英文" else "all_ja"
 
             # 根据选择的切分方式处理文本
             logger.info(f"text segmentation mode: {how_to_cut}")
@@ -1638,28 +1637,16 @@ class TTSInferencer:
             if prompt_text is None or prompt_text.strip() == "":
                 ref_free = True
                 logger.info("no prompt text provided; using reference-free mode")
-            else:
-                prompt_text = prompt_text.strip()
-                # 确保参考文本以标点符号结尾
-                if prompt_text and prompt_text[-1] not in self.splits:
-                    prompt_text += "。" if prompt_language != "英文" else "."
-
-                if prompt_language in self.dict_language:
-                    prompt_language_code = self.dict_language[prompt_language]
-                else:
-                    prompt_language_code = _default_lang_code()
-
+            prompt_text, prompt_language_code = self._normalize_reference_prompt(
+                prompt_text, prompt_language,
+            )
+            if not ref_free:
                 logger.info(f"prompt text: '{prompt_text}'")
 
             # v3模型不支持ref_free模式
             if self.model_version == "v3" and ref_free:
                 logger.warning("v3 model does not support reference-free mode; forcing reference mode")
                 ref_free = False
-
-                # 如果没有参考文本，使用当前语言的默认文本
-                if not prompt_text:
-                    prompt_text = _default_ref_free_prompt()
-                    prompt_language_code = "en" if _TTS_OUTPUT_LANGUAGE == "英文" else "all_ja"
 
             # 根据选择的切分方式处理文本
             logger.info(f"text segmentation mode: {how_to_cut}")
