@@ -1,4 +1,5 @@
 const RUNTIME_VALUE_KEYS: Record<string, string> = {
+  main_chat_character_prompt_ja: 'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA',
   llm_provider: 'LLM_PROVIDER',
   local_llm_type: 'LOCAL_LLM_TYPE',
   asr_backend: 'ASR_BACKEND',
