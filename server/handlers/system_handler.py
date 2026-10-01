@@ -49,14 +49,15 @@ def _startup_field(
     return field
 
 
-def _voice_configuration(settings: Any) -> list[dict[str, Any]]:
+def _voice_configuration(settings: Any, emotion_pack: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     from asr.registry import asr_backend_statuses
     from tts.registry import tts_backend_statuses
     from config.asset_packages import external_asset_pack_status
     from tts.reference_pack import PACK_ID
     import tts.pipeline as tts_pipeline
 
-    emotion_pack = external_asset_pack_status(PACK_ID)
+    if emotion_pack is None:
+        emotion_pack = external_asset_pack_status(PACK_ID)
     emotion_runtime = tts_pipeline.emotion_reference_status()
     emotion_requested = bool(settings.ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING)
 
@@ -1158,6 +1159,7 @@ class SystemHandler(RequestHandler):
         from server import chat_translation_runtime
         from render.character_pack import character_pack_status
         from config.asset_packages import external_asset_pack_status
+        from tts.reference_pack import PACK_ID
         import tts.pipeline as tts_pipeline
         from core.chat_runtime import get_chat_runtime
         from llm.prompts import get_character_prompt_config
@@ -1175,8 +1177,9 @@ class SystemHandler(RequestHandler):
         )
         active_provider = getattr(llm_client, 'LLM_PROVIDER', 'deepseek')
         project_root = Path(__file__).resolve().parents[2]
+        emotion_pack = await asyncio.to_thread(external_asset_pack_status, PACK_ID)
         voice_configuration, local_status, hybrid_status = await asyncio.gather(
-            asyncio.to_thread(_voice_configuration, settings),
+            asyncio.to_thread(_voice_configuration, settings, emotion_pack),
             asyncio.to_thread(local_backend_status, settings, project_root=project_root),
             asyncio.to_thread(hybrid_local_status, settings),
         )
@@ -1200,7 +1203,7 @@ class SystemHandler(RequestHandler):
             "wake_enabled": bool(getattr(settings, "WAKE_ENABLED", False)),
             "visual_asset_pack": external_asset_pack_status("visual-runtime"),
             "character_pack": character_pack_status(),
-            "emotion_reference_pack": external_asset_pack_status("voice-kurisu-emotions"),
+            "emotion_reference_pack": emotion_pack,
             **get_character_prompt_config(),
             "settings_scope": "runtime_only",
             "model_connections": _model_connections(
