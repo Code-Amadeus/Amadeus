@@ -61,12 +61,6 @@ name must have an entry in `runtime_manifest.json::mouthOverlays`. Authoring-onl
 fields such as `root`, `phase`, `frame_names`, `closed_source`, and
 `speaking_frames` are rejected.
 
-Its `canvas_size` (`[width, height]`) is the canvas every clip was authored on.
-The renderer fits the character by this canvas rather than by each frame, so a
-frame larger than the canvas, for example one whose hair blows past its edge,
-extends beyond it, centred at the bottom, without changing the character's size.
-Packs without `canvas_size` are fitted frame by frame.
-
 ## Graph semantics
 
 `graph_config.json` contains only runtime topology:

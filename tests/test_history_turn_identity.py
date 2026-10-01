@@ -36,24 +36,20 @@ def test_interruption_targets_requested_turn_not_latest_assistant():
     assert history.dialog[1]["content"] == "later reply"
 
 
-def test_unknown_turn_id_does_not_overwrite_identified_assistant():
-    history = ConversationHistory()
-    history.add_assistant("identified", turn_id="turn_a")
-
-    assert not history.mark_last_assistant_interrupted("heard other", turn_id="turn_b")
-    assert history.dialog[0]["content"] == "identified"
-
-
-def test_missing_or_unknown_turn_id_rewrites_no_reply():
+def test_missing_or_unknown_turn_id_falls_back_to_latest_assistant():
     history = ConversationHistory()
     history.add_assistant("first", turn_id="turn_first")
-    history.add_assistant("latest without turn identity")
+    history.add_assistant("latest")
 
-    assert not history.mark_last_assistant_interrupted("heard")
-    assert not history.mark_last_assistant_interrupted("heard", turn_id="turn_missing")
-    assert [row["content"] for row in history.dialog] == [
-        "first", "latest without turn identity",
-    ]
+    assert history.mark_last_assistant_interrupted("legacy heard")
+    assert history.dialog[-1]["content"] == "legacy heard [interrupted by user]"
+
+    history.add_assistant("new latest")
+    assert history.mark_last_assistant_interrupted(
+        "unknown heard",
+        turn_id="turn_missing",
+    )
+    assert history.dialog[-1]["content"] == "unknown heard [interrupted by user]"
 
 
 def test_interruption_preserves_an_already_committed_delegate_fact():
@@ -153,7 +149,7 @@ def test_history_reader_still_excludes_hidden_thought_and_presentation_tags():
     assert history.dialog[0]["content"] == "Visible. [interrupted by user]\n\n" + control
 
 
-def test_legacy_session_json_loads_and_keeps_unidentified_replies():
+def test_legacy_session_json_loads_and_can_be_annotated():
     old_session_dir = sm._SESSION_DIR
     old_dialog = sm.conversation_history.dialog
     old_session_id = sm._CURRENT_SESSION_ID
@@ -178,12 +174,14 @@ def test_legacy_session_json_loads_and_keeps_unidentified_replies():
             assert loaded is True
             assert enabled is True
             assert sm.conversation_history.dialog[-1].get("turn_id") is None
-            # A current interruption cannot be a reply recorded without turn identity.
-            assert not sm.conversation_history.mark_last_assistant_interrupted(
+            assert sm.conversation_history.mark_last_assistant_interrupted(
                 "legacy heard",
                 turn_id="unavailable_turn",
             )
-            assert sm.conversation_history.dialog[-1]["content"] == "legacy reply"
+            assert (
+                sm.conversation_history.dialog[-1]["content"]
+                == "legacy heard [interrupted by user]"
+            )
     finally:
         sm._SESSION_DIR = old_session_dir
         sm.conversation_history.dialog = old_dialog

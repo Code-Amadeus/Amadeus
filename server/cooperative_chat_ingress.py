@@ -727,7 +727,7 @@ class CooperativeChatManager:
     def __init__(self, handler: ChatHandler, *, ledger: ControlLedgerStore,
                  fence_scope: str, provider: str, runtime: ProviderRuntime,
                  context_requirements: dict, allocate: Callable,
-                 query: Callable, persona: str | Callable[[], str] = "", publish_factory: Callable | None = None,
+                 query: Callable, persona: str = "", publish_factory: Callable | None = None,
                  role_provider_selector: Callable[[str], Any] | None = None,
                  permission_policy: str = "",
                  permission_store: WorkLedgerStore | None = None,

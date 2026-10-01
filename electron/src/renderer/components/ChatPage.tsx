@@ -660,7 +660,16 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       }
     }))
     unsubs.push(subscribe('asr.status', (p) => {
-      if (p.status === 'idle') setAsrListening(false)
+      // Keep the mic button in sync with the real backend state.  The backend
+      // stays listening after a wake recognition (hot window) and for the whole
+      // manual-mic session, so only an idle/unloaded/error status turns the
+      // button off; otherwise clicking it would start a new session instead of
+      // stopping the one that is still running.
+      if (p.status === 'idle' || p.status === 'unloaded' || p.status === 'error') {
+        setAsrListening(false)
+      } else if (p.status === 'listening' || p.status === 'awake') {
+        setAsrListening(true)
+      }
     }))
     return () => unsubs.forEach(fn => fn())
   }, [subscribe, refreshSessions, upsertAssistantMessage, upsertUserMessage, applySessionPayload, hydrateWorkActivities])
@@ -734,11 +743,16 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     if (!connected) return
     try {
       if (asrListening) {
-        await send('asr.stop', {})
-        setAsrListening(false)
+        const res = await send('asr.stop', {})
+        // Only turn the button off once the backend confirms the stop; an
+        // ignored stop (wrong source) means it is still listening.
+        setAsrListening(res?.status === 'ignored')
       } else {
-        await send('asr.start', {})
-        setAsrListening(true)
+        const res = await send('asr.start', {})
+        // Reflect what actually happened: listening/awake/already_listening
+        // all mean the microphone is live right now.
+        const status = res?.status
+        setAsrListening(status === 'listening' || status === 'awake' || status === 'already_listening')
       }
     } catch { /* ignore */ }
   }, [connected, send, asrListening])

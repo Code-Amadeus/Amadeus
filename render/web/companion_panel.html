@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src http://127.0.0.1:*">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src http://127.0.0.1:*">
   <title>Amadeus · Companion</title>
   <link rel="stylesheet" href="companion_panel.css">
 </head>
@@ -15,11 +15,19 @@
       <button id="close" title="收起面板，继续语音和游戏" aria-label="收起面板">×</button>
     </header>
     <section class="dialogue">
-      <div class="portrait"><img id="portrait" alt="牧濑红莉栖" hidden><span id="fallback">A</span><div class="scanlines"></div></div>
+      <div class="portrait">
+        <div id="canvas-container"></div>
+        <img id="portrait" alt="牧濑红莉栖" hidden><span id="fallback">A</span><div class="scanlines"></div>
+      </div>
       <div class="speech"><strong>牧瀬 紅莉栖</strong><p id="caption" tabindex="0">正在连接…</p></div>
     </section>
     <footer><span class="signal" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span id="status" role="status">CONNECTING</span><span class="drag-hint">拖动顶部调整位置</span></footer>
   </main>
+  <script>window.__DISABLE_RENDERER_WS__ = true;</script>
+  <script src="/render/web/vendor/pixi.min.js"></script>
+  <script src="/render/web/vendor/pixi-basis-ktx2.global.js"></script>
+  <script src="/render/web/render_budget.js"></script>
+  <script src="/render/web/renderer.js"></script>
   <script src="companion_presentation.js"></script>
   <script src="companion_atlas.js"></script>
   <script src="companion_panel.js"></script>

@@ -13,6 +13,12 @@ import time
 _MIN_LIVELY_WIDTH = 320
 _MIN_LIVELY_HEIGHT = 180
 
+# Desktop pinning is disabled: keep the character window as a normal
+# top-level window instead of parenting it into WorkerW/Progman.  This
+# leaves the user's ordinary Windows wallpaper visible.  Set to True to
+# restore the old "pin as wallpaper" behavior.
+_DESKTOP_PINNING_ENABLED = False
+
 
 def _user32():
     user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -299,6 +305,8 @@ def _place_above_desktop_anchor(
 
 def _attach_window_to_desktop(hwnd: int) -> tuple[bool, str, bool]:
     """Place an existing window on the currently available wallpaper layer."""
+    if not _DESKTOP_PINNING_ENABLED:
+        return True, "pinning-disabled", False
     if sys.platform != "win32" or int(hwnd or 0) <= 0:
         return False, "invalid-window", False
     user32 = _user32()

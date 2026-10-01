@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import base64
+import gc
 import json
 import logging
 import os
 import subprocess
 import sys
 import threading
-import time
 import uuid
 from collections import deque
 from pathlib import Path
@@ -45,52 +45,7 @@ class GPTSoVITSBackend(BaseTTSBackend):
         self._stderr_thread: threading.Thread | None = None
         self._stderr_tail: deque[str] = deque(maxlen=50)
         self._ready_info: dict[str, Any] = {}
-        self._emotion_pack = None
-        self.emotion_reference_status = {"state": "disabled", "ready": False, "detail": "Emotion references are disabled."}
-
-    def emotion_reference_key(self, emotion: str) -> str:
-        return self._emotion_pack.key_for(emotion) if self._emotion_pack else ""
-
-    def _configure_emotion_references(self) -> None:
-        from config import settings
-        if not settings.ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING:
-            return
-        infer = self._inferencer
-        if (sys.platform != "win32" or infer is None or infer.model_version != "v3"
-                or infer.is_rocm or not str(infer.device).startswith("cuda")
-                or settings.TTS_OUTPUT_LANGUAGE != "日文"):
-            self.emotion_reference_status = {"state": "unsupported", "ready": False,
-                "detail": "Emotion references require Windows CUDA, embedded V3 and Japanese output."}
-            return
-        from tts.reference_pack import PACK_TREE, ReferencePackError, load_reference_pack
-        root = _PROJECT_ROOT / "assets" / PACK_TREE
-        if not (root / "references.json").is_file():
-            self.emotion_reference_status = {"state": "not_installed", "ready": False,
-                "detail": "Install the optional emotion reference pack, then restart."}
-            logger.warning("[TTS-EMOTION] %s", self.emotion_reference_status["detail"])
-            return
-        start = time.perf_counter()
-        try:
-            pack = load_reference_pack(root)
-            refs = pack.distinct_references()
-            default = infer.warm_reference_cache(settings.TTS_REF_AUDIO_JA, settings.TTS_REF_TEXT_JA, settings.TTS_OUTPUT_LANGUAGE)
-            if any(default.get(key) is None for key in ("refer_spec", "prompt_fea_ref", "prompt_ge", "mel2_norm")):
-                raise ReferencePackError("Could not warm the configured default acoustic reference")
-            for ref in refs:
-                cache = infer.warm_reference_cache(str(ref.audio), ref.text, "日文")
-                if any(cache.get(key) is None for key in ("prompt", "phones1", "bert1")):
-                    raise ReferencePackError(f"Could not warm semantic reference: {ref.audio.name}")
-            infer._sync_sovits_timing()
-        except (ReferencePackError, RuntimeError, OSError, ValueError) as exc:
-            self.emotion_reference_status = {"state": "invalid", "ready": False, "detail": str(exc)}
-            logger.warning("[TTS-EMOTION] unavailable; default TTS remains active: %s", exc)
-            return
-        self._emotion_pack = pack
-        elapsed = time.perf_counter() - start
-        self.emotion_reference_status = {"state": "ready", "ready": True,
-            "warmed_references": len(refs), "warmup_seconds": elapsed,
-            "detail": "Emotion reference pack ready; all references prewarmed."}
-        logger.info("[TTS-EMOTION] prewarmed %d distinct references in %.3fs", len(refs), elapsed)
+        self._model_paths: tuple[str, str] = ("", "")
 
     @property
     def is_rocm(self) -> bool:
@@ -124,9 +79,11 @@ class GPTSoVITSBackend(BaseTTSBackend):
     def load(self) -> None:
         if self._inferencer is not None or self._is_running():
             return
+        from tts.model_paths import resolve_active_tts_model_paths
+
+        gpt_model, sovits_model = resolve_active_tts_model_paths()
         if self._sidecar_enabled():
-            self._load_sidecar()
-            self._configure_emotion_references()
+            self._load_sidecar(gpt_model, sovits_model)
             return
         self.deployment = "embedded"
         from config import settings
@@ -134,10 +91,10 @@ class GPTSoVITSBackend(BaseTTSBackend):
 
         self._inferencer = TTSInferencer(
             device=settings.TTS_DEVICE,
-            gpt_path=settings.TTS_GPT_MODEL_PATH or None,
-            sovits_path=settings.TTS_SOVITS_MODEL_PATH or None,
+            gpt_path=gpt_model or None,
+            sovits_path=sovits_model or None,
         )
-        self._configure_emotion_references()
+        self._model_paths = (gpt_model, sovits_model)
 
     def _is_running(self) -> bool:
         return self._proc is not None and self._proc.poll() is None
@@ -171,13 +128,20 @@ class GPTSoVITSBackend(BaseTTSBackend):
                 "GPT-SoVITS sidecar emitted invalid JSON on stdout"
             ) from exc
 
-    def _load_sidecar(self) -> None:
+    def _load_sidecar(self, gpt_model: str = "", sovits_model: str = "") -> None:
         python = os.environ.get("TTS_PYTHON", "").strip() or sys.executable
         if not Path(python).is_file():
             raise FileNotFoundError(f"GPT-SoVITS sidecar Python not found: {python}")
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
         proc = subprocess.Popen(
-            [python, str(_SIDECAR_SCRIPT)],
+            [
+                python,
+                str(_SIDECAR_SCRIPT),
+                "--gpt-model",
+                gpt_model,
+                "--sovits-model",
+                sovits_model,
+            ],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -199,6 +163,7 @@ class GPTSoVITSBackend(BaseTTSBackend):
                 detail = message.get("msg") or message
                 raise TTSBackendError(f"GPT-SoVITS sidecar failed to load: {detail}")
             self._ready_info = dict(message)
+            self._model_paths = (gpt_model, sovits_model)
             self.deployment = "subprocess"
             logger.info(
                 "[TTS:GPT-SoVITS] sidecar ready "
@@ -219,10 +184,94 @@ class GPTSoVITSBackend(BaseTTSBackend):
         return self._inferencer
 
     @staticmethod
+    def _release_inferencer(inferencer: Any) -> None:
+        close = getattr(inferencer, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception as exc:
+                logger.warning("[TTS:GPT-SoVITS] failed to close inferencer: %s", exc)
+        del inferencer
+        gc.collect()
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+    def _reload_embedded(self, model_paths: tuple[str, str]) -> bool:
+        from config import settings
+        from local_tts_infer import TTSInferencer
+
+        with self._io_lock:
+            self.load()
+            if self._model_paths == model_paths and self._inferencer is not None:
+                return False
+
+            gpt_model, sovits_model = model_paths
+            inferencer = self._inferencer
+            reload_sovits = getattr(inferencer, "reload_sovits", None)
+            if (
+                inferencer is not None
+                and self._model_paths[0] == gpt_model
+                and callable(reload_sovits)
+            ):
+                reload_sovits(sovits_model)
+                self._model_paths = model_paths
+                logger.info("[TTS:GPT-SoVITS] reloaded character SoVITS weights")
+                return True
+
+            replacement = TTSInferencer(
+                device=settings.TTS_DEVICE,
+                gpt_path=gpt_model or None,
+                sovits_path=sovits_model or None,
+            )
+            previous = self._inferencer
+            self._inferencer = replacement
+            self._model_paths = model_paths
+
+        self._release_inferencer(previous)
+        logger.info("[TTS:GPT-SoVITS] reloaded character model pair")
+        return True
+
+    def reload_active_voice(self) -> bool:
+        """Swap weights when the selected character changes.
+
+        SoVITS-only changes reuse the loaded GPT/BERT/SSL/BigVGAN runtime and
+        replace only the acoustic model.  A GPT change falls back to a full
+        inferencer rebuild so future character packs are not artificially
+        restricted to one checkpoint layout.
+        """
+
+        from tts.model_paths import resolve_active_tts_model_paths
+
+        model_paths = resolve_active_tts_model_paths()
+        if model_paths == self._model_paths and (
+            self._inferencer is not None or self._is_running()
+        ):
+            return False
+
+        if self._sidecar_enabled():
+            with self._io_lock:
+                self.load()
+                if self._model_paths == model_paths:
+                    return False
+                proc, request_id = self._send_payload_locked(
+                    "reload_model",
+                    {"gpt_model": model_paths[0], "sovits_model": model_paths[1]},
+                )
+                for _ in self._messages_for_request_locked(proc, request_id):
+                    pass
+            self._model_paths = model_paths
+            logger.info("[TTS:GPT-SoVITS] sidecar character weights reloaded")
+            return True
+
+        return self._reload_embedded(model_paths)
+
+    @staticmethod
     def _serialize_request(request: TTSSynthesisRequest) -> dict[str, Any]:
-        options = dict(request.options)
-        # Semantic-reference routing is currently embedded-only.
-        options.pop("emotion", None)
         return {
             "text": request.text,
             "language": request.language,
@@ -232,7 +281,7 @@ class GPTSoVITSBackend(BaseTTSBackend):
             "reference_text": request.reference_text,
             "reference_language": request.reference_language,
             "chunk_size_seconds": request.chunk_size_seconds,
-            "options": options,
+            "options": dict(request.options),
         }
 
     @staticmethod
@@ -255,6 +304,13 @@ class GPTSoVITSBackend(BaseTTSBackend):
         operation: str,
         request: TTSSynthesisRequest,
     ) -> tuple[subprocess.Popen[bytes], str]:
+        return self._send_payload_locked(operation, self._serialize_request(request))
+
+    def _send_payload_locked(
+        self,
+        operation: str,
+        request: dict[str, Any],
+    ) -> tuple[subprocess.Popen[bytes], str]:
         self.load()
         proc = self._proc
         if proc is None or proc.stdin is None or proc.poll() is not None:
@@ -265,7 +321,7 @@ class GPTSoVITSBackend(BaseTTSBackend):
                 {
                     "type": operation,
                     "request_id": request_id,
-                    "request": self._serialize_request(request),
+                    "request": request,
                 },
                 ensure_ascii=True,
             ).encode("utf-8") + b"\n"
@@ -351,42 +407,31 @@ class GPTSoVITSBackend(BaseTTSBackend):
                     f"GPT-SoVITS sidecar returned {len(chunks)} chunks for non-streaming inference"
                 )
             return chunks[0]
-        sample_rate, audio = self._ready().infer(
-            text=request.text,
-            **self._request_kwargs(request, streaming=False),
-        )
+        with self._io_lock:
+            sample_rate, audio = self._ready().infer(
+                text=request.text,
+                **self._kwargs(request, streaming=False),
+            )
         return TTSAudioChunk(int(sample_rate), audio, request.text)
 
     def synthesize_stream(self, request: TTSSynthesisRequest):
         if self._sidecar_enabled():
             yield from self._synthesize_sidecar_stream(request, streaming=True)
             return
-        self._ready()
-        kwargs = self._request_kwargs(request, streaming=True)
+        kwargs = self._kwargs(request, streaming=True)
         kwargs["chunk_size_seconds"] = request.chunk_size_seconds
-        for item in self._ready().infer_stream(text=request.text, **kwargs):
-            if len(item) == 2:
-                sample_rate, audio = item
-                text = ""
-            else:
-                sample_rate, audio, text = item
-            yield TTSAudioChunk(int(sample_rate), audio, str(text or ""))
-
-    def _request_kwargs(self, request: TTSSynthesisRequest, *, streaming: bool) -> dict:
-        kwargs = self._kwargs(request, streaming=streaming)
-        emotion = str(kwargs.pop("emotion", ""))
-        if self._emotion_pack and request.language == "ja":
-            ref = self._emotion_pack.references.get(emotion)
-            if ref:
-                kwargs["semantic_reference"] = (str(ref.audio), ref.text, "日文")
-                logger.info("[TTS-EMOTION] semantic=%s acoustic=%s", ref.audio.name, Path(request.reference_audio).name)
-        return kwargs
+        with self._io_lock:
+            for item in self._ready().infer_stream(text=request.text, **kwargs):
+                if len(item) == 2:
+                    sample_rate, audio = item
+                    text = ""
+                else:
+                    sample_rate, audio, text = item
+                yield TTSAudioChunk(int(sample_rate), audio, str(text or ""))
 
     def close(self) -> None:
         inferencer = self._inferencer
         self._inferencer = None
-        self._emotion_pack = None
-        self.emotion_reference_status = {"state": "disabled", "ready": False, "detail": "Voice runtime is closed."}
         close = getattr(inferencer, "close", None)
         if callable(close):
             close()

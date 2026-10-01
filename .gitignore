@@ -144,3 +144,6 @@ assets/audio/sfx/*.wav
 
 # 口型调试用参考图（本地生成）
 tools/debug_mouth/*.png
+
+# Local OpenJTalk dictionary used by embedded Japanese TTS
+open_jtalk_dic/

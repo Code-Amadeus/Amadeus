@@ -181,6 +181,15 @@ class AsrHandler(RequestHandler):
     async def stop_listening(self) -> dict[str, Any]:
         self._active = False
         self._one_shot = False
+        # Cancelling the asyncio task does not stop the blocking
+        # listen_for_speech thread that asyncio.to_thread already started;
+        # abort the in-flight capture so the microphone releases promptly.
+        manager = self._asr_manager
+        if manager is not None:
+            try:
+                manager.abort_listen()
+            except Exception:
+                logger.debug("asr abort_listen failed", exc_info=True)
         if self._listen_task:
             self._listen_task.cancel()
             self._listen_task = None

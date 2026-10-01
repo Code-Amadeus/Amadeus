@@ -82,10 +82,6 @@ class TtsHandler(RequestHandler):
         return {"mode": mode}
 
     async def _interrupt(self, params: dict[str, Any]) -> dict[str, Any]:
-        from core.session_manager import get_current_session_id
-
-        # Playback interruption yields; Session selection may change while it drains.
-        session_id = get_current_session_id()
         completed_text = ""
         if self._playback_manager and hasattr(self._playback_manager, "get_completed_turn_text"):
             try:
@@ -101,15 +97,12 @@ class TtsHandler(RequestHandler):
 
         if self._playback_manager and hasattr(self._playback_manager, "interrupt"):
             await self._playback_manager.interrupt()
-        else:
-            if self._playback_manager:
-                try:
-                    self._playback_manager.pending_audio.clear()
-                    self._playback_manager.player_is_ready.set()
-                except Exception:
-                    logger.exception("failed to clear playback manager during interrupt")
-            if self._player:
-                self._player.stop()
+        elif self._playback_manager:
+            try:
+                self._playback_manager.pending_audio.clear()
+                self._playback_manager.player_is_ready.set()
+            except Exception:
+                logger.exception("failed to clear playback manager during interrupt")
 
         # PlaybackManager.reset_sequence and sentence-id allocation are the
         # two halves of one turn boundary.  Direct Chat branches do not enter
@@ -122,8 +115,8 @@ class TtsHandler(RequestHandler):
             except Exception:
                 logger.exception("failed to reset sentence sequence during interrupt")
 
-        # PlaybackManager owns stopping the device as well as invalidation;
-        # stopping it again here would destroy its idle-stream reuse.
+        if self._player:
+            self._player.stop()
         if params.get("annotate_history") and self._on_interrupt is not None:
             result = self._on_interrupt(
                 {
@@ -131,7 +124,6 @@ class TtsHandler(RequestHandler):
                     "completed_text": completed_text,
                     "accumulated_text": params.get("accumulated_text", ""),
                     "turn_id": params.get("turn_id", ""),
-                    "session_id": session_id or "",
                 }
             )
             if hasattr(result, "__await__"):

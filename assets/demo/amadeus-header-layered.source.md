@@ -1,53 +1,17 @@
 # Amadeus header with separately processed character
 
-Created with built-in ImageGen edits. First, the character from the
+Created with three built-in ImageGen edits. First, the character from the
 [original organization header](https://github.com/Code-Amadeus/.github/blob/fbbfc221d43d415dbe865566ccccc94625ecd1d3/profile/assets/code-amadeus-hero.png)
 was processed as the separate `amadeus-character-projection.png` panel,
 preserving source detail and distinguishing hair, face, headset and clothing.
 The approved panel was then combined with the dotted AMADEUS wordmark and
-Real-Time subtitle. After red/white, all-green, and coral/mint color studies,
-the current revision uses vermilion-red hair, warm-white typography and
-face/headset/clothing, and a neutral near-black background. The header and
-adjacent capability strips share this red/black/white palette; CRT green
-remains in the architecture graphics further down the README.
-The red revision was produced with the built-in ImageGen tool using the
-previous coral/mint banner as its edit target. The final prompt is recorded
-below. It preserves the composition, dotted wordmark, character profile,
-headset, hair silhouette and intentional signal fragments. The green study drew on
-the [resource website artwork](https://code-amadeus.github.io/assets/character.png),
-which is identical to the retained `amadeus-character-projection.png` panel.
-The full banner layout, text and recognizable character drawing are retained.
-The separate green character panel is retained as the source reference;
+Real-Time subtitle. A final selective color edit changed only the character's
+hair to coral-red halftone, retaining the mint-green face, headset and clothing.
+The separate green character panel is retained as the pre-color-edit source;
 superseded header concepts are not part of the published asset set.
 
 This is brand artwork, not an application screenshot. The source character's
 rights are unchanged. The existing `assets/demo/**` source-archive exclusion applies.
-
-## Current red / warm-white revision prompt
-
-Use case: precise-object-edit / style-transfer.
-Asset type: finished Amadeus GitHub README header, a complete wide 3:1 banner, preferably 2160x720.
-Input image 1 is the EDIT TARGET: the current mint-and-coral Amadeus header. Preserve its distinctive existing woman, composition, and dotted wordmark. The user wants one polished red / warm-white / neutral-black revision, visually consistent with the red Code Amadeus resource website.
-
-Replace the palette throughout:
-- Clean, flat neutral near-black background #0d0e10, no green tint or murky haze.
-- Hair is restrained deep vermilion / brick red, around #b94b43, with at most one quiet darker tone. Not orange, pink, pastel coral, neon, or glossy.
-- Entire face, circular headphones, neck, collar, shoulder and clothing are warm ivory #e8e2d4, never green. Preserve black seams and anatomy.
-- AMADEUS dotted wordmark is the same warm ivory, keeping its exact distinctive letter shapes and location. Make its tiny dots orderly, crisp and even with ample black air; no glow.
-- Subtitle stays warm light gray, slightly smaller and quieter than the source, keeping the two original lines and left alignment.
-- Footer is muted warm gray with a short vermilion rule. Arc and small technical marks on the right are very subdued dark red / warm gray.
-- Character signal fragments use warm ivory and restrained red; eliminate every green/cyan element.
-
-Preserve the exact recognizable bowed left-facing profile, closed eye, fringe, long flowing hair shapes, precise headphone geometry, shoulder detail, and purposeful horizontal disintegration. Keep fine uniform dot / halftone sampling and clear large black separations. No arbitrary speckle, no random bright dots, no large polka dots, no blurry edges. Hair darker than face; character must not overpower the wordmark.
-Keep overall 3:1 layout: ample quiet negative space around the left typography, roughly right 48% character, shoulder naturally cropped at lower edge. Do not add borders, buttons, badges, extra copy, symbols, or another figure.
-
-Text, verbatim and correctly spelled:
-AMADEUS
-Real-Time Multimodal AI Agent
-for Desktop Interaction
-VOICE / PRESENCE / ACTION
-
-Return one complete final banner image, edge to edge, no browser or presentation framing. This should feel calm and precise, like a finished restrained brand graphic. No lighting effects, green fog, scanline overlay, gradients, grain, or bloom.
 
 ## Character conversion prompt
 
@@ -108,66 +72,3 @@ clothing, text, background or arc. Keep the same clean fine halftone dots, no
 blur, no added glow or shadow, no new elements, no smoothing or simplification.
 Return just the edited image without framing. This is a comparison variant to
 assess selective red hair against the existing green design.
-
-## White character edit prompt
-
-Use case: precise-object-edit.
-Asset type: Amadeus README banner.
-Input: the supplied full 2171x724 PNG is the edit target. Keep its complete wide 3:1 composition.
-User request: make the ENTIRE right-side character feel cleaner and fresher by changing ALL of her mint-green dots/glyphs to neutral white, while retaining her coral-red hair.
-Recolor the face, circular headset (including its little inner ring), neck, collar, shoulder plates, clothing seams, shoulder circular detail, and ALL rectangular signal/dissolving fragments belonging to the character on the right to neutral soft white (main marks approximately #ededeb, brighter marks #f7f7f5). Absolutely no green or cyan tint should remain anywhere in the character or its dissolving signal fragments. Coral-red crown, bangs and flowing hair remain coral-red with the same shapes.
-Make the white treatment restrained, crisp and airy: fine consistent dot sizes, black separation between dots, clean silhouettes, no green halos, no extra bloom or fog, no heavy glowing masses. Remove only accidental isolated speckle and colored fringe around the character; retain the deliberate pixel disintegration. Keep the original intricate halftone structure and dark internal seams. Do not turn dotted surfaces into solid fills, or simplify hair/headset/facial anatomy.
-Preserve the exact bowed left-facing profile, closed eyelid, nose, chin, hair arrangement, headset structure, clothing, and scale. No redesign or new decorative elements.
-The LEFT wordmark and all typography stay visually exactly as supplied, retaining their current colors, positions, scale and lettering:
-"AMADEUS"
-"Real-Time Multimodal AI Agent"
-"for Desktop Interaction"
-"VOICE / PRESENCE / ACTION".
-Retain the dark near-black background and the restrained thin green outer arc and its left-side HUD marks; avoid added background texture or glow. Leave plenty of dark negative space.
-Return just the complete banner, no crop, no frame, no explanation.
-
-## Clean green revision prompt
-
-Use case: precise-object-edit / style-transfer.
-Asset type: Amadeus README header, complete 2172x724 wide 3:1 banner.
-IMAGE 1 is the EDIT TARGET: the full README banner. Preserve its overall layout, exact left wording, proportions, character pose and recognizable source silhouette.
-IMAGE 2 is the STYLE AND COLOR REFERENCE: the actual green character art used on the Code Amadeus resource website. Use its calm monochromatic mint/jade palette, fine graphic detail, black negative space and restrained brightness. Do not copy its taller framing into the banner.
-
-The user's objection is that the red-and-white right side feels disconnected from the green left side, and that arbitrary changes in dot density look dirty. Produce ONE cohesive, cleaner all-green version:
-- Recolor ALL right-side character elements, including all hair, face, headset, neck, collar, shoulder and all signal fragments, into the same restrained mint/jade family as the left wordmark. No red, coral, orange or pure white remains in the character.
-- Use only two or three flat, deliberate green levels: a medium jade for the hair, a soft light mint for face/headset/clothing, subdued mint for fine accents. Maintain one constant level across each continuous material region. Do not add random brightness changes, mottled patches or gradients within a face, lock of hair, or clothing panel.
-- Critically, regularize the character's dot matrix: a single fine, evenly spaced, orderly orthogonal grid with consistent small mark size and consistent coverage. Uniform pitch and density across neighboring regions; their color/brightness defines material hierarchy, NOT random changes in density. Keep substantial clean black gaps between marks so the image does not become a solid luminous mass when seen at README width. At the target resolution aim for roughly 4px center spacing and fine 1.5–2px marks, visually consistent rather than an oversized polka-dot filter. Do not reproduce the reference's incidental dot noise or irregular scattered glyphs.
-- Preserve intentional large black hair separations, fine wisps, closed eyelid, nose/chin profile, headset circle, collar and shoulder seams, and intentional rightward rectangular dissolution. No anatomy changes, no invented hair ribbons, no added blocks.
-- The left AMADEUS wordmark keeps its exact shape, scale and location and remains dotted; tidy only stray halos/noise so it belongs to the same crisp visual family. Keep the exact subtitle lines and typography, with a very pale mint near-white that fits the restrained green palette. Keep the original footer.
-- Keep the original full composition, margins and dark negative space, with a quiet near-black background. Remove the murky green haze and unnecessary scattered noise. Outer arc and small HUD details stay thin and subordinate. No blooms, shadows, fog, scanline overlays, grain, simulated distressed print, vignette glare, new ornaments, boxes or frame.
-
-Exact text, unchanged:
-AMADEUS
-Real-Time Multimodal AI Agent
-for Desktop Interaction
-VOICE / PRESENCE / ACTION
-
-Goal: as calm, clean and monochromatically coherent as the green resource website image, with MORE stable dot sampling. A precise digital graphic, not a random texture effect. Keep the full original banner canvas and all essential drawing details.
-
-## Refined coral and mint revision prompt
-
-Use case: precise-object-edit.
-Asset: the Amadeus README banner, complete wide 3:1 composition, approximately 2172x724.
-IMAGE 1 is the EDIT TARGET: the original coral-haired / mint-character banner. Preserve its exact character drawing, typography, placement and overall proportions.
-IMAGE 2 is a SUPPORTING REFERENCE for cleaner sampling and restrained contrast: the all-green revision. Borrow only its calmer visual texture. The final image must have RED HAIR, not green hair.
-
-Refine the original banner rather than redesigning it. The user's goal is a cleaner face and cleaner flat color levels, while retaining the red-haired identity:
-1. Hair: muted, slightly desaturated dusty coral, around #c0786c. One stable midtone over each continuous hair region, at most one restrained darker level where the original separation needs it. No bright orange, pink-white highlights, random sparkling dots, mottled patches or gradient shading. Preserve every main hair split, fringe, wispy edge and flowing strand.
-2. Face, headset, neck, collar, shoulder and signal fragments: a unified soft pale mint around #b2d5c1, with at most one quieter mint tone for secondary details. Especially on the FACE, use a calm uniform field of marks. No whitening the cheek, no bright noisy forehead/chin patches, no random green-to-white variation.
-3. CLEAN DOT MATRIX is the main work, not merely changing hue. Make marks small, crisp and evenly spaced on an orderly grid. Maintain constant dot size and pitch, with consistent coverage across the interior of each material. Use color levels and the original black linework to define form, never random stippling or arbitrary local density changes. Clear black air between marks; avoid dense surfaces that merge into a luminous slab at README display width. Do not turn the face into a solid fill, or use giant dots. Do not draw artificial concentric contour bands or fake shading gradients.
-4. Keep facial anatomy, closed eyelid, nose, lips, chin, circular headphones, seams and black negative-space channels intact. Retain the intentional horizontal dissolving fragments, but remove incidental isolated speckle and fuzzy colored halos.
-5. Preserve IMAGE 1's entire left text region EXACTLY: dotted AMADEUS shape, its scale and location; subtitle font, line breaks, spacing and positions; footer. The right-side mint should harmonize with the wordmark, and should not overwhelm it.
-6. Keep the quiet near-black green background, fine arc and sparse HUD details. No added grain, glows, fog, noisy texture, bloom, shadows, decorations or frames.
-
-Exact unchanged text:
-"AMADEUS"
-"Real-Time Multimodal AI Agent"
-"for Desktop Interaction"
-"VOICE / PRESENCE / ACTION"
-
-Final palette: restrained dusty coral hair + soft pale mint character and wordmark + near-black negative space. A precise, calm digital graphic. Return one complete final banner.

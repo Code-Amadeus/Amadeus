@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 import time
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from render.companion_pack import BYTE_LIMIT, CompanionPackError, load_companion_pack, validate_clip
 
@@ -22,7 +22,9 @@ class AtlasPlayer:
     def __init__(self, root: Path, *, clock=time.monotonic):
         self.root = Path(root)
         load_companion_pack(self.root)
-        self.emotions = json.loads((self.root / "manifest.json").read_text(encoding="utf-8"))["emotions"]
+        manifest = json.loads((self.root / "manifest.json").read_text(encoding="utf-8"))
+        self.emotions = manifest["emotions"]
+        self.mouth_config = manifest.get("mouth") or {}
         self.clock = clock
         self.entries: OrderedDict[str, Image.Image] = OrderedDict()
         self.resident_bytes = 0
@@ -30,6 +32,10 @@ class AtlasPlayer:
         self.last_speaking = False
         self.last_emotion = ""
         self.spec = None
+        self.mouth_spec = None
+        self.mouth_entry = None
+        self.mouth_entry_url = ""
+        self.mouth_value = 1.0
         self.started = clock()
         self.elapsed = 0.0
         self.paused = False
@@ -41,6 +47,15 @@ class AtlasPlayer:
         if speaking and (advance_variant or not self.last_speaking or key != self.last_emotion):
             self.speech_counts[key] = self.speech_counts.get(key, 0) + 1
         self.last_speaking, self.last_emotion = speaking, key
+        self.mouth_spec = self.mouth_config.get(key) if speaking else None
+        if self.mouth_spec:
+            mouth_url = str(self.mouth_spec.get("url") or "")
+            if mouth_url and mouth_url != self.mouth_entry_url:
+                if self.mouth_entry is not None:
+                    self.mouth_entry.close()
+                with Image.open(self.root / mouth_url) as image:
+                    self.mouth_entry = image.convert("RGBA")
+                self.mouth_entry_url = mouth_url
         states = self.emotions[key]
         alternate = "speakingAlternate" in states and self.speech_counts.get(key, 1) % 2 == 0
         spec = (states["speakingAlternate"] if alternate else states["speaking"]) if speaking else (
@@ -66,6 +81,34 @@ class AtlasPlayer:
         self.started, self.elapsed = self.clock(), 0.0
         self.last_tile = None
 
+    def set_mouth_value(self, value: float) -> None:
+        try:
+            self.mouth_value = max(0.0, min(1.0, float(value)))
+        except (TypeError, ValueError):
+            self.mouth_value = 1.0
+
+    def _close_mouth(self, image: Image.Image) -> Image.Image:
+        spec = self.mouth_spec or {}
+        source = self.mouth_entry
+        if source is None:
+            return image
+        roi = spec.get("roi") if isinstance(spec.get("roi"), dict) else {}
+        try:
+            width = float(roi.get("width", 0) or 0)
+            height = float(roi.get("height", 0) or 0)
+            cx = image.width / 2 + float(roi.get("cx", 0) or 0)
+            cy = image.height / 2 + float(roi.get("cy", 0) or 0)
+        except (TypeError, ValueError):
+            return image
+        if width <= 0 or height <= 0:
+            return image
+        mask = Image.new("L", image.size, 0)
+        draw = ImageDraw.Draw(mask)
+        draw.ellipse((cx - width / 2, cy - height / 2, cx + width / 2, cy + height / 2), fill=255)
+        result = image.copy()
+        result.paste(source, (0, 0), mask)
+        return result
+
     def frame(self) -> tuple[Image.Image | None, int | None]:
         """Return a changed tile and milliseconds to its next change (None = no timer)."""
         if self.spec is None:
@@ -80,6 +123,9 @@ class AtlasPlayer:
             size, columns = spec["size"], spec["columns"]
             left, top = tile % columns * size, tile // columns * size
             image = self.entries[spec["url"]].crop((left, top, left + size, top + size))
+            threshold = float((self.mouth_spec or {}).get("threshold", 0.08))
+            if self.last_speaking and self.mouth_value <= threshold:
+                image = self._close_mouth(image)
             self.last_tile = tile
             self.draws += 1
         if self.paused or all(value == tile for value in spec["sequence"]):
@@ -101,6 +147,10 @@ class AtlasPlayer:
     def close(self):
         for image in self.entries.values():
             image.close()
+        if self.mouth_entry is not None:
+            self.mouth_entry.close()
+            self.mouth_entry = None
+        self.mouth_entry_url = ""
         self.entries.clear()
         self.resident_bytes = 0
         self.spec = None

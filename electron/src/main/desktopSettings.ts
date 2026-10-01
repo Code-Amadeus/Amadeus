@@ -51,7 +51,6 @@ type StoredMcpConnection = {
 }
 
 const VALUE_KEYS = new Set([
-  'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA',
   'AMADEUS_UI_LOCALE',
   'AMADEUS_UI_THEME',
   'AMADEUS_WINDOWS_STARTUP_MODE',
@@ -164,7 +163,6 @@ const VALUE_KEYS = new Set([
   'AEC_REALTIME_BARGE_IN',
   'AEC_REALTIME_DELAY_MS',
   'TTS_BACKEND',
-  'ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING',
   'TTS_DEVICE',
   'TTS_VOICE_PROFILE',
   'TTS_GPT_MODEL_PATH',
@@ -219,7 +217,6 @@ const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
   AMADEUS_VISION_MODE: new Set(['off', 'on_demand', 'watching', 'self_aware']),
   AMADEUS_VISION_SCOPE: new Set(['full_screen', 'current_window', 'selected_window', 'wallpaper_surface', 'region']),
   ENABLE_CUDA_GRAPH: new Set(['1', '0']),
-  ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING: new Set(['true', 'false', '1', '0', 'yes', 'no']),
   TTS_OUTPUT_LANGUAGE: new Set(['日文', '英文']),
   TTS_VOICE_PROFILE: new Set(['custom', 'kurisu_v3', 'kurisu_v2pro']),
   LLM_PROVIDER: new Set(['deepseek', 'openai', 'gemini', 'bedrock', 'local', 'hybrid', 'hybrid2', 'hybrid3']),
@@ -683,18 +680,13 @@ export class DesktopSettingsStore {
       if (explicitEnvironmentHas(environment, key)) {
         throw new Error(`${key} is locked by the parent process environment`)
       }
-      // Keep an explicit empty character prompt so restoring the built-in
-      // role also overrides any project .env value on the next start.
-      if (rawValue === null || (rawValue === '' && key !== 'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA')) {
+      if (rawValue === null || rawValue === '') {
         if (stored.values[key] !== undefined) changedKeys.add(key)
         delete stored.values[key]
         continue
       }
-      if (key === 'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA' && typeof rawValue !== 'string') throw new Error('Character prompt must be a string')
-      const value = key === 'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA' ? String(rawValue).trim()
-        : typeof rawValue === 'boolean' ? (rawValue ? 'true' : 'false') : String(rawValue)
-      const maxLength = key === 'AMADEUS_ACP_PROVIDERS' ? 65536 : key === 'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA' ? 8192 : 4096
-      if (value.includes('\0') || String(rawValue).length > maxLength) throw new Error(`Invalid value for ${key}`)
+      const value = typeof rawValue === 'boolean' ? (rawValue ? 'true' : 'false') : String(rawValue)
+      if (value.includes('\0') || value.length > (key === 'AMADEUS_ACP_PROVIDERS' ? 65536 : 4096)) throw new Error(`Invalid value for ${key}`)
       if (key === 'AMADEUS_ACP_PROVIDERS') validateAcpProviders(value)
       const choices = VALUE_CHOICES[key]
       if (choices && !choices.has(value)) throw new Error(`Invalid value for ${key}: ${value}`)

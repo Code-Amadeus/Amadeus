@@ -117,6 +117,18 @@ export default function WorkDetailDrawer({
   const goal = valueText(detail.goal, activeRun?.task || 'No persisted goal is available for this WorkItem.')
   const effectiveProvider = activeWorkItem?.provider || activeRun?.provider || provider
   const liveRows = detailEvents.map(eventNarrative)
+  const isBrowser = effectiveProvider === 'browser'
+  const researchSources = [...(activeRun?.events || []), ...(detailEvents || [])]
+    .filter(event => event.type === 'tool.result')
+    .flatMap(event => {
+      const payload = event.payload || {}
+      if (payload.tool !== 'browser.search' || payload.engine !== 'qwen') return []
+      const list = Array.isArray(payload.sources) ? payload.sources : []
+      return list.filter((item): item is { url: string; title?: string } =>
+        Boolean(item && typeof item === 'object' && (item as { url?: unknown }).url))
+    })
+    .filter((item, index, all) => all.findIndex(other => other.url === item.url) === index)
+    .slice(0, 6)
   const workspaceActions = activeRun?.cwd
     ? [{ label: 'Git status', onClick: refreshStatus }]
     : []
@@ -163,8 +175,8 @@ export default function WorkDetailDrawer({
             type="workspace"
             title="Workspace Ownership"
             actions={[
-              { label: 'Load diff', onClick: () => refreshDiff() },
-              ...workspaceActions,
+              ...(isBrowser ? [] : [{ label: 'Load diff', onClick: () => refreshDiff() }]),
+              ...(isBrowser ? [] : workspaceActions),
               { label: 'Provider trace', onClick: () => setOverlay('trace') },
             ]}
           >
@@ -215,13 +227,15 @@ export default function WorkDetailDrawer({
                       <td>{valueText(attempt.provider, 'provider')} / {valueText(attempt.execution_status, 'unknown')}</td>
                       <td>{compact(attempt.task || attempt.result || attempt.error, 360) || 'No retained summary.'}</td>
                       <td>
-                        <button
-                          type="button"
-                          onClick={() => refreshDiff(
-                            valueText(attempt.attempt_id),
-                            valueText(attempt.provider_run_id),
-                          )}
-                        >Diff</button>
+                        {!isBrowser && (
+                          <button
+                            type="button"
+                            onClick={() => refreshDiff(
+                              valueText(attempt.attempt_id),
+                              valueText(attempt.provider_run_id),
+                            )}
+                          >Diff</button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -256,33 +270,64 @@ export default function WorkDetailDrawer({
             </RichCard>
           )}
 
-          <RichCard
-            type="file-list"
-            title={`Business Artifacts (${artifacts.length})`}
-            actions={[{ label: 'Load attributed diff', onClick: () => refreshDiff() }]}
-          >
-            {artifacts.length > 0 ? (
-              <table className="crt-rich-table compact">
-                <thead><tr><th>Kind</th><th>Reference</th><th>Status</th></tr></thead>
-                <tbody>
-                  {artifacts.slice(0, 40).map((artifact, index) => (
-                    <tr key={valueText(artifact.artifact_id, `artifact-${index}`)}>
-                      <td>{valueText(artifact.kind || artifact.role, 'artifact')}</td>
-                      <td><code>{valueText(artifact.path || artifact.ref || artifact.identity_key, 'No path')}</code></td>
-                      <td>
-                        {valueText(artifact.status, 'registered')}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : <p>No business artifact has been registered. Provider runtime metadata is not counted as a delivered file.</p>}
-            {!auipArtifactId && auipLaunchFeedback && (
-              <p role={auipLaunchFeedback.status === 'error' ? 'alert' : 'status'}>
-                {auipLaunchFeedback.message}
+          {isBrowser ? (
+            <RichCard type="web-research" title="Web Research" tone="info">
+              <p
+                style={{
+                  margin: '5px 0',
+                  color: 'var(--muted)',
+                  fontSize: 11.5,
+                  lineHeight: 1.55,
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'anywhere',
+                }}
+              >
+                {activeRun?.result || activeRun?.error || 'No retained answer.'}
               </p>
-            )}
-          </RichCard>
+              {researchSources.length > 0 && (
+                <div>
+                  <span style={{ color: 'var(--faint)', fontSize: 10 }}>Sources</span>
+                  <ul style={{ margin: '4px 0 0 0', paddingLeft: 18, color: 'var(--muted)', fontSize: 10.5, lineHeight: 1.5 }}>
+                    {researchSources.map((source, index) => (
+                      <li key={source.url}>
+                        <a href={source.url} target="_blank" rel="noreferrer" style={{ color: '#2563EB' }}>
+                          {source.title || source.url}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </RichCard>
+          ) : (
+            <RichCard
+              type="file-list"
+              title={`Business Artifacts (${artifacts.length})`}
+              actions={[{ label: 'Load attributed diff', onClick: () => refreshDiff() }]}
+            >
+              {artifacts.length > 0 ? (
+                <table className="crt-rich-table compact">
+                  <thead><tr><th>Kind</th><th>Reference</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {artifacts.slice(0, 40).map((artifact, index) => (
+                      <tr key={valueText(artifact.artifact_id, `artifact-${index}`)}>
+                        <td>{valueText(artifact.kind || artifact.role, 'artifact')}</td>
+                        <td><code>{valueText(artifact.path || artifact.ref || artifact.identity_key, 'No path')}</code></td>
+                        <td>
+                          {valueText(artifact.status, 'registered')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : <p>No business artifact has been registered. Provider runtime metadata is not counted as a delivered file.</p>}
+              {!auipArtifactId && auipLaunchFeedback && (
+                <p role={auipLaunchFeedback.status === 'error' ? 'alert' : 'status'}>
+                  {auipLaunchFeedback.message}
+                </p>
+              )}
+            </RichCard>
+          )}
 
           {auipExperience && (
             <RichCard

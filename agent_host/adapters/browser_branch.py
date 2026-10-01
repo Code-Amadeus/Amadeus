@@ -17,7 +17,7 @@ import json
 import logging
 import re
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -237,6 +237,13 @@ class BrowserBranchAdapter:
             await emit(event)
 
         first_request = policy_decision.initial_request
+        # The branch owns the live page across multiple steps. A fresh
+        # session must not be closed by the first run's ephemeral cleanup,
+        # or the follow-up hidden-DOM capture cannot find it.
+        first_request = replace(
+            first_request,
+            metadata={**(first_request.metadata or {}), "ephemeral": False},
+        )
         first_result = await self.base.run(first_request, run_id, branch_emit)
         if first_result.status != "done":
             branch.add_risk({"level": "error", "note": first_result.error or first_result.result})
@@ -567,10 +574,24 @@ class BrowserBranchAdapter:
                 awaiting_goal_confirmation = True
                 continue
 
-            latest_state = await self.base.inspect_session(
-                browser_session_id,
-                include_dom=False,
-            )
+            try:
+                latest_state = await self.base.inspect_session(
+                    browser_session_id,
+                    include_dom=False,
+                )
+            except RuntimeError:
+                # The live page was lost (session pruned or the first run
+                # never created one). Degrade gracefully instead of crashing
+                # the whole branch: merge what already ran and let the next
+                # turn start a fresh browser run.
+                branch.add_risk(
+                    {
+                        "level": "info",
+                        "note": "Browser session was lost; the branch closed with what it had.",
+                    }
+                )
+                latest_state = {}
+                break
             if steer_control.has_newer(active_revision):
                 expected_state = {}
                 continue
@@ -736,6 +757,9 @@ class BrowserBranchAdapter:
             "browser_session_id": browser_session_id,
             "browser_action": action_name,
             "browser_mode": action_name,
+            # The branch owns the live session across all of its actions: a
+            # single action must not close the browser out from under it.
+            "ephemeral": False,
         }
         for key in (
             "url",
@@ -763,7 +787,10 @@ class BrowserBranchAdapter:
         label: str,
         include_dom: bool,
     ) -> dict[str, Any]:
-        state = await self.base.inspect_session(browser_session_id, include_dom=include_dom)
+        try:
+            state = await self.base.inspect_session(browser_session_id, include_dom=include_dom)
+        except RuntimeError:
+            return {"url": "", "title": "", "dom": "", "interaction_refs": []}
         branch.add_message(
             role="system",
             content=str(state.get("dom") or ""),

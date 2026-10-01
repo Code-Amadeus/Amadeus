@@ -58,6 +58,19 @@ def load_companion_pack(root: Path) -> tuple[Path, ...]:
             raise CompanionPackError("Companion requires normal and at most 24 expressions")
         files = {manifest_path}
         payloads: dict[Path, tuple[int, str]] = {}
+        mouth = manifest.get("mouth") or {}
+        if not isinstance(mouth, dict):
+            raise CompanionPackError("mouth must be an object")
+        for label, config in mouth.items():
+            if not isinstance(config, dict):
+                raise CompanionPackError(f"mouth profile {label!r} must be an object")
+            url = config.get("url")
+            if not isinstance(url, str) or not re.fullmatch(r"(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\.webp", url):
+                raise CompanionPackError(f"Unsafe mouth overlay URL: {label!r}")
+            source = root / url
+            if source.resolve() != source or not source.is_file():
+                raise CompanionPackError(f"Missing or redirected mouth overlay: {url}")
+            files.add(source)
         for states in emotions.values():
             if not isinstance(states, dict) or not {"idle", "speaking"} <= states.keys():
                 raise CompanionPackError("Missing portrait state")

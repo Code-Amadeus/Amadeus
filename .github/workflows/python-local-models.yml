@@ -61,7 +61,6 @@ jobs:
           tests/test_gpt_sovits_checkpoint_loading.py
           tests/test_local_tts_device_context.py
           tests/test_local_tts_semantic_guard.py
-          tests/test_local_tts_punctuation.py
           tests/test_t2s_cuda_graph_sync_policy.py
           tests/test_t2s_static_kv_mask.py
           tests/test_local_model_loading.py

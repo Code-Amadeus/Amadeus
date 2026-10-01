@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Amadeus Reading Bridge",
+  "version": "0.3.0",
+  "description": "Send selected novel text or a comic chapter to Amadeus Companion.",
+  "permissions": ["contextMenus", "storage", "tabs", "activeTab"],
+  "host_permissions": ["http://127.0.0.1:17878/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Send selection to Amadeus", "default_popup": "popup.html" },
+  "commands": {
+    "send-selection": {
+      "suggested_key": { "default": "Ctrl+Shift+Y" },
+      "description": "Send the current selection to Amadeus"
+    }
+  },
+  "content_scripts": [{
+    "matches": ["<all_urls>"],
+    "js": ["content.js"],
+    "run_at": "document_idle"
+  }]
+}

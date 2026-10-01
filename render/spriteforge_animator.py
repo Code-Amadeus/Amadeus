@@ -512,11 +512,13 @@ class SpriteForgeAnimator:
             interval_ms = int(clip["frameIntervalMs"])
             phase = str(clip.get("phase") or "loop")
             urls = [path.resolve().as_uri() for path in frames]
-            clip_config = self._clip_config(clip, interval_ms, pack.canvas_size)
             self.engine.load_sprite_frames(emotion, urls)
             self.engine.set_idle_frame_interval_ms(emotion, interval_ms)
-            if clip_config:
-                self.engine.set_sprite_clip_config(emotion, clip_config)
+            if str(clip.get("loopMode") or "loop") == "once_then_hold":
+                self.engine.set_sprite_clip_config(
+                    emotion,
+                    {"loopMode": "once_then_hold", "frameIntervalMs": interval_ms},
+                )
 
             # Register legacy aliases with the same frame set so old emotion
             # keys do not fall back to stale JS-renderer assets. For example,
@@ -524,8 +526,11 @@ class SpriteForgeAnimator:
             for old_name in self._LEGACY_ALIASES.get(emotion, []):
                 self.engine.load_sprite_frames(old_name, urls)
                 self.engine.set_idle_frame_interval_ms(old_name, interval_ms)
-                if clip_config:
-                    self.engine.set_sprite_clip_config(old_name, clip_config)
+                if str(clip.get("loopMode") or "loop") == "once_then_hold":
+                    self.engine.set_sprite_clip_config(
+                        old_name,
+                        {"loopMode": "once_then_hold", "frameIntervalMs": interval_ms},
+                    )
                 logger.info("[SFAnimator] aliased legacy: %s -> %s", old_name, emotion)
 
             duration = len(frames) * interval_ms / 1000.0
@@ -630,17 +635,6 @@ class SpriteForgeAnimator:
                         label, mouth_set, len(anchor_track), len(frame_urls))
 
         logger.info("[SFAnimator] mouth profiles loaded: %d", loaded)
-
-    @staticmethod
-    def _clip_config(clip: dict, interval_ms: int, canvas: tuple[int, int] | None) -> dict:
-        """Playback and fit settings the page needs for one clip. The canvas lets the
-        page fit every clip alike, whatever the size of an individual frame."""
-        config: dict = {}
-        if str(clip.get("loopMode") or "loop") == "once_then_hold":
-            config.update(loopMode="once_then_hold", frameIntervalMs=interval_ms)
-        if canvas:
-            config.update(canvasWidth=canvas[0], canvasHeight=canvas[1])
-        return config
 
     def _frontend_runtime_payload(self) -> dict:
         return {

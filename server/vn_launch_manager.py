@@ -319,8 +319,23 @@ class VNLaunchManager:
                         "sessionId": session_id,
                     }
                 )
+            external_overlay_url = str(
+                params.get("overlayUrl") or params.get("overlay_url") or ""
+            ).strip()
             if launch_overlay:
                 runtime_params["overlay_url"] = await self._launch_overlay(profile, params)
+            elif external_overlay_url:
+                # Companion-only already owns the card at 8788. Reuse it instead
+                # of spawning a second overlay process and colliding on the port.
+                runtime_params["overlay_url"] = external_overlay_url
+                if self._runtime_overlay:
+                    self._runtime_overlay(external_overlay_url)
+                self._state["overlay"] = {
+                    "status": "external_running",
+                    "pid": None,
+                    "url": external_overlay_url,
+                    "helper": "",
+                }
             runtime = None
             if not capture_only:
                 runtime_started = self._runtime_owned = True

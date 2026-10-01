@@ -16,7 +16,7 @@ test('voice setup remains discoverable without a running backend', () => {
   }, null)
   assert.deepEqual(groups.map(group => group.id), [
     'conversation_asr', 'asr_remote', 'wake_asr', 'acoustic_pipeline',
-    'speech_synthesis', 'tts_embedded_v3', 'voice_reference_profile', 'tts_fish_audio', 'tts_emotion_references', 'tts_remote', 'tts_mimo',
+    'speech_synthesis', 'tts_embedded_v3', 'voice_reference_profile', 'tts_fish_audio', 'tts_remote', 'tts_mimo',
   ])
   assert.equal(groups.find(group => group.id === 'asr_remote').status, 'Optional')
   assert.equal(groups.find(group => group.id === 'tts_remote').status, 'Optional')
@@ -72,23 +72,4 @@ test('selected remote voice services request only their own credentials', () => 
   assert.equal(groups.find(group => group.id === 'asr_remote').status, 'Needs setup')
   assert.equal(groups.find(group => group.id === 'tts_mimo').status, 'Needs setup')
   assert.equal(groups.find(group => group.id === 'tts_remote').status, 'Optional')
-})
-
-
-test('emotion reference switch is default off, accepts the existing 1 value and requires restart', () => {
-  const selection = { asrBackend: 'qwen3_asr', ttsBackend: 'gpt_sovits', wakeEnabled: false, aecEnabled: true }
-  for (const value of [undefined, '1', 'true', 'false']) {
-    const snapshot = { values: value === undefined ? {} : { ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING: value } }
-    const group = exports.buildVoiceConfigurationCatalog(selection, snapshot).find(group => group.id === 'tts_emotion_references')
-    assert.equal(group.fields[0].value, value === '1' || value === 'true')
-    assert.equal(group.fields[0].restart_required, true)
-    assert.equal(group.fields[0].type, 'boolean')
-  }
-})
-
-test('effective dotenv emotion setting is visible until a stored override changes it', () => {
-  const selection = { asrBackend: 'qwen3_asr', ttsBackend: 'gpt_sovits', wakeEnabled: false, aecEnabled: true, emotionReferencesEnabled: true }
-  const field = snapshot => exports.buildVoiceConfigurationCatalog(selection, snapshot).find(group => group.id === 'tts_emotion_references').fields[0]
-  assert.equal(field(null).value, true)
-  assert.equal(field({ values: { ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING: 'false' } }).value, false)
 })

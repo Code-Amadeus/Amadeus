@@ -1,8 +1,11 @@
 """The native VN shell keeps the established caption, emotion and duration contract."""
 import http.client
 import json
+import urllib.request
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 
 from render.vn_overlay_window import PortraitOverlayTk, clean_display_text, infer_emotion
 from tools.vn_portrait_overlay_lite import overlay_class
@@ -93,6 +96,61 @@ def test_invalid_reaction_is_rejected_before_queue_and_next_reaction_is_polled()
         shell._poll()
         shell.apply_reaction.assert_called_once_with({"text": "good", "duration_ms": 1200})
         assert shell._messages.empty()
+    finally:
+        shell._server.shutdown()
+        shell._server.server_close()
+        shell._thread.join(timeout=2)
+
+
+@pytest.mark.parametrize("companion", [False, True])
+def test_constructing_the_shell_wires_its_controls(companion, monkeypatch):
+    """The constructor must pass the controls flag, not a bare name.
+
+    A regression here raises NameError inside __init__ *after* the window is
+    created but *before* the portrait pack loads, so the card dies with an
+    empty-looking log and no art. Nothing else covers this wiring: the control
+    handler tests fake the shell and the lite tests fake the window.
+    """
+    import render.vn_overlay_controls as controls_module
+    from render.vn_overlay_window import PortraitOverlayTk
+
+    captured: dict[str, object] = {}
+
+    class FakeControls:
+        def __init__(self, url, *, companion=False):
+            captured["url"] = url
+            captured["companion"] = companion
+
+        def snapshot(self):
+            return {"connected": False, "inputs": {}, "pending": False, "error": ""}
+
+        def close(self):
+            captured["closed"] = True
+
+    monkeypatch.setattr(controls_module, "VNOverlayControls", FakeControls)
+
+    root = MagicMock()
+    root.winfo_fpixels.return_value = 96
+    root.after.return_value = 1
+    with patch("render.vn_overlay_window.tk.Tk", return_value=root), \
+         patch("render.vn_overlay_window.tk.Canvas", return_value=MagicMock()), \
+         patch("render.vn_overlay_window.tk.Label", return_value=MagicMock()), \
+         patch("render.vn_overlay_window.tk.Button", return_value=MagicMock()), \
+         patch("render.vn_overlay_window.tk.StringVar", return_value=MagicMock()):
+        shell = PortraitOverlayTk(
+            port=0,
+            backend_url="ws://127.0.0.1:17777/ws",
+            companion_controls=companion,
+        )
+
+    try:
+        assert captured["url"] == "ws://127.0.0.1:17777/ws"
+        assert captured["companion"] is companion
+        assert shell._companion_controls_mode is companion
+        port = shell._server.server_address[1]
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=2) as response:
+            health = json.loads(response.read().decode("utf-8"))
+        assert health["companion_controls"] is companion
     finally:
         shell._server.shutdown()
         shell._server.server_close()

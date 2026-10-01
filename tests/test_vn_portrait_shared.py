@@ -24,6 +24,22 @@ def test_launcher_uses_repository_owned_overlay_without_external_helper(tmp_path
     assert args[args.index("--backend-url") + 1] == "ws://127.0.0.1:17779/ws"
 
 
+def test_emotion_preview_is_published_before_playback():
+    from server import vn_tts_bridge as bridge
+
+    posted = []
+    async def run():
+        with patch.object(bridge, "_companion_overlay_url", return_value="http://127.0.0.1:8788/reaction"), \
+             patch.object(bridge, "_post_json", side_effect=lambda url, payload, timeout: posted.append(payload)):
+            await bridge.publish_overlay_preview("disappointed", turn_id="turn-1")
+    asyncio.run(run())
+    assert len(posted) == 1
+    assert posted[0]["source"] == "vn_preview"
+    assert posted[0]["emotion"] == "disappointed"
+    assert "speaking" not in posted[0]
+    assert posted[0]["sentence_id"] == ""
+
+
 def test_only_vn_playback_is_projected_and_audio_edges_keep_order():
     from server import vn_tts_bridge as bridge
 

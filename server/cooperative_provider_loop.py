@@ -493,7 +493,7 @@ class CooperativeProviderLoop:
     def __init__(self, runtime: ProviderRuntime, query: Callable[..., Awaitable[str]],
                  allocate: Callable[[str, str], Path], *, provider: str,
                  context_requirements: dict[str, ProviderRequirements],
-                 persona: str | Callable[[], str] = "", publish: Callable[[dict], Any] | None = None,
+                 persona: str = "", publish: Callable[[dict], Any] | None = None,
                  owns_runtime: bool = True,
                  initial_destination: Callable[[str, ProviderRequirements], dict | None] | None = None,
                  context_destination_validator: Callable[[ChildConversation], bool] | None = None,
@@ -522,7 +522,8 @@ class CooperativeProviderLoop:
         self.browser_context = browser_context
         self.history_source = history_source
         self.work_proposals_only = bool(work_proposals_only)
-        self._persona = persona
+        self.system = persona + "\n\n" + _role_coordination_contract(self.work_proposals_only)
+        self.presentation_system = persona + "\n\n" + PRESENTATION_CONTRACT
         self.children: dict[str, ChildConversation] = OrderedDict()
         self._live_children = WeakValueDictionary()
         self._idle_context_budget = max(1, int(idle_context_budget))
@@ -545,17 +546,6 @@ class CooperativeProviderLoop:
         self._owns_runtime = owns_runtime
         self._turn_dialogue: ContextVar[tuple[str, tuple[dict, ...] | None] | None] = ContextVar(
             "cooperative_turn_dialogue", default=None)
-
-    def _current_persona(self) -> str:
-        return self._persona() if callable(self._persona) else self._persona
-
-    @property
-    def system(self) -> str:
-        return self._current_persona() + "\n\n" + _role_coordination_contract(self.work_proposals_only)
-
-    @property
-    def presentation_system(self) -> str:
-        return self._current_persona() + "\n\n" + PRESENTATION_CONTRACT
 
     def _capture_turn_history(self, turn_id: str) -> tuple[dict, ...] | None:
         """Freeze one turn's authoritative dialogue source before model I/O."""

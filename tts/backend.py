@@ -51,6 +51,10 @@ class BaseTTSBackend(ABC):
     def close(self) -> None:
         """Release optional backend resources."""
 
+    def reload_active_voice(self) -> bool:
+        """Reload model weights owned by the active character profile."""
+        return False
+
 
 def _language_code(value: str) -> str:
     clean = str(value or "").strip().lower()
@@ -86,6 +90,10 @@ class TTSRuntimeAdapter:
     @property
     def is_rocm(self) -> bool:
         return bool(getattr(self.backend, "is_rocm", False))
+
+    def reload_active_voice(self) -> bool:
+        reload = getattr(self.backend, "reload_active_voice", None)
+        return bool(reload()) if callable(reload) else False
 
     @staticmethod
     def _request(
@@ -136,7 +144,6 @@ class TTSRuntimeAdapter:
         enable_cuda_graph: bool = False,
         enable_static_kv: bool = True,
         max_sec_override: float | None = None,
-        emotion: str = "",
     ) -> tuple[int, np.ndarray]:
         request = self._request(
             text=text,
@@ -158,8 +165,6 @@ class TTSRuntimeAdapter:
             enable_cuda_graph=enable_cuda_graph,
             enable_static_kv=enable_static_kv,
             max_sec_override=max_sec_override,
-            # Preserve the options shape for backends that do not use emotion.
-            **({"emotion": emotion} if emotion else {}),
         )
         chunk = self.backend.synthesize(request)
         return chunk.sample_rate, chunk.audio
@@ -187,7 +192,6 @@ class TTSRuntimeAdapter:
         chunk_size_seconds: float | None = None,
         max_sec_override: float | None = None,
         collect_t2s_stats: bool = False,
-        emotion: str = "",
     ):
         request = self._request(
             text=text,
@@ -211,8 +215,6 @@ class TTSRuntimeAdapter:
             chunk_size_seconds=chunk_size_seconds,
             max_sec_override=max_sec_override,
             collect_t2s_stats=collect_t2s_stats,
-            # Preserve the options shape for backends that do not use emotion.
-            **({"emotion": emotion} if emotion else {}),
         )
         for chunk in self.backend.synthesize_stream(request):
             yield chunk.sample_rate, chunk.audio, chunk.text

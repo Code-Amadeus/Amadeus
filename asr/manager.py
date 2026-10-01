@@ -217,6 +217,9 @@ class ASRManager:
         self._tts_block_mic_fn = None
         # 可选：VAD 检测到语音起始时调用（用于 barge-in：打断正在播放的 TTS）
         self._on_speech_start_fn = None
+        # 每次 listen_for_speech 的取消信号：stop_listening() 置位后，
+        # 正在运行的 capture_utterance 会立即退出，避免停止后麦克风仍继续采集。
+        self._active_abort: Optional[threading.Event] = None
         # 可选：投机文本回调（切片 D2，见 set_speculative_text_callback）
         self._speculative_text_fn = None
 
@@ -414,6 +417,12 @@ class ASRManager:
         """阻塞等待后端就绪，返回是否成功。供需要同步等待的场景使用。"""
         return self._backend_ready.wait(timeout=timeout)
 
+    def abort_listen(self) -> None:
+        """请求取消当前正在进行的监听（线程安全，供 asr.stop 调用）。"""
+        event = self._active_abort
+        if event is not None:
+            event.set()
+
     def listen_for_speech(self, max_retries: int = 2) -> Optional[str]:
         """监听语音并返回识别文本；无有效输入返回 None。"""
         # 后端尚未就绪时等待（最多 120s），不阻塞主进程启动
@@ -427,14 +436,24 @@ class ASRManager:
             return None
 
         logger.info("[ASR] listening started")
-        for attempt in range(max_retries + 1):
-            result = self._listen_once(listen_timeout_attempt=attempt)
-            if result:
-                return result
-            if attempt < max_retries:
-                logger.debug(f"[ASR] attempt {attempt + 1} recognized no speech; retrying...")
-        logger.info("[ASR] no speech recognized after all attempts")
-        return None
+        abort = threading.Event()
+        self._active_abort = abort
+        try:
+            for attempt in range(max_retries + 1):
+                result = self._listen_once(
+                    listen_timeout_attempt=attempt,
+                    abort_event=abort,
+                )
+                if result:
+                    return result
+                if abort.is_set():
+                    break
+                if attempt < max_retries:
+                    logger.debug(f"[ASR] attempt {attempt + 1} recognized no speech; retrying...")
+            logger.info("[ASR] no speech recognized after all attempts")
+            return None
+        finally:
+            self._active_abort = None
 
     def set_language(self, language_code: str) -> None:
         """Set the conversation recognizer language when supported."""
@@ -493,7 +512,12 @@ class ASRManager:
     # 内部实现
     # ------------------------------------------------------------------
 
-    def _listen_once(self, *, listen_timeout_attempt: int = 0) -> Optional[str]:
+    def _listen_once(
+        self,
+        *,
+        listen_timeout_attempt: int = 0,
+        abort_event: Optional[threading.Event] = None,
+    ) -> Optional[str]:
         def _should_block_mic() -> bool:
             try:
                 if self._tts_block_mic_fn is not None and self._tts_block_mic_fn():
@@ -543,6 +567,7 @@ class ASRManager:
             probable_end_silence_ms=_SPECULATIVE_END_MS if speculative is not None else 0,
             on_probable_end=speculative.submit if speculative is not None else None,
             on_probable_end_cancelled=speculative.invalidate if speculative is not None else None,
+            abort_event=abort_event,
         )
         self._mic_index = mic_service.mic_index
         if audio is None:

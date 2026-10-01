@@ -762,17 +762,11 @@
         this.sprite.scale.set(1);
         return;
       }
-      // Fit the character by the canvas it was authored on, not by this frame: a frame
-      // wider than the canvas (hair blowing past its edge) must extend beyond it, centred
-      // at the bottom like every other frame, instead of shrinking the character.
-      const cfg = this._clipConfigs[this._currentEmotion] || {};
-      const fitWidth = cfg.canvasWidth > 0 ? cfg.canvasWidth : texture.width;
-      const fitHeight = cfg.canvasHeight > 0 ? cfg.canvasHeight : texture.height;
       if (this._viewportBounds) {
         const b = this._viewportBounds;
         const maxW = b.width * 0.64;
         const maxH = b.height * 0.90;
-        const scale = Math.min(maxW / fitWidth, maxH / fitHeight);
+        const scale = Math.min(maxW / texture.width, maxH / texture.height);
         this.sprite.scale.set(scale);
         this.sprite.x = b.x + b.width * 0.52;
         // Keep the lower artwork just inside the CRT viewport.
@@ -780,7 +774,7 @@
         return;
       }
       const h = app.screen.height;
-      const scale = h / fitHeight;
+      const scale = h / texture.height;
       this.sprite.scale.set(scale);
       this.sprite.x = app.screen.width / 2;
       this.sprite.y = h;

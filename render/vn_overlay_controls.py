@@ -18,15 +18,18 @@ from server.local_auth import AUTH_TOKEN_HEADER, LocalAuthPolicy
 class VNOverlayControls:
     """One connection, one outstanding change; reconnect never replays a click."""
 
-    def __init__(self, url: str):
+    def __init__(self, url: str, *, companion: bool = False):
         target = urlsplit(url)
         if target.scheme != "ws" or target.hostname not in {"127.0.0.1", "localhost"} or target.path != "/ws":
             raise ValueError("VN controls require the local backend /ws endpoint")
         self.url = url
+        self._companion = bool(companion)
+        self._status_method = "companion.status" if companion else "vn.status"
+        self._input_method = "companion.input.set" if companion else "vn.input.set"
         auth = LocalAuthPolicy.from_environment(os.environ)
         self._headers = {AUTH_TOKEN_HEADER: auth.token} if auth.required else {}
         self._lock = threading.Lock()
-        self._state = {"connected": False, "inputs": {}, "pending": False, "error": ""}
+        self._state = {"connected": False, "inputs": {}, "pending": False, "error": "", "mouth": 1.0}
         self._commands = queue.Queue(maxsize=1)
         self._stop = threading.Event()
         self._socket = None
@@ -37,14 +40,48 @@ class VNOverlayControls:
         with self._lock:
             return deepcopy(self._state)
 
+    def mouth_value(self) -> float:
+        with self._lock:
+            return float(self._state.get("mouth", 1.0))
+
+    def send_text(self, text: str) -> bool:
+        value = str(text or "").strip()
+        if not value:
+            return False
+        return self.set_inputs("companion", text=value)
+
+    def request(self, method: str, params: dict | None = None, callback=None) -> bool:
+        """Send one arbitrary request; callback receives the response params."""
+        request_method = str(method or "").strip()
+        if not request_method:
+            return False
+        with self._lock:
+            if not self._state["connected"] or self._state["pending"]:
+                return False
+            request_id = uuid.uuid4().hex
+            self._state.update(pending=True, error="")
+            self._commands.put_nowait({
+                "type": "req",
+                "id": request_id,
+                "method": request_method,
+                "params": dict(params or {}),
+                "callback": callback,
+            })
+            return True
+
     def set_inputs(self, session_id: str, **changes) -> bool:
         with self._lock:
-            if (not self._state["connected"] or self._state["pending"] or not session_id
-                    or session_id != self._state["inputs"].get("session_id")):
+            if not self._state["connected"] or self._state["pending"]:
                 return False
+            if self._companion:
+                params = {**changes, "session_id": "companion"}
+            else:
+                if not session_id or session_id != self._state["inputs"].get("session_id"):
+                    return False
+                params = {**changes, "session_id": session_id}
             self._state.update(pending=True, error="")
-            self._commands.put_nowait({"type": "req", "id": uuid.uuid4().hex, "method": "vn.input.set",
-                                      "params": {**changes, "session_id": session_id}})
+            self._commands.put_nowait({"type": "req", "id": uuid.uuid4().hex,
+                                      "method": self._input_method, "params": params})
             return True
 
     def close(self):
@@ -58,17 +95,20 @@ class VNOverlayControls:
             try:
                 with connect(self.url, additional_headers=self._headers, open_timeout=3, close_timeout=1) as ws:
                     self._socket = ws
-                    status_request = json.dumps({"type": "req", "id": "status", "method": "vn.status", "params": {}})
+                    status_request = json.dumps({"type": "req", "id": "status", "method": self._status_method, "params": {}})
                     ws.send(status_request)
-                    pending_id, deadline = "", time.monotonic() + 30
+                    pending_id, pending_command, deadline = "", None, time.monotonic() + 30
                     while not self._stop.is_set():
                         try:
                             command = self._commands.get_nowait()
                         except queue.Empty:
                             pass
                         else:
-                            pending_id, deadline = command["id"], time.monotonic() + 30
-                            ws.send(json.dumps(command))
+                            pending_id = command["id"]
+                            pending_command = command
+                            deadline = time.monotonic() + 30
+                            payload = {key: value for key, value in command.items() if key != "callback"}
+                            ws.send(json.dumps(payload))
                         if time.monotonic() > deadline:
                             raise TimeoutError("VN control request timed out")
                         try:
@@ -77,7 +117,7 @@ class VNOverlayControls:
                             continue
                         params = message.get("params") or {}
                         with self._lock:
-                            is_status = (message.get("type") == "evt" and message.get("method") == "vn.status"
+                            is_status = (message.get("type") == "evt" and message.get("method") == self._status_method
                                          or message.get("type") == "res" and message.get("id") == "status")
                             if is_status and isinstance(params.get("inputs"), dict):
                                 previous_session = self._state["inputs"].get("session_id")
@@ -86,9 +126,20 @@ class VNOverlayControls:
                                 self._state.update(connected=True, inputs=params["inputs"])
                                 if not pending_id:
                                     deadline = float("inf")
+                            if message.get("method") == "render.mouth":
+                                try:
+                                    self._state["mouth"] = max(0.0, min(1.0, float(params.get("value") or 0.0)))
+                                except (TypeError, ValueError):
+                                    self._state["mouth"] = 1.0
                             if message.get("type") == "res" and message.get("id") == pending_id:
                                 self._state.update(pending=False, error=str(params.get("error") or ""))
-                                pending_id, deadline = "", time.monotonic() + 30
+                                callback = (pending_command or {}).get("callback")
+                                if callable(callback):
+                                    try:
+                                        callback(params)
+                                    except Exception:
+                                        pass
+                                pending_id, pending_command, deadline = "", None, time.monotonic() + 30
                                 # Read the current session after completion, including rejected changes.
                                 ws.send(status_request)
             except Exception as exc:
@@ -96,6 +147,7 @@ class VNOverlayControls:
                     self._state["error"] = str(exc)
             finally:
                 self._socket = None
+                pending_command = None
                 with self._lock:
                     self._state.update(connected=False, pending=False, inputs={})
                     while not self._commands.empty():

@@ -13,6 +13,9 @@ from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
+from config import settings
+from llm.qwen_client import qwen_web_research
+
 from agent_host.browser_request_contract import (
     browser_research_query,
     normalize_web_address,
@@ -58,6 +61,9 @@ class BrowserSession:
     # "back" first uses the active page's history, then returns to its opener
     # when the active tab has no previous entry.
     page_stack: list[Any] = field(default_factory=list)
+    # True when the session is deliberately kept open for the user to watch
+    # (Qwen research viewing). Keep-alive sessions are exempt from TTL pruning.
+    keep_alive: bool = False
 
 
 class BrowserAdapter:
@@ -82,6 +88,27 @@ class BrowserAdapter:
         self._run_to_session: dict[str, str] = {}
         self._chat_to_session: dict[str, str] = {}
         self._session_ttl_s = max(60.0, float(os.environ.get("AMADEUS_BROWSER_SESSION_TTL_SECONDS", "900")))
+        # Default to a visible browser window (headless=False) so the user can
+        # watch the provider work. Set AMADEUS_BROWSER_HEADLESS=1 to force the
+        # old invisible mode.
+        self._headless = (
+            str(os.environ.get("AMADEUS_BROWSER_HEADLESS", "0")).strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
+        # Close the browser after each task by default; a request may opt out
+        # by passing ephemeral=false or setting AMADEUS_BROWSER_KEEP_OPEN=1.
+        keep_open = (
+            str(os.environ.get("AMADEUS_BROWSER_KEEP_OPEN", "0")).strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
+        self._default_ephemeral = not keep_open
+
+        # Show the live browser while Qwen web research runs so the user can
+        # watch pages open. Set AMADEUS_BROWSER_SHOW_RESEARCH=0 to skip this.
+        self._show_research_browser = (
+            str(os.environ.get("AMADEUS_BROWSER_SHOW_RESEARCH", "1")).strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
 
     async def run(
         self,
@@ -112,7 +139,7 @@ class BrowserAdapter:
             or ""
         ).strip()
         chat_session_id = str(metadata.get("session_id") or metadata.get("chat_session_id") or "").strip()
-        ephemeral = bool(metadata.get("ephemeral", False))
+        ephemeral = bool(metadata.get("ephemeral", self._default_ephemeral))
 
         if action in {"close", "close_session"}:
             if not session_id and chat_session_id:
@@ -131,28 +158,30 @@ class BrowserAdapter:
         ).strip().lower()
         atomic_actions = BROWSER_MANIFEST.capabilities.atomic_operation_ids()
         if declared_action and declared_action not in atomic_actions:
-            # Semantic actions such as ``search`` must be lowered by the
-            # branch policy into structured atomic actions first.  Unknown
-            # explicit actions are contract errors, not observations: silently
+            # ``search``/``research`` are semantic actions that the direct
+            # path lowers to the research flow (Qwen Web Research / Playwright
+            # search) when there is no live page to branch against. Other
+            # unknown explicit actions remain contract errors: silently
             # capturing the current page made a no-op look like successful
             # execution in the Work ledger and Slice.
-            return ProviderRunResult(
-                status="error",
-                result=(
-                    "Browser provider could not start: unsupported atomic action "
-                    f"{declared_action!r}."
-                ),
-                error=f"unsupported_browser_action:{declared_action}",
-                metadata={
-                    "browser": {
-                        "chat_session_id": chat_session_id,
-                        "mode": mode,
-                        "action": action,
-                        "query": query,
-                        "expected_state": {},
-                    }
-                },
-            )
+            if declared_action not in {"search", "research"}:
+                return ProviderRunResult(
+                    status="error",
+                    result=(
+                        "Browser provider could not start: unsupported atomic action "
+                        f"{declared_action!r}."
+                    ),
+                    error=f"unsupported_browser_action:{declared_action}",
+                    metadata={
+                        "browser": {
+                            "chat_session_id": chat_session_id,
+                            "mode": mode,
+                            "action": action,
+                            "query": query,
+                            "expected_state": {},
+                        }
+                    },
+                )
 
         # ``open`` is a navigation command, not an underspecified research
         # request.  Searching for the task text when its target cannot be
@@ -254,6 +283,22 @@ class BrowserAdapter:
                 observing = query_synthesized
                 live_page = bool(session.page.url and session.page.url != "about:blank")
                 if not urls and query and not (observing and live_page):
+                    qwen_result = await self._qwen_research_result(
+                        query,
+                        run_id,
+                        emit,
+                        session=session,
+                        max_pages=max_pages,
+                        timeout_ms=timeout_ms,
+                    )
+                    if qwen_result is not None:
+                        if self._show_research_browser:
+                            # Keep the visible browser open so the user can
+                            # watch the opened pages; the run() finally
+                            # closes ephemeral sessions, which would make
+                            # the window flash and vanish with the answer.
+                            ephemeral = False
+                        return qwen_result
                     urls = await self._search_with_playwright(
                         session,
                         query,
@@ -424,18 +469,28 @@ class BrowserAdapter:
             requested_session_id = self._chat_to_session.get(chat_session_id, "")
         if requested_session_id and requested_session_id in self._sessions:
             session = self._sessions[requested_session_id]
-            session.updated_at = time.time()
-            if chat_session_id:
-                self._chat_to_session[chat_session_id] = session.session_id
-            await emit(
-                ProviderEvent(
-                    provider=self.provider_id,
-                    run_id=run_id,
-                    type="tool.result",
-                    payload={"tool": "browser.session", "status": "reused", "browser_session_id": session.session_id},
+            try:
+                connected = bool(session.browser.is_connected())
+            except Exception:
+                connected = False
+            if not connected:
+                # The user closed the browser window; drop the stale session
+                # so the next launch starts fresh instead of failing on a dead
+                # browser.
+                await self._close_session(session.session_id)
+            else:
+                session.updated_at = time.time()
+                if chat_session_id:
+                    self._chat_to_session[chat_session_id] = session.session_id
+                await emit(
+                    ProviderEvent(
+                        provider=self.provider_id,
+                        run_id=run_id,
+                        type="tool.result",
+                        payload={"tool": "browser.session", "status": "reused", "browser_session_id": session.session_id},
+                    )
                 )
-            )
-            return session
+                return session
 
         playwright = await self._ensure_playwright()
         session_id = requested_session_id or f"browser_{secrets.token_hex(6)}"
@@ -449,13 +504,37 @@ class BrowserAdapter:
                 payload={"tool": "browser.launch", "engine": "chromium", "browser_session_id": session_id},
             )
         )
-        browser = await playwright.chromium.launch(headless=True)
+        # Prefer the system Chrome channel when available: bundled Chrome for
+        # Testing sometimes fails SxS activation on Windows. System Chrome is
+        # already registered, launches reliably, and can show a visible window.
+        # AMADEUS_BROWSER_CHANNEL overrides (chrome / msedge / chromium).
+        import os as _os
+        channel = str(_os.environ.get("AMADEUS_BROWSER_CHANNEL", "chrome")).strip().lower()
+        window_args = self._launch_window_args()
+        if channel in {"chrome", "msedge"}:
+            try:
+                browser = await playwright.chromium.launch(
+                    headless=self._headless,
+                    channel=channel,
+                    args=window_args,
+                )
+            except Exception:
+                browser = await playwright.chromium.launch(
+                    headless=self._headless,
+                    args=window_args,
+                )
+        else:
+            browser = await playwright.chromium.launch(
+                headless=self._headless,
+                args=window_args,
+            )
         context = await browser.new_context(
             viewport={"width": 1280, "height": 720},
             user_agent="AmadeusBrowserProvider/0.1 local-runtime",
             ignore_https_errors=True,
         )
         page = await context.new_page()
+        await self._apply_window_bounds(page, context)
         now = time.time()
         session = BrowserSession(
             session_id=session_id,
@@ -475,6 +554,306 @@ class BrowserAdapter:
             )
         )
         return session
+    def _compact_search_query(self, query: str, *, limit: int = 40) -> str:
+        """Shorten a verbose research instruction to core search terms.
+
+        The user said to search for "命运石之门攻略"; the synthesized query
+        must not dump the whole instruction ("优先使用Steam指南、GameFAQs…
+        整理剧情分支…") into the browser's search box.
+        """
+        text = re.sub(r"\s+", " ", str(query or "").strip()).strip()
+        # Drop leading search-command scaffolding.
+        text = re.sub(
+            r"^(?:请|帮我|麻烦|请你|帮我一下)?\s*"
+            r"(?:搜索|搜一下|搜一搜|搜|查找|找一下|找|查一下|查|查询|检索)\s*",
+            "",
+            text,
+            flags=re.I,
+        )
+        # Cut at the first instruction clause boundary.
+        cut = re.split(
+            r"[，,。;；]\s*(?:优先|使用|来源|整理|总结|汇总|报告|然后|并|并且|同时|再)",
+            text,
+            maxsplit=1,
+        )
+        if len(cut) > 1:
+            text = cut[0]
+        else:
+            text = re.split(
+                r"\s+(?:using|from|prefer|then|and\s+summar|summar|organize|report)\b",
+                text,
+                maxsplit=1,
+                flags=re.I,
+            )[0]
+        text = text.strip().strip("，,。；;：:")
+        if len(text) > limit:
+            text = text[:limit].rstrip("，,。；;：: ")
+        return text or str(query or "").strip()
+
+    def _window_size(self) -> tuple[int, int]:
+        raw = str(
+            os.environ.get("AMADEUS_BROWSER_WINDOW_SIZE", "560x420")
+        ).strip().lower()
+        match = re.match(r"^(\d+)x(\d+)$", raw)
+        if not match:
+            return 560, 420
+        return (
+            max(320, min(1280, int(match.group(1)))),
+            max(240, min(900, int(match.group(2)))),
+        )
+
+    def _launch_window_args(self) -> list[str]:
+        """Return Chromium window args for a small, top-left browser.
+
+        The kept-open browser is meant for watching the agent work, so it must
+        be a small window that does not cover the character or the dialogue.
+        Defaults to 560x420 at the top-left of the primary display; override
+        the size with AMADEUS_BROWSER_WINDOW_SIZE (e.g. 720x480).
+        """
+        if self._headless:
+            return []
+        width, height = self._window_size()
+        return [
+            f"--window-size={width},{height}",
+            "--window-position=16,16",
+        ]
+
+    async def _apply_window_bounds(self, page: Any, context: Any) -> None:
+        """Force a small top-left window via CDP when launch args are ignored.
+
+        System Chrome can ignore --window-size/--window-position (e.g. after
+        restoring a session). CDP Browser.setWindowBounds attached to the page
+        target is authoritative for the visible OS window.
+        """
+        if self._headless:
+            return
+        width, height = self._window_size()
+        try:
+            cdp = await context.new_cdp_session(page)
+            window = await cdp.send("Browser.getWindowForTarget")
+            window_id = window.get("windowId")
+            if window_id is None:
+                return
+            await cdp.send(
+                "Browser.setWindowBounds",
+                {
+                    "windowId": window_id,
+                    "bounds": {
+                        "windowState": "normal",
+                        "left": 16,
+                        "top": 16,
+                        "width": width,
+                        "height": height,
+                    },
+                },
+            )
+        except Exception:  # noqa: BLE001 - best-effort; launch args already applied
+            return
+
+
+    async def _qwen_research_result(
+        self,
+        query: str,
+        run_id: str,
+        emit: EmitProviderEvent,
+        *,
+        session: BrowserSession | None = None,
+        max_pages: int = 3,
+        timeout_ms: int = 18000,
+    ) -> ProviderRunResult | None:
+        """Run Qwen enable_search web research; return a done result or None.
+
+        Only active when DASHSCOPE_API_KEY is configured. Returns a grounded
+        answer without launching or navigating a browser, so anti-bot or
+        blocked-site environments cannot stall the retrieval path.
+        """
+        if not str(getattr(settings, "DASHSCOPE_API_KEY", "") or "").strip():
+            return None
+        session_id = self._run_to_session.get(run_id, "")
+        await emit(
+            ProviderEvent(
+                provider=self.provider_id,
+                run_id=run_id,
+                type="tool.call",
+                payload={
+                    "tool": "browser.search",
+                    "engine": "qwen",
+                    "query": query,
+                    "browser_session_id": session_id,
+                },
+            )
+        )
+        try:
+            result = await asyncio.to_thread(
+                qwen_web_research,
+                query,
+                model=getattr(settings, "QWEN_MODEL_NAME", None),
+            )
+        except Exception as exc:  # noqa: BLE001 - provider-level fallback
+            result = None
+        if not result:
+            await emit(
+                ProviderEvent(
+                    provider=self.provider_id,
+                    run_id=run_id,
+                    type="tool.result",
+                    payload={
+                        "tool": "browser.search",
+                        "engine": "qwen",
+                        "query": query,
+                        "status": "error",
+                        "error": "Qwen web research is unavailable; falling back to browser search.",
+                        "browser_session_id": session_id,
+                    },
+                )
+            )
+            return None
+        answer = str(result.get("answer") or "").strip()
+        sources = result.get("sources") or []
+        await emit(
+            ProviderEvent(
+                provider=self.provider_id,
+                run_id=run_id,
+                type="tool.result",
+                payload={
+                    "tool": "browser.search",
+                    "engine": "qwen",
+                    "query": query,
+                    "status": "ok",
+                    "result": answer,
+                    "sources": sources,
+                    "browser_session_id": session_id,
+                },
+            )
+        )
+        await emit(
+            ProviderEvent(
+                provider=self.provider_id,
+                run_id=run_id,
+                type="semantic.progress",
+                payload={
+                    **progress_payload(
+                        "validation",
+                        f"Qwen web research: {answer[:160]}",
+                        source="browser_provider:qwen_research",
+                        explicit=True,
+                        verified=True,
+                    ),
+                    "browser_session_id": session_id,
+                },
+            )
+        )
+        # Let the user watch the research in the live browser: best-effort
+        # open the source pages (or a search page when Qwen returned none).
+        if session is not None and self._show_research_browser:
+            session.keep_alive = True
+            await self._open_research_sources(
+                session,
+                query,
+                sources,
+                run_id,
+                emit,
+                max_pages=max_pages,
+                timeout_ms=timeout_ms,
+            )
+        return ProviderRunResult(
+            status="done",
+            result=answer,
+            metadata={
+                "browser": {
+                    "engine": "qwen",
+                    "research": True,
+                    "query": query,
+                    "sources": sources,
+                }
+            },
+        )
+
+    async def _extract_search_result_links(
+        self,
+        session: BrowserSession,
+        *,
+        limit: int,
+    ) -> list[str]:
+        """Pull real result URLs out of the currently open Bing results page."""
+        try:
+            html = await session.page.content()
+            soup = BeautifulSoup(html or "", "html.parser")
+            results: list[str] = []
+            for anchor in soup.select("li.b_algo h2 a[href]"):
+                href = str(anchor.get("href") or "").strip()
+                normalized = self._normalize_search_href(href)
+                if not normalized or normalized in results:
+                    continue
+                results.append(normalized)
+                if len(results) >= limit:
+                    break
+            return results
+        except Exception:  # noqa: BLE001 - best-effort
+            return []
+
+
+    async def _open_research_sources(
+        self,
+        session: BrowserSession,
+        query: str,
+        sources: list[dict[str, str]],
+        run_id: str,
+        emit: EmitProviderEvent,
+        *,
+        max_pages: int,
+        timeout_ms: int,
+    ) -> None:
+        """Best-effort open research sources in the live browser for viewing.
+
+        The Qwen answer is already authoritative; opening pages is purely so
+        the user can watch the browser navigate. Each navigation is isolated
+        so one blocked or slow site cannot stall the run.
+        """
+        targets = [
+            str(item.get("url") or "").strip()
+            for item in (sources or [])
+            if str(item.get("url") or "").strip()
+        ]
+        opened = 0
+        if not targets:
+            # No Qwen sources: open the search page first, then actually enter
+            # the top result sites so the user sees real pages, not just a
+            # search-results listing.
+            search_url = (
+                "https://www.bing.com/search?q="
+                + quote_plus(self._compact_search_query(query))
+            )
+            try:
+                await self._open_and_capture(
+                    session,
+                    search_url,
+                    run_id,
+                    emit,
+                    index=1,
+                    timeout_ms=timeout_ms,
+                )
+                opened = 1
+            except Exception:  # noqa: BLE001 - viewing is best-effort
+                return
+            targets = await self._extract_search_result_links(
+                session,
+                limit=max(1, max_pages - 1),
+            )
+        for url in targets[: max(0, max_pages - opened)]:
+            try:
+                await self._open_and_capture(
+                    session,
+                    url,
+                    run_id,
+                    emit,
+                    index=opened + 1,
+                    timeout_ms=timeout_ms,
+                )
+                opened += 1
+            except Exception:  # noqa: BLE001 - viewing is best-effort
+                continue
+
 
     async def _search_with_playwright(
         self,
@@ -487,16 +866,19 @@ class BrowserAdapter:
         timeout_ms: int,
     ) -> list[str]:
         results: list[dict[str, str]] = []
+        # Bing first: reachable from CN networks without a proxy. DuckDuckGo
+        # stays as a last-resort fallback for networks where it is reachable.
+        search_term = self._compact_search_query(query)
         search_engines = (
             (
-                "duckduckgo",
-                f"https://duckduckgo.com/html/?q={quote_plus(query)}",
-                "a.result__a",
+                "bing",
+                f"https://www.bing.com/search?q={quote_plus(search_term)}",
+                "li.b_algo h2 a[href]",
             ),
             (
-                "bing",
-                f"https://www.bing.com/search?q={quote_plus(query)}",
-                "li.b_algo h2 a[href]",
+                "duckduckgo",
+                f"https://duckduckgo.com/html/?q={quote_plus(search_term)}",
+                "a.result__a",
             ),
         )
         for engine, search_url, selector in search_engines:
@@ -513,43 +895,35 @@ class BrowserAdapter:
                     },
                 )
             )
-            response = await session.page.goto(
-                search_url,
-                wait_until="domcontentloaded",
-                timeout=timeout_ms,
-            )
-            session.last_url = str(session.page.url or search_url)
-            session.updated_at = time.time()
-            html = await session.page.content()
-            soup = BeautifulSoup(html or "", "html.parser")
-            engine_results: list[dict[str, str]] = []
-            for anchor in soup.select(selector):
-                href = str(anchor.get("href") or "").strip()
-                label = self._clean_text(anchor.get_text(" ", strip=True))
-                normalized = self._normalize_search_href(href)
-                if not normalized or not label:
-                    continue
-                if any(item["url"] == normalized for item in engine_results):
-                    continue
-                engine_results.append({"title": label[:120], "url": normalized})
-                if len(engine_results) >= max_results:
-                    break
-            await emit(
-                ProviderEvent(
-                    provider=self.provider_id,
-                    run_id=run_id,
-                    type="tool.result",
-                    payload={
-                        "tool": "browser.search",
-                        "engine": engine,
-                        "query": query,
-                        "status_code": response.status if response else None,
-                        "status": "ok" if engine_results else "no_results",
-                        "results": engine_results,
-                        "browser_session_id": session.session_id,
-                    },
+            try:
+                engine_results = await self._search_engine_once(
+                    session,
+                    engine,
+                    search_url,
+                    selector,
+                    query,
+                    run_id,
+                    emit,
+                    max_results=max_results,
+                    timeout_ms=timeout_ms,
                 )
-            )
+            except Exception as exc:  # noqa: BLE001 - one engine must not kill the search
+                await emit(
+                    ProviderEvent(
+                        provider=self.provider_id,
+                        run_id=run_id,
+                        type="tool.result",
+                        payload={
+                            "tool": "browser.search",
+                            "engine": engine,
+                            "query": query,
+                            "status": "error",
+                            "error": str(exc)[:200],
+                            "browser_session_id": session.session_id,
+                        },
+                    )
+                )
+                continue
             if engine_results:
                 results = engine_results
                 break
@@ -572,6 +946,58 @@ class BrowserAdapter:
                 )
             )
         return [item["url"] for item in results[:max_results]]
+
+    async def _search_engine_once(
+        self,
+        session: BrowserSession,
+        engine: str,
+        search_url: str,
+        selector: str,
+        query: str,
+        run_id: str,
+        emit: EmitProviderEvent,
+        *,
+        max_results: int,
+        timeout_ms: int,
+    ) -> list[dict[str, str]]:
+        response = await session.page.goto(
+            search_url,
+            wait_until="domcontentloaded",
+            timeout=timeout_ms,
+        )
+        session.last_url = str(session.page.url or search_url)
+        session.updated_at = time.time()
+        html = await session.page.content()
+        soup = BeautifulSoup(html or "", "html.parser")
+        engine_results: list[dict[str, str]] = []
+        for anchor in soup.select(selector):
+            href = str(anchor.get("href") or "").strip()
+            label = self._clean_text(anchor.get_text(" ", strip=True))
+            normalized = self._normalize_search_href(href)
+            if not normalized or not label:
+                continue
+            if any(item["url"] == normalized for item in engine_results):
+                continue
+            engine_results.append({"title": label[:120], "url": normalized})
+            if len(engine_results) >= max_results:
+                break
+        await emit(
+            ProviderEvent(
+                provider=self.provider_id,
+                run_id=run_id,
+                type="tool.result",
+                payload={
+                    "tool": "browser.search",
+                    "engine": engine,
+                    "query": query,
+                    "status_code": response.status if response else None,
+                    "status": "ok" if engine_results else "no_results",
+                    "results": engine_results,
+                    "browser_session_id": session.session_id,
+                },
+            )
+        )
+        return engine_results
 
     async def _click_text(
         self,
@@ -1362,6 +1788,8 @@ class BrowserAdapter:
     async def _prune_sessions(self) -> None:
         now = time.time()
         for session_id, session in list(self._sessions.items()):
+            if session.keep_alive:
+                continue
             if now - session.updated_at > self._session_ttl_s:
                 await self._close_session(session_id)
 

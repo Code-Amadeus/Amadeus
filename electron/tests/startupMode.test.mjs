@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { isWallpaperStartup } from '../src/main/startupMode.ts'
+import { isCompanionOnlyStartup, isWallpaperStartup, resolveStartupMode } from '../src/main/startupMode.ts'
 import { managesWindowsWallpaper } from '../src/main/windowsWallpaper.ts'
 
 test('wallpaper startup is explicit in argv or environment', () => {
@@ -53,4 +53,35 @@ test('wallpaper entry choices never override external host ownership', () => {
       assert.equal(managesWindowsWallpaper('win32', environment), false)
     }
   }
+})
+
+test('companion-only is its own startup mode on every platform', () => {
+  for (const platform of ['darwin', 'linux', 'win32']) {
+    assert.equal(resolveStartupMode(['electron', '.', '--companion'], {}, platform), 'companion')
+    assert.equal(resolveStartupMode(['electron', '.'], { AMADEUS_COMPANION: '1' }, platform), 'companion')
+    assert.equal(isCompanionOnlyStartup(['electron', '.', '--companion'], {}, platform), true)
+    assert.equal(isCompanionOnlyStartup(['electron', '.'], {}, platform), false)
+  }
+})
+
+test('companion-only never starts the wallpaper host, even with wallpaper opt-ins', () => {
+  const optIns = [
+    { AMADEUS_WALLPAPER: '1' },
+    { AMADEUS_WINDOWS_STARTUP_MODE: 'wallpaper' },
+  ]
+  for (const platform of ['darwin', 'linux', 'win32']) {
+    for (const override of optIns) {
+      const environment = { ...override, AMADEUS_COMPANION: '1' }
+      assert.equal(isWallpaperStartup(['electron', '.'], environment, platform, 'wallpaper'), false)
+    }
+  }
+  assert.equal(isWallpaperStartup(['electron', '.', '--companion'], { AMADEUS_WALLPAPER: '1' }, 'win32'), false)
+})
+
+test('an explicit wallpaper request still wins over a saved window preference', () => {
+  assert.equal(resolveStartupMode(['electron', '.', '--wallpaper'], {}, 'win32', 'window'), 'wallpaper')
+  assert.equal(resolveStartupMode(['electron', '.', '--no-wallpaper'], {}, 'win32', 'wallpaper'), 'window')
+  assert.equal(resolveStartupMode(['electron', '.'], {}, 'win32', 'wallpaper'), 'wallpaper')
+  assert.equal(resolveStartupMode(['electron', '.'], {}, 'win32', 'window'), 'window')
+  assert.equal(isCompanionOnlyStartup(['electron', '.', '--companion'], {}, 'win32', 'wallpaper'), true)
 })

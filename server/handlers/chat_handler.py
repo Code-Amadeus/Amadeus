@@ -457,17 +457,16 @@ class ChatHandler(RequestHandler):
         )
         self._observe_turn_admission(turn_admission)
 
-        def token_callback(accumulated: str) -> bool:
+        def token_callback(accumulated: str) -> None:
             if chat_epoch != self._chat_epoch or turn_id != self._active_turn_id:
-                return False
+                return
             if pending:
-                return False
+                return
             self._active_accumulated_text = str(accumulated or "")
             loop.create_task(
                 bus.emit(Method.CHAT_TOKEN, {"token": accumulated, "turn_id": turn_id,
                     "session_id": session_id})
             )
-            return True
 
         self._stream_task = asyncio.create_task(
             self._run_stream(

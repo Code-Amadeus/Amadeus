@@ -8661,3 +8661,53 @@ class WorkLedgerCoordinator:
                     status="stale",
                     metadata={"startup_reconciliation": "provider_run_not_live"},
                 )
+
+    def recover_stale_runtime_attempts(self) -> dict[str, int]:
+        """Cancel attempts that were running/queued when this process started.
+
+        After a restart the previous process is gone: its in-flight attempts
+        cannot keep running and must not keep holding workspace writer leases.
+        This fails them closed so fresh work can proceed instead of colliding
+        with a phantom ``active writer``. Only non-terminal attempts are
+        touched; completed work is never mutated.
+        """
+
+        cleaned = {"attempts": 0, "leases": 0}
+        try:
+            items = self.store.list_work_items(limit=2000)
+        except Exception:
+            return cleaned
+        for item in items:
+            try:
+                attempts = self.store.list_attempts(item.work_item_id)
+            except Exception:
+                continue
+            for attempt in attempts:
+                if attempt.execution_status in _TERMINAL_EXECUTION:
+                    continue
+                try:
+                    self.store.update_attempt(
+                        attempt.attempt_id,
+                        execution_status="cancelled",
+                        error=(
+                            "startup cleanup: previous runtime no longer owns this attempt"
+                        ),
+                        metadata={
+                            "startup_cleanup": True,
+                            "reason": "stale_runtime_after_restart",
+                        },
+                    )
+                    cleaned["attempts"] += 1
+                except Exception:
+                    continue
+                try:
+                    lease = self.store.release_writer_lease(
+                        attempt.attempt_id,
+                        status="released",
+                        metadata={"startup_cleanup": True},
+                    )
+                    if lease is not None:
+                        cleaned["leases"] += 1
+                except Exception:
+                    continue
+        return cleaned

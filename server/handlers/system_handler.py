@@ -49,17 +49,9 @@ def _startup_field(
     return field
 
 
-def _voice_configuration(settings: Any, emotion_pack: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def _voice_configuration(settings: Any) -> list[dict[str, Any]]:
     from asr.registry import asr_backend_statuses
     from tts.registry import tts_backend_statuses
-    from config.asset_packages import external_asset_pack_status
-    from tts.reference_pack import PACK_ID
-    import tts.pipeline as tts_pipeline
-
-    if emotion_pack is None:
-        emotion_pack = external_asset_pack_status(PACK_ID)
-    emotion_runtime = tts_pipeline.emotion_reference_status()
-    emotion_requested = bool(settings.ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING)
 
     asr_selected = str(settings.ASR_BACKEND or "qwen3_asr").strip().lower()
     tts_selected = str(settings.TTS_BACKEND or "gpt_sovits").strip().lower()
@@ -196,6 +188,56 @@ def _voice_configuration(settings: Any, emotion_pack: dict[str, Any] | None = No
                 _startup_field("ASR_API_BASE_URL", "API base URL", settings.ASR_API_BASE_URL, field_type="url"),
                 _startup_field("ASR_API_KEY", "API key", field_type="secret", secret_configured=bool(settings.ASR_API_KEY)),
                 _startup_field("ASR_API_MODEL", "Model", settings.ASR_API_MODEL),
+            ],
+        },
+        {
+            "id": "asr_qwen_remote",
+            "label": "Qwen remote ASR (DashScope)",
+            "description": "Native DashScope Qwen3-ASR upload and transcription. Used only when Conversation recognition selects qwen_remote.",
+            "active": asr_selected == "qwen_remote",
+            "configured": bool(
+                (settings.QWEN_REMOTE_ASR_API_KEY or settings.DASHSCOPE_API_KEY)
+                and settings.QWEN_REMOTE_ASR_MODEL
+            ),
+            "status": "remote" if asr_selected == "qwen_remote" else "available",
+            "status_ok": bool(
+                (settings.QWEN_REMOTE_ASR_API_KEY or settings.DASHSCOPE_API_KEY)
+                and settings.QWEN_REMOTE_ASR_MODEL
+            ),
+            "fields": [
+                _startup_field(
+                    "QWEN_REMOTE_ASR_BASE_URL",
+                    "API base URL",
+                    settings.QWEN_REMOTE_ASR_BASE_URL,
+                    field_type="url",
+                ),
+                _startup_field(
+                    "QWEN_REMOTE_ASR_API_KEY",
+                    "API key",
+                    field_type="secret",
+                    secret_configured=bool(
+                        settings.QWEN_REMOTE_ASR_API_KEY
+                        or settings.DASHSCOPE_API_KEY
+                    ),
+                ),
+                _startup_field(
+                    "QWEN_REMOTE_ASR_MODEL",
+                    "Model",
+                    settings.QWEN_REMOTE_ASR_MODEL,
+                ),
+                _startup_field(
+                    "QWEN_REMOTE_ASR_WORKSPACE",
+                    "Workspace",
+                    settings.QWEN_REMOTE_ASR_WORKSPACE,
+                    description="Optional DashScope workspace ID.",
+                ),
+                _startup_field(
+                    "QWEN_REMOTE_ASR_TRUST_ENV",
+                    "Use environment proxy",
+                    bool(settings.QWEN_REMOTE_ASR_TRUST_ENV),
+                    field_type="boolean",
+                    description="Off by default so a Fish-only local proxy does not intercept DashScope.",
+                ),
             ],
         },
         {
@@ -359,23 +401,6 @@ def _voice_configuration(settings: Any, emotion_pack: dict[str, Any] | None = No
                     "TTS_SOVITS_MODEL_PATH", "Custom SoVITS acoustic checkpoint",
                     settings.TTS_SOVITS_MODEL_PATH,
                     description="Used only with the Custom checkpoint pair profile; relative paths resolve from the repository root.",
-                ),
-            ],
-        },
-        {
-            "id": "tts_emotion_references",
-            "label": "Emotion voice references",
-            "description": "Use an optional emotion voice pack for Windows CUDA V3 Japanese speech. References are prepared at startup.",
-            "active": tts_selected == "gpt_sovits" and emotion_requested,
-            "configured": not emotion_requested or bool(emotion_pack["installed"]),
-            "status": str(emotion_runtime["state"]),
-            "status_ok": not emotion_requested or bool(emotion_runtime["ready"]),
-            "status_detail": str(emotion_runtime["detail"]),
-            "fields": [
-                _startup_field(
-                    "ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING", "Enable emotion voice references",
-                    bool(settings.ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING), field_type="boolean",
-                    description="Default off. Install the optional voice-kurisu-emotions pack and restart. Turning this off restores default reference speech.",
                 ),
             ],
         },
@@ -1159,12 +1184,10 @@ class SystemHandler(RequestHandler):
         from server import chat_translation_runtime
         from render.character_pack import character_pack_status
         from config.asset_packages import external_asset_pack_status
-        from tts.reference_pack import PACK_ID
         import tts.pipeline as tts_pipeline
         from core.chat_runtime import get_chat_runtime
-        from llm.prompts import get_character_prompt_config
-
         vision = visual_runtime.get_config()
+        vision_capability = visual_runtime.provider_availability()
         chat_runtime = get_chat_runtime()
         from asr.registry import asr_backend_statuses
         from llm.local_backends import hybrid_local_status, local_backend_status
@@ -1177,9 +1200,8 @@ class SystemHandler(RequestHandler):
         )
         active_provider = getattr(llm_client, 'LLM_PROVIDER', 'deepseek')
         project_root = Path(__file__).resolve().parents[2]
-        emotion_pack = await asyncio.to_thread(external_asset_pack_status, PACK_ID)
         voice_configuration, local_status, hybrid_status = await asyncio.gather(
-            asyncio.to_thread(_voice_configuration, settings, emotion_pack),
+            asyncio.to_thread(_voice_configuration, settings),
             asyncio.to_thread(local_backend_status, settings, project_root=project_root),
             asyncio.to_thread(hybrid_local_status, settings),
         )
@@ -1203,8 +1225,6 @@ class SystemHandler(RequestHandler):
             "wake_enabled": bool(getattr(settings, "WAKE_ENABLED", False)),
             "visual_asset_pack": external_asset_pack_status("visual-runtime"),
             "character_pack": character_pack_status(),
-            "emotion_reference_pack": emotion_pack,
-            **get_character_prompt_config(),
             "settings_scope": "runtime_only",
             "model_connections": _model_connections(
                 settings,
@@ -1235,6 +1255,9 @@ class SystemHandler(RequestHandler):
             "vision_mode": vision.get("mode", "off"),
             "vision_scope": vision.get("scope", "full_screen"),
             "vision_provider": vision.get("provider", "auto"),
+            "vision_provider_available": bool(vision_capability.get("available")),
+            "vision_provider_resolved": str(vision_capability.get("provider") or ""),
+            "vision_provider_model": str(vision_capability.get("model") or ""),
             "vision_max_long_side": vision.get("max_long_side", 960),
             "vision_jpeg_quality": vision.get("jpeg_quality", 68),
             "vision_region": vision.get("region", ""),
@@ -1289,10 +1312,7 @@ class SystemHandler(RequestHandler):
         from server import wallpaper_subtitle_runtime
         import tts.pipeline as tts_pipeline
 
-        from llm.prompts import CHARACTER_PROMPT_SETTING, normalize_character_prompt, set_character_prompt
-
         allowed = {
-            CHARACTER_PROMPT_SETTING,
             "llm_provider",
             "local_llm_type",
             "tts_mode",
@@ -1314,9 +1334,6 @@ class SystemHandler(RequestHandler):
         if unknown:
             raise ValueError(f"unsupported runtime setting(s): {', '.join(unknown)}")
         values = {str(key): value for key, value in values.items()}
-
-        if CHARACTER_PROMPT_SETTING in values:
-            values[CHARACTER_PROMPT_SETTING] = normalize_character_prompt(values[CHARACTER_PROMPT_SETTING])
 
         if "llm_provider" in values:
             provider = str(values["llm_provider"] or "").strip().lower()
@@ -1354,7 +1371,7 @@ class SystemHandler(RequestHandler):
             scope = str(values["vision_scope"] or "").strip().lower()
             if scope not in {
                 "full_screen", "current_window", "selected_window",
-                "wallpaper_surface", "region",
+                "wallpaper_surface", "region", "read_window",
             }:
                 raise ValueError(f"unsupported vision scope: {scope!r}")
             values["vision_scope"] = scope
@@ -1404,8 +1421,6 @@ class SystemHandler(RequestHandler):
                     raise RuntimeError("wait for TTS playback to become idle before changing TTS settings")
 
         updated: list[str] = []
-        if CHARACTER_PROMPT_SETTING in values:
-            updated.extend(set_character_prompt(values[CHARACTER_PROMPT_SETTING]))
         if "asr_backend" in values:
             if self._asr_handler is None:
                 raise RuntimeError("ASR runtime is unavailable")
