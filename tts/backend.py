@@ -136,6 +136,7 @@ class TTSRuntimeAdapter:
         enable_cuda_graph: bool = False,
         enable_static_kv: bool = True,
         max_sec_override: float | None = None,
+        emotion: str = "",
     ) -> tuple[int, np.ndarray]:
         request = self._request(
             text=text,
@@ -157,6 +158,7 @@ class TTSRuntimeAdapter:
             enable_cuda_graph=enable_cuda_graph,
             enable_static_kv=enable_static_kv,
             max_sec_override=max_sec_override,
+            **({"emotion": emotion} if emotion else {}),
         )
         chunk = self.backend.synthesize(request)
         return chunk.sample_rate, chunk.audio
@@ -184,6 +186,7 @@ class TTSRuntimeAdapter:
         chunk_size_seconds: float | None = None,
         max_sec_override: float | None = None,
         collect_t2s_stats: bool = False,
+        emotion: str = "",
     ):
         request = self._request(
             text=text,
@@ -207,6 +210,7 @@ class TTSRuntimeAdapter:
             chunk_size_seconds=chunk_size_seconds,
             max_sec_override=max_sec_override,
             collect_t2s_stats=collect_t2s_stats,
+            **({"emotion": emotion} if emotion else {}),
         )
         for chunk in self.backend.synthesize_stream(request):
             yield chunk.sample_rate, chunk.audio, chunk.text

@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import numpy as np
 import pytest
 
 from config import settings
@@ -46,7 +47,16 @@ class CacheEngine:
     def __init__(self):
         self.cache = {}
         self.builds = []
+        self.requests = []
         self._sync_sovits_timing = Mock()
+
+    def infer(self, **kwargs):
+        self.requests.append(kwargs)
+        return 24000, np.ones(240, dtype=np.float32)
+
+    def infer_stream(self, **kwargs):
+        sample_rate, audio = self.infer(**kwargs)
+        yield sample_rate, audio, kwargs['text']
 
     def _build_session_cache(self, audio, text, language):
         key = (audio, text, language)
@@ -68,6 +78,7 @@ def backend(monkeypatch, tmp_path):
     write_pack(tmp_path / 'assets' / PACK_TREE)
     result = gpt_sovits.GPTSoVITSBackend()
     result._inferencer = CacheEngine()
+    monkeypatch.setattr(result, '_sidecar_enabled', lambda: False)
     return result
 
 
@@ -132,6 +143,37 @@ def test_semantic_pack_language_is_independent_of_default_acoustic_transcript(ba
     count = len(engine.builds)
     engine._build_synthesis_cache('default.wav', 'Default.', 'en', reference)
     assert len(engine.builds) == count + 1  # only the new acoustic-pair key
+
+
+@pytest.mark.parametrize('streaming', [False, True])
+@pytest.mark.parametrize('enabled', [False, True])
+@pytest.mark.parametrize('language', ['日文', '英文'])
+def test_adapter_routes_emotion_without_leaking_between_requests(backend, monkeypatch, streaming, enabled, language):
+    monkeypatch.setattr(settings, 'ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING', enabled)
+    backend._configure_emotion_references()
+    runtime = TTSRuntimeAdapter(backend)
+    engine = backend._inferencer
+    # Keep the actual adapter and backend; substitute only model inference.
+    for emotion in ('sad', '', 'shy', ''):
+        params = dict(text='声。', ref_audio_path='default.wav', prompt_text='Default。',
+                      text_language=language, emotion=emotion)
+        if streaming:
+            chunks = list(runtime.infer_stream(**params))
+            assert len(chunks) == 1 and chunks[0][2] == '声。'
+            sample_rate, audio = chunks[0][:2]
+        else:
+            sample_rate, audio = runtime.infer(**params)
+        assert sample_rate == 24000 and audio.size == 240
+        request = engine.requests[-1]
+        assert request['ref_audio_path'] == 'default.wav'
+        assert request['prompt_text'] == 'Default。'
+        assert 'emotion' not in request
+        if enabled and language == '日文' and emotion:
+            ref = backend._emotion_pack.references[emotion]
+            assert request['semantic_reference'] == (str(ref.audio), ref.text, 'all_ja')
+        else:
+            assert 'semantic_reference' not in request
+    assert len(engine.requests) == 4
 
 
 def test_disabled_needs_no_pack_or_warmup(backend, monkeypatch):
@@ -250,15 +292,9 @@ async def test_scheduler_merges_aliases_but_stops_at_changed_reference(backend, 
 async def test_mixed_opening_bypasses_default_audio_cache_and_normal_reuses_it(backend, monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
     from unittest.mock import AsyncMock
-    import numpy as np
     from tts import pipeline
     backend._configure_emotion_references()
-    seen = []
-    def infer_stream(**kwargs):
-        seen.append(kwargs.get('emotion', ''))
-        yield 24000, np.ones(240, dtype=np.float32), '声'
     runtime = TTSRuntimeAdapter(backend)
-    monkeypatch.setattr(runtime, 'infer_stream', infer_stream)
     monkeypatch.setattr(pipeline, '_tts_runtime', runtime)
     monkeypatch.setattr(pipeline, 'current_tts_language_code', lambda: 'ja')
     monkeypatch.setattr(pipeline, '_tts_interrupt_epoch', 7)
@@ -270,10 +306,14 @@ async def test_mixed_opening_bypasses_default_audio_cache_and_normal_reuses_it(b
         monkeypatch.setattr(pipeline, '_tts_executor', executor)
         await pipeline.speak_stream_enhanced_asyncio_queue('声。', 'sad-id', True, emotion='sad', interrupt_epoch=7)
         cache.lookup.assert_not_called(); cache.store.assert_not_called()
-        assert seen == ['sad']
+        requests = backend._inferencer.requests
+        assert len(requests) == 1
+        ref = backend._emotion_pack.references['sad']
+        assert requests[0]['semantic_reference'] == (str(ref.audio), ref.text, 'all_ja')
+        pipeline._playback_manager.add_to_playlist.assert_awaited_once()
         await pipeline.speak_stream_enhanced_asyncio_queue('声。', 'normal-id', True, interrupt_epoch=7)
         cache.lookup.assert_called_once()
-        assert seen == ['sad']
+        assert len(requests) == 1
 
 
 def test_startup_gui_exposes_boolean_and_disabled_is_healthy(monkeypatch):
