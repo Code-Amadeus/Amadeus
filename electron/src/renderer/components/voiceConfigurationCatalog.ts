@@ -10,6 +10,7 @@ interface VoiceRuntimeSelection {
   ttsBackend: string
   wakeEnabled: boolean
   aecEnabled: boolean
+  emotionReferencesEnabled?: boolean
 }
 
 const field = (
@@ -44,6 +45,9 @@ export function buildVoiceConfigurationCatalog(
   const ttsBackend = value('TTS_BACKEND', selection.ttsBackend || 'gpt_sovits')
   const wakeEnabled = bool('WAKE_ENABLED', selection.wakeEnabled)
   const aecEnabled = bool('AEC_REALTIME_ENABLED', selection.aecEnabled)
+  const emotionEnabled = values.ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING === undefined
+    ? Boolean(selection.emotionReferencesEnabled)
+    : ['true', '1', 'yes'].includes(value('ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING').toLowerCase())
   const unknown = 'Backend status unavailable'
 
   return [
@@ -182,6 +186,20 @@ export function buildVoiceConfigurationCatalog(
         field('FISH_TTS_MODEL', 'Inference model', 'text', value('FISH_TTS_MODEL', 's2.1-pro-free')),
         field('FISH_TTS_REFERENCE_ID', 'Voice reference ID', 'text', value('FISH_TTS_REFERENCE_ID', 'b450b19370434173b121446057622e9b')),
         field('FISH_TTS_LATENCY', 'Latency mode', 'select', value('FISH_TTS_LATENCY', 'balanced'), ['normal', 'balanced', 'low']),
+      ],
+    },
+    {
+      id: 'tts_emotion_references',
+      label: 'Emotion voice references',
+      description: 'Use an optional emotion voice pack for Windows CUDA V3 Japanese speech. References are prepared at startup.',
+      active: ttsBackend === 'gpt_sovits' && emotionEnabled,
+      configured: !emotionEnabled,
+      status: emotionEnabled ? unknown : 'Off',
+      status_ok: !emotionEnabled,
+      fields: [
+        field('ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING', 'Enable emotion voice references', 'boolean',
+          emotionEnabled,
+          undefined, 'Default off. Install the optional voice-kurisu-emotions pack and restart. Turning this off restores default reference speech.'),
       ],
     },
     {

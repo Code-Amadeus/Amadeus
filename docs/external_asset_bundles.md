@@ -137,6 +137,12 @@ reviewed before publishing either voice archive.
 
 ## Archive contract
 
+The optional `voice-kurisu-emotions` pack adds paired Japanese semantic references
+to an existing Windows CUDA V3 installation. It uses the same bundle contract
+and installer; it does not include model weights or overwrite default references.
+See [emotion reference setup and warmup](tts_emotion_references.md). Installation
+does not enable the default-off setting; the Voice switch requires a restart.
+
 An archive contains only:
 
 ```text

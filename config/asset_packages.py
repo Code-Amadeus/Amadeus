@@ -83,7 +83,7 @@ def asset_pack_specs(index_path: Path = ASSET_INDEX_PATH) -> dict[str, AssetPack
         if spec_version <= 0:
             raise AssetPackageError(f"external pack {pack_id!r} has an invalid spec version")
         validator = str(entry.get("validator") or "required_files").strip()
-        if validator not in {"required_files", "visual_runtime", "character_pack", "companion_pack"}:
+        if validator not in {"required_files", "visual_runtime", "character_pack", "companion_pack", "tts_reference_pack"}:
             raise AssetPackageError(f"external pack {pack_id!r} has an unknown validator")
         spec = AssetPackSpec(
             id=pack_id,
@@ -98,6 +98,8 @@ def asset_pack_specs(index_path: Path = ASSET_INDEX_PATH) -> dict[str, AssetPack
             raise AssetPackageError(f"external pack {pack_id!r} has no install contract")
         if spec.validator == "companion_pack" and len(spec.trees) != 1:
             raise AssetPackageError("companion pack requires exactly one runtime tree")
+        if spec.validator == "tts_reference_pack" and len(spec.trees) != 1:
+            raise AssetPackageError("TTS reference pack requires exactly one runtime tree")
         specs[pack_id] = spec
     return specs
 
@@ -139,6 +141,14 @@ def external_asset_pack_status(
         state = "incomplete"
     else:
         state = "installed"
+
+    if state == "installed" and spec.validator == "tts_reference_pack":
+        from tts.reference_pack import ReferencePackError, load_reference_pack
+        try:
+            load_reference_pack(asset_path(asset_root, spec.trees[0]))
+        except ReferencePackError as exc:
+            state = "invalid"
+            message = str(exc)
 
     if state == "installed" and spec.validator == "visual_runtime":
         graph_path = asset_path(asset_root, PurePosixPath("scenarios/runtime/scenario_graph.json"))

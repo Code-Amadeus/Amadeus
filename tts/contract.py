@@ -39,7 +39,8 @@ class TTSRequest:
     # 后台生产者在异步工作开始时领取；None 保持旧消费侧盖章行为
     tts_epoch: int | None = None
     playback_epoch: int | None = None
-    # 预留：语音风格/情绪
+    # Opt-in semantic-reference preset resolved from the model's EMO tag.
+    # Empty keeps the established default synthesis path.
     emotion: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 

@@ -6,6 +6,18 @@ const DESKTOP_LOCALE_KEY = 'AMADEUS_UI_LOCALE'
 const LOCAL_LOCALE_KEY = 'amadeus.ui.locale'
 
 const ZH_CN: Record<string, string> = {
+  'Use an optional emotion voice pack for Windows CUDA V3 Japanese speech. References are prepared at startup.': '为 Windows CUDA V3 日语语音启用可选情绪包，启动时提前准备参考音频。',
+  'Emotion reference pack ready; all references prewarmed.': '情绪参考包已就绪，所有参考已预热。',
+  'Voice runtime is not initialized.': '语音运行时尚未初始化。',
+  'Emotion references require embedded V3 Japanese speech.': '情绪参考需要内嵌 V3 模型和日语输出。',
+  'Emotion voice references': '情绪语音参考',
+  'Enable emotion voice references': '启用情绪语音参考',
+  'Kurisu V3 Emotion Reference Pack': '红莉栖 V3 情绪参考音频包',
+  'Optional reference audio and paired transcripts. Existing V3 weights and the default acoustic reference are kept.': '可选的参考音频与配对原文，沿用已有 V3 权重和默认声学参考。',
+  'Default off. Install the optional voice-kurisu-emotions pack and restart. Turning this off restores default reference speech.': '默认关闭。安装可选情绪参考包并重启后生效，关闭后恢复默认参考语音。',
+  'Emotion references are disabled.': '情绪参考已关闭。',
+  'Install the optional emotion reference pack, then restart.': '请安装可选情绪参考包，然后重启。',
+  'Emotion references require Windows CUDA, embedded V3 and Japanese output.': '情绪参考需要 Windows CUDA、内嵌 V3 模型和日语输出。',
   'Portrait art is optional. Without the Companion Lite pack, the window shows a simple avatar and captions.': '头像资源为可选项。未安装 Companion Lite 时，小窗显示简洁头像和字幕。',
   'Official help links are available in the desktop app.': '请在桌面应用中打开官方帮助链接。',
   'Commentary frequency': '评论频率',
