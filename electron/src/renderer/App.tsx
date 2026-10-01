@@ -36,7 +36,7 @@ function AmadeusApp() {
   const panelWindow = searchParams.get('panelWindow') === '1'
   const glowWindow = searchParams.get('glowWindow') === '1'
   const [page, setPage] = useState<Page>(() => initialPage())
-  const [renderActive, setRenderActive] = useState(false)  // false=VTS, true=PixiJS
+  const [renderActive, setRenderActive] = useState(false)
   const [wallpaperActive, setWallpaperActive] = useState(false)
   const [renderAssetUrl, setRenderAssetUrl] = useState('')
 
@@ -77,7 +77,8 @@ function AmadeusApp() {
     }
   }, [desktopProjection, glowWindow, panelWindow])
 
-  // Toggle the supported VTS/PixiJS render projection.
+  // These toggles own projection visibility. The backend's shared graph signal
+  // route must remain active for speech and expressions on either surface.
   const handleToggleRender = useCallback(async () => {
     const next = !renderActive
     setRenderActive(next)
@@ -91,17 +92,12 @@ function AmadeusApp() {
         }
         setWallpaperActive(false)
       }
-      // Start PixiJS render mode
-      const backend = 'graph'
-      send('expression.set_backend', { backend }).catch(() => {})
       // Start AssetServer and get the render page URL
       try {
         const res = await send('render.start', {})
         if (res?.url) setRenderAssetUrl(String(res.url))
       } catch { /* AssetServer might already be running */ }
     } else {
-      // Switch back to VTS
-      send('expression.set_backend', { backend: 'vts' }).catch(() => {})
       send('render.stop', {}).catch(() => {})
       setRenderAssetUrl('')
     }
@@ -115,7 +111,6 @@ function AmadeusApp() {
     if (next) {
       setWallpaperActive(true)
       if (renderActive) {
-        send('expression.set_backend', { backend: 'vts' }).catch(() => {})
         try { await send('render.stop', {}) } catch {}
         setRenderActive(false)
         setRenderAssetUrl('')
@@ -132,7 +127,7 @@ function AmadeusApp() {
     }
   }, [wallpaperActive, renderActive, send])
 
-  // listen for render mode back-to-vts from model bar
+  // Listen for render projection changes from the model bar.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail
