@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from collections import deque
 from pathlib import Path
@@ -44,6 +45,52 @@ class GPTSoVITSBackend(BaseTTSBackend):
         self._stderr_thread: threading.Thread | None = None
         self._stderr_tail: deque[str] = deque(maxlen=50)
         self._ready_info: dict[str, Any] = {}
+        self._emotion_pack = None
+        self.emotion_reference_status = {"state": "disabled", "ready": False, "detail": "Emotion references are disabled."}
+
+    def emotion_reference_key(self, emotion: str) -> str:
+        return self._emotion_pack.key_for(emotion) if self._emotion_pack else ""
+
+    def _configure_emotion_references(self) -> None:
+        from config import settings
+        if not settings.ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING:
+            return
+        infer = self._inferencer
+        if (sys.platform != "win32" or infer is None or infer.model_version != "v3"
+                or infer.is_rocm or not str(infer.device).startswith("cuda")
+                or settings.TTS_OUTPUT_LANGUAGE != "日文"):
+            self.emotion_reference_status = {"state": "unsupported", "ready": False,
+                "detail": "Emotion references require Windows CUDA, embedded V3 and Japanese output."}
+            return
+        from tts.reference_pack import PACK_TREE, ReferencePackError, load_reference_pack
+        root = _PROJECT_ROOT / "assets" / PACK_TREE
+        if not (root / "references.json").is_file():
+            self.emotion_reference_status = {"state": "not_installed", "ready": False,
+                "detail": "Install the optional emotion reference pack, then restart."}
+            logger.warning("[TTS-EMOTION] %s", self.emotion_reference_status["detail"])
+            return
+        start = time.perf_counter()
+        try:
+            pack = load_reference_pack(root)
+            refs = pack.distinct_references()
+            default = infer.warm_reference_cache(settings.TTS_REF_AUDIO_JA, settings.TTS_REF_TEXT_JA, "all_ja")
+            if any(default.get(key) is None for key in ("refer_spec", "prompt_fea_ref", "prompt_ge", "mel2_norm")):
+                raise ReferencePackError("Could not warm the configured default acoustic reference")
+            for ref in refs:
+                cache = infer.warm_reference_cache(str(ref.audio), ref.text, "all_ja")
+                if any(cache.get(key) is None for key in ("prompt", "phones1", "bert1")):
+                    raise ReferencePackError(f"Could not warm semantic reference: {ref.audio.name}")
+            infer._sync_sovits_timing()
+        except (ReferencePackError, RuntimeError, OSError, ValueError) as exc:
+            self.emotion_reference_status = {"state": "invalid", "ready": False, "detail": str(exc)}
+            logger.warning("[TTS-EMOTION] unavailable; default TTS remains active: %s", exc)
+            return
+        self._emotion_pack = pack
+        elapsed = time.perf_counter() - start
+        self.emotion_reference_status = {"state": "ready", "ready": True,
+            "warmed_references": len(refs), "warmup_seconds": elapsed,
+            "detail": "Emotion reference pack ready; all references prewarmed."}
+        logger.info("[TTS-EMOTION] prewarmed %d distinct references in %.3fs", len(refs), elapsed)
 
     @property
     def is_rocm(self) -> bool:
@@ -79,6 +126,7 @@ class GPTSoVITSBackend(BaseTTSBackend):
             return
         if self._sidecar_enabled():
             self._load_sidecar()
+            self._configure_emotion_references()
             return
         self.deployment = "embedded"
         from config import settings
@@ -89,6 +137,7 @@ class GPTSoVITSBackend(BaseTTSBackend):
             gpt_path=settings.TTS_GPT_MODEL_PATH or None,
             sovits_path=settings.TTS_SOVITS_MODEL_PATH or None,
         )
+        self._configure_emotion_references()
 
     def _is_running(self) -> bool:
         return self._proc is not None and self._proc.poll() is None
@@ -171,6 +220,9 @@ class GPTSoVITSBackend(BaseTTSBackend):
 
     @staticmethod
     def _serialize_request(request: TTSSynthesisRequest) -> dict[str, Any]:
+        options = dict(request.options)
+        # Semantic-reference routing is currently embedded-only.
+        options.pop("emotion", None)
         return {
             "text": request.text,
             "language": request.language,
@@ -180,7 +232,7 @@ class GPTSoVITSBackend(BaseTTSBackend):
             "reference_text": request.reference_text,
             "reference_language": request.reference_language,
             "chunk_size_seconds": request.chunk_size_seconds,
-            "options": dict(request.options),
+            "options": options,
         }
 
     @staticmethod
@@ -301,7 +353,7 @@ class GPTSoVITSBackend(BaseTTSBackend):
             return chunks[0]
         sample_rate, audio = self._ready().infer(
             text=request.text,
-            **self._kwargs(request, streaming=False),
+            **self._request_kwargs(request, streaming=False),
         )
         return TTSAudioChunk(int(sample_rate), audio, request.text)
 
@@ -309,7 +361,8 @@ class GPTSoVITSBackend(BaseTTSBackend):
         if self._sidecar_enabled():
             yield from self._synthesize_sidecar_stream(request, streaming=True)
             return
-        kwargs = self._kwargs(request, streaming=True)
+        self._ready()
+        kwargs = self._request_kwargs(request, streaming=True)
         kwargs["chunk_size_seconds"] = request.chunk_size_seconds
         for item in self._ready().infer_stream(text=request.text, **kwargs):
             if len(item) == 2:
@@ -319,9 +372,21 @@ class GPTSoVITSBackend(BaseTTSBackend):
                 sample_rate, audio, text = item
             yield TTSAudioChunk(int(sample_rate), audio, str(text or ""))
 
+    def _request_kwargs(self, request: TTSSynthesisRequest, *, streaming: bool) -> dict:
+        kwargs = self._kwargs(request, streaming=streaming)
+        emotion = str(kwargs.pop("emotion", ""))
+        if self._emotion_pack and request.language == "ja":
+            ref = self._emotion_pack.references.get(emotion)
+            if ref:
+                kwargs["semantic_reference"] = (str(ref.audio), ref.text, "all_ja")
+                logger.info("[TTS-EMOTION] semantic=%s acoustic=%s", ref.audio.name, Path(request.reference_audio).name)
+        return kwargs
+
     def close(self) -> None:
         inferencer = self._inferencer
         self._inferencer = None
+        self._emotion_pack = None
+        self.emotion_reference_status = {"state": "disabled", "ready": False, "detail": "Voice runtime is closed."}
         close = getattr(inferencer, "close", None)
         if callable(close):
             close()

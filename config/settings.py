@@ -360,6 +360,7 @@ TTS_GPT_MODEL_PATH, TTS_SOVITS_MODEL_PATH = _resolve_tts_voice_paths(
 # 输出语言："日文" | "英文"（对应 dict_language 中的键名）
 # 切换此项即可在日文 LoRA 管线和英文 base 管线之间手动选择
 TTS_OUTPUT_LANGUAGE   = _str("TTS_OUTPUT_LANGUAGE", "日文")
+ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING = _bool("ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING", False)
 
 # 日文管线参考音频 / 文本
 TTS_REF_AUDIO_JA = _str("TTS_REF_AUDIO_JA", "./assets/audio/reference/kurisu_reference.wav")

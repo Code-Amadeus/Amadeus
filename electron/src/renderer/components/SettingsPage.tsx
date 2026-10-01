@@ -843,7 +843,19 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     : characterPackState === 'invalid'
       ? `The optional package is incomplete: ${String(characterPack.message ?? 'validation failed')}`
       : 'Optional. Chat, Work, and headless mode remain available without this package.'
+  const emotionPack = asRecord(config.emotion_reference_pack)
+  const emotionPackInstalled = Boolean(emotionPack.installed)
+  const emotionPackNeedsAttention = ['invalid', 'incomplete'].includes(String(emotionPack.state))
   const runtimePackages: RuntimePackageStatus[] = [
+    {
+      id: 'emotion_reference_pack',
+      label: 'Kurisu V3 Emotion Reference Pack',
+      description: 'Optional reference audio and paired transcripts. Existing V3 weights and the default acoustic reference are kept.',
+      value: emotionPackInstalled ? 'Installed' : emotionPackNeedsAttention ? 'Needs attention' : 'Not installed',
+      state: emotionPackInstalled ? 'ready' : emotionPackNeedsAttention ? 'attention' : 'inactive',
+      stateLabel: emotionPackInstalled ? 'Installed' : emotionPackNeedsAttention ? 'Needs attention' : 'Not installed',
+      icon: 'People',
+    },
     {
       id: 'visual_runtime_pack',
       label: 'Visual Runtime Pack',
@@ -989,6 +1001,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
         ttsBackend: desktop?.sources?.TTS_BACKEND === 'user' ? desktop.values.TTS_BACKEND : val('tts_backend', 'gpt_sovits'),
         wakeEnabled: desktop?.sources?.WAKE_ENABLED === 'user' ? desktop.values.WAKE_ENABLED === 'true' : bool('wake_enabled'),
         aecEnabled: desktop?.sources?.AEC_REALTIME_ENABLED === 'user' ? desktop.values.AEC_REALTIME_ENABLED === 'true' : config.aec_realtime_enabled === undefined ? true : bool('aec_realtime_enabled'),
+        emotionReferencesEnabled: backendVoiceConfiguration.find(group => group.id === 'tts_emotion_references')?.fields.find(field => field.key === 'ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING')?.value === true,
       }, desktop)
   const voiceConfiguration: ConfigurationGroup[] = voiceCatalog.map(base => {
     const backend = backendVoiceConfiguration.find(group => group.id === base.id)
@@ -1002,7 +1015,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
       status_detail: backend.status_detail,
     } : base
   })
-  const primaryVoiceIds = new Set(['conversation_asr', 'speech_synthesis', 'wake_asr', 'acoustic_pipeline'])
+  const primaryVoiceIds = new Set(['conversation_asr', 'speech_synthesis', 'wake_asr', 'acoustic_pipeline', 'tts_emotion_references'])
   const remoteVoiceIds = new Set(['asr_remote', 'tts_fish_audio', 'tts_remote'])
   const primaryVoiceConfiguration = voiceConfiguration.filter(group => primaryVoiceIds.has(group.id))
   const remoteVoiceConfiguration = voiceConfiguration.filter(group => remoteVoiceIds.has(group.id))

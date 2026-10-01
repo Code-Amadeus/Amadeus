@@ -52,6 +52,13 @@ def _startup_field(
 def _voice_configuration(settings: Any) -> list[dict[str, Any]]:
     from asr.registry import asr_backend_statuses
     from tts.registry import tts_backend_statuses
+    from config.asset_packages import external_asset_pack_status
+    from tts.reference_pack import PACK_ID
+    import tts.pipeline as tts_pipeline
+
+    emotion_pack = external_asset_pack_status(PACK_ID)
+    emotion_runtime = tts_pipeline.emotion_reference_status()
+    emotion_requested = bool(settings.ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING)
 
     asr_selected = str(settings.ASR_BACKEND or "qwen3_asr").strip().lower()
     tts_selected = str(settings.TTS_BACKEND or "gpt_sovits").strip().lower()
@@ -351,6 +358,23 @@ def _voice_configuration(settings: Any) -> list[dict[str, Any]]:
                     "TTS_SOVITS_MODEL_PATH", "Custom SoVITS acoustic checkpoint",
                     settings.TTS_SOVITS_MODEL_PATH,
                     description="Used only with the Custom checkpoint pair profile; relative paths resolve from the repository root.",
+                ),
+            ],
+        },
+        {
+            "id": "tts_emotion_references",
+            "label": "Emotion voice references",
+            "description": "Use an optional emotion voice pack for Windows CUDA V3 Japanese speech. References are prepared at startup.",
+            "active": tts_selected == "gpt_sovits" and emotion_requested,
+            "configured": not emotion_requested or bool(emotion_pack["installed"]),
+            "status": str(emotion_runtime["state"]),
+            "status_ok": not emotion_requested or bool(emotion_runtime["ready"]),
+            "status_detail": str(emotion_runtime["detail"]),
+            "fields": [
+                _startup_field(
+                    "ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING", "Enable emotion voice references",
+                    bool(settings.ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING), field_type="boolean",
+                    description="Default off. Install the optional voice-kurisu-emotions pack and restart. Turning this off restores default reference speech.",
                 ),
             ],
         },
@@ -1174,6 +1198,7 @@ class SystemHandler(RequestHandler):
             "wake_enabled": bool(getattr(settings, "WAKE_ENABLED", False)),
             "visual_asset_pack": external_asset_pack_status("visual-runtime"),
             "character_pack": character_pack_status(),
+            "emotion_reference_pack": external_asset_pack_status("voice-kurisu-emotions"),
             "settings_scope": "runtime_only",
             "model_connections": _model_connections(
                 settings,

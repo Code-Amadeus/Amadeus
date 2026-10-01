@@ -1053,6 +1053,7 @@ class _TurnState:
     __slots__ = (
         "full_response", "history_response", "current_sentence", "is_first",
         "pending_expr_acts", "last_sentence_id", "next_stream_tts",
+        "tts_emotion_routing", "tts_emotion", "tts_ordered_parts",
         "parser", "gui_callback", "api_call_start",
         "turn_id", "branch_continue_seen", "delegate_seen", "work_delegate_seen",
         "focus_delegate_attrs", "focus_delegate_batches", "sentence_count",
@@ -1098,6 +1099,10 @@ class _TurnState:
         self.current_sentence = ""
         self.is_first = True
         self.pending_expr_acts: list = []
+        from tts.pipeline import emotion_references_enabled
+        self.tts_emotion_routing = emotion_references_enabled()
+        self.tts_emotion = ""
+        self.tts_ordered_parts = ()
         self.last_sentence_id: str | None = None
         self.next_stream_tts: bool | None = None  # hybrid: 下一句使用流式 TTS（仅消费一次）
         from llm.action_existence_protocol import control_envelope_enabled
@@ -1908,11 +1913,19 @@ class ChatRuntime:
         sentence_id = sentence_state_manager.create_sentence(safe_text)
         st.last_sentence_id = sentence_id
         st.sentence_count += 1
-        # 每句只消费 pending_expr_acts 里的第一个，余下留给后续句子
-        buffered = [st.pending_expr_acts.pop(0)] if st.pending_expr_acts else []
+        # The experiment queues only actions encountered before this span.
+        # Keep the established one-action-per-sentence policy when disabled.
+        if st.tts_emotion_routing:
+            buffered = list(st.pending_expr_acts)
+            st.pending_expr_acts.clear()
+        else:
+            buffered = [st.pending_expr_acts.pop(0)] if st.pending_expr_acts else []
         all_expr_acts = buffered + inline_expr_acts
         if all_expr_acts:
             _get_expr_ctrl().register_sentence_actions(sentence_id, all_expr_acts)
+        if st.tts_emotion_routing:
+            logger.info("[TTS-EMOTION] queued turn=%s id=%s reference=%s chars=%s",
+                        st.turn_id, sentence_id, st.tts_emotion, len(safe_text))
 
         # 并行启动预翻译，不阻塞 TTS（CLI 本地路径关闭翻译，字幕在播放时显示）
         if translation and _pre_translation_enabled():
@@ -1930,6 +1943,7 @@ class ChatRuntime:
                 stream_tts=_stream_tts_flag,
                 source="chat",
                 turn_id=st.turn_id,
+                emotion=st.tts_emotion,
             ))
         else:
             logger.info(
@@ -1943,6 +1957,7 @@ class ChatRuntime:
                 stream_tts=None,
                 source="chat_cli",
                 turn_id=st.turn_id,
+                emotion=st.tts_emotion,
             ))
 
         if st.is_first:
@@ -2295,10 +2310,33 @@ class ChatRuntime:
         """Consume one provider text fragment through the shared stream port."""
 
         async def dispatch(content: str) -> None:
-            if dispatch_text is not None:
-                await dispatch_text(content)
-            else:
-                await self._append_and_dispatch(st, content)
+            async def text_piece(text):
+                if dispatch_text is not None:
+                    await dispatch_text(text)
+                else:
+                    await self._append_and_dispatch(st, text)
+
+            if not st.tts_emotion_routing:
+                await text_piece(content)
+                return
+            from llm.codex_role_contract import EMOTION_DURATION_RANGES
+            from tts.pipeline import emotion_reference_key
+            for kind, value in st.tts_ordered_parts:
+                if kind == "text":
+                    await text_piece(str(value))
+                elif value.get("type") not in {"DELEGATE", "CONTROL", "AUIP"}:
+                    if value.get("type") == "EMO":
+                        preset = str(value.get("attrs", {}).get("preset", "normal")).lower()
+                        preset = preset if preset in EMOTION_DURATION_RANGES else "normal"
+                        reference_key = emotion_reference_key(preset)
+                        if reference_key != st.tts_emotion and st.current_sentence.strip():
+                            # A model-emitted boundary must not recolor text
+                            # already buffered before the tag or cross a job.
+                            await self._process_sentence(st, st.current_sentence)
+                            st.current_sentence = ""
+                        st.tts_emotion = reference_key
+                    st.pending_expr_acts.append(value)
+            st.tts_ordered_parts = ()
 
         return await consume_role_stream_text(
             st,
@@ -2312,6 +2350,8 @@ class ChatRuntime:
         """标签解析 + DELEGATE 立即派发 + 表情动作暂存，返回清洗后的文本。"""
         _trace_raw_role_chunk(st.turn_id, raw_content)
         parsed = parse_inline_control_chunk(st.parser, raw_content)
+        if st.tts_emotion_routing:
+            st.tts_ordered_parts = parsed.ordered_parts
         cleaned = parsed.cleaned_text
         st.history_response += project_inline_role_history(parsed.ordered_parts)
         if parsed.had_actions:
@@ -2442,7 +2482,8 @@ class ChatRuntime:
                     st.history_response += "".join(
                         str(action.get("raw") or "") for action in _d
                     )
-            st.pending_expr_acts.extend(parsed.expression_actions)
+            if not st.tts_emotion_routing:
+                st.pending_expr_acts.extend(parsed.expression_actions)
         return cleaned
 
     def _schedule_auip_control(self, st: _TurnState, action: dict) -> asyncio.Task | None:
@@ -4790,6 +4831,10 @@ class ChatRuntime:
                             if not raw_content:
                                 continue
 
+                            if st.tts_emotion_routing:
+                                await self._accept_role_stream_text(st, raw_content)
+                                first_sentence_completed = not st.is_first
+                                continue
                             content = self._consume_stream_chunk(st, raw_content)
                             st.full_response += content
 

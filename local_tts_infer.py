@@ -970,6 +970,30 @@ class TTSInferencer:
             logger.warning(traceback.format_exc())
             return {}
 
+    def warm_reference_cache(self, audio_path: str, text: str, language_code: str):
+        """Use the same normalized key for startup warmup and live synthesis."""
+        text = text.strip()
+        if text and text[-1] not in self.splits:
+            text += "." if language_code == "en" else "。"
+        return self._build_session_cache(audio_path, text, language_code)
+
+    def _build_synthesis_cache(self, audio_path, text, language_code, semantic_reference=None):
+        default = self._build_session_cache(audio_path, text, language_code)
+        if semantic_reference is None:
+            return default
+        if self.model_version != "v3":
+            raise ValueError("Mixed semantic references require V3")
+        semantic = self.warm_reference_cache(*semantic_reference)
+        acoustic_keys = ("refer_spec", "prompt_fea_ref", "prompt_ge", "mel2_norm")
+        if any(default.get(key) is None for key in acoustic_keys) or any(
+            semantic.get(key) is None for key in ("prompt", "phones1", "bert1")
+        ):
+            raise RuntimeError("Incomplete mixed-reference cache")
+        # Explicit request-local composition; neither shared cache is mutated.
+        result = dict(semantic)
+        result.update({key: default[key] for key in acoustic_keys})
+        return result
+
     def _clone_cached_value(self, value):
         """避免读取会话缓存后被后续推理路径原地复用/污染。"""
         if torch.is_tensor(value):
@@ -1155,7 +1179,8 @@ class TTSInferencer:
               if_sr=False,
               enable_cuda_graph=False,
               enable_static_kv=True,
-              max_sec_override=None):
+              max_sec_override=None,
+              semantic_reference=None):
         """
         执行TTS推理
 
@@ -1255,7 +1280,7 @@ class TTSInferencer:
 
             # 处理参考音频（会话级缓存优先）
             sess_lang = prompt_language_code if not ref_free else _default_lang_code()
-            sess = self._build_session_cache(ref_audio_path, prompt_text, sess_lang)
+            sess = self._build_synthesis_cache(ref_audio_path, prompt_text, sess_lang, semantic_reference)
             prompt = sess.get("prompt")
 
             # 获取参考音频的音素和BERT特征
@@ -1563,7 +1588,8 @@ class TTSInferencer:
                      enable_static_kv=True,
                      chunk_size_seconds: float = None,
                      max_sec_override: float = None,
-                     collect_t2s_stats: bool = False):
+                     collect_t2s_stats: bool = False,
+                     semantic_reference=None):
         """
         流式执行TTS推理，逐步返回音频块
 
@@ -1689,7 +1715,7 @@ class TTSInferencer:
 
             # 处理参考音频（会话级缓存优先）
             sess_lang = prompt_language_code if not ref_free else _default_lang_code()
-            sess = self._build_session_cache(ref_audio_path, prompt_text, sess_lang)
+            sess = self._build_synthesis_cache(ref_audio_path, prompt_text, sess_lang, semantic_reference)
             prompt = sess.get("prompt")
 
             # 获取参考音频的音素和BERT特征（会话级缓存优先）
