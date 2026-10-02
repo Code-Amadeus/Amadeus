@@ -60,7 +60,7 @@ value at a time and restart the backend before judging it.
 | `WAKE_MATCH_THRESHOLD` | `0.10` | Minimum normalized text similarity. Higher is stricter. Exact phrase containment still matches directly. |
 | `WAKE_VAD_THRESHOLD` | `0.45` | Silero speech probability required to open a wake segment. Higher is stricter. |
 | `WAKE_MIN_SEGMENT_RMS` | `0.003` | Rejects completed segments quieter than this RMS value. |
-| `WAKE_AWAKE_SECONDS` | `60` | Keeps the full Conversation recognizer hot after a wake. |
+| `WAKE_AWAKE_SECONDS` | `60` | Minimum time the full Conversation recognizer stays hot after a wake; see [Returning to standby](#returning-to-standby). |
 | `WAKE_BRIDGE_MAX_SECONDS` | `45` | Maximum post-wake SenseVoice bridge window. |
 | `WAKE_BRIDGE_AUTO_SEND` | `false` | Allows bridge text to be submitted automatically; keep disabled unless that behavior is intended. |
 | `WAKE_AUTO_START_WITH_WALLPAPER` | `true` | Starts/stops Wake with the Electron wallpaper lifecycle. |
@@ -69,6 +69,27 @@ The energy detector is a disabled fallback, not a second default VAD path.
 Enable `WAKE_ENERGY_FALLBACK` only when the normal VAD path is unavailable or
 has been deliberately ruled out. `WAKE_ENERGY_START_RMS` opens its segment and
 `WAKE_ENERGY_END_RMS` closes it.
+
+## Returning to standby
+
+After a wake, the full Conversation recognizer stays hot for the larger of
+`WAKE_AWAKE_SECONDS` and `ASR_IDLE_UNLOAD_SECONDS` (180 seconds by default),
+counted from the wake or from the end of the last reply. When that window
+passes, the conversation returns to Wake standby; on the Windows wallpaper this
+includes continuous conversation. An in-process Qwen3-ASR model on CUDA then
+waits in RAM instead of VRAM. The next wake, or the start of speech, moves it
+back while the user is still speaking. Other Conversation recognizers unload at
+that point.
+
+Listening that does not return to standby (continuous conversation with Wake
+disabled, or a manual microphone session) keeps running. An idle Qwen3-ASR
+model still moves to RAM after `ASR_IDLE_UNLOAD_SECONDS` and comes back at
+speech start.
+
+| Setting | Default | Effect |
+| --- | ---: | --- |
+| `ASR_IDLE_UNLOAD_SECONDS` | `180` | Seconds the Conversation recognizer stays in VRAM after the last conversation activity. |
+| `ASR_RAM_UNLOAD_SECONDS` | `0` | Once the model waits in RAM and listening has stopped, seconds before it unloads; `0` keeps it loaded. |
 
 ## Personalized template cache
 

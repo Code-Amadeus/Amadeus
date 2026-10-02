@@ -109,6 +109,10 @@ class Qwen3ASRBackend(BaseASRBackend):
     _shared_model = None
     _shared_device = ""
     _shared_attn_impl = ""
+    # An idle in-process model can wait in RAM; the next transcription, or a
+    # speech-start prepare(), moves it back to _shared_device first.
+    _shared_parked = False
+    _last_used = 0.0
     _inprocess_disabled_until = 0.0
     _inprocess_disabled_reason = ""
 
@@ -194,12 +198,67 @@ class Qwen3ASRBackend(BaseASRBackend):
             cooldown,
         )
 
+    @property
+    def parked(self) -> bool:
+        return self._mode == "inprocess" and Qwen3ASRBackend._shared_parked
+
+    def release_vram(self, idle_seconds: float = 0.0) -> bool:
+        """Move an in-process CUDA model idle for idle_seconds to RAM.
+
+        Returns True when the model now waits in RAM, False when it stays on
+        the GPU or this backend cannot be parked (sidecar, CPU).
+        """
+        if self._mode != "inprocess" or self._model is None or not str(self._device).startswith("cuda"):
+            return False
+        with self._lock:
+            if Qwen3ASRBackend._shared_parked:
+                return True
+            # Re-check under the lock: a transcription that just ran must not
+            # be followed by a move that costs the next utterance a reload.
+            if time.monotonic() - Qwen3ASRBackend._last_used < idle_seconds:
+                return False
+            started = time.perf_counter()
+            self._model.model.to("cpu")
+            Qwen3ASRBackend._shared_parked = True
+        try:
+            import torch
+
+            # A cuBLAS workspace that inference allocated later can sit in a
+            # freed weight segment and keep it reserved (measured: 1.2 GiB
+            # stayed reserved without this). It is recreated on the next matmul.
+            clear_workspaces = getattr(torch._C, "_cuda_clearCublasWorkspaces", None)
+            if callable(clear_workspaces):
+                clear_workspaces()
+            torch.cuda.empty_cache()
+        except Exception:
+            logger.debug("[ASR:Qwen3ASR] cuda cache cleanup skipped after moving to RAM", exc_info=True)
+        logger.info("[ASR:Qwen3ASR] idle model moved to RAM in %.0f ms",
+                    (time.perf_counter() - started) * 1000)
+        return True
+
+    def prepare(self) -> None:
+        """Return a model waiting in RAM to its device before it is needed."""
+        if not self.parked:
+            return
+        with self._lock:
+            self._restore_device_locked()
+
+    def _restore_device_locked(self) -> None:
+        if Qwen3ASRBackend._shared_parked and self._model is not None:
+            started = time.perf_counter()
+            self._model.model.to(self._device)
+            Qwen3ASRBackend._shared_parked = False
+            logger.info("[ASR:Qwen3ASR] model restored to %s from RAM in %.0f ms",
+                        self._device, (time.perf_counter() - started) * 1000)
+        Qwen3ASRBackend._last_used = time.monotonic()
+
     def _drop_inprocess_model(self, reason: str) -> None:
         model = self._model
         if Qwen3ASRBackend._shared_model is model:
             Qwen3ASRBackend._shared_model = None
             Qwen3ASRBackend._shared_device = ""
             Qwen3ASRBackend._shared_attn_impl = ""
+            Qwen3ASRBackend._shared_parked = False
         self._model = None
         self._owns_model = False
         self._mode = "unloaded"
@@ -302,6 +361,8 @@ class Qwen3ASRBackend(BaseASRBackend):
             Qwen3ASRBackend._shared_model = model
             Qwen3ASRBackend._shared_device = device_map
             Qwen3ASRBackend._shared_attn_impl = attn_impl
+            Qwen3ASRBackend._shared_parked = False
+            Qwen3ASRBackend._last_used = time.monotonic()
             self._model = model
             self._device = device_map
             self._attn_impl = attn_impl
@@ -476,6 +537,7 @@ class Qwen3ASRBackend(BaseASRBackend):
         t0 = time.perf_counter()
         try:
             with self._lock:
+                self._restore_device_locked()
                 prev_tokens = getattr(model, "max_new_tokens", _MAX_TOKENS_CAP)
                 model.max_new_tokens = max_tokens
                 try:
@@ -486,6 +548,7 @@ class Qwen3ASRBackend(BaseASRBackend):
                     )
                 finally:
                     model.max_new_tokens = prev_tokens
+                    Qwen3ASRBackend._last_used = time.monotonic()
             text = (results[0].text if results else "").strip()
             dt = (time.perf_counter() - t0) * 1000
             logger.info(
@@ -510,6 +573,7 @@ class Qwen3ASRBackend(BaseASRBackend):
                 Qwen3ASRBackend._shared_model = None
                 Qwen3ASRBackend._shared_device = ""
                 Qwen3ASRBackend._shared_attn_impl = ""
+                Qwen3ASRBackend._shared_parked = False
             self._model = None
             self._owns_model = False
             self._mode = "unloaded"

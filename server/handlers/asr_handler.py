@@ -8,7 +8,12 @@ import time
 from typing import Any
 from collections.abc import Callable
 
-from config.settings import ASR_BACKEND, ASR_IDLE_UNLOAD_SECONDS, ASR_TURN_COMPLETE_TIMEOUT_SECONDS
+from config.settings import (
+    ASR_BACKEND,
+    ASR_IDLE_UNLOAD_SECONDS,
+    ASR_RAM_UNLOAD_SECONDS,
+    ASR_TURN_COMPLETE_TIMEOUT_SECONDS,
+)
 from server.event_bus import bus
 from server.protocol import Method
 from server.ws_handler import RequestHandler
@@ -30,6 +35,7 @@ class AsrHandler(RequestHandler):
         self._on_listening_stopped: Callable[[dict[str, Any]], Any] | None = None
         self._on_ready_to_listen: Callable[[dict[str, Any]], Any] | None = None
         self._tts_playing_fn: Callable[[], bool] | None = None
+        self._wake_resumable_fn: Callable[[], bool] | None = None
         self._active = False
         self._one_shot = False
         self._source = ""
@@ -77,6 +83,7 @@ class AsrHandler(RequestHandler):
         on_listening_stopped: Callable[[dict[str, Any]], Any] | None = None,
         on_ready_to_listen: Callable[[dict[str, Any]], Any] | None = None,
         tts_playing_fn: Callable[[], bool] | None = None,
+        wake_resumable_fn: Callable[[], bool] | None = None,
     ) -> None:
         self._asr_manager = asr_manager
         self._asr_manager_factory = asr_manager_factory
@@ -85,6 +92,7 @@ class AsrHandler(RequestHandler):
         self._on_listening_stopped = on_listening_stopped
         self._on_ready_to_listen = on_ready_to_listen
         self._tts_playing_fn = tts_playing_fn
+        self._wake_resumable_fn = wake_resumable_fn
 
     async def _ensure_asr_manager(self):
         if self._unload_task:
@@ -131,6 +139,7 @@ class AsrHandler(RequestHandler):
                 return {"status": "error", "error": str(exc)}
             if asr_manager is None:
                 return {"status": "error", "error": "ASR manager unavailable"}
+        self._prepare_asr_backend()
         # Lazy initialization can suspend two start callers. Rejoin the current
         # lifecycle after that wait before either caller creates a listener.
         if self._active:
@@ -199,8 +208,31 @@ class AsrHandler(RequestHandler):
     def _is_awake_session(self) -> bool:
         return self._source == "wake" and (self._continuous_awake or self._awake_until > 0)
 
+    def awake_remaining(self) -> float | None:
+        """Seconds left in the wake hot window; None when nothing ends the session."""
+        # Continuous voice outlives the hot window only when no wake word can
+        # bring it back; otherwise wake standby takes over and Qwen3 can sleep.
+        if self._continuous_awake and (self._awake_until <= 0 or not self._wake_resumable()):
+            return None
+        return max(0.0, self._awake_until - time.monotonic())
+
     def _awake_expired(self) -> bool:
-        return self._is_awake_session() and not self._continuous_awake and time.monotonic() >= self._awake_until
+        return self._is_awake_session() and self.awake_remaining() == 0
+
+    def _wake_resumable(self) -> bool:
+        if self._wake_resumable_fn is None:
+            return False
+        try:
+            return bool(self._wake_resumable_fn())
+        except Exception:
+            return False
+
+    def _prepare_asr_backend(self) -> None:
+        # Start moving a model that waits in RAM back now; it is on the GPU
+        # again by the time the first utterance ends.
+        prepare = getattr(self._asr_manager, "prepare_backend_async", None)
+        if callable(prepare):
+            prepare()
 
     def _clear_session_state(self) -> dict[str, Any]:
         info = {
@@ -232,13 +264,12 @@ class AsrHandler(RequestHandler):
         except Exception:
             logger.debug("turn coordinator notify failed", exc_info=True)
         if self._is_awake_session():
-            remaining = max(0.0, self._awake_until - time.monotonic())
             await bus.emit(
                 Method.ASR_STATUS,
                 {
                     "status": "awake",
                     "source": "wake",
-                    "awake_remaining": None if self._continuous_awake else remaining,
+                    "awake_remaining": self.awake_remaining(),
                     "continuous": self._continuous_awake,
                     "source_payload": self._source_payload,
                 },
@@ -340,7 +371,8 @@ class AsrHandler(RequestHandler):
         except Exception:
             logger.debug("turn coordinator notify failed", exc_info=True)
         await bus.emit(Method.ASR_STATUS, {"status": "idle", "reason": reason, **session_info})
-        self.schedule_unload()
+        # An expired hot window already spent ASR_IDLE_UNLOAD_SECONDS idle.
+        self.schedule_unload(0.0 if reason == "awake_timeout" else None)
         if self._on_listening_stopped is not None:
             payload = {"reason": reason, **session_info}
             result = self._on_listening_stopped(payload)
@@ -349,18 +381,24 @@ class AsrHandler(RequestHandler):
 
     def schedule_unload(self, delay_seconds: float | None = None) -> None:
         delay = ASR_IDLE_UNLOAD_SECONDS if delay_seconds is None else float(delay_seconds)
-        if delay <= 0:
-            self._unload_task = asyncio.create_task(self.unload())
-            return
         if self._unload_task:
             self._unload_task.cancel()
-        self._unload_task = asyncio.create_task(self._unload_after(delay))
+        self._unload_task = asyncio.create_task(self._unload_after(max(0.0, delay)))
 
     async def _unload_after(self, delay: float) -> None:
         try:
             await asyncio.sleep(delay)
-            if not self._active:
-                await self.unload()
+            if self._active:
+                return
+            release = getattr(self._asr_manager, "release_vram", None)
+            if callable(release) and await asyncio.to_thread(release):
+                # The model now waits in RAM; the next wake moves it back.
+                if ASR_RAM_UNLOAD_SECONDS <= 0:
+                    return
+                await asyncio.sleep(ASR_RAM_UNLOAD_SECONDS)
+                if self._active:
+                    return
+            await self.unload()
         except asyncio.CancelledError:
             pass
 
@@ -411,17 +449,25 @@ class AsrHandler(RequestHandler):
                         if hasattr(result, "__await__"):
                             await result
                 elif self._active and self._is_awake_session():
-                    remaining = max(0.0, self._awake_until - time.monotonic())
-                    logger.info("awake ASR heard nothing; continuing for %.1fs", remaining)
+                    remaining = self.awake_remaining()
+                    logger.info("awake ASR heard nothing; continuing %s",
+                                "until stopped" if remaining is None else f"for {remaining:.1f}s")
                     await bus.emit(
                         Method.ASR_STATUS,
                         {
                             "status": "no_speech",
                             "source": "wake",
-                            "awake_remaining": None if self._continuous_awake else remaining,
+                            "awake_remaining": remaining,
                             "continuous": self._continuous_awake,
                         },
                     )
+                if not text:
+                    # Listening that does not expire (continuous voice without
+                    # a wake word, a manual microphone session) keeps running;
+                    # an idle model still leaves VRAM and returns at speech start.
+                    release = getattr(asr_manager, "release_vram", None)
+                    if callable(release):
+                        await asyncio.to_thread(release, ASR_IDLE_UNLOAD_SECONDS)
                 if self._one_shot:
                     self._active = False
                     await self._finish_listening("one_shot_complete")

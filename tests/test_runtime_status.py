@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from server.handlers.asr_handler import AsrHandler
 from server.runtime_status import RuntimeStatusCollector
 
 
@@ -154,13 +156,27 @@ def test_readiness_marks_asr_not_fully_ready_only_for_degraded_vad():
     assert fallback._ready({"asr": fallback._asr()})["asr"] is True
 
 
-def test_continuous_wake_status_has_no_expired_idle_deadline():
+def _continuous_wake_status(*, wake_word: bool, awake_until: float) -> tuple[dict, str]:
+    handler = AsrHandler()
+    handler.configure(wake_resumable_fn=lambda: wake_word)
+    handler._active, handler._source, handler._continuous_awake = True, "wake", True
+    handler._awake_until = awake_until
     collector = RuntimeStatusCollector()
-    collector._asr_handler = SimpleNamespace(_active=True, _source="wake", _continuous_awake=True, _awake_until=1.0)
+    collector._asr_handler = handler
     state = collector._asr()
-    assert state["continuous"] is True
-    assert state["awake_remaining_s"] is None
-    assert collector._derived({"asr": state})["asr_mode"] == "awake_hot"
+    return state, collector._derived({"asr": state})["asr_mode"]
+
+
+def test_continuous_wake_status_has_a_deadline_only_when_wake_standby_takes_over():
+    # Without a wake word to return to, continuous voice has no idle deadline,
+    # however old the hot window is.
+    state, mode = _continuous_wake_status(wake_word=False, awake_until=1.0)
+    assert state["continuous"] is True and state["awake_remaining_s"] is None
+    assert mode == "awake_hot"
+    # With one, the status shows when wake standby takes over.
+    state, mode = _continuous_wake_status(wake_word=True, awake_until=time.monotonic() + 30)
+    assert state["continuous"] is True and 0 < state["awake_remaining_s"] <= 30
+    assert mode == "awake_hot"
 
 
 def _main() -> None:

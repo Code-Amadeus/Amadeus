@@ -301,14 +301,13 @@ class RuntimeStatusCollector:
         }
         h = self._asr_handler
         if h is not None:
-            awake_until = float(getattr(h, "_awake_until", 0.0) or 0.0)
-            continuous = bool(getattr(h, "_continuous_awake", False))
+            remaining = h.awake_remaining()
             out.update({
                 "active": bool(getattr(h, "_active", False)),
                 "source": str(getattr(h, "_source", "") or ""),
                 "one_shot": bool(getattr(h, "_one_shot", False)),
-                "continuous": continuous,
-                "awake_remaining_s": None if continuous else round(max(0.0, awake_until - time.monotonic()), 1),
+                "continuous": bool(getattr(h, "_continuous_awake", False)),
+                "awake_remaining_s": None if remaining is None else round(remaining, 1),
                 "waiting_turn_complete": bool(getattr(h, "_waiting_turn_complete", False)),
             })
         getter = self._asr_manager_getter

@@ -65,8 +65,15 @@ async def test_source_scoped_stop_respects_microphone_owner(source, stops):
     assert handler.stop_listening.await_count == int(stops) + 1
 
 
-@pytest.mark.parametrize("continuous,expected", [(False, ["first"]), (True, ["first", "second"])])
-async def test_continuous_voice_reuses_wake_delivery_and_survives_silence(monkeypatch, continuous, expected):
+@pytest.mark.parametrize("continuous,wake_word,expected", [
+    (False, True, ["first"]),
+    # Without a wake word to come back to, continuous voice survives silence.
+    (True, False, ["first", "second"]),
+    # With one, wake standby takes over after the hot window.
+    (True, True, ["first"]),
+])
+async def test_continuous_voice_reuses_wake_delivery_and_sleeps_only_into_wake_standby(
+        monkeypatch, continuous, wake_word, expected):
     monkeypatch.setattr("server.handlers.asr_handler.bus", EventBus())
     handler = AsrHandler()
     heard = []
@@ -91,7 +98,8 @@ async def test_continuous_voice_reuses_wake_delivery_and_survives_silence(monkey
         if len(heard) == 2:
             handler._active = False
 
-    handler.configure(asr_manager=SimpleNamespace(is_ready=True, listen_for_speech=listen_for_speech), on_recognized=recognized)
+    handler.configure(asr_manager=SimpleNamespace(is_ready=True, listen_for_speech=listen_for_speech),
+                      on_recognized=recognized, wake_resumable_fn=lambda: wake_word)
     monkeypatch.setattr(handler, "schedule_unload", Mock())
     await handler.start_listening({"source": "wake", "awake_seconds": 30, "continuous": continuous, "finish_after_turn_complete": False})
     await asyncio.wait_for(handler._listen_task, 3)

@@ -200,7 +200,7 @@ idle/wallpaper:
   lightweight wake detector
 
 wake detected:
-  load or reuse Qwen ASR
+  load or reuse Qwen ASR (moving it back if it waits in RAM)
   enter awake window
 
 after assistant finishes speaking:
@@ -209,6 +209,7 @@ after assistant finishes speaking:
 
 if no user speech before idle timeout:
   return to wake detector
+  move an in-process Qwen model from VRAM to RAM
 ```
 
 Important detail:

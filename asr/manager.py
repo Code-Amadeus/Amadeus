@@ -249,6 +249,34 @@ class ASRManager:
         except Exception:
             pass
 
+    def release_vram(self, idle_seconds: float = 0.0) -> bool:
+        """Move an idle backend model to RAM; True when it now waits there."""
+        release = getattr(self._backend, "release_vram", None)
+        return bool(release(idle_seconds)) if callable(release) else False
+
+    def prepare_backend_async(self) -> None:
+        """Start moving a model that waits in RAM back while the user speaks.
+
+        Recognition only runs after the end of speech, so the move (about
+        0.1–0.5 s) overlaps the utterance instead of delaying the result.
+        """
+        backend = self._backend
+        if getattr(backend, "parked", False):
+            threading.Thread(target=self._prepare_quietly, args=(backend,),
+                             daemon=True, name="asr-prepare").start()
+
+    @staticmethod
+    def _prepare_quietly(backend) -> None:
+        try:
+            backend.prepare()
+        except Exception:
+            logger.exception("[ASR] moving the model back from RAM failed")
+
+    def _speech_started(self) -> None:
+        self.prepare_backend_async()
+        if self._on_speech_start_fn is not None:
+            self._on_speech_start_fn()
+
     # ------------------------------------------------------------------
     # 初始化
     # ------------------------------------------------------------------
@@ -538,7 +566,7 @@ class ASRManager:
             energy_start_rms=_ENERGY_START_RMS,
             handoff_max_capture_sec=_HANDOFF_MAX_CAPTURE_SEC,
             block_mic_fn=_should_block_mic,
-            on_speech_start=self._on_speech_start_fn,
+            on_speech_start=self._speech_started,
             consume_handoff=True,
             probable_end_silence_ms=_SPECULATIVE_END_MS if speculative is not None else 0,
             on_probable_end=speculative.submit if speculative is not None else None,

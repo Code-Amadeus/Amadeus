@@ -2472,6 +2472,8 @@ async def bootstrap(port: int = 17777) -> None:
         on_listening_stopped=_handle_asr_listening_stopped,
         on_ready_to_listen=_handle_asr_ready_to_listen,
         tts_playing_fn=_tts_should_block_mic,
+        # _handle_asr_listening_stopped restores wake standby under the same flag.
+        wake_resumable_fn=lambda: bool(WAKE_ENABLED),
     )
     wake_h.configure(wake_service_factory=_get_or_create_wake_service)
     vts_h.configure(vts_manager=vts_manager)
