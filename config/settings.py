@@ -432,7 +432,14 @@ ASR_API_BASE_URL = _str("ASR_API_BASE_URL", "https://api.openai.com/v1")
 ASR_API_KEY = _secret("ASR_API_KEY", "")
 ASR_API_MODEL = _str("ASR_API_MODEL", "gpt-4o-mini-transcribe")
 ASR_API_TIMEOUT_SECONDS = _float("ASR_API_TIMEOUT_SECONDS", 45.0)
+# Qwen3-ASR stays in VRAM this long after the last conversation activity. A wake
+# session (continuous voice too, when the wake word is enabled) then returns to
+# wake standby. An in-process model moves to RAM and comes back on the next
+# wake or speech start; other backends unload.
 ASR_IDLE_UNLOAD_SECONDS = _float("ASR_IDLE_UNLOAD_SECONDS", 180.0)
+# After a model has moved to RAM and listening has stopped, seconds before it is
+# unloaded from RAM as well. 0 keeps it in RAM until the backend exits.
+ASR_RAM_UNLOAD_SECONDS = _float("ASR_RAM_UNLOAD_SECONDS", 0.0)
 ASR_TURN_COMPLETE_TIMEOUT_SECONDS = _float("ASR_TURN_COMPLETE_TIMEOUT_SECONDS", 45.0)
 ASR_ECHO_TAIL_GUARD_MS = _float("ASR_ECHO_TAIL_GUARD_MS", 650.0)
 ASR_VAD_THRESHOLD = _float("ASR_VAD_THRESHOLD", 0.45)

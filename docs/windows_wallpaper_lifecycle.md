@@ -194,10 +194,15 @@ Window/dialog failures cannot skip backend cleanup or escape as rejected exit
 notifications.
 
 Voice behavior is tracked separately in issue #112; the confirmed default is
-standby followed by continuous conversation after waking, not a new idle timeout.
-For continuous sessions, `awake_remaining` and `awake_remaining_s` are nullable:
-`null` with `continuous: true` means there is no idle deadline. Timed sessions
-retain numeric values. External status clients must accept that nullable state.
+standby followed by continuous conversation after waking. With the wake word
+enabled, continuous conversation returns to wake standby once the Qwen hot
+window passes after the wake or the last reply, as a timed wake session does
+(`max(WAKE_AWAKE_SECONDS, ASR_IDLE_UNLOAD_SECONDS)`, 180 seconds by default).
+The wake word or the microphone button resumes it. Without a wake word to return
+to, continuous conversation has no idle deadline. For continuous sessions,
+`awake_remaining` and `awake_remaining_s` count down to wake standby and are
+`null` when there is no idle deadline. Timed sessions retain numeric values.
+External status clients must accept that nullable state.
 ASR stop with a source ignores a different owner, including an empty source;
 unscoped `asr.stop {}` keeps the original Chat behavior.
 
