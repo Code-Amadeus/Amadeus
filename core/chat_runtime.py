@@ -1456,7 +1456,7 @@ class ChatRuntime:
         st = _TurnState(
             gui_callback=gui_callback, turn_id=turn_id, question=_original_question,
             session_id=_task_session_id, prompt_variant=prompt_variant,
-            control_prior_messages=tuple(history_snapshot.dialog) if enable_conv else (),
+            control_prior_messages=tuple(history_snapshot.recent()) if enable_conv else (),
             interaction_branch_routing_lease=interaction_branch_routing_lease,
             turn_admission=turn_admission, history_snapshot=history_snapshot,
         )

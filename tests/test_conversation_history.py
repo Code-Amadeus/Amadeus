@@ -35,8 +35,24 @@ def test_gemini_history_does_not_mix_summary_maintenance_into_the_reply() -> Non
     assert "要約してください" not in prompt
 
 
+def test_prompts_carry_the_recent_window_while_the_record_keeps_every_round() -> None:
+    history = ConversationHistory(max_rounds=2)
+    for index in range(4):
+        history.add_user(f"user {index}")
+        history.add_assistant(f"reply {index}")
+
+    assert [message["content"] for message in history.dialog][:2] == ["user 0", "reply 0"]
+    assert len(history.dialog) == 8
+    sent = history.build_deepseek_messages("system", "latest")[1:-1]
+    assert [message["content"] for message in sent] == ["user 2", "reply 2", "user 3", "reply 3"]
+    prompt = history.build_gemini_full_prompt("system", "latest")
+    assert "user 1" not in prompt and "user 2" in prompt and "reply 3" in prompt
+
+
 if __name__ == "__main__":
     test_openai_style_history_has_one_authoritative_latest_user_message()
     print("ok: OpenAI-style history adds no in-band maintenance request")
     test_gemini_history_does_not_mix_summary_maintenance_into_the_reply()
     print("ok: Gemini history adds no in-band maintenance request")
+    test_prompts_carry_the_recent_window_while_the_record_keeps_every_round()
+    print("ok: prompts carry the recent window; the record keeps every round")

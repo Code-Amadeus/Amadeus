@@ -96,8 +96,9 @@ The integration must preserve the same invariants as Browser and Codex:
 
 ### Memory evolution
 
-Amadeus already has bounded conversation working memory and durable event memory
-in the Work Ledger. The missing product layer is cross-session recall and a
+Amadeus already keeps each Session's complete conversation, sends a bounded
+recent window of it to Main Chat, and keeps durable event memory in the Work
+Ledger. The missing product layer is cross-session recall and a
 small, user-governed semantic memory for preferences and long-term context.
 
 If this becomes active work, the intended sequence is:
