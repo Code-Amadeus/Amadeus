@@ -13,7 +13,7 @@ type Options = {
 }
 const sameRect = (a: Rect, b: Rect) => ['x', 'y', 'width', 'height'].every(k => a[k as keyof Rect] === b[k as keyof Rect])
 
-/** Owns only the companion's window and placement, never speech or AppSession state. */
+/** Owns the card's placement and forwards input controls to the existing Host. */
 export class CompanionPanel {
   private window: BrowserWindow | null = null
   private opening = false
@@ -41,15 +41,24 @@ export class CompanionPanel {
     ipcMain.handle('companion.portraits', event => owns(event.sender)
       ? readCompanionPortraits(options.portraitCacheDir) : {})
     ipcMain.handle('companion.close', event => owns(event.sender) ? this.close() : false)
-    ipcMain.handle('companion.dock', event => {
-      if (!owns(event.sender)) return false
-      this.dock(options.target(this.workItemId))
-      return Boolean(this.game)
+    ipcMain.handle('companion.input', async (event, action: unknown) => {
+      if (!owns(event.sender) || event.senderFrame !== event.sender.mainFrame || !this.bridge
+        || typeof action !== 'string' || !['status', 'voice_start', 'voice_stop', 'vision_toggle'].includes(action)) {
+        return { ok: false, error: 'input_control_unavailable' }
+      }
+      try {
+        return await this.requestBridge(this.bridge, 'chat-action', { action }, action === 'voice_start' ? 65000 : 12000)
+      } catch (error) { return { ok: false, error: String(error instanceof Error ? error.message : error) } }
     })
     ipcMain.handle('companion.connected', (event, connected: unknown) => {
       if (!owns(event.sender)) return false
       // A disconnected card must never leave the original display hidden.
       return this.setSuppressed(connected === true)
+    })
+    ipcMain.handle('companion.fit-content', (event, height: unknown) => {
+      if (!owns(event.sender) || event.senderFrame !== event.sender.mainFrame
+        || typeof height !== 'number' || !Number.isFinite(height) || height < 226) return false
+      return this.fitContent(height)
     })
   }
 
@@ -71,16 +80,7 @@ export class CompanionPanel {
     const apply = async () => {
       if (!bridge) return false
       try {
-        const info = await fetch(`http://127.0.0.1:${bridge.assetPort}/wallpaper/bridge-info`, { signal: AbortSignal.timeout(3000) })
-        const descriptor = await info.json() as { bridgeToken?: string }
-        if (!info.ok || !descriptor.bridgeToken) throw new Error('Presentation bridge unavailable')
-        const response = await fetch(`http://127.0.0.1:${bridge.bridgePort}/wallpaper/canvas-action`, {
-          method: 'POST', signal: AbortSignal.timeout(3000),
-          headers: { 'Content-Type': 'application/json', 'X-Amadeus-Bridge-Token': descriptor.bridgeToken },
-          body: JSON.stringify({ target: 'presentation', action: 'companion', active }),
-        })
-        const result = await response.json() as { ok?: boolean }
-        if (!response.ok || !result.ok) throw new Error('Companion presentation update rejected')
+        await this.requestBridge(bridge, 'canvas-action', { target: 'presentation', action: 'companion', active })
         return true
       } catch (error) {
         console.error('[companion] presentation update failed', error)
@@ -89,6 +89,20 @@ export class CompanionPanel {
     }
     const result = this.presentationQueue.then(apply)
     this.presentationQueue = result.then(() => {})
+    return result
+  }
+
+  private async requestBridge(bridge: Bridge, route: 'canvas-action' | 'chat-action', payload: Record<string, unknown>, timeout = 3000): Promise<Record<string, unknown>> {
+    const info = await fetch(`http://127.0.0.1:${bridge.assetPort}/wallpaper/bridge-info`, { signal: AbortSignal.timeout(3000) })
+    const descriptor = await info.json() as { bridgeToken?: string }
+    if (!info.ok || !descriptor.bridgeToken) throw new Error('Presentation bridge unavailable')
+    const response = await fetch(`http://127.0.0.1:${bridge.bridgePort}/wallpaper/${route}`, {
+      method: 'POST', signal: AbortSignal.timeout(timeout),
+      headers: { 'Content-Type': 'application/json', 'X-Amadeus-Bridge-Token': descriptor.bridgeToken },
+      body: JSON.stringify(payload),
+    })
+    const result = await response.json() as Record<string, unknown>
+    if (!response.ok || (result.ok !== true && result.status !== 'ok')) throw new Error(String(result.error || 'Companion action rejected'))
     return result
   }
 
@@ -102,7 +116,7 @@ export class CompanionPanel {
     this.workItemId = workItemId
     try {
       const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea
-      let bounds: Rect = { x: area.x + area.width - 486, y: area.y + 60, width: 470, height: 250 }
+      let bounds: Rect = { x: area.x + area.width - 486, y: area.y + 60, width: 470, height: 226 }
       try {
         const saved = JSON.parse(fs.readFileSync(this.positionFile(), 'utf8'))
         if (['x', 'y', 'width', 'height'].every(key => Number.isFinite(saved[key]))
@@ -127,9 +141,10 @@ export class CompanionPanel {
       })
       window.on('resized', () => { if (this.game) this.place(); this.savePosition() })
       window.on('closed', () => {
+        if (this.window !== window) return
         this.undock()
-        if (this.window === window) this.window = null
-        if (!this.closeTask) void this.setSuppressed(false)
+        this.window = null
+        void this.setSuppressed(false)
         this.publish()
       })
       await window.loadURL(url)
@@ -146,6 +161,20 @@ export class CompanionPanel {
 
   attachPreview(window: BrowserWindow, workItemId: string) {
     if (this.window && this.workItemId === workItemId && !this.game) this.dock(window)
+  }
+
+  private fitContent(height: number): boolean {
+    if (!this.window || this.window.isDestroyed()) return false
+    const before = this.window.getBounds()
+    const area = screen.getDisplayMatching(before).workArea
+    const bounds = clampPanel({ ...before, height: Math.ceil(height) }, area)
+    if (sameRect(before, bounds)) return true
+    // Content growth can move the card into the work area without detaching it.
+    this.placing = true
+    try { this.window.setBounds(bounds) } finally { this.placing = false }
+    if (this.game) this.place()
+    this.savePosition()
+    return true
   }
 
   private positionFile() { return path.join(this.options.userDataDir, 'companion-position.json') }
@@ -215,9 +244,16 @@ export class CompanionPanel {
   close(): Promise<boolean> {
     if (this.closeTask) return this.closeTask
     const window = this.window
-    if (!window) return Promise.resolve(true)
+    if (!window) return this.presentationQueue.then(() => true)
     this.savePosition()
     this.closeTask = this.setSuppressed(false).then(() => {
+      // Release ownership before the asynchronous closed event. A retired card
+      // must not restore presentation or undock a subsequently opened card.
+      if (this.window === window) {
+        this.window = null
+        this.undock()
+        this.publish()
+      }
       if (!window.isDestroyed()) window.destroy()
       return true
     }).finally(() => { this.closeTask = null })

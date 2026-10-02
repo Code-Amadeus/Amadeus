@@ -10,7 +10,7 @@ export function clampPanel(bounds: Rect, area: Rect): Rect {
 }
 
 /** Reserve real desktop space; a docked card never covers the game. */
-export function dockPanel(game: Rect, area: Rect, width = 470, height = 250): { panel: Rect; game: Rect } {
+export function dockPanel(game: Rect, area: Rect, width = 470, height = 226): { panel: Rect; game: Rect } {
   const gap = 12
   const panel = clampPanel({ x: game.x + game.width + gap, y: game.y, width, height }, area)
   if (game.x + game.width + gap + panel.width <= area.x + area.width) {

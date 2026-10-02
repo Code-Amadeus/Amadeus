@@ -8,17 +8,29 @@
   <link rel="stylesheet" href="companion_panel.css">
 </head>
 <body>
-  <main class="companion-card">
-    <header><span class="brand">A M A D E U S</span><span class="link-label">HOLO-LINK</span>
-      <button id="motion" title="切换待机微动或静止" aria-label="待机微动" aria-pressed="true" hidden>动</button>
-      <button id="dock" title="停靠到游戏旁边" aria-label="停靠到游戏旁边">⊞</button>
-      <button id="close" title="收起面板，继续语音和游戏" aria-label="收起面板">×</button>
+  <main id="card" class="companion-card" tabindex="0" aria-label="Amadeus 陪伴卡片">
+    <div class="scan-sweep" aria-hidden="true"></div>
+    <header title="拖动调整位置，右键收起卡片"><span class="brand">A M A D E U S</span><span class="link-label">HOLO-LINK / SLICE</span>
+      <div class="controls">
+        <button id="voice" class="input-control" type="button" aria-label="语音输入" aria-pressed="false" disabled><svg viewBox="0 0 28 28" aria-hidden="true"><ellipse cx="14" cy="11" rx="3" ry="6"/><path d="M8 15a6 6 0 0 0 12 0M14 21v3m-4 0h8"/><path class="off-mark" d="m5 5 18 19"/><circle class="busy-mark" cx="24" cy="4" r="2"/></svg></button>
+        <button id="vision" class="input-control" type="button" aria-label="持续观察" aria-pressed="false" disabled><svg viewBox="0 0 28 28" aria-hidden="true"><path d="m9 9 2-3h6l2 3"/><rect x="5" y="9" width="18" height="13"/><circle cx="14" cy="16" r="4"/><path class="off-mark" d="m5 5 18 19"/><circle class="busy-mark" cx="24" cy="4" r="2"/></svg></button>
+        <button id="close" type="button" title="收起面板，继续语音和游戏" aria-label="收起面板"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+      </div>
     </header>
+    <div id="input-hint" role="tooltip" hidden></div>
     <section class="dialogue">
-      <div class="portrait"><img id="portrait" alt="牧濑红莉栖" hidden><span id="fallback">A</span><div class="scanlines"></div></div>
+      <svg class="portrait-frame" viewBox="0 0 146 146" aria-hidden="true">
+        <defs><pattern id="portrait-lines" width="134" height="5" patternUnits="userSpaceOnUse" y="13"><path d="M0 0h134" stroke="#102f32"/></pattern></defs>
+        <rect x="2" y="2" width="142" height="142" rx="15" fill="#0b2a2e" stroke="#28574f"/>
+        <rect x="6" y="13" width="134" height="124" fill="url(#portrait-lines)"/>
+        <path d="M0 10V0h10M136 0h10v10M0 136v10h10M136 146h10v-10" fill="none" stroke="#70bfae"/>
+      </svg>
+      <div class="portrait"><img id="portrait" alt="牧濑红莉栖" hidden><span id="fallback">A</span></div>
+      <span class="speech-accent" aria-hidden="true"></span>
       <div class="speech"><strong>牧瀬 紅莉栖</strong><p id="caption" tabindex="0">正在连接…</p></div>
     </section>
-    <footer><span class="signal" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span id="status" role="status">CONNECTING</span><span class="drag-hint">拖动顶部调整位置</span></footer>
+    <footer><span class="signal" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span id="status" role="status">CONNECTING</span></footer>
+    <span class="corner-dots" aria-hidden="true"></span><span class="baseline" aria-hidden="true"></span>
   </main>
   <script src="companion_presentation.js"></script>
   <script src="companion_atlas.js"></script>

@@ -5,19 +5,102 @@
   const status = document.getElementById("status");
   let portrait = document.getElementById("portrait");
   const fallback = document.getElementById("fallback");
-  const motion = document.getElementById("motion");
   let atlas = null;
   let returnTimer = null;
-  let staticIdle = false;
-  try { staticIdle = localStorage.getItem('companionStaticIdle') === 'true'; } catch { /* optional preference */ }
   let frames = {};
   let state = { text: "", emotion: "normal", speaking: false };
   let connected = false;
   let frameIndex = 0;
   let source = null;
+  const card = document.getElementById('card');
+  const inputHint = document.getElementById('input-hint');
+  const inputButtons = { voice: document.getElementById('voice'), vision: document.getElementById('vision') };
+  let inputs = null, inputPending = false, inputStatusRequest = null, inputError = '', hoverInput = '', inputPoll = null;
+  function renderInputs() {
+    const otherVoice = inputs?.voice?.active && inputs.voice.source !== 'wake';
+    for (const [name, button] of Object.entries(inputButtons)) {
+      const selected = name === 'voice' ? Boolean(inputs?.voice?.active && !otherVoice) : inputs?.watching === true;
+      const available = connected && inputs && (name === 'voice' ? !otherVoice : inputs.supports_images === true);
+      const label = name === 'voice' ? '语音输入（持续通话）' : '持续观察（通用视觉）';
+      const detail = inputPending ? '正在切换…' : !connected ? '连接已断开' : !inputs ? '输入控制暂不可用'
+        : name === 'voice' && otherVoice ? '麦克风正忙' : !available ? '当前聊天模型不支持图片' : selected ? '已开启' : '已关闭';
+      button.disabled = !available || inputPending;
+      button.setAttribute('aria-pressed', String(selected));
+      button.setAttribute('aria-busy', String(inputPending));
+      button.title = `${label} · ${detail}${inputError ? ' · ' + inputError : ''}`;
+    }
+    inputHint.hidden = !hoverInput;
+    if (hoverInput) inputHint.textContent = inputButtons[hoverInput].title;
+  }
+  function errorText(error) {
+    const message = String(error.message || error);
+    return message === 'already_listening' ? '麦克风正忙' : message === 'current_model_does_not_support_images'
+      ? '当前聊天模型不支持图片' : message;
+  }
+  async function readInputs() {
+    const result = await api.input('status');
+    if (result.ok !== true) throw new Error(result.error || '输入控制暂不可用');
+    return result;
+  }
+  function refreshInputs() {
+    if (!connected || !api?.input || inputPending) return;
+    if (inputStatusRequest) return inputStatusRequest;
+    inputStatusRequest = readInputs().then(snapshot => {
+      if (connected && !inputPending) inputs = snapshot;
+    }).catch(error => {
+      if (connected && !inputPending) { inputs = null; inputError = errorText(error); }
+    }).finally(() => { inputStatusRequest = null; renderInputs(); });
+    return inputStatusRequest;
+  }
+  async function toggleInput(name) {
+    if (inputPending || inputButtons[name].disabled) return;
+    inputPending = true; inputError = ''; renderInputs();
+    try {
+      await inputStatusRequest;
+      // Read the actual owner/state before choosing start or stop; no optimistic toggles.
+      const snapshot = await readInputs();
+      if (name === 'voice' && snapshot.voice?.active && snapshot.voice.source !== 'wake') throw new Error('already_listening');
+      if (name === 'vision' && snapshot.supports_images !== true) throw new Error('current_model_does_not_support_images');
+      const action = name === 'vision' ? 'vision_toggle' : snapshot.voice?.active ? 'voice_stop' : 'voice_start';
+      const result = await api.input(action);
+      if (result.ok !== true) throw new Error(result.error || '输入切换失败');
+    } catch (error) { inputError = errorText(error); }
+    finally {
+      if (connected) {
+        try { inputs = await readInputs(); }
+        catch (error) { inputs = null; if (!inputError) inputError = errorText(error); }
+      }
+      inputPending = false; renderInputs();
+    }
+  }
+  for (const [name, button] of Object.entries(inputButtons)) {
+    button.onclick = () => { void toggleInput(name); };
+    if (api?.input) {
+      for (const event of ['mouseenter', 'focus']) button.addEventListener(event, () => { hoverInput = name; renderInputs(); });
+      for (const event of ['mouseleave', 'blur']) button.addEventListener(event, () => { hoverInput = ''; renderInputs(); });
+    }
+  }
+  if (api?.input) {
+    card.addEventListener('pointerenter', () => { void refreshInputs(); });
+    card.addEventListener('focusin', () => { void refreshInputs(); });
+    inputPoll = setInterval(() => {
+      if (!document.hidden && card.matches(':hover, :focus-within')) void refreshInputs();
+    }, 2000);
+  }
+  renderInputs();
+  let contentHeight = 0;
+  function fitCaption() {
+    if (!api?.fitContent) return;
+    // Measure the untruncated text, even after the Host caps the window to a screen.
+    const height = Math.max(226, Math.ceil(caption.getBoundingClientRect().top + caption.scrollHeight + 36));
+    if (height !== contentHeight) { contentHeight = height; void api.fitContent(height); }
+  }
+  const layout = new ResizeObserver(fitCaption);
+  layout.observe(caption);
+  document.fonts.ready.then(fitCaption);
   function paint() {
     const text = connected ? (state.text || "我在这里，继续吧。") : "连接已断开，正在重连…";
-    if (caption.textContent !== text) { caption.textContent = text; caption.scrollTop = 0; }
+    if (caption.textContent !== text) { caption.textContent = text; caption.scrollTop = 0; fitCaption(); }
     status.textContent = connected ? (state.speaking ? "VOICE" : "STANDBY") : "RECONNECTING";
     document.body.classList.toggle("speaking", connected && state.speaking);
   }
@@ -31,29 +114,20 @@
     portrait.dataset.emotion = state.emotion;
     if (!atlas) return;
     try {
-      await atlas.select(state.emotion, connected && state.speaking, staticIdle);
+      await atlas.select(state.emotion, connected && state.speaking);
       portrait.hidden = false;
       fallback.hidden = true;
     } catch (error) { portraitError(error); }
   }
   function cancelReturn() { clearTimeout(returnTimer); returnTimer = null; }
-  motion.onclick = () => {
-    staticIdle = !staticIdle;
-    try { localStorage.setItem('companionStaticIdle', String(staticIdle)); } catch { /* optional preference */ }
-    motion.textContent = staticIdle ? '静' : '动';
-    motion.setAttribute('aria-pressed', String(!staticIdle));
-    void paintPortrait();
-  };
   function visibility() {
     atlas?.setPaused(document.hidden);
     document.body.classList.toggle('presentation-paused', document.hidden);
   }
   document.addEventListener('visibilitychange', visibility);
+  visibility();
   document.getElementById("close").onclick = () => { void api?.close(); };
-  document.getElementById("dock").onclick = async () => {
-    const docked = await api?.dock();
-    if (!docked) status.textContent = "请先用 W 打开游戏预览";
-  };
+  document.addEventListener('contextmenu', event => { event.preventDefault(); void api?.close(); });
   const animation = setInterval(() => {
     if (atlas || document.hidden) return;
     const emotion = frames[state.emotion] || frames.normal;
@@ -81,9 +155,6 @@
           portrait = canvas;
           atlas = new window.CompanionAtlas.Player(canvas, manifest, base);
           clearInterval(animation);
-          motion.hidden = false;
-          motion.textContent = staticIdle ? '静' : '动';
-          motion.setAttribute('aria-pressed', String(!staticIdle));
           visibility();
           await paintPortrait();
         } else if (response.status === 404) {
@@ -96,12 +167,14 @@
     source = new EventSource(`http://127.0.0.1:${port}/wallpaper/events?retainSubtitle=true`);
     source.onopen = () => {
       connected = true;
+      inputError = ''; renderInputs(); void refreshInputs();
       paint();
       void paintPortrait();
       void api?.connected(true);
     };
     source.onerror = () => {
       connected = false;
+      inputs = null; hoverInput = ''; renderInputs();
       cancelReturn();
       state = { text: "", emotion: "normal", speaking: false };
       paint();
@@ -111,6 +184,7 @@
     source.onmessage = event => {
       try {
         const call = JSON.parse(event.data);
+        if (call.method === 'composerEvent' || call.method === 'setAsrStatus') void refreshInputs();
         const next = window.CompanionPresentation.apply(state, call);
         if (next !== state) {
           const changed = next.emotion !== state.emotion || next.speaking !== state.speaking;
@@ -133,6 +207,6 @@
       } catch (error) { console.warn("[companion] invalid presentation event", error); }
     };
   }
-  window.addEventListener("beforeunload", () => { clearInterval(animation); cancelReturn(); source?.close(); atlas?.dispose(); });
-  start().catch(error => { caption.textContent = "面板暂时无法连接，可以关闭后重新打开。"; console.error(error); });
+  window.addEventListener("beforeunload", () => { layout.disconnect(); clearInterval(inputPoll); clearInterval(animation); cancelReturn(); source?.close(); atlas?.dispose(); });
+  start().catch(error => { caption.textContent = "面板暂时无法连接，可以关闭后重新打开。"; fitCaption(); console.error(error); });
 })();
