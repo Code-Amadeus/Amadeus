@@ -17,6 +17,7 @@ import sys
 import threading
 import time
 import gc
+from weakref import WeakSet
 from pathlib import Path
 from typing import Optional
 
@@ -103,12 +104,14 @@ class Qwen3ASRBackend(BaseASRBackend):
     """Qwen3-ASR-0.6B, in-process by default with sidecar fallback."""
 
     _process_lock = threading.Lock()
-    _model_lock = threading.Lock()
-    _io_lock = threading.Lock()
+    # Loading, inference, device moves and final release share one boundary.
+    # RLock also permits fatal-inference cleanup under the inference lock.
+    _io_lock = threading.RLock()
     _shared_proc: Optional[subprocess.Popen] = None
     _shared_model = None
     _shared_device = ""
     _shared_attn_impl = ""
+    _model_users: WeakSet = WeakSet()
     # An idle in-process model can wait in RAM; the next transcription, or a
     # speech-start prepare(), moves it back to _shared_device first.
     _shared_parked = False
@@ -123,7 +126,6 @@ class Qwen3ASRBackend(BaseASRBackend):
         self._attn_impl = ""
         self._lock = Qwen3ASRBackend._io_lock
         self._owns_proc = False
-        self._owns_model = False
         self._mode = "unloaded"
         self._language: str | None = None
 
@@ -200,7 +202,8 @@ class Qwen3ASRBackend(BaseASRBackend):
 
     @property
     def parked(self) -> bool:
-        return self._mode == "inprocess" and Qwen3ASRBackend._shared_parked
+        return (self._mode == "inprocess" and self._model is not None
+                and Qwen3ASRBackend._shared_parked)
 
     def release_vram(self, idle_seconds: float = 0.0) -> bool:
         """Move an in-process CUDA model idle for idle_seconds to RAM.
@@ -208,9 +211,9 @@ class Qwen3ASRBackend(BaseASRBackend):
         Returns True when the model now waits in RAM, False when it stays on
         the GPU or this backend cannot be parked (sidecar, CPU).
         """
-        if self._mode != "inprocess" or self._model is None or not str(self._device).startswith("cuda"):
-            return False
         with self._lock:
+            if self._mode != "inprocess" or self._model is None or not str(self._device).startswith("cuda"):
+                return False
             if Qwen3ASRBackend._shared_parked:
                 return True
             # Re-check under the lock: a transcription that just ran must not
@@ -220,31 +223,31 @@ class Qwen3ASRBackend(BaseASRBackend):
             started = time.perf_counter()
             self._model.model.to("cpu")
             Qwen3ASRBackend._shared_parked = True
-        try:
-            import torch
+            try:
+                import torch
 
-            # A cuBLAS workspace that inference allocated later can sit in a
-            # freed weight segment and keep it reserved (measured: 1.2 GiB
-            # stayed reserved without this). It is recreated on the next matmul.
-            clear_workspaces = getattr(torch._C, "_cuda_clearCublasWorkspaces", None)
-            if callable(clear_workspaces):
-                clear_workspaces()
-            torch.cuda.empty_cache()
-        except Exception:
-            logger.debug("[ASR:Qwen3ASR] cuda cache cleanup skipped after moving to RAM", exc_info=True)
+                # A cuBLAS workspace that inference allocated later can sit in a
+                # freed weight segment and keep it reserved (measured: 1.2 GiB
+                # stayed reserved without this). It is recreated on the next matmul.
+                clear_workspaces = getattr(torch._C, "_cuda_clearCublasWorkspaces", None)
+                if callable(clear_workspaces):
+                    clear_workspaces()
+                torch.cuda.empty_cache()
+            except Exception:
+                logger.debug("[ASR:Qwen3ASR] cuda cache cleanup skipped after moving to RAM", exc_info=True)
         logger.info("[ASR:Qwen3ASR] idle model moved to RAM in %.0f ms",
                     (time.perf_counter() - started) * 1000)
         return True
 
     def prepare(self) -> None:
         """Return a model waiting in RAM to its device before it is needed."""
-        if not self.parked:
-            return
         with self._lock:
             self._restore_device_locked()
 
     def _restore_device_locked(self) -> None:
-        if Qwen3ASRBackend._shared_parked and self._model is not None:
+        if self._model is None:
+            return
+        if Qwen3ASRBackend._shared_parked:
             started = time.perf_counter()
             self._model.model.to(self._device)
             Qwen3ASRBackend._shared_parked = False
@@ -252,32 +255,39 @@ class Qwen3ASRBackend(BaseASRBackend):
                         self._device, (time.perf_counter() - started) * 1000)
         Qwen3ASRBackend._last_used = time.monotonic()
 
-    def _drop_inprocess_model(self, reason: str) -> None:
-        model = self._model
-        if Qwen3ASRBackend._shared_model is model:
-            Qwen3ASRBackend._shared_model = None
-            Qwen3ASRBackend._shared_device = ""
-            Qwen3ASRBackend._shared_attn_impl = ""
-            Qwen3ASRBackend._shared_parked = False
-        self._model = None
-        self._owns_model = False
-        self._mode = "unloaded"
-        gc.collect()
-        try:
-            import torch
+    @classmethod
+    def _clear_shared_model_locked(cls) -> None:
+        cls._shared_model = None
+        cls._shared_device = ""
+        cls._shared_attn_impl = ""
+        cls._shared_parked = False
+        cls._last_used = 0.0
+        cls._model_users.clear()
 
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        except Exception:
-            logger.debug("[ASR:Qwen3ASR] cuda cache cleanup skipped after %s", reason, exc_info=True)
+    def _drop_inprocess_model(self, reason: str) -> None:
+        with self._lock:
+            # A fatal device error invalidates the shared model for every user.
+            # No borrower can keep using it after another backend replaces it.
+            for backend in list(Qwen3ASRBackend._model_users):
+                backend._model = None
+                backend._mode = "unloaded"
+            self._clear_shared_model_locked()
+            gc.collect()
+            try:
+                import torch
+
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                logger.debug("[ASR:Qwen3ASR] cuda cache cleanup skipped after %s", reason, exc_info=True)
 
     def _load_inprocess(self, device: str) -> None:
-        with self._model_lock:
+        with self._lock:
             if Qwen3ASRBackend._shared_model is not None:
                 self._model = Qwen3ASRBackend._shared_model
                 self._device = Qwen3ASRBackend._shared_device
                 self._attn_impl = Qwen3ASRBackend._shared_attn_impl
-                self._owns_model = False
+                Qwen3ASRBackend._model_users.add(self)
                 self._mode = "inprocess"
                 logger.info(
                     "[ASR:Qwen3ASR] in-process model already loaded; reuse "
@@ -366,7 +376,7 @@ class Qwen3ASRBackend(BaseASRBackend):
             self._model = model
             self._device = device_map
             self._attn_impl = attn_impl
-            self._owns_model = True
+            Qwen3ASRBackend._model_users.add(self)
             self._mode = "inprocess"
             logger.info(
                 "[ASR:Qwen3ASR] in-process ready (device=%s, attn=%s, %.2fs)",
@@ -523,13 +533,6 @@ class Qwen3ASRBackend(BaseASRBackend):
         sample_rate: int = 16000,
         context: str = "",
     ) -> Optional[str]:
-        model = self._model
-        if model is None:
-            self.load("cuda")
-            model = self._model
-        if model is None:
-            return None
-
         audio = audio.astype(np.float32, copy=False)
         duration_ms = len(audio) / sample_rate * 1000
         max_tokens = _calc_max_tokens(len(audio) / sample_rate)
@@ -537,18 +540,31 @@ class Qwen3ASRBackend(BaseASRBackend):
         t0 = time.perf_counter()
         try:
             with self._lock:
-                self._restore_device_locked()
-                prev_tokens = getattr(model, "max_new_tokens", _MAX_TOKENS_CAP)
-                model.max_new_tokens = max_tokens
+                # close() may have won the lock after transcribe() selected
+                # this path. A retired backend must not resurrect its model.
+                model = self._model
+                if model is None:
+                    return None
                 try:
-                    results = model.transcribe(
-                        audio=(audio, sample_rate),
-                        language=language,
-                        context=context,
-                    )
-                finally:
-                    model.max_new_tokens = prev_tokens
-                    Qwen3ASRBackend._last_used = time.monotonic()
+                    self._restore_device_locked()
+                    prev_tokens = getattr(model, "max_new_tokens", _MAX_TOKENS_CAP)
+                    model.max_new_tokens = max_tokens
+                    try:
+                        results = model.transcribe(
+                            audio=(audio, sample_rate),
+                            language=language,
+                            context=context,
+                        )
+                    finally:
+                        model.max_new_tokens = prev_tokens
+                        Qwen3ASRBackend._last_used = time.monotonic()
+                except Exception as exc:
+                    if self._is_fatal_cuda_error(exc):
+                        reason = str(exc).splitlines()[0]
+                        self._disable_inprocess_temporarily(reason)
+                        self._drop_inprocess_model(reason)
+                        raise ASRBackendFatalError(reason) from exc
+                    raise
             text = (results[0].text if results else "").strip()
             dt = (time.perf_counter() - t0) * 1000
             logger.info(
@@ -558,33 +574,33 @@ class Qwen3ASRBackend(BaseASRBackend):
                 text,
             )
             return text or None
+        except ASRBackendFatalError:
+            raise
         except Exception as exc:
             logger.error("[ASR:Qwen3ASR] in-process inference failed: %s", exc)
-            if self._is_fatal_cuda_error(exc):
-                reason = str(exc).splitlines()[0]
-                self._disable_inprocess_temporarily(reason)
-                self._drop_inprocess_model(reason)
-                raise ASRBackendFatalError(reason) from exc
             return None
 
     def close(self) -> None:
-        if self._model is not None:
-            if self._owns_model and Qwen3ASRBackend._shared_model is self._model:
-                Qwen3ASRBackend._shared_model = None
-                Qwen3ASRBackend._shared_device = ""
-                Qwen3ASRBackend._shared_attn_impl = ""
-                Qwen3ASRBackend._shared_parked = False
-            self._model = None
-            self._owns_model = False
-            self._mode = "unloaded"
-            gc.collect()
-            try:
-                import torch
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-            except Exception:
-                pass
-            return
+        # A sidecar may be blocked reading its pipe under the I/O lock. Its
+        # existing shutdown must still terminate that process without waiting.
+        if self._mode != "sidecar":
+            with self._lock:
+                if self._model is not None:
+                    self._model = None
+                    self._mode = "unloaded"
+                    Qwen3ASRBackend._model_users.discard(self)
+                    # Conversation and Wake have equal claims on the same model.
+                    # Residency survives until its final user releases it.
+                    if not Qwen3ASRBackend._model_users:
+                        self._clear_shared_model_locked()
+                        gc.collect()
+                        try:
+                            import torch
+                            if torch.cuda.is_available():
+                                torch.cuda.empty_cache()
+                        except Exception:
+                            pass
+                    return
 
         proc = self._proc
         if proc is None:

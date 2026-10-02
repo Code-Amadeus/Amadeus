@@ -81,10 +81,18 @@ waits in RAM instead of VRAM. The next wake, or the start of speech, moves it
 back while the user is still speaking. Other Conversation recognizers unload at
 that point.
 
+The model stays in VRAM throughout the hot window, including a window renewed
+after a long reply. Its last transcription time does not shorten that window.
+
 Listening that does not return to standby (continuous conversation with Wake
 disabled, or a manual microphone session) keeps running. An idle Qwen3-ASR
 model still moves to RAM after `ASR_IDLE_UNLOAD_SECONDS` and comes back at
-speech start.
+speech start. A continuous session also keeps any remaining hot window after
+its last reply, even when Wake is disabled.
+
+If Wake is configured to share Qwen3-ASR, stopping or unloading Conversation
+does not release Wake's model. Its residency is shared until the last user
+releases it; a Wake transcription restores a model waiting in RAM to its device.
 
 | Setting | Default | Effect |
 | --- | ---: | --- |

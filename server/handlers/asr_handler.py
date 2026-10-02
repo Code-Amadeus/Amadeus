@@ -461,13 +461,6 @@ class AsrHandler(RequestHandler):
                             "continuous": self._continuous_awake,
                         },
                     )
-                if not text:
-                    # Listening that does not expire (continuous voice without
-                    # a wake word, a manual microphone session) keeps running;
-                    # an idle model still leaves VRAM and returns at speech start.
-                    release = getattr(asr_manager, "release_vram", None)
-                    if callable(release):
-                        await asyncio.to_thread(release, ASR_IDLE_UNLOAD_SECONDS)
                 if self._one_shot:
                     self._active = False
                     await self._finish_listening("one_shot_complete")
@@ -476,6 +469,15 @@ class AsrHandler(RequestHandler):
                     self._active = False
                     await self._finish_listening("awake_timeout")
                     break
+                if not text and (not self._is_awake_session()
+                                 or time.monotonic() >= self._awake_until):
+                    # Keep the model hot through the window renewed by the last
+                    # reply, even if ASR itself has not run recently. Listeners
+                    # without a wake fallback may park only after that window;
+                    # manual sessions use the backend's idle-use deadline.
+                    release = getattr(asr_manager, "release_vram", None)
+                    if callable(release):
+                        await asyncio.to_thread(release, ASR_IDLE_UNLOAD_SECONDS)
             except asyncio.CancelledError:
                 break
             except Exception:
