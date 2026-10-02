@@ -25,6 +25,13 @@ from pathlib import Path
 from queue import Queue
 from typing import Any, TYPE_CHECKING
 
+# Intel OpenMP, which torch uses for CPU work, keeps each worker thread spinning
+# for 200 ms after a parallel region. Silero VAD runs every 32 ms on the wake
+# and listening threads, so one worker never slept and the idle backend used a
+# whole CPU core. 1 ms still keeps workers warm across back-to-back CPU
+# inference. This must run before anything imports torch.
+os.environ.setdefault("KMP_BLOCKTIME", "1")
+
 if TYPE_CHECKING:
     from core.session_manager import ConversationHistory
     from server.turn_admission import TurnAdmissionRecord
