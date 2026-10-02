@@ -5,6 +5,33 @@ preview. It uses the optional Companion Lite pack at `assets/companion/kurisu/` 
 existing Host presentation signals. It does not start another VN session, TTS
 pipeline, Work, or AUIP authority.
 
+The VN card is the visual reference for both surfaces. See the
+[before/after and contextual-control evidence](evidence/companion-vn-style-2026-10-03/README.md).
+ Slice uses the same rounded
+double border, transparent outer margin, 0.92 whole-card opacity, 132px portrait
+placement and corner brackets, caption typography, side/bottom accents and subdued
+five-second scan sweep. The default composition is 470×226 logical pixels. Captions
+grow and shrink the window; the Host limits it to the monitor work area. When stacked
+below a Work preview on a narrow screen, the card also preserves the preview's minimum
+height where space permits. Text scrolls when it cannot fit. Resizing the width keeps
+the same visual language in the compact layout. An existing saved position/width is retained; saved heights
+are fitted to the current caption on opening.
+
+Slice's microphone and camera use VN's contextual icon design, selected/off states,
+pending marker and hover hints. They appear on hover or keyboard focus alongside
+close; there is no standalone docking button or idle-motion toggle.
+The microphone starts/stops the wallpaper's existing continuous conversation. The
+camera toggles its existing General vision observation (VN keeps question-time
+vision). Actual state and microphone ownership come from the Host; other-owner,
+unsupported-model, disconnected, pending and rejected requests are reflected on the
+buttons without replacing captions or replaying clicks on reconnect. The card reads
+status when opening, on input events and while controls are visible. Bridge credentials
+remain in the main process, which accepts only these four bounded input actions.
+
+Drag the header to move the card; right-click also closes it. Slice retains its own
+window lifecycle and automatic Work docking, while VN retains its native Tk shell.
+Hidden cards pause the sweep and portrait; reduced-motion preferences disable the sweep.
+
 Install the separately supplied `companion-kurisu` archive with
 `python tools/external_assets.py install <bundle.zip>`. It is derived from the same
 SpriteForge character sources but is independently installable; Companion does not
@@ -20,8 +47,8 @@ explicit decoded atlas pixels are retained. This is not a cap on total Electron 
 browser decoder memory. Hidden windows pause; closing destroys the renderer and
 closes its bitmaps. Static frames do not run a redraw timer.
 
-The `动` / `静` button selects gentle or static idle and remembers the choice.
-The reviewed pack uses `idle_static_saved`, `speaking_short`, and both thinking
+The card uses the pack's default gentle idle; no stored static-idle preference is
+read or written. The reviewed pack uses `idle_static_saved`, `speaking_short`, and both thinking
 speaking variants. Thinking variants alternate between speech runs, never halfway
 through a sentence. After speech ends the expression returns to neutral idle after
 350 ms. A new expression or new speech cancels that deadline. Captions remain intact.

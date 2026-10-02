@@ -10,7 +10,7 @@ export function clampPanel(bounds: Rect, area: Rect): Rect {
 }
 
 /** Reserve real desktop space; a docked card never covers the game. */
-export function dockPanel(game: Rect, area: Rect, width = 470, height = 250): { panel: Rect; game: Rect } {
+export function dockPanel(game: Rect, area: Rect, width = 470, height = 226, minimumGameHeight = game.height): { panel: Rect; game: Rect } {
   const gap = 12
   const panel = clampPanel({ x: game.x + game.width + gap, y: game.y, width, height }, area)
   if (game.x + game.width + gap + panel.width <= area.x + area.width) {
@@ -22,10 +22,14 @@ export function dockPanel(game: Rect, area: Rect, width = 470, height = 250): { 
   const available = area.width - panel.width - gap
   // On narrow displays, place the card below instead of squeezing the game.
   if (available < 640) {
+    // Keep the preview's minimum height whenever the minimum-size card can fit.
+    // Additional caption text scrolls rather than consuming the preview's space.
+    const reserved = Math.max(1, Math.min(minimumGameHeight, area.height - 226 - gap))
+    panel.height = Math.min(panel.height, area.height - reserved - gap)
     const next = clampPanel({ ...game, x: area.x, y: area.y,
       width: Math.min(game.width, area.width), height: Math.max(1, area.height - panel.height - gap) }, area)
     return { game: next, panel: { ...panel, x: area.x, y: next.y + next.height + gap } }
   }
   const next = clampPanel({ ...game, x: area.x, width: Math.min(game.width, available) }, area)
-  return { game: next, panel: { ...panel, x: next.x + next.width + gap, y: next.y } }
+  return { game: next, panel: { ...panel, x: next.x + next.width + gap } }
 }

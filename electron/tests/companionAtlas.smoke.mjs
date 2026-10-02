@@ -86,12 +86,7 @@ async function run(){
  await rpc('speaking',{active:true});await sleep(350)
  assert.equal(await js(`document.querySelector('#portrait').dataset.emotion`),'sided_thinking')
  await rpc('speaking',{active:false});await until(`document.querySelector('#portrait').dataset.emotion==='normal'`)
- await js(`document.querySelector('#motion').click()`)
- await sleep(180)
- const still=await js(`document.querySelector('#portrait').toDataURL()`)
- await sleep(600)
- assert.equal(await js(`document.querySelector('#portrait').toDataURL()`),still)
- await js(`document.querySelector('#motion').click()`)
+ assert.equal(await js(`document.querySelector('#motion')`),null)
  panel.hide();await until('document.hidden')
  await sleep(80);const hidden=await js(`document.querySelector('#portrait').toDataURL()`)
  await sleep(500)
@@ -112,7 +107,7 @@ async function run(){
  await fs.writeFile(path.join(legacy,'manifest.json'),JSON.stringify({emotions:{normal:{idle:['face.png'],speaking:['face.png']}}}))
  options.portraitCacheDir=legacy;await open()
  await until(`document.querySelector('#portrait').naturalWidth===1`)
- await fs.writeFile(path.join(output,'result.json'),JSON.stringify({ok:true,returnMs,checks:['real Host and production panel','no Pixi','atlas speaking','350ms return','new expression cancels return','new speech cancels return','static idle','hidden pause/resume','renderer exits on close','missing pack fallback','legacy PNG override']}))
+ await fs.writeFile(path.join(output,'result.json'),JSON.stringify({ok:true,returnMs,checks:['real Host and production panel','no Pixi','atlas speaking','350ms return','new expression cancels return','new speech cancels return','default gentle idle without a motion toggle','hidden pause/resume','renderer exits on close','missing pack fallback','legacy PNG override']}))
 }
 async function cleanup(){
  await panelHost?.close();for(const w of BrowserWindow.getAllWindows())w.destroy()

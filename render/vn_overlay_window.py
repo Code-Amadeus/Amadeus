@@ -65,7 +65,7 @@ class PortraitOverlayTk:
         self.card_width, self.card_height = 470, 226
         self.root.configure(bg=TRANSPARENT_KEY)
         self.root.geometry(f"{self._px(self.card_width)}x{self._px(self.card_height)}+{self._px(x)}+{self._px(y)}")
-        self.root.attributes("-alpha", .88)
+        self.root.attributes("-alpha", .92)
         if self.root.tk.call("tk", "windowingsystem") == "win32":
             self.root.attributes("-transparentcolor", TRANSPARENT_KEY)
         self.visible = True

@@ -25,6 +25,30 @@ test('docking uses existing space on either side without resizing the game', () 
     assert.equal(overlap(game, panel), false)
   }
 })
+
+test('tall captions preserve usable preview space when stacked and remain inside the work area', () => {
+  for (const area of [{ x: 0, y: 0, width: 1024, height: 728 }, { x: -1024, y: 50, width: 1024, height: 1000 }]) {
+    const initial = dockPanel({ ...area }, area, 470, 226, 520)
+    const grown = dockPanel(initial.game, area, 470, 2000, 520)
+    assert.ok(grown.game.height >= Math.min(520, initial.game.height))
+    assert.equal(overlap(grown.game, grown.panel), false)
+    assert.deepEqual(clampPanel(grown.panel, area), grown.panel)
+    assert.deepEqual(clampPanel(grown.game, area), grown.game)
+    assert.ok(grown.panel.height >= 226)
+    if (area.height === 1000) assert.ok(grown.panel.height > 226, 'spare height remains available for captions')
+    assert.deepEqual(dockPanel(grown.game, area, 470, 226, 520), initial, 'short captions restore the original stacked layout')
+  }
+  const area = { x: 0, y: 0, width: 1920, height: 1040 }
+  const wide = dockPanel({ ...area }, area, 470, 2000, 520)
+  assert.equal(wide.panel.height, area.height, 'side-by-side cards can use the full work area height')
+  assert.equal(wide.game.height, area.height)
+  assert.equal(overlap(wide.game, wide.panel), false)
+  const offsetGame = { x: 30, y: 100, width: 1600, height: 700 }
+  const offset = dockPanel(offsetGame, area, 470, 2000, 520)
+  assert.deepEqual(clampPanel(offset.panel, area), offset.panel, 'a tall side card is clamped even when the preview is offset vertically')
+  assert.equal(offset.game.y, offsetGame.y)
+  assert.equal(offset.game.height, offsetGame.height)
+})
 test('optional VN cache reuses frames but cannot read outside its root', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'companion-'))
   try {

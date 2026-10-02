@@ -3,7 +3,9 @@
 > Historical implementation record. The 2026-09-25 product pass replaced the
 > external Tk helper dependency with the repository-owned window in
 > `render/vn_overlay_window.py`, preserving the shared atlas/playback contract.
-> Current behavior and setup are documented in `vn-text-sources.md`.
+> Current behavior and setup are documented in `vn-text-sources.md`. The later
+> Slice frame/style alignment and contextual controls are documented in
+> `companion-panel.md`; the "Slice unchanged" scope below describes this historical PR.
 
 ## Final scope
 
