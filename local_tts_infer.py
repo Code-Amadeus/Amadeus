@@ -219,8 +219,11 @@ class TTSInferencer:
             # 初始化语言字典
             self._init_language_dict()
 
-            # 初始化BERT和SSL模型
-            self._init_bert_model()
+            # 初始化SSL模型。BERT 特征只有中文文本需要，日文/英文用零向量，
+            # 所以 BERT 在第一次需要时才加载（_ensure_bert_model）。
+            self.tokenizer = None
+            self.bert_model = None
+            self._bert_lock = threading.Lock()
             self._init_ssl_model()
 
             # 加载GPT和SoVITS模型
@@ -555,13 +558,20 @@ class TTSInferencer:
         from transformers import AutoModelForMaskedLM, AutoTokenizer
 
         logger.info(f"Loading BERT model: {self.bert_path}")
-        self.tokenizer = AutoTokenizer.from_pretrained(self.bert_path, local_files_only=True)
-        self.bert_model = AutoModelForMaskedLM.from_pretrained(self.bert_path, local_files_only=True)
-
+        tokenizer = AutoTokenizer.from_pretrained(self.bert_path, local_files_only=True)
+        model = AutoModelForMaskedLM.from_pretrained(self.bert_path, local_files_only=True)
         if self.is_half:
-            self.bert_model = self.bert_model.half().to(self.device)
-        else:
-            self.bert_model = self.bert_model.to(self.device)
+            model = model.half()
+        self.tokenizer = tokenizer
+        # Publish the model last, on its device: readers check it without the lock.
+        self.bert_model = model.to(self.device)
+
+    def _ensure_bert_model(self):
+        """Load BERT once, on the first Chinese feature request."""
+        if self.bert_model is None:
+            with self._bert_lock:
+                if self.bert_model is None:
+                    self._init_bert_model()
 
     def _init_ssl_model(self):
         """初始化SSL模型"""
@@ -1019,6 +1029,7 @@ class TTSInferencer:
 
     def get_bert_feature(self, text, word2ph):
         """获取BERT特征"""
+        self._ensure_bert_model()
         with torch.no_grad():
             inputs = self.tokenizer(text, return_tensors="pt")
             for i in inputs:
