@@ -488,41 +488,81 @@ function sourceFor(
   return 'default'
 }
 
+function storedSettingsFrom(text: string): StoredDesktopSettings {
+  const parsed = JSON.parse(text) as Record<string, unknown>
+  const pendingRevisions = cleanPendingRevisions(parsed.pendingRevisions, parsed.pendingKeys)
+  const highestRevision = Math.max(0, ...Object.values(pendingRevisions))
+  const storedNextRevision = Number.isSafeInteger(parsed.nextRevision) && Number(parsed.nextRevision) > 0
+    ? Number(parsed.nextRevision)
+    : 1
+  return {
+    version: 2,
+    values: cleanRecord(parsed.values, VALUE_KEYS),
+    encryptedSecrets: cleanRecord(parsed.encryptedSecrets, SECRET_KEYS),
+    mcpConnections: cleanStoredMcpConnections(parsed.mcpConnections),
+    pendingRevisions,
+    nextRevision: Math.max(storedNextRevision, highestRevision + 1),
+  }
+}
+
+// Flush before rename: after a power loss the target holds either its previous
+// or its new content, never a renamed file whose data never reached the disk.
+function writeFileDurably(target: string, text: string): void {
+  const temporary = `${target}.tmp`
+  const handle = fs.openSync(temporary, 'w', 0o600)
+  try {
+    fs.writeFileSync(handle, text, 'utf8')
+    fs.fsyncSync(handle)
+  } finally {
+    fs.closeSync(handle)
+  }
+  fs.renameSync(temporary, target)
+}
+
 export class DesktopSettingsStore {
   constructor(
     private readonly filePath: string,
     private readonly dotenvPath: string,
   ) {}
 
+  private get backupPath(): string {
+    return `${this.filePath}.bak`
+  }
+
+  // Every save rewrites the store, so reading must never turn settings it
+  // could not read into an empty store that the next save makes permanent.
   private read(): StoredDesktopSettings {
+    let failure: unknown
     try {
-      const parsed = JSON.parse(fs.readFileSync(this.filePath, 'utf8')) as Record<string, unknown>
-      const pendingRevisions = cleanPendingRevisions(parsed.pendingRevisions, parsed.pendingKeys)
-      const highestRevision = Math.max(0, ...Object.values(pendingRevisions))
-      const storedNextRevision = Number.isSafeInteger(parsed.nextRevision) && Number(parsed.nextRevision) > 0
-        ? Number(parsed.nextRevision)
-        : 1
-      return {
-        version: 2,
-        values: cleanRecord(parsed.values, VALUE_KEYS),
-        encryptedSecrets: cleanRecord(parsed.encryptedSecrets, SECRET_KEYS),
-        mcpConnections: cleanStoredMcpConnections(parsed.mcpConnections),
-        pendingRevisions,
-        nextRevision: Math.max(storedNextRevision, highestRevision + 1),
-      }
-    } catch {
-      return emptyStore()
+      return storedSettingsFrom(fs.readFileSync(this.filePath, 'utf8'))
+    } catch (error) {
+      failure = error
     }
+    const code = (failure as NodeJS.ErrnoException).code
+    // A missing file is a first launch or a deliberate reset, not damage.
+    if (code === 'ENOENT') return emptyStore()
+    try {
+      const saved = storedSettingsFrom(fs.readFileSync(this.backupPath, 'utf8'))
+      console.error(`[desktop-settings] ${this.filePath} is unreadable; using the copy from its last save`, failure)
+      return saved
+    } catch {
+      // No usable copy; decide below without guessing.
+    }
+    // An I/O error says nothing about the content, so it is not replaced.
+    if (code) throw failure
+    // Unparseable content without a usable copy: keep the bytes for inspection
+    // and start from defaults instead of silently overwriting them.
+    const setAside = `${this.filePath}.corrupt-${Date.now()}`
+    fs.renameSync(this.filePath, setAside)
+    console.error(`[desktop-settings] unreadable settings were moved to ${setAside}`, failure)
+    return emptyStore()
   }
 
   private write(value: StoredDesktopSettings): void {
     fs.mkdirSync(path.dirname(this.filePath), { recursive: true })
-    const temporary = `${this.filePath}.tmp`
-    fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, {
-      encoding: 'utf8',
-      mode: 0o600,
-    })
-    fs.renameSync(temporary, this.filePath)
+    const text = `${JSON.stringify(value, null, 2)}\n`
+    writeFileDurably(this.filePath, text)
+    writeFileDurably(this.backupPath, text)
   }
 
   private dotenvKeys(): Set<string> {
