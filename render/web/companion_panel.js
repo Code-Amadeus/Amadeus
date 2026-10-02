@@ -10,6 +10,7 @@
   let frames = {};
   let state = { text: "", emotion: "normal", speaking: false };
   let connected = false;
+  let inputConnection = 0;
   let frameIndex = 0;
   let source = null;
   const card = document.getElementById('card');
@@ -37,40 +38,53 @@
     return message === 'already_listening' ? '麦克风正忙' : message === 'current_model_does_not_support_images'
       ? '当前聊天模型不支持图片' : message;
   }
-  async function readInputs() {
-    const result = await api.input('status');
-    if (result.ok !== true) throw new Error(result.error || '输入控制暂不可用');
-    return result;
+  async function readInputs(connection = inputConnection) {
+    // A status snapshot and its unsent click belong to one uninterrupted connection.
+    const current = () => connected && connection === inputConnection;
+    if (!current()) return null;
+    try {
+      const result = await api.input('status');
+      if (!current()) return null;
+      if (result.ok !== true) throw new Error(result.error || '输入控制暂不可用');
+      return result;
+    } catch (error) { if (current()) throw error; return null; }
   }
   function refreshInputs() {
     if (!connected || !api?.input || inputPending) return;
     if (inputStatusRequest) return inputStatusRequest;
+    const connection = inputConnection;
     inputStatusRequest = readInputs().then(snapshot => {
-      if (connected && !inputPending) inputs = snapshot;
+      if (snapshot && !inputPending) inputs = snapshot;
     }).catch(error => {
       if (connected && !inputPending) { inputs = null; inputError = errorText(error); }
-    }).finally(() => { inputStatusRequest = null; renderInputs(); });
+    }).finally(() => {
+      inputStatusRequest = null; renderInputs();
+      if (connection !== inputConnection) void refreshInputs();
+    });
     return inputStatusRequest;
   }
   async function toggleInput(name) {
     if (inputPending || inputButtons[name].disabled) return;
+    const connection = inputConnection;
     inputPending = true; inputError = ''; renderInputs();
     try {
       await inputStatusRequest;
       // Read the actual owner/state before choosing start or stop; no optimistic toggles.
-      const snapshot = await readInputs();
+      const snapshot = await readInputs(connection);
+      if (!snapshot) return;
       if (name === 'voice' && snapshot.voice?.active && snapshot.voice.source !== 'wake') throw new Error('already_listening');
       if (name === 'vision' && snapshot.supports_images !== true) throw new Error('current_model_does_not_support_images');
       const action = name === 'vision' ? 'vision_toggle' : snapshot.voice?.active ? 'voice_stop' : 'voice_start';
       const result = await api.input(action);
       if (result.ok !== true) throw new Error(result.error || '输入切换失败');
-    } catch (error) { inputError = errorText(error); }
+    } catch (error) { if (connected && connection === inputConnection) inputError = errorText(error); }
     finally {
       if (connected) {
         try { inputs = await readInputs(); }
         catch (error) { inputs = null; if (!inputError) inputError = errorText(error); }
       }
       inputPending = false; renderInputs();
+      if (connection !== inputConnection) void refreshInputs();
     }
   }
   for (const [name, button] of Object.entries(inputButtons)) {
@@ -174,6 +188,7 @@
     };
     source.onerror = () => {
       connected = false;
+      inputConnection++;
       inputs = null; hoverInput = ''; renderInputs();
       cancelReturn();
       state = { text: "", emotion: "normal", speaking: false };

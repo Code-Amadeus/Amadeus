@@ -107,7 +107,7 @@ async function captureCard(panel, name) {
   const { width, height } = frame.getSize(), pixels = frame.toBitmap()
   assert.equal(pixels[3], 0, 'outer corner must remain transparent')
   const alpha = pixels[(Math.floor(height / 2) * width + Math.floor(width / 2)) * 4 + 3]
-  assert.ok(Math.abs(alpha - 224) <= 1, 'whole-card alpha must match VN opacity')
+  assert.ok(Math.abs(alpha - 235) <= 1, 'whole-card alpha must match VN opacity')
   await fs.writeFile(path.join(output, name), frame.toPNG())
 }
 async function run() {
@@ -149,7 +149,7 @@ try {
   assert.deepEqual(layout.portrait, [23, 58, 132, 132])
   assert.deepEqual(layout.caption.slice(0, 2), [177, 84])
   assert.equal(layout.caption[2], layout.viewportWidth - 177 - 27)
-  assert.equal(layout.opacity, '0.88')
+  assert.equal(layout.opacity, '0.92')
   assert.equal(layout.font, '14px')
   assert.equal(layout.controls, 'hidden')
   // Visibility boundary fixture; hidden diagnostic windows disable Chromium
@@ -264,7 +264,36 @@ try {
   current.destroy()
   await until(() => visibility.at(-1) === false, 'external close did not restore presentation')
   assert.deepEqual(game.getBounds(), original)
-  console.log(JSON.stringify({ ok: true, checks: ['actual Slice button next to W', 'native dock without overlap', 'optional-art-free portrait fixture', 'VN geometry and opacity', 'saved height fits caption', 'visibility event pauses sweep', 'keyboard reveals contextual controls', 'resize/input IPC rejects foreign/invalid requests', 'Host-backed voice/vision controls', 'pending input click is not duplicated', 'other ASR owner and unsupported images disable inputs', 'rejected input preserves caption and Host state', 'no dock or motion toggle', 'shared subtitles and speaking', 'caption grows and shrinks', 'monitor-limited caption scroll', 'compact layout', 'drag detaches', 'disconnect/reconnect restores presentation', 'close button and right-click', 'singleton toggle', 'retired window events cannot affect the current card', 'external close restores presentation', 'preview bounds restored'], layout, screenshots: output }))
+  // Exercise production IPC and native window minimums against a narrow-work-area fixture.
+  const matchingDisplay = screen.getDisplayMatching.bind(screen)
+  const nearestDisplay = screen.getDisplayNearestPoint.bind(screen)
+  const narrowArea = { ...area, width: 1024, height: 728 }
+  screen.getDisplayMatching = bounds => ({ ...matchingDisplay(bounds), workArea: narrowArea })
+  screen.getDisplayNearestPoint = point => ({ ...nearestDisplay(point), workArea: narrowArea })
+  try {
+    game.setBounds(narrowArea)
+    const originalNarrowGame = game.getBounds()
+    await panelHost.toggle('work-test')
+    const narrow = BrowserWindow.getAllWindows().find(window => window !== game && window !== slice)
+    await until(() => narrow.webContents.executeJavaScript(`document.querySelector('#caption').textContent === ${JSON.stringify(seed.args[0])}`), 'narrow card did not connect')
+    const previewHeight = game.getBounds().height
+    publish({ method: 'setSubtitle', args: [longText.repeat(30)] })
+    await until(() => narrow.webContents.executeJavaScript(`document.querySelector('#caption').textContent.length > 1000`), 'narrow card did not receive the long caption')
+    await narrow.webContents.executeJavaScript(`window.companion.fitContent(document.querySelector('#caption').scrollHeight + 120)`)
+    const preview = game.getBounds(), card = narrow.getBounds()
+    assert.ok(preview.height >= previewHeight - 1, 'caption growth must preserve the stacked preview height')
+    assert.deepEqual(clampToArea(card, narrowArea), card, 'stacked card must remain within the work area')
+    assert.ok(preview.y + preview.height <= card.y, 'stacked card must not cover the preview')
+    assert.equal(await narrow.webContents.executeJavaScript(`document.querySelector('#caption').scrollHeight > document.querySelector('#caption').clientHeight`), true)
+    publish(seed)
+    await until(() => narrow.webContents.executeJavaScript(`document.querySelector('#caption').textContent === ${JSON.stringify(seed.args[0])}`), 'short caption did not recover')
+    await panelHost.close()
+    assert.deepEqual(game.getBounds(), originalNarrowGame, 'narrow preview bounds must restore on close')
+  } finally {
+    screen.getDisplayMatching = matchingDisplay
+    screen.getDisplayNearestPoint = nearestDisplay
+  }
+  console.log(JSON.stringify({ ok: true, checks: ['actual Slice button next to W', 'native dock without overlap', 'optional-art-free portrait fixture', 'VN geometry and opacity', 'saved height fits caption', 'visibility event pauses sweep', 'keyboard reveals contextual controls', 'resize/input IPC rejects foreign/invalid requests', 'Host-backed voice/vision controls', 'pending input click is not duplicated', 'other ASR owner and unsupported images disable inputs', 'rejected input preserves caption and Host state', 'no dock or motion toggle', 'shared subtitles and speaking', 'caption grows and shrinks', 'monitor-limited caption scroll', 'compact layout', 'drag detaches', 'disconnect/reconnect restores presentation', 'close button and right-click', 'singleton toggle', 'retired window events cannot affect the current card', 'external close restores presentation', 'preview bounds restored', 'narrow docking preserves preview while captions scroll'], layout, screenshots: output }))
 } catch (error) {
   console.error(error)
   process.exitCode = 1

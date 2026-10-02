@@ -4,7 +4,7 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
-.companion-card { --speech-left: 177px; position: relative; width: 100%; height: 100%; opacity: .88; }
+.companion-card { --speech-left: 177px; position: relative; width: 100%; height: 100%; opacity: .92; }
 .companion-card:focus-visible { outline: none; }
 .companion-card:focus-visible::after { border-color: #91dfcc; }
 .companion-card::before, .companion-card::after { content: ""; position: absolute; pointer-events: none; border: 1px solid; }

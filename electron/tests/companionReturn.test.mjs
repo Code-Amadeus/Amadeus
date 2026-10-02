@@ -38,6 +38,46 @@ test('new speech and new expression each cancel a stale return deadline',async()
 })
 
 const flush=()=>new Promise(resolve=>setImmediate(resolve))
+test('disconnect cancels unsent input clicks even when status completes after reconnect',async()=>{
+ for(const name of ['voice','vision'])for(const background of [false,true])for(const reconnect of [false,true]){
+  const snapshot={ok:true,supports_images:true,watching:false,voice:{active:false,source:''}}
+  const actions=[];let hold=false,release
+  const s=await setup(async action=>{
+   if(action==='status'){
+    if(hold){hold=false;return new Promise(resolve=>{release=()=>resolve(structuredClone(snapshot))})}
+    return structuredClone(snapshot)
+   }
+   actions.push(action);return {ok:true}
+  })
+  await flush();hold=true
+  if(background)s.send('setAsrStatus',{status:'idle'})
+  s.element(name).onclick();await flush()
+  s.disconnect();if(reconnect)s.reconnect()
+  release();await flush()
+  assert.deepEqual(actions,[],`${name}: background=${background}, reconnect=${reconnect}`)
+  if(!reconnect)s.reconnect()
+  await flush()
+  assert.equal(s.element(name).disabled,false,'a fresh click must remain available after reconnect')
+  s.element(name).onclick();await flush()
+  assert.deepEqual(actions,[name==='voice'?'voice_start':'vision_toggle'])
+ }
+})
+
+test('a pre-disconnect status result cannot replace the new connection state',async()=>{
+ const snapshot={ok:true,supports_images:true,watching:false,voice:{active:false,source:''}}
+ let hold=false,release
+ const s=await setup(async()=>{
+  const result=structuredClone(snapshot)
+  if(hold){hold=false;return new Promise(resolve=>{release=()=>resolve(result)})}
+  return result
+ })
+ await flush();hold=true;s.send('setAsrStatus',{status:'idle'})
+ s.disconnect();snapshot.voice={active:true,source:'other'};s.reconnect()
+ release();await flush()
+ assert.equal(s.element('voice').disabled,true)
+ assert.equal(s.element('vision').disabled,false,'new connection must receive fresh status')
+})
+
 test('input buttons follow Host completion and reject duplicate clicks while pending',async()=>{
  const snapshot={ok:true,supports_images:true,watching:false,voice:{active:false,source:''}}
  const actions=[];let release
@@ -57,6 +97,21 @@ test('input buttons follow Host completion and reject duplicate clicks while pen
  assert.equal(s.element('voice').attributes['aria-pressed'],'true')
  assert.equal(s.element('voice').disabled,false)
  assert.equal(s.element('caption').textContent,'保留当前字幕')
+})
+
+test('reconnect reconciles an already dispatched input without replaying it',async()=>{
+ const snapshot={ok:true,supports_images:true,watching:false,voice:{active:false,source:''}}
+ const actions=[];let release
+ const s=await setup(async action=>{
+  if(action==='status')return structuredClone(snapshot)
+  actions.push(action);return new Promise(resolve=>{release=resolve})
+ })
+ await flush();s.element('voice').onclick();await flush()
+ s.disconnect();s.reconnect()
+ snapshot.voice={active:true,source:'wake'};release({ok:true});await flush()
+ assert.deepEqual(actions,['voice_start'])
+ assert.equal(s.element('voice').attributes['aria-pressed'],'true')
+ assert.equal(s.element('voice').disabled,false)
 })
 test('input ownership, model limitations and rejected changes remain Host facts across reconnect',async()=>{
  const snapshot={ok:true,supports_images:false,watching:false,voice:{active:true,source:'other'}}

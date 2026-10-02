@@ -8,12 +8,13 @@ pipeline, Work, or AUIP authority.
 The VN card is the visual reference for both surfaces. See the
 [before/after and contextual-control evidence](evidence/companion-vn-style-2026-10-03/README.md).
  Slice uses the same rounded
-double border, transparent outer margin, 0.88 whole-card opacity, 132px portrait
+double border, transparent outer margin, 0.92 whole-card opacity, 132px portrait
 placement and corner brackets, caption typography, side/bottom accents and subdued
 five-second scan sweep. The default composition is 470×226 logical pixels. Captions
-grow and shrink the window; the Host limits it to the monitor work area, with text
-scrolling only when it cannot fit. Resizing the width keeps the same visual language
-in the compact layout. An existing saved position/width is retained; saved heights
+grow and shrink the window; the Host limits it to the monitor work area. When stacked
+below a Work preview on a narrow screen, the card also preserves the preview's minimum
+height where space permits. Text scrolls when it cannot fit. Resizing the width keeps
+the same visual language in the compact layout. An existing saved position/width is retained; saved heights
 are fitted to the current caption on opening.
 
 Slice's microphone and camera use VN's contextual icon design, selected/off states,

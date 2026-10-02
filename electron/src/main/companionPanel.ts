@@ -165,14 +165,17 @@ export class CompanionPanel {
 
   private fitContent(height: number): boolean {
     if (!this.window || this.window.isDestroyed()) return false
+    if (this.game && !this.game.isDestroyed()) {
+      this.place(Math.ceil(height))
+      this.savePosition()
+      return true
+    }
     const before = this.window.getBounds()
     const area = screen.getDisplayMatching(before).workArea
     const bounds = clampPanel({ ...before, height: Math.ceil(height) }, area)
     if (sameRect(before, bounds)) return true
-    // Content growth can move the card into the work area without detaching it.
     this.placing = true
     try { this.window.setBounds(bounds) } finally { this.placing = false }
-    if (this.game) this.place()
     this.savePosition()
     return true
   }
@@ -201,7 +204,7 @@ export class CompanionPanel {
     this.place()
   }
 
-  private place() {
+  private place(contentHeight?: number) {
     if (this.placing || !this.game || this.game.isDestroyed() || !this.window || this.window.isDestroyed()) return
     this.placing = true
     try {
@@ -212,14 +215,16 @@ export class CompanionPanel {
         this.gameMaximized = this.game.isMaximized()
       }
       const panel = this.window.getBounds()
-      const placement = dockPanel(bounds, screen.getDisplayMatching(bounds).workArea, panel.width, panel.height)
-      this.assignedPanel = placement.panel
+      const placement = dockPanel(bounds, screen.getDisplayMatching(bounds).workArea,
+        panel.width, contentHeight ?? panel.height, this.gameMinimum?.[1] || bounds.height)
       if (!sameRect(bounds, placement.game)) {
-        this.assignedGame = placement.game
         if (this.gameMinimum) this.game.setMinimumSize(Math.min(this.gameMinimum[0], placement.game.width), Math.min(this.gameMinimum[1], placement.game.height))
         this.game.setBounds(placement.game)
+        // Native DPI rounding is our placement, not a later user resize.
+        this.assignedGame = this.game.getBounds()
       }
       if (!sameRect(panel, placement.panel)) this.window.setBounds(placement.panel)
+      this.assignedPanel = this.window.getBounds()
     } finally { this.placing = false }
   }
 
