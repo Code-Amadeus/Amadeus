@@ -1,6 +1,6 @@
 """
 会话管理模块
-- ConversationHistory：对话历史维护（滚动窗口 + token 估算 + 摘要触发）
+- ConversationHistory：完整会话记录 + 发给模型的最近若干轮窗口
 - 会话持久化 CRUD（JSON 文件存储）
 
 注意：连续对话开关的运行时归属为 core.chat_runtime.ChatRuntime.enable_conversation，
@@ -24,12 +24,19 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # ConversationHistory
 # ---------------------------------------------------------------------------
+# Main Chat sends at most this many recent rounds to a model. The Session keeps
+# every message; this window bounds model input, not what is retained.
+PROMPT_HISTORY_ROUNDS = 30
+
+
 class ConversationHistory:
-    def __init__(self, max_rounds: int = 10, summary_token_threshold: int = 3000):
-        self.dialog: list[dict[str, Any]] = []  # {role, content, turn_id?}
+    def __init__(self, max_rounds: int = PROMPT_HISTORY_ROUNDS, summary_token_threshold: int = 3000):
+        # The complete Session record: {role, content, turn_id?}.
+        self.dialog: list[dict[str, Any]] = []
+        # Rounds visible to a model; see recent().
         self.max_rounds = max_rounds
         # Retained in persisted Session files for backward compatibility.
-        # The alpha product uses a bounded rolling window; it does not ask the
+        # The alpha product sends a bounded recent window; it does not ask the
         # visible reply model to generate an in-band memory summary.
         self.summary_token_threshold = summary_token_threshold
         self.last_summary = ""
@@ -51,11 +58,15 @@ class ConversationHistory:
     def total_tokens(self) -> int:
         return sum(self._estimate_tokens(m.get("content", "")) for m in self.dialog)
 
+    def recent(self) -> list[dict[str, Any]]:
+        """Return the window a model sees; the record itself is never trimmed."""
+
+        return self.dialog[-max(2, self.max_rounds * 2):]
+
     def add_user(self, content: str):
         if not content:
             return
         self.dialog.append({"role": "user", "content": content})
-        self._trim()
 
     def add_assistant(self, content: str, turn_id: str | None = None):
         if not content:
@@ -64,7 +75,6 @@ class ConversationHistory:
         if turn_id:
             message["turn_id"] = str(turn_id)
         self.dialog.append(message)
-        self._trim()
 
     def mark_last_assistant_interrupted(
         self,
@@ -134,11 +144,6 @@ class ConversationHistory:
             logger.debug("could not preserve interrupted control history", exc_info=True)
             return ""
 
-    def _trim(self):
-        max_items = max(2, self.max_rounds * 2)
-        if len(self.dialog) > max_items:
-            self.dialog = self.dialog[-max_items:]
-
     def build_deepseek_messages(
         self,
         system_prompt: str,
@@ -149,12 +154,12 @@ class ConversationHistory:
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
-        for m in self.dialog:
+        for m in self.recent():
             messages.append({"role": m["role"], "content": m["content"]})
         # Host-owned facts about this exact turn belong after history and
         # before the user's words. They are neither durable memory nor a
         # rewrite of the user utterance, and therefore cannot be displaced by
-        # stale assistant claims in the rolling window.
+        # stale assistant claims in the recent window.
         if current_turn_system:
             messages.append({"role": "system", "content": current_turn_system})
         messages.append({"role": "user", "content": latest_user})
@@ -170,7 +175,7 @@ class ConversationHistory:
         parts = []
         if system_prompt:
             parts.append(system_prompt)
-        for m in self.dialog:
+        for m in self.recent():
             prefix = "ユーザー:" if m["role"] == "user" else "アシスタント:"
             parts.append(f"{prefix}{m['content']}")
         if current_turn_system:
@@ -224,7 +229,7 @@ def persist_interrupted_assistant_turn(
 
 
 # 全局单例
-conversation_history = ConversationHistory(max_rounds=10, summary_token_threshold=3000)
+conversation_history = ConversationHistory(summary_token_threshold=3000)
 
 # ---------------------------------------------------------------------------
 # 会话持久化
@@ -272,9 +277,10 @@ def _install_session_state(
     global _CURRENT_SESSION_ID, _SESSION_SELECTION_REVISION
     if history is not None:
         # Keep the established singleton object for its existing importers.
+        # The model window is Host policy, not Session state, so a Session never
+        # carries its own max_rounds into the singleton.
         conversation_history.dialog = history.dialog
         conversation_history.last_summary = history.last_summary
-        conversation_history.max_rounds = history.max_rounds
         conversation_history.summary_token_threshold = history.summary_token_threshold
     _CURRENT_SESSION_ID = session_id
     if independent_selection:
@@ -383,7 +389,6 @@ def _persist_history(
         "session_id": sid,
         "dialog": history.dialog,
         "last_summary": history.last_summary,
-        "max_rounds": history.max_rounds,
         "summary_token_threshold": history.summary_token_threshold,
         "enable_conversation": enable_conversation,
         "timestamp": time.time(),
@@ -430,8 +435,10 @@ def _read_session_history(session_id: str) -> tuple[ConversationHistory, bool]:
         data = json.load(source)
     if not isinstance(data, dict) or data.get("session_id", session_id) != session_id:
         raise ValueError("Session data does not match the requested identity")
+    # Older files also stored max_rounds. The model window is Host policy, so a
+    # saved value no longer narrows what the loaded Session sends to a model.
     history = ConversationHistory(
-        int(data.get("max_rounds", conversation_history.max_rounds)),
+        conversation_history.max_rounds,
         int(data.get("summary_token_threshold", conversation_history.summary_token_threshold)),
     )
     history.dialog = data.get("dialog", [])
@@ -456,7 +463,7 @@ def append_session_message(session_id: str, *, role: str, content: str, turn_id:
 
     Called synchronously on the owning Host loop, like Session selection/save.
     This never activates or creates a Session. Replay detection covers the
-    retained history window; it is not a durable execution/input ledger.
+    Session record; it is not a durable execution/input ledger.
     A turn may publish several messages. Callers with a stable message identity
     retain each part while keeping its original turn correlation.
     """
@@ -478,7 +485,6 @@ def append_session_message(session_id: str, *, role: str, content: str, turn_id:
                 return False
         else:
             history.dialog.append(message)
-            history._trim()
         _persist_history(session_id, history, enable_conversation=enable)
         if session_id == _CURRENT_SESSION_ID:
             conversation_history.dialog = history.dialog

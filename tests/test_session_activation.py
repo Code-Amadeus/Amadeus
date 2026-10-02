@@ -64,12 +64,11 @@ def context(sessions, monkeypatch):
         coordinator.close()
 
 
-@pytest.mark.parametrize("field", ["max_rounds", "summary_token_threshold"])
-def test_bad_numeric_setting_does_not_install_another_sessions_history(sessions, field):
+def test_bad_numeric_setting_does_not_install_another_sessions_history(sessions):
     before = state()
     guard = Mock(return_value=None)
     sm.configure_activation_guard(guard)
-    write_session("B", last_summary="SUMMARY_B", **{field: "not-an-int"})
+    write_session("B", last_summary="SUMMARY_B", summary_token_threshold="not-an-int")
     assert sm.load_session("B") == (False, False)
     assert state() == before
     guard.assert_not_called()
@@ -291,10 +290,55 @@ def test_legacy_history_keeps_configuration_metadata_title_and_singleton(session
     assert seen == [("A", "B", before)]
     assert sm.conversation_history is singleton
     assert sm.conversation_history.dialog == dialog
-    assert sm.conversation_history.max_rounds == 7
+    # A saved window size is legacy data; the Host policy decides what a model sees.
+    assert sm.conversation_history.max_rounds == sm.PROMPT_HISTORY_ROUNDS
     assert sm.conversation_history.summary_token_threshold == 200
     assert sm.save_session("B")
     assert sm.get_session_title("B") == "Existing title"
+    assert "max_rounds" not in json.loads(path.read_text(encoding="utf-8"))
+
+
+def _add_rounds(count, prefix=""):
+    for index in range(count):
+        sm.conversation_history.add_user(f"{prefix}user {index}")
+        sm.conversation_history.add_assistant(f"{prefix}reply {index}", turn_id=f"{prefix}t{index}")
+
+
+def test_session_keeps_every_round_while_models_see_the_recent_window(context):
+    rounds = sm.PROMPT_HISTORY_ROUNDS + 5
+    _add_rounds(rounds)
+    assert sm.save_session("A")
+
+    shown = [row["content"] for row in context.handler._session_payload("A")["messages"]]
+    assert shown[:3] == ["ONLY_A", "user 0", "reply 0"]
+    assert len(shown) == 1 + 2 * rounds
+
+    sent = sm.conversation_history.build_deepseek_messages("system", "latest")[1:-1]
+    assert len(sent) == 2 * sm.PROMPT_HISTORY_ROUNDS
+    assert sent[0]["content"] == "user 5" and sent[-1]["content"] == f"reply {rounds - 1}"
+
+
+def test_cooperative_role_history_uses_the_same_recent_window(sessions):
+    from server.cooperative_chat_ingress import _shared_role_history
+
+    rounds = sm.PROMPT_HISTORY_ROUNDS + 10
+    _add_rounds(rounds)
+    assert sm.save_session("A")
+    loaded = _shared_role_history("A", current_turn_id="next")
+    sm.create_session("B")
+    from_file = _shared_role_history("A", current_turn_id="next")
+    for rows in (loaded, from_file):
+        assert len(rows) == 2 * sm.PROMPT_HISTORY_ROUNDS
+        assert rows[0]["text"] == "user 10" and rows[-1]["text"] == f"reply {rounds - 1}"
+
+
+def test_replay_outside_the_model_window_is_still_recognized(sessions):
+    assert sm.append_session_message("A", role="assistant", content="early reply", turn_id="early")
+    _add_rounds(sm.PROMPT_HISTORY_ROUNDS + 1, prefix="later ")
+    assert sm.save_session("A")
+    assert sm.append_session_message("A", role="assistant", content="early reply", turn_id="early")
+    data = json.loads(Path(sm._session_path("A")).read_text(encoding="utf-8"))
+    assert [row["content"] for row in data["dialog"]].count("early reply") == 1
 
 
 def test_prepared_session_is_not_an_activation(sessions):

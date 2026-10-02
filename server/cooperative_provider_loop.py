@@ -39,6 +39,7 @@ from agent_host.browser_request_contract import (
     web_addresses,
 )
 from agent_host.work_ledger_store import WorkLedgerConflict, WorkLedgerStore
+from core.session_manager import PROMPT_HISTORY_ROUNDS
 from server.control_ledger import ControlLedgerConflict
 from server.reference_catalog import reference_goal_text
 from server.cooperative_provider_effect import (
@@ -1113,7 +1114,8 @@ class CooperativeProviderLoop:
                             or (not current_run and unique_owner)):
                         owner["task"] = {"token":candidate.token, "goal":reference_goal_text(candidate)}
             history = self.history if turn_history is None else turn_history
-            frame = {"source_kind":event["source"], "history":list(history[-20:]),
+            frame = {"source_kind":event["source"],
+                     "history":list(history[-2 * PROMPT_HISTORY_ROUNDS:]),
                      "available_delegate_providers":sorted(self.context_requirements),
                      "retained_contexts_complete":len(preview_ids) == len(retained),
                      "retained_contexts":list(preview.values()),

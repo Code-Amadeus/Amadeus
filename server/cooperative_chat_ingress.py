@@ -183,7 +183,9 @@ def _shared_role_history(session_id: str, current_turn_id: str) -> tuple[dict, .
     else:
         history, _ = sm._read_session_history(session_id)
     rows = []
-    for row in history.dialog:
+    # The Session keeps every message; the role sees the same recent window
+    # as every other Main Chat prompt.
+    for row in history.recent():
         role = str(row.get("role") or "")
         text = str(row.get("content") or "")
         turn_id = str(row.get("turn_id") or "")
@@ -214,7 +216,7 @@ class CooperativeChatIngress:
         loop.history.extend({"source":"user" if row["role"] == "user" else "kurisu",
             "text":row["content"],
             "input_id" if row["role"] == "user" else "cause":str(row.get("turn_id") or "")}
-            for row in history.dialog if row["role"] in {"user", "assistant"} and row["content"])
+            for row in history.recent() if row["role"] in {"user", "assistant"} and row["content"])
         loop.history_source = lambda turn_id:_shared_role_history(
             self.session_id, turn_id)
         self.receipts = loop.receipts
