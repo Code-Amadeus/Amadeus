@@ -104,7 +104,10 @@ def test_deepseek_visible_turn_wraps_input_without_rewriting_host_question() -> 
 
 
 def test_language_wrapper_preserves_real_action_semantics() -> None:
-    with patch("tts.pipeline.TTS_OUTPUT_LANGUAGE", "日文"):
+    with (
+        patch("tts.pipeline.TTS_OUTPUT_LANGUAGE", "日文"),
+        patch("llm.prompts._character_persona_language", return_value=""),
+    ):
         wrapped = wrap_user_message_for_language_lock(
             "OpenClawでページを開いて内容を調べて。"
         )
@@ -174,3 +177,39 @@ if __name__ == "__main__":
     print("ok: language wrapper preserves real action semantics")
     test_delegate_resend_uses_neutral_control_prompt_and_finalized_system()
     print("ok: delegate resend uses neutral control wording")
+
+def test_character_soul_overrides_stock_identity_and_language_lock(monkeypatch) -> None:
+    import llm.prompts as prompts
+    import tts.pipeline as pipeline
+
+    soul = "# 言语（最高优先级）\n只使用中文回答。\n\n# 身元\n你是月见八千代。"
+    monkeypatch.setattr(pipeline, "TTS_OUTPUT_LANGUAGE", "日文")
+    monkeypatch.setattr(prompts, "_character_persona_addon", lambda: soul)
+
+    prompt = prompts.get_system_prompt("base")
+    assert "[当前角色设定｜最高优先级]" in prompt
+    assert prompt.endswith(soul)
+    assert prompt.index("あなたは牧瀬紅莉栖") < prompt.index(soul)
+
+    finalized = prompts.finalize_system_prompt_language(prompt)
+    assert finalized == prompt
+    assert "[言語ロック]" not in finalized
+
+    wrapped = prompts.wrap_user_message_for_language_lock("你好")
+    assert "用户发言" in wrapped
+    assert "日本語" not in wrapped
+
+def test_character_switch_owns_visible_reply_language(monkeypatch) -> None:
+    import llm.prompts as prompts
+
+    # Kurisu profile: no persona override, keep the established Japanese lock.
+    monkeypatch.setattr(prompts, "_character_persona_addon", lambda: "")
+    kurisu = prompts.finalize_system_prompt_language("牧瀬紅莉栖 prompt")
+    assert "[言語ロック]" in kurisu
+
+    # Yachiyo SOUL: profile is appended last and owns the Chinese contract.
+    soul = "# 言语（最高优先级）\n只使用中文回答。\n# 身元\n你是月见八千代。"
+    monkeypatch.setattr(prompts, "_character_persona_addon", lambda: soul)
+    yachiyo = prompts.finalize_system_prompt_language(prompts.get_system_prompt("base"))
+    assert yachiyo.endswith(soul)
+    assert "[言語ロック]" not in yachiyo

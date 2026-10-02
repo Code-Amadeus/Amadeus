@@ -41,6 +41,16 @@ def _str_env(key: str, default: str) -> str:
     return os.getenv(key, default).strip() or default
 
 
+_READER_PROCESS_NAMES = frozenset({
+    "msedge.exe", "chrome.exe", "firefox.exe", "brave.exe", "opera.exe",
+    "vivaldi.exe", "obsidian.exe", "calibre.exe", "koreader.exe",
+    "zotero.exe", "thorium.exe", "librewolf.exe",
+})
+_READER_TITLE_HINTS = (
+    "edge", "chrome", "firefox", "obsidian", "calibre", "zotero",
+    "novel", "read", "book", "chapter", "阅读", "小说",
+)
+
 _VISION_TRIGGERS = (
     "看一下",
     "看下",
@@ -54,6 +64,8 @@ _VISION_TRIGGERS = (
     "这个窗口",
     "看到",
     "看得到",
+    "你觉得",
+    "你怎么看",
     "能看到",
     "what do you see",
     "look at",
@@ -77,6 +89,49 @@ class VisionConfig:
 
 
 _config = VisionConfig()
+
+# Vision provider -> (credential setting, model setting). The chat provider
+# (LLM_PROVIDER) and the vision provider (AMADEUS_VISION_PROVIDER) are
+# independent: a text-only chat provider such as DeepSeek is perfectly usable
+# for visual turns as long as a dedicated vision provider is configured here and
+# has credentials. Keep this the single source of truth so the chat-turn routing
+# and the desktop UI gate can never disagree about whether vision works.
+_VISION_PROVIDER_KEYS: dict[str, tuple[str, str]] = {
+    "qwen": ("DASHSCOPE_API_KEY", "QWEN_VL_MODEL_NAME"),
+    "gemini": ("GEMINI_API_KEY", "GEMINI_MODEL_NAME"),
+    "openai": ("OPENAI_API_KEY", "OPENAI_MODEL_NAME"),
+}
+
+
+def provider_availability() -> dict[str, Any]:
+    """Report which vision provider would serve a frame and whether it can."""
+
+    configured = str(_config.provider or "auto").strip().lower()
+    try:
+        from config import settings
+    except Exception:  # pragma: no cover - availability must never raise
+        settings = None
+
+    def _setting(name: str) -> str:
+        return str(getattr(settings, name, "") or "").strip() if settings is not None else ""
+
+    usable = {
+        name: bool(_setting(credential))
+        for name, (credential, _model) in _VISION_PROVIDER_KEYS.items()
+    }
+    if configured in usable:
+        resolved = configured
+    elif configured == "auto":
+        resolved = next((name for name in ("qwen", "gemini", "openai") if usable[name]), "")
+    else:
+        resolved = ""
+    if not resolved:
+        return {"provider": configured, "available": False, "model": ""}
+    return {
+        "provider": resolved,
+        "available": True,
+        "model": _setting(_VISION_PROVIDER_KEYS[resolved][1]),
+    }
 
 
 def get_config() -> dict[str, Any]:
@@ -158,6 +213,24 @@ def list_capture_windows(limit: int = 40) -> list[dict[str, Any]]:
     except Exception:
         logger.exception("[VisionRuntime] failed to list capture windows")
     return windows
+
+
+def select_reader_window() -> dict[str, Any] | None:
+    """Choose the topmost visible browser or reader window."""
+
+    for window in list_capture_windows(limit=120):
+        rect = window.get("rect") if isinstance(window, dict) else None
+        if not isinstance(rect, dict):
+            continue
+        if int(rect.get("width") or 0) < 320 or int(rect.get("height") or 0) < 240:
+            continue
+        process = str(window.get("processName") or "").strip().lower()
+        title = str(window.get("title") or "").strip().lower()
+        if process in _READER_PROCESS_NAMES or any(
+            hint in title for hint in _READER_TITLE_HINTS
+        ):
+            return window
+    return None
 
 
 def is_enabled() -> bool:
@@ -312,6 +385,39 @@ def capture_visual_context(
                                   max_long_side=_config.max_long_side, jpeg_quality=_config.jpeg_quality)
 
 
+def _capture_read_window():
+    window = select_reader_window()
+    if not window:
+        raise RuntimeError(
+            "No visible browser or reader window is available; open the reading page first",
+        )
+    hwnd = _parse_hwnd(window.get("hwnd"))
+    if not hwnd:
+        raise RuntimeError("The reader window handle is invalid")
+    region = {**window["rect"], "_actual_scope": "read_window"}
+    try:
+        from server.window_capture import capture_window_frame
+
+        image = capture_window_frame(hwnd)
+    except Exception as exc:
+        # windows-capture is optional in the voice-only tier. Fall back to the
+        # visible window rectangle so browser/reader vision still works there.
+        logger.warning(
+            "[VisionRuntime] exact reader window capture unavailable; using visible region: %s",
+            exc,
+        )
+        from PIL import ImageGrab
+
+        bbox = (
+            int(region["left"]),
+            int(region["top"]),
+            int(region["left"] + region["width"]),
+            int(region["top"] + region["height"]),
+        )
+        image = ImageGrab.grab(bbox=bbox, all_screens=True).convert("RGB")
+    return image, region, "read_window"
+
+
 def capture_game_window(pid: int, executable: str) -> dict[str, Any]:
     """Capture only the verified game's window, without changing global vision settings."""
     if os.name != "nt":
@@ -378,6 +484,16 @@ def _encode_visual_context(image, region: dict[str, Any], *, requested_scope: st
 
 def _resolve_capture_region(scope: str, monitor_all: dict[str, int]) -> dict[str, int]:
     scope = (scope or "current_window").strip().lower()
+    if scope == "read_window":
+        window = select_reader_window()
+        if window:
+            clamped = _clamp_region(window["rect"], monitor_all)
+            if clamped:
+                clamped["_actual_scope"] = "read_window"
+                return clamped
+        raise RuntimeError(
+            "No visible browser or reader window is available; open the reading page first",
+        )
     if scope == "region":
         parsed = _parse_region(_config.region)
         if parsed:
@@ -427,6 +543,8 @@ def _capture_image(requested_scope: str):
     from PIL import ImageGrab, Image
 
     normalized_scope = (requested_scope or "full_screen").strip().lower()
+    if normalized_scope == "read_window":
+        return _capture_read_window()
 
     try:
         import mss

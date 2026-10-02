@@ -1,3 +1,4 @@
+import gc
 import os
 import sys
 import time
@@ -523,7 +524,7 @@ class TTSInferencer:
         }
 
         self.dict_language = dict_language_v2 if self.model_version in ["v2", "v3", "v2Pro", "v2ProPlus"] else dict_language_v1
-        self.splits = {"、", "，", "。", "？", "！", ",", ".", "?", "!", "~", ":", "：", "—", "…"}
+        self.splits = {"，", "。", "？", "！", ",", ".", "?", "!", "~", ":", "：", "—", "…"}
 
     def _detect_model_version(self):
         """检测模型版本"""
@@ -587,6 +588,46 @@ class TTSInferencer:
         # 如果是v3模型，还需加载BigVGAN
         if self.model_version == "v3":
             self._load_bigvgan_model()
+
+    def reload_sovits(self, sovits_path: str) -> bool:
+        """Hot-swap a compatible SoVITS checkpoint without rebuilding GPT."""
+        target = os.path.abspath(os.fspath(sovits_path))
+        if not os.path.isfile(target):
+            raise FileNotFoundError(f"SoVITS checkpoint not found: {target}")
+        current = os.path.abspath(os.fspath(self.sovits_path))
+        if target == current:
+            return False
+
+        previous_path = self.sovits_path
+        previous_version = self.model_version
+        previous_sovits_version = getattr(self, "sovits_version", "")
+        previous_detected_lora = getattr(self, "_detected_lora", False)
+        self._session_cache.clear()
+        self.sovits_path = target
+        try:
+            detected_version = self._detect_model_version()
+            if detected_version != previous_version:
+                raise ValueError(
+                    "SoVITS hot reload requires the same model version: "
+                    f"{previous_version!r} -> {detected_version!r}"
+                )
+            self._load_sovits_model()
+        except Exception:
+            self.sovits_path = previous_path
+            self.model_version = previous_version
+            self.sovits_version = previous_sovits_version
+            self._detected_lora = previous_detected_lora
+            try:
+                self._load_sovits_model()
+            except Exception:
+                logger.exception("failed to restore previous SoVITS checkpoint")
+            raise
+
+        gc.collect()
+        if self._uses_torch_cuda_api:
+            torch.cuda.empty_cache()
+        logger.info("SoVITS checkpoint reloaded: %s", target)
+        return True
 
     def _load_gpt_model(self):
         """加载GPT模型"""
@@ -693,9 +734,6 @@ class TTSInferencer:
                 **self.hps.model
             )
         else:
-            # 该字段是声学架构版本，不能被 v2 文字符号覆盖：上游 decode_encp 据此
-            # 选择上采样倍率（1.875 / 2）。符号版本已存于 self.sovits_version。
-            self.hps.model.version = self.model_version
             self.vq_model = SynthesizerTrnV3(
                 self.hps.data.filter_length // 2 + 1,
                 self.hps.train.segment_size // self.hps.data.hop_length,
@@ -970,41 +1008,6 @@ class TTSInferencer:
             logger.warning(traceback.format_exc())
             return {}
 
-    def _normalize_reference_prompt(self, prompt_text, prompt_language):
-        """Resolve the reference exactly as live inference does, including V3 fallback."""
-        if prompt_text is None or not prompt_text.strip():
-            if self.model_version == "v3":
-                # Keep the established fallback verbatim; it is not punctuated
-                # a second time by either warmup or synthesis.
-                return _default_ref_free_prompt(), "en" if _TTS_OUTPUT_LANGUAGE == "英文" else "all_ja"
-            return prompt_text, _default_lang_code()
-        text = prompt_text.strip()
-        if text[-1] not in self.splits:
-            text += "." if prompt_language == "英文" else "。"
-        return text, self.dict_language.get(prompt_language, _default_lang_code())
-
-    def warm_reference_cache(self, audio_path: str, text: str, prompt_language: str):
-        """Use the same normalized key for startup warmup and live synthesis."""
-        text, language_code = self._normalize_reference_prompt(text, prompt_language)
-        return self._build_session_cache(audio_path, text, language_code)
-
-    def _build_synthesis_cache(self, audio_path, text, language_code, semantic_reference=None):
-        default = self._build_session_cache(audio_path, text, language_code)
-        if semantic_reference is None:
-            return default
-        if self.model_version != "v3":
-            raise ValueError("Mixed semantic references require V3")
-        semantic = self.warm_reference_cache(*semantic_reference)
-        acoustic_keys = ("refer_spec", "prompt_fea_ref", "prompt_ge", "mel2_norm")
-        if any(default.get(key) is None for key in acoustic_keys) or any(
-            semantic.get(key) is None for key in ("prompt", "phones1", "bert1")
-        ):
-            raise RuntimeError("Incomplete mixed-reference cache")
-        # Explicit request-local composition; neither shared cache is mutated.
-        result = dict(semantic)
-        result.update({key: default[key] for key in acoustic_keys})
-        return result
-
     def _clone_cached_value(self, value):
         """避免读取会话缓存后被后续推理路径原地复用/污染。"""
         if torch.is_tensor(value):
@@ -1190,8 +1193,7 @@ class TTSInferencer:
               if_sr=False,
               enable_cuda_graph=False,
               enable_static_kv=True,
-              max_sec_override=None,
-              semantic_reference=None):
+              max_sec_override=None):
         """
         执行TTS推理
 
@@ -1237,16 +1239,28 @@ class TTSInferencer:
             if prompt_text is None or prompt_text.strip() == "":
                 ref_free = True
                 logger.info("no prompt text provided; using reference-free mode")
-            prompt_text, prompt_language_code = self._normalize_reference_prompt(
-                prompt_text, prompt_language,
-            )
-            if not ref_free:
+            else:
+                prompt_text = prompt_text.strip()
+                # 确保参考文本以标点符号结尾
+                if prompt_text and prompt_text[-1] not in self.splits:
+                    prompt_text += "。" if prompt_language != "英文" else "."
+
+                if prompt_language in self.dict_language:
+                    prompt_language_code = self.dict_language[prompt_language]
+                else:
+                    prompt_language_code = _default_lang_code()
+
                 logger.info(f"prompt text: '{prompt_text}'")
 
             # v3模型不支持ref_free模式
             if self.model_version == "v3" and ref_free:
                 logger.warning("v3 model does not support reference-free mode; forcing reference mode")
                 ref_free = False
+
+                # 如果没有参考文本，使用当前语言的默认文本
+                if not prompt_text:
+                    prompt_text = _default_ref_free_prompt()
+                    prompt_language_code = "en" if _TTS_OUTPUT_LANGUAGE == "英文" else "all_ja"
 
             # 根据选择的切分方式处理文本
             logger.info(f"text segmentation mode: {how_to_cut}")
@@ -1279,7 +1293,7 @@ class TTSInferencer:
 
             # 处理参考音频（会话级缓存优先）
             sess_lang = prompt_language_code if not ref_free else _default_lang_code()
-            sess = self._build_synthesis_cache(ref_audio_path, prompt_text, sess_lang, semantic_reference)
+            sess = self._build_session_cache(ref_audio_path, prompt_text, sess_lang)
             prompt = sess.get("prompt")
 
             # 获取参考音频的音素和BERT特征
@@ -1587,8 +1601,7 @@ class TTSInferencer:
                      enable_static_kv=True,
                      chunk_size_seconds: float = None,
                      max_sec_override: float = None,
-                     collect_t2s_stats: bool = False,
-                     semantic_reference=None):
+                     collect_t2s_stats: bool = False):
         """
         流式执行TTS推理，逐步返回音频块
 
@@ -1637,16 +1650,28 @@ class TTSInferencer:
             if prompt_text is None or prompt_text.strip() == "":
                 ref_free = True
                 logger.info("no prompt text provided; using reference-free mode")
-            prompt_text, prompt_language_code = self._normalize_reference_prompt(
-                prompt_text, prompt_language,
-            )
-            if not ref_free:
+            else:
+                prompt_text = prompt_text.strip()
+                # 确保参考文本以标点符号结尾
+                if prompt_text and prompt_text[-1] not in self.splits:
+                    prompt_text += "。" if prompt_language != "英文" else "."
+
+                if prompt_language in self.dict_language:
+                    prompt_language_code = self.dict_language[prompt_language]
+                else:
+                    prompt_language_code = _default_lang_code()
+
                 logger.info(f"prompt text: '{prompt_text}'")
 
             # v3模型不支持ref_free模式
             if self.model_version == "v3" and ref_free:
                 logger.warning("v3 model does not support reference-free mode; forcing reference mode")
                 ref_free = False
+
+                # 如果没有参考文本，使用当前语言的默认文本
+                if not prompt_text:
+                    prompt_text = _default_ref_free_prompt()
+                    prompt_language_code = "en" if _TTS_OUTPUT_LANGUAGE == "英文" else "all_ja"
 
             # 根据选择的切分方式处理文本
             logger.info(f"text segmentation mode: {how_to_cut}")
@@ -1702,7 +1727,7 @@ class TTSInferencer:
 
             # 处理参考音频（会话级缓存优先）
             sess_lang = prompt_language_code if not ref_free else _default_lang_code()
-            sess = self._build_synthesis_cache(ref_audio_path, prompt_text, sess_lang, semantic_reference)
+            sess = self._build_session_cache(ref_audio_path, prompt_text, sess_lang)
             prompt = sess.get("prompt")
 
             # 获取参考音频的音素和BERT特征（会话级缓存优先）
@@ -2283,7 +2308,7 @@ def cut4(inp):
     """按英文句号切 - 按英文句号'.'分割"""
     import re
     inp = inp.strip("\n")
-    opts = re.split(r'(?<!\d)\.(?!\d)', inp.strip("."))
+    opts = re.split(r'(s<!\d)\.(s!\d)', inp.strip("."))
     opts = [item for item in opts if not set(item).issubset(punctuation)]
     return "\n".join(opts)
 
@@ -2292,7 +2317,7 @@ def cut5(inp):
     """按标点符号切 - 按各种标点符号分割"""
     import re
     inp = inp.strip("\n")
-    punds = {',', '.', ';', '?', '!', '、', '，', '。', '？', '！', ';', '：', '…'}
+    punds = {',', '.', ';', 's', '!', '、', '，', '。', '？', '！', ';', '：', '…'}
     mergeitems = []
     items = []
 
@@ -2316,7 +2341,8 @@ def cut5(inp):
 
 def split(todo_text):
     """将文本按标点符号分割成句子列表"""
-    splits = {"，", "。", "？", "！", ",", ".", "?", "!", "~", ":", "：", "—", "…"}
+    splits = {"，", "。", "？", "！", ",", ".", "s", "!", "~", ":", "：", "—", "…"}
+    punctuation = set(['!', 's', '…', ',', '.', '-', " "])
 
     todo_text = todo_text.replace("……", "。").replace("——", "，")
     if todo_text[-1] not in splits:

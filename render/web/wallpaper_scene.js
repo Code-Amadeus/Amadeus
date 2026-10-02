@@ -9,21 +9,6 @@
 (function () {
   "use strict";
 
-  // The wallpaper art keeps its proportions on every screen: it covers the screen like a
-  // desktop "fill" wallpaper and crops what overflows instead of stretching, so 16:9 art on
-  // a 16:10 laptop loses a strip at each side. This one transform places the art's sprites
-  // and maps its image coordinates (CRT polygon, lamp and ambient positions) to the screen.
-  function coverTransform(imageWidth, imageHeight, screenWidth, screenHeight) {
-    const scale = Math.max(screenWidth / imageWidth, screenHeight / imageHeight);
-    return {
-      scale,
-      x: (screenWidth - imageWidth * scale) / 2,
-      y: (screenHeight - imageHeight * scale) / 2,
-      width: imageWidth * scale,
-      height: imageHeight * scale,
-    };
-  }
-
   function callRender(method, args) {
     if (!window.renderApp || typeof window.renderApp[method] !== "function") {
       console.warn("[WallpaperScene] renderApp method unavailable:", method);
@@ -1912,7 +1897,8 @@
         this.ambientLowSprite.destroy({ texture: true, baseTexture: true });
       }
       this.ambientLowSprite = new PIXI.Sprite(texture);
-      this._placeBackdrop(this.ambientLowSprite);
+      this.ambientLowSprite.width = this.app.screen.width;
+      this.ambientLowSprite.height = this.app.screen.height;
       this.ambientLowSprite.alpha = this._ambientLowIdleAlpha();
       this.ambientLayer.addChildAt(this.ambientLowSprite, 0);
       console.info("[WallpaperScene] ambient low layer ready:", {
@@ -1941,7 +1927,8 @@
         this.ambientSprite.destroy({ texture: true, baseTexture: true });
       }
       this.ambientSprite = new PIXI.Sprite(texture);
-      this._placeBackdrop(this.ambientSprite);
+      this.ambientSprite.width = this.app.screen.width;
+      this.ambientSprite.height = this.app.screen.height;
       this.ambientSprite.alpha = this._ambientBaseAlpha();
       if (sourceKind === "generated-mask" && PIXI.BLEND_MODES && PIXI.BLEND_MODES.ADD) {
         this.ambientSprite.blendMode = PIXI.BLEND_MODES.ADD;
@@ -2037,32 +2024,18 @@
       }, this._subtitleClearDelayMs);
     },
 
-    _imageTransform() {
-      const screen = this.app.screen;
-      const imgSize = this.cfg.img_size || [screen.width, screen.height];
-      return coverTransform(Math.max(1, Number(imgSize[0]) || 1), Math.max(1, Number(imgSize[1]) || 1),
-        screen.width, screen.height);
-    },
-
-    _placeBackdrop(sprite) {
-      if (!sprite) return;
-      const t = this._imageTransform();
-      sprite.x = t.x;
-      sprite.y = t.y;
-      sprite.width = t.width;
-      sprite.height = t.height;
-    },
-
     _crtPoints() {
       const app = this.app;
+      const imgSize = this.cfg.img_size || [app.screen.width, app.screen.height];
       const rawPoints = this.cfg.crt_polygon || this.cfg.crt_corners || [
         [0, 0],
         [app.screen.width, 0],
         [app.screen.width, app.screen.height],
         [0, app.screen.height],
       ];
-      const t = this._imageTransform();
-      return rawPoints.map((p) => ({ x: Number(p[0]) * t.scale + t.x, y: Number(p[1]) * t.scale + t.y }));
+      const sx = app.screen.width / Math.max(1, Number(imgSize[0]) || 1);
+      const sy = app.screen.height / Math.max(1, Number(imgSize[1]) || 1);
+      return rawPoints.map((p) => ({ x: Number(p[0]) * sx, y: Number(p[1]) * sy }));
     },
 
     _computeBounds(points) {
@@ -2077,9 +2050,20 @@
 
     layout() {
       if (!this.app || !this.mask || !this.staticOverlay) return;
-      this._placeBackdrop(this.bg);
-      this._placeBackdrop(this.ambientLowSprite);
-      this._placeBackdrop(this.ambientSprite);
+      if (this.bg) {
+        this.bg.x = 0;
+        this.bg.y = 0;
+        this.bg.width = this.app.screen.width;
+        this.bg.height = this.app.screen.height;
+      }
+      if (this.ambientLowSprite) {
+        this.ambientLowSprite.width = this.app.screen.width;
+        this.ambientLowSprite.height = this.app.screen.height;
+      }
+      if (this.ambientSprite) {
+        this.ambientSprite.width = this.app.screen.width;
+        this.ambientSprite.height = this.app.screen.height;
+      }
 
       const points = this._crtPoints();
       const bounds = this._computeBounds(points);
@@ -2252,21 +2236,25 @@
 
     _scaledRect(rect) {
       if (!rect || rect.length < 4 || !this.app) return null;
-      const t = this._imageTransform();
+      const imgSize = this.cfg.img_size || [this.app.screen.width, this.app.screen.height];
+      const sx = this.app.screen.width / Math.max(1, Number(imgSize[0]) || 1);
+      const sy = this.app.screen.height / Math.max(1, Number(imgSize[1]) || 1);
       return {
-        x: Number(rect[0]) * t.scale + t.x,
-        y: Number(rect[1]) * t.scale + t.y,
-        width: Number(rect[2]) * t.scale,
-        height: Number(rect[3]) * t.scale,
+        x: Number(rect[0]) * sx,
+        y: Number(rect[1]) * sy,
+        width: Number(rect[2]) * sx,
+        height: Number(rect[3]) * sy,
       };
     },
 
     _scaledPoint(point, fallback) {
-      const t = this._imageTransform();
+      const imgSize = this.cfg.img_size || [this.app.screen.width, this.app.screen.height];
+      const sx = this.app.screen.width / Math.max(1, Number(imgSize[0]) || 1);
+      const sy = this.app.screen.height / Math.max(1, Number(imgSize[1]) || 1);
       const p = point && point.length >= 2 ? point : fallback;
       return {
-        x: Number(p[0]) * t.scale + t.x,
-        y: Number(p[1]) * t.scale + t.y,
+        x: Number(p[0]) * sx,
+        y: Number(p[1]) * sy,
       };
     },
 

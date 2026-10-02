@@ -782,12 +782,7 @@ class PlaybackManager:
         """Stop current playback and discard queued audio for the active turn."""
         self._playback_epoch = self._next_playback_epoch()
         epoch = self._playback_epoch
-        # Readiness means no playback owns the device. A new turn still
-        # invalidates queued producers, but must not close an idle warm stream
-        # only to reopen it before asking the LLM for its first sentence.
-        # player.is_playing also describes an open warm stream, not just speech.
-        if not self.player_is_ready.is_set():
-            self.player.stop()
+        self.player.stop()
         async with self.play_condition:
             self.pending_audio.clear()
             if reset_sequence:
@@ -1227,8 +1222,8 @@ class PlaybackManager:
                         item_epoch = self._playback_epoch
                         full_audio_data, sample_rate, sentence_id, japanese_text = audio_item
                         segments = None
+                    del self.pending_audio[self.next_seq_to_play]
                     if not self.is_epoch_current(item_epoch):
-                        del self.pending_audio[self.next_seq_to_play]
                         self.logger.info(
                             "[TTS-INTERRUPT] drop stale pending playback: %s item_epoch=%s current_epoch=%s",
                             sentence_id,
@@ -1247,18 +1242,12 @@ class PlaybackManager:
                         f"next_seq_to_play updated to: {self.next_seq_to_play}"
                     )
 
-                try:
-                    await self.player_is_ready.wait()
-                finally:
-                    # This iteration owns the reserved item even on cancellation
-                    # or failure. Retain its cover only while it can still play.
+                await self.player_is_ready.wait()
+                if not self.is_epoch_current(item_epoch):
                     async with self.play_condition:
-                        if self.pending_audio.get(sentence_seq) is audio_item:
-                            del self.pending_audio[sentence_seq]
                         if self._normal_waiting_seq == sentence_seq:
                             self._normal_waiting_seq = None
                         self.play_condition.notify_all()
-                if not self.is_epoch_current(item_epoch):
                     self.logger.info(
                         "[TTS-INTERRUPT] stale playback skipped after ready wait: %s item_epoch=%s current_epoch=%s",
                         sentence_id,
@@ -1267,6 +1256,10 @@ class PlaybackManager:
                     )
                     continue
                 self.player_is_ready.clear()
+                async with self.play_condition:
+                    if self._normal_waiting_seq == sentence_seq:
+                        self._normal_waiting_seq = None
+                    self.play_condition.notify_all()
                 self.current_playing_id = sentence_id
                 self._current_playing_segment_ids = {
                     str(segment.get("sentence_id", ""))

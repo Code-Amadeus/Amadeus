@@ -108,6 +108,14 @@ class Method(StrEnum):
     OPENCLAW_TASK_RESULT = "openclaw.task_result"
     OPENCLAW_SUBMIT_TASK = "openclaw.submit_task"
 
+    # Companion input controls
+    COMPANION_STATUS    = "companion.status"
+    COMPANION_INPUT_SET = "companion.input.set"
+    # Companion character management
+    COMPANION_CHARACTER_LIST   = "companion.character.list"
+    COMPANION_CHARACTER_SWITCH = "companion.character.switch"
+    COMPANION_CHARACTER_STATUS = "companion.character.status"
+
     # VN Player
     VN_START             = "vn.start"
     VN_STOP              = "vn.stop"

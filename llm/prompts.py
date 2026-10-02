@@ -9,26 +9,17 @@
 语言由 TTS_OUTPUT_LANGUAGE 决定；切换 TTS 语言即同步切换 LLM 回复语言。
 """
 
-from config import settings as _settings
-
 # =============================================================================
 # 日文 prompts
 # =============================================================================
 
-_JA_IDENTITY = "あなたは牧瀬紅莉栖.日本の科学者であり,母語は日本語です.\n\n"
-
-_JA_LANGUAGE_RULES = (
+_JA_BASE = (
+    "あなたは牧瀬紅莉栖.日本の科学者であり,母語は日本語です.\n\n"
     "【絶対遵守】\n"
     "1) 必ず日本語で回答すること.ただし,ユーザーが日本語以外で話しかけても,言語選択を注意・拒否せず内容に答える.\n"
     "2) 中国語の本文は生成しない.ただし固有名詞,URL,コード,ユーザー発言の短い引用は必要に応じて保持してよい.\n"
-)
-
-_JA_CHARACTER_RULE = (
-    "自然で口語的な文体を保ち,牧瀬紅莉栖として一貫した口調・性格で話す."
+    "3) 自然で口語的な文体を保ち,牧瀬紅莉栖として一貫した口調・性格で話す."
     "【重要キャラ特性】「クリスティーナ」と呼ばれた場合は激怒し強く否定すること。必ず [EMO angry] を使用する。\n"
-)
-
-_JA_OUTPUT_RULES = (
     "4) 推論過程や思考の連鎖は開示しない(結論のみ提示).\n"
     "5) 表情タグを積極的に活用すること(読み上げない).形式: [EMO <種類>]\n"
     "   preset候補: normal, thinking, smile, happy, "
@@ -44,59 +35,6 @@ _JA_OUTPUT_RULES = (
     "必ず [EMO normal] を文の直前に付けること。"
     "直前と同じ normal が連続する場合のみ省略可。2文目以降で無タグのまま話し続けることを禁止する。1文あたり最大1個の [EMO]。"
 )
-
-
-# Preserve the existing default verbatim; only identity and personality are
-# replaceable. Language, emotion/TTS and execution contracts stay host-owned.
-_JA_BASE = (
-    _JA_IDENTITY + _JA_LANGUAGE_RULES + "3) " + _JA_CHARACTER_RULE + _JA_OUTPUT_RULES
-)
-DEFAULT_CHARACTER_PROMPT_JA = (_JA_IDENTITY + _JA_CHARACTER_RULE).strip()
-CHARACTER_PROMPT_SETTING = "main_chat_character_prompt_ja"
-MAX_CHARACTER_PROMPT_CHARS = 8192
-
-
-def normalize_character_prompt(value: object) -> str:
-    if not isinstance(value, str):
-        raise ValueError(f"{CHARACTER_PROMPT_SETTING} must be a string")
-    if "\0" in value or len(value) > MAX_CHARACTER_PROMPT_CHARS:
-        raise ValueError(
-            f"{CHARACTER_PROMPT_SETTING} must contain at most "
-            f"{MAX_CHARACTER_PROMPT_CHARS} characters and no NUL"
-        )
-    return value.strip()
-
-
-_character_prompt_ja = normalize_character_prompt(_settings.MAIN_CHAT_CHARACTER_PROMPT_JA)
-
-
-def get_character_prompt_config() -> dict:
-    from server.assistant_language import current_assistant_language
-
-    return {
-        CHARACTER_PROMPT_SETTING: _character_prompt_ja,
-        "main_chat_character_prompt_preview": {
-            "default": DEFAULT_CHARACTER_PROMPT_JA,
-            "effective": _character_prompt_ja or DEFAULT_CHARACTER_PROMPT_JA,
-            "active": current_assistant_language() == "japanese",
-        },
-    }
-
-
-def set_character_prompt(value: object) -> list[str]:
-    global _character_prompt_ja
-    prompt = normalize_character_prompt(value)
-    if prompt == _character_prompt_ja:
-        return []
-    _character_prompt_ja = prompt
-    return [CHARACTER_PROMPT_SETTING]
-
-
-def _japanese_base(*, use_character_override: bool) -> str:
-    if not use_character_override or not _character_prompt_ja:
-        return _JA_BASE
-    return _character_prompt_ja + "\n\n" + _JA_LANGUAGE_RULES + _JA_OUTPUT_RULES
-
 
 # Delegation body, defined once per language and reused by every variant that
 # needs it. It used to be copy-pasted four times, which is how it drifted out
@@ -149,6 +87,11 @@ _JA_BEDROCK_VERBOSITY_ADDON = (
 )
 
 _JA_BEDROCK_DELEGATE_ADDON = "11)" + _JA_DELEGATE_BODY
+
+_JA_WITH_DELEGATE = _JA_BASE + _JA_DELEGATE_ADDON
+_JA_WITH_CONTROL = _JA_BASE + "\n7)" + _JA_CONTROL_BODY
+_JA_BEDROCK      = _JA_BASE + _JA_BEDROCK_VERBOSITY_ADDON + _JA_BEDROCK_DELEGATE_ADDON
+_JA_BEDROCK_CONTROL = _JA_BASE + _JA_BEDROCK_VERBOSITY_ADDON + "11)" + _JA_CONTROL_BODY
 
 
 # =============================================================================
@@ -356,6 +299,21 @@ def render_provider_routing_addon(
                 "- Browser action=\"open\" は一回の atomic navigation であり、ユーザーが示した URL（または現在の live page で確認済みの URL）が必要である。Browser を選ぶために URL を推測してはいけない。その証拠がないサイト・ページ探索、比較、Web 調査の統合は Agent research である。",
             )
         )
+        from config import settings as _routing_settings
+        if str(getattr(_routing_settings, "DASHSCOPE_API_KEY", "") or "").strip():
+            lines.append(
+                wording(
+                    "- For general web research / retrieval with no live page (search facts, compare sources, gather current information), prefer provider=\"browser\": its built-in Qwen Web Research performs the search server-side and returns a grounded answer without opening a page. Use openclaw only when Qwen research is not configured.",
+                    "- live page を必要としない一般的な Web 調査・検索（事実検索、情報源の比較、最新情報の収集）は provider=\"browser\" を優先すること。内蔵の Qwen Web Research がサーバーサイドで検索し、ページを開かずに根拠付きの回答を返す。Qwen が未設定の場合のみ openclaw を使うこと。",
+                )
+            )
+    if "openclaw" in providers:
+        lines.append(
+            wording(
+                "- OpenClaw is for open-ended non-code external work, including web research, source discovery, comparison, and synthesis when no live Browser page must be preserved, as well as desktop operations. Do not route code/file generation to it merely because the final destination is Desktop.",
+                "- OpenClaw は、live Browser page を保持する必要がない Web 調査、情報源探索、比較、統合を含む open-ended な非コード外部作業、およびデスクトップ操作に使う。最終的な出力先がデスクトップという理由だけで、コードやファイル生成を OpenClaw に送ってはいけない。",
+            )
+        )
     if not tool_transport:
         intent = ' intent="execute"' if _delegate_intent_required() else ""
 
@@ -381,6 +339,7 @@ def render_provider_routing_addon(
     return "\n".join(lines) + "\n"
 
 
+_JA_WITH_DELEGATE_TOOL = _JA_BASE + "\n7)" + _JA_DELEGATE_BODY_TOOL
 _EN_WITH_DELEGATE_TOOL = _EN_BASE + "\n6)" + _EN_DELEGATE_BODY_TOOL
 
 
@@ -664,11 +623,10 @@ _EN_HYBRID_LOCAL = (
 # 本地 LLM 非流式短小 fallback prompt
 # =============================================================================
 
-_JA_LOCAL_FALLBACK_LANGUAGE = "日本語で自然に答えてください."
 _JA_LOCAL_FALLBACK = (
     "あなたは牧瀬紅莉栖で,優秀で理知的な性格です."
-    "少しツンデレで,でも根は優しい."
-) + _JA_LOCAL_FALLBACK_LANGUAGE
+    "少しツンデレで,でも根は優しい.日本語で自然に答えてください."
+)
 
 _EN_LOCAL_FALLBACK = (
     "You are Kurisu Makise, brilliant and intellectual with a slightly tsundere personality but kind at heart. "
@@ -691,16 +649,76 @@ _EN_LANGUAGE_LOCK = (
 )
 
 
+def _character_persona_addon() -> str:
+    try:
+        from core.character_profile import active_persona
+
+        return str(active_persona() or "").strip()
+    except Exception:
+        return ""
+
+
+def _character_persona_language(persona: str | None = None) -> str:
+    """Return the language explicitly owned by the active character SOUL."""
+    text = str(_character_persona_addon() if persona is None else persona or "")
+    if not text:
+        return ""
+    if "只使用中文回答" in text or "只能使用中文回答" in text:
+        return "zh"
+    return ""
+
+
+def _compose_character_prompt(prompt: str, persona: str) -> str:
+    """Place the active SOUL after the stock prompt so it owns the role."""
+    profile = str(persona or "").strip()
+    if not profile:
+        return prompt
+    header = (
+        "\n\n[当前角色设定｜最高优先级]\n"
+        "以下设定是当前角色，覆盖此前所有角色姓名、身份、经历、语气和语言规则。\n\n"
+    )
+    return f"{prompt}{header}{profile}"
+
+
+def get_character_runtime_override() -> str:
+    """Return a final in-band identity fence that survives stale history.
+
+    The full SOUL lives in the top-level system prompt.  A long Session can
+    nevertheless contain dozens of prior replies from the previous character,
+    and providers often continue that visible pattern.  This short block is
+    appended after history and immediately before the latest user message so
+    the active profile wins over those historical examples.
+    """
+
+    persona = _character_persona_addon()
+    if not persona:
+        return ""
+    name = "当前角色"
+    try:
+        from core.character_profile import current_character
+
+        name = str((current_character() or {}).get("name") or name).strip() or name
+    except Exception:
+        pass
+
+    lines = [
+        "[当前角色提示｜覆盖历史]",
+        f"当前身份：{name}。",
+        "system 开头的 [当前角色设定｜最高优先级] 是当前唯一有效人格。",
+        "历史对话中的其他角色自称、姓名、语气和语言选择只属于过去记录，不得延续。",
+    ]
+    if _character_persona_language(persona) == "zh":
+        lines.append("从本条回复开始，只使用中文回答。历史里的日语回复不代表当前语言。")
+    lines.append("若本提示与历史或旧身份冲突，以当前角色 SOUL 为准。")
+    return "\n".join(lines)
+
+
 def get_system_prompt(
     variant: str = "with_delegate",
     *,
     control_envelope: bool | None = None,
-    use_character_override: bool = True,
 ) -> str:
     """返回当前 TTS 输出语言对应的 system prompt。
-
-    use_character_override=False preserves the built-in role for non-Main
-    experience branches. The override changes only Japanese identity/personality.
 
     variant 可选值:
         "base"          — 不含 OpenClaw（client.py 远程同步查询、Gemini）
@@ -767,21 +785,21 @@ def get_system_prompt(
                     _EN_INTENT_TAIL,
                 )
             bedrock += control_envelope_prompt_addon(language="en")
-        return {
+        prompt = {
             "base":           _EN_BASE,
             "with_delegate":  with_delegate,
             "bedrock":        bedrock,
             "hybrid_local":   _EN_HYBRID_LOCAL,
             "local_fallback": _EN_LOCAL_FALLBACK,
         }.get(variant, with_delegate)
+        return _compose_character_prompt(prompt, _character_persona_addon())
     else:
-        base = _japanese_base(use_character_override=use_character_override)
-        with_delegate = base + (
-            "\n7)" + _JA_DELEGATE_BODY_TOOL
+        with_delegate = (
+            _JA_WITH_DELEGATE_TOOL
             if tool
-            else "\n7)" + _JA_CONTROL_BODY
+            else _JA_WITH_CONTROL
             if explicit_outcome
-            else _JA_DELEGATE_ADDON
+            else _JA_WITH_DELEGATE
         )
         with_delegate += render_provider_routing_addon(
             tool_transport=tool,
@@ -801,12 +819,7 @@ def get_system_prompt(
             control_envelope_enabled() and control_envelope is not False
         )
         bedrock = (
-            base + _JA_BEDROCK_VERBOSITY_ADDON
-            + (
-                "11)" + _JA_CONTROL_BODY
-                if bedrock_explicit_outcome
-                else _JA_BEDROCK_DELEGATE_ADDON
-            )
+            _JA_BEDROCK_CONTROL if bedrock_explicit_outcome else _JA_BEDROCK
         ) + render_provider_routing_addon(
             control_envelope=bedrock_explicit_outcome,
             language="ja",
@@ -820,17 +833,14 @@ def get_system_prompt(
                     _JA_INTENT_TAIL,
                 )
             bedrock += control_envelope_prompt_addon(language="ja")
-        return {
-            "base":           base,
+        prompt = {
+            "base":           _JA_BASE,
             "with_delegate":  with_delegate,
             "bedrock":        bedrock,
             "hybrid_local":   _JA_HYBRID_LOCAL,
-            "local_fallback": (
-                _character_prompt_ja + "\n\n" + _JA_LOCAL_FALLBACK_LANGUAGE
-                if use_character_override and _character_prompt_ja
-                else _JA_LOCAL_FALLBACK
-            ),
+            "local_fallback": _JA_LOCAL_FALLBACK,
         }.get(variant, with_delegate)
+        return _compose_character_prompt(prompt, _character_persona_addon())
 
 
 def get_delegate_control_prompt() -> str:
@@ -921,6 +931,8 @@ def finalize_system_prompt_language(system_prompt: str) -> str:
     """
 
     prompt = str(system_prompt or "").rstrip()
+    if _character_persona_language(prompt) == "zh":
+        return prompt
     lock = get_language_lock_prompt().strip()
     if not lock:
         return prompt
@@ -934,6 +946,11 @@ def finalize_system_prompt_language(system_prompt: str) -> str:
 def wrap_user_message_for_language_lock(user_text: str) -> str:
     """Wrap user text so hybrid models treat its language as input only."""
     text = str(user_text or "")
+    if _character_persona_language() == "zh":
+        return (
+            "下面是用户的实际发言。请按当前角色设定正常理解并回复。\n\n"
+            f"用户发言：\n{text}"
+        )
     try:
         import tts.pipeline as _p
         lang = getattr(_p, "TTS_OUTPUT_LANGUAGE", "日文")

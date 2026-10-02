@@ -1,0 +1,12 @@
+{
+  "id": "yachiyo",
+  "name": "月见八千代",
+  "art_dir": "D:\\codex_project\\p\\yachiyo-8emotions-companion",
+  "voice": {
+    "audio": "assets/audio/reference/yachiyo_reference.wav",
+    "text": "仕方空間月読管理人の、ルナミヤチヨです。なんと、八千歳!",
+    "sovits_model": "assets/models/gpt-sovits/weights/sovits/v3/yachiyo_e8_s288_l32.pth",
+    "gpt_model": ""
+  },
+  "persona_file": "assets/characters/yachiyo/persona-SOUL.md"
+}

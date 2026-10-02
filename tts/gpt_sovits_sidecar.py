@@ -8,6 +8,7 @@ speech synthesis runs in a separate CUDA/ROCm environment.
 from __future__ import annotations
 
 import base64
+import gc
 import json
 import os
 import sys
@@ -30,6 +31,17 @@ def _emit(message: dict[str, Any]) -> None:
 
 def _truthy(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _model_paths_from_argv(argv: list[str]) -> tuple[str, str]:
+    gpt_model = ""
+    sovits_model = ""
+    for index, value in enumerate(argv):
+        if value == "--gpt-model" and index + 1 < len(argv):
+            gpt_model = str(argv[index + 1] or "")
+        elif value == "--sovits-model" and index + 1 < len(argv):
+            sovits_model = str(argv[index + 1] or "")
+    return gpt_model, sovits_model
 
 
 def _request_kwargs(payload: dict[str, Any], *, streaming: bool) -> dict[str, Any]:
@@ -96,8 +108,15 @@ def main() -> None:
 
     from config import settings
     from local_tts_infer import TTSInferencer
+    from tts.model_paths import resolve_active_tts_model_paths
 
     requested_device = str(settings.TTS_DEVICE or "cpu")
+    current_gpt_model, current_sovits_model = resolve_active_tts_model_paths()
+    arg_gpt_model, arg_sovits_model = _model_paths_from_argv(sys.argv[1:])
+    if arg_gpt_model:
+        current_gpt_model = arg_gpt_model
+    if arg_sovits_model:
+        current_sovits_model = arg_sovits_model
     cuda_available = bool(torch.cuda.is_available())
     torch_version = str(getattr(torch, "__version__", "?"))
     hip_version = getattr(torch.version, "hip", None)
@@ -112,8 +131,8 @@ def main() -> None:
     try:
         inferencer = TTSInferencer(
             device=requested_device,
-            gpt_path=settings.TTS_GPT_MODEL_PATH or None,
-            sovits_path=settings.TTS_SOVITS_MODEL_PATH or None,
+            gpt_path=current_gpt_model or None,
+            sovits_path=current_sovits_model or None,
         )
         actual_device = str(getattr(inferencer, "device", requested_device))
         if _truthy("TTS_REQUIRE_CUDA") and (
@@ -178,6 +197,27 @@ def main() -> None:
                     else:
                         sample_rate, audio, chunk_text = item
                     _emit_chunk(request_id, sample_rate, audio, str(chunk_text or ""))
+            elif operation == "reload_model":
+                target_gpt = str(payload.get("gpt_model") or current_gpt_model)
+                target_sovits = str(payload.get("sovits_model") or current_sovits_model)
+                if target_gpt != current_gpt_model or target_sovits != current_sovits_model:
+                    reload_sovits = getattr(inferencer, "reload_sovits", None)
+                    if target_gpt == current_gpt_model and callable(reload_sovits):
+                        reload_sovits(target_sovits)
+                    else:
+                        replacement = TTSInferencer(
+                            device=requested_device,
+                            gpt_path=target_gpt or None,
+                            sovits_path=target_sovits or None,
+                        )
+                        previous = inferencer
+                        inferencer = replacement
+                        del previous
+                        gc.collect()
+                        if cuda_available:
+                            torch.cuda.empty_cache()
+                    current_gpt_model = target_gpt
+                    current_sovits_model = target_sovits
             else:
                 raise ValueError(f"unsupported operation: {operation!r}")
             _emit({"type": "done", "request_id": request_id})

@@ -85,14 +85,7 @@ def _resolved_source_files(
     spec: AssetPackSpec,
 ) -> tuple[Path, ...]:
     asset_root = project_root / "assets"
-    if spec.validator == "tts_reference_pack":
-        from tts.reference_pack import ReferencePackError, load_reference_pack
-        try:
-            pack = load_reference_pack(asset_path(asset_root, spec.trees[0]))
-            files = set(pack.files())
-        except ReferencePackError as exc:
-            raise AssetPackageError(f"{spec.id}: {exc}") from exc
-    elif spec.validator == "companion_pack":
+    if spec.validator == "companion_pack":
         try:
             files = set(load_companion_pack(asset_path(asset_root, spec.trees[0])))
         except CompanionPackError as exc:

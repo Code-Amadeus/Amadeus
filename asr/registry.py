@@ -45,7 +45,9 @@ _REGISTRY: dict[str, ASRBackendDescriptor] = {}
 _LOCK = threading.Lock()
 _BUILTINS_READY = False
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
-_BUILTIN_IDS = frozenset({"qwen3_asr", "sense_voice", "openai_compatible"})
+_BUILTIN_IDS = frozenset(
+    {"qwen3_asr", "qwen_remote", "sense_voice", "openai_compatible"}
+)
 
 
 def register_asr_backend(
@@ -67,6 +69,12 @@ def _qwen_factory() -> BaseASRBackend:
     from asr.backends.qwen3_asr import Qwen3ASRBackend
 
     return Qwen3ASRBackend()
+
+
+def _qwen_remote_factory() -> BaseASRBackend:
+    from asr.backends.qwen_remote import QwenRemoteASRBackend
+
+    return QwenRemoteASRBackend()
 
 
 def _sense_voice_factory() -> BaseASRBackend:
@@ -119,6 +127,22 @@ def _sense_voice_probe() -> tuple[str, str]:
     return "not_installed", "SenseVoice model cache is not installed"
 
 
+def _qwen_remote_probe() -> tuple[str, str]:
+    from config import settings
+
+    if importlib.util.find_spec("requests") is None:
+        return "not_installed", "requests is not installed"
+    api_key = (
+        str(settings.QWEN_REMOTE_ASR_API_KEY or "").strip()
+        or str(settings.DASHSCOPE_API_KEY or "").strip()
+    )
+    if not api_key:
+        return "unavailable", "QWEN_REMOTE_ASR_API_KEY or DASHSCOPE_API_KEY is not configured"
+    if not str(settings.QWEN_REMOTE_ASR_MODEL or "").strip():
+        return "unavailable", "QWEN_REMOTE_ASR_MODEL is not configured"
+    return "remote", "DashScope Qwen remote ASR configured; availability is checked on use"
+
+
 def _remote_probe() -> tuple[str, str]:
     from config import settings
 
@@ -153,6 +177,14 @@ def _ensure_builtins() -> None:
                     _sense_voice_factory,
                     _sense_voice_probe,
                     "Lightweight local recognizer; also used independently by Wake.",
+                ),
+                "qwen_remote": ASRBackendDescriptor(
+                    "qwen_remote",
+                    "Qwen remote ASR (DashScope)",
+                    "remote",
+                    _qwen_remote_factory,
+                    _qwen_remote_probe,
+                    "Native DashScope Qwen3-ASR upload and transcription; no local model runtime.",
                 ),
                 "openai_compatible": ASRBackendDescriptor(
                     "openai_compatible",

@@ -40,6 +40,7 @@ from config.settings import (
     DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL_NAME,
     OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL_NAME,
     GEMINI_API_KEY, GEMINI_MODEL_NAME,
+    DASHSCOPE_API_KEY, DASHSCOPE_BASE_URL, QWEN_VL_MODEL_NAME,
     AWS_BEDROCK_BEARER_TOKEN, AWS_BEDROCK_AUTH_MODE, AWS_BEDROCK_REGION,
     AWS_BEDROCK_MODEL_ID, AWS_BEDROCK_USE_INFERENCE_PROFILE,
     AWS_BEDROCK_INFERENCE_PROFILE_ID, AWS_BEDROCK_ENDPOINT,
@@ -63,6 +64,7 @@ from core.chat_history_projection import (
     stamp_branch_entries,
     turn_allows_history,
 )
+from core.emotion_hints import infer_emotion_from_text
 from core.chat_stream_consumption import (
     consume_role_stream_text,
     iter_sync_stream as _aiter_sync_iter,
@@ -74,6 +76,7 @@ from llm.local_cli import local_llm_query_cli_stream, local_llm_query_cli
 from llm.local_backends import local_chat_url
 from llm.prompts import (
     finalize_system_prompt_language as _finalize_system_prompt_language,
+    get_character_runtime_override as _get_character_runtime_override,
     get_system_prompt as _get_system_prompt,
     wrap_user_message_for_language_lock as _wrap_user_message_for_language_lock,
 )
@@ -83,7 +86,7 @@ from llm.sentence_splitter import (
 from llm.stream_parser import StreamTagParser, clean_sentence_for_tts
 from server.control_proposal import ControlProposalBatch, seal_control_proposals
 from server.auip_control_decision import auip_decision_preserves_main_context
-from tools.text_utils import STRONG_SENTENCE_ENDINGS, _compute_text_sha1, strip_tags
+from tools.text_utils import _compute_text_sha1, strip_tags
 from tts.contract import TTSRequest
 from tts.latency_clock import mark_llm_stream_request_sent, log_latency_marker
 from tts.sentence_state import sentence_state_manager, pre_translation_cache
@@ -260,8 +263,9 @@ _CONTROL_AUTHORITY_CALLBACK_UNSET = object()
 _AUIP_CONTROL_CALLBACK_UNSET = object()
 _AUIP_CONTROL_DECIDER_UNSET = object()
 
+_STRONG_ENDINGS = {".", "!", "?", "。", "！", "？", "\n"}
 _WEAK_ENDINGS = {"，", ",", "、", "；", ";"}
-_SENTENCE_ENDINGS = STRONG_SENTENCE_ENDINGS | _WEAK_ENDINGS
+_SENTENCE_ENDINGS = _STRONG_ENDINGS | _WEAK_ENDINGS
 
 # ── FROZEN marker tables ─────────────────────────────────────────────────────
 # These substring tables approximate a semantic judgement the main LLM already
@@ -850,7 +854,10 @@ def _turn_role_grounding(st: "_TurnState") -> str:
     if getattr(st, "prompt_variant", ""):
         return ""
     reference = str(getattr(st, "character_reference", "") or "")
-    parts: list[str] = [reference] if reference else []
+    character_override = _get_character_runtime_override()
+    parts: list[str] = [character_override] if character_override else []
+    if reference:
+        parts.append(reference)
     try:
         from server.auip_control_decision import render_auip_role_grounding
 
@@ -888,6 +895,9 @@ def _turn_role_grounding(st: "_TurnState") -> str:
             parts.append(briefing)
     except Exception as exc:
         logger.debug(f"AUIP role capability registry unavailable: {exc}")
+    extra_context = str(getattr(st, "extra_context", "") or "").strip()
+    if extra_context:
+        parts.append(extra_context[:12000])
     return "\n\n".join(parts)
 
 
@@ -1053,7 +1063,6 @@ class _TurnState:
     __slots__ = (
         "full_response", "history_response", "current_sentence", "is_first",
         "pending_expr_acts", "last_sentence_id", "next_stream_tts",
-        "tts_emotion_routing", "tts_emotion", "tts_ordered_parts",
         "parser", "gui_callback", "api_call_start",
         "turn_id", "branch_continue_seen", "delegate_seen", "work_delegate_seen",
         "focus_delegate_attrs", "focus_delegate_batches", "sentence_count",
@@ -1072,7 +1081,7 @@ class _TurnState:
         "auip_cross_axis_ambiguous",
         "auip_role_branch_recorded", "auip_role_branch_isolated",
         "interaction_branch_routing_lease",
-        "turn_admission", "history_snapshot",
+        "turn_admission", "history_snapshot", "extra_context",
     )
 
     def __init__(
@@ -1088,6 +1097,7 @@ class _TurnState:
         interaction_branch_routing_lease: Mapping[str, Any] | None = None,
         turn_admission: TurnAdmissionRecord | None = None,
         history_snapshot: ConversationHistory | None = None,
+        extra_context: str = "",
     ) -> None:
         self.full_response = ""
         # Same text as full_response plus the DELEGATE tags the model actually
@@ -1099,10 +1109,6 @@ class _TurnState:
         self.current_sentence = ""
         self.is_first = True
         self.pending_expr_acts: list = []
-        from tts.pipeline import emotion_references_enabled
-        self.tts_emotion_routing = emotion_references_enabled()
-        self.tts_emotion = ""
-        self.tts_ordered_parts = ()
         self.last_sentence_id: str | None = None
         self.next_stream_tts: bool | None = None  # hybrid: 下一句使用流式 TTS（仅消费一次）
         from llm.action_existence_protocol import control_envelope_enabled
@@ -1117,6 +1123,7 @@ class _TurnState:
         self.character_reference = ""
         self.session_id = str(session_id or "")
         self.turn_admission = turn_admission
+        self.extra_context = str(extra_context or "").strip()
         self.history_snapshot = (
             conversation_history.snapshot() if history_snapshot is None else history_snapshot
         )
@@ -1259,6 +1266,8 @@ class ChatRuntime:
         # 懒初始化的客户端/知识库
         self.llm_client = None
         self.gemini_model = None
+        self.qwen_vision_client = None
+        self.rag_system = None
         self.character_rag = CharacterRAG()
         # 当前对话 GUI callback，供 delegate 第二轮复用
         self.current_gui_callback = None
@@ -1353,6 +1362,7 @@ class ChatRuntime:
             # provider 切换后强制重建客户端（原 chatGui 通过置空 llm_client 实现）
             self.llm_client = None
             self.gemini_model = None
+            self.qwen_vision_client = None
         self.provider = provider
         # Compatibility projection for diagnostics and old read-only callers.
         # Routing itself is owned exclusively by ``provider``.
@@ -1400,6 +1410,7 @@ class ChatRuntime:
         interaction_branch_routing_lease: Mapping[str, Any] | None = None,
         turn_admission: TurnAdmissionRecord | None = None,
         history_snapshot: ConversationHistory | None = None,
+        extra_context: str = "",
     ):
         """流式 LLM 查询：分句、启动预翻译、提交待播队列，并等待播放完成。"""
         require_legacy_turn_authority(turn_admission)
@@ -1449,16 +1460,37 @@ class ChatRuntime:
         _visual_context = visual_context if isinstance(visual_context, dict) else None
         _text_only_question = question
         if _visual_context:
-            from llm.visual_context import visual_notice_text
+            from llm.visual_context import provider_supports_direct_image, visual_notice_text
 
             _text_only_question = visual_notice_text(question, _visual_context, supported=False)
 
+        # ── 视觉 provider 路由：主模型收不了图时，带视觉的轮次整体走专用视觉模型 ──
+        # AMADEUS_VISION_PROVIDER=qwen 时优先使用 Qwen-VL，即使主模型能直接看图。
+        # 其余情况仍以 server.visual_runtime.provider_availability() 为唯一闸门。
+        _configured_vision_provider = (
+            str(_visual_context.get("provider") or "").strip().lower()
+            if _visual_context else ""
+        )
+        if _visual_context and (
+            _configured_vision_provider in {"qwen", "qwen_vision"}
+            or not provider_supports_direct_image(llm_provider, DEEPSEEK_MODEL_NAME)
+        ):
+            try:
+                from server import visual_runtime as _vision_runtime
+
+                _vision_route = _vision_runtime.provider_availability()
+            except Exception:
+                logger.exception("vision provider availability check failed")
+                _vision_route = {}
+            if _vision_route.get("available") and _vision_route.get("provider") == "qwen":
+                llm_provider = "qwen_vision"
         st = _TurnState(
             gui_callback=gui_callback, turn_id=turn_id, question=_original_question,
             session_id=_task_session_id, prompt_variant=prompt_variant,
             control_prior_messages=tuple(history_snapshot.recent()) if enable_conv else (),
             interaction_branch_routing_lease=interaction_branch_routing_lease,
             turn_admission=turn_admission, history_snapshot=history_snapshot,
+            extra_context=extra_context,
         )
         _ensure_turn_admission_observed(st)
 
@@ -1580,6 +1612,8 @@ class ChatRuntime:
                 await self._run_deepseek_openai(st, question, _visual_context, enable_conv, llm_provider)
             elif llm_provider == "gemini":
                 await self._run_gemini(st, question, _visual_context, enable_conv)
+            elif llm_provider == "qwen_vision":
+                await self._run_deepseek_openai(st, question, _visual_context, enable_conv, llm_provider)
             elif llm_provider == "bedrock":
                 early_return = await self._run_bedrock(
                     st, question, _text_only_question, _original_question, enable_conv
@@ -1811,6 +1845,24 @@ class ChatRuntime:
             from llm.gemini_client import create_gemini_client
 
             self.gemini_model = create_gemini_client(GEMINI_API_KEY)
+        elif llm_provider == "qwen_vision" and self.qwen_vision_client is None:
+            import httpx
+            from openai import OpenAI
+
+            http_client = httpx.Client(
+                limits=httpx.Limits(
+                    max_connections=10,
+                    max_keepalive_connections=5,
+                    keepalive_expiry=60.0,
+                ),
+                timeout=httpx.Timeout(60.0),
+                http2=False,
+            )
+            self.qwen_vision_client = OpenAI(
+                api_key=DASHSCOPE_API_KEY,
+                base_url=DASHSCOPE_BASE_URL,
+                http_client=http_client,
+            )
         elif llm_provider == "bedrock":
             init_llm_client()
         elif llm_provider in ("hybrid", "hybrid2", "hybrid3"):
@@ -1848,12 +1900,8 @@ class ChatRuntime:
             not in {"1", "true", "yes", "on"}
         ):
             try:
-                started = time.perf_counter()
                 await asyncio.to_thread(player.initialize, 24000)
-                logger.info(
-                    "pyaudio stream warmup completed (24000 Hz) turn=%s elapsed_ms=%.1f",
-                    turn_id, (time.perf_counter() - started) * 1000,
-                )
+                logger.info("pyaudio stream warmup completed (24000 Hz)")
             except asyncio.CancelledError:
                 _observe_turn_terminal(turn_id, "cancelled", reason="audio_warmup_cancelled")
                 raise
@@ -1917,19 +1965,50 @@ class ChatRuntime:
         sentence_id = sentence_state_manager.create_sentence(safe_text)
         st.last_sentence_id = sentence_id
         st.sentence_count += 1
-        # The experiment queues only actions encountered before this span.
-        # Keep the established one-action-per-sentence policy when disabled.
-        if st.tts_emotion_routing:
-            buffered = list(st.pending_expr_acts)
-            st.pending_expr_acts.clear()
-        else:
-            buffered = [st.pending_expr_acts.pop(0)] if st.pending_expr_acts else []
+        # 每句只消费 pending_expr_acts 里的第一个，余下留给后续句子
+        buffered = [st.pending_expr_acts.pop(0)] if st.pending_expr_acts else []
         all_expr_acts = buffered + inline_expr_acts
         if all_expr_acts:
             _get_expr_ctrl().register_sentence_actions(sentence_id, all_expr_acts)
-        if st.tts_emotion_routing:
-            logger.info("[TTS-EMOTION] queued turn=%s id=%s reference=%s chars=%s",
-                        st.turn_id, sentence_id, st.tts_emotion, len(safe_text))
+
+        emotion = ""
+        for action in all_expr_acts:
+            if str(action.get("type") or "").upper() != "EMO":
+                continue
+            attrs = action.get("attrs") if isinstance(action.get("attrs"), dict) else {}
+            emotion = str(attrs.get("preset") or attrs.get("name") or "").strip()
+            if emotion:
+                break
+        if not emotion:
+            emotion = infer_emotion_from_text(safe_text)
+        try:
+            from core.emotion_hints import has_affection_signal
+
+            if has_affection_signal(str(getattr(st, "question", "") or "")):
+                if emotion in {"sad", "angry", "disappointed"}:
+                    emotion = "blush"
+        except Exception:
+            logger.debug("affection emotion guard unavailable", exc_info=True)
+        try:
+            from server.vn_tts_bridge import register_sentence_metadata
+
+            has_kana = any("\u3040" <= char <= "\u30ff" for char in safe_text)
+            has_cjk = any("\u4e00" <= char <= "\u9fff" for char in safe_text)
+            display_text = safe_text if has_cjk and not has_kana else ""
+            register_sentence_metadata(
+                sentence_id,
+                {"emotion": emotion, "display_text": display_text, "display_language": "zh"},
+            )
+        except Exception:
+            logger.debug("sentence presentation metadata registration unavailable", exc_info=True)
+
+        if emotion:
+            try:
+                from server.vn_tts_bridge import publish_overlay_preview
+
+                await publish_overlay_preview(emotion, turn_id=st.turn_id)
+            except Exception:
+                logger.debug("overlay emotion preview publish unavailable", exc_info=True)
 
         # 并行启动预翻译，不阻塞 TTS（CLI 本地路径关闭翻译，字幕在播放时显示）
         if translation and _pre_translation_enabled():
@@ -1947,7 +2026,6 @@ class ChatRuntime:
                 stream_tts=_stream_tts_flag,
                 source="chat",
                 turn_id=st.turn_id,
-                emotion=st.tts_emotion,
             ))
         else:
             logger.info(
@@ -1961,7 +2039,6 @@ class ChatRuntime:
                 stream_tts=None,
                 source="chat_cli",
                 turn_id=st.turn_id,
-                emotion=st.tts_emotion,
             ))
 
         if st.is_first:
@@ -2314,33 +2391,10 @@ class ChatRuntime:
         """Consume one provider text fragment through the shared stream port."""
 
         async def dispatch(content: str) -> None:
-            async def text_piece(text):
-                if dispatch_text is not None:
-                    await dispatch_text(text)
-                else:
-                    await self._append_and_dispatch(st, text)
-
-            if not st.tts_emotion_routing:
-                await text_piece(content)
-                return
-            from llm.emo_presets import EMOTION_DURATION_RANGES
-            from tts.pipeline import emotion_reference_key
-            for kind, value in st.tts_ordered_parts:
-                if kind == "text":
-                    await text_piece(str(value))
-                elif kind == "action":
-                    if value.get("type") == "EMO":
-                        preset = str(value.get("attrs", {}).get("preset", "normal")).lower()
-                        preset = preset if preset in EMOTION_DURATION_RANGES else "normal"
-                        reference_key = emotion_reference_key(preset)
-                        if reference_key != st.tts_emotion and st.current_sentence.strip():
-                            # A model-emitted boundary must not recolor text
-                            # already buffered before the tag or cross a job.
-                            await self._process_sentence(st, st.current_sentence)
-                            st.current_sentence = ""
-                        st.tts_emotion = reference_key
-                    st.pending_expr_acts.append(value)
-            st.tts_ordered_parts = ()
+            if dispatch_text is not None:
+                await dispatch_text(content)
+            else:
+                await self._append_and_dispatch(st, content)
 
         return await consume_role_stream_text(
             st,
@@ -2354,8 +2408,6 @@ class ChatRuntime:
         """标签解析 + DELEGATE 立即派发 + 表情动作暂存，返回清洗后的文本。"""
         _trace_raw_role_chunk(st.turn_id, raw_content)
         parsed = parse_inline_control_chunk(st.parser, raw_content)
-        if st.tts_emotion_routing:
-            st.tts_ordered_parts = parsed.ordered_parts
         cleaned = parsed.cleaned_text
         st.history_response += project_inline_role_history(parsed.ordered_parts)
         if parsed.had_actions:
@@ -2486,8 +2538,7 @@ class ChatRuntime:
                     st.history_response += "".join(
                         str(action.get("raw") or "") for action in _d
                     )
-            if not st.tts_emotion_routing:
-                st.pending_expr_acts.extend(parsed.expression_actions)
+            st.pending_expr_acts.extend(parsed.expression_actions)
         return cleaned
 
     def _schedule_auip_control(self, st: _TurnState, action: dict) -> asyncio.Task | None:
@@ -4835,9 +4886,6 @@ class ChatRuntime:
                             if not raw_content:
                                 continue
 
-                            if st.tts_emotion_routing:
-                                await self._accept_role_stream_text(st, raw_content, pace_s=0.01)
-                                continue
                             content = self._consume_stream_chunk(st, raw_content)
                             st.full_response += content
 
@@ -4917,7 +4965,10 @@ class ChatRuntime:
             )
 
             if (
-                provider_supports_direct_image(llm_provider, DEEPSEEK_MODEL_NAME)
+                (
+                    provider_supports_direct_image(llm_provider, DEEPSEEK_MODEL_NAME)
+                    or llm_provider == "qwen_vision"
+                )
                 and not visual_context.get("error")
             ):
                 messages = attach_openai_chat_image(messages, visual_context)
@@ -4929,7 +4980,13 @@ class ChatRuntime:
                 )
 
         request_kwargs = {
-            "model": OPENAI_MODEL_NAME if llm_provider == "openai" else DEEPSEEK_MODEL_NAME,
+            "model": (
+                QWEN_VL_MODEL_NAME
+                if llm_provider == "qwen_vision"
+                else OPENAI_MODEL_NAME
+                if llm_provider == "openai"
+                else DEEPSEEK_MODEL_NAME
+            ),
             "messages": messages,
             "stream": True,
             # Matches the pooled client's own 30s rather than overriding it
@@ -4959,7 +5016,12 @@ class ChatRuntime:
                 "extra_body": {"thinking": {"type": "disabled"}},
             })
         tool_calls = self._delegate_tool_accumulator(request_kwargs)
-        response = self.llm_client.chat.completions.create(**request_kwargs)
+        vision_client = (
+            self.qwen_vision_client
+            if llm_provider == "qwen_vision"
+            else self.llm_client
+        )
+        response = vision_client.chat.completions.create(**request_kwargs)
 
         async for chunk in _aiter_sync_iter(response):
             if not chunk.choices:

@@ -9,6 +9,7 @@ Usage:
 """
 
 import argparse
+from dataclasses import replace
 import asyncio
 import json
 import logging
@@ -201,6 +202,10 @@ host_readonly_voice_sink = None
 # resolved WorkItem status questions. Populated by bootstrap; lookup itself
 # continues to own only identity and ledger facts.
 work_status_narrator = None
+# Companion-only owns exactly one portrait card process for this backend
+# lifetime. None means the ordinary desktop/wallpaper startup path.
+companion_card = None
+companion_context_runtime = None
 # Focus is applied synchronously at the dispatcher boundary, while its spoken
 # post-condition waits for the shared character lane in a tracked background
 # task.  This keeps a compound "switch and edit" from delaying Provider start.
@@ -297,14 +302,17 @@ def _http_request_authenticated(headers, auth_policy: LocalAuthPolicy) -> bool:
 
 # bootstrap.
 
-async def bootstrap(port: int = 17777) -> None:
+async def bootstrap(port: int = 17777, companion_only: bool = False) -> None:
     """Mirrors main.py's main() init sequence, minus GUI."""
     global vts_manager, player, playback_manager, tts_runtime, asr_manager, wake_service
     global tts_executor, translation_executor, pending_actions, pending_sentence_items
     global exp_tts_semaphore, exp_play_condition, output_idle_probe, host_readonly_voice_sink
-    global work_status_narrator
+    global work_status_narrator, companion_card, companion_context_runtime
 
     auth_policy = LocalAuthPolicy.from_environment(os.environ)
+    from server.companion_runtime import desktop_credential_environment
+
+    companion_credentials = desktop_credential_environment(os.environ) if companion_only else {}
     clear_inherited_auth_environment(os.environ)
     if auth_policy.required:
         logger.info("local desktop authentication enabled")
@@ -312,6 +320,16 @@ async def bootstrap(port: int = 17777) -> None:
         logger.warning(
             "local desktop authentication disabled; direct loopback development mode"
         )
+    if companion_only:
+        logger.info("companion mode: portrait card, local voice, no Work or AUIP context")
+        from core.companion import CompanionRuntime
+
+        companion_context_runtime = CompanionRuntime(Path(ROOT) / "runtime" / "companion")
+        try:
+            reading_port = await asyncio.to_thread(companion_context_runtime.start_reading_server)
+            logger.info("[companion] reader adapter listening on 127.0.0.1:%s", reading_port)
+        except OSError as error:
+            logger.warning("[companion] reader adapter unavailable: %s", error)
 
     e2e_no_tts = str(os.environ.get("AMADEUS_E2E_NO_TTS") or "").strip().lower() in {
         "1",
@@ -337,7 +355,10 @@ async def bootstrap(port: int = 17777) -> None:
     )
     import llm.client as _llm_client_mod
 
-    cooperative_chat_enabled = bool(settings.COOPERATIVE_CHAT_ENABLED)
+    # Companion-only keeps the shared session, context and local voice stack but
+    # owns no Work surface: the cooperative/Work planner lanes are the only
+    # producers of WorkItems, so they stay off even if .env enables them.
+    cooperative_chat_enabled = bool(settings.COOPERATIVE_CHAT_ENABLED) and not companion_only
 
     # wire handler registration.
     from server.ws_handler import manager as _mgr
@@ -374,6 +395,7 @@ async def bootstrap(port: int = 17777) -> None:
     from server.auip_runtime import runtime as auip_runtime
     from server.auip_self_attach import AuipSelfAttachCoordinator
     from server.handlers.vn_player_handler import VNPlayerHandler
+    from server.handlers.companion_control_handler import CompanionControlHandler
     from server.handlers.vn_launch_handler import VNLaunchHandler
     from server.work_observer import WorkObserverCoordinator
     from server.canvas_action_router import CanvasActionRouter
@@ -500,6 +522,19 @@ async def bootstrap(port: int = 17777) -> None:
     auip_result_entry_callback = auip_launch.on_app_updated
     bus.on(Method.AUIP_UPDATED, auip_result_entry_callback)
     provider_runtime.set_request_preparer(work_ledger.prepare_request)
+    # After a restart, in-flight attempts from the previous process are
+    # phantom: their runtime is gone and their writer leases would block fresh
+    # work. Cancel them before adopting whatever the current runtime recovered.
+    try:
+        stale = work_ledger.recover_stale_runtime_attempts()
+        if stale.get("attempts") or stale.get("leases"):
+            logger.info(
+                "startup cleanup: cancelled %s stale attempts, released %s leases",
+                stale.get("attempts", 0),
+                stale.get("leases", 0),
+            )
+    except Exception:
+        logger.exception("startup cleanup of stale runtime attempts failed")
     work_ledger.adopt_runtime_records(provider_runtime.list_runs())
     work_ledger.configure()
     work_activity = WorkActivityCoordinator()
@@ -566,12 +601,13 @@ async def bootstrap(port: int = 17777) -> None:
         _validate_provider_start_admission
     )
     vn_h = VNPlayerHandler()
+    companion_control_h = CompanionControlHandler()
     vn_launch_h = VNLaunchHandler()
 
     handlers = (chat_h, session_h, tts_h, asr_h, wake_h, vts_h, expr_h, sys_h,
         render_h, wallpaper_h, provider_h, capability_h, mcp_connection_h,
         provider_activity_h, work_h, work_preview_h, attention_h, auip_h, vn_h,
-        vn_launch_h)
+        companion_control_h, vn_launch_h)
     if chat_role_delivery is not None:
         handlers += (chat_role_delivery,)
     for h in handlers:
@@ -701,6 +737,175 @@ async def bootstrap(port: int = 17777) -> None:
         result = await _speak_vn_reaction(payload)
         return {"ok": True, **(result or {})}
 
+    @app.post("/vision/describe")
+    async def vision_describe(payload: dict, request: Request):
+        """Capture a screenshot and describe it with the configured vision model (Qwen-VL).
+
+        Used by the dsh-amadeus plugin so a text-only DSH agent can "see" the
+        desktop / current window. Returns a text description plus capture metadata.
+        """
+        if not _http_request_authenticated(request.headers, auth_policy):
+            raise HTTPException(status_code=401, detail="Authentication required")
+        if not _http_request_origin_allowed(request.headers, backend_port=port):
+            raise HTTPException(status_code=403, detail="Untrusted request origin")
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="payload must be an object")
+
+        from server.visual_runtime import capture_visual_context
+
+        scope = str(payload.get("scope") or "current_window").strip()
+        captured = capture_visual_context(scope=scope or None, reason="dsh_plugin")
+        if not captured.get("enabled") or not isinstance(captured.get("frame"), dict):
+            return {"ok": True, "status": "capture_failed", "capture": captured}
+        frame = captured["frame"]
+        image_base64 = str(frame.get("dataBase64") or "").strip()
+        if not image_base64:
+            return {"ok": True, "status": "capture_failed", "reason": "empty_frame", "capture": captured}
+
+        from llm.qwen_client import qwen_vision_describe
+
+        prompt = str(payload.get("prompt") or "").strip()
+        described = qwen_vision_describe(
+            image_base64,
+            prompt=prompt
+            or "请用中文描述这张截图：正在显示什么应用/窗口、关键界面元素、可见文字、以及值得注意的地方。",
+        )
+        capture_summary = {
+            key: captured.get(key)
+            for key in ("scope", "actualScope", "capturedAt", "capture")
+        }
+        if not described:
+            return {
+                "ok": True,
+                "status": "describe_failed",
+                "reason": "vision_model_unavailable",
+                "capture": capture_summary,
+            }
+        return {
+            "ok": True,
+            "status": "ok",
+            "description": str(described.get("description") or "").strip(),
+            "capture": capture_summary,
+        }
+
+    def _require_companion_scene(request: Request) -> None:
+        if not _http_request_authenticated(request.headers, auth_policy):
+            raise HTTPException(status_code=401, detail="Authentication required")
+        if not _http_request_origin_allowed(request.headers, backend_port=port):
+            raise HTTPException(status_code=403, detail="Untrusted request origin")
+        if companion_context_runtime is None:
+            raise HTTPException(status_code=404, detail="Companion scene context is not part of this launch")
+
+    @app.get("/companion/scene/windows")
+    async def companion_scene_windows(request: Request):
+        _require_companion_scene(request)
+        from server.visual_runtime import list_capture_windows
+
+        return {"ok": True, "windows": list_capture_windows()}
+
+    @app.get("/companion/scene/status")
+    async def companion_scene_status(request: Request):
+        _require_companion_scene(request)
+        assert companion_context_runtime is not None
+        return {"ok": True, "scene": companion_context_runtime.scene_status()}
+
+    @app.post("/companion/scene/bind")
+    async def companion_scene_bind(payload: dict, request: Request):
+        _require_companion_scene(request)
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="payload must be an object")
+        kind = str(payload.get("kind") or "").strip().lower()
+        if kind not in {"game", "comic"}:
+            raise HTTPException(status_code=400, detail="kind must be game or comic")
+        from server.visual_runtime import list_capture_windows, set_config
+
+        windows = list_capture_windows()
+        hwnd = str(payload.get("window_handle") or "").strip()
+        title_hint = str(payload.get("title") or "").strip().lower()
+        selected = None
+        if hwnd:
+            selected = next((item for item in windows if str(item.get("hwnd") or "") == hwnd), None)
+        elif title_hint:
+            selected = next(
+                (item for item in windows if title_hint in str(item.get("title") or "").lower()),
+                None,
+            )
+        if selected is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"error": "window not found; pass window_handle or title from /companion/scene/windows", "windows": windows},
+            )
+        assert companion_context_runtime is not None
+        scene = companion_context_runtime.bind_scene(
+            kind,
+            window_handle=str(selected.get("hwnd") or ""),
+            title=str(selected.get("title") or ""),
+            process_name=str(selected.get("processName") or ""),
+        )
+        set_config({"vision_scope": "selected_window", "vision_window_handle": scene.window_handle})
+        return {"ok": True, "scene": companion_context_runtime.scene_status(), "window": selected}
+
+    @app.post("/companion/scene/capture")
+    async def companion_scene_capture(payload: dict, request: Request):
+        _require_companion_scene(request)
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="payload must be an object")
+        assert companion_context_runtime is not None
+        scene = companion_context_runtime.scene_status()
+        if not scene.get("active"):
+            raise HTTPException(status_code=400, detail="no active companion scene; bind a game or comic window first")
+        kind = str(scene.get("kind") or "game")
+        from llm.qwen_client import qwen_vision_describe
+        from server.visual_runtime import capture_visual_context, set_config
+
+        set_config({
+            "vision_scope": "selected_window",
+            "vision_window_handle": str(scene.get("windowHandle") or ""),
+        })
+        captured = await asyncio.to_thread(
+            capture_visual_context,
+            scope="selected_window",
+            reason=f"companion_{kind}",
+        )
+        frame = captured.get("frame") if isinstance(captured.get("frame"), dict) else {}
+        image_base64 = str(frame.get("dataBase64") or "").strip()
+        if not image_base64:
+            return {"ok": True, "status": "capture_failed", "capture": captured}
+        default_prompt = (
+            "你正在看一个游戏画面。请用中文描述当前游戏画面、可见UI、角色、对话/字幕、当前目标和可操作项。"
+            "只描述可见内容，不推测未来剧情。"
+            if kind == "game"
+            else "你正在看一页漫画。请按阅读顺序用中文描述画面、可见对白/气泡文字；如果文字是日文或英文，"
+            "给出原文和中文翻译。只描述本页可见内容，不推测后续页面。"
+        )
+        prompt = str(payload.get("prompt") or "").strip() or default_prompt
+        described = await asyncio.to_thread(qwen_vision_describe, image_base64, prompt=prompt)
+        if not described:
+            return {"ok": True, "status": "describe_failed", "reason": "vision_model_unavailable", "capture": captured}
+        description = str(described.get("description") or "").strip()
+        companion_context_runtime.record_scene_capture(description)
+        capture_summary = {
+            key: captured.get(key)
+            for key in ("scope", "actualScope", "capturedAt", "capture")
+        }
+        return {
+            "ok": True,
+            "status": "ok",
+            "description": description,
+            "capture": capture_summary,
+            "scene": companion_context_runtime.scene_status(),
+        }
+
+    @app.post("/companion/scene/close")
+    async def companion_scene_close(request: Request):
+        _require_companion_scene(request)
+        assert companion_context_runtime is not None
+        companion_context_runtime.close_scene()
+        from server.visual_runtime import set_config
+
+        set_config({"vision_scope": "read_window", "vision_window_handle": ""})
+        return {"ok": True, "scene": companion_context_runtime.scene_status()}
+
     @app.get("/wallpaper/bridge-info")
     async def wallpaper_bridge_info():
         # This is a discovery/health endpoint, not the bridge transport.
@@ -720,6 +925,53 @@ async def bootstrap(port: int = 17777) -> None:
     @app.get("/wallpaper/lively/{rel_path:path}")
     async def lively_asset(rel_path: str):
         return _project_file_response(Path(ROOT) / "wallpaper" / "lively", rel_path)
+
+    def _companion_card_required():
+        if companion_card is None:
+            raise HTTPException(status_code=404, detail="Companion card is not part of this launch")
+        return companion_card
+
+    def _companion_request_allowed(request: Request) -> None:
+        if not _http_request_authenticated(request.headers, auth_policy):
+            raise HTTPException(status_code=401, detail="Authentication required")
+        if not _http_request_origin_allowed(request.headers, backend_port=port):
+            raise HTTPException(status_code=403, detail="Untrusted request origin")
+
+    @app.get("/companion/card/status")
+    async def companion_card_status(request: Request):
+        _companion_request_allowed(request)
+        card = _companion_card_required()
+        return {"ok": True, "card": card.status()}
+
+    @app.post("/companion/card/visibility")
+    async def companion_card_visibility(payload: dict, request: Request):
+        _companion_request_allowed(request)
+        card = _companion_card_required()
+        if not isinstance(payload, dict) or not isinstance(payload.get("visible"), bool):
+            raise HTTPException(status_code=400, detail="visible must be a boolean")
+        return {"ok": True, "card": await card.set_visible(payload["visible"])}
+
+    @app.post("/companion/card/focus")
+    async def companion_card_focus(request: Request):
+        """Show and raise the card; a second launch must never create another."""
+        _companion_request_allowed(request)
+        card = _companion_card_required()
+        return {"ok": True, "card": await card.focus()}
+
+    @app.post("/companion/card-close")
+    async def companion_card_close(request: Request):
+        """The user closed the card. Its owning launch ends with it."""
+        _companion_request_allowed(request)
+        card = _companion_card_required()
+        await card.stop()
+        logger.info("companion card closed by the user; ending the backend session")
+
+        async def _request_exit() -> None:
+            await asyncio.sleep(0.2)
+            server.should_exit = True
+
+        asyncio.create_task(_request_exit())
+        return {"ok": True}
 
     # start uvicorn in background.
     config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
@@ -1368,8 +1620,8 @@ async def bootstrap(port: int = 17777) -> None:
             logger.exception("failed to prepare wake chat session")
             return ""
 
-    async def _send_wake_text(text: str, *, source: str = "wake") -> None:
-        if not WAKE_AUTO_SEND_TO_CHAT:
+    async def _send_wake_text(text: str, *, source: str = "wake", visual=None, force_auto_send: bool = False) -> None:
+        if not WAKE_AUTO_SEND_TO_CHAT and not force_auto_send:
             return
         text = str(text or "").strip()
         if not text:
@@ -1416,6 +1668,7 @@ async def bootstrap(port: int = 17777) -> None:
             provider=provider,
             session_id=session_id,
             source="wake",
+            visual=visual,
         )
 
     async def _handle_asr_recognized(payload: dict) -> None:
@@ -1423,9 +1676,20 @@ async def bootstrap(port: int = 17777) -> None:
         if source == "vn_player":
             await _handle_vn_player_asr_recognized(payload)
             return
-        if source != "wake":
+        if source == "companion":
+            await _send_wake_text(
+                str(payload.get("text") or ""),
+                source="companion ASR",
+                visual=True if companion_control_h.vision_enabled else None,
+                force_auto_send=True,
+            )
             return
-        await _send_wake_text(str(payload.get("text") or ""), source="wake ASR")
+        # wake and manual microphone (empty source) both auto-submit,
+        # so clicking the mic gives real-time voice interaction.
+        if source not in ("wake", ""):
+            return
+        label = "wake ASR" if source == "wake" else "mic ASR"
+        await _send_wake_text(str(payload.get("text") or ""), source=label)
 
     async def _handle_vn_player_asr_recognized(payload: dict) -> None:
         text = str(payload.get("text") or "").strip()
@@ -1512,20 +1776,30 @@ async def bootstrap(port: int = 17777) -> None:
 
             completed_text = str(payload.get("completed_text") or "").strip()
             accumulated_text = str(payload.get("accumulated_text") or "").strip()
-            marker = "[interrupted by user]"
-            turn_id = str(payload.get("turn_id") or "")
-            sid = str(payload.get("session_id") or "")
             interrupted_prefix = completed_text or accumulated_text
-            interrupted_text = (
-                f"{interrupted_prefix} {marker}".strip()
-                if interrupted_prefix else marker
+            marker = "[interrupted by user]"
+            interrupted_text = f"{interrupted_prefix} {marker}".strip() if interrupted_prefix else marker
+            dialog = getattr(sm.conversation_history, "dialog", [])
+            had_assistant = any(
+                message.get("role") == "assistant"
+                for message in dialog
+                if isinstance(message, dict)
             )
-            changed = sm.persist_interrupted_assistant_turn(
-                sid,
-                turn_id=turn_id,
-                heard_content=completed_text or accumulated_text,
+            turn_id = str(payload.get("turn_id") or "")
+            changed = sm.conversation_history.mark_last_assistant_interrupted(
+                interrupted_prefix,
                 marker=marker,
+                turn_id=turn_id or None,
             )
+            if not had_assistant:
+                sm.conversation_history.add_assistant(
+                    interrupted_text,
+                    turn_id=turn_id or None,
+                )
+                changed = True
+            sid = sm.get_current_session_id()
+            if sid and changed:
+                sm.save_session(sid, enable_conversation=True)
             logger.info(
                 "emitting chat.interrupted turn=%s text_len=%s completed_len=%s subscribers=%s source=%s",
                 payload.get("turn_id") or "",
@@ -1757,7 +2031,7 @@ async def bootstrap(port: int = 17777) -> None:
             runtime=provider_runtime, context_requirements=context_requirements,
             allocate=lambda label, context_id:create_scratch_workspace(
                 label, unique_id=context_id), query=_query_cooperative_chat,
-            persona=lambda: get_system_prompt("base"), publish_factory=_cooperative_publisher,
+            persona=get_system_prompt("base"), publish_factory=_cooperative_publisher,
             role_provider_selector=_select_cooperative_role_provider,
             permission_policy=settings.COOPERATIVE_CHAT_PERMISSION_POLICY,
             permission_store=work_ledger_store,
@@ -2473,6 +2747,20 @@ async def bootstrap(port: int = 17777) -> None:
         on_ready_to_listen=_handle_asr_ready_to_listen,
         tts_playing_fn=_tts_should_block_mic,
     )
+    async def _send_companion_text(text: str, visual: bool) -> dict:
+        return await chat_h.send_text(
+            text,
+            provider=_current_llm_provider(),
+            session_id=_current_or_create_session_id(),
+            source="companion_text",
+            visual=True if visual else None,
+        )
+
+    companion_control_h.configure(
+        asr_control=asr_h.handle,
+        asr_state=lambda: asr_h.listening_state(include_context=True),
+        chat_send=_send_companion_text,
+    )
     wake_h.configure(wake_service_factory=_get_or_create_wake_service)
     vts_h.configure(vts_manager=vts_manager)
     expr_h.configure(expression_controller=_expr_ctrl)
@@ -2521,10 +2809,14 @@ async def bootstrap(port: int = 17777) -> None:
     )
     work_activity.configure()
     interaction_branch.configure()
-    from server.character_presentation import project_auip_update
+    from server.character_presentation import (
+        asr_listening_presentation,
+        project_auip_update,
+    )
 
     auip_presentation_callback = project_auip_update
     bus.on(Method.AUIP_UPDATED, auip_presentation_callback)
+    bus.on(Method.ASR_STATUS, asr_listening_presentation)
     output_idle_probe = lambda: not (chat_h.is_busy() or _tts_is_observer_output_busy())
     work_observer.configure(
         is_chat_busy=chat_h.is_busy,
@@ -2537,7 +2829,7 @@ async def bootstrap(port: int = 17777) -> None:
         release_work=work_activity.release_work_presentation,
     )
     work_status_narrator = work_observer
-    if bool(settings.AUIP_NARRATION_ENABLED):
+    if bool(settings.AUIP_NARRATION_ENABLED) and not companion_only:
         from server.auip_narration import AuipNarrationAdapter, AuipNarrationProfile
         from server.auip_narration_llm import (
             decide_with_auip_observer,
@@ -2588,6 +2880,34 @@ async def bootstrap(port: int = 17777) -> None:
         asr_control=asr_h.handle, asr_state=lambda: asr_h.listening_state(include_context=True),
         capture_game_view=lambda: vn_launch_h.handle(Method.VN_LAUNCH_CAPTURE, {}),
     )
+
+    def _game_companion_context() -> str:
+        """Render the live VN/Galgame hook as read-only Game Companion context."""
+        try:
+            status = vn_h.status()
+        except Exception:
+            return ""
+        if str(status.get("status") or "") != "active":
+            return ""
+        profile = status.get("profile") if isinstance(status.get("profile"), dict) else {}
+        game_name = str(profile.get("name") or profile.get("game_name") or "").strip()
+        lines = ["<game_companion_context>", f"game={game_name}"]
+        try:
+            activity = vn_h.activity()
+        except Exception:
+            activity = []
+        for item in list(activity)[-8:]:
+            if not isinstance(item, dict):
+                continue
+            payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+            text = str(payload.get("speech") or payload.get("text") or payload.get("display_text") or "").strip()
+            if text:
+                lines.append(f"- {str(item.get('method') or 'vn.event')}: {text[:400]}")
+        lines.append("</game_companion_context>")
+        return "\n".join(lines)
+
+    if companion_context_runtime is not None:
+        companion_context_runtime.set_game_context_provider(_game_companion_context)
     vn_launch_h.configure(
         project_root=Path(ROOT),
         runtime_start=lambda params: vn_h.handle(Method.VN_START, params),
@@ -2599,6 +2919,19 @@ async def bootstrap(port: int = 17777) -> None:
         backend_url=f"ws://127.0.0.1:{port}/ws",
         auth_policy=auth_policy,
     )
+    if companion_only:
+        # The card is the only visible surface: no wallpaper, no Slice, no
+        # Canvas, no visible main UI. It reuses this session and voice stack.
+        from server.companion_runtime import CompanionCardHost
+
+        companion_card = CompanionCardHost(
+            Path(ROOT),
+            backend_url=f"ws://127.0.0.1:{port}/ws",
+            auth_policy=auth_policy,
+            credential_environment=companion_credentials,
+        )
+        status = await companion_card.ensure_running()
+        logger.info("[companion] card %s url=%s", status.get("status"), status.get("url"))
 
     # Start only after dependency configuration, inside the owning teardown scope.
     # Cancelling executor Futures cannot stop their threads: signal and join them.
@@ -2616,6 +2949,18 @@ async def bootstrap(port: int = 17777) -> None:
 
         async def _close_runtime() -> None:
             vts_worker_stop.set()
+            if companion_card is not None:
+                # The card and the audio it speaks through are owned by this
+                # launch; leave neither behind.
+                try:
+                    await companion_card.stop()
+                except Exception:
+                    logger.exception("Companion card shutdown failed")
+            if companion_context_runtime is not None:
+                try:
+                    await asyncio.to_thread(companion_context_runtime.close)
+                except Exception:
+                    logger.exception("Companion memory/reading shutdown failed")
             try:
                 await chat_h.close()
             except Exception:
@@ -2748,7 +3093,31 @@ async def _stream_llm_query_adapter(
         False if e2e_no_tts else _pre_translation_enabled()
     )
 
-    return await rt.stream_llm_query(
+    extra_context = ""
+    book_id = ""
+    prior_user_messages: list[str] = []
+    if history_snapshot is not None:
+        for message in getattr(history_snapshot, "dialog", ()) or ():
+            if not isinstance(message, dict) or message.get("role") != "user":
+                continue
+            content = str(message.get("content") or "").strip()
+            if content:
+                prior_user_messages.append(content)
+    if companion_context_runtime is not None:
+        latest_context = companion_context_runtime.reading.latest_context()
+        book_id = latest_context.book_id if latest_context is not None else ""
+        chunks = companion_context_runtime.reading.list_chunks(book_id) if book_id else ()
+        try:
+            extra_context = companion_context_runtime.context_block(
+                text,
+                book_id=book_id or None,
+                chunks=chunks,
+                prior_user_messages=prior_user_messages,
+            )
+        except Exception as error:
+            logger.debug("[companion] context assembly unavailable: %s", error)
+
+    response = await rt.stream_llm_query(
         text,
         gui_callback=gui_callback,
         preserve_emotion=preserve_emotion,
@@ -2758,7 +3127,19 @@ async def _stream_llm_query_adapter(
         interaction_branch_routing_lease=interaction_branch_routing_lease,
         turn_admission=turn_admission,
         history_snapshot=history_snapshot,
+        extra_context=extra_context,
     )
+    if (
+        companion_context_runtime is not None
+        and response
+        and not str(response).startswith("LLM API Error:")
+    ):
+        companion_context_runtime.remember_conversation(
+            user_message=text,
+            assistant_message=str(response),
+            book_id=book_id or None,
+        )
+    return response
 
 
 async def _run_work_observer_llm(
@@ -4472,6 +4853,29 @@ def _delegate_provider_selection(
         ),
     )
     requirements = compile_delegate_requirements(facts)
+    # Web research routes to the Qwen Web Research path (provider="browser")
+    # when configured, regardless of a workspace pin or a generic model label
+    # such as "codex"/"openclaw": a research query does not need a workspace
+    # writer, and diverting it avoids blocking on one. The decision is based
+    # on actual file/code mutation evidence in the user text, not on a pinned
+    # project's workspace effect. Explicit user choice (force_provider="user")
+    # and genuine amend continuation are always respected.
+    if (
+        str(getattr(settings, "DASHSCOPE_API_KEY", "") or "").strip()
+        and not facts.task_requests_workspace_mutation
+        and not facts.source_requests_workspace_mutation
+        and not facts.requires_browser_state
+        and str(facts.declared_intent or "").strip().lower() != "amend"
+        and not facts.user_forced_provider
+        and facts.requested_provider not in {"browser", "qwen", "web"}
+    ):
+        requirements = replace(
+            requirements,
+            task_kind="general",
+            workspace_access="none",
+            preferred_provider="browser",
+            preference_policy="prefer",
+        )
     default_provider = str(
         getattr(settings, "PROVIDER_DELEGATE_DEFAULT_PROVIDER", "pi")
         or "pi"
@@ -6186,5 +6590,10 @@ def _noop_warmup() -> str:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Amadeus backend server")
     parser.add_argument("--port", type=int, default=17777)
+    parser.add_argument(
+        "--companion",
+        action="store_true",
+        help="Companion session: portrait card and local voice, no wallpaper/Work/AUIP surfaces",
+    )
     args = parser.parse_args()
-    asyncio.run(bootstrap(port=args.port))
+    asyncio.run(bootstrap(port=args.port, companion_only=args.companion))

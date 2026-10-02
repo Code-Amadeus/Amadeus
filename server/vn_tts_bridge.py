@@ -75,6 +75,17 @@ def is_vn_sentence(sentence_id: str) -> bool:
     return str(sentence_id or "") in _SENTENCE_META
 
 
+def register_sentence_metadata(sentence_id: str, metadata: dict[str, Any]) -> None:
+    """Register presentation metadata for a sentence from the shared TTS queue."""
+
+    clean_id = str(sentence_id or "").strip()
+    if clean_id and isinstance(metadata, dict):
+        _SENTENCE_META[clean_id] = dict(metadata)
+        emotion = str(metadata.get("emotion") or "").strip()
+        if emotion:
+            logger.info("[Companion emotion] id=%s emotion=%s", clean_id, emotion)
+
+
 def get_vn_sentence_metadata(sentence_id: str) -> dict[str, Any] | None:
     """Return a bounded copy of host playback identity for one queued line."""
 
@@ -159,6 +170,22 @@ def update_playback_subtitle(sentence_id, japanese_text, chinese_text, *, update
     if "_subtitle" not in _SENTENCE_META.get(str(sentence_id or ""), {}):
         update(japanese_text, chinese_text)
 
+
+def _companion_overlay_url() -> str:
+    """Companion-only card endpoint, or empty when this launch owns no card.
+
+    Read through the module attribute every time so a stale import binding can
+    never keep publishing captions at a card that already exited.
+    """
+    from server import companion_runtime
+
+    url = companion_runtime.default_overlay_url()
+    if url:
+        return url
+    if os.environ.get("AMADEUS_COMPANION", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return "http://127.0.0.1:8788/reaction"
+    return ""
+
 _STRONG_ENDINGS = {"\u3002", "\uff01", "\uff1f", "!", "?", "\n"}
 _WEAK_ENDINGS = {"\u3001", "\uff0c", ",", "\uff1b", ";", "\uff1a", ":"}
 _KANA_RE = re.compile("[\u3040-\u30ff]")
@@ -211,7 +238,7 @@ def submit_vn_tts(
     metadata = {
         "source": str(payload.get("source") or "").strip(),
         "display_language": _normalize_display_language(payload.get("display_language")),
-        "overlay_url": str(payload.get("overlay_url") or "").strip(),
+        "overlay_url": str(payload.get("overlay_url") or "").strip() or _companion_overlay_url(),
         "emotion": str(payload.get("emotion") or payload.get("emotion_intent") or "").strip(),
         "duration_ms": int(payload.get("duration_ms") or 6500),
         "line_id": str(payload.get("line_id") or "").strip(),
@@ -692,12 +719,35 @@ def schedule_overlay_playback(sentence_id: str, speaking: bool, loop: asyncio.Ab
 
 
 async def publish_overlay_playback(sentence_id: str, speaking: bool) -> None:
-    """Project only real VN audio boundaries, never main-chat speech, to its overlay."""
-    meta = _SENTENCE_META.get(str(sentence_id or ""))
-    if not meta or not meta.get("overlay_url"):
+    """Project real audio boundaries to the companion or VN overlay."""
+    meta = _SENTENCE_META.get(str(sentence_id or "")) or {}
+    if not meta and not _companion_overlay_url():
         return
     await _publish_overlay(meta, display_text=str(meta.get("display_text") or "") if speaking else "",
                            raw_text="", source="vn_playback", sentence_id=sentence_id, speaking=speaking)
+
+
+async def publish_overlay_preview(emotion: str, *, turn_id: str = "") -> None:
+    """Project an expression as soon as the first sentence is known.
+
+    This event precedes TTS synthesis and audio playback, so the companion
+    portrait does not wait for the voice queue before reacting.
+    """
+
+    key = str(emotion or "").strip()
+    if not key or key == "normal":
+        return
+    await _publish_overlay(
+        {
+            "emotion": key,
+            "duration_ms": 6500,
+            "line_id": f"preview:{turn_id}" if turn_id else "",
+        },
+        display_text="",
+        raw_text="",
+        source="vn_preview",
+        sentence_id="",
+    )
 
 
 async def _publish_overlay(
@@ -709,13 +759,13 @@ async def _publish_overlay(
     sentence_id: str = "",
     speaking: bool | None = None,
 ) -> None:
-    url = str((meta or {}).get("overlay_url") or "").strip()
+    url = str((meta or {}).get("overlay_url") or _companion_overlay_url()).strip()
     if not url:
         return
     payload = {
         "text": raw_text,
         "display_text": display_text,
-        "emotion": str((meta or {}).get("emotion") or "thinking"),
+        "emotion": str((meta or {}).get("emotion") or "normal"),
         "duration_ms": int((meta or {}).get("duration_ms") or 6500),
         "line_id": str((meta or {}).get("line_id") or ""),
         "script_id": str((meta or {}).get("script_id") or ""),

@@ -119,7 +119,10 @@ the full Conversation recognizer and defaults to Qwen3-ASR, preserving context
 prompting and speculative endpoint optimization. `WAKE_ASR_BACKEND` is an
 independent always-on role and may keep SenseVoice loaded alongside Qwen. A
 remote Conversation ASR intentionally disables partial speculative API calls
-to avoid hidden duplicate network requests and metered usage.
+to avoid hidden duplicate network requests and metered usage. Selecting
+`qwen_remote` uses DashScope's native multimodal API, uploads one temporary
+WAV per utterance, and falls back from `QWEN_REMOTE_ASR_API_KEY` to
+`DASHSCOPE_API_KEY`.
 
 The Electron Voice settings use the same precedence and encrypted-secret store
 as model connections. `ASR_API_KEY`, `TTS_API_KEY`, and `FISH_TTS_API_KEY` are never returned to the

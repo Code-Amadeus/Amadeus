@@ -1,6 +1,6 @@
 <div align="center">
 
-<p><img src="./assets/demo/amadeus-header-layered.png" width="1100" alt="Amadeus — 实时多模态桌面交互 AI Agent。暖白色点阵标题与二次元角色、朱红色头发，搭配中性近黑色背景。"/></p>
+<p><img src="./assets/demo/amadeus-header-layered.png" width="1100" alt="Amadeus — 实时多模态桌面交互 AI Agent。薄荷绿色字符投影的二次元角色，搭配珊瑚红色点阵头发。"/></p>
 
 <p><picture>
   <source media="(max-width: 600px)" srcset="./assets/header-strip.zh.mobile.svg"/>
@@ -8,14 +8,14 @@
 </picture></p>
 
 <p>
-  <a href="https://www.bilibili.com/video/BV1783G6hEYY/"><img src="https://img.shields.io/badge/demo-Bilibili-b94b43?labelColor=191a1d&amp;logo=bilibili&amp;logoColor=e8e2d4" alt="Bilibili demo"/></a>
-  <a href="#系统架构"><img src="https://img.shields.io/badge/architecture-current-444449?labelColor=191a1d" alt="系统架构"/></a>
-  <a href="./docs/alpha-0.15.2.md"><img src="https://img.shields.io/badge/version-0.15.2_Alpha-b94b43?labelColor=191a1d" alt="0.15.2 Alpha"/></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-444449?labelColor=191a1d" alt="AGPL-3.0 license"/></a>
+  <a href="https://www.bilibili.com/video/BV1783G6hEYY/"><img src="https://img.shields.io/badge/demo-Bilibili-46745c?labelColor=16291f&amp;logo=bilibili&amp;logoColor=b4e4c4" alt="Bilibili demo"/></a>
+  <a href="#系统架构"><img src="https://img.shields.io/badge/architecture-current-46745c?labelColor=16291f" alt="系统架构"/></a>
+  <a href="./docs/alpha-0.15.2.md"><img src="https://img.shields.io/badge/version-0.15.2_Alpha-46745c?labelColor=16291f" alt="0.15.2 Alpha"/></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-58625c?labelColor=16291f" alt="AGPL-3.0 license"/></a>
   <br/>
-  <a href="#快速开始"><img src="https://img.shields.io/badge/Windows-reference-444449?labelColor=191a1d" alt="Windows — 参考平台"/></a>
-  <a href="#快速开始"><img src="https://img.shields.io/badge/macOS-MPS-444449?labelColor=191a1d" alt="macOS — 支持 Apple Silicon MPS"/></a>
-  <a href="#linux"><img src="https://img.shields.io/badge/Linux-verified-444449?labelColor=191a1d" alt="Linux — 已实机跑通"/></a>
+  <a href="#快速开始"><img src="https://img.shields.io/badge/Windows-reference-46745c?labelColor=16291f" alt="Windows — 参考平台"/></a>
+  <a href="#快速开始"><img src="https://img.shields.io/badge/macOS-MPS-46745c?labelColor=16291f" alt="macOS — 支持 Apple Silicon MPS"/></a>
+  <a href="#linux"><img src="https://img.shields.io/badge/Linux-verified-46745c?labelColor=16291f" alt="Linux — 已实机跑通"/></a>
 </p>
 
 <p><a href="./README.md">English</a> · <strong>简体中文</strong></p>

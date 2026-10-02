@@ -19,9 +19,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import hashlib
 import re
-from typing import Iterable, Sequence
+from typing import Iterable, Mapping, Sequence
 
-from llm.emo_presets import EMOTION_DURATION_RANGES
 from llm.prompts import get_system_prompt
 from llm.stream_parser import StreamTagParser
 from tools.text_utils import _parse_seconds
@@ -45,6 +44,26 @@ _VISIBLE_INTERNAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("provider_result", re.compile(r"\bprovider\.result\b", re.IGNORECASE)),
     ("progress_marker", re.compile(r"\[PROGRESS\s*:", re.IGNORECASE)),
 )
+
+
+# These are copied from the ranges declared in the current _JA_BASE/_EN_BASE
+# prompt.  The actual persona and wording are not copied: build_role_contract()
+# embeds get_system_prompt("base") and records its fingerprint.
+EMOTION_DURATION_RANGES: Mapping[str, tuple[float, float] | None] = {
+    "normal": (2.0, 6.0),
+    "thinking": (10.0, 15.0),
+    "smile": (1.0, 2.0),
+    "happy": (1.0, 2.0),
+    "shy": (2.0, 4.0),
+    "blush": (2.0, 4.0),
+    "angry": (3.0, 5.0),
+    "sad": (3.0, 5.0),
+    "disappointed": (3.0, 5.0),
+    "surprised": (1.0, 2.0),
+    # The shipping prompt defines this preset by semantic span instead of a
+    # numeric duration.  Require a positive, bounded duration for consumption.
+    "serious_speaking": None,
+}
 
 
 @dataclass(frozen=True)

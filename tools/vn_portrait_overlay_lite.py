@@ -41,6 +41,24 @@ def overlay_class(shell=vn_overlay_window):
             else:
                 super()._load_frames()
 
+        def reload_character_pack(self, new_dir):
+            target = Path(new_dir)
+            if not (target / "manifest.json").is_file():
+                return False
+            try:
+                replacement = AtlasPlayer(target)
+            except Exception:
+                return False
+            previous = self._lite
+            self._lite = replacement
+            self._lite_dir = target
+            if previous is not None:
+                previous.close()
+            self._sentence_id = ""
+            self._set_emotion("normal", "idle")
+            self._draw_lite()
+            return True
+
         def _resolve_key(self, emotion):
             if not self._lite:
                 return super()._resolve_key(emotion)
@@ -60,6 +78,7 @@ def overlay_class(shell=vn_overlay_window):
             # Hold the current pose during the short sentence-end grace period.
             # The next speaking variant can enter directly, without routing through idle.
             settling = self._current_state == "speaking" and self._active_until == 0.0
+            self._lite.set_mouth_value(getattr(self, "_mouth_value", 1.0))
             self._lite.set_paused(not self.root.winfo_viewable() or settling)
             if self._atlas_timer is not None:
                 self.root.after_cancel(self._atlas_timer)
@@ -71,6 +90,7 @@ def overlay_class(shell=vn_overlay_window):
                         resized = frame.convert("RGBa").resize((self.avatar_size, self.avatar_size), Image.Resampling.LANCZOS).convert("RGBA")
                         frame.close()
                         frame = resized
+
                     # No old per-frame tint/sweep/re-crop; display the same RGBA tile as Canvas.
                     photo = ImageTk.PhotoImage(frame, master=self.root)
                     self.avatar_label.configure(image=photo)
@@ -117,6 +137,16 @@ def overlay_class(shell=vn_overlay_window):
                 self.root.after_cancel(self._return_timer)
                 self._return_timer = None
             emotion, duration = shell.infer_emotion(raw, str(payload.get("emotion") or ""))
+            if payload.get("source") == "vn_preview":
+                # The expression is known before the voice queue starts.
+                # Hold it in idle pose until the real playback edge arrives.
+                self._idle_deadline = 0.0
+                self._active_until = float("inf")
+                self._set_emotion(emotion, "idle")
+                if getattr(self, "visible", True):
+                    self.root.deiconify()
+                    self.root.lift()
+                return
             speaking = payload.get("speaking")
             state = str(payload.get("portrait_state") or payload.get("state") or "").strip().lower()
             if state not in {"idle", "speaking"}:
@@ -154,12 +184,17 @@ def main():
     parser.add_argument("--static-idle", action="store_true")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8788)
-    parser.add_argument("--backend-url", default="", help="Local backend /ws endpoint for VN session controls")
+    parser.add_argument("--backend-url", default="", help="Local backend /ws endpoint for session controls")
+    parser.add_argument("--companion-controls", action="store_true", help="Use Companion ASR/vision controls")
     parser.add_argument("--x", type=int, default=60)
     parser.add_argument("--y", type=int, default=80)
+    parser.add_argument("--on-close", choices=("exit", "card-close"), default="exit",
+                        help="Companion mode reports the user's close to the owning backend")
     args = parser.parse_args()
     overlay = overlay_class()(lite_dir=args.lite_dir, static_idle=args.static_idle,
-                              host=args.host, port=args.port, x=args.x, y=args.y, backend_url=args.backend_url)
+                              host=args.host, port=args.port, x=args.x, y=args.y,
+                              backend_url=args.backend_url, on_close=args.on_close,
+                              companion_controls=args.companion_controls)
     return overlay.run()
 
 

@@ -9,7 +9,7 @@
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
-    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron . --disable-gpu-sandbox\"",
     "electron:build": "npm run build && electron-builder"
   },
   "build": {

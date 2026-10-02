@@ -66,6 +66,9 @@ def test_sentence_gap_changes_thinking_variant_directly_but_final_stop_returns_i
         overlay.apply_reaction({"source": "vn_playback", "sentence_id": sentence,
                                 "speaking": speaking, "emotion": emotion})
     try:
+        overlay.apply_reaction({"source": "vn_preview", "emotion": "disappointed"})
+        assert overlay._current_emotion == "disappointed" and overlay._current_state == "idle"
+        assert overlay._return_timer is None and not overlay._lite.paused
         event("first", True)
         advance(100)
         first_spec = overlay._lite.spec

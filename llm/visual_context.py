@@ -15,7 +15,9 @@ def provider_supports_direct_image(provider: str, model: str = "") -> bool:
         return str(model or "").strip().lower() in {
             "deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp",
         }
-    return provider in {"openai", "gemini", "hybrid3"}
+    # Qwen-VL uses the same OpenAI-compatible image message shape. The dedicated
+    # route names it ``qwen_vision`` after dispatching to DashScope.
+    return provider in {"openai", "gemini", "hybrid3", "qwen", "qwen_vision"}
 
 
 def visual_notice_text(question: str, visual_context: dict[str, Any] | None, *, supported: bool) -> str:

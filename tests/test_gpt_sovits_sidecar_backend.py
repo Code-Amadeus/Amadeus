@@ -120,7 +120,10 @@ for line in sys.stdin:
     request = message["request"]
     sys.stderr.write("handled " + request_id + "\n")
     sys.stderr.flush()
-    if message["type"] == "infer_stream":
+    if message["type"] == "reload_model":
+        sys.stderr.write("reload " + request.get("sovits_model", "") + "\n")
+        sys.stderr.flush()
+    elif message["type"] == "infer_stream":
         chunk(request_id, [0.1, 0.2], "first")
         chunk(request_id, [0.3], "second")
     else:
@@ -257,3 +260,27 @@ def test_sidecar_skips_stream_metadata_and_rejects_non_finite_audio(monkeypatch)
         assert False, "non-finite audio must not cross the sidecar protocol"
     except ValueError as exc:
         assert "non-finite audio" in str(exc)
+
+
+def test_sidecar_reload_model_uses_existing_channel(tmp_path, monkeypatch):
+    script = tmp_path / "fake_tts_sidecar.py"
+    _write_fake_sidecar(script)
+    monkeypatch.setattr(backend_module, "_SIDECAR_SCRIPT", script)
+    monkeypatch.setenv("TTS_MODE", "sidecar")
+    monkeypatch.setenv("TTS_PYTHON", sys.executable)
+
+    current = {"gpt": "old-gpt", "sovits": "old-sovits"}
+    monkeypatch.setattr(
+        "tts.model_paths.resolve_active_tts_model_paths",
+        lambda: (current["gpt"], current["sovits"]),
+    )
+
+    backend = GPTSoVITSBackend()
+    try:
+        backend.load()
+        current.update(gpt="new-gpt", sovits="new-sovits")
+        assert backend.reload_active_voice() is True
+        assert backend._model_paths == ("new-gpt", "new-sovits")
+        assert backend.reload_active_voice() is False
+    finally:
+        backend.close()

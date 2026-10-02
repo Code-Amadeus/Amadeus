@@ -21,6 +21,7 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = PROJECT_ROOT / "assets" / "spriteforge" / "runtime" / "kurisu"
 PACK_FORMAT = "amadeus.spriteforge.character-pack.v1"
+DEFAULT_RELEASE_VERSION = "2026.08.27"
 DEFAULT_FPS = 24
 PHASE_PRIORITY = ("loop", "in", "out")
 FRAME_DIR_NAMES = (
@@ -304,6 +305,15 @@ def _mouth_runtime_config(
         # minimum openness score may still be an open mouth; it is not an
         # equivalent fallback when that source has not been encoded.
         if not texture.is_file() or texture.stat().st_size <= 0:
+            if use_closed_source:
+                # An explicit closed-mouth source was selected. Falling back to the
+                # profile's own closed frame would silently substitute a
+                # speaking-loop frame for the intended closed mouth, so refuse.
+                raise ValueError(
+                    f"mouth profile {label!r} explicitly selects a closed source but its "
+                    f"KTX2 sidecar is missing: {texture}; refusing to substitute the "
+                    f"speaking-loop frame"
+                )
             raise ValueError(f"mouth profile {label!r} is missing KTX2 overlay: {texture}")
         runtime_anchor = {
             "cx": anchor.get("cx", raw_profile.get("cx", 0.0)),
@@ -353,6 +363,7 @@ def build_plan(
     quality: int,
     zcmp: int,
     ffprobe: Path,
+    version: str = DEFAULT_RELEASE_VERSION,
 ) -> dict[str, Any]:
     workspace = workspace.resolve()
     graph_path = workspace / "graph_config.json"
@@ -433,7 +444,7 @@ def build_plan(
         "format": PACK_FORMAT,
         "id": "kurisu",
         "displayName": "Kurisu",
-        "version": "2026.08.27",
+        "version": version,
         "textureFormat": "ktx2",
         "graph": "graph_config.json",
         "mouthConfig": "spriteforge_mouth_config.json",
@@ -503,6 +514,11 @@ def main() -> int:
     parser.add_argument("--quality", type=int, default=4)
     parser.add_argument("--zcmp", type=int, default=18)
     parser.add_argument("--ffprobe", type=Path, default=PROJECT_ROOT / "ffprobe.exe")
+    parser.add_argument(
+        "--version",
+        default=DEFAULT_RELEASE_VERSION,
+        help="release label written to the runtime manifest version field",
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--move-textures", action="store_true")
     args = parser.parse_args()
@@ -515,6 +531,7 @@ def main() -> int:
         quality=max(0, int(args.quality)),
         zcmp=max(0, int(args.zcmp)),
         ffprobe=args.ffprobe.resolve(),
+        version=str(args.version),
     )
     manifest = plan["manifest"]
     print(

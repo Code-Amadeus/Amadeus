@@ -1,0 +1,10 @@
+{
+  "id": "kurisu",
+  "name": "牧瀬紅莉栖",
+  "art_dir": "assets/companion/kurisu",
+  "voice": {
+    "audio": "assets/audio/reference/kurisu_reference.wav",
+    "text": "そういえば,正式に自己紹介していませんでしたね……牧瀬紅莉栖です.改めまして,よろしく"
+  },
+  "persona_file": "assets/characters/kurisu/persona-SOUL.md"
+}

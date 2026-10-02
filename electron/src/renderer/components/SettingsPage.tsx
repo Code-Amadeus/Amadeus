@@ -4,7 +4,6 @@ import FluentIcon, { type FluentIconName } from './FluentIcon'
 import { GroupTitle, CardShell, CardIcon, StatusPill, SettingsGroup } from './SettingsPrimitives'
 import McpConnections, { type McpConnectionSummary } from './McpConnections'
 import ChatAvatarSettings from './ChatAvatarSettings'
-import MainChatCharacterSettings from './MainChatCharacterSettings'
 import AcpProviders, { type AcpConfiguration } from './AcpProviders'
 import CapabilitiesPanel, { type RuntimePackageStatus } from './CapabilitiesPanel'
 import { buildCapabilityProfiles, type SceneConfigureSection } from './sceneCapabilityProjection'
@@ -695,15 +694,11 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
       setConfig((response.values as Record<string, unknown>) ?? response)
       const applied = await markRuntimeSettingsApplied({ [key]: value }, saved.pendingRevisions)
       if (applied) setDesktop(applied as unknown as DesktopSettingsSnapshot)
-      if (key === 'main_chat_character_prompt_ja') setNotice('Character prompt saved. New Main Chat replies use the current setting.')
-      return true
     } catch (reason) {
       if (persisted) {
         setNotice('Saved for the next backend start; the current runtime did not change.')
-        return true
       } else {
         setError(reason instanceof Error ? reason.message : `Could not update ${key}`)
-        return false
       }
     } finally {
       setSaving(null)
@@ -848,19 +843,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     : characterPackState === 'invalid'
       ? `The optional package is incomplete: ${String(characterPack.message ?? 'validation failed')}`
       : 'Optional. Chat, Work, and headless mode remain available without this package.'
-  const emotionPack = asRecord(config.emotion_reference_pack)
-  const emotionPackInstalled = Boolean(emotionPack.installed)
-  const emotionPackNeedsAttention = ['invalid', 'incomplete'].includes(String(emotionPack.state))
   const runtimePackages: RuntimePackageStatus[] = [
-    {
-      id: 'emotion_reference_pack',
-      label: 'Kurisu V3 Emotion Reference Pack',
-      description: 'Optional reference audio and paired transcripts. Existing V3 weights and the default acoustic reference are kept.',
-      value: emotionPackInstalled ? 'Installed' : emotionPackNeedsAttention ? 'Needs attention' : 'Not installed',
-      state: emotionPackInstalled ? 'ready' : emotionPackNeedsAttention ? 'attention' : 'inactive',
-      stateLabel: emotionPackInstalled ? 'Installed' : emotionPackNeedsAttention ? 'Needs attention' : 'Not installed',
-      icon: 'People',
-    },
     {
       id: 'visual_runtime_pack',
       label: 'Visual Runtime Pack',
@@ -1006,7 +989,6 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
         ttsBackend: desktop?.sources?.TTS_BACKEND === 'user' ? desktop.values.TTS_BACKEND : val('tts_backend', 'gpt_sovits'),
         wakeEnabled: desktop?.sources?.WAKE_ENABLED === 'user' ? desktop.values.WAKE_ENABLED === 'true' : bool('wake_enabled'),
         aecEnabled: desktop?.sources?.AEC_REALTIME_ENABLED === 'user' ? desktop.values.AEC_REALTIME_ENABLED === 'true' : config.aec_realtime_enabled === undefined ? true : bool('aec_realtime_enabled'),
-        emotionReferencesEnabled: backendVoiceConfiguration.find(group => group.id === 'tts_emotion_references')?.fields.find(field => field.key === 'ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING')?.value === true,
       }, desktop)
   const voiceConfiguration: ConfigurationGroup[] = voiceCatalog.map(base => {
     const backend = backendVoiceConfiguration.find(group => group.id === base.id)
@@ -1020,7 +1002,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
       status_detail: backend.status_detail,
     } : base
   })
-  const primaryVoiceIds = new Set(['conversation_asr', 'speech_synthesis', 'wake_asr', 'acoustic_pipeline', 'tts_emotion_references'])
+  const primaryVoiceIds = new Set(['conversation_asr', 'speech_synthesis', 'wake_asr', 'acoustic_pipeline'])
   const remoteVoiceIds = new Set(['asr_remote', 'tts_fish_audio', 'tts_remote'])
   const primaryVoiceConfiguration = voiceConfiguration.filter(group => primaryVoiceIds.has(group.id))
   const remoteVoiceConfiguration = voiceConfiguration.filter(group => remoteVoiceIds.has(group.id))
@@ -1178,18 +1160,6 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                   <ThemePicker
                     value={theme}
                     onChange={value => void setTheme(value).catch(reason => setError(reason instanceof Error ? reason.message : 'Could not save interface theme'))}
-                  />
-                </SettingsGroup>
-                <SettingsGroup title="Main Chat character" detail="Override the Japanese identity and personality used by Main Chat. Language, expression, voice and agent rules are kept separately.">
-                  <MainChatCharacterSettings
-                    savedOverride={desktop?.sources?.AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA === 'user'
-                      ? desktop.values.AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA ?? ''
-                      : String(config.main_chat_character_prompt_ja ?? '')}
-                    preview={config.main_chat_character_prompt_preview}
-                    canSave={connected || Boolean(desktop)}
-                    locked={Boolean(desktop?.locked?.AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA)}
-                    saving={saving === 'main_chat_character_prompt_ja'}
-                    onSave={value => handleChange('main_chat_character_prompt_ja', value)}
                   />
                 </SettingsGroup>
                 <SettingsGroup title="Chat appearance" detail="Local presentation only; avatar images are never sent to the model.">

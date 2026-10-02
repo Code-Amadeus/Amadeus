@@ -73,9 +73,6 @@ LOG_USER_CONTENT = _bool("LOG_USER_CONTENT", False)
 # ===========================================================================
 # Main Chat LLM routing — remote DeepSeek first-release baseline
 # ===========================================================================
-# Japanese Main Chat identity/personality only; empty uses the built-in role.
-MAIN_CHAT_CHARACTER_PROMPT_JA = _str("AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA", "")
-
 LLM_PROVIDER = _str("LLM_PROVIDER", "deepseek").strip().lower()
 LLM_PROVIDERS = frozenset(
     {"deepseek", "openai", "gemini", "bedrock", "local", "hybrid", "hybrid2", "hybrid3"}
@@ -89,6 +86,16 @@ if LLM_PROVIDER not in LLM_PROVIDERS:
 DEEPSEEK_API_KEY   = _secret("DEEPSEEK_API_KEY")
 DEEPSEEK_BASE_URL  = _str("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 DEEPSEEK_MODEL_NAME = _str("DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
+# ===========================================================================
+# LLM 提供商 — Qwen / DashScope（联网检索专用链路）
+# 主模型仍由 LLM_PROVIDER 决定（默认 deepseek）。配置 DASHSCOPE_API_KEY 后，
+# Amadeus 的 Web 检索/查资料走 Qwen 的 enable_search：联网搜索在阿里云服务端
+# 完成，不经本地浏览器，不受反爬/被墙站点影响。
+# ===========================================================================
+DASHSCOPE_API_KEY  = _str("DASHSCOPE_API_KEY").strip()
+DASHSCOPE_BASE_URL = _str("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1").strip()
+QWEN_MODEL_NAME    = _str("QWEN_MODEL_NAME", "qwen-plus").strip()
+QWEN_VL_MODEL_NAME = _str("QWEN_VL_MODEL_NAME", "qwen-vl-max").strip()
 
 # ===========================================================================
 # LLM 提供商 — OpenAI / GPT
@@ -276,8 +283,10 @@ VTS_RECONNECT_ENABLED = _bool("VTS_RECONNECT_ENABLED", True)
 # TTS（Amadeus 低延迟 GPT-SoVITS v3 推理；本地后端仅支持 v3 权重）
 # ===========================================================================
 TTS_BACKEND = _str("TTS_BACKEND", "gpt_sovits").strip().lower()
-TTS_API_BASE_URL = _str("TTS_API_BASE_URL", "https://api.openai.com/v1")
-TTS_API_KEY = _secret("TTS_API_KEY", "")
+TTS_API_BASE_URL = _str("TTS_API_BASE_URL", "").strip() or OPENAI_BASE_URL
+TTS_API_KEY = _secret("TTS_API_KEY", "").strip() or (
+    OPENAI_API_KEY if TTS_BACKEND == "openai_compatible" else ""
+)
 TTS_API_MODEL = _str("TTS_API_MODEL", "gpt-4o-mini-tts")
 TTS_API_VOICE = _str("TTS_API_VOICE", "alloy")
 TTS_API_STREAM_PROTOCOL = _str("TTS_API_STREAM_PROTOCOL", "buffered").strip().lower()
@@ -362,8 +371,20 @@ TTS_GPT_MODEL_PATH, TTS_SOVITS_MODEL_PATH = _resolve_tts_voice_paths(
 
 # 输出语言："日文" | "英文"（对应 dict_language 中的键名）
 # 切换此项即可在日文 LoRA 管线和英文 base 管线之间手动选择
-TTS_OUTPUT_LANGUAGE   = _str("TTS_OUTPUT_LANGUAGE", "日文")
-ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING = _bool("ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING", False)
+_tts_output_language_raw = _str("TTS_OUTPUT_LANGUAGE", "日文").strip()
+_TTS_OUTPUT_LANGUAGE_ALIASES = {
+    "ja": "日文",
+    "jp": "日文",
+    "japanese": "日文",
+    "日文": "日文",
+    "en": "英文",
+    "english": "英文",
+    "英文": "英文",
+}
+TTS_OUTPUT_LANGUAGE = _TTS_OUTPUT_LANGUAGE_ALIASES.get(
+    _tts_output_language_raw.lower(),
+    _tts_output_language_raw,
+)
 
 # 日文管线参考音频 / 文本
 TTS_REF_AUDIO_JA = _str("TTS_REF_AUDIO_JA", "./assets/audio/reference/kurisu_reference.wav")
@@ -432,6 +453,19 @@ ASR_API_BASE_URL = _str("ASR_API_BASE_URL", "https://api.openai.com/v1")
 ASR_API_KEY = _secret("ASR_API_KEY", "")
 ASR_API_MODEL = _str("ASR_API_MODEL", "gpt-4o-mini-transcribe")
 ASR_API_TIMEOUT_SECONDS = _float("ASR_API_TIMEOUT_SECONDS", 45.0)
+# Native DashScope multimodal API used by the qwen_remote backend.
+QWEN_REMOTE_ASR_BASE_URL = _str(
+    "QWEN_REMOTE_ASR_BASE_URL",
+    "https://dashscope.aliyuncs.com/api/v1",
+)
+QWEN_REMOTE_ASR_API_KEY = _secret("QWEN_REMOTE_ASR_API_KEY", "")
+QWEN_REMOTE_ASR_MODEL = _str("QWEN_REMOTE_ASR_MODEL", "qwen3-asr-flash")
+QWEN_REMOTE_ASR_WORKSPACE = _str("QWEN_REMOTE_ASR_WORKSPACE", "")
+QWEN_REMOTE_ASR_TRUST_ENV = _bool("QWEN_REMOTE_ASR_TRUST_ENV", False)
+QWEN_REMOTE_ASR_TIMEOUT_SECONDS = _float(
+    "QWEN_REMOTE_ASR_TIMEOUT_SECONDS",
+    60.0,
+)
 ASR_IDLE_UNLOAD_SECONDS = _float("ASR_IDLE_UNLOAD_SECONDS", 180.0)
 ASR_TURN_COMPLETE_TIMEOUT_SECONDS = _float("ASR_TURN_COMPLETE_TIMEOUT_SECONDS", 45.0)
 ASR_ECHO_TAIL_GUARD_MS = _float("ASR_ECHO_TAIL_GUARD_MS", 650.0)

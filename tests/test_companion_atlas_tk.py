@@ -123,3 +123,47 @@ def test_static_tile_has_no_timer(tmp_path):
     assert delay is None
     assert player.frame() == (None, None)
     player.close()
+
+
+def test_switching_emotion_reloads_mouth_overlay(tmp_path):
+    size = 2
+    atlas = Image.new("RGBA", (size, size), (10, 20, 30, 255))
+    atlas_path = tmp_path / "atlas.webp"
+    atlas.save(atlas_path, lossless=True)
+    atlas.close()
+    spec = {
+        "url": "atlas.webp", "size": size, "columns": 1, "sequence": [0],
+        "durationMs": 1000, "decodedBytes": size * size * 4,
+        "fileBytes": atlas_path.stat().st_size,
+        "sha256": hashlib.sha256(atlas_path.read_bytes()).hexdigest(),
+    }
+    mouth_specs = {}
+    for name, color in (("normal", (255, 0, 0, 255)), ("happy", (0, 255, 0, 255))):
+        mouth_path = tmp_path / f"{name}-mouth.webp"
+        mouth = Image.new("RGBA", (size, size), color)
+        mouth.save(mouth_path, lossless=True)
+        mouth.close()
+        mouth_specs[name] = {
+            "url": mouth_path.name, "threshold": 0.08,
+            "roi": {"cx": 0, "cy": 0, "width": size * 2, "height": size * 2},
+        }
+    manifest = {
+        "format": "amadeus.companion-atlas.v1",
+        "emotions": {name: {"idle": spec, "speaking": spec} for name in mouth_specs},
+        "mouth": mouth_specs,
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    player = AtlasPlayer(tmp_path)
+    try:
+        player.select("normal", True)
+        player.set_mouth_value(0.0)
+        frame, _ = player.frame()
+        assert frame.getpixel((1, 1)) == (255, 0, 0, 255)
+        frame.close()
+        player.select("happy", True)
+        frame, _ = player.frame()
+        assert frame.getpixel((1, 1)) == (0, 255, 0, 255)
+        frame.close()
+        assert player.mouth_entry_url == "happy-mouth.webp"
+    finally:
+        player.close()

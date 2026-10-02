@@ -73,7 +73,11 @@ class BrowserInteractionPolicy:
         if max_actions == 0 and not self._requires_observation(operation):
             return self._direct(request, max_actions=max_actions, reason="no_branch_actions_requested")
 
-        if self._requires_observation(operation):
+        # Observe-then-plan needs a live page to observe. A fresh search
+        # with no existing session has nothing to capture: run it directly
+        # so the research path (Qwen Web Research) handles it instead of
+        # opening a branch against a blank page.
+        if self._requires_observation(operation) and self._has_browser_session(metadata):
             return self._branch_decision(
                 request,
                 action=action,

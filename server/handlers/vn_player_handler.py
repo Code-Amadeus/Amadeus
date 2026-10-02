@@ -75,6 +75,12 @@ class VNPlayerHandler(RequestHandler):
         status = self._runtime.status() if self._runtime else {"status": "stopped"}
         return {**status, "inputs": self._inputs(status)}
 
+    def activity(self) -> list[dict[str, Any]]:
+        """Expose recent hook activity as read-only Game Companion context."""
+        if self._runtime is None or not self._runtime.enabled:
+            return []
+        return self._runtime.activity()
+
     async def _emit_runtime(self, method: str, payload: dict[str, Any]) -> None:
         if method == Method.VN_STATUS:
             await self._reconcile_voice(payload)

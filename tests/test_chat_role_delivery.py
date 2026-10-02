@@ -350,7 +350,7 @@ async def test_bootstrap_role_publisher_uses_chat_runtime_speech(monkeypatch, vi
     playback.mark_turn_last_sentence.assert_called_once_with(items[-1].sentence_id, "role-turn")
     assert delivery.receipts[-1]["narration"]["accepted"] is True
 
-    # Shared scheduling preserves each complete sentence and the role turn.
+    # The real shared scheduler can aggregate the tail, unlike an all-streaming VN line.
     from tts.utterance_scheduler import TTSUtteranceScheduler
     monkeypatch.setenv("ENABLE_TTS_UTTERANCE_SCHEDULER", "1")
     monkeypatch.setenv("TTS_UTTERANCE_MIN_START_SEQ", "2")
@@ -361,10 +361,8 @@ async def test_bootstrap_role_publisher_uses_chat_runtime_speech(monkeypatch, vi
     first = await scheduler.next_job(queue)
     tail = await scheduler.next_job(queue)
     assert first.is_first and first.consumed_count == 1
-    assert not tail.is_first and tail.consumed_count == 1
-    assert tail.turn_id == "role-turn" and tail.text == "二。"
-    last = await scheduler.next_job(queue)
-    assert last.turn_id == "role-turn" and last.text == "三。"
+    assert not tail.is_first and tail.consumed_count == 2
+    assert tail.turn_id == "role-turn" and tail.text == "二。三。"
 
 
 @pytest.fixture
@@ -547,7 +545,7 @@ async def test_interrupted_stream_cannot_publish_or_enqueue_tail(streaming_role,
         assert host.emitted
         assert all(method == Method.CHAT_TOKEN
             and payload["token"] == "前句。" for method, payload in host.emitted)
-        host.history.assert_called_once_with("A", role="assistant", content="前句。", turn_id="reply")
+        host.history.assert_not_called()
         host.playback.mark_turn_last_sentence.assert_not_called()
         assert not host.display.receipts
     finally:
@@ -576,7 +574,7 @@ async def test_streamed_null_cannot_be_replaced_by_a_duplicate_action(streaming_
         assert str(raised.value.__cause__) == "invalid coordination JSON"
         assert isinstance(raised.value.__cause__.__cause__, ValueError)
         assert not loop.children and not loop.receipts
-        host.history.assert_called_once_with("A", role="assistant", content="暂时。", turn_id="reply")
+        host.history.assert_not_called()
     finally:
         await loop.close()
 

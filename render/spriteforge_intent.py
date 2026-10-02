@@ -23,6 +23,8 @@ RANDOM_TRIGGER_ROUTES: dict[str, tuple[str, ...]] = {
 }
 
 TRIGGER_ALIASES: dict[str, str] = {
+    "listening": "idle_mic_wind",
+    "listen": "idle_mic_wind",
     "work": "thinking",
     "working": "thinking",
     "provider_work": "thinking",

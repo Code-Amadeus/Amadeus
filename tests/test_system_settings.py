@@ -49,6 +49,7 @@ def test_settings_connection_descriptors_never_return_secret_values() -> None:
         "ASR_API_KEY",
         "TTS_API_KEY",
         "MIMO_TTS_API_KEY",
+        "QWEN_REMOTE_ASR_API_KEY",
         "FISH_TTS_API_KEY",
     }
 
@@ -135,7 +136,12 @@ def test_settings_only_publish_composed_work_providers() -> None:
 def test_asr_handler_owns_desired_and_loaded_backend() -> None:
     async def run() -> None:
         handler = AsrHandler()
-        assert handler.backend_name in {"qwen3_asr", "sense_voice", "openai_compatible"}
+        assert handler.backend_name in {
+            "qwen3_asr",
+            "qwen_remote",
+            "sense_voice",
+            "openai_compatible",
+        }
 
         await handler.set_backend("sense_voice")
         assert handler.backend_name == "sense_voice"
@@ -183,32 +189,6 @@ def test_system_settings_report_optional_character_pack_status() -> None:
         assert result["character_pack"] == expected
 
     asyncio.run(run())
-
-
-def test_emotion_pack_status_is_read_once_off_loop_and_shared(monkeypatch):
-    import threading
-    from config import asset_packages, settings
-    from tts.reference_pack import PACK_ID
-
-    expected = {"id": PACK_ID, "installed": True, "state": "installed"}
-    calls = []
-    original = asset_packages.external_asset_pack_status
-
-    def status(pack_id, **kwargs):
-        if pack_id == PACK_ID:
-            calls.append(threading.get_ident())
-            return expected
-        return original(pack_id, **kwargs)
-
-    monkeypatch.setattr(settings, 'ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING', True)
-    monkeypatch.setattr(asset_packages, 'external_asset_pack_status', status)
-    loop_thread = threading.get_ident()
-    result = asyncio.run(SystemHandler()._get_config({}))
-    assert len(calls) == 1 and calls[0] != loop_thread
-    assert result['emotion_reference_pack'] is expected
-    group = next(group for group in result['voice_configuration'] if group['id'] == 'tts_emotion_references')
-    assert group['configured'] is True
-    assert 'main_chat_character_prompt_ja' in result
 
 
 def test_graphics_status_distinguishes_saved_custom_limits_from_applied_preset(monkeypatch):

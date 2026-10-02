@@ -1,6 +1,6 @@
 <div align="center">
 
-<p><img src="./assets/demo/amadeus-header-layered.png" width="1100" alt="Amadeus — Real-Time Multimodal AI Agent for Desktop Interaction. Warm-white dot-matrix wordmark and anime character with vermilion-red hair on a neutral near-black background."/></p>
+<p><img src="./assets/demo/amadeus-header-layered.png" width="1100" alt="Amadeus — Real-Time Multimodal AI Agent for Desktop Interaction. Mint-green glyph projection of an anime character with coral-red halftone hair."/></p>
 
 <p><picture>
   <source media="(max-width: 600px)" srcset="./assets/header-strip.en.mobile.svg"/>
@@ -8,14 +8,14 @@
 </picture></p>
 
 <p>
-  <a href="https://www.bilibili.com/video/BV1783G6hEYY/"><img src="https://img.shields.io/badge/demo-Bilibili-b94b43?labelColor=191a1d&amp;logo=bilibili&amp;logoColor=e8e2d4" alt="Bilibili demo"/></a>
-  <a href="#architecture"><img src="https://img.shields.io/badge/architecture-current-444449?labelColor=191a1d" alt="Current architecture"/></a>
-  <a href="./docs/alpha-0.15.2.md"><img src="https://img.shields.io/badge/version-0.15.2_Alpha-b94b43?labelColor=191a1d" alt="0.15.2 Alpha"/></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-444449?labelColor=191a1d" alt="AGPL-3.0 license"/></a>
+  <a href="https://www.bilibili.com/video/BV1783G6hEYY/"><img src="https://img.shields.io/badge/demo-Bilibili-46745c?labelColor=16291f&amp;logo=bilibili&amp;logoColor=b4e4c4" alt="Bilibili demo"/></a>
+  <a href="#architecture"><img src="https://img.shields.io/badge/architecture-current-46745c?labelColor=16291f" alt="Current architecture"/></a>
+  <a href="./docs/alpha-0.15.2.md"><img src="https://img.shields.io/badge/version-0.15.2_Alpha-46745c?labelColor=16291f" alt="0.15.2 Alpha"/></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-58625c?labelColor=16291f" alt="AGPL-3.0 license"/></a>
   <br/>
-  <a href="#quick-start"><img src="https://img.shields.io/badge/Windows-reference-444449?labelColor=191a1d" alt="Windows — reference platform"/></a>
-  <a href="#quick-start"><img src="https://img.shields.io/badge/macOS-MPS-444449?labelColor=191a1d" alt="macOS — Apple Silicon MPS supported"/></a>
-  <a href="#linux"><img src="https://img.shields.io/badge/Linux-verified-444449?labelColor=191a1d" alt="Linux — verified on real hardware"/></a>
+  <a href="#quick-start"><img src="https://img.shields.io/badge/Windows-reference-46745c?labelColor=16291f" alt="Windows — reference platform"/></a>
+  <a href="#quick-start"><img src="https://img.shields.io/badge/macOS-MPS-46745c?labelColor=16291f" alt="macOS — Apple Silicon MPS supported"/></a>
+  <a href="#linux"><img src="https://img.shields.io/badge/Linux-verified-46745c?labelColor=16291f" alt="Linux — verified on real hardware"/></a>
 </p>
 
 <p><strong>English</strong> · <a href="./README_ZH.md">简体中文</a></p>

@@ -544,6 +544,38 @@ coordinator = CharacterPresentationCoordinator(
 playback_bridge = PlaybackPresentationBridge(coordinator)
 
 
+# ASR "listening"/"awake" states own a low-priority ambient pose so the
+# character visibly reacts to the user speaking.  Utterance-tier speaking
+# claims (TTS) automatically override it; release returns to the previous
+# effective ambient claim (or idle).
+_LISTENING_ASR_STATUSES = {"listening", "awake"}
+_IDLE_ASR_STATUSES = {"idle", "unloaded", "error", "no_speech"}
+
+
+async def asr_listening_presentation(
+    _method: str,
+    payload: Mapping[str, Any],
+    *,
+    target: CharacterPresentationCoordinator = coordinator,
+) -> None:
+    """Translate ASR lifecycle status into one ambient listening claim."""
+
+    status = str(payload.get("status") or "").strip().lower()
+    if status in _LISTENING_ASR_STATUSES:
+        await target.claim(
+            source_kind="asr",
+            source_id="listening",
+            label="listening",
+            tier="ambient",
+        )
+    elif status in _IDLE_ASR_STATUSES:
+        await target.release(
+            source_kind="asr",
+            source_id="listening",
+            tier="ambient",
+        )
+
+
 async def project_auip_update(
     _method: str,
     payload: Mapping[str, Any],
