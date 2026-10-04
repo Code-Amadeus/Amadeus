@@ -1133,7 +1133,15 @@
       // Prepare finite heads without choosing a winner or deprioritizing a
       // rare edge until after it has already become the visible animation.
       const next = this._labelsForNodeIds(edges.map(edge => edge.to));
-      this._prefetchLabels(next, this.speechActive ? "interactive" : "warm", { reason: "graph-next" });
+      // Speech can exit through a deterministic release route rather than an
+      // edge. Protect that known head too; retaining the current cycle must
+      // not evict the return pose. This lookup consumes no random decision.
+      const label = this._label(nodeId);
+      if (this._has("speakingReleaseLabels", label)) {
+        const release = this._label(this._postSpeechReleaseNode(label));
+        if (release) next.add(release);
+      }
+      this._prefetchLabels(next, "interactive", { reason: "graph-next" });
     }
 
     _has(name, label) {

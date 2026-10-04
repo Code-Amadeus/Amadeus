@@ -274,7 +274,7 @@ test('current loop retains visited frames without eagerly decoding the entire cy
   assert.equal(s.sprite.texture.url, 'lap-3');
 });
 
-test('all positive graph neighbors are warm outside speech, eligible during speech, and withdrawn at an empty neighborhood', async t => {
+test('all positive graph neighbors outrank cycle retention, remain eligible during speech, and withdraw at an empty neighborhood', async t => {
   const f = fixture(t, { budgetBytes: 200 }), s = f.sprite, runtime = f.runtime();
   s.loadFrames('normal', ['normal']);
   s.loadFrames('next', ['next-0', 'next-1', 'next-2']);
@@ -282,8 +282,8 @@ test('all positive graph neighbors are warm outside speech, eligible during spee
   runtime.loadGraph({ rootNodeId: 'root', graph: { nodes: [
     { id: 'root', label: 'normal', isRoot: true }, { id: 'leaf', label: 'next' }, { id: 'rare', label: 'rare' },
   ], edges: [{ from: 'root', to: 'leaf', prob: 0.95 }, { from: 'root', to: 'rare', prob: 0.05 }] } });
-  assert.ok(f.demands.get('prefetch:graph-next').some(row => row.url === 'next-1' && row.priority === 65));
-  assert.ok(f.demands.get('prefetch:graph-next').some(row => row.url === 'rare-1' && row.priority === 65));
+  assert.ok(f.demands.get('prefetch:graph-next').some(row => row.url === 'next-1' && row.priority === 90));
+  assert.ok(f.demands.get('prefetch:graph-next').some(row => row.url === 'rare-1' && row.priority === 90));
   s.setSpeaking(true); runtime.speechActive = true;
   runtime._prefetchNodeNeighborhood('root');
   assert.ok(f.demands.get('prefetch:graph-next').some(row => row.url === 'next-1' && row.priority === 90));
@@ -344,6 +344,46 @@ test('the five-percent successor head is resident before the ordinary selection 
   assert.equal(s._frames.rare.length, rareUrls.length);
   assert.equal(s._displayMisses, misses, 'the rare node can advance from its poster without a missing source');
   assert.equal(f.randomCalls, 1);
+});
+
+test('speech release heads survive a larger active cycle for root and emotion return routes without extra draws', async t => {
+  for (const emotionRoute of [false, true]) {
+    const f = fixture(t, { budgetBytes: 120 }), s = f.sprite, runtime = f.runtime();
+    s.loadFrames('normal', ['root-0', 'root-1', 'root-2']);
+    s.loadFrames('calm', ['calm-0', 'calm-1', 'calm-2']);
+    s.loadFrames('speaking', Array.from({ length: 12 }, (_, i) => `talk-${i}`));
+    s.setIdleFrameIntervalMs('speaking', 100);
+    runtime.loadGraph({ rootNodeId: 'root', graph: { nodes: [
+      { id: 'root', label: 'normal' }, { id: 'talk', label: 'speaking' }, { id: 'release', label: 'calm' },
+    ], edges: [] }, config: { speakingReleaseLabels: ['speaking'],
+      nonEmotionSpeakingLabels: emotionRoute ? [] : ['speaking'],
+      emotionIntentByLabel: { speaking: 'calm' }, postSpeechEmotionLabelByIntent: { calm: 'calm' } } });
+    const settle = async () => {
+      await flush();
+      await f.finishCancelled();
+      for (let round = 0; round < 20; round++) {
+        const pending = f.loads.filter(call => !call.pending.done && !call.signal.aborted);
+        if (!pending.length) break;
+        for (const call of pending) await f.complete(call.url);
+      }
+    };
+    await settle();
+    runtime.speechActive = true; s.setSpeaking(true); runtime._playNode('talk');
+    const expected = emotionRoute ? 'calm' : 'root';
+    assert.ok(f.demands.get('prefetch:graph-next').some(row => row.url === `${expected}-1` && row.priority === 90));
+    for (let i = 1; i < 24; i++) { s._frameIdx = i % 12; s._showFrame(s._frameIdx); await settle(); }
+    assert.ok(s._frameStore.stats().evictions > 0, 'exercise real budget pressure');
+    assert.ok(s._frameStore.stats().residentBytes <= 120);
+    const returned = s._frameStore.get(`${expected}-1`);
+    assert.ok(returned, 'known release head survives retained cycle history');
+    runtime.setSpeaking(false);
+    f.runTimer();
+    const misses = s._displayMisses;
+    s._showFrame(1);
+    assert.equal(s.sprite.texture, returned);
+    assert.equal(s._displayMisses, misses);
+    assert.equal(f.randomCalls, 0);
+  }
 });
 
 test('full release withdraws trigger needs while an active after-speech handoff retains them', async t => {
@@ -645,7 +685,7 @@ test('graph entry-head hints use existing edges and config without extra decisio
   assert.equal(entries[0].labels.length, 7, 'aliases and duplicate config entries request one head');
   const neighbors = hints.find(hint => hint.reason === 'graph-next');
   assert.deepEqual(new Set(neighbors.labels), new Set(['automatic-common', 'automatic-rare']));
-  assert.equal(neighbors.priority, 'warm');
+  assert.equal(neighbors.priority, 'interactive');
   assert.equal(runtime.rootNodeId, 'root');
   assert.equal(runtime.currentNodeId, 'root');
   assert.deepEqual(selections, ['normal']);
