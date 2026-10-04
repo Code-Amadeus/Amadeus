@@ -1,4 +1,31 @@
 // Probe-only argument, journey, and evidence helpers. No renderer imports.
+
+// Install before navigation's vendor scripts, identically for main and store.
+// Observe the shared transcoder boundary without changing either renderer.
+export function installTranscodeCounter() {
+  const counters = window.__textureTranscodes = { installed: false, attempts: 0, completed: 0, failures: 0, elapsedMs: 0 }
+  const install = () => {
+    const parser = window.PixiBasisKtx2Shim?.KTX2Parser
+    if (counters.installed || typeof parser?.transcode !== 'function') return
+    const transcode = parser.transcode
+    parser.transcode = function (...args) {
+      counters.attempts++
+      const start = performance.now()
+      let result
+      try { result = transcode.apply(this, args) }
+      catch (error) { counters.failures++; throw error }
+      return Promise.resolve(result).then(value => {
+        counters.completed++; counters.elapsedMs += performance.now() - start
+        return value
+      }, error => { counters.failures++; throw error })
+    }
+    counters.installed = true
+    document.removeEventListener('load', loaded, true)
+  }
+  const loaded = event => { if (event.target?.tagName === 'SCRIPT') install() }
+  document.addEventListener('load', loaded, true)
+  install()
+}
 export const usage = `Usage: electron tests/fpsTextures.probe.mjs [baseline|sampled] [30|60] [options]
   --sampling off|on        Explicit sampling setting (default: off; sampled means on)
   --profile PROFILE       custom (default), standard at 60 FPS, power_saving at 30 FPS

@@ -274,7 +274,7 @@ def metadata_facts(metadata, samples):
               "platform": {key: value for key, value in (metadata.get("platform") or {}).items()
                            if key in ("os", "release", "architecture") and identifier(value)},
               "instrumentation": {key: value for key, value in (metadata.get("instrumentation") or {}).items()
-                                  if key in ("legacyMisses", "legacyLoads", "textureStats") and isinstance(value, bool)}}
+                                  if key in ("legacyMisses", "legacyLoads", "textureStats", "transcodes") and isinstance(value, bool)}}
     for key in ("sampling", "scenario", "companion", "contextLoss"):
         if isinstance(options.get(key), bool):
             result["options"][key] = options[key]
@@ -419,6 +419,7 @@ def summarize_run(label, directory):
             "journeyMemory": journey, "journeyTailWindow": journey_window,
             "journeyCpu": cpu_window(journey_samples),
             "journeyStore": sampled_counters(journey_samples, "textureStats", STORE_KEYS),
+            "journeyTranscodes": sampled_counters(journey_samples, "transcodes", ("attempts", "completed", "failures", "elapsedMs")),
             "journeyGaps": journey_gaps(metadata, directory / "events.ndjson", issues),
             "phaseMetricsSource": phase_source, "phases": phases,
             "phaseTotals": {key: sum(row[key] for row in phases if number(row.get(key)))

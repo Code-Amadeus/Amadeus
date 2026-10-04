@@ -1,7 +1,25 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import vm from 'node:vm'
-import { parseArgs, createJourney, seededRandom, summarizeGaps, createEvidenceSummary, installTextureProbe } from './textureProbe.mjs'
+import { parseArgs, createJourney, seededRandom, summarizeGaps, createEvidenceSummary, installTextureProbe, installTranscodeCounter } from './textureProbe.mjs'
+
+test('shared counter installs on vendor load before rendering and preserves results, receivers and failures', async () => {
+  const listeners = new Set(), window = {}, receiver = { marker: 17 }
+  const context = { window, performance, Promise, document: {
+    addEventListener(name, fn, capture) { assert.equal(name, 'load'); assert.equal(capture, true); listeners.add(fn) },
+    removeEventListener(name, fn) { listeners.delete(fn) },
+  } }
+  vm.runInNewContext(`(${installTranscodeCounter.toString()})()`, context)
+  assert.equal(window.__textureTranscodes.installed, false)
+  window.PixiBasisKtx2Shim = { KTX2Parser: { async transcode(value) { assert.equal(this, receiver); if (value < 0) throw Error('failed'); return value } } }
+  for (const listener of listeners) listener({ target: { tagName: 'SCRIPT' } })
+  assert.equal(listeners.size, 0)
+  assert.equal(await window.PixiBasisKtx2Shim.KTX2Parser.transcode.call(receiver, 42), 42)
+  await assert.rejects(window.PixiBasisKtx2Shim.KTX2Parser.transcode.call(receiver, -1), /failed/)
+  assert.equal(window.__textureTranscodes.attempts, 2)
+  assert.equal(window.__textureTranscodes.completed, 1)
+  assert.equal(window.__textureTranscodes.failures, 1)
+})
 
 test('probe defaults to the current-source baseline with sampling disabled', () => {
   const options = parseArgs([])

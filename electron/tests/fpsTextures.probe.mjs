@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { spawn, execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createInterface } from 'node:readline'
-import { parseArgs, usage, createJourney, createEvidenceSummary, installTextureProbe } from './textureProbe.mjs'
+import { parseArgs, usage, createJourney, createEvidenceSummary, installTextureProbe, installTranscodeCounter } from './textureProbe.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 let options
@@ -47,7 +47,10 @@ else {
 
   async function startHost() {
     const hostArgs = ['-X', 'utf8', '-u', 'tools/probes/wallpaper_memory_host.py', ...(options.scenario ? ['--scenario'] : [])]
-    host = spawn(path.join(root, '.venv/Scripts/python.exe'), hostArgs, { cwd: root, windowsHide: true,
+    const python = process.env.TEXTURE_PROBE_PYTHON || path.join(root, '.venv/Scripts/python.exe')
+    if (!path.isAbsolute(python)) throw Error('TEXTURE_PROBE_PYTHON must be an absolute interpreter path')
+    await fs.access(python)
+    host = spawn(python, hostArgs, { cwd: root, windowsHide: true,
       env: { ...process.env, GRAPHICS_PROFILE: options.profile, RENDER_MAX_FPS: String(options.fps), RENDER_MAX_RESOLUTION: '1.5',
         RENDER_TEXTURE_SAMPLING: options.sampling ? 'true' : 'false', WALLPAPER_WHEEL_FORWARD: 'false',
         AMADEUS_SCENARIO_IDLE_SECONDS: String(options.durationSeconds + 120),
@@ -108,7 +111,7 @@ else {
       label:s._currentEmotion,logical:s._frameIdx,source:s._activeFrameIdx,spriteRenderable:s.container.renderable,
       currentLabelLoadedFrames:(s._frames?.[s._currentEmotion]||[]).filter(Boolean).length,
       currentLabelTotalFrames:s._frames?.[s._currentEmotion]?.length??null,
-      textureStats,textureStatsError};
+      textureStats,textureStatsError,transcodes:window.__textureTranscodes??null};
   })()`
 
   async function drain() {
@@ -165,6 +168,10 @@ else {
 
   async function run() {
     let failure
+    const sourceHash = async source => {
+      try { return createHash('sha256').update(await fs.readFile(path.join(root, source))).digest('hex') }
+      catch (error) { if (error.code === 'ENOENT') return null; throw error }
+    }
     try {
       metadata.revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, windowsHide: true }).toString().trim()
       metadata.branch = execFileSync('git', ['branch', '--show-current'], { cwd: root, windowsHide: true }).toString().trim()
@@ -174,7 +181,7 @@ else {
         'render/web/vendor/pixi-basis-ktx2.global.js', 'render/server.py', 'render/spriteforge_animator.py',
         'wallpaper/wallpaper_engine_bridge.py', 'wallpaper/scene_assets.py', 'tools/probes/wallpaper_memory_host.py',
         'electron/tests/fpsTextures.probe.mjs', 'electron/tests/textureProbe.mjs']) {
-        metadata.sourceSha256[source] = createHash('sha256').update(await fs.readFile(path.join(root, source))).digest('hex')
+        metadata.sourceSha256[source] = await sourceHash(source)
       }
       await startHost()
       metadata.host = bridge
@@ -186,6 +193,10 @@ else {
       window.webContents.setAudioMuted(true)
       window.webContents.on('paint', () => { paintCount++ })
       window.webContents.on('console-message', event => { void fs.appendFile(path.join(output, 'renderer.log'), event.message + '\n').catch(console.error) })
+      window.webContents.debugger.attach('1.3')
+      await window.webContents.debugger.sendCommand('Page.enable')
+      await window.webContents.debugger.sendCommand('Page.addScriptToEvaluateOnNewDocument', {
+        source: `(${installTranscodeCounter.toString()})()` })
       // Never discover or contact the user's backend, even if a renderer regresses.
       const allowedPorts = new Set([String(bridge.assetPort), String(bridge.bridgePort)])
       window.webContents.session.webRequest.onBeforeRequest((details, callback) => {
@@ -201,8 +212,9 @@ else {
         await sleep(100)
       }
       metadata.instrumentation = await js(`(${installTextureProbe.toString()})(${options.seed})`)
+      metadata.instrumentation.transcodes = await js('window.__textureTranscodes?.installed===true')
+      if (!metadata.instrumentation.transcodes) throw Error('Common transcoder instrumentation was not installed')
       if (metadata.cpuProfiling) {
-        window.webContents.debugger.attach('1.3')
         await window.webContents.debugger.sendCommand('Profiler.enable')
         await window.webContents.debugger.sendCommand('Profiler.setSamplingInterval', { interval: 1000 })
         await window.webContents.debugger.sendCommand('Profiler.start')
@@ -295,7 +307,7 @@ else {
       }
       const sourcesChanged = []
       for (const [source, hash] of Object.entries(metadata.sourceSha256)) {
-        const current = createHash('sha256').update(await fs.readFile(path.join(root, source))).digest('hex')
+        const current = await sourceHash(source)
         if (current !== hash) sourcesChanged.push(source)
       }
       if (sourcesChanged.length && !failure) failure = Error('Source changed during run; comparison invalid')
