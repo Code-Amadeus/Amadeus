@@ -430,9 +430,25 @@ def summarize_run(label, directory):
                               if (directory / filename).is_file()], "readIssues": issues}
 
 
+def compact_run(run):
+    """Keep initial/repeat journeys, optional checks and worst phases, not every soak lap."""
+    phases = run.get("phases") or []
+    selected = {i for i, row in enumerate(phases) if not row.get("phase", "").startswith("soak-")}
+    for group, key in ((None, "misses"), (None, "loadFailures"),
+                       ("tickerGaps", "maxMs"), ("tickerGaps", "p99Ms"), ("rafGaps", "maxMs")):
+        values = [(i, (row.get(group) or {}).get(key) if group else row.get(key)) for i, row in enumerate(phases)]
+        measured = [(i, value) for i, value in values if number(value)]
+        if measured:
+            selected.add(max(measured, key=lambda item: item[1])[0])
+    return {**run, "phases": [row for i, row in enumerate(phases) if i in selected],
+            "phaseSelection": {"recordedCount": len(phases), "publishedCount": len(selected),
+                               "scope": "Non-soak phases plus worst misses, failures, ticker max/P99 and RAF max; totals include all phases."}}
+
+
 def aggregate(runs):
-    return {"schema": "amadeus.texture-probe-summary.v1", "units": "bytes and milliseconds",
+    return {"schema": "amadeus.texture-probe-summary.v1", "units": "bytes, milliseconds, CPU seconds and single-core percent",
             "limitations": ["Process memory groups are separate; GPU process memory is not texture allocation or VRAM.",
+                            "CPU time sums valid consecutive same-process intervals; missing counters or restarts are unavailable. One full core is 100%.",
                             "Store bytes count retained CPU payload plus potential GPU payload, independently of process memory.",
                             "Tail windows describe samples; settlement is unverified, including while loading.",
                             "Journey gap percentiles aggregate raw events; per-phase spikes remain separately reported.",
@@ -446,6 +462,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", action="append", required=True, metavar="LABEL=DIRECTORY")
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--compact", action="store_true", help="Omit repetitive soak phases, retaining totals and adverse extremes")
     args = parser.parse_args(argv)
     runs = []
     for value in args.run:
@@ -456,7 +473,10 @@ def main(argv=None):
             parser.error("Run labels must be unique")
         runs.append((label, directory))
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(aggregate(runs), ensure_ascii=False, indent=2, sort_keys=True,
+    result = aggregate(runs)
+    if args.compact:
+        result["runs"] = [compact_run(run) for run in result["runs"]]
+    args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True,
                                      allow_nan=False) + "\n", encoding="utf-8")
 
 

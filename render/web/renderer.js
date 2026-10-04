@@ -71,6 +71,8 @@
       this._lastSpeechStateChangedAt = 0;
       this._speechQuietBeforeWarmMs = 900;
       this._prefetchHints = new Map();
+      this._textureDemandRevision = 0;
+      this._cycleDemandKey = "";
       this._textureUrls = new WeakMap();
       this._displayMisses = 0;
       /** emotion → PIXI.Texture[][] (transition from→to) */
@@ -135,6 +137,7 @@
       this._frames[emotion] = new Array(list.length);
       this._frameSamplingPlans.delete(emotion);
       this._requiredFrameIndices.delete(emotion);
+      this._textureDemandRevision++;
       this._frameStore.replaceViews("frames:" + emotion, list);
       this._updateRequiredPins(emotion);
       this._refreshTextureDemand();
@@ -176,6 +179,7 @@
     setSpeaking(speaking) {
       if (this._speaking === speaking) return;
       this._speaking = speaking;
+      this._textureDemandRevision++;
       this._lastSpeechStateChangedAt = Date.now();
       if (speaking) {
         this._frameIdx = 0;
@@ -200,11 +204,13 @@
     setIdleFrameIntervalMs(emotion, intervalMs) {
       this._frameIntervals[emotion] = intervalMs;
       this._frameSamplingPlans.delete(emotion);
+      this._textureDemandRevision++;
       this._refreshTextureDemand();
     }
 
     setClipConfig(emotion, config) {
       this._clipConfigs[emotion] = config;
+      this._textureDemandRevision++;
       this._refreshTextureDemand();
     }
 
@@ -220,6 +226,7 @@
       this._mouthConfigSignatures[label] = signature;
       this._mouthConfigs[label] = config;
       this._frameSamplingPlans.delete(label);
+      this._textureDemandRevision++;
       const urls = Array.isArray(config.frameUrls) ? config.frameUrls : [];
       const textures = new Array(urls.length);
       this._mouthTextures[label] = textures;
@@ -343,21 +350,40 @@
           ? (index % (urls.length - 1)) + 1 : (index + 1) % urls.length;
       }
       this._frameStore.replaceDemand("current", requests);
+      const cycleKey = `${label}:${this._textureDemandRevision}:${this._speaking}:${this._held}:${once}`;
+      if (cycleKey !== this._cycleDemandKey) {
+        this._cycleDemandKey = cycleKey;
+        const cycle = [];
+        if (!once && !this._held) for (let i = 0; i < urls.length; i++) {
+          const selected = this._sampleFrameIndex(label, i, i * interval);
+          if (urls[selected]) cycle.push({ url: urls[selected], priority: 80 });
+        }
+        // Retain visited frames for the next lap ahead of global warm heads.
+        // Only the near window starts loads; the cycle is neither a pin nor an
+        // instruction to decode the whole clip up front. Stronger needs win.
+        this._frameStore.replaceDemand("current-cycle", cycle, { load: false });
+      }
       const deferred = this._speaking || Date.now() - this._lastSpeechStateChangedAt < this._speechQuietBeforeWarmMs;
       for (const [owner, hint] of this._prefetchHints) {
-        const wanted = [];
-        if (!deferred || hint.priority >= 90) {
+        const load = !deferred || hint.priority >= 90;
+        if (hint.revision !== this._textureDemandRevision) {
+          hint.requests = [];
           for (const target of hint.labels) {
             const frames = this._frameUrls[target] || [];
             const timing = this._frameIntervals[target] || this._clipConfigs[target]?.frameIntervalMs || 150;
             const headMs = this._clipConfigs[target]?.loopMode === "once_then_hold" ? 750 : 250;
             for (let i = 0; i < Math.min(frames.length, Math.ceil(headMs / timing) + 1); i++) {
               const selected = this._sampleFrameIndex(target, i, i * timing);
-              if (frames[selected]) wanted.push({ url: frames[selected], priority: hint.priority, deadline: Infinity });
+              if (frames[selected]) hint.requests.push({ url: frames[selected], priority: hint.priority, deadline: Infinity });
             }
           }
+          hint.revision = this._textureDemandRevision;
+          hint.load = undefined;
         }
-        this._frameStore.replaceDemand(owner, wanted);
+        if (hint.load !== load) {
+          hint.load = load;
+          this._frameStore.replaceDemand(owner, hint.requests, { load });
+        }
       }
     }
 
@@ -377,6 +403,7 @@
         if (!this._requiredFrameIndices.has(emotion)) this._requiredFrameIndices.set(emotion, new Set());
         this._requiredFrameIndices.get(emotion).add(this._heldFrameIdx);
         this._frameSamplingPlans.delete(emotion);
+        this._textureDemandRevision++;
       }
       const heldUrl = this._frameUrls[emotion]?.[this._heldFrameIdx];
       this._frameStore.replacePins("hold", heldUrl ? [heldUrl] : []);

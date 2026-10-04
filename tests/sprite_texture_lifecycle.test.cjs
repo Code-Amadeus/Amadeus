@@ -82,10 +82,10 @@ function fixture(t, { budgetBytes = 100, sampling = false, fps = 30 } = {}) {
       FrameStore: { createFrameStore: options => {
         const store = storeApi.createFrameStore({ ...options, budgetBytes });
         const replaceDemand = store.replaceDemand;
-        store.replaceDemand = (owner, requests) => {
+        store.replaceDemand = (owner, requests, options) => {
           const snapshot = Array.from(requests, request => ({ ...request }));
           demands.set(owner, snapshot);
-          replaceDemand(owner, snapshot);
+          replaceDemand(owner, snapshot, options);
         };
         return store;
       } },
@@ -199,6 +199,8 @@ test('repeated trigger hints replace prior URL needs and cancel obsolete work th
   runtime.loadGraph({ rootNodeId: 'root', graph: { nodes: [
     { id: 'root', label: 'normal', isRoot: true }, { id: 'a', label: 'first' }, { id: 'b', label: 'second' },
   ], edges: [{ from: 'root', to: 'a', prob: 0 }, { from: 'root', to: 'b', prob: 0 }] } });
+  // Isolate trigger replacement from the independent graph-entry retention.
+  s.prefetchLabels([], 'warm', { reason: 'graph-entries' });
   runtime._prefetchForTrigger('first', 'interactive');
   await flush();
   const old = f.loads.find(call => call.url === 'first-1');
@@ -216,6 +218,60 @@ test('repeated trigger hints replace prior URL needs and cancel obsolete work th
   assert.equal(s._frames.second.length, 3);
   assert.equal(runtime.currentNodeId, 'root', 'hint replacement does not select a new graph node');
   assert.equal(f.randomCalls, 0);
+});
+
+test('speech pauses warm starts but preserves resident heads and resumes after the quiet interval', async t => {
+  const f = fixture(t, { budgetBytes: 80 }), s = f.sprite;
+  s.loadFrames('normal', ['body']);
+  s.loadFrames('entry', ['head-0', 'head-1', 'head-2']);
+  s.prefetchLabels(['entry'], 'warm', { reason: 'graph-entries' });
+  await flush();
+  await f.complete('body'); await f.complete('head-0');
+  const head = await f.complete('head-1');
+  s.setSpeaking(true);
+  await flush();
+  assert.equal(f.demands.get('prefetch:graph-entries').length, 3);
+  assert.equal(head.destroyed, false);
+  assert.ok(f.loads.filter(call => call.url === 'head-2').every(call => !call.signal.aborted), 'pausing does not cancel active work');
+  s.loadFrames('late', ['late-0', 'late-1']);
+  s.prefetchLabels(['entry', 'late'], 'warm', { reason: 'graph-entries' });
+  await flush();
+  assert.equal(f.loads.some(call => call.url === 'late-1'), false);
+  s.setSpeaking(false);
+  await flush();
+  assert.equal(f.loads.some(call => call.url === 'late-1'), false);
+  s._lastSpeechStateChangedAt = Date.now() - 901;
+  s._refreshTextureDemand();
+  for (const call of f.loads.filter(call => !call.pending.done)) await f.complete(call.url);
+  await flush();
+  assert.ok(f.loads.some(call => call.url === 'late-1'));
+  assert.equal(head.destroyed, false);
+});
+
+test('current loop retains visited frames without eagerly decoding the entire cycle', async t => {
+  const f = fixture(t, { budgetBytes: 160 }), s = f.sprite;
+  const urls = Array.from({ length: 12 }, (_, i) => `lap-${i}`);
+  s.loadFrames('normal', urls);
+  s.setIdleFrameIntervalMs('normal', 150);
+  const settle = async () => {
+    await flush();
+    for (let round = 0; round < 20; round++) {
+      const pending = f.loads.filter(call => !call.pending.done);
+      if (!pending.length) break;
+      for (const call of pending) await f.complete(call.url);
+    }
+  };
+  await settle();
+  assert.ok(f.loads.length < urls.length, 'retention alone does not start far-future decodes');
+  for (let lap = 0; lap < 3; lap++) {
+    const before = f.loads.length;
+    for (let i = 0; i < urls.length; i++) { s._frameIdx = i; s._showFrame(i); await settle(); }
+    if (lap > 0) assert.equal(f.loads.length - before, 0);
+    assert.ok(s._frameStore.stats().residentBytes <= 160);
+  }
+  s.holdFrame(3);
+  assert.equal(f.demands.get('current-cycle').length, 0);
+  assert.equal(s.sprite.texture.url, 'lap-3');
 });
 
 test('all positive graph neighbors are warm outside speech, eligible during speech, and withdrawn at an empty neighborhood', async t => {

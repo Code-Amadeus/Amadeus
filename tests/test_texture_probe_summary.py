@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from tools.probes.summarize_texture_runs import aggregate, cpu_window, main, summarize_run
+from tools.probes.summarize_texture_runs import aggregate, compact_run, cpu_window, main, summarize_run
 
 
 def test_cpu_intervals_keep_missing_counters_and_restarts_unavailable():
@@ -17,6 +17,19 @@ def test_cpu_intervals_keep_missing_counters_and_restarts_unavailable():
     assert cpu["gpu"]["cpuSeconds"] is None
     assert cpu["gpu"]["missingIntervals"] == 7
     assert "pid" not in json.dumps(cpu)
+
+
+def test_compact_evidence_retains_adverse_soak_extremes_and_full_totals():
+    run = {"phaseTotals": {"misses": 20}, "recording": {"complete": False}, "phases": [
+        {"phase": "startup", "misses": 1, "tickerGaps": {"maxMs": 30}},
+        {"phase": "soak-speech-1", "misses": 2, "tickerGaps": {"maxMs": 31}},
+        {"phase": "soak-idle-2", "misses": 17, "tickerGaps": {"maxMs": 500}},
+        {"phase": "context-loss", "misses": 0}]}
+    compact = compact_run(run)
+    assert [row["phase"] for row in compact["phases"]] == ["startup", "soak-idle-2", "context-loss"]
+    assert compact["phaseTotals"] == {"misses": 20}
+    assert compact["recording"]["complete"] is False
+    assert compact["phaseSelection"]["recordedCount"] == 4
 
 
 def write_run(directory, *, samples=(), metadata=None, summary=None, events=None):

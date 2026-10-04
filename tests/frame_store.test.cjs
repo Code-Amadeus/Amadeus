@@ -11,6 +11,78 @@ function deferred() {
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const demand = (url, priority = 10, deadline = 0) => ({ url, priority, deadline });
 
+test('a retained loop displaces weak heads, reuses fitting laps, and stays bounded when too large', async () => {
+  for (const budgetBytes of [90, 50]) {
+    let loads = 0;
+    const backend = { now: () => loads, load: async url => {
+      loads++; return { texture: { url }, cpuBytes: 4, gpuBytes: 6 };
+    }, upload: async () => {}, destroy() {} };
+    const store = createFrameStore({ backend, budgetBytes, maxInFlight: 3 });
+    const loop = Array.from({ length: 6 }, (_, i) => `loop-${i}`);
+    store.replacePins('static', ['poster', 'mouth']);
+    store.replaceDemand('warm', Array.from({ length: 7 }, (_, i) => demand(`warm-${i}`, 65)));
+    await flush();
+    store.replaceDemand('cycle', loop.map(url => demand(url, 80)), { load: false });
+    const laps = [];
+    for (let lap = 0; lap < 3; lap++) {
+      const before = loads;
+      for (let i = 0; i < loop.length; i++) {
+        store.replaceDemand('current', [demand(loop[i], 100), demand(loop[(i + 1) % loop.length], 100)]);
+        await flush();
+        assert.ok(store.get(loop[i]), 'the current window can displace retained history');
+        store.replacePins('display', [loop[i]]);
+        assert.ok(store.stats().residentBytes <= budgetBytes);
+      }
+      laps.push(loads - before);
+    }
+    if (budgetBytes === 90) assert.deepEqual(laps.slice(1), [0, 0]);
+    else assert.ok(laps[1] > 0 && laps[2] > 0, 'an oversized cycle must remain evictable');
+    store.destroy();
+    assert.equal(store.stats().residentBytes, 0);
+  }
+});
+
+test('paused demand protects resident work and defers cold work until loading resumes', async () => {
+  const f = fixture({ budgetBytes: 20 });
+  f.store.replaceDemand('warm', [demand('head', 65)]);
+  await flush();
+  f.store.replaceDemand('warm', [demand('head', 65), demand('cold', 65)], { load: false });
+  assert.equal(f.loads[0].signal.aborted, false);
+  const head = await f.complete('head');
+  f.store.replaceDemand('background', [demand('equal-a', 65), demand('equal-b', 65)]);
+  await flush(); await f.complete('equal-a');
+  assert.equal(f.store.get('head'), head, 'paused heads retain priority against equal requests');
+  assert.equal(f.loads.some(call => call.url === 'cold'), false);
+  f.store.replaceDemand('warm', [demand('head', 90), demand('cold', 90)]);
+  await flush(); await f.complete('cold');
+  assert.equal(f.store.get('equal-a'), null);
+  assert.equal(f.store.stats().residentBytes, 20);
+  f.store.destroy();
+});
+
+test('publication accounting is coherent when a view callback changes pins and replaces its view', async () => {
+  let store, published = false;
+  const backend = { now: () => 0, load: async url => ({ texture: { url }, cpuBytes: 4, gpuBytes: 6 }),
+    upload: async () => {}, destroy() {} };
+  store = createFrameStore({ backend, budgetBytes: 20, onViewChange(key, index, texture) {
+    if (!texture || published) return;
+    published = true;
+    assert.equal(store.stats().residentBytes, 10);
+    store.replacePins('display', [texture.url]);
+    assert.equal(store.stats().pinnedBytes, 10);
+    store.replaceViews(key, []);
+    store.replaceDemand('current', []);
+  } });
+  store.replaceViews('clip', ['frame']);
+  store.replaceDemand('current', [demand('frame')]);
+  await flush();
+  assert.equal(published, true);
+  assert.equal(store.get('frame').url, 'frame');
+  store.destroy();
+  assert.equal(store.stats().pinnedBytes, 0);
+  assert.equal(store.stats().inFlight, 0);
+});
+
 function fixture({ budgetBytes = 20, maxInFlight = 2, autoUpload = true } = {}) {
   let time = 0, textureId = 0;
   const loads = [], uploads = [], destroyed = [], changes = [];
