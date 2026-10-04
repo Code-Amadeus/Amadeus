@@ -193,7 +193,10 @@
       const read = async address => {
         check(signal);
         counters.fetchAttempts++;
-        const response = await fetchAsset(address, { signal,
+        // Residency belongs to FrameStore and derived bytes to the asset server.
+        // A second browser disk cache adds revalidation/eviction stalls to this
+        // streaming path, including when the BC7 cache already has the frame.
+        const response = await fetchAsset(address, { signal, cache: 'no-store',
           ...(useCache ? { headers: { Accept: 'application/x-amadeus-bc7, image/ktx2' } } : {}) });
         if (response.ok === false) throw new Error(`Frame fetch failed (${response.status})`);
         const bytes = await response.arrayBuffer();

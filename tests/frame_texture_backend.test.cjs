@@ -59,7 +59,7 @@ function fixture(overrides = {}) {
     cache: overrides.cache,
     shim: { ...basis, KTX2Parser: parser }, createImage, now: () => time,
     fetch: async (url, init) => {
-      fetches.push({ url, signal: init.signal });
+      fetches.push({ url, signal: init.signal, cache: init.cache });
       return overrides.fetch ? overrides.fetch(url, init) : { ok: true, arrayBuffer: async () => new ArrayBuffer(4) };
     } });
   const state = { backend, renderer, parser, images, fetches, binds, decoded, callbacks, listeners,
@@ -105,12 +105,14 @@ test('persistent cache hits bypass UASTC; source misses only save after successf
   const loaded = await hit.backend.load('frame.ktx2');
   assert.equal(hit.initCount(), 0);
   assert.equal(hit.backend.stats().transcodesCompleted, 0);
+  assert.equal(hit.fetches[0].cache, 'no-store', 'BC7 hits bypass the duplicate browser response cache');
   assert.equal(loaded.cpuBytes, 16);
   hit.backend.dispose();
   const cold = fixture({ cache, fetch: async () => ({ ok: true,
     headers: { get: name => name === 'Content-Type' ? 'image/ktx2' : 'key' },
     arrayBuffer: async () => new ArrayBuffer(4) }) });
   const frame = await cold.backend.load('frame.ktx2');
+  assert.equal(cold.fetches[0].cache, 'no-store', 'source reads use the same streaming contract');
   assert.equal(misses, 1); assert.equal(saved, 0);
   const upload = cold.backend.upload(frame.texture); cold.tick(); await upload;
   assert.equal(saved, 1);
@@ -129,6 +131,7 @@ test('invalid disk payload retries the original compressed source exactly once, 
   const result = await f.backend.load('frame.ktx2');
   assert.equal(result.cpuBytes, 16);
   assert.deepEqual(f.fetches.map(row => row.url), ['frame.ktx2', 'frame.ktx2?source=1']);
+  assert.ok(f.fetches.every(row => row.cache === 'no-store'), 'repair also bypasses browser response caching');
   assert.equal(f.images.length, 0); assert.equal(invalidated, 1);
   assert.equal(f.backend.stats().transcodesCompleted, 1);
   f.backend.dispose();

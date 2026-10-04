@@ -140,8 +140,10 @@ log redirection.
   · [After](evidence/texture-cache-ui-2026-10-05/after.png).
 - [Sanitized functional evidence](evidence/texture-cache-product-2026-10-05.json).
 
-The fourth closed-eye visit's approximately 0.62-second missing-frame window
-from the earlier fixed-route 600-second experiment remains unresolved. These
-60-second integration checks do not reach that visit and do not certify its
-repair. Visible Wallpaper Engine/Lively/macOS hosts, model contention and
-multi-hour behavior remain unqualified. Keep PR #155 draft.
+These 60-second integration checks do not reach the fourth closed-eye visit
+and did not certify repair of its earlier approximately 0.62-second gap.
+A [subsequent targeted diagnosis and fix](texture_closed_eye_fix_2026-10-05.md)
+reproduced the gap with the automatic cache and removed it by bypassing the
+duplicate browser HTTP response cache for streamed compressed textures.
+Visible Wallpaper Engine/Lively/macOS hosts, model contention and multi-hour
+behavior remain unqualified. Keep PR #155 draft.
