@@ -169,7 +169,17 @@
     "docs/alpha-0.15.1.md",
     "docs/provider_parent_conversation_handoff_2026-08-31.md",
     "docs/alpha-0.15.1-acceptance.md",
-    "docs/alpha-0.15.2.md"
+    "docs/alpha-0.15.2.md",
+    "docs/texture_pipeline_plan_2026-10-03.md",
+    "docs/evidence/texture-store-2026-10-04.json",
+    "docs/evidence/texture-pipeline-2026-10-03/analyze_pack.cjs",
+    "docs/evidence/texture-pipeline-2026-10-03/dump_frames.cjs",
+    "docs/evidence/texture-pipeline-2026-10-03/pack_stats_stride10.json",
+    "docs/evidence/texture-pipeline-2026-10-03/scenario_video.json",
+    "docs/evidence/texture-pipeline-2026-10-03/stage_timings.json",
+    "docs/evidence/texture-pipeline-2026-10-03/ticker_gate_sim.cjs",
+    "docs/evidence/texture-pipeline-2026-10-03/tier_quality.json",
+    "docs/evidence/texture-pipeline-2026-10-03/tier_quality.py"
   ],
   "exclude_globs": [
     ".github/ISSUE_TEMPLATE/config.yml",

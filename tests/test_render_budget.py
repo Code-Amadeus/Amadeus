@@ -33,6 +33,8 @@ def test_every_renderer_host_loads_budget_before_renderer() -> None:
     ):
         source = (ROOT / relative).read_text(encoding="utf-8")
         assert source.index("render_budget.js") < source.rindex("renderer.js")
+        assert source.index("frame_store.js") < source.rindex("renderer.js")
+        assert source.index("frame_texture_backend.js") < source.rindex("renderer.js")
 
 
 @pytest.mark.parametrize(
@@ -89,13 +91,13 @@ def test_project_and_wallpaper_engine_limits_use_lower_supported_value() -> None
     result = _run_node(
         f"""
 const budget = require({json.dumps(str(RENDER_BUDGET))});
-const ticker = {{ maxFPS: 0 }};
+const ticker = {{ maxFPS: 0, update() {{}} }};
 const controller = budget.createFrameRateController(ticker, 30);
 const values = [controller.apply()];
 values.push(controller.setHostMaxFps(60));
 values.push(controller.setHostMaxFps(20));
 values.push(controller.setHostMaxFps(10));
-process.stdout.write(JSON.stringify({{ values, ticker: ticker.maxFPS }}));
+process.stdout.write(JSON.stringify({{ values, ticker: controller.effectiveMaxFps }}));
 """
     )
     assert result == {"values": [30, 30, 20, 10], "ticker": 10}
@@ -105,10 +107,10 @@ def test_invalid_wallpaper_engine_limit_restores_project_profile() -> None:
     result = _run_node(
         f"""
 const budget = require({json.dumps(str(RENDER_BUDGET))});
-const ticker = {{ maxFPS: 0 }};
+const ticker = {{ maxFPS: 0, update() {{}} }};
 const controller = budget.createFrameRateController(ticker, 60);
 const values = [5, 0, -1, NaN, 241].map(value => controller.setHostMaxFps(value));
-process.stdout.write(JSON.stringify({{ values, ticker: ticker.maxFPS }}));
+process.stdout.write(JSON.stringify({{ values, ticker: controller.effectiveMaxFps }}));
 """
     )
     assert result == {"values": [60, 60, 60, 60, 60], "ticker": 60}
@@ -125,13 +127,13 @@ const target = {{
     applyUserProperties() {{}},
   }},
 }};
-const ticker = {{ maxFPS: 0 }};
+const ticker = {{ maxFPS: 0, update() {{}} }};
 const controller = budget.createFrameRateController(ticker, 60);
 budget.installWallpaperEngineListener(target, controller);
 target.wallpaperPropertyListener.applyGeneralProperties({{ fps: 24 }});
 process.stdout.write(JSON.stringify({{
   calls,
-  ticker: ticker.maxFPS,
+  ticker: controller.effectiveMaxFps,
   keptUserListener: typeof target.wallpaperPropertyListener.applyUserProperties === "function",
 }}));
 """

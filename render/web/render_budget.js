@@ -46,20 +46,57 @@
     };
   }
 
+  // Present on the closest available vsync, carrying fractional time forward.
+  // Only whole missed periods are discarded after a stall; clipping ordinary
+  // overshoot loses time on displays whose refresh rate is not a multiple of FPS.
+  function createPresentGate() {
+    let last = null;
+    let balance = 0;
+    const deltas = [];
+    return {
+      reset() { last = null; balance = 0; deltas.length = 0; },
+      shouldPresent(time, maxFps) {
+        if (last === null || time < last) { last = time; balance = 0; return true; }
+        const dt = time - last;
+        if (!(dt > 0)) return false;
+        last = time;
+        deltas.push(dt);
+        if (deltas.length > 31) deltas.shift();
+        const sorted = deltas.slice().sort((a, b) => a - b);
+        const vsync = sorted[sorted.length >> 1];
+        const period = 1000 / maxFps;
+        balance += dt;
+        if (balance < period - Math.min(vsync, period) / 2) return false;
+        balance -= period;
+        if (balance >= period) balance %= period;
+        return true;
+      },
+    };
+  }
+
   function createFrameRateController(ticker, configuredMaxFps) {
     const projectMaxFps = supportedFps(configuredMaxFps) || STANDARD_MAX_FPS;
     let hostMaxFps = null;
+    let effectiveMaxFps = projectMaxFps;
+    const gate = createPresentGate();
+    const update = ticker.update;
+    ticker.update = function (time = performance.now()) {
+      if (gate.shouldPresent(time, effectiveMaxFps)) update.call(this, time);
+    };
 
     function apply() {
-      const effectiveMaxFps = hostMaxFps === null
+      const nextMaxFps = hostMaxFps === null
         ? projectMaxFps
         : Math.min(projectMaxFps, hostMaxFps);
-      ticker.maxFPS = effectiveMaxFps;
+      if (nextMaxFps !== effectiveMaxFps) gate.reset();
+      effectiveMaxFps = nextMaxFps;
+      ticker.maxFPS = 0;
       return effectiveMaxFps;
     }
 
     return {
       projectMaxFps,
+      get effectiveMaxFps() { return effectiveMaxFps; },
       setHostMaxFps(value) {
         hostMaxFps = supportedFps(value);
         return apply();
@@ -116,6 +153,7 @@
     supportedResolution,
     resolveRenderBudget,
     createFrameRateController,
+    createPresentGate,
     createFrameSamplingPlan,
     installWallpaperEngineListener,
   };

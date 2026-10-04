@@ -83,6 +83,9 @@ _WALLPAPER_CLIENT_ASSETS = (
     _PROJECT_ROOT / "render" / "web" / "companion_atlas.js",
     _PROJECT_ROOT / "render" / "web" / "companion_presentation.js",
     _PROJECT_ROOT / "render" / "web" / "wallpaper_scene.js",
+    _PROJECT_ROOT / "render" / "web" / "render_budget.js",
+    _PROJECT_ROOT / "render" / "web" / "frame_store.js",
+    _PROJECT_ROOT / "render" / "web" / "frame_texture_backend.js",
     _PROJECT_ROOT / "render" / "web" / "renderer.js",
 )
 

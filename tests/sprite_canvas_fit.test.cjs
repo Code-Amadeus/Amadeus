@@ -23,8 +23,10 @@ class Display {
 function renderer(screen = {width: 1280, height: 720}) {
   const ticker = {maxFPS: 60, deltaMS: 1000 / 60, add() {}};
   const context = {
-    app: {ticker, screen}, renderBudget: budget.resolveRenderBudget({maxFps: 60, textureSampling: true}),
-    PIXI: {Container: Display, Sprite: Display, Graphics: Display}, window: {RenderBudget: budget},
+    app: {ticker, screen}, graphicsProfile: 'standard', frameRateController: {effectiveMaxFps: 60}, renderBudget: budget.resolveRenderBudget({maxFps: 60, textureSampling: true}),
+    PIXI: {Container: Display, Sprite: Display, Graphics: Display}, window: {RenderBudget: budget, FrameStore: require('../render/web/frame_store.js'),
+      FrameTextureBackend: {createFrameTextureBackend:()=>({now:()=>0,load:async()=>{throw Error('unexpected load');},upload:async()=>{},destroy(){},dispose(){}})},
+      addEventListener() {}},
     console: {log() {}, warn() {}, error() {}}, setTimeout, clearTimeout,
   };
   vm.createContext(context);

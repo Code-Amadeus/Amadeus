@@ -63,54 +63,19 @@
       /** emotion → PIXI.Texture[] */
       this._frames = {};
       this._frameUrls = {};
-      this._texturePromisesByUrl = new Map();
       this._textureSamplingEnabled = renderBudget.textureSampling;
       this._frameSamplingPlans = new Map();
       this._requiredFrameIndices = new Map();
       this._textureSampleFps = null;
       this._sampleTimeMs = null;
-      this._compressedTextureRuntimePromise = null;
-      this._compressedTextureRuntimeReady = false;
-      this._framePromises = {};
-      this._frameSetStates = {};
-      this._frameLoadQueue = new Map();
-      this._frameLoadSerial = 0;
-      this._activeFrameSetLoads = 0;
-      this._maxConcurrentFrameSetLoads = 1;
-      this._frameLoadPumpTimer = null;
       this._lastSpeechStateChangedAt = 0;
-      this._framesPerLoadSlice = 2;
-      this._speechQuietBeforeSpeculativeMs = 900;
-      this._speculativeLoadEpoch = 0;
-      this._pinnedFrameLabels = new Set([
-        "idle",
-        "speaking_short",
-        "speaking_med",
-        "speaking_long",
-        "speaking_trans",
-        "speaking_loop1",
-        "speaking_loop2",
-        "closed_eye_trans",
-        "speaking_closed_eye_1",
-        "speaking_closed_eye_2",
-        "smile_speaking",
-        "sad_speaking",
-        "shy_speaking1",
-        "shy_speaking2",
-        "surprise_speaking",
-        "angry_speaking",
-      ]);
-      this._warmFrameLabels = new Set([
-        "thinking_trans",
-        "thinking_speaking1",
-        "thinking_speaking2",
-        "thinking_to_serious",
-        "thinking_to_key_point",
-        "key_point_speaking",
-        "serious_to_thinking",
-      ]);
+      this._speechQuietBeforeWarmMs = 900;
+      this._prefetchHints = new Map();
+      this._textureUrls = new WeakMap();
+      this._displayMisses = 0;
       /** emotion → PIXI.Texture[][] (transition from→to) */
       this._transitions = {};
+      this._transitionUrls = {};
 
       this._currentEmotion = "normal";
       this._speaking = false;
@@ -144,50 +109,45 @@
       this.sprite.addChild(this._mouthOverlay);
       this._mouthConfigs = {};     // label → js_cfg
 
+      this._frameBackend = window.FrameTextureBackend.createFrameTextureBackend({ renderer: app.renderer });
+      this._frameStore = window.FrameStore.createFrameStore({
+        backend: this._frameBackend,
+        // With sampling off, a lower presentation rate still visits the same
+        // source frames. Halving residency makes those frames churn on loops.
+        budgetBytes: 2 * 1024 * 1024 * 1024,
+        maxInFlight: 3,
+        onViewChange: (view, index, texture) => this._onTextureViewChange(view, index, texture),
+      });
+      window.addEventListener("unload", () => {
+        this._frameStore.destroy();
+        this._frameBackend.dispose();
+      }, { once: true });
+
       this._startIdleTicker();
     }
 
     // ---- Asset loading ----
 
     loadFrames(emotion, urls) {
-      if (this._sameUrlList(this._frameUrls[emotion], urls) && this._frames[emotion]) {
-        return;
-      }
-      this._frameUrls[emotion] = Array.isArray(urls) ? urls.slice() : [];
+      if (this._sameUrlList(this._frameUrls[emotion], urls) && this._frames[emotion]) return;
+      const list = Array.isArray(urls) ? urls.slice() : [];
+      this._frameUrls[emotion] = list;
+      this._frames[emotion] = new Array(list.length);
       this._frameSamplingPlans.delete(emotion);
       this._requiredFrameIndices.delete(emotion);
-      console.log("[SpriteRenderer] registerFrames:", emotion, urls.length, "urls, first:", (urls[0]||'').slice(0, 100));
-      const textures = new Array(urls.length);
-      this._frames[emotion] = textures;
-      this._framePromises[emotion] = new Array(urls.length);
-      this._frameSetStates[emotion] = "cold";
-
-      // Poster frame keeps low-frequency graph hops from flashing blank while
-      // the full clip is still cold. The rest of the clip is loaded by the
-      // priority scheduler below.
-      this._ensureFrameIndex(emotion, 0);
-
-      const priority = this._initialFrameSetPriority(emotion);
-      if (priority > 0) {
-        this._queueFrameSet(emotion, priority, { reason: "register" });
-      }
+      this._frameStore.replaceViews("frames:" + emotion, list);
+      this._updateRequiredPins(emotion);
+      this._refreshTextureDemand();
     }
 
     loadTransitionFrames(fromEmotion, toEmotion, urls) {
       const key = `${fromEmotion}->${toEmotion}`;
-      const textures = new Array(urls.length);
-      this._transitions[key] = textures;
-      let loaded = 0;
-      urls.forEach((u, idx) => {
-        this._loadTextureFromImage(u).then((tex) => {
-          if (!tex) return;
-          textures[idx] = tex;
-          loaded++;
-          if (loaded === urls.length) {
-            console.log("[SpriteRenderer] transition ready:", key, loaded);
-          }
-        });
-      });
+      const list = Array.isArray(urls) ? urls.slice() : [];
+      this._transitions[key] = new Array(list.length);
+      this._transitionUrls[key] = list;
+      this._frameStore.replaceViews("transition:" + key, list);
+      // The legacy API retains a complete transition until it is replaced.
+      this._frameStore.replacePins("transition:" + key, list);
     }
 
     // ---- State control ----
@@ -204,7 +164,7 @@
       this._sampleTimeMs = null;
       this._cycleCompletedForEmotion = "";
       this._hideMouthLayer();
-      this._queueFrameSet(emotion, this._currentFrameSetPriority(emotion), { reason: "current" });
+      this._refreshTextureDemand();
 
       if (transFrames && transFrames.length > 0) {
         this._playTransition(transFrames, () => this._showFrame(0));
@@ -218,16 +178,13 @@
       this._speaking = speaking;
       this._lastSpeechStateChangedAt = Date.now();
       if (speaking) {
-        this.clearSpeculativeFrameLoads();
-      } else {
-        this._scheduleFrameLoadPump(320);
-      }
-      if (speaking) {
         this._frameIdx = 0;
         this._sampleTimeMs = null;
         this._cycleCompletedForEmotion = "";
         this._held = false;
+        this._frameStore.replacePins("hold", []);
       }
+      this._refreshTextureDemand();
       this._updateMouthLayer();
     }
 
@@ -243,10 +200,12 @@
     setIdleFrameIntervalMs(emotion, intervalMs) {
       this._frameIntervals[emotion] = intervalMs;
       this._frameSamplingPlans.delete(emotion);
+      this._refreshTextureDemand();
     }
 
     setClipConfig(emotion, config) {
       this._clipConfigs[emotion] = config;
+      this._refreshTextureDemand();
     }
 
     setCycleCompleteHandler(handler) {
@@ -264,15 +223,11 @@
       const urls = Array.isArray(config.frameUrls) ? config.frameUrls : [];
       const textures = new Array(urls.length);
       this._mouthTextures[label] = textures;
-      urls.forEach((u, idx) => {
-        this._loadTextureFromImage(u).then((tex) => {
-          if (!tex) return;
-          textures[idx] = tex;
-          if (label === this._currentEmotion) {
-            this._updateMouthLayer();
-          }
-        });
-      });
+      if (label === this._currentEmotion) this._hideMouthLayer();
+      this._frameStore.replaceViews("mouth:" + label, urls);
+      this._frameStore.replacePins("mouth:" + label, urls);
+      this._updateRequiredPins(label);
+      this._refreshTextureDemand();
       console.log("[SpriteRenderer] mouth config for", label, JSON.stringify(config).slice(0, 120));
     }
 
@@ -292,7 +247,7 @@
       let plan = this._frameSamplingPlans.get(emotion);
       if (!plan) {
         // Changes to graphics settings take effect for texture sampling on reload.
-        if (this._textureSampleFps === null) this._textureSampleFps = app.ticker.maxFPS;
+        if (this._textureSampleFps === null) this._textureSampleFps = frameRateController.effectiveMaxFps;
         const cfg = this._mouthConfigs[emotion] || {};
         const required = Array.from(this._requiredFrameIndices.get(emotion) || []);
         if (Number.isInteger(cfg.closedFrameIdx)) required.push(cfg.closedFrameIdx);
@@ -322,172 +277,88 @@
     prefetchLabels(labels, priority = "interactive", options = {}) {
       const score = this._priorityScore(priority);
       if (!score) return;
-      for (const label of labels || []) {
-        const emotion = String(label || "").trim();
-        if (!emotion) continue;
-        this._queueFrameSet(emotion, score, {
-          reason: options.reason || priority,
-          speculative: !!options.speculative,
-        });
-      }
-    }
-
-    clearSpeculativeFrameLoads() {
-      let cleared = 0;
-      this._speculativeLoadEpoch += 1;
-      for (const [label, entry] of Array.from(this._frameLoadQueue.entries())) {
-        if (entry && entry.speculative) {
-          this._frameLoadQueue.delete(label);
-          cleared += 1;
-        }
-      }
-      if (cleared > 0) {
-        console.log("[SpriteRenderer] cleared speculative frame loads:", cleared);
-      }
-    }
-
-    _initialFrameSetPriority(emotion) {
-      if (this._pinnedFrameLabels.has(emotion)) return 100;
-      if (this._warmFrameLabels.has(emotion)) return 65;
-      return 0;
-    }
-
-    _currentFrameSetPriority(emotion) {
-      if (this._pinnedFrameLabels.has(emotion)) return 100;
-      if (this._warmFrameLabels.has(emotion)) return 90;
-      if (/speaking|trans|thinking|key_point/.test(String(emotion || ""))) return 90;
-      return 65;
+      const owner = "prefetch:" + (options.reason || priority);
+      this._prefetchHints.set(owner, {
+        labels: Array.from(new Set((labels || []).filter(Boolean))),
+        priority: score,
+      });
+      this._refreshTextureDemand();
     }
 
     _priorityScore(priority) {
       if (typeof priority === "number") return priority;
-      if (priority === "pinned" || priority === "current") return 100;
-      if (priority === "interactive") return 90;
-      if (priority === "speaking") return 85;
-      if (priority === "warm") return 65;
-      if (priority === "ambient") return 25;
-      if (priority === "poster") return 10;
-      return 0;
+      return ({ pinned: 100, current: 100, interactive: 90, speaking: 85, warm: 65, ambient: 25, poster: 10 })[priority] || 0;
     }
 
-    _queueFrameSet(emotion, priority, options = {}) {
-      if (!emotion || !this._frameUrls[emotion] || !this._frameUrls[emotion].length) return;
-      const currentState = this._frameSetStates[emotion];
-      if (currentState === "warm" && priority < 100) return;
-      const existing = this._frameLoadQueue.get(emotion);
-      const next = {
-        priority: Math.max(priority, existing ? existing.priority : 0),
-        serial: existing ? existing.serial : ++this._frameLoadSerial,
-        speculative: !!(options.speculative || (existing && existing.speculative)),
-        speculativeEpoch: options.speculative ? this._speculativeLoadEpoch : (existing && existing.speculativeEpoch) || this._speculativeLoadEpoch,
-        reason: options.reason || (existing && existing.reason) || "",
-      };
-      this._frameLoadQueue.set(emotion, next);
-      this._scheduleFrameLoadPump(0);
+    _updateRequiredPins(label) {
+      const urls = this._frameUrls[label] || [];
+      const cfg = this._mouthConfigs[label] || {};
+      const indices = new Set([0]);
+      if (Number.isInteger(cfg.closedFrameIdx)) indices.add(cfg.closedFrameIdx);
+      let minimum = Infinity, closed = -1;
+      for (let i = 0; i < Math.min(urls.length, (cfg.opennessByFrame || []).length); i++) {
+        const value = Number(cfg.opennessByFrame[i]);
+        if (Number.isFinite(value) && value < minimum) { minimum = value; closed = i; }
+      }
+      if (closed >= 0) indices.add(closed);
+      this._frameStore.replacePins("required:" + label, [...indices].map(index => urls[index]).filter(Boolean));
     }
 
-    _scheduleFrameLoadPump(delayMs = 0) {
-      if (this._frameLoadPumpTimer) return;
-      this._frameLoadPumpTimer = setTimeout(() => {
-        this._frameLoadPumpTimer = null;
-        this._pumpFrameLoadQueue();
-      }, Math.max(0, delayMs));
+    _onTextureViewChange(view, index, texture) {
+      const colon = view.indexOf(":");
+      const kind = view.slice(0, colon), label = view.slice(colon + 1);
+      const arrays = kind === "mouth" ? this._mouthTextures : kind === "transition" ? this._transitions : this._frames;
+      const frames = arrays[label];
+      if (!frames || index >= frames.length) return;
+      frames[index] = texture;
+      if (!texture) return;
+      if (kind === "frames") {
+        this._textureUrls.set(texture, this._frameUrls[label][index]);
+        if (label === this._currentEmotion) {
+          const target = this._held ? this._heldFrameIdx : this._frameIdx;
+          if (index === this._sampleFrameIndex(label, target, this._held ? null : this._sampleTimeMs)) this._showFrame(target);
+        }
+      } else if (kind === "mouth") {
+        const url = this._mouthConfigs[label]?.frameUrls?.[index];
+        if (url) this._textureUrls.set(texture, url);
+        if (label === this._currentEmotion) this._updateMouthLayer();
+      } else if (kind === "transition") {
+        this._textureUrls.set(texture, this._transitionUrls[label][index]);
+      }
     }
 
-    _pumpFrameLoadQueue() {
-      while (this._activeFrameSetLoads < this._maxConcurrentFrameSetLoads && this._frameLoadQueue.size > 0) {
-        let selectedLabel = "";
-        let selectedEntry = null;
-        for (const [label, entry] of this._frameLoadQueue.entries()) {
-          if (this._shouldDeferFrameSet(entry)) continue;
-          if (
-            !selectedEntry ||
-            entry.priority > selectedEntry.priority ||
-            (entry.priority === selectedEntry.priority && entry.serial < selectedEntry.serial)
-          ) {
-            selectedLabel = label;
-            selectedEntry = entry;
+    _refreshTextureDemand(sourceIndex = this._frameIdx) {
+      const label = this._frames[this._currentEmotion] ? this._currentEmotion : "normal";
+      const urls = this._frameUrls[label] || [];
+      const interval = this._frameIntervals[label] || this._clipConfigs[label]?.frameIntervalMs || 150;
+      const once = this._clipConfigs[label]?.loopMode === "once_then_hold";
+      const requests = [], now = this._frameBackend.now();
+      let index = this._held ? this._heldFrameIdx : sourceIndex;
+      const count = this._held ? 1 : Math.min(urls.length, Math.ceil(500 / interval) + 1);
+      for (let step = 0; step < count && urls.length; step++) {
+        const selected = this._sampleFrameIndex(label, index, this._held ? null : index * interval);
+        if (urls[selected]) requests.push({ url: urls[selected], priority: 100, deadline: now + step * interval });
+        if (once && index >= urls.length - 1) break;
+        index = this._speaking && !this._mouthConfigs[label] && !once && urls.length > 1
+          ? (index % (urls.length - 1)) + 1 : (index + 1) % urls.length;
+      }
+      this._frameStore.replaceDemand("current", requests);
+      const deferred = this._speaking || Date.now() - this._lastSpeechStateChangedAt < this._speechQuietBeforeWarmMs;
+      for (const [owner, hint] of this._prefetchHints) {
+        const wanted = [];
+        if (!deferred || hint.priority >= 90) {
+          for (const target of hint.labels) {
+            const frames = this._frameUrls[target] || [];
+            const timing = this._frameIntervals[target] || this._clipConfigs[target]?.frameIntervalMs || 150;
+            const headMs = this._clipConfigs[target]?.loopMode === "once_then_hold" ? 750 : 250;
+            for (let i = 0; i < Math.min(frames.length, Math.ceil(headMs / timing) + 1); i++) {
+              const selected = this._sampleFrameIndex(target, i, i * timing);
+              if (frames[selected]) wanted.push({ url: frames[selected], priority: hint.priority, deadline: Infinity });
+            }
           }
         }
-        if (!selectedLabel) {
-          this._scheduleFrameLoadPump(360);
-          return;
-        }
-        this._frameLoadQueue.delete(selectedLabel);
-        this._activeFrameSetLoads += 1;
-        this._loadFrameSet(selectedLabel, selectedEntry).finally(() => {
-          this._activeFrameSetLoads = Math.max(0, this._activeFrameSetLoads - 1);
-          this._scheduleFrameLoadPump(0);
-        });
+        this._frameStore.replaceDemand(owner, wanted);
       }
-    }
-
-    _shouldDeferFrameSet(entry) {
-      if (!entry) return false;
-      if (entry.priority >= 90) return false;
-      if (this._speaking) return true;
-      const quietMs = Date.now() - this._lastSpeechStateChangedAt;
-      return quietMs < this._speechQuietBeforeSpeculativeMs;
-    }
-
-    async _loadFrameSet(emotion, entry) {
-      const urls = this._frameUrls[emotion] || [];
-      if (!urls.length) return;
-      this._frameSetStates[emotion] = "loading";
-      console.log("[SpriteRenderer] frame load start:", emotion, urls.length, entry && entry.reason ? entry.reason : "");
-      let loadedThisSlice = 0;
-      for (let i = 0; i < urls.length; i += 1) {
-        if (this._sampleFrameIndex(emotion, i) !== i) continue;
-        if (entry && entry.speculative && entry.speculativeEpoch !== this._speculativeLoadEpoch) {
-          this._frameSetStates[emotion] = "cold";
-          return;
-        }
-        if (this._shouldDeferFrameSet(entry)) {
-          this._frameSetStates[emotion] = "cold";
-          this._queueFrameSet(emotion, entry.priority, entry);
-          return;
-        }
-        await this._ensureFrameIndex(emotion, i);
-        loadedThisSlice += 1;
-        if (loadedThisSlice >= this._framesPerLoadSlice) {
-          loadedThisSlice = 0;
-          await this._yieldFrameLoadSlice(entry);
-        }
-      }
-      this._frameSetStates[emotion] = "warm";
-      console.log("[SpriteRenderer] frame load ready:", emotion, urls.length);
-    }
-
-    _yieldFrameLoadSlice(entry) {
-      const delay = this._speaking ? 16 : (entry && entry.priority >= 90 ? 0 : 24);
-      if (typeof requestIdleCallback === "function" && (!entry || entry.priority < 90) && !this._speaking) {
-        return new Promise((resolve) => requestIdleCallback(resolve, { timeout: 80 }));
-      }
-      return new Promise((resolve) => setTimeout(resolve, delay));
-    }
-
-    _ensureFrameIndex(emotion, idx) {
-      const urls = this._frameUrls[emotion] || [];
-      const textures = this._frames[emotion] || [];
-      if (!urls.length || idx < 0 || idx >= urls.length) return Promise.resolve(null);
-      idx = this._sampleFrameIndex(emotion, idx);
-      if (textures[idx]) return Promise.resolve(textures[idx]);
-      if (!this._framePromises[emotion]) this._framePromises[emotion] = new Array(urls.length);
-      if (this._framePromises[emotion][idx]) return this._framePromises[emotion][idx];
-
-      const promise = this._loadTextureFromImage(urls[idx]).then((tex) => {
-        if (tex) {
-          textures[idx] = tex;
-          if (emotion === this._currentEmotion && idx === this._sampleFrameIndex(emotion, this._frameIdx, this._sampleTimeMs)) {
-            this._showFrame(this._frameIdx);
-          }
-        }
-        return tex;
-      }).finally(() => {
-        if (this._framePromises[emotion]) this._framePromises[emotion][idx] = null;
-      });
-      this._framePromises[emotion][idx] = promise;
-      return promise;
     }
 
     holdFrame(which) {
@@ -507,12 +378,8 @@
         this._requiredFrameIndices.get(emotion).add(this._heldFrameIdx);
         this._frameSamplingPlans.delete(emotion);
       }
-      if (validHold && !this._frames[emotion]?.[this._heldFrameIdx]) {
-        const heldIdx = this._heldFrameIdx;
-        void this._ensureFrameIndex(emotion, heldIdx).then(() => {
-          if (this._held && this._heldFrameIdx === heldIdx && this._currentEmotion === emotion) this._showFrame(heldIdx);
-        });
-      }
+      const heldUrl = this._frameUrls[emotion]?.[this._heldFrameIdx];
+      this._frameStore.replacePins("hold", heldUrl ? [heldUrl] : []);
       this._held = true;
       if (!this._textureSamplingEnabled) {
         this._activeFramePhase = "frames";
@@ -550,6 +417,8 @@
 
     clearHold() {
       this._held = false;
+      this._frameStore.replacePins("hold", []);
+      this._refreshTextureDemand();
     }
 
     resize(w, h) {
@@ -580,6 +449,7 @@
     }
 
     _showFrame(idx) {
+      this._refreshTextureDemand(idx);
       const frames = this._getEmotionFrames();
       if (!frames || frames.length === 0) return;
       const logicalIdx = idx % frames.length;
@@ -587,6 +457,7 @@
       let targetIdx = this._sampleFrameIndex(emotion, logicalIdx, this._sampleTimeMs);
       let texture = frames[targetIdx];
       if (!texture) {
+        this._displayMisses++;
         // file:// assets are decoded asynchronously. Falling back to the first
         // loaded frame creates visible mid-animation snaps; keep the previous
         // frame until the requested texture is ready.
@@ -606,152 +477,12 @@
       this._applyFrame(texture);
     }
 
-    _loadTextureFromImage(url) {
-      const key = String(url || "");
-      if (!key) return Promise.resolve(null);
-
-      const cached = this._texturePromisesByUrl.get(key);
-      if (cached) {
-        return cached.then((texture) => {
-          if (texture && !texture.destroyed && texture.baseTexture && !texture.baseTexture.destroyed) {
-            return texture;
-          }
-          this._texturePromisesByUrl.delete(key);
-          return this._loadTextureFromImage(key);
-        });
-      }
-
-      const loadPromise = this._isKtx2Url(key)
-        ? this._loadTextureFromCompressedAsset(key)
-        : this._loadTextureFromRasterImage(key);
-
-      this._texturePromisesByUrl.set(key, loadPromise);
-      return loadPromise;
-    }
-
-    _isKtx2Url(url) {
-      return /\.ktx2(?:[?#]|$)/i.test(String(url || ""));
-    }
-
-    _pngFallbackUrl(url) {
-      const key = String(url || "");
-      if (!this._isKtx2Url(key)) return "";
-      return key
-        .replace(/(frames[^/?#]*?)_ktx2_uastc_q\d+_z\d+(?=[/\\])/i, "$1")
-        .replace(/\.ktx2(?=([?#]|$))/i, ".png");
-    }
-
-    _loadTextureFromRasterImage(key) {
-      return new Promise((resolve) => {
-        const img = new Image();
-        img.decoding = "async";
-        if (/^https?:\/\//i.test(key)) {
-          img.crossOrigin = "anonymous";
-        }
-        img.onload = async () => {
-          try {
-            if (typeof img.decode === "function") {
-              try {
-                await img.decode();
-              } catch (_) {
-                // onload already fired; some Chromium/file:// paths reject decode().
-              }
-            }
-            const tex = PIXI.Texture.from(img);
-            if (tex.baseTexture && typeof tex.baseTexture.update === "function") {
-              tex.baseTexture.update();
-            }
-            await this._prepareTexture(tex);
-            resolve(tex);
-          } catch (e) {
-            console.error("[SpriteRenderer] Texture.from failed:", key.slice(0, 160), e);
-            resolve(null);
-          }
-        };
-        img.onerror = () => {
-          console.error("[SpriteRenderer] IMG FAIL:", key.slice(0, 160));
-          resolve(null);
-        };
-        img.src = key;
-      }).then((texture) => {
-        if (!texture) {
-          this._texturePromisesByUrl.delete(key);
-        }
-        return texture;
-      });
-    }
-
-    async _ensureCompressedTextureRuntime() {
-      if (this._compressedTextureRuntimeReady) return true;
-      if (this._compressedTextureRuntimePromise) {
-        return this._compressedTextureRuntimePromise;
-      }
-      this._compressedTextureRuntimePromise = (async () => {
-        if (!window.PixiBasisKtx2Shim || !PIXI.Assets) {
-          console.warn("[SpriteRenderer] KTX2 loader unavailable; falling back to PNG");
-          return false;
-        }
-        try {
-          await PixiBasisKtx2Shim.KTX2Parser.loadTranscoder(
-            "./vendor/basis_transcoder.js",
-            "./vendor/basis_transcoder.wasm"
-          );
-          await PIXI.Assets.init({
-            texturePreference: { format: ["ktx2", "ktx", "png"] },
-          });
-          this._compressedTextureRuntimeReady = true;
-          console.log("[SpriteRenderer] KTX2 compressed texture runtime ready");
-          return true;
-        } catch (e) {
-          console.warn("[SpriteRenderer] KTX2 runtime init failed; falling back to PNG", e);
-          return false;
-        }
-      })();
-      return this._compressedTextureRuntimePromise;
-    }
-
-    async _loadTextureFromCompressedAsset(key) {
-      if (!(await this._ensureCompressedTextureRuntime())) {
-        const fallback = this._pngFallbackUrl(key);
-        return fallback ? this._loadTextureFromImage(fallback) : null;
-      }
-      try {
-        const loaded = await PIXI.Assets.load({
-          src: key,
-          format: "ktx2",
-          loadParser: "loadKTX2",
-        });
-        const texture = Array.isArray(loaded) ? loaded[0] : loaded;
-        if (!texture) throw new Error("PIXI.Assets.load returned no texture");
-        const tex = texture.baseTexture ? texture : new PIXI.Texture(texture);
-        await this._prepareTexture(tex);
-        return tex;
-      } catch (e) {
-        console.warn("[SpriteRenderer] KTX2 load failed, trying PNG fallback:", key.slice(0, 160), e);
-        this._texturePromisesByUrl.delete(key);
-        const fallback = this._pngFallbackUrl(key);
-        return fallback ? this._loadTextureFromImage(fallback) : null;
-      }
-    }
-
-    _prepareTexture(texture) {
-      return new Promise((resolve) => {
-        const prepare = app.renderer && app.renderer.plugins && app.renderer.plugins.prepare;
-        if (!prepare || typeof prepare.upload !== "function") {
-          resolve();
-          return;
-        }
-        try {
-          prepare.upload(texture, resolve);
-        } catch (_) {
-          resolve();
-        }
-      });
-    }
-
     _applyFrame(texture) {
       if (!texture) return;
       this.sprite.texture = texture;
+      const url = this._textureUrls.get(texture);
+      if (url) this._frameStore.get(url);
+      this._frameStore.replacePins("display", url ? [url] : []);
       this._applyCurrentTransform();
       this._updateMouthLayer();
     }
@@ -787,6 +518,7 @@
     }
 
     _hideMouthLayer() {
+      this._frameStore.replacePins("mouth-display", []);
       if (this._mouthOverlay) {
         this._mouthOverlay.visible = false;
         this._mouthOverlay.x = 0;
@@ -832,6 +564,8 @@
       }
 
       this._mouthOverlay.texture = texture;
+      const mouthUrl = this._textureUrls.get(texture);
+      this._frameStore.replacePins("mouth-display", mouthUrl ? [mouthUrl] : []);
       const sourceAnchors = Array.isArray(cfg.sourceAnchors) ? cfg.sourceAnchors : null;
       this._mouthSourceAnchor = sourceAnchors && sourceAnchors[bestIdx] ? sourceAnchors[bestIdx] : null;
 
@@ -1047,10 +781,12 @@
 
     _playTransition(frames, onDone) {
       this._transitionQueue = [...frames];
+      this._frameStore.replacePins("transition-playing", frames.map(texture => this._textureUrls.get(texture)).filter(Boolean));
       let idx = 0;
       const step = () => {
         if (idx >= this._transitionQueue.length) {
           this._transitionQueue = [];
+          this._frameStore.replacePins("transition-playing", []);
           onDone && onDone();
           return;
         }
@@ -1115,6 +851,18 @@
         this.rootNodeId = this.graph.nodes[0].id;
       }
       if (this.rootNodeId) this._playNode(this.rootNodeId);
+      // Entry heads are reloadable hints, not graph decisions. Do not call
+      // _nextAutoNode here: prefetch must not consume an extra random draw.
+      const entries = new Set([
+        this.cfg.defaultSpeakingTriggerLabel, this.cfg.closedEyeSpeakingTriggerLabel,
+        ...Object.values(this.cfg.emotionEntryByIntent || {}),
+        ...(this.cfg.thinkingEntryLabels || []), ...(this.cfg.seriousEntryLabels || []),
+        ...Object.values(this.cfg.postSpeechEmotionLabelByIntent || {}),
+      ]);
+      for (const edge of this.graph.edges || []) {
+        if (edge.from === this.rootNodeId && Number(edge.prob || 0) === 0) entries.add(this._label(edge.to));
+      }
+      this._prefetchLabels(entries, "warm", { reason: "graph-entries" });
       console.log("[SpriteForgeRuntime] graph loaded:", (this.graph.nodes || []).length, "nodes");
     }
 
@@ -1134,9 +882,6 @@
         return;
       }
       this.deferredPresentationIntent = null;
-      if (typeof this.sprite.clearSpeculativeFrameLoads === "function") {
-        this.sprite.clearSpeculativeFrameLoads();
-      }
       this._prefetchForTrigger(label, "interactive");
       this._clearPostSpeechTimer();
       this.transitionHoldActive = false;
@@ -1171,6 +916,7 @@
       this.deferredPresentationIntent = null;
       this.pendingExpression = null;
       this.forcedNodeId = null;
+      this._prefetchLabels([], "interactive", { reason: "trigger" });
       this.speechActive = false;
       this.activeSpeechIntent = null;
       this.transitionHoldActive = false;
@@ -1350,24 +1096,17 @@
         const next = this._nextAutoNode(entry);
         if (next) labels.add(this._label(next));
       }
-      this._prefetchLabels(labels, priority, { reason: `trigger:${targetLabel}` });
+      this._prefetchLabels(labels, priority, { reason: "trigger" });
     }
 
     _prefetchNodeNeighborhood(nodeId) {
       const edges = (this.graph.edges || [])
-        .filter((e) => e.from === nodeId && Number(e.prob || 0) > 0)
-        .sort((a, b) => Number(b.prob || 0) - Number(a.prob || 0));
-      if (!edges.length) return;
-      const immediate = new Set();
-      const speculative = new Set();
-      edges.forEach((edge, index) => {
-        const label = this._label(edge.to);
-        if (!label) return;
-        if (index === 0 || Number(edge.prob || 0) >= 0.4) immediate.add(label);
-        else speculative.add(label);
-      });
-      this._prefetchLabels(immediate, "warm", { reason: "graph-next" });
-      this._prefetchLabels(speculative, "ambient", { reason: "graph-speculative", speculative: true });
+        .filter((e) => e.from === nodeId && Number(e.prob || 0) > 0);
+      // Every direct successor can be selected by the next ordinary draw.
+      // Prepare finite heads without choosing a winner or deprioritizing a
+      // rare edge until after it has already become the visible animation.
+      const next = this._labelsForNodeIds(edges.map(edge => edge.to));
+      this._prefetchLabels(next, this.speechActive ? "interactive" : "warm", { reason: "graph-next" });
     }
 
     _has(name, label) {
@@ -1744,6 +1483,10 @@
 
     setSpriteViewportMask(mask) {
       this._sprite.container.mask = mask || null;
+    }
+
+    getTextureStats() {
+      return { ...this._sprite._frameStore.stats(), displayMiss: this._sprite._displayMisses };
     }
 
     getPixiApp() {

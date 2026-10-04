@@ -11,23 +11,33 @@ class Display {
   addChild() {}
 }
 function setup(fps = 30, textureSampling = true) {
-  const ticker = {maxFPS:fps,deltaMS:1000/fps,add(fn){this.tick=fn}};
-  const context = { app:{ticker}, renderBudget:budget.resolveRenderBudget({maxFps:fps,textureSampling}), PIXI:{Container:Display,Sprite:Display,Graphics:Display},
-    window:{RenderBudget:budget},console:{log(){},warn(){},error(){}},setTimeout,clearTimeout };
+  const ticker = {maxFPS:0,deltaMS:1000/fps,add(fn){this.tick=fn}};
+  const loads=[];
+  const backend={
+    now:()=>0, upload:async()=>{}, dispose(){},
+    destroy(texture){texture.destroyed=true;texture.baseTexture.destroyed=true;},
+    load:async(url)=>{loads.push(url);return {texture:{url,height:100,width:100,baseTexture:{valid:true}},cpuBytes:40000,gpuBytes:40000};},
+  };
+  const context = { app:{ticker}, graphicsProfile:'standard', frameRateController:{effectiveMaxFps:fps},
+    renderBudget:budget.resolveRenderBudget({maxFps:fps,textureSampling}), PIXI:{Container:Display,Sprite:Display,Graphics:Display},
+    window:{RenderBudget:budget,FrameStore:require('../render/web/frame_store.js'),
+      FrameTextureBackend:{createFrameTextureBackend:()=>backend},addEventListener(){}},
+    console:{log(){},warn(){},error(){}},setTimeout,clearTimeout };
   vm.createContext(context);
   vm.runInContext(source.slice(start,end)+'\nglobalThis.SpriteRenderer=SpriteRenderer;',context);
   const sprite = new context.SpriteRenderer(new Display());
-  sprite._queueFrameSet=()=>{}; sprite._scheduleFrameLoadPump=()=>{};
-  sprite._yieldFrameLoadSlice=async()=>{}; sprite._updateMouthLayer=()=>{};
-  sprite._hideMouthLayer=()=>{};
-  const loads=[];
-  sprite._loadTextureFromImage=async(url)=>{
-    loads.push(url); return {url,height:100,width:100,baseTexture:{valid:true}};
-  };
-  sprite._applyFrame=texture=>{sprite.sprite.texture=texture};
-  return {sprite,ticker,loads};
+  sprite._applyCurrentTransform=()=>{};sprite._updateMouthLayer=()=>{};sprite._hideMouthLayer=()=>{};
+  return {sprite,ticker,loads,backend};
 }
-async function clip(fps=30,count=120,interval=17,closed=undefined,enabled=true) {
+async function settled(sprite) {
+  for(let i=0;i<20;i++) {
+    await new Promise(resolve=>setImmediate(resolve));
+    const stats=sprite._frameStore.stats();
+    if(!stats.inFlight&&!stats.queued)return;
+  }
+  throw Error('fake backend did not settle');
+}
+async function clip(fps=30,count=120,interval=17,closed=undefined,enabled=true,preload=true) {
   const state=setup(fps,enabled), s=state.sprite;
   s.loadFrames('normal',Array.from({length:count},(_,i)=>'frame-'+i));
   s.setIdleFrameIntervalMs('normal',interval);
@@ -35,7 +45,10 @@ async function clip(fps=30,count=120,interval=17,closed=undefined,enabled=true) 
     const openness=Array(count).fill(1);openness[closed]=0;
     s.loadMouthConfig('normal',{frameUrls:[],opennessByFrame:openness,closedFrameIdx:closed});
   }
-  await s._loadFrameSet('normal',{priority:100});
+  if(preload) s._frameStore.replaceDemand('contract-preload',s._frameUrls.normal
+    .map((url,i)=>({url,i})).filter(({i})=>s._sampleFrameIndex('normal',i)===i)
+    .map(({url})=>({url,priority:99})));
+  await settled(s);
   return state;
 }
 test('30 FPS decodes only its selected frames; endpoints and original duration remain intact',async()=>{
@@ -120,15 +133,16 @@ test('sampling does not reintroduce the excluded zero pose in legacy speaking lo
   for(let i=0;i<300;i++) {ticker.tick(1);assert.notEqual(s._activeFrameIdx,0);}
 });
 test('a cold selected hold keeps the displayed source index until the requested frame arrives',async()=>{
-  const {sprite:s}=await clip();
+  const {sprite:s,backend}=await clip(30,120,17,undefined,true,false);
   s._showFrame(0);
-  s._frames.normal[119]=undefined;
+  assert.ok(!s._frames.normal[119]);
   let finish;
-  s._loadTextureFromImage=()=>new Promise(resolve=>{finish=resolve});
+  backend.load=()=>new Promise(resolve=>{finish=resolve});
   s.holdFrame(119);
   assert.equal(s._activeFrameIdx,0);
   assert.equal(s.sprite.texture.url,'frame-0');
-  finish({url:'frame-119',height:100,width:100,baseTexture:{valid:true}});
+  await new Promise(resolve=>setImmediate(resolve));
+  finish({texture:{url:'frame-119',height:100,width:100,baseTexture:{valid:true}},cpuBytes:40000,gpuBytes:40000});
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(s._activeFrameIdx,119);
   assert.equal(s.sprite.texture.url,'frame-119');
@@ -144,7 +158,7 @@ test('initial fallback reports the source index of the image actually displayed'
   assert.equal(s._activeFrameIdx,0);
   assert.equal(s.sprite.texture.url,'frame-0');
 });
-test('disabled sampling loads all frames and preserves original source selection',async()=>{
+test('disabled sampling retains all requested frames and preserves original source selection',async()=>{
   const {sprite:s,loads}=await clip(30,120,17,undefined,false);
   assert.equal(loads.length,120);
   assert.equal(s._frameSamplingPlans.size,0);

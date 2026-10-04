@@ -3,9 +3,12 @@
 用途：QWebEngineView 加载 http://127.0.0.1:{port}/render/web/index.html，
 同时使所有项目文件（图片、模型等）可从浏览器上下文访问。
 """
+import datetime
+import email.utils
 import http.server
 import json
 import mimetypes
+import os
 import threading
 import socket
 import sys
@@ -31,6 +34,8 @@ class _CORSHandler(http.server.SimpleHTTPRequestHandler):
     tree.  The historical class name is retained to avoid import churn.
     """
 
+    protocol_version = "HTTP/1.1"
+
     def end_headers(self):
         self.send_header("Cache-Control", "no-cache")
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -51,6 +56,37 @@ class _CORSHandler(http.server.SimpleHTTPRequestHandler):
 
 
 class _QuietThreadingHTTPServer(http.server.ThreadingHTTPServer):
+    def __init__(self, *args, **kwargs):
+        self._connections: set[socket.socket] = set()
+        self._connections_lock = threading.Lock()
+        super().__init__(*args, **kwargs)
+
+    def get_request(self):
+        request, address = super().get_request()
+        with self._connections_lock:
+            self._connections.add(request)
+        return request, address
+
+    def shutdown_request(self, request):
+        try:
+            super().shutdown_request(request)
+        finally:
+            with self._connections_lock:
+                self._connections.discard(request)
+
+    def server_close(self):
+        super().server_close()
+        with self._connections_lock:
+            connections = tuple(self._connections)
+        # Closing the listener alone leaves keep-alive handlers waiting for
+        # another request. Wake them when this display lifetime ends.
+        for request in connections:
+            try:
+                request.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            request.close()
+
     def handle_error(self, request, client_address):
         exc = sys.exc_info()[1]
         if isinstance(exc, (ConnectionAbortedError, ConnectionResetError, BrokenPipeError)):
@@ -184,101 +220,130 @@ def _make_handler(root: Path, dynamic_routes: dict | None = None, static_mounts:
             super().do_OPTIONS()
 
         def do_GET(self):
+            # Dynamic routes retain GET-only semantics; static GET and HEAD
+            # share the same opened-file metadata and security boundary.
+            bare = urllib.parse.urlsplit(self.path).path
+            fn = routes.get(bare)
+            if fn is None:
+                super().do_GET()
+                return
             if self._reject_untrusted_host():
                 return
-            # 剥离查询字符串后匹配动态路由
-            bare = urllib.parse.urlsplit(self.path).path
             if blocked_path(bare):
                 self.send_error(404)
                 return
-            fn = routes.get(bare)
-            if fn is not None:
-                try:
-                    body = json.dumps(fn(), ensure_ascii=False).encode("utf-8")
-                    self.send_response(200)
-                    self.send_header("Content-Type", "application/json; charset=utf-8")
-                    self.send_header("Content-Length", str(len(body)))
-                    self.end_headers()
-                    self.wfile.write(body)
-                except Exception:
-                    self.send_response(500)
-                    self.send_header("Content-Length", "0")
-                    self.end_headers()
+            try:
+                body = json.dumps(fn(), ensure_ascii=False).encode("utf-8")
+            except Exception:
+                self.send_response(500)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
                 return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def send_head(self):
+            if self._reject_untrusted_host():
+                return None
+            bare = urllib.parse.urlsplit(self.path).path
+            if blocked_path(bare):
+                self.send_error(404)
+                return None
+            base = Path(root_str).resolve()
+            rel = urllib.parse.unquote(bare.lstrip("/"))
             for prefix, mount_root in mounts.items():
                 if not bare.startswith(prefix):
                     continue
                 rel = urllib.parse.unquote(bare[len(prefix):].lstrip("/"))
                 if blocked_path(rel):
                     self.send_error(404)
-                    return
+                    return None
                 base = Path(mount_root).resolve()
-                target = (base / rel).resolve()
-                if (base != target and base not in target.parents) or not target.is_file():
-                    self.send_response(404)
-                    self.send_header("Content-Length", "0")
-                    self.end_headers()
-                    return
-                try:
-                    data = target.read_bytes()
-                except OSError:
-                    self.send_response(404)
-                    self.send_header("Content-Length", "0")
-                    self.end_headers()
-                    return
-                self.send_response(200)
-                self.send_header("Content-Type", mimetypes.guess_type(str(target))[0] or "application/octet-stream")
-                self.send_header("Content-Length", str(len(data)))
-                self.end_headers()
-                self.wfile.write(data)
-                return
-            base = Path(root_str).resolve()
-            rel = urllib.parse.unquote(bare.lstrip("/"))
+                break
+            else:
+                # SimpleHTTPRequestHandler previously rejected this root-file
+                # URL even though Path normalizes away its trailing slash.
+                if bare.endswith("/"):
+                    self.send_error(404)
+                    return None
             target = (base / rel).resolve()
             if (
                 (base != target and base not in target.parents)
                 or not target.is_file()
             ):
                 self.send_error(404)
-                return
-            super().do_GET()
+                return None
+            try:
+                source = target.open("rb")
+            except OSError:
+                self.send_error(404)
+                return None
 
-        def do_HEAD(self):
-            if self._reject_untrusted_host():
-                return
-            bare = urllib.parse.urlsplit(self.path).path
-            if blocked_path(bare):
-                self.send_error(404)
-                return
-            for prefix, mount_root in mounts.items():
-                if not bare.startswith(prefix):
-                    continue
-                rel = urllib.parse.unquote(bare[len(prefix):].lstrip("/"))
-                if blocked_path(rel):
-                    self.send_error(404)
-                    return
-                base = Path(mount_root).resolve()
-                target = (base / rel).resolve()
-                if (base != target and base not in target.parents) or not target.is_file():
-                    self.send_error(404)
-                    return
-                self.send_response(200)
-                self.send_header(
-                    "Content-Type",
-                    mimetypes.guess_type(str(target))[0] or "application/octet-stream",
-                )
-                self.send_header("Content-Length", str(target.stat().st_size))
+            try:
+                metadata = os.fstat(source.fileno())
+                etag = f'W/"{metadata.st_size:x}-{metadata.st_mtime_ns:x}"'
+                not_modified = self._not_modified(metadata, etag)
+                self.send_response(304 if not_modified else 200)
+                self.send_header("Content-Type", self.guess_type(str(target)))
+                # For 304 this is the selected representation's size, not a
+                # body length. Both GET and HEAD remain explicitly bodyless.
+                self.send_header("Content-Length", str(metadata.st_size))
+                self.send_header("ETag", etag)
+                self.send_header("Last-Modified", self.date_time_string(metadata.st_mtime))
                 self.end_headers()
-                return
-            base = Path(root_str).resolve()
-            target = (base / urllib.parse.unquote(bare.lstrip("/"))).resolve()
-            if (
-                (base != target and base not in target.parents)
-                or not target.is_file()
-            ):
-                self.send_error(404)
-                return
-            super().do_HEAD()
+                if not_modified:
+                    source.close()
+                    return None
+                self._response_size = metadata.st_size
+                return source
+            except Exception:
+                source.close()
+                raise
+
+        def _not_modified(self, metadata, etag: str) -> bool:
+            condition = self.headers.get("If-None-Match")
+            if condition is not None:
+                # GET/HEAD use weak comparison, including a client's strong
+                # spelling of the same opaque validator. ETag takes precedence
+                # even when it does not match the current representation.
+                return any(
+                    value.strip() == "*"
+                    or value.strip().removeprefix("W/") == etag.removeprefix("W/")
+                    for value in condition.split(",")
+                )
+            condition = self.headers.get("If-Modified-Since")
+            if condition is None:
+                return False
+            try:
+                modified_since = email.utils.parsedate_to_datetime(condition)
+            except (TypeError, IndexError, OverflowError, ValueError):
+                return False
+            if modified_since.tzinfo is None:
+                modified_since = modified_since.replace(tzinfo=datetime.timezone.utc)
+            return (
+                modified_since.tzinfo is datetime.timezone.utc
+                and int(metadata.st_mtime) <= modified_since.timestamp()
+            )
+
+        def copyfile(self, source, outputfile):
+            # A file can grow or shrink after fstat. Never cross the advertised
+            # response boundary, and close on early EOF rather than reuse a
+            # connection whose body was shorter than Content-Length.
+            remaining = self._response_size
+            try:
+                while remaining:
+                    block = source.read(min(64 * 1024, remaining))
+                    if not block:
+                        self.close_connection = True
+                        return
+                    outputfile.write(block)
+                    remaining -= len(block)
+            except OSError:
+                self.close_connection = True
+                raise
 
     return _Handler
 
