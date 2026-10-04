@@ -123,6 +123,7 @@ else {
     await drain()
     const rendererPid = window.webContents.getOSProcessId()
     const processes = app.getAppMetrics().map(process => ({ pid: process.pid, type: process.type,
+      cpuSeconds: process.cpu.cumulativeCPUUsage ?? null, cpuPercent: process.cpu.percentCPUUsage,
       rssBytes: process.memory.workingSetSize * 1024, privateBytes: process.memory.privateBytes * 1024,
       sharedBytes: process.memory.sharedBytes * 1024 }))
     const row = { stage, phase: phaseName, elapsedMs: Date.now() - startedAt, timeUtc: new Date().toISOString(),

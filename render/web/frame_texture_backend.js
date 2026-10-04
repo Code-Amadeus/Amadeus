@@ -58,6 +58,8 @@
     const createImage = options.createImage || (() => new root.Image());
     const now = options.now || (() => root.performance.now());
     const owned = new Map(), loads = new Set(), uploads = new Map();
+    const counters = { fetchAttempts: 0, fetchCompleted: 0, fetchedPayloadBytes: 0,
+      transcodeAttempts: 0, transcodesCompleted: 0, transcodeMs: 0, textureUploads: 0, textureUploadMs: 0 };
     const ticker = pixi.Ticker.system, canvas = renderer.view;
     let disposed = false, scheduled = false, contextLost = false;
     let extensionsContextUid = renderer.CONTEXT_UID;
@@ -136,6 +138,15 @@
     function makeTexture(resource, baseOptions, releaseSource) {
       let base;
       resource.internal = true;
+      // Observe the resource boundary, including Pixi GC/restore uploads which
+      // bypass our queue. This is synchronous CPU submission time, not GPU time.
+      const uploadResource = resource.upload;
+      resource.upload = function (...args) {
+        const started = now();
+        const uploaded = uploadResource.apply(this, args);
+        if (uploaded) { counters.textureUploads++; counters.textureUploadMs += now() - started; }
+        return uploaded;
+      };
       try {
         base = new pixi.BaseTexture(resource, baseOptions);
         const texture = new pixi.Texture(base);
@@ -168,15 +179,22 @@
       const parser = await waitWithAbort(ensureTranscoder(), signal);
       check(signal);
       // Use Pixi's adapter, including its supported file:// behavior in the GUI.
+      counters.fetchAttempts++;
       const response = await fetchAsset(url, { signal });
       if (response.ok === false) throw new Error(`Frame fetch failed (${response.status})`);
       const bytes = await response.arrayBuffer();
+      counters.fetchCompleted++;
+      counters.fetchedPayloadBytes += bytes.byteLength;
       check(signal);
       // The existing worker API cannot cancel one submitted transcode. Keep the
       // caller's load slot occupied until it finishes, then destroy cancelled
       // results. Racing this work against abort would hide still-active jobs.
       let decoded;
+      counters.transcodeAttempts++;
+      const started = now();
       const transcoded = Promise.resolve(parser.transcode(bytes)).then(resources => {
+        counters.transcodesCompleted++;
+        counters.transcodeMs += now() - started;
         decoded = resources;
         if (disposed || signal.aborted) {
           for (const resource of resources || []) resource.destroy();
@@ -306,7 +324,7 @@
       canvas?.removeEventListener("webglcontextrestored", onRestored);
     }
 
-    return { load, upload, destroy, now, dispose };
+    return { load, upload, destroy, now, dispose, stats: () => ({ ...counters }) };
   }
 
   return { createFrameTextureBackend };

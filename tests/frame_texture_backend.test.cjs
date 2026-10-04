@@ -373,6 +373,8 @@ test('real Pixi restore leaves compressed extension enablement stale; backend re
     gpu.dirtyId = base.dirtyId; base._glTextures[f.renderer.CONTEXT_UID] = gpu;
   };
   const first = f.backend.upload(loaded.texture); f.tick(); await first;
+  assert.equal(f.backend.stats().textureUploads, 1);
+  assert.equal(f.backend.stats().transcodesCompleted, 1);
   const queriesBeforeLoss = extensionQueries, cached = system.extensions.bptc;
   f.lose(); enabled = false; // WebGL resets extension enablement on restore.
   system.handleContextRestored();
@@ -387,9 +389,27 @@ test('real Pixi restore leaves compressed extension enablement stale; backend re
   // The held resident frame can redraw without a new decode or store upload.
   f.renderer.texture.bind(loaded.texture.baseTexture);
   assert.equal(gl.getError(), 0);
+  assert.equal(f.backend.stats().textureUploads, 3, 'includes redraw and attempted stale-context submission outside the queue');
   assert.equal(f.decoded.length, 1, 'restoration retains the original CPU payload');
   const again = f.backend.upload(loaded.texture); f.tick(); await again;
   assert.equal(extensionQueries, queriesBeforeLoss + 1, 'only one refresh per current context');
+  f.backend.dispose();
+});
+
+test('completed transcodes count cancelled results, independently of store load attempts', async () => {
+  const pending = deferred();
+  const f = fixture({ parser: { loadTranscoder: async () => {}, transcode: () => pending.promise } });
+  const controller = new AbortController();
+  const load = f.backend.load('cancelled.ktx2', controller.signal);
+  await flush();
+  assert.equal(f.backend.stats().transcodeAttempts, 1);
+  assert.equal(f.backend.stats().transcodesCompleted, 0);
+  controller.abort();
+  pending.resolve(resources());
+  await assert.rejects(load, { name: 'AbortError' });
+  assert.equal(f.backend.stats().transcodesCompleted, 1);
+  assert.equal(f.backend.stats().fetchedPayloadBytes, 4);
+  assert.equal(f.backend.stats().textureUploads, 0);
   f.backend.dispose();
 });
 

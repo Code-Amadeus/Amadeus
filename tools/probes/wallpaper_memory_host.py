@@ -107,7 +107,9 @@ def main():
                     if private is None:
                         private = getattr(process.memory_full_info(), "uss", None)
                         source = "memory_full_info.uss" if private is not None else "unavailable"
-                    result = {"pid": os.getpid(), "rssBytes": info.rss, "privateBytes": private, "privateSource": source}
+                    cpu = process.cpu_times()
+                    result = {"pid": os.getpid(), "rssBytes": info.rss, "privateBytes": private,
+                              "privateSource": source, "cpuSeconds": cpu.user + cpu.system}
                 elif command == "speaking":
                     host.set_speaking(request["active"] is True)
                     result = {"ok": True}

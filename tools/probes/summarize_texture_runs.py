@@ -28,7 +28,9 @@ PHASE_KEYS = ("startedAtMs", "endedAtMs", "durationMs", "misses", "changes", "cy
 LEGACY_LOAD_KEYS = ("loadsStarted", "loadsCompleted", "loadFailures", "refetches", "loadedPerSecond")
 STORE_KEYS = ("residentCpuBytes", "residentGpuBytes", "residentBytes", "budgetBytes", "pinnedBytes",
               "pinnedOverageBytes", "residentFrames", "transientBytes", "maxInFlight", "entries", "queued",
-              "inFlight", "loads", "refetches", "evictions", "failures", "pressure", "displayMiss")
+              "inFlight", "loads", "refetches", "evictions", "failures", "pressure", "displayMiss",
+              "fetchAttempts", "fetchCompleted", "fetchedPayloadBytes", "transcodeAttempts",
+              "transcodesCompleted", "transcodeMs", "textureUploads", "textureUploadMs")
 LEGACY_KEYS = ("legacyFrames", "cpuBufferBytes", "glTextures", "queue", "activeLoads")
 ERROR_KINDS = ("INVALID_ENUM", "INVALID_VALUE", "INVALID_OPERATION", "INVALID_FRAMEBUFFER_OPERATION")
 EVIDENCE_TYPES = {"metadata.json": "metadata", "summary.json": "phase-summary",
@@ -119,6 +121,39 @@ def group_memory(sample, group, metric):
         return None
     values = [process_bytes(process, metric) for process in processes]
     return sum(values) if all(value is not None for value in values) else None
+
+
+def cpu_window(samples):
+    """Only count intervals with complete, monotonic counters for identical PIDs.
+
+    Missing counters or a process restart make that interval unavailable, never
+    zero. PIDs are used locally for matching and are not published.
+    """
+    result = {}
+    for group, key in (("renderer", "rendererProcesses"), ("gpu", "gpuProcesses"),
+                       ("other", "otherProcesses"), ("host", "host")):
+        seconds = duration = 0
+        measured = missing = 0
+        previous = None
+        for sample in samples:
+            rows = [sample.get(key) or {}] if group == "host" else sample.get(key) or []
+            current = {row.get("pid"): row.get("cpuSeconds") for row in rows}
+            elapsed = sample.get("elapsedMs")
+            valid = bool(current) and None not in current and all(number(v) and v >= 0 for v in current.values())
+            if previous is not None:
+                before, start, was_valid = previous
+                if (valid and was_valid and current.keys() == before.keys() and number(elapsed)
+                        and number(start) and elapsed > start and all(current[p] >= before[p] for p in current)):
+                    seconds += sum(current[p] - before[p] for p in current)
+                    duration += (elapsed - start) / 1000
+                    measured += 1
+                else:
+                    missing += 1
+            previous = current, elapsed, valid
+        result[group] = {"cpuSeconds": seconds if measured else None,
+                         "measuredWallSeconds": duration, "measuredIntervals": measured, "missingIntervals": missing,
+                         "meanSingleCorePercent": seconds / duration * 100 if duration else None}
+    return result
 
 
 def describe_series(values, tail_values):
@@ -381,6 +416,7 @@ def summarize_run(label, directory):
             "memory": memory,
             "tailWindow": tail_window,
             "journeyMemory": journey, "journeyTailWindow": journey_window,
+            "journeyCpu": cpu_window([row for row in samples if row.get("stage") in ("journey", "journey-complete")]),
             "journeyGaps": journey_gaps(metadata, directory / "events.ndjson", issues),
             "phaseMetricsSource": phase_source, "phases": phases,
             "phaseTotals": {key: sum(row[key] for row in phases if number(row.get(key)))

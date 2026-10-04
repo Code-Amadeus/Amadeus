@@ -307,7 +307,8 @@
       const { residentCpuBytes, residentGpuBytes, pinnedBytes } = amounts;
       return { residentCpuBytes, residentGpuBytes, residentBytes: residentCpuBytes + residentGpuBytes,
         budgetBytes, pinnedBytes, pinnedOverageBytes: Math.max(0, pinnedBytes - budgetBytes),
-        residentFrames, transientBytes, maxInFlight, entries: entries.size, queued, inFlight: jobs.size, ...counters };
+        residentFrames, transientBytes, maxInFlight, entries: entries.size, queued, inFlight: jobs.size,
+        ...counters, ...backend.stats?.() };
     }
 
     function destroy() {

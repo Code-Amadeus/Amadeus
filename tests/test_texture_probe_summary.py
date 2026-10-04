@@ -3,7 +3,20 @@ import json
 
 import pytest
 
-from tools.probes.summarize_texture_runs import aggregate, main, summarize_run
+from tools.probes.summarize_texture_runs import aggregate, cpu_window, main, summarize_run
+
+
+def test_cpu_intervals_keep_missing_counters_and_restarts_unavailable():
+    rows = [{"elapsedMs": i * 1000, "rendererProcesses": [{"pid": pid, "cpuSeconds": cpu}]}
+            for i, (pid, cpu) in enumerate([(1, 10), (1, 10.5), (2, 1), (2, 1.25),
+                                           (2, None), (2, 2), (2, 1), (2, 1.5)])]
+    cpu = cpu_window(rows)
+    assert cpu["renderer"] == {"cpuSeconds": 1.25, "measuredWallSeconds": 3,
+                               "measuredIntervals": 3, "missingIntervals": 4,
+                               "meanSingleCorePercent": 1.25 / 3 * 100}
+    assert cpu["gpu"]["cpuSeconds"] is None
+    assert cpu["gpu"]["missingIntervals"] == 7
+    assert "pid" not in json.dumps(cpu)
 
 
 def write_run(directory, *, samples=(), metadata=None, summary=None, events=None):
