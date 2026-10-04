@@ -81,6 +81,7 @@ def test_journey_memory_excludes_optional_context_drop_and_uses_its_own_tail(tmp
                {**sample(55_000, 5, 6, 7), "stage": "context-loss"}]
     for index, row in enumerate(samples):
         row["render"]["textureStats"] = {"transcodesCompleted": index * 10}
+        row["render"]["transcodes"] = {"completed": index * 10}
     directory = write_run(tmp_path / "run", samples=samples)
     run = summarize_run("scoped", directory)
     assert run["memory"]["renderer"]["privateBytes"]["peak"] == 1000
@@ -99,6 +100,8 @@ def test_journey_memory_excludes_optional_context_drop_and_uses_its_own_tail(tmp
     assert run["journeyTailWindow"]["settlement"] == "unverified"
     assert run["journeyTailWindow"]["loadingObserved"] is True
     assert run["journeyStore"]["last"]["transcodesCompleted"] == 20
+    assert run["journeyTranscodes"]["last"]["completed"] == 20
+    assert run["journeyTranscodes"]["lastObservedElapsedMs"] == 40_000
     assert run["store"]["last"]["transcodesCompleted"] == 50
 
 

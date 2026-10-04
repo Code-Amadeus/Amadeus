@@ -172,6 +172,7 @@
     "docs/alpha-0.15.2.md",
     "docs/texture_pipeline_acceptance_2026-10-04.md",
     "docs/evidence/texture-store-2026-10-04.json",
+    "docs/evidence/texture-egpu-comparison-2026-10-04.json",
     "docs/evidence/texture-pipeline-2026-10-03/analyze_pack.cjs",
     "docs/evidence/texture-pipeline-2026-10-03/dump_frames.cjs",
     "docs/evidence/texture-pipeline-2026-10-03/pack_stats_stride10.json",
