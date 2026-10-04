@@ -222,7 +222,7 @@ def phase_status(row):
     result.update(numeric_fields(row, ("requestedSeconds", "actualSeconds")))
     if row.get("reason"):
         result["reasonRecorded"] = True  # Free-form errors stay in local raw evidence.
-    if row.get("phase") == "context-loss":
+    if row.get("phase") in ("context-loss", "texture-disposal"):
         result["visualValidation"] = "recorded" if isinstance(row.get("pixelMatch"), bool) else "unverified"
         for key in ("beforePixels", "afterPixels"):
             pixels = row.get(key)
@@ -274,8 +274,14 @@ def metadata_facts(metadata, samples):
               "platform": {key: value for key, value in (metadata.get("platform") or {}).items()
                            if key in ("os", "release", "architecture") and identifier(value)},
               "instrumentation": {key: value for key, value in (metadata.get("instrumentation") or {}).items()
-                                  if key in ("legacyMisses", "legacyLoads", "textureStats", "transcodes") and isinstance(value, bool)}}
-    for key in ("sampling", "scenario", "companion", "contextLoss"):
+                                  if key in ("legacyMisses", "legacyLoads", "textureStats", "transcodes", "loadTrace", "fixedRoute") and isinstance(value, bool)}}
+    if identifier(options.get("coldClip")):
+        result["options"]["coldClip"] = options["coldClip"]
+    if number(options.get("coldStartDelayMs")):
+        result["options"]["coldStartDelayMs"] = options["coldStartDelayMs"]
+    if number(options.get("coldEnterSeconds")):
+        result["options"]["coldEnterSeconds"] = options["coldEnterSeconds"]
+    for key in ("sampling", "scenario", "companion", "contextLoss", "coldFill", "fixedRoute", "highPerformanceGpu", "textureDisposal"):
         if isinstance(options.get(key), bool):
             result["options"][key] = options[key]
     if isinstance(settings.get("renderTextureSampling"), bool):

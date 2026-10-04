@@ -31,6 +31,33 @@ test('probe defaults to the current-source baseline with sampling disabled', () 
   assert.equal(options.contextLoss, false)
 })
 
+test('fixed resource routes keep identical clip timing across sampling and repeat without graph selection', () => {
+  const off = parseArgs(['baseline', '60', '--profile', 'standard', '--fixed-route', '--duration-seconds', '600'])
+  const on = parseArgs(['sampled', '60', '--profile', 'standard', '--fixed-route', '--duration-seconds', '600'])
+  assert.deepEqual(createJourney(off), createJourney(on))
+  const route = createJourney(off)
+  assert.ok(route.every((row, index) => row.command === 'route-clip' && (!index || row.at > route[index - 1].at)))
+  assert.ok(route.some(row => row.label === 'idle_closed_eye'))
+  assert.ok(route.some(row => row.phase === 'route-4-speaking_long'))
+  assert.equal(parseArgs(['--expect-gpu', '4070', '--high-performance-gpu', '--texture-disposal']).expectGpu, '4070')
+  assert.throws(() => parseArgs(['--expect-gpu']))
+  assert.throws(() => parseArgs(['--fixed-route', '--cold-clip', 'idle']))
+})
+
+test('cold-clip qualification is a distinct bounded journey with explicit fault injection', () => {
+  const options = parseArgs(['--cold-clip', 'idle_closed_eye', '--cold-fill', '--cold-start-delay-ms', '400'])
+  assert.equal(options.coldStartDelayMs, 400)
+  assert.equal(options.coldFill, true)
+  const journey = createJourney(options)
+  assert.deepEqual(journey.map(row => row.phase), ['cold-prepare', 'cold-settle', 'cold-enter', 'cold-return', 'cold-repeat'])
+  assert.ok(journey.filter(row => row.command === 'cold-enter').every(row => row.label === 'idle_closed_eye'))
+  const delayed = parseArgs(['--duration-seconds', '120', '--cold-clip', 'idle_closed_eye', '--cold-enter-seconds', '80'])
+  assert.equal(createJourney(delayed).find(row => row.phase === 'cold-enter').at, 80)
+  for (const args of [['--cold-fill'], ['--cold-start-delay-ms', '400'],
+    ['--cold-clip', '../clip'], ['--cold-clip', 'idle', '--cold-start-delay-ms', '1001'],
+    ['--cold-clip', 'idle', '--cold-enter-seconds', '55']]) assert.throws(() => parseArgs(args))
+})
+
 test('explicit paired settings and the optional ten-minute journey parse', () => {
   const options = parseArgs(['sampled', '60', '--sampling', 'on', '--duration-seconds', '600',
     '--seed', '0', '--sample-seconds', '1', '--scenario', '--companion', '--context-loss', '--output', 'probe run'])

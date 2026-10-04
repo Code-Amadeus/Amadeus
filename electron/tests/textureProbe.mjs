@@ -35,6 +35,14 @@ export const usage = `Usage: electron tests/fpsTextures.probe.mjs [baseline|samp
   --scenario              Exercise the public work-activity scenario if available
   --companion             Exercise companion presentation suppression/restoration
   --context-loss          Lose and restore WebGL context if supported
+  --texture-disposal      Dispose the held GPU texture and verify re-upload pixels
+  --fixed-route           Use the same scheduled clip route without graph draws
+  --high-performance-gpu  Request Chromium's high-performance GPU preference
+  --expect-gpu TEXT       Refuse measurement on a different WebGL renderer
+  --cold-clip LABEL       Isolate a real root successor after head prefetch
+  --cold-fill             Preload and release low-priority demand before entry
+  --cold-start-delay-ms N  Inject one bounded cold-entry loading pause (0..1000)
+  --cold-enter-seconds N   Delay fixed entry to exercise an idle loading pipeline
   --output DIRECTORY      New run directory (must not already exist)
   --help                  Print this help without starting a host
 Both modes use the current checked-out source. Run off and on separately with
@@ -46,13 +54,23 @@ export function parseArgs(argv) {
   const positional = []
   let explicitSampling
   const values = new Map([['--duration-seconds', 'durationSeconds'], ['--sample-seconds', 'sampleSeconds'],
-    ['--seed', 'seed'], ['--output', 'output']])
+    ['--seed', 'seed'], ['--output', 'output'], ['--cold-clip', 'coldClip'], ['--cold-start-delay-ms', 'coldStartDelayMs'],
+    ['--cold-enter-seconds', 'coldEnterSeconds']])
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]
     if (token === '--help') options.help = true
     else if (token === '--scenario') options.scenario = true
     else if (token === '--companion') options.companion = true
     else if (token === '--context-loss') options.contextLoss = true
+    else if (token === '--texture-disposal') options.textureDisposal = true
+    else if (token === '--fixed-route') options.fixedRoute = true
+    else if (token === '--high-performance-gpu') options.highPerformanceGpu = true
+    else if (token === '--expect-gpu') {
+      const value = argv[++i]
+      if (!value || value.startsWith('--')) throw Error('Missing expected GPU')
+      options.expectGpu = value
+    }
+    else if (token === '--cold-fill') options.coldFill = true
     else if (token === '--sampling' || token === '--profile' || values.has(token)) {
       const value = argv[++i]
       if (!value || value.startsWith('--')) throw Error(`Missing value for ${token}`)
@@ -60,7 +78,7 @@ export function parseArgs(argv) {
         if (!['off', 'on'].includes(value)) throw Error('--sampling expects off|on')
         explicitSampling = value === 'on'
       } else if (token === '--profile') options.profile = value
-      else options[values.get(token)] = token === '--output' ? value : Number(value)
+      else options[values.get(token)] = ['--output', '--cold-clip'].includes(token) ? value : Number(value)
     } else if (token.startsWith('--')) throw Error(`Unknown option: ${token}`)
     else positional.push(token)
   }
@@ -86,6 +104,13 @@ export function parseArgs(argv) {
   if (!Number.isInteger(options.seed) || options.seed < 0 || options.seed > 0xffffffff) {
     throw Error('seed must be an unsigned 32-bit integer')
   }
+  if (options.coldClip && !/^[a-zA-Z0-9_-]+$/.test(options.coldClip)) throw Error('Invalid cold clip label')
+  if (options.coldFill && !options.coldClip) throw Error('--cold-fill requires --cold-clip')
+  if (options.fixedRoute && options.coldClip) throw Error('Fixed route and cold-clip are separate experiments')
+  if (options.coldStartDelayMs !== undefined && (!options.coldClip || !Number.isFinite(options.coldStartDelayMs)
+    || options.coldStartDelayMs < 0 || options.coldStartDelayMs > 1000)) throw Error('Invalid cold-start delay')
+  if (options.coldEnterSeconds !== undefined && (!options.coldClip || !Number.isFinite(options.coldEnterSeconds)
+    || options.coldEnterSeconds < 20 || options.coldEnterSeconds + 15 >= options.durationSeconds)) throw Error('Invalid cold entry time')
   return options
 }
 
@@ -102,6 +127,34 @@ export function seededRandom(seed) {
 // The first triggers happen before preload settles. Later phases repeat the same
 // public journey; the soak continues with deterministic, timestamped inputs.
 export function createJourney(options) {
+  if (options.fixedRoute) {
+    const clips = [
+      ['idle', 8], ['trans_smile', 1.2], ['smile_speaking', 8, true],
+      ['speaking_trans', 1.2], ['speaking_long', 10, true], ['idle_side_butterfly', 14],
+      ['closed_eye_trans', 1.2], ['speaking_closed_eye_2', 8, true], ['idle_closed_eye', 16],
+      ['thinking_trans', 1.2], ['thinking_speaking2', 8, true], ['sad_trans', 1.2],
+      ['sad_speaking', 6, true], ['idle2', 8],
+    ]
+    const actions = []
+    let at = 0, lap = 0
+    while (at < options.durationSeconds) {
+      for (const [label, seconds, speaking = false] of clips) {
+        if (at >= options.durationSeconds) break
+        actions.push({ at: Math.round(at * 1000) / 1000, phase: `route-${lap}-${label}`, command: 'route-clip', label, speaking })
+        at += seconds
+      }
+      lap++
+    }
+    return actions
+  }
+  const enter = options.coldEnterSeconds ?? 20;
+  if (options.coldClip) return [
+    { at: 0, phase: 'cold-prepare', command: 'cold-prepare', label: options.coldClip },
+    { at: 18, phase: 'cold-settle', command: 'cold-settle', label: options.coldClip },
+    { at: enter, phase: 'cold-enter', command: 'cold-enter', label: options.coldClip },
+    { at: enter + 18, phase: 'cold-return', command: 'idle' },
+    { at: enter + 23, phase: 'cold-repeat', command: 'cold-enter', label: options.coldClip },
+  ].filter(action => action.at < options.durationSeconds)
   const actions = [
     { at: 0, phase: 'startup', command: 'idle' },
     { at: 3, phase: 'first-speech', command: 'speaking', active: true },
@@ -123,6 +176,23 @@ export function createJourney(options) {
       { at: at + 11, phase: `soak-${cycle}-idle`, command: 'idle' })
   }
   return actions.filter(action => action.at < options.durationSeconds)
+}
+
+// Serialized into the isolated renderer; validates pixels, not only restore events.
+export function readTexturePixels() {
+  const app = wallpaperApp.scene.app, texture = renderApp._sprite.sprite.texture
+  const target = new PIXI.Sprite(texture)
+  let pixels
+  try { pixels = app.renderer.extract.pixels(target) }
+  finally { target.destroy({ texture: false, baseTexture: false }) }
+  let hash = 2166136261, rgbSum = 0, alphaSum = 0
+  for (let i = 0; i < pixels.length; i++) {
+    hash = Math.imul(hash ^ pixels[i], 16777619)
+    if (i % 4 === 3) alphaSum += pixels[i]; else rgbSum += pixels[i]
+  }
+  const gl = app.renderer.gl, errors = []
+  for (let i = 0; i < 16; i++) { const error = gl.getError(); if (error === gl.NO_ERROR) break; errors.push(error) }
+  return { width: texture.width, height: texture.height, hash: (hash >>> 0).toString(16), rgbSum, alphaSum, glErrors: errors }
 }
 
 export function summarizeGaps(values) {

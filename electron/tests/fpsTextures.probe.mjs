@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { spawn, execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createInterface } from 'node:readline'
-import { parseArgs, usage, createJourney, createEvidenceSummary, installTextureProbe, installTranscodeCounter } from './textureProbe.mjs'
+import { parseArgs, usage, createJourney, createEvidenceSummary, installTextureProbe, installTranscodeCounter, readTexturePixels } from './textureProbe.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 let options
@@ -15,6 +15,7 @@ try { options = parseArgs(process.argv.slice(2)) }
 catch (error) { console.error(error.message + '\n' + usage); app.exit(2) }
 if (!options || options.help) { if (options?.help) console.log(usage); app.exit(0) }
 else {
+  if (options.highPerformanceGpu) app.commandLine.appendSwitch('force-high-performance-gpu')
   const output = options.output ? path.resolve(options.output) : path.join(root, 'output/diagnostics/fps-textures',
     new Date().toISOString().replaceAll(':', '-') + `-${options.mode}-${options.fps}-${process.pid}`)
   await fs.mkdir(path.dirname(output), { recursive: true })
@@ -44,6 +45,7 @@ else {
   const append = (name, rows) => rows.length ? fs.appendFile(path.join(output, name), rows.map(row => JSON.stringify(row)).join('\n') + '\n') : Promise.resolve()
   const failPending = error => { for (const call of pending.values()) call.reject(error); pending.clear() }
   const js = code => timeout(window.webContents.executeJavaScript(code), 15000, 'Renderer evaluation timed out')
+  const texturePixels = `(${readTexturePixels.toString()})()`
 
   async function startHost() {
     const hostArgs = ['-X', 'utf8', '-u', 'tools/probes/wallpaper_memory_host.py', ...(options.scenario ? ['--scenario'] : [])]
@@ -145,6 +147,50 @@ else {
     phaseName = item.phase
     await js(`window.__textureProbe.setPhase(${JSON.stringify(phaseName)})`)
     const row = { ...item, actualAtSeconds: (Date.now() - startedAt) / 1000 }
+    if (item.command === 'route-clip') {
+      row.observed = await js(`(() => {
+        const r=renderApp._spriteforgeRuntime,s=renderApp._sprite,label=${JSON.stringify(item.label)};
+        const node=r._nodeByLabel(label);if(!node)throw Error('Fixed route clip unavailable: '+label);
+        r._clearPostSpeechTimer();r.pendingExpression=null;r.forcedNodeId=null;
+        r.postSpeechHoldActive=false;r.speechActive=${Boolean(item.speaking)};
+        s.setSpeaking(${Boolean(item.speaking)});s.setMouth(${item.speaking ? 0.6 : 0});
+        r._playNode(node.id);
+        return {label:s._currentEmotion,speaking:s._speaking};
+      })()`)
+      if (row.observed.label !== item.label) throw Error('Fixed route label did not apply')
+      row.status = 'exercised'
+    }
+    if (['cold-prepare', 'cold-settle', 'cold-enter'].includes(item.command)) {
+      row.before = await js(`(() => {
+        const r=renderApp._spriteforgeRuntime,s=renderApp._sprite,label=${JSON.stringify(item.label)};
+        const target=r._nodeByLabel(label);
+        if(!target || !(r.graph.edges||[]).some(e=>e.from===r.rootNodeId&&e.to===target.id))
+          throw Error('Cold clip must be a declared root successor');
+        const stats=s._frameStore.stats();
+        const before={label,loaded:(s._frames[label]||[]).filter(Boolean).length,total:s._frames[label]?.length,
+          queued:stats.queued,inFlight:stats.inFlight,residentBytes:stats.residentBytes,budgetBytes:stats.budgetBytes};
+        if(${JSON.stringify(item.command)}==='cold-prepare') {
+          r._playNode(r.rootNodeId);s.holdFrame(0);
+          if(${Boolean(options.coldFill)}) {
+            const excluded=new Set(s._frameUrls[label]);
+            s._frameStore.replaceDemand('probe-fill',[...new Set(Object.values(s._frameUrls).flat())]
+              .filter(url=>!excluded.has(url)).map(url=>({url,priority:1})));
+          }
+        } else if(${JSON.stringify(item.command)}==='cold-settle') s._frameStore.replaceDemand('probe-fill',[]);
+        else {
+          if(${item.phase === 'cold-enter' && Boolean(options.coldStartDelayMs)}) {
+            const b=s._frameBackend,load=b.load,urls=new Set(s._frameUrls[label]);
+            let release;const gate=new Promise(resolve=>{release=resolve});
+            const delayed=function(...args){return urls.has(args[0])?gate.then(()=>load.apply(this,args)):load.apply(this,args)};
+            b.load=delayed;
+            setTimeout(()=>{if(b.load===delayed)b.load=load;release()},${Number(options.coldStartDelayMs) || 0});
+          }
+          r._playNode(target.id);
+        }
+        return before;
+      })()`)
+      row.status = 'exercised'
+    }
     if (item.command === 'trigger') {
       const exists = await js(`Boolean(renderApp._spriteforgeRuntime.labelToIds[${JSON.stringify(item.label)}]?.length)`)
       if (!exists) {
@@ -217,6 +263,42 @@ else {
       metadata.instrumentation = await js(`(${installTextureProbe.toString()})(${options.seed})`)
       metadata.instrumentation.transcodes = await js('window.__textureTranscodes?.installed===true')
       if (!metadata.instrumentation.transcodes) throw Error('Common transcoder instrumentation was not installed')
+      if (options.expectGpu) {
+        const actual = (await js(snapshot)).gpu || ''
+        if (!actual.includes(options.expectGpu)) throw Error(`Expected GPU ${options.expectGpu}, observed ${actual}`)
+      }
+      if (options.fixedRoute) {
+        // Control clip selection only. Real sprite clocks, frame sampling,
+        // holds, mouth layers and graph-neighborhood resource demand remain.
+        await js('renderApp._spriteforgeRuntime._advanceNow=()=>{}')
+        metadata.instrumentation.fixedRoute = true
+      }
+      if (process.env.TEXTURE_PROBE_LOAD_TRACE === '1') {
+        metadata.instrumentation.loadTrace = true
+        await js(`(() => {
+          performance.setResourceTimingBufferSize(20000);
+          const b=renderApp._sprite._frameBackend,rows=[];window.__textureLoadTrace=rows;
+          const adapter=PIXI.settings.ADAPTER,fetchAsset=adapter.fetch;
+          adapter.fetch=function(...args){
+            const start=performance.now();
+            return Promise.resolve(fetchAsset.apply(this,args)).then(response=>{
+              const received=performance.now(),read=response.arrayBuffer.bind(response);
+              response.arrayBuffer=()=>read().then(bytes=>{
+                rows.push({name:'fetch',url:String(args[0]),start,headersMs:received-start,ms:performance.now()-start,bytes:bytes.byteLength});return bytes;
+              });return response;
+            });
+          };
+          for(const name of ['load','upload']) {
+            const original=b[name];b[name]=function(...args) {
+              const start=performance.now(),label=renderApp._sprite._currentEmotion;
+              return Promise.resolve(original.apply(this,args)).then(value=>{
+                rows.push({name,label,start,ms:performance.now()-start,url:name==='load'?args[0]:null,
+                  cpuBytes:value?.cpuBytes,gpuBytes:value?.gpuBytes});return value;
+              },error=>{rows.push({name,label,start,ms:performance.now()-start,failed:true});throw error;});
+            };
+          }
+        })()`)
+      }
       if (metadata.cpuProfiling) {
         await window.webContents.debugger.sendCommand('Profiler.enable')
         await window.webContents.debugger.sendCommand('Profiler.setSamplingInterval', { interval: 1000 })
@@ -237,6 +319,10 @@ else {
         await sleep(50)
       }
       await sample('journey-complete')
+      if (process.env.TEXTURE_PROBE_LOAD_TRACE === '1') {
+        await writeJson('load-trace.json', await js('window.__textureLoadTrace'))
+        await writeJson('resource-timing.json', await js("performance.getEntriesByType('resource').map(e=>e.toJSON())"))
+      }
       if (metadata.cpuProfiling) {
         const { profile } = await window.webContents.debugger.sendCommand('Profiler.stop')
         await writeJson('cpu-profile.cpuprofile', profile)
@@ -259,21 +345,28 @@ else {
         await rpc('scenario', { active: false }); await sleep(2000)
         return { scope: 'public work activity; inspect renderer.log for activation evidence', status: 'requested', activation: 'unverified' }
       })
+      if (options.textureDisposal) await optionalPhase('texture-disposal', true, '', async () => {
+        await js('renderApp.holdSpriteFrame(renderApp._sprite._activeFrameIdx)')
+        const beforePixels = await js(texturePixels)
+        await js('wallpaperApp.scene.app.renderer.texture.destroyTexture(renderApp._sprite.sprite.texture.baseTexture)')
+        const deadline = Date.now() + 10000
+        while (!await js(`(() => { const t=renderApp._sprite.sprite.texture,r=wallpaperApp.scene.app.renderer;
+          return t?.height>1 && Boolean(t.baseTexture?._glTextures?.[r.CONTEXT_UID]); })()`)) {
+          if (Date.now() > deadline) throw Error('Disposed texture reload timed out')
+          await sleep(50)
+        }
+        const afterPixels = await js(texturePixels)
+        await js('renderApp.clearSpriteHold()')
+        const pixelMatch = beforePixels.hash === afterPixels.hash && beforePixels.rgbSum > 0
+          && beforePixels.width === afterPixels.width && beforePixels.height === afterPixels.height
+        const passed = pixelMatch && !beforePixels.glErrors.length && !afterPixels.glErrors.length
+        return { status: passed ? 'exercised' : 'failed', pixelMatch, beforePixels, afterPixels,
+          reason: passed ? null : 'Disposed texture reload pixels or GL errors differ' }
+      })
       if (options.contextLoss) await optionalPhase('context-loss', await js("Boolean(wallpaperApp.scene.app.renderer.gl.getExtension('WEBGL_lose_context'))"), 'WEBGL_lose_context unavailable', async () => {
         // Freeze the same source image. A restored event and a valid Texture
         // object can still hide failed compressed uploads (an opaque black quad).
         await js('renderApp.holdSpriteFrame(renderApp._sprite._activeFrameIdx)')
-        const texturePixels = `(() => {
-          const app=wallpaperApp.scene.app,texture=renderApp._sprite.sprite.texture;
-          const target=new PIXI.Sprite(texture);
-          let pixels;
-          try{pixels=app.renderer.extract.pixels(target);}finally{target.destroy({texture:false,baseTexture:false});}
-          let hash=2166136261,rgbSum=0,alphaSum=0;
-          for(let i=0;i<pixels.length;i++){hash=Math.imul(hash^pixels[i],16777619);if(i%4===3)alphaSum+=pixels[i];else rgbSum+=pixels[i];}
-          const gl=app.renderer.gl,errors=[];
-          for(let i=0;i<16;i++){const error=gl.getError();if(error===gl.NO_ERROR)break;errors.push(error);}
-          return {width:texture.width,height:texture.height,hash:(hash>>>0).toString(16),rgbSum,alphaSum,glErrors:errors};
-        })()`
         const beforePixels = await js(texturePixels)
         await js(`new Promise((resolve,reject)=>{
           const canvas=wallpaperApp.scene.app.view,ext=wallpaperApp.scene.app.renderer.gl.getExtension('WEBGL_lose_context');
