@@ -396,6 +396,7 @@ def summarize_run(label, directory):
     elapsed = [row["elapsedMs"] for row in samples if number(row.get("elapsedMs"))]
     memory, tail_window = memory_window(samples, "all recorded samples")
     journey, journey_window = journey_memory(samples)
+    journey_samples = [row for row in samples if row.get("stage") in ("journey", "journey-complete")]
     raw_phases = summary.get("phases")
     phase_source = "summary.json"
     if not isinstance(raw_phases, list):
@@ -416,7 +417,8 @@ def summarize_run(label, directory):
             "memory": memory,
             "tailWindow": tail_window,
             "journeyMemory": journey, "journeyTailWindow": journey_window,
-            "journeyCpu": cpu_window([row for row in samples if row.get("stage") in ("journey", "journey-complete")]),
+            "journeyCpu": cpu_window(journey_samples),
+            "journeyStore": sampled_counters(journey_samples, "textureStats", STORE_KEYS),
             "journeyGaps": journey_gaps(metadata, directory / "events.ndjson", issues),
             "phaseMetricsSource": phase_source, "phases": phases,
             "phaseTotals": {key: sum(row[key] for row in phases if number(row.get(key)))

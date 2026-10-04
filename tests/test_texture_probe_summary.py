@@ -79,6 +79,8 @@ def test_journey_memory_excludes_optional_context_drop_and_uses_its_own_tail(tmp
                {**sample(45_000, 1000, 1100, 1200), "stage": "companion-suppressed"},
                {**sample(50_000, 800, 900, 1000), "stage": "scenario"},
                {**sample(55_000, 5, 6, 7), "stage": "context-loss"}]
+    for index, row in enumerate(samples):
+        row["render"]["textureStats"] = {"transcodesCompleted": index * 10}
     directory = write_run(tmp_path / "run", samples=samples)
     run = summarize_run("scoped", directory)
     assert run["memory"]["renderer"]["privateBytes"]["peak"] == 1000
@@ -96,6 +98,8 @@ def test_journey_memory_excludes_optional_context_drop_and_uses_its_own_tail(tmp
     assert run["journeyTailWindow"]["endElapsedMs"] == 40_000
     assert run["journeyTailWindow"]["settlement"] == "unverified"
     assert run["journeyTailWindow"]["loadingObserved"] is True
+    assert run["journeyStore"]["last"]["transcodesCompleted"] == 20
+    assert run["store"]["last"]["transcodesCompleted"] == 50
 
 
 @pytest.mark.parametrize("stages", [(None, None), ("journey", None)])

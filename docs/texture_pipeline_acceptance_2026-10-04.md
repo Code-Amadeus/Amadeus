@@ -1,10 +1,10 @@
-# 纹理管线：收窄后的施工方案与验收记录
+# 纹理管线：实现与自动验收记录
 
-修订日期：2026-10-04。开工基线：本地与远程 `main` 均为 `0e7b4840fc4dd7d036b5c76532af5becedd0ed13`。本轮在独立分支施工，未修改 main。当前实现分支为 `codex/texture-pipeline-wp3`；WP0、WP2、WP1 各自保存了前置分支与提交，便于分阶段审阅和回滚。
+修订日期：2026-10-04。原主线基线为 `0e7b4840fc4dd7d036b5c76532af5becedd0ed13`。当前实现位于 PR #155 的 `codex/texture-pipeline-draft` 分支；后续修正在独立 worktree 完成。主目录和 main 未随本次审查修正而切换或更新。
 
-**状态：按用户“流畅优先，允许更高内存”的要求，采用统一 2 GiB 合计预算和修订后的预取调度，十分钟测量与恢复检查已完成。原 1 GiB / 512 MiB 候选仅作历史对照。完整 Python 测试有一项已在原基线上复现的本机配置相关失败。可见壁纸宿主和语音模型并行负载仍不在本次已验证范围。**
+**状态：统一 2 GiB 合计预算，审查后修正循环保留、预取暂停和增量记账；当前 eGPU 验收结果见第 7 节。PR 保持 draft。可见壁纸宿主、场景激活和语音模型并行负载仍未完成验收。**
 
-本文件取代原案中未经验证的伪代码。原始调研与工作包草案保存在本地历史提交 `2b20ed1` 的同名文件；离线研究脚本和原始统计继续保留在 [texture-pipeline-2026-10-03](evidence/texture-pipeline-2026-10-03/)。本轮只实施 WP0、修订后的 WP2/WP1、只管理纹理生命周期的 WP3。WP4–WP8 不自动进入施工。
+本文件记录实际实现；离线研究脚本和统计保存在 [texture-pipeline-2026-10-03](evidence/texture-pipeline-2026-10-03/)。本轮只实施 WP0、修订后的 WP2/WP1、只管理纹理生命周期的 WP3。WP4–WP8 不自动进入施工。
 
 ## 1. 产品行为边界
 
@@ -82,7 +82,7 @@ flowchart TD
 ```js
 createFrameStore({ backend, budgetBytes, maxInFlight, onViewChange })
 store.replaceViews(viewKey, urls)
-store.replaceDemand(owner, [{ url, priority, deadline }])
+store.replaceDemand(owner, [{ url, priority, deadline }], { load: true })
 store.replacePins(owner, urls)
 store.get(url)
 store.stats()
@@ -93,9 +93,13 @@ owner 的需求是替换，不是历史累计。多个 label/索引共享一个 
 
 当前片段请求约 500 ms 前视窗口；图邻域/触发提示对循环片段请求约 250 ms 头部，对 `once_then_hold` 片段请求最多 750 ms，以覆盖 120 帧 × 5 ms 的短转场。图载入时从现有手动入口和 cfg 提取可能入口的头部提示，不调用 `_nextAutoNode`，不提前抽签。这一层由已拥有图语义的 runtime 提供信息，store 不解释图。
 
-当前节点所有正概率直接后继都准备有限头部，包括 5% 这样的低概率分支；概率继续只参与原有播放选择，不提前抽签。说话期间，这些后继使用现有 interactive 优先级，避免被后台预载延迟规则阻塞；非说话期间为 warm。触发提示使用单个“最近触发” owner，新触发替换旧需求，完整 release 时撤回；空邻域撤回旧 graph-next 需求。原先区分高概率/可丢弃低概率预取的逻辑已移除，因为实测仍会导致抽中稀有分支时头部缺帧。这里改变的是资源需求的存续期和加载优先级，没有改变节点选择或随机调用次数。
+审查后增加当前循环的普通保留需求（优先级 80、`load: false`）：已播帧优先于全局 warm 头部（65）保留，仍可被当前窗口（100）和直接后继（90）淘汰。仅窗口启动加载，不预先解码整段，也不将整段 pin；片段本身装不下时仍遵守预算。一次性片段及 hold 不保留整个循环。
 
-显示帧、待显示 hold、海报/闭嘴必要帧、嘴型、旧 transition 注册和正在播放队列有显式 pin。切换节点不能先释放上一张实际显示的图。普通驻留按需求优先级、截止时间、LRU 管理；只有更弱的未 pin 资源可被新请求淘汰。已知容量不够时保留等待状态，不在每轮 pump 里反复解码。
+说话期间和结束后 900 ms，低优先级提示仍保留需求，只暂停新的加载；已经在途的任务可以完成。高优先级后继仍能加载。头部请求和循环成员按配置变化缓存；需求/显示 pin 只更新受影响 URL 的 owner，字节账目增量维护，pump 只考察待加载项，不再每帧扫描全部 7,552 个视图条目。预算压力下淘汰仍会考察驻留集合。
+
+当前节点所有正概率直接后继都准备有限头部，包括 5% 这样的低概率分支；概率继续只参与原有播放选择，不提前抽签。这些直接后继统一使用 interactive（90），高于循环历史保留。runtime 也通过已有 `_postSpeechReleaseNode` 的确定性查询，保留说话结束后返回 root 或情绪释放节点的头部，不额外抽签。触发提示使用单个“最近触发” owner，新触发替换旧需求，完整 release 时撤回；空邻域撤回旧 graph-next 需求。这里改变的是资源需求的存续期和加载优先级，没有改变节点选择或随机调用次数。
+
+显示帧、待显示 hold、海报/闭嘴必要帧、嘴型、旧 transition 注册和正在播放队列有显式 pin。切换节点不能先释放上一张实际显示的图。加载按优先级和截止时间调度，淘汰按需求优先级和 LRU；只有更弱的未 pin 资源可被新请求淘汰。已知容量不够时保留等待状态，不在每轮 pump 里反复解码。
 
 加载失败不会定时重试。新的 owner 需求、重新进入当前播放窗口或优先级提升可以重试一次；相同需求和每帧截止时间刷新不会形成重试循环。永久必要帧 pin 不会阻止后来的实际播放需求重试。
 
@@ -109,6 +113,8 @@ owner 的需求是替换，不是历史累计。多个 label/索引共享一个 
 
 compressed CPU 字节按唯一 backing buffer 计算，GPU 按所有 level 数据计费；raster CPU 是 RGBA 解码数据估计，GPU 包含 Pixi 实际生成的 mip 层。PNG 继承旧 `Texture.from(img)` 的 BaseTexture 默认设置，包括 POW2 mipmap；不通过关闭 mipmap 改变缩小画质。`renderApp.getTextureStats()` 提供驻留、预算、pin 超额、队列、加载、重取、淘汰、失败和显示缺帧计数。GUI 和壁纸各有独立 store。
 
+`loads`/`refetches` 是 store 发起加载/重复尝试数，不能称为“完成解码”。后端另报 KTX2 fetch、实际完成转码（包括随后取消的结果）和资源上传提交次数。`fetchedPayloadBytes` 是收到的正文大小，包含缓存读取，不是网络线上传输量；`transcodeMs` 含异步排队/往返，`textureUploadMs` 是同步提交的 CPU 时间，均不是 GPU 执行时间。上传计数覆盖 Pixi GC/恢复绕过队列的重上传，但资源返回成功并不证明 GL 无错误；恢复验收仍单独检查 GL 错误和像素。
+
 ### 解码、上传与恢复
 
 [frame_texture_backend.js](../render/web/frame_texture_backend.js) 复用 `KTX2Parser.loadTranscoder/transcode` 和两个 worker。主线程 fetch 保留现有 file:// 支持；直接创建有明确所有权的 BaseTexture/Texture，不进入 Assets 或 Texture.from 全局缓存。PNG 回退沿用旧 URL 规则，失败可见。
@@ -121,88 +127,83 @@ compressed CPU 字节按唯一 backing buffer 计算，GPU 按所有 level 数�
 
 ## 7. 证据、命令和验收边界
 
-### 当前采用的流畅优先方案
+### 审查后的 eGPU 对照
 
-两轮 600 秒对照均为同机、同包、30 FPS、采样关闭、实际 resolution=1、DPR=1。旧主线 profile 名为 custom，新一轮为 power_saving；传入的最大帧率/分辨率和实际呈现设置相同。新代码各 profile 纹理预算统一，不用低帧率推定更小素材工作集。
+本次显卡环境已改变，实际 WebGL 渲染器为 **RTX 4070 Ti SUPER / ANGLE D3D11**。修正前基线为 `29a3bad`（PR 原逻辑 + 同样的测量计数），候选为 `7b20ffe`。两者均复用主目录依赖和素材，独立进程/profile 顺序运行；30 FPS、custom、采样关闭、resolution=1、DPR=1、seed=103、600 秒旅程，另测 companion 和上下文恢复。没有将这批绝对数值与旧 780M 的测量混为同机收益。
 
-| 指标 | 原主线 `0e7b484` | 当前 2 GiB 合计方案 |
+中间候选 `614ecbe` 在约 318 秒主动停止：第 69、99、144 秒说话结束时各缺少一次 idle 第 1 帧。当前循环保留暴露出原预取只覆盖图边、没有覆盖确定性说话退出路径的遗漏。随后补齐已知释放目标、提升直接后继到 90；新增测试在真实 store 预算压力下覆盖 root 和情绪退出路径，要求返回头部保留且不增加随机抽签。该中间记录作为未完成且发现回归的实验保存，不能当作通过结果。
+
+| 600 秒播放期指标 | 审查前 | 本次修正 |
 |---|---:|---:|
-| 播放期 ticker 间隔整体 P99 | 50.3 ms | 35.2 ms |
-| 播放期 ticker 间隔 > 50 ms 次数 | 274 / 17,515 | 10 / 17,844 |
-| 播放期 ticker 间隔最大值 | 51.8 ms | 51.1 ms |
-| renderer 私有内存：600 秒时 | 4,830 MiB | 1,353 MiB |
-| renderer 私有内存：播放期峰值 | 4,936 MiB | 1,451 MiB |
-| GPU 进程私有内存：600 秒时 | 2,325 MiB | 1,986 MiB |
-| GPU 进程私有内存：播放期峰值 | 2,384 MiB | 2,140 MiB |
+| KTX2 完成转码 | 22,601 | 17,193（−23.9%） |
+| store 重复加载尝试 | 18,449 | 13,035（−29.3%） |
+| renderer CPU 时间 | 326.08 s | 258.65 s（−20.7%） |
+| Python Host CPU 时间 | 55.08 s | 42.97 s（−22.0%） |
+| GPU 进程 CPU 时间 | 58.88 s | 58.15 s |
+| 其他 Electron 进程 CPU 时间 | 106.99 s | 89.06 s |
+| renderer 私有内存：结束 / 峰值 | 1,321 / 1,440 MiB | 1,365 / 1,428 MiB |
+| GPU 进程私有内存：结束 | 1,621 MiB | 907 MiB |
+| ticker P99 / 最大间隔 | 35.5 / 205.6 ms | 35.2 / 53.1 ms |
+| ticker 间隔 >50 ms | 9 | 12 |
+| store 缺帧尝试（含启动） | 16 | 20 |
 
-全记录探针缺帧尝试为 15 次，其中 14 次在启动阶段、1 次在首次说话开始；后续完整旅程未记录到缺帧。不要把这描述为绝对零缺帧或零帧时间波动。约第 461 秒抽中 `idle2` 的同一 5% 分支已再次发生，其源帧 1/3/4 没有重现上一版的缺帧，且未增加随机抽签。
+候选缺帧集中于启动和第一次说话，后续旅程未再记录；不能宣称零缺帧，也不能凭一次成对实验认定最大间隔改进具有统计稳定性。两轮无失败加载、预算阻塞、pin 超额、掉事件或 GL 错误，源码未在测量中变化。候选上下文恢复前后像素 hash 均为 `f098e0fe`，companion 的抑制/恢复已观察；GPU 进程内存不等于 VRAM。驻留预算仍是 2 GiB 的 CPU+潜在 GPU 合计，renderer 内存峰值基本持平。
 
-store 驻留峰值 2,147,426,208 字节，预算阻塞、必要 pin 超额和加载失败均为零。完整记录重取 16,514 次，低于紧预算长测的 29,761 次；预算和预取策略同时改变，不能把收益全部归因于其中一项。CPU 采样未证明需求计算是主要瓶颈，因此没有增加静态需求缓存或重写解码器。诊断性 CPU 采样记录单独标记，不代替未开启采样器的性能验收。
+**剩余代价明确存在：17,193 次仍明显高于旧 main 记录的 6,150 次；这次没有满足“总解码接近 main”的审查目标。** 当前循环的反复解码已在容量实验中消除，但多片段切换仍会发生重取。先保留 CPU 副本及已验证的恢复路径；若继续压低跨片段重取，应把释放 CPU 副本、Pixi GC 重新上传和上下文丢失后的整体重载作为下一项完整生命周期改动验收，不能只把 CPU 预算改成零。PR 继续保持 draft。
 
-记录完整、源码未变、零掉事件、零 GL 错误。companion 的角色层抑制/恢复已观察；上下文恢复前后角色纹理校验和均为 `6bff95cb`，尺寸、RGB/alpha 总和一致。scenario 激活仍为 unverified。内存表仅使用播放旅程样本，不混入上下文重置后的内存下降。
+补充的 60 秒检查均完整结束、源码未变化、无掉事件、GL 错误、加载失败或 pin 超额，恢复前后像素一致：
 
-当前代码另完成两组 60 秒验证：standard / 60 FPS / 采样关，整体 ticker P99 19.2 ms、最大 45.5 ms、启动后零缺帧，首次转场完整显示 36 次；custom / 30 FPS / 采样开，整体 P99 35.0 ms、最大 38.3 ms，store 无淘汰、重取 3 次。两组均无预算阻塞、加载失败或 GL 错误。采样仍是显式可选项，默认关闭。
+| 当前 eGPU 路径 | ticker P99 / 最大间隔 | store 缺帧尝试 | 重复加载尝试 |
+|---|---:|---:|---:|
+| standard / 60 FPS / 采样关 | 18.8 / 38.2 ms | 24，集中于启动和首次说话 | 128 |
+| custom / 30 FPS / 采样开 | 35.0 / 35.7 ms | 18；含 repeat-speech、repeat-idle 各一次 | 0 |
 
-证据中 `accepted-*` 为当前采用方案，`wp3-tight-*` 为初版紧预算对照，其他 `wp3-*` 为诊断与中间方案。失败或有帧时间尖峰的中间记录一并保留，没有用一次通过的短跑覆盖不利证据。
+采样开启的两次后续缺帧均保留了上一张实际纹理；本次仍不将该可选路径称为零缺帧。默认采样设置未改变。
 
-### 初版紧预算候选的历史对照（已调整默认值）
+CPU 统计用 Electron 各进程累计 CPU 秒及 Python `psutil` 的 user+system 秒，按同 PID 的有效相邻区间作差；100% 表示占满一个逻辑核。renderer（含转码 worker）、GPU、其他 Electron 进程和 Python Host 分别汇总。缺失值、PID 更换或计数倒退的区间标为 unavailable，不补零。没有测整机功耗。
 
-同机、同包、30 FPS、采样关闭，AMD Radeon 780M / ANGLE D3D11 / Electron 离屏。首次说话在启动三秒后触发，首次转场在十一秒后触发。
+每帧 API 合成实验使用相同的当前窗口和显示 pin 更新，以及随后的 pump：7,552 个注册条目、883 个 warm 驻留条目、120 帧循环。仅改变未使用的注册条目数到 15,104，验证空闲元数据不再让更新成本线性上升。它不含网络、真实解码或 GPU，不能代替硬件 CPU 测量。脚本见 [benchmark_frame_store.cjs](../tools/probes/benchmark_frame_store.cjs)。
 
-同为 600 秒的播放旅程，以下内存只统计进入 companion/scenario/context-loss 之前的样本，单位 MiB。原主线在该窗口仍有加载活动；候选持续按需加载/淘汰，不能把尾部窗口称为完全静止的稳态。
-
-| 指标 | 原主线 `0e7b484` | 初版 1 GiB 合计候选 |
+| 注册条目 | 修改前 P50 / P99 | 修改后 P50 / P99 |
 |---|---:|---:|
-| renderer 私有内存：600 秒时 | 4,830 | 790 |
-| renderer 私有内存：播放期峰值 | 4,936 | 942 |
-| renderer 私有内存：尾部约 30 秒均值 | 4,828 | 830 |
-| GPU 进程私有内存：600 秒时 | 2,325 | 1,171 |
-| GPU 进程私有内存：播放期峰值 | 2,384 | 1,188 |
-| GPU 进程私有内存：尾部约 30 秒均值 | 2,211 | 1,139 |
-| 首次说话：纹理切换 / 缺帧尝试 | 2 / 145 | 149 / 0 |
-| 首次转场：纹理切换 / 缺帧尝试 | 1 / 31 | 30 / 0 |
-| first-idle ticker P99 | 50.7 ms | 34.8 ms |
+| 7,552 | 0.243 / 0.492 ms | 0.011 / 0.034 ms |
+| 15,104 | 0.478 / 1.212 ms | 0.011 / 0.034 ms |
 
-这次紧预算长测记录完整、零掉事件、源码未变化。store 驻留峰值 1,073,651,424 字节，低于 1 GiB；必要 pin 超额和加载失败均为零。完整记录仍有 51 次探针缺帧尝试（含启动），并非零缺帧；store 计数为 52 次，因它还覆盖安装探针前的调用。窗口淘汰带来 29,761 次重新加载尝试，说明单纯追求低驻留有明显解码/IO 代价；本轮没有测整机能耗，也不宣称 CPU 用量必然下降。
+使用实际包帧尺寸、7,552 个 URL、883 个入口头部和静态 pin 的容量模拟：600 帧 butterfly 循环第二/三圈加载从 599/599 降为 0/0；738 帧 closed-eye 从 737/737 降为 0/0，预算均未超过 2 GiB。120/290/360 帧三个循环在该模拟中修改前后都为 0/0，因此未复现“360 帧必定每圈重解”的断言。模拟采用立即完成的假解码/上传，没有动态 graph-next/hold owner 或真实 GPU；相应边界另由实际 store 的预算压力测试和上述硬件旅程覆盖。
 
-companion 角色层抑制/恢复已观察；scenario 仅发送请求，激活仍标为未验证。上下文恢复前后角色纹理均为 764 × 1028，像素校验和 `88f96f3`、RGB/alpha 总和一致，GL 错误为空；截图显示正常。原主线长测的恢复阶段出现黑色矩形与 GL 错误，其旧探针只检查事件，因此不能用旧 `complete=true` 声称视觉通过。
+### 780M 历史对照及未采用结果
 
-另外保留前期两次 60 秒原主线及入口头部候选短测，用来展示启动期的差异：
+以下为原环境，保留用于说明 PR 的初始收益和审查发现，**不代表本次修正版的 eGPU 结果**。
 
-| 指标 | 当前主线 | 收窄后的候选 |
-|---|---|---|
-| 60 秒 renderer 私有内存 | 两次约 2,688 / 2,884 MiB，仍在加载 | 入口头部候选约 707 MiB（其他短跑有 GC 波动） |
-| 首次说话 5 秒内纹理切换 | 约 1–2 次 | 约 150 次 |
-| 首次转场 | 约 1 次 | 入口头部预取后 30 次，目标请求无缺帧 |
-| 已有帧 idle 的 ticker P99 | 约 50 ms | 约 35 ms |
-| 60 秒 GPU 进程私有内存 | 约 554 / 628 MiB | 入口头部候选约 1,137 MiB |
+| 600 秒旅程指标 | 原 main `0e7b484` | 审查前 PR，2 GiB 合计预算 |
+|---|---:|---:|
+| ticker P99 | 50.3 ms | 35.2 ms |
+| 间隔 >50 ms | 274 | 10 |
+| renderer 私有内存：结束 / 峰值 | 4,830 / 4,936 MiB | 1,353 / 1,451 MiB |
+| GPU 进程私有内存：结束 / 峰值 | 2,325 / 2,384 MiB | 1,986 / 2,140 MiB |
 
-GPU 进程的短程私有内存有上升，原因是候选主动上传有预算的资源；不能只报 renderer 的下降。十分钟同窗口对照中 GPU 进程峰值和尾部均值则下降。GPU 进程内存不是 GPU 纹理字节，不能和 store 预算混用；上下文恢复后的分配另列，不混入播放期比较。
+审查前 PR 记录 store 加载尝试 20,672 次、重取 16,514 次。这不是“完成解码 20,672 次”；原 main 的 6,150 是不同计数边界的 completed 值，且没有 CPU 进程时间，不能据此直接计算 CPU 倍率。但持续重取本身确实暴露出驻留策略问题，促成本次循环保留和预取暂停修正。
 
-初版三组 60 秒补测均完整结束、零掉事件、零 GL 错误、零加载失败、零 pin 超额，但流畅度结果仍不足以接受原预算：
+审查前长测全程记录 15 次探针缺帧尝试（14 次启动、1 次首次说话），恢复像素一致，无 GL 错误。旧 main 的恢复曾出现黑色矩形和 GL 错误；旧探针只检查事件，`complete=true` 不能证明视觉恢复通过。早期上下文探针自身也有失败记录。
 
-| 档位 | 结束时 renderer / GPU 进程 MiB | store 驻留 MiB / 预算 | 首次转场缺帧尝试 | first-idle ticker P99 |
-|---|---:|---:|---:|---:|
-| standard，60 FPS，采样关 | 771 / 1,164 | 1,023 / 1,024 | 11 | 18.6 ms |
-| custom，30 FPS，采样开 | 711 / 1,197 | 1,023 / 1,024 | 0 | 34.9 ms |
-| power_saving，30 FPS，采样关 | 468 / 693 | 511 / 512 | 0 | 55.3 ms |
+未采用的紧预算长测（1 GiB 合计）虽将 renderer 结束内存压到约 790 MiB，却有 29,761 次重复加载尝试、51 次探针缺帧；512 MiB 省电候选的 first-idle ticker P99 为 55.3 ms。早期较弱预取也曾在 5% 分支缺少开头帧。没有把这些失败删除后称原候选通过。完整 24 轮历史测量保存在本地忽略目录；仓库只保留原 main、审查前采用方案和本次前后对照的精简汇总及上述不利结论。
 
-60 FPS 冷转场仍有缺帧，省电档的更小预算也存在换入压力和较高的尾延迟；不能把 custom/30 的结果推广到所有档位。采样开组只用于验证既有可选路径，默认值未变。
+旧 standard/60 和 sampled/30 的通过记录属于审查前实现；本次修正另测并单列结果。采样仍默认关闭。原离线研究只抽样 796/7,552 帧（10.54%），Node 转码及静态画质样本不是浏览器吞吐或动态画质保证，不用作本轮收益。
 
-完整脱敏结果见 [texture-store-2026-10-04.json](evidence/texture-store-2026-10-04.json)。候选在提交前的工作区测量，metadata 的 revision 是当时的前置提交；实际被测源码以逐文件 SHA-256 和 sourceChangedDuringRun 为准。旧 loader 的逐阶段计数在新路径下明确为 null，加载/重取计数改看独立 store 统计。汇总也保留探针修正前的失败记录，不与最终通过记录混淆。
-
-原离线研究的证据范围：包画像是 796/7,552 帧抽样（10.54%）；67.07% 包围盒面积不是逐帧全量保证。8.58 ms 与 1.55 ms 是 Node 单线程 60 帧样本，不是浏览器吞吐保证；分辨率画质来自 12 帧静态样本，尚未包含重编码及时间闪烁。这些研究不作为本轮实现收益。
+证据见 [texture-store-2026-10-04.json](evidence/texture-store-2026-10-04.json)。`phaseSelection` 说明被省略的重复 soak 阶段；保留全部阶段合计、最差缺帧/失败/时延阶段、恢复结果和源码 hash。候选实际被测源码以逐文件 SHA-256 和 `sourceChangedDuringRun` 为准。
 
 ### 复现命令
 
-当前验证记录：相关 Node 契约 92 项通过（含探针辅助测试和 14 项生命周期集成契约）；相关 Python 检查 73 项通过（含 24 项汇总工具测试）。完整 Python runner 执行了 410 个套件，汇总 4,882 项通过、6 项跳过，另有 5 项预期失败，唯一非预期失败是 `test_gpt_sovits_sidecar_backend.py::test_embedded_backend_preserves_synthesis_request`。本机 `.env` 开启实验性 V3 情绪路由后，测试的 FakeInferencer 缺少 `model_version`；原基线同样失败，相关生产/测试文件本轮没有修改。仅对测试进程设置 `ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING=false` 后，该套件 15 项通过；用户配置保持原样。因此不把完整运行标成全绿。
+本次修正相关 Node 契约 **99 项通过**，包含 17 项生命周期集成契约；相关 Python 检查 **72 项通过**，包含 26 项汇总工具测试。审查前 PR `4ef9370` 的 GitHub CI 已全部通过；新提交需要重新运行 CI，不能沿用旧提交的绿色状态。
 
-Electron 191 项测试与构建、Ruff 全库检查和两项架构生成一致性检查已通过。运行时原始日志保存在本地忽略目录。
+历史完整 Python runner 为 4,882 通过、6 跳过、5 预期失败，另有一项本机配置相关失败：`test_gpt_sovits_sidecar_backend.py::test_embedded_backend_preserves_synthesis_request`。本机 `.env` 开启 V3 情绪路由后，FakeInferencer 缺少 `model_version`；原基线同样失败。仅在测试进程关闭该开关后套件 15 项通过，用户配置未修改。本次没有重跑整套 Python，也不把这一历史本机运行改写成全绿。
+
+本次 Electron 191 项测试与构建、变更 Python 文件的 Ruff 检查通过。发布证据由约 1.20 MB / 24 轮全量结果收敛为约 176 KB，包含 6 轮基线/采用方案精简结果和一份中间回归摘要；完整记录保存在本地忽略目录。
 
 从仓库根运行基本契约：
 
 ```powershell
-node --test tests/render_frame_gate.test.cjs tests/frame_store.test.cjs tests/frame_texture_backend.test.cjs tests/sprite_texture_lifecycle.test.cjs tests/sprite_frame_sampling.test.cjs tests/sprite_canvas_fit.test.cjs
+node --test tests/render_frame_gate.test.cjs tests/frame_store.test.cjs tests/frame_texture_backend.test.cjs tests/sprite_texture_lifecycle.test.cjs tests/sprite_frame_sampling.test.cjs tests/sprite_canvas_fit.test.cjs electron/tests/textureProbe.test.mjs
 .venv/Scripts/python.exe -m pytest -q tests/test_asset_server_http.py tests/test_local_bridge_security.py tests/test_render_budget.py tests/test_wallpaper_asset_revision.py tests/test_texture_probe_summary.py
 npm --prefix electron test
 npm --prefix electron run build
@@ -221,7 +222,7 @@ Start-Process -FilePath "$probeRoot/electron/node_modules/electron/dist/electron
 
 另测 sampled/on、60 FPS、`--profile power_saving`（30 FPS）与 `--profile standard`（60 FPS）。baseline/off 仍表示当前源码关闭采样，不代表自动切回旧实现。
 
-使用 `tools/probes/summarize_texture_runs.py --run name=RUN_DIRECTORY --output FILE` 生成脱敏汇总。汇总保留未完成、掉事件、源码变化、GL 错误和可选阶段的未验证状态；尾部 30 秒统计本身不等于稳态。`journeyMemory` / `journeyTailWindow` 仅使用明确标记为 journey / journey-complete 的样本，以免上下文重置后的内存下降污染播放期比较；缺少阶段标签时明确不可用。`memory` / `tailWindow` 则保留全部样本。
+使用 `tools/probes/summarize_texture_runs.py --run name=RUN_DIRECTORY --compact --output FILE` 生成脱敏精简汇总；省略 `--compact` 保留全部阶段。汇总保留未完成、掉事件、源码变化、GL 错误和可选阶段的未验证状态；尾部 30 秒统计本身不等于稳态。`journeyMemory` / `journeyTailWindow` / `journeyCpu` 仅使用明确标记为 journey / journey-complete 的样本，以免上下文重置污染播放期比较；缺少 CPU 计数时明确不可用。`memory` / `tailWindow` 则保留全部样本。
 
 `journeyGaps` 根据 metadata.journey 中明确列出的阶段汇总原始 RAF/ticker 间隔，不对各阶段 P99 求平均；缺少阶段标签或原始事件则标为 unavailable。诊断时可对单个探针进程设置 `TEXTURE_PROBE_CPU_PROFILE=1`，生成本地 `cpu-profile.cpuprofile`，metadata 与脱敏汇总会记录 `cpuProfiling=true`。CPU profile 含原始脚本 URL，仅保存在忽略目录，不纳入发布汇总；正式时延验收不启用它。
 
@@ -236,4 +237,4 @@ Start-Process -FilePath "$probeRoot/electron/node_modules/electron/dist/electron
 
 WP4 提前抽签需要另证图决策等价；WP5 视频化涉及独立时钟、静态首帧开关和画质；WP6 裁边必须保留原始帧坐标，alpha > 2 不能当作完全透明；WP7 精确帧率、导出抽帧、分档和包 schema 都需生产端/消费端兼容验证。默认采样 D5 仍关闭。D3、D6 只影响相应未来工作包，不阻挡本轮。
 
-回滚使用各工作包分支/提交，按逆依赖撤回；没有新增长期并存的旧加载开关。原加载代码的公开调用者已由 store 适配：帧、嘴型、旧 transition、PNG 回退均有契约覆盖。不要通过恢复无界缓存来掩盖缺帧，也不要为了达成内存目标修改时钟或默认开启采样。
+回滚使用 PR 内可见提交，按逆依赖撤回；没有新增长期并存的旧加载开关。原加载代码的公开调用者已由 store 适配：帧、嘴型、旧 transition、PNG 回退均有契约覆盖。不要通过恢复无界缓存来掩盖缺帧，也不要为了达成内存目标修改时钟或默认开启采样。
