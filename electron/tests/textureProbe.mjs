@@ -39,6 +39,7 @@ export const usage = `Usage: electron tests/fpsTextures.probe.mjs [baseline|samp
   --fixed-route           Use the same scheduled clip route without graph draws
   --high-performance-gpu  Request Chromium's high-performance GPU preference
   --expect-gpu TEXT       Refuse measurement on a different WebGL renderer
+  --bc7-cache DIRECTORY   Experimental prebuilt, source-verified BC7 cache
   --cold-clip LABEL       Isolate a real root successor after head prefetch
   --cold-fill             Preload and release low-priority demand before entry
   --cold-start-delay-ms N  Inject one bounded cold-entry loading pause (0..1000)
@@ -65,10 +66,10 @@ export function parseArgs(argv) {
     else if (token === '--texture-disposal') options.textureDisposal = true
     else if (token === '--fixed-route') options.fixedRoute = true
     else if (token === '--high-performance-gpu') options.highPerformanceGpu = true
-    else if (token === '--expect-gpu') {
+    else if (token === '--expect-gpu' || token === '--bc7-cache') {
       const value = argv[++i]
       if (!value || value.startsWith('--')) throw Error('Missing expected GPU')
-      options.expectGpu = value
+      options[token === '--bc7-cache' ? 'bc7Cache' : 'expectGpu'] = value
     }
     else if (token === '--cold-fill') options.coldFill = true
     else if (token === '--sampling' || token === '--profile' || values.has(token)) {

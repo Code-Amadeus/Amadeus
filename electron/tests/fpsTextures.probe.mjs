@@ -8,6 +8,8 @@ import { spawn, execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createInterface } from 'node:readline'
 import { parseArgs, usage, createJourney, createEvidenceSummary, installTextureProbe, installTranscodeCounter, readTexturePixels } from './textureProbe.mjs'
+import { installBc7Cache } from '../../tools/probes/bc7-cache/install.mjs'
+import { verifyCache } from '../../tools/probes/bc7-cache/verify.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 let options
@@ -54,6 +56,7 @@ else {
     await fs.access(python)
     host = spawn(python, hostArgs, { cwd: root, windowsHide: true,
       env: { ...process.env, GRAPHICS_PROFILE: options.profile, RENDER_MAX_FPS: String(options.fps), RENDER_MAX_RESOLUTION: '1.5',
+        TEXTURE_PROBE_BC7_CACHE: options.bc7Cache ? path.resolve(options.bc7Cache) : '',
         RENDER_TEXTURE_SAMPLING: options.sampling ? 'true' : 'false', WALLPAPER_WHEEL_FORWARD: 'false',
         AMADEUS_SCENARIO_IDLE_SECONDS: String(options.durationSeconds + 120),
         LOCALAPPDATA: path.join(output, 'host-profile'), APPDATA: path.join(output, 'host-profile'), PYTHONIOENCODING: 'utf-8' },
@@ -113,7 +116,8 @@ else {
       label:s._currentEmotion,logical:s._frameIdx,source:s._activeFrameIdx,spriteRenderable:s.container.renderable,
       currentLabelLoadedFrames:(s._frames?.[s._currentEmotion]||[]).filter(Boolean).length,
       currentLabelTotalFrames:s._frames?.[s._currentEmotion]?.length??null,
-      textureStats,textureStatsError,transcodes:window.__textureTranscodes??null};
+      textureStats,textureStatsError,transcodes:window.__textureTranscodes??null,bc7Cache:window.__bc7Cache??null,
+      displayedTextureFormat:s.sprite?.texture?.baseTexture?.resource?.format??null};
   })()`
 
   async function drain() {
@@ -226,8 +230,18 @@ else {
         'render/web/wallpaper_engine_bridge.js', 'render/web/wallpaper_engine.html', 'render/web/vendor/pixi.min.js',
         'render/web/vendor/pixi-basis-ktx2.global.js', 'render/server.py', 'render/spriteforge_animator.py',
         'wallpaper/wallpaper_engine_bridge.py', 'wallpaper/scene_assets.py', 'tools/probes/wallpaper_memory_host.py',
-        'electron/tests/fpsTextures.probe.mjs', 'electron/tests/textureProbe.mjs']) {
+        'electron/tests/fpsTextures.probe.mjs', 'electron/tests/textureProbe.mjs',
+        'tools/probes/bc7-cache/install.mjs', 'tools/probes/bc7-cache/verify.mjs',
+        'tools/probes/bc7-cache/decode.mjs', 'tools/probes/bc7-cache/worker.mjs',
+        'tools/probes/bc7-cache/vendor/zstddec.mjs']) {
         metadata.sourceSha256[source] = await sourceHash(source)
+      }
+      let cache
+      if (options.bc7Cache) {
+        cache = await verifyCache(root, path.resolve(options.bc7Cache))
+        metadata.bc7Cache = { indexSha256: cache.sha256, entries: cache.entries,
+          compression: cache.index.compression, cacheState: 'prebuilt; verified before navigation',
+          scope: 'experimental read path; no automatic runtime cache generation' }
       }
       await startHost()
       metadata.host = bridge
@@ -246,6 +260,8 @@ else {
       await timeout(window.webContents.debugger.sendCommand('Page.enable'), 10000, 'Probe Page.enable timed out')
       await timeout(window.webContents.debugger.sendCommand('Page.addScriptToEvaluateOnNewDocument', {
         source: `(${installTranscodeCounter.toString()})()` }), 10000, 'Probe script registration timed out')
+      if (cache) await window.webContents.debugger.sendCommand('Page.addScriptToEvaluateOnNewDocument', {
+        source: `(${installBc7Cache.toString()})(${JSON.stringify(cache.index)})` })
       // Never discover or contact the user's backend, even if a renderer regresses.
       const allowedPorts = new Set([String(bridge.assetPort), String(bridge.bridgePort)])
       window.webContents.session.webRequest.onBeforeRequest((details, callback) => {
@@ -270,7 +286,7 @@ else {
       if (options.fixedRoute) {
         // Control clip selection only. Real sprite clocks, frame sampling,
         // holds, mouth layers and graph-neighborhood resource demand remain.
-        await js('renderApp._spriteforgeRuntime._advanceNow=()=>{}')
+        await js('void (renderApp._spriteforgeRuntime._advanceNow=()=>{})')
         metadata.instrumentation.fixedRoute = true
       }
       if (process.env.TEXTURE_PROBE_LOAD_TRACE === '1') {

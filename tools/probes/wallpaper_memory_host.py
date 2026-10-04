@@ -61,6 +61,9 @@ def main():
     while abs(bridge_port - asset_port) < 20:
         bridge_port = unused_port()
     host = bridge_module.WallpaperEngineBridgeHost(asset_port=asset_port, bridge_port=bridge_port, slice_host="electron")
+    cache = os.environ.get("TEXTURE_PROBE_BC7_CACHE")
+    if cache:
+        host._asset_server.mount_static("/__bc7_cache", Path(cache))
     animator = SpriteForgeAnimator(host)
     try:
         host.start()
