@@ -36,10 +36,12 @@
       ? devicePixelRatio
       : 1;
     const maxResolution = supportedResolution(options && options.maxResolution);
+    const maxFps = supportedFps(options && options.maxFps) || STANDARD_MAX_FPS;
+    const sampling = options?.textureSampling;
     return {
-      maxFps: supportedFps(options && options.maxFps) || STANDARD_MAX_FPS,
-      textureSampling: options?.textureSampling === true
-        || options?.textureSampling === "1" || options?.textureSampling === "true",
+      maxFps,
+      textureSampling: sampling === undefined || sampling === null || sampling === '' ? maxFps === 60
+        : sampling === true || sampling === "1" || sampling === "true",
       resolution: maxResolution === null
         ? nativeResolution
         : Math.min(nativeResolution, maxResolution),

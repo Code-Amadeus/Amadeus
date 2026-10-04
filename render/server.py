@@ -7,6 +7,7 @@ import datetime
 import email.utils
 import http.server
 import json
+import logging
 import mimetypes
 import os
 import threading
@@ -103,7 +104,7 @@ class AssetServer:
     start_port: 首选端口，若被占用则自动递增至 start_port+20
     """
 
-    def __init__(self, root: Path, start_port: int = 17777):
+    def __init__(self, root: Path, start_port: int = 17777, *, texture_cache: bool = False):
         self.root = Path(root)
         self.start_port = start_port
         self.port: int = -1
@@ -112,6 +113,20 @@ class AssetServer:
         self._static_mounts: dict[str, Path] = {}
         # 动态路由表：路径 → 返回 dict 的 callable（序列化为 JSON 响应）
         self._dynamic_routes: dict[str, object] = {}
+        self._texture_cache_enabled = texture_cache
+        self._texture_cache = None
+        self._cache_lock = threading.Lock()
+
+    def _get_texture_cache(self):
+        with self._cache_lock:
+            if self._texture_cache_enabled and self._texture_cache is None:
+                from render.texture_cache import TextureDiskCache
+                try:
+                    self._texture_cache = TextureDiskCache(self.root / "render/web/vendor")
+                except OSError:
+                    self._texture_cache_enabled = False
+                    logging.getLogger(__name__).warning("BC7 disk cache unavailable; using source textures", exc_info=True)
+            return self._texture_cache
 
     def set_dynamic_route(self, path: str, fn) -> None:
         """注册动态 GET 路由。
@@ -130,7 +145,7 @@ class AssetServer:
 
     def start(self) -> int:
         """启动服务器并返回实际监听端口。"""
-        handler = _make_handler(self.root, self._dynamic_routes, self._static_mounts)
+        handler = _make_handler(self.root, self._dynamic_routes, self._static_mounts, self._get_texture_cache)
         for p in range(self.start_port, self.start_port + 20):
             if _port_free(p):
                 self._server = _QuietThreadingHTTPServer(("127.0.0.1", p), handler)
@@ -159,7 +174,7 @@ class AssetServer:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_handler(root: Path, dynamic_routes: dict | None = None, static_mounts: dict | None = None):
+def _make_handler(root: Path, dynamic_routes: dict | None = None, static_mounts: dict | None = None, texture_cache=None):
     """工厂：创建固定 directory 的 handler 类（避免 os.chdir）。
 
     dynamic_routes: {path: callable}，callable 无参，返回可 JSON 序列化的对象。
@@ -245,6 +260,45 @@ def _make_handler(root: Path, dynamic_routes: dict | None = None, static_mounts:
             self.end_headers()
             self.wfile.write(body)
 
+        def do_POST(self):
+            # Derived writes have a separate, narrow capability. They cannot select
+            # a filesystem path, create assets, or use cross-origin ambient access.
+            from render.texture_cache import KEY, MAX_BODY_BYTES
+            self.close_connection = True
+            if self._reject_untrusted_host():
+                return
+            origin = self.headers.get("Origin", "")
+            if origin != f"http://{self.headers.get('Host')}":
+                self.send_error(403)
+                return
+            key = self.path.removeprefix("/_texture-cache/")
+            if not self.path.startswith("/_texture-cache/") or not KEY.fullmatch(key):
+                self.send_error(404)
+                return
+            cache = texture_cache() if texture_cache else None
+            import secrets
+            if cache is None or not secrets.compare_digest(self.headers.get("X-Amadeus-Cache-Token", ""), cache.token):
+                self.send_error(403)
+                return
+            try:
+                size = int(self.headers.get("Content-Length", "0"))
+                if self.headers.get("Transfer-Encoding") or not 4 < size <= MAX_BODY_BYTES:
+                    raise ValueError("Invalid body size")
+                self.connection.settimeout(10)
+                body = self.rfile.read(size)
+                if len(body) != size:
+                    raise ValueError("Incomplete cache upload")
+                cache.publish(key, body)
+            except (ValueError, KeyError, TypeError) as error:
+                self.send_error(400, str(error))
+                return
+            except OSError:
+                self.send_error(503)
+                return
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
         def send_head(self):
             if self._reject_untrusted_host():
                 return None
@@ -284,10 +338,34 @@ def _make_handler(root: Path, dynamic_routes: dict | None = None, static_mounts:
 
             try:
                 metadata = os.fstat(source.fileno())
+                cache_info = None
+                cached = False
+                # Original representation remains available for unsupported GPUs
+                # and for one explicit repair after a corrupt derived response.
+                wants_cache = "application/x-amadeus-bc7" in self.headers.get("Accept", "")
+                cache = texture_cache() if texture_cache and wants_cache and target.suffix.lower() == ".ktx2" else None
+                if cache is not None:
+                    try:
+                        identity = cache.identify(source, target, metadata)
+                        if identity:
+                            cache_info = (identity[0], cache.token)
+                            if "source" not in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query):
+                                hit = cache.open(identity[0])
+                                if hit:
+                                    source.close()
+                                    source, metadata = hit
+                                    cached = True
+                    except OSError:
+                        source.seek(0)  # A cache read failure must not lose the original representation.
                 etag = f'W/"{metadata.st_size:x}-{metadata.st_mtime_ns:x}"'
                 not_modified = self._not_modified(metadata, etag)
                 self.send_response(304 if not_modified else 200)
-                self.send_header("Content-Type", self.guess_type(str(target)))
+                self.send_header("Content-Type", "application/x-amadeus-bc7" if cached else self.guess_type(str(target)))
+                if target.suffix.lower() == ".ktx2":
+                    self.send_header("Vary", "Accept")
+                if cache_info:
+                    self.send_header("X-Amadeus-BC7-Key", cache_info[0])
+                    self.send_header("X-Amadeus-Cache-Token", cache_info[1])
                 # For 304 this is the selected representation's size, not a
                 # body length. Both GET and HEAD remain explicitly bodyless.
                 self.send_header("Content-Length", str(metadata.st_size))

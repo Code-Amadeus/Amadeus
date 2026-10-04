@@ -40,6 +40,8 @@ export const usage = `Usage: electron tests/fpsTextures.probe.mjs [baseline|samp
   --high-performance-gpu  Request Chromium's high-performance GPU preference
   --expect-gpu TEXT       Refuse measurement on a different WebGL renderer
   --bc7-cache DIRECTORY   Experimental prebuilt, source-verified BC7 cache
+  --disk-cache            Exercise automatic product cache generation and reuse
+  --cache-profile PATH    Shared isolated user-cache profile across product runs
   --cold-clip LABEL       Isolate a real root successor after head prefetch
   --cold-fill             Preload and release low-priority demand before entry
   --cold-start-delay-ms N  Inject one bounded cold-entry loading pause (0..1000)
@@ -65,11 +67,12 @@ export function parseArgs(argv) {
     else if (token === '--context-loss') options.contextLoss = true
     else if (token === '--texture-disposal') options.textureDisposal = true
     else if (token === '--fixed-route') options.fixedRoute = true
+    else if (token === '--disk-cache') options.diskCache = true
     else if (token === '--high-performance-gpu') options.highPerformanceGpu = true
-    else if (token === '--expect-gpu' || token === '--bc7-cache') {
+    else if (token === '--expect-gpu' || token === '--bc7-cache' || token === '--cache-profile') {
       const value = argv[++i]
       if (!value || value.startsWith('--')) throw Error('Missing expected GPU')
-      options[token === '--bc7-cache' ? 'bc7Cache' : 'expectGpu'] = value
+      options[token === '--bc7-cache' ? 'bc7Cache' : token === '--cache-profile' ? 'cacheProfile' : 'expectGpu'] = value
     }
     else if (token === '--cold-fill') options.coldFill = true
     else if (token === '--sampling' || token === '--profile' || values.has(token)) {

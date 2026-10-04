@@ -32,6 +32,7 @@ from config.settings import (
     RENDER_EFFECTIVE_MAX_FPS,
     RENDER_EFFECTIVE_MAX_RESOLUTION,
     RENDER_TEXTURE_SAMPLING,
+    RENDER_BC7_CACHE,
     WALLPAPER_SFX_GATE_LOG,
     WALLPAPER_WHEEL_FORWARD,
 )
@@ -86,6 +87,10 @@ _WALLPAPER_CLIENT_ASSETS = (
     _PROJECT_ROOT / "render" / "web" / "render_budget.js",
     _PROJECT_ROOT / "render" / "web" / "frame_store.js",
     _PROJECT_ROOT / "render" / "web" / "frame_texture_backend.js",
+    _PROJECT_ROOT / "render" / "web" / "texture_cache.js",
+    _PROJECT_ROOT / "render" / "web" / "texture_cache_codec.mjs",
+    _PROJECT_ROOT / "render" / "web" / "texture_cache_worker.mjs",
+    _PROJECT_ROOT / "render" / "web" / "vendor" / "zstd" / "zstd.wasm",
     _PROJECT_ROOT / "render" / "web" / "renderer.js",
 )
 
@@ -710,7 +715,7 @@ class WallpaperEngineBridgeHost:
         *,
         slice_host: str = "wallpaper",
     ):
-        self._asset_server = AssetServer(_PROJECT_ROOT, start_port=asset_port)
+        self._asset_server = AssetServer(_PROJECT_ROOT, start_port=asset_port, texture_cache=RENDER_BC7_CACHE)
         self._asset_port = -1
         self._bridge_port = -1
         self._bridge_start_port = bridge_port

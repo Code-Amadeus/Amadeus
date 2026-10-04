@@ -5,6 +5,7 @@ export interface GraphicsRuntimeSettings {
   custom_max_fps: number
   custom_max_resolution: number
   texture_sampling: boolean
+  bc7_cache?: boolean
   effective_max_fps: number
   effective_max_resolution: number | null
 }
@@ -15,6 +16,12 @@ export function buildGraphicsConfiguration(
 ): ModelConnectionCatalogGroup[] {
   const values = snapshot?.values || {}
   const profile = values.GRAPHICS_PROFILE ?? runtime?.profile ?? 'standard'
+  const selectedFps = profile === 'standard' ? 60 : profile === 'power_saving' ? 30
+    : Number(values.RENDER_MAX_FPS ?? runtime?.custom_max_fps ?? 30)
+  const sampling = values.RENDER_TEXTURE_SAMPLING === undefined
+    ? (runtime && profile === runtime.profile && selectedFps === runtime.effective_max_fps
+      ? runtime.texture_sampling : selectedFps === 60)
+    : values.RENDER_TEXTURE_SAMPLING === 'true'
   const field = (key: string, label: string, type: ModelConnectionCatalogField['type'],
     value: string | boolean, extra: Partial<ModelConnectionCatalogField> = {}): ModelConnectionCatalogField => ({
     key, label, type, value, editable: true, restart_required: true, ...extra,
@@ -43,12 +50,15 @@ export function buildGraphicsConfiguration(
     status: profile === 'standard' ? 'Standard' : profile === 'power_saving' ? 'Power saving' : 'Custom',
     status_ok: true, fields,
   }, {
-    id: 'graphics_sampling', label: 'Experimental texture sampling',
-    description: 'Load fewer animation source frames to reduce texture memory. Keep off for the original full-frame loading behavior.',
-    active: false, configured: true, status: 'Experimental', status_ok: false,
+    id: 'graphics_sampling', label: 'Texture loading',
+    description: 'Reduce repeated texture conversion while keeping the memory budget bounded.',
+    active: false, configured: true, status: 'Configured', status_ok: true,
     fields: [field('RENDER_TEXTURE_SAMPLING', 'Sample animation textures', 'boolean',
-      values.RENDER_TEXTURE_SAMPLING === undefined ? runtime?.texture_sampling ?? false : values.RENDER_TEXTURE_SAMPLING === 'true', {
-        description: 'Independent of the graphics profile. Requires a backend restart and reopening the character or wallpaper to rebuild textures.',
-      })],
+      sampling, {
+        description: 'Skip source frames above the selected frame rate. On by default at 60 FPS; explicit choices are preserved. Restart the backend and reopen the character or wallpaper to apply.',
+      }), field('RENDER_BC7_CACHE', 'Reuse converted textures on disk', 'boolean',
+        values.RENDER_BC7_CACHE === undefined ? runtime?.bc7_cache ?? true : values.RENDER_BC7_CACHE === 'true', {
+          description: 'Builds a local cache as animations play, targeting 4 GiB of disk space. Reduces repeated conversion on supported wallpaper GPUs. Requires a backend restart.',
+        })],
   }]
 }

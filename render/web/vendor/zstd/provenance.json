@@ -1,0 +1,20 @@
+{
+  "name": "@bokuweb/zstd-wasm",
+  "version": "0.0.27",
+  "tarball": "https://registry.npmjs.org/@bokuweb/zstd-wasm/-/zstd-wasm-0.0.27.tgz",
+  "integrity": "sha512-GDm2uOTK3ESjnYmSeLQifJnBsRCWajKLvN32D2ZcQaaCIJI/Hse9s74f7APXjHit95S10UImsRGkTsbwHmrtmg==",
+  "changes": "Relative JS module imports have explicit .js extensions; /errors resolves /errors/index.js. Source map comments omitted. WASM unchanged.",
+  "files": {
+    "index.web.js": "094823cbe3ff9cf70ccac1d2a57dee69c6f07307d74783b33dcf991fbc19f315",
+    "module.js": "45abbe6c1020d50dc86286effaab0c14fa21b8e2036e6283adb712c59fe5f79e",
+    "zstd.js": "726ba37b57d7f156ba469adea6891daa7e3a40586b7e0941d71821d6cbbfe3d3",
+    "zstd.wasm": "80260eee5795ee8072bb5821e203730c74dca3909938f5ac1128da67f96223df",
+    "errors/index.js": "c3a7209e4018de65e5e120f1cc95460af68209f08328eba8e9c7c7793d45868e",
+    "simple/compress.js": "b60dadafa77cc1df649cb0bfabb0029d855f9dd9066edc10ac40a13d852d642c",
+    "simple/compress_using_dict.js": "5184ea268d9c35e6bd8c595ecabdc4b29be24bc911d2414412118682d7697fa3",
+    "simple/decompress.js": "52aec4dd59bf975d4670253482d6fa6a34c9ea14a04bd449c937a4a21819a290",
+    "simple/decompress_using_dict.js": "2a7a4caa2cd45b61d6d22fc2c7f0d174a908c84cb419dd1b24d922dfa80a5191"
+  },
+  "license": "MIT (glue) AND BSD-3-Clause (Zstandard)",
+  "licenseEvidence": "Published package/package.json and package/README.md; local notices in LICENSES/"
+}

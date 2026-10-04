@@ -80,10 +80,10 @@ process.stdout.write(JSON.stringify(cases));
 """
     )
     assert result == [
-        {"maxFps": 60, "resolution": 2.5, "textureSampling": False},
+        {"maxFps": 60, "resolution": 2.5, "textureSampling": True},
         {"maxFps": 30, "resolution": 1.5, "textureSampling": False},
         {"maxFps": 45, "resolution": 1, "textureSampling": False},
-        {"maxFps": 60, "resolution": 2, "textureSampling": False},
+        {"maxFps": 60, "resolution": 2, "textureSampling": True},
     ]
 
 
@@ -141,13 +141,14 @@ process.stdout.write(JSON.stringify({{
     assert result == {"calls": [24], "ticker": 24, "keptUserListener": True}
 
 
-def test_texture_sampling_is_an_explicit_opt_in_independent_of_fps() -> None:
+def test_texture_sampling_defaults_at_60_fps_but_explicit_choices_win() -> None:
     from config.settings import declared_environment_fields
     from config.environment import EnvironmentReader
 
     field = next(f for f in declared_environment_fields() if f.key == "RENDER_TEXTURE_SAMPLING")
-    assert field.default is False
-    assert EnvironmentReader({}).boolean(field.key, field.default) is False
+    from config.settings import RENDER_EFFECTIVE_MAX_FPS
+    assert field.default is (RENDER_EFFECTIVE_MAX_FPS == 60)
+    assert EnvironmentReader({field.key: "false"}).boolean(field.key, field.default) is False
     result = _run_node(f"""
 const budget = require({json.dumps(str(RENDER_BUDGET))});
 const cases = [undefined, null, false, 'false', '0', '', 'yes', true, 'true', '1'];
@@ -155,6 +156,12 @@ process.stdout.write(JSON.stringify(cases.map(textureSampling =>
   budget.resolveRenderBudget({{maxFps:30,textureSampling}}).textureSampling)));
 """)
     assert result == [False] * 7 + [True] * 3
+    result = _run_node(f"""
+const budget = require({json.dumps(str(RENDER_BUDGET))});
+process.stdout.write(JSON.stringify([30,60,120].map(maxFps =>
+  [undefined,false,true].map(textureSampling => budget.resolveRenderBudget({{maxFps,textureSampling}}).textureSampling))));
+""")
+    assert result == [[False, False, True], [True, False, True], [False, False, True]]
 
 
 @pytest.mark.parametrize("enabled", [False, True])

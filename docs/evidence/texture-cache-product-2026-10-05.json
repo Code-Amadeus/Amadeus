@@ -1,0 +1,2346 @@
+{
+  "schema": "amadeus.bc7-product-acceptance.v1",
+  "scope": "Three serial 60-second renderer-only journeys on RTX 4070 Laptop 8 GiB; isolated persistent user cache; no prebuilt cache injection; no ASR/TTS workload.",
+  "runs": {
+    "generation-60": {
+      "recording": {
+        "complete": true,
+        "errorRecorded": false,
+        "droppedEvents": 0,
+        "sourceChangedDuringRun": [],
+        "sourceChangedCount": 0,
+        "sampleCount": 35,
+        "sampledDurationMs": 69168
+      },
+      "metadata": {
+        "revision": "d45ef5525fa53ed2bb6e5091dc63417979c83bb9",
+        "sourceSha256": {
+          "render/web/renderer.js": "d3718256756e5f3536760c0b68deb3226e0ba44e32ab57ea93b28ea23c62780a",
+          "render/web/render_budget.js": "557dc45e096c3ffa5ffe00deefd00328f890d65bf6eeafb9ad8a37e5c6e9ad86",
+          "render/web/frame_store.js": "5c7895b322aeea9fc2b7a3de3835f37cb480bc677cb68d6473ac5a38ada4cfc1",
+          "render/web/frame_texture_backend.js": "ff189910f1085f993029f95298b8d2781ed2ef40010047a683a1317466b9a094",
+          "render/web/wallpaper_scene.js": "3a72034ad7a68dda41fbb1e943f2e4d73609d9f84d77d2785093b2476e9c40d8",
+          "render/web/wallpaper_engine_bridge.js": "8289b0a3923c3460f3e89920cd6eaa9685c86516a71e470a6e3a381e09c49413",
+          "render/web/wallpaper_engine.html": "594ee3761e62f0351686fe8115c6a333ee4556e0a1f3d23ac0498c5a7545c61b",
+          "render/web/vendor/pixi.min.js": "b88dfa8fc79ee50b7e511c4cf5e5c459fbc1c8569a40f6e2529b46995df0d7d9",
+          "render/web/vendor/pixi-basis-ktx2.global.js": "d3acd83bb568a2b884953cd17a5724fb20d65d8318c82e99796e19d52274dcc2",
+          "render/server.py": "a989fa7f0b6286facf89b1a164294df0b94956406bbdeed336003f9ad16a58f4",
+          "render/spriteforge_animator.py": "7c1e72b89ae56b17a5e96ad0a4435d24c4f1e40ed2e4460e6b6ea8d49a0d7df4",
+          "wallpaper/wallpaper_engine_bridge.py": "3add1d650ad15dc748ef4db1884c22be32fdf87c4cab0d77f704c774893a8ac6",
+          "wallpaper/scene_assets.py": "a235841f390211f93309e6ce9bb1d14436ec914471a6cacf5063c1e6067ecc99",
+          "tools/probes/wallpaper_memory_host.py": "09844bf9199fa206857b9bfed7856a74ba75e1b19d0e1dbb6004e63aea58b815",
+          "electron/tests/fpsTextures.probe.mjs": "394bfed56b2e3cf62af2194d863eccf604919778bf1258e0b9f8faddfdcea63d",
+          "electron/tests/textureProbe.mjs": "b239fa7519803d18b057e8f12e1f9fdb0651c6765a08199ffd18724a344de449",
+          "tools/probes/bc7-cache/install.mjs": "0584611c15baa0f982f51fcdce3b93eedd6c53371c703b5d3b3c77f6f590b26f",
+          "tools/probes/bc7-cache/verify.mjs": "e5cd898d0ff801832026876113c58bab5f10035de45a6b8e4bf9edbf08661f8a",
+          "tools/probes/bc7-cache/decode.mjs": "c10ca3b4d37e6830a51f60a6e13c8ba244c14b1b8fee80a6a6c1732fd7354d47",
+          "tools/probes/bc7-cache/worker.mjs": "46c3920ef2804f1d8e16367c6944451b2100fdbe8da3b4d3761a10162fa36255",
+          "tools/probes/bc7-cache/vendor/zstddec.mjs": "e0fc7d1413bc55ddca8306a26999f724e20cfd760f6b26a44a255d962018be64",
+          "render/texture_cache.py": "2f3e3d6778d06e469717627dfd87d319cb4654d1a129f1fa247673be1062c9e9",
+          "render/web/texture_cache.js": "d9c3537d343542bb36f2beb493fa3c013d074a33ca599b112193fc8428bb5a57",
+          "render/web/texture_cache_worker.mjs": "4e4b080cfb232e485159d2cf660e7d8120057cbc1fe26ac044483a8c8e306aa9",
+          "render/web/texture_cache_codec.mjs": "3be74362a954eb055d429b6963608c6914a7c7a1f2c518344412ff0a52cb8dd5",
+          "render/web/vendor/zstd/zstd.wasm": "80260eee5795ee8072bb5821e203730c74dca3909938f5ac1128da67f96223df"
+        },
+        "versions": {
+          "node": "24.18.1",
+          "electron": "44.0.0",
+          "chrome": "152.0.7977.54",
+          "python": "3.12.10"
+        },
+        "pack": {
+          "id": "kurisu",
+          "version": "2026.08.29-mouth1",
+          "manifestSha256": "ffd4fc6c1f0925fd5c61659e3109c8c8dcd15cbb7bfa001552c8ad794db9cf34",
+          "available": true
+        },
+        "options": {
+          "fps": 60,
+          "durationSeconds": 60,
+          "sampleSeconds": 2,
+          "seed": 103,
+          "sampling": true,
+          "scenario": false,
+          "companion": true,
+          "contextLoss": true,
+          "fixedRoute": true,
+          "highPerformanceGpu": true,
+          "textureDisposal": true
+        },
+        "settings": {
+          "renderMaxFps": 60,
+          "renderMaxResolution": null,
+          "renderTextureSampling": true,
+          "graphicsProfile": "standard"
+        },
+        "offscreenFrameRate": 60,
+        "platform": {
+          "os": "win32",
+          "release": "10.0.26200",
+          "architecture": "x64"
+        },
+        "instrumentation": {
+          "legacyMisses": true,
+          "legacyLoads": false,
+          "textureStats": true,
+          "transcodes": true,
+          "fixedRoute": true
+        },
+        "offscreen": true,
+        "cpuProfiling": false,
+        "observed": {
+          "resolution": [
+            1
+          ],
+          "dpr": [
+            1
+          ],
+          "rawTickerMaxFps": [
+            0
+          ],
+          "samplingEnabled": [
+            true
+          ],
+          "sampleFps": [
+            60
+          ],
+          "configuredMaxFps": [
+            60
+          ],
+          "offscreenFrameRate": [
+            60
+          ]
+        },
+        "gpuModels": [
+          "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Laptop Direct3D11 vs_5_0 ps_5_0, D3D11)"
+        ]
+      },
+      "journeyCpu": {
+        "renderer": {
+          "cpuSeconds": 63.535816,
+          "measuredWallSeconds": 60.012,
+          "measuredIntervals": 30,
+          "missingIntervals": 0,
+          "meanSingleCorePercent": 105.87185229620741
+        },
+        "gpu": {
+          "cpuSeconds": 11.797472,
+          "measuredWallSeconds": 60.012,
+          "measuredIntervals": 30,
+          "missingIntervals": 0,
+          "meanSingleCorePercent": 19.658521629007534
+        },
+        "other": {
+          "cpuSeconds": 28.142116,
+          "measuredWallSeconds": 60.012,
+          "measuredIntervals": 30,
+          "missingIntervals": 0,
+          "meanSingleCorePercent": 46.89414783709925
+        },
+        "host": {
+          "cpuSeconds": 20.046875,
+          "measuredWallSeconds": 60.012,
+          "measuredIntervals": 30,
+          "missingIntervals": 0,
+          "meanSingleCorePercent": 33.40477737785776
+        }
+      },
+      "journeyMemory": {
+        "renderer": {
+          "privateBytes": {
+            "initial": 125100032,
+            "peak": 1796677632,
+            "final": 1583349760,
+            "sampleCount": 31,
+            "missingSamples": 0,
+            "tail": {
+              "min": 1579503616,
+              "max": 1796677632,
+              "mean": 1633822583.4666667,
+              "sampleCount": 15
+            }
+          },
+          "rssBytes": {
+            "initial": 168157184,
+            "peak": 1779675136,
+            "final": 1564540928,
+            "sampleCount": 31,
+            "missingSamples": 0,
+            "tail": {
+              "min": 1563234304,
+              "max": 1779675136,
+              "mean": 1617181900.8,
+              "sampleCount": 15
+            }
+          }
+        },
+        "gpu": {
+          "privateBytes": {
+            "initial": 353292288,
+            "peak": 2397286400,
+            "final": 2210193408,
+            "sampleCount": 31,
+            "missingSamples": 0,
+            "tail": {
+              "min": 2072829952,
+              "max": 2397286400,
+              "mean": 2200189064.5333333,
+              "sampleCount": 15
+            }
+          },
+          "rssBytes": {
+            "initial": 217399296,
+            "peak": 706629632,
+            "final": 561377280,
+            "sampleCount": 31,
+            "missingSamples": 0,
+            "tail": {
+              "min": 561377280,
+              "max": 703291392,
+              "mean": 663629550.9333333,
+              "sampleCount": 15
+            }
+          }
+        },
+        "host": {
+          "privateBytes": {
+            "initial": 33288192,
+            "peak": 42225664,
+            "final": 42225664,
+            "sampleCount": 31,
+            "missingSamples": 0,
+            "tail": {
+              "min": 37670912,
+              "max": 42225664,
+              "mean": 39329518.93333333,
+              "sampleCount": 15
+            }
+          },
+          "rssBytes": {
+            "initial": 48103424,
+            "peak": 56664064,
+            "final": 56664064,
+            "sampleCount": 31,
+            "missingSamples": 0,
+            "tail": {
+              "min": 52371456,
+              "max": 56664064,
+              "mean": 54234589.86666667,
+              "sampleCount": 15
+            }
+          }
+        }
+      },
+      "journeyGaps": {
+        "available": true,
+        "scope": "raw RAF and ticker events in metadata.journey action phases only",
+        "rafGaps": {
+          "count": 3593,
+          "p50Ms": 16.69999999999709,
+          "p95Ms": 16.700000000004366,
+          "p99Ms": 16.80000000000291,
+          "maxMs": 16.80000000000291,
+          "over50Ms": 0
+        },
+        "tickerGaps": {
+          "count": 3593,
+          "p50Ms": 16.700000001117587,
+          "p95Ms": 18.09999999962747,
+          "p99Ms": 18.699999999254942,
+          "maxMs": 26.5,
+          "over50Ms": 0
+        }
+      },
+      "phaseStatus": [
+        {
+          "phase": "journey",
+          "status": "exercised",
+          "requestedSeconds": 60,
+          "actualSeconds": 60.034
+        },
+        {
+          "phase": "companion",
+          "status": "exercised",
+          "activation": "observed",
+          "suppressed": true,
+          "restored": true
+        },
+        {
+          "phase": "texture-disposal",
+          "status": "exercised",
+          "pixelMatch": true,
+          "visualValidation": "recorded",
+          "beforePixels": {
+            "width": 960,
+            "height": 1028,
+            "rgbSum": 175591177,
+            "alphaSum": 97596891,
+            "hash": "5c1587cf",
+            "glErrors": []
+          },
+          "afterPixels": {
+            "width": 960,
+            "height": 1028,
+            "rgbSum": 175591177,
+            "alphaSum": 97596891,
+            "hash": "5c1587cf",
+            "glErrors": []
+          }
+        },
+        {
+          "phase": "context-loss",
+          "status": "exercised",
+          "restored": true,
+          "pixelMatch": true,
+          "visualValidation": "recorded",
+          "beforePixels": {
+            "width": 960,
+            "height": 1028,
+            "rgbSum": 175591177,
+            "alphaSum": 97596891,
+            "hash": "5c1587cf",
+            "glErrors": []
+          },
+          "afterPixels": {
+            "width": 960,
+            "height": 1028,
+            "rgbSum": 175591177,
+            "alphaSum": 97596891,
+            "hash": "5c1587cf",
+            "glErrors": []
+          }
+        }
+      ],
+      "phases": [
+        {
+          "phase": "startup",
+          "startedAtMs": 317.80000000074506,
+          "endedAtMs": 448.09999999962747,
+          "durationMs": 130.2999999988824,
+          "misses": 0,
+          "changes": 0,
+          "cycles": 0,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 2,
+            "p50Ms": 16.600000000000023,
+            "p95Ms": 100.09999999999997,
+            "p99Ms": 100.09999999999997,
+            "maxMs": 100.09999999999997,
+            "over50Ms": 1
+          },
+          "tickerGaps": {
+            "count": 2,
+            "p50Ms": 2,
+            "p95Ms": 10.100000001490116,
+            "p99Ms": 10.100000001490116,
+            "maxMs": 10.100000001490116,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-idle",
+          "startedAtMs": 448.09999999962747,
+          "endedAtMs": 8465.199999999255,
+          "durationMs": 8017.0999999996275,
+          "misses": 33,
+          "changes": 345,
+          "cycles": 3,
+          "holds": 0,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 480,
+            "p50Ms": 16.699999999999818,
+            "p95Ms": 16.700000000000728,
+            "p99Ms": 16.800000000000182,
+            "maxMs": 16.800000000000182,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 480,
+            "p50Ms": 16.699999999254942,
+            "p95Ms": 18.100000001490116,
+            "p99Ms": 19.5,
+            "maxMs": 23.200000001117587,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-trans_smile",
+          "startedAtMs": 8465.199999999255,
+          "endedAtMs": 9649.599999999627,
+          "durationMs": 1184.4000000003725,
+          "misses": 0,
+          "changes": 26,
+          "cycles": 1,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 70,
+            "p50Ms": 16.69999999999891,
+            "p95Ms": 16.700000000000728,
+            "p99Ms": 16.80000000000109,
+            "maxMs": 16.80000000000109,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 70,
+            "p50Ms": 16.799999998882413,
+            "p95Ms": 17.699999999254942,
+            "p99Ms": 18.299999998882413,
+            "maxMs": 18.299999998882413,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-smile_speaking",
+          "startedAtMs": 9649.599999999627,
+          "endedAtMs": 17677.300000000745,
+          "durationMs": 8027.700000001118,
+          "misses": 0,
+          "changes": 473,
+          "cycles": 2,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 481,
+            "p50Ms": 16.69999999999891,
+            "p95Ms": 16.700000000000728,
+            "p99Ms": 16.80000000000109,
+            "maxMs": 16.80000000000109,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 481,
+            "p50Ms": 16.700000001117587,
+            "p95Ms": 17.90000000037253,
+            "p99Ms": 18.300000000745058,
+            "maxMs": 19.799999998882413,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-speaking_trans",
+          "startedAtMs": 17677.300000000745,
+          "endedAtMs": 18848.699999999255,
+          "durationMs": 1171.3999999985099,
+          "misses": 0,
+          "changes": 58,
+          "cycles": 1,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 69,
+            "p50Ms": 16.700000000000728,
+            "p95Ms": 16.799999999999272,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 69,
+            "p50Ms": 16.699999999254942,
+            "p95Ms": 17.90000000037253,
+            "p99Ms": 18.59999999962747,
+            "maxMs": 18.59999999962747,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-speaking_long",
+          "startedAtMs": 18848.699999999255,
+          "endedAtMs": 28837.900000000373,
+          "durationMs": 9989.200000001118,
+          "misses": 1,
+          "changes": 588,
+          "cycles": 1,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 599,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.700000000000728,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 599,
+            "p50Ms": 16.699999999254942,
+            "p95Ms": 18,
+            "p99Ms": 18.5,
+            "maxMs": 20.40000000037253,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-idle_side_butterfly",
+          "startedAtMs": 28837.900000000373,
+          "endedAtMs": 42851.5,
+          "durationMs": 14013.599999999627,
+          "misses": 0,
+          "changes": 824,
+          "cycles": 1,
+          "holds": 0,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 839,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.799999999995634,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 839,
+            "p50Ms": 16.700000001117587,
+            "p95Ms": 18.100000001490116,
+            "p99Ms": 18.600000001490116,
+            "maxMs": 19.600000001490116,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-closed_eye_trans",
+          "startedAtMs": 42851.5,
+          "endedAtMs": 44097.699999999255,
+          "durationMs": 1246.199999999255,
+          "misses": 0,
+          "changes": 58,
+          "cycles": 1,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 74,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.700000000004366,
+            "p99Ms": 16.799999999995634,
+            "maxMs": 16.799999999995634,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 74,
+            "p50Ms": 16.699999999254942,
+            "p95Ms": 17.800000000745058,
+            "p99Ms": 21.59999999962747,
+            "maxMs": 21.59999999962747,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-speaking_closed_eye_2",
+          "startedAtMs": 44097.699999999255,
+          "endedAtMs": 52070.300000000745,
+          "durationMs": 7972.60000000149,
+          "misses": 0,
+          "changes": 470,
+          "cycles": 1,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 478,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.700000000004366,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 478,
+            "p50Ms": 16.600000001490116,
+            "p95Ms": 18,
+            "p99Ms": 18.5,
+            "maxMs": 18.799999998882413,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-idle_closed_eye",
+          "startedAtMs": 52070.300000000745,
+          "endedAtMs": 60471.59999999963,
+          "durationMs": 8401.299999998882,
+          "misses": 0,
+          "changes": 495,
+          "cycles": 0,
+          "holds": 0,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 503,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.799999999995634,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 503,
+            "p50Ms": 16.799999998882413,
+            "p95Ms": 18.100000001490116,
+            "p99Ms": 18.90000000037253,
+            "maxMs": 26.5,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "companion",
+          "startedAtMs": 60471.59999999963,
+          "endedAtMs": 66499.80000000075,
+          "durationMs": 6028.200000001118,
+          "misses": 0,
+          "changes": 354,
+          "cycles": 1,
+          "holds": 0,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 360,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.799999999995634,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 360,
+            "p50Ms": 16.799999998882413,
+            "p95Ms": 18.09999999962747,
+            "p99Ms": 18.700000001117587,
+            "maxMs": 28.09999999962747,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "texture-disposal",
+          "startedAtMs": 66499.80000000075,
+          "endedAtMs": 66546.09999999963,
+          "durationMs": 46.29999999888241,
+          "misses": 0,
+          "changes": 0,
+          "cycles": 0,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 2,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.69999999999709,
+            "p99Ms": 16.69999999999709,
+            "maxMs": 16.69999999999709,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 2,
+            "p50Ms": 1.099999999627471,
+            "p95Ms": 17.700000001117587,
+            "p99Ms": 17.700000001117587,
+            "maxMs": 17.700000001117587,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "context-loss",
+          "startedAtMs": 66546.09999999963,
+          "endedAtMs": 69628.59999999963,
+          "durationMs": 3082.5,
+          "misses": 0,
+          "changes": 0,
+          "cycles": 0,
+          "holds": 0,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 182,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.70000000001164,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 50,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 182,
+            "p50Ms": 16.699999999254942,
+            "p95Ms": 18.09999999962747,
+            "p99Ms": 34.40000000037253,
+            "maxMs": 65.59999999962747,
+            "over50Ms": 1
+          }
+        }
+      ],
+      "storeAt60Seconds": {
+        "residentCpuBytes": 1071007408,
+        "residentGpuBytes": 1071007408,
+        "residentBytes": 2142014816,
+        "budgetBytes": 2147483648,
+        "pinnedBytes": 96623776,
+        "pinnedOverageBytes": 0,
+        "residentFrames": 1230,
+        "transientBytes": 3947520,
+        "maxInFlight": 3,
+        "entries": 7568,
+        "queued": 0,
+        "inFlight": 3,
+        "loads": 2760,
+        "refetches": 27,
+        "evictions": 1527,
+        "failures": 0,
+        "pressure": 0,
+        "fetchAttempts": 2760,
+        "fetchCompleted": 2759,
+        "fetchedPayloadBytes": 964107846,
+        "transcodeAttempts": 2710,
+        "transcodesCompleted": 2710,
+        "transcodeMs": 35300.29999997094,
+        "textureUploads": 2757,
+        "textureUploadMs": 225.60000004805624,
+        "cacheHits": 49,
+        "cacheMisses": 2710,
+        "cacheReadFailures": 0,
+        "cacheWrites": 2404,
+        "cacheWriteFailures": 0,
+        "cacheWriteSkipped": 303,
+        "cachePendingWrites": 1,
+        "cacheCompressedBytes": 17815703,
+        "displayMiss": 35
+      },
+      "actualGpu": [
+        "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Laptop Direct3D11 vs_5_0 ps_5_0, D3D11)"
+      ],
+      "webglLog": {
+        "available": true,
+        "errorLines": 0,
+        "byKind": {
+          "INVALID_ENUM": 0,
+          "INVALID_VALUE": 0,
+          "INVALID_OPERATION": 0,
+          "INVALID_FRAMEBUFFER_OPERATION": 0
+        }
+      }
+    },
+    "warm-60": {
+      "recording": {
+        "complete": true,
+        "errorRecorded": false,
+        "droppedEvents": 0,
+        "sourceChangedDuringRun": [],
+        "sourceChangedCount": 0,
+        "sampleCount": 35,
+        "sampledDurationMs": 69232
+      },
+      "metadata": {
+        "revision": "d45ef5525fa53ed2bb6e5091dc63417979c83bb9",
+        "sourceSha256": {
+          "render/web/renderer.js": "d3718256756e5f3536760c0b68deb3226e0ba44e32ab57ea93b28ea23c62780a",
+          "render/web/render_budget.js": "557dc45e096c3ffa5ffe00deefd00328f890d65bf6eeafb9ad8a37e5c6e9ad86",
+          "render/web/frame_store.js": "5c7895b322aeea9fc2b7a3de3835f37cb480bc677cb68d6473ac5a38ada4cfc1",
+          "render/web/frame_texture_backend.js": "ff189910f1085f993029f95298b8d2781ed2ef40010047a683a1317466b9a094",
+          "render/web/wallpaper_scene.js": "3a72034ad7a68dda41fbb1e943f2e4d73609d9f84d77d2785093b2476e9c40d8",
+          "render/web/wallpaper_engine_bridge.js": "8289b0a3923c3460f3e89920cd6eaa9685c86516a71e470a6e3a381e09c49413",
+          "render/web/wallpaper_engine.html": "594ee3761e62f0351686fe8115c6a333ee4556e0a1f3d23ac0498c5a7545c61b",
+          "render/web/vendor/pixi.min.js": "b88dfa8fc79ee50b7e511c4cf5e5c459fbc1c8569a40f6e2529b46995df0d7d9",
+          "render/web/vendor/pixi-basis-ktx2.global.js": "d3acd83bb568a2b884953cd17a5724fb20d65d8318c82e99796e19d52274dcc2",
+          "render/server.py": "a989fa7f0b6286facf89b1a164294df0b94956406bbdeed336003f9ad16a58f4",
+          "render/spriteforge_animator.py": "7c1e72b89ae56b17a5e96ad0a4435d24c4f1e40ed2e4460e6b6ea8d49a0d7df4",
+          "wallpaper/wallpaper_engine_bridge.py": "3add1d650ad15dc748ef4db1884c22be32fdf87c4cab0d77f704c774893a8ac6",
+          "wallpaper/scene_assets.py": "a235841f390211f93309e6ce9bb1d14436ec914471a6cacf5063c1e6067ecc99",
+          "tools/probes/wallpaper_memory_host.py": "09844bf9199fa206857b9bfed7856a74ba75e1b19d0e1dbb6004e63aea58b815",
+          "electron/tests/fpsTextures.probe.mjs": "394bfed56b2e3cf62af2194d863eccf604919778bf1258e0b9f8faddfdcea63d",
+          "electron/tests/textureProbe.mjs": "b239fa7519803d18b057e8f12e1f9fdb0651c6765a08199ffd18724a344de449",
+          "tools/probes/bc7-cache/install.mjs": "0584611c15baa0f982f51fcdce3b93eedd6c53371c703b5d3b3c77f6f590b26f",
+          "tools/probes/bc7-cache/verify.mjs": "e5cd898d0ff801832026876113c58bab5f10035de45a6b8e4bf9edbf08661f8a",
+          "tools/probes/bc7-cache/decode.mjs": "c10ca3b4d37e6830a51f60a6e13c8ba244c14b1b8fee80a6a6c1732fd7354d47",
+          "tools/probes/bc7-cache/worker.mjs": "46c3920ef2804f1d8e16367c6944451b2100fdbe8da3b4d3761a10162fa36255",
+          "tools/probes/bc7-cache/vendor/zstddec.mjs": "e0fc7d1413bc55ddca8306a26999f724e20cfd760f6b26a44a255d962018be64",
+          "render/texture_cache.py": "600398a53e10ad8383c1e9225c4bfe799a0039e1d0598ef2108c7cb12c9f43d6",
+          "render/web/texture_cache.js": "d9c3537d343542bb36f2beb493fa3c013d074a33ca599b112193fc8428bb5a57",
+          "render/web/texture_cache_worker.mjs": "4e4b080cfb232e485159d2cf660e7d8120057cbc1fe26ac044483a8c8e306aa9",
+          "render/web/texture_cache_codec.mjs": "3be74362a954eb055d429b6963608c6914a7c7a1f2c518344412ff0a52cb8dd5",
+          "render/web/vendor/zstd/zstd.wasm": "80260eee5795ee8072bb5821e203730c74dca3909938f5ac1128da67f96223df"
+        },
+        "versions": {
+          "node": "24.18.1",
+          "electron": "44.0.0",
+          "chrome": "152.0.7977.54",
+          "python": "3.12.10"
+        },
+        "pack": {
+          "id": "kurisu",
+          "version": "2026.08.29-mouth1",
+          "manifestSha256": "ffd4fc6c1f0925fd5c61659e3109c8c8dcd15cbb7bfa001552c8ad794db9cf34",
+          "available": true
+        },
+        "options": {
+          "fps": 60,
+          "durationSeconds": 60,
+          "sampleSeconds": 2,
+          "seed": 103,
+          "sampling": true,
+          "scenario": false,
+          "companion": true,
+          "contextLoss": true,
+          "fixedRoute": true,
+          "highPerformanceGpu": true,
+          "textureDisposal": true
+        },
+        "settings": {
+          "renderMaxFps": 60,
+          "renderMaxResolution": null,
+          "renderTextureSampling": true,
+          "graphicsProfile": "standard"
+        },
+        "offscreenFrameRate": 60,
+        "platform": {
+          "os": "win32",
+          "release": "10.0.26200",
+          "architecture": "x64"
+        },
+        "instrumentation": {
+          "legacyMisses": true,
+          "legacyLoads": false,
+          "textureStats": true,
+          "transcodes": true,
+          "fixedRoute": true
+        },
+        "offscreen": true,
+        "cpuProfiling": false,
+        "observed": {
+          "resolution": [
+            1
+          ],
+          "dpr": [
+            1
+          ],
+          "rawTickerMaxFps": [
+            0
+          ],
+          "samplingEnabled": [
+            true
+          ],
+          "sampleFps": [
+            60
+          ],
+          "configuredMaxFps": [
+            60
+          ],
+          "offscreenFrameRate": [
+            60
+          ]
+        },
+        "gpuModels": [
+          "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Laptop Direct3D11 vs_5_0 ps_5_0, D3D11)"
+        ]
+      },
+      "journeyCpu": {
+        "renderer": {
+          "cpuSeconds": 20.076865,
+          "measuredWallSeconds": 59.992999999999995,
+          "measuredIntervals": 30,
+          "missingIntervals": 0,
+          "meanSingleCorePercent": 33.465345957028326
+        },
+        "gpu": {
+          "cpuSeconds": 11.296965,
+          "measuredWallSeconds": 59.992999999999995,
+          "measuredIntervals": 30,
+          "missingIntervals": 0,
+          "meanSingleCorePercent": 18.83047188838698
+        },
+        "other": {
+          "cpuSeconds": 18.906413999999998,
+          "measuredWallSeconds": 59.992999999999995,
+          "measuredIntervals": 30,
+          "missingIntervals": 0,
+          "meanSingleCorePercent": 31.51436667611221
+        },
+        "host": {
+          "cpuSeconds": 9.03125,
+          "measuredWallSeconds": 59.992999999999995,
+          "measuredIntervals": 30,
+          "missingIntervals": 0,
+          "meanSingleCorePercent": 15.053839614621708
+        }
+      },
+      "journeyMemory": {
+        "renderer": {
+          "privateBytes": {
+            "initial": 135987200,
+            "peak": 1836560384,
+            "final": 1441882112,
+            "sampleCount": 31,
+            "missingSamples": 0,
+            "tail": {
+              "min": 1441882112,
+              "max": 1836560384,
+              "mean": 1611676672.0,
+              "sampleCount": 16
+            }
+          },
+          "rssBytes": {
+            "initial": 175452160,
+            "peak": 1821200384,
+            "final": 1428180992,
+            "sampleCount": 31,
+            "missingSamples": 0,
+            "tail": {
+              "min": 1428180992,
+              "max": 1821200384,
+              "mean": 1597419264.0,
+              "sampleCount": 16
+            }
+          }
+        },
+        "gpu": {
+          "privateBytes": {
+            "initial": 352616448,
+            "peak": 2389622784,
+            "final": 2209943552,
+            "sampleCount": 31,
+            "missingSamples": 0,
+            "tail": {
+              "min": 2056769536,
+              "max": 2389622784,
+              "mean": 2186076672.0,
+              "sampleCount": 16
+            }
+          },
+          "rssBytes": {
+            "initial": 224800768,
+            "peak": 712359936,
+            "final": 568856576,
+            "sampleCount": 31,
+            "missingSamples": 0,
+            "tail": {
+              "min": 568856576,
+              "max": 712359936,
+              "mean": 669009152.0,
+              "sampleCount": 16
+            }
+          }
+        },
+        "host": {
+          "privateBytes": {
+            "initial": 36052992,
+            "peak": 41127936,
+            "final": 41127936,
+            "sampleCount": 31,
+            "missingSamples": 0,
+            "tail": {
+              "min": 38629376,
+              "max": 41127936,
+              "mean": 40109312.0,
+              "sampleCount": 16
+            }
+          },
+          "rssBytes": {
+            "initial": 50241536,
+            "peak": 56127488,
+            "final": 56127488,
+            "sampleCount": 31,
+            "missingSamples": 0,
+            "tail": {
+              "min": 53444608,
+              "max": 56127488,
+              "mean": 54300160.0,
+              "sampleCount": 16
+            }
+          }
+        }
+      },
+      "journeyGaps": {
+        "available": true,
+        "scope": "raw RAF and ticker events in metadata.journey action phases only",
+        "rafGaps": {
+          "count": 3594,
+          "p50Ms": 16.69999999999709,
+          "p95Ms": 16.799999999995634,
+          "p99Ms": 16.80000000000291,
+          "maxMs": 16.80000000000291,
+          "over50Ms": 0
+        },
+        "tickerGaps": {
+          "count": 3594,
+          "p50Ms": 16.700000001117587,
+          "p95Ms": 18,
+          "p99Ms": 18.40000000037253,
+          "maxMs": 20.300000000745058,
+          "over50Ms": 0
+        }
+      },
+      "phaseStatus": [
+        {
+          "phase": "journey",
+          "status": "exercised",
+          "requestedSeconds": 60,
+          "actualSeconds": 60.038
+        },
+        {
+          "phase": "companion",
+          "status": "exercised",
+          "activation": "observed",
+          "suppressed": true,
+          "restored": true
+        },
+        {
+          "phase": "texture-disposal",
+          "status": "exercised",
+          "pixelMatch": true,
+          "visualValidation": "recorded",
+          "beforePixels": {
+            "width": 960,
+            "height": 1028,
+            "rgbSum": 175591177,
+            "alphaSum": 97596891,
+            "hash": "5c1587cf",
+            "glErrors": []
+          },
+          "afterPixels": {
+            "width": 960,
+            "height": 1028,
+            "rgbSum": 175591177,
+            "alphaSum": 97596891,
+            "hash": "5c1587cf",
+            "glErrors": []
+          }
+        },
+        {
+          "phase": "context-loss",
+          "status": "exercised",
+          "restored": true,
+          "pixelMatch": true,
+          "visualValidation": "recorded",
+          "beforePixels": {
+            "width": 960,
+            "height": 1028,
+            "rgbSum": 175591177,
+            "alphaSum": 97596891,
+            "hash": "5c1587cf",
+            "glErrors": []
+          },
+          "afterPixels": {
+            "width": 960,
+            "height": 1028,
+            "rgbSum": 175591177,
+            "alphaSum": 97596891,
+            "hash": "5c1587cf",
+            "glErrors": []
+          }
+        }
+      ],
+      "phases": [
+        {
+          "phase": "startup",
+          "startedAtMs": 303.80000000074506,
+          "endedAtMs": 426,
+          "durationMs": 122.19999999925494,
+          "misses": 0,
+          "changes": 0,
+          "cycles": 0,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 1,
+            "p50Ms": 99.90000000000003,
+            "p95Ms": 99.90000000000003,
+            "p99Ms": 99.90000000000003,
+            "maxMs": 99.90000000000003,
+            "over50Ms": 1
+          },
+          "tickerGaps": {
+            "count": 1,
+            "p50Ms": 1.800000000745058,
+            "p95Ms": 1.800000000745058,
+            "p99Ms": 1.800000000745058,
+            "maxMs": 1.800000000745058,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-idle",
+          "startedAtMs": 426,
+          "endedAtMs": 8422.900000000373,
+          "durationMs": 7996.9000000003725,
+          "misses": 22,
+          "changes": 358,
+          "cycles": 3,
+          "holds": 0,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 480,
+            "p50Ms": 16.699999999999818,
+            "p95Ms": 16.700000000000728,
+            "p99Ms": 16.800000000000182,
+            "maxMs": 16.800000000000182,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 480,
+            "p50Ms": 16.600000001490116,
+            "p95Ms": 18,
+            "p99Ms": 18.59999999962747,
+            "maxMs": 20.199999999254942,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-trans_smile",
+          "startedAtMs": 8422.900000000373,
+          "endedAtMs": 9673.800000000745,
+          "durationMs": 1250.9000000003725,
+          "misses": 0,
+          "changes": 28,
+          "cycles": 1,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 74,
+            "p50Ms": 16.69999999999891,
+            "p95Ms": 16.700000000000728,
+            "p99Ms": 16.80000000000109,
+            "maxMs": 16.80000000000109,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 74,
+            "p50Ms": 16.699999999254942,
+            "p95Ms": 18.09999999962747,
+            "p99Ms": 18.300000000745058,
+            "maxMs": 18.300000000745058,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-smile_speaking",
+          "startedAtMs": 9673.800000000745,
+          "endedAtMs": 17640.10000000149,
+          "durationMs": 7966.300000000745,
+          "misses": 0,
+          "changes": 469,
+          "cycles": 2,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 477,
+            "p50Ms": 16.69999999999891,
+            "p95Ms": 16.799999999999272,
+            "p99Ms": 16.80000000000109,
+            "maxMs": 16.80000000000109,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 477,
+            "p50Ms": 16.799999998882413,
+            "p95Ms": 18,
+            "p99Ms": 18.40000000037253,
+            "maxMs": 18.800000000745058,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-speaking_trans",
+          "startedAtMs": 17640.10000000149,
+          "endedAtMs": 18825.900000000373,
+          "durationMs": 1185.7999999988824,
+          "misses": 0,
+          "changes": 58,
+          "cycles": 1,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 70,
+            "p50Ms": 16.700000000000728,
+            "p95Ms": 16.80000000000291,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 70,
+            "p50Ms": 16.700000001117587,
+            "p95Ms": 18.09999999962747,
+            "p99Ms": 18.40000000037253,
+            "maxMs": 18.40000000037253,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-speaking_long",
+          "startedAtMs": 18825.900000000373,
+          "endedAtMs": 28871.900000000373,
+          "durationMs": 10046,
+          "misses": 0,
+          "changes": 592,
+          "cycles": 1,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 602,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.799999999999272,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 602,
+            "p50Ms": 16.700000001117587,
+            "p95Ms": 17.90000000037253,
+            "p99Ms": 18.5,
+            "maxMs": 19.199999999254942,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-idle_side_butterfly",
+          "startedAtMs": 28871.900000000373,
+          "endedAtMs": 42855,
+          "durationMs": 13983.099999999627,
+          "misses": 0,
+          "changes": 823,
+          "cycles": 1,
+          "holds": 0,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 838,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.700000000004366,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 838,
+            "p50Ms": 16.800000000745058,
+            "p95Ms": 18,
+            "p99Ms": 18.300000000745058,
+            "maxMs": 19.100000001490116,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-closed_eye_trans",
+          "startedAtMs": 42855,
+          "endedAtMs": 44036.300000000745,
+          "durationMs": 1181.300000000745,
+          "misses": 0,
+          "changes": 58,
+          "cycles": 1,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 69,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.799999999995634,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 69,
+            "p50Ms": 16.5,
+            "p95Ms": 18.09999999962747,
+            "p99Ms": 18.40000000037253,
+            "maxMs": 18.40000000037253,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-speaking_closed_eye_2",
+          "startedAtMs": 44036.300000000745,
+          "endedAtMs": 52055.800000000745,
+          "durationMs": 8019.5,
+          "misses": 0,
+          "changes": 473,
+          "cycles": 1,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 481,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.700000000004366,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 481,
+            "p50Ms": 16.699999999254942,
+            "p95Ms": 18,
+            "p99Ms": 18.5,
+            "maxMs": 19.40000000037253,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-idle_closed_eye",
+          "startedAtMs": 52055.800000000745,
+          "endedAtMs": 60453.800000000745,
+          "durationMs": 8398,
+          "misses": 0,
+          "changes": 495,
+          "cycles": 0,
+          "holds": 0,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 503,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.799999999995634,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 503,
+            "p50Ms": 16.800000000745058,
+            "p95Ms": 18,
+            "p99Ms": 18.40000000037253,
+            "maxMs": 20.300000000745058,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "companion",
+          "startedAtMs": 60453.800000000745,
+          "endedAtMs": 66479.40000000037,
+          "durationMs": 6025.5999999996275,
+          "misses": 0,
+          "changes": 354,
+          "cycles": 1,
+          "holds": 0,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 360,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.70000000001164,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 360,
+            "p50Ms": 16.699999999254942,
+            "p95Ms": 17.90000000037253,
+            "p99Ms": 18.199999999254942,
+            "maxMs": 18.59999999962747,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "texture-disposal",
+          "startedAtMs": 66479.40000000037,
+          "endedAtMs": 66594.70000000112,
+          "durationMs": 115.30000000074506,
+          "misses": 0,
+          "changes": 0,
+          "cycles": 0,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 6,
+            "p50Ms": 16.60000000000582,
+            "p95Ms": 16.80000000000291,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 6,
+            "p50Ms": 16.300000000745058,
+            "p95Ms": 18.399999998509884,
+            "p99Ms": 18.399999998509884,
+            "maxMs": 18.399999998509884,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "context-loss",
+          "startedAtMs": 66594.70000000112,
+          "endedAtMs": 69700.40000000037,
+          "durationMs": 3105.699999999255,
+          "misses": 1,
+          "changes": 0,
+          "cycles": 0,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 183,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.70000000001164,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 50,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 183,
+            "p50Ms": 16.700000001117587,
+            "p95Ms": 18,
+            "p99Ms": 28.5,
+            "maxMs": 69.30000000074506,
+            "over50Ms": 1
+          }
+        }
+      ],
+      "storeAt60Seconds": {
+        "residentCpuBytes": 1073363584,
+        "residentGpuBytes": 1073363584,
+        "residentBytes": 2146727168,
+        "budgetBytes": 2147483648,
+        "pinnedBytes": 96623776,
+        "pinnedOverageBytes": 0,
+        "residentFrames": 1233,
+        "transientBytes": 0,
+        "maxInFlight": 3,
+        "entries": 7568,
+        "queued": 0,
+        "inFlight": 2,
+        "loads": 2759,
+        "refetches": 27,
+        "evictions": 1524,
+        "failures": 0,
+        "pressure": 0,
+        "fetchAttempts": 2759,
+        "fetchCompleted": 2757,
+        "fetchedPayloadBytes": 1001377163,
+        "transcodeAttempts": 281,
+        "transcodesCompleted": 281,
+        "transcodeMs": 3410.9999999981374,
+        "textureUploads": 2757,
+        "textureUploadMs": 213.50000000931323,
+        "cacheHits": 2476,
+        "cacheMisses": 281,
+        "cacheReadFailures": 0,
+        "cacheWrites": 276,
+        "cacheWriteFailures": 0,
+        "cacheWriteSkipped": 4,
+        "cachePendingWrites": 1,
+        "cacheCompressedBytes": 901781390,
+        "displayMiss": 23
+      },
+      "actualGpu": [
+        "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Laptop Direct3D11 vs_5_0 ps_5_0, D3D11)"
+      ],
+      "webglLog": {
+        "available": true,
+        "errorLines": 0,
+        "byKind": {
+          "INVALID_ENUM": 0,
+          "INVALID_VALUE": 0,
+          "INVALID_OPERATION": 0,
+          "INVALID_FRAMEBUFFER_OPERATION": 0
+        }
+      }
+    },
+    "repair-60": {
+      "recording": {
+        "complete": true,
+        "errorRecorded": false,
+        "droppedEvents": 0,
+        "sourceChangedDuringRun": [],
+        "sourceChangedCount": 0,
+        "sampleCount": 35,
+        "sampledDurationMs": 69261
+      },
+      "metadata": {
+        "revision": "d45ef5525fa53ed2bb6e5091dc63417979c83bb9",
+        "sourceSha256": {
+          "render/web/renderer.js": "d3718256756e5f3536760c0b68deb3226e0ba44e32ab57ea93b28ea23c62780a",
+          "render/web/render_budget.js": "557dc45e096c3ffa5ffe00deefd00328f890d65bf6eeafb9ad8a37e5c6e9ad86",
+          "render/web/frame_store.js": "5c7895b322aeea9fc2b7a3de3835f37cb480bc677cb68d6473ac5a38ada4cfc1",
+          "render/web/frame_texture_backend.js": "ff189910f1085f993029f95298b8d2781ed2ef40010047a683a1317466b9a094",
+          "render/web/wallpaper_scene.js": "3a72034ad7a68dda41fbb1e943f2e4d73609d9f84d77d2785093b2476e9c40d8",
+          "render/web/wallpaper_engine_bridge.js": "8289b0a3923c3460f3e89920cd6eaa9685c86516a71e470a6e3a381e09c49413",
+          "render/web/wallpaper_engine.html": "594ee3761e62f0351686fe8115c6a333ee4556e0a1f3d23ac0498c5a7545c61b",
+          "render/web/vendor/pixi.min.js": "b88dfa8fc79ee50b7e511c4cf5e5c459fbc1c8569a40f6e2529b46995df0d7d9",
+          "render/web/vendor/pixi-basis-ktx2.global.js": "d3acd83bb568a2b884953cd17a5724fb20d65d8318c82e99796e19d52274dcc2",
+          "render/server.py": "a989fa7f0b6286facf89b1a164294df0b94956406bbdeed336003f9ad16a58f4",
+          "render/spriteforge_animator.py": "7c1e72b89ae56b17a5e96ad0a4435d24c4f1e40ed2e4460e6b6ea8d49a0d7df4",
+          "wallpaper/wallpaper_engine_bridge.py": "3add1d650ad15dc748ef4db1884c22be32fdf87c4cab0d77f704c774893a8ac6",
+          "wallpaper/scene_assets.py": "a235841f390211f93309e6ce9bb1d14436ec914471a6cacf5063c1e6067ecc99",
+          "tools/probes/wallpaper_memory_host.py": "09844bf9199fa206857b9bfed7856a74ba75e1b19d0e1dbb6004e63aea58b815",
+          "electron/tests/fpsTextures.probe.mjs": "394bfed56b2e3cf62af2194d863eccf604919778bf1258e0b9f8faddfdcea63d",
+          "electron/tests/textureProbe.mjs": "b239fa7519803d18b057e8f12e1f9fdb0651c6765a08199ffd18724a344de449",
+          "tools/probes/bc7-cache/install.mjs": "0584611c15baa0f982f51fcdce3b93eedd6c53371c703b5d3b3c77f6f590b26f",
+          "tools/probes/bc7-cache/verify.mjs": "e5cd898d0ff801832026876113c58bab5f10035de45a6b8e4bf9edbf08661f8a",
+          "tools/probes/bc7-cache/decode.mjs": "c10ca3b4d37e6830a51f60a6e13c8ba244c14b1b8fee80a6a6c1732fd7354d47",
+          "tools/probes/bc7-cache/worker.mjs": "46c3920ef2804f1d8e16367c6944451b2100fdbe8da3b4d3761a10162fa36255",
+          "tools/probes/bc7-cache/vendor/zstddec.mjs": "e0fc7d1413bc55ddca8306a26999f724e20cfd760f6b26a44a255d962018be64",
+          "render/texture_cache.py": "600398a53e10ad8383c1e9225c4bfe799a0039e1d0598ef2108c7cb12c9f43d6",
+          "render/web/texture_cache.js": "d9c3537d343542bb36f2beb493fa3c013d074a33ca599b112193fc8428bb5a57",
+          "render/web/texture_cache_worker.mjs": "4e4b080cfb232e485159d2cf660e7d8120057cbc1fe26ac044483a8c8e306aa9",
+          "render/web/texture_cache_codec.mjs": "3be74362a954eb055d429b6963608c6914a7c7a1f2c518344412ff0a52cb8dd5",
+          "render/web/vendor/zstd/zstd.wasm": "80260eee5795ee8072bb5821e203730c74dca3909938f5ac1128da67f96223df"
+        },
+        "versions": {
+          "node": "24.18.1",
+          "electron": "44.0.0",
+          "chrome": "152.0.7977.54",
+          "python": "3.12.10"
+        },
+        "pack": {
+          "id": "kurisu",
+          "version": "2026.08.29-mouth1",
+          "manifestSha256": "ffd4fc6c1f0925fd5c61659e3109c8c8dcd15cbb7bfa001552c8ad794db9cf34",
+          "available": true
+        },
+        "options": {
+          "fps": 60,
+          "durationSeconds": 60,
+          "sampleSeconds": 2,
+          "seed": 103,
+          "sampling": true,
+          "scenario": false,
+          "companion": true,
+          "contextLoss": true,
+          "fixedRoute": true,
+          "highPerformanceGpu": true,
+          "textureDisposal": true
+        },
+        "settings": {
+          "renderMaxFps": 60,
+          "renderMaxResolution": null,
+          "renderTextureSampling": true,
+          "graphicsProfile": "standard"
+        },
+        "offscreenFrameRate": 60,
+        "platform": {
+          "os": "win32",
+          "release": "10.0.26200",
+          "architecture": "x64"
+        },
+        "instrumentation": {
+          "legacyMisses": true,
+          "legacyLoads": false,
+          "textureStats": true,
+          "transcodes": true,
+          "fixedRoute": true
+        },
+        "offscreen": true,
+        "cpuProfiling": false,
+        "observed": {
+          "resolution": [
+            1
+          ],
+          "dpr": [
+            1
+          ],
+          "rawTickerMaxFps": [
+            0
+          ],
+          "samplingEnabled": [
+            true
+          ],
+          "sampleFps": [
+            60
+          ],
+          "configuredMaxFps": [
+            60
+          ],
+          "offscreenFrameRate": [
+            60
+          ]
+        },
+        "gpuModels": [
+          "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Laptop Direct3D11 vs_5_0 ps_5_0, D3D11)"
+        ]
+      },
+      "journeyCpu": {
+        "renderer": {
+          "cpuSeconds": 15.720908,
+          "measuredWallSeconds": 60.041000000000004,
+          "measuredIntervals": 30,
+          "missingIntervals": 0,
+          "meanSingleCorePercent": 26.183621192185335
+        },
+        "gpu": {
+          "cpuSeconds": 11.352828,
+          "measuredWallSeconds": 60.041000000000004,
+          "measuredIntervals": 30,
+          "missingIntervals": 0,
+          "meanSingleCorePercent": 18.90845921953332
+        },
+        "other": {
+          "cpuSeconds": 18.031014,
+          "measuredWallSeconds": 60.041000000000004,
+          "measuredIntervals": 30,
+          "missingIntervals": 0,
+          "meanSingleCorePercent": 30.031168701387383
+        },
+        "host": {
+          "cpuSeconds": 7.71875,
+          "measuredWallSeconds": 60.041000000000004,
+          "measuredIntervals": 30,
+          "missingIntervals": 0,
+          "meanSingleCorePercent": 12.855798537665928
+        }
+      },
+      "journeyMemory": {
+        "renderer": {
+          "privateBytes": {
+            "initial": 81489920,
+            "peak": 1773973504,
+            "final": 1496588288,
+            "sampleCount": 31,
+            "missingSamples": 0,
+            "tail": {
+              "min": 1496588288,
+              "max": 1773973504,
+              "mean": 1602198186.6666667,
+              "sampleCount": 15
+            }
+          },
+          "rssBytes": {
+            "initial": 159166464,
+            "peak": 1758408704,
+            "final": 1480585216,
+            "sampleCount": 31,
+            "missingSamples": 0,
+            "tail": {
+              "min": 1480585216,
+              "max": 1758408704,
+              "mean": 1585078272.0,
+              "sampleCount": 15
+            }
+          }
+        },
+        "gpu": {
+          "privateBytes": {
+            "initial": 344948736,
+            "peak": 2347413504,
+            "final": 2224660480,
+            "sampleCount": 31,
+            "missingSamples": 0,
+            "tail": {
+              "min": 2057732096,
+              "max": 2347413504,
+              "mean": 2181997363.2,
+              "sampleCount": 15
+            }
+          },
+          "rssBytes": {
+            "initial": 210898944,
+            "peak": 708681728,
+            "final": 595070976,
+            "sampleCount": 31,
+            "missingSamples": 0,
+            "tail": {
+              "min": 595070976,
+              "max": 708681728,
+              "mean": 672369868.8,
+              "sampleCount": 15
+            }
+          }
+        },
+        "host": {
+          "privateBytes": {
+            "initial": 34570240,
+            "peak": 39911424,
+            "final": 39899136,
+            "sampleCount": 31,
+            "missingSamples": 0,
+            "tail": {
+              "min": 37146624,
+              "max": 39911424,
+              "mean": 38553736.53333333,
+              "sampleCount": 15
+            }
+          },
+          "rssBytes": {
+            "initial": 49410048,
+            "peak": 54198272,
+            "final": 54198272,
+            "sampleCount": 31,
+            "missingSamples": 0,
+            "tail": {
+              "min": 51933184,
+              "max": 54198272,
+              "mean": 53149149.86666667,
+              "sampleCount": 15
+            }
+          }
+        }
+      },
+      "journeyGaps": {
+        "available": true,
+        "scope": "raw RAF and ticker events in metadata.journey action phases only",
+        "rafGaps": {
+          "count": 3594,
+          "p50Ms": 16.69999999999709,
+          "p95Ms": 16.700000000004366,
+          "p99Ms": 16.80000000000291,
+          "maxMs": 16.80000000000291,
+          "over50Ms": 0
+        },
+        "tickerGaps": {
+          "count": 3594,
+          "p50Ms": 16.699999999254942,
+          "p95Ms": 18,
+          "p99Ms": 18.40000000037253,
+          "maxMs": 40,
+          "over50Ms": 0
+        }
+      },
+      "phaseStatus": [
+        {
+          "phase": "journey",
+          "status": "exercised",
+          "requestedSeconds": 60,
+          "actualSeconds": 60.048
+        },
+        {
+          "phase": "companion",
+          "status": "exercised",
+          "activation": "observed",
+          "suppressed": true,
+          "restored": true
+        },
+        {
+          "phase": "texture-disposal",
+          "status": "exercised",
+          "pixelMatch": true,
+          "visualValidation": "recorded",
+          "beforePixels": {
+            "width": 960,
+            "height": 1028,
+            "rgbSum": 175591177,
+            "alphaSum": 97596891,
+            "hash": "5c1587cf",
+            "glErrors": []
+          },
+          "afterPixels": {
+            "width": 960,
+            "height": 1028,
+            "rgbSum": 175591177,
+            "alphaSum": 97596891,
+            "hash": "5c1587cf",
+            "glErrors": []
+          }
+        },
+        {
+          "phase": "context-loss",
+          "status": "exercised",
+          "restored": true,
+          "pixelMatch": true,
+          "visualValidation": "recorded",
+          "beforePixels": {
+            "width": 960,
+            "height": 1028,
+            "rgbSum": 175591177,
+            "alphaSum": 97596891,
+            "hash": "5c1587cf",
+            "glErrors": []
+          },
+          "afterPixels": {
+            "width": 960,
+            "height": 1028,
+            "rgbSum": 175591177,
+            "alphaSum": 97596891,
+            "hash": "5c1587cf",
+            "glErrors": []
+          }
+        }
+      ],
+      "phases": [
+        {
+          "phase": "startup",
+          "startedAtMs": 311.40000000037253,
+          "endedAtMs": 443.5,
+          "durationMs": 132.09999999962747,
+          "misses": 0,
+          "changes": 0,
+          "cycles": 0,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 1,
+            "p50Ms": 116.60000000000002,
+            "p95Ms": 116.60000000000002,
+            "p99Ms": 116.60000000000002,
+            "maxMs": 116.60000000000002,
+            "over50Ms": 1
+          },
+          "tickerGaps": {
+            "count": 1,
+            "p50Ms": 1.599999999627471,
+            "p95Ms": 1.599999999627471,
+            "p99Ms": 1.599999999627471,
+            "maxMs": 1.599999999627471,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-idle",
+          "startedAtMs": 443.5,
+          "endedAtMs": 8460.699999999255,
+          "durationMs": 8017.199999999255,
+          "misses": 15,
+          "changes": 360,
+          "cycles": 3,
+          "holds": 0,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 480,
+            "p50Ms": 16.699999999999818,
+            "p95Ms": 16.700000000000728,
+            "p99Ms": 16.800000000000182,
+            "maxMs": 16.800000000000182,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 480,
+            "p50Ms": 16.699999999254942,
+            "p95Ms": 18.09999999962747,
+            "p99Ms": 18.700000001117587,
+            "maxMs": 40,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-trans_smile",
+          "startedAtMs": 8460.699999999255,
+          "endedAtMs": 9647.800000000745,
+          "durationMs": 1187.1000000014901,
+          "misses": 0,
+          "changes": 27,
+          "cycles": 1,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 70,
+            "p50Ms": 16.69999999999891,
+            "p95Ms": 16.80000000000109,
+            "p99Ms": 16.80000000000109,
+            "maxMs": 16.80000000000109,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 70,
+            "p50Ms": 16.699999999254942,
+            "p95Ms": 18.199999999254942,
+            "p99Ms": 18.5,
+            "maxMs": 18.5,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-smile_speaking",
+          "startedAtMs": 9647.800000000745,
+          "endedAtMs": 17693.900000000373,
+          "durationMs": 8046.0999999996275,
+          "misses": 0,
+          "changes": 474,
+          "cycles": 2,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 482,
+            "p50Ms": 16.69999999999891,
+            "p95Ms": 16.700000000000728,
+            "p99Ms": 16.80000000000109,
+            "maxMs": 16.80000000000109,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 482,
+            "p50Ms": 16.700000001117587,
+            "p95Ms": 18,
+            "p99Ms": 18.40000000037253,
+            "maxMs": 18.5,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-speaking_trans",
+          "startedAtMs": 17693.900000000373,
+          "endedAtMs": 18880.300000000745,
+          "durationMs": 1186.4000000003725,
+          "misses": 0,
+          "changes": 58,
+          "cycles": 1,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 70,
+            "p50Ms": 16.700000000000728,
+            "p95Ms": 16.700000000000728,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 70,
+            "p50Ms": 16.699999999254942,
+            "p95Ms": 17.699999999254942,
+            "p99Ms": 18.09999999962747,
+            "maxMs": 18.09999999962747,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-speaking_long",
+          "startedAtMs": 18880.300000000745,
+          "endedAtMs": 28850.099999999627,
+          "durationMs": 9969.799999998882,
+          "misses": 0,
+          "changes": 588,
+          "cycles": 1,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 598,
+            "p50Ms": 16.700000000000728,
+            "p95Ms": 16.700000000000728,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 598,
+            "p50Ms": 16.700000001117587,
+            "p95Ms": 17.90000000037253,
+            "p99Ms": 18.199999999254942,
+            "maxMs": 18.5,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-idle_side_butterfly",
+          "startedAtMs": 28850.099999999627,
+          "endedAtMs": 42856.90000000037,
+          "durationMs": 14006.800000000745,
+          "misses": 0,
+          "changes": 824,
+          "cycles": 1,
+          "holds": 0,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 839,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.700000000004366,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 839,
+            "p50Ms": 16.799999998882413,
+            "p95Ms": 18,
+            "p99Ms": 18.40000000037253,
+            "maxMs": 19.90000000037253,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-closed_eye_trans",
+          "startedAtMs": 42856.90000000037,
+          "endedAtMs": 44046.800000000745,
+          "durationMs": 1189.9000000003725,
+          "misses": 0,
+          "changes": 58,
+          "cycles": 1,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 70,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.799999999995634,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 70,
+            "p50Ms": 16.800000000745058,
+            "p95Ms": 18,
+            "p99Ms": 19.699999999254942,
+            "maxMs": 19.699999999254942,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-speaking_closed_eye_2",
+          "startedAtMs": 44046.800000000745,
+          "endedAtMs": 52095.300000000745,
+          "durationMs": 8048.5,
+          "misses": 0,
+          "changes": 474,
+          "cycles": 1,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 482,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.700000000004366,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 482,
+            "p50Ms": 16.59999999962747,
+            "p95Ms": 17.899999998509884,
+            "p99Ms": 18.40000000037253,
+            "maxMs": 18.700000001117587,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "route-0-idle_closed_eye",
+          "startedAtMs": 52095.300000000745,
+          "endedAtMs": 60489.90000000037,
+          "durationMs": 8394.599999999627,
+          "misses": 0,
+          "changes": 495,
+          "cycles": 0,
+          "holds": 0,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 503,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.700000000004366,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 503,
+            "p50Ms": 16.600000001490116,
+            "p95Ms": 18,
+            "p99Ms": 18.40000000037253,
+            "maxMs": 22.699999999254942,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "companion",
+          "startedAtMs": 60489.90000000037,
+          "endedAtMs": 66517.09999999963,
+          "durationMs": 6027.199999999255,
+          "misses": 0,
+          "changes": 354,
+          "cycles": 1,
+          "holds": 0,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 361,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.70000000001164,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 361,
+            "p50Ms": 16.800000000745058,
+            "p95Ms": 17.90000000037253,
+            "p99Ms": 18.299999998882413,
+            "maxMs": 18.799999998882413,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "texture-disposal",
+          "startedAtMs": 66517.09999999963,
+          "endedAtMs": 66628.5,
+          "durationMs": 111.40000000037253,
+          "misses": 0,
+          "changes": 0,
+          "cycles": 0,
+          "holds": 1,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 5,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.80000000000291,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 16.80000000000291,
+            "over50Ms": 0
+          },
+          "tickerGaps": {
+            "count": 5,
+            "p50Ms": 16.300000000745058,
+            "p95Ms": 23.59999999962747,
+            "p99Ms": 23.59999999962747,
+            "maxMs": 23.59999999962747,
+            "over50Ms": 0
+          }
+        },
+        {
+          "phase": "context-loss",
+          "startedAtMs": 66628.5,
+          "endedAtMs": 69709.90000000037,
+          "durationMs": 3081.4000000003725,
+          "misses": 0,
+          "changes": 0,
+          "cycles": 0,
+          "holds": 0,
+          "loadsStarted": null,
+          "loadsCompleted": null,
+          "loadFailures": null,
+          "refetches": null,
+          "decisions": 0,
+          "loadedPerSecond": null,
+          "rafGaps": {
+            "count": 181,
+            "p50Ms": 16.69999999999709,
+            "p95Ms": 16.70000000001164,
+            "p99Ms": 16.80000000000291,
+            "maxMs": 66.69999999999709,
+            "over50Ms": 1
+          },
+          "tickerGaps": {
+            "count": 181,
+            "p50Ms": 16.700000001117587,
+            "p95Ms": 18,
+            "p99Ms": 22.300000000745058,
+            "maxMs": 69.5,
+            "over50Ms": 1
+          }
+        }
+      ],
+      "storeAt60Seconds": {
+        "residentCpuBytes": 1073182656,
+        "residentGpuBytes": 1073182656,
+        "residentBytes": 2146365312,
+        "budgetBytes": 2147483648,
+        "pinnedBytes": 96623776,
+        "pinnedOverageBytes": 0,
+        "residentFrames": 1232,
+        "transientBytes": 0,
+        "maxInFlight": 3,
+        "entries": 7568,
+        "queued": 0,
+        "inFlight": 1,
+        "loads": 2761,
+        "refetches": 27,
+        "evictions": 1528,
+        "failures": 0,
+        "pressure": 0,
+        "fetchAttempts": 2762,
+        "fetchCompleted": 2762,
+        "fetchedPayloadBytes": 1007714633,
+        "transcodeAttempts": 5,
+        "transcodesCompleted": 5,
+        "transcodeMs": 307.6000000014901,
+        "textureUploads": 2760,
+        "textureUploadMs": 214.70000005699694,
+        "cacheHits": 2755,
+        "cacheMisses": 5,
+        "cacheReadFailures": 1,
+        "cacheWrites": 3,
+        "cacheWriteFailures": 0,
+        "cacheWriteSkipped": 2,
+        "cachePendingWrites": 0,
+        "cacheCompressedBytes": 1005212926,
+        "displayMiss": 16
+      },
+      "actualGpu": [
+        "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Laptop Direct3D11 vs_5_0 ps_5_0, D3D11)"
+      ],
+      "webglLog": {
+        "available": true,
+        "errorLines": 0,
+        "byKind": {
+          "INVALID_ENUM": 0,
+          "INVALID_VALUE": 0,
+          "INVALID_OPERATION": 0,
+          "INVALID_FRAMEBUFFER_OPERATION": 0
+        }
+      }
+    }
+  },
+  "repair": {
+    "key": "d64d57eff6a26b22883c1e342b4d4bf77875e56604175f0aae56cd9623135c68",
+    "relativeSource": "textures/idle/loop/kurisu_idle_pingpong0001.ktx2",
+    "originalSha256": "8ffcadf8c06c393ed58fa5f310591dea4770e4ed05d71a84def50dc9f92355c1",
+    "corruptedSha256": "88fdf0e881e80b4c9db90cfe4f0f9f27f0916ffe8f92dd426134a8c8b91c5ad5",
+    "method": "flip one payload byte in the isolated test cache after preserving a backup; source asset unchanged",
+    "restoredOriginalSha256": true
+  },
+  "cacheDiskBytesAfterTests": 1046368622
+}

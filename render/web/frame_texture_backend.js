@@ -58,6 +58,9 @@
     const createImage = options.createImage || (() => new root.Image());
     const now = options.now || (() => root.performance.now());
     const owned = new Map(), loads = new Set(), uploads = new Map();
+    const cache = options.cache === false ? null : options.cache
+      || root.FrameTextureCache?.createTextureCache({ renderer, pixi });
+    const cacheWrites = new Map();
     const counters = { fetchAttempts: 0, fetchCompleted: 0, fetchedPayloadBytes: 0,
       transcodeAttempts: 0, transcodesCompleted: 0, transcodeMs: 0, textureUploads: 0, textureUploadMs: 0 };
     const ticker = pixi.Ticker.system, canvas = renderer.view;
@@ -100,6 +103,7 @@
           const uploaded = base._glTextures[renderer.CONTEXT_UID];
           if (!uploaded || uploaded.dirtyId !== base.dirtyId) throw new Error("Frame texture upload did not complete");
           uploads.delete(texture);
+          persist(texture);
           job.resolve();
         } catch (error) {
           uploads.delete(texture);
@@ -128,11 +132,19 @@
       if (!owned.has(texture)) return;
       const releaseSource = owned.get(texture);
       owned.delete(texture);
+      cacheWrites.delete(texture);
       const job = uploads.get(texture);
       if (job) { uploads.delete(texture); job.reject(abortError()); }
       if (!uploads.size) stopTicker();
       try { texture.destroy(true); }
       finally { releaseSource?.(); }
+    }
+
+    function persist(texture) {
+      const entry = cacheWrites.get(texture);
+      if (!entry) return;
+      cacheWrites.delete(texture);
+      cache.save(entry, texture.baseTexture.resource);
     }
 
     function makeTexture(resource, baseOptions, releaseSource) {
@@ -176,35 +188,59 @@
     }
 
     async function loadCompressed(url, signal) {
-      const parser = await waitWithAbort(ensureTranscoder(), signal);
-      check(signal);
       // Use Pixi's adapter, including its supported file:// behavior in the GUI.
-      counters.fetchAttempts++;
-      const response = await fetchAsset(url, { signal });
-      if (response.ok === false) throw new Error(`Frame fetch failed (${response.status})`);
-      const bytes = await response.arrayBuffer();
-      counters.fetchCompleted++;
-      counters.fetchedPayloadBytes += bytes.byteLength;
+      const useCache = cache?.canUse(url);
+      const read = async address => {
+        check(signal);
+        counters.fetchAttempts++;
+        const response = await fetchAsset(address, { signal,
+          ...(useCache ? { headers: { Accept: 'application/x-amadeus-bc7, image/ktx2' } } : {}) });
+        if (response.ok === false) throw new Error(`Frame fetch failed (${response.status})`);
+        const bytes = await response.arrayBuffer();
+        counters.fetchCompleted++; counters.fetchedPayloadBytes += bytes.byteLength;
+        check(signal);
+        return { response, bytes };
+      };
+      let { response, bytes } = await read(useCache ? cache.requestUrl(url) : url);
       check(signal);
-      // The existing worker API cannot cancel one submitted transcode. Keep the
-      // caller's load slot occupied until it finishes, then destroy cancelled
-      // results. Racing this work against abort would hide still-active jobs.
-      let decoded;
-      counters.transcodeAttempts++;
-      const started = now();
-      const transcoded = Promise.resolve(parser.transcode(bytes)).then(resources => {
-        counters.transcodesCompleted++;
-        counters.transcodeMs += now() - started;
-        decoded = resources;
-        if (disposed || signal.aborted) {
-          for (const resource of resources || []) resource.destroy();
-          throw abortError();
+      let resources, cacheWrite;
+      if (useCache && response.headers?.get('Content-Type') === 'application/x-amadeus-bc7') {
+        try {
+          resources = [await cache.decode(bytes, response.headers.get('X-Amadeus-BC7-Key'))];
+          resources.basisFormat = 6;
+          if (disposed || signal.aborted) { resources[0].destroy(); throw abortError(); }
+        } catch (error) {
+          check(signal);
+          cache.invalidate(url);
+          ({ response, bytes } = await read(cache.sourceUrl(url)));
         }
-        return resources;
-      });
-      let resources;
-      try { resources = await transcoded; check(signal); }
-      catch (error) { for (const resource of decoded || []) resource.destroy(); throw error; }
+      }
+      if (!resources) {
+        const parser = await waitWithAbort(ensureTranscoder(), signal);
+        check(signal);
+        if (useCache && response.headers?.get('X-Amadeus-BC7-Key')) {
+          cache.miss();
+          cacheWrite = { url, key: response.headers.get('X-Amadeus-BC7-Key'), token: response.headers.get('X-Amadeus-Cache-Token') };
+        }
+        // The existing worker API cannot cancel one submitted transcode. Keep the
+        // caller's load slot occupied until it finishes, then destroy cancelled
+        // results. Racing this work against abort would hide still-active jobs.
+        let decoded;
+        counters.transcodeAttempts++;
+        const started = now();
+        const transcoded = Promise.resolve(parser.transcode(bytes)).then(resources => {
+          counters.transcodesCompleted++;
+          counters.transcodeMs += now() - started;
+          decoded = resources;
+          if (disposed || signal.aborted) {
+            for (const resource of resources || []) resource.destroy();
+            throw abortError();
+          }
+          return resources;
+        });
+        try { resources = await transcoded; check(signal); }
+        catch (error) { for (const resource of decoded || []) resource.destroy(); throw error; }
+      }
       if (!resources?.[0]) throw new Error("KTX2 decoder returned no frame");
       const resource = resources[0];
       for (const extra of resources.slice(1)) extra.destroy();
@@ -219,6 +255,7 @@
         type: shim.BASIS_FORMAT_TO_TYPE[basisFormat],
         format: basisFormat === shim.BASIS_FORMATS.cTFRGBA32 ? pixi.FORMATS.RGBA : pixi.FORMATS.RGB,
       });
+      if (cacheWrite && compressed && basisFormat === 6) cacheWrites.set(texture, cacheWrite);
       return { texture, ...accounting };
     }
 
@@ -306,7 +343,7 @@
       if (disposed || !owned.has(texture)) return Promise.reject(abortError());
       if (uploads.has(texture)) return uploads.get(texture).promise;
       const base = texture.baseTexture, gpu = base?._glTextures[renderer.CONTEXT_UID];
-      if (!lost() && gpu && gpu.dirtyId === base.dirtyId) return Promise.resolve();
+      if (!lost() && gpu && gpu.dirtyId === base.dirtyId) { persist(texture); return Promise.resolve(); }
       const job = {};
       job.promise = new Promise((resolve, reject) => { job.resolve = resolve; job.reject = reject; });
       uploads.set(texture, job);
@@ -318,13 +355,14 @@
       if (disposed) return;
       disposed = true;
       for (const controller of loads) controller.abort();
+      cache?.dispose();
       for (const texture of [...owned.keys()]) destroy(texture);
       stopTicker();
       canvas?.removeEventListener("webglcontextlost", onLost);
       canvas?.removeEventListener("webglcontextrestored", onRestored);
     }
 
-    return { load, upload, destroy, now, dispose, stats: () => ({ ...counters }) };
+    return { load, upload, destroy, now, dispose, stats: () => ({ ...counters, ...cache?.stats() }) };
   }
 
   return { createFrameTextureBackend };

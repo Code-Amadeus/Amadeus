@@ -57,9 +57,11 @@ else {
     host = spawn(python, hostArgs, { cwd: root, windowsHide: true,
       env: { ...process.env, GRAPHICS_PROFILE: options.profile, RENDER_MAX_FPS: String(options.fps), RENDER_MAX_RESOLUTION: '1.5',
         TEXTURE_PROBE_BC7_CACHE: options.bc7Cache ? path.resolve(options.bc7Cache) : '',
+        RENDER_BC7_CACHE: options.diskCache ? 'true' : 'false',
         RENDER_TEXTURE_SAMPLING: options.sampling ? 'true' : 'false', WALLPAPER_WHEEL_FORWARD: 'false',
         AMADEUS_SCENARIO_IDLE_SECONDS: String(options.durationSeconds + 120),
-        LOCALAPPDATA: path.join(output, 'host-profile'), APPDATA: path.join(output, 'host-profile'), PYTHONIOENCODING: 'utf-8' },
+        LOCALAPPDATA: options.cacheProfile ? path.resolve(options.cacheProfile) : path.join(output, 'host-profile'),
+        APPDATA: path.join(output, 'host-profile'), PYTHONIOENCODING: 'utf-8' },
       stdio: ['pipe', 'pipe', 'pipe'] })
     host.stderr.on('data', data => { void fs.appendFile(path.join(output, 'host.log'), data).catch(console.error) })
     let readyResolve, readyReject
@@ -243,6 +245,9 @@ else {
           compression: cache.index.compression, cacheState: 'prebuilt; verified before navigation',
           scope: 'experimental read path; no automatic runtime cache generation' }
       }
+      for (const source of ['render/texture_cache.py', 'render/web/texture_cache.js',
+        'render/web/texture_cache_worker.mjs', 'render/web/texture_cache_codec.mjs',
+        'render/web/vendor/zstd/zstd.wasm']) metadata.sourceSha256[source] = await sourceHash(source)
       await startHost()
       metadata.host = bridge
       await writeJson('metadata.json', metadata)

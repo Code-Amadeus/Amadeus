@@ -58,14 +58,30 @@ so the renderer uses the lower of it and the project profile. Unsupported host
 values restore the project limit. This runtime constraint does not mutate the
 startup environment.
 
-`RENDER_TEXTURE_SAMPLING` is a separate experimental startup opt-in, defaulting
-to `false`. Off preserves full-frame loading and the pre-experiment playback
-clock/hold behavior, regardless of the selected graphics profile. On enables
-time-based texture sampling and its associated clock corrections against that
-same effective FPS budget. It reaches chat, web wallpaper, Lively and the macOS
-Electron scene through the existing render descriptors/URLs. It does not add
-another FPS setting. Restart the backend and recreate the render surface after
-changing it; texture selection is fixed for that surface lifetime.
+`RENDER_TEXTURE_SAMPLING` defaults on when the effective startup limit is
+60 FPS, and off at other rates. An explicit true/false choice overrides the
+default. The 30 FPS fast-transition timing tradeoff remains opt-in. Changing
+sampling requires a backend restart and reopening render surfaces.
+
+`RENDER_BC7_CACHE` defaults true for the shared HTTP wallpaper asset server.
+On GPUs exposing WebGL BPTC, displayed UASTC frames are saved as derived BC7
+in the background, then reused on later loads and application launches. The
+2 GiB texture-store CPU + GPU budget is unchanged. Derived files target
+4 GiB under `%LOCALAPPDATA%/Amadeus/texture-cache/bc7-v1` on Windows,
+`~/Library/Caches/Amadeus/texture-cache/bc7-v1` on macOS, and
+`$XDG_CACHE_HOME/Amadeus/texture-cache/bc7-v1` (or `~/.cache/...`) on Linux.
+Only owned flat cache files are pruned; character packs are never modified.
+Concurrent app instances reconcile the shared directory on writes every 30
+seconds, so the disk target may be temporarily exceeded between scans.
+
+Cache identity includes source content and the bundled transcoder revision.
+Writes publish atomically. Corrupt entries fall back to the UASTC source and
+are rebuilt as their frames are displayed. Unsupported GPUs/layouts, file://
+legacy rendering, and unavailable cache storage retain the source path.
+Startup derivation is bounded to one compression worker and two pending
+frames, using zstd level 3 to limit interactive CPU work. It does not prebuild
+an entire pack. Cache disk space, worker/transient buffers, and reclaimable
+OS file cache are separate from the texture-store residency budget.
 
 ## What belongs where
 

@@ -221,9 +221,10 @@ def test_graphics_status_distinguishes_saved_custom_limits_from_applied_preset(m
     monkeypatch.setattr(settings, "RENDER_EFFECTIVE_MAX_FPS", fps)
     monkeypatch.setattr(settings, "RENDER_EFFECTIVE_MAX_RESOLUTION", resolution)
     monkeypatch.setattr(settings, "RENDER_TEXTURE_SAMPLING", False)
+    monkeypatch.setattr(settings, "RENDER_BC7_CACHE", True)
     result = asyncio.run(SystemHandler()._get_config({}))
     assert result["graphics"] == {"profile": "standard", "custom_max_fps": 48,
-        "custom_max_resolution": 1.25, "texture_sampling": False,
+        "custom_max_resolution": 1.25, "texture_sampling": False, "bc7_cache": True,
         "effective_max_fps": 60, "effective_max_resolution": None}
 
 

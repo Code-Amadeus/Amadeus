@@ -56,6 +56,7 @@ function fixture(overrides = {}) {
     images.push(image); return image;
   }
   const backend = createFrameTextureBackend({ renderer, pixi,
+    cache: overrides.cache,
     shim: { ...basis, KTX2Parser: parser }, createImage, now: () => time,
     fetch: async (url, init) => {
       fetches.push({ url, signal: init.signal });
@@ -91,6 +92,46 @@ test('real Pixi frame resources are owned, independent, and absent from every gl
   assert.equal(borrowed.destroyed, false);
   assert.equal(borrowedResource.destroyed, false);
   borrowed.destroy(true); borrowedResource.destroy();
+});
+
+test('persistent cache hits bypass UASTC; source misses only save after successful GPU upload', async () => {
+  let saved = 0, misses = 0;
+  const cache = { canUse: () => true, requestUrl: url => url,
+    decode: async () => compressed(), save: () => { saved++; }, miss: () => { misses++; },
+    stats: () => ({}), dispose() {} };
+  const hit = fixture({ cache, fetch: async () => ({ ok: true,
+    headers: { get: name => name === 'Content-Type' ? 'application/x-amadeus-bc7' : 'key' },
+    arrayBuffer: async () => new ArrayBuffer(4) }) });
+  const loaded = await hit.backend.load('frame.ktx2');
+  assert.equal(hit.initCount(), 0);
+  assert.equal(hit.backend.stats().transcodesCompleted, 0);
+  assert.equal(loaded.cpuBytes, 16);
+  hit.backend.dispose();
+  const cold = fixture({ cache, fetch: async () => ({ ok: true,
+    headers: { get: name => name === 'Content-Type' ? 'image/ktx2' : 'key' },
+    arrayBuffer: async () => new ArrayBuffer(4) }) });
+  const frame = await cold.backend.load('frame.ktx2');
+  assert.equal(misses, 1); assert.equal(saved, 0);
+  const upload = cold.backend.upload(frame.texture); cold.tick(); await upload;
+  assert.equal(saved, 1);
+  cold.backend.dispose();
+});
+
+test('invalid disk payload retries the original compressed source exactly once, not PNG', async () => {
+  let invalidated = 0;
+  const cache = { canUse: () => true, requestUrl: url => url, sourceUrl: url => url + '?source=1',
+    decode: async () => { throw Error('checksum'); }, invalidate: () => { invalidated++; },
+    miss() {}, save() {}, stats: () => ({}), dispose() {} };
+  const f = fixture({ cache, fetch: async url => ({ ok: true,
+    headers: { get: name => name === 'Content-Type'
+      ? (url.endsWith('?source=1') ? 'image/ktx2' : 'application/x-amadeus-bc7') : 'key' },
+    arrayBuffer: async () => new ArrayBuffer(4) }) });
+  const result = await f.backend.load('frame.ktx2');
+  assert.equal(result.cpuBytes, 16);
+  assert.deepEqual(f.fetches.map(row => row.url), ['frame.ktx2', 'frame.ktx2?source=1']);
+  assert.equal(f.images.length, 0); assert.equal(invalidated, 1);
+  assert.equal(f.backend.stats().transcodesCompleted, 1);
+  f.backend.dispose();
 });
 
 test('compressed GPU cost uses actual levels for every shim-supported format; CPU backing buffers are counted once', async () => {
