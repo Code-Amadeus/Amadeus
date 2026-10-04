@@ -118,8 +118,11 @@ def test_quota_only_removes_owned_flat_cache_files(cache_fixture):
     body1 = container(key1)
     cache.max_bytes = len(body1) + 8
     cache.publish(key1, body1)
-    source.write_bytes(ktx(b"second"))
-    key2, _, _ = identify(cache, source)
+    # Use a second source file: identities are memoized by file metadata, which
+    # cannot distinguish a same-size in-place rewrite within timestamp resolution.
+    second = source.with_name("second.ktx2")
+    second.write_bytes(ktx(b"second"))
+    key2, _, _ = identify(cache, second)
     cache.publish(key2, container(key2))
     assert not (cache.root / (key1 + ".bc7")).exists()
     assert (cache.root / (key2 + ".bc7")).is_file()
