@@ -193,10 +193,13 @@ else {
       window.webContents.setAudioMuted(true)
       window.webContents.on('paint', () => { paintCount++ })
       window.webContents.on('console-message', event => { void fs.appendFile(path.join(output, 'renderer.log'), event.message + '\n').catch(console.error) })
+      // Materialize the offscreen renderer before issuing Page commands;
+      // otherwise a brand-new hidden window may never acknowledge Page.enable.
+      await timeout(window.loadURL('about:blank'), 10000, 'Probe blank page initialization timed out')
       window.webContents.debugger.attach('1.3')
-      await window.webContents.debugger.sendCommand('Page.enable')
-      await window.webContents.debugger.sendCommand('Page.addScriptToEvaluateOnNewDocument', {
-        source: `(${installTranscodeCounter.toString()})()` })
+      await timeout(window.webContents.debugger.sendCommand('Page.enable'), 10000, 'Probe Page.enable timed out')
+      await timeout(window.webContents.debugger.sendCommand('Page.addScriptToEvaluateOnNewDocument', {
+        source: `(${installTranscodeCounter.toString()})()` }), 10000, 'Probe script registration timed out')
       // Never discover or contact the user's backend, even if a renderer regresses.
       const allowedPorts = new Set([String(bridge.assetPort), String(bridge.bridgePort)])
       window.webContents.session.webRequest.onBeforeRequest((details, callback) => {
