@@ -11,7 +11,7 @@ import { Module, waitInitialized } from './module.js';
 export const init = (path) => __awaiter(void 0, void 0, void 0, function* () {
     // @ts-ignore
     const url = new URL(`./zstd.wasm`, import.meta.url).href;
-    Module['init'](path !== null && path !== void 0 ? path : url);
+    yield Module['init'](path !== null && path !== void 0 ? path : url);
     yield waitInitialized();
 });
 export * from './simple/decompress.js';

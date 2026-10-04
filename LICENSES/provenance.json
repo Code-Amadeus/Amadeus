@@ -388,26 +388,7 @@
       "modified": true,
       "release_action": "include",
       "gate_status": "ready",
-      "notes": "Published package.json and README explicitly declare MIT for TypeScript glue and BSD-3-Clause for Zstandard. Upstream does not ship a separate glue copyright/LICENSE file; this limitation is preserved in the local notice. Only browser-relative import extensions and source-map comments were adjusted; WASM bytes are unchanged. Used by the bounded BC7 cache workers."
-    },
-    {
-      "id": "zstddec-probe",
-      "name": "ZSTD decoder for the reproducible BC7 experiment",
-      "category": "vendored-bundle",
-      "paths": [
-        "tools/probes/bc7-cache/vendor/**"
-      ],
-      "source_url": "https://github.com/donmccurdy/zstddec-wasm",
-      "source_revision": "npm:zstddec@0.2.0; package SHA-512 recorded beside the fixture",
-      "license_expression": "MIT AND BSD-3-Clause",
-      "license_evidence": [
-        "tools/probes/bc7-cache/vendor/LICENSE-zstddec.txt",
-        "tools/probes/bc7-cache/vendor/zstddec.mjs"
-      ],
-      "modified": false,
-      "release_action": "include",
-      "gate_status": "ready",
-      "notes": "Unmodified ESM bundle saved with .mjs extension for the historical prebuilt-cache probe. Its embedded WASM BSD notice and package MIT license are retained. Production uses bokuweb-zstd-wasm instead."
+      "notes": "Published package.json and README explicitly declare MIT for TypeScript glue and BSD-3-Clause for Zstandard. Upstream does not ship a separate glue copyright/LICENSE file; this limitation is preserved in the local notice. Browser-relative imports and source-map comments were adjusted. Initialization promises now propagate WASM fetch/compile failures. WASM bytes are unchanged. Used by the bounded BC7 cache workers."
     }
   ]
 }

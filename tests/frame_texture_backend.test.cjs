@@ -152,6 +152,28 @@ test('compressed GPU cost uses actual levels for every shim-supported format; CP
   }
 });
 
+test('a transient cache-worker failure falls back for this load without invalidating good disk bytes', async () => {
+  let interrupted = true, invalidated = 0;
+  const cache = { canUse: () => true, requestUrl: url => url, sourceUrl: url => url + '?source=1',
+    decode: async () => {
+      if (interrupted) throw Object.assign(Error('worker interrupted'), { cacheTransient: true });
+      return compressed();
+    }, invalidate: () => { invalidated++; }, miss() {}, save() {}, stats: () => ({}), dispose() {} };
+  const f = fixture({ cache, fetch: async url => ({ ok: true,
+    headers: { get: name => name === 'Content-Type'
+      ? (url.endsWith('?source=1') ? 'image/ktx2' : 'application/x-amadeus-bc7') : 'key' },
+    arrayBuffer: async () => new ArrayBuffer(4) }) });
+  const first = await f.backend.load('frame.ktx2');
+  assert.equal(first.cpuBytes, 16);
+  interrupted = false;
+  const next = await f.backend.load('frame.ktx2');
+  assert.equal(next.cpuBytes, 16);
+  assert.equal(invalidated, 0);
+  assert.equal(f.backend.stats().transcodesCompleted, 1);
+  assert.deepEqual(f.fetches.map(row => row.url), ['frame.ktx2', 'frame.ktx2?source=1', 'frame.ktx2']);
+  f.backend.dispose();
+});
+
 test('uncompressed Basis types retain the shim options and account packed pixels', async () => {
   for (const [format, bytesPerPixel] of [[13, 4], [14, 2], [15, 2], [16, 2]]) {
     const data = new Uint8Array(4 * 4 * bytesPerPixel);

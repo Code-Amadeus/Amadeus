@@ -14,7 +14,7 @@ The texture probe's `--bc7-cache DIRECTORY` verifies the manifest, transcoder
 and every source content hash before the timed run. The existing asset server
 mounts the cache read-only. A probe-only adapter replaces source fetches with
 cache fetches when the actual WebGL context exposes BPTC. Two browser workers
-check compressed SHA-256, inflate via the pinned zstddec WASM decoder and check
+check compressed SHA-256, inflate via the shared production BC7 decoder and check
 raw BC7 SHA-256 before constructing the same Pixi compressed resource. Invalid
 cache files fall back once to the UASTC source; cancellation stays cancelled.
 There is no decoded side cache: FrameStore retains ownership and counts CPU
@@ -22,6 +22,9 @@ and GPU bytes exactly as before. Its scheduling, eviction, GC and context
 restoration are unchanged. The shared UASTC counter excludes cache hits; the
 backend's older `transcodesCompleted` counter counts both kinds of decode jobs.
 Use `render.transcodes` and `render.bc7Cache` to distinguish them.
+The historical October 5 experiment used `zstddec@0.2.0`; that duplicate
+decoder has since been removed. Its recorded source hashes and results remain
+historical evidence, not measurements of the shared decoder now used here.
 Likewise, backend `fetchedPayloadBytes` counts decoded bytes in this adapter;
 use the cache's `compressedBytes` counter for cache payload transfer volume.
 
@@ -38,6 +41,11 @@ fresh Electron profile and host, the current source, actual GPU verification,
 checks. An independent `nvidia-smi` observer records total device memory; that
 includes other applications and is not per-process allocation. Electron GPU
 process private memory is system process memory, not dedicated VRAM.
+This matrix explicitly requests the high-performance GPU. It does not qualify
+the GPU selected by the normal application. For a default-selection run, invoke
+`fpsTextures.probe.mjs` without `--high-performance-gpu` or `--expect-gpu` and
+record the actual WebGL renderer from its samples; do not infer it from which
+adapters are connected. No such hardware run was added in the audit follow-up.
 
 Report the full 600 seconds and the last 300 seconds separately. Fixed clip
 selection improves comparability but does not reproduce every natural graph

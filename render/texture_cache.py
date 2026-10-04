@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import stat
 import struct
 import sys
@@ -19,6 +20,7 @@ MIME = "application/x-amadeus-bc7"
 MAX_FRAME_BYTES = 16 * 1024 * 1024
 MAX_BODY_BYTES = MAX_FRAME_BYTES + 8192
 MAX_DISK_BYTES = 4 * 1024**3
+MIN_FREE_BYTES = 1024**3
 KEY = re.compile(r"[0-9a-f]{64}\Z")
 KTX2 = b"\xabKTX 20\xbb\r\n\x1a\n"
 log = logging.getLogger(__name__)
@@ -53,10 +55,12 @@ def parse_container(body: bytes, *, key: str, width: int, height: int) -> dict:
 
 
 class TextureDiskCache:
-    def __init__(self, vendor: Path, root: Path | None = None, *, max_bytes: int = MAX_DISK_BYTES):
+    def __init__(self, vendor: Path, root: Path | None = None, *, max_bytes: int = MAX_DISK_BYTES,
+                 min_free_bytes: int = MIN_FREE_BYTES):
         self.root = (root or default_cache_root()).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self.max_bytes = max_bytes
+        self.min_free_bytes = min_free_bytes
         self.token = secrets.token_urlsafe(32)
         digest = hashlib.sha256(b"amadeus-bc7-v1;basis=6;flags=0;")
         for name in ("basis_transcoder.js", "basis_transcoder.wasm"):
@@ -66,6 +70,8 @@ class TextureDiskCache:
         self._tickets: dict[str, tuple] = {}
         self._entries: OrderedDict[str, int] = OrderedDict()
         self._lock = threading.RLock()
+        # Serialize writers, without making reads wait for compression output or fsync.
+        self._write_lock = threading.Lock()
         self._last_scan = 0.0
         self._bytes = 0
         self._scan()
@@ -104,16 +110,45 @@ class TextureDiskCache:
         self._bytes = sum(self._entries.values())
         self._last_scan = time.monotonic()
 
-    def _prune(self, incoming: int):
-        while self._entries and self._bytes + incoming > self.max_bytes:
-            key, size = self._entries.popitem(last=False)
+    def _prune(self, incoming: int, *, keep: str | None = None):
+        # One finite pass: locked files remain indexed and charged for later attempts.
+        if self._bytes + incoming <= self.max_bytes:
+            return
+        for key, size in list(self._entries.items()):
+            if self._bytes + incoming <= self.max_bytes:
+                break
+            if key == keep:
+                continue
             path = self.root / (key + ".bc7")
-            if self._regular(path):
-                try:
-                    path.unlink()  # One validated cache file; never a directory/recursive deletion.
-                except OSError:
+            try:
+                info = path.lstat()
+                if not stat.S_ISREG(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
                     continue
+                path.unlink()  # One validated cache file; never a directory/recursive deletion.
+            except FileNotFoundError:
+                pass
+            except OSError:
+                continue
+            del self._entries[key]
             self._bytes -= size
+
+    def _record(self, key: str, size: int):
+        self._bytes += size - self._entries.pop(key, 0)
+        self._entries[key] = size
+
+    def _same_content(self, key: str, body: bytes) -> bool:
+        path = self.root / (key + ".bc7")
+        if not self._regular(path):
+            return False
+        try:
+            with path.open("rb") as existing:
+                if os.fstat(existing.fileno()).st_size != len(body) or existing.read(len(body) + 1) != body:
+                    return False
+        except OSError:
+            return False
+        with self._lock:
+            self._record(key, len(body))
+        return True
 
     def identify(self, source, path: Path, info) -> tuple[str, int, int] | None:
         stamp = (info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
@@ -157,6 +192,10 @@ class TextureDiskCache:
                 return None
 
     def publish(self, key: str, body: bytes) -> None:
+        with self._write_lock:
+            self._publish(key, body)
+
+    def _publish(self, key: str, body: bytes) -> None:
         if not KEY.fullmatch(key):
             raise ValueError("Invalid texture cache key")
         with self._lock:
@@ -173,6 +212,12 @@ class TextureDiskCache:
         parse_container(body, key=key, width=width, height=height)
         if len(body) > self.max_bytes:
             raise ValueError("Texture exceeds disk cache budget")
+        # An identical winner is already complete, even if another reader has it open.
+        if self._same_content(key, body):
+            return
+        # Leave room for the temporary file as well as the permanent free-space floor.
+        if shutil.disk_usage(self.root).free < self.min_free_bytes + len(body):
+            raise OSError("Texture cache free-space reserve reached")
         temporary = self.root / (key + "." + secrets.token_hex(8) + ".tmp")
         try:
             with temporary.open("xb") as target:
@@ -182,17 +227,20 @@ class TextureDiskCache:
             with self._lock:
                 if time.monotonic() - self._last_scan > 30:
                     self._scan()
-                old_size = self._entries.pop(key, 0)
-                self._bytes -= old_size
-                self._prune(len(body))
-                if self._bytes + len(body) > self.max_bytes:
+                old_size = self._entries.get(key, 0)
+                self._prune(len(body) - old_size, keep=key)
+                if self._bytes + len(body) - old_size > self.max_bytes:
                     raise OSError("Texture cache budget could not be reclaimed")
-                try:
-                    os.replace(temporary, self.root / (key + ".bc7"))
-                except OSError:
-                    self._scan()  # Reconcile the still-existing old entry after failed replacement.
-                    raise
-                self._entries[key] = len(body)
-                self._bytes += len(body)
+            if shutil.disk_usage(self.root).free < self.min_free_bytes:
+                raise OSError("Texture cache free-space reserve reached")
+            try:
+                os.replace(temporary, self.root / (key + ".bc7"))
+            except OSError:
+                # Another process may have published the same bytes after our check.
+                if self._same_content(key, body):
+                    return
+                raise  # Sharing violations / full disks are temporary write failures.
+            with self._lock:
+                self._record(key, len(body))
         finally:
             temporary.unlink(missing_ok=True)

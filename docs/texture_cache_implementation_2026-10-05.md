@@ -40,6 +40,9 @@ the automatic implementation.
   temporary files are cleaned individually. There is no recursive deletion.
   Multiple running app instances may temporarily exceed the target until a
   subsequent write refreshes the shared directory inventory (30-second cadence).
+  Publication now also preserves a 1 GiB free-space reserve including the
+  temporary allocation. Identical bytes are an idempotent success, including
+  a concurrent publisher's winner; locked evictions remain indexed and charged.
 - `RENDER_BC7_CACHE=false` disables the server cache. The Graphics settings page
   exposes both sampling and disk-cache choices. Settings require a backend
   restart. CPU/model-less operation needs no Node subprocess, Python zstd
@@ -55,6 +58,45 @@ dimensions, not the compressed stream's claimed output size. MIT/BSD notices
 are included. The isolated package audit reported zero known vulnerabilities;
 production dependency lockfiles and the user's installed environment were not
 changed.
+
+## Code-only audit follow-up
+
+The follow-up fixes transient failure handling: one timed-out/crashed worker
+retires only its own jobs and is replaced on demand. Decode and encode health
+are independent; three consecutive worker incidents enter a 30-second cooldown.
+503/network/storage write failures cool down and can recover on later playback,
+while 403 stops writes for the page lifetime. Existing reads continue. A worker
+interruption falls back for that load without classifying disk bytes as corrupt.
+Cache-directory initialization also recovers after a 30-second cooldown rather
+than switching off the server's configured cache for its entire lifetime.
+The vendored zstd JavaScript initializer now returns/awaits its WASM promise;
+otherwise fetch/compile failures escape `init()` and the worker cannot report
+them as transient. This matches the already reported upstream
+[initialization-error issue](https://github.com/bokuweb/zstd-wasm/issues/125).
+The local patch and file hashes are declared in provenance; WASM bytes and
+the cache format are unchanged. No upstream comment or issue was posted.
+
+Runtime host FPS changes now invalidate cached sampling plans and demand on
+their next use, retaining authored time, logical position, required frames and
+explicit holds. Sampling-disabled sessions remain disabled. The previous
+implementation only changed presentation FPS while retaining its initial
+sampling plan. [Configuration migration and timing policy](../config/README.md)
+explain the old explicit `false` override and the 60-to-30 FPS transition behavior.
+
+The historical prebuilt-cache probe now shares the production payload decoder;
+its duplicate zstd implementation and license/provenance entry were removed.
+Earlier experiment records keep their original decoder version and source hashes.
+
+Validation for this follow-up is code-only at the user's request. Targeted tests
+cover actual Windows read/replace contention, idempotent publication, competing
+publication, failed eviction/quota accounting, free-space checks, recoverable
+worker and write failures, and FPS changes. No new GPU, performance, microphone,
+sleep/wake hardware or long-session experiment was run. Previous 4070 results
+explicitly forced that GPU; default GPU selection and 780M behavior remain
+unverified. This change does not assert which GPU the normal application chooses.
+The follow-up passed 101 focused Node tests and 67 related Python tests,
+including Windows file-sharing cases, plus Ruff. The cache-only Python subset
+was rerun after the final quota fast-path change and all 22 tests passed.
 
 ## Real GPU functional acceptance
 

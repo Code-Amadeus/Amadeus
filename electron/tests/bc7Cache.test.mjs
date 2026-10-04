@@ -7,6 +7,10 @@ import { zstdCompressSync } from 'node:zlib';
 import { installBc7Cache } from '../../tools/probes/bc7-cache/install.mjs';
 import { decodeFrame } from '../../tools/probes/bc7-cache/decode.mjs';
 import { installTranscodeCounter } from './textureProbe.mjs';
+const nativeFetch = globalThis.fetch;
+globalThis.fetch = async (url, options) => String(url).startsWith('file:')
+  ? new Response(fs.readFileSync(new URL(url)), { headers: { 'Content-Type': 'application/wasm' } })
+  : nativeFetch(url, options);
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const raw = Uint8Array.from({ length: 16 }, (_, i) => i * 13);
 const compressed = zstdCompressSync(raw);

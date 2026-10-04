@@ -13,6 +13,7 @@ import os
 import threading
 import socket
 import sys
+import time
 import urllib.parse
 from pathlib import Path
 
@@ -115,16 +116,18 @@ class AssetServer:
         self._dynamic_routes: dict[str, object] = {}
         self._texture_cache_enabled = texture_cache
         self._texture_cache = None
+        self._texture_cache_retry_at = 0.0
         self._cache_lock = threading.Lock()
 
     def _get_texture_cache(self):
         with self._cache_lock:
-            if self._texture_cache_enabled and self._texture_cache is None:
+            if (self._texture_cache_enabled and self._texture_cache is None
+                    and time.monotonic() >= self._texture_cache_retry_at):
                 from render.texture_cache import TextureDiskCache
                 try:
                     self._texture_cache = TextureDiskCache(self.root / "render/web/vendor")
                 except OSError:
-                    self._texture_cache_enabled = False
+                    self._texture_cache_retry_at = time.monotonic() + 30
                     logging.getLogger(__name__).warning("BC7 disk cache unavailable; using source textures", exc_info=True)
             return self._texture_cache
 

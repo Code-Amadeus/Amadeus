@@ -214,7 +214,8 @@
           if (disposed || signal.aborted) { resources[0].destroy(); throw abortError(); }
         } catch (error) {
           check(signal);
-          cache.invalidate(url);
+          // Worker interruption is not evidence that the on-disk bytes are bad.
+          if (!error.cacheTransient) cache.invalidate(url);
           ({ response, bytes } = await read(cache.sourceUrl(url)));
         }
       }

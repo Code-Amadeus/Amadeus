@@ -5,11 +5,15 @@ import json
 import os
 import socket
 import struct
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from render.server import AssetServer
 from render.texture_cache import KTX2, MAX_BODY_BYTES, MIME, TextureDiskCache
+import render.texture_cache as cache_module
+import render.server as server_module
 
 
 def ktx(payload=b"source", width=5, height=7):
@@ -123,6 +127,139 @@ def test_quota_only_removes_owned_flat_cache_files(cache_fixture):
     assert (directory / "keep.txt").read_bytes() == b"nested"
 
 
+def test_identical_publication_is_successful_while_reading_and_without_free_disk_space(cache_fixture, monkeypatch):
+    cache, source, vendor = cache_fixture
+    key, _, _ = identify(cache, source)
+    body = container(key)
+    cache.publish(key, body)
+    other = TextureDiskCache(vendor, cache.root)
+    identify(other, source)
+    monkeypatch.setattr(cache_module.shutil, "disk_usage", lambda _: SimpleNamespace(free=0))
+
+    def unexpected_replace(*args):
+        pytest.fail("Identical bytes must not be replaced")
+
+    monkeypatch.setattr(os, "replace", unexpected_replace)
+    stream, _ = cache.open(key)
+    with stream:
+        cache.publish(key, body)
+        other.publish(key, body)
+        assert stream.read() == body
+    assert cache._bytes == other._bytes == len(body)
+    assert not list(cache.root.glob("*.tmp"))
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows denies replacement while a normal reader holds the file")
+def test_windows_sharing_conflict_preserves_cache_and_later_publication_recovers(cache_fixture):
+    cache, source, _ = cache_fixture
+    key, _, _ = identify(cache, source)
+    original = container(key)
+    replacement = container(key, payload=b"new-data")
+    cache.publish(key, original)
+    stream, _ = cache.open(key)
+    with stream:
+        with pytest.raises(PermissionError):
+            cache.publish(key, replacement)
+        assert stream.read() == original
+        assert cache._entries[key] == cache._bytes == len(original)
+    cache.publish(key, replacement)
+    assert (cache.root / (key + ".bc7")).read_bytes() == replacement
+    assert cache._entries[key] == cache._bytes == len(replacement)
+
+
+def test_locked_eviction_remains_indexed_and_can_be_reclaimed_later(cache_fixture, monkeypatch):
+    cache, source, _ = cache_fixture
+    key, _, _ = identify(cache, source)
+    body = container(key)
+    cache.publish(key, body)
+    second = source.with_name("second.ktx2")
+    second.write_bytes(ktx(b"second"))
+    key2, _, _ = identify(cache, second)
+    cache.publish(key2, container(key2))
+    cache.max_bytes = len(body)
+    unlink = Path.unlink
+
+    def blocked(path, *args, **kwargs):
+        if path == cache.root / (key + ".bc7"):
+            raise PermissionError("reader holds this file")
+        return unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", blocked)
+    cache._prune(0)
+    assert list(cache._entries) == [key]
+    assert cache._bytes == len(body)
+    assert (cache.root / (key + ".bc7")).is_file()
+    assert not (cache.root / (key2 + ".bc7")).exists()
+    cache._prune(1)  # Nothing can be reclaimed; a finite pass preserves accounting.
+    assert list(cache._entries) == [key] and cache._bytes == len(body)
+    monkeypatch.setattr(Path, "unlink", unlink)
+    cache._prune(1)
+    assert not cache._entries and cache._bytes == 0
+
+
+def test_unreclaimable_quota_does_not_forget_existing_replacement_target(cache_fixture, monkeypatch):
+    cache, source, _ = cache_fixture
+    key, _, _ = identify(cache, source)
+    body = container(key)
+    cache.publish(key, body)
+    second = source.with_name("second.ktx2")
+    second.write_bytes(ktx(b"second"))
+    key2, _, _ = identify(cache, second)
+    cache.publish(key2, container(key2))
+    cache.max_bytes = cache._bytes
+    unlink = Path.unlink
+
+    def blocked(path, *args, **kwargs):
+        if path.suffix == ".bc7":
+            raise PermissionError("reader holds this file")
+        return unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", blocked)
+    with pytest.raises(OSError, match="could not be reclaimed"):
+        cache.publish(key, container(key, payload=b"larger" * 10))
+    assert cache._bytes == sum(cache._entries.values()) == sum(p.stat().st_size for p in cache.root.glob("*.bc7"))
+    assert (cache.root / (key + ".bc7")).read_bytes() == body
+    assert not list(cache.root.glob("*.tmp"))
+
+
+def test_identical_cross_process_winner_makes_replace_conflict_successful(cache_fixture, monkeypatch):
+    cache, source, _ = cache_fixture
+    key, _, _ = identify(cache, source)
+    body = container(key)
+
+    def competing_publication(temporary, target):
+        target.write_bytes(body)
+        raise PermissionError("another publisher's reader holds the winner")
+
+    monkeypatch.setattr(os, "replace", competing_publication)
+    cache.publish(key, body)
+    assert cache._bytes == cache._entries[key] == len(body)
+    assert not list(cache.root.glob("*.tmp"))
+
+
+@pytest.mark.parametrize("after_temporary", [False, True])
+def test_disk_reserve_counts_temporary_space_and_recovers_later(cache_fixture, monkeypatch, after_temporary):
+    cache, source, _ = cache_fixture
+    key, _, _ = identify(cache, source)
+    body = container(key)
+    calls = []
+
+    def space(_):
+        calls.append(1)
+        free = cache.min_free_bytes + len(body) if after_temporary and len(calls) == 1 else cache.min_free_bytes - 1
+        return SimpleNamespace(free=free)
+
+    monkeypatch.setattr(cache_module.shutil, "disk_usage", space)
+    with pytest.raises(OSError, match="free-space reserve"):
+        cache.publish(key, body)
+    assert not cache._entries and cache._bytes == 0
+    assert not list(cache.root.glob("*.tmp"))
+    assert not (cache.root / (key + ".bc7")).exists()
+    monkeypatch.setattr(cache_module.shutil, "disk_usage", lambda _: SimpleNamespace(free=cache.min_free_bytes + len(body)))
+    cache.publish(key, body)
+    assert (cache.root / (key + ".bc7")).read_bytes() == body
+
+
 @pytest.fixture
 def server(cache_fixture):
     cache, source, _ = cache_fixture
@@ -162,6 +299,40 @@ def test_http_cold_write_warm_repair_and_original_negotiation(server):
     (cache.root / (key + ".bc7")).write_bytes(b"broken payload")
     assert request(server, "POST", "/_texture-cache/" + key, auth, packed)[0] == 204
     assert request(server, "GET", "/frame.ktx2", {"Accept": MIME})[2] == packed
+
+
+def test_asset_server_recovers_from_temporary_cache_initialization_failure(tmp_path, monkeypatch):
+    server = AssetServer(tmp_path, texture_cache=True)
+    now, attempts = [100.0], []
+    ready = object()
+
+    def create_cache(_):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise OSError("directory temporarily unavailable")
+        return ready
+
+    monkeypatch.setattr(server_module.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(cache_module, "TextureDiskCache", create_cache)
+    assert server._get_texture_cache() is None
+    assert server._get_texture_cache() is None
+    assert len(attempts) == 1
+    now[0] += 30
+    assert server._get_texture_cache() is ready
+    assert len(attempts) == 2
+
+
+def test_http_low_space_is_temporary_and_later_write_succeeds(server, monkeypatch):
+    server, cache, _ = server
+    _, info, _ = request(server, "GET", "/frame.ktx2", {"Accept": MIME})
+    key = info["X-Amadeus-BC7-Key"]
+    headers = {"Origin": f"http://127.0.0.1:{server.port}", "X-Amadeus-Cache-Token": info["X-Amadeus-Cache-Token"]}
+    body = container(key)
+    monkeypatch.setattr(cache_module.shutil, "disk_usage", lambda _: SimpleNamespace(free=0))
+    assert request(server, "POST", "/_texture-cache/" + key, headers, body)[0] == 503
+    assert request(server, "GET", "/frame.ktx2")[0] == 200
+    monkeypatch.setattr(cache_module.shutil, "disk_usage", lambda _: SimpleNamespace(free=cache.min_free_bytes + len(body)))
+    assert request(server, "POST", "/_texture-cache/" + key, headers, body)[0] == 204
 
 
 @pytest.mark.parametrize("change", ["no-token", "foreign-origin", "null-origin", "no-origin", "unknown-key", "traversal", "oversize"])

@@ -234,8 +234,7 @@ else {
         'wallpaper/wallpaper_engine_bridge.py', 'wallpaper/scene_assets.py', 'tools/probes/wallpaper_memory_host.py',
         'electron/tests/fpsTextures.probe.mjs', 'electron/tests/textureProbe.mjs',
         'tools/probes/bc7-cache/install.mjs', 'tools/probes/bc7-cache/verify.mjs',
-        'tools/probes/bc7-cache/decode.mjs', 'tools/probes/bc7-cache/worker.mjs',
-        'tools/probes/bc7-cache/vendor/zstddec.mjs']) {
+        'tools/probes/bc7-cache/decode.mjs', 'tools/probes/bc7-cache/worker.mjs']) {
         metadata.sourceSha256[source] = await sourceHash(source)
       }
       let cache

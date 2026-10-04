@@ -251,10 +251,16 @@
       const count = (this._frameUrls[emotion] || []).length;
       const interval = this._frameIntervals[emotion];
       if (!count || !(interval > 0)) return idx;
+      const fps = frameRateController.effectiveMaxFps;
+      if (this._textureSampleFps !== fps) {
+        // The host cap changes sampling density, never the authored clock or
+        // the user's sampling choice. Required/held sources survive replanning.
+        this._textureSampleFps = fps;
+        this._frameSamplingPlans.clear();
+        this._textureDemandRevision++;
+      }
       let plan = this._frameSamplingPlans.get(emotion);
       if (!plan) {
-        // Changes to graphics settings take effect for texture sampling on reload.
-        if (this._textureSampleFps === null) this._textureSampleFps = frameRateController.effectiveMaxFps;
         const cfg = this._mouthConfigs[emotion] || {};
         const required = Array.from(this._requiredFrameIndices.get(emotion) || []);
         if (Number.isInteger(cfg.closedFrameIdx)) required.push(cfg.closedFrameIdx);

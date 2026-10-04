@@ -6,3 +6,6 @@
 /tools/probes/**/*.py text eol=lf
 /tools/probes/fixtures/**/*.json text eol=lf
 /tools/probes/fixtures/**/*.zip binary
+# Vendored cache provenance hashes must survive Windows autocrlf checkouts.
+/render/web/vendor/zstd/**/*.js text eol=lf
+/render/web/vendor/zstd/provenance.json text eol=lf

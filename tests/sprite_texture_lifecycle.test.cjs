@@ -73,7 +73,7 @@ function fixture(t, { budgetBytes = 100, sampling = false, fps = 30 } = {}) {
   };
   const context = {
     app: { ticker, screen: { width: 1200, height: 800 }, renderer: {} },
-    frameRateController: { effectiveMaxFps: fps }, graphicsProfile: 'standard',
+    frameRateController: budget.createFrameRateController({ update() {} }, fps), graphicsProfile: 'standard',
     renderBudget: budget.resolveRenderBudget({ maxFps: fps, textureSampling: sampling }),
     PIXI: { Container: Display, Sprite: Display, Graphics: Display }, Math: guardedMath,
     window: {
@@ -134,6 +134,7 @@ function fixture(t, { budgetBytes = 100, sampling = false, fps = 30 } = {}) {
     assert.fail('canceled backend work settles within the bounded completion steps');
   }
   return { sprite, ticker, loads, uploads, destroyed, demands, complete, finishLoad, finishUpload, finishCancelled,
+    hostFps: value => context.frameRateController.setHostMaxFps(value),
     get randomCalls() { return randomCalls; },
     withRandom(value, select) {
       const original = guardedMath.random;
@@ -485,6 +486,57 @@ test('a cold explicit hold publishes its exact source and mouth anchor without a
   assert.equal(s.sprite.texture, held);
   assert.equal(s._activeFrameIdx, requested);
   assert.equal(s._getMouthAnchor(s._mouthConfigs.normal).cx, requested);
+});
+
+test('host FPS changes replan sampling demand without changing authored time, exact holds or the user choice', async t => {
+  const f = fixture(t, { sampling: true, fps: 60, budgetBytes: 1500 }), s = f.sprite;
+  s.loadFrames('normal', Array.from({ length: 120 }, (_, i) => 'frame-' + i));
+  s.setIdleFrameIntervalMs('normal', 5);
+  s.setClipConfig('normal', { loopMode: 'once_then_hold' });
+  s._frameIdx = 40; s._sampleTimeMs = 203;
+  s._refreshTextureDemand();
+  const sixty = s._frameSamplingPlans.get('normal');
+  assert.equal(sixty.timelineIndices.length, 36);
+  f.hostFps(30); s._refreshTextureDemand();
+  const thirty = s._frameSamplingPlans.get('normal');
+  assert.equal(thirty.timelineIndices.length, 18);
+  assert.equal(thirty.timelineIndices.length * thirty.sampleIntervalMs, 600);
+  assert.equal(s._frameIdx, 40); assert.equal(s._sampleTimeMs, 203);
+  assert.notEqual(thirty, sixty);
+  assert.ok(f.demands.get('current').every(row => thirty.indices.includes(Number(row.url.slice(6)))));
+  s.holdFrame(41);
+  f.hostFps(15); s._refreshTextureDemand();
+  assert.equal(s._sampleFrameIndex('normal', 41), 41, 'explicit held source remains exact after replanning');
+  assert.deepEqual(f.demands.get('current').map(row => row.url), ['frame-41']);
+  f.hostFps(60); s._refreshTextureDemand();
+  assert.equal(s._textureSampleFps, 60);
+  assert.ok(s._frameSamplingPlans.get('normal').indices.includes(41));
+  assert.equal(s._textureSamplingEnabled, true);
+  const off = fixture(t, { sampling: false, fps: 60 });
+  off.sprite.loadFrames('normal', Array.from({ length: 120 }, (_, i) => 'raw-' + i));
+  off.sprite.setIdleFrameIntervalMs('normal', 5);
+  off.hostFps(30); off.sprite._refreshTextureDemand();
+  assert.equal(off.sprite._textureSamplingEnabled, false);
+  assert.equal(off.sprite._sampleFrameIndex('normal', 41, 205), 41);
+  assert.equal(off.sprite._frameSamplingPlans.size, 0);
+});
+
+test('a sampled fast transition retains its 600ms authored duration after a 60 to 30 FPS host cap change', async t => {
+  const f = fixture(t, { sampling: true, fps: 60, budgetBytes: 2000 }), s = f.sprite;
+  s.loadFrames('normal', Array.from({ length: 120 }, (_, i) => 'fast-' + i));
+  s.setIdleFrameIntervalMs('normal', 5);
+  s.setClipConfig('normal', { loopMode: 'once_then_hold' });
+  await flush(); await f.complete('fast-0');
+  const cycles = []; s.setCycleCompleteHandler(label => cycles.push(label));
+  f.ticker.tick(100);
+  assert.equal(s._frameIdx, 20);
+  f.hostFps(30);
+  for (let i = 0; i < 4; i++) f.ticker.tick(100);
+  assert.equal(s._frameIdx, 100); assert.equal(cycles.length, 0);
+  f.ticker.tick(100);
+  assert.equal(s._frameIdx, 119);
+  assert.deepEqual(cycles, ['normal']);
+  assert.equal(s._textureSampleFps, 30);
 });
 
 test('emotion handoff pins the actual old display until the successor upload is ready', async t => {

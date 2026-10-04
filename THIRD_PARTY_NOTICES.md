@@ -112,12 +112,13 @@ the cu124 dependency audit and future SBOM rather than duplicated here.
   separate glue copyright/LICENSE file; the local notice records this fact.
 - Evidence: `LICENSES/bokuweb-zstd-wasm-MIT.txt`, `LICENSES/zstd-BSD.txt`, and
   `render/web/vendor/zstd/provenance.json` (checked tarball integrity and hashes).
-- Changes: explicit relative module extensions and omitted source-map comments;
-  the WASM binary is unchanged. Loaded locally by cache workers; no CDN fetch.
-- The earlier prebuilt-cache probe retains an unmodified `zstddec@0.2.0` ESM
-  bundle from <https://github.com/donmccurdy/zstddec-wasm>. Its MIT license and
-  embedded WASM BSD notice are retained beside the probe. It is not the
-  production encoder/decoder.
+- Changes: explicit relative module extensions, omitted source-map comments,
+  and returned/awaited initialization promises so WASM fetch/compile failures
+  reach the worker owner. The WASM binary is unchanged. Loaded locally by
+  cache workers; no CDN fetch.
+- The prebuilt-cache probe reuses this decoder. Historical measurements using
+  `zstddec@0.2.0` retain their original source hashes in the evidence records;
+  the superseded decoder is no longer shipped.
 
 ### Keyboard Soundpack #1
 

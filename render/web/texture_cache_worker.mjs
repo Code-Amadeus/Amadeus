@@ -5,6 +5,6 @@ self.onmessage = ({ data: { id, kind, ...data } }) => {
     try {
       const result = await (kind === 'encode' ? encodeFrame(data) : decodeFrame(data));
       self.postMessage({ id, ...result }, [result.buffer]);
-    } catch (error) { self.postMessage({ id, error: error.message }); }
+    } catch (error) { self.postMessage({ id, error: error.message, cacheTransient: error.cacheTransient === true }); }
   });
 };

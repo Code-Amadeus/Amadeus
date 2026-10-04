@@ -146,6 +146,7 @@ function init(filePathOrBuf) {
         if (filePathOrBuf && filePathOrBuf.byteLength > 0) {
             return WebAssembly.instantiate(filePathOrBuf, info).then(receiveInstantiationResult, function (reason) {
                 err('wasm compile failed: ' + reason);
+                throw reason;
             });
         }
         else if (typeof WebAssembly.instantiateStreaming === 'function' &&
@@ -174,8 +175,7 @@ function init(filePathOrBuf) {
             return false;
         }
     }
-    instantiateAsync();
-    return {};
+    return instantiateAsync();
 }
 class ExitStatus {
     constructor(status) {
