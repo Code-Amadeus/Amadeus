@@ -6,6 +6,11 @@ const DESKTOP_LOCALE_KEY = 'AMADEUS_UI_LOCALE'
 const LOCAL_LOCALE_KEY = 'amadeus.ui.locale'
 
 const ZH_CN: Record<string, string> = {
+  'Texture loading': '纹理加载',
+  'Reduce repeated texture conversion while keeping the memory budget bounded.': '在限制纹理内存预算的同时，减少重复转码。',
+  'Skip source frames above the selected frame rate. On by default at 60 FPS; explicit choices are preserved. Restart the backend and reopen the character or wallpaper to apply.': '跳过所选帧率下用不到的源帧。60 FPS 默认开启，保留手动选择。重启后端并重新打开角色或壁纸后生效。',
+  'Reuse converted textures on disk': '复用磁盘中的已转码纹理',
+  'Builds a local cache as animations play, targeting 4 GiB of disk space. Reduces repeated conversion on supported wallpaper GPUs. Requires a backend restart.': '随动画播放建立本地缓存，磁盘空间目标为 4 GiB。在支持的壁纸渲染设备上减少重复转码，重启后端后生效。',
   'Use an optional emotion voice pack for Windows CUDA V3 Japanese speech. References are prepared at startup.': '为 Windows CUDA V3 日语语音启用可选情绪包，启动时提前准备参考音频。',
   'Emotion reference pack ready; all references prewarmed.': '情绪参考包已就绪，所有参考已预热。',
   'Voice runtime is not initialized.': '语音运行时尚未初始化。',

@@ -1,0 +1,1447 @@
+{
+  "scope": "RTX 4070 Laptop 8 GiB; standard 60 FPS; sampling and product BC7 cache enabled; 2 GiB; 345-second fixed route; renderer only, no ASR/TTS; one run per condition.",
+  "runs": {
+    "route-before": {
+      "recording": {
+        "complete": true,
+        "errorRecorded": false,
+        "droppedEvents": 0,
+        "sourceChangedDuringRun": [],
+        "sourceChangedCount": 0,
+        "sampleCount": 174,
+        "sampledDurationMs": 345037
+      },
+      "metadata": {
+        "revision": "04dbef2e51776b2ce5ca61691e122996a023de6c",
+        "sourceSha256": {
+          "render/web/renderer.js": "d3718256756e5f3536760c0b68deb3226e0ba44e32ab57ea93b28ea23c62780a",
+          "render/web/render_budget.js": "557dc45e096c3ffa5ffe00deefd00328f890d65bf6eeafb9ad8a37e5c6e9ad86",
+          "render/web/frame_store.js": "5c7895b322aeea9fc2b7a3de3835f37cb480bc677cb68d6473ac5a38ada4cfc1",
+          "render/web/frame_texture_backend.js": "ff189910f1085f993029f95298b8d2781ed2ef40010047a683a1317466b9a094",
+          "render/web/wallpaper_scene.js": "3a72034ad7a68dda41fbb1e943f2e4d73609d9f84d77d2785093b2476e9c40d8",
+          "render/web/wallpaper_engine_bridge.js": "8289b0a3923c3460f3e89920cd6eaa9685c86516a71e470a6e3a381e09c49413",
+          "render/web/wallpaper_engine.html": "594ee3761e62f0351686fe8115c6a333ee4556e0a1f3d23ac0498c5a7545c61b",
+          "render/web/vendor/pixi.min.js": "b88dfa8fc79ee50b7e511c4cf5e5c459fbc1c8569a40f6e2529b46995df0d7d9",
+          "render/web/vendor/pixi-basis-ktx2.global.js": "d3acd83bb568a2b884953cd17a5724fb20d65d8318c82e99796e19d52274dcc2",
+          "render/server.py": "a989fa7f0b6286facf89b1a164294df0b94956406bbdeed336003f9ad16a58f4",
+          "render/spriteforge_animator.py": "7c1e72b89ae56b17a5e96ad0a4435d24c4f1e40ed2e4460e6b6ea8d49a0d7df4",
+          "wallpaper/wallpaper_engine_bridge.py": "3add1d650ad15dc748ef4db1884c22be32fdf87c4cab0d77f704c774893a8ac6",
+          "wallpaper/scene_assets.py": "a235841f390211f93309e6ce9bb1d14436ec914471a6cacf5063c1e6067ecc99",
+          "tools/probes/wallpaper_memory_host.py": "09844bf9199fa206857b9bfed7856a74ba75e1b19d0e1dbb6004e63aea58b815",
+          "electron/tests/fpsTextures.probe.mjs": "394bfed56b2e3cf62af2194d863eccf604919778bf1258e0b9f8faddfdcea63d",
+          "electron/tests/textureProbe.mjs": "b239fa7519803d18b057e8f12e1f9fdb0651c6765a08199ffd18724a344de449",
+          "tools/probes/bc7-cache/install.mjs": "0584611c15baa0f982f51fcdce3b93eedd6c53371c703b5d3b3c77f6f590b26f",
+          "tools/probes/bc7-cache/verify.mjs": "e5cd898d0ff801832026876113c58bab5f10035de45a6b8e4bf9edbf08661f8a",
+          "tools/probes/bc7-cache/decode.mjs": "c10ca3b4d37e6830a51f60a6e13c8ba244c14b1b8fee80a6a6c1732fd7354d47",
+          "tools/probes/bc7-cache/worker.mjs": "46c3920ef2804f1d8e16367c6944451b2100fdbe8da3b4d3761a10162fa36255",
+          "tools/probes/bc7-cache/vendor/zstddec.mjs": "e0fc7d1413bc55ddca8306a26999f724e20cfd760f6b26a44a255d962018be64",
+          "render/texture_cache.py": "600398a53e10ad8383c1e9225c4bfe799a0039e1d0598ef2108c7cb12c9f43d6",
+          "render/web/texture_cache.js": "d9c3537d343542bb36f2beb493fa3c013d074a33ca599b112193fc8428bb5a57",
+          "render/web/texture_cache_worker.mjs": "4e4b080cfb232e485159d2cf660e7d8120057cbc1fe26ac044483a8c8e306aa9",
+          "render/web/texture_cache_codec.mjs": "3be74362a954eb055d429b6963608c6914a7c7a1f2c518344412ff0a52cb8dd5",
+          "render/web/vendor/zstd/zstd.wasm": "80260eee5795ee8072bb5821e203730c74dca3909938f5ac1128da67f96223df"
+        },
+        "versions": {
+          "node": "24.18.1",
+          "electron": "44.0.0",
+          "chrome": "152.0.7977.54",
+          "python": "3.12.10"
+        },
+        "pack": {
+          "id": "kurisu",
+          "version": "2026.08.29-mouth1",
+          "manifestSha256": "ffd4fc6c1f0925fd5c61659e3109c8c8dcd15cbb7bfa001552c8ad794db9cf34",
+          "available": true
+        },
+        "options": {
+          "fps": 60,
+          "durationSeconds": 345,
+          "sampleSeconds": 2,
+          "seed": 103,
+          "sampling": true,
+          "scenario": false,
+          "companion": false,
+          "contextLoss": false,
+          "fixedRoute": true,
+          "highPerformanceGpu": true,
+          "diskCache": true
+        },
+        "settings": {
+          "renderMaxFps": 60,
+          "renderMaxResolution": null,
+          "renderTextureSampling": true,
+          "graphicsProfile": "standard"
+        },
+        "offscreenFrameRate": 60,
+        "platform": {
+          "os": "win32",
+          "release": "10.0.26200",
+          "architecture": "x64"
+        },
+        "instrumentation": {
+          "legacyMisses": true,
+          "legacyLoads": false,
+          "textureStats": true,
+          "transcodes": true,
+          "fixedRoute": true,
+          "loadTrace": true
+        },
+        "offscreen": true,
+        "cpuProfiling": false,
+        "observed": {
+          "resolution": [
+            1
+          ],
+          "dpr": [
+            1
+          ],
+          "rawTickerMaxFps": [
+            0
+          ],
+          "samplingEnabled": [
+            true
+          ],
+          "sampleFps": [
+            60
+          ],
+          "configuredMaxFps": [
+            60
+          ],
+          "offscreenFrameRate": [
+            60
+          ]
+        },
+        "gpuModels": [
+          "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Laptop Direct3D11 vs_5_0 ps_5_0, D3D11)"
+        ]
+      },
+      "readIssues": [],
+      "allPhaseMisses": {
+        "startup": 0,
+        "route-0-idle": 16,
+        "route-0-trans_smile": 0,
+        "route-0-smile_speaking": 0,
+        "route-0-speaking_trans": 0,
+        "route-0-speaking_long": 0,
+        "route-0-idle_side_butterfly": 0,
+        "route-0-closed_eye_trans": 0,
+        "route-0-speaking_closed_eye_2": 0,
+        "route-0-idle_closed_eye": 0,
+        "route-0-thinking_trans": 1,
+        "route-0-thinking_speaking2": 0,
+        "route-0-sad_trans": 0,
+        "route-0-sad_speaking": 0,
+        "route-0-idle2": 0,
+        "route-1-idle": 0,
+        "route-1-trans_smile": 0,
+        "route-1-smile_speaking": 0,
+        "route-1-speaking_trans": 0,
+        "route-1-speaking_long": 0,
+        "route-1-idle_side_butterfly": 0,
+        "route-1-closed_eye_trans": 0,
+        "route-1-speaking_closed_eye_2": 0,
+        "route-1-idle_closed_eye": 0,
+        "route-1-thinking_trans": 0,
+        "route-1-thinking_speaking2": 0,
+        "route-1-sad_trans": 0,
+        "route-1-sad_speaking": 0,
+        "route-1-idle2": 0,
+        "route-2-idle": 0,
+        "route-2-trans_smile": 0,
+        "route-2-smile_speaking": 0,
+        "route-2-speaking_trans": 0,
+        "route-2-speaking_long": 0,
+        "route-2-idle_side_butterfly": 0,
+        "route-2-closed_eye_trans": 0,
+        "route-2-speaking_closed_eye_2": 0,
+        "route-2-idle_closed_eye": 0,
+        "route-2-thinking_trans": 0,
+        "route-2-thinking_speaking2": 0,
+        "route-2-sad_trans": 0,
+        "route-2-sad_speaking": 0,
+        "route-2-idle2": 0,
+        "route-3-idle": 24,
+        "route-3-trans_smile": 0,
+        "route-3-smile_speaking": 0,
+        "route-3-speaking_trans": 0,
+        "route-3-speaking_long": 0,
+        "route-3-idle_side_butterfly": 0,
+        "route-3-closed_eye_trans": 0,
+        "route-3-speaking_closed_eye_2": 0,
+        "route-3-idle_closed_eye": 43,
+        "route-3-thinking_trans": 0,
+        "route-3-thinking_speaking2": 0
+      },
+      "target": {
+        "phase": "route-3-idle_closed_eye",
+        "beginMs": 328108,
+        "endMs": 344069.5999999996,
+        "missCount": 43,
+        "misses": [
+          {
+            "t": 330507.8999999985,
+            "logical": 141,
+            "target": 141
+          },
+          {
+            "t": 330523.7999999989,
+            "logical": 142,
+            "target": 142
+          },
+          {
+            "t": 330540.7999999989,
+            "logical": 143,
+            "target": 143
+          },
+          {
+            "t": 330557.7999999989,
+            "logical": 144,
+            "target": 144
+          },
+          {
+            "t": 330574.7999999989,
+            "logical": 145,
+            "target": 145
+          },
+          {
+            "t": 330590.7999999989,
+            "logical": 146,
+            "target": 146
+          },
+          {
+            "t": 330607.0999999996,
+            "logical": 147,
+            "target": 147
+          },
+          {
+            "t": 330624.3999999985,
+            "logical": 148,
+            "target": 148
+          },
+          {
+            "t": 330640.2999999989,
+            "logical": 149,
+            "target": 149
+          },
+          {
+            "t": 330674.3999999985,
+            "logical": 150,
+            "target": 150
+          },
+          {
+            "t": 330690.3999999985,
+            "logical": 151,
+            "target": 151
+          },
+          {
+            "t": 330706.8999999985,
+            "logical": 152,
+            "target": 152
+          },
+          {
+            "t": 330723.8999999985,
+            "logical": 153,
+            "target": 153
+          },
+          {
+            "t": 330740.8999999985,
+            "logical": 154,
+            "target": 154
+          },
+          {
+            "t": 330757,
+            "logical": 155,
+            "target": 155
+          },
+          {
+            "t": 330774.3999999985,
+            "logical": 156,
+            "target": 156
+          },
+          {
+            "t": 330792,
+            "logical": 157,
+            "target": 157
+          },
+          {
+            "t": 330807.5,
+            "logical": 158,
+            "target": 158
+          },
+          {
+            "t": 330823.5999999996,
+            "logical": 159,
+            "target": 159
+          },
+          {
+            "t": 330840.69999999925,
+            "logical": 160,
+            "target": 160
+          },
+          {
+            "t": 330857.69999999925,
+            "logical": 161,
+            "target": 161
+          },
+          {
+            "t": 330873.69999999925,
+            "logical": 162,
+            "target": 162
+          },
+          {
+            "t": 330890.69999999925,
+            "logical": 163,
+            "target": 163
+          },
+          {
+            "t": 330907.19999999925,
+            "logical": 164,
+            "target": 164
+          },
+          {
+            "t": 330925.19999999925,
+            "logical": 165,
+            "target": 165
+          },
+          {
+            "t": 330941.19999999925,
+            "logical": 166,
+            "target": 166
+          },
+          {
+            "t": 330957.19999999925,
+            "logical": 167,
+            "target": 167
+          },
+          {
+            "t": 330974.7999999989,
+            "logical": 168,
+            "target": 168
+          },
+          {
+            "t": 330990.2999999989,
+            "logical": 169,
+            "target": 169
+          },
+          {
+            "t": 331007.19999999925,
+            "logical": 170,
+            "target": 170
+          },
+          {
+            "t": 331023.5,
+            "logical": 171,
+            "target": 171
+          },
+          {
+            "t": 331040.0999999996,
+            "logical": 172,
+            "target": 172
+          },
+          {
+            "t": 331056.7999999989,
+            "logical": 173,
+            "target": 173
+          },
+          {
+            "t": 331074,
+            "logical": 174,
+            "target": 174
+          },
+          {
+            "t": 331091.5,
+            "logical": 175,
+            "target": 175
+          },
+          {
+            "t": 331107.5,
+            "logical": 176,
+            "target": 176
+          },
+          {
+            "t": 331124.5999999996,
+            "logical": 177,
+            "target": 177
+          },
+          {
+            "t": 331140.5,
+            "logical": 178,
+            "target": 178
+          },
+          {
+            "t": 331157.5,
+            "logical": 179,
+            "target": 179
+          },
+          {
+            "t": 331174.5,
+            "logical": 180,
+            "target": 180
+          },
+          {
+            "t": 331190.5,
+            "logical": 181,
+            "target": 181
+          },
+          {
+            "t": 331208.0999999996,
+            "logical": 182,
+            "target": 182
+          },
+          {
+            "t": 331225.5,
+            "logical": 183,
+            "target": 183
+          }
+        ],
+        "requests": 737,
+        "maxHttpMs": 791.5,
+        "maxLoadMs": 794,
+        "slowestRequests": [
+          {
+            "asset": "idle_closed_eye/loop/kurisu_idle_loop0144.ktx2",
+            "startMs": 330291,
+            "durationMs": 791.5,
+            "requestToFirstByteMs": 2.300000000745058,
+            "bodyMs": 716.0,
+            "transferBytes": 314469,
+            "bodyBytes": 314169
+          },
+          {
+            "asset": "idle_closed_eye/loop/kurisu_idle_loop0143.ktx2",
+            "startMs": 330240.5,
+            "durationMs": 727.6999999992549,
+            "requestToFirstByteMs": 2.099999999627471,
+            "bodyMs": 672.0,
+            "transferBytes": 299818,
+            "bodyBytes": 299518
+          },
+          {
+            "asset": "idle_closed_eye/loop/kurisu_idle_loop0142.ktx2",
+            "startMs": 330174.19999999925,
+            "durationMs": 592.5999999996275,
+            "requestToFirstByteMs": 2.300000000745058,
+            "bodyMs": 555.5999999996275,
+            "transferBytes": 317392,
+            "bodyBytes": 317092
+          },
+          {
+            "asset": "idle_closed_eye/loop/kurisu_idle_loop0156.ktx2",
+            "startMs": 330774.3999999985,
+            "durationMs": 429.7000000011176,
+            "requestToFirstByteMs": 2.199999999254942,
+            "bodyMs": 310.2000000011176,
+            "transferBytes": 313823,
+            "bodyBytes": 313523
+          },
+          {
+            "asset": "idle_closed_eye/loop/kurisu_idle_loop0141.ktx2",
+            "startMs": 329991.8999999985,
+            "durationMs": 283.1000000014901,
+            "requestToFirstByteMs": 2.099999999627471,
+            "bodyMs": 258.90000000037253,
+            "transferBytes": 299544,
+            "bodyBytes": 299244
+          }
+        ]
+      },
+      "peakStoreBytes": 2147459104,
+      "budgetBytes": 2147483648,
+      "finalCounters": {
+        "residentCpuBytes": 1072409600,
+        "residentGpuBytes": 1072409600,
+        "residentBytes": 2144819200,
+        "budgetBytes": 2147483648,
+        "pinnedBytes": 96220800,
+        "pinnedOverageBytes": 0,
+        "residentFrames": 1201,
+        "transientBytes": 1570784,
+        "maxInFlight": 3,
+        "entries": 7568,
+        "queued": 0,
+        "inFlight": 1,
+        "loads": 12903,
+        "refetches": 9233,
+        "evictions": 11701,
+        "failures": 0,
+        "pressure": 216,
+        "fetchAttempts": 12903,
+        "fetchCompleted": 12903,
+        "fetchedPayloadBytes": 4666140952,
+        "transcodeAttempts": 581,
+        "transcodesCompleted": 581,
+        "transcodeMs": 6151.399999996647,
+        "textureUploads": 13467,
+        "textureUploadMs": 932.5999999921769,
+        "cacheHits": 12322,
+        "cacheMisses": 581,
+        "cacheReadFailures": 0,
+        "cacheWrites": 538,
+        "cacheWriteFailures": 0,
+        "cacheWriteSkipped": 43,
+        "cachePendingWrites": 0,
+        "cacheCompressedBytes": 4465421168,
+        "displayMiss": 85
+      },
+      "webglLog": {
+        "available": true,
+        "errorLines": 0,
+        "byKind": {
+          "INVALID_ENUM": 0,
+          "INVALID_VALUE": 0,
+          "INVALID_OPERATION": 0,
+          "INVALID_FRAMEBUFFER_OPERATION": 0
+        }
+      },
+      "sourceEvidenceSha256": {
+        "events.ndjson": "f4d29c13d894ff0648efbb1926c24ac74e8d46dc10220673b8105f9699610c17",
+        "load-trace.json": "5fd3093b6b7ec7cf242c09a5a7a490ac5ae61a965fc495a4f828f8a2bf4bba2e",
+        "resource-timing.json": "9c2369d293c43e07a9cc6f2dc799110c091300bc1e9469713ab2f5f019708af2",
+        "samples.ndjson": "e89b7fb0864eff218406361cbb10454d5324efabe4defd619946a2d61b9d212c"
+      },
+      "targetAdjacentSamples": [
+        {
+          "elapsedMs": 326058,
+          "label": "speaking_closed_eye_2",
+          "logical": 77,
+          "counters": {
+            "cacheHits": 11464,
+            "cacheMisses": 580,
+            "cacheWrites": 537,
+            "transcodesCompleted": 580,
+            "inFlight": 0,
+            "queued": 0,
+            "pressure": 162
+          }
+        },
+        {
+          "elapsedMs": 328022,
+          "label": "idle_closed_eye",
+          "logical": 21,
+          "counters": {
+            "cacheHits": 11514,
+            "cacheMisses": 580,
+            "cacheWrites": 537,
+            "transcodesCompleted": 580,
+            "inFlight": 1,
+            "queued": 0,
+            "pressure": 162
+          }
+        },
+        {
+          "elapsedMs": 342061,
+          "label": "idle_closed_eye",
+          "logical": 109,
+          "counters": {
+            "cacheHits": 12167,
+            "cacheMisses": 580,
+            "cacheWrites": 537,
+            "transcodesCompleted": 580,
+            "inFlight": 0,
+            "queued": 11,
+            "pressure": 173
+          }
+        },
+        {
+          "elapsedMs": 344050,
+          "label": "thinking_trans",
+          "logical": 56,
+          "counters": {
+            "cacheHits": 12260,
+            "cacheMisses": 581,
+            "cacheWrites": 538,
+            "transcodesCompleted": 581,
+            "inFlight": 3,
+            "queued": 34,
+            "pressure": 216
+          }
+        }
+      ],
+      "totalMisses": 84
+    },
+    "route-nodelay": {
+      "recording": {
+        "complete": true,
+        "errorRecorded": false,
+        "droppedEvents": 0,
+        "sourceChangedDuringRun": [],
+        "sourceChangedCount": 0,
+        "sampleCount": 174,
+        "sampledDurationMs": 345015
+      },
+      "metadata": {
+        "revision": "04dbef2e51776b2ce5ca61691e122996a023de6c",
+        "sourceSha256": {
+          "render/web/renderer.js": "d3718256756e5f3536760c0b68deb3226e0ba44e32ab57ea93b28ea23c62780a",
+          "render/web/render_budget.js": "557dc45e096c3ffa5ffe00deefd00328f890d65bf6eeafb9ad8a37e5c6e9ad86",
+          "render/web/frame_store.js": "5c7895b322aeea9fc2b7a3de3835f37cb480bc677cb68d6473ac5a38ada4cfc1",
+          "render/web/frame_texture_backend.js": "ff189910f1085f993029f95298b8d2781ed2ef40010047a683a1317466b9a094",
+          "render/web/wallpaper_scene.js": "3a72034ad7a68dda41fbb1e943f2e4d73609d9f84d77d2785093b2476e9c40d8",
+          "render/web/wallpaper_engine_bridge.js": "8289b0a3923c3460f3e89920cd6eaa9685c86516a71e470a6e3a381e09c49413",
+          "render/web/wallpaper_engine.html": "594ee3761e62f0351686fe8115c6a333ee4556e0a1f3d23ac0498c5a7545c61b",
+          "render/web/vendor/pixi.min.js": "b88dfa8fc79ee50b7e511c4cf5e5c459fbc1c8569a40f6e2529b46995df0d7d9",
+          "render/web/vendor/pixi-basis-ktx2.global.js": "d3acd83bb568a2b884953cd17a5724fb20d65d8318c82e99796e19d52274dcc2",
+          "render/server.py": "b6b0049bbade0cb2438396f83a6d4adae73bf4efb0b0ca481c7a59455f860914",
+          "render/spriteforge_animator.py": "7c1e72b89ae56b17a5e96ad0a4435d24c4f1e40ed2e4460e6b6ea8d49a0d7df4",
+          "wallpaper/wallpaper_engine_bridge.py": "3add1d650ad15dc748ef4db1884c22be32fdf87c4cab0d77f704c774893a8ac6",
+          "wallpaper/scene_assets.py": "a235841f390211f93309e6ce9bb1d14436ec914471a6cacf5063c1e6067ecc99",
+          "tools/probes/wallpaper_memory_host.py": "09844bf9199fa206857b9bfed7856a74ba75e1b19d0e1dbb6004e63aea58b815",
+          "electron/tests/fpsTextures.probe.mjs": "b765045052057178c33a3d5aa3561e5f77913cb4315c188a68af82a28a492fe5",
+          "electron/tests/textureProbe.mjs": "e0680837d78930c29ed7e77226a7abea1182acd813f90869f6f8ffc0ce1b9ff1",
+          "tools/probes/bc7-cache/install.mjs": "0584611c15baa0f982f51fcdce3b93eedd6c53371c703b5d3b3c77f6f590b26f",
+          "tools/probes/bc7-cache/verify.mjs": "e5cd898d0ff801832026876113c58bab5f10035de45a6b8e4bf9edbf08661f8a",
+          "tools/probes/bc7-cache/decode.mjs": "c10ca3b4d37e6830a51f60a6e13c8ba244c14b1b8fee80a6a6c1732fd7354d47",
+          "tools/probes/bc7-cache/worker.mjs": "46c3920ef2804f1d8e16367c6944451b2100fdbe8da3b4d3761a10162fa36255",
+          "tools/probes/bc7-cache/vendor/zstddec.mjs": "e0fc7d1413bc55ddca8306a26999f724e20cfd760f6b26a44a255d962018be64",
+          "render/texture_cache.py": "600398a53e10ad8383c1e9225c4bfe799a0039e1d0598ef2108c7cb12c9f43d6",
+          "render/web/texture_cache.js": "d9c3537d343542bb36f2beb493fa3c013d074a33ca599b112193fc8428bb5a57",
+          "render/web/texture_cache_worker.mjs": "4e4b080cfb232e485159d2cf660e7d8120057cbc1fe26ac044483a8c8e306aa9",
+          "render/web/texture_cache_codec.mjs": "3be74362a954eb055d429b6963608c6914a7c7a1f2c518344412ff0a52cb8dd5",
+          "render/web/vendor/zstd/zstd.wasm": "80260eee5795ee8072bb5821e203730c74dca3909938f5ac1128da67f96223df"
+        },
+        "versions": {
+          "node": "24.18.1",
+          "electron": "44.0.0",
+          "chrome": "152.0.7977.54",
+          "python": "3.12.10"
+        },
+        "pack": {
+          "id": "kurisu",
+          "version": "2026.08.29-mouth1",
+          "manifestSha256": "ffd4fc6c1f0925fd5c61659e3109c8c8dcd15cbb7bfa001552c8ad794db9cf34",
+          "available": true
+        },
+        "options": {
+          "fps": 60,
+          "durationSeconds": 345,
+          "sampleSeconds": 2,
+          "seed": 103,
+          "sampling": true,
+          "scenario": false,
+          "companion": false,
+          "contextLoss": false,
+          "fixedRoute": true,
+          "highPerformanceGpu": true,
+          "diskCache": true
+        },
+        "settings": {
+          "renderMaxFps": 60,
+          "renderMaxResolution": null,
+          "renderTextureSampling": true,
+          "graphicsProfile": "standard"
+        },
+        "offscreenFrameRate": 60,
+        "platform": {
+          "os": "win32",
+          "release": "10.0.26200",
+          "architecture": "x64"
+        },
+        "instrumentation": {
+          "legacyMisses": true,
+          "legacyLoads": false,
+          "textureStats": true,
+          "transcodes": true,
+          "fixedRoute": true,
+          "loadTrace": true
+        },
+        "offscreen": true,
+        "cpuProfiling": false,
+        "observed": {
+          "resolution": [
+            1
+          ],
+          "dpr": [
+            1
+          ],
+          "rawTickerMaxFps": [
+            0
+          ],
+          "samplingEnabled": [
+            true
+          ],
+          "sampleFps": [
+            60
+          ],
+          "configuredMaxFps": [
+            60
+          ],
+          "offscreenFrameRate": [
+            60
+          ]
+        },
+        "gpuModels": [
+          "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Laptop Direct3D11 vs_5_0 ps_5_0, D3D11)"
+        ]
+      },
+      "readIssues": [],
+      "allPhaseMisses": {
+        "startup": 0,
+        "route-0-idle": 15,
+        "route-0-trans_smile": 0,
+        "route-0-smile_speaking": 0,
+        "route-0-speaking_trans": 0,
+        "route-0-speaking_long": 16,
+        "route-0-idle_side_butterfly": 0,
+        "route-0-closed_eye_trans": 0,
+        "route-0-speaking_closed_eye_2": 0,
+        "route-0-idle_closed_eye": 0,
+        "route-0-thinking_trans": 1,
+        "route-0-thinking_speaking2": 0,
+        "route-0-sad_trans": 0,
+        "route-0-sad_speaking": 0,
+        "route-0-idle2": 0,
+        "route-1-idle": 0,
+        "route-1-trans_smile": 0,
+        "route-1-smile_speaking": 0,
+        "route-1-speaking_trans": 0,
+        "route-1-speaking_long": 0,
+        "route-1-idle_side_butterfly": 0,
+        "route-1-closed_eye_trans": 0,
+        "route-1-speaking_closed_eye_2": 0,
+        "route-1-idle_closed_eye": 0,
+        "route-1-thinking_trans": 0,
+        "route-1-thinking_speaking2": 0,
+        "route-1-sad_trans": 0,
+        "route-1-sad_speaking": 0,
+        "route-1-idle2": 0,
+        "route-2-idle": 0,
+        "route-2-trans_smile": 0,
+        "route-2-smile_speaking": 0,
+        "route-2-speaking_trans": 0,
+        "route-2-speaking_long": 0,
+        "route-2-idle_side_butterfly": 0,
+        "route-2-closed_eye_trans": 0,
+        "route-2-speaking_closed_eye_2": 0,
+        "route-2-idle_closed_eye": 0,
+        "route-2-thinking_trans": 0,
+        "route-2-thinking_speaking2": 0,
+        "route-2-sad_trans": 0,
+        "route-2-sad_speaking": 0,
+        "route-2-idle2": 0,
+        "route-3-idle": 0,
+        "route-3-trans_smile": 0,
+        "route-3-smile_speaking": 0,
+        "route-3-speaking_trans": 0,
+        "route-3-speaking_long": 0,
+        "route-3-idle_side_butterfly": 0,
+        "route-3-closed_eye_trans": 0,
+        "route-3-speaking_closed_eye_2": 0,
+        "route-3-idle_closed_eye": 38,
+        "route-3-thinking_trans": 0,
+        "route-3-thinking_speaking2": 0
+      },
+      "target": {
+        "phase": "route-3-idle_closed_eye",
+        "beginMs": 328058.0999999996,
+        "endMs": 344080.69999999925,
+        "missCount": 38,
+        "misses": [
+          {
+            "t": 330491.69999999925,
+            "logical": 144,
+            "target": 144
+          },
+          {
+            "t": 330508.7999999989,
+            "logical": 145,
+            "target": 145
+          },
+          {
+            "t": 330526.2999999989,
+            "logical": 146,
+            "target": 146
+          },
+          {
+            "t": 330542.2999999989,
+            "logical": 147,
+            "target": 147
+          },
+          {
+            "t": 330558.2999999989,
+            "logical": 148,
+            "target": 148
+          },
+          {
+            "t": 330576.2999999989,
+            "logical": 149,
+            "target": 149
+          },
+          {
+            "t": 330608.2999999989,
+            "logical": 150,
+            "target": 150
+          },
+          {
+            "t": 330624.8999999985,
+            "logical": 151,
+            "target": 151
+          },
+          {
+            "t": 330641.7999999989,
+            "logical": 152,
+            "target": 152
+          },
+          {
+            "t": 330660,
+            "logical": 153,
+            "target": 153
+          },
+          {
+            "t": 330675.8999999985,
+            "logical": 154,
+            "target": 154
+          },
+          {
+            "t": 330692,
+            "logical": 155,
+            "target": 155
+          },
+          {
+            "t": 330708.7999999989,
+            "logical": 156,
+            "target": 156
+          },
+          {
+            "t": 330725,
+            "logical": 157,
+            "target": 157
+          },
+          {
+            "t": 330742.3999999985,
+            "logical": 158,
+            "target": 158
+          },
+          {
+            "t": 330758.7999999989,
+            "logical": 159,
+            "target": 159
+          },
+          {
+            "t": 330775.3999999985,
+            "logical": 160,
+            "target": 160
+          },
+          {
+            "t": 330792.3999999985,
+            "logical": 161,
+            "target": 161
+          },
+          {
+            "t": 330808.3999999985,
+            "logical": 162,
+            "target": 162
+          },
+          {
+            "t": 330825.8999999985,
+            "logical": 163,
+            "target": 163
+          },
+          {
+            "t": 330841.7999999989,
+            "logical": 164,
+            "target": 164
+          },
+          {
+            "t": 330858.7999999989,
+            "logical": 165,
+            "target": 165
+          },
+          {
+            "t": 330876.2999999989,
+            "logical": 166,
+            "target": 166
+          },
+          {
+            "t": 330891.7999999989,
+            "logical": 167,
+            "target": 167
+          },
+          {
+            "t": 330908.7999999989,
+            "logical": 168,
+            "target": 168
+          },
+          {
+            "t": 330925.2999999989,
+            "logical": 169,
+            "target": 169
+          },
+          {
+            "t": 330941.7999999989,
+            "logical": 170,
+            "target": 170
+          },
+          {
+            "t": 330958.7999999989,
+            "logical": 171,
+            "target": 171
+          },
+          {
+            "t": 330975.7999999989,
+            "logical": 172,
+            "target": 172
+          },
+          {
+            "t": 330991.8999999985,
+            "logical": 173,
+            "target": 173
+          },
+          {
+            "t": 331008.7999999989,
+            "logical": 174,
+            "target": 174
+          },
+          {
+            "t": 331025.2999999989,
+            "logical": 175,
+            "target": 175
+          },
+          {
+            "t": 331042.3999999985,
+            "logical": 176,
+            "target": 176
+          },
+          {
+            "t": 331058.3999999985,
+            "logical": 177,
+            "target": 177
+          },
+          {
+            "t": 331075.2999999989,
+            "logical": 178,
+            "target": 178
+          },
+          {
+            "t": 331093.2999999989,
+            "logical": 179,
+            "target": 179
+          },
+          {
+            "t": 331109,
+            "logical": 180,
+            "target": 180
+          },
+          {
+            "t": 331126.69999999925,
+            "logical": 181,
+            "target": 181
+          }
+        ],
+        "requests": 737,
+        "maxHttpMs": 815.5,
+        "maxLoadMs": 818.2000000011176,
+        "slowestRequests": [
+          {
+            "asset": "idle_closed_eye/loop/kurisu_idle_loop0147.ktx2",
+            "startMs": 330276.3999999985,
+            "durationMs": 815.5,
+            "requestToFirstByteMs": 2.200000001117587,
+            "bodyMs": 745.7999999988824,
+            "transferBytes": 289298,
+            "bodyBytes": 288998
+          },
+          {
+            "asset": "idle_closed_eye/loop/kurisu_idle_loop0146.ktx2",
+            "startMs": 330191.8999999985,
+            "durationMs": 680.9000000003725,
+            "requestToFirstByteMs": 2.699999999254942,
+            "bodyMs": 628.9000000003725,
+            "transferBytes": 313125,
+            "bodyBytes": 312825
+          },
+          {
+            "asset": "idle_closed_eye/loop/kurisu_idle_loop0145.ktx2",
+            "startMs": 330142.8999999985,
+            "durationMs": 606.5,
+            "requestToFirstByteMs": 2.300000000745058,
+            "bodyMs": 567.7999999988824,
+            "transferBytes": 276550,
+            "bodyBytes": 276250
+          },
+          {
+            "asset": "idle_closed_eye/loop/kurisu_idle_loop0159.ktx2",
+            "startMs": 330758.69999999925,
+            "durationMs": 358.30000000074506,
+            "requestToFirstByteMs": 2.099999999627471,
+            "bodyMs": 241.80000000074506,
+            "transferBytes": 295384,
+            "bodyBytes": 295084
+          },
+          {
+            "asset": "idle_closed_eye/loop/kurisu_idle_loop0144.ktx2",
+            "startMs": 329976.5,
+            "durationMs": 280,
+            "requestToFirstByteMs": 2.0,
+            "bodyMs": 256.40000000037253,
+            "transferBytes": 314469,
+            "bodyBytes": 314169
+          }
+        ]
+      },
+      "peakStoreBytes": 2147426208,
+      "budgetBytes": 2147483648,
+      "finalCounters": {
+        "residentCpuBytes": 1073194992,
+        "residentGpuBytes": 1073194992,
+        "residentBytes": 2146389984,
+        "budgetBytes": 2147483648,
+        "pinnedBytes": 96220800,
+        "pinnedOverageBytes": 0,
+        "residentFrames": 1202,
+        "transientBytes": 0,
+        "maxInFlight": 3,
+        "entries": 7568,
+        "queued": 0,
+        "inFlight": 1,
+        "loads": 12904,
+        "refetches": 9234,
+        "evictions": 11701,
+        "failures": 0,
+        "pressure": 216,
+        "fetchAttempts": 12904,
+        "fetchCompleted": 12903,
+        "fetchedPayloadBytes": 4677347194,
+        "transcodeAttempts": 0,
+        "transcodesCompleted": 0,
+        "transcodeMs": 0,
+        "textureUploads": 13469,
+        "textureUploadMs": 923.8000000603497,
+        "cacheHits": 12903,
+        "cacheMisses": 0,
+        "cacheReadFailures": 0,
+        "cacheWrites": 0,
+        "cacheWriteFailures": 0,
+        "cacheWriteSkipped": 0,
+        "cachePendingWrites": 0,
+        "cacheCompressedBytes": 4677347194,
+        "displayMiss": 71
+      },
+      "webglLog": {
+        "available": true,
+        "errorLines": 0,
+        "byKind": {
+          "INVALID_ENUM": 0,
+          "INVALID_VALUE": 0,
+          "INVALID_OPERATION": 0,
+          "INVALID_FRAMEBUFFER_OPERATION": 0
+        }
+      },
+      "sourceEvidenceSha256": {
+        "events.ndjson": "6de74652ec887d52a2c9b3e4f4812c4682932e967dcb611e627c3da89d695f43",
+        "load-trace.json": "0ad47f1de189ad674520c8c7a74687f2aa62a9209ab8684d05759958e932d564",
+        "resource-timing.json": "96886368cdc5ead5ad7c3d05dd7aa9e90e3dc87eab10d5b069709d95551af702",
+        "samples.ndjson": "bef24a074b4820721c977b7c1fd375721684d97c4bbfea3ab5bf6244745abe1b"
+      },
+      "targetAdjacentSamples": [
+        {
+          "elapsedMs": 326050,
+          "label": "speaking_closed_eye_2",
+          "logical": 76,
+          "counters": {
+            "cacheHits": 12044,
+            "cacheMisses": 0,
+            "cacheWrites": 0,
+            "transcodesCompleted": 0,
+            "inFlight": 0,
+            "queued": 0,
+            "pressure": 162
+          }
+        },
+        {
+          "elapsedMs": 328055,
+          "label": "idle_closed_eye",
+          "logical": 26,
+          "counters": {
+            "cacheHits": 12099,
+            "cacheMisses": 0,
+            "cacheWrites": 0,
+            "transcodesCompleted": 0,
+            "inFlight": 1,
+            "queued": 0,
+            "pressure": 162
+          }
+        },
+        {
+          "elapsedMs": 342013,
+          "label": "idle_closed_eye",
+          "logical": 109,
+          "counters": {
+            "cacheHits": 12751,
+            "cacheMisses": 0,
+            "cacheWrites": 0,
+            "transcodesCompleted": 0,
+            "inFlight": 0,
+            "queued": 16,
+            "pressure": 178
+          }
+        },
+        {
+          "elapsedMs": 344020,
+          "label": "thinking_trans",
+          "logical": 47,
+          "counters": {
+            "cacheHits": 12848,
+            "cacheMisses": 0,
+            "cacheWrites": 0,
+            "transcodesCompleted": 0,
+            "inFlight": 3,
+            "queued": 22,
+            "pressure": 216
+          }
+        }
+      ],
+      "totalMisses": 70
+    },
+    "route-no-store": {
+      "recording": {
+        "complete": true,
+        "errorRecorded": false,
+        "droppedEvents": 0,
+        "sourceChangedDuringRun": [],
+        "sourceChangedCount": 0,
+        "sampleCount": 174,
+        "sampledDurationMs": 344997
+      },
+      "metadata": {
+        "revision": "04dbef2e51776b2ce5ca61691e122996a023de6c",
+        "sourceSha256": {
+          "render/web/renderer.js": "d3718256756e5f3536760c0b68deb3226e0ba44e32ab57ea93b28ea23c62780a",
+          "render/web/render_budget.js": "557dc45e096c3ffa5ffe00deefd00328f890d65bf6eeafb9ad8a37e5c6e9ad86",
+          "render/web/frame_store.js": "5c7895b322aeea9fc2b7a3de3835f37cb480bc677cb68d6473ac5a38ada4cfc1",
+          "render/web/frame_texture_backend.js": "b4e85d2f81a0ee17b207dce4ea48405a3424dd964f8a46c4cf452df9a90135aa",
+          "render/web/wallpaper_scene.js": "3a72034ad7a68dda41fbb1e943f2e4d73609d9f84d77d2785093b2476e9c40d8",
+          "render/web/wallpaper_engine_bridge.js": "8289b0a3923c3460f3e89920cd6eaa9685c86516a71e470a6e3a381e09c49413",
+          "render/web/wallpaper_engine.html": "594ee3761e62f0351686fe8115c6a333ee4556e0a1f3d23ac0498c5a7545c61b",
+          "render/web/vendor/pixi.min.js": "b88dfa8fc79ee50b7e511c4cf5e5c459fbc1c8569a40f6e2529b46995df0d7d9",
+          "render/web/vendor/pixi-basis-ktx2.global.js": "d3acd83bb568a2b884953cd17a5724fb20d65d8318c82e99796e19d52274dcc2",
+          "render/server.py": "ce726e3f935c88a41027f07759f112654340bc8c659d4e32693f7008a72f2036",
+          "render/spriteforge_animator.py": "7c1e72b89ae56b17a5e96ad0a4435d24c4f1e40ed2e4460e6b6ea8d49a0d7df4",
+          "wallpaper/wallpaper_engine_bridge.py": "3add1d650ad15dc748ef4db1884c22be32fdf87c4cab0d77f704c774893a8ac6",
+          "wallpaper/scene_assets.py": "a235841f390211f93309e6ce9bb1d14436ec914471a6cacf5063c1e6067ecc99",
+          "tools/probes/wallpaper_memory_host.py": "09844bf9199fa206857b9bfed7856a74ba75e1b19d0e1dbb6004e63aea58b815",
+          "electron/tests/fpsTextures.probe.mjs": "9541620eb2f4d227aef9ab7c80d28caf543048dd8b46bda69aeaa30d3a7b68e7",
+          "electron/tests/textureProbe.mjs": "9e00a9706f2991603fc28b190bebaf4408db15bd2fdc3f6df7cdb9f0801f9ef3",
+          "tools/probes/bc7-cache/install.mjs": "0584611c15baa0f982f51fcdce3b93eedd6c53371c703b5d3b3c77f6f590b26f",
+          "tools/probes/bc7-cache/verify.mjs": "e5cd898d0ff801832026876113c58bab5f10035de45a6b8e4bf9edbf08661f8a",
+          "tools/probes/bc7-cache/decode.mjs": "c10ca3b4d37e6830a51f60a6e13c8ba244c14b1b8fee80a6a6c1732fd7354d47",
+          "tools/probes/bc7-cache/worker.mjs": "46c3920ef2804f1d8e16367c6944451b2100fdbe8da3b4d3761a10162fa36255",
+          "tools/probes/bc7-cache/vendor/zstddec.mjs": "e0fc7d1413bc55ddca8306a26999f724e20cfd760f6b26a44a255d962018be64",
+          "render/texture_cache.py": "600398a53e10ad8383c1e9225c4bfe799a0039e1d0598ef2108c7cb12c9f43d6",
+          "render/web/texture_cache.js": "d9c3537d343542bb36f2beb493fa3c013d074a33ca599b112193fc8428bb5a57",
+          "render/web/texture_cache_worker.mjs": "4e4b080cfb232e485159d2cf660e7d8120057cbc1fe26ac044483a8c8e306aa9",
+          "render/web/texture_cache_codec.mjs": "3be74362a954eb055d429b6963608c6914a7c7a1f2c518344412ff0a52cb8dd5",
+          "render/web/vendor/zstd/zstd.wasm": "80260eee5795ee8072bb5821e203730c74dca3909938f5ac1128da67f96223df"
+        },
+        "versions": {
+          "node": "24.18.1",
+          "electron": "44.0.0",
+          "chrome": "152.0.7977.54",
+          "python": "3.12.10"
+        },
+        "pack": {
+          "id": "kurisu",
+          "version": "2026.08.29-mouth1",
+          "manifestSha256": "ffd4fc6c1f0925fd5c61659e3109c8c8dcd15cbb7bfa001552c8ad794db9cf34",
+          "available": true
+        },
+        "options": {
+          "fps": 60,
+          "durationSeconds": 345,
+          "sampleSeconds": 2,
+          "seed": 103,
+          "sampling": true,
+          "scenario": false,
+          "companion": false,
+          "contextLoss": false,
+          "fixedRoute": true,
+          "highPerformanceGpu": true,
+          "diskCache": true
+        },
+        "settings": {
+          "renderMaxFps": 60,
+          "renderMaxResolution": null,
+          "renderTextureSampling": true,
+          "graphicsProfile": "standard"
+        },
+        "offscreenFrameRate": 60,
+        "platform": {
+          "os": "win32",
+          "release": "10.0.26200",
+          "architecture": "x64"
+        },
+        "instrumentation": {
+          "legacyMisses": true,
+          "legacyLoads": false,
+          "textureStats": true,
+          "transcodes": true,
+          "fixedRoute": true,
+          "loadTrace": true
+        },
+        "offscreen": true,
+        "cpuProfiling": false,
+        "observed": {
+          "resolution": [
+            1
+          ],
+          "dpr": [
+            1
+          ],
+          "rawTickerMaxFps": [
+            0
+          ],
+          "samplingEnabled": [
+            true
+          ],
+          "sampleFps": [
+            60
+          ],
+          "configuredMaxFps": [
+            60
+          ],
+          "offscreenFrameRate": [
+            60
+          ]
+        },
+        "gpuModels": [
+          "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Laptop Direct3D11 vs_5_0 ps_5_0, D3D11)"
+        ]
+      },
+      "readIssues": [],
+      "allPhaseMisses": {
+        "startup": 0,
+        "route-0-idle": 15,
+        "route-0-trans_smile": 0,
+        "route-0-smile_speaking": 0,
+        "route-0-speaking_trans": 0,
+        "route-0-speaking_long": 0,
+        "route-0-idle_side_butterfly": 0,
+        "route-0-closed_eye_trans": 0,
+        "route-0-speaking_closed_eye_2": 0,
+        "route-0-idle_closed_eye": 0,
+        "route-0-thinking_trans": 1,
+        "route-0-thinking_speaking2": 0,
+        "route-0-sad_trans": 0,
+        "route-0-sad_speaking": 0,
+        "route-0-idle2": 0,
+        "route-1-idle": 0,
+        "route-1-trans_smile": 0,
+        "route-1-smile_speaking": 0,
+        "route-1-speaking_trans": 0,
+        "route-1-speaking_long": 0,
+        "route-1-idle_side_butterfly": 0,
+        "route-1-closed_eye_trans": 0,
+        "route-1-speaking_closed_eye_2": 0,
+        "route-1-idle_closed_eye": 0,
+        "route-1-thinking_trans": 0,
+        "route-1-thinking_speaking2": 0,
+        "route-1-sad_trans": 0,
+        "route-1-sad_speaking": 0,
+        "route-1-idle2": 0,
+        "route-2-idle": 0,
+        "route-2-trans_smile": 0,
+        "route-2-smile_speaking": 0,
+        "route-2-speaking_trans": 0,
+        "route-2-speaking_long": 0,
+        "route-2-idle_side_butterfly": 0,
+        "route-2-closed_eye_trans": 0,
+        "route-2-speaking_closed_eye_2": 0,
+        "route-2-idle_closed_eye": 0,
+        "route-2-thinking_trans": 0,
+        "route-2-thinking_speaking2": 0,
+        "route-2-sad_trans": 0,
+        "route-2-sad_speaking": 0,
+        "route-2-idle2": 0,
+        "route-3-idle": 0,
+        "route-3-trans_smile": 0,
+        "route-3-smile_speaking": 0,
+        "route-3-speaking_trans": 0,
+        "route-3-speaking_long": 0,
+        "route-3-idle_side_butterfly": 0,
+        "route-3-closed_eye_trans": 0,
+        "route-3-speaking_closed_eye_2": 0,
+        "route-3-idle_closed_eye": 0,
+        "route-3-thinking_trans": 0,
+        "route-3-thinking_speaking2": 0
+      },
+      "target": {
+        "phase": "route-3-idle_closed_eye",
+        "beginMs": 328061.5,
+        "endMs": 344078.80000000075,
+        "missCount": 0,
+        "misses": [],
+        "requests": 737,
+        "maxHttpMs": 24.5,
+        "maxLoadMs": 28.600000001490116,
+        "slowestRequests": [
+          {
+            "asset": "idle_closed_eye/loop/kurisu_idle_loop0716.ktx2",
+            "startMs": 339702.2000000011,
+            "durationMs": 24.5,
+            "requestToFirstByteMs": 3.099999999627471,
+            "bodyMs": 0.900000000372529,
+            "transferBytes": 292737,
+            "bodyBytes": 292437
+          },
+          {
+            "asset": "idle_closed_eye/loop/kurisu_idle_loop0175.ktx2",
+            "startMs": 330502.4000000004,
+            "durationMs": 24.40000000037253,
+            "requestToFirstByteMs": 2.299999998882413,
+            "bodyMs": 20.700000001117587,
+            "transferBytes": 286666,
+            "bodyBytes": 286366
+          },
+          {
+            "asset": "idle_closed_eye/loop/kurisu_idle_loop0360.ktx2",
+            "startMs": 333653,
+            "durationMs": 23.700000001117587,
+            "requestToFirstByteMs": 3.099999999627471,
+            "bodyMs": 0.900000000372529,
+            "transferBytes": 312155,
+            "bodyBytes": 311855
+          },
+          {
+            "asset": "idle_closed_eye/loop/kurisu_idle_loop0529.ktx2",
+            "startMs": 336518.9000000004,
+            "durationMs": 19.800000000745058,
+            "requestToFirstByteMs": 3.0,
+            "bodyMs": 0.6000000014901161,
+            "transferBytes": 283729,
+            "bodyBytes": 283429
+          },
+          {
+            "asset": "idle_closed_eye/loop/kurisu_idle_loop0176.ktx2",
+            "startMs": 330518.5,
+            "durationMs": 13.099999999627471,
+            "requestToFirstByteMs": 2.300000000745058,
+            "bodyMs": 0.3999999985098839,
+            "transferBytes": 308393,
+            "bodyBytes": 308093
+          }
+        ]
+      },
+      "peakStoreBytes": 2147459104,
+      "budgetBytes": 2147483648,
+      "finalCounters": {
+        "residentCpuBytes": 1073194992,
+        "residentGpuBytes": 1073194992,
+        "residentBytes": 2146389984,
+        "budgetBytes": 2147483648,
+        "pinnedBytes": 96220800,
+        "pinnedOverageBytes": 0,
+        "residentFrames": 1202,
+        "transientBytes": 0,
+        "maxInFlight": 3,
+        "entries": 7568,
+        "queued": 0,
+        "inFlight": 1,
+        "loads": 12904,
+        "refetches": 9234,
+        "evictions": 11701,
+        "failures": 0,
+        "pressure": 216,
+        "fetchAttempts": 12904,
+        "fetchCompleted": 12903,
+        "fetchedPayloadBytes": 4677616169,
+        "transcodeAttempts": 0,
+        "transcodesCompleted": 0,
+        "transcodeMs": 0,
+        "textureUploads": 13478,
+        "textureUploadMs": 949.0000000074506,
+        "cacheHits": 12903,
+        "cacheMisses": 0,
+        "cacheReadFailures": 0,
+        "cacheWrites": 0,
+        "cacheWriteFailures": 0,
+        "cacheWriteSkipped": 0,
+        "cachePendingWrites": 0,
+        "cacheCompressedBytes": 4677616169,
+        "displayMiss": 17
+      },
+      "webglLog": {
+        "available": true,
+        "errorLines": 0,
+        "byKind": {
+          "INVALID_ENUM": 0,
+          "INVALID_VALUE": 0,
+          "INVALID_OPERATION": 0,
+          "INVALID_FRAMEBUFFER_OPERATION": 0
+        }
+      },
+      "sourceEvidenceSha256": {
+        "events.ndjson": "c57c3d9b7f54e420b2867a36aea55a62f04bf303b39293df03e42cc3a17af437",
+        "load-trace.json": "6e561fb725ad8d340748cd7cd76ee6766c20217ff4f39053bec82539ec289c3c",
+        "resource-timing.json": "2e996086b7180731701a24767f87e60123e88fa5e8f4de842cc3ad5c821844e6",
+        "samples.ndjson": "11229101a5938de24758a12376a26e52442708a89b970b8c6bc07dc407085fac"
+      },
+      "targetAdjacentSamples": [
+        {
+          "elapsedMs": 326043,
+          "label": "speaking_closed_eye_2",
+          "logical": 77,
+          "counters": {
+            "cacheHits": 12044,
+            "cacheMisses": 0,
+            "cacheWrites": 0,
+            "transcodesCompleted": 0,
+            "inFlight": 0,
+            "queued": 0,
+            "pressure": 162
+          }
+        },
+        {
+          "elapsedMs": 328053,
+          "label": "idle_closed_eye",
+          "logical": 26,
+          "counters": {
+            "cacheHits": 12099,
+            "cacheMisses": 0,
+            "cacheWrites": 0,
+            "transcodesCompleted": 0,
+            "inFlight": 1,
+            "queued": 0,
+            "pressure": 162
+          }
+        },
+        {
+          "elapsedMs": 342060,
+          "label": "idle_closed_eye",
+          "logical": 111,
+          "counters": {
+            "cacheHits": 12781,
+            "cacheMisses": 0,
+            "cacheWrites": 0,
+            "transcodesCompleted": 0,
+            "inFlight": 0,
+            "queued": 54,
+            "pressure": 216
+          }
+        },
+        {
+          "elapsedMs": 344064,
+          "label": "thinking_trans",
+          "logical": 54,
+          "counters": {
+            "cacheHits": 12859,
+            "cacheMisses": 0,
+            "cacheWrites": 0,
+            "transcodesCompleted": 0,
+            "inFlight": 3,
+            "queued": 17,
+            "pressure": 216
+          }
+        }
+      ],
+      "totalMisses": 16
+    }
+  },
+  "qualification": {
+    "classification": "integration: redundant browser HTTP response cache on a texture stream with explicit ownership",
+    "adoptedChange": "frame_texture_backend.js reads compressed textures with fetch cache=no-store, including BC7 hits, UASTC misses and corrupt-cache repair; FrameStore and BC7 disk cache stay enabled",
+    "notEstablished": "The exact Chromium cache-internal mechanism is not isolated; no upstream bug claim. No fresh-cache cost, CPU/energy benefit or multi-hour guarantee is inferred from these runs.",
+    "byteHashDifferences": "Before/after backend differs by adopted fetch policy. Recorded probe/server byte hashes also differ after restoring temporary experiments (working-copy newline conversions); canonical Git diffs verify no retained changes in these files. Individual runs report zero source changes during measurement.",
+    "cacheState": "BC7 cache progressively filled. Target closed-eye phases have no new cache misses or writes; nodelay and no-store finish all 12903 loads as BC7 hits with zero transcodes. Fresh browser profile per run.",
+    "measurement": "Single serial runs, no ASR/TTS. Brief unit checks occurred early in candidate runs, outside target phase. Diagnostic/playback comparison, not a new whole-run CPU benchmark.",
+    "rejected": "TCP_NODELAY alone has 38 target misses and was reverted. A 60-second direct cold entry and a 138-response partial HTTP-head experiment did not reproduce the long-run stall; no cold-head option retained."
+  }
+}

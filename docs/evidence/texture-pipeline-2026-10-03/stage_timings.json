@@ -1,0 +1,11 @@
+{
+  "note": "Node 22.21.1, vendor basis_transcoder.wasm, single thread, first 60 frames of speaking_long; machine of 2026-10-03 research",
+  "frames": 60,
+  "meanUastcZstdFileKiB": 343.9,
+  "meanZstdDecodeMs": 1.50,
+  "meanFullKtx2ToBc7Ms": 8.58,
+  "meanBc7RawKiB": 767.0,
+  "meanBc7Zstd19KiB": 323.2,
+  "meanBc7Zstd9KiB": 342.4,
+  "meanBc7Zstd19DecodeMs": 1.55
+}

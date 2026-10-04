@@ -103,6 +103,23 @@ the cu124 dependency audit and future SBOM rather than duplicated here.
   KTX2 textures. `tools/revendor_pixi_basis_ktx2.py` pins the npm integrity and
   esbuild version used for the browser-global wrapper.
 
+### Zstandard texture-cache workers
+
+- Production source: <https://github.com/bokuweb/zstd-wasm>, npm
+  `@bokuweb/zstd-wasm@0.0.27`.
+- License: MIT for the JavaScript glue, BSD-3-Clause for Zstandard, as declared
+  in the published package metadata and README. The package does not ship a
+  separate glue copyright/LICENSE file; the local notice records this fact.
+- Evidence: `LICENSES/bokuweb-zstd-wasm-MIT.txt`, `LICENSES/zstd-BSD.txt`, and
+  `render/web/vendor/zstd/provenance.json` (checked tarball integrity and hashes).
+- Changes: explicit relative module extensions, omitted source-map comments,
+  and returned/awaited initialization promises so WASM fetch/compile failures
+  reach the worker owner. The WASM binary is unchanged. Loaded locally by
+  cache workers; no CDN fetch.
+- The prebuilt-cache probe reuses this decoder. Historical measurements using
+  `zstddec@0.2.0` retain their original source hashes in the evidence records;
+  the superseded decoder is no longer shipped.
+
 ### Keyboard Soundpack #1
 
 - Source: <https://opengameart.org/content/keyboard-soundpack-1-typing-and-single-keystrokes>

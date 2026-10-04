@@ -1,0 +1,132 @@
+{
+ "1080p@1x wallpaper (458px)": {
+  "crt/current_fullres_bilinear": {
+   "ssim": 0.9824,
+   "psnr": 33.35
+  },
+  "crt/tier_0.5": {
+   "ssim": 0.9839,
+   "psnr": 34.26
+  },
+  "crt/tier_0.75": {
+   "ssim": 0.995,
+   "psnr": 39.87
+  },
+  "grey/current_fullres_bilinear": {
+   "ssim": 0.9832,
+   "psnr": 33.11
+  },
+  "grey/tier_0.5": {
+   "ssim": 0.9844,
+   "psnr": 34.27
+  },
+  "grey/tier_0.75": {
+   "ssim": 0.9958,
+   "psnr": 39.8
+  }
+ },
+ "1440p@1x wallpaper (610px)": {
+  "crt/current_fullres_bilinear": {
+   "ssim": 0.9918,
+   "psnr": 36.98
+  },
+  "crt/tier_0.5": {
+   "ssim": 0.9737,
+   "psnr": 31.92
+  },
+  "crt/tier_0.75": {
+   "ssim": 0.9934,
+   "psnr": 38.08
+  },
+  "grey/current_fullres_bilinear": {
+   "ssim": 0.9924,
+   "psnr": 36.79
+  },
+  "grey/tier_0.5": {
+   "ssim": 0.9731,
+   "psnr": 31.83
+  },
+  "grey/tier_0.75": {
+   "ssim": 0.9939,
+   "psnr": 38.09
+  }
+ },
+ "2560x1600@1.5x wallpaper (678px)": {
+  "crt/current_fullres_bilinear": {
+   "ssim": 0.9942,
+   "psnr": 38.46
+  },
+  "crt/tier_0.5": {
+   "ssim": 0.9682,
+   "psnr": 31.13
+  },
+  "crt/tier_0.75": {
+   "ssim": 0.9919,
+   "psnr": 37.12
+  },
+  "grey/current_fullres_bilinear": {
+   "ssim": 0.9947,
+   "psnr": 38.3
+  },
+  "grey/tier_0.5": {
+   "ssim": 0.9676,
+   "psnr": 31.04
+  },
+  "grey/tier_0.75": {
+   "ssim": 0.9922,
+   "psnr": 37.11
+  }
+ },
+ "MacBook 2880x1864@2x wallpaper (790px)": {
+  "crt/current_fullres_bilinear": {
+   "ssim": 0.9965,
+   "psnr": 41.45
+  },
+  "crt/tier_0.5": {
+   "ssim": 0.961,
+   "psnr": 30.32
+  },
+  "crt/tier_0.75": {
+   "ssim": 0.9877,
+   "psnr": 35.29
+  },
+  "grey/current_fullres_bilinear": {
+   "ssim": 0.997,
+   "psnr": 41.33
+  },
+  "grey/tier_0.5": {
+   "ssim": 0.9599,
+   "psnr": 30.22
+  },
+  "grey/tier_0.75": {
+   "ssim": 0.988,
+   "psnr": 35.22
+  }
+ },
+ "4K wallpaper (915px)": {
+  "crt/current_fullres_bilinear": {
+   "ssim": 0.9979,
+   "psnr": 44.84
+  },
+  "crt/tier_0.5": {
+   "ssim": 0.9533,
+   "psnr": 29.67
+  },
+  "crt/tier_0.75": {
+   "ssim": 0.9849,
+   "psnr": 34.49
+  },
+  "grey/current_fullres_bilinear": {
+   "ssim": 0.9983,
+   "psnr": 44.8
+  },
+  "grey/tier_0.5": {
+   "ssim": 0.952,
+   "psnr": 29.57
+  },
+  "grey/tier_0.75": {
+   "ssim": 0.985,
+   "psnr": 34.42
+  }
+ }
+}

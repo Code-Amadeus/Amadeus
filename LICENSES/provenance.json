@@ -370,6 +370,25 @@
       "release_action": "include",
       "gate_status": "ready",
       "notes": "Linux-only path source. The sole upstream source patch forces bundled Abseil in Meson setup. Original nested notices are retained and copied into wheel package data. See the adjacent provenance and patch files for verification and removal conditions."
+    },
+    {
+      "id": "bokuweb-zstd-wasm",
+      "name": "Zstandard browser encoder/decoder",
+      "category": "vendored-source",
+      "paths": [
+        "render/web/vendor/zstd/**"
+      ],
+      "source_url": "https://github.com/bokuweb/zstd-wasm",
+      "source_revision": "npm:@bokuweb/zstd-wasm@0.0.27; pinned tarball integrity and per-file hashes in render/web/vendor/zstd/provenance.json",
+      "license_expression": "MIT AND BSD-3-Clause",
+      "license_evidence": [
+        "LICENSES/bokuweb-zstd-wasm-MIT.txt",
+        "LICENSES/zstd-BSD.txt"
+      ],
+      "modified": true,
+      "release_action": "include",
+      "gate_status": "ready",
+      "notes": "Published package.json and README explicitly declare MIT for TypeScript glue and BSD-3-Clause for Zstandard. Upstream does not ship a separate glue copyright/LICENSE file; this limitation is preserved in the local notice. Browser-relative imports and source-map comments were adjusted. Initialization promises now propagate WASM fetch/compile failures. WASM bytes are unchanged. Used by the bounded BC7 cache workers."
     }
   ]
 }

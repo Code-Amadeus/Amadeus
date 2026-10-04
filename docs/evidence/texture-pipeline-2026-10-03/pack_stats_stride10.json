@@ -1,0 +1,749 @@
+{
+ "stride": 10,
+ "tile": 64,
+ "clips": {
+  "idle": {
+   "frames": 120,
+   "analysedFrames": 13,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 21,
+   "unionBBox": [
+    9,
+    16,
+    664,
+    1027
+   ],
+   "unionAreaFraction": 0.8452747163200033,
+   "meanFrameBBoxAreaFraction": 0.8155974243533068,
+   "transparentBlockFraction": 0.5137503114564251,
+   "uniqueBlockFraction": 0.5266081729300097,
+   "transparentTileFraction": 0.39441930618401205,
+   "uniqueNonEmptyTileFraction": 0.6055806938159879
+  },
+  "idle2": {
+   "frames": 290,
+   "analysedFrames": 30,
+   "width": 764,
+   "height": 1026,
+   "intervalMs": 21,
+   "unionBBox": [
+    112,
+    1,
+    667,
+    1025
+   ],
+   "unionAreaFraction": 0.7270393843830052,
+   "meanFrameBBoxAreaFraction": 0.7061715637746685,
+   "transparentBlockFraction": 0.5171002505755088,
+   "uniqueBlockFraction": 0.5537392792389023,
+   "transparentTileFraction": 0.4261437908496732,
+   "uniqueNonEmptyTileFraction": 0.5738562091503268
+  },
+  "idle_mic_wind": {
+   "frames": 194,
+   "analysedFrames": 21,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 21,
+   "unionBBox": [
+    13,
+    16,
+    679,
+    1021
+   ],
+   "unionAreaFraction": 0.8543529855155133,
+   "meanFrameBBoxAreaFraction": 0.7481131048177824,
+   "transparentBlockFraction": 0.5107510765627986,
+   "uniqueBlockFraction": 0.566527652069649,
+   "transparentTileFraction": 0.4091970121381886,
+   "uniqueNonEmptyTileFraction": 0.5908029878618114
+  },
+  "idle_str_wind": {
+   "frames": 194,
+   "analysedFrames": 21,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 21,
+   "unionBBox": [
+    12,
+    16,
+    731,
+    1021
+   ],
+   "unionAreaFraction": 0.922240104304602,
+   "meanFrameBBoxAreaFraction": 0.8242161390805633,
+   "transparentBlockFraction": 0.5035684940344015,
+   "uniqueBlockFraction": 0.577989323135696,
+   "transparentTileFraction": 0.38935574229691877,
+   "uniqueNonEmptyTileFraction": 0.6106442577030813
+  },
+  "idle1": {
+   "frames": 120,
+   "analysedFrames": 13,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 21,
+   "unionBBox": [
+    9,
+    16,
+    664,
+    1027
+   ],
+   "unionAreaFraction": 0.8452747163200033,
+   "meanFrameBBoxAreaFraction": 0.8156615765414938,
+   "transparentBlockFraction": 0.5137252382347826,
+   "uniqueBlockFraction": 0.5278900413864864,
+   "transparentTileFraction": 0.39441930618401205,
+   "uniqueNonEmptyTileFraction": 0.6055806938159879
+  },
+  "trans_standby": {
+   "frames": 196,
+   "analysedFrames": 21,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 21,
+   "unionBBox": [
+    119,
+    16,
+    675,
+    1027
+   ],
+   "unionAreaFraction": 0.7177103917534174,
+   "meanFrameBBoxAreaFraction": 0.6309521384286595,
+   "transparentBlockFraction": 0.5601182351645815,
+   "uniqueBlockFraction": 0.389795765923865,
+   "transparentTileFraction": 0.45098039215686275,
+   "uniqueNonEmptyTileFraction": 0.5375816993464052
+  },
+  "trans_smile": {
+   "frames": 120,
+   "analysedFrames": 13,
+   "width": 764,
+   "height": 1027,
+   "intervalMs": 5,
+   "unionBBox": [
+    116,
+    16,
+    745,
+    1026
+   ],
+   "unionAreaFraction": 0.811760477576635,
+   "meanFrameBBoxAreaFraction": 0.8082246520742215,
+   "transparentBlockFraction": 0.5046988784434544,
+   "uniqueBlockFraction": 0.4695948010674924,
+   "transparentTileFraction": 0.3872549019607843,
+   "uniqueNonEmptyTileFraction": 0.6127450980392157
+  },
+  "speaking_trans": {
+   "frames": 120,
+   "analysedFrames": 13,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 8,
+   "unionBBox": [
+    92,
+    17,
+    703,
+    1027
+   ],
+   "unionAreaFraction": 0.7878002322407155,
+   "meanFrameBBoxAreaFraction": 0.6666431931688007,
+   "transparentBlockFraction": 0.5321430866076088,
+   "uniqueBlockFraction": 0.4456169657954244,
+   "transparentTileFraction": 0.416289592760181,
+   "uniqueNonEmptyTileFraction": 0.583710407239819
+  },
+  "speaking_loop1": {
+   "frames": 180,
+   "analysedFrames": 19,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 17,
+   "unionBBox": [
+    156,
+    20,
+    599,
+    1027
+   ],
+   "unionAreaFraction": 0.569845376576283,
+   "meanFrameBBoxAreaFraction": 0.5698453765762829,
+   "transparentBlockFraction": 0.5662427505192178,
+   "uniqueBlockFraction": 0.28589839951192997,
+   "transparentTileFraction": 0.47961816305469557,
+   "uniqueNonEmptyTileFraction": 0.5201238390092879
+  },
+  "speaking_loop2": {
+   "frames": 240,
+   "analysedFrames": 25,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 17,
+   "unionBBox": [
+    156,
+    19,
+    599,
+    1027
+   ],
+   "unionAreaFraction": 0.5704106993705055,
+   "meanFrameBBoxAreaFraction": 0.5698453765762828,
+   "transparentBlockFraction": 0.5640874365921731,
+   "uniqueBlockFraction": 0.3047707132234604,
+   "transparentTileFraction": 0.4625490196078431,
+   "uniqueNonEmptyTileFraction": 0.5368627450980392
+  },
+  "idle_side_wind": {
+   "frames": 180,
+   "analysedFrames": 19,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 17,
+   "unionBBox": [
+    176,
+    34,
+    695,
+    1027
+   ],
+   "unionAreaFraction": 0.6581172204453317,
+   "meanFrameBBoxAreaFraction": 0.6163246137631038,
+   "transparentBlockFraction": 0.5788069088932325,
+   "uniqueBlockFraction": 0.3601285794395129,
+   "transparentTileFraction": 0.46362229102167185,
+   "uniqueNonEmptyTileFraction": 0.5363777089783281
+  },
+  "idle_side_soft_wind": {
+   "frames": 180,
+   "analysedFrames": 19,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 17,
+   "unionBBox": [
+    176,
+    34,
+    695,
+    1027
+   ],
+   "unionAreaFraction": 0.6581172204453317,
+   "meanFrameBBoxAreaFraction": 0.6162929165509574,
+   "transparentBlockFraction": 0.5788111977337767,
+   "uniqueBlockFraction": 0.3601082074469283,
+   "transparentTileFraction": 0.46362229102167185,
+   "uniqueNonEmptyTileFraction": 0.5363777089783281
+  },
+  "speaking_short": {
+   "frames": 120,
+   "analysedFrames": 13,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 17,
+   "unionBBox": [
+    116,
+    16,
+    667,
+    1027
+   ],
+   "unionAreaFraction": 0.7112677490985393,
+   "meanFrameBBoxAreaFraction": 0.7100693274578418,
+   "transparentBlockFraction": 0.5105973538348709,
+   "uniqueBlockFraction": 0.3074572462394085,
+   "transparentTileFraction": 0.3963046757164404,
+   "uniqueNonEmptyTileFraction": 0.6033182503770739
+  },
+  "speaking_med": {
+   "frames": 240,
+   "analysedFrames": 25,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 17,
+   "unionBBox": [
+    116,
+    16,
+    667,
+    1027
+   ],
+   "unionAreaFraction": 0.7112677490985393,
+   "meanFrameBBoxAreaFraction": 0.7110335221137979,
+   "transparentBlockFraction": 0.5076635361704729,
+   "uniqueBlockFraction": 0.31251858944323346,
+   "transparentTileFraction": 0.38333333333333336,
+   "uniqueNonEmptyTileFraction": 0.6166666666666667
+  },
+  "speaking_long": {
+   "frames": 360,
+   "analysedFrames": 37,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 17,
+   "unionBBox": [
+    116,
+    16,
+    667,
+    1027
+   ],
+   "unionAreaFraction": 0.7112677490985393,
+   "meanFrameBBoxAreaFraction": 0.7095613194223824,
+   "transparentBlockFraction": 0.5094809601705521,
+   "uniqueBlockFraction": 0.299192993796453,
+   "transparentTileFraction": 0.3995760466348702,
+   "uniqueNonEmptyTileFraction": 0.6001589825119237
+  },
+  "smile_speaking": {
+   "frames": 180,
+   "analysedFrames": 19,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 17,
+   "unionBBox": [
+    115,
+    17,
+    667,
+    1027
+   ],
+   "unionAreaFraction": 0.7118521706358099,
+   "meanFrameBBoxAreaFraction": 0.7087298947196866,
+   "transparentBlockFraction": 0.5132037317201574,
+   "uniqueBlockFraction": 0.315701552453056,
+   "transparentTileFraction": 0.3975748194014448,
+   "uniqueNonEmptyTileFraction": 0.6024251805985552
+  },
+  "sad_trans": {
+   "frames": 60,
+   "analysedFrames": 7,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 8,
+   "unionBBox": [
+    112,
+    16,
+    664,
+    1027
+   ],
+   "unionAreaFraction": 0.7125562776295149,
+   "meanFrameBBoxAreaFraction": 0.7068539386337377,
+   "transparentBlockFraction": 0.510629814702176,
+   "uniqueBlockFraction": 0.4843179311368445,
+   "transparentTileFraction": 0.38445378151260506,
+   "uniqueNonEmptyTileFraction": 0.615546218487395
+  },
+  "sad_speaking": {
+   "frames": 120,
+   "analysedFrames": 13,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 17,
+   "unionBBox": [
+    115,
+    16,
+    667,
+    1027
+   ],
+   "unionAreaFraction": 0.7125562776295149,
+   "meanFrameBBoxAreaFraction": 0.7112677490985393,
+   "transparentBlockFraction": 0.5106600368889773,
+   "uniqueBlockFraction": 0.35921464401510034,
+   "transparentTileFraction": 0.40120663650075417,
+   "uniqueNonEmptyTileFraction": 0.5987933634992458
+  },
+  "thinking_trans": {
+   "frames": 120,
+   "analysedFrames": 13,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 8,
+   "unionBBox": [
+    104,
+    11,
+    665,
+    1027
+   ],
+   "unionAreaFraction": 0.7277308656059649,
+   "meanFrameBBoxAreaFraction": 0.6462365290199036,
+   "transparentBlockFraction": 0.5360513750311456,
+   "uniqueBlockFraction": 0.44964591909811624,
+   "transparentTileFraction": 0.4309954751131222,
+   "uniqueNonEmptyTileFraction": 0.5690045248868778
+  },
+  "thinking_speaking1": {
+   "frames": 180,
+   "analysedFrames": 19,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 17,
+   "unionBBox": [
+    176,
+    20,
+    639,
+    1027
+   ],
+   "unionAreaFraction": 0.5955140872328722,
+   "meanFrameBBoxAreaFraction": 0.5924432774032786,
+   "transparentBlockFraction": 0.5575728593592687,
+   "uniqueBlockFraction": 0.2896929511833447,
+   "transparentTileFraction": 0.46181630546955627,
+   "uniqueNonEmptyTileFraction": 0.5381836945304438
+  },
+  "thinking_speaking2": {
+   "frames": 300,
+   "analysedFrames": 31,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 17,
+   "unionBBox": [
+    176,
+    20,
+    639,
+    1027
+   ],
+   "unionAreaFraction": 0.5955140872328722,
+   "meanFrameBBoxAreaFraction": 0.5904631473939951,
+   "transparentBlockFraction": 0.5579796766373332,
+   "uniqueBlockFraction": 0.2854149019154273,
+   "transparentTileFraction": 0.465528146742568,
+   "uniqueNonEmptyTileFraction": 0.5343137254901961
+  },
+  "thinking_to_serious": {
+   "frames": 120,
+   "analysedFrames": 13,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 8,
+   "unionBBox": [
+    156,
+    14,
+    637,
+    1027
+   ],
+   "unionAreaFraction": 0.6222981644834681,
+   "meanFrameBBoxAreaFraction": 0.5872740080014919,
+   "transparentBlockFraction": 0.5597816122394932,
+   "uniqueBlockFraction": 0.4465525103779631,
+   "transparentTileFraction": 0.4611613876319759,
+   "uniqueNonEmptyTileFraction": 0.5388386123680241
+  },
+  "thinking_to_key_point": {
+   "frames": 120,
+   "analysedFrames": 13,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 8,
+   "unionBBox": [
+    148,
+    16,
+    639,
+    1027
+   ],
+   "unionAreaFraction": 0.6339560372400025,
+   "meanFrameBBoxAreaFraction": 0.6131424229507735,
+   "transparentBlockFraction": 0.5436093842800303,
+   "uniqueBlockFraction": 0.4036208866204588,
+   "transparentTileFraction": 0.44042232277526394,
+   "uniqueNonEmptyTileFraction": 0.5595776772247361
+  },
+  "key_point_speaking": {
+   "frames": 180,
+   "analysedFrames": 19,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 17,
+   "unionBBox": [
+    148,
+    24,
+    700,
+    1027
+   ],
+   "unionAreaFraction": 0.7069234216798745,
+   "meanFrameBBoxAreaFraction": 0.6430406726831951,
+   "transparentBlockFraction": 0.533912398287466,
+   "uniqueBlockFraction": 0.34141422372522257,
+   "transparentTileFraction": 0.42905056759545923,
+   "uniqueNonEmptyTileFraction": 0.5709494324045408
+  },
+  "serious_to_thinking": {
+   "frames": 120,
+   "analysedFrames": 13,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 8,
+   "unionBBox": [
+    146,
+    20,
+    639,
+    1027
+   ],
+   "unionAreaFraction": 0.6340171532177562,
+   "meanFrameBBoxAreaFraction": 0.584555522298713,
+   "transparentBlockFraction": 0.5601044299681414,
+   "uniqueBlockFraction": 0.40780968171112203,
+   "transparentTileFraction": 0.4626696832579186,
+   "uniqueNonEmptyTileFraction": 0.5373303167420814
+  },
+  "shy_trans": {
+   "frames": 60,
+   "analysedFrames": 7,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 8,
+   "unionBBox": [
+    112,
+    16,
+    667,
+    1027
+   ],
+   "unionAreaFraction": 0.7164218632224418,
+   "meanFrameBBoxAreaFraction": 0.7095634136474889,
+   "transparentBlockFraction": 0.5108509963359517,
+   "uniqueBlockFraction": 0.4674993961159341,
+   "transparentTileFraction": 0.38235294117647056,
+   "uniqueNonEmptyTileFraction": 0.6176470588235294
+  },
+  "shy_speaking1": {
+   "frames": 180,
+   "analysedFrames": 19,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 17,
+   "unionBBox": [
+    115,
+    16,
+    664,
+    1027
+   ],
+   "unionAreaFraction": 0.7086906920365881,
+   "meanFrameBBoxAreaFraction": 0.7083147483576422,
+   "transparentBlockFraction": 0.5116361605012797,
+   "uniqueBlockFraction": 0.2736805650118533,
+   "transparentTileFraction": 0.3844169246646027,
+   "uniqueNonEmptyTileFraction": 0.6153250773993808
+  },
+  "shy_speaking2": {
+   "frames": 300,
+   "analysedFrames": 31,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 17,
+   "unionBBox": [
+    115,
+    16,
+    664,
+    1027
+   ],
+   "unionAreaFraction": 0.7086906920365881,
+   "meanFrameBBoxAreaFraction": 0.7083771440700742,
+   "transparentBlockFraction": 0.5113915582405696,
+   "uniqueBlockFraction": 0.3312039124740339,
+   "transparentTileFraction": 0.3866223908918406,
+   "uniqueNonEmptyTileFraction": 0.6133776091081594
+  },
+  "surprise_trans": {
+   "frames": 60,
+   "analysedFrames": 7,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 8,
+   "unionBBox": [
+    115,
+    16,
+    666,
+    1027
+   ],
+   "unionAreaFraction": 0.7112677490985393,
+   "meanFrameBBoxAreaFraction": 0.7073385010287856,
+   "transparentBlockFraction": 0.5112380641950589,
+   "uniqueBlockFraction": 0.4548978635600348,
+   "transparentTileFraction": 0.38305322128851543,
+   "uniqueNonEmptyTileFraction": 0.6169467787114846
+  },
+  "surprise_speaking": {
+   "frames": 180,
+   "analysedFrames": 19,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 17,
+   "unionBBox": [
+    116,
+    16,
+    664,
+    1027
+   ],
+   "unionAreaFraction": 0.7074021635056125,
+   "meanFrameBBoxAreaFraction": 0.7073285830850274,
+   "transparentBlockFraction": 0.5120564668746039,
+   "uniqueBlockFraction": 0.2953810259549908,
+   "transparentTileFraction": 0.39164086687306504,
+   "uniqueNonEmptyTileFraction": 0.608359133126935
+  },
+  "angry_trans": {
+   "frames": 60,
+   "analysedFrames": 7,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 8,
+   "unionBBox": [
+    115,
+    17,
+    740,
+    1027
+   ],
+   "unionAreaFraction": 0.8058218061808625,
+   "meanFrameBBoxAreaFraction": 0.8034841200317803,
+   "transparentBlockFraction": 0.5052719806524276,
+   "uniqueBlockFraction": 0.46577068703089847,
+   "transparentTileFraction": 0.37675070028011204,
+   "uniqueNonEmptyTileFraction": 0.623249299719888
+  },
+  "angry_speaking": {
+   "frames": 180,
+   "analysedFrames": 19,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 17,
+   "unionBBox": [
+    112,
+    19,
+    667,
+    1027
+   ],
+   "unionAreaFraction": 0.7142980829954978,
+   "meanFrameBBoxAreaFraction": 0.708753550355813,
+   "transparentBlockFraction": 0.512195854192288,
+   "uniqueBlockFraction": 0.33945851243710146,
+   "transparentTileFraction": 0.3872549019607843,
+   "uniqueNonEmptyTileFraction": 0.6127450980392157
+  },
+  "idle_side_butterfly": {
+   "frames": 600,
+   "analysedFrames": 61,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 17,
+   "unionBBox": [
+    21,
+    32,
+    678,
+    1027
+   ],
+   "unionAreaFraction": 0.8344470022612912,
+   "meanFrameBBoxAreaFraction": 0.6604946695512519,
+   "transparentBlockFraction": 0.576679011203594,
+   "uniqueBlockFraction": 0.4409424284149888,
+   "transparentTileFraction": 0.45170363227258115,
+   "uniqueNonEmptyTileFraction": 0.5482963677274189
+  },
+  "closed_eye_trans": {
+   "frames": 120,
+   "analysedFrames": 13,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 8,
+   "unionBBox": [
+    72,
+    18,
+    703,
+    1027
+   ],
+   "unionAreaFraction": 0.8127406441624055,
+   "meanFrameBBoxAreaFraction": 0.7307703081342234,
+   "transparentBlockFraction": 0.5058350087991337,
+   "uniqueBlockFraction": 0.7102804909963628,
+   "transparentTileFraction": 0.39215686274509803,
+   "uniqueNonEmptyTileFraction": 0.6078431372549019
+  },
+  "speaking_closed_eye_1": {
+   "frames": 180,
+   "analysedFrames": 19,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 17,
+   "unionBBox": [
+    136,
+    20,
+    664,
+    1027
+   ],
+   "unionAreaFraction": 0.6789373968667876,
+   "meanFrameBBoxAreaFraction": 0.6766277892206428,
+   "transparentBlockFraction": 0.513806313816607,
+   "uniqueBlockFraction": 0.32284676079956853,
+   "transparentTileFraction": 0.3872549019607843,
+   "uniqueNonEmptyTileFraction": 0.609391124871001
+  },
+  "speaking_closed_eye_2": {
+   "frames": 300,
+   "analysedFrames": 31,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 17,
+   "unionBBox": [
+    136,
+    20,
+    663,
+    1027
+   ],
+   "unionAreaFraction": 0.677653961333958,
+   "meanFrameBBoxAreaFraction": 0.6775909149456167,
+   "transparentBlockFraction": 0.5129142003960052,
+   "uniqueBlockFraction": 0.3097686333087336,
+   "transparentTileFraction": 0.3877292852624921,
+   "uniqueNonEmptyTileFraction": 0.6086337760910816
+  },
+  "idle_closed_eye": {
+   "frames": 738,
+   "analysedFrames": 75,
+   "width": 960,
+   "height": 1028,
+   "intervalMs": 17,
+   "unionBBox": [
+    196,
+    18,
+    907,
+    1027
+   ],
+   "unionAreaFraction": 0.7286802853437094,
+   "meanFrameBBoxAreaFraction": 0.5766327550799828,
+   "transparentBlockFraction": 0.5998594898400346,
+   "uniqueBlockFraction": 0.2985791180285344,
+   "transparentTileFraction": 0.525437908496732,
+   "uniqueNonEmptyTileFraction": 0.47409150326797384
+  },
+  "smile": {
+   "frames": 120,
+   "analysedFrames": 13,
+   "width": 764,
+   "height": 1027,
+   "intervalMs": 17,
+   "unionBBox": [
+    116,
+    16,
+    667,
+    1026
+   ],
+   "unionAreaFraction": 0.7112567994004803,
+   "meanFrameBBoxAreaFraction": 0.7097791760995216,
+   "transparentBlockFraction": 0.5131156455335973,
+   "uniqueBlockFraction": 0.36897596261582655,
+   "transparentTileFraction": 0.4061085972850679,
+   "uniqueNonEmptyTileFraction": 0.5938914027149321
+  },
+  "sad": {
+   "frames": 120,
+   "analysedFrames": 13,
+   "width": 764,
+   "height": 1028,
+   "intervalMs": 17,
+   "unionBBox": [
+    116,
+    16,
+    667,
+    1027
+   ],
+   "unionAreaFraction": 0.7112677490985393,
+   "meanFrameBBoxAreaFraction": 0.7104122233522584,
+   "transparentBlockFraction": 0.5113260443388583,
+   "uniqueBlockFraction": 0.34066045999959255,
+   "transparentTileFraction": 0.39064856711915535,
+   "uniqueNonEmptyTileFraction": 0.6093514328808446
+  }
+ },
+ "meanBc7TranscodeMs": 7.986117964824116,
+ "meanRgbaTranscodeMs": 5.453918467336681
+}

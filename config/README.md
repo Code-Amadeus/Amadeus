@@ -58,14 +58,60 @@ so the renderer uses the lower of it and the project profile. Unsupported host
 values restore the project limit. This runtime constraint does not mutate the
 startup environment.
 
-`RENDER_TEXTURE_SAMPLING` is a separate experimental startup opt-in, defaulting
-to `false`. Off preserves full-frame loading and the pre-experiment playback
-clock/hold behavior, regardless of the selected graphics profile. On enables
-time-based texture sampling and its associated clock corrections against that
-same effective FPS budget. It reaches chat, web wallpaper, Lively and the macOS
-Electron scene through the existing render descriptors/URLs. It does not add
-another FPS setting. Restart the backend and recreate the render surface after
-changing it; texture selection is fixed for that surface lifetime.
+`RENDER_TEXTURE_SAMPLING` defaults on when the effective startup limit is
+60 FPS, and off at other rates. An explicit true/false choice overrides the
+default. The 30 FPS fast-transition timing tradeoff remains opt-in. Changing
+sampling requires a backend restart and reopening render surfaces.
+
+Migration from an older `.env.example`: an existing
+`RENDER_TEXTURE_SAMPLING=false` remains an explicit override, even if it was
+copied from that template. Remove/comment that line to use the new startup
+default, or set it to `true` to enable sampling explicitly. Updates do not
+rewrite the user's `.env` or guess whether an old value was intentional.
+
+Once sampling is enabled, a Wallpaper Engine host-cap change rebuilds the
+sampling plans at the new effective FPS on their next use. It preserves
+authored playback time, the logical position and exact held/required frames.
+For example, a 120-frame, 5 ms transition keeps its 600 ms duration when the
+host changes from 60 to 30 FPS; the unsampled legacy 30 FPS path can take 1 s.
+The host cap does not toggle the user's sampling choice. Sampling-disabled
+sessions stay disabled, and a 30 FPS startup default is still off.
+
+`RENDER_BC7_CACHE` defaults true for the shared HTTP wallpaper asset server.
+On GPUs exposing WebGL BPTC, displayed UASTC frames are saved as derived BC7
+in the background, then reused on later loads and application launches. The
+2 GiB texture-store CPU + GPU budget is unchanged. Derived files target
+4 GiB under `%LOCALAPPDATA%/Amadeus/texture-cache/bc7-v1` on Windows,
+`~/Library/Caches/Amadeus/texture-cache/bc7-v1` on macOS, and
+`$XDG_CACHE_HOME/Amadeus/texture-cache/bc7-v1` (or `~/.cache/...`) on Linux.
+Only owned flat cache files are pruned; character packs are never modified.
+Concurrent app instances reconcile the shared directory on writes every 30
+seconds, so the disk target may be temporarily exceeded between scans.
+New writes also preserve a 1 GiB free-space reserve, checked before allocating
+the temporary file (including its size) and before publication. This is a
+best-effort guard against concurrent external disk use, not a volume reservation.
+Low space pauses derivation; existing cache reads and playback continue.
+
+Cache identity includes source content and the bundled transcoder revision.
+Writes publish atomically. Corrupt entries fall back to the UASTC source and
+are rebuilt as their frames are displayed. Unsupported GPUs/layouts, file://
+legacy rendering, and unavailable cache storage retain the source path.
+Startup derivation is bounded to one compression worker and two pending
+frames, using zstd level 3 to limit interactive CPU work. It does not prebuild
+an entire pack. Cache disk space, worker/transient buffers, and reclaimable
+OS file cache are separate from the texture-store residency budget.
+
+Identical publications succeed without replacing an in-use file. Failed
+evictions remain indexed and charged. Temporary write failures (including
+503 sharing/space errors) cool down for 30 seconds, then a later playback load
+can try again; no payloads or autonomous retries are queued during cooldown.
+403 disables writes for that page's capability lifetime, without disabling
+reads. A stalled/crashed worker is retired with only its own pending jobs;
+later requests create a replacement. Three consecutive worker incidents in
+one channel pause that channel for 30 seconds. Decode and encode health are
+independent, and a worker interruption does not mark valid disk data corrupt.
+Temporary cache-directory initialization errors likewise retry on a later
+asset request after a 30-second cooldown, without changing the configured flag.
 
 ## What belongs where
 

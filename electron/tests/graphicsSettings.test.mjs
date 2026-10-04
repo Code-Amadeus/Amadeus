@@ -28,7 +28,7 @@ function fixture(t) {
 
 test('graphics settings persist, reach the next backend and respect process overrides', t => {
   const store = fixture(t)
-  const values = { GRAPHICS_PROFILE: 'custom', RENDER_MAX_FPS: '45', RENDER_MAX_RESOLUTION: '1.25', RENDER_TEXTURE_SAMPLING: true }
+  const values = { GRAPHICS_PROFILE: 'custom', RENDER_MAX_FPS: '45', RENDER_MAX_RESOLUTION: '1.25', RENDER_TEXTURE_SAMPLING: true, RENDER_BC7_CACHE: false }
   const saved = store.update({}, { values })
   assert.equal(saved.restartRequired, true)
   assert.deepEqual([...saved.pendingKeys].sort(), Object.keys(values).sort())
@@ -37,6 +37,7 @@ test('graphics settings persist, reach the next backend and respect process over
   assert.equal(environment.RENDER_MAX_FPS, '45')
   assert.equal(environment.RENDER_MAX_RESOLUTION, '1.25')
   assert.equal(environment.RENDER_TEXTURE_SAMPLING, 'true')
+  assert.equal(environment.RENDER_BC7_CACHE, 'false')
   const explicit = { GRAPHICS_PROFILE: 'standard' }
   assert.equal({ ...explicit, ...store.backendEnvironment(explicit) }.GRAPHICS_PROFILE, 'standard')
   assert.equal(store.snapshot({ GRAPHICS_PROFILE: 'standard' }).locked.GRAPHICS_PROFILE, true)
@@ -50,14 +51,14 @@ test('desktop graphics validation matches existing render bounds', t => {
     ['GRAPHICS_PROFILE', 'fast'], ['RENDER_MAX_FPS', '9'], ['RENDER_MAX_FPS', '241'],
     ['RENDER_MAX_FPS', '30.5'], ['RENDER_MAX_FPS', 'NaN'],
     ['RENDER_MAX_RESOLUTION', '0'], ['RENDER_MAX_RESOLUTION', '4.1'],
-    ['RENDER_MAX_RESOLUTION', 'Infinity'], ['RENDER_TEXTURE_SAMPLING', 'yes'],
+    ['RENDER_MAX_RESOLUTION', 'Infinity'], ['RENDER_TEXTURE_SAMPLING', 'yes'], ['RENDER_BC7_CACHE', 'yes'],
   ]) assert.throws(() => store.update({}, { values: { [key]: value } }))
   for (const [fps, density] of [['10', '0.25'], ['240', '4']]) {
     store.update({}, { values: { RENDER_MAX_FPS: fps, RENDER_MAX_RESOLUTION: density } })
   }
 })
 
-test('preset changes preserve custom values without enabling experimental sampling', t => {
+test('preset changes preserve custom values and keep 30 FPS sampling opt-in', t => {
   const store = fixture(t)
   store.update({}, { values: { GRAPHICS_PROFILE: 'custom', RENDER_MAX_FPS: '48', RENDER_MAX_RESOLUTION: '1.25' } })
   const preset = store.update({}, { values: { GRAPHICS_PROFILE: 'power_saving' } })
@@ -80,5 +81,8 @@ test('saved choices do not overwrite the separately reported running renderer bu
   assert.equal(runtime.effective_max_resolution, null)
   const [offline, sampling] = buildGraphicsConfiguration()
   assert.equal(offline.fields[0].value, 'standard')
-  assert.equal(sampling.fields[0].value, false)
+  assert.equal(sampling.fields[0].value, true)
+  assert.equal(sampling.fields[1].value, true)
+  const explicit = buildGraphicsConfiguration(undefined, { values: { RENDER_TEXTURE_SAMPLING: 'false' } })
+  assert.equal(explicit[1].fields[0].value, false)
 })

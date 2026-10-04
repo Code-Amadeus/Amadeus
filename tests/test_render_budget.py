@@ -33,6 +33,8 @@ def test_every_renderer_host_loads_budget_before_renderer() -> None:
     ):
         source = (ROOT / relative).read_text(encoding="utf-8")
         assert source.index("render_budget.js") < source.rindex("renderer.js")
+        assert source.index("frame_store.js") < source.rindex("renderer.js")
+        assert source.index("frame_texture_backend.js") < source.rindex("renderer.js")
 
 
 @pytest.mark.parametrize(
@@ -78,10 +80,10 @@ process.stdout.write(JSON.stringify(cases));
 """
     )
     assert result == [
-        {"maxFps": 60, "resolution": 2.5, "textureSampling": False},
+        {"maxFps": 60, "resolution": 2.5, "textureSampling": True},
         {"maxFps": 30, "resolution": 1.5, "textureSampling": False},
         {"maxFps": 45, "resolution": 1, "textureSampling": False},
-        {"maxFps": 60, "resolution": 2, "textureSampling": False},
+        {"maxFps": 60, "resolution": 2, "textureSampling": True},
     ]
 
 
@@ -89,13 +91,13 @@ def test_project_and_wallpaper_engine_limits_use_lower_supported_value() -> None
     result = _run_node(
         f"""
 const budget = require({json.dumps(str(RENDER_BUDGET))});
-const ticker = {{ maxFPS: 0 }};
+const ticker = {{ maxFPS: 0, update() {{}} }};
 const controller = budget.createFrameRateController(ticker, 30);
 const values = [controller.apply()];
 values.push(controller.setHostMaxFps(60));
 values.push(controller.setHostMaxFps(20));
 values.push(controller.setHostMaxFps(10));
-process.stdout.write(JSON.stringify({{ values, ticker: ticker.maxFPS }}));
+process.stdout.write(JSON.stringify({{ values, ticker: controller.effectiveMaxFps }}));
 """
     )
     assert result == {"values": [30, 30, 20, 10], "ticker": 10}
@@ -105,10 +107,10 @@ def test_invalid_wallpaper_engine_limit_restores_project_profile() -> None:
     result = _run_node(
         f"""
 const budget = require({json.dumps(str(RENDER_BUDGET))});
-const ticker = {{ maxFPS: 0 }};
+const ticker = {{ maxFPS: 0, update() {{}} }};
 const controller = budget.createFrameRateController(ticker, 60);
 const values = [5, 0, -1, NaN, 241].map(value => controller.setHostMaxFps(value));
-process.stdout.write(JSON.stringify({{ values, ticker: ticker.maxFPS }}));
+process.stdout.write(JSON.stringify({{ values, ticker: controller.effectiveMaxFps }}));
 """
     )
     assert result == {"values": [60, 60, 60, 60, 60], "ticker": 60}
@@ -125,13 +127,13 @@ const target = {{
     applyUserProperties() {{}},
   }},
 }};
-const ticker = {{ maxFPS: 0 }};
+const ticker = {{ maxFPS: 0, update() {{}} }};
 const controller = budget.createFrameRateController(ticker, 60);
 budget.installWallpaperEngineListener(target, controller);
 target.wallpaperPropertyListener.applyGeneralProperties({{ fps: 24 }});
 process.stdout.write(JSON.stringify({{
   calls,
-  ticker: ticker.maxFPS,
+  ticker: controller.effectiveMaxFps,
   keptUserListener: typeof target.wallpaperPropertyListener.applyUserProperties === "function",
 }}));
 """
@@ -139,13 +141,14 @@ process.stdout.write(JSON.stringify({{
     assert result == {"calls": [24], "ticker": 24, "keptUserListener": True}
 
 
-def test_texture_sampling_is_an_explicit_opt_in_independent_of_fps() -> None:
+def test_texture_sampling_defaults_at_60_fps_but_explicit_choices_win() -> None:
     from config.settings import declared_environment_fields
     from config.environment import EnvironmentReader
 
     field = next(f for f in declared_environment_fields() if f.key == "RENDER_TEXTURE_SAMPLING")
-    assert field.default is False
-    assert EnvironmentReader({}).boolean(field.key, field.default) is False
+    from config.settings import RENDER_EFFECTIVE_MAX_FPS
+    assert field.default is (RENDER_EFFECTIVE_MAX_FPS == 60)
+    assert EnvironmentReader({field.key: "false"}).boolean(field.key, field.default) is False
     result = _run_node(f"""
 const budget = require({json.dumps(str(RENDER_BUDGET))});
 const cases = [undefined, null, false, 'false', '0', '', 'yes', true, 'true', '1'];
@@ -153,6 +156,12 @@ process.stdout.write(JSON.stringify(cases.map(textureSampling =>
   budget.resolveRenderBudget({{maxFps:30,textureSampling}}).textureSampling)));
 """)
     assert result == [False] * 7 + [True] * 3
+    result = _run_node(f"""
+const budget = require({json.dumps(str(RENDER_BUDGET))});
+process.stdout.write(JSON.stringify([30,60,120].map(maxFps =>
+  [undefined,false,true].map(textureSampling => budget.resolveRenderBudget({{maxFps,textureSampling}}).textureSampling))));
+""")
+    assert result == [[False, False, True], [True, False, True], [False, False, True]]
 
 
 @pytest.mark.parametrize("enabled", [False, True])
