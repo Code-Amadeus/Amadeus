@@ -58,22 +58,44 @@ changed.
 
 ## Real GPU functional acceptance
 
-Three serial 60-second fixed-route runs used the RTX 4070 Laptop / ANGLE D3D11,
+Four serial 60-second fixed-route runs used the RTX 4070 Laptop / ANGLE D3D11,
 standard 60 FPS, the existing installed character pack, fresh browser profiles
 and one isolated persistent cache directory. These were renderer-only runs,
 without ASR/TTS inference. No prebuilt-cache injection was used.
 
-| Playback-period observation | Empty cache | Restart / reuse | Restart after one corrupt entry |
-| --- | ---: | ---: | ---: |
-| Completed UASTC transcodes | 2,710 | 281 | 5 |
-| BC7 cache hits | 49 | 2,476 | 2,755 |
-| Completed background writes | 2,404 | 276 | 3 |
-| Skipped writes at queue capacity | 303 | 4 | 2 |
-| Cache read validation failures | 0 | 0 | 1 (injected) |
-| Cache write failures | 0 | 0 | 0 |
-| Texture load failures | 0 | 0 | 0 |
-| Renderer CPU in 60 seconds | 63.54 s | 20.08 s | 15.72 s |
-| Renderer private memory peak | 1,713 MiB | 1,751 MiB | 1,692 MiB |
+The final run disabled both sampling and disk caching on the same code as the
+reuse/repair runs; all measured source hashes match those two runs. It measures
+the combined feature benefit relative to the 2 GiB configuration, not relative
+to historical unbounded main. Each configuration ran once, in the order empty,
+reuse, repair, then disabled baseline; small differences are not statistically
+qualified. The empty-cache run preceded the final cache inventory/cleanup
+changes, which are captured in its source hashes.
+
+| Playback-period observation | Sampling/cache off | Empty cache + sampling | Restart / reuse | Restart after one corrupt entry |
+| --- | ---: | ---: | ---: | ---: |
+| Completed UASTC transcodes | 3,411 | 2,710 | 281 | 5 |
+| BC7 cache hits | 0 | 49 | 2,476 | 2,755 |
+| Completed background writes | 0 | 2,404 | 276 | 3 |
+| Skipped writes at queue capacity | 0 | 303 | 4 | 2 |
+| Cache read validation failures | 0 | 0 | 0 | 1 (injected) |
+| Cache write failures | 0 | 0 | 0 | 0 |
+| Texture load failures | 0 | 0 | 0 | 0 |
+| Renderer CPU in 60 seconds | 45.02 s | 63.54 s | 20.08 s | 15.72 s |
+| Measured Electron + Python host CPU | 80.96 s | 123.52 s | 59.31 s | 52.82 s |
+| Renderer private memory peak | 1,656 MiB | 1,713 MiB | 1,751 MiB | 1,692 MiB |
+| GPU-process private memory peak (not VRAM) | 1,963 MiB | 2,286 MiB | 2,279 MiB | 2,239 MiB |
+| Ticker P99 | 18.6 ms | 18.7 ms | 18.4 ms | 18.4 ms |
+| Ticker intervals over 50 ms | 0 | 0 | 0 | 0 |
+
+Relative to the disabled baseline, reuse reduces renderer CPU by 55.4% and
+the measured process sum by 26.7%. Once the route's cache is nearly filled,
+the repair run reduces those by 65.1% and 34.8%, with 99.85% fewer UASTC
+transcodes. The first generation run instead costs 41.1% more renderer CPU
+and 52.6% more measured process CPU. All four process groups have complete
+CPU intervals; their sum is not whole-system CPU or energy. Renderer memory
+remains in the same range, while GPU-process private memory increases; this
+short integration comparison does not measure device VRAM. No claim of a
+further memory or VRAM reduction follows from keeping the 2 GiB store budget.
 
 The initial cold run performs both conversion and compression, so it costs
 additional CPU. The cache is populated progressively; this is not a promise
@@ -86,7 +108,7 @@ changed in the isolated test cache after preserving its original. Exactly one
 read-validation failure was observed; the rewritten file's SHA-256 matched the
 original. The source KTX2 file was not changed.
 
-All three runs completed with zero dropped events and zero source changes
+All four runs completed with zero dropped events and zero source changes
 during each run. Companion suppression/restoration, explicit GPU texture
 disposal/reupload, and WebGL context-restoration pixel equality passed; GL
 errors and source loading failures were zero. The evidence records file hashes
@@ -98,7 +120,7 @@ and descriptor `fstat` exposed different `st_ctime` values for the same file.
 The owning cache now compares descriptor metadata on both sides. Tests use the
 real serving boundary's metadata API. The failed preflight is retained locally;
 it is not counted as a passing cache test. A direct GUI launch also lost its
-stdout consumer; the three accepted runs used hidden processes with persistent
+stdout consumer; the four accepted runs used hidden processes with persistent
 log redirection.
 
 ## Automated checks and remaining scope
