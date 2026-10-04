@@ -22,6 +22,8 @@ and GPU bytes exactly as before. Its scheduling, eviction, GC and context
 restoration are unchanged. The shared UASTC counter excludes cache hits; the
 backend's older `transcodesCompleted` counter counts both kinds of decode jobs.
 Use `render.transcodes` and `render.bc7Cache` to distinguish them.
+Likewise, backend `fetchedPayloadBytes` counts decoded bytes in this adapter;
+use the cache's `compressedBytes` counter for cache payload transfer volume.
 
 The experiment uses an already-built cache. Automatic background derivation,
 runtime repair/publishing, disk eviction, other hosts and package distribution
