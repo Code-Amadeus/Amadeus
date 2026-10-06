@@ -15,6 +15,7 @@ from tools.e2e_routing_matrix import (
     LOG_ANCHORS,
     REAL_ONLY_SCENARIOS,
     SCENARIO_DIR,
+    SCRATCH_TARGET,
     ScenarioError,
     _prepare_real_utterance,
     _provider_terminal_statuses,
@@ -203,6 +204,7 @@ def test_real_server_env_isolates_host_workspaces_for_codex() -> None:
     scratch_root = Path(env["WORK_SCRATCH_ROOT"]).resolve()
     assert scratch_root == project_root / "_drafts"
     assert scratch_root.parent == project_root
+    assert env["WORK_WORKTREE_ISOLATION"] == "0"
     assert env["CODEX_APP_SERVER_PROVIDER_ENABLED"] == "1"
 
 
@@ -569,39 +571,18 @@ def test_real_utterance_preserves_complete_scratch_task() -> None:
     say = "请在 scratch 仓创建 diag-a.txt，写入 A。"
     wrapped = _prepare_real_utterance(say)
     assert wrapped.endswith(say)
-    assert 'provider="codex"' in wrapped
-    assert "cwd 属性原样设为" in wrapped
+    assert "codex" in wrapped
+    assert SCRATCH_TARGET.as_posix() in wrapped
+    assert "DELEGATE" not in wrapped
+    assert "cwd" not in wrapped
 
     # Carried once per run. Repeating it put protocol boilerplate in front of
     # every delegating instruction, which then showed up inside WorkItem titles
     # and synthesised tasks, and competed for the model's attention on exactly
     # the turns that kept dropping `cwd`.
     assert _prepare_real_utterance(say, with_preamble=False) == say
-    assert "task 属性必须完整保留用户要求的操作、文件名和内容" in wrapped
-    assert "task 属性只能说" not in wrapped
+    assert "完整保留要求的操作、文件名和内容" in wrapped
     assert _prepare_real_utterance("只回答 2+3。") == "只回答 2+3。"
-
-    # The A/B must vary only the framing clause: everything the router depends
-    # on (provider, cwd, task-preservation rules) has to be byte-identical, or
-    # a difference in omission rate would not be attributable to the framing.
-    from tools.e2e_routing_matrix import (
-        PREAMBLE_VARIANTS,
-        current_preamble_variant,
-        set_preamble_variant,
-    )
-
-    assert current_preamble_variant() == "permissive", "default arm must not drift"
-    tails = {}
-    try:
-        for variant, clause in PREAMBLE_VARIANTS.items():
-            set_preamble_variant(variant)
-            rendered = _prepare_real_utterance(say)
-            assert rendered.startswith(clause), variant
-            tails[variant] = rendered[len(clause):]
-    finally:
-        set_preamble_variant("permissive")
-    assert len(set(tails.values())) == 1, "only the framing clause may differ"
-    assert "若需要委托" not in PREAMBLE_VARIANTS["imperative"]
 
 
 def test_extractor_covers_every_log_anchor() -> None:

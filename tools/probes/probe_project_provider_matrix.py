@@ -1,7 +1,6 @@
 r"""Disposable-repository acceptance matrix with the shipping Codex Provider.
 
-This is the execution counterpart to ``probe_project_host_matrix.py``.  The
-chat model, shipping parser/dispatcher/handler, Work Ledger, Codex App Server and
+The chat model, shipping runtime/handler, Work Ledger, Codex App Server and
 coding runtime are all real.  Every writable path is fenced below one fresh OS
 temporary directory; the Amadeus checkout is not allowlisted and the backend
 itself starts with the isolated directory as its cwd.

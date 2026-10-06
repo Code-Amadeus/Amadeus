@@ -29,11 +29,8 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import config.settings as settings
-from agent_host.provider_catalog import CODEX_APP_SERVER_MANIFEST
-from agent_host.provider_runtime import runtime as provider_runtime
 from agent_host.provider_types import ProviderRunRequest
 from agent_host.work_ledger_store import WorkLedgerStore
-from core.chat_runtime import ChatRuntime, _TurnState
 from server import task_lookup
 from server.work_context import _status_phrase, render_conversation_work_context
 from server.work_ledger_coordinator import WorkLedgerCoordinator
@@ -201,126 +198,6 @@ def test_approved_desktop_export_is_a_produced_file_for_amend_lookup() -> None:
             assert found[0]["files"] == ["endless_game.html"]
 
 
-def test_amend_binds_to_a_target_the_window_lost() -> None:
-    """The 9/9 amend result expires the moment its target leaves the window.
-
-    Resolution searched the same recency roster, so a follow-up naming a task
-    that had scrolled past matched nothing -- and nothing matching means new
-    work, silently, in a fresh worktree.
-    """
-
-    with tempfile.TemporaryDirectory(prefix="task_lookup_amend_") as temp:
-        root = Path(temp)
-        with WorkLedgerStore(root / "ledger.sqlite3") as store:
-            ids = _seed(store, root)
-            coordinator = WorkLedgerCoordinator(store)
-            coordinator.configure()
-            try:
-                utterance = "把 theme.txt 里的 color 改成 green"
-
-                def ground() -> dict:
-                    action = {
-                        "type": "DELEGATE",
-                        "attrs": {
-                            "provider": "codex",
-                            "intent": "amend",
-                            "task": utterance,
-                        },
-                    }
-                    with (
-                        patch.object(settings, "DELEGATE_INTENT_ATTRIBUTE", True),
-                        patch.object(settings, "DELEGATE_AMEND_INTENT", True),
-                        patch.object(
-                            provider_runtime,
-                            "provider_manifests",
-                            return_value=(CODEX_APP_SERVER_MANIFEST,),
-                        ),
-                        _window(store, 5),
-                    ):
-                        ChatRuntime._ground_present_provider_delegate(
-                            action, utterance, session_id=SESSION
-                        )
-                    return action["attrs"]
-
-                with patch.object(settings, "TASK_LOOKUP_ENABLED", False):
-                    without = ground()
-                assert "workspace_ref" not in without, (
-                    "today's behaviour: the window cannot see it, so this forks a task"
-                )
-
-                with patch.object(settings, "TASK_LOOKUP_ENABLED", True):
-                    with_lookup = ground()
-                assert with_lookup["workspace_ref"] == ids[0]
-                assert with_lookup["task"].startswith("目标文件是 theme.txt。")
-            finally:
-                coordinator.close()
-
-
-def test_the_switch_off_leaves_the_resolution_path_untouched() -> None:
-    """Off must mean the recency roster, unchanged, including its fail-closed rule."""
-
-    calls: list[str] = []
-
-    def roster(session_id: str):
-        calls.append(session_id)
-        return None, [{"work_item_id": "w1", "title": "create theme.txt", "files": []}], True
-
-    action = {
-        "type": "DELEGATE",
-        "attrs": {"provider": "codex", "intent": "amend", "task": "改 theme.txt"},
-    }
-    with (
-        patch.object(settings, "TASK_LOOKUP_ENABLED", False),
-        patch.object(settings, "DELEGATE_INTENT_ATTRIBUTE", True),
-        patch.object(settings, "DELEGATE_AMEND_INTENT", True),
-        patch.object(
-            provider_runtime,
-            "provider_manifests",
-            return_value=(CODEX_APP_SERVER_MANIFEST,),
-        ),
-        patch("core.chat_runtime._load_conversation_resolution_roster", side_effect=roster),
-    ):
-        bound = ChatRuntime._ground_present_provider_delegate(
-            action, "改 theme.txt", session_id=SESSION
-        )
-    assert bound is True and calls == [SESSION]
-    assert action["attrs"]["workspace_ref"] == "w1"
-
-    # A saturated window still fails closed rather than guessing.
-    with (
-        patch.object(settings, "TASK_LOOKUP_ENABLED", False),
-        patch.object(settings, "DELEGATE_INTENT_ATTRIBUTE", True),
-        patch.object(settings, "DELEGATE_AMEND_INTENT", True),
-        patch.object(
-            provider_runtime,
-            "provider_manifests",
-            return_value=(CODEX_APP_SERVER_MANIFEST,),
-        ),
-        patch(
-            "core.chat_runtime._load_conversation_resolution_roster",
-            return_value=(None, [], False),
-        ),
-    ):
-        blocked = {
-            "type": "DELEGATE",
-            "attrs": {"provider": "codex", "intent": "amend", "task": "改 theme.txt"},
-        }
-        assert (
-            ChatRuntime._ground_present_provider_delegate(
-                blocked, "改 theme.txt", session_id=SESSION
-            )
-            is False
-        )
-
-    # And the pre-turn pass is inert, leaving nothing for the roster to read.
-    async def run() -> None:
-        with patch.object(settings, "TASK_LOOKUP_ENABLED", False):
-            assert await task_lookup.pre_turn_resolve(SESSION, "改 theme.txt") is None
-        assert task_lookup.peek_turn_resolution(SESSION) is None
-
-    asyncio.run(run())
-
-
 def test_the_first_sentence_is_not_taxed_for_an_injection_nobody_reads() -> None:
     """The pre-turn pass only runs where its result can actually be used.
 
@@ -462,11 +339,11 @@ def test_the_report_path_answers_from_the_ledger_without_delegate_vocabulary() -
     facts = task_lookup.render_task_facts(row)
     assert "partial" in facts and "conflict" in facts and "git 无改动" in facts
 
-    model_calls: list[str] = []
+    model_calls: list[object] = []
     history: list[str] = []
 
-    async def fake_stream(text: str, **kwargs) -> str:
-        model_calls.append(text)
+    def fake_query(messages, **kwargs) -> str:
+        model_calls.append(messages)
         raise AssertionError("a ledger status answer must not invoke the main model")
 
     class FakeHistory:
@@ -479,8 +356,7 @@ def test_the_report_path_answers_from_the_ledger_without_delegate_vocabulary() -
     async def run() -> str:
         with (
             patch.object(settings, "TASK_LOOKUP_ENABLED", True),
-            patch.object(settings, "DELEGATE_INTENT_ATTRIBUTE", True),
-            patch.object(server_app, "_stream_llm_query_adapter", fake_stream),
+            patch("llm.client.remote_llm_messages_query", fake_query),
             patch.object(
                 server_app,
                 "_observer_display_language",
@@ -496,7 +372,7 @@ def test_the_report_path_answers_from_the_ledger_without_delegate_vocabulary() -
                 new=_stub_resolution({"row": row, "level": 1, "reason": "hit"}),
             ),
         ):
-            return await server_app._handle_delegate(
+            return await server_app._answer_report_from_ledger(
                 "确认一下那个导出任务",
                 {
                     "intent": "report",
@@ -608,7 +484,7 @@ def test_canonical_report_identity_bypasses_natural_language_reresolution() -> N
             patch.object(task_lookup, "resolve", new=forbidden_resolve),
             patch("core.session_manager.conversation_history", FakeHistory),
         ):
-            return await server_app._handle_delegate(
+            return await server_app._answer_report_from_ledger(
                 "然后告诉我刚才那个任务的状态",
                 {
                     "intent": "report",
@@ -865,7 +741,6 @@ def test_the_answer_waits_for_the_floor_and_keeps_a_text_fallback() -> None:
     async def run(probe, timeout_s: float) -> str:
         with (
             patch.object(settings, "TASK_LOOKUP_ENABLED", True),
-            patch.object(settings, "DELEGATE_INTENT_ATTRIBUTE", True),
             patch.object(server_app, "host_readonly_voice_sink", voice_sink),
             patch.object(server_app, "output_idle_probe", probe),
             patch.object(server_app, "work_status_narrator", narrator),
@@ -882,7 +757,7 @@ def test_the_answer_waits_for_the_floor_and_keeps_a_text_fallback() -> None:
                 new=_stub_resolution({"row": row, "level": 1, "reason": "hit"}),
             ),
         ):
-            return await server_app._handle_delegate(
+            return await server_app._answer_report_from_ledger(
                 "看看那个任务",
                 {
                     "intent": "report",
@@ -924,11 +799,10 @@ def test_an_unresolved_question_asks_instead_of_answering_about_the_wrong_task()
     async def run(payload: dict) -> str:
         with (
             patch.object(settings, "TASK_LOOKUP_ENABLED", True),
-            patch.object(settings, "DELEGATE_INTENT_ATTRIBUTE", True),
             patch.object(server_app, "_announce_report_unanswered", capture),
             patch.object(task_lookup, "resolve", new=_stub_resolution(payload)),
         ):
-            return await server_app._handle_delegate(
+            return await server_app._answer_report_from_ledger(
                 "看看那个调研",
                 {
                     "intent": "report",
@@ -951,48 +825,6 @@ def test_an_unresolved_question_asks_instead_of_answering_about_the_wrong_task()
     assert notes[-1]["reason"] == "lookup_empty"
 
 
-def test_the_switch_off_keeps_report_refusing_without_answering() -> None:
-    from server import app as server_app
-
-    async def run() -> str | None:
-        with (
-            patch.object(settings, "TASK_LOOKUP_ENABLED", False),
-            patch.object(settings, "DELEGATE_INTENT_ATTRIBUTE", True),
-        ):
-            return await server_app._handle_delegate(
-                "看看那个任务", {"intent": "report"}
-            )
-
-    assert asyncio.run(run()) is None
-
-
-def test_a_host_answering_turn_can_never_start_work() -> None:
-    """The answering pass quotes filenames and verbs; none of it may execute."""
-
-    runtime = ChatRuntime()
-    st = _TurnState(gui_callback=None, prompt_variant="base")
-    dispatched: list = []
-
-    with patch("core.chat_runtime.record_actions", side_effect=dispatched.append):
-        runtime._consume_stream_chunk(
-            st,
-            'まだよ。[DELEGATE provider="codex" task="theme.txt に一行足す"]',
-        )
-    assert dispatched == [], "a host answering turn dispatched a delegate"
-    assert st.delegate_seen is False
-
-    # Both omission nets stay out of it too: their triggers are exactly the
-    # vocabulary a ledger fact is made of.
-    async def run() -> bool:
-        st_answer = _TurnState(
-            gui_callback=None, prompt_variant="base"
-        )
-        st_answer.full_response = "theme.txt を作成したわよ"
-        return await ChatRuntime._repair_missing_delegate(
-            st_answer, "theme.txt を作成して", session_id=SESSION
-        )
-
-    assert asyncio.run(run()) is False
 
 
 def test_each_rung_of_the_ladder_is_countable() -> None:
@@ -1205,43 +1037,3 @@ def test_a_paraphrase_defeats_literal_overlap_so_the_gate_never_shortlists() -> 
     # The report path, already committed to "let me check", skips the gate and
     # reaches the row over a set proven to contain it.
     assert report["row"]["work_item_id"] == "w_theme"
-
-
-if __name__ == "__main__":
-    test_cancel_pending_status_is_not_rendered_as_stopped_or_plain_running()
-    print("ok: cancel-pending status remains unconfirmed")
-    test_a_task_outside_the_recency_window_is_still_found()
-    print("ok: a task outside the recency window is still found")
-    test_the_index_does_not_cross_conversations()
-    print("ok: the index does not cross conversations")
-    test_amend_binds_to_a_target_the_window_lost()
-    print("ok: amend binds to a target the window lost")
-    test_the_switch_off_leaves_the_resolution_path_untouched()
-    print("ok: the switch off leaves the resolution path untouched")
-    test_the_first_sentence_is_not_taxed_for_an_injection_nobody_reads()
-    print("ok: the first sentence is not taxed for an injection nobody reads")
-    test_a_resolved_task_is_paid_for_out_of_the_existing_roster_budget()
-    print("ok: a resolved task is paid for out of the existing roster budget")
-    test_nothing_asks_the_model_to_notice_a_task_is_missing()
-    print("ok: nothing asks the model to notice a task is missing")
-    test_the_report_path_answers_from_the_ledger_without_delegate_vocabulary()
-    test_free_form_status_intent_has_no_host_regex_owner()
-    test_running_status_next_step_tracks_the_latest_semantic_phase()
-    print("ok: the report path answers from the ledger without delegate vocabulary")
-    test_the_answer_waits_for_the_floor_and_keeps_a_text_fallback()
-    print("ok: the answer waits for the floor and says so when it never gets one")
-    test_an_unresolved_question_asks_instead_of_answering_about_the_wrong_task()
-    print("ok: an unresolved question asks instead of answering about the wrong task")
-    test_the_switch_off_keeps_report_refusing_without_answering()
-    print("ok: the switch off keeps report refusing without answering")
-    test_a_host_answering_turn_can_never_start_work()
-    print("ok: a host answering turn can never start work")
-    test_each_rung_of_the_ladder_is_countable()
-    print("ok: each rung of the ladder is countable")
-    test_the_prefilter_favours_recall_over_precision()
-    print("ok: the prefilter favours recall over precision")
-    test_exact_artifact_lookup_collapses_only_one_continuation_lineage()
-    print("ok: exact artifact lookup collapses only one continuation lineage")
-    test_a_paraphrase_defeats_literal_overlap_so_the_gate_never_shortlists()
-    print("ok: a paraphrase defeats literal overlap so the gate never shortlists")
-    print("all task lookup tests passed")

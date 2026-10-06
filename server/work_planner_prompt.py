@@ -65,7 +65,7 @@ Hostが識別・権限・実行・受領を検証します。IDやpayloadを捏�
 def get_work_planner_prompt(provider_ids=None) -> str:
     """Keep professional rules outside the speaking role and legacy adjudication."""
     return "\n\n".join((WHOLE_TURN_MARKER, WORK_PLANNER_CONTRACT,
-        render_provider_routing_addon(provider_ids, tool_transport=True, language="en"),
+        render_provider_routing_addon(provider_ids, semantic_only=True, language="en"),
         NONWORK_PARAGRAPH_WITH_GATE))
 
 

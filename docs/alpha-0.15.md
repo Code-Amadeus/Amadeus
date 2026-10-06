@@ -1,5 +1,9 @@
 # 0.15 Alpha: routing authority and continuous interaction
 
+> Historical record: Original Chat and its route selector are retired in the convergence branch.
+> For the current basic/professional runtime and settings migration, see
+> [Chat runtime convergence](chat-runtime-convergence.md). The historical results below are unchanged.
+
 Status: draft integration candidate, not a published release.
 
 This candidate keeps the foreground character conversation responsive while Work

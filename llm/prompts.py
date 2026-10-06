@@ -128,15 +128,6 @@ _JA_DELEGATE_BODY = _JA_CONTROL_SEMANTICS + (
     "（例:「調べてみるわ」「ちょっと待って」）。"
 )
 
-_JA_CONTROL_BODY = _JA_CONTROL_SEMANTICS + (
-    "制御結果の正確な出力形式は、後段の制御結果契約だけに従うこと。"
-    "制御結果の前に必ず一言添えること（例:「調べてみるわ」「ちょっと待って」）。"
-)
-
-_JA_DELEGATE_BODY_TOOL = _JA_CONTROL_SEMANTICS + (
-    "制御アクションが必要な場合は同じ返答で delegate ツールを呼ぶこと。"
-    "ツールを呼ぶ前に必ず一言添えること（例:「調べてみるわ」「ちょっと待って」）。"
-)
 
 _JA_DELEGATE_ADDON = "\n7)" + _JA_DELEGATE_BODY
 
@@ -202,17 +193,6 @@ _EN_DELEGATE_BODY = _EN_CONTROL_SEMANTICS + (
     "(e.g., 'Let me look that up.', 'Hold on a sec.')."
 )
 
-_EN_CONTROL_BODY = _EN_CONTROL_SEMANTICS + (
-    "Follow only the later control-outcome contract for the exact output format. "
-    "Always add a brief spoken remark before the control outcome "
-    "(e.g., 'Let me look that up.', 'Hold on a sec.')."
-)
-
-_EN_DELEGATE_BODY_TOOL = _EN_CONTROL_SEMANTICS + (
-    "When a control action is needed, call the delegate tool in the same response. "
-    "Always add a brief spoken remark before calling it "
-    "(e.g., 'Let me look that up.', 'Hold on a sec.')."
-)
 
 _EN_DELEGATE_ADDON = "\n6)" + _EN_DELEGATE_BODY
 
@@ -228,9 +208,7 @@ _EN_BEDROCK_VERBOSITY_ADDON = (
 _EN_BEDROCK_DELEGATE_ADDON = "10)" + _EN_DELEGATE_BODY
 
 _EN_WITH_DELEGATE = _EN_BASE + _EN_DELEGATE_ADDON
-_EN_WITH_CONTROL = _EN_BASE + "\n6)" + _EN_CONTROL_BODY
 _EN_BEDROCK      = _EN_BASE + _EN_BEDROCK_VERBOSITY_ADDON + _EN_BEDROCK_DELEGATE_ADDON
-_EN_BEDROCK_CONTROL = _EN_BASE + _EN_BEDROCK_VERBOSITY_ADDON + "10)" + _EN_CONTROL_BODY
 
 # Single source of truth for WHICH provider. Static capability wording taught
 # the model "code == Locus" even after a second code Provider was registered.
@@ -250,8 +228,7 @@ def registered_provider_ids() -> tuple[str, ...]:
 def render_provider_routing_addon(
     provider_ids: tuple[str, ...] | list[str] | None = None,
     *,
-    tool_transport: bool = False,
-    control_envelope: bool = False,
+    semantic_only: bool = False,
     language: str = "en",
 ) -> str:
     ja = str(language or "").strip().lower() == "ja"
@@ -285,12 +262,7 @@ def render_provider_routing_addon(
                 "- Every delegate call must name one of those exact provider ids.",
                 "- delegate 呼び出しでは、上記いずれかの provider id を正確に指定すること。",
             )
-            if tool_transport
-            else wording(
-                "- Every action-bearing CONTROL outcome must name one of those exact provider ids in its provider attribute.",
-                "- action を持つすべての CONTROL 結果は、provider 属性に上記いずれかの provider id を正確に指定すること。",
-            )
-            if control_envelope
+            if semantic_only
             else wording(
                 "- Every DELEGATE tag must name one of those exact provider ids in its provider attribute.",
                 "- すべての DELEGATE タグは、provider 属性に上記いずれかの provider id を正確に指定すること。",
@@ -356,12 +328,10 @@ def render_provider_routing_addon(
                 "- Browser action=\"open\" は一回の atomic navigation であり、ユーザーが示した URL（または現在の live page で確認済みの URL）が必要である。Browser を選ぶために URL を推測してはいけない。その証拠がないサイト・ページ探索、比較、Web 調査の統合は Agent research である。",
             )
         )
-    if not tool_transport:
+    if not semantic_only:
         intent = ' intent="execute"' if _delegate_intent_required() else ""
 
         def example(attrs: str) -> str:
-            if control_envelope:
-                return f'[CONTROL delegate="true" {attrs}]'
             return f"[DELEGATE {attrs}]"
 
         if has_coding:
@@ -379,9 +349,6 @@ def render_provider_routing_addon(
                 )
             )
     return "\n".join(lines) + "\n"
-
-
-_EN_WITH_DELEGATE_TOOL = _EN_BASE + "\n6)" + _EN_DELEGATE_BODY_TOOL
 
 
 # Declaring beats refraining. "A status question is read-only, do not act" asks
@@ -590,17 +557,6 @@ def _intent_addon(
     )
 
 
-def _delegate_tool_transport() -> bool:
-    """Read at call time so the transport can be switched without a restart."""
-
-    try:
-        from config import settings as _settings
-
-        return bool(getattr(_settings, "LLM_DELEGATE_TOOL_CALLS", False))
-    except Exception:
-        return False
-
-
 # =============================================================================
 # 公共入口
 # =============================================================================
@@ -694,18 +650,12 @@ _EN_LANGUAGE_LOCK = (
 def get_system_prompt(
     variant: str = "with_delegate",
     *,
-    control_envelope: bool | None = None,
     use_character_override: bool = True,
 ) -> str:
-    """返回当前 TTS 输出语言对应的 system prompt。
+    """Return the current role prompt with its established language contract.
 
-    use_character_override=False preserves the built-in role for non-Main
+    use_character_override=False preserves the built-in role for inherited
     experience branches. The override changes only Japanese identity/personality.
-
-    variant 可选值:
-        "base"          — 不含 OpenClaw（client.py 远程同步查询、Gemini）
-        "with_delegate" — 含 OpenClaw（本地 LLM、DeepSeek 流式）默认值
-        "bedrock"       — 含简洁话量规则 + OpenClaw（Bedrock Qwen 235B）
     """
     try:
         import tts.pipeline as _p
@@ -713,158 +663,41 @@ def get_system_prompt(
     except Exception:
         lang = "日文"
 
-    # Only the streaming chat path carries the tool; bedrock and the local
-    # fallback keep the tag, so their prompts are untouched.
-    tool = _delegate_tool_transport()
-
     intent = _delegate_intent_required()
-
-    from llm.action_existence_protocol import (
-        control_envelope_enabled,
-        control_envelope_prompt_addon,
-    )
-
-    envelope_available = control_envelope_enabled() and not tool
-    explicit_outcome = envelope_available and control_envelope is not False
-
     if lang == "英文":
-        with_delegate = (
-            _EN_WITH_DELEGATE_TOOL
-            if tool
-            else _EN_WITH_CONTROL
-            if explicit_outcome
-            else _EN_WITH_DELEGATE
-        )
-        with_delegate += render_provider_routing_addon(
-            tool_transport=tool,
-            control_envelope=explicit_outcome,
-            language="en",
-        )
+        with_delegate = _EN_WITH_DELEGATE + render_provider_routing_addon(language="en")
         if intent:
             with_delegate += _intent_addon(
-                _EN_INTENT_HEAD,
-                _EN_AMEND_ADDON,
-                _EN_RETRACT_ADDON,
-                _EN_INTENT_TAIL,
+                _EN_INTENT_HEAD, _EN_AMEND_ADDON, _EN_RETRACT_ADDON, _EN_INTENT_TAIL,
             )
-        if explicit_outcome:
-            with_delegate += control_envelope_prompt_addon(language="en")
-        bedrock_explicit_outcome = (
-            control_envelope_enabled() and control_envelope is not False
-        )
-        bedrock = (
-            _EN_BEDROCK_CONTROL if bedrock_explicit_outcome else _EN_BEDROCK
-        ) + render_provider_routing_addon(
-            control_envelope=bedrock_explicit_outcome,
-            language="en",
-        )
-        if bedrock_explicit_outcome:
-            if intent:
-                bedrock += _intent_addon(
-                    _EN_INTENT_HEAD,
-                    _EN_AMEND_ADDON,
-                    _EN_RETRACT_ADDON,
-                    _EN_INTENT_TAIL,
-                )
-            bedrock += control_envelope_prompt_addon(language="en")
+        bedrock = _EN_BEDROCK + render_provider_routing_addon(language="en")
         return {
-            "base":           _EN_BASE,
-            "with_delegate":  with_delegate,
-            "bedrock":        bedrock,
-            "hybrid_local":   _EN_HYBRID_LOCAL,
+            "base": _EN_BASE,
+            "with_delegate": with_delegate,
+            "bedrock": bedrock,
+            "hybrid_local": _EN_HYBRID_LOCAL,
             "local_fallback": _EN_LOCAL_FALLBACK,
         }.get(variant, with_delegate)
-    else:
-        base = _japanese_base(use_character_override=use_character_override)
-        with_delegate = base + (
-            "\n7)" + _JA_DELEGATE_BODY_TOOL
-            if tool
-            else "\n7)" + _JA_CONTROL_BODY
-            if explicit_outcome
-            else _JA_DELEGATE_ADDON
-        )
-        with_delegate += render_provider_routing_addon(
-            tool_transport=tool,
-            control_envelope=explicit_outcome,
-            language="ja",
-        )
-        if intent:
-            with_delegate += _intent_addon(
-                _JA_INTENT_HEAD,
-                _JA_AMEND_ADDON,
-                _JA_RETRACT_ADDON,
-                _JA_INTENT_TAIL,
-            )
-        if explicit_outcome:
-            with_delegate += control_envelope_prompt_addon(language="ja")
-        bedrock_explicit_outcome = (
-            control_envelope_enabled() and control_envelope is not False
-        )
-        bedrock = (
-            base + _JA_BEDROCK_VERBOSITY_ADDON
-            + (
-                "11)" + _JA_CONTROL_BODY
-                if bedrock_explicit_outcome
-                else _JA_BEDROCK_DELEGATE_ADDON
-            )
-        ) + render_provider_routing_addon(
-            control_envelope=bedrock_explicit_outcome,
-            language="ja",
-        )
-        if bedrock_explicit_outcome:
-            if intent:
-                bedrock += _intent_addon(
-                    _JA_INTENT_HEAD,
-                    _JA_AMEND_ADDON,
-                    _JA_RETRACT_ADDON,
-                    _JA_INTENT_TAIL,
-                )
-            bedrock += control_envelope_prompt_addon(language="ja")
-        return {
-            "base":           base,
-            "with_delegate":  with_delegate,
-            "bedrock":        bedrock,
-            "hybrid_local":   _JA_HYBRID_LOCAL,
-            "local_fallback": (
-                _character_prompt_ja + "\n\n" + _JA_LOCAL_FALLBACK_LANGUAGE
-                if use_character_override and _character_prompt_ja
-                else _JA_LOCAL_FALLBACK
-            ),
-        }.get(variant, with_delegate)
 
-
-def get_delegate_control_prompt() -> str:
-    """Return the role-free, provider-neutral DELEGATE decision contract.
-
-    This reuses the same intent and live provider-routing sources as the role
-    prompt. It deliberately excludes persona, emotion, TTS, and visible-reply
-    language rules: a control decision is not user-facing narration.
-    """
-
-    prompt = (
-        "[Delegate control decision]\n"
-        "Classify the final user message independently from any role reply. "
-        "Do not role-play, explain, or add spoken text. Return only the canonical "
-        "DELEGATE tag or tags in the user's requested order. Return exactly NONE "
-        "when no structured action is required, or when the dynamic contract "
-        "requires clarification because a target cannot be resolved safely. A "
-        "pure Project context switch is the one exception: emit a taskless "
-        "intent=\"focus\" proposal without project_id when its identity is "
-        "uncertain, because the host's typed reference authority resolves, asks, "
-        "or blocks it before any focus side effect. "
-        "A compound destination change plus one operation is one DELEGATE with "
-        "the operation's real intent and a focus modifier; genuinely separate "
-        "requested actions remain separate tags in source order.\n"
-    )
-    prompt += render_provider_routing_addon(language="en")
-    if _delegate_intent_required():
-        prompt += _intent_addon(
-            _EN_INTENT_HEAD,
-            _EN_AMEND_ADDON,
-            _EN_RETRACT_ADDON,
-            _EN_INTENT_TAIL,
+    base = _japanese_base(use_character_override=use_character_override)
+    with_delegate = base + _JA_DELEGATE_ADDON + render_provider_routing_addon(language="ja")
+    if intent:
+        with_delegate += _intent_addon(
+            _JA_INTENT_HEAD, _JA_AMEND_ADDON, _JA_RETRACT_ADDON, _JA_INTENT_TAIL,
         )
-    return prompt
+    bedrock = (base + _JA_BEDROCK_VERBOSITY_ADDON
+        + _JA_BEDROCK_DELEGATE_ADDON) + render_provider_routing_addon(language="ja")
+    return {
+        "base": base,
+        "with_delegate": with_delegate,
+        "bedrock": bedrock,
+        "hybrid_local": _JA_HYBRID_LOCAL,
+        "local_fallback": (
+            _character_prompt_ja + "\n\n" + _JA_LOCAL_FALLBACK_LANGUAGE
+            if use_character_override and _character_prompt_ja
+            else _JA_LOCAL_FALLBACK
+        ),
+    }.get(variant, with_delegate)
 
 
 def get_structured_control_prompt() -> str:
@@ -885,7 +718,7 @@ def get_structured_control_prompt() -> str:
         "user-facing narration. A final ControlDecision JSON contract will be "
         "provided after all dynamic context.\n"
     )
-    prompt += render_provider_routing_addon(tool_transport=True, language="en")
+    prompt += render_provider_routing_addon(semantic_only=True, language="en")
     if _delegate_intent_required():
         prompt += _intent_addon(
             _EN_INTENT_HEAD,

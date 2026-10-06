@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from pathlib import Path
 import subprocess
 import sys
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -137,149 +136,6 @@ def test_miss_after_hit_does_not_reuse_previous_reference(monkeypatch):
     assert service.reference("weather") == ""
 
 
-@pytest.mark.parametrize("provider", ["local", "deepseek", "openai", "gemini", "bedrock", "hybrid", "hybrid2", "hybrid3"])
-@pytest.mark.parametrize("enabled", [False, True])
-def test_shared_dispatch_retrieves_once_without_rewriting_host_input(monkeypatch, provider, enabled):
-    from core import chat_runtime as chat
-
-    async def run():
-        runtime = chat.ChatRuntime()
-        runtime.configure(pending_sentence_items=asyncio.Queue(), playback_manager=None, provider=provider)
-        runtime._ensure_clients = Mock()
-        runtime._start_auip_decision = Mock(return_value=False)
-        runtime._repair_missing_delegate = AsyncMock()
-        runtime.character_rag.reference = Mock(return_value="reference for this turn")
-        captured = []
-
-        async def capture(state, question, *args):
-            captured.append((state.question, question, state.character_reference))
-            return False
-
-        for name in ("_run_local", "_run_deepseek_openai", "_run_gemini", "_run_bedrock", "_run_hybrid"):
-            monkeypatch.setattr(runtime, name, capture)
-        monkeypatch.setattr(chat, "RAG_ENABLED", enabled)
-        monkeypatch.setattr(chat, "reset_all_expressions", Mock())
-        monkeypatch.setattr(chat, "_get_expr_ctrl", lambda: Mock())
-        monkeypatch.setattr("server.task_lookup.pre_turn_resolve", AsyncMock())
-        result = await runtime.stream_llm_query("原始问题", enable_conversation=False, turn_id="rag-test")
-        assert result == ""
-        assert captured == [("原始问题", "原始问题", "reference for this turn" if enabled else "")]
-        assert runtime.character_rag.reference.call_count == int(enabled)
-
-    asyncio.run(run())
-
-
-@pytest.mark.parametrize("preserve,variant", [(True, ""), (False, "base")])
-def test_host_generated_turns_do_not_retrieve(monkeypatch, preserve, variant):
-    from core import chat_runtime as chat
-
-    async def run():
-        runtime = chat.ChatRuntime()
-        runtime.configure(pending_sentence_items=asyncio.Queue(), playback_manager=None, provider="deepseek")
-        runtime._ensure_clients = Mock()
-        runtime._run_deepseek_openai = AsyncMock()
-        runtime._repair_missing_delegate = AsyncMock()
-        runtime.character_rag.reference = Mock()
-        monkeypatch.setattr(chat, "RAG_ENABLED", True)
-        monkeypatch.setattr(chat, "reset_all_expressions", Mock())
-        monkeypatch.setattr(chat, "_get_expr_ctrl", lambda: Mock())
-        assert await runtime.stream_llm_query("host evidence", preserve_emotion=preserve, prompt_variant=variant, enable_conversation=False) == ""
-        runtime.character_rag.reference.assert_not_called()
-
-    asyncio.run(run())
-
-
-@pytest.mark.parametrize("provider", ["local", "deepseek", "openai", "gemini", "bedrock", "hybrid", "hybrid2", "hybrid3"])
-@pytest.mark.parametrize("history_enabled", [False, True])
-def test_reference_reaches_actual_provider_payload_only_for_current_turn(monkeypatch, provider, history_enabled):
-    from core import chat_runtime as chat
-    from core.session_manager import ConversationHistory
-
-    captured = []
-    runtime = chat.ChatRuntime()
-    runtime.local_llm_type = "llama_server"
-    runtime.llm_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
-        create=lambda **kwargs: (captured.append(kwargs) or iter(())),
-    )))
-    history = ConversationHistory()
-    history.add_user("previous question")
-    history.add_assistant("previous answer")
-    before = list(history.dialog)
-    state = chat._TurnState(gui_callback=None, question="current question",
-        history_snapshot=history.snapshot())
-    state.character_reference = rag.render_reference([{"id": 0, "text": "UNIQUE_KNOWLEDGE"}])
-    later_history = ConversationHistory()
-    later_history.add_user("LATE_OTHER_SESSION")
-    monkeypatch.setattr(chat, "conversation_history", later_history)
-    monkeypatch.setattr(chat, "_turn_system_prompt", lambda *args: "UNCHANGED_PERSONA")
-    monkeypatch.setattr(chat, "_wrap_user_message_for_language_lock", lambda text: text)
-    monkeypatch.setattr(chat, "AWS_BEDROCK_AUTH_MODE", "bearer")
-    monkeypatch.setattr(chat, "AWS_BEDROCK_BEARER_TOKEN", "test-only")
-    monkeypatch.setattr(chat, "remote_llm_query", Mock(side_effect=AssertionError("Unexpected fallback")))
-    monkeypatch.setattr(chat, "local_llm_query", Mock(side_effect=AssertionError("Unexpected fallback")))
-
-    async def empty_stream(*args, **kwargs):
-        captured.append({"args": args, **kwargs})
-        if False:
-            yield ""
-
-    class EmptyContent:
-        def __aiter__(self):
-            return self
-
-        async def __anext__(self):
-            raise StopAsyncIteration
-
-        def iter_chunked(self, _size):
-            return self
-
-    class Session:
-        status = 200
-        content = EmptyContent()
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return None
-
-        def post(self, *args, **kwargs):
-            captured.append(kwargs)
-            return self
-
-        def raise_for_status(self):
-            pass
-
-    monkeypatch.setattr(chat.aiohttp, "ClientSession", Session)
-    monkeypatch.setattr("llm.gemini_client.stream_gemini_text", empty_stream)
-    monkeypatch.setattr("llm.hybrid_stream.hybrid_llm_stream", empty_stream)
-
-    async def run():
-        if provider == "local":
-            await runtime._run_local(state, state.question, None, history_enabled, provider)
-        elif provider in {"deepseek", "openai"}:
-            await runtime._run_deepseek_openai(state, state.question, None, history_enabled, provider)
-        elif provider == "gemini":
-            await runtime._run_gemini(state, state.question, None, history_enabled)
-        elif provider == "bedrock":
-            await runtime._run_bedrock(state, state.question, state.question, state.question, history_enabled)
-        else:
-            await runtime._run_hybrid(state, state.question, state.question, None, history_enabled, provider)
-
-    asyncio.run(run())
-    assert captured
-    payload = json.dumps(captured, ensure_ascii=False, default=str)
-    assert "UNIQUE_KNOWLEDGE" in payload
-    assert "UNCHANGED_PERSONA" in payload
-    assert "current question" in payload
-    assert ("previous question" in payload) is history_enabled
-    assert "LATE_OTHER_SESSION" not in payload
-    assert state.question == "current question"
-    assert list(history.dialog) == before
-    next_state = chat._TurnState(gui_callback=None, question="unrelated next question")
-    assert "UNIQUE_KNOWLEDGE" not in chat._turn_role_grounding(next_state)
-
-
 def test_shared_settings_group_and_restart_contract():
     from config import settings
     from server.handlers.system_handler import _model_connections
@@ -385,50 +241,6 @@ def test_search_command_uses_applied_config_and_shows_filtered_candidates(tmp_pa
     assert observed == {"directory": tmp_path, "query": "query", "top_k": 1}
     assert result["max_distance"] == 0.25 and result["index_dir"] == str(tmp_path)
     assert result["hits"] == [] and result["candidates"][0]["distance"] == 0.3232
-
-
-@pytest.mark.parametrize("provider", ["local", "bedrock", "hybrid2"])
-@pytest.mark.parametrize("reference", ["", "CURRENT_REFERENCE"])
-def test_existing_fallbacks_preserve_reference_without_changing_disabled_behavior(monkeypatch, provider, reference):
-    from core import chat_runtime as chat
-
-    runtime = chat.ChatRuntime()
-    runtime.local_llm_type = "llama_server"
-    runtime._process_sentence = AsyncMock()
-    state = chat._TurnState(gui_callback=None, question="user words")
-    state.character_reference = reference
-    monkeypatch.setattr(chat, "_turn_system_prompt", lambda *args: "PERSONA")
-    monkeypatch.setattr(chat, "_turn_role_grounding", lambda state: state.character_reference)
-    monkeypatch.setattr(chat, "_wrap_user_message_for_language_lock", lambda value: value)
-    monkeypatch.setattr(chat, "AWS_BEDROCK_AUTH_MODE", "bearer")
-    monkeypatch.setattr(chat, "AWS_BEDROCK_BEARER_TOKEN", "test-only")
-    monkeypatch.setattr(chat.aiohttp, "ClientSession", Mock(side_effect=RuntimeError("transport failed")))
-    fallback = Mock(return_value="fallback reply")
-    monkeypatch.setattr(chat, "local_llm_query", fallback)
-    monkeypatch.setattr(chat, "remote_llm_query", fallback)
-
-    async def failed_stream(*args, **kwargs):
-        raise RuntimeError("transport failed")
-        yield  # pragma: no cover
-
-    monkeypatch.setattr("llm.hybrid_stream.hybrid_llm_stream", failed_stream)
-
-    async def run():
-        if provider == "local":
-            await runtime._run_local(state, state.question, None, False, provider)
-        elif provider == "bedrock":
-            await runtime._run_bedrock(state, state.question, state.question, state.question, False)
-        else:
-            await runtime._run_hybrid(state, state.question, state.question, None, False, provider)
-
-    asyncio.run(run())
-    assert fallback.call_args.args == ("user words",)
-    if reference:
-        assert "CURRENT_REFERENCE" in fallback.call_args.kwargs["system_prompt"]
-        assert "PERSONA" in fallback.call_args.kwargs["system_prompt"]
-    else:
-        assert fallback.call_args.kwargs == {}
-    assert state.full_response == "fallback reply"
 
 
 def test_local_synchronous_fallback_sends_the_given_context(monkeypatch):

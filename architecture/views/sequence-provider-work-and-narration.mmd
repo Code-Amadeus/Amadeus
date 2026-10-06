@@ -3,8 +3,8 @@ sequenceDiagram
     autonumber
     participant user as User
     participant surface as Voice / chat surface
-    participant chat as ChatRuntime
-    participant gateway as ProviderHandler
+    participant chat as Cooperative Chat
+    participant gateway as WorkControl / WorkEffectExecutor
     participant work as WorkLedger control plane
     participant runtime as ProviderRuntime
     participant adapter as Codex / OpenClaw / browser adapter
@@ -15,9 +15,9 @@ sequenceDiagram
     participant speech as Character speech channel
     user->>surface: Submit a task
     surface->>chat: chat.send
-    chat->>gateway: Structured delegation with provider, task, and cwd
-    gateway->>work: prepare_request creates or binds WorkItem and RunAttempt
-    gateway->>runtime: Start normalized ProviderRunRequest
+    chat->>gateway: Resolve proposal and accept one identity-bound Work effect
+    gateway->>work: Bind accepted effect to WorkItem and RunAttempt
+    gateway->>runtime: Start accepted ProviderRunRequest or replay its existing receipt
     runtime->>adapter: run(request, run_id, emit)
     loop Normalized provider event stream
     adapter-->>runtime: status, tool, semantic progress, artifact, permission

@@ -519,8 +519,11 @@ Amadeus 不会替你启动 Luna 或选择其 hook；**结束陪玩**只断开原
 .\start_llm_server.bat
 ```
 
-LM Studio、Ollama、llama-cli 和 hybrid profiles 仍保留，但不会在
-DeepSeek 失败后自动切换。
+托管 llama-server 默认使用 16k 上下文；容量不足时明确拒绝，不静默截断 Chat
+请求。常驻 llama-cli 会话需要迁到 llama-server。LM Studio、Ollama 的容量行为
+仍待实机验收。Hybrid 使用独立 HTTP 本地首句加远端回复，与纯本地后端选择无关；
+任何 profile 都不会在 DeepSeek 失败后自动接管。
+主流程已统一为 Cooperative，保留 basic/professional，见[运行时与配置迁移说明](docs/chat-runtime-convergence.md)。
 
 ### 可选远程模型建议
 

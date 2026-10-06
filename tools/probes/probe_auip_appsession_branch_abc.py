@@ -1331,7 +1331,7 @@ async def _run_role_executor(
     started = time.perf_counter()
     decision = await call_auip_tool(
         system_prompt=(
-            get_system_prompt("with_delegate", control_envelope=False)
+            get_system_prompt("with_delegate")
             + "\n\n"
             + ROLE_EXECUTOR_ADDON
         ),
@@ -1461,7 +1461,7 @@ async def _present_participant_first(
     }
     presented = await call_auip_tool(
         system_prompt=(
-            get_system_prompt("with_delegate", control_envelope=False)
+            get_system_prompt("with_delegate")
             + "\n\n"
             + ROLE_PRESENTATION_ADDON
         ),
@@ -1526,7 +1526,7 @@ async def _present_current_narrator(
         {
             **payload,
             "system_prompt": _structured_presenter_system_prompt(
-                get_system_prompt("with_delegate", control_envelope=False),
+                get_system_prompt("with_delegate"),
                 max_spoken_chars=96,
                 presentation_required=False,
                 display_language="japanese",
@@ -1634,7 +1634,7 @@ def _split_role_messages(
             "role": "system",
             "content": "\n\n".join(
                 (
-                    get_system_prompt("with_delegate", control_envelope=False),
+                    get_system_prompt("with_delegate"),
                     fixture.runtime.render_main_chat_context(
                         fixture.conversation_id,
                         language="ja",

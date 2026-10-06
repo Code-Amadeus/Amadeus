@@ -243,61 +243,26 @@ def _provider_wait_state(
     return current_run_id, False
 
 
-# A/B on whether the harness is manufacturing the tag omission it measures.
-# `permissive` is the original framing: "if delegation is needed" reads as an
-# option, and the clause before it can be heard as "do not act". `imperative`
-# states the same requirement as an obligation. Only this clause differs — the
-# routing rules appended after it are byte-identical in both arms, so a change
-# in omission rate is attributable to the framing alone.
-PREAMBLE_VARIANTS = {
-    "permissive": "这是路由协议测试；不要在主对话中直接执行任务。若需要委托，",
-    "imperative": (
-        "这是路由协议测试；凡是创建、修改、运行文件或代码的要求，"
-        "本轮回复必须发出 DELEGATE 标签，口头答应不算执行。"
-    ),
-}
-_preamble_variant = "permissive"
-
-
-def set_preamble_variant(name: str) -> None:
-    if name not in PREAMBLE_VARIANTS:
-        raise ScenarioError(f"unknown preamble variant {name!r}")
-    global _preamble_variant
-    _preamble_variant = name
-
-
-def current_preamble_variant() -> str:
-    return _preamble_variant
-
-
 def _prepare_real_utterance(
     say: str,
     *,
     execution_provider: str = "codex",
     with_preamble: bool = True,
 ) -> str:
-    """Attach the isolated scratch route without truncating the task itself.
+    """Name the isolated Project and provider without teaching a wire protocol.
 
-    Carried once per run, not on every utterance. Prepending it each time put
-    ~120 characters of protocol boilerplate in front of the actual instruction
-    on every delegating turn, and that leaked into what was being measured: the
-    repair net titled a WorkItem with it (2026-08-01, F1), a synthesised task
-    carried it through to the provider which then acted on it (G1), and turns
-    about workspace paths were where the model kept dropping `cwd`.
-
-    The wording was A/B'd on 2026-07-31 and cleared; its placement and
-    frequency never were.
+    This context is carried once, preserving the full scenario request. The
+    retired harness instructed the model to emit cwd/task DELEGATE attributes,
+    which contradict the current professional handoff contract.
     """
 
     text = str(say or "")
     if not with_preamble or "scratch 仓" not in text:
         return text
     return (
-        PREAMBLE_VARIANTS[_preamble_variant]
-        + f'DELEGATE 标签必须包含 provider="{execution_provider}"，并将 cwd 属性原样设为 '
-        f'"{SCRATCH_TARGET.as_posix()}"；task 属性必须完整保留用户要求的操作、'
-        "文件名和内容，其中的位置只能表述为“在当前工作目录”，不得在 task 中"
-        "重复该绝对路径，因为实际执行目录会被安全地分配为 worktree。"
+        f"请使用 {execution_provider} 执行器处理下面的任务。"
+        f"这里的 scratch 仓指隔离测试项目“{SCRATCH_TARGET.as_posix()}”。"
+        "请完整保留要求的操作、文件名和内容，只在该项目的工作目录内操作。"
         + text
     )
 
@@ -1561,7 +1526,9 @@ def _server_env(isolation: Path, *, execution_provider: str = "codex") -> dict[s
             # invisible to ControlDecision and turns every valid file request
             # into a zero-candidate reference failure.
             "WORK_SCRATCH_ROOT": str(SCRATCH_TARGET / "_drafts"),
-            "WORK_WORKTREE_ISOLATION": "1",
+            # Accepted Cooperative effects use local Project/Draft isolation.
+            # The whole fixture is already below the disposable scratch fence.
+            "WORK_WORKTREE_ISOLATION": "0",
             "CODEX_APP_SERVER_PROVIDER_ENABLED": "1",
             "CODEX_APP_SERVER_APPROVAL_MODE": "host",
             "DIRECT_CODEX_PROVIDER_ENABLED": "0",
@@ -1744,7 +1711,7 @@ async def _real_recording(
         "run_id": run_id,
         "started_at": datetime.now(timezone.utc).isoformat(),
         "chat_provider": chat_provider,
-        "preamble_variant": current_preamble_variant(),
+        "preamble_variant": "workspace_context",
         "provider_execution": "real",
         "execution_provider": execution_provider,
         "execution_provider_projects": execution_projects,
@@ -1767,6 +1734,14 @@ async def _real_recording(
         probe = WsProbe(f"ws://127.0.0.1:{port}/ws")
         await probe.__aenter__()
         try:
+            await probe.request(
+                "session.create", {"session_id": session_id, "title": scenario["id"]},
+            )
+            configuration = await probe.request("system.get_config", {})
+            recording["actual_chat_route"] = {
+                key: configuration.get(key)
+                for key in ("cooperative_chat_enabled", "cooperative_work_planner_enabled")
+            }
             for index, definition in enumerate(scenario["steps"], 1):
                 if "action" in definition:
                     action = definition["action"]
@@ -1810,6 +1785,7 @@ async def _real_recording(
                         process, handle, port = await start()
                         probe = WsProbe(f"ws://127.0.0.1:{port}/ws")
                         await probe.__aenter__()
+                        await probe.request("session.load", {"session_id": session_id})
                         after = snapshot_ledger_readonly(ledger)
                         action_row["recovery"] = {
                             "before": {
@@ -2157,7 +2133,6 @@ async def run(args: argparse.Namespace) -> int:
         raise ScenarioError("--fuzz is intentionally deferred in testbed v1")
     if args.mode == "real":
         _ensure_real_mode_capacity()
-    set_preamble_variant(getattr(args, "preamble", "permissive"))
 
     selected = resolve_scenarios(args)
     report_dir = Path(args.report_dir).resolve()
@@ -2299,12 +2274,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="coding Provider exercised by real-mode scenarios",
     )
     parser.add_argument("--report-dir", default=str(DEFAULT_REPORT_DIR))
-    parser.add_argument(
-        "--preamble",
-        choices=sorted(PREAMBLE_VARIANTS),
-        default="permissive",
-        help="real-mode framing of the routing protocol preamble (A/B)",
-    )
     parser.add_argument("--long-silence", action="store_true")
     parser.add_argument("--fuzz", type=int, default=0)
     return parser

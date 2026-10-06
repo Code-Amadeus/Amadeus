@@ -2,6 +2,7 @@
   "schema": 1,
   "id": "J6_failure_recovery_journey",
   "category": "transport",
+  "bind_scratch_project": true,
   "notes": "Alpha semantic Journey J6. The first provider is deliberately held in a real validation command long enough to cross the semantic-silence boundary, then killed. The same isolated ledger is restarted before one bounded retry. This scenario is excluded unless --long-silence is explicit because the 145 second observation window is load-bearing and includes the production heartbeat quantization.",
   "steps": [
     {

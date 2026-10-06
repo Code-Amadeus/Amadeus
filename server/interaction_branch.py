@@ -15,19 +15,14 @@ import hashlib
 import json
 import logging
 import math
-import re
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Literal, Mapping, TYPE_CHECKING
+from typing import Any, Awaitable, Callable, Literal, Mapping
 from urllib.parse import urlparse
 
-if TYPE_CHECKING:
-    from server.turn_admission import TurnAdmissionRecord
-
 from server.event_bus import bus
-from core.turn_coordinator import require_legacy_turn_authority
 from server.protocol import Method
 from agent_host.provider_outcome import (
     OUTCOME_EVIDENCE_METADATA_KEY,
@@ -571,10 +566,9 @@ class InteractionBranchCoordinator:
     ) -> bool:
         """Retire a live branch when canonical control selects another Provider.
 
-        An interaction branch is an execution context, not the Session's
-        routing authority. Keeping it active after a Provider handoff lets its
-        structural fast paths steal later turns from the newly selected context.
-        Same-provider work remains on the normal continue/new/close lifecycle.
+        An interaction branch is an execution context. A Provider handoff
+        retires that context before another Provider starts. Same-provider work
+        remains on the normal continue/new/close lifecycle.
         """
 
         sid = str(session_id or "").strip()
@@ -1137,211 +1131,6 @@ class InteractionBranchCoordinator:
             },
         }
 
-    async def try_route_user_message(
-        self,
-        *,
-        text: str,
-        session_id: str,
-        turn_id: str = "",
-        routing_scope: Mapping[str, Any] | None = None,
-        turn_admission: TurnAdmissionRecord | None = None,
-    ) -> dict[str, Any] | None:
-        """Route a user turn into the active branch when it is a continuation."""
-
-        require_legacy_turn_authority(turn_admission)
-        if turn_admission is not None:
-            session_id = turn_admission.session_id
-        user_text = str(text or "").strip()
-        sid = str(session_id or "").strip()
-        if not user_text or not sid:
-            return None
-        if self.termination_pending_for_session(sid):
-            return None
-        routing_lease: InteractionBranchRoutingLease | None = None
-        if routing_scope is not None:
-            scope_state = str(routing_scope.get("state") or "").strip().lower()
-            if scope_state != "bound":
-                # An admitted absence/quarantine is evidence, not permission to
-                # adopt a branch that appeared while this turn was in flight.
-                return None
-            routing_lease = InteractionBranchRoutingLease.from_mapping(routing_scope)
-            if routing_lease is None or routing_lease.parent_session_id != sid:
-                return None
-            branch = self.resolve_routing_lease(routing_lease)
-        else:
-            # Compatibility for direct callers predating turn-start capture.
-            # Production ChatHandler always supplies the admitted scope.
-            branch = self.active_branch_for_session(sid)
-        if branch is None:
-            return None
-        if branch.provider != "browser" or not (
-            branch.browser_session_id or branch.active_run_id
-        ):
-            return None
-        if not math.isfinite(branch.expires_at) or branch.expires_at <= time.time():
-            return None
-        # 三条结构性快通道（按分支状态/显式结构触发，不查词表）。
-        # 其余一切消息返回 None → 落回主对话，由主 LLM 借助分支状态块
-        # 决定 branch=continue/new/close（单脑路由）。
-        route_kind, route_reason = self._structural_fast_path(branch, user_text)
-        if route_kind == "retarget":
-            lock = self._branch_locks.setdefault(sid, asyncio.Lock())
-            cancel_args: tuple[str, str, str, int] | None = None
-            transitioned_branch_id = ""
-            async with lock:
-                current = (
-                    self.resolve_routing_lease(routing_lease)
-                    if routing_lease is not None
-                    else self._active_by_session.get(sid)
-                )
-                if current is not None and current.branch_id == branch.branch_id:
-                    transitioned_branch_id = current.branch_id
-                    active_run_id = str(current.active_run_id or "").strip()
-                    browser_session_id = current.browser_session_id
-                    self._close_branch(
-                        current,
-                        status="superseded",
-                        reason=route_reason,
-                        queue_stop=False,
-                    )
-                    if active_run_id:
-                        cancel_args = (
-                            current.branch_id,
-                            browser_session_id,
-                            active_run_id,
-                            current.instruction_revision,
-                        )
-                        self._mark_termination_pending(
-                            session_id=sid,
-                            branch_id=current.branch_id,
-                            run_id=active_run_id,
-                            reason=f"termination_in_progress:{route_reason}",
-                        )
-            if cancel_args is not None:
-                branch_id, browser_session_id, run_id, revision = cancel_args
-                confirmed, stop_reason, _before_execution = await self._cancel_stale_run_identity(
-                    session_id=sid,
-                    branch_id=branch_id,
-                    browser_session_id=browser_session_id,
-                    run_id=run_id,
-                    revision=revision,
-                    reason=route_reason,
-                )
-                if not confirmed:
-                    return {
-                        "handled": True,
-                        "route_kind": "browser_retarget_blocked",
-                        "branch_id": "",
-                        "blocked_branch_id": branch_id,
-                        "provider": "browser",
-                        "display_text": (
-                            "I could not confirm that the previous browser action stopped, "
-                            "so I did not start the new page request."
-                        ),
-                        "voice_text_ja": (
-                            "前のブラウザ操作が停止したことを確認できなかったため、"
-                            "新しいページ操作は開始していないわ。"
-                        ),
-                        "speak": True,
-                        "continuation_disposition": "failed",
-                        "continuation_reason": (
-                            f"run_stop_unconfirmed:{stop_reason}"
-                        ),
-                    }
-            if not transitioned_branch_id:
-                return None
-            return {
-                "handled": False,
-                "route_kind": "browser_retarget_released",
-                "provider": "browser",
-                "routing_scope_transition": {
-                    "state": "absent",
-                    "parent_session_id": sid,
-                    "captured_at": time.time(),
-                    "transitioned_from_branch_id": transitioned_branch_id,
-                },
-            }
-        if route_kind != "continue":
-            return None
-
-        receipt = await self._continue_branch(
-            branch,
-            user_text,
-            turn_id=turn_id,
-            route_reason=route_reason,
-            message_source="branch_followup",
-            routing_lease=routing_lease,
-        )
-        if receipt is None:
-            return None
-        run = dict(receipt.run)
-        if not receipt.accepted:
-            execution_uncertain = receipt.execution_started is not False
-            return {
-                "handled": True,
-                "route_kind": "browser_continuation_blocked",
-                "branch_id": receipt.branch_id,
-                "provider": "browser",
-                "display_text": (
-                    "I could not confirm whether the current browser transition "
-                    "had already begun, so I blocked any replacement action."
-                    if execution_uncertain
-                    else (
-                        "I could not apply that instruction to the current browser run. "
-                        "Nothing new was started; please try again after the current step finishes."
-                    )
-                ),
-                "voice_text_ja": (
-                    "現在のブラウザ遷移がすでに始まっていたか確認できなかったため、"
-                    "代わりの操作は開始せずに止めたわ。"
-                    if execution_uncertain
-                    else (
-                        "いまのブラウザ操作にはその指示を適用できなかったわ。"
-                        "新しい処理は開始していないから、現在の操作が終わってからもう一度頼んで。"
-                    )
-                ),
-                "speak": True,
-                "run": run,
-                "continuation_disposition": receipt.disposition,
-                "continuation_reason": receipt.reason,
-                **(
-                    {"execution_uncertain": True}
-                    if execution_uncertain
-                    else {"execution_started": False}
-                ),
-            }
-
-        try:
-            from agent_host.provider_runtime import runtime
-
-            record = runtime.get_run(str(run.get("run_id") or ""))
-            if record is not None and record.task_handle is not None:
-                await asyncio.shield(record.task_handle)
-                run = record.to_dict()
-        except asyncio.CancelledError:
-            logger.info(
-                "browser interaction branch wait interrupted; provider run remains shielded session=%s branch=%s",
-                sid,
-                branch.branch_id,
-            )
-            raise
-        except Exception:
-            logger.exception("failed waiting for branch provider run")
-
-        lock = self._branch_locks.setdefault(sid, asyncio.Lock())
-        async with lock:
-            self._update_from_run(run, fallback_session_id=sid, user_text=user_text)
-        display_text = self._display_text_for_run(run, branch)
-        return {
-            "handled": True,
-            "branch_id": branch.branch_id,
-            "provider": branch.provider,
-            "display_text": display_text,
-            "speak": bool(display_text),
-            "hidden_summary": branch.hidden_summary,
-            "visible_messages": list(branch.visible_messages[-8:]),
-            "run": run,
-        }
 
     async def _on_provider_result(self, _method: str, params: dict[str, Any]) -> None:
         if not isinstance(params, dict):
@@ -2398,34 +2187,6 @@ class InteractionBranchCoordinator:
             f"操作 {steps} 手。結果: {outcome or '記録なし'}"
         )
 
-    def _structural_fast_path(self, branch: InteractionBranchState, text: str) -> tuple[str, str]:
-        """三条结构性快通道；其余一律 ignore（交主 LLM 单脑路由）。
-
-        与旧的 11 个关键词启发式不同，这里的每条规则都由"分支状态 +
-        消息结构"触发，不依赖任何自然语言词表——因此天然三语、
-        不会把普通聊天误吸进分支，也不会漏掉白名单外的表达。
-        """
-        lowered = text.strip().lower()
-        if not lowered:
-            return "ignore", "empty_message"
-
-        # 快通道 1：分支在等一个值，且消息形如短值 → 直接 continue
-        # （等值场景不该让完整对话轮的延迟挡在中间）
-        if (
-            branch.status == "waiting_for_user"
-            and self._looks_like_short_value(lowered)
-            and self._goal_needs_user_value(branch)
-        ):
-            return "continue", "value_for_waiting_branch"
-
-        # 快通道 2/3：消息含显式 URL → 按域名结构判定
-        explicit_site = self._site_key_from_explicit_url(text)
-        if explicit_site:
-            if explicit_site == self._url_site_key(branch.url):
-                return "continue", "explicit_url_same_site"
-            return "retarget", "explicit_url_new_site"
-
-        return "ignore", "defer_to_main_llm"
 
     def _should_start_new_branch(
         self,
@@ -2501,12 +2262,6 @@ class InteractionBranchCoordinator:
             token in text for token in ("search", "\u641c", "\u691c\u7d22", "query", "keyword")
         )
 
-    @classmethod
-    def _site_key_from_explicit_url(cls, text: str) -> str:
-        match = re.search(r"https?://[^\s)>\]}]+", str(text or ""), re.I)
-        if not match:
-            return ""
-        return cls._url_site_key(match.group(0))
 
     @classmethod
     def _url_site_key(cls, url: str) -> str:
@@ -2537,21 +2292,6 @@ class InteractionBranchCoordinator:
         parts = host.split(".")
         return parts[-2] if len(parts) >= 2 else host
 
-    @staticmethod
-    def _looks_like_short_value(text: str) -> bool:
-        compact = text.strip().strip(".?!,;: \t\r\n")
-        if not compact:
-            return False
-        if len(compact) > 64:
-            return False
-        if re.search(r"\s", compact) and len(compact.split()) > 4:
-            return False
-        return True
-
-    @staticmethod
-    def _goal_needs_user_value(branch: InteractionBranchState) -> bool:
-        goal = f"{branch.goal} {branch.pending_goal}".lower()
-        return any(token in goal for token in ("search", "\u641c", "\u691c\u7d22", "query", "keyword"))
 
     @staticmethod
     def _branch_task(branch: InteractionBranchState, user_text: str) -> str:

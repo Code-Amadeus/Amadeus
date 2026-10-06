@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import config.settings as settings
 from agent_host.work_ledger_store import WorkLedgerStore
-from server.app import _handle_delegate
+from server.app import _answer_report_from_ledger
 from server.context_status import project_item_status_labels
 from server.project_report import answer_project_report, normalize_report_subject
 from server.work_ledger_coordinator import WorkLedgerCoordinator
@@ -122,11 +122,11 @@ def test_project_report_never_routes_or_creates_work() -> None:
                 with (
                     patch.object(settings, "DELEGATE_INTENT_ATTRIBUTE", True),
                     patch.object(settings, "TASK_LOOKUP_ENABLED", True),
-                    patch("server.app._delegate_provider_for_task") as router,
+                    patch("agent_host.provider_runtime.runtime.start") as start,
                     patch("server.app._speak_task_lookup_answer", side_effect=capture),
                     patch("server.app._observer_display_language", return_value="simplified_chinese"),
                 ):
-                    result = await _handle_delegate(
+                    result = await _answer_report_from_ledger(
                         "这个项目怎么样？",
                         {
                             "provider": "locus",
@@ -135,7 +135,7 @@ def test_project_report_never_routes_or_creates_work() -> None:
                             "project_id": second_project_id,
                         },
                     )
-                    invalid = await _handle_delegate(
+                    invalid = await _answer_report_from_ledger(
                         "查一下状态",
                         {
                             "provider": "codex",
@@ -143,7 +143,7 @@ def test_project_report_never_routes_or_creates_work() -> None:
                             "subject": "workspace",
                         },
                     )
-                    router.assert_not_called()
+                    start.assert_not_called()
                 assert result == "[report] answered project from the ledger", result
                 assert invalid == "[report] invalid subject", invalid
                 assert spoken[0]["history_marker"] == "PROJECT_STATUS"

@@ -6,27 +6,25 @@ import tempfile
 import asyncio
 import os
 import sys
+from dataclasses import fields, replace
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent_host.provider_catalog import (
-    BROWSER_MANIFEST,
     CODEX_APP_SERVER_MANIFEST,
     OPENCLAW_MANIFEST,
 )
 from agent_host.provider_identity import (
     PARENT_CONTEXT_DELIVERY_METADATA_KEY,
+    PARENT_CONTEXT_DELIVERED_EVENT,
     parent_context_delivery_receipt,
 )
-from agent_host.provider_types import ProviderRunRequest, ProviderSessionHandle
-from agent_host.provider_contract import ProviderRequirements, ProviderSelection
+from agent_host.provider_types import ProviderEvent, ProviderRunRequest, ProviderSessionHandle
 from agent_host.work_ledger_store import WorkLedgerConflict, WorkLedgerStore
+from server.work_control import WorkAmendPayloadV4
 from server.work_ledger_coordinator import WorkLedgerCoordinator
-from server.work_steer_control import route_active_amendment
-from server.app import _delegate_provider_selection, _handle_delegate
+from test_work_effect_executor import _admission, _host, _payload
 
 
 def test_workspace_less_work_item_attaches_its_provider_session() -> None:
@@ -78,63 +76,12 @@ def test_workspace_less_work_item_attaches_its_provider_session() -> None:
                     },
                 )
 
-                # A terminal target must bypass the active steer/replacement
-                # state machine. The ordinary amend path below then creates a
-                # new Operation and lets the capability-driven Ledger attach
-                # the typed Provider Session.
-                route = asyncio.run(
-                    route_active_amendment(
-                        runtime=object(),
-                        coordinator=coordinator,
-                        work_item_id=work_item_id,
-                        selected_provider="openclaw",
-                        task_text="On that same page, inspect the first section.",
-                        turn_id="turn-2",
-                    )
-                )
-                assert route == {"handled": False}
-
                 facts = coordinator.continuation_routing_facts(work_item_id)
                 assert facts == {
                     "work_item_id": work_item_id,
                     "workspace_mode": "none",
                     "provider": "openclaw",
                 }
-                requirements, selection = _delegate_provider_selection(
-                    "Click the first result on that page.",
-                    {
-                        "provider": "openclaw",
-                        "intent": "amend",
-                        "workspace_ref": work_item_id,
-                    },
-                    manifests=(
-                        BROWSER_MANIFEST,
-                        CODEX_APP_SERVER_MANIFEST,
-                        OPENCLAW_MANIFEST,
-                    ),
-                )
-                assert requirements.task_kind == "general"
-                assert requirements.workspace_access == "none"
-                assert selection.provider_id == "openclaw"
-
-                browser_requirements, browser_selection = _delegate_provider_selection(
-                    "Use a verified page reference to click the first result.",
-                    {
-                        "provider": "browser",
-                        "intent": "amend",
-                        "workspace_ref": work_item_id,
-                        "action": "click_ref",
-                        "branch": "continue",
-                    },
-                    manifests=(
-                        BROWSER_MANIFEST,
-                        CODEX_APP_SERVER_MANIFEST,
-                        OPENCLAW_MANIFEST,
-                    ),
-                )
-                assert browser_requirements.task_kind == "browser"
-                assert browser_selection.provider_id == "browser"
-
                 followup = coordinator.prepare_request(
                     ProviderRunRequest(
                         provider="openclaw",
@@ -501,71 +448,58 @@ def test_codex_claims_mid_run_steering_only_with_what_backs_it() -> None:
     assert CODEX_APP_SERVER_MANIFEST.capabilities.cancellation == "confirmed"
 
 
-def test_active_steer_receives_only_parent_context_since_last_handoff() -> None:
+def test_accepted_amend_receives_only_delivered_parent_context_delta() -> None:
     async def scenario() -> None:
-        active = SimpleNamespace(
-            provider="codex",
-            provider_run_id="codex-active",
-            work_item_id="work-active",
-            attempt_id="attempt-active",
-        )
-        coordinator = SimpleNamespace(
-            active_attempt_for_item=lambda _work_item_id: active,
-        )
-        steer = AsyncMock(
-            return_value={"accepted": True, "safe_boundary": "provider_native"}
-        )
-        runtime = SimpleNamespace(
-            get_run=lambda _run_id: SimpleNamespace(
-                status="running",
-                metadata={
-                    "source_user_text": "上一轮当前请求。",
-                    "turn_id": "turn-1",
-                    "source_context_scope": "chat:chat-steer",
-                    PARENT_CONTEXT_DELIVERY_METADATA_KEY: (
-                        parent_context_delivery_receipt(
-                            {
-                                "source_context_scope": "chat:chat-steer",
-                                "turn_id": "turn-1",
-                                "source_user_text": "上一轮当前请求。",
-                                "source_context_mode": "snapshot",
-                            }
-                        )
-                    ),
-                    "steering": {},
-                },
-            ),
-            get_manifest=lambda _provider: CODEX_APP_SERVER_MANIFEST,
-            steer=steer,
-        )
+        with tempfile.TemporaryDirectory(prefix="accepted-session-context-") as temp:
+            async with _host(Path(temp), source="上一轮当前请求。", task="上一轮当前请求。") as host:
+                handle = ProviderSessionHandle(provider=host.adapter.provider_id,
+                    session_id="accepted-native-session", scope="work_item")
+                host.adapter.manifest = replace(host.adapter.manifest,
+                    capabilities=replace(host.adapter.manifest.capabilities, resume="attach"))
+                host.runtime.register(host.adapter)
+                original_run = host.adapter.run
 
-        outcome = await route_active_amendment(
-            runtime=runtime,
-            coordinator=coordinator,
-            work_item_id="work-active",
-            selected_provider="codex",
-            task_text="Apply the newly referenced constraint.",
-            turn_id="turn-2",
-            source_user_text="把新约束也加上。",
-            source_context_scope="chat:chat-steer",
-            source_user_context="\n".join(
-                [
-                    'User: "很早以前的目标。"',
-                    'User: "上一轮当前请求。"',
-                    'Main Chat: "上一轮结束后的回复。"',
-                    'User: "两轮之间的新约束。"',
-                ]
-            ),
-        )
+                async def delivered_run(request, run_id, emit):
+                    await emit(ProviderEvent(provider=host.adapter.provider_id, run_id=run_id,
+                        type=PARENT_CONTEXT_DELIVERED_EVENT, metadata=dict(request.metadata)))
+                    result = await original_run(request, run_id, emit)
+                    result.session = handle
+                    return result
 
-        assert outcome == {"handled": True, "message": "[amend] active run steered"}
-        request = steer.await_args.args[1]
-        assert request.metadata["source_context_mode"] == "delta"
-        assert request.metadata["source_context_base_turn_id"] == "turn-1"
-        assert "很早以前的目标" not in request.metadata["source_user_context"]
-        assert "上一轮当前请求" not in request.metadata["source_user_context"]
-        assert "上一轮结束后的回复" in request.metadata["source_user_context"]
-        assert "两轮之间的新约束" in request.metadata["source_user_context"]
+                host.adapter.run = delivered_run
+                first = await host.executor.execute(host.effect_id)
+                work_id = first["binding"]["work_item_id"]
+                previous = host.work.get_attempt(first["binding"]["attempt_id"])
+                assert previous is not None
+                assert previous.metadata[PARENT_CONTEXT_DELIVERY_METADATA_KEY][
+                    "source_turn_id"] == "turn-one"
+
+                source = "把新约束也加上。"
+                admission = _admission(suffix="two", epoch=2, text=source)
+                host.control.admit(admission, fence_scope="foreground-chat")
+                base = replace(_payload(host.project.project_id, host.adapter.provider_id,
+                    suffix="two", source=source, task=source), source_user_context="\n".join([
+                        'User: "很早以前的目标。"',
+                        'User: "上一轮当前请求。"',
+                        'Main Chat: "上一轮结束后的回复。"',
+                        'User: "两轮之间的新约束。"',
+                    ]))
+                payload = WorkAmendPayloadV4(
+                    **{field.name: getattr(base, field.name) for field in fields(base)},
+                    work_item_id=work_id)
+                effect_id = host.control.seal(admission, payload)["effect_id"]
+                outcome = await host.executor.execute(effect_id)
+                request = host.adapter.requests[-1]["request"]
+                assert request.session == handle
+                assert outcome["binding"]["work_item_id"] == work_id
+                assert outcome["receipt"]["outcome"] == "succeeded"
+                assert request.metadata["source_context_mode"] == "delta"
+                assert request.metadata["source_context_base_turn_id"] == "turn-one"
+                assert "很早以前的目标" not in request.metadata["source_user_context"]
+                assert "上一轮当前请求" not in request.metadata["source_user_context"]
+                assert "上一轮结束后的回复" in request.metadata["source_user_context"]
+                assert "两轮之间的新约束" in request.metadata["source_user_context"]
+                assert len(host.work.list_attempts(work_id)) == 2
 
     asyncio.run(scenario())
 
@@ -597,129 +531,3 @@ def test_intake_cannot_inject_a_session_without_work_item_lineage() -> None:
                 assert "provider_session" not in attempt.metadata
             finally:
                 coordinator.close()
-
-
-def test_workspace_less_delegate_keeps_the_work_item_operation_target() -> None:
-    async def scenario() -> None:
-        start = AsyncMock(
-            return_value=SimpleNamespace(
-                task_handle=None,
-                result="continued",
-                error="",
-                metadata={"result_type": "ok"},
-            )
-        )
-        requirements = ProviderRequirements(
-            task_kind="general",
-            workspace_access="none",
-            preferred_provider="openclaw",
-            preference_policy="require",
-        )
-        selection = ProviderSelection(
-            provider_id="openclaw",
-            reason="test",
-            compatible_candidates=("openclaw",),
-        )
-        with (
-            patch(
-                "server.app._delegate_provider_selection",
-                return_value=(requirements, selection),
-            ),
-            patch(
-                "server.app._delegate_workspace_route",
-                return_value={
-                    "status": "resolved",
-                    "cwd": None,
-                    "projectId": "",
-                    "source": "not_applicable",
-                },
-            ),
-            patch(
-                "agent_host.provider_runtime.runtime.get_manifest",
-                return_value=OPENCLAW_MANIFEST,
-            ),
-            patch("agent_host.provider_runtime.runtime.start", new=start),
-            patch(
-                "server.work_ledger_coordinator.get_work_ledger_coordinator",
-                return_value=None,
-            ),
-        ):
-            result = await _handle_delegate(
-                "Click the first result on that page.",
-                {
-                    "provider": "openclaw",
-                    "intent": "amend",
-                    "workspace_ref": "work-web",
-                },
-            )
-        assert result == "continued"
-        request = start.await_args.args[0]
-        assert request.cwd is None
-        assert request.metadata["continuation"] == "amend"
-        assert request.metadata["work"] == {
-            "workspace_ref": "work-web",
-            "work_item_id": "work-web",
-        }
-
-    asyncio.run(scenario())
-
-
-def test_session_provider_start_failure_does_not_fall_back_to_one_shot() -> None:
-    async def scenario() -> None:
-        requirements = ProviderRequirements(
-            task_kind="general",
-            workspace_access="none",
-            preferred_provider="openclaw",
-            preference_policy="require",
-        )
-        selection = ProviderSelection(
-            provider_id="openclaw",
-            reason="test",
-            compatible_candidates=("openclaw",),
-        )
-        announce = AsyncMock()
-        legacy_summary = AsyncMock()
-        with (
-            patch(
-                "server.app._delegate_provider_selection",
-                return_value=(requirements, selection),
-            ),
-            patch(
-                "server.app._delegate_workspace_route",
-                return_value={"status": "resolved", "cwd": None, "source": "not_applicable"},
-            ),
-            patch(
-                "agent_host.provider_runtime.runtime.get_manifest",
-                return_value=OPENCLAW_MANIFEST,
-            ),
-            patch(
-                "agent_host.provider_runtime.runtime.start",
-                new=AsyncMock(side_effect=RuntimeError("gateway unavailable")),
-            ),
-            patch("server.app._announce_provider_start_failure", new=announce),
-            patch("server.app._speak_openclaw_delegate_result", new=legacy_summary),
-        ):
-            result = await _handle_delegate(
-                "Find the official page.",
-                {"provider": "openclaw", "intent": "execute"},
-            )
-        assert result == "[openclaw error] delegate execution failed"
-        announce.assert_awaited_once()
-        legacy_summary.assert_not_awaited()
-
-    asyncio.run(scenario())
-
-
-def _main() -> None:
-    test_workspace_less_work_item_attaches_its_provider_session()
-    test_attach_capability_keeps_legacy_attempts_without_a_session_cold()
-    test_attach_capability_rejects_a_malformed_stored_session()
-    test_codex_claims_mid_run_steering_only_with_what_backs_it()
-    test_intake_cannot_inject_a_session_without_work_item_lineage()
-    test_workspace_less_delegate_keeps_the_work_item_operation_target()
-    test_session_provider_start_failure_does_not_fall_back_to_one_shot()
-    print("ok: Provider Sessions attach only through WorkItem lineage")
-
-
-if __name__ == "__main__":
-    _main()

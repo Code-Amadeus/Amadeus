@@ -187,7 +187,7 @@ def _scope_failure(messages, proposals, candidates, complete, candidate_limit):
     error = validate_candidate_catalog(candidates)
     if error:
         return compound.CompoundControlPlan(status="invalid", reason=error)
-    if not compound._current_user_text(messages).strip():
+    if not compound.current_user_text(messages).strip():
         return compound.CompoundControlPlan(status="invalid", reason="missing current source")
     return None
 
@@ -331,7 +331,7 @@ async def resolve_whole_turn_references(plan, messages, proposals, candidates, *
         return replace(plan, status="incomplete", operations=(),
             reason="whole-turn reference evidence exceeds the complete bounded catalog scope")
     entries, queries, retries = [], 0, 0
-    source = compound._current_user_text(messages)
+    source = compound.current_user_text(messages)
     for entry in decision.entries:
         if entry.reference_candidates is None:
             entries.append(entry)
@@ -386,7 +386,7 @@ async def whole_turn_owner(messages, proposals, candidates, *, complete, query,
             return compound.CompoundControlPlan(status="unavailable",
                 reason=f"{type(exc).__name__}: {exc}", decision_queries=attempt + 1)
         result = replace(parse_whole_turn_reply(raw,
-            source=compound._current_user_text(messages), candidates=candidates,
+            source=compound.current_user_text(messages), candidates=candidates,
             provider_ids=provider_ids, proposals=proposals,
             proposal_controls=proposal_controls,
             payload_policy=payload_policy,

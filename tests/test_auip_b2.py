@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
-from core.chat_runtime import ChatRuntime, _TurnState
 from server.auip_action_candidates import (
     AuipActionCandidate,
     compile_auip_action_candidates,
@@ -186,11 +185,132 @@ def test_candidate_compiler_keeps_exact_payloads_and_omits_open_schema() -> None
     assert all(item.revision == 1 for item in candidates)
 
 
+def _choice_runtime(description: str, *, labels=("Send to reserve", "Send to archive")):
+    runtime = AuipRuntime(role_branch_mode="b2")
+    registered = runtime.register(manifest={
+        "schema": "amadeus.auip/v0",
+        "app": {"id": "semantic-choice", "title": "Semantic choice"},
+        "events": {"relay.transferred": {"beat": True, "participantOpportunity": True}},
+        "actions": {"relay.transfer": {
+            "description": description, "risk": "local_execution",
+            "inputSchema": {"type": "object", "properties": {
+                "destination": {"type": "string", "enum": ["reserve", "archive"]}},
+                "required": ["destination"], "additionalProperties": False},
+        }},
+        "stances": ["spectator", "participant"], "situationKinds": ["choice/v1"],
+    }, conversation_id="semantic-choice-chat")
+    runtime.set_engagement_mode(app_session_id=registered["app_session_id"], mode="collaborate")
+    options = [{"action": "relay.transfer", "payload": {"destination": destination},
+        "label": label, "available": True} for destination, label in zip(("reserve", "archive"), labels)]
+    runtime.publish_state(app_session_id=registered["app_session_id"], bridge_token=registered["bridge_token"],
+        revision=1, state={"choices": {"kind": "choice/v1", "actionTypes": ["relay.transfer"], "options": options}})
+    return runtime, registered, options
+
+
+def test_choice_candidates_preserve_action_and_specific_value_meanings_without_changing_identity():
+    description = "Transfer the participant-owned token to the selected destination."
+    runtime, registered, options = _choice_runtime(description)
+    compilation = compile_auip_action_candidates(runtime, registered["app_session_id"])
+    fallback_runtime, fallback_registered, _ = _choice_runtime("Another declared transfer description.")
+    fallback = compile_auip_action_candidates(fallback_runtime, fallback_registered["app_session_id"])
+    assert compilation.complete
+    assert set(compilation.candidates) == set(fallback.candidates)
+    assert len(compilation.candidates) == 2
+    for option in options:
+        candidate = next(row for row in compilation.candidates.values() if row.payload == option["payload"])
+        assert description in candidate.semantic_label
+        assert option["label"] in candidate.semantic_label
+        assert candidate.payload == fallback.candidates[candidate.candidate_id].payload == option["payload"]
+        assert candidate.action_type == "relay.transfer"
+        assert candidate.revision == compilation.context["revision"]
+        assert candidate.decision_generation == compilation.context["decision_generation"]
+        assert candidate.source == "choice/v1"
+
+
+def test_choice_candidates_keep_value_meanings_within_the_existing_label_budget():
+    meaning = "Transfer the participant-owned token."
+    description = (meaning + " Details for the declared transfer." * 8)[:240]
+    runtime, registered, options = _choice_runtime(description)
+    compilation = compile_auip_action_candidates(runtime, registered["app_session_id"])
+    labels = set()
+    for option in options:
+        candidate = next(row for row in compilation.candidates.values() if row.payload == option["payload"])
+        assert len(candidate.semantic_label) <= 240
+        assert meaning in candidate.semantic_label
+        assert option["label"] in candidate.semantic_label
+        labels.add(candidate.semantic_label)
+    assert len(labels) == 2
+
+
+def test_choice_candidates_without_action_description_keep_label_and_type_fallbacks():
+    runtime, registered, options = _choice_runtime("Declared transfer.", labels=("Send to reserve", ""))
+    context = runtime.participant_context(registered["app_session_id"], max_chars=7200)
+    context["available_actions"]["relay.transfer"]["description"] = ""
+    with patch.object(runtime, "participant_context", return_value=context):
+        compilation = compile_auip_action_candidates(runtime, registered["app_session_id"])
+    for option in options:
+        candidate = next(row for row in compilation.candidates.values() if row.payload == option["payload"])
+        assert candidate.semantic_label == (option["label"] or option["action"])
+
+
+def test_choice_role_catalog_retains_declared_semantics_and_fixed_candidate_payloads():
+    async def scenario():
+        description = "Transfer the participant-owned token to the selected destination."
+        runtime, registered, options = _choice_runtime(description)
+        compilation = compile_auip_action_candidates(runtime, registered["app_session_id"])
+        captured = {}
+        selected = next(iter(compilation.candidates))
+        async def fake_call(**kwargs):
+            captured.update(kwargs)
+            return {"candidate_id": selected, "choice_reason": "Synthetic declared choice."}
+        with patch("server.auip_b2_role_llm.call_auip_schema", fake_call):
+            result = await choose_b2_role_action(context=compilation.context, candidates=compilation.candidates,
+                user_instruction="", branch_messages=[], trigger="explicit_step", speech_required=False)
+        assert result["candidate_id"] == selected
+        catalog = captured["payload"]["candidate_catalog"]
+        assert {row["candidate_id"] for row in catalog} == set(compilation.candidates)
+        for option in options:
+            row = next(row for row in catalog if row["payload"] == option["payload"])
+            assert description in row["meaning"] and option["label"] in row["meaning"]
+            assert row["action_type"] == option["action"]
+            assert row["payload"] == compilation.candidates[row["candidate_id"]].payload
+    asyncio.run(scenario())
+
+
+def test_b2_user_decision_preserves_original_actor_and_constraints_over_a_lossy_summary():
+    async def scenario():
+        runtime, registered = _runtime()
+        original = "You transfer your token to reserve; leave my token and the current binding unchanged."
+        decision = AuipControlDecision(status="ok", action="step", instruction="Transfer token",
+            app_session_id=registered["app_session_id"])
+        coordinator = AuipB2Coordinator(runtime=runtime, role_chooser=AsyncMock())
+        with patch.object(coordinator, "_execute_candidate_step", new=AsyncMock(return_value={"handled": True})) as step:
+            await coordinator.execute_user_decision(decision=decision, text=original,
+                session_id="b2-chat", turn_id="source-preserved")
+        assert step.await_args.kwargs["user_instruction"] == original
+        assert step.await_args.kwargs["source_user_text"] == original
+    asyncio.run(scenario())
+
+
+def test_b2_user_decision_uses_the_derived_instruction_only_when_original_source_is_absent():
+    async def scenario():
+        runtime, registered = _runtime()
+        instruction = "Transfer the participant token to reserve."
+        decision = AuipControlDecision(status="ok", action="step", instruction=instruction,
+            app_session_id=registered["app_session_id"])
+        coordinator = AuipB2Coordinator(runtime=runtime, role_chooser=AsyncMock())
+        with patch.object(coordinator, "_execute_candidate_step", new=AsyncMock(return_value={"handled": True})) as step:
+            await coordinator.execute_user_decision(decision=decision, text="",
+                session_id="b2-chat", turn_id="source-absent")
+        assert step.await_args.kwargs["user_instruction"] == instruction
+        assert step.await_args.kwargs["source_user_text"] == ""
+    asyncio.run(scenario())
+
+
 def test_b2_yields_an_incomplete_candidate_space_before_role_choice() -> None:
     async def scenario() -> None:
         runtime, registered = _runtime(include_open_action=True)
         sid = registered["app_session_id"]
-        staged: list[tuple[str, object]] = []
         chooser_called = False
 
         class Decider:
@@ -213,12 +333,11 @@ def test_b2_yields_an_incomplete_candidate_space_before_role_choice() -> None:
 
         coordinator = AuipB2Coordinator(
             runtime=runtime,
-            control_decider=Decider(),
             role_chooser=choose,
-            stage_decision=lambda turn, decision: staged.append((turn, decision)),
             receipt_timeout_s=1,
         )
-        routed = await coordinator.try_route_user_message(
+        routed = await coordinator.execute_user_decision(
+                decision=await Decider().capture(),
             text="set a custom value",
             session_id="b2-chat",
             turn_id="turn-open",
@@ -226,8 +345,6 @@ def test_b2_yields_an_incomplete_candidate_space_before_role_choice() -> None:
 
         assert routed is None
         assert chooser_called is False
-        assert len(staged) == 1
-        assert staged[0][0] == "turn-open"
         assert runtime.get(sid)["operator_status"] == "idle"
 
         automatic = await coordinator.execute_automatic_step(
@@ -250,7 +367,6 @@ def test_b2_open_sidepath_holds_one_role_payload_until_accepted_receipt() -> Non
         runtime, registered = _runtime(include_open_action=True)
         sid = registered["app_session_id"]
         token = registered["bridge_token"]
-        staged: list[tuple[str, object]] = []
         requested: list[dict] = []
         requested_relations: list[str] = []
 
@@ -311,16 +427,13 @@ def test_b2_open_sidepath_holds_one_role_payload_until_accepted_receipt() -> Non
         try:
             coordinator = AuipB2Coordinator(
                 runtime=runtime,
-                control_decider=Decider(),
                 role_chooser=lambda **_kwargs: {},
                 open_role_chooser=open_choose,
                 open_payload_mode="candidate",
-                stage_decision=lambda turn, decision: staged.append(
-                    (turn, decision)
-                ),
                 receipt_timeout_s=1,
             )
-            routed = await coordinator.try_route_user_message(
+            routed = await coordinator.execute_user_decision(
+                decision=await Decider().capture(),
                 text="set a custom value",
                 session_id="b2-chat",
                 turn_id="turn-open",
@@ -343,7 +456,6 @@ def test_b2_open_sidepath_holds_one_role_payload_until_accepted_receipt() -> Non
             assert runtime.get(sid)["latest_delivered_narration"]["text"] == (
                 "その値にするわ。"
             )
-            assert staged == []
         finally:
             bus.off(Method.AUIP_ACTION_REQUESTED, app_receipt)
 
@@ -472,7 +584,6 @@ def test_b2_releases_one_line_only_after_accepted_receipt_and_visible_delivery()
         runtime, registered = _runtime()
         sid = registered["app_session_id"]
         token = registered["bridge_token"]
-        staged: list[tuple[str, object]] = []
 
         class Decider:
             def capture(self, **_kwargs):
@@ -531,12 +642,11 @@ def test_b2_releases_one_line_only_after_accepted_receipt_and_visible_delivery()
         try:
             coordinator = AuipB2Coordinator(
                 runtime=runtime,
-                control_decider=Decider(),
                 role_chooser=choose,
-                stage_decision=lambda turn, decision: staged.append((turn, decision)),
                 receipt_timeout_s=1,
             )
-            routed = await coordinator.try_route_user_message(
+            routed = await coordinator.execute_user_decision(
+                decision=await Decider().capture(),
                 text="你能下一手吗",
                 session_id="b2-chat",
                 turn_id="turn-b2",
@@ -558,7 +668,6 @@ def test_b2_releases_one_line_only_after_accepted_receipt_and_visible_delivery()
             delivered = runtime.get(sid)["latest_delivered_narration"]
             assert delivered["text"] == "右下の(1,1)に置いたわ。"
             assert delivered["event_id"] == routed["action_id"]
-            assert staged == []
         finally:
             bus.off(Method.AUIP_ACTION_REQUESTED, app_receipt)
 
@@ -684,12 +793,11 @@ def test_b2_controller_policy_rebinds_across_role_choice_latency() -> None:
         try:
             coordinator = AuipB2Coordinator(
                 runtime=runtime,
-                control_decider=Decider(),
                 role_chooser=choose,
-                stage_decision=lambda *_args: None,
                 receipt_timeout_s=1,
             )
-            routed = await coordinator.try_route_user_message(
+            routed = await coordinator.execute_user_decision(
+                decision=await Decider().capture(),
                 text="保持安全范围",
                 session_id="b2-controller-chat",
                 turn_id="turn-b2-controller",
@@ -870,17 +978,15 @@ def test_b2_recompiles_once_when_the_app_phase_changes_before_invoke() -> None:
             )
             await bus.emit(Method.AUIP_UPDATED, resolved)
 
-        staged: list[tuple[str, object]] = []
         bus.on(Method.AUIP_ACTION_REQUESTED, app_receipt)
         try:
             coordinator = AuipB2Coordinator(
                 runtime=runtime,
-                control_decider=Decider(),
                 role_chooser=choose,
-                stage_decision=lambda turn, decision: staged.append((turn, decision)),
                 receipt_timeout_s=1,
             )
-            routed = await coordinator.try_route_user_message(
+            routed = await coordinator.execute_user_decision(
+                decision=await Decider().capture(),
                 text="继续跑，改成猛攻。",
                 session_id="b2-phase-race-chat",
                 turn_id="turn-phase-race",
@@ -895,7 +1001,6 @@ def test_b2_recompiles_once_when_the_app_phase_changes_before_invoke() -> None:
             ]
             assert len(requested) == 1
             assert requested[0]["type"] == "run.restart"
-            assert staged == []
 
             await routed["delivery_observer"]({"visible": True, "voice": {}})
             branch = runtime.recent_role_branch_messages("b2-phase-race-chat") or []
@@ -956,12 +1061,11 @@ def test_b2_rejected_receipt_never_releases_the_private_line() -> None:
         try:
             coordinator = AuipB2Coordinator(
                 runtime=runtime,
-                control_decider=Decider(),
                 role_chooser=choose,
-                stage_decision=lambda *_args: None,
                 receipt_timeout_s=1,
             )
-            routed = await coordinator.try_route_user_message(
+            routed = await coordinator.execute_user_decision(
+                decision=await Decider().capture(),
                 text="下一手",
                 session_id="b2-chat",
                 turn_id="turn-rejected",
@@ -977,10 +1081,9 @@ def test_b2_rejected_receipt_never_releases_the_private_line() -> None:
     asyncio.run(scenario())
 
 
-def test_b2_stages_non_step_decision_for_the_ordinary_chat_path() -> None:
+def test_b2_rejects_non_step_decision_without_starting_action() -> None:
     async def scenario() -> None:
         runtime, registered = _runtime()
-        staged: list[tuple[str, object]] = []
 
         class Decider:
             def capture(self, **_kwargs):
@@ -995,18 +1098,15 @@ def test_b2_stages_non_step_decision_for_the_ordinary_chat_path() -> None:
 
         coordinator = AuipB2Coordinator(
             runtime=runtime,
-            control_decider=Decider(),
             role_chooser=lambda **_kwargs: {},
-            stage_decision=lambda turn, decision: staged.append((turn, decision)),
         )
-        routed = await coordinator.try_route_user_message(
+        routed = await coordinator.execute_user_decision(
+                decision=await Decider().capture(),
             text="帮我查一下 Paxos 论文",
             session_id="b2-chat",
             turn_id="turn-work",
         )
         assert routed is None
-        assert staged == [("turn-work", staged[0][1])]
-        assert staged[0][1].work_relation == "independent"
         assert runtime.get(registered["app_session_id"])["pending_action"] is None
 
     asyncio.run(scenario())
@@ -1016,7 +1116,6 @@ def test_b2_bypasses_a_closed_appsession_without_calling_any_model_lane() -> Non
     async def scenario() -> None:
         runtime, registered = _runtime()
         runtime.host_leave(app_session_id=registered["app_session_id"])
-        staged: list[tuple[str, object]] = []
 
         class Decider:
             def capture(self, **_kwargs):
@@ -1027,18 +1126,16 @@ def test_b2_bypasses_a_closed_appsession_without_calling_any_model_lane() -> Non
 
         coordinator = AuipB2Coordinator(
             runtime=runtime,
-            control_decider=Decider(),
             role_chooser=choose,
-            stage_decision=lambda turn, decision: staged.append((turn, decision)),
         )
-        routed = await coordinator.try_route_user_message(
+        routed = await coordinator.execute_user_decision(
+                decision=AuipControlDecision(status="ok", action="step", app_session_id=registered["app_session_id"]),
             text="聊点别的。",
             session_id="b2-chat",
             turn_id="turn-after-close",
         )
 
         assert routed is None
-        assert staged == []
 
     asyncio.run(scenario())
 
@@ -1269,48 +1366,6 @@ def test_b2_open_role_can_choose_schema_bound_payload_or_locked_candidate() -> N
     asyncio.run(scenario())
 
 
-def test_staged_leave_reuses_the_original_immediate_dispatch_semantics() -> None:
-    async def scenario() -> None:
-        dispatched: list[dict] = []
-
-        async def route(attrs, **_kwargs):
-            dispatched.append(dict(attrs))
-
-        chat = ChatRuntime()
-        chat.configure(auip_control_callback=route)
-        chat.stage_auip_decision(
-            "turn-leave",
-            AuipControlDecision(
-                status="ok",
-                action="leave",
-                work_relation="subsumed",
-                app_session_id="app-b2",
-            ),
-        )
-        state = _TurnState(
-            gui_callback=None,
-            turn_id="turn-leave",
-            question="关掉游戏",
-            session_id="chat-b2",
-        )
-        assert chat._start_auip_decision(state) is True
-        assert state.auip_decision_result is not None
-        assert state.auip_decision_result.action == "leave"
-        assert state.auip_decision_ready.is_set() is True
-        assert dispatched == []
-        await state.auip_decision_task
-
-        assert dispatched == [
-            {
-                "action": "leave",
-                "_host_app_session_id": "app-b2",
-            }
-        ]
-        assert state.auip_decision_dispatched is True
-
-    asyncio.run(scenario())
-
-
 def test_automatic_b2_opportunity_uses_same_candidate_owner_then_yields_presentation() -> None:
     async def scenario() -> None:
         runtime, registered = _runtime()
@@ -1364,9 +1419,7 @@ def test_automatic_b2_opportunity_uses_same_candidate_owner_then_yields_presenta
         try:
             coordinator = AuipB2Coordinator(
                 runtime=runtime,
-                control_decider=object(),
                 role_chooser=choose,
-                stage_decision=lambda *_args: None,
                 receipt_timeout_s=1,
             )
             result = await coordinator.execute_automatic_step(
@@ -1381,6 +1434,7 @@ def test_automatic_b2_opportunity_uses_same_candidate_owner_then_yields_presenta
             assert "decision_context" not in result["receipt"]
             assert len(chooser_calls) == 2
             assert chooser_calls[0]["speech_required"] is False
+            assert all(call["user_instruction"] == "" for call in chooser_calls)
             snapshot = runtime.get(sid)
             assert snapshot["latest_delivered_narration"] is None
             assert "decision_context" not in snapshot["latest_verified_self_action"]

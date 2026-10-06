@@ -87,8 +87,7 @@ async def test_work_retract_preserves_artifact_and_independent_application(pendi
         context.host.runtime.cancel=AsyncMock(wraps=context.host.runtime.cancel)
         if app_action!='none':
             decider=AuipControlDecisionResolver(query=app_query,app_runtime=runtime,launch_catalog=_Catalog())
-            b2=AuipB2Coordinator(runtime=runtime,control_decider=decider,role_chooser=choose,
-                stage_decision=lambda *_:pytest.fail('unexpected legacy fallback'))
+            b2=AuipB2Coordinator(runtime=runtime,role_chooser=choose)
             context.manager.configure_auip(decider,AsyncMock(side_effect=AssertionError('do not duplicate the app lane')),
                 step_request=b2.execute_user_decision)
         context.publications.clear()

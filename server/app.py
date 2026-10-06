@@ -16,10 +16,8 @@ from logging.handlers import RotatingFileHandler
 import os
 import sys
 import mimetypes
-import re
 import threading
 import time
-import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from queue import Queue
@@ -33,8 +31,7 @@ from typing import Any, TYPE_CHECKING
 os.environ.setdefault("KMP_BLOCKTIME", "1")
 
 if TYPE_CHECKING:
-    from core.session_manager import ConversationHistory
-    from server.turn_admission import TurnAdmissionRecord
+    pass
 
 from tts.pre_translation_runtime import (
     configured_default_enabled as _configured_pre_translation_default,
@@ -91,7 +88,6 @@ from server.log_encoding import install_mojibake_repair_filter, install_stdio_mo
 from server.local_auth import LocalAuthPolicy, clear_inherited_auth_environment
 from config import settings
 from config.log_privacy import protected_text
-from server.work_steer_control import route_active_amendment as _route_active_amendment
 
 install_stdio_mojibake_repair()
 
@@ -212,7 +208,6 @@ work_status_narrator = None
 # post-condition waits for the shared character lane in a tracked background
 # task.  This keeps a compound "switch and edit" from delaying Provider start.
 _focus_confirmation_tasks: set[asyncio.Task] = set()
-_auip_preparation_tasks: set[asyncio.Task] = set()
 
 
 def _websocket_origin_allowed(
@@ -344,7 +339,6 @@ async def bootstrap(port: int = 17777) -> None:
     )
     import llm.client as _llm_client_mod
 
-    cooperative_chat_enabled = bool(settings.COOPERATIVE_CHAT_ENABLED)
 
     # wire handler registration.
     from server.ws_handler import manager as _mgr
@@ -398,11 +392,9 @@ async def bootstrap(port: int = 17777) -> None:
     # Handlers are registered before uvicorn starts so that methods are
     # recognized immediately. Runtime deps are injected later via configure().
     chat_h = ChatHandler()
-    chat_role_delivery = None
-    if cooperative_chat_enabled:
-        from server.chat_role_delivery import ChatRoleDelivery
+    from server.chat_role_delivery import ChatRoleDelivery
 
-        chat_role_delivery = ChatRoleDelivery()
+    chat_role_delivery = ChatRoleDelivery()
     session_h = SessionHandler()
     tts_h = TtsHandler()
     asr_h = AsrHandler()
@@ -579,8 +571,7 @@ async def bootstrap(port: int = 17777) -> None:
         render_h, wallpaper_h, provider_h, capability_h, mcp_connection_h,
         provider_activity_h, work_h, work_preview_h, attention_h, auip_h, vn_h,
         vn_launch_h)
-    if chat_role_delivery is not None:
-        handlers += (chat_role_delivery,)
+    handlers += (chat_role_delivery,)
     for h in handlers:
         _mgr.register_handler(h)
 
@@ -640,25 +631,13 @@ async def bootstrap(port: int = 17777) -> None:
 
     @app.get("/health")
     async def health():
-        from core.chat_runtime import get_chat_runtime
-
-        chat_runtime = get_chat_runtime()
         return {
             "status": "ok" if backend_ready else "starting",
             **auth_policy.health_fields(),
             "vts_connected": vts_manager.connected if vts_manager else False,
-            "control_decision_mode": (
-                "authority"
-                if bool(getattr(chat_runtime, "_control_proposal_authority", False))
-                else "shadow"
-                if getattr(chat_runtime, "_control_proposal_observer", None) is not None
-                else "disabled"
-            ),
-            "cooperative_chat_mode": "authority" if cooperative_chat_enabled else "disabled",
-            "cooperative_permission_policy": (
-                settings.COOPERATIVE_CHAT_PERMISSION_POLICY
-                if cooperative_chat_enabled else "disabled"
-            ),
+            "control_decision_mode": "retired",
+            "cooperative_chat_mode": "authority",
+            "cooperative_permission_policy": settings.COOPERATIVE_CHAT_PERMISSION_POLICY,
         }
 
     @app.get("/runtime/status")
@@ -1642,12 +1621,6 @@ async def bootstrap(port: int = 17777) -> None:
         vts_manager=vts_manager,
         pending_actions=pending_actions,
     )
-    from server import host_action_dispatcher
-
-    host_action_dispatcher.configure(
-        delegate_handler=_handle_delegate,
-        expression_sink=_vts_action_mod.record_expression_actions,
-    )
     _llm_client_mod.configure(llm_provider=LLM_PROVIDER)
     from core.chat_runtime import get_chat_runtime
 
@@ -1660,182 +1633,167 @@ async def bootstrap(port: int = 17777) -> None:
         False if e2e_no_tts else _pre_translation_enabled()
     )
 
-    cooperative_chat = None
-    cooperative_ledger = None
-    if cooperative_chat_enabled:
-        from server.control_ledger import ControlLedgerStore
-        from server.cooperative_chat_ingress import CooperativeChatManager
-        from server.cooperative_delivery import CooperativeHostDelivery
-        from server.scratch_workspace import create_scratch_workspace
-        from llm.prompts import get_system_prompt
+    from server.control_ledger import ControlLedgerStore
+    from server.cooperative_chat_ingress import CooperativeChatManager
+    from server.cooperative_delivery import CooperativeHostDelivery
+    from server.scratch_workspace import create_scratch_workspace
+    from llm.prompts import get_system_prompt
 
-        provider_id = str(settings.COOPERATIVE_CHAT_PROVIDER or "").strip().lower()
-        if not provider_id:
-            raise RuntimeError("cooperative Chat Provider configuration is empty")
-        if provider_runtime.get_manifest(provider_id) is None:
-            logger.warning(
-                "cooperative Chat execution Provider is unavailable at startup: %s; "
-                "role-only turns remain available and execution requests will reject",
-                provider_id,
-            )
-        try:
-            requirements_payload = json.loads(settings.COOPERATIVE_CHAT_REQUIREMENTS_JSON)
-        except (TypeError, ValueError) as exc:
-            raise RuntimeError("invalid cooperative Chat Provider requirements JSON") from exc
-        if not isinstance(requirements_payload, dict):
-            raise RuntimeError("cooperative Chat Provider requirements must be an object")
-        try:
-            additional_requirements_payload = json.loads(
-                settings.COOPERATIVE_CHAT_ADDITIONAL_REQUIREMENTS_JSON
-            )
-        except (TypeError, ValueError) as exc:
-            raise RuntimeError(
-                "invalid additional cooperative Provider requirements JSON"
-            ) from exc
-        if not isinstance(additional_requirements_payload, dict):
-            raise RuntimeError(
-                "additional cooperative Provider requirements must be an object"
-            )
-        from agent_host.provider_roles import work_provider_roles, work_context_requirements
-
-        context_requirements = work_context_requirements(provider_runtime,
-            roles=work_provider_roles(), primary_policy=requirements_payload,
-            additional_policies=additional_requirements_payload)
-        cooperative_ledger = ControlLedgerStore(Path(work_ledger_store.db_path))
-        cooperative_deliveries = {}
-
-        async def _query_cooperative_chat(messages, *, visual_context=None, on_text=None,
-                                          json_output=None):
-            from server.cooperative_delivery import query_role_messages
-            from llm.prompts import (
-                finalize_system_prompt_language,
-                wrap_user_message_for_language_lock,
-            )
-
-            role_messages = [dict(message) for message in messages]
-            role_messages[0]["content"] = finalize_system_prompt_language(
-                role_messages[0]["content"])
-            # The same query port also serves typed-reference and other generic
-            # JSON decisions. Only the loop's explicit sources select role mode.
-            try:
-                frame = json.loads(role_messages[-1]["content"])
-            except (TypeError, ValueError):
-                frame = None
-            source_kind = frame.get("source_kind") if isinstance(frame, dict) else None
-            if source_kind == "user":
-                role_messages[-1]["content"] = wrap_user_message_for_language_lock(
-                    role_messages[-1]["content"])
-
-            return await query_role_messages(_llm_client_mod.remote_llm_messages_query,
-                role_messages,
-                json_output=(source_kind not in ("provider", "host_receipt")
-                    if json_output is None else json_output),
-                on_text=on_text, visual_context=visual_context, temperature=0.0,
-                max_tokens=max(1, int(settings.COOPERATIVE_CHAT_QUERY_MAX_TOKENS)),
-                timeout=max(1.0, float(settings.COOPERATIVE_CHAT_QUERY_TIMEOUT_S)))
-
-        def _cooperative_publisher(session_id):
-            from core import session_manager as cooperative_sessions
-
-            delivery = CooperativeHostDelivery(session_id=session_id,
-                display=chat_role_delivery.publish, narration_sink=_speak_cooperative_chat,
-                role_stream_factory=lambda cause, gui_callback=None,
-                    auip_background_capture_release=None:
-                    chat_runtime.begin_role_text_stream(
-                        turn_id=cause, speech=not e2e_no_tts,
-                        gui_callback=gui_callback,
-                        auip_background_capture_release=(
-                            auip_background_capture_release)),
-                partial_display=chat_role_delivery.publish_partial,
-                allows=chat_role_delivery.allows,
-                record_display=cooperative_sessions.append_session_message,
-                finish_execution=work_observer.finish_external_presentation,
-                begin_execution_result=work_observer.begin_external_result)
-            cooperative_deliveries[session_id] = delivery
-            return delivery
-
-        def _select_cooperative_role_provider(provider):
-            selected = str(provider or "").strip()
-            if selected:
-                _llm_client_mod.configure(llm_provider=selected)
-
-        cooperative_chat = CooperativeChatManager(chat_h, ledger=cooperative_ledger,
-            fence_scope="cooperative:foreground", provider=provider_id,
-            runtime=provider_runtime, context_requirements=context_requirements,
-            allocate=lambda label, context_id:create_scratch_workspace(
-                label, unique_id=context_id), query=_query_cooperative_chat,
-            persona=lambda: get_system_prompt("base"), publish_factory=_cooperative_publisher,
-            role_provider_selector=_select_cooperative_role_provider,
-            permission_policy=settings.COOPERATIVE_CHAT_PERMISSION_POLICY,
-            permission_store=work_ledger_store,
-            destination=work_ledger.destination)
-        canvas_action_router.configure_cooperative_permission_action(
-            cooperative_chat.resolve_permission
+    provider_id = str(settings.COOPERATIVE_CHAT_PROVIDER or "").strip().lower()
+    if not provider_id:
+        raise RuntimeError("cooperative Chat Provider configuration is empty")
+    if provider_runtime.get_manifest(provider_id) is None:
+        logger.warning(
+            "cooperative Chat execution Provider is unavailable at startup: %s; "
+            "role-only turns remain available and execution requests will reject",
+            provider_id,
         )
-
-        from server.work_control import WorkControl
-        from server.work_effect_executor import WorkEffectExecutor
-
-        cooperative_work_control = WorkControl(cooperative_ledger,
-            work_ledger_store,
-            cooperative_context_resolver=cooperative_chat.resolve_work_recipient)
-        work_ledger.configure_work_control(cooperative_work_control)
-        cooperative_chat.configure_work(cooperative_work_control,
-            WorkEffectExecutor(cooperative_work_control, provider_runtime, work_ledger),
-            input_request=work_h.submit_input,
-            report_request=_answer_report_from_ledger,
-            focus_request=lambda attrs, *, session_id: _handle_declared_focus(
-                attrs, announce_result=False, session_id=session_id))
-        if settings.COOPERATIVE_WORK_PLANNER_ENABLED:
-            from server.work_planner import RuntimeWorkPlanner
-
-            async def _query_cooperative_work(messages):
-                return await asyncio.to_thread(
-                    _llm_client_mod.remote_llm_messages_query, messages,
-                    json_output=True, temperature=0.0,
-                    model=settings.COOPERATIVE_WORK_PLANNER_MODEL or None,
-                    max_tokens=max(1, int(settings.CONTROL_DECISION_MAX_TOKENS)),
-                    timeout=max(1.0, float(settings.CONTROL_DECISION_TIMEOUT_S)))
-
-            cooperative_chat.work_planner = RuntimeWorkPlanner(
-                coordinator=work_ledger, query=_query_cooperative_work,
-                provider=provider_id,
-                project_limit=settings.CONTROL_DECISION_PROJECT_LIMIT,
-                work_item_limit=settings.CONTROL_DECISION_WORK_ITEM_LIMIT,
-                candidate_limit=settings.CONTROL_DECISION_EXHAUSTIVE_CANDIDATE_LIMIT)
-        cooperative_chat.configure_browser(interaction_branch)
-
-        def _prepare_provider_request(request, run_id, intake_authority=None):
-            authority_kind = str(getattr(intake_authority, "kind", "") or "")
-            if (authority_kind == "cooperative_provider_effect"
-                    or (not authority_kind and str(request.metadata.get(
-                        "cooperative_context_id") or "").strip())):
-                return cooperative_chat.prepare_runtime_request(
-                    request, run_id, intake_authority,
-                )
-            return work_ledger.prepare_request(request, run_id, intake_authority)
-
-        provider_runtime.set_request_preparer(_prepare_provider_request)
-        provider_runtime.set_native_session_checkpoint(
-            cooperative_chat.checkpoint_native_session
+    try:
+        requirements_payload = json.loads(settings.COOPERATIVE_CHAT_REQUIREMENTS_JSON)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("invalid cooperative Chat Provider requirements JSON") from exc
+    if not isinstance(requirements_payload, dict):
+        raise RuntimeError("cooperative Chat Provider requirements must be an object")
+    try:
+        additional_requirements_payload = json.loads(
+            settings.COOPERATIVE_CHAT_ADDITIONAL_REQUIREMENTS_JSON
         )
-
-    control_authority_enabled = bool(
-        getattr(settings, "CONTROL_DECISION_AUTHORITY_ENABLED", False)
-    ) and not cooperative_chat_enabled
-    control_shadow_enabled = bool(
-        getattr(settings, "CONTROL_DECISION_SHADOW_ENABLED", False)
-    ) and not cooperative_chat_enabled
-    compound_control_shadow_enabled = bool(
-        getattr(settings, "COMPOUND_CONTROL_SHADOW_ENABLED", False)
-    ) and not cooperative_chat_enabled
-    compound_control_authority_enabled = bool(
-        getattr(settings, "COMPOUND_CONTROL_AUTHORITY_ENABLED", False)
-    ) and not cooperative_chat_enabled
-    if compound_control_authority_enabled and not control_authority_enabled:
+    except (TypeError, ValueError) as exc:
         raise RuntimeError(
-            "compound control authority requires ControlDecision authority"
+            "invalid additional cooperative Provider requirements JSON"
+        ) from exc
+    if not isinstance(additional_requirements_payload, dict):
+        raise RuntimeError(
+            "additional cooperative Provider requirements must be an object"
         )
+    from agent_host.provider_roles import work_provider_roles, work_context_requirements
+
+    context_requirements = work_context_requirements(provider_runtime,
+        roles=work_provider_roles(), primary_policy=requirements_payload,
+        additional_policies=additional_requirements_payload)
+    cooperative_ledger = ControlLedgerStore(Path(work_ledger_store.db_path))
+    cooperative_deliveries = {}
+
+    async def _query_cooperative_chat(messages, *, visual_context=None, on_text=None,
+                                      json_output=None):
+        from server.cooperative_delivery import query_role_messages
+        from llm.prompts import (
+            finalize_system_prompt_language,
+            wrap_user_message_for_language_lock,
+        )
+
+        role_messages = [dict(message) for message in messages]
+        role_messages[0]["content"] = finalize_system_prompt_language(
+            role_messages[0]["content"])
+        # The same query port also serves typed-reference and other generic
+        # JSON decisions. Only the loop's explicit sources select role mode.
+        try:
+            frame = json.loads(role_messages[-1]["content"])
+        except (TypeError, ValueError):
+            frame = None
+        source_kind = frame.get("source_kind") if isinstance(frame, dict) else None
+        if source_kind == "user":
+            role_messages[-1]["content"] = wrap_user_message_for_language_lock(
+                role_messages[-1]["content"])
+
+        return await query_role_messages(_llm_client_mod.remote_llm_messages_query,
+            role_messages,
+            json_output=(source_kind not in ("provider", "host_receipt")
+                if json_output is None else json_output),
+            on_text=on_text, visual_context=visual_context, temperature=0.0,
+            max_tokens=max(1, int(settings.COOPERATIVE_CHAT_QUERY_MAX_TOKENS)),
+            timeout=max(1.0, float(settings.COOPERATIVE_CHAT_QUERY_TIMEOUT_S)))
+
+    def _cooperative_publisher(session_id):
+        from core import session_manager as cooperative_sessions
+
+        delivery = CooperativeHostDelivery(session_id=session_id,
+            display=chat_role_delivery.publish, narration_sink=_speak_cooperative_chat,
+            role_stream_factory=lambda cause, gui_callback=None,
+                auip_background_capture_release=None:
+                chat_runtime.begin_role_text_stream(
+                    turn_id=cause, speech=not e2e_no_tts,
+                    gui_callback=gui_callback,
+                    auip_background_capture_release=(
+                        auip_background_capture_release)),
+            partial_display=chat_role_delivery.publish_partial,
+            allows=chat_role_delivery.allows,
+            record_display=cooperative_sessions.append_session_message,
+            finish_execution=work_observer.finish_external_presentation,
+            begin_execution_result=work_observer.begin_external_result)
+        cooperative_deliveries[session_id] = delivery
+        return delivery
+
+    def _select_cooperative_role_provider(provider):
+        selected = str(provider or "").strip()
+        if selected:
+            _llm_client_mod.configure(llm_provider=selected)
+
+    from core.character_rag import role_character_reference
+    from llm.hybrid_stream import hybrid_local_head
+
+    cooperative_chat = CooperativeChatManager(chat_h, ledger=cooperative_ledger,
+        fence_scope="cooperative:foreground", provider=provider_id,
+        runtime=provider_runtime, context_requirements=context_requirements,
+        allocate=lambda label, context_id:create_scratch_workspace(
+            label, unique_id=context_id), query=_query_cooperative_chat,
+        persona=lambda: get_system_prompt("base"), publish_factory=_cooperative_publisher,
+        role_provider_selector=_select_cooperative_role_provider,
+        role_reference=role_character_reference,
+        hybrid_head=hybrid_local_head,
+        permission_policy=settings.COOPERATIVE_CHAT_PERMISSION_POLICY,
+        permission_store=work_ledger_store,
+        destination=work_ledger.destination)
+    canvas_action_router.configure_cooperative_permission_action(
+        cooperative_chat.resolve_permission
+    )
+
+    from server.work_control import WorkControl
+    from server.work_effect_executor import WorkEffectExecutor
+
+    cooperative_work_control = WorkControl(cooperative_ledger,
+        work_ledger_store,
+        cooperative_context_resolver=cooperative_chat.resolve_work_recipient)
+    work_ledger.configure_work_control(cooperative_work_control)
+    cooperative_chat.configure_work(cooperative_work_control,
+        WorkEffectExecutor(cooperative_work_control, provider_runtime, work_ledger),
+        input_request=work_h.submit_input,
+        report_request=_answer_report_from_ledger,
+        focus_request=lambda attrs, *, session_id: _handle_declared_focus(
+            attrs, announce_result=False, session_id=session_id))
+    if settings.COOPERATIVE_WORK_PLANNER_ENABLED:
+        from server.work_planner import RuntimeWorkPlanner
+
+        async def _query_cooperative_work(messages):
+            return await asyncio.to_thread(
+                _llm_client_mod.remote_llm_messages_query, messages,
+                json_output=True, temperature=0.0,
+                model=settings.COOPERATIVE_WORK_PLANNER_MODEL or None,
+                max_tokens=max(1, int(settings.CONTROL_DECISION_MAX_TOKENS)),
+                timeout=max(1.0, float(settings.CONTROL_DECISION_TIMEOUT_S)))
+
+        cooperative_chat.work_planner = RuntimeWorkPlanner(
+            coordinator=work_ledger, query=_query_cooperative_work,
+            provider=provider_id,
+            project_limit=settings.CONTROL_DECISION_PROJECT_LIMIT,
+            work_item_limit=settings.CONTROL_DECISION_WORK_ITEM_LIMIT,
+            candidate_limit=settings.CONTROL_DECISION_EXHAUSTIVE_CANDIDATE_LIMIT)
+    cooperative_chat.configure_browser(interaction_branch)
+
+    def _prepare_provider_request(request, run_id, intake_authority=None):
+        authority_kind = str(getattr(intake_authority, "kind", "") or "")
+        if (authority_kind == "cooperative_provider_effect"
+                or (not authority_kind and str(request.metadata.get(
+                    "cooperative_context_id") or "").strip())):
+            return cooperative_chat.prepare_runtime_request(
+                request, run_id, intake_authority,
+            )
+        return work_ledger.prepare_request(request, run_id, intake_authority)
+
+    provider_runtime.set_request_preparer(_prepare_provider_request)
+    provider_runtime.set_native_session_checkpoint(
+        cooperative_chat.checkpoint_native_session
+    )
 
     async def _query_structured_control(
         messages: list[dict[str, str]],
@@ -1848,78 +1806,6 @@ async def bootstrap(port: int = 17777) -> None:
             temperature=0.0,
             max_tokens=max_tokens,
             timeout=float(getattr(settings, "CONTROL_DECISION_TIMEOUT_S", 45)),
-        )
-
-    if control_shadow_enabled or control_authority_enabled:
-        from server.control_adjudication import RuntimeControlDecisionResolver
-
-        async def _query_control_decision(messages: list[dict[str, str]]) -> str:
-            return await _query_structured_control(
-                messages,
-                max_tokens=int(
-                    getattr(settings, "CONTROL_DECISION_MAX_TOKENS", 900)
-                ),
-            )
-
-        control_resolver = RuntimeControlDecisionResolver(
-            coordinator=work_ledger,
-            query=_query_control_decision,
-            compound_enabled=(
-                compound_control_shadow_enabled
-                or compound_control_authority_enabled
-            ),
-            project_limit=int(
-                getattr(settings, "CONTROL_DECISION_PROJECT_LIMIT", 200)
-            ),
-            work_item_limit=int(
-                getattr(settings, "CONTROL_DECISION_WORK_ITEM_LIMIT", 200)
-            ),
-            exhaustive_candidate_limit=int(
-                getattr(
-                    settings,
-                    "CONTROL_DECISION_EXHAUSTIVE_CANDIDATE_LIMIT",
-                    64,
-                )
-            ),
-        )
-        get_chat_runtime().configure(
-            control_proposal_observer=control_resolver,
-            control_proposal_authority=control_authority_enabled,
-            compound_control_authority=compound_control_authority_enabled,
-            control_proposal_authority_timeout_s=float(
-                getattr(settings, "CONTROL_DECISION_AUTHORITY_TIMEOUT_S", 30.0)
-            ),
-            control_authority_block_callback=(
-                _announce_control_authority_block
-                if control_authority_enabled
-                else None
-            ),
-        )
-        logger.info(
-            (
-                "[CONTROL-DECISION] runtime enabled mode=%s "
-                "project_limit=%d work_item_limit=%d exhaustive_limit=%d "
-                "compound_authority=%s compound_shadow=%s"
-            ),
-            "authority-canary" if control_authority_enabled else "shadow",
-            int(getattr(settings, "CONTROL_DECISION_PROJECT_LIMIT", 200)),
-            int(getattr(settings, "CONTROL_DECISION_WORK_ITEM_LIMIT", 200)),
-            int(
-                getattr(
-                    settings,
-                    "CONTROL_DECISION_EXHAUSTIVE_CANDIDATE_LIMIT",
-                    64,
-                )
-            ),
-            compound_control_authority_enabled,
-            compound_control_shadow_enabled,
-        )
-    else:
-        get_chat_runtime().configure(
-            control_proposal_observer=None,
-            control_proposal_authority=False,
-            compound_control_authority=False,
-            control_authority_block_callback=None,
         )
 
     # expression presets.
@@ -2141,88 +2027,6 @@ async def bootstrap(port: int = 17777) -> None:
 
     from server.auip_control_decision import AuipControlDecisionResolver
 
-    async def _route_auip_control(
-        attrs: dict,
-        *,
-        session_id: str,
-        user_text: str,
-        turn_id: str,
-        turn_admission: "TurnAdmissionRecord | None" = None,
-    ) -> None:
-        """Resolve role-level AUIP control against host-owned focus.
-
-        The model selects only the source-local control verb.  AppSession
-        identity comes from the current Session, so an app cannot smuggle a
-        target id through prompt data and a stale model id cannot redirect it.
-        """
-        from core.turn_coordinator import require_legacy_turn_authority
-
-        require_legacy_turn_authority(turn_admission)
-
-        async def prepare_existing_work(candidate, mode: str) -> None:
-            """Queue the AUIP prerequisite through the ordinary Work path.
-
-            The source-local decision authorizes only preparation of this
-            Host-resolved WorkItem. It neither chooses a Provider nor creates
-            an AUIP-shaped run. The Provider adapter receives the user's exact
-            request plus the existing host-authoring capability contract.
-            """
-
-            attrs = {
-                "intent": "amend",
-                "subject": "work_item",
-                "work_placement": "not_applicable",
-                "workspace_ref": str(candidate.work_item_id),
-                "_host_reference_resolved": True,
-                "_host_dispatch_source": "auip_prepare",
-                "_host_auip_mode": mode,
-                "_host_source_user_text": str(user_text or "")[:4000],
-                "_host_turn_id": str(turn_id or "")[:200],
-            }
-
-            async def run() -> None:
-                try:
-                    await _handle_delegate(
-                        str(user_text or ""), attrs, turn_admission=turn_admission,
-                    )
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    logger.exception(
-                        "[AUIP-CONTROL] preparation Work failed turn_id=%s",
-                        turn_id,
-                    )
-
-            task = asyncio.create_task(
-                run(),
-                name=f"auip-prepare:{turn_id or 'turn'}",
-            )
-            _auip_preparation_tasks.add(task)
-            task.add_done_callback(_auip_preparation_tasks.discard)
-
-        action = str(attrs.get("action") or "").strip().lower()
-        try:
-            result = await auip_h.route_control(
-                attrs,
-                session_id=session_id,
-                user_text=user_text,
-                turn_id=turn_id,
-                prepare_work=prepare_existing_work,
-            )
-        except Exception:
-            logger.exception(
-                "[AUIP-CONTROL] dispatch failed action=%s turn_id=%s",
-                action,
-                turn_id,
-            )
-            return
-        if not isinstance(result, dict) or result.get("ok") is not True:
-            logger.warning(
-                "[AUIP-CONTROL] rejected action=%s turn_id=%s result=%s",
-                action,
-                turn_id,
-                result,
-            )
 
     async def _query_auip_control(messages: list[dict[str, str]]) -> str:
         return await _query_structured_control(messages, max_tokens=300)
@@ -2262,10 +2066,6 @@ async def bootstrap(port: int = 17777) -> None:
         if bool(getattr(settings, "AUIP_CONTROL_DECISION_ENABLED", False))
         else None
     )
-    get_chat_runtime().configure(
-        auip_control_callback=_route_auip_control,
-        auip_control_decider=auip_control_decider,
-    )
 
     auip_b2 = None
     auip_b2_unavailable_reason = ""
@@ -2294,7 +2094,6 @@ async def bootstrap(port: int = 17777) -> None:
         else:
             auip_b2 = AuipB2Coordinator(
                 runtime=auip_h.runtime,
-                control_decider=auip_control_decider,
                 role_chooser=choose_b2_role_action,
                 open_role_chooser=(
                     choose_b2_open_role_action
@@ -2302,7 +2101,6 @@ async def bootstrap(port: int = 17777) -> None:
                     else None
                 ),
                 open_payload_mode=settings.AUIP_B2_OPEN_PAYLOAD_MODE,
-                stage_decision=get_chat_runtime().stage_auip_decision,
             )
             logger.info(
                 "[AUIP-B2] foreground route enabled provider=%s model=%s "
@@ -2319,53 +2117,6 @@ async def bootstrap(port: int = 17777) -> None:
         )
 
     # configure handlers with runtime deps.
-    async def _route_interaction_branch(
-        *,
-        text: str,
-        session_id: str,
-        turn_id: str = "",
-        routing_scope: dict[str, Any] | None = None,
-        turn_admission: "TurnAdmissionRecord | None" = None,
-    ) -> dict | None:
-        # Free-form language first acquires a canonical operation from the
-        # model-owned DELEGATE/ControlDecision path. The Host must not infer
-        # ``report`` from words such as "game" and "state": the same words can
-        # describe an amend request. Canonical reports still read the Ledger
-        # deterministically in ``_answer_report_from_ledger`` and never start
-        # a Provider.
-        if turn_admission is not None:
-            session_id = turn_admission.session_id
-        routed = await interaction_branch.try_route_user_message(
-            text=text,
-            session_id=session_id,
-            turn_id=turn_id,
-            routing_scope=routing_scope,
-            turn_admission=turn_admission,
-        )
-        if routed is not None:
-            return routed
-        scope_state = (
-            str(routing_scope.get("state") or "").strip().lower()
-            if isinstance(routing_scope, dict)
-            else ""
-        )
-        if scope_state in {"bound", "quarantined", "reserved"}:
-            # A Browser-bound turn must reach the canonical plan/guard before
-            # crossing into AUIP. A direct AUIP fast path would otherwise evade
-            # stale-lease and stop-uncertainty checks.
-            return None
-        if scope_state == "absent" and not await interaction_branch.validate_absent_routing_scope(
-            session_id
-        ):
-            return None
-        if auip_b2 is not None:
-            return await auip_b2.try_route_user_message(
-                text=text,
-                session_id=session_id,
-                turn_id=turn_id,
-                turn_admission=turn_admission,
-            )
-        return None
 
     async def _interrupt_presentation_before_chat() -> None:
         await tts_h.handle(
@@ -2383,51 +2134,37 @@ async def bootstrap(port: int = 17777) -> None:
             _attention_session_manager.get_current_session_id() or ""
         )
 
-    if cooperative_chat is not None:
-        if auip_control_decider is not None:
-            async def _route_cooperative_auip_control(attrs, *, session_id,
-                                                       user_text, turn_id, prepare_work=None):
-                result = await auip_h.route_control(attrs,
-                    session_id=session_id, user_text=user_text,
-                    turn_id=turn_id, prepare_work=prepare_work)
-                if (str(attrs.get("action") or "") == "step"
-                        and isinstance(result, dict) and result.get("ok") is True):
-                    app_session_id = str(attrs.get("_host_app_session_id") or "")
-                    await auip_engagement.wait_for_idle(app_session_id)
-                    projection = auip_h.runtime.get(app_session_id)
-                    pending = projection.get("pending_action")
-                    verified = projection.get("latest_verified_self_action")
-                    if not isinstance(pending, dict) and not (
-                            isinstance(verified, dict)
-                            and verified.get("accepted") is True):
-                        return {"ok":False,
-                            "error":str(projection.get("operator_error")
-                                or "auip_step_not_admitted")}
-                return result
+    if auip_control_decider is not None:
+        async def _route_cooperative_auip_control(attrs, *, session_id,
+                                                   user_text, turn_id, prepare_work=None):
+            result = await auip_h.route_control(attrs,
+                session_id=session_id, user_text=user_text,
+                turn_id=turn_id, prepare_work=prepare_work)
+            if (str(attrs.get("action") or "") == "step"
+                    and isinstance(result, dict) and result.get("ok") is True):
+                app_session_id = str(attrs.get("_host_app_session_id") or "")
+                await auip_engagement.wait_for_idle(app_session_id)
+                projection = auip_h.runtime.get(app_session_id)
+                pending = projection.get("pending_action")
+                verified = projection.get("latest_verified_self_action")
+                if not isinstance(pending, dict) and not (
+                        isinstance(verified, dict)
+                        and verified.get("accepted") is True):
+                    return {"ok":False,
+                        "error":str(projection.get("operator_error")
+                            or "auip_step_not_admitted")}
+            return result
 
-            cooperative_chat.configure_auip(
-                auip_control_decider, _route_cooperative_auip_control,
-                cancel_deferred=auip_launch.cancel_deferred,
-                step_request=auip_b2.execute_user_decision if auip_b2 is not None else None,
-                entry_context=lambda session:auip_launch.render_prompt_context(
-                    session, language="ja", include_control_contract=False))
-        cooperative_chat.install(pending_sentence_items=pending_sentence_items,
-            on_turn_finished=_handle_wake_chat_finished,
-            assistant_voice_sink=_speak_cooperative_chat,
-            presentation_interrupt=_interrupt_presentation_before_chat,
-            background_interaction_interrupt=_interrupt_background_interaction_before_chat)
-    else:
-        chat_h.configure(
-            stream_llm_query=_stream_llm_query_adapter,
-            pending_sentence_items=pending_sentence_items,
-            on_turn_finished=_handle_wake_chat_finished,
-            interaction_branch_router=_route_interaction_branch,
-            assistant_voice_sink=_speak_vn_reaction,
-            presentation_interrupt=_interrupt_presentation_before_chat,
-            background_interaction_interrupt=(
-                _interrupt_background_interaction_before_chat
-            ),
-        )
+        cooperative_chat.configure_auip(
+            auip_control_decider, _route_cooperative_auip_control,
+            cancel_deferred=auip_launch.cancel_deferred,
+            step_request=auip_b2.execute_user_decision if auip_b2 is not None else None,
+            entry_context=lambda session:auip_launch.render_prompt_context(
+                session, language="ja", include_control_contract=False))
+    cooperative_chat.install(pending_sentence_items=pending_sentence_items,
+        on_turn_finished=_handle_wake_chat_finished,
+        presentation_interrupt=_interrupt_presentation_before_chat,
+        background_interaction_interrupt=_interrupt_background_interaction_before_chat)
     from server.interrupt_flow import get_interrupt_flow
     get_interrupt_flow().configure(chat_handler=chat_h, tts_handler=tts_h)
 
@@ -2466,6 +2203,7 @@ async def bootstrap(port: int = 17777) -> None:
         provider_runtime_getter=lambda: provider_runtime,
         provider_availability_getter=provider_h.provider_availability,
         work_ledger_getter=lambda: work_ledger,
+        cooperative_chat_getter=lambda: cooperative_chat,
     )
     tts_h.configure(
         playback_manager=playback_manager,
@@ -2629,13 +2367,12 @@ async def bootstrap(port: int = 17777) -> None:
                 await chat_h.close()
             except Exception:
                 logger.exception("Chat shutdown failed; continuing shared-resource cleanup")
-            if cooperative_chat is not None:
-                try:
-                    await cooperative_chat.begin_close()
-                except Exception:
-                    logger.exception(
-                        "cooperative Chat stop preparation failed; continuing shared-resource cleanup"
-                    )
+            try:
+                await cooperative_chat.begin_close()
+            except Exception:
+                logger.exception(
+                    "cooperative Chat stop preparation failed; continuing shared-resource cleanup"
+                )
             await asyncio.gather(*vts_workers)
             bus.off(Method.WORK_UPDATED, auip_launch_callback)
             bus.off(Method.WORK_INPUT_UPDATED, auip_launch_callback)
@@ -2658,13 +2395,12 @@ async def bootstrap(port: int = 17777) -> None:
             try:
                 await provider_runtime.close()
             finally:
-                if cooperative_chat is not None:
-                    try:
-                        await cooperative_chat.finish_close()
-                    except Exception:
-                        logger.exception(
-                            "cooperative Chat observation drain failed after Provider close"
-                        )
+                try:
+                    await cooperative_chat.finish_close()
+                except Exception:
+                    logger.exception(
+                        "cooperative Chat observation drain failed after Provider close"
+                    )
                 if cooperative_ledger is not None:
                     cooperative_ledger.close()
             if openclaw_gateway_start_task is not None:
@@ -2717,58 +2453,6 @@ async def bootstrap(port: int = 17777) -> None:
 
 # adapter: drives core.chat_runtime directly (no main.py attribute injection).
 
-async def _stream_llm_query_adapter(
-    text: str,
-    gui_callback=None,
-    provider: str | None = None,
-    preserve_emotion: bool = False,
-    visual_context: dict | None = None,
-    turn_id: str = "",
-    prompt_variant: str = "",
-    interaction_branch_routing_lease: dict[str, Any] | None = None,
-    turn_admission: "TurnAdmissionRecord | None" = None,
-    history_snapshot: "ConversationHistory | None" = None,
-) -> str:
-    """Thin adapter around ChatRuntime.stream_llm_query."""
-    os.environ.setdefault("AMADEUS_HEADLESS", "1")
-    from core.chat_runtime import get_chat_runtime
-    import llm.client as _lcm
-
-    rt = get_chat_runtime()
-
-    # Sync the Electron-selected provider into the runtime and llm.client.
-    selected_provider = str(provider or "").strip() or _lcm.LLM_PROVIDER or rt.provider
-    if selected_provider:
-        rt.set_provider(selected_provider)
-        _lcm.configure(llm_provider=selected_provider)
-
-    # Server runtime singletons (module globals populated by bootstrap).
-    rt.configure(
-        playback_manager=playback_manager,
-        pending_sentence_items=pending_sentence_items,
-    )
-    e2e_no_tts = str(os.environ.get("AMADEUS_E2E_NO_TTS") or "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-    pre_translation_runtime.configure(
-        False if e2e_no_tts else _pre_translation_enabled()
-    )
-
-    return await rt.stream_llm_query(
-        text,
-        gui_callback=gui_callback,
-        preserve_emotion=preserve_emotion,
-        visual_context=visual_context,
-        turn_id=turn_id,
-        prompt_variant=prompt_variant,
-        interaction_branch_routing_lease=interaction_branch_routing_lease,
-        turn_admission=turn_admission,
-        history_snapshot=history_snapshot,
-    )
-
 
 async def _run_work_observer_llm(
     *,
@@ -2786,524 +2470,6 @@ async def _run_work_observer_llm(
         recent_spoken_updates=recent_spoken_updates or [],
         display_language=_observer_display_language(),
     )
-
-
-def _build_openclaw_follow_up(result_type: str) -> str:
-    if result_type == "error":
-        return (
-            "[SYSTEM] OpenClaw 执行时遇到了问题，上方 [RESULT] 是错误或失败信息。"
-            "请以 Kurisu 的口吻简短说明发生了什么，并提示用户下一步可以重试、换一种问法或检查设置。"
-            "不要逐字朗读技术日志，不要提 provider、observer 或路由细节。"
-        )
-    if result_type == "partial":
-        return (
-            "[SYSTEM] OpenClaw 因 API 限制或工具限制只返回了部分结果，上方 [RESULT] 可能仍包含有用信息。"
-            "请先总结其中确实有用的内容，再用一句话说明结果不完整。"
-            "如果信息不足，请直接说明需要重新查询或补充条件。"
-        )
-    if result_type == "question":
-        return (
-            "[SYSTEM] OpenClaw 需要更多信息才能继续，上方 [RESULT] 包含它的问题。"
-            "请以 Kurisu 的口吻把问题转述给用户，语气自然简短，不要逐字复述系统文本。"
-        )
-    return (
-        "[SYSTEM] OpenClaw 已完成任务，上方 [RESULT] 是执行结果。"
-        "请以 Kurisu 的口吻向用户做一次简短自然的汇报。"
-        "总结结果内容，不要逐字朗读日志，不要提 provider、observer 或后台路由细节。"
-    )
-
-
-async def _speak_openclaw_delegate_result(result: str, result_type: str) -> None:
-    """Run the legacy second-pass Kurisu summary after provider completion."""
-    result = str(result or "").strip()
-    if not result:
-        return
-    try:
-        from core.session_manager import conversation_history
-
-        conversation_history.add_assistant(f"[RESULT] OpenClaw 执行结果\n{result}")
-    except Exception:
-        logger.exception("failed to inject OpenClaw result into conversation history")
-
-    try:
-        from core.chat_runtime import get_chat_runtime
-
-        gui_callback = get_chat_runtime().current_gui_callback
-    except Exception:
-        gui_callback = None
-
-    follow_up = _build_openclaw_follow_up(result_type)
-    await _stream_llm_query_adapter(
-        follow_up,
-        gui_callback=gui_callback,
-        preserve_emotion=True,
-    )
-
-
-def _delegate_workspace_route(provider: str, attrs: dict, *, manifest=None) -> dict:
-    """Resolve a host-owned delegate workspace without guessing a destination."""
-
-    values = attrs if isinstance(attrs, dict) else {}
-    if manifest is None:
-        try:
-            from agent_host.provider_runtime import runtime as provider_runtime
-
-            manifest = provider_runtime.get_manifest(provider)
-        except Exception:
-            manifest = None
-    if manifest is None:
-        return {
-            "status": "invalid",
-            "reason": "provider_manifest_unavailable",
-            "cwd": "",
-            "projectId": "",
-            "source": "delegate_guard",
-        }
-    from agent_host.provider_workspace import workspace_route_authority
-
-    route_authority = workspace_route_authority(
-        manifest.capabilities.workspace_ownership
-    )
-    if route_authority != "host":
-        explicit = next(
-            (
-                str(values.get(key)).strip()
-                for key in ("cwd", "workspace", "workspace_path", "project", "project_dir")
-                if values.get(key) not in (None, "")
-            ),
-            "",
-        )
-        return {
-            "status": "resolved",
-            "cwd": explicit or None,
-            "projectId": "",
-            "source": "delegate_attribute" if explicit else "not_applicable",
-        }
-
-    try:
-        from server.work_ledger_coordinator import get_work_ledger_coordinator
-    except Exception:
-        logger.exception("failed to load provider workspace control plane")
-        return {
-            "status": "invalid",
-            "reason": "workspace_control_plane_unavailable",
-            "cwd": "",
-            "projectId": "",
-            "source": "delegate_guard",
-        }
-
-    coordinator = get_work_ledger_coordinator()
-    if coordinator is not None:
-        try:
-            frozen_session_id = str(
-                values.get("_host_admitted_session_id") or ""
-            ).strip()
-            if frozen_session_id:
-                # A role-authored session_id is never routing authority.
-                values = {**values, "session_id": frozen_session_id}
-            elif not values.get("session_id"):
-                # An unnamed instruction falls back to the project this
-                # conversation chose, so the route cannot be resolved without
-                # knowing which conversation is asking.
-                from core import session_manager as _sm
-
-                values = {
-                    **values,
-                    "session_id": _sm.get_current_session_id() or "",
-                }
-            return coordinator.resolve_workspace_route(values)
-        except Exception:
-            logger.exception("failed to resolve provider workspace through work ledger")
-            return {
-                "status": "invalid",
-                "reason": "workspace_resolution_failed",
-                "cwd": "",
-                "projectId": "",
-                "source": "delegate_guard",
-            }
-
-    # Startup/test fallback never invents a destination. It can only preserve
-    # an explicit existing directory already trusted by the host Project
-    # Registry. Provider adapters still enforce their own execution contracts
-    # after this host-owned routing decision.
-    explicit = next(
-        (
-            str(values.get(key)).strip()
-            for key in ("cwd", "workspace", "workspace_path", "project", "project_dir")
-            if values.get(key) not in (None, "")
-        ),
-        "",
-    )
-    if explicit:
-        try:
-            resolved = str(Path(explicit).resolve())
-        except (OSError, RuntimeError, ValueError):
-            resolved = ""
-        from server.project_registry import cwd_in_project_registry
-
-        allowed = bool(
-            resolved
-            and Path(resolved).is_dir()
-            and cwd_in_project_registry(resolved)
-        )
-        if allowed:
-            return {
-                "status": "resolved",
-                "cwd": resolved,
-                "projectId": "",
-                "source": "explicit_cwd_without_ledger",
-            }
-    # Without a ledger there is no scratch destination either, so this refuses
-    # rather than guessing. It is not the old "which project did you mean?" --
-    # nothing asks that any more; unnamed work simply goes to scratch.
-    return {
-        "status": "missing",
-        "reason": "no_work_ledger",
-        "cwd": "",
-        "projectId": "",
-        "source": "delegate_guard",
-    }
-
-
-async def _announce_provider_workspace_block(
-    provider: str,
-    route: dict,
-    *,
-    session_id: str = "",
-) -> None:
-    """Make a failed host routing decision visible and audible once."""
-
-    try:
-        from core import session_manager as sm
-        from server.ai_os_schema import work_note_payload, work_signal
-        from server.event_bus import bus
-        from server.protocol import Method
-        from server.work_context import add_work_note
-
-        reason = str(route.get("reason") or "workspace_unresolved")
-        candidates = route.get("candidates") if isinstance(route.get("candidates"), list) else []
-        # Asking the user to name a project only helps when naming one would
-        # have changed the outcome. When the scratch destination itself is
-        # unusable, saying that would send them after the wrong problem.
-        summary = (
-            "I could not prepare a workspace for new work, so I did not start this. "
-            "The scratch area is unavailable; that needs fixing before I can run it."
-            if reason == "scratch_unavailable"
-            else (
-                "I could not safely determine which project directory this instruction belongs to. "
-                "Please name the project, or choose a historical task and lock its workspace."
-            )
-        )
-        note = work_note_payload(
-            source="workspace_router",
-            provider=provider,
-            run_id=f"{provider}_route_{time.time_ns()}",
-            session_id=str(session_id or "").strip()
-            or (sm.get_current_session_id() or ""),
-            # This is a correction that no execution started, not a Provider
-            # terminal result.  Marking it Result made WorkObserver replace the
-            # structured failure with its generic "task finished" closure.
-            phase="Checkpoint",
-            title="Project context required",
-            summary=summary,
-            signals=[
-                work_signal(
-                    label="routing",
-                    text=f"{provider} execution was not started",
-                    detail=f"{reason}; {len(candidates)} candidate workspace(s)",
-                    kind="status",
-                    importance="blocking",
-                )
-            ],
-            importance="blocking",
-            metadata={
-                "routing_blocked": True,
-                "reason": reason,
-                "candidate_count": len(candidates),
-                "execution_started": False,
-                "narration_keypoint": "execution_blocked",
-            },
-            speak=True,
-        )
-        add_work_note(note)
-        await bus.emit(Method.CHAT_WORK_NOTE, note)
-    except Exception:
-        logger.exception("failed to announce blocked provider workspace routing")
-
-
-async def _announce_provider_start_failure(
-    provider: str,
-    error: Exception,
-    *,
-    session_id: str = "",
-) -> None:
-    """Correct a pre-execution promise when Provider intake never starts.
-
-    The conversational line necessarily precedes the delegate result.  If the
-    Runtime rejects intake before it can mint a run, there is no Provider event
-    for WorkActivity or WorkObserver to narrate, so the host must close that
-    promise explicitly and without claiming that any external action happened.
-    """
-
-    try:
-        from core import session_manager as sm
-        from server.ai_os_schema import work_note_payload, work_signal
-        from server.event_bus import bus
-        from server.protocol import Method
-        from server.work_context import add_work_note
-
-        clean_provider = str(provider or "provider").strip().lower() or "provider"
-        label = "Browser" if clean_provider == "browser" else clean_provider.capitalize()
-        summary = (
-            f"I could not start the {label} action, so nothing was opened or changed."
-            if clean_provider == "browser"
-            else f"I could not start the {label} task, so no new work was executed."
-        )
-        note = work_note_payload(
-            source="provider_runtime",
-            provider=clean_provider,
-            run_id=f"{clean_provider}_start_failed_{time.time_ns()}",
-            session_id=str(session_id or "").strip()
-            or (sm.get_current_session_id() or ""),
-            phase="Checkpoint",
-            title=f"{label} did not start",
-            summary=summary,
-            signals=[
-                work_signal(
-                    label="start",
-                    text=f"{label} execution was not started",
-                    detail=error.__class__.__name__,
-                    kind="status",
-                    importance="blocking",
-                )
-            ],
-            importance="blocking",
-            metadata={
-                "provider_start_failed": True,
-                "failure_kind": error.__class__.__name__,
-                "execution_started": False,
-                "narration_keypoint": "execution_blocked",
-            },
-            speak=True,
-        )
-        add_work_note(note)
-        await bus.emit(Method.CHAT_WORK_NOTE, note)
-    except Exception:
-        logger.exception("failed to announce provider start failure: %s", provider)
-
-
-async def _announce_control_authority_block(resolution, session_id: str) -> None:
-    """Correct a commitment from known refusal or uncertain application facts.
-
-    This is intentionally a provider-neutral Work Note. WorkObserver already
-    owns when and how blocking facts enter voice, so the decision callback does
-    not wait for the current TTS floor or create a second chat turn.
-    """
-
-    try:
-        from server.ai_os_schema import work_note_payload, work_signal
-        from server.event_bus import bus
-        from server.protocol import Method
-        from server.work_context import add_work_note
-
-        disposition = str(getattr(resolution, "disposition", "") or "failed_closed")
-        status = str(getattr(resolution, "decision_status", "") or "unavailable")
-        outcome = str(getattr(resolution, "decision_outcome", "") or "")
-        uncertain = outcome == "application_uncertain"
-        if uncertain:
-            summary = (
-                "The control handoff failed after execution may have been scheduled. "
-                "The request may have started; its actual state must be checked before retrying."
-            )
-        elif disposition == "suppressed":
-            summary = "The control check found no verified action to execute, so no Provider work was started."
-        else:
-            summary = (
-                "The control check did not finish with a complete safe result, "
-                "so no Provider work or persistent project switch was started."
-            )
-        note = work_note_payload(
-            source="control_authority",
-            provider="host",
-            run_id=f"control_{time.time_ns()}",
-            session_id=str(session_id or ""),
-            phase="Checkpoint",
-            title="Request state is unconfirmed" if uncertain else "Request was not started",
-            summary=summary,
-            signals=[
-                work_signal(
-                    label="control",
-                    text="Execution state is unconfirmed" if uncertain else "Nothing was started",
-                    detail=f"{disposition}; {status}",
-                    kind="status",
-                    importance="blocking",
-                )
-            ],
-            importance="blocking",
-            metadata={
-                "control_authority_blocked": True,
-                "disposition": disposition,
-                "decision_status": status,
-                "decision_outcome": outcome,
-                **({"execution_uncertain": True} if uncertain else {"execution_started": False}),
-                "narration_keypoint": "execution_blocked",
-            },
-            speak=True,
-        )
-        add_work_note(note)
-        await bus.emit(Method.CHAT_WORK_NOTE, note)
-    except Exception:
-        logger.exception("failed to announce a blocked control decision")
-
-
-_RETRACT_TERMINAL_STATUSES = {"done", "error", "cancelled"}
-
-
-async def _announce_retract_outcome(
-    summary: str,
-    *,
-    reason: str,
-    count: int,
-    session_id: str = "",
-) -> None:
-    """Let the character correct itself when a withdrawal could not be honoured.
-
-    The model speaks before the host sees the tag, so by now it has already said
-    it is stopping something. If nothing was running, or several things were,
-    staying silent would leave that claim standing as fact.
-    """
-
-    try:
-        from core import session_manager as sm
-        from server.ai_os_schema import work_note_payload, work_signal
-        from server.event_bus import bus
-        from server.protocol import Method
-        from server.work_context import add_work_note
-
-        note = work_note_payload(
-            source="workspace_router",
-            provider="host",
-            run_id=f"retract_{time.time_ns()}",
-            session_id=str(session_id or "").strip()
-            or (sm.get_current_session_id() or ""),
-            phase="Checkpoint",
-            title="Nothing was stopped",
-            summary=summary,
-            signals=[
-                work_signal(
-                    label="retract",
-                    text="No attempt was cancelled",
-                    detail=f"{reason}; {count} active run(s)",
-                    kind="status",
-                    importance="blocking",
-                )
-            ],
-            importance="blocking",
-            metadata={
-                "retract_unresolved": True,
-                "reason": reason,
-                "active_runs": count,
-                "narration_keypoint": "execution_blocked",
-            },
-            speak=True,
-        )
-        add_work_note(note)
-        await bus.emit(Method.CHAT_WORK_NOTE, note)
-    except Exception:
-        logger.exception("failed to announce an unresolved retraction")
-
-
-async def _announce_amend_ambiguous(titles: str) -> None:
-    """Ask which task, in the nouns the user can see.
-
-    Never the work_item_id: the model demonstrably will not quote one (0 of 18,
-    then 0 of 10 more on 2026-08-01), and an identifier is not something this
-    character would say out loud either.
-    """
-
-    try:
-        from core import session_manager as sm
-        from server.ai_os_schema import work_note_payload, work_signal
-        from server.event_bus import bus
-        from server.protocol import Method
-        from server.work_context import add_work_note
-
-        note = work_note_payload(
-            source="workspace_router",
-            provider="host",
-            run_id=f"amend_{time.time_ns()}",
-            session_id=sm.get_current_session_id() or "",
-            phase="Checkpoint",
-            title="Which task should I change?",
-            summary=(
-                "More than one task matches that file, so I did not guess: "
-                f"{titles}. Tell me which one and I will change it."
-            ),
-            signals=[
-                work_signal(
-                    label="amend",
-                    text="Nothing was started",
-                    detail="ambiguous_amend_target",
-                    kind="status",
-                    importance="blocking",
-                )
-            ],
-            importance="blocking",
-            metadata={
-                "amend_ambiguous": True,
-                "narration_keypoint": "execution_blocked",
-            },
-            speak=True,
-        )
-        add_work_note(note)
-        await bus.emit(Method.CHAT_WORK_NOTE, note)
-    except Exception:
-        logger.exception("failed to ask which task an amendment meant")
-
-
-async def _announce_amend_missing(filename: str) -> None:
-    """Say that an explicit amendment was blocked instead of inventing work."""
-
-    try:
-        from core import session_manager as sm
-        from server.ai_os_schema import work_note_payload, work_signal
-        from server.event_bus import bus
-        from server.protocol import Method
-        from server.work_context import add_work_note
-
-        clean_name = str(filename or "").strip() or "that file"
-        note = work_note_payload(
-            source="workspace_router",
-            provider="host",
-            run_id=f"amend_{time.time_ns()}",
-            session_id=sm.get_current_session_id() or "",
-            phase="Checkpoint",
-            title="Existing file not found",
-            summary=(
-                f"I could not find a tracked task that produced {clean_name}, "
-                "so I did not create a replacement in a new workspace."
-            ),
-            signals=[
-                work_signal(
-                    label="amend",
-                    text="Nothing was started",
-                    detail="missing_amend_target",
-                    kind="status",
-                    importance="blocking",
-                )
-            ],
-            importance="blocking",
-            metadata={
-                "amend_missing": True,
-                "filename": clean_name,
-                "narration_keypoint": "execution_blocked",
-            },
-            speak=True,
-        )
-        add_work_note(note)
-        await bus.emit(Method.CHAT_WORK_NOTE, note)
-    except Exception:
-        logger.exception("failed to announce a missing amendment target")
 
 
 # How long the answer may wait for the floor. It is waiting for one turn to
@@ -3802,11 +2968,11 @@ async def _answer_report_from_ledger(task_text: str, attrs: dict, *, publish=Non
         if isinstance(candidate, dict)
     ]
     if reason == "ambiguous" and candidates:
-        from core.chat_runtime import _amend_candidate_label
+        from server.reference_catalog import candidate_task_label
 
         titles = ", ".join(
             label
-            for label in (_amend_candidate_label(candidate) for candidate in candidates[:4])
+            for label in (candidate_task_label(candidate) for candidate in candidates[:4])
             if label
         )
         logger.info("[TASK-LOOKUP] level=3 ask consumer=report n=%d", len(candidates))
@@ -3865,13 +3031,13 @@ def _drafts_in_other_conversations(question: str) -> list[dict]:
     """Drafts elsewhere matching what was asked. Never routes; only phrases."""
 
     try:
-        from core.chat_runtime import _explicit_file_references
+        from server.reference_catalog import explicit_file_references
         from server.work_ledger_coordinator import get_work_ledger_coordinator
 
         coordinator = get_work_ledger_coordinator()
         if coordinator is None:
             return []
-        for reference in _explicit_file_references(str(question or "")):
+        for reference in explicit_file_references(str(question or "")):
             found = coordinator.drafts_in_other_conversations(reference)
             if found:
                 return found
@@ -3879,697 +3045,6 @@ def _drafts_in_other_conversations(question: str) -> list[dict]:
         # Wording help only: a failure here must not change the answer path.
         logger.debug("draft lookup outside the conversation failed", exc_info=True)
     return []
-
-
-async def _handle_declared_retract(
-    task_text: str,
-    attrs: dict | None = None,
-    *,
-    session_id: str = "",
-) -> str:
-    """Cancel what the user took back, or say plainly that nothing was.
-
-    Never starts work: a withdrawal that spawns a task is the worst variant of
-    the chat invariant, and it is exactly what happened before the model had a
-    verb for this (2026-07-31, B1: 3 of 5 runs created a third WorkItem).
-    """
-
-    from agent_host.provider_runtime import runtime
-
-    values = attrs if isinstance(attrs, dict) else {}
-    frozen_session_id = str(session_id or "").strip()
-    target_ref = str(
-        values.get("workspace_ref")
-        or values.get("workspaceRef")
-        or values.get("work_item_id")
-        or values.get("workItemId")
-        or values.get("attempt_id")
-        or values.get("attemptId")
-        or ""
-    ).strip()
-
-    def run_matches_scope(run: dict) -> bool:
-        metadata = (
-            run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
-        )
-        work = metadata.get("work") if isinstance(metadata.get("work"), dict) else {}
-        identities = {
-            str(run.get("run_id") or "").strip(),
-            str(metadata.get("task_id") or "").strip(),
-            str(metadata.get("attempt_id") or "").strip(),
-            str(work.get("work_item_id") or work.get("workItemId") or "").strip(),
-            str(work.get("workspace_ref") or work.get("workspaceRef") or "").strip(),
-            str(work.get("attempt_id") or work.get("attemptId") or "").strip(),
-        }
-        identities.discard("")
-        if target_ref:
-            return target_ref in identities
-        if frozen_session_id:
-            return str(metadata.get("session_id") or "").strip() == frozen_session_id
-        return True
-
-    active = [
-        run
-        for run in runtime.list_runs()
-        if str(run.get("status") or "").strip().lower() not in _RETRACT_TERMINAL_STATUSES
-        and run_matches_scope(run)
-    ]
-    try:
-        from server.work_ledger_coordinator import get_work_ledger_coordinator
-
-        recovery_coordinator = get_work_ledger_coordinator()
-        pending_recoveries = (
-            recovery_coordinator.pending_provider_recoveries()
-            if recovery_coordinator is not None
-            else []
-        )
-    except Exception:
-        recovery_coordinator = None
-        pending_recoveries = []
-    if target_ref:
-        pending_recoveries = [
-            recovery
-            for recovery in pending_recoveries
-            if target_ref
-            in {
-                str(recovery.get("work_item_id") or "").strip(),
-                str(recovery.get("attempt_id") or "").strip(),
-                str(recovery.get("successor_run_id") or "").strip(),
-            }
-        ]
-    elif frozen_session_id:
-        # Pending recovery receipts do not carry chat Session identity. Without
-        # an exact Work/Attempt target, cancelling one would be a global guess.
-        pending_recoveries = []
-    active_run_ids = {
-        str(run.get("run_id") or "").strip() for run in active
-    }
-    active_recovery_predecessors = {
-        str(recovery.get("predecessor_attempt_id") or "").strip()
-        for run in active
-        for metadata in [
-            run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
-        ]
-        for recovery in [
-            metadata.get("provider_recovery")
-            if isinstance(metadata.get("provider_recovery"), dict)
-            else {}
-        ]
-        if str(recovery.get("predecessor_attempt_id") or "").strip()
-    }
-    pending_only = [
-        recovery
-        for recovery in pending_recoveries
-        if str(recovery.get("successor_run_id") or "").strip()
-        not in active_run_ids
-        and str(recovery.get("attempt_id") or "").strip()
-        not in active_recovery_predecessors
-    ]
-    target_count = len(active) + len(pending_only)
-    logger.info(
-        "[DELEGATE-RETRACT] declared; active=%d pending_recovery=%d task=%r",
-        len(active),
-        len(pending_only),
-        str(task_text or "")[:120],
-    )
-    if target_count == 0:
-        await _announce_retract_outcome(
-            "There was nothing running to stop, so nothing was cancelled.",
-            reason="no_active_run",
-            count=0,
-            session_id=frozen_session_id,
-        )
-        return "[retract] nothing was running"
-    if target_count > 1:
-        # Cancelling the wrong task is not recoverable by asking afterwards, so
-        # ask first — the same fail-closed rule the workspace router follows.
-        await _announce_retract_outcome(
-            "More than one task is running, so I did not guess which to stop. "
-            "Tell me which one and I will.",
-            reason="ambiguous_active_runs",
-            count=target_count,
-            session_id=frozen_session_id,
-        )
-        return "[retract] several tasks are running"
-    if not active:
-        pending = pending_only[0]
-        attempt_id = str(pending.get("attempt_id") or "").strip()
-        cancelled = bool(
-            recovery_coordinator is not None
-            and recovery_coordinator.cancel_pending_provider_recovery(attempt_id)
-        )
-        if cancelled:
-            logger.info(
-                "[DELEGATE-RETRACT] cancelled pending recovery attempt_id=%s",
-                attempt_id,
-            )
-            return "[retract] cancelled"
-        # Intake may have made the successor visible between the inventory and
-        # compare-and-set. Fall through to the ordinary runtime cancellation if
-        # exactly one live run now exists.
-        active = [
-            run
-            for run in runtime.list_runs()
-            if str(run.get("status") or "").strip().lower()
-            not in _RETRACT_TERMINAL_STATUSES
-            and run_matches_scope(run)
-        ]
-        if len(active) != 1:
-            await _announce_retract_outcome(
-                "That task had already finished before cancellation could take effect.",
-                reason="recovery_transition_finished",
-                count=len(active),
-                session_id=frozen_session_id,
-            )
-            return "[retract] task had already finished"
-    run_id = str(active[0].get("run_id") or "")
-    active_metadata = (
-        active[0].get("metadata")
-        if isinstance(active[0].get("metadata"), dict)
-        else {}
-    )
-    active_recovery = (
-        active_metadata.get("provider_recovery")
-        if isinstance(active_metadata.get("provider_recovery"), dict)
-        else {}
-    )
-    active_predecessor = str(
-        active_recovery.get("predecessor_attempt_id") or ""
-    ).strip()
-    if recovery_coordinator is not None:
-        for pending in pending_recoveries:
-            if (
-                str(pending.get("successor_run_id") or "").strip() == run_id
-                or active_predecessor
-                and str(pending.get("attempt_id") or "").strip()
-                == active_predecessor
-            ):
-                recovery_coordinator.cancel_pending_provider_recovery(
-                    str(pending.get("attempt_id") or "")
-                )
-    result = await runtime.cancel(run_id)
-    cancelled = bool(result.get("cancelled"))
-    reason = str(result.get("reason") or "").strip()
-    logger.info(
-        "[DELEGATE-RETRACT] cancel run_id=%s cancelled=%s reason=%s",
-        run_id,
-        cancelled,
-        reason,
-    )
-    if not cancelled:
-        refreshed = next(
-            (
-                run
-                for run in runtime.list_runs()
-                if str(run.get("run_id") or "") == run_id
-            ),
-            {},
-        )
-        refreshed_status = str(refreshed.get("status") or "").strip().lower()
-        if refreshed_status == "cancelled":
-            return "[retract] cancelled"
-        if refreshed_status in {"done", "error"}:
-            await _announce_retract_outcome(
-                "That task had already finished before cancellation could take effect.",
-                reason=reason or f"already_{refreshed_status}",
-                count=1,
-                session_id=frozen_session_id,
-            )
-            return "[retract] task had already finished"
-        # A provider can accept the signal while confirmation is still racing
-        # the terminal event.  The ledger owns the eventual cancelled/done
-        # narration; claiming either outcome here produced two contradictory
-        # voice reports in the 2026-08-07 real run.
-        logger.info(
-            "[DELEGATE-RETRACT] awaiting terminal confirmation run_id=%s status=%s reason=%s",
-            run_id,
-            refreshed_status or "unknown",
-            reason or "cancel_unconfirmed",
-        )
-        return "[retract] cancellation requested; awaiting terminal confirmation"
-    return "[retract] cancelled"
-
-
-def _delegate_mode_for_provider(
-    provider: str,
-    attrs: dict,
-    action: str,
-    task_text: str = "",
-    *,
-    workspace_access: str = "",
-) -> str:
-    explicit_mode = str(attrs.get("mode") or "").strip().lower()
-    action_mode = str(action or "").strip().lower()
-    if explicit_mode:
-        return explicit_mode
-    if action_mode:
-        return action_mode
-    return "delegate"
-
-
-def _english_mutation_is_negated(text: str, start: int) -> bool:
-    """Return whether one mutation verb belongs to a local negative constraint.
-
-    The workspace guard must not turn "do not write files" into positive write
-    authority.  This is deliberately clause-local: punctuation and explicit
-    contrast/sequence words end the negative scope, so a later positive action
-    in the same utterance still requires a writable Provider.
-    """
-
-    prefix = text[max(0, start - 120) : start]
-    clause = re.split(r"[.;!?]", prefix)[-1]
-    clause = re.split(
-        r"\b(?:but|however|instead|then|rather)\b",
-        clause,
-    )[-1]
-    return bool(
-        re.search(
-            r"\b(?:do\s+not|don't|must\s+not|need\s+not|never|no\s+need\s+to)\b"
-            r"(?:(?!\b(?:but|however|instead|then|rather)\b).)*$",
-            clause,
-        )
-    )
-
-
-_ENGLISH_FILE_MUTATION_PATTERN = re.compile(
-    r"\b(?:add|build|change|copy|create|delete|develop|edit|export|fix|generate|"
-    r"implement|make|modify|move|patch|refactor|remove|rename|replace|save|update|write)\b",
-)
-
-
-def _cjk_mutation_is_negated(text: str, start: int, end: int) -> bool:
-    """Apply the same clause-local rule to Chinese/Japanese mutation words."""
-
-    prefix = re.split(r"[;；,，、。！？.!?]", text[max(0, start - 48) : start])[-1]
-    if re.search(
-        r"(?:不要|不得|不能|禁止|无需|無需|不需要|别|別)"
-        r"[^;；,，、。！？.!?]{0,24}$",
-        prefix,
-    ):
-        return True
-    return bool(
-        re.match(
-            r"[^;；。！？.!?]{0,20}(?:しない|しません|せず|ないで|禁止)",
-            text[end : end + 28],
-        )
-    )
-
-
-def _has_positive_cjk_mutation(text: str, markers: tuple[str, ...]) -> bool:
-    return any(
-        not _cjk_mutation_is_negated(text, match.start(), match.end())
-        for marker in markers
-        for match in re.finditer(re.escape(marker), text)
-    )
-
-
-def _task_requests_file_mutation(task_text: str) -> bool:
-    """Return whether a task asks to create or mutate code/files.
-
-    This intentionally requires both a mutation verb and a code/file marker so
-    ordinary actions such as "create a user profile" keep their existing
-    provider routing.
-    """
-    normalized = " ".join(str(task_text or "").lower().split())
-    english_strong_code = re.search(
-        r"\b(?:api|cli|code|codebase|css|go|html|java|javascript|module|node|php|"
-        r"program|python|react|repository|repo|ruby|rust|script|source\s+code|sql|"
-        r"typescript|vue)\b",
-        normalized,
-    )
-    strong_code_markers = (
-        "代码",
-        "程式",
-        "程序",
-        "脚本",
-        "代码库",
-        "程式碼",
-        "源码",
-        "源代码",
-        "仓库",
-        "倉庫",
-        "模块",
-        "模組",
-        "接口",
-        "コード",
-        "プログラム",
-        "スクリプト",
-    )
-    english_weak_software = re.search(
-        r"\b(?:app|application|button|chess|component|game|gui|tool|ui)\b",
-        normalized,
-    )
-    cjk_weak_software_markers = (
-        "国际象棋",
-        "國際象棋",
-        "游戏",
-        "遊戲",
-        "应用",
-        "應用",
-        "工具",
-        "界面",
-        "チェス",
-        "ゲーム",
-    )
-    english_mutation = next(
-        (
-            match
-            for match in _ENGLISH_FILE_MUTATION_PATTERN.finditer(normalized)
-            if not _english_mutation_is_negated(normalized, match.start())
-        ),
-        None,
-    )
-    mutation_markers = (
-        "生成",
-        "创建",
-        "創建",
-        "寫",
-        "写",
-        "添加",
-        "新增",
-        "新建",
-        "增加",
-        "删除",
-        "刪除",
-        "移除",
-        "修改",
-        "更改",
-        "改一下",
-        "改下",
-        "重命名",
-        "重新命名",
-        "移动",
-        "移動",
-        "复制",
-        "複製",
-        "导出",
-        "導出",
-        "输出",
-        "輸出",
-        "替换",
-        "替換",
-        "存到",
-        "存入",
-        "存为",
-        "存為",
-        "开发",
-        "開發",
-        "制作",
-        "製作",
-        "构建",
-        "構建",
-        "实现",
-        "實現",
-        "修复",
-        "修復",
-        "更新",
-        "保存",
-        "儲存",
-        "重构",
-        "重構",
-        "编辑",
-        "編輯",
-        "给我做",
-        "帮我做",
-        "幫我做",
-        "做个",
-        "做個",
-        "做一个",
-        "做一個",
-        "作成",
-        "実装",
-        "編集",
-    )
-    file_markers = (
-        "文件",
-        "文件夹",
-        "檔案",
-        "資料夾",
-        "ファイル",
-        "フォルダ",
-    )
-    named_file = re.search(
-        r"(?<![\w.])[\w@()+-][\w@().+-]*\."
-        r"(?:c|cc|conf|cpp|cs|css|csv|cfg|go|h|hpp|html|ini|ipynb|java|js|jsx|"
-        r"json|md|markdown|php|ps1|py|rb|rs|sh|sql|svg|toml|ts|tsx|tsv|txt|xml|"
-        r"yaml|yml)\b",
-        normalized,
-    )
-    named_file_kind = re.search(
-        r"\b(?:config|directory|file|files|folder|readme)\b",
-        normalized,
-    )
-    read_only_change_context = re.search(
-        r"(?:解释|說明|说明|查看|浏览|瀏覽|审查|審查|分析|总结|總結|展示|列出)"
-        r".{0,40}(?:修改|更改|变更|變更).{0,12}(?:历史|歷史|记录|紀錄|日志|日誌)",
-        normalized,
-    )
-    usage_question = re.search(
-        r"(?:python|代码|程式|程序|脚本).{0,16}做什么(?:用|用途|的)?",
-        normalized,
-    )
-    if read_only_change_context is not None or usage_question is not None:
-        return False
-    mutates_files = english_mutation is not None or _has_positive_cjk_mutation(
-        normalized,
-        mutation_markers,
-    )
-    strong_file_context = (
-        english_strong_code is not None
-        or any(marker in normalized for marker in strong_code_markers)
-        or named_file_kind is not None
-        or any(marker in normalized for marker in file_markers)
-        or named_file is not None
-    )
-    if mutates_files and strong_file_context:
-        return True
-
-    # A precise Desktop output request is file work even when the prompt calls
-    # the deliverable only "the result".  The shared export detector rejects
-    # Desktop as an input, reference, runtime platform, or negated target.
-    if any(marker in normalized for marker in ("desktop", "桌面", "デスクトップ")):
-        from server.work_export_service import WorkExportService
-
-        if WorkExportService._has_desktop_destination(normalized):
-            return True
-
-    # app/game/UI are weak evidence by themselves: the same words occur in
-    # account management, Steam updates, and window movement.  Require an
-    # explicit creation/development verb and reject nearby external objects.
-    weak_software_context = english_weak_software is not None or any(
-        marker in normalized for marker in cjk_weak_software_markers
-    )
-    english_development = re.search(
-        r"\b(?:build|create|develop|generate|implement|make|refactor|write)\b",
-        normalized,
-    )
-    english_external_object = re.search(
-        r"\b(?:app|application|game|tool|ui)\b.{0,24}"
-        r"\b(?:account|profile|setting|shortcut|steam|user|window)\b|"
-        r"\b(?:account|profile|setting|shortcut|steam|user|window)\b.{0,24}"
-        r"\b(?:app|application|game|tool|ui)\b",
-        normalized,
-    )
-    cjk_development_markers = (
-            "创建",
-            "創建",
-            "开发",
-            "開發",
-            "制作",
-            "製作",
-            "构建",
-            "構建",
-            "实现",
-            "實現",
-            "重构",
-            "重構",
-            "给我做",
-            "帮我做",
-            "幫我做",
-            "做个",
-            "做個",
-            "做一个",
-            "做一個",
-            "作成",
-            "実装",
-        )
-    cjk_development = _has_positive_cjk_mutation(
-        normalized,
-        cjk_development_markers,
-    )
-    cjk_external_object = re.search(
-        r"(?:应用|應用|游戏|遊戲|界面).{0,12}(?:账户|帳戶|账号|帳號|用户|用戶|窗口|視窗|设置|設定)|"
-        r"(?:账户|帳戶|账号|帳號|用户|用戶|窗口|視窗|设置|設定).{0,12}(?:应用|應用|游戏|遊戲|界面)",
-        normalized,
-    )
-    return bool(
-        weak_software_context
-        and english_external_object is None
-        and cjk_external_object is None
-        and (english_development is not None or cjk_development)
-    )
-
-
-def _delegate_provider_selection(
-    task_text: str,
-    attrs: dict,
-    *,
-    manifests=None,
-):
-    """Translate host-owned task facts into requirements, then select.
-
-    Workspace mutation is a capability requirement, not a provider identity.
-    Any registered conforming provider can compete without changing this
-    function or the model prompt.
-    """
-
-    from agent_host.provider_contract import ProviderSelectionError, select_provider
-    from agent_host.provider_runtime import runtime as provider_runtime
-    from server.provider_requirements import (
-        DelegateRequirementFacts,
-        compile_delegate_requirements,
-    )
-
-    source_user_text = str(attrs.get("_host_source_user_text") or "").strip()
-    requested_provider = str(attrs.get("provider") or "").strip()
-    continuation_facts: dict = {}
-    workspace_ref = str(
-        attrs.get("workspace_ref")
-        or attrs.get("workspaceRef")
-        or attrs.get("work_item_id")
-        or attrs.get("workItemId")
-        or ""
-    ).strip()
-    if workspace_ref:
-        try:
-            from server.work_ledger_coordinator import get_work_ledger_coordinator
-
-            coordinator = get_work_ledger_coordinator()
-            if coordinator is not None:
-                continuation_facts = coordinator.continuation_routing_facts(
-                    workspace_ref
-                )
-        except Exception:
-            logger.exception("failed to read bounded WorkItem routing facts")
-    from agent_host.browser_request_contract import web_addresses
-
-    facts = DelegateRequirementFacts.from_delegate(
-        attrs,
-        # Once ControlDecision has named a Provider, its model-authored task is
-        # an execution payload, not a second capability authority. The exact
-        # user turn and durable target facts own requirements; task prose stays
-        # as the compatibility fallback for legacy provider-less delegates.
-        task_requests_workspace_mutation=(
-            _task_requests_file_mutation(task_text)
-            if not (source_user_text and requested_provider)
-            else False
-        ),
-        source_requests_workspace_mutation=_task_requests_file_mutation(
-            source_user_text
-        ),
-        target_workspace_mode=str(
-            continuation_facts.get("workspace_mode") or ""
-        ),
-        continuation_provider=str(
-            continuation_facts.get("provider") or ""
-        ),
-        source_has_browser_address=bool(
-            web_addresses(source_user_text, allow_bare_domain=True)
-        ),
-        required_workspace_access=str(
-            attrs.get("_host_workspace_access") or ""
-        ),
-    )
-    requirements = compile_delegate_requirements(facts)
-    default_provider = str(
-        getattr(settings, "PROVIDER_DELEGATE_DEFAULT_PROVIDER", "pi")
-        or "pi"
-    ).strip().lower()
-    available_manifests = (
-        tuple(manifests)
-        if manifests is not None
-        else provider_runtime.provider_manifests()
-    )
-    if not available_manifests:
-        raise ProviderSelectionError("provider registry is not initialized")
-    selection = select_provider(
-        requirements,
-        available_manifests,
-        default_provider=default_provider,
-    )
-    return requirements, selection
-
-
-def _delegate_provider_for_task(task_text: str, attrs: dict, *, manifests=None) -> str:
-    _requirements, selection = _delegate_provider_selection(
-        task_text,
-        attrs,
-        manifests=manifests,
-    )
-    return selection.provider_id
-
-
-def _delegate_declared_report_only(attrs: dict) -> bool:
-    """True when the model declared this turn is about reporting, not doing.
-
-    Only honoured while the attribute is part of the contract; otherwise an
-    absent declaration would be indistinguishable from a model that never
-    learned to make one.
-    """
-
-    from config import settings as _settings
-
-    if not bool(getattr(_settings, "DELEGATE_INTENT_ATTRIBUTE", False)):
-        return False
-    return str(attrs.get("intent") or "").strip().lower() == "report"
-
-
-def _delegate_declared_retract(attrs: dict) -> bool:
-    """True when the model declared this turn takes running work back.
-
-    Gated on both flags: the value is meaningless unless the attribute is part
-    of the contract, and the verb is only offered while the host is wired to
-    act on it.
-    """
-
-    from config import settings as _settings
-
-    if not bool(getattr(_settings, "DELEGATE_INTENT_ATTRIBUTE", False)):
-        return False
-    if not bool(getattr(_settings, "DELEGATE_RETRACT_INTENT", False)):
-        return False
-    return str(attrs.get("intent") or "").strip().lower() == "retract"
-
-
-def _delegate_declared_focus(attrs: dict) -> bool:
-    """True when the model was told which project this conversation is on."""
-
-    from config import settings as _settings
-
-    if not bool(getattr(_settings, "DELEGATE_INTENT_ATTRIBUTE", False)):
-        return False
-    if not bool(getattr(_settings, "DELEGATE_FOCUS_INTENT", False)):
-        return False
-    return str(attrs.get("intent") or "").strip().lower() == "focus"
-
-
-def _delegate_focus_modifier(attrs: dict) -> str:
-    """Return an explicit persistent-destination modifier, when enabled.
-
-    ``intent`` describes the operation performed now. ``focus`` is an
-    orthogonal side effect on later turns, so compound requests do not have to
-    mislabel execute/amend/report work as a control operation. The existing
-    feature gates own both spellings during the compatibility migration.
-    """
-
-    from config import settings as _settings
-
-    if not bool(getattr(_settings, "DELEGATE_INTENT_ATTRIBUTE", False)):
-        return ""
-    if not bool(getattr(_settings, "DELEGATE_FOCUS_INTENT", False)):
-        return ""
-    modifier = str(attrs.get("focus") or "").strip().lower()
-    return modifier if modifier in {"set", "clear"} else ""
 
 
 async def _handle_declared_focus(
@@ -4669,1521 +3144,6 @@ async def _handle_declared_focus(
         "ok": True,
         "message": f"[focus] now working in {chosen['projectName']}",
     }
-
-
-def _recent_dialog_for_reference() -> list[dict[str, str]]:
-    try:
-        from core.session_manager import conversation_history
-
-        return [
-            {
-                "role": str(message.get("role") or ""),
-                "content": str(message.get("content") or "")[:1200],
-            }
-            for message in list(conversation_history.dialog)[-8:]
-            if isinstance(message, dict)
-            and str(message.get("role") or "") in {"user", "assistant"}
-            and str(message.get("content") or "").strip()
-        ]
-    except Exception:
-        logger.exception("failed to collect chat context for reference lookup")
-        return []
-
-
-async def _resume_reference_selection(plan) -> dict[str, object]:
-    """Apply the single host continuation claimed by an attention option."""
-
-    from core import session_manager as sm
-    from server.work_ledger_coordinator import get_work_ledger_coordinator
-
-    session_id = sm.get_current_session_id() or ""
-    if not session_id or session_id != str(plan.session_id or ""):
-        raise RuntimeError("the selected reference no longer belongs to the active Session")
-    if plan.kind == "delegate":
-        resume_attrs = dict(plan.attrs)
-        # The explicit Slice choice is acknowledged below. Mark only this
-        # continuation so a pure focus does not also emit the ordinary
-        # automatic focus confirmation. Immediate unique resolution never
-        # carries this flag and therefore still reports its verified result.
-        resume_attrs["_host_reference_selection_resumed"] = True
-        result = await _handle_delegate(plan.task_text, resume_attrs)
-    elif plan.kind == "bind_work_item":
-        coordinator = get_work_ledger_coordinator()
-        candidate = plan.candidate
-        if coordinator is None or not session_id or not candidate.parent_project_id:
-            raise RuntimeError("the selected WorkItem cannot be bound to this Session")
-        result = coordinator.bind_session_context(
-            session_id,
-            candidate.parent_project_id,
-            work_item_id=candidate.entity_id,
-            source="reference_selection",
-        )
-        await coordinator.publish_snapshot(reason="reference_selection.bound")
-    else:
-        result = {"status": "acknowledged"}
-
-    await _speak_task_lookup_answer(
-        plan.display_text,
-        voice_text_ja=plan.voice_text_ja,
-        history_marker="REFERENCE_SELECTION",
-        source="reference_selection",
-        log_label="REFERENCE-SELECTION",
-    )
-    return {
-        "status": "resumed" if plan.kind == "delegate" else plan.kind,
-        "result": result,
-    }
-
-
-async def _adjudicate_delegate_reference(
-    task_text: str,
-    attrs: dict,
-    *,
-    session_id: str = "",
-) -> tuple[str, str, dict]:
-    """Resolve one frozen entity decision before any destination side effect."""
-
-    from core import session_manager as sm
-    from server.control_decision import CONTROL_REFERENCE_CANDIDATES_ATTR
-    from server.reference_catalog import TypedReferenceCandidate
-
-    current_session_id = sm.get_current_session_id() or ""
-    frozen_session_id = str(session_id or "").strip()
-    if frozen_session_id and current_session_id != frozen_session_id:
-        attrs["_host_reference_authority_blocked"] = True
-        return "blocked", task_text, attrs
-
-    missing = object()
-    frozen_references = attrs.pop(CONTROL_REFERENCE_CANDIDATES_ATTR, missing)
-    has_frozen_references = frozen_references is None or (
-        isinstance(frozen_references, tuple)
-        and all(
-            isinstance(candidate, TypedReferenceCandidate)
-            for candidate in frozen_references
-        )
-    )
-    if frozen_references is not missing and not has_frozen_references:
-        logger.warning("discarded an invalid host control-reference handoff")
-
-    if not bool(getattr(settings, "REFERENCE_CLARIFICATION_ENABLED", False)):
-        return "bypass", task_text, attrs
-    if attrs.get("_host_reference_resolved") is True:
-        return "bypass", task_text, attrs
-
-    from server.reference_clarification import (
-        adjudicate_focus_reference,
-        clarification_announcement,
-        create_reference_selection,
-        default_message_query,
-        plan_resume,
-    )
-    from server.work_ledger_coordinator import get_work_ledger_coordinator
-
-    session_id = frozen_session_id or current_session_id
-    coordinator = get_work_ledger_coordinator()
-    if not session_id or coordinator is None:
-        return "bypass", task_text, attrs
-    clears_or_replaces_pending = (
-        (
-            str(attrs.get("focus") or "").strip().lower() == "clear"
-            and (not has_frozen_references or frozen_references is None)
-        )
-        or (
-            str(attrs.get("intent") or "").strip().lower() == "focus"
-            and not str(
-                attrs.get("project_id") or attrs.get("projectId") or ""
-            ).strip()
-            # Legacy taskless focus used the absence of project_id as clear.
-            # A ControlDecision handoff has an explicit three-state reference
-            # result: null is "no existing target", not permission to clear a
-            # durable Session binding. Canonical clear must say focus=clear.
-            and not has_frozen_references
-        )
-    )
-    if clears_or_replaces_pending:
-        from server.attention_request import attention_requests
-
-        await attention_requests.cancel_matching(
-            session_id=session_id,
-            dedupe_key="reference_clarification",
-        )
-        return "bypass", task_text, attrs
-
-    if has_frozen_references:
-        if frozen_references is None:
-            needs_existing_entity = (
-                str(attrs.get("intent") or "").strip().lower() == "focus"
-                or str(attrs.get("focus") or "").strip().lower() == "set"
-            )
-            if not needs_existing_entity:
-                return "bypass", task_text, attrs
-            adjudication_status = "blocked"
-            adjudication_reason = "control decision provided no existing entity target"
-            adjudication_request = None
-        elif not frozen_references:
-            adjudication_status = "blocked"
-            adjudication_reason = "no typed reference candidate matched the request"
-            adjudication_request = None
-        elif len(frozen_references) > 1:
-            adjudication_request = await create_reference_selection(
-                session_id=session_id,
-                task_text=task_text,
-                attrs=attrs,
-                candidates=frozen_references,
-                resume=_resume_reference_selection,
-            )
-            adjudication_status = "deferred"
-            adjudication_reason = ""
-        else:
-            plan = plan_resume(
-                session_id=session_id,
-                task_text=task_text,
-                attrs=attrs,
-                candidate=frozen_references[0],
-            )
-            if plan.kind == "delegate":
-                return "resolved", plan.task_text, dict(plan.attrs)
-            await _resume_reference_selection(plan)
-            return "handled", "", attrs
-    else:
-        source_text = " ".join(
-            str(attrs.get("_host_source_user_text") or "").split()
-        )
-        if not source_text:
-            # Internal callers and legacy tests without the originating
-            # utterance cannot be re-linked safely. Existing host validation
-            # still applies.
-            return "bypass", task_text, attrs
-        adjudication = await adjudicate_focus_reference(
-            coordinator=coordinator,
-            session_id=session_id,
-            utterance=source_text,
-            task_text=task_text,
-            attrs=attrs,
-            query=default_message_query,
-            resume=_resume_reference_selection,
-            history=_recent_dialog_for_reference(),
-        )
-        if adjudication.status in {"bypass", "resolved"}:
-            resolved_task = "" if dict(adjudication.attrs).pop(
-                "_host_reference_taskless", False
-            ) else task_text
-            resolved_attrs = dict(adjudication.attrs)
-            resolved_attrs.pop("_host_reference_taskless", None)
-            return adjudication.status, resolved_task, resolved_attrs
-        adjudication_status = adjudication.status
-        adjudication_reason = adjudication.reason
-        adjudication_request = adjudication.request
-    if adjudication_status == "deferred":
-        display, voice_ja = clarification_announcement()
-        await _speak_task_lookup_answer(
-            display,
-            voice_text_ja=voice_ja,
-            history_marker="REFERENCE_CLARIFICATION",
-            source="reference_clarification",
-            log_label="REFERENCE-CLARIFICATION",
-        )
-        logger.info(
-            "[REFERENCE-CLARIFICATION] deferred session=%s request=%s candidates=%d",
-            session_id,
-            str((adjudication_request or {}).get("id") or ""),
-            len((adjudication_request or {}).get("options") or []),
-        )
-        return "deferred", task_text, attrs
-
-    logger.warning(
-        "[REFERENCE-CLARIFICATION] blocked before focus side effect: %s",
-        adjudication_reason,
-    )
-    await _speak_task_lookup_answer(
-        "这个操作没有可靠地对应到现有 Project 或当前会话的 WorkItem，所以我没有执行这个操作，也没有更改它的会话目标。",
-        voice_text_ja=(
-            "この操作の対象を既存の Project または現在の会話の WorkItem に安全に対応できなかったため、"
-            "この操作は実行せず、会話の対象も変更していません。"
-        ),
-        history_marker="REFERENCE_BLOCKED",
-        source="reference_clarification",
-        log_label="REFERENCE-CLARIFICATION",
-    )
-    return "blocked", task_text, attrs
-
-
-async def _defer_ambiguous_amend(task_text: str, attrs: dict) -> bool:
-    """Turn grounded WorkItem ambiguity into the same structured choice UI."""
-
-    if not bool(getattr(settings, "REFERENCE_CLARIFICATION_ENABLED", False)):
-        return False
-    rows = attrs.get("_host_amend_candidates")
-    if not isinstance(rows, list) or len(rows) < 2:
-        return False
-    from core import session_manager as sm
-    from server.reference_clarification import (
-        amend_candidates_from_host_rows,
-        clarification_announcement,
-        create_reference_selection,
-    )
-    from server.work_ledger_coordinator import get_work_ledger_coordinator
-
-    coordinator = get_work_ledger_coordinator()
-    session_id = sm.get_current_session_id() or ""
-    if coordinator is None or not session_id:
-        return False
-    candidates = amend_candidates_from_host_rows(coordinator, rows)
-    if len(candidates) < 2:
-        return False
-    await create_reference_selection(
-        session_id=session_id,
-        task_text=task_text,
-        attrs=attrs,
-        candidates=candidates,
-        resume=_resume_reference_selection,
-    )
-    display, voice_ja = clarification_announcement()
-    await _speak_task_lookup_answer(
-        display,
-        voice_text_ja=voice_ja,
-        history_marker="REFERENCE_CLARIFICATION",
-        source="reference_clarification",
-        log_label="REFERENCE-CLARIFICATION",
-    )
-    return True
-
-
-async def _announce_interaction_branch_lease_block(
-    *,
-    session_id: str,
-    turn_id: str,
-    branch_id: str,
-    instruction_revision: int | None,
-    reason: str,
-    execution_started: bool | None = False,
-) -> None:
-    """Publish one Host-owned correction when exact Browser routing is refused."""
-
-    try:
-        from server.ai_os_schema import work_note_payload, work_signal
-        from server.event_bus import bus
-        from server.protocol import Method
-        from server.work_context import add_work_note
-
-        clean_turn = re.sub(r"[^A-Za-z0-9_-]+", "-", str(turn_id or "")).strip("-")
-        identity = clean_turn or re.sub(
-            r"[^A-Za-z0-9_-]+",
-            "-",
-            str(branch_id or "unknown"),
-        ).strip("-")
-        clean_reason = str(reason or "stale_turn_start_lease")
-        execution_uncertain = bool(
-            execution_started is None or "stop_unconfirmed" in clean_reason
-        )
-        summary = (
-            "I could not confirm that the previous Browser run stopped. It may still be active, "
-            "so I blocked the requested continuation or Provider handoff."
-            if execution_uncertain
-            else (
-                "The Browser transition was blocked after execution may already have begun. "
-                "I did not start a replacement Browser or agent task."
-                if execution_started is True
-                else (
-                    "I could not safely apply that instruction to the browser context "
-                    "captured when this turn began, so no replacement Browser or agent task was started."
-                )
-            )
-        )
-        note = work_note_payload(
-            source="interaction_branch",
-            provider="browser",
-            run_id=f"browser_branch_blocked_{identity or 'unknown'}",
-            session_id=str(session_id or ""),
-            phase="Checkpoint",
-            title=(
-                "Browser transition blocked"
-                if execution_started is not False
-                else "Browser continuation was not started"
-            ),
-            summary=summary,
-            signals=[
-                work_signal(
-                    label="routing",
-                    text=(
-                        "The next transition was blocked while the prior run remains uncertain"
-                        if execution_uncertain
-                        else "The captured Browser continuation was blocked"
-                    ),
-                    detail=clean_reason,
-                    kind="status",
-                    importance="blocking",
-                )
-            ],
-            importance="blocking",
-            metadata={
-                "routing_scope_lease_blocked": True,
-                "reason": clean_reason,
-                "branch_id": str(branch_id or ""),
-                "turn_id": str(turn_id or ""),
-                "instruction_revision": instruction_revision,
-                **(
-                    {"execution_uncertain": True}
-                    if execution_uncertain
-                    else {"execution_started": bool(execution_started)}
-                ),
-                "narration_keypoint": "execution_blocked",
-            },
-            speak=True,
-        )
-        add_work_note(note)
-        await bus.emit(Method.CHAT_WORK_NOTE, note)
-    except Exception:
-        logger.exception("failed to announce rejected interaction branch lease")
-
-
-async def _consume_captured_interaction_branch_intent(
-    task_text: str,
-    attrs: dict[str, Any],
-    *,
-    preflight_only: bool = False,
-) -> bool:
-    """Consume an exact turn-start Browser lease before provider selection."""
-
-    from server.provider_requirements import normalize_requested_provider
-
-    requested_provider = normalize_requested_provider(attrs.get("provider"))
-    branch_intent = str(attrs.get("branch") or "").strip().lower()
-    raw_lease = attrs.get("_host_interaction_branch_routing_lease")
-    if not raw_lease:
-        return False
-
-    from core import session_manager as _sm
-    from server.interaction_branch import (
-        InteractionBranchRoutingLease,
-        InteractionBranchRunStopUnconfirmed,
-        get_interaction_branch_coordinator,
-    )
-
-    scope_state = (
-        str(raw_lease.get("state") or "bound").strip().lower()
-        if isinstance(raw_lease, dict)
-        else "invalid"
-    )
-    lease = (
-        InteractionBranchRoutingLease.from_mapping(raw_lease)
-        if scope_state == "bound"
-        else None
-    )
-    current_session_id = _sm.get_current_session_id() or ""
-    accepted = False
-    reason = ""
-    receipt = None
-    blocked_execution_started: bool | None = False
-    scope_session_id = (
-        lease.parent_session_id
-        if lease is not None
-        else str(raw_lease.get("parent_session_id") or "").strip()
-        if isinstance(raw_lease, dict)
-        else ""
-    )
-    scope_branch_id = (
-        lease.branch_id
-        if lease is not None
-        else str(raw_lease.get("branch_id") or "").strip()
-        if isinstance(raw_lease, dict)
-        else ""
-    )
-    scope_revision = lease.instruction_revision if lease is not None else None
-    coordinator = get_interaction_branch_coordinator()
-    absent_scope_valid: bool | None = None
-    bound_scope_valid: bool | None = None
-    if (
-        coordinator is not None
-        and scope_session_id
-        and current_session_id == scope_session_id
-    ):
-        if scope_state == "absent":
-            absent_scope_valid = await coordinator.validate_absent_routing_scope(
-                scope_session_id
-            )
-        elif scope_state == "bound" and lease is not None:
-            bound_scope_valid = await coordinator.validate_routing_lease(lease)
-        # Validation may wait on the Session lock. The ambient UI Session is
-        # not stable across that await, so refresh it before any side effect.
-        current_session_id = _sm.get_current_session_id() or ""
-    pending_termination = (
-        coordinator.termination_pending_for_session(scope_session_id)
-        if coordinator is not None
-        and scope_session_id
-        and current_session_id == scope_session_id
-        else ()
-    )
-    if not scope_session_id:
-        reason = (
-            "invalid_quarantined_routing_scope"
-            if scope_state == "quarantined"
-            else "invalid_absent_turn_start_scope"
-            if scope_state == "absent"
-            else "invalid_turn_start_lease"
-        )
-    elif current_session_id != scope_session_id:
-        reason = "session_changed_after_turn_admission"
-    elif pending_termination:
-        # The admitted scope may predate a failed stop attempt. Current Host
-        # liveness wins over the older bound/absent projection.
-        blocked_execution_started = None
-        reason = "prior_browser_run_stop_unconfirmed"
-        scope_branch_id = pending_termination[0].branch_id or scope_branch_id
-    elif scope_state == "reserved":
-        reason = "provider_admission_in_progress"
-    elif scope_state == "quarantined":
-        blocked_execution_started = None
-        reason = "prior_browser_run_stop_unconfirmed"
-    elif scope_state == "absent":
-        if coordinator is None:
-            reason = "interaction_coordinator_unavailable"
-        elif absent_scope_valid is not True:
-            reason = "branch_appeared_after_turn_admission"
-        elif requested_provider == "browser" and branch_intent in {
-            "continue",
-            "close",
-        }:
-            reason = "no_browser_branch_at_turn_admission"
-        else:
-            return False
-    elif lease is None:
-        reason = "invalid_turn_start_lease"
-    else:
-        if coordinator is None:
-            reason = "interaction_coordinator_unavailable"
-        elif bound_scope_valid is not True:
-            reason = "stale_turn_start_lease"
-        elif requested_provider in {"", lease.provider} and branch_intent not in {
-            "continue",
-            "close",
-            "new",
-        }:
-            reason = "browser_branch_relation_missing"
-        # A valid same-Session lease constrains identity even when this action
-        # explicitly escapes to branch=new or another Provider. Only the exact
-        # Browser continue/close relation is consumed here.
-        elif preflight_only or not (
-            requested_provider in {"", lease.provider}
-            and branch_intent in {"continue", "close"}
-        ):
-            return False
-        else:
-            try:
-                if branch_intent == "close":
-                    accepted = await coordinator.close_from_routing_lease(
-                        lease,
-                        reason="llm_close",
-                    )
-                    reason = "closed" if accepted else "stale_turn_start_lease"
-                else:
-                    receipt = await coordinator.continue_from_delegate(
-                        session_id=lease.parent_session_id,
-                        task=task_text,
-                        source_user_text=str(attrs.get("_host_source_user_text") or ""),
-                        turn_id=str(attrs.get("_host_turn_id") or ""),
-                        routing_lease=lease,
-                    )
-                    accepted = bool(receipt is not None and receipt.accepted)
-                    if receipt is not None:
-                        blocked_execution_started = receipt.execution_started
-                    reason = (
-                        "continued"
-                        if accepted
-                        else receipt.reason
-                        if receipt is not None
-                        else "stale_turn_start_lease"
-                    )
-            except InteractionBranchRunStopUnconfirmed as exc:
-                reason = f"run_stop_unconfirmed:{exc.reason}"
-                blocked_execution_started = None
-
-    try:
-        from server.turn_decision_shadow import (
-            get_enabled_turn_decision_shadow_observer,
-        )
-
-        shadow = get_enabled_turn_decision_shadow_observer()
-        if shadow is not None:
-            shadow.record_event(
-                str(attrs.get("_host_turn_id") or ""),
-                stage="routing_scope_lease_consumed",
-                origin_kind="interaction_branch",
-                origin_id=scope_branch_id,
-                payload={
-                    "axis": "browser",
-                    "branch_intent": branch_intent,
-                    "accepted": accepted,
-                    "reason": reason,
-                    "instruction_revision": (
-                        scope_revision
-                    ),
-                },
-            )
-    except Exception:
-        logger.debug("interaction branch lease observation failed", exc_info=True)
-
-    if accepted:
-        logger.info(
-            "captured interaction branch lease consumed before provider selection: "
-            "session=%s branch=%s intent=%s",
-            scope_session_id,
-            scope_branch_id,
-            branch_intent,
-        )
-    else:
-        logger.warning(
-            "captured interaction branch lease rejected before provider selection: "
-            "session=%s branch=%s intent=%s reason=%s",
-            scope_session_id,
-            scope_branch_id,
-            branch_intent,
-            reason,
-        )
-        await _announce_interaction_branch_lease_block(
-            session_id=scope_session_id or current_session_id,
-            turn_id=str(attrs.get("_host_turn_id") or ""),
-            branch_id=scope_branch_id,
-            instruction_revision=scope_revision,
-            reason=reason,
-            execution_started=blocked_execution_started,
-        )
-    attrs["_host_interaction_branch_scope_disposition"] = (
-        "accepted" if accepted else "blocked"
-    )
-    # A captured lease is a Host claim. Once present, rejection is fail-closed:
-    # never reinterpret the same turn as a new Browser/OpenClaw Work request.
-    return True
-
-
-async def _handle_delegate(
-    task_text: str, attrs: dict | None = None, *,
-    turn_admission: "TurnAdmissionRecord | None" = None,
-) -> str | None:
-    """Forward delegate tags through ProviderRuntime.
-
-    ProviderRuntime owns canvas updates and WorkObserver owns terminal narration.
-    The legacy second-pass summary is only kept for the direct OpenClaw fallback
-    path, where no provider observer session exists.
-    """
-    attrs = dict(attrs) if isinstance(attrs, dict) else {}
-    from server.host_action_dispatcher import HostDispatchBlocked
-    from core import session_manager as _dispatch_session_manager
-
-    admitted_scope = attrs.get("_host_interaction_branch_routing_lease")
-    if turn_admission is not None:
-        admitted_session_id = turn_admission.session_id
-        attrs["_host_turn_id"] = turn_admission.turn_id
-    else:
-        admitted_session_id = (
-            str(admitted_scope.get("parent_session_id") or "").strip()
-            if isinstance(admitted_scope, dict)
-            else ""
-        ) or (_dispatch_session_manager.get_current_session_id() or "")
-    attrs["_host_admitted_session_id"] = admitted_session_id
-    source_user_at_admission = " ".join(
-        str(attrs.get("_host_source_user_text") or "").split()
-    )
-    if (
-        not admitted_session_id
-        or (_dispatch_session_manager.get_current_session_id() or "")
-        == admitted_session_id
-    ):
-        attrs["_host_delegate_history_snapshot"] = {
-            "latest_user": _latest_user_message(_dispatch_session_manager),
-            "antecedent_user": _user_message_before_current(
-                _dispatch_session_manager,
-                current_user=source_user_at_admission,
-            ),
-            "interrupted_antecedent": (
-                _immediately_preceding_assistant_was_interrupted(
-                    _dispatch_session_manager,
-                    current_user=source_user_at_admission,
-                )
-            ),
-        }
-
-    if await _consume_captured_interaction_branch_intent(
-        task_text,
-        attrs,
-        preflight_only=True,
-    ):
-        return HostDispatchBlocked(
-            "[routing scope blocked] captured Browser scope is no longer valid"
-        )
-    focus_modifier = _delegate_focus_modifier(attrs)
-    if focus_modifier:
-        from server.focus_policy import (
-            apply_focus_modifier_audit,
-            audit_focus_modifier,
-        )
-
-        focus_audit = await audit_focus_modifier(attrs)
-        apply_focus_modifier_audit(attrs, focus_audit)
-        if not focus_audit.allowed:
-            logger.warning(
-                "[WORK-DESTINATION] persistent focus modifier denied: "
-                "requested=%s decision=%s outcome=%s",
-                focus_audit.requested,
-                focus_audit.decision or "unavailable",
-                focus_audit.outcome,
-            )
-            if _delegate_declared_focus(attrs):
-                # Both spellings name the same context operation. Removing
-                # only its modifier must not leave intent=focus executable.
-                if not str(task_text or "").strip():
-                    return HostDispatchBlocked(
-                        "[focus blocked] persistent context change was not confirmed"
-                    )
-                # Preserve the supported legacy focus+task Work operation;
-                # this audit rejects only the persistent context effect.
-                attrs["intent"] = "execute"
-        focus_modifier = _delegate_focus_modifier(attrs)
-    # Audit whether the user actually requested a persistent modifier before
-    # resolving its entity. Otherwise an invented focus=set on ordinary work
-    # can manufacture a selection card even though the modifier is removed a
-    # few lines later.
-    reference_status, task_text, attrs = await _adjudicate_delegate_reference(
-        task_text,
-        attrs,
-        session_id=admitted_session_id,
-    )
-    if (
-        admitted_session_id
-        and (_dispatch_session_manager.get_current_session_id() or "")
-        != admitted_session_id
-    ):
-        return HostDispatchBlocked(
-            "[routing scope blocked] originating Session changed"
-        )
-    if reference_status == "deferred":
-        return "[focus] awaiting reference selection"
-    if reference_status == "blocked":
-        if attrs.pop("_host_reference_authority_blocked", False) is True:
-            return HostDispatchBlocked(
-                "[routing scope blocked] originating Session changed"
-            )
-        return "[focus] reference resolution blocked"
-    if reference_status == "handled":
-        return "[focus] reference selection applied"
-    reference_selection_resumed = (
-        attrs.pop("_host_reference_selection_resumed", False) is True
-    )
-    focus_modifier = _delegate_focus_modifier(attrs)
-    declared_focus = _delegate_declared_focus(attrs)
-    if focus_modifier or declared_focus:
-        # Both spellings describe this one context change. In particular a
-        # canonical taskless clear has intent=focus AND focus=clear; applying
-        # them in separate branches repeats the domain write and projection.
-        # Keep the existing audits above, but one owner applies their result.
-        focus_attrs = dict(attrs)
-        if focus_modifier == "set":
-            project_id = str(
-                focus_attrs.get("project_id") or focus_attrs.get("projectId") or ""
-            ).strip()
-            if not project_id:
-                return "[focus] a project is required when setting the destination"
-        elif focus_modifier == "clear":
-            # project_id may still route the current operation; clearing only
-            # changes the destination inherited by future turns.
-            focus_attrs.pop("project_id", None)
-            focus_attrs.pop("projectId", None)
-        focus_result = await _handle_declared_focus(
-            focus_attrs,
-            announce_result=(
-                declared_focus
-                and not str(task_text or "").strip()
-                and not reference_selection_resumed
-            ),
-            session_id=admitted_session_id,
-        )
-        if focus_result.get("ok") is not True:
-            if focus_result.get("authority_blocked") is True:
-                return HostDispatchBlocked(
-                    "[routing scope blocked] originating Session changed"
-                )
-            return str(focus_result.get("message") or "[focus] switch refused")
-        attrs.pop("focus", None)
-        attrs["focus_applied"] = True
-    if (
-        admitted_session_id
-        and (_dispatch_session_manager.get_current_session_id() or "")
-        != admitted_session_id
-    ):
-        return HostDispatchBlocked(
-            "[routing scope blocked] originating Session changed"
-        )
-    if declared_focus:
-        if not str(task_text or "").strip():
-            return str(focus_result.get("message") or "[focus] destination updated")
-        # The supported legacy focus+task form continues as execute.
-        # Orthogonal modifiers preserve their actual operation intent.
-        attrs["intent"] = "execute"
-    if _delegate_declared_report_only(attrs):
-        # The model was asked to declare what the user wanted rather than to
-        # refrain from acting, because suppression by prose kept losing to the
-        # habit of acting (2026-07-31: a status-only question still created work
-        # in 20% of tag-path runs and 58% of tool-path runs). A declaration the
-        # host can act on turns an unenforceable rule into an enforced one.
-        logger.info(
-            "[DELEGATE-INTENT] report-only declared; answering from the ledger "
-            "instead of starting work: task=%r",
-            str(task_text or "")[:120],
-        )
-        try:
-            from server.task_lookup import lookup_enabled
-        except Exception:
-            return None
-        if lookup_enabled():
-            # The answering half of the declaration: until task lookup, the
-            # line above was aspiration — nothing read the ledger, and the
-            # model answered from whatever the roster happened to carry.
-            return await _answer_report_from_ledger(task_text, attrs)
-        return None
-    if _delegate_declared_retract(attrs):
-        # Before this branch existed the tag fell through to provider routing
-        # and "stop that one" started a task instead of ending one.
-        return await _handle_declared_retract(
-            task_text,
-            attrs,
-            session_id=admitted_session_id,
-        )
-    ambiguous_amend = str(attrs.get("amend_ambiguous") or "").strip()
-    if ambiguous_amend:
-        # Resolution found several candidates. Starting anything here means
-        # picking one, and picking wrong writes into a worktree that does not
-        # hold the file the user meant — silent, unlike one question.
-        logger.info("[DELEGATE-AMEND] blocked, asking which task: %s", ambiguous_amend)
-        try:
-            if await _defer_ambiguous_amend(task_text, attrs):
-                return "[amend blocked] awaiting WorkItem selection"
-        except Exception:
-            logger.exception("failed to publish structured amend selection")
-        await _announce_amend_ambiguous(ambiguous_amend)
-        return "[amend blocked] several tasks match that file"
-    missing_amend = str(attrs.get("amend_missing") or "").strip()
-    if missing_amend:
-        logger.info("[DELEGATE-AMEND] blocked, tracked target missing: %s", missing_amend)
-        await _announce_amend_missing(missing_amend)
-        return "[amend blocked] tracked target was not found"
-    declared_operation = str(
-        attrs.get("action") or attrs.get("browser_action") or ""
-    ).strip()
-    if declared_operation and not str(task_text or "").strip():
-        # A structured operation is already executable, but the Work Ledger
-        # and Observer still need a human-readable description.  The exact
-        # current utterance is authoritative and avoids asking the model to
-        # duplicate the same instruction in a second field.
-        task_text = " ".join(
-            str(attrs.get("_host_source_user_text") or "").split()
-        )
-    if (
-        admitted_session_id
-        and (_dispatch_session_manager.get_current_session_id() or "")
-        != admitted_session_id
-    ):
-        return HostDispatchBlocked(
-            "[routing scope blocked] originating Session changed"
-        )
-    if await _consume_captured_interaction_branch_intent(task_text, attrs):
-        if attrs.get("_host_interaction_branch_scope_disposition") == "blocked":
-            return HostDispatchBlocked(
-                "[routing scope blocked] captured Browser scope is no longer valid"
-            )
-        return None
-    provider_requirements, provider_selection = _delegate_provider_selection(task_text, attrs)
-    provider = provider_selection.provider_id
-    from core import session_manager as sm
-
-    task_text, handoff_audit = _rebase_web_goal_for_selected_provider(
-        task_text,
-        attrs,
-        selected_provider=provider,
-        requirements=provider_requirements,
-        session_manager=sm,
-    )
-    if handoff_audit:
-        attrs["_host_provider_handoff"] = handoff_audit
-    from agent_host.provider_runtime import runtime as provider_runtime
-    from agent_host.provider_workspace import workspace_route_authority
-
-    # Interaction branches are subordinate to the canonical control decision.
-    # Retire/squash a different Provider's branch before its structural fast
-    # paths can intercept later turns after the handoff.
-    interaction_session_id = ""
-    try:
-        from server.interaction_branch import (
-            InteractionBranchRoutingLease,
-            get_interaction_branch_coordinator,
-        )
-
-        interaction_coordinator = get_interaction_branch_coordinator()
-        interaction_session_id = admitted_session_id
-        raw_handoff_scope = attrs.get("_host_interaction_branch_routing_lease")
-        handoff_scope_state = (
-            str(raw_handoff_scope.get("state") or "bound").strip().lower()
-            if isinstance(raw_handoff_scope, dict)
-            else ""
-        )
-        captured_handoff_lease = InteractionBranchRoutingLease.from_mapping(
-            raw_handoff_scope
-        )
-        requested_branch_intent = str(attrs.get("branch") or "").strip().lower()
-        from server.provider_requirements import normalize_requested_provider
-
-        declared_provider = normalize_requested_provider(attrs.get("provider"))
-        if (
-            captured_handoff_lease is not None
-            and requested_branch_intent in {"continue", "close"}
-            and provider == captured_handoff_lease.provider
-            and declared_provider != captured_handoff_lease.provider
-        ):
-            raise ValueError(
-                "selected Provider conflicts with the captured branch relation"
-            )
-        branch_closed = False
-        if interaction_coordinator is not None and handoff_scope_state == "absent":
-            if not await interaction_coordinator.validate_absent_routing_scope(
-                interaction_session_id
-            ):
-                raise RuntimeError("branch appeared after turn admission")
-        elif interaction_coordinator is not None:
-            branch_closed = await interaction_coordinator.close_for_provider_handoff(
-                interaction_session_id,
-                next_provider=provider,
-                routing_lease=captured_handoff_lease,
-                replace_same_provider=bool(
-                    captured_handoff_lease is not None
-                    and requested_branch_intent == "new"
-                ),
-            )
-        if branch_closed:
-            attrs["_host_interaction_branch_routing_lease"] = {
-                "state": "absent",
-                "parent_session_id": interaction_session_id,
-                "captured_at": time.time(),
-                "transitioned_from_branch_id": (
-                    captured_handoff_lease.branch_id
-                    if captured_handoff_lease is not None
-                    else ""
-                ),
-            }
-            logger.info(
-                "interaction branch closed for canonical provider handoff: "
-                "session=%s provider=%s",
-                interaction_session_id,
-                provider,
-            )
-    except Exception as exc:
-        logger.exception("failed to close interaction branch during provider handoff")
-        reason = (
-            f"provider_handoff_stop_unconfirmed:{getattr(exc, 'reason', '')}"
-            if type(exc).__name__ == "InteractionBranchRunStopUnconfirmed"
-            else f"provider_handoff_failed:{type(exc).__name__}"
-        )
-        await _announce_interaction_branch_lease_block(
-            session_id=interaction_session_id,
-            turn_id=str(attrs.get("_host_turn_id") or ""),
-            branch_id=str(getattr(exc, "branch_id", "") or ""),
-            instruction_revision=None,
-            reason=reason,
-            execution_started=None,
-        )
-        return HostDispatchBlocked(
-            "[provider handoff blocked] prior Browser run may still be active"
-        )
-
-    provider_manifest = provider_runtime.get_manifest(provider)
-    if provider_manifest is None:
-        raise ValueError(f"selected provider is not registered: {provider}")
-    action = str(attrs.get("action") or attrs.get("browser_action") or "").strip().lower()
-    branch_intent = str(attrs.get("branch") or "").strip().lower()
-    workspace_authority = workspace_route_authority(
-        provider_manifest.capabilities.workspace_ownership
-    )
-    workspace_route = _delegate_workspace_route(
-        provider,
-        attrs,
-        manifest=provider_manifest,
-    )
-    logger.info(
-        "[PROVIDER-DISPATCH] turn_id=%s provider=%s intent=%s subject=%s "
-        "workspace_ref=%s project_id=%s dispatch_source=%s "
-        "route_status=%s route_reason=%s route_source=%s task_chars=%d",
-        str(attrs.get("_host_turn_id") or ""),
-        provider,
-        str(attrs.get("intent") or ""),
-        str(attrs.get("subject") or ""),
-        str(attrs.get("workspace_ref") or attrs.get("workspaceRef") or ""),
-        str(attrs.get("project_id") or attrs.get("projectId") or ""),
-        str(attrs.get("_host_dispatch_source") or ""),
-        str(workspace_route.get("status") or ""),
-        str(workspace_route.get("reason") or ""),
-        str(workspace_route.get("source") or ""),
-        len(str(task_text or "")),
-    )
-    if workspace_authority == "host" and workspace_route.get("status") != "resolved":
-        logger.warning(
-            "%s delegate blocked before execution: reason=%s candidates=%s",
-            provider,
-            workspace_route.get("reason") or "workspace_unresolved",
-            len(workspace_route.get("candidates") or []),
-        )
-        await _announce_provider_workspace_block(
-            provider,
-            workspace_route,
-            session_id=admitted_session_id,
-        )
-        return HostDispatchBlocked(
-            "[workspace routing blocked] project context is required"
-        )
-    delegate_cwd = workspace_route.get("cwd") or None
-    delegate_mode = _delegate_mode_for_provider(
-        provider,
-        attrs,
-        action,
-        task_text,
-        workspace_access=provider_requirements.workspace_access,
-    )
-
-    # ── 单脑路由（2026-07-04）：主 LLM 通过 branch 属性表达分支意图 ──────────
-    # continue → 在活跃分支内后台执行（不阻塞对话，observer 叙述结果）；
-    # close    → 关闭活跃分支（模型标签前的那句话就是语音应答）；
-    # new/缺省 → 走通用 provider 路径，intent 随 metadata 下传给
-    #            _should_start_new_branch 显式判定。
-    if provider == "browser" and branch_intent in {"continue", "close"}:
-        try:
-            from server.interaction_branch import get_interaction_branch_coordinator
-
-            coordinator = get_interaction_branch_coordinator()
-            branch_session_id = admitted_session_id
-            if coordinator is not None:
-                if branch_intent == "close":
-                    closed = await coordinator.close_active_branch(
-                        branch_session_id,
-                        reason="llm_close",
-                    )
-                    logger.info("llm branch=close handled; closed=%s", closed)
-                    return None
-                receipt = await coordinator.continue_from_delegate(
-                    session_id=branch_session_id,
-                    task=task_text,
-                    source_user_text=str(
-                        attrs.get("_host_source_user_text") or ""
-                    ),
-                    turn_id=str(attrs.get("_host_turn_id") or ""),
-                )
-                if receipt is not None:
-                    if not receipt.accepted:
-                        await _announce_interaction_branch_lease_block(
-                            session_id=branch_session_id,
-                            turn_id=str(attrs.get("_host_turn_id") or ""),
-                            branch_id=receipt.branch_id,
-                            instruction_revision=receipt.instruction_revision,
-                            reason=receipt.reason,
-                            execution_started=receipt.execution_started,
-                        )
-                        return HostDispatchBlocked(
-                            "[routing scope blocked] Browser continuation was not accepted"
-                        )
-                    return None
-                logger.info("branch=continue without active branch; falling through as new run")
-        except Exception as exc:
-            logger.exception("branch intent handling failed closed")
-            reason = (
-                f"branch_run_stop_unconfirmed:{getattr(exc, 'reason', '')}"
-                if type(exc).__name__ == "InteractionBranchRunStopUnconfirmed"
-                else f"branch_intent_failed:{type(exc).__name__}"
-            )
-            await _announce_interaction_branch_lease_block(
-                session_id=branch_session_id,
-                turn_id=str(attrs.get("_host_turn_id") or ""),
-                branch_id=str(getattr(exc, "branch_id", "") or ""),
-                instruction_revision=None,
-                reason=reason,
-                execution_started=None,
-            )
-            return HostDispatchBlocked(
-                "[routing scope blocked] Browser branch transition failed"
-            )
-
-    from server.delegate_dispatch import (
-        DelegateDispatchPlan,
-        dispatch_delegate,
-    )
-
-    sanitized_task, sanitize_info = _sanitize_delegate_task_for_provider(
-        task_text,
-        attrs,
-        provider=provider,
-        session_manager=sm,
-    )
-    if sanitize_info:
-        removed_parameters = _remove_ungrounded_persona_parameters(attrs)
-        if removed_parameters:
-            sanitize_info["removed_parameters"] = removed_parameters
-        logger.warning(
-            "delegate task sanitized: provider=%s reason=%s original=%r replacement=%r",
-            provider,
-            sanitize_info.get("reason") or "unknown",
-            str(task_text or "")[:220],
-            sanitized_task[:220],
-        )
-        task_text = sanitized_task
-    delegate_mode = _delegate_mode_for_provider(
-        provider,
-        attrs,
-        action,
-        task_text,
-        workspace_access=provider_requirements.workspace_access,
-    )
-    browser_parameters: dict = {}
-    browser_audit: dict = {}
-    if provider == "browser":
-        from agent_host.browser_request_contract import (
-            normalize_delegate_browser_request,
-        )
-
-        browser_normalization = normalize_delegate_browser_request(
-            task_text,
-            action,
-            attrs,
-        )
-        action = browser_normalization.action
-        delegate_mode = _delegate_mode_for_provider(
-            provider,
-            attrs,
-            action,
-            task_text,
-            workspace_access=provider_requirements.workspace_access,
-        )
-        browser_parameters = dict(browser_normalization.parameters)
-        browser_audit = dict(browser_normalization.audit)
-    dispatch_plan = DelegateDispatchPlan(
-        task_text=str(task_text or ""),
-        attrs=dict(attrs),
-        session_id=admitted_session_id,
-        admission_id=f"ibr_admit_{uuid.uuid4().hex}",
-        provider=provider,
-        requirements=provider_requirements,
-        selection=provider_selection,
-        manifest=provider_manifest,
-        workspace_route=dict(workspace_route),
-        workspace_authority=workspace_authority,
-        delegate_cwd=delegate_cwd,
-        delegate_mode=delegate_mode,
-        action=action,
-        branch_intent=branch_intent,
-        sanitize_info=dict(sanitize_info),
-        browser_parameters=browser_parameters,
-        browser_audit=browser_audit,
-    )
-
-    async def announce_scoped_start_failure(
-        failed_provider: str,
-        error: Exception,
-    ) -> None:
-        await _announce_provider_start_failure(
-            failed_provider,
-            error,
-            session_id=admitted_session_id,
-        )
-
-    try:
-        return await dispatch_delegate(
-            dispatch_plan,
-            announce_start_failure=announce_scoped_start_failure,
-            route_amendment=_route_active_amendment,
-        )
-    except Exception as exc:
-        from agent_host.provider_runtime import ProviderStartAdmissionRejected
-
-        if not isinstance(exc, ProviderStartAdmissionRejected):
-            raise
-        await _announce_interaction_branch_lease_block(
-            session_id=admitted_session_id,
-            turn_id=str(attrs.get("_host_turn_id") or ""),
-            branch_id="",
-            instruction_revision=None,
-            reason=exc.reason,
-            execution_started=False,
-        )
-        return HostDispatchBlocked(
-            "[routing scope blocked] Browser scope changed before Provider start"
-        )
-
-_DELEGATE_PERSONA_MARKERS = (
-    "牧瀬紅莉栖",
-    "牧濑红莉栖",
-    "紅莉栖",
-    "红莉栖",
-    "まきせ",
-    "くりす",
-    "クリス",
-    "クリスティーナ",
-    "kurisu",
-    "makise",
-    "christina",
-    "steins;gate",
-    "steins gate",
-    "viktor chondria",
-)
-
-
-_BROWSER_EXECUTION_PARAMETER_KEYS = (
-    "action",
-    "browser_action",
-    "branch",
-    "url",
-    "query",
-    "text",
-    "label",
-    "selector_text",
-    "ref",
-    "action_ref",
-    "target_ref",
-    "value",
-    "input",
-    "submit",
-)
-
-
-def _rebase_web_goal_for_selected_provider(
-    task_text: str,
-    attrs: dict,
-    *,
-    selected_provider: str,
-    requirements,
-    session_manager,
-) -> tuple[str, dict]:
-    """Transfer an address-less Web goal without carrying Browser guesses.
-
-    Provider selection may correctly lower a model-proposed Browser operation
-    to Agent research.  In that case the model's URL/task is precisely the
-    evidence that was rejected as capability authority, so it cannot remain
-    the execution payload.  The exact source turn is authoritative; an
-    interrupted immediately-adjacent turn is bounded conversational context.
-    """
-
-    from server.provider_requirements import normalize_requested_provider
-
-    requested = normalize_requested_provider(attrs.get("provider"))
-    source_user = " ".join(
-        str(attrs.get("_host_source_user_text") or "").split()
-    )
-    if not (
-        requested == "browser"
-        and str(selected_provider or "").strip().lower() == "openclaw"
-        and str(getattr(requirements, "task_kind", "") or "") == "research"
-        and source_user
-    ):
-        return task_text, {}
-
-    antecedent_user = _user_message_before_current(
-        session_manager,
-        current_user=source_user,
-    )
-    interrupted_antecedent = _immediately_preceding_assistant_was_interrupted(
-        session_manager,
-        current_user=source_user,
-    )
-    lines = [
-        "Complete this external Web goal from the main conversation.",
-    ]
-    if interrupted_antecedent and antecedent_user:
-        lines.append(f"Immediate prior user request (context only): {antecedent_user}")
-    lines.append(f"Latest user instruction (authoritative): {source_user}")
-    identity_grounded = _user_explicitly_references_assistant_identity(
-        source_user
-    ) or (
-        interrupted_antecedent
-        and _user_explicitly_references_assistant_identity(antecedent_user)
-    )
-    lines.append(
-        "Do not inherit an older page or research target when it conflicts "
-        "with the latest instruction."
-    )
-
-    removed: list[str] = []
-    for key in _BROWSER_EXECUTION_PARAMETER_KEYS:
-        if key in attrs:
-            attrs.pop(key, None)
-            removed.append(key)
-    return "\n".join(lines), {
-        "reason": "browser_goal_lowered_to_agent_research",
-        "requested_provider": requested,
-        "selected_provider": selected_provider,
-        "source_authority": "current_user",
-        "interrupted_antecedent_included": bool(
-            interrupted_antecedent and antecedent_user
-        ),
-        "identity_grounded": identity_grounded,
-        "removed_browser_parameters": removed,
-    }
-
-
-def _sanitize_delegate_task_for_provider(
-    task_text: str,
-    attrs: dict,
-    *,
-    provider: str,
-    session_manager,
-) -> tuple[str, dict]:
-    task = " ".join(str(task_text or "").split())
-    source_user = " ".join(
-        str(attrs.get("_host_source_user_text") or "").split()
-    )
-    history_snapshot = (
-        attrs.get("_host_delegate_history_snapshot")
-        if isinstance(attrs.get("_host_delegate_history_snapshot"), dict)
-        else {}
-    )
-    latest_user = str(history_snapshot.get("latest_user") or "").strip()
-    antecedent_user = str(
-        history_snapshot.get("antecedent_user") or ""
-    ).strip()
-    if not history_snapshot:
-        # Bounded compatibility for non-Host direct callers. Production
-        # dispatch overwrites this snapshot before any awaited routing stage.
-        latest_user = _latest_user_message(session_manager)
-        antecedent_user = _user_message_before_current(
-            session_manager,
-            current_user=source_user,
-        )
-    authoritative_user = source_user or latest_user
-    if not task:
-        return authoritative_user, {
-            "reason": "empty_task_replaced_with_source_user",
-            "source": "current_turn" if source_user else "conversation_history",
-        } if authoritative_user else {}
-    confirmed_prior_request = _consume_control_payload_grounding(attrs)
-    persona_grounded = _delegate_persona_reference_is_grounded(
-        source_user,
-        antecedent_user,
-        provider=provider,
-        confirmed_prior_request=confirmed_prior_request,
-        interrupted_antecedent=(
-            bool(history_snapshot.get("interrupted_antecedent"))
-            if history_snapshot
-            else _immediately_preceding_assistant_was_interrupted(
-                session_manager,
-                current_user=source_user,
-            )
-        ),
-    )
-    persona_in_parameters = any(
-        _has_persona_marker(str(attrs.get(key) or ""))
-        for key in _DELEGATE_PERSONA_PARAMETER_KEYS
-    )
-    if (
-        (_has_persona_marker(task) or persona_in_parameters)
-        and authoritative_user
-        and not persona_grounded
-    ):
-        return authoritative_user, {
-            "reason": "persona_leak_removed",
-            "provider": provider,
-            "original_task": task[:500],
-            "source_user": source_user[:500],
-            "latest_user": latest_user[:500],
-            "antecedent_user": antecedent_user[:500],
-            "confirmed_prior_request": confirmed_prior_request,
-            "replacement_source": (
-                "current_turn" if source_user else "conversation_history"
-            ),
-        }
-    return task, {}
-
-
-def _consume_control_payload_grounding(attrs: dict) -> bool:
-    """Consume the typed proof emitted by canonical ControlDecision.
-
-    Private-looking strings in a role-authored tag are not Host authority.  A
-    positive result therefore requires the frozen dataclass installed by
-    ``reconcile_control_decision``; the evidence is removed before Provider
-    routing while the ordinary string ``_host_payload_source`` remains for
-    audit metadata.
-    """
-
-    from server.control_decision import (
-        CONTROL_PAYLOAD_GROUNDING_ATTR,
-        ControlPayloadGrounding,
-    )
-
-    evidence = attrs.pop(CONTROL_PAYLOAD_GROUNDING_ATTR, None)
-    return bool(
-        isinstance(evidence, ControlPayloadGrounding)
-        and evidence.continuity == "confirmed_prior_request"
-    )
-
-
-def _latest_user_message(session_manager) -> str:
-    try:
-        dialog = getattr(session_manager.conversation_history, "dialog", [])
-        for message in reversed(list(dialog)):
-            if message.get("role") == "user":
-                return " ".join(str(message.get("content") or "").split())
-    except Exception:
-        logger.exception("failed to inspect latest user message for delegate sanitization")
-    return ""
-
-
-def _user_message_before_current(session_manager, *, current_user: str) -> str:
-    """Return the immediate user antecedent in the real persisted ordering.
-
-    During Provider dispatch the current user message is already in history.
-    Older tests treated the latest history entry as the antecedent, which made
-    one-turn retry authorization pass in isolation but fail in production.
-    If a caller supplies a history snapshot from before the current turn, the
-    latest user entry is already the correct antecedent.
-    """
-
-    current = " ".join(str(current_user or "").split())
-    try:
-        dialog = getattr(session_manager.conversation_history, "dialog", [])
-        users = [
-            " ".join(str(message.get("content") or "").split())
-            for message in reversed(list(dialog))
-            if message.get("role") == "user"
-        ]
-        if current and users and users[0] == current:
-            users = users[1:]
-        return users[0] if users else ""
-    except Exception:
-        logger.exception("failed to inspect prior user message for delegate sanitization")
-    return ""
-
-
-def _immediately_preceding_assistant_was_interrupted(
-    session_manager,
-    *,
-    current_user: str,
-) -> bool:
-    """Use the persisted barge-in boundary, not language-specific corrections."""
-
-    current = " ".join(str(current_user or "").split())
-    try:
-        dialog = list(
-            getattr(session_manager.conversation_history, "dialog", [])
-        )
-        preceding_index = len(dialog) - 1
-        if current:
-            for index in range(len(dialog) - 1, -1, -1):
-                message = dialog[index]
-                if message.get("role") != "user":
-                    continue
-                content = " ".join(str(message.get("content") or "").split())
-                if content == current:
-                    preceding_index = index - 1
-                    break
-        if preceding_index < 0:
-            return False
-        preceding = dialog[preceding_index]
-        return bool(
-            preceding.get("role") == "assistant"
-            and "[interrupted by user]"
-            in str(preceding.get("content") or "").lower()
-        )
-    except Exception:
-        logger.exception("failed to inspect interrupted conversation boundary")
-    return False
-
-
-def _has_persona_marker(text: str) -> bool:
-    lowered = str(text or "").lower()
-    return any(marker in lowered for marker in _DELEGATE_PERSONA_MARKERS)
-
-
-_ASSISTANT_IDENTITY_REFERENCE_MARKERS = (
-    "你自己",
-    "妳自己",
-    "您的身份",
-    "你的身份",
-    "你的页面",
-    "你的頁面",
-    "あなた自身",
-    "君自身",
-    "自分のページ",
-    "yourself",
-    "your own",
-    "about you",
-)
-
-
-def _user_explicitly_references_assistant_identity(text: str) -> bool:
-    normalized = " ".join(str(text or "").lower().split())
-    return _has_persona_marker(normalized) or any(
-        marker in normalized for marker in _ASSISTANT_IDENTITY_REFERENCE_MARKERS
-    )
-
-
-_PRIOR_REQUEST_RETRY_MARKERS = (
-    "再试",
-    "重试",
-    "再来一次",
-    "继续刚才",
-    "继续上次",
-    "もう一度",
-    "再試行",
-    "さっきの",
-    "try again",
-    "retry",
-    "one more time",
-    "continue the previous",
-)
-
-
-def _delegate_persona_reference_is_grounded(
-    source_user: str,
-    antecedent_user: str,
-    *,
-    provider: str = "",
-    confirmed_prior_request: bool = False,
-    interrupted_antecedent: bool = False,
-) -> bool:
-    """Accept identity from current authority or one bounded continuation."""
-
-    if _user_explicitly_references_assistant_identity(source_user):
-        return True
-    if not source_user:
-        return _user_explicitly_references_assistant_identity(antecedent_user)
-    if confirmed_prior_request:
-        return _user_explicitly_references_assistant_identity(antecedent_user)
-    if interrupted_antecedent:
-        return _user_explicitly_references_assistant_identity(antecedent_user)
-    normalized_source = " ".join(str(source_user or "").lower().split())
-    retry = any(marker in normalized_source for marker in _PRIOR_REQUEST_RETRY_MARKERS)
-    provider_retarget = bool(
-        str(provider or "").strip()
-        and str(provider or "").strip().lower() in normalized_source
-    )
-    return bool(
-        (retry or provider_retarget)
-        and _user_explicitly_references_assistant_identity(antecedent_user)
-    )
-
-
-_DELEGATE_PERSONA_PARAMETER_KEYS = (
-    "url",
-    "query",
-    "text",
-    "label",
-    "selector_text",
-    "value",
-    "input",
-)
-
-
-def _remove_ungrounded_persona_parameters(attrs: dict) -> list[str]:
-    """Keep a persona rewrite atomic across task and action arguments."""
-
-    removed: list[str] = []
-    for key in _DELEGATE_PERSONA_PARAMETER_KEYS:
-        value = attrs.get(key)
-        if value not in (None, "") and _has_persona_marker(str(value)):
-            attrs.pop(key, None)
-            removed.append(key)
-    return removed
 
 
 def _noop_warmup() -> str:

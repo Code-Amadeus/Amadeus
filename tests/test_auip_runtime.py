@@ -9,7 +9,6 @@ from server.auip_contract import AUIP_SCHEMA, AuipProtocolError
 from server.auip_runtime import ATTACH_TICKET_TIMEOUT_S, PENDING_ACTION_TIMEOUT_S, AuipRuntime
 from server.work_context import (
     augment_system_prompt_for_control_decision,
-    augment_system_prompt_with_active_provider_context,
 )
 
 
@@ -1708,64 +1707,6 @@ def test_action_input_schema_guides_tools_without_replacing_app_receipt_truth() 
     assert rejected["latest_verified_self_action"] is None
 
 
-def test_main_prompt_reads_projection_without_copying_event_history() -> None:
-    from server.auip_runtime import runtime
-
-    runtime.reset_for_tests()
-    registered = runtime.register(manifest=_manifest(), conversation_id="prompt-session")
-    runtime.publish_state(
-        app_session_id=registered["app_session_id"],
-        bridge_token=registered["bridge_token"],
-        revision=1,
-        state={"turn": "user"},
-    )
-    from config import settings
-
-    with patch.object(settings, "AUIP_CONTROL_DECISION_ENABLED", True):
-        prompt = augment_system_prompt_with_active_provider_context(
-            "You are Kurisu.",
-            session_id="prompt-session",
-        )
-    assert "[Current AUIP app experience]" in prompt
-    assert "[AUIP Interaction Briefing]" not in prompt
-    assert '"turn":"user"' in prompt
-    assert "normally no tag" in prompt
-    assert "Claim completion only after accepted receipt" in prompt
-    assert "[AUIP action=" not in prompt
-
-    from core.chat_runtime import _TurnState, _turn_role_grounding
-    from server.auip_control_decision import AuipControlDecision
-
-    state = _TurnState(
-        gui_callback=None,
-        session_id="prompt-session",
-    )
-    state.auip_decision_result = AuipControlDecision(
-        status="ok",
-        action="step",
-        app_session_id=registered["app_session_id"],
-    )
-    with patch("core.chat_runtime.get_current_session_id", return_value="prompt-session"):
-        current_turn = _turn_role_grounding(state)
-    assert "[AUIP Interaction Briefing]" in current_turn
-    assert "interaction_summary=Place one legal stone" in current_turn
-    assert "selection_contract=" in current_turn
-    assert "inputSchema" not in current_turn
-    assert current_turn.index("Authoritative Current-Turn Application State") < (
-        current_turn.index("AUIP Interaction Briefing")
-    )
-
-    with patch.object(settings, "AUIP_CONTROL_DECISION_ENABLED", False):
-        legacy_prompt = augment_system_prompt_with_active_provider_context(
-            "You are Kurisu.",
-            session_id="prompt-session",
-        )
-    assert "[AUIP action=observe]" in legacy_prompt
-    assert "[AUIP Interaction Briefing]" in legacy_prompt
-    assert "receipt precedes completion claims" in legacy_prompt
-    runtime.reset_for_tests()
-
-
 def test_control_prompt_sees_appsession_identity_without_copying_app_state() -> None:
     from server.auip_runtime import runtime
 
@@ -2480,29 +2421,3 @@ def test_completed_experience_can_close_its_owned_surface_without_resuming() -> 
     assert left["status"] == "closed"
     assert left["surface_close_status"] == "pending"
     assert left["decision_generation"] == completed["decision_generation"] + 1
-
-
-def _main() -> None:
-    test_raw_app_traffic_stays_out_of_main_chat_projection()
-    test_spectator_only_capability_is_visible_without_granting_participation()
-    test_only_accepted_receipt_becomes_kurisu_self_experience()
-    test_revision_and_token_boundaries_fail_closed()
-    test_action_input_schema_guides_tools_without_replacing_app_receipt_truth()
-    test_main_prompt_reads_projection_without_copying_event_history()
-    test_control_prompt_sees_appsession_identity_without_copying_app_state()
-    test_app_text_cannot_close_the_host_projection_block()
-    test_closed_branch_keeps_delivered_narration_and_terminal_not_raw_events()
-    test_active_branch_projects_only_narration_the_delivery_sink_accepted()
-    test_oversized_projection_stays_valid_and_preserves_later_situation_fields()
-    test_projection_budget_never_drops_the_latest_verified_self_action()
-    test_attach_ticket_is_single_use_and_expires_without_creating_a_session()
-    test_attach_ticket_binds_the_requested_initial_engagement_mode()
-    test_a_pending_action_expires_without_becoming_a_result()
-    test_expired_action_tells_the_character_the_outcome_is_unknown()
-    test_rejected_participant_action_returns_a_visible_host_outcome()
-    test_completed_experience_can_close_its_owned_surface_without_resuming()
-    print("ok: AUIP AppSession truth stays bounded and role-aware")
-
-
-if __name__ == "__main__":
-    _main()

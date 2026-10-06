@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from core import session_manager as sm
-import core.chat_runtime as cr
 import core.chat_history_projection as hp
 import core.turn_coordinator as tc
 from server.cooperative_context_store import CooperativeContextStore
@@ -28,7 +27,7 @@ def isolated_history(tmp_path, monkeypatch):
     monkeypatch.setattr(sm, "_SESSION_SELECTION_REVISION", 0)
     monkeypatch.setattr(sm, "_activation_guard", None)
     history = sm.ConversationHistory()
-    for module in (sm, cr, hp):
+    for module in (sm, hp):
         monkeypatch.setattr(module, "conversation_history", history)
     monkeypatch.setattr(tc, "coordinator", tc.TurnCoordinator())
     monkeypatch.setattr(ChatHandler, "_turn_allows_visible_emit", AsyncMock(return_value=True))
@@ -273,71 +272,3 @@ async def test_tts_interrupt_retains_origin_when_playback_drain_switches_session
     assert sm.conversation_history.dialog == [{"role":"user", "content":"Only B"}]
     assert assistant_rows("B") == []
     assert assistant_rows("A")[0]["content"] == "Heard prefix. [interrupted by user]"
-
-
-@pytest.mark.parametrize("branch_mode", ["normal_chat", "a1", "b2"])
-async def test_handler_respects_runtime_history_scope(monkeypatch, branch_mode):
-    from server.auip_control_decision import AuipControlDecision
-    from server.auip_runtime import AuipRuntime
-    from test_auip_appsession_role_branch_acceptance import _manifest
-
-    runtime = cr.ChatRuntime()
-    runtime.configure(pending_sentence_items=asyncio.Queue(), provider="local")
-    runtime.enable_conversation = True
-    isolate_branch = branch_mode != "normal_chat"
-    app = AuipRuntime(role_branch_mode=branch_mode if isolate_branch else "b2")
-    registered = app.register(manifest=_manifest(), conversation_id="A")
-    app.publish_state(app_session_id=registered["app_session_id"], bridge_token=registered["bridge_token"],
-                      revision=1, state={"turn": "user", "position": 0})
-    monkeypatch.setattr("server.auip_runtime.runtime", app)
-    monkeypatch.setattr(cr, "RAG_ENABLED", False)
-    monkeypatch.setattr(cr, "_get_expr_ctrl", lambda: Mock())
-    monkeypatch.setattr(cr, "reset_all_expressions", Mock())
-    monkeypatch.setattr("server.task_lookup.pre_turn_resolve", AsyncMock())
-    monkeypatch.setattr(runtime, "_ensure_clients", Mock())
-    monkeypatch.setattr(runtime, "prepare_role_audio", AsyncMock())
-    monkeypatch.setattr(runtime, "_start_auip_decision", Mock(return_value=False))
-    monkeypatch.setattr(runtime, "_wait_for_control_authority", AsyncMock())
-    monkeypatch.setattr(runtime, "_repair_missing_delegate", AsyncMock())
-    monkeypatch.setattr(runtime, "_finalize_action_existence_outcome", Mock())
-    monkeypatch.setattr(runtime, "_wait_for_turn_playback", AsyncMock())
-    observed = []
-
-    async def model(st, *_args):
-        if isolate_branch:
-            st.auip_decision_result = AuipControlDecision(status="ok", action="none",
-                work_relation="subsumed", app_session_id=registered["app_session_id"])
-        st.full_response = st.history_response = "Synthetic displayed response."
-        st.gui_callback(st.full_response)
-        observed.append(st)
-
-    monkeypatch.setattr(runtime, "_run_local", model)
-    handler = ChatHandler()
-
-    async def runner(text, **kwargs):
-        return await runtime.stream_llm_query(text, **kwargs)
-
-    handler.configure(stream_llm_query=runner, pending_sentence_items=None)
-    handler._active_turn_id = "scope-turn"
-    monkeypatch.setattr(handler, "_prepare_visual_context", AsyncMock(return_value=None))
-    emit = AsyncMock()
-    monkeypatch.setattr("server.handlers.chat_handler.bus.emit", emit)
-    await handler._run_stream("A question", lambda text: setattr(handler, "_active_accumulated_text", text),
-        "scope-turn", provider="local", session_id="A")
-    complete = [call.args[1] for call in emit.await_args_list if call.args[0] == Method.CHAT_COMPLETE]
-    assert complete and complete[-1]["full_text"] == "Synthetic displayed response."
-    assert observed[0].auip_role_branch_isolated is isolate_branch
-    if isolate_branch:
-        assert app.recent_role_branch_messages("A")[-1]["content"] == "Synthetic displayed response."
-        assert assistant_rows() == [], "AppSession-local reply must not be copied into parent history"
-    else:
-        assert len(assistant_rows()) == 1
-
-    # Speech usually outlives its text. Barge in afterwards in interrupt_flow's
-    # order: Chat abort names the last reply, then TTS interruption annotates it.
-    aborted = await handler.handle(Method.CHAT_ABORT, {"turn_id": "", "stop_execution": False})
-    assert aborted["turn_id"] == "scope-turn"
-    await interrupt_callback(monkeypatch)({"session_id": "A", "turn_id": aborted["turn_id"],
-        "completed_text": "Synthetic displayed", "accumulated_text": aborted["accumulated_text"]})
-    assert [(row["turn_id"], row["content"]) for row in assistant_rows()] == (
-        [] if isolate_branch else [("scope-turn", "Synthetic displayed [interrupted by user]")])

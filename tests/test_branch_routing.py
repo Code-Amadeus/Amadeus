@@ -1,11 +1,4 @@
-"""单脑分支路由（branch=continue/new/close）测试。
-
-覆盖：三条结构性快通道、旧关键词误吸场景不再误判、
-continue_from_delegate / close_active_branch、_should_start_new_branch
-的显式意图判定、work_context 分支状态块渲染。
-
-运行：.venv\\Scripts\\python.exe -X utf8 tests\\test_branch_routing.py
-"""
+"""Browser branch continuation, captured leases and safe lifecycle transitions."""
 
 from __future__ import annotations
 
@@ -21,7 +14,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import server.interaction_branch as ib_mod
 from server.interaction_branch import (
     InteractionBranchCoordinator,
-    InteractionBranchContinuationReceipt,
     InteractionBranchRoutingLease,
     InteractionBranchRunStopUnconfirmed,
     InteractionBranchState,
@@ -60,63 +52,6 @@ def _make_branch(session_id="s1", *, status="active", url="https://www.bilibili.
         updated_at=now,
         expires_at=now + 900,
     )
-
-
-def test_structural_fast_paths_only():
-    async def run():
-        runs: list = []
-        c = _make_coordinator(runs)
-        branch = _make_branch()
-        c._active_by_session["s1"] = branch
-
-        # 旧关键词误吸场景：这些现在全部落回主对话（返回 None），
-        # 既不误 continue 也不误杀分支
-        for text in (
-            "打开心扉聊聊吧",          # 旧: "打开"命中 continuation → 误吸
-            "嗯嗯",                    # 旧: noise 表判定
-            "点击第一个结果",           # 旧: 关键词 continue —— 现在由主 LLM 发标签
-            "look up paxos papers",    # 旧: unanchored search retarget
-            "换个话题吧",               # 旧: new_topic → 误杀分支
-        ):
-            result = await c.try_route_user_message(text=text, session_id="s1")
-            assert result is None, f"should defer to main llm: {text!r}"
-            assert c._active_by_session.get("s1") is branch, f"branch must survive: {text!r}"
-
-        # 快通道 2：显式 URL 同站 → continue（provider_run 被调用）
-        result = await c.try_route_user_message(
-            text="https://www.bilibili.com/video/BV1 开这个", session_id="s1"
-        )
-        assert result is not None and result["handled"]
-        assert runs[-1]["metadata"]["branch_intent"] == "continue"
-
-        # 快通道 3：显式 URL 异站 → 分支 superseded，落回主对话
-        branch2 = _make_branch(session_id="s2")
-        c._active_by_session["s2"] = branch2
-        result = await c.try_route_user_message(
-            text="打开 https://zh.wikipedia.org/wiki/Amadeus", session_id="s2"
-        )
-        assert result is not None and result["handled"] is False
-        assert result["routing_scope_transition"]["state"] == "absent"
-        assert "s2" not in c._active_by_session  # superseded
-
-    asyncio.run(run())
-
-
-def test_waiting_value_fast_path():
-    async def run():
-        runs: list = []
-        c = _make_coordinator(runs)
-        branch = _make_branch(status="waiting_for_user", goal="search this site for a keyword")
-        c._active_by_session["s1"] = branch
-        result = await c.try_route_user_message(text="Amadeus", session_id="s1")
-        assert result is not None and result["handled"]
-        # 非等值状态下，同样的短语落回主对话
-        runs.clear()
-        branch2 = _make_branch(session_id="s3", status="active")
-        c._active_by_session["s3"] = branch2
-        assert await c.try_route_user_message(text="Amadeus", session_id="s3") is None
-
-    asyncio.run(run())
 
 
 def test_continue_and_close_from_delegate():
@@ -290,37 +225,6 @@ def test_advanced_or_expired_routing_lease_fails_closed():
         assert runs == []
 
     asyncio.run(run())
-
-
-def test_chat_turn_freezes_branch_lease_into_host_control_metadata():
-    runs: list = []
-    coordinator = _make_coordinator(runs)
-    branch = _make_branch()
-    coordinator._active_by_session["s1"] = branch
-    ib_mod._current_coordinator = coordinator
-    try:
-        from core.chat_runtime import ChatRuntime, _TurnState
-
-        state = _TurnState(
-            gui_callback=None,
-            turn_id="turn-lease",
-            question="继续刚才的页面",
-            session_id="s1",
-        )
-        assert state.interaction_branch_routing_lease["branch_id"] == "br_test_1"
-
-        action = {"type": "DELEGATE", "attrs": {"provider": "browser"}}
-        ChatRuntime._annotate_delegate_source(
-            action,
-            state.question,
-            turn_id=state.turn_id,
-            routing_scope_lease=state.interaction_branch_routing_lease,
-        )
-        assert action["attrs"]["_host_interaction_branch_routing_lease"] == (
-            state.interaction_branch_routing_lease
-        )
-    finally:
-        ib_mod._current_coordinator = None
 
 
 def test_canonical_provider_handoff_retires_only_a_different_provider_branch():
@@ -702,7 +606,7 @@ def test_unconfirmed_running_cancel_never_reports_handoff_success():
     asyncio.run(run())
 
 
-def test_retarget_is_visibly_blocked_when_old_browser_stop_is_unconfirmed():
+def test_captured_close_blocks_a_new_branch_when_browser_stop_is_unconfirmed():
     async def run() -> None:
         provider_runs: list[dict] = []
 
@@ -730,16 +634,22 @@ def test_retarget_is_visibly_blocked_when_old_browser_stop_is_unconfirmed():
         branch.active_run_id = "old-running-browser"
         coordinator._active_by_session["retarget-session"] = branch
 
-        result = await coordinator.try_route_user_message(
-            text="Open https://different.example/new",
-            session_id="retarget-session",
-            turn_id="retarget-turn",
-        )
-
-        assert result is not None
-        assert result["handled"] is True
-        assert result["route_kind"] == "browser_retarget_blocked"
-        assert "run_stop_unconfirmed" in result["continuation_reason"]
+        lease = coordinator.capture_routing_lease("retarget-session")
+        assert lease is not None
+        try:
+            await coordinator.close_from_routing_lease(lease, reason="replace_browser")
+        except InteractionBranchRunStopUnconfirmed as exc:
+            assert exc.branch_id == branch.branch_id
+            assert exc.run_id == "old-running-browser"
+            assert "cancel_pending" in exc.reason
+        else:
+            raise AssertionError("unconfirmed Browser close was reported as success")
+        assert coordinator.termination_pending_for_session("retarget-session")
+        result = await coordinator.start_from_turn(
+            session_id="retarget-session", source_user_text="Open the new page",
+            target_url="https://different.example/new", turn_id="replacement-turn",
+            routing_scope={"state":"absent", "parent_session_id":"retarget-session"})
+        assert result is None
         assert provider_runs == []
 
     asyncio.run(run())
@@ -886,7 +796,7 @@ def test_new_browser_run_is_cancelled_when_prior_run_stop_is_unconfirmed():
     asyncio.run(run())
 
 
-def test_direct_router_never_adopts_branch_after_admitted_absence():
+def test_browser_start_cannot_adopt_a_branch_after_admitted_absence():
     async def run() -> None:
         runs: list = []
         coordinator = _make_coordinator(runs)
@@ -902,8 +812,9 @@ def test_direct_router_never_adopts_branch_after_admitted_absence():
         appeared.branch_id = "appeared-after-admission"
         coordinator._active_by_session["scope-session"] = appeared
 
-        result = await coordinator.try_route_user_message(
-            text="Open https://example.test/next",
+        result = await coordinator.start_from_turn(
+            source_user_text="Open https://example.test/next",
+            target_url="https://example.test/next",
             session_id="scope-session",
             turn_id="old-absent-turn",
             routing_scope=absent_scope,
@@ -916,77 +827,10 @@ def test_direct_router_never_adopts_branch_after_admitted_absence():
     asyncio.run(run())
 
 
-def test_routing_scope_capture_failure_is_explicit_and_fail_closed():
+def test_confirmed_captured_close_allows_a_new_browser_start():
     async def run() -> None:
-        from unittest.mock import patch
-
-        from core.chat_runtime import (
-            _capture_interaction_branch_routing_lease as capture_runtime_scope,
-        )
-        from server import app as server_app
-        from server.handlers.chat_handler import ChatHandler
-
-        with patch(
-            "server.interaction_branch.capture_interaction_branch_routing_scope",
-            side_effect=RuntimeError("capture failed"),
-        ):
-            runtime_scope = capture_runtime_scope("capture-session")
-            handler_scope = ChatHandler._capture_interaction_branch_routing_lease(
-                "capture-session"
-            )
-
-        for scope in (runtime_scope, handler_scope):
-            assert scope["state"] == "invalid"
-            assert scope["parent_session_id"] == "capture-session"
-            assert scope["reason"] == "routing_scope_capture_failed"
-
-        async def ignore_block(**_kwargs) -> None:
-            return None
-
-        previous = ib_mod._current_coordinator
-        ib_mod._current_coordinator = None
-        try:
-            unavailable_scope = ib_mod.capture_interaction_branch_routing_scope(
-                "capture-session"
-            )
-            assert unavailable_scope["state"] == "invalid"
-            attrs = {
-                "provider": "browser",
-                "branch": "continue",
-                "_host_interaction_branch_routing_lease": unavailable_scope,
-            }
-            with (
-                patch(
-                    "core.session_manager.get_current_session_id",
-                    return_value="capture-session",
-                ),
-                patch.object(
-                    server_app,
-                    "_announce_interaction_branch_lease_block",
-                    new=ignore_block,
-                ),
-            ):
-                consumed = await server_app._consume_captured_interaction_branch_intent(
-                    "continue the browser action",
-                    attrs,
-                    preflight_only=True,
-                )
-            assert consumed is True
-            assert attrs["_host_interaction_branch_scope_disposition"] == "blocked"
-        finally:
-            ib_mod._current_coordinator = previous
-
-    asyncio.run(run())
-
-
-def test_confirmed_retarget_evolves_same_turn_scope_to_absent():
-    async def run() -> None:
-        from unittest.mock import patch
-
-        from server.app import _consume_captured_interaction_branch_intent
-        from server.handlers.chat_handler import ChatHandler
-
-        coordinator = _make_coordinator([])
+        runs: list = []
+        coordinator = _make_coordinator(runs)
         branch = _make_branch(
             session_id="retarget-scope-session",
             url="https://example.test/old",
@@ -994,76 +838,24 @@ def test_confirmed_retarget_evolves_same_turn_scope_to_absent():
         coordinator._active_by_session["retarget-scope-session"] = branch
         lease = coordinator.capture_routing_lease("retarget-scope-session")
         assert lease is not None
-        scope = {"state": "bound", **lease.as_dict()}
-        handler = ChatHandler()
-        handler.configure(
-            stream_llm_query=lambda *_args, **_kwargs: None,
-            pending_sentence_items=None,
-            interaction_branch_router=coordinator.try_route_user_message,
-        )
-
-        direct = await handler._try_interaction_branch_route(
-            text="Open https://different.test/new",
-            turn_id="retarget-scope-turn",
-            session_id="retarget-scope-session",
-            routing_scope=scope,
-        )
-        assert direct is None
-        assert scope["state"] == "absent"
-        assert scope["transitioned_from_branch_id"] == branch.branch_id
+        assert await coordinator.close_from_routing_lease(lease, reason="replace_browser") is True
         assert coordinator.active_branch_for_session("retarget-scope-session") is None
 
         ib_mod._current_coordinator = coordinator
         try:
-            with patch(
-                "core.session_manager.get_current_session_id",
-                return_value="retarget-scope-session",
-            ):
-                attrs = {
-                    "provider": "browser",
-                    "branch": "new",
-                    "_host_interaction_branch_routing_lease": scope,
-                }
-                assert await _consume_captured_interaction_branch_intent(
-                    "open the new page",
-                    attrs,
-                    preflight_only=True,
-                ) is False
+            scope = ib_mod.capture_interaction_branch_routing_scope("retarget-scope-session")
+            assert scope["state"] == "absent"
+            result = await coordinator.start_from_turn(
+                source_user_text="Open https://different.test/new",
+                target_url="https://different.test/new",
+                turn_id="retarget-scope-turn",
+                session_id="retarget-scope-session", routing_scope=scope)
+            assert result is not None and result.accepted
+            assert len(runs) == 1
+            assert runs[0]["metadata"]["branch_intent"] == "new"
+            assert runs[0]["metadata"]["interaction_branch_routing_scope"] == scope
         finally:
             ib_mod._current_coordinator = None
-
-    asyncio.run(run())
-
-
-def test_direct_fast_path_does_not_claim_unknown_execution_never_started():
-    async def run() -> None:
-        coordinator = _make_coordinator([])
-        branch = _make_branch(session_id="truth-session")
-        coordinator._active_by_session["truth-session"] = branch
-        lease = coordinator.capture_routing_lease("truth-session")
-        assert lease is not None
-
-        async def blocked(*_args, **_kwargs):
-            return InteractionBranchContinuationReceipt(
-                disposition="superseded",
-                reason="branch_generation_superseded_during_start",
-                branch_id=branch.branch_id,
-                instruction_revision=1,
-                run={"run_id": "maybe-started"},
-                execution_started=None,
-            )
-
-        coordinator._continue_branch = blocked  # type: ignore[method-assign]
-        result = await coordinator.try_route_user_message(
-            text="Open https://www.bilibili.com/video/new",
-            session_id="truth-session",
-            turn_id="truth-turn",
-            routing_scope={"state": "bound", **lease.as_dict()},
-        )
-
-        assert result is not None
-        assert result["execution_uncertain"] is True
-        assert "Nothing new was started" not in result["display_text"]
 
     asyncio.run(run())
 

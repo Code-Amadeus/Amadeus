@@ -50,14 +50,6 @@ class TurnAuthorityError(RuntimeError):
     """A required Host turn grant/fence failed; never convert it into permission."""
 
 
-def require_legacy_turn_authority(admission: Any) -> None:
-    """Keep an explicitly new-mode turn out of an unconverted execution entry."""
-    if admission is not None and getattr(admission, "authority_mode", None) not in {
-        "source_witness_v1", "legacy",
-    }:
-        raise TurnAuthorityError("this execution entry does not accept TurnDecision authority")
-
-
 class TurnCoordinator:
     def __init__(self) -> None:
         self._lock = Lock()

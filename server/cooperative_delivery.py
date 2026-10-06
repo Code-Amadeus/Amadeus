@@ -120,8 +120,8 @@ class CooperativeHostDelivery:
             # The Host published the output. Persistence failure must not cause
             # another model/execution call to repeat it.
             history_text = project_completed_role_history(text)
-            message_id = "cooperative-role:" + hashlib.sha256(
-                (str(cause) + "\0" + text).encode("utf-8")).hexdigest()
+            message_id = event.get("message_id") or ("cooperative-role:" + hashlib.sha256(
+                (str(cause) + "\0" + text).encode("utf-8")).hexdigest())
             receipt["history_recorded"] = self.record_display(
                 self.session_id, role="assistant",
                 content=history_text, turn_id=cause, message_id=message_id) is True
@@ -186,6 +186,12 @@ class _CooperativeReplyStream:
         if prepare is not None:
             await prepare()
         await self._check()
+
+    async def begin_remote(self):
+        await self._check()
+        boundary = getattr(self.role, "begin_remote", None)
+        if boundary is not None:
+            await boundary()
 
     async def finish(self, event):
         await self._check()

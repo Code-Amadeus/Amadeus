@@ -1,0 +1,64 @@
+{
+  "schema": "amadeus.hybrid-basic-interaction-evidence.v1",
+  "date": "2026-10-07",
+  "profile": "Original BAT command/environment; only isolated loopback port differs.",
+  "identity": {
+    "commit_sha": "445172aa0f0957eb307ca9623b01ccea7447995d",
+    "workspace_dirty": true,
+    "workspace_fingerprint": "79a154cec703317a4569fd21483f77efcc25606b25a85b4c75710618ba40e664"
+  },
+  "chat_route": {
+    "selection": "basic",
+    "requested_selection": "basic",
+    "source": "cli",
+    "environment_overrides": {
+      "COOPERATIVE_CHAT_ENABLED": "1",
+      "COOPERATIVE_WORK_PLANNER_ENABLED": "0"
+    },
+    "actual": {
+      "source": "system.get_config",
+      "mode": "basic",
+      "cooperative_chat_enabled": true,
+      "cooperative_work_planner_enabled": false
+    },
+    "matches_request": true
+  },
+  "checks": {
+    "provider_selected": true,
+    "ordinary_reply_no_work": true,
+    "explanation_no_work": true,
+    "image_grounding": true,
+    "interrupt_acknowledged": true,
+    "next_turn_after_interrupt": true,
+    "no_late_completion_after_interrupt": true,
+    "work_terminal_success": true,
+    "requested_artifact": true,
+    "only_requested_file": true,
+    "report_no_new_run": true,
+    "total_provider_runs": true,
+    "no_shell_commands": true,
+    "no_renderer_page_error": true,
+    "hybrid_local_presented": true
+  },
+  "work_provider": "pi",
+  "tool_names": [
+    "read",
+    "write"
+  ],
+  "desktop_reaped": true,
+  "history_interrupt_check": {
+    "assistant_rows": 1,
+    "equals_actual_presented_prefix": true,
+    "prefix": "空"
+  },
+  "local_head_has_image_bytes": false,
+  "synthetic_image": "640x360, red circle, blue square, number 42",
+  "image_reply": "画像の形と色か、 赤い円と青い四角、それに数字の42ね。実行もファイル作成も要らない、見たままを答えるだけよ。",
+  "after_interrupt_reply": "確認したわ、 確認したわ。",
+  "limits": [
+    "Real UI image upload; interruption uses the authenticated chat.abort API, not a nonexistent GUI Stop button.",
+    "No physical speech.",
+    "Post-abort reply repeats the acknowledgement across head and remote; delivery recovered, but this is not a full persona/output-exactness acceptance.",
+    "Timing totals from this older helper are not used as warm Chat latency evidence."
+  ]
+}

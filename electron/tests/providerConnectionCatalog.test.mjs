@@ -17,6 +17,19 @@ test('built-in Work Provider connections remain discoverable without the backend
   assert.equal(catalog.connections.find(group => group.id === 'openclaw').status, 'Optional')
   assert.ok(catalog.routing.fields.some(field => field.key === 'WORK_CODING_PROVIDER'))
   assert.ok(catalog.routing.fields.some(field => field.key === 'WORK_EXECUTION_PROVIDER'))
+  assert.ok(!catalog.routing.fields.some(field => field.key === 'COOPERATIVE_CHAT_ENABLED'))
+})
+
+test('a stored retired Off value does not disable role assignments or Provider setup', () => {
+  const catalog = exports.buildWorkProviderCatalog({ provider: 'pi' }, {
+    values: { COOPERATIVE_CHAT_ENABLED: 'false' },
+    secrets: { DEEPSEEK_API_KEY: { configured: true } },
+  })
+  assert.equal(catalog.routing.active, true)
+  assert.equal(catalog.connections.find(group => group.id === 'pi').active, true)
+  assert.equal(catalog.connections.find(group => group.id === 'pi').configured, true)
+  assert.equal(catalog.connections.find(group => group.id === 'pi').status, 'Backend status unavailable')
+  assert.ok(!catalog.routing.fields.some(field => field.key === 'COOPERATIVE_CHAT_ENABLED'))
 })
 
 test('new daily-agent defaults select Pi and leave OpenClaw optional', () => {

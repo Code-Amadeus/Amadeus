@@ -1,0 +1,215 @@
+{
+  "schema": "amadeus.native-hybrid-evidence.v1",
+  "date": "2026-10-07",
+  "server": "llama.cpp b8575 / 65097181e",
+  "model": "Qwen3.5-9B-Q4_K_M",
+  "context": 16384,
+  "parallel": 1,
+  "device": "RTX 4070 Laptop CUDA",
+  "pure_local_type_setting": "cli",
+  "head_transport": "independent HTTP",
+  "server_reaped": true,
+  "physical_speech": false,
+  "journeys": [
+    {
+      "identity": {
+        "commit_sha": "f0c9076045573d534490e4e0bb0e1dba2460f456",
+        "workspace_dirty": true,
+        "workspace_fingerprint": "81e4f4f1577a4c6128cbbf33e19120f820f27177a6b737af9ce4d9bc0e9fd53b"
+      },
+      "chat_route": {
+        "selection": "professional",
+        "requested_selection": "professional",
+        "source": "cli",
+        "environment_overrides": {
+          "COOPERATIVE_CHAT_ENABLED": "1",
+          "COOPERATIVE_WORK_PLANNER_ENABLED": "1"
+        },
+        "actual": {
+          "source": "system.get_config",
+          "mode": "professional",
+          "cooperative_chat_enabled": true,
+          "cooperative_work_planner_enabled": true
+        },
+        "matches_request": true
+      },
+      "checks": {
+        "provider_selected": true,
+        "ordinary_reply_no_work": true,
+        "explanation_no_work": true,
+        "work_terminal_success": true,
+        "requested_artifact": true,
+        "only_requested_file": true,
+        "report_no_new_run": true,
+        "total_provider_runs": true,
+        "no_shell_commands": false,
+        "no_renderer_page_error": true,
+        "hybrid_local_presented": true
+      },
+      "work_provider": "codex",
+      "tool_names": [
+        "js",
+        "shell"
+      ],
+      "process_reaped": true,
+      "instrument_status": "failed",
+      "audited_status": "failed",
+      "quality_review": "Local head contained unrelated repetitive characters; transport success is not persona acceptance.",
+      "head_outcomes": [
+        {
+          "label": "ordinary",
+          "outcome": "presented"
+        },
+        {
+          "label": "explain",
+          "outcome": "presented"
+        },
+        {
+          "label": "single_work",
+          "outcome": "presented"
+        },
+        {
+          "label": "report",
+          "outcome": "presented"
+        }
+      ],
+      "turn_samples": [
+        {
+          "label": "ordinary",
+          "first_120_chars": "穏やかに過ごしたいのか、こんにちは。 穏やかな一日、いいわね。",
+          "timings": {
+            "first_chat_token_s": 1.016,
+            "chat_complete_s": 4.281
+          }
+        },
+        {
+          "label": "explain",
+          "first_120_chars": "esar/exec.prod虹ってのは、 空気中の水滴に太陽光が入って、屈折・反射・分散を繰り返すことで起きるのよ。\n 波長ごとに曲がり方が違うから色が分かれて、しかも水滴の角度によって見える色が変わるから、あのきれいな円弧になるわけ。",
+          "timings": {
+            "first_chat_token_s": 0.579,
+            "chat_complete_s": 2.641
+          }
+        },
+        {
+          "label": "single_work",
+          "first_120_chars": "的第上下任何其他上下/messages上下jern任何其他上下uttaęc故意伤害持空空任何其他atchingęcdefer perpetscheranyillah任何其他/execęc任何其他 ramanyęcęc巍巍丝 Lever任何其",
+          "timings": {
+            "first_chat_token_s": 0.391,
+            "chat_complete_s": 4.875
+          }
+        },
+        {
+          "label": "report",
+          "first_120_chars": "的第上下any任何其他上下enessęcええ、 記録を確認するわね。\n\nさっきの convergence_result.txt の作成だけど、担当は codex で、実行ステータスは succeeded になってるわ。 つまり実行そのものは",
+          "timings": {
+            "first_chat_token_s": 0.735,
+            "chat_complete_s": 2.829
+          }
+        }
+      ]
+    },
+    {
+      "identity": {
+        "commit_sha": "f0c9076045573d534490e4e0bb0e1dba2460f456",
+        "workspace_dirty": true,
+        "workspace_fingerprint": "81e4f4f1577a4c6128cbbf33e19120f820f27177a6b737af9ce4d9bc0e9fd53b"
+      },
+      "chat_route": {
+        "selection": "basic",
+        "requested_selection": "basic",
+        "source": "cli",
+        "environment_overrides": {
+          "COOPERATIVE_CHAT_ENABLED": "1",
+          "COOPERATIVE_WORK_PLANNER_ENABLED": "0"
+        },
+        "actual": {
+          "source": "system.get_config",
+          "mode": "basic",
+          "cooperative_chat_enabled": true,
+          "cooperative_work_planner_enabled": false
+        },
+        "matches_request": true
+      },
+      "checks": {
+        "provider_selected": true,
+        "ordinary_reply_no_work": true,
+        "explanation_no_work": true,
+        "work_terminal_success": true,
+        "requested_artifact": true,
+        "only_requested_file": true,
+        "report_no_new_run": true,
+        "total_provider_runs": true,
+        "no_shell_commands": true,
+        "no_renderer_page_error": true,
+        "hybrid_local_presented": true
+      },
+      "work_provider": "pi",
+      "tool_names": [
+        "read",
+        "write"
+      ],
+      "process_reaped": true,
+      "instrument_status": "passed",
+      "audited_status": "failed",
+      "quality_review": "Local head contained unrelated repetitive characters; transport success is not persona acceptance.",
+      "head_outcomes": [
+        {
+          "label": "ordinary",
+          "outcome": "presented"
+        },
+        {
+          "label": "explain",
+          "outcome": "presented"
+        },
+        {
+          "label": "single_work",
+          "outcome": "presented"
+        },
+        {
+          "label": "report",
+          "outcome": "presented"
+        }
+      ],
+      "turn_samples": [
+        {
+          "label": "ordinary",
+          "first_120_chars": "巍巍any任何其他こんにちは。 穏やかな一日になるといいわね。",
+          "timings": {
+            "first_chat_token_s": 1.515,
+            "chat_complete_s": 3.531
+          }
+        },
+        {
+          "label": "explain",
+          "first_120_chars": "巍巍any任何其他rixęc 虹が見えるのは、空気中の水滴が太陽光を屈折・反射させて、色ごとに曲がり方が違うからよ。 その結果、光が色ごとに分かれて、私たちの目には円弧状の帯として映るの。",
+          "timings": {
+            "first_chat_token_s": 0.359,
+            "chat_complete_s": 2.406
+          }
+        },
+        {
+          "label": "single_work",
+          "first_120_chars": "わかったわ、現在のプロジェクトに convergence_result.txt を作って、中身は CONVERGENCE_OK だけにする。他のファイルには手を出さないし、コードもコマンドも実行しないわ。 その条件で作業を進めるよう手配する",
+          "timings": {
+            "first_chat_token_s": 0.406,
+            "chat_complete_s": 2.531
+          }
+        },
+        {
+          "label": "report",
+          "first_120_chars": "esarhotsdowndowndown查看更多信息же.prod/exec上下上下ęt perpetęcęc/execatasęc/execęcikas任何其他上下ęc/exec上下ęc任何其他ęcESTA任何其他ęcęc天池ęc任何其他",
+          "timings": {
+            "first_chat_token_s": 0.812,
+            "chat_complete_s": 2.89
+          }
+        }
+      ]
+    }
+  ],
+  "open_findings": [
+    "Repeated local head output became incoherent after the first request; cache/checkpoint causality not yet proven.",
+    "Professional Work source_user_operation_text excluded the following no-command restriction, while source_user_text retained it. Provider handoff renders the operation fragment preferentially. This owner code is unchanged from baseline f306bc1.",
+    "A previous passing Work execution is not proof that a shortened source fragment preserves the user constraint."
+  ],
+  "acceptance": "not accepted; routing mechanics and head delivery observed, output quality and source-constraint issues remain"
+}

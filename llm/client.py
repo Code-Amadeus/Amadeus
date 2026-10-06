@@ -10,7 +10,6 @@
   - local_llm_type : str，覆盖纯本地链路的 backend 类型
 """
 
-import asyncio
 import base64
 import json
 import logging
@@ -36,7 +35,7 @@ from config.settings import (
 )
 from llm.gemini_client import create_gemini_client, generate_gemini_text
 from llm.local_cli import local_llm_query_cli
-from llm.local_backends import local_chat_url
+from llm.local_backends import local_chat_url, require_llama_message_capacity
 
 logger = logging.getLogger(__name__)
 
@@ -48,12 +47,20 @@ bedrock_http_client = None
 bedrock_runtime_client = None
 
 def configure(llm_provider: str = None, local_llm_type: str = None):
-    """设置当前进程的 LLM 路由选项。"""
+    """Own process routing changes and publish them to settings readers."""
     global LLM_PROVIDER, LOCAL_LLM_TYPE, llm_client
+    from config import settings
+
+    if local_llm_type is not None:
+        local_llm_type = str(local_llm_type or "").strip().lower()
+        if local_llm_type not in {"llama_server", "lmstudio", "ollama", "cli"}:
+            raise ValueError(f"unsupported local LLM type: {local_llm_type!r}")
     if llm_provider is not None:
         previous_family = _openai_client_family(LLM_PROVIDER)
         next_provider = str(llm_provider).strip().lower()
         LLM_PROVIDER = next_provider
+        # Local lifecycle, Work observer and AUIP narration read this projection.
+        settings.LLM_PROVIDER = next_provider
         if _openai_client_family(next_provider) != previous_family:
             # DeepSeek and OpenAI use the same SDK type but different endpoints.
             # Keeping the old object silently sends a newly selected model to the
@@ -61,6 +68,7 @@ def configure(llm_provider: str = None, local_llm_type: str = None):
             llm_client = None
     if local_llm_type is not None:
         LOCAL_LLM_TYPE = local_llm_type
+        settings.LOCAL_LLM_TYPE = local_llm_type
 
 
 def _openai_client_family(provider: str) -> str:
@@ -596,22 +604,11 @@ def _local_messages_query(
 ) -> str:
     backend = str(LOCAL_LLM_TYPE or "").strip().lower()
     if backend == "cli":
-        transcript = "\n".join(
-            f"{message['role'].capitalize()}: {message['content']}"
-            for message in messages[1:]
+        raise RuntimeError(
+            "Persistent llama-cli cannot provide isolated Chat/Planner message requests. "
+            "Select LOCAL_LLM_TYPE=llama_server, point LOCAL_LLM_CLI_PATH to llama-server, "
+            "and configure a context large enough for the complete conversation."
         )
-        content = asyncio.run(
-            local_llm_query_cli(
-                transcript,
-                stream=False,
-                system_prompt=messages[0]["content"],
-            )
-        )
-        # The reusable CLI process has no per-query cancellation owner. Keep its
-        # existing single complete query; do not claim native token streaming.
-        if on_text is not None:
-            on_text(content)
-        return content
 
     url = local_chat_url(
         backend,
@@ -649,8 +646,15 @@ def _local_messages_query(
         "temperature": float(temperature),
         "max_tokens": max(1, int(max_tokens)),
     }
+    if json_output:
+        # Explicit root type is portable across local grammar implementations;
+        # an empty json_object schema can leave native template output unconstrained.
+        payload["response_format"] = {"type": "json_schema", "json_schema": {
+            "name": "response", "schema": {"type": "object"},
+        }}
     if backend == "llama_server":
         payload["cache_prompt"] = True
+        require_llama_message_capacity(LOCAL_LLM_URL, payload, timeout=float(timeout))
     if on_text is not None:
         return _local_messages_stream(url, payload, timeout=timeout, on_text=on_text)
     response = requests.post(url, json=payload, timeout=float(timeout))

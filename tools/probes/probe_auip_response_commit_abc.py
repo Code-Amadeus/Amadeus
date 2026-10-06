@@ -313,7 +313,7 @@ def _messages(
     registered: str = "",
 ) -> list[dict[str, str]]:
     conversation_id = next(iter(runtime._focused_by_conversation))  # noqa: SLF001
-    system = get_system_prompt("with_delegate", control_envelope=False)
+    system = get_system_prompt("with_delegate")
     blocks = [system]
     if include_briefing:
         blocks.append(runtime.render_main_chat_briefing(conversation_id))

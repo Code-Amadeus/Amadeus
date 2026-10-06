@@ -10,17 +10,14 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import config.settings as settings
-from _support import settle_provider_runs
-from agent_host.provider_contract import ProviderCapabilities, ProviderManifest
 from agent_host.provider_identity import PARENT_CONTEXT_DELIVERED_EVENT
-from agent_host.provider_runtime import ProviderRuntime
-from agent_host.provider_types import ProviderRunRequest, ProviderRunResult
+from agent_host.provider_types import ProviderRunRequest
 from agent_host.work_ledger_store import WorkLedgerConflict, WorkLedgerStore
 from server import task_lookup
-from server.app import _route_active_amendment
 from server.event_bus import bus
 from server.handlers.work_activity_handler import WorkActivityCoordinator
 from server.protocol import Method
@@ -33,6 +30,8 @@ from server.work_activity_snapshot import (
 )
 from server.work_ledger_coordinator import WorkLedgerCoordinator
 from server.work_export_service import WorkExportService
+from test_work_amend_effect import seal_amend
+from test_work_effect_executor import _host
 
 
 def _event(sequence: int, event_type: str, payload: dict | None = None, *, at: float) -> dict:
@@ -704,197 +703,94 @@ def test_report_refresh_combines_durable_activity_with_live_git_facts() -> None:
     print("ok: report refresh joins restart-safe activity with bounded live Git facts")
 
 
-class _ReplacementAdapter:
-    provider_id = "replacement"
-    manifest = ProviderManifest(
-        provider_id="replacement",
-        display_name="Replacement test",
-        capabilities=ProviderCapabilities(
-            task_kinds=("general", "workspace_edit"),
-            workspace_access="write",
-            workspace_ownership="caller",
-            steering="none",
-            cancellation="confirmed",
-        ),
-    )
-
-    def __init__(self, *, confirm_cancel: bool = True) -> None:
-        self.confirm_cancel = confirm_cancel
-        self.started: list[ProviderRunRequest] = []
-        self.started_event = asyncio.Event()
-
-    async def run(self, request, _run_id, _emit) -> ProviderRunResult:
-        self.started.append(request)
-        self.started_event.set()
-        await asyncio.Event().wait()
-        return ProviderRunResult(status="done", result="unexpected")
-
-    async def cancel(self, _run_id: str) -> dict:
-        if self.confirm_cancel:
-            return {"confirmed": True, "cancelled": True}
-        return {"confirmed": False, "cancelled": False, "reason": "still_running"}
+async def _confirmed_cancel(_run_id):
+    # A native stop acknowledgement precedes Runtime cancelling the producer.
+    # Releasing the success fixture here would race that terminal commit.
+    return {"confirmed": True, "cancelled": True}
 
 
-def _replacement_request(workspace: Path) -> ProviderRunRequest:
-    return ProviderRunRequest(
-        provider="replacement",
-        task="Build a one-player game in game.html",
-        cwd=str(workspace),
-        mode="agent",
-        metadata={"source": "test", "session_id": "replacement-session"},
-    )
-
-
-def test_confirmed_cancel_restarts_same_work_item_with_lineage() -> None:
+def test_confirmed_cancel_allows_one_accepted_amendment_on_the_same_work() -> None:
     async def run() -> None:
-        with tempfile.TemporaryDirectory(prefix="activity_replace_") as temp:
-            root = Path(temp)
-            workspace = root / "project"
-            workspace.mkdir()
-            _git(workspace, "init")
-            _git(workspace, "config", "user.email", "replace@example.invalid")
-            _git(workspace, "config", "user.name", "Replacement Test")
-            (workspace / "game.html").write_text("one player\n", encoding="utf-8")
-            _git(workspace, "add", "game.html")
-            _git(workspace, "commit", "-m", "baseline")
+        with tempfile.TemporaryDirectory(prefix="activity_cancel_amend_") as temp:
+            async with _host(Path(temp), block=True) as host:
+                host.adapter.cancel = _confirmed_cancel
+                dispatch = await host.executor.dispatch(host.effect_id)
+                await asyncio.wait_for(host.adapter.started.wait(), timeout=2.0)
+                binding = dispatch.binding
+                attempt = host.work.get_attempt(binding["attempt_id"])
+                assert attempt is not None and attempt.execution_status == "running"
+                assert host.work.get_writer_lease(attempt.attempt_id).status == "active"
+                with pytest.raises(WorkLedgerConflict, match="settled"):
+                    seal_amend(host, binding["work_item_id"], "before-cancel")
+                assert host.adapter.calls == 1
+                assert len(host.work.list_attempts(binding["work_item_id"])) == 1
 
-            store = WorkLedgerStore(root / "ledger.sqlite3")
-            coordinator = WorkLedgerCoordinator(store)
-            coordinator.configure()
-            runtime = ProviderRuntime()
-            adapter = _ReplacementAdapter(confirm_cancel=True)
-            runtime.register(adapter)
-            runtime.set_request_preparer(coordinator.prepare_request)
-            notes: list[dict] = []
+                outcome = await host.runtime.cancel(binding["provider_run_id"])
+                assert outcome["cancelled"] is True
+                cancelled = await host.executor.finish(dispatch)
+                assert cancelled["receipt"]["outcome"] == "cancelled"
+                predecessor = host.work.get_attempt(binding["attempt_id"])
+                assert predecessor is not None and predecessor.execution_status == "cancelled"
+                assert host.work.get_writer_lease(predecessor.attempt_id).status == "released"
+                assert predecessor.metadata[ACTIVITY_METADATA_KEY]["phase"] == "terminal"
 
-            async def capture(_method: str, params: dict) -> None:
-                notes.append(params)
-
-            bus.on(Method.CHAT_WORK_NOTE, capture)
-            try:
-                with (patch.object(settings, "WORK_LEDGER_OWNS_TERMINAL_NARRATION", True),
-                      patch.object(settings, "WORK_PROJECT_ALLOWLIST", str(workspace))):
-                    first = await runtime.start(_replacement_request(workspace))
-                    await asyncio.wait_for(adapter.started_event.wait(), timeout=2.0)
-                    binding = dict(first.metadata["work"])
-                    route = await _route_active_amendment(
-                        runtime=runtime,
-                        coordinator=coordinator,
-                        work_item_id=str(binding["work_item_id"]),
-                        selected_provider="replacement",
-                        task_text="Change game.html into a two-player game.",
-                        turn_id="turn-2",
-                    )
-                    replacement = route.get("replacement")
-                    assert route.get("handled") is False and isinstance(replacement, dict)
-                    predecessor = store.get_attempt(str(binding["attempt_id"]))
-                    assert predecessor is not None and predecessor.execution_status == "cancelled"
-                    assert predecessor.metadata["steer_replacement"]["state"] == "cancel_pending"
-                    assert not any(
-                        note.get("metadata", {}).get("attempt_id") == predecessor.attempt_id
-                        and note.get("metadata", {}).get("narration_keypoint") == "terminal"
-                        for note in notes
-                    ), "the cancelled predecessor must not narrate task cancellation"
-
-                    control = dict(replacement["control"])
-                    second_metadata = {
-                        "source": "test",
-                        "session_id": "replacement-session",
-                        "intent": "amend",
-                        "continuation": "steer_replacement",
-                        "replaces_attempt_id": predecessor.attempt_id,
-                        "steer_replacement": control,
-                        "work": {
-                            "work_item_id": str(replacement["work_item_id"]),
-                            "project_id": str(replacement["project_id"]),
-                            "workspace_path": str(replacement["workspace_path"]),
-                            "workspace_mode": str(replacement["workspace_mode"]),
-                        },
-                        **dict(replacement["lineage"]),
-                    }
-                    adapter.started_event = asyncio.Event()
-                    second = await runtime.start(
-                        ProviderRunRequest(
-                            provider="replacement",
-                            task=str(replacement["instruction"]),
-                            cwd=str(replacement["workspace_path"]),
-                            mode=str(replacement["mode"]),
-                            metadata=second_metadata,
-                        )
-                    )
-                    await asyncio.wait_for(adapter.started_event.wait(), timeout=2.0)
-                    second_binding = dict(second.metadata["work"])
-                    assert second_binding["work_item_id"] == binding["work_item_id"]
-                    assert second_binding["attempt_id"] != binding["attempt_id"]
-                    attempts = store.list_attempts(str(binding["work_item_id"]))
-                    assert len(attempts) == 2
-                    assert attempts[-1].metadata["continuation"] == "steer_replacement"
-                    assert attempts[-1].metadata["replaces_attempt_id"] == predecessor.attempt_id
-                    assert "Inspect the current workspace and Git state" in attempts[-1].task
-                    old = store.get_attempt(predecessor.attempt_id)
-                    assert old is not None
-                    assert old.metadata["steer_replacement"]["state"] == "replaced"
-                    assert old.metadata["steer_replacement"]["successor_attempt_id"] == (
-                        second_binding["attempt_id"]
-                    )
-                    new_activity = attempts[-1].metadata[ACTIVITY_METADATA_KEY]
-                    assert new_activity["steering"]["state"] == "restarted"
-                    assert new_activity["steering"]["predecessorAttemptId"] == (
-                        predecessor.attempt_id
-                    )
-                    await runtime.cancel(second.run_id)
-            finally:
-                bus.off(Method.CHAT_WORK_NOTE, capture)
-                await settle_provider_runs(runtime)
-                coordinator.close()
+                effect_id = seal_amend(host, binding["work_item_id"], "after-cancel", epoch=3)
+                host.adapter.release.set()
+                amended = await host.executor.execute(effect_id)
+                successor = host.work.get_attempt(amended["binding"]["attempt_id"])
+                assert successor is not None
+                assert amended["binding"]["work_item_id"] == binding["work_item_id"]
+                assert successor.attempt_id != predecessor.attempt_id
+                assert successor.operation_id != predecessor.operation_id
+                assert successor.metadata["continuation"] == "amend"
+                operation = host.work.get_operation(successor.operation_id)
+                assert operation is not None and operation.intent == "amend"
+                assert operation.origin_effect_id == effect_id
+                assert successor.origin_effect_id == effect_id
+                assert amended["receipt"]["outcome"] == "succeeded"
+                assert host.adapter.calls == 2
+                assert len(host.work.list_work_items()) == 1
+                assert len(host.work.list_attempts(binding["work_item_id"])) == 2
+                replay = await host.executor.execute(effect_id)
+                assert replay["replayed"] and replay["receipt"] == amended["receipt"]
+                assert host.adapter.calls == 2
 
     asyncio.run(run())
-    print("ok: confirmed cancellation creates one same-task replacement with lineage")
+    print("ok: confirmed cancellation releases the writer before one accepted amendment")
 
 
-def test_unconfirmed_cancel_never_creates_a_second_writer() -> None:
+def test_unconfirmed_cancel_keeps_one_writer_and_refuses_accepted_amendment() -> None:
     async def run() -> None:
-        with tempfile.TemporaryDirectory(prefix="activity_replace_refused_") as temp:
-            root = Path(temp)
-            workspace = root / "project"
-            workspace.mkdir()
-            store = WorkLedgerStore(root / "ledger.sqlite3")
-            coordinator = WorkLedgerCoordinator(store)
-            coordinator.configure()
-            runtime = ProviderRuntime()
-            adapter = _ReplacementAdapter(confirm_cancel=False)
-            runtime.register(adapter)
-            runtime.set_request_preparer(coordinator.prepare_request)
-            try:
-                first = await runtime.start(_replacement_request(workspace))
-                await asyncio.wait_for(adapter.started_event.wait(), timeout=2.0)
-                binding = dict(first.metadata["work"])
-                route = await _route_active_amendment(
-                    runtime=runtime,
-                    coordinator=coordinator,
-                    work_item_id=str(binding["work_item_id"]),
-                    selected_provider="replacement",
-                    task_text="Make it two-player.",
-                    turn_id="turn-2",
-                )
-                assert route == {
-                    "handled": True,
-                    "message": "[amend blocked] cancellation unconfirmed",
-                }
-                attempts = store.list_attempts(str(binding["work_item_id"]))
-                assert len(attempts) == 1
-                assert attempts[0].execution_status == "running"
-                assert attempts[0].metadata["steer_replacement"]["state"] == "rejected"
-                assert attempts[0].metadata[ACTIVITY_METADATA_KEY]["phase"] == "working"
-                assert store.get_writer_lease(attempts[0].attempt_id).status == "active"
-                adapter.confirm_cancel = True
-                await runtime.cancel(first.run_id)
-            finally:
-                await settle_provider_runs(runtime)
-                coordinator.close()
+        with tempfile.TemporaryDirectory(prefix="activity_cancel_unconfirmed_") as temp:
+            async with _host(Path(temp), block=True) as host:
+                dispatch = await host.executor.dispatch(host.effect_id)
+                await asyncio.wait_for(host.adapter.started.wait(), timeout=2.0)
+                binding = dispatch.binding
+
+                async def unconfirmed_cancel(_run_id):
+                    return {"confirmed": False, "cancelled": False, "reason": "still_running"}
+
+                host.adapter.cancel = unconfirmed_cancel
+                outcome = await host.runtime.cancel(binding["provider_run_id"])
+                await host.coordinator.drain_provider_facts()
+                assert outcome["cancelled"] is False
+                attempt = host.work.get_attempt(binding["attempt_id"])
+                assert attempt is not None and attempt.execution_status == "running"
+                assert attempt.metadata[ACTIVITY_METADATA_KEY]["phase"] == "cancelling"
+                assert attempt.metadata[ACTIVITY_METADATA_KEY]["uncertainty"] == (
+                    "cancellation_not_yet_confirmed")
+                assert host.work.get_writer_lease(attempt.attempt_id).status == "active"
+                with pytest.raises(WorkLedgerConflict, match="settled"):
+                    seal_amend(host, binding["work_item_id"])
+                assert host.adapter.calls == 1
+                assert len(host.work.list_operations(binding["work_item_id"])) == 1
+                assert len(host.work.list_attempts(binding["work_item_id"])) == 1
+                host.adapter.cancel = _confirmed_cancel
+                assert (await host.runtime.cancel(binding["provider_run_id"]))["cancelled"] is True
+                await host.executor.finish(dispatch)
 
     asyncio.run(run())
-    print("ok: unconfirmed cancellation leaves exactly one active writer")
+    print("ok: unconfirmed cancellation refuses accepted amendment and keeps one writer")
 
 
 def test_replacement_predecessor_has_no_terminal_activity_report() -> None:
@@ -1159,8 +1055,8 @@ def main() -> None:
     test_repeated_permission_fact_does_not_reset_clock_after_other_progress()
     test_staging_observation_is_bounded_to_the_attempt_namespace()
     test_report_refresh_combines_durable_activity_with_live_git_facts()
-    test_confirmed_cancel_restarts_same_work_item_with_lineage()
-    test_unconfirmed_cancel_never_creates_a_second_writer()
+    test_confirmed_cancel_allows_one_accepted_amendment_on_the_same_work()
+    test_unconfirmed_cancel_keeps_one_writer_and_refuses_accepted_amendment()
     test_replacement_predecessor_has_no_terminal_activity_report()
     test_provider_snapshot_projection_is_burst_coalesced()
     test_provider_snapshot_projection_does_not_backpressure_event_ingest()

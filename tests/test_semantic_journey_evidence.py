@@ -18,9 +18,8 @@ from tools.semantic_journey_evidence import (
     evidence_from_report,
     validate_evidence,
 )
-from tools.e2e_auip_semantic_journey import _checks as _auip_checks
 from tools.semantic_release_gate import discover_evidence, evaluate_gate
-from tools.run_semantic_journeys import _active_steer, _auip_experience
+from tools.run_semantic_journeys import JOURNEYS, _active_steer, _auip_experience
 
 
 def _evidence(journey_id: str = "J3", *, level: str = "L3") -> dict:
@@ -107,153 +106,18 @@ def test_j3_runner_uses_the_default_codex_control_journey() -> None:
     print("ok: J3 exercises the default Codex App Server control path")
 
 
-def test_j7_runner_uses_the_canonical_auip_journey() -> None:
-    command = _auip_experience(
-        argparse.Namespace(model="deepseek-v4-flash"),
-        ROOT / "runtime" / "e2e_reports" / "semantic_journeys" / "J7",
-    )
-    assert command[5:7] == ["--model", "deepseek-v4-flash"]
-    assert command[4].endswith("e2e_auip_semantic_journey.py")
-    print("ok: J7 runs one canonical AUIP AppSession journey")
-
-
-def test_j7_requires_scene_commentary_and_a_grounded_terminal_summary() -> None:
-    result = {
-        "browser": "chromium-headless",
-        "transport": "real_websocket",
-        "identity_preserved": True,
-        "routed_controls": [
-            {"decided": action}
-            for action in ("observe", "collaborate", "step", "none", "step")
-        ],
-        "natural_step": {
-            "decided": "step",
-            "receipt_type": "game.take_first_move",
-            "status_decided": "none",
-            "status_preserved_revision": True,
-            "participant_role": "black",
-        },
-        "negotiated_step": {
-            "decided": "step",
-            "agreed_instruction": "Place one stone at x=5, y=4.",
-            "participant_instruction": "Place one stone at x=5, y=4.",
-            "receipt_type": "game.place_stone",
-            "receipt_payload": {"x": 5, "y": 4},
-        },
-        "role_authorizer_transport": "real_explicit_turns+deterministic_fixture",
-        "real_role_authorization_count": 1,
-        "role_consensus": {
-            "decided": "step",
-            "participant_was_consulted": True,
-            "action_suppressed": True,
-        },
-        "narration_trace": [
-            {
-                "source": "auip_operator_outcome",
-                "terminal": False,
-                "display_text": "blocked",
-                "voice_text_matches": True,
-                "fact_brief": "operator failure",
-            },
-            {
-                "source": "auip_narrator",
-                "terminal": False,
-                "display_text": "move comment",
-                "voice_text_matches": True,
-                "fact_brief": "accepted action",
-            },
-            {
-                "source": "auip_narrator",
-                "terminal": True,
-                "display_text": "terminal summary",
-                "voice_text_matches": True,
-                "fact_brief": 'verified terminal outcome {"winner":"black"}',
-            },
-        ],
-        "attached_final_revision": 13,
-        "retained_kurisu_actions": 4,
-        "winner": "black",
-        "terminal_event": "game.experience_finished",
-        "lifecycle_step": {"decided": "step"},
-        "close_reason": "journey_complete",
-        "context_bounded": True,
-        "shared_state_chars": 200,
-        "standalone_move_count": 1,
-        "console_errors": [],
-        "page_errors": [],
-        "diverse_games": {
-            "samples": {
-                "2048": {
-                    "natural_step": {
-                        "decided": "step",
-                        "receipt_type": "game.slide",
-                        "status_decided": "none",
-                    },
-                    "console_errors": [],
-                    "page_errors": [],
-                },
-                "reactor": {
-                    "natural_step": {
-                        "decided": "step",
-                        "receipt_type": "reactor.set_cooling",
-                        "status_decided": "none",
-                    },
-                    "console_errors": [],
-                    "page_errors": [],
-                },
-            }
-        },
-    }
-
-    rows = {item["name"]: item["ok"] for item in _auip_checks(result)}
-    assert rows["natural-step-crosses-participant-app-and-receipt"] is True
-    assert rows["negotiated-step-binds-agreement-proposal-and-receipt"] is True
-    assert rows["polite-proposal-respects-visible-role-alternative"] is True
-    assert rows["real-observer-narrator-delivers-an-intermediate-comment"] is True
-    assert rows["terminal-summary-is-grounded-delivered-and-retained"] is True
-    assert rows[
-        "round-result-remains-active-before-explicit-experience-terminal"
-    ] is True
-
-    speculative_question = json.loads(json.dumps(result))
-    speculative_question["role_consensus"]["decided"] = "none"
-    speculative_question["role_consensus"]["participant_was_consulted"] = False
-    rows = {
-        item["name"]: item["ok"]
-        for item in _auip_checks(speculative_question)
-    }
-    assert rows["polite-proposal-respects-visible-role-alternative"] is False
-
-    mismatched_negotiation = json.loads(json.dumps(result))
-    mismatched_negotiation["negotiated_step"]["receipt_payload"] = {
-        "x": 3,
-        "y": 4,
-    }
-    rows = {
-        item["name"]: item["ok"]
-        for item in _auip_checks(mismatched_negotiation)
-    }
-    assert rows["negotiated-step-binds-agreement-proposal-and-receipt"] is False
-
-    without_scene_comment = json.loads(json.dumps(result))
-    without_scene_comment["narration_trace"] = [
-        item
-        for item in without_scene_comment["narration_trace"]
-        if item["source"] != "auip_narrator" or item["terminal"] is True
-    ]
-    rows = {
-        item["name"]: item["ok"]
-        for item in _auip_checks(without_scene_comment)
-    }
-    assert rows["real-observer-narrator-delivers-an-intermediate-comment"] is False
-
-    wrong_terminal = json.loads(json.dumps(result))
-    wrong_terminal["narration_trace"][-1]["fact_brief"] = (
-        'verified terminal outcome {"winner":"white"}'
-    )
-    rows = {item["name"]: item["ok"] for item in _auip_checks(wrong_terminal)}
-    assert rows["terminal-summary-is-grounded-delivered-and-retained"] is False
-    print("ok: J7 separates scene commentary from control errors and terminal truth")
+def test_j7_uses_shipping_cooperative_entry_and_requires_complete_experience_evidence() -> None:
+    journey = JOURNEYS['J7']
+    assert journey.implemented is True
+    assert journey.build is _auip_experience
+    command = journey.build(argparse.Namespace(chat_route="basic", provider="deepseek", model="test-model"),
+        ROOT / "runtime" / "e2e_reports" / "semantic_journeys" / "J7")
+    assert command[4].endswith("e2e_live_product_journey.py")
+    assert command[command.index("--journey-layer") + 1] == "interaction"
+    assert command[command.index("--chat-route") + 1] == "basic"
+    assert command[command.index("--seed") + 1] == str(ROOT / "examples" / "auip-gomoku")
+    assert {"--require-b2", "--complete-gomoku-round", "--exercise-gomoku-post-round",
+        "--exercise-post-leave-chat", "--require-experience-history"}.issubset(command)
 
 
 def main() -> None:
@@ -262,8 +126,7 @@ def main() -> None:
     test_gate_counts_only_matching_l3_and_keeps_manual_separate()
     test_discovery_ignores_legacy_json_and_rejects_malformed_canonical_json()
     test_j3_runner_uses_the_default_codex_control_journey()
-    test_j7_runner_uses_the_canonical_auip_journey()
-    test_j7_requires_scene_commentary_and_a_grounded_terminal_summary()
+    test_j7_uses_shipping_cooperative_entry_and_requires_complete_experience_evidence()
 
 
 if __name__ == "__main__":

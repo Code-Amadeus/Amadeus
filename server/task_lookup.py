@@ -99,9 +99,9 @@ def peek_turn_resolution(session_id: str) -> dict[str, Any] | None:
 
 
 def _file_references(text: str) -> set[str]:
-    from core.chat_runtime import _explicit_file_references
+    from server.reference_catalog import explicit_file_references
 
-    return _explicit_file_references(text)
+    return explicit_file_references(text)
 
 
 def _exact_matches_for_reference(session_id: str, reference: str) -> list[dict[str, Any]]:

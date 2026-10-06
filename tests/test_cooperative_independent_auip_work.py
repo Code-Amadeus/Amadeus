@@ -940,7 +940,9 @@ async def test_existing_b2_owner_chooses_executes_and_publishes_once(composition
     requested = []
 
     async def choose(**kwargs):
-        assert kwargs["user_instruction"] == "这步你来吧。"
+        # Host owns the AppSession step; the original turn retains actor
+        # and constraint evidence while sibling Work keeps its own clause.
+        assert kwargs["user_instruction"] == text
         candidate = next(item for item in kwargs["candidates"].values()
             if item.action_type == "game.place" and item.payload == {"x":1, "y":1})
         assert candidate.revision == 1
@@ -952,8 +954,8 @@ async def test_existing_b2_owner_chooses_executes_and_publishes_once(composition
             "speech":spoken_choice, "choice_reason":"the selected point is empty"}
 
     chooser = AsyncMock(side_effect=choose)
-    b2 = AuipB2Coordinator(runtime=runtime, control_decider=decider, role_chooser=chooser,
-        stage_decision=lambda *_args:pytest.fail("accepted B2 step must not enter legacy Chat staging"))
+    b2 = AuipB2Coordinator(runtime=runtime,  role_chooser=chooser,
+    )
     context.manager.configure_auip(decider, context.manager.auip_router,
         step_request=b2.execute_user_decision)
     planner_receipts = []

@@ -26,7 +26,8 @@ class ChatRoleDelivery(RequestHandler):
             and event["session_id"] == sm.get_current_session_id())
 
     async def _publish(self, event: dict, *, complete: bool) -> bool:
-        message_id, session_id = event["cause"], event["session_id"]
+        message_id = event.get("message_id") or event["cause"]
+        session_id = event["session_id"]
         visible_text = _display_text(event["text"])
         if not isinstance(visible_text, str) or not visible_text:
             return False
@@ -40,7 +41,8 @@ class ChatRoleDelivery(RequestHandler):
         self.receipts.append({"message_id":message_id, "session_id":session_id,
             "state":"published"})
         await bus.emit(Method.CHAT_ROLE_MESSAGE, {
-            "message_id":message_id, "session_id":session_id, "text":visible_text})
+            "message_id":message_id, "session_id":session_id, "text":visible_text,
+            **({"turn_id":event["cause"]} if message_id != event["cause"] else {})})
         return True
 
     async def handle(self, method, params):

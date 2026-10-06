@@ -175,7 +175,6 @@ class SessionHandler(RequestHandler):
             if prepared:
                 sm.delete_session(sid)
             return {"ok": False, "error": str(exc)}
-        self._enable_conversation()
         sm.save_session(sid, enable_conversation=True)
         if title:
             sm.set_session_title(sid, title)
@@ -192,7 +191,6 @@ class SessionHandler(RequestHandler):
         ok, _enable = sm.load_session(sid)
         if not ok:
             return {"ok": False, "error": "session not found"}
-        self._enable_conversation()
         sm.save_session(sid, enable_conversation=True)
         result = self._session_payload(sid)
         self._publish_context_projection_now("session.loaded")
@@ -461,10 +459,3 @@ class SessionHandler(RequestHandler):
             return json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             return {}
-
-    def _enable_conversation(self) -> None:
-        try:
-            from core.chat_runtime import get_chat_runtime
-            get_chat_runtime().enable_conversation = True
-        except Exception:
-            pass

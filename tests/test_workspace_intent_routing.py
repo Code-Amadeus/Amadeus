@@ -1,18 +1,15 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import os
 import sys
 import tempfile
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import config.settings as settings
-from agent_host.adapters.direct_codex import DirectCodexAdapter
 from agent_host.provider_catalog import (
     CODEX_APP_SERVER_MANIFEST,
     DIRECT_CODEX_MANIFEST,
@@ -21,26 +18,16 @@ from agent_host.provider_contract import (
     ProviderCapabilities,
     ProviderManifest,
     ProviderRequirements,
-    ProviderSelection,
 )
 from agent_host.provider_runtime import ProviderRuntime, runtime as provider_runtime
 from agent_host.provider_types import ProviderRunRequest, ProviderRunResult
-from agent_host.work_ledger_store import WorkLedgerConflict, WorkLedgerStore
-from server.app import (
-    _announce_provider_workspace_block,
-    _delegate_workspace_route,
-    _handle_delegate,
-)
-from server.event_bus import bus
-from server.handlers.provider_handler import ProviderHandler
-from server.protocol import Method
+from agent_host.work_ledger_store import WorkLedgerStore
 from server.work_context import (
     augment_system_prompt_with_active_provider_context,
     render_conversation_work_context,
     render_workspace_routing_context,
 )
 from server.work_ledger_coordinator import DEFAULT_WORK_SURFACE, WorkLedgerCoordinator
-from server.work_export_service import WorkExportService
 
 
 def _with_scratch_root(path: Path):
@@ -152,9 +139,7 @@ def test_main_intent_context_routes_by_stable_refs_and_pin_is_authoritative() ->
                     # ambiguity the user was asked to resolve. Naming neither is
                     # now an answer: this is new work, and new work gets its own
                     # place instead of being guessed into one of theirs.
-                    unnamed = _delegate_workspace_route(
-                        "codex", {}, manifest=CODEX_APP_SERVER_MANIFEST
-                    )
+                    unnamed = coordinator.resolve_workspace_route({})
                     assert unnamed["status"] == "resolved"
                     assert unnamed["source"] == "scratch_default"
                     assert Path(unnamed["cwd"]) not in {
@@ -162,11 +147,7 @@ def test_main_intent_context_routes_by_stable_refs_and_pin_is_authoritative() ->
                         workspace_b.resolve(),
                     }
 
-                    by_ref = _delegate_workspace_route(
-                        "codex",
-                        {"project_id": project_a, "workspace_ref": item_a},
-                        manifest=CODEX_APP_SERVER_MANIFEST,
-                    )
+                    by_ref = coordinator.resolve_workspace_route({"project_id": project_a, "workspace_ref": item_a})
                     assert by_ref["status"] == "resolved"
                     assert by_ref["source"] == "intent_workspace_ref"
                     assert by_ref["workItemId"] == item_a
@@ -198,11 +179,7 @@ def test_main_intent_context_routes_by_stable_refs_and_pin_is_authoritative() ->
                     assert Path(forced_work["workspace_path"]) == workspace_a.resolve()
                     assert forced_work["attempt_number"] == 1
                     coordinator.select(item_b, surface=DEFAULT_WORK_SURFACE)
-                    still_pinned = _delegate_workspace_route(
-                        "codex",
-                        {"project_id": project_b, "workspace_ref": item_b},
-                        manifest=CODEX_APP_SERVER_MANIFEST,
-                    )
+                    still_pinned = coordinator.resolve_workspace_route({"project_id": project_b, "workspace_ref": item_b})
                     assert still_pinned["source"] == "workspace_pin"
                     assert Path(still_pinned["cwd"]) == workspace_a.resolve()
 
@@ -210,59 +187,15 @@ def test_main_intent_context_routes_by_stable_refs_and_pin_is_authoritative() ->
                         mode="auto",
                         surface=DEFAULT_WORK_SURFACE,
                     )
-                    after_unlock = _delegate_workspace_route(
-                        "codex",
-                        {"project_id": project_b, "workspace_ref": item_b},
-                        manifest=CODEX_APP_SERVER_MANIFEST,
-                    )
+                    after_unlock = coordinator.resolve_workspace_route({"project_id": project_b, "workspace_ref": item_b})
                     assert after_unlock["source"] == "intent_workspace_ref"
                     assert Path(after_unlock["cwd"]) == workspace_b.resolve()
             finally:
                 coordinator.close()
 
 
-def test_delegate_never_falls_back_to_first_allowlist_entry_without_intent() -> None:
-    # With no ledger there is no scratch destination either, so this refuses.
-    # It is not the old "which project did you mean?": nothing asks that now.
-    route = _delegate_workspace_route("codex", {}, manifest=CODEX_APP_SERVER_MANIFEST)
-    assert route["status"] == "missing"
-    assert route["reason"] == "no_work_ledger"
-    assert not route["cwd"]
 
 
-def test_delegate_startup_fallback_uses_host_project_registry() -> None:
-    with tempfile.TemporaryDirectory(prefix="delegate_registry_fallback_") as temp:
-        root = Path(temp)
-        host_project = root / "host-project"
-        codex_only = root / "codex-only"
-        host_project.mkdir()
-        codex_only.mkdir()
-        with (
-            patch(
-                "server.work_ledger_coordinator.get_work_ledger_coordinator",
-                return_value=None,
-            ),
-            patch.object(
-                settings,
-                "WORK_PROJECT_ALLOWLIST",
-                str(host_project),
-            ),
-        ):
-            accepted = _delegate_workspace_route(
-                "codex",
-                {"cwd": str(host_project)},
-                manifest=DIRECT_CODEX_MANIFEST,
-            )
-            rejected = _delegate_workspace_route(
-                "codex",
-                {"cwd": str(codex_only)},
-                manifest=DIRECT_CODEX_MANIFEST,
-            )
-        assert accepted["status"] == "resolved"
-        assert accepted["source"] == "explicit_cwd_without_ledger"
-        assert Path(accepted["cwd"]) == host_project.resolve()
-        assert rejected["status"] == "missing"
-        assert rejected["reason"] == "no_work_ledger"
 
 
 def test_conversation_work_roster_is_session_scoped_and_read_only() -> None:
@@ -338,342 +271,16 @@ def test_conversation_work_roster_is_session_scoped_and_read_only() -> None:
                 coordinator.close()
 
 
-def test_delegate_fails_closed_when_live_coordinator_resolution_raises() -> None:
-    class BrokenCoordinator:
-        @staticmethod
-        def resolve_workspace_route(_attrs: dict) -> dict:
-            raise RuntimeError("simulated ledger failure")
-
-    with patch(
-        "server.work_ledger_coordinator.get_work_ledger_coordinator",
-        return_value=BrokenCoordinator(),
-    ):
-        route = _delegate_workspace_route(
-            "codex",
-            {"cwd": str(Path(__file__).resolve().parents[1])},
-            manifest=CODEX_APP_SERVER_MANIFEST,
-        )
-    assert route["status"] == "invalid"
-    assert route["reason"] == "workspace_resolution_failed"
-    assert not route["cwd"]
 
 
-def test_ambiguous_route_emits_one_spoken_user_facing_blocker() -> None:
-    async def run() -> None:
-        notes: list[dict] = []
-
-        async def capture(_method: str, payload: dict) -> None:
-            notes.append(payload)
-
-        bus.on(Method.CHAT_WORK_NOTE, capture)
-        try:
-            await _announce_provider_workspace_block(
-                "fixture-provider",
-                {
-                    "status": "ambiguous",
-                    "reason": "project_intent_required",
-                    "candidates": [{"projectId": "a"}, {"projectId": "b"}],
-                }
-            )
-        finally:
-            bus.off(Method.CHAT_WORK_NOTE, capture)
-
-        assert len(notes) == 1
-        assert notes[0]["source"] == "workspace_router"
-        assert notes[0]["provider"] == "fixture-provider"
-        assert notes[0]["phase"].lower() == "checkpoint"
-        assert notes[0]["speak"] is True
-        assert notes[0]["metadata"]["candidate_count"] == 2
-        assert notes[0]["metadata"]["execution_started"] is False
-        assert notes[0]["metadata"]["narration_keypoint"] == "execution_blocked"
-        assert "not started" in notes[0]["signals"][0]["text"]
-
-    asyncio.run(run())
 
 
-def test_rejected_codex_start_does_not_speak_false_task_failure() -> None:
-    async def run() -> None:
-        speak = AsyncMock()
-        notes: list[dict] = []
-
-        async def capture_note(_method: str, payload: dict) -> None:
-            notes.append(payload)
-
-        workspace = str(Path(__file__).resolve().parents[1])
-        bus.on(Method.CHAT_WORK_NOTE, capture_note)
-        try:
-            with (
-                patch(
-                    "server.app._delegate_provider_selection",
-                    return_value=(
-                        ProviderRequirements(
-                            task_kind="workspace_read",
-                            workspace_access="write",
-                            workspace_ownership="negotiated",
-                        ),
-                        ProviderSelection(
-                            provider_id="codex",
-                            reason="test",
-                            compatible_candidates=("codex",),
-                        ),
-                    ),
-                ),
-                patch(
-                    "server.app._delegate_workspace_route",
-                    return_value={
-                        "status": "resolved",
-                        "cwd": workspace,
-                        "projectId": "project-test",
-                        "source": "test",
-                    },
-                ),
-                patch.object(
-                    provider_runtime,
-                    "get_manifest",
-                    return_value=CODEX_APP_SERVER_MANIFEST,
-                ),
-                patch(
-                    "server.app._sanitize_delegate_task_for_provider",
-                    return_value=("Inspect existing work", {}),
-                ),
-                patch(
-                    "agent_host.provider_runtime.runtime.start",
-                    new=AsyncMock(side_effect=WorkLedgerConflict("workspace already has an active writer")),
-                ),
-                patch("server.app._speak_openclaw_delegate_result", new=speak),
-            ):
-                result = await _handle_delegate(
-                    "Inspect existing work",
-                    {"provider": "codex", "cwd": workspace},
-                )
-        finally:
-            bus.off(Method.CHAT_WORK_NOTE, capture_note)
-        assert result == "[codex error] delegate execution failed"
-        speak.assert_not_awaited()
-        failures = [
-            note for note in notes if note.get("metadata", {}).get("provider_start_failed")
-        ]
-        assert len(failures) == 1
-        assert failures[0]["speak"] is True
-        assert failures[0]["metadata"]["execution_started"] is False
-        assert "no new work was executed" in failures[0]["summary"]
-
-    asyncio.run(run())
 
 
-def test_delegate_preserves_workspace_reference_without_falsely_amending_new_goal() -> None:
-    async def run() -> None:
-        workspace = str(Path(__file__).resolve().parents[1])
-        start = AsyncMock(
-            return_value=SimpleNamespace(
-                task_handle=None,
-                result="checked",
-                error="",
-                metadata={"result_type": "ok"},
-            )
-        )
-        with (
-            patch(
-                "server.app._delegate_provider_selection",
-                return_value=(
-                    ProviderRequirements(
-                        task_kind="workspace_write",
-                        workspace_access="write",
-                        workspace_ownership="negotiated",
-                    ),
-                    ProviderSelection(
-                        provider_id="codex",
-                        reason="test",
-                        compatible_candidates=("codex",),
-                    ),
-                ),
-            ),
-            patch(
-                "server.app._delegate_workspace_route",
-                return_value={
-                    "status": "resolved",
-                    "cwd": workspace,
-                    "projectId": "project-test",
-                    "workItemId": "work-previous",
-                    "workspaceMode": "worktree",
-                    "source": "intent_workspace_ref",
-                },
-            ),
-            patch(
-                "server.app._sanitize_delegate_task_for_provider",
-                return_value=("Change theme.txt to green", {}),
-            ),
-            patch(
-                "agent_host.provider_runtime.runtime.start",
-                new=start,
-            ),
-            patch.object(provider_runtime, "get_manifest", return_value=CODEX_APP_SERVER_MANIFEST),
-        ):
-            await _handle_delegate(
-                "Change theme.txt to green",
-                {
-                    "provider": "codex",
-                    "workspace_ref": "work-previous",
-                },
-            )
-        request = start.await_args.args[0]
-        assert "related_work_item_id" not in request.metadata
-        assert "work_item_id" not in request.metadata["work"]
-        assert request.metadata["work"]["workspace_ref"] == "work-previous"
-        assert request.metadata["work"]["workspace_mode"] == "worktree"
-
-    asyncio.run(run())
 
 
-def test_existing_multifile_copy_stays_a_provider_task_in_the_bound_workspace() -> None:
-    async def run() -> None:
-        workspace = str(Path(__file__).resolve().parents[1])
-        provider_task = (
-            "目标文件是 index.html, script.js, style.css。"
-            "把现有三个文件复制到桌面，不要重做或修改内容。"
-        )
-        start = AsyncMock(
-            return_value=SimpleNamespace(
-                task_handle=None,
-                result="staged",
-                error="",
-                metadata={"result_type": "ok"},
-            )
-        )
-        with (
-            patch(
-                "server.app._delegate_provider_selection",
-                return_value=(
-                    ProviderRequirements(
-                        task_kind="workspace_write",
-                        workspace_access="write",
-                        workspace_ownership="negotiated",
-                    ),
-                    ProviderSelection(
-                        provider_id="codex",
-                        reason="test",
-                        compatible_candidates=("codex",),
-                    ),
-                ),
-            ),
-            patch(
-                "server.app._delegate_workspace_route",
-                return_value={
-                    "status": "resolved",
-                    "cwd": workspace,
-                    "projectId": "project-real-life",
-                    "workItemId": "work-real-life",
-                    "workspaceMode": "scratch",
-                    "source": "intent_workspace_ref",
-                },
-            ),
-            patch("agent_host.provider_runtime.runtime.start", new=start),
-            patch.object(provider_runtime, "get_manifest", return_value=CODEX_APP_SERVER_MANIFEST),
-            patch(
-                "server.work_ledger_coordinator.get_work_ledger_coordinator",
-                return_value=None,
-            ),
-        ):
-            result = await _handle_delegate(
-                provider_task,
-                {
-                    "provider": "codex",
-                    "intent": "amend",
-                    "workspace_ref": "work-real-life",
-                    "target": "desktop",
-                    "_host_source_user_text": "不是叫你重做，只是把它们复制到桌面",
-                },
-            )
-        assert result == "staged"
-        request = start.await_args.args[0]
-        assert request.task == provider_task
-        assert Path(str(request.cwd)) == Path(workspace)
-        assert request.metadata["intent"] == "amend"
-        assert request.metadata["continuation"] == "amend"
-        assert request.metadata["work"]["work_item_id"] == "work-real-life"
-        assert "related_work_item_id" not in request.metadata
-        assert request.metadata["work"]["workspace_ref"] == "work-real-life"
-        assert request.metadata["external_export"] == {
-            "target": "desktop",
-            "intent_source": "source_user_text",
-        }
-
-    asyncio.run(run())
 
 
-def test_status_noun_in_canonical_amend_still_reaches_the_provider() -> None:
-    """Regression: ``game ... state`` once seized this turn as a report."""
-
-    async def run() -> None:
-        workspace = str(Path(__file__).resolve().parents[1])
-        source = "你需要根据AUIP重新改写当前游戏，目前这个版本的状态声明已经过时了"
-        start = AsyncMock(
-            return_value=SimpleNamespace(
-                task_handle=None,
-                result="updated",
-                error="",
-                metadata={"result_type": "ok"},
-            )
-        )
-        with (
-            patch.object(settings, "DELEGATE_INTENT_ATTRIBUTE", True),
-            patch.object(settings, "DELEGATE_AMEND_INTENT", True),
-            patch(
-                "server.app._delegate_provider_selection",
-                return_value=(
-                    ProviderRequirements(
-                        task_kind="workspace_mutation",
-                        workspace_access="write",
-                    ),
-                    ProviderSelection(
-                        provider_id="codex",
-                        reason="test",
-                        compatible_candidates=("codex",),
-                    ),
-                ),
-            ),
-            patch(
-                "server.app._delegate_workspace_route",
-                return_value={
-                    "status": "resolved",
-                    "cwd": workspace,
-                    "projectId": "project-game",
-                    "workItemId": "work-game",
-                    "workspaceMode": "scratch",
-                    "source": "intent_workspace_ref",
-                },
-            ),
-            patch("agent_host.provider_runtime.runtime.start", new=start),
-            patch.object(
-                provider_runtime,
-                "get_manifest",
-                return_value=CODEX_APP_SERVER_MANIFEST,
-            ),
-            patch(
-                "server.work_ledger_coordinator.get_work_ledger_coordinator",
-                return_value=None,
-            ),
-        ):
-            result = await _handle_delegate(
-                source,
-                {
-                    "provider": "codex",
-                    "intent": "amend",
-                    "subject": "work_item",
-                    "workspace_ref": "work-game",
-                    "_host_source_user_text": source,
-                },
-            )
-
-        assert result == "updated"
-        request = start.await_args.args[0]
-        assert request.task == source
-        assert request.provider == "codex"
-        assert request.metadata["intent"] == "amend"
-        assert request.metadata["continuation"] == "amend"
-        assert request.metadata["work"]["work_item_id"] == "work-game"
-
-    asyncio.run(run())
 
 
 def test_control_plane_persists_amend_lineage_and_inference_audit() -> None:
@@ -779,191 +386,6 @@ def test_project_source_resolution_uses_current_tree_not_delivery_history() -> N
             coordinator.close()
 
 
-def test_approved_desktop_delivery_outranks_session_project_source_for_amend() -> None:
-    """A Desktop copy is an external delivery, not another Project source."""
-
-    from core.chat_runtime import ChatRuntime
-    from server.control_decision import CONTROL_REFERENCE_CANDIDATES_ATTR
-    from server.reference_catalog import TypedReferenceCandidate
-
-    with tempfile.TemporaryDirectory(prefix="desktop_export_amend_route_") as temp:
-        root = Path(temp)
-        workspace = root / "ETERNAL_LOOP"
-        desktop = root / "Desktop"
-        workspace.mkdir()
-        desktop.mkdir()
-        filename = "two_player_maze.html"
-        # The same basename deliberately exists in the Project. target=desktop
-        # must select the approved external delivery instead of this tree.
-        (workspace / filename).write_text("project source\n", encoding="utf-8")
-        target = desktop / filename
-        target.write_text("approved desktop copy\n", encoding="utf-8")
-
-        store = WorkLedgerStore(root / "ledger.sqlite3")
-        coordinator = WorkLedgerCoordinator(
-            store,
-            export_service=WorkExportService(store, desktop_path=desktop),
-        )
-        project = store.create_or_get_project(workspace, name="ETERNAL_LOOP")
-        item = store.create_work_item(
-            project.project_id,
-            title="Deliver the two-player maze game",
-            workspace_path=workspace,
-        )
-        _operation, attempt = store.create_operation_attempt(
-            item.work_item_id,
-            intent="execute",
-            instruction="Deliver the two-player maze game",
-            provider="codex",
-            task=f"Create {filename}",
-            attempt_metadata={"session_id": "older-session"},
-        )
-        store.update_attempt(attempt.attempt_id, execution_status="succeeded")
-        store.register_artifact(
-            item.work_item_id,
-            attempt_id=attempt.attempt_id,
-            kind="business.export",
-            title=f"Export {filename} to Desktop",
-            path=target,
-            status="approved",
-            sha256=hashlib.sha256(target.read_bytes()).hexdigest(),
-        )
-        coordinator.configure()
-        project_candidate = TypedReferenceCandidate(
-            kind="project",
-            entity_id=project.project_id,
-            label="ETERNAL_LOOP",
-            scope="persistent",
-        )
-        action = {
-            "type": "DELEGATE",
-            "attrs": {
-                "provider": "codex",
-                "intent": "amend",
-                "subject": "project",
-                "project_id": project.project_id,
-                "target": "desktop",
-                "task": (
-                    f"Change {filename} so the first player to one win wins."
-                ),
-                CONTROL_REFERENCE_CANDIDATES_ATTR: (project_candidate,),
-            },
-        }
-        try:
-            with (
-                patch.object(settings, "DELEGATE_INTENT_ATTRIBUTE", True),
-                patch.object(settings, "DELEGATE_AMEND_INTENT", True),
-                patch(
-                    "core.chat_runtime._provider_supports_workspace_mutation",
-                    return_value=True,
-                ),
-                patch(
-                    "server.work_ledger_coordinator.cwd_in_project_registry",
-                    return_value=True,
-                ),
-            ):
-                assert ChatRuntime._ground_present_provider_delegate(
-                    action,
-                    "我现在桌面有一个两人迷宫游戏，帮我把获胜条件改成一次获胜。",
-                    session_id="current-session",
-                ) is True
-
-            attrs = action["attrs"]
-            assert attrs["workspace_ref"] == item.work_item_id
-            assert attrs["subject"] == "work_item"
-            assert attrs["target"] == "desktop"
-            assert attrs.get("_host_project_source_amend") is not True
-            frozen = attrs[CONTROL_REFERENCE_CANDIDATES_ATTR]
-            assert len(frozen) == 1
-            assert frozen[0].kind == "work_item"
-            assert frozen[0].entity_id == item.work_item_id
-
-            prepared = coordinator.prepare_request(
-                ProviderRunRequest(
-                    provider="codex",
-                    task=f"Change {filename} so the first player to one win wins.",
-                    cwd=str(workspace),
-                    mode="agent",
-                    metadata={
-                        "intent": "amend",
-                        "continuation": "amend",
-                        "external_export": {"target": "desktop"},
-                        "work": {
-                            "work_item_id": item.work_item_id,
-                            "workspace_ref": item.work_item_id,
-                        },
-                    },
-                )
-            )
-            assert prepared.metadata["work"]["work_item_id"] == item.work_item_id
-            plan = prepared.metadata["export_plan"]
-            assert plan["replace_existing"] is True
-            assert plan["inherited_target_path"] == str(target.resolve())
-            staged = Path(plan["staging_root"]) / filename
-            assert staged.read_text(encoding="utf-8") == "approved desktop copy\n"
-
-            other = store.create_work_item(
-                project.project_id,
-                title="A separate delivery with the same Desktop target",
-                workspace_path=workspace,
-            )
-            _other_operation, other_attempt = store.create_operation_attempt(
-                other.work_item_id,
-                intent="execute",
-                instruction="Deliver another maze build",
-                provider="codex",
-                task=f"Create {filename}",
-                attempt_metadata={"session_id": "older-session"},
-            )
-            store.update_attempt(
-                other_attempt.attempt_id,
-                execution_status="succeeded",
-            )
-            store.register_artifact(
-                other.work_item_id,
-                attempt_id=other_attempt.attempt_id,
-                kind="business.export",
-                title=f"A second approved {filename}",
-                path=target,
-                status="approved",
-                sha256=hashlib.sha256(target.read_bytes()).hexdigest(),
-            )
-            ambiguous = {
-                "type": "DELEGATE",
-                "attrs": {
-                    "provider": "codex",
-                    "intent": "amend",
-                    "subject": "project",
-                    "project_id": project.project_id,
-                    "target": "desktop",
-                    "task": f"Change {filename}",
-                    CONTROL_REFERENCE_CANDIDATES_ATTR: (project_candidate,),
-                },
-            }
-            with (
-                patch.object(settings, "DELEGATE_INTENT_ATTRIBUTE", True),
-                patch.object(settings, "DELEGATE_AMEND_INTENT", True),
-                patch(
-                    "core.chat_runtime._provider_supports_workspace_mutation",
-                    return_value=True,
-                ),
-            ):
-                assert ChatRuntime._ground_present_provider_delegate(
-                    ambiguous,
-                    f"把桌面的 {filename} 改一下",
-                    session_id="current-session",
-                ) is False
-            choices = ambiguous["attrs"][CONTROL_REFERENCE_CANDIDATES_ATTR]
-            assert {choice.kind for choice in choices} == {"work_item"}
-            assert {choice.entity_id for choice in choices} == {
-                item.work_item_id,
-                other.work_item_id,
-            }
-            assert "workspace_ref" not in ambiguous["attrs"]
-        finally:
-            coordinator.close()
-
-
 def test_new_project_delivery_can_record_an_amend_operation() -> None:
     with tempfile.TemporaryDirectory(prefix="project_source_amend_") as temp:
         root = Path(temp)
@@ -1006,111 +428,6 @@ def test_new_project_delivery_can_record_an_amend_operation() -> None:
             coordinator.close()
 
 
-def test_project_source_amend_crosses_reference_and_provider_assembly() -> None:
-    from core.chat_runtime import ChatRuntime
-    from server.control_decision import CONTROL_REFERENCE_CANDIDATES_ATTR
-    from server.reference_catalog import TypedReferenceCandidate
-
-    async def run() -> None:
-        with tempfile.TemporaryDirectory(prefix="project_source_assembly_") as temp:
-            root = Path(temp)
-            workspace = root / "ETERNAL_LOOP"
-            workspace.mkdir()
-            (workspace / "two_player_maze.html").write_text("three", encoding="utf-8")
-            store = WorkLedgerStore(root / "ledger.sqlite3")
-            coordinator = WorkLedgerCoordinator(store)
-            project = store.create_or_get_project(workspace, name="ETERNAL_LOOP")
-            coordinator.configure()
-            candidate = TypedReferenceCandidate(
-                "project",
-                project.project_id,
-                "ETERNAL_LOOP",
-                "persistent",
-                aliases=("two_player_maze.html",),
-            )
-            action = {
-                "type": "DELEGATE",
-                "attrs": {
-                    "provider": "codex",
-                    "intent": "execute",
-                    "project_id": project.project_id,
-                    "task": "Change two_player_maze.html so one point wins",
-                    CONTROL_REFERENCE_CANDIDATES_ATTR: (candidate,),
-                },
-            }
-            start = AsyncMock(
-                return_value=SimpleNamespace(
-                    task_handle=None,
-                    result="started",
-                    error="",
-                    metadata={"result_type": "ok"},
-                )
-            )
-            old_lookup = patch(
-                "server.task_lookup._exact_matches_for_reference",
-                return_value=[
-                    {"work_item_id": "work_created", "files": ["two_player_maze.html"]},
-                    {"work_item_id": "work_changed", "files": ["two_player_maze.html"]},
-                ],
-            )
-            try:
-                with (
-                    patch(
-                        "core.chat_runtime._provider_supports_workspace_mutation",
-                        return_value=True,
-                    ),
-                    patch.object(settings, "DELEGATE_INTENT_ATTRIBUTE", True),
-                    patch.object(settings, "DELEGATE_AMEND_INTENT", True),
-                    patch.object(settings, "REFERENCE_CLARIFICATION_ENABLED", True),
-                    patch(
-                        "server.work_ledger_coordinator.cwd_in_project_registry",
-                        return_value=True,
-                    ),
-                    patch(
-                        "core.session_manager.get_current_session_id",
-                        return_value="project-source-session",
-                    ),
-                    patch(
-                        "server.app._delegate_provider_selection",
-                        return_value=(
-                            ProviderRequirements(
-                                task_kind="workspace_write",
-                                workspace_access="write",
-                                workspace_ownership="negotiated",
-                            ),
-                            ProviderSelection(
-                                provider_id="codex",
-                                reason="test",
-                                compatible_candidates=("codex",),
-                            ),
-                        ),
-                    ),
-                    patch("agent_host.provider_runtime.runtime.start", new=start),
-                    patch.object(provider_runtime, "get_manifest", return_value=CODEX_APP_SERVER_MANIFEST),
-                    old_lookup as historical_lookup,
-                ):
-                    assert ChatRuntime._ground_present_provider_delegate(
-                        action,
-                        "Make the two-player maze game end at one point",
-                        session_id="project-source-session",
-                    ) is True
-                    result = await _handle_delegate(
-                        action["attrs"]["task"],
-                        action["attrs"],
-                    )
-                assert result == "started"
-                historical_lookup.assert_not_called()
-                request = start.await_args.args[0]
-                assert Path(str(request.cwd)) == workspace
-                assert request.metadata["intent"] == "amend"
-                assert request.metadata["project_source_amend"] is True
-                assert request.metadata["work"]["project_id"] == project.project_id
-                assert "workspace_ref" not in request.metadata["work"]
-                assert "continuation" not in request.metadata
-            finally:
-                coordinator.close()
-
-
 def test_second_provider_uses_project_and_one_off_scratch_routes() -> None:
     with tempfile.TemporaryDirectory(prefix="codex_product_route_") as temp:
         root = Path(temp)
@@ -1134,19 +451,11 @@ def test_second_provider_uses_project_and_one_off_scratch_routes() -> None:
                         "codex-route-session",
                         project.project_id,
                     )
-                    project_route = _delegate_workspace_route(
-                        "codex",
-                        {"session_id": "codex-route-session"},
-                        manifest=DIRECT_CODEX_MANIFEST,
-                    )
-                    scratch_route = _delegate_workspace_route(
-                        "codex",
-                        {
+                    project_route = coordinator.resolve_workspace_route({"session_id": "codex-route-session"})
+                    scratch_route = coordinator.resolve_workspace_route({
                             "session_id": "codex-route-session",
                             "one_off": "true",
-                        },
-                        manifest=DIRECT_CODEX_MANIFEST,
-                    )
+                        })
                 assert project_route["status"] == "resolved"
                 assert project_route["source"] == "session_project"
                 assert project_route["projectId"] == project.project_id
@@ -1158,169 +467,10 @@ def test_second_provider_uses_project_and_one_off_scratch_routes() -> None:
                 coordinator.close()
 
 
-def test_second_provider_delegate_preserves_product_route_identity() -> None:
-    async def run() -> None:
-        with tempfile.TemporaryDirectory(prefix="codex_delegate_route_") as temp:
-            root = Path(temp)
-            project_path = root / "project"
-            project_path.mkdir()
-            store = WorkLedgerStore(root / "ledger.sqlite3")
-            coordinator = WorkLedgerCoordinator(store)
-            project = store.create_or_get_project(project_path, name="project")
-            coordinator.configure()
-            captured: list[ProviderRunRequest] = []
-
-            async def start(request: ProviderRunRequest):
-                prepared = coordinator.prepare_request(request)
-                captured.append(prepared)
-                return SimpleNamespace(
-                    task_handle=None,
-                    result="created",
-                    error="",
-                    metadata={**prepared.metadata, "result_type": "ok"},
-                )
-
-            if provider_runtime.get_manifest("codex") is None:
-                provider_runtime.register(DirectCodexAdapter(cli_path="unused"))
-            try:
-                with (
-                    patch(
-                        "core.session_manager.get_current_session_id",
-                        return_value="codex-delegate-session",
-                    ),
-                    patch.object(settings, "WORK_WORKTREE_ISOLATION", False),
-                    patch.object(
-                        settings,
-                        "WORK_PROJECT_ALLOWLIST",
-                        str(project_path),
-                    ),
-                    patch.object(
-                        provider_runtime,
-                        "start",
-                        new=AsyncMock(side_effect=start),
-                    ),
-                ):
-                    coordinator.set_session_project(
-                        "codex-delegate-session",
-                        project.project_id,
-                    )
-                    result = await _handle_delegate(
-                        "Create route-proof.txt containing project-route",
-                        {"provider": "codex", "intent": "execute"},
-                    )
-                assert result == "created"
-                assert len(captured) == 1
-                request = captured[0]
-                assert request.provider == "codex"
-                assert Path(str(request.cwd)) == project_path.resolve()
-                assert request.metadata["provider_manifest"]["provider_id"] == "codex"
-                assert (
-                    request.metadata["provider_manifest"]["capabilities"][
-                        "workspace_ownership"
-                    ]
-                    == "caller"
-                )
-                assert request.metadata["provider_selection"]["provider_id"] == "codex"
-                assert request.metadata["work"]["project_id"] == project.project_id
-                assert request.metadata["work"]["workspace_path"] == str(
-                    project_path.resolve()
-                )
-                assert "codex_allow_agent_mode" not in request.metadata
-                assert "external_export" not in request.metadata
-            finally:
-                coordinator.close()
-
-    asyncio.run(run())
 
 
-def test_original_user_desktop_destination_survives_provider_paraphrase() -> None:
-    async def run() -> None:
-        workspace = str(Path(__file__).resolve().parents[1])
-        start = AsyncMock(
-            return_value=SimpleNamespace(
-                task_handle=None,
-                result="created",
-                error="",
-                metadata={"result_type": "ok"},
-            )
-        )
-        if provider_runtime.get_manifest("codex") is None:
-            provider_runtime.register(DirectCodexAdapter(cli_path="unused"))
-        with (
-            patch(
-                "server.app._delegate_workspace_route",
-                return_value={
-                    "status": "resolved",
-                    "cwd": workspace,
-                    "projectId": "project-test",
-                    "source": "test",
-                },
-            ),
-            patch.object(provider_runtime, "start", new=start),
-        ):
-            result = await _handle_delegate(
-                "Create a small game for the desktop.",
-                {
-                    "provider": "codex",
-                    "intent": "execute",
-                    "_host_source_user_text": "你可以在我的桌面写一个小游戏吗？",
-                },
-            )
-
-        assert result == "created"
-        request = start.await_args.args[0]
-        assert request.provider == "codex"
-        assert request.metadata["source_user_text"] == "你可以在我的桌面写一个小游戏吗？"
-        assert request.metadata["external_export"] == {
-            "target": "desktop",
-            "intent_source": "source_user_text",
-        }
-        assert "_host_source_user_text" not in request.metadata["delegate_attrs"]
-
-    asyncio.run(run())
 
 
-def test_model_target_cannot_override_user_desktop_denial() -> None:
-    async def run() -> None:
-        workspace = str(Path(__file__).resolve().parents[1])
-        start = AsyncMock(
-            return_value=SimpleNamespace(
-                task_handle=None,
-                result="created",
-                error="",
-                metadata={"result_type": "ok"},
-            )
-        )
-        if provider_runtime.get_manifest("codex") is None:
-            provider_runtime.register(DirectCodexAdapter(cli_path="unused"))
-        with (
-            patch(
-                "server.app._delegate_workspace_route",
-                return_value={
-                    "status": "resolved",
-                    "cwd": workspace,
-                    "projectId": "project-test",
-                    "source": "test",
-                },
-            ),
-            patch.object(provider_runtime, "start", new=start),
-        ):
-            result = await _handle_delegate(
-                "journey_timer.html をデスクトップへコピーする。",
-                {
-                    "provider": "codex",
-                    "intent": "execute",
-                    "target": "desktop",
-                    "_host_source_user_text": "不要复制到桌面。",
-                },
-            )
-
-        assert result == "created"
-        request = start.await_args.args[0]
-        assert request.metadata["source_user_text"] == "不要复制到桌面。"
-        assert "external_export" not in request.metadata
-
-    asyncio.run(run())
 
 
 def test_runtime_intake_routes_caller_owned_provider_without_chat_entrypoint() -> None:
@@ -1392,44 +542,6 @@ def test_runtime_intake_routes_caller_owned_provider_without_chat_entrypoint() -
     asyncio.run(run())
 
 
-def test_second_provider_route_failure_is_visible_and_never_starts() -> None:
-    async def run() -> None:
-        notes: list[dict] = []
-
-        async def capture(_method: str, payload: dict) -> None:
-            notes.append(payload)
-
-        if provider_runtime.get_manifest("codex") is None:
-            provider_runtime.register(DirectCodexAdapter(cli_path="unused"))
-        start = AsyncMock()
-        bus.on(Method.CHAT_WORK_NOTE, capture)
-        try:
-            with (
-                patch(
-                    "server.app._delegate_workspace_route",
-                    return_value={
-                        "status": "invalid",
-                        "reason": "scratch_unavailable",
-                        "cwd": "",
-                        "source": "scratch_default",
-                    },
-                ),
-                patch.object(provider_runtime, "start", new=start),
-            ):
-                result = await _handle_delegate(
-                    "Create blocked-route.txt",
-                    {"provider": "codex", "intent": "execute"},
-                )
-        finally:
-            bus.off(Method.CHAT_WORK_NOTE, capture)
-        assert result == "[workspace routing blocked] project context is required"
-        start.assert_not_awaited()
-        assert len(notes) == 1
-        assert notes[0]["provider"] == "codex"
-        assert notes[0]["speak"] is True
-        assert "not started" in notes[0]["signals"][0]["text"]
-
-    asyncio.run(run())
 
 
 def test_stalled_liveness_is_durable_but_execution_stays_running() -> None:
@@ -1718,41 +830,3 @@ def test_workspace_prompt_selects_from_live_manifests_without_a_provider_default
 
     assert 'provider="future_workspace_agent"' in block
     assert 'provider="codex"' not in block
-
-
-def _main() -> None:
-    # Production constructs the Provider composition root before delegate
-    # routing. Keep this assembly test honest instead of relying on a static
-    # catalog fallback that could advertise disabled Providers.
-    ProviderHandler()
-    test_roster_offers_a_recency_ordered_candidate_set()
-    test_roster_rules_never_crowd_out_the_task_rows()
-    test_workspace_rules_follow_the_selected_prompt_language()
-    test_workspace_prompt_selects_from_live_manifests_without_a_provider_default()
-    test_main_intent_context_routes_by_stable_refs_and_pin_is_authoritative()
-    test_delegate_never_falls_back_to_first_allowlist_entry_without_intent()
-    test_delegate_startup_fallback_uses_host_project_registry()
-    test_conversation_work_roster_is_session_scoped_and_read_only()
-    test_delegate_fails_closed_when_live_coordinator_resolution_raises()
-    test_ambiguous_route_emits_one_spoken_user_facing_blocker()
-    test_rejected_codex_start_does_not_speak_false_task_failure()
-    test_delegate_preserves_workspace_reference_without_falsely_amending_new_goal()
-    test_existing_multifile_copy_stays_a_provider_task_in_the_bound_workspace()
-    test_status_noun_in_canonical_amend_still_reaches_the_provider()
-    test_control_plane_persists_amend_lineage_and_inference_audit()
-    test_project_source_resolution_uses_current_tree_not_delivery_history()
-    test_approved_desktop_delivery_outranks_session_project_source_for_amend()
-    test_new_project_delivery_can_record_an_amend_operation()
-    test_project_source_amend_crosses_reference_and_provider_assembly()
-    test_second_provider_uses_project_and_one_off_scratch_routes()
-    test_second_provider_delegate_preserves_product_route_identity()
-    test_original_user_desktop_destination_survives_provider_paraphrase()
-    test_model_target_cannot_override_user_desktop_denial()
-    test_runtime_intake_routes_caller_owned_provider_without_chat_entrypoint()
-    test_second_provider_route_failure_is_visible_and_never_starts()
-    test_stalled_liveness_is_durable_but_execution_stays_running()
-    print("ok: workspace intent routing is bounded, explicit, and pin-aware")
-
-
-if __name__ == "__main__":
-    _main()

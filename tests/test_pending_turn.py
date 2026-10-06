@@ -27,7 +27,7 @@ from core.turn_coordinator import (
 
 def test_all_pending_gates_share_settings_timeout():
     from config.settings import PENDING_TURN_GATE_TIMEOUT_S
-    from core.chat_runtime import PENDING_TURN_GATE_TIMEOUT_S as history_timeout
+    from server.cooperative_chat_ingress import PENDING_TURN_GATE_TIMEOUT_S as history_timeout
     from core.turn_coordinator import PENDING_TURN_GATE_TIMEOUT_S as coordinator_timeout
     from server.handlers.chat_handler import PENDING_TURN_GATE_TIMEOUT_S as visible_timeout
     from tts.pipeline import _PENDING_TURN_GATE_TIMEOUT_S as tts_timeout
@@ -394,34 +394,6 @@ def test_discarded_pending_chat_never_emits_a_user_message():
                 except asyncio.CancelledError:
                     pass
             bus.off(Method.CHAT_USER, capture)
-
-    asyncio.run(run())
-
-
-def test_history_guard():
-    async def run():
-        coord = _fresh_coordinator()
-        from core.chat_runtime import ChatRuntime
-
-        # 作废轮 → 拒绝写历史
-        coord.open_turn(turn_id="h1", local_next_epoch=1, pending=True)
-        coord.discard_turn("h1")
-        assert await ChatRuntime._turn_allows_history("h1") is False
-        # 确认轮 / 无轮次 → 放行
-        coord.open_turn(turn_id="h2", local_next_epoch=2, pending=True)
-        coord.confirm_turn("h2")
-        assert await ChatRuntime._turn_allows_history("h2") is True
-        assert await ChatRuntime._turn_allows_history("") is True
-        # 未决议：等待期内决议 → 按决议放行/拒绝
-        coord.open_turn(turn_id="h3", local_next_epoch=3, pending=True)
-
-        async def _discard_soon():
-            await asyncio.sleep(0.1)
-            coord.discard_turn("h3")
-
-        task = asyncio.create_task(_discard_soon())
-        assert await ChatRuntime._turn_allows_history("h3") is False
-        await task
 
     asyncio.run(run())
 

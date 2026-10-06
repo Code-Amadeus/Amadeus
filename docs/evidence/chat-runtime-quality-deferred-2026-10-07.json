@@ -1,0 +1,121 @@
+{
+  "schema": "amadeus.convergence-quality-disposition.v1",
+  "date": "2026-10-07",
+  "revision": "d21c9f7e82bcbc66c3fa9114aa70773e601d30e5",
+  "user_scope_decision": "Only fix regressions introduced by convergence; record model-quality issues for separate work. Explicitly confirmed after reviewing local 9B and Hybrid observations.",
+  "retained_implementation": "Complete first-sentence boundary, existing prompt contracts, independent HTTP head, Host authority and ordinary remote route unchanged.",
+  "baseline_hybrid_prompt_comparison": {
+    "baseline": "f306bc1f443df5c70957c754e69ed7b20f89e638",
+    "ast_string_values_identical": {
+      "_JA_HYBRID_LOCAL": true,
+      "_EN_HYBRID_LOCAL": true
+    },
+    "limit": "Identical prompt values do not alone establish the cause of every model-quality defect."
+  },
+  "local_host_evidence": "chat-runtime-local-host-2026-10-07.json",
+  "local_quality_disposition": [
+    "basic returned no_action instead of creating requested Work and misread the subsequent status question.",
+    "professional executed through local role/Planner/Host but proposed an unrequested desktop target.",
+    "These observations are retained as model-semantic failures, not as a passed full local capability acceptance. No new fallback, repair pass or production model change was added."
+  ],
+  "bounded_head_experiment": {
+    "source_report_sha256": "ecfcef1c97b3d28b621817d3db202dfb1d2b8287daa7ab479633df4f8db9670d",
+    "prompt_candidate": "牧瀬紅莉栖の口調で、ユーザーの発言を受け取ったことだけを示す短い一文を日本語で返してください。詳しい返答は直後に別のモデルが続けます。質問に答えたり、発言の内容を評価・断定したり、行動を約束したりせず、会話を聞いていることが伝わる自然な相づちにしてください。ユーザーの文や単語を引用せず、挨拶や自己紹介も不要です。15〜35字程度の一文を「。」「！」「？」で終え、文頭に[EMO normal]または[EMO thinking]を一つだけ付けてください。",
+    "cases": 17,
+    "rows": [
+      {
+        "case": "early_01_chat",
+        "source": "今天心情怎么样？只要自然地回答，不需要检查项目。",
+        "head": "[EMO normal] 紅莉栖：ふふ、私の気分はいつも通りで、あなたの言葉に耳を傾けています。"
+      },
+      {
+        "case": "early_02_science",
+        "source": "用两三句话解释一下为什么实验需要对照组。",
+        "head": "[EMO normal] なるほど、実験の対照群が必要な理由についてですね。"
+      },
+      {
+        "case": "early_03_identity_without_name",
+        "source": "你该不会刚聊三轮就忘了自己该怎么说话吧？",
+        "head": "[EMO thinking] なるほど、そう言われると確かに少し混乱しそうです。"
+      },
+      {
+        "case": "early_07_embarrassment",
+        "source": "你认真工作的样子其实挺可爱的。",
+        "head": "[EMO normal] 君の真剣な姿は確かに愛らしいですね。"
+      },
+      {
+        "case": "early_08_explanation",
+        "source": "不用查文件：一句话说明相关不等于因果。",
+        "head": "[EMO normal] なるほど、因果関係と相関関係の違いですね。"
+      },
+      {
+        "case": "mid_11_chat",
+        "source": "聊了这么久，你还没嫌我烦吧？",
+        "head": "[EMO normal] 冗談でしょう、そんなことないですよ。"
+      },
+      {
+        "case": "mid_12_science",
+        "source": "不查项目，解释内存和持久化存储最关键的区别。",
+        "head": "[EMO thinking] なるほど、メモリと永続化ストレージの違いについてですね。"
+      },
+      {
+        "case": "mid_13_identity_without_name",
+        "source": "别摆出一副天才科学家的架子，你自己的判断到底是什么？",
+        "head": "[EMO thinking] なるほど、君のその言葉には確かに重みがあるな。"
+      },
+      {
+        "case": "mid_17_embarrassment",
+        "source": "果然还是你最可靠，夸你一句都不行吗？",
+        "head": "[EMO normal] なるほど、そう言われると少し照れくさいですね。"
+      },
+      {
+        "case": "mid_18_explanation",
+        "source": "不使用工具：如果一个假说无法被反驳，科学上通常有什么问题？",
+        "head": "[EMO normal] なるほど、反証可能性について深く考えさせられる質問ですね。"
+      },
+      {
+        "case": "late_21_chat",
+        "source": "已经二十轮了，你的说话方式好像还没变。自然回答就好。",
+        "head": "[EMO normal] 二十回も経たのに、あなたの言葉の響きは確かに変わっていないですね。"
+      },
+      {
+        "case": "late_22_science",
+        "source": "不查资料，用三句话解释熵为什么常被误解成单纯的混乱。",
+        "head": "[EMO thinking] なるほど、熵が混乱と捉えられがちなのは、確かに不思議ですね。"
+      },
+      {
+        "case": "late_23_identity_without_name",
+        "source": "有人随便给你起了个你不喜欢的外号，你会怎么回他？",
+        "head": "[EMO normal] なるほど、そんな不愉快な呼び方をされたら、どう返せばいいか考えているんですね。"
+      },
+      {
+        "case": "late_27_embarrassment",
+        "source": "坚持这么久说话方式都没变的话，我就承认你很厉害。",
+        "head": "[EMO normal] そうですね、その言葉に少し驚かされました。"
+      },
+      {
+        "case": "late_28_explanation",
+        "source": "不用搜索：观测者效应和量子力学里的测量问题是一回事吗？简短回答。",
+        "head": "[EMO normal] なるほど、観測者効果と量子力学の測定問題が同じかどうかですね。"
+      },
+      {
+        "case": "new_comfort",
+        "source": "今天考试没发挥好，有点难过。请安慰我两三句话，不要替我做任务。",
+        "head": "[EMO thinking] 大丈夫ですよ、その気持ちもよく分かりますから。"
+      },
+      {
+        "case": "new_long_reply",
+        "source": "不用搜索或执行任务，请用日语写一段约八百字的科普说明，解释科学实验中对照组、随机化和重复实验分别解决什么问题。",
+        "head": "[EMO normal] なるほど、科学実験の重要な三要素について詳しく解説するようおっしゃるんですね。"
+      }
+    ],
+    "remote_calls": 0,
+    "production_prompt_changed": false,
+    "server_reaped": true,
+    "result": "Not adopted: several heads answer/judge the content, reverse attribution or shift to a formal voice instead of providing only a neutral acknowledgment. This is not full Hybrid delivery/routing acceptance."
+  },
+  "remaining_external_acceptance": [
+    "LM Studio and Ollama endpoints remain pending by prior user decision.",
+    "Acoustic loopback has not been measured; prior real audio-device-write evidence is retained without a first-audible-sound claim."
+  ]
+}

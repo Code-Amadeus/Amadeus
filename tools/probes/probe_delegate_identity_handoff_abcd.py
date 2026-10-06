@@ -34,7 +34,7 @@ from unittest.mock import patch
 from agent_host.provider_runtime import runtime as provider_runtime
 from llm.prompts import get_system_prompt
 from llm.stream_parser import StreamTagParser
-from tools.probes.control_adjudication_shadow import delegate_attrs
+from tools.text_utils import parse_tags_and_clean
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -212,7 +212,7 @@ def _production_role_prompt() -> str:
         "list_providers",
         return_value=("browser", "codex", "openclaw"),
     ):
-        return get_system_prompt("with_delegate", control_envelope=False)
+        return get_system_prompt("with_delegate")
 
 
 def _experiment_prompts() -> tuple[str, str]:
@@ -226,7 +226,8 @@ def _experiment_prompts() -> tuple[str, str]:
 
 
 def _task_from_reply(reply: str) -> tuple[str, int]:
-    actions = delegate_attrs(reply)
+    _cleaned, parsed = parse_tags_and_clean(str(reply or ""))
+    actions = [dict(action.get("attrs") or {}) for action in parsed if action.get("type") == "DELEGATE"]
     if not actions:
         return "", 0
     return str(actions[0].get("task") or "").strip(), len(actions)

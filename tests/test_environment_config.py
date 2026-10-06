@@ -59,7 +59,7 @@ def test_project_reader_is_shared_for_one_root(tmp_path) -> None:
     assert load_project_environment(tmp_path) is load_project_environment(tmp_path)
 
 
-def test_cooperative_chat_is_the_declared_default_with_explicit_rollback() -> None:
+def test_retired_cooperative_setting_remains_readable_for_migration() -> None:
     from config import settings
 
     field = next(field for field in settings.declared_environment_fields()
@@ -68,6 +68,79 @@ def test_cooperative_chat_is_the_declared_default_with_explicit_rollback() -> No
     assert EnvironmentReader({}).boolean("COOPERATIVE_CHAT_ENABLED", True) is True
     assert EnvironmentReader({"COOPERATIVE_CHAT_ENABLED":"false"}).boolean(
         "COOPERATIVE_CHAT_ENABLED", True) is False
+
+
+@pytest.mark.parametrize("source", ["environment", "dotenv"])
+def test_explicit_retired_false_warns_without_rewriting_or_blocking_startup(source):
+    import json
+    import subprocess
+    import sys
+
+    code = '''
+import json
+import config.environment as environment
+reader = environment.EnvironmentReader(
+    {"COOPERATIVE_CHAT_ENABLED": "false"},
+    dotenv_keys=frozenset({"COOPERATIVE_CHAT_ENABLED"}) if SOURCE == "dotenv" else frozenset(),
+)
+environment.load_project_environment = lambda root: reader
+from config import settings
+print(json.dumps({"facts": settings.retired_settings(), "input": settings.COOPERATIVE_CHAT_ENABLED}))
+'''.replace('SOURCE', repr(source))
+    result = subprocess.run([sys.executable, "-W", "always", "-c", code],
+        capture_output=True, text=True, check=True)
+    assert "retired and ignored" in result.stderr
+    assert "never prohibited Work" in result.stderr
+    payload = json.loads(result.stdout.splitlines()[-1])
+    assert payload == {"input": False, "facts": [{
+        "key": "COOPERATIVE_CHAT_ENABLED", "value": False,
+        "source": source, "effective_behavior": "cooperative_only",
+    }]}
+
+
+def test_environment_source_distinguishes_process_precedence_from_dotenv(tmp_path, monkeypatch):
+    (tmp_path / ".env").write_text("CONFIG_TEST_SOURCE=dotenv\nCONFIG_TEST_OVERRIDE=dotenv\n", encoding="utf-8")
+    monkeypatch.delenv("CONFIG_TEST_SOURCE", raising=False)
+    monkeypatch.setenv("CONFIG_TEST_OVERRIDE", "process")
+    reader = load_project_environment(tmp_path)
+    assert reader.source("CONFIG_TEST_SOURCE") == "dotenv"
+    assert reader.source("CONFIG_TEST_OVERRIDE") == "environment"
+    assert reader.source("CONFIG_TEST_UNSET") == "default"
+
+
+def test_obsolete_runtime_choices_are_evidence_only_and_planner_budgets_remain():
+    import json
+    import subprocess
+    import sys
+
+    code = '''
+import json
+import config.environment as environment
+values = {
+    "WORK_DELEGATE_REPAIR": "true", "DELEGATE_RESEND_ON_OMISSION": "true", "LLM_DELEGATE_TOOL_CALLS": "true",
+    "ACTION_EXISTENCE_CONTROL_ENVELOPE_ENABLED": "true",
+    "CONTROL_DECISION_SHADOW_ENABLED": "false", "CONTROL_DECISION_AUTHORITY_ENABLED": "false",
+    "COMPOUND_CONTROL_AUTHORITY_ENABLED": "false", "COMPOUND_CONTROL_SHADOW_ENABLED": "true",
+    "ACTION_EXISTENCE_COMMITMENT_RECOVERY_MODE": "shadow", "CONTROL_DECISION_AUTHORITY_TIMEOUT_S": "12.5",
+    "DEEPSEEK_API_KEY": "synthetic-secret-never-project",
+}
+reader = environment.EnvironmentReader(values)
+environment.load_project_environment = lambda root: reader
+from config import settings
+assert all(not hasattr(settings, key) for key in values if key != "DEEPSEEK_API_KEY")
+assert settings.CONTROL_DECISION_PROJECT_LIMIT == 200
+assert settings.CONTROL_DECISION_WORK_ITEM_LIMIT == 200
+assert settings.CONTROL_DECISION_EXHAUSTIVE_CANDIDATE_LIMIT == 64
+assert settings.CONTROL_DECISION_MAX_TOKENS == 900
+assert settings.CONTROL_DECISION_TIMEOUT_S == 45
+print(json.dumps(settings.retired_settings()))
+'''
+    result = subprocess.run([sys.executable, "-W", "always", "-c", code], capture_output=True, text=True, check=True)
+    facts = json.loads(result.stdout.splitlines()[-1])
+    assert len(facts) == 10
+    assert all(row["source"] == "environment" and row["effective_behavior"] for row in facts)
+    assert "synthetic-secret-never-project" not in result.stdout + result.stderr
+    assert "retired and ignored" in result.stderr
 
 
 def test_professional_work_planner_defaults_on_with_explicit_rollback() -> None:

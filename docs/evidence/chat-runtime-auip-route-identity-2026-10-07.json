@@ -1,0 +1,41 @@
+{
+  "schema": "amadeus.auip-route-identity-check.v1",
+  "date": "2026-10-07",
+  "user_checkout": {
+    "branch": "codex/local-pr155-2g",
+    "commit": "bfb67318ff6d016806b27bf5e0cc15809b7f2126",
+    "scope": "Existing user checkout configuration loaded by its own Python environment; no application startup or settings mutation.",
+    "effective_settings": {
+      "AUIP_APPSESSION_ROLE_BRANCH_MODE": "b2",
+      "AUIP_B2_OPEN_PAYLOAD_MODE": "candidate",
+      "AUIP_PRESENTATION_MODE": "structured",
+      "AUIP_CONTROL_DECISION_ENABLED": true,
+      "AUIP_ACTION_PROVIDER": "openai",
+      "AUIP_ACTION_MODEL": "gpt-5.6-terra",
+      "AUIP_ACTION_REASONING_EFFORT": "low",
+      "AUIP_ACTION_SERVICE_TIER": "fast",
+      "COOPERATIVE_CHAT_ENABLED": true,
+      "COOPERATIVE_WORK_PLANNER_ENABLED": true
+    },
+    "evidence": [
+      "The user's .env explicitly selects B2; values above omit credentials and endpoints.",
+      "config/settings.py:904-918 defaults to B2 and candidate open payloads, describing both as promoted Alpha defaults.",
+      "server/app.py:2269-2319 constructs the B2 coordinator; :2408-2411 wires Cooperative AUIP step_request to execute_user_decision."
+    ]
+  },
+  "baseline_comparison": {
+    "baseline": "f306bc1f443df5c70957c754e69ed7b20f89e638",
+    "command": "git diff --quiet f306bc1f443df5c70957c754e69ed7b20f89e638..HEAD -- server/auip_b2.py server/auip_b2_role_llm.py server/auip_action_candidates.py server/auip_engagement.py server/cooperative_chat_ingress.py server/app.py",
+    "cwd": "user checkout",
+    "exit_code": 0,
+    "meaning": "The selected AUIP and assembly files are identical between the construction baseline and the user's current checkout."
+  },
+  "probe_identity": {
+    "require_b2": "Asserts the selected mode and observed B2 receipt route; does not set AUIP_APPSESSION_ROLE_BRANCH_MODE.",
+    "wrapper_override": "Copies the user's action provider/model/effort/tier, but does not override role branch or open-payload mode.",
+    "observed_backend_log": "AUIP-B2 foreground route enabled provider=openai model=gpt-5.6-terra effort=low service_tier=fast open_payload=candidate",
+    "actual_chat_route": "professional and basic in separate runs"
+  },
+  "coverage_limit": "The seeded Gomoku journey exercises B2 closed candidates. It does not establish acceptance of open-payload actions or continuous controller execution. B2 is an AUIP action owner, independent of the basic/professional Chat strategy choice.",
+  "implementation_state_at_check": "AUIP semantic repairs are frozen and uncommitted while their mixed-clause regression contract is reviewed. No original checkout files or configuration were changed."
+}

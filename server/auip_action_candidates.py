@@ -99,6 +99,8 @@ def compile_auip_action_candidates(
             return
         output[candidate.candidate_id] = candidate
 
+    available_actions = context.get("available_actions")
+    available_actions = available_actions if isinstance(available_actions, Mapping) else {}
     for option in context.get("available_choice_options") or []:
         if not isinstance(option, Mapping):
             continue
@@ -106,16 +108,18 @@ def compile_auip_action_candidates(
         if not action_type:
             continue
         expected_action_types.add(action_type)
+        raw_spec = available_actions.get(action_type)
+        spec = raw_spec if isinstance(raw_spec, Mapping) else {}
+        description = str(spec.get("description") or "").strip()
+        label = str(option.get("label") or action_type)
         append(
             action_type=action_type,
             payload=option.get("payload") or {},
-            semantic_label=str(option.get("label") or action_type),
+            semantic_label=f"{label}: {description}" if description else label,
             source="choice/v1",
         )
 
     state = context.get("state") if isinstance(context.get("state"), Mapping) else {}
-    available_actions = context.get("available_actions")
-    available_actions = available_actions if isinstance(available_actions, Mapping) else {}
     for action_index, (raw_type, raw_spec) in enumerate(sorted(available_actions.items())):
         action_type = str(raw_type or "").strip().lower()
         if not action_type or action_type in choice_types:

@@ -2,21 +2,22 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 
 from agent_host.provider_contract import select_provider
-from core.chat_runtime import _bounded_delegate_source_context
 from llm.prompts import finalize_system_prompt_language, get_system_prompt
 from llm.stream_parser import StreamTagParser
 from server.control_ledger import ControlLedgerConflict
 from server.control_proposal import seal_control_proposals
-from server.control_adjudication import RuntimeControlDecisionResolver
+from server.control_context import capture_control_context
 from server.provider_event_ingestion import ProviderEventIngestor
 from server.provider_requirements import DelegateRequirementFacts, compile_delegate_requirements
 from server.task_lookup import pre_turn_resolve, set_turn_resolution
 from server.turn_admission import admission_transcript_hash
 from server.work_context import augment_system_prompt_with_active_provider_context
 from server.work_control import CurrentTurnSourceSpanV1, WorkEffectPayloadV3, WorkAmendPayloadV4, WorkContextPayloadV5
-from tools.probes.probe_whole_turn_control import whole_turn_owner
+from server.whole_turn_control import whole_turn_owner
+from server.work_planner_prompt import get_work_planner_prompt
 from dataclasses import asdict
 from server import compound_control as compound, control_decision
 
@@ -81,9 +82,12 @@ class AcceptedWorkChatRunner:
             async def query(messages):
                 return await self.query("control", messages)
 
-            context = RuntimeControlDecisionResolver(coordinator=self.coordinator, query=query).capture_context(batch)
+            provider_ids = frozenset(manifest.provider_id for manifest in self.executor.runtime.provider_manifests())
+            context = capture_control_context(self.coordinator, batch,
+                semantic_prompt=get_work_planner_prompt(tuple(sorted(provider_ids))),
+                project_limit=200, work_item_limit=200, exhaustive_candidate_limit=64)
             plan = await whole_turn_owner(context.messages, batch.decision_payloads(), context.candidates,
-                complete=context.catalog_complete, query=query, provider_ids=context.provider_ids,
+                complete=context.catalog_complete, query=query, provider_ids=provider_ids,
                 candidate_limit=context.exhaustive_candidate_limit, proposal_controls=batch.proposals)
             record["plan_status"] = plan.status
             record["operation_count"] = len(plan.operations)
@@ -136,7 +140,7 @@ class AcceptedWorkChatRunner:
             payload = payload_type(provider=selection.provider_id, task=op.source_clause,
                 title=ProviderEventIngestor.task_title(op.source_clause), project_id=project_id,
                 session_id=admission.session_id, utterance_id=admission.utterance_id, turn_id=admission.turn_id,
-                source_user_text=text, source_user_context=_bounded_delegate_source_context(history, current_user=text),
+                source_user_text=text, source_user_context=json.dumps(history[-6:], ensure_ascii=False)[-2000:],
                 source_context_scope=admission.dialogue_source_scope,
                 source_proof=CurrentTurnSourceSpanV1.capture(admission, text, start=clause.start, end=clause.end),
                 requirements=requirements,

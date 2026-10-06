@@ -227,7 +227,7 @@ async def test_cooperative_completion_cannot_overwrite_clean_role_text(monkeypat
     handler = ChatHandler()
     handler._chat_epoch = 7
     handler._active_turn_id = "turn-clean"
-    handler._control_turn_runner = AsyncMock(return_value=raw)
+    handler._turn_runner = AsyncMock(return_value=raw)
     handler._turn_allows_visible_emit = AsyncMock(return_value=True)
     handler._notify_coordinator_finished = Mock()
     monkeypatch.setattr("server.handlers.chat_handler.bus.emit", emitted)
@@ -252,7 +252,7 @@ async def test_chat_error_retains_its_originating_session(monkeypatch):
     handler = ChatHandler()
     handler._chat_epoch = 7
     handler._active_turn_id = "failed-turn"
-    handler._control_turn_runner = AsyncMock(side_effect=RuntimeError("query failed"))
+    handler._turn_runner = AsyncMock(side_effect=RuntimeError("query failed"))
     handler._turn_allows_visible_emit = AsyncMock(return_value=True)
     handler._notify_coordinator_finished = Mock()
     emitted = AsyncMock()

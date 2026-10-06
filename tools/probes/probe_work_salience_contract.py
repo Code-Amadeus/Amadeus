@@ -126,7 +126,7 @@ def _system_prompt() -> str:
         patch("tts.pipeline.TTS_OUTPUT_LANGUAGE", "日文"),
     ):
         return finalize_system_prompt_language(
-            get_system_prompt("with_delegate", control_envelope=False)
+            get_system_prompt("with_delegate")
         )
 
 

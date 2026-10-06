@@ -296,7 +296,6 @@ async def test_scheduler_merges_aliases_but_stops_at_changed_reference(backend, 
 
 async def test_mixed_opening_bypasses_default_audio_cache_and_normal_reuses_it(backend, monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
-    from unittest.mock import AsyncMock
     from tts import pipeline
     backend._configure_emotion_references()
     runtime = TTSRuntimeAdapter(backend)
@@ -425,107 +424,45 @@ def test_pack_validation_import_does_not_initialize_runtime_settings():
 
 
 @pytest.fixture
-def local_role_stream(backend, monkeypatch):
+def role_text_stream(backend, monkeypatch):
     from core import chat_runtime as chat
     from tts import pipeline
     monkeypatch.setattr(pipeline, '_tts_runtime', TTSRuntimeAdapter(backend))
     monkeypatch.setattr(pipeline, 'current_tts_language_code', lambda: 'ja')
     monkeypatch.setattr(chat, '_pre_translation_enabled', lambda: False)
-    monkeypatch.setattr(chat, '_turn_system_prompt', lambda *args: 'Synthetic role')
-    monkeypatch.setattr(chat, '_wrap_user_message_for_language_lock', lambda text: text)
     expression = Mock()
     monkeypatch.setattr(chat, '_get_expr_ctrl', lambda: expression)
-    fallback = Mock(side_effect=AssertionError('Unexpected local fallback'))
-    monkeypatch.setattr(chat, 'local_llm_query', fallback)
-    sleep = AsyncMock()
-    monkeypatch.setattr(chat.asyncio, 'sleep', sleep)
 
-    async def run(local_type, chunks):
+    async def run(chunks):
         queue = asyncio.Queue()
-        queued_before_chunk = []
-
-        async def content():
-            for chunk in chunks:
-                queued_before_chunk.append(queue.qsize())
-                if local_type == 'ollama':
-                    payload = json.dumps({'message': {'content': chunk}})
-                else:
-                    payload = 'data: ' + json.dumps({'choices': [{'delta': {'content': chunk}}]})
-                yield (payload + '\n').encode()
-            if local_type == 'ollama':
-                yield b'{"done":true}\n'
-
-        class Session:
-            async def __aenter__(self): return self
-            async def __aexit__(self, *args): return None
-            def post(self, *args, **kwargs):
-                self.content = content()
-                return self
-            def raise_for_status(self): pass
-
-        monkeypatch.setattr(chat.aiohttp, 'ClientSession', Session)
         runtime = chat.ChatRuntime()
         runtime.configure(pending_sentence_items=queue)
-        runtime.local_llm_type = local_type
-        state = chat._TurnState(gui_callback=None, question='Synthetic question', turn_id='local-emotion')
-        await runtime._run_local(state, state.question, None, False, 'local')
-        fallback.assert_not_called()
-        items = []
-        while not queue.empty(): items.append(queue.get_nowait())
-        return items, queued_before_chunk, expression, sleep
+        stream = runtime.begin_role_text_stream(turn_id='role-emotion')
+        queued_before_chunk = []
+        for chunk in chunks:
+            queued_before_chunk.append(queue.qsize())
+            await stream.feed(chunk)
+        await stream.finish()
+        items = [queue.get_nowait() for _ in range(queue.qsize())]
+        return items, queued_before_chunk, expression
 
     return run
 
 
-@pytest.mark.parametrize('local_type', ['llama_server', 'lmstudio', 'ollama'])
 @pytest.mark.parametrize('chunk_size', [1, 7, 1000])
-async def test_local_llm_routes_emotions_and_flushes_trailing_text(backend, local_role_stream, local_type, chunk_size):
+async def test_role_text_routes_emotions_and_flushes_trailing_text(backend, role_text_stream, chunk_size):
     backend._configure_emotion_references()
     text = '普通[EMO thinking]に続ける。[EMO shy]照れて[EMO blush]しまう。[EMO normal]戻る。末尾'
     chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
-    items, _, expression, sleep = await local_role_stream(local_type, chunks)
+    items, _, expression = await role_text_stream(chunks)
     assert [(item.text, item.emotion) for item in items] == [
         ('普通に続ける。', ''), ('照れてしまう。', 'shy'), ('戻る。', ''), ('末尾', '')]
     actions = [action for call in expression.register_sentence_actions.call_args_list for action in call.args[1]]
     assert [action['attrs']['preset'] for action in actions] == ['thinking', 'shy', 'blush', 'normal']
-    assert [call.args for call in sleep.await_args_list] == [(0.01,)] * len(chunks)
 
 
-@pytest.mark.parametrize('local_type', ['llama_server', 'lmstudio', 'ollama'])
-async def test_disabled_local_llm_keeps_first_chunk_boundary_policy(local_role_stream, local_type):
-    items, queued, expression, sleep = await local_role_stream(local_type, ['普通。[EMO shy]続き', 'です。', '末尾'])
-    assert queued == [0, 0, 1]
-    assert [(item.text, item.emotion) for item in items] == [('普通。続きです。', ''), ('末尾', '')]
+async def test_disabled_role_text_keeps_first_sentence_and_trailing_flush(role_text_stream):
+    items, queued, expression = await role_text_stream(['普通。[EMO shy]続き', 'です。', '末尾'])
+    assert queued == [0, 1, 2]
+    assert [(item.text, item.emotion) for item in items] == [('普通。', ''), ('続きです。', ''), ('末尾', '')]
     assert expression.register_sentence_actions.call_args.args[1][0]['attrs']['preset'] == 'shy'
-    assert [call.args for call in sleep.await_args_list] == [(0.05,), (0.01,)]
-
-
-@pytest.mark.parametrize('finish', ['exhaust', 'close', 'error'])
-def test_emotion_stream_closes_inner_iterator_exactly_once(monkeypatch, finish):
-    from tts import pipeline
-
-    class Stream:
-        started = False
-        closed = 0
-        def __iter__(self): return self
-        def __next__(self):
-            if not self.started:
-                self.started = True
-                return 'chunk'
-            if finish == 'error':
-                raise ValueError('synthetic inference failure')
-            raise StopIteration
-        def close(self): self.closed += 1
-
-    inner = Stream()
-    monkeypatch.setattr(pipeline, '_tts_runtime', SimpleNamespace(infer_stream=lambda **kwargs: inner))
-    outer = pipeline._emotion_stream('', 'lifecycle')
-    assert next(outer) == 'chunk'
-    if finish == 'close':
-        outer.close()
-    elif finish == 'error':
-        with pytest.raises(ValueError, match='synthetic inference failure'):
-            next(outer)
-    else:
-        assert list(outer) == []
-    assert inner.closed == 1
