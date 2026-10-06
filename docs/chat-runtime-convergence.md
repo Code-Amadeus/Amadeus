@@ -135,8 +135,9 @@ retry added one Attempt to the same WorkItem and produced the exact recovery
 artifact; read-only queries added no Work. This is bounded headless
 professional/DeepSeek/Codex evidence, with TTS off.
 
-Provider handoff continues to prefer the selected operation's source clause.
-The experimental expansion to the full current message has been withdrawn
-from this change; surrounding-constraint propagation needs separate validation
-against multi-operation scope. Earlier execution evidence that used that
-experiment is not proof of constraint delivery in the final implementation.
+Provider handoff keeps the selected operation as the assigned task. The earlier
+experiment that replaced its source evidence with the full message was
+withdrawn from retirement. A separately reviewed [handoff change](provider-handoff-context.md)
+retains the selected source and additionally quotes the complete current
+message as context for applicable constraints. It does not expand Host task,
+target or permission authority; its bounded scope evidence is recorded separately.
