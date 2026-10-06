@@ -1,4 +1,4 @@
-﻿"""Adapter for LLM chat pipeline – wraps stream_llm_query from main.py."""
+"""Chat transport, source admission and foreground turn lifecycle."""
 
 from __future__ import annotations
 
@@ -31,11 +31,9 @@ class ChatHandler(RequestHandler):
 
     def __init__(self) -> None:
         self._stream_task: asyncio.Task | None = None
-        self._stream_llm_query = None          # injected by configure()
+        self._turn_runner = None              # one injected execution owner
         self._pending_sentence_items = None
         self._on_turn_finished = None
-        self._interaction_branch_router = None
-        self._assistant_voice_sink = None
         self._presentation_interrupt = None
         self._background_interaction_interrupt = None
         self._abort_sink = None
@@ -50,7 +48,6 @@ class ChatHandler(RequestHandler):
         self._control_fence_scope = ""
         self._control_authority_mode = ""
         self._control_root_id = ""
-        self._control_turn_runner = None
         self._control_admission_preparer = None
         self._control_allows_pending = False
         self._control_ingress_lock = asyncio.Lock()
@@ -61,21 +58,17 @@ class ChatHandler(RequestHandler):
 
     def configure(
         self,
-        stream_llm_query,
-        pending_sentence_items,
+        stream_llm_query=None,
+        pending_sentence_items=None,
         on_turn_finished=None,
-        interaction_branch_router=None,
-        assistant_voice_sink=None,
         presentation_interrupt=None,
         background_interaction_interrupt=None,
         abort_sink=None,
         permission_sink=None,
     ) -> None:
-        self._stream_llm_query = stream_llm_query
+        self._turn_runner = stream_llm_query
         self._pending_sentence_items = pending_sentence_items
         self._on_turn_finished = on_turn_finished
-        self._interaction_branch_router = interaction_branch_router
-        self._assistant_voice_sink = assistant_voice_sink
         self._presentation_interrupt = presentation_interrupt
         self._background_interaction_interrupt = background_interaction_interrupt
         self._abort_sink = abort_sink
@@ -94,10 +87,9 @@ class ChatHandler(RequestHandler):
         """Install one explicit Host source-admission assembly.
 
         Install once while quiescent. The mode is a Host cohort, never a
-        request/model field. New mode needs its own whole-turn runner. Session
-        assembly separately installs invalidate_session_context as its guard.
-        The default app bootstrap leaves this unset; the cooperative opt-in
-        installs the existing legacy cohort with a pre-admission context hook.
+        request/model field. Cooperative Chat supplies the single admitted
+        turn runner. Session assembly separately installs
+        invalidate_session_context as its guard.
         """
         from core.turn_coordinator import get_turn_coordinator
 
@@ -105,7 +97,7 @@ class ChatHandler(RequestHandler):
             raise TurnAuthorityError("control ingress requires a new quiescent Handler")
         if not isinstance(fence_scope, str) or not fence_scope.strip():
             raise ValueError("an explicit foreground fence scope is required")
-        if authority_mode not in {"legacy", "turn_decision"}:
+        if authority_mode != "turn_decision":
             raise ValueError("an explicit Host authority mode is required")
         coordinator = get_turn_coordinator()
         snapshot = coordinator.snapshot()
@@ -119,10 +111,9 @@ class ChatHandler(RequestHandler):
         self._control_fence_scope = fence_scope
         self._control_authority_mode = authority_mode
         self._control_root_id = fence["root_id"] if fence else ""
-        self._control_turn_runner = turn_runner
+        self._turn_runner = turn_runner
         self._control_admission_preparer = admission_preparer
-        self._control_allows_pending = bool(allows_pending and authority_mode == "turn_decision"
-            and turn_runner is not None)
+        self._control_allows_pending = bool(allows_pending and turn_runner is not None)
 
     def _control_replay(self, admission: TurnAdmissionRecord) -> dict[str, Any] | None:
         stored = self._control_ledger.find_admission(
@@ -367,11 +358,9 @@ class ChatHandler(RequestHandler):
             sm.require_session_selection(selection_revision)
             if not os.path.exists(sm._session_path(session_id)):
                 raise TurnAuthorityError("managed ingress requires an already prepared Session")
-            if self._control_authority_mode == "turn_decision" and self._control_turn_runner is None:
+            if self._turn_runner is None:
                 raise TurnAuthorityError("TurnDecision whole-turn runner is not configured")
-        if self._stream_llm_query is None and not (
-            prepared is not None and prepared.authority_mode == "turn_decision" and self._control_turn_runner is not None
-        ):
+        if self._turn_runner is None:
             raise RuntimeError("chat handler not configured")
         # A new confirmed user turn supersedes an unfinished role turn.  Use
         # the existing compound interrupt owner so generation, queued speech,
@@ -393,7 +382,6 @@ class ChatHandler(RequestHandler):
         # Session. Relabelling the global history with a new id is not a load.
         os.environ.setdefault("AMADEUS_HEADLESS", "1")
         from core import session_manager as sm
-        from core.chat_runtime import get_chat_runtime
 
         sm.require_session_selection(selection_revision)
         if self._control_ledger is not None and not os.path.exists(sm._session_path(session_id)):
@@ -411,7 +399,6 @@ class ChatHandler(RequestHandler):
                         raise RuntimeError("could not load the requested Session context")
                 else:
                     sm.create_session(session_id)
-            get_chat_runtime().enable_conversation = True
         history_snapshot = sm.conversation_history.snapshot()
         loop = asyncio.get_running_loop()
         if self._control_admission_preparer is not None:
@@ -566,105 +553,8 @@ class ChatHandler(RequestHandler):
         history_snapshot: ConversationHistory | None = None,
     ) -> None:
         try:
-            new_mode = bool(
-                turn_admission is not None
-                and turn_admission.authority_mode == "turn_decision"
-            )
-            branch_result = None
-            if not new_mode:
-                branch_result = await self._try_interaction_branch_route(
-                    text=text, turn_id=turn_id, session_id=session_id,
-                    routing_scope=interaction_branch_routing_lease,
-                    turn_admission=turn_admission,
-                )
-            if branch_result is not None:
-                if chat_epoch != self._chat_epoch or turn_id != self._active_turn_id:
-                    logger.info(
-                        "drop stale interaction-branch completion turn_id=%s",
-                        turn_id,
-                    )
-                    return
-                self._observe_direct_branch(turn_id, branch_result)
-                full = str(branch_result.get("display_text") or "").strip()
-                if full:
-                    callback(full)
-                self._active_accumulated_text = full
-                self._last_assistant_turn_id = turn_id
-                self._last_assistant_text = full
-                if not await self._turn_allows_visible_emit(turn_id):
-                    logger.info("drop pending-discarded chat completion turn_id=%s", turn_id)
-                    return
-                if session_id and branch_result.get("save_history", True) is not False:
-                    self._save_direct_turn(
-                        session_id=session_id,
-                        user_text=text,
-                        assistant_text=full,
-                        turn_id=turn_id,
-                        branch_id=str(branch_result.get("branch_id") or ""),
-                    )
-                await bus.emit(
-                    Method.CHAT_COMPLETE,
-                    {
-                        "turn_id": turn_id,
-                        "session_id": session_id,
-                        "full_text": full,
-                        # Direct host/provider branches must remain observable to
-                        # clients and acceptance probes.  The normal LLM path has
-                        # no route_kind, so consumers can distinguish a
-                        # deterministic ledger read from generated conversation
-                        # without parsing the answer text.
-                        "source": str(branch_result.get("source") or ""),
-                        "route_kind": str(branch_result.get("route_kind") or ""),
-                        "provider": str(branch_result.get("provider") or ""),
-                        "status_fact_kind": str(
-                            branch_result.get("status_fact_kind") or ""
-                        ),
-                        "status_fact_source": str(
-                            branch_result.get("status_fact_source") or ""
-                        ),
-                        "project_id": str(branch_result.get("project_id") or ""),
-                        "work_item_id": str(
-                            branch_result.get("work_item_id") or ""
-                        ),
-                        "app_session_id": str(
-                            branch_result.get("app_session_id") or ""
-                        ),
-                        "candidate_id": str(
-                            branch_result.get("candidate_id") or ""
-                        ),
-                        "proposal_id": str(
-                            branch_result.get("proposal_id") or ""
-                        ),
-                        "action_id": str(branch_result.get("action_id") or ""),
-                    },
-                )
-                self._notify_coordinator_finished(turn_id, ok=True)
-                voice_receipt: dict[str, Any] = {}
-                if full and bool(branch_result.get("speak", True)):
-                    voice_receipt = await self._speak_direct_branch_reply(
-                        full,
-                        branch_result,
-                        turn_id=turn_id,
-                    )
-                await self._notify_direct_branch_delivery(
-                    branch_result,
-                    visible=True,
-                    voice_receipt=voice_receipt,
-                )
-                if self._on_turn_finished is not None and source == "wake":
-                    status = "complete" if full else "empty"
-                    result = self._on_turn_finished(
-                        {"status": status, "turn_id": turn_id, "source": source}
-                    )
-                    if hasattr(result, "__await__"):
-                        await result
-                if turn_id == self._active_turn_id:
-                    self._active_turn_id = ""
-                    self._active_accumulated_text = ""
-                return
-
             visual_context = await self._prepare_visual_context(text=text, visual_request=visual_request)
-            runner = self._control_turn_runner if new_mode else self._stream_llm_query
+            runner = self._turn_runner
             if runner is None:
                 raise TurnAuthorityError("the admitted turn has no execution owner")
             full = await runner(
@@ -745,77 +635,6 @@ class ChatHandler(RequestHandler):
                 self._active_turn_id = ""
                 self._active_accumulated_text = ""
 
-    async def _try_interaction_branch_route(
-        self,
-        *,
-        text: str,
-        turn_id: str,
-        session_id: str,
-        routing_scope: dict[str, Any] | None = None,
-        turn_admission: TurnAdmissionRecord | None = None,
-    ) -> dict[str, Any] | None:
-        router = self._interaction_branch_router
-        if router is None:
-            return None
-        try:
-            result = router(
-                text=text,
-                session_id=session_id,
-                turn_id=turn_id,
-                routing_scope=(
-                    dict(routing_scope) if routing_scope is not None else None
-                ),
-                turn_admission=turn_admission,
-            )
-            if hasattr(result, "__await__"):
-                result = await result
-            if isinstance(result, dict):
-                transition = result.get("routing_scope_transition")
-                if isinstance(transition, dict) and routing_scope is not None:
-                    routing_scope.clear()
-                    routing_scope.update(dict(transition))
-                if result.get("handled"):
-                    return result
-        except Exception as exc:
-            logger.exception("interaction branch router failed")
-            scope_state = (
-                str(routing_scope.get("state") or "").strip().lower()
-                if isinstance(routing_scope, dict)
-                else ""
-            )
-            if scope_state in {
-                "bound",
-                "absent",
-                "reserved",
-                "quarantined",
-                "invalid",
-            }:
-                # The direct route may have crossed an execution boundary before
-                # raising. Never invoke a second planner for the same utterance
-                # when effect state is unknown.
-                return {
-                    "handled": True,
-                    "route_kind": "interaction_route_failed_closed",
-                    "branch_id": str(
-                        routing_scope.get("branch_id") or ""
-                    ),
-                    "provider": "browser",
-                    "display_text": (
-                        "The interaction route failed before I could confirm its "
-                        "execution state, so I did not submit the same request again."
-                    ),
-                    "voice_text_ja": (
-                        "操作の実行状態を確認できないまま経路で問題が起きたため、"
-                        "同じ依頼は重ねて送っていないわ。"
-                    ),
-                    "speak": True,
-                    "execution_uncertain": True,
-                    "continuation_disposition": "failed",
-                    "continuation_reason": (
-                        f"interaction_route_error:{type(exc).__name__}"
-                    ),
-                }
-        return None
 
     @staticmethod
     async def _prepare_visual_context(*, text: str, visual_request: Any = None) -> dict[str, Any] | None:
@@ -827,117 +646,6 @@ class ChatHandler(RequestHandler):
             logger.exception("visual runtime failed; continuing without visual context")
             return None
 
-    @staticmethod
-    def _save_direct_turn(
-        *,
-        session_id: str,
-        user_text: str,
-        assistant_text: str,
-        turn_id: str = "",
-        branch_id: str = "",
-    ) -> None:
-        try:
-            os.environ.setdefault("AMADEUS_HEADLESS", "1")
-            from core import session_manager as sm
-            from core.chat_runtime import get_chat_runtime
-
-            if session_id and sm.get_current_session_id() != session_id:
-                # A direct Browser reply can complete after the user switches
-                # conversations. Never replace the globally loaded transcript
-                # merely to persist that stale completion.
-                logger.info(
-                    "skip direct branch history for inactive session=%s current=%s",
-                    session_id,
-                    sm.get_current_session_id() or "",
-                )
-                return
-            get_chat_runtime().enable_conversation = True
-            sm.conversation_history.add_user(str(user_text or ""))
-            entry_count = 1
-            if assistant_text:
-                sm.conversation_history.add_assistant(
-                    str(assistant_text or ""),
-                    turn_id=turn_id,
-                )
-                entry_count = 2
-            # 快通道直达的分支操作轮打标（squash-merge 区间成员；
-            # 正常对白轮不带 branch_id，坍缩时原样保留）
-            if branch_id:
-                for entry in sm.conversation_history.dialog[-entry_count:]:
-                    if isinstance(entry, dict):
-                        entry["branch_id"] = str(branch_id)
-            sm.save_session(session_id, enable_conversation=True)
-            if sm.get_session_title(session_id) == session_id:
-                title = str(user_text or "").strip().replace("\n", " ")[:30]
-                if title:
-                    sm.set_session_title(session_id, title)
-        except Exception:
-            logger.exception("failed to save direct interaction branch turn")
-
-    async def _speak_direct_branch_reply(
-        self,
-        text: str,
-        branch_result: dict[str, Any],
-        *,
-        turn_id: str,
-    ) -> dict[str, Any]:
-        """Render a direct branch answer on the normal character voice lane.
-
-        Browser continuation and deterministic host status reads already own
-        their answer text.  The sink performs voice/presentation only; it does
-        not reinterpret provider logs or make a second observer decision.
-        """
-        voice_sink = self._assistant_voice_sink
-        if voice_sink is None:
-            return {"status": "unavailable", "reason": "voice_sink_missing"}
-        line_id = str(
-            branch_result.get("line_id")
-            or f"direct-branch-{branch_result.get('branch_id') or turn_id}"
-        )
-        payload = {
-            "display_text": str(text or ""),
-            "voice_text_ja": str(branch_result.get("voice_text_ja") or ""),
-            "emotion": str(branch_result.get("emotion") or "thinking"),
-            "duration_ms": 5600,
-            "line_id": line_id,
-            "turn_id": turn_id,
-            "complete_turn": True,
-            "source": str(branch_result.get("source") or "browser_conversation_fork"),
-            "action": "assistant_reply",
-            "terminal": False,
-            "branch_id": str(branch_result.get("branch_id") or ""),
-            "provider": str(branch_result.get("provider") or "browser"),
-        }
-        try:
-            result = voice_sink(payload)
-            if hasattr(result, "__await__"):
-                result = await result
-            return dict(result) if isinstance(result, dict) else {"status": "unknown"}
-        except Exception:
-            logger.exception("failed to speak direct branch reply")
-            return {"status": "error", "reason": "voice_sink_failed"}
-
-    @staticmethod
-    async def _notify_direct_branch_delivery(
-        branch_result: dict[str, Any],
-        *,
-        visible: bool,
-        voice_receipt: dict[str, Any],
-    ) -> None:
-        observer = branch_result.get("delivery_observer")
-        if not callable(observer):
-            return
-        try:
-            result = observer(
-                {
-                    "visible": bool(visible),
-                    "voice": dict(voice_receipt or {}),
-                }
-            )
-            if hasattr(result, "__await__"):
-                await result
-        except Exception:
-            logger.exception("direct branch delivery observer failed")
 
     @staticmethod
     def _notify_coordinator_finished(turn_id: str, *, ok: bool) -> None:
@@ -1021,18 +729,6 @@ class ChatHandler(RequestHandler):
         except Exception:
             logger.debug("turn decision admission observation failed", exc_info=True)
 
-    @staticmethod
-    def _observe_direct_branch(turn_id: str, result: dict[str, Any]) -> None:
-        try:
-            from server.turn_decision_shadow import (
-                get_enabled_turn_decision_shadow_observer,
-            )
-
-            shadow = get_enabled_turn_decision_shadow_observer()
-            if shadow is not None:
-                shadow.observe_direct_branch(turn_id, result)
-        except Exception:
-            logger.debug("direct branch decision observation failed", exc_info=True)
 
     def _advance_chat_epoch(self) -> int:
         """向 TurnCoordinator 账本申领下一 chat epoch（所有权迁移·切片 B）。

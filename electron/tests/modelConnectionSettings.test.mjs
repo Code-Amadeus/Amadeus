@@ -51,7 +51,6 @@ test('a blank desktop install can persist a complete model selection for the nex
       HYBRID_LOCAL_LLM_MODEL: 'local-head',
       RAG_ENABLED: true,
       RAG_INDEX_DIR: '.amadeus/character-rag',
-      COOPERATIVE_CHAT_ENABLED: true,
       COOPERATIVE_CHAT_PROVIDER: 'codex',
       CODEX_PROVIDER_TRANSPORT: 'app_server',
       CODEX_APP_SERVER_AUTH_MODE: 'chatgpt',
@@ -72,7 +71,7 @@ test('a blank desktop install can persist a complete model selection for the nex
   assert.equal(environment.OPENAI_API_KEY, 'test-api-key')
   assert.equal(environment.HYBRID_LOCAL_LLM_URL, 'http://127.0.0.1:8080/v1')
   assert.equal(environment.RAG_ENABLED, 'true')
-  assert.equal(environment.COOPERATIVE_CHAT_ENABLED, 'true')
+  assert.equal(environment.COOPERATIVE_CHAT_ENABLED, undefined)
   assert.equal(environment.COOPERATIVE_CHAT_PROVIDER, 'codex')
   assert.equal(environment.CODEX_APP_SERVER_PROVIDER_ENABLED, 'true')
   assert.equal(environment.DIRECT_CODEX_PROVIDER_ENABLED, 'false')

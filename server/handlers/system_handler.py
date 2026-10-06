@@ -821,8 +821,7 @@ def _model_role_configuration(settings: Any) -> list[dict[str, Any]]:
             "label": "Work planner / router",
             "description": "Plans and routes cooperative Work; an empty model inherits the main conversation model on the existing backend.",
             "active": bool(
-                getattr(settings, "COOPERATIVE_CHAT_ENABLED", False)
-                and getattr(settings, "COOPERATIVE_WORK_PLANNER_ENABLED", False)
+                getattr(settings, "COOPERATIVE_WORK_PLANNER_ENABLED", False)
             ),
             "configured": True,
             "status": "override" if settings.COOPERATIVE_WORK_PLANNER_MODEL else "inherited",
@@ -1161,11 +1160,10 @@ class SystemHandler(RequestHandler):
         from config.asset_packages import external_asset_pack_status
         from tts.reference_pack import PACK_ID
         import tts.pipeline as tts_pipeline
-        from core.chat_runtime import get_chat_runtime
+        from core.character_rag import get_character_rag
         from llm.prompts import get_character_prompt_config
 
         vision = visual_runtime.get_config()
-        chat_runtime = get_chat_runtime()
         from asr.registry import asr_backend_statuses
         from llm.local_backends import hybrid_local_status, local_backend_status
         from tts.registry import tts_backend_statuses
@@ -1183,12 +1181,24 @@ class SystemHandler(RequestHandler):
             asyncio.to_thread(local_backend_status, settings, project_root=project_root),
             asyncio.to_thread(hybrid_local_status, settings),
         )
+        from server.runtime_status import status_collector
+
+        head = status_collector.hybrid_head()
+        outcome_detail = {
+            "presented": "Local first sentence delivered.",
+            "empty": "Local head returned no visible text; remote reply continued.",
+            "skipped_remote_ready": "Remote reply was ready first; unused local head cancelled.",
+            "interrupted": "Local head interrupted with its turn.",
+        }.get(head["outcome"])
+        if outcome_detail:
+            hybrid_status["detail"] += " Last head in this conversation: " + outcome_detail
         return {
             "vts_ws_url": getattr(settings, 'VTS_WS_URL', ''),
             "chat_supports_images": provider_supports_direct_image(
                 active_provider, llm_client.DEEPSEEK_MODEL_NAME,
             ),
             "llm_provider": active_provider,
+            "hybrid_head": head,
             "tts_device": getattr(settings, 'TTS_DEVICE', ''),
             "tts_mode": tts_pipeline.current_tts_mode(),
             "tts_output_language": tts_pipeline.current_tts_language_code(),
@@ -1196,7 +1206,7 @@ class SystemHandler(RequestHandler):
             "asr_backend": asr_backend,
             "asr_language": getattr(settings, "ASR_LANGUAGE", "auto"),
             "asr_context": getattr(settings, "ASR_CONTEXT", ""),
-            "local_llm_type": chat_runtime.local_llm_type,
+            "local_llm_type": llm_client.LOCAL_LLM_TYPE,
             "aec_realtime_enabled": bool(getattr(settings, "AEC_REALTIME_ENABLED", False)),
             "aec_realtime_barge_in": bool(getattr(settings, "AEC_REALTIME_BARGE_IN", False)),
             "aec_realtime_delay_ms": float(getattr(settings, "AEC_REALTIME_DELAY_MS", 280.0)),
@@ -1211,7 +1221,7 @@ class SystemHandler(RequestHandler):
                 active_provider,
                 local_status=local_status,
                 hybrid_status=hybrid_status,
-                rag_status=chat_runtime.character_rag.status(),
+                rag_status=get_character_rag().status(),
             ),
             "model_roles": _model_role_configuration(settings),
             "work_provider_configuration": _work_provider_configuration(settings),
@@ -1242,19 +1252,11 @@ class SystemHandler(RequestHandler):
             "vision_window_handle": vision.get("window_handle", ""),
             **presentation_runtime.get_config(),
             **chat_translation_runtime.get_config(),
-            "control_decision_mode": (
-                "authority"
-                if bool(getattr(chat_runtime, "_control_proposal_authority", False))
-                else "shadow"
-                if getattr(chat_runtime, "_control_proposal_observer", None) is not None
-                else "disabled"
-            ),
-            "cooperative_chat_enabled": bool(
-                getattr(settings, "COOPERATIVE_CHAT_ENABLED", False)
-            ),
+            "control_decision_mode": "retired",
+            "retired_settings": settings.retired_settings(),
+            "cooperative_chat_enabled": True,
             "cooperative_work_planner_enabled": bool(
-                getattr(settings, "COOPERATIVE_CHAT_ENABLED", False)
-                and getattr(settings, "COOPERATIVE_WORK_PLANNER_ENABLED", False)
+                getattr(settings, "COOPERATIVE_WORK_PLANNER_ENABLED", False)
             ),
             "cooperative_work_planner_model": str(
                 getattr(settings, "COOPERATIVE_WORK_PLANNER_MODEL", "") or ""
@@ -1271,10 +1273,8 @@ class SystemHandler(RequestHandler):
             ),
             "work_coding_provider": settings.WORK_CODING_PROVIDER,
             "work_execution_provider": settings.WORK_EXECUTION_PROVIDER,
-            "cooperative_permission_policy": (
-                str(getattr(settings, "COOPERATIVE_CHAT_PERMISSION_POLICY", "") or "")
-                if bool(getattr(settings, "COOPERATIVE_CHAT_ENABLED", False))
-                else "disabled"
+            "cooperative_permission_policy": str(
+                getattr(settings, "COOPERATIVE_CHAT_PERMISSION_POLICY", "") or ""
             ),
         }
 
@@ -1420,16 +1420,14 @@ class SystemHandler(RequestHandler):
             updated.append("tts_output_language")
         if "llm_provider" in values:
             import llm.client as llm_client
-            from core.chat_runtime import get_chat_runtime
 
             provider = str(values["llm_provider"]).strip().lower()
-            get_chat_runtime().set_provider(provider)
             llm_client.configure(llm_provider=provider)
             updated.append("llm_provider")
         if "local_llm_type" in values:
-            from core.chat_runtime import get_chat_runtime
+            import llm.client as llm_client
 
-            get_chat_runtime().set_local_llm_type(str(values["local_llm_type"]))
+            llm_client.configure(local_llm_type=str(values["local_llm_type"]))
             updated.append("local_llm_type")
         if {"llm_provider", "local_llm_type"}.intersection(values):
             from config import settings

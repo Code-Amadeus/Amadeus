@@ -1030,7 +1030,7 @@ async def test_separate_runtime_contenders_have_one_sqlite_winner_and_one_adapte
             work.close()
 
 
-def test_work_effect_owner_has_no_concrete_provider_and_only_cohort_installation():
+def test_work_effect_owner_has_no_concrete_provider_and_one_production_installation():
     root = Path(__file__).resolve().parents[1]
     sources = "\n".join(
         (root / relative).read_text(encoding="utf-8").lower()
@@ -1044,12 +1044,14 @@ def test_work_effect_owner_has_no_concrete_provider_and_only_cohort_installation
     assert 'provider == "openclaw"' not in sources
     assert "clientusermessageid" not in sources
     app_source = (root / "server" / "app.py").read_text(encoding="utf-8")
-    cohort_start = app_source.index("    cooperative_chat = None")
-    cohort_end = app_source.index(
-        "    control_authority_enabled =", cohort_start)
-    cohort = app_source[cohort_start:cohort_end]
-    assert "from server.work_effect_executor import WorkEffectExecutor" in cohort
-    assert "WorkEffectExecutor(cooperative_work_control" in cohort
-    assert "WorkEffectExecutor" not in (
-        app_source[:cohort_start] + app_source[cohort_end:])
+    import ast
+
+    tree = ast.parse(app_source)
+    bootstrap = next(node for node in tree.body
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "bootstrap")
+    installations = [node for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        and node.func.id == "WorkEffectExecutor"]
+    assert len(installations) == 1
+    assert installations[0] in tuple(ast.walk(bootstrap))
     assert "ProviderRunIntakeAuthority" not in app_source

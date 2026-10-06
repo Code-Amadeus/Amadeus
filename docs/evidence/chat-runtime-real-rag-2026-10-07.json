@@ -1,0 +1,94 @@
+{
+  "index_build": {
+    "entries": 1,
+    "dimension": 384,
+    "model": "intfloat/multilingual-e5-small"
+  },
+  "real_embedding_model": true,
+  "real_role_model": true,
+  "physical_speech": false,
+  "desktop": false,
+  "results": [
+    {
+      "mode": "basic",
+      "case": "hit",
+      "reply": "ええ、[EMO thinking] 参照資料によれば、青いしおりのコード名は ORCHID よ。ただ、これは合成テスト用の架空設定だから、実際の資料として扱わないようにね。[EMO normal]",
+      "retrieval": {
+        "matched_count": 1,
+        "nearest_distance": 0.12109417468309402,
+        "reference_selected": true
+      },
+      "checks": {
+        "no_action": true,
+        "reference_selection": true,
+        "system_only": true,
+        "answer": true,
+        "shared_index": true,
+        "no_raw_reference_in_trace": true
+      }
+    },
+    {
+      "mode": "basic",
+      "case": "miss",
+      "reply": "[EMO normal] 4よ。それくらい即答できるわ。",
+      "retrieval": {
+        "matched_count": 0,
+        "nearest_distance": 0.4786352813243866,
+        "reference_selected": false
+      },
+      "checks": {
+        "no_action": true,
+        "reference_selection": true,
+        "system_only": true,
+        "answer": true,
+        "shared_index": true,
+        "no_raw_reference_in_trace": true
+      }
+    },
+    {
+      "mode": "professional",
+      "case": "hit",
+      "reply": "ええ、[EMO thinking] 合成テスト資料に書かれていた青いしおりのコード名は「ORCHID」よ。\n\n[EMO normal] ただ、これはテスト専用の架空設定だって断っておくわ。実際の資料や本物の情報と混同しないでね。",
+      "retrieval": {
+        "matched_count": 1,
+        "nearest_distance": 0.12109417468309402,
+        "reference_selected": true
+      },
+      "checks": {
+        "no_action": true,
+        "reference_selection": true,
+        "system_only": true,
+        "answer": true,
+        "shared_index": true,
+        "no_raw_reference_in_trace": true
+      }
+    },
+    {
+      "mode": "professional",
+      "case": "miss",
+      "reply": "2+2は4よ。[EMO normal] こんなの、わざわざ聞くことかしら。",
+      "retrieval": {
+        "matched_count": 0,
+        "nearest_distance": 0.4786352813243866,
+        "reference_selected": false
+      },
+      "checks": {
+        "no_action": true,
+        "reference_selection": true,
+        "system_only": true,
+        "answer": true,
+        "shared_index": true,
+        "no_raw_reference_in_trace": true
+      }
+    }
+  ],
+  "logs_contain_raw_reference": false,
+  "status": "passed",
+  "schema": "amadeus.real-index-rag-evidence.v1",
+  "date": "2026-10-07",
+  "limitations": [
+    "Synthetic one-entry local corpus; no private user material.",
+    "Real Cooperative loop and remote model, not a desktop or microphone journey.",
+    "First-load cancellation remains covered by deterministic ownership tests, not this live sample."
+  ]
+}

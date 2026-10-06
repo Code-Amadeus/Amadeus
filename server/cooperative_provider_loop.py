@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import OrderedDict
-from contextlib import contextmanager
+from contextlib import aclosing, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 import inspect
@@ -506,6 +506,8 @@ class CooperativeProviderLoop:
                  browser_context: Callable[[Mapping[str, Any] | None], dict | None]
                     | None = None, idle_context_budget: int = 4,
                  work_proposals_only: bool = False,
+                 role_reference: Callable[[str], Awaitable[str]] | None = None,
+                 hybrid_head: Callable | None = None,
                  history_source: Callable[[str], tuple[dict, ...]] | None = None):
         self.runtime, self.query, self.allocate = runtime, query, allocate
         self._query_streams = any(parameter.name == "on_text"
@@ -522,6 +524,8 @@ class CooperativeProviderLoop:
         self.task_contexts = task_contexts
         self.browser_context = browser_context
         self.history_source = history_source
+        self.role_reference = role_reference
+        self.hybrid_head = hybrid_head
         self.work_proposals_only = bool(work_proposals_only)
         self._persona = persona
         self.children: dict[str, ChildConversation] = OrderedDict()
@@ -773,12 +777,10 @@ class CooperativeProviderLoop:
             self.trace.append({"kind":"context_reconciliation", "child_id":child_id, **receipt})
             return receipt
 
-    def _save_child(self, child, *, input_id=None, turn_id=None, text="", binding_token=None,
-                    **updates):
+    def _save_child(self, child, **updates):
         checkpoint = replace(child, **updates)
         if self._state is not None:
-            self._state.checkpoint(checkpoint, input_id=input_id, turn_id=turn_id,
-                text=text, binding_token=binding_token)
+            self._state.checkpoint(checkpoint)
         for key, value in updates.items():
             setattr(child, key, value)
         child.revision = checkpoint.revision
@@ -1059,7 +1061,8 @@ class CooperativeProviderLoop:
 
     async def _decide(self, event, *, initial_destination=None,
                       browser_context=None, visual_context=None, on_text=None,
-                      turn_history=None, auip_context=None, auip_entry=None):
+                      turn_history=None, auip_context=None, auip_entry=None,
+                      role_reference="", hybrid_head_enabled=False):
         if event["source"] == "user":
             context = self.context_facts(self.bound_context_id)
             child_id = self.bound_context_id if context is not None else ""
@@ -1123,6 +1126,12 @@ class CooperativeProviderLoop:
             if work_tasks:
                 frame["work_tasks"] = work_tasks[:5]
             system = self.system
+            if role_reference:
+                system += "\n\n" + role_reference
+            if hybrid_head_enabled:
+                system += ("\n\nA separate local voice may already acknowledge receipt of this message. "
+                    "Start your reply with its substantive content, without another receipt acknowledgement. "
+                    "The local voice supplies no execution decision or result.")
             if self.role_app_context is not None:
                 app_context = self.role_app_context("")
                 if app_context:
@@ -1440,12 +1449,14 @@ class CooperativeProviderLoop:
         async with self._delivery_lock:
             return await self._deliver_locked(text, cause=cause)
 
-    async def _deliver_locked(self, text, *, cause, stream=None):
+    async def _deliver_locked(self, text, *, cause, stream=None, message_id=None):
         if self._closed:
             self.trace.append({"kind":"delivery_suppressed", "cause":cause, "reason":"loop_closed"})
             return False
         if text:
             event = {"source":"kurisu", "text":text, "cause":cause}
+            if message_id is not None:
+                event["message_id"] = message_id
             accepted = (stream.finish(dict(event)) if stream is not None
                 else self.publish(dict(event)) if self.publish else False)
             if inspect.isawaitable(accepted):
@@ -1491,6 +1502,58 @@ class CooperativeProviderLoop:
         decoder = ((DelegateRoleDecoder() if self.work_proposals_only
             else ConversationSayDecoder()) if stream is not None else None)
         delivery_owned = False
+        prepared = asyncio.Event()
+        prefix = ""
+        remote_started = False
+        head_outcome = ""
+
+        async def local_head(tokens):
+            nonlocal delivery_owned, prefix, head_outcome
+            try:
+                async with aclosing(tokens):
+                    async for chunk in tokens:
+                        await prepared.wait()
+                        if self._closed:
+                            raise asyncio.CancelledError("loop closed during local head")
+                        if admission_check:
+                            admission_check()
+                        if not delivery_owned:
+                            await self._delivery_lock.acquire()
+                            delivery_owned = True
+                        await stream.feed(chunk)
+                        prefix = stream.presented_text
+                head_outcome = "presented" if prefix else "empty"
+                if not prefix:
+                    logging.getLogger(__name__).warning(
+                        "[Hybrid] local head produced no visible text; remote reply continues")
+            except asyncio.CancelledError:
+                head_outcome = head_outcome or "interrupted"
+                raise
+
+        tokens = (self.hybrid_head(text, visual_context)
+            if stream is not None and self.hybrid_head is not None else None)
+        head_task = asyncio.create_task(local_head(tokens)) if tokens is not None else None
+
+        async def settle_head():
+            nonlocal head_outcome
+            if head_outcome == "skipped_remote_ready":
+                return
+            if head_task is not None:
+                if not head_task.done() and not delivery_owned:
+                    # No local chunk owns presentation. A ready remote reply
+                    # must not wait for an unavailable/slow head endpoint.
+                    head_outcome = "skipped_remote_ready"
+                    head_task.cancel()
+                    await asyncio.gather(head_task, return_exceptions=True)
+                else:
+                    await head_task
+
+        async def begin_remote():
+            nonlocal remote_started
+            await settle_head()
+            if prefix and not remote_started:
+                await stream.begin_remote()
+                remote_started = True
 
         async def on_text(raw):
             nonlocal delivery_owned
@@ -1499,7 +1562,11 @@ class CooperativeProviderLoop:
             if admission_check:
                 admission_check()
             delta = decoder.feed(raw)
-            if decoder.started and not delivery_owned:
+            if delta:
+                # Only the head task can own delivery before this await. It has
+                # finished before remote output may acquire/feed the same port.
+                await begin_remote()
+            if delta and not delivery_owned:
                 await self._delivery_lock.acquire()
                 delivery_owned = True
             if delta:
@@ -1509,10 +1576,23 @@ class CooperativeProviderLoop:
 
         async def commit_role(value):
             nonlocal delivery_owned
-            if decoder is None or not decoder.started:
-                return False
+            await settle_head()
             try:
-                return await self._deliver_locked(value["say"], cause=turn_id, stream=stream)
+                if decoder is not None and decoder.started:
+                    if not delivery_owned:
+                        await self._delivery_lock.acquire()
+                        delivery_owned = True
+                    return await self._deliver_locked(prefix + value["say"], cause=turn_id, stream=stream)
+                if prefix and value["action"] is None:
+                    await begin_remote()
+                    await stream.feed(value["say"])
+                    return await self._deliver_locked(prefix + value["say"], cause=turn_id, stream=stream)
+                if prefix:
+                    # An action's final expression belongs to Host/ingress.
+                    # Finish a separate head and release here, before any effect.
+                    await self._deliver_locked(prefix, cause=turn_id, stream=stream,
+                        message_id="cooperative-head:" + turn_id)
+                return False
             finally:
                 if delivery_owned:
                     self._delivery_lock.release()
@@ -1523,12 +1603,19 @@ class CooperativeProviderLoop:
                 prepare = getattr(stream, "prepare", None)
                 if prepare is not None:
                     await prepare()
+            prepared.set()
             return await self._user_turn_impl(key, turn_id, text, admission_check, binding,
                 turn_admission, browser_routing_scope, visual_context, acceptance_check,
                 auip_context=auip_context, auip_entry=auip_entry,
                 stream=stream, decoder=decoder, on_text=on_text if stream else None,
-                commit_role=commit_role)
+                commit_role=commit_role, hybrid_head_enabled=head_task is not None)
         finally:
+            if head_task is not None:
+                if not head_task.done():
+                    head_task.cancel()
+                await asyncio.gather(head_task, return_exceptions=True)
+                self.trace.append({"kind":"hybrid_head", "turn_id":turn_id,
+                    "outcome":head_outcome or "interrupted"})
             if stream is not None:
                 stream.abort()
             if delivery_owned:
@@ -1538,7 +1625,8 @@ class CooperativeProviderLoop:
     async def _user_turn_impl(self, key, turn_id, text, admission_check=None, binding=None,
                          turn_admission=None, browser_routing_scope=None, visual_context=None,
                          acceptance_check=None, *, auip_context=None, auip_entry=None,
-                         stream=None, decoder=None, on_text=None, commit_role=None):
+                         stream=None, decoder=None, on_text=None, commit_role=None,
+                         hybrid_head_enabled=False):
         await self._foreground.acquire()
         foreground_owned = True
         try:
@@ -1561,8 +1649,16 @@ class CooperativeProviderLoop:
                 foreground_owned = False
                 try:
                     try:
+                        reference = (await self.role_reference(text)
+                            if self.role_reference is not None else "")
+                        if self._closed:
+                            raise asyncio.CancelledError("loop closed during role retrieval")
+                        if admission_check:
+                            admission_check()
                         value = await self._decide(event,
                             initial_destination=initial_destination,
+                        role_reference=reference,
+                        hybrid_head_enabled=hybrid_head_enabled,
                         visual_context=visual_context,
                         on_text=on_text,
                         turn_history=turn_history,
@@ -1600,7 +1696,7 @@ class CooperativeProviderLoop:
             self.history.append(event)
             role_streamed = decoder is not None and decoder.started
             coordination_delivered = (await commit_role(value)
-                if role_streamed and commit_role is not None else False)
+                if commit_role is not None else False)
             action = value["action"]
             receipt = {"state":"no_action", "input_id":key}
             if action:
@@ -1786,7 +1882,7 @@ class CooperativeProviderLoop:
         if presentation_event is not None:
             await self._express_and_deliver(presentation_event, cause=turn_id)
         else:
-            if role_streamed:
+            if role_streamed or coordination_delivered:
                 delivered = coordination_delivered
             else:
                 delivered = await self._deliver(delivery_text, cause=turn_id)
@@ -2022,9 +2118,7 @@ class CooperativeProviderLoop:
                     if intent is not None:
                         claim = accept_and_claim(intent, run_status=record.status)
                     else:
-                        self._save_child(child, run_status=record.status,
-                            input_id=input_id, turn_id=turn_id, text=text,
-                            binding_token=binding_token)
+                        self._save_child(child, run_status=record.status)
                     try:
                         outcome = await self.runtime.cancel(record.run_id)
                     except Exception as exc:
@@ -2077,9 +2171,7 @@ class CooperativeProviderLoop:
                 claim = (accept_and_claim(intent, run_status=record.status)
                     if intent is not None else None)
                 if claim is None:
-                    self._save_child(child, run_status=record.status,
-                        input_id=input_id, turn_id=turn_id, text=text,
-                        binding_token=binding_token)
+                    self._save_child(child, run_status=record.status)
                 delivered_text = with_parent_conversation_context(text, metadata={
                     "source_user_text":text, "source_user_context":parent_context,
                     "conversation_mode":"cooperative",
@@ -2149,8 +2241,7 @@ class CooperativeProviderLoop:
                     "child_id":child.child_id, "bound":False})
             if claim is None:
                 self._save_child(child, run_id="", run_status="dispatching",
-                    native_session=prepared_session, input_id=input_id,
-                    turn_id=turn_id, text=text, binding_token=binding_token)
+                    native_session=prepared_session)
             if self._requires_writer_lease(child) and claim is not None:
                 if self.workspace_leases is None:
                     self._state.restore_rejected_start(child, self._effects,

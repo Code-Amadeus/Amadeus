@@ -18,13 +18,9 @@ import inspect
 import json
 import logging
 from collections.abc import Awaitable, Callable, Mapping
-from typing import Any, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from server.turn_admission import TurnAdmissionRecord
+from typing import Any
 
 from config import settings
-from core.turn_coordinator import require_legacy_turn_authority
 from server.auip_action_candidates import (
     AuipActionCandidate,
     compile_auip_action_candidates,
@@ -38,7 +34,6 @@ from server.protocol import Method
 logger = logging.getLogger(__name__)
 
 RoleChooser = Callable[..., Mapping[str, Any] | Awaitable[Mapping[str, Any]]]
-DecisionStager = Callable[[str, Any], None]
 
 _PRE_ACTION_REPLAN_CODES = frozenset(
     {
@@ -78,18 +73,14 @@ class AuipB2Coordinator:
         self,
         *,
         runtime: AuipRuntime,
-        control_decider: Any,
         role_chooser: RoleChooser,
-        stage_decision: DecisionStager,
         open_role_chooser: RoleChooser | None = None,
         open_payload_mode: str | None = None,
         receipt_timeout_s: float | None = None,
     ) -> None:
         self.runtime = runtime
-        self.control_decider = control_decider
         self.role_chooser = role_chooser
         self.open_role_chooser = open_role_chooser
-        self.stage_decision = stage_decision
         self.open_payload_mode = str(
             open_payload_mode
             if open_payload_mode is not None
@@ -107,72 +98,6 @@ class AuipB2Coordinator:
         )
         self._locks: dict[str, asyncio.Lock] = {}
 
-    async def try_route_user_message(
-        self,
-        *,
-        text: str,
-        session_id: str,
-        turn_id: str = "",
-        turn_admission: TurnAdmissionRecord | None = None,
-    ) -> dict[str, Any] | None:
-        """Return one direct Chat branch result, or stage the decision for fallback."""
-
-        require_legacy_turn_authority(turn_admission)
-        if turn_admission is not None:
-            session_id = turn_admission.session_id
-        if self.runtime.role_branch_mode != "b2":
-            return None
-        projection = self.runtime.focused_projection(str(session_id or ""))
-        if (
-            not isinstance(projection, dict)
-            or str(projection.get("status") or "") != "active"
-        ):
-            logger.debug(
-                "[AUIP-B2] foreground ineligible reason=no_active_projection"
-            )
-            return None
-        app_session_id = str(projection.get("app_session_id") or "").strip()
-        if not app_session_id or not self.runtime.role_branch_active(app_session_id):
-            logger.info(
-                "[AUIP-B2] foreground ineligible reason=role_branch_inactive "
-                "app_session_bound=%s",
-                bool(app_session_id),
-            )
-            return None
-
-        prior_messages = self.runtime.recent_role_branch_messages(
-            str(session_id or ""),
-            limit=8,
-        )
-        pending = self.control_decider.capture(
-            session_id=str(session_id or ""),
-            user_text=str(text or ""),
-            prior_messages=prior_messages or (),
-            include_work_followup=False,
-        )
-        if pending is None:
-            logger.info(
-                "[AUIP-B2] foreground ineligible reason=decision_unavailable"
-            )
-            return None
-        decision = await pending if inspect.isawaitable(pending) else pending
-        if not self._owns_decision(decision):
-            logger.info(
-                "[AUIP-B2] foreground pass-through status=%s action=%s "
-                "work_relation=%s app_session_bound=%s",
-                str(getattr(decision, "status", "") or ""),
-                str(getattr(decision, "action", "") or ""),
-                str(getattr(decision, "work_relation", "") or ""),
-                bool(str(getattr(decision, "app_session_id", "") or "")),
-            )
-            self.stage_decision(str(turn_id or ""), decision)
-            return None
-
-        result = await self.execute_user_decision(
-            decision=decision, text=text, session_id=session_id, turn_id=turn_id)
-        if result is None:
-            self.stage_decision(str(turn_id or ""), decision)
-        return result
 
     async def execute_user_decision(
         self, *, decision: Any, text: str, session_id: str, turn_id: str,
@@ -182,6 +107,8 @@ class AuipB2Coordinator:
 
         The caller owns Chat admission and any independent Work clause. B2 keeps
         the same role choice, revision-bound action and receipt delivery owner.
+        Original user wording supplies the role's evidence; the derived
+        instruction is only a fallback when that source is absent.
         """
         app_session_id = str(getattr(decision, "app_session_id", "") or "")
         if (self.runtime.role_branch_mode != "b2"
@@ -202,7 +129,7 @@ class AuipB2Coordinator:
                 return await self._execute_candidate_step(
                     app_session_id=app_session_id,
                     conversation_id=str(session_id or ""),
-                    user_instruction=str(getattr(decision, "instruction", "") or text),
+                    user_instruction=str(text or getattr(decision, "instruction", "") or ""),
                     source_user_text=str(text or ""),
                     turn_id=str(turn_id or ""),
                     trigger="explicit_step",
@@ -249,15 +176,6 @@ class AuipB2Coordinator:
             )
         return dict(result or {"status": "blocked"})
 
-    @staticmethod
-    def _owns_decision(decision: Any) -> bool:
-        return bool(
-            str(getattr(decision, "status", "") or "") == "ok"
-            and str(getattr(decision, "action", "") or "") == "step"
-            and str(getattr(decision, "work_relation", "") or "")
-            in {"", "subsumed"}
-            and str(getattr(decision, "app_session_id", "") or "")
-        )
 
     async def _execute_candidate_step(
         self,

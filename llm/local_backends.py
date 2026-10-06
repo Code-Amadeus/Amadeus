@@ -6,9 +6,56 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import requests
 
 
 LOCAL_BACKEND_TYPES = frozenset({"llama_server", "lmstudio", "ollama", "cli"})
+
+
+def require_llama_message_capacity(
+    url: str, payload: dict, *, timeout: float,
+) -> dict[str, int]:
+    """Count the loaded model's templated input before submitting generation.
+
+    The server's per-slot n_ctx is authoritative, including for external servers.
+    Never substitute the launch setting or truncate a role's instructions/history.
+    """
+    base = openai_base_url(url).removesuffix("/v1")
+    try:
+        response = requests.get(base + "/props", params={"model": payload["model"]}, timeout=timeout)
+        response.raise_for_status()
+        context = response.json()["default_generation_settings"]["n_ctx"]
+        if type(context) is not int or context <= 0:
+            raise ValueError("server did not report a positive per-slot n_ctx")
+        # Use the same request, including output format/template options, that
+        # generation will receive. Never count a reduced messages-only variant.
+        response = requests.post(base + "/apply-template", json=payload, timeout=timeout)
+        response.raise_for_status()
+        prompt = response.json()["prompt"]
+        if not isinstance(prompt, str):
+            raise ValueError("server did not return a chat template")
+        response = requests.post(base + "/tokenize", json={
+            "model": payload["model"], "content": prompt, "add_special": True, "parse_special": True,
+        }, timeout=timeout)
+        response.raise_for_status()
+        tokens = response.json()["tokens"]
+        if not isinstance(tokens, list):
+            raise ValueError("server did not return prompt tokens")
+    except (requests.RequestException, KeyError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "Cannot verify llama-server context capacity. The server must expose "
+            "/props, /apply-template and /tokenize for the selected model."
+        ) from exc
+    budget = {"input_tokens": len(tokens), "output_tokens": max(1, int(payload["max_tokens"])),
+              "context_tokens": context}
+    if budget["input_tokens"] + budget["output_tokens"] > context:
+        raise RuntimeError(
+            f"Local context is too small: {len(tokens)} input + "
+            f"{budget['output_tokens']} output tokens exceeds the loaded {context}-token context. "
+            "Increase the server context (LOCAL_LLM_CLI_CONTEXT for managed llama-server) "
+            "or start a shorter conversation. No messages were truncated."
+        )
+    return budget
 
 
 def openai_base_url(value: str) -> str:
@@ -101,11 +148,13 @@ def local_backend_status(settings: Any, *, project_root: Path) -> dict[str, Any]
             missing.append("GGUF model")
         return {
             "configured": not missing,
-            "available": not missing,
-            "state": "installed" if not missing else "not_configured",
-            "detail": "CLI executable and GGUF model found"
-            if not missing
-            else f"Missing {', '.join(missing)}",
+            "available": False,
+            "state": "unsupported",
+            "detail": (
+                "Persistent llama-cli does not isolate Cooperative Chat/Planner requests. "
+                "Select llama_server and point the executable setting to llama-server; "
+                "the existing GGUF can be reused with sufficient context."
+            ),
         }
 
     if backend_type == "ollama":

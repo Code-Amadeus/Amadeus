@@ -17,18 +17,13 @@ def built_in_character(monkeypatch):
     monkeypatch.setattr("tts.pipeline.TTS_OUTPUT_LANGUAGE", "日文")
 
 
-@pytest.mark.parametrize("tool,envelope,intent", [
-    (False, False, False), (False, False, True),
-    (False, True, True), (True, True, True),
-])
-def test_persona_override_preserves_output_and_execution_contracts(monkeypatch, tool, envelope, intent):
-    monkeypatch.setattr(prompts, "_delegate_tool_transport", lambda: tool)
+@pytest.mark.parametrize("intent", [False, True])
+def test_persona_override_preserves_output_and_execution_contracts(monkeypatch, intent):
     monkeypatch.setattr(prompts, "_delegate_intent_required", lambda: intent)
     monkeypatch.setattr(prompts, "registered_provider_ids", lambda: ("browser", "codex"))
-    monkeypatch.setattr("llm.action_existence_protocol.control_envelope_enabled", lambda: envelope)
     variants = ("base", "with_delegate", "bedrock", "local_fallback", "hybrid_local")
     original = {v: prompts.get_system_prompt(v) for v in variants}
-    controls = (prompts.get_delegate_control_prompt(), prompts.get_structured_control_prompt())
+    controls = prompts.get_structured_control_prompt()
     inherited = inherited_main_role_prompt()
     default = prompts.get_character_prompt_config()["main_chat_character_prompt_preview"]["default"]
 
@@ -50,7 +45,7 @@ def test_persona_override_preserves_output_and_execution_contracts(monkeypatch, 
     assert prompts.get_system_prompt("local_fallback") == (
         override + "\n\n" + prompts._JA_LOCAL_FALLBACK_LANGUAGE)
     assert prompts.get_system_prompt("hybrid_local") == original["hybrid_local"]
-    assert (prompts.get_delegate_control_prompt(), prompts.get_structured_control_prompt()) == controls
+    assert prompts.get_structured_control_prompt() == controls
     assert inherited_main_role_prompt() == inherited
     assert prompts.get_system_prompt("base", use_character_override=False) == original["base"]
     assert prompts.set_character_prompt("\n \t") == [prompts.CHARACTER_PROMPT_SETTING]

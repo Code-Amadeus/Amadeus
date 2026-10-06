@@ -26,6 +26,10 @@ import {
 import {
   INTERRUPTED_MARKER,
   acceptedRoleMessage,
+  applyRoleMessage,
+  assistantTurnAnchors,
+  finishAssistantTurn,
+  updateAssistantMessage,
   chatAsrDestination,
   chatEventMatchesSession,
   patchInterruptedMessage,
@@ -194,23 +198,14 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
         role: (m.role === 'assistant' || m.role === 'system') ? m.role : 'user',
         text: String(m.content ?? m.text ?? ''),
         turnId: String(m.turn_id ?? m.turnId ?? '') || undefined,
+        messageId: String(m.message_id ?? m.messageId ?? '') || undefined,
         streaming: false,
       }))
       .filter(m => m.text)
   }, [])
 
   const upsertAssistantMessage = useCallback((turnId: string, text: string, streamingValue: boolean) => {
-    setMessages(prev => {
-      if (turnId) {
-        const index = prev.findIndex(m => m.role === 'assistant' && m.turnId === turnId)
-        if (index >= 0) {
-          const next = [...prev]
-          next[index] = { ...next[index], text, streaming: streamingValue }
-          return next
-        }
-      }
-      return [...prev, { role: 'assistant', text, turnId, streaming: streamingValue }]
-    })
+    setMessages(prev => updateAssistantMessage(prev, turnId, text, streamingValue))
   }, [])
 
   const upsertUserMessage = useCallback((turnId: string, text: string) => {
@@ -562,7 +557,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       if (!chatEventMatchesSession(p, activeSessionRef.current, interruptedTurnIdsRef.current)) return
       const text = String(p.full_text ?? p.token ?? '')
       const turnId = String(p.turn_id ?? '')
-      upsertAssistantMessage(turnId, text, false)
+      setMessages(prev => finishAssistantTurn(prev, turnId, text))
       setStreaming(false)
       setStreamingText('')
       streamingTextRef.current = ''
@@ -588,7 +583,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     }))
     unsubs.push(subscribe('chat.role_message', (p) => {
       const line = acceptedRoleMessage(p, activeSessionRef.current, interruptedTurnIdsRef.current)
-      if (line) upsertAssistantMessage(line.messageId, line.text, false)
+      if (line) setMessages(prev => applyRoleMessage(prev, line))
       // Client acceptance is separate from the current foreground stream and
       // never dispatches work or claims physical audio/render completion.
       send('chat.role_received', {
@@ -1221,6 +1216,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     }
     return grouped
   }, [workActivities])
+  const activityAnchors = useMemo(() => assistantTurnAnchors(messages), [messages])
 
   const comboCls = `text-[10px] border border-[var(--border)] rounded-md px-2
     bg-[var(--surface)] text-[var(--text)] outline-none
@@ -1384,8 +1380,8 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
             <p className="text-center mt-20" style={{ color: 'var(--faint)', fontSize: 13 }}>{t('Type a message to start.')}</p>
           )}
           {messages.map((msg, i) => {
-            const key = `${msg.role}-${msg.turnId || 'local'}-${i}`
-            const attached = msg.role === 'assistant' && msg.turnId
+            const key = msg.messageId || `${msg.role}-${msg.turnId || 'local'}-${i}`
+            const attached = msg.role === 'assistant' && msg.turnId && activityAnchors.get(msg.turnId) === i
               ? activitiesByTurn.get(msg.turnId) || []
               : []
             return (

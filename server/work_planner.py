@@ -10,7 +10,7 @@ import json
 import logging
 from typing import Callable, Mapping
 
-from server.control_adjudication import RuntimeControlDecisionResolver
+from server.control_context import capture_control_context
 from server.control_proposal import seal_control_proposals
 from server.focus_policy import finalize_work_focus_modifiers
 from server.whole_turn_control import whole_turn_owner, resolve_whole_turn_references
@@ -123,10 +123,6 @@ class RuntimeWorkPlanner:
             "action", "timing", "instruction", "app_session_id", "target", "project_ref", "reason") if key in auip}
             if isinstance(auip, dict) else {})
 
-        resolver = RuntimeControlDecisionResolver(coordinator=self.coordinator,
-            query=self.query, project_limit=self.project_limit,
-            work_item_limit=self.work_item_limit,
-            exhaustive_candidate_limit=self.candidate_limit)
         # Planning and dispatch must expose the same configured Work Providers.
         # The global registry also contains app/browser capabilities that this
         # cooperative Work entry cannot execute.
@@ -137,7 +133,9 @@ class RuntimeWorkPlanner:
         provider_message = isinstance(receipt.get("provider_message_action"), Mapping)
         if provider_message:
             semantic_prompt += "\n\n" + PROVIDER_MESSAGE_SCOPE
-        context = await asyncio.to_thread(resolver.capture_context, batch,
+        context = await asyncio.to_thread(capture_control_context, self.coordinator, batch,
+            project_limit=self.project_limit, work_item_limit=self.work_item_limit,
+            exhaustive_candidate_limit=self.candidate_limit,
             include_app_capabilities=True, semantic_prompt=semantic_prompt)
         context = replace(context, provider_ids=provider_ids)
         messages = list(context.messages)

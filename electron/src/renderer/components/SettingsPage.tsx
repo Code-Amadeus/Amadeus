@@ -5,6 +5,7 @@ import { GroupTitle, CardShell, CardIcon, StatusPill, SettingsGroup } from './Se
 import McpConnections, { type McpConnectionSummary } from './McpConnections'
 import ChatAvatarSettings from './ChatAvatarSettings'
 import MainChatCharacterSettings from './MainChatCharacterSettings'
+import RetiredRouteSetting, { RETIRED_ROUTE_KEY, retiredRouteMigration, removeStoredRetiredRouteSetting, type RetiredSettingFact } from './RetiredRouteSetting'
 import AcpProviders, { type AcpConfiguration } from './AcpProviders'
 import CapabilitiesPanel, { type RuntimePackageStatus } from './CapabilitiesPanel'
 import { buildCapabilityProfiles, type SceneConfigureSection } from './sceneCapabilityProjection'
@@ -118,6 +119,7 @@ interface DesktopSettingsSnapshot {
   restartRequired: boolean
   pendingKeys: string[]
   pendingRevisions: Record<string, number>
+  retired_settings: RetiredSettingFact[]
 }
 
 interface CompanionPortraitStatus {
@@ -733,6 +735,27 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     }
   }, [])
 
+  const confirmRetiredRoute = useCallback(async () => {
+    if (!window.amadeus) return
+    setSaving(RETIRED_ROUTE_KEY)
+    setError('')
+    try {
+      const saved = await removeStoredRetiredRouteSetting<DesktopSettingsSnapshot>(
+        async request => {
+          const result = await window.amadeus!.updateDesktopSettings(request)
+          return { ...result, settings: result.settings as unknown as DesktopSettingsSnapshot | undefined }
+        },
+      )
+      // Successful durable deletion is the only acknowledgment. A failure
+      // leaves this snapshot and its notice intact, including after restart.
+      setDesktop(saved)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not confirm the retired setting migration')
+    } finally {
+      setSaving(null)
+    }
+  }, [])
+
   const handleMainProviderChange = useCallback(async (value: string) => {
     await handleChange('llm_provider', value)
   }, [handleChange])
@@ -967,9 +990,6 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   ).toLowerCase()
   const selectedCodingProvider = String(desktop?.sources?.WORK_CODING_PROVIDER === 'user'
     ? desktop.values.WORK_CODING_PROVIDER : val('work_coding_provider', 'codex')).toLowerCase()
-  const workExecutionEnabled = desktop?.sources?.COOPERATIVE_CHAT_ENABLED === 'user'
-    ? desktop.values.COOPERATIVE_CHAT_ENABLED === 'true'
-    : config.cooperative_chat_enabled === undefined ? true : bool('cooperative_chat_enabled')
   const workProviderLabels: Record<string, string> = { codex: 'Codex agent', openclaw: 'OpenClaw agent', browser: 'Browser provider', pi: 'Pi daily agent' }
   const workProviderAssignment = `${t('Coding')}: ${workProviderLabels[selectedCodingProvider] || selectedCodingProvider} · ${t('Everyday execution')}: ${workProviderLabels[selectedWorkProvider] || selectedWorkProvider}`
   const roleGroups = Object.fromEntries(modelRoles.map(group => [group.id, group])) as Record<string, ConfigurationGroup>
@@ -984,7 +1004,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   const graphicsRuntime = connected ? config.graphics as GraphicsRuntimeSettings | undefined : undefined
   const graphicsConfiguration = buildGraphicsConfiguration(graphicsRuntime, desktop)
   const backendProviderConfiguration = asConfigurationGroups(config.work_provider_configuration)
-  const providerCatalog = buildWorkProviderCatalog({ provider: selectedWorkProvider, enabled: workExecutionEnabled,
+  const providerCatalog = buildWorkProviderCatalog({ provider: selectedWorkProvider,
     codingProvider: selectedCodingProvider, roleCandidates: providerRoleCandidates }, desktop)
   const providerConfiguration: ConfigurationGroup[] = providerCatalog.connections.map(base => {
     const backend = backendProviderConfiguration.find(group => group.id === base.id)
@@ -1039,8 +1059,8 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   }
   const avatarConfiguration = asConfigurationGroups(config.avatar_configuration)
   const capabilityProfiles = useMemo(
-    () => buildCapabilityProfiles(config, providerAvailability),
-    [config, providerAvailability],
+    () => buildCapabilityProfiles(connected ? config : {}, connected ? providerAvailability : []),
+    [connected, config, providerAvailability],
   )
   const sharedCapabilities = useMemo(() => capabilityPackages.flatMap(packageInfo =>
     (packageInfo.contributions || [])
@@ -1116,6 +1136,9 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
             {error ? <div role="alert" className="text-[11px] rounded-md p-3" style={{ color: 'var(--danger)', background: 'var(--danger-bg)' }}>{error}</div> : null}
           </div>
         ) : null}
+
+        <RetiredRouteSetting migration={retiredRouteMigration(desktop, config.retired_settings)}
+          saving={saving === RETIRED_ROUTE_KEY} onConfirm={confirmRetiredRoute} />
 
         <div className="settings-layout flex gap-6 items-start" style={{ width: '100%' }}>
           <nav className="settings-section-nav shrink-0 flex flex-col gap-0.5 sticky" style={{ width: 138, top: 16 }} aria-label={t('Settings sections')}>

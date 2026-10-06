@@ -1,5 +1,9 @@
 # Routing strategies and the 2026-09-12 baseline
 
+> Historical record: Original Chat and its route selector are retired in the convergence branch.
+> For the current basic/professional runtime and settings migration, see
+> [Chat runtime convergence](chat-runtime-convergence.md). The historical results below are unchanged.
+
 This is historical evidence from the integration branch at `e182052f`, not a new
 accuracy measurement of the public 0.15 Alpha candidate. Per-case frozen scores
 are published in [the evidence table](evidence/routing-accuracy-2026-09-12.json),

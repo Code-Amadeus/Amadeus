@@ -14,7 +14,6 @@ from unittest.mock import patch
 import pytest
 
 from agent_host.work_ledger_store import WorkLedgerStore
-from core.chat_runtime import ChatRuntime, _TurnState
 from server.attention_request import AttentionRequestCoordinator
 from server.auip_app_source import (
     discover_launchable_auip_app,
@@ -32,8 +31,7 @@ from server.handlers.auip_handler import AuipHandler
 from server.protocol import Method
 from server.work_export_service import WorkExportService
 from server.work_ledger_coordinator import WorkLedgerCoordinator
-from core.chat_control_envelope import parse_inline_control_chunk
-from llm.stream_parser import StreamTagParser
+from llm.stream_parser import StreamTagParser, presentation_parts
 
 
 SESSION = "chat-auip-launch"
@@ -942,21 +940,13 @@ def test_rejected_host_outcome_retires_deferred_launch_without_second_error(
     asyncio.run(scenario())
 
 
-def test_same_turn_launch_tag_can_precede_the_work_control_in_one_stream() -> None:
-    parser = StreamTagParser()
-    parsed = parse_inline_control_chunk(
-        parser,
-        '[AUIP action=launch target="delivery" mode="collaborate" after="work"]'
-        '[DELEGATE provider="locus" intent="execute" task="build the game"]',
-    )
-    assert len(parsed.auip_actions) == 1
-    assert parsed.auip_actions[0]["attrs"] == {
-        "action": "launch",
-        "target": "delivery",
-        "mode": "collaborate",
-        "after": "work",
-    }
-    assert len(parsed.delegate_actions) == 1
+def test_launch_and_work_tags_have_no_presentation_authority() -> None:
+    parser = StreamTagParser(control_envelope_enabled=True, stop_after_control=False)
+    cleaned, parts = presentation_parts(parser,
+        '前[AUIP action=launch target="delivery" mode="collaborate" after="work"]'
+        '[DELEGATE provider="locus" intent="execute" task="build the game"]後')
+    assert cleaned == "前後"
+    assert all(kind == "text" for kind, _value in parts)
 
 
 def test_latest_attempt_revision_supersedes_historical_manifest_records() -> None:
@@ -994,41 +984,6 @@ def test_latest_attempt_revision_supersedes_historical_manifest_records() -> Non
         assert discovered["app"]["title"] == "Evolving Game v2"
         assert discovered["contributing_attempt_ids"] == [second_attempt.attempt_id]
         store.close()
-
-
-def test_same_fragment_schedules_deferred_launch_before_delegate_start() -> None:
-    async def scenario() -> None:
-        events: list[str] = []
-        provider_tasks: list[asyncio.Task[None]] = []
-
-        async def route_auip(_attrs, **_context) -> None:
-            events.append("auip")
-
-        def record_delegate(_actions) -> None:
-            async def start_provider() -> None:
-                events.append("delegate")
-
-            provider_tasks.append(asyncio.create_task(start_provider()))
-
-        runtime = ChatRuntime()
-        runtime.configure(auip_control_callback=route_auip)
-        state = _TurnState(
-            gui_callback=None,
-            turn_id="turn-build-and-play",
-            question="build it, then play with me",
-            session_id=SESSION,
-        )
-        with patch("core.chat_runtime.record_actions", side_effect=record_delegate):
-            runtime._consume_stream_chunk(
-                state,
-                '[AUIP action=launch target="delivery" mode="collaborate" after="work"]'
-                '[DELEGATE provider="locus" intent="execute" task="build the game"]',
-            )
-            await runtime._wait_for_auip_controls(state)
-            await asyncio.gather(*provider_tasks)
-        assert events == ["auip", "delegate"]
-
-    asyncio.run(scenario())
 
 
 def test_later_launch_is_independent_from_the_work_delivery() -> None:
@@ -2299,21 +2254,3 @@ def test_deferred_launch_uses_attention_to_freeze_one_active_operation() -> None
             store.close()
 
     asyncio.run(scenario())
-
-
-if __name__ == "__main__":
-    test_generic_html_is_not_an_auip_application()
-    test_deleted_historical_index_does_not_hide_current_named_entry()
-    test_approved_desktop_html_is_a_preparable_delivery_not_a_launchable_app()
-    test_one_approved_auip_bundle_launches_without_duplicate_preparation()
-    test_same_turn_launch_tag_can_precede_the_work_control_in_one_stream()
-    test_failed_preparation_uses_the_work_terminal_without_a_second_launch_report()
-    test_latest_attempt_revision_supersedes_historical_manifest_records()
-    test_same_fragment_schedules_deferred_launch_before_delegate_start()
-    test_later_launch_is_independent_from_the_work_delivery()
-    test_launch_timing_cannot_mix_an_existing_app_with_work_continuation()
-    test_same_turn_launch_waits_for_that_turns_successful_auip_delivery()
-    test_followup_launch_freezes_the_active_operation_without_redelegating()
-    test_ambiguous_launch_uses_one_shot_attention_selection()
-    test_deferred_launch_uses_attention_to_freeze_one_active_operation()
-    print("ok: AUIP launch is capability-based, independent, bounded, and one-shot")

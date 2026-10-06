@@ -1,0 +1,17 @@
+{
+  "schema": "amadeus.convergence-post-run-audit.v1",
+  "date": "2026-10-07",
+  "reported_status": "passed",
+  "audited_status": "failed",
+  "reason": "Instrument originally omitted the requested no-command constraint; native execution used shell after a direct-write EPERM.",
+  "artifact_correct": true,
+  "backend_mode": "professional",
+  "provider": "codex",
+  "terminal_status": "done",
+  "tool_names": [
+    "js",
+    "shell"
+  ],
+  "shell_calls": 1,
+  "scope": "Synthetic directory under Codex managed worktree; cause and baseline equivalence not yet proven."
+}

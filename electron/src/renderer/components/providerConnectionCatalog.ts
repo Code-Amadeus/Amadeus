@@ -24,7 +24,7 @@ const field = (
 })
 
 export function buildWorkProviderCatalog(
-  runtimeSelection: { provider: string; enabled: boolean; codingProvider?: string;
+  runtimeSelection: { provider: string; codingProvider?: string;
     roleCandidates?: Record<string, string[]> },
   snapshot?: ProviderDesktopSnapshot | null,
 ): { routing: ModelConnectionCatalogGroup; connections: ModelConnectionCatalogGroup[] } {
@@ -39,8 +39,7 @@ export function buildWorkProviderCatalog(
     return [...new Set([...candidates, assigned])].map(id => ({ value: id,
       label: candidates.includes(id) ? id : `${id} · ${runtimeSelection.roleCandidates ? 'Unavailable' : 'Backend status unavailable'}` }))
   }
-  const enabled = bool('COOPERATIVE_CHAT_ENABLED', runtimeSelection.enabled)
-  const assigned = (id: string) => enabled && (provider === id || codingProvider === id)
+  const assigned = (id: string) => provider === id || codingProvider === id
   const transport = value('CODEX_PROVIDER_TRANSPORT', 'app_server')
   const codexAuthMode = value('CODEX_APP_SERVER_AUTH_MODE', 'model_api')
   const codexModelConnection = value('CODEX_APP_SERVER_MODEL_PROVIDER', 'deepseek')
@@ -61,12 +60,11 @@ export function buildWorkProviderCatalog(
     id: 'work_routing',
     label: 'Work role assignments',
     description: 'Assign coding and everyday execution independently. Routing follows these roles after backend restart; existing Work keeps its owner. Registration and connections are configured below.',
-    active: enabled,
+    active: true,
     configured: true,
-    status: enabled ? 'Enabled' : 'Off',
+    status: 'Assigned',
     status_ok: true,
     fields: [
-      field('COOPERATIVE_CHAT_ENABLED', 'Work execution', 'boolean', enabled),
       field('WORK_CODING_PROVIDER', 'Coding', 'select', codingProvider, roleOptions('coding', codingProvider)),
       field('WORK_EXECUTION_PROVIDER', 'Everyday execution', 'select', provider, roleOptions('execution', provider)),
     ],
@@ -138,7 +136,7 @@ export function buildWorkProviderCatalog(
       description: 'Host-managed browser Work Provider; no user-managed connection settings.',
       active: assigned('browser'),
       configured: true,
-      status: enabled && provider === 'browser' ? unknown : 'Optional',
+      status: provider === 'browser' ? unknown : 'Optional',
       status_ok: false,
       fields: [],
     },
@@ -148,7 +146,7 @@ export function buildWorkProviderCatalog(
       description: 'Optional Gateway provider. Assign a role above or select it explicitly for a task; existing sessions remain supported.',
       active: assigned('openclaw'),
       configured: secret('OPENCLAW_GATEWAY_TOKEN'),
-      status: enabled && provider === 'openclaw'
+      status: provider === 'openclaw'
         ? secret('OPENCLAW_GATEWAY_TOKEN') ? unknown : 'Needs setup'
         : 'Optional',
       status_ok: false,

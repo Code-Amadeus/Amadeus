@@ -1,5 +1,7 @@
 """Cooperative Host boundaries use existing Provider contracts, not Codex traits."""
+import asyncio
 import json
+import sqlite3
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -11,8 +13,9 @@ from agent_host.provider_types import (ProviderNativeExecutionHandle, ProviderRu
     ProviderSessionHandle, ProviderSubmissionReconciliationResult)
 from server.control_ledger import ControlLedgerStore, ControlLedgerConflict
 from server.cooperative_context_store import CooperativeContextStore
+from server.cooperative_provider_effect import CooperativeProviderEffectLedger
 from server.cooperative_provider_loop import CooperativeProviderLoop, LoopConflict
-from server.turn_admission import admission_transcript_hash
+from server.turn_admission import admission_transcript_hash, capture_turn_admission
 
 
 def assemble(database, adapter, requirements, allocate):
@@ -26,10 +29,16 @@ def assemble(database, adapter, requirements, allocate):
     loop = CooperativeProviderLoop(runtime, query, allocate, provider=adapter.provider_id,
         context_requirements={adapter.provider_id:requirements}, publish=lambda event: True)
     loop.attach_state(CooperativeContextStore(ledger, "contracts"))
+    loop.attach_effect_ledger(CooperativeProviderEffectLedger(ledger))
     async def send(text, key):
-        ledger.open_admission(root_id="root-" + key, source_scope="chat:contracts", fence_scope="foreground",
-            utterance_id=key, authority_mode="legacy", transcript_hash=admission_transcript_hash(text))
-        receipt = await loop.submit(text, input_id=key)
+        admission = capture_turn_admission(utterance_id=key, turn_id=key,
+            session_id="contracts", transcript=text,
+            authority_mode="turn_decision")
+        opened = ledger.open_admission(root_id=admission.root_id, source_scope=admission.dialogue_source_scope,
+            fence_scope="foreground", utterance_id=key,
+            authority_mode=admission.authority_mode, transcript_hash=admission.transcript_hash)
+        admission = replace(admission, chat_epoch=opened["admission"]["chat_epoch"])
+        receipt = await loop.submit(text, input_id=key, turn_id=key, turn_admission=admission)
         await loop.wait()
         return receipt
     async def close():
@@ -42,6 +51,34 @@ def assemble(database, adapter, requirements, allocate):
 
 def no_allocation(*args):
     raise AssertionError("this Provider does not use a Host filesystem workspace")
+
+
+async def test_legacy_source_cannot_bind_a_run_and_observation_keeps_dispatch_identity(tmp_path):
+    policy = ProviderRequirements(workspace_access="none", workspace_ownership="none", resume="none")
+    adapter = StatelessFixture()
+    host = assemble(tmp_path/"host.sqlite3", adapter, policy, no_allocation)
+    try:
+        await host.send("First request", "first")
+        child = host.loop.children[host.loop.bound_context_id]
+        request, = adapter.requests
+        host.ledger.open_admission(root_id="old-source", source_scope="chat:contracts",
+            fence_scope="foreground", utterance_id="old-source", authority_mode="legacy",
+            transcript_hash=admission_transcript_hash(request.task))
+        request = replace(request, metadata={**request.metadata,
+            "source_utterance_id":"old-source", "turn_id":"old-source"})
+        before = host.loop._state.load_context(child.child_id)
+        with pytest.raises(ControlLedgerConflict, match="accepted Provider effect"):
+            host.loop._state.bind_runtime_run(child, request, "unauthorized-run")
+        assert host.loop._state.load_context(child.child_id) == before
+        observed = replace(child, output="Read-only observation")
+        host.loop._state.checkpoint(observed)
+        after = host.loop._state.load_context(child.child_id)
+        assert after["output"] == "Read-only observation"
+        assert (after["last_input_id"], after["last_turn_id"]) == (
+            before["last_input_id"], before["last_turn_id"])
+        assert len(adapter.requests) == 1
+    finally:
+        await host.close()
 
 
 class AgentFixture:
@@ -154,14 +191,27 @@ async def test_real_openclaw_adapter_uses_gateway_session_without_scratch(tmp_pa
 
 async def test_stateless_provider_reconciles_an_unresolved_run_without_a_session_handle(tmp_path):
     policy = ProviderRequirements(workspace_access="none", workspace_ownership="none", resume="none")
-    first = assemble(tmp_path/"host.sqlite3", StatelessFixture(), policy, no_allocation)
+    running = StatelessFixture()
+    started, release = asyncio.Event(), asyncio.Event()
+    original_run = running.run
+    async def paused_run(request, run_id, emit):
+        started.set()
+        await release.wait()
+        return await original_run(request, run_id, emit)
+    running.run = paused_run
+    first = assemble(tmp_path/"host.sqlite3", running, policy, no_allocation)
+    pending = asyncio.create_task(first.send("First request", "first"))
+    crash_database = tmp_path/"crash.sqlite3"
     try:
-        await first.send("First request", "first")
+        await asyncio.wait_for(started.wait(), 2)
         child = first.loop.children[first.loop.bound_context_id]
-        first.loop._save_child(child, run_id="stateless-host-run", run_status="orphaned",
-            native_session=None)
-        child_id = child.child_id
+        child_id, run_id = child.child_id, child.run_id
+        assert child.run_effect_id and child.native_session is None
+        with sqlite3.connect(crash_database) as snapshot:
+            first.ledger._db.backup(snapshot)
     finally:
+        release.set()
+        await pending
         await first.close()
 
     adapter = StatelessFixture()
@@ -169,12 +219,12 @@ async def test_stateless_provider_reconciles_an_unresolved_run_without_a_session
         execution=ProviderNativeExecutionHandle(provider=adapter.provider_id,
             execution_id="stateless-native-result"),
         terminal_result=ProviderRunResult(status="done", result="Recovered by run id"))
-    second = assemble(tmp_path/"host.sqlite3", adapter, policy, no_allocation)
+    second = assemble(crash_database, adapter, policy, no_allocation)
     try:
         receipt = await second.loop.reconcile_restored_context(child_id)
         assert receipt == {"state":"matched_terminal", "promoted":True, "reason":""}
         inspection, = adapter.inspections
-        assert inspection.run_id == "stateless-host-run" and inspection.session is None
+        assert inspection.run_id == run_id and inspection.session is None
         restored = second.loop.children[child_id]
         assert restored.run_status == "done" and restored.native_session is None
         assert not adapter.requests and not second.runtime.list_runs()

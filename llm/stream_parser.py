@@ -9,16 +9,17 @@ interleaved turns can never corrupt each other's parse state.
 from __future__ import annotations
 
 import re
+import logging
 
-from tools.text_utils import (
-    _parse_tag_attrs,
-    parse_tags_and_clean,
-)
+from tools.text_utils import _parse_tag_attrs
 
 _TAG_RE = re.compile(
     r"^\[(PARAM|EXPR|HOTKEY|EMO|ANIM|DELEGATE|CONTROL|AUIP)([^\]]*)\]$",
     flags=re.IGNORECASE,
 )
+
+EXPRESSION_ACTION_TYPES = frozenset({"EMO", "EXPR", "PARAM", "HOTKEY"})
+logger = logging.getLogger(__name__)
 
 
 class StreamTagParser:
@@ -143,24 +144,27 @@ class StreamTagParser:
         return "".join(out_chars), actions, parts
 
 
-def clean_sentence_for_tts(sentence: str, record_actions_fn=None):
-    """强力清理：移除完整标签，残留的半截标签/孤立右括号。
-
-    返回 (clean_text, expr_actions)。
-    DELEGATE 动作通过 record_actions_fn 立即触发（不依赖播放时序）；
-    EXPR/PARAM/EMO/HOTKEY 动作以列表返回，由调用方交给 ExpressionController
-    按播放时序延迟触发。
-    """
-    if not sentence:
-        return sentence, []
-    cleaned, actions = parse_tags_and_clean(sentence)
-    delegate_acts = [a for a in actions if a.get("type") == "DELEGATE"]
-    expr_acts = [
-        a for a in actions if a.get("type") not in {"DELEGATE", "AUIP", "CONTROL"}
+def presentation_parts(parser: StreamTagParser, text: str):
+    """Strip controls without decoding them or stopping subsequent speech."""
+    cleaned, actions, parts = parser.process_chunk_parts(text)
+    dropped = [a for a in actions if a.get("type") not in EXPRESSION_ACTION_TYPES]
+    if dropped:
+        logger.warning("[PRESENTATION] dropped %d non-expression tag(s): %s",
+                       len(dropped), sorted({a["type"] for a in dropped}))
+    return cleaned, [
+        (kind, value) for kind, value in parts
+        if kind == "text" or value.get("type") in EXPRESSION_ACTION_TYPES
     ]
-    if delegate_acts and record_actions_fn is not None:
-        record_actions_fn(delegate_acts)
-    s = cleaned
+
+
+def clean_presentation_sentence(sentence: str):
+    """Residual cleanup with no execution callback or control semantics."""
+    parser = StreamTagParser(control_envelope_enabled=True, stop_after_control=False)
+    cleaned, parts = presentation_parts(parser, sentence)
+    return _clean_tag_residue(cleaned), [value for kind, value in parts if kind == "action"]
+
+
+def _clean_tag_residue(s: str) -> str:
     # 移除字符串开头的孤立右括号及其前缀噪声，例如 "8 dur=2s] ..."
     while True:
         new_s = re.sub(r"^\s*[^\[]*\]", "", s)
@@ -169,4 +173,4 @@ def clean_sentence_for_tts(sentence: str, record_actions_fn=None):
         s = new_s
     # 移除未闭合的左括号到结尾，例如 "...[EXPR name=..."
     s = re.sub(r"\[[^\]]*$", "", s)
-    return s.strip(), expr_acts
+    return s.strip()

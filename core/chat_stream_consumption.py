@@ -9,29 +9,8 @@ to the event loop.  It deliberately knows nothing about Provider identity.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
-from typing import Any, TypeVar
-
-T = TypeVar("T")
-
-
-def _next_or_sentinel(iterator):
-    try:
-        return True, next(iterator)
-    except StopIteration:
-        return False, None
-
-
-async def iter_sync_stream(sync_iterable: Iterable[T]) -> AsyncIterator[T]:
-    """Read a synchronous SDK stream without blocking the event loop."""
-
-    iterator = iter(sync_iterable)
-    while True:
-        has_item, item = await asyncio.to_thread(_next_or_sentinel, iterator)
-        if not has_item:
-            break
-        yield item
-
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 async def consume_role_stream_text(
     state: Any,

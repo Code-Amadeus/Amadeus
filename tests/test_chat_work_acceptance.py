@@ -7,8 +7,8 @@ from unittest.mock import Mock
 import pytest
 
 from agent_host.provider_runtime import ProviderRuntime
+from core import session_manager as sm
 from server.event_bus import bus
-from server.handlers.chat_handler import ChatHandler
 from server.work_control import WorkControl
 from server.work_effect_executor import WorkEffectExecutor
 from server.work_ledger_coordinator import WorkLedgerCoordinator
@@ -61,8 +61,12 @@ async def host(context, monkeypatch):
         return json.dumps({"decisions":rows})
 
     executor = WorkEffectExecutor(control, runtime, coordinator)
+    def record_turn(*, session_id, user_text, assistant_text, turn_id):
+        assert session_id == sm.get_current_session_id()
+        sm.conversation_history.add_user(user_text)
+        sm.conversation_history.add_assistant(assistant_text, turn_id=turn_id)
     runner = AcceptedWorkChatRunner(control, executor, coordinator, query,
-        fence_scope="foreground", record_turn=ChatHandler._save_direct_turn)
+        fence_scope="foreground", record_turn=record_turn)
     handler, legacy, direct = context.make(runner=runner)
     state.runner, state.handler, state.legacy, state.direct = runner, handler, legacy, direct
     try:

@@ -17,7 +17,7 @@ workspace "Amadeus" "Current local AI OS interface architecture (observed 2026-0
                 api = component "WebSocket and Request Handlers" "Dispatches protocol methods and forwards selected events." "server/ws_handler.py + server/handlers/*"
                 eventBus = component "Event Bus" "In-process asynchronous pub/sub using protocol method names." "server/event_bus.py" "EventBus"
 
-                chat = component "Chat and Turn Runtime" "Streams LLM output, parses structured tags, maintains conversation turns, and schedules sentence output." "core/chat_runtime.py + core/turn_coordinator.py"
+                chat = component "Cooperative Chat and Presentation" "Cooperative owns basic/professional turns and accepted effects; shared presentation filters text, expressions and TTS without dispatch authority." "server/cooperative_chat_ingress.py + server/cooperative_provider_loop.py + core/chat_runtime.py"
                 session = component "Session and Active Work Context" "Persists chat history and exposes bounded active-provider context to later turns." "core/session_manager.py + server/work_context.py"
 
                 providerGateway = component "Provider Gateway" "Normalizes provider.run, cancellation, resume restrictions, and Provider inspection commands." "server/handlers/provider_handler.py"

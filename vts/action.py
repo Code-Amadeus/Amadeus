@@ -9,7 +9,6 @@
 依赖注入（configure()）：
   - vts_manager     : VTSConnectionManager 实例
   - pending_actions : Queue（由 server.app 传入）
-  - delegate_fn     : async callable，处理 DELEGATE 标签（_handle_delegate）
 """
 
 import logging
@@ -33,17 +32,14 @@ _paused: bool = False
 # ===== 依赖注入占位 =====
 _vts_manager = None
 _pending_actions = None
-_delegate_fn = None
 
-def configure(vts_manager=None, pending_actions=None, delegate_fn=None):
+def configure(vts_manager=None, pending_actions=None):
     """注入运行时依赖。在 async main() 初始化完毕后调用。"""
-    global _vts_manager, _pending_actions, _delegate_fn
+    global _vts_manager, _pending_actions
     if vts_manager is not None:
         _vts_manager = vts_manager
     if pending_actions is not None:
         _pending_actions = pending_actions
-    if delegate_fn is not None:
-        _delegate_fn = delegate_fn
 
 
 def set_paused(paused: bool) -> None:
@@ -322,19 +318,12 @@ def reset_all_expressions(fade_time: float = 0.2):
 # =============================================================================
 
 def record_expression_actions(actions):
+    from llm.stream_parser import EXPRESSION_ACTION_TYPES
+
     for action in actions or ():
+        if action.get("type") not in EXPRESSION_ACTION_TYPES:
+            logger.warning("Ignoring non-expression action at presentation sink: %s", action.get("type"))
+            continue
         if _pending_actions is not None:
             _pending_actions.put(action)
             logger.info("parsed expression action: %s", action)
-
-
-def record_actions(actions):
-    """Compatibility facade for legacy VTS callers and focused tests."""
-
-    from server.host_action_dispatcher import record_actions as host_record_actions
-
-    return host_record_actions(
-        actions,
-        delegate_handler=_delegate_fn,
-        expression_sink=record_expression_actions,
-    )

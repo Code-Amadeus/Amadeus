@@ -1,5 +1,9 @@
 # 0.15 Alpha impact and validation map
 
+> Historical record: Original Chat and its route selector are retired in the convergence branch.
+> For the current basic/professional runtime and settings migration, see
+> [Chat runtime convergence](chat-runtime-convergence.md). The historical results below are unchanged.
+
 This is a review map, not a statement that every adjacent subsystem has passed
 physical acceptance. Routing crosses shared owners, so file preservation and a green
 build alone cannot establish the absence of side effects.

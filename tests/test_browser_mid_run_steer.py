@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -32,7 +32,6 @@ from agent_host.provider_types import (
     ProviderSteerRequest,
 )
 from server.event_bus import bus
-from server.handlers.chat_handler import ChatHandler
 from server.handlers.provider_handler import ProviderHandler
 from server.handlers.work_activity_handler import WorkActivityCoordinator
 from server.interaction_branch import InteractionBranchCoordinator, InteractionBranchState
@@ -1675,10 +1674,8 @@ def test_adapter_steer_receipts_cannot_mint_or_advance_host_revision() -> None:
     asyncio.run(run())
 
 
-def test_chat_overlap_emits_only_latest_steered_turn() -> None:
+def test_captured_continuations_apply_only_the_latest_steered_instruction() -> None:
     async def run() -> None:
-        import agent_host.provider_runtime as runtime_module
-
         engine = _SteerEngine()
         planner_started = asyncio.Event()
         release_planner = asyncio.Event()
@@ -1763,121 +1760,44 @@ def test_chat_overlap_emits_only_latest_steered_turn() -> None:
                 expires_at=time.time() + 900,
             )
             coordinator._active_by_session[branch.parent_session_id] = branch
-            interaction_branch_module._current_coordinator = coordinator
-
-            unexpected_llm_calls: list[str] = []
-
-            async def unexpected_llm(text, **_kwargs):
-                unexpected_llm_calls.append(str(text))
-                raise AssertionError("same-site structural continuation must bypass main LLM")
-
-            spoken: list[dict[str, Any]] = []
-
-            async def voice_sink(payload):
-                spoken.append(dict(payload))
-
-            handler = ChatHandler()
-            handler.configure(
-                unexpected_llm,
-                asyncio.Queue(),
-                interaction_branch_router=coordinator.try_route_user_message,
-                assistant_voice_sink=voice_sink,
-            )
-            next_epoch = 0
-
-            def open_turn(**_kwargs):
-                nonlocal next_epoch
-                next_epoch += 1
-                return {"chat_epoch": next_epoch}
-
-            handler._open_turn = open_turn  # type: ignore[method-assign]
-            saved_turns: list[dict[str, Any]] = []
-            completed: list[dict[str, Any]] = []
-            tokens: list[dict[str, Any]] = []
-
-            async def capture_complete(_method, params):
-                completed.append(dict(params))
-
-            async def capture_token(_method, params):
-                tokens.append(dict(params))
-
-            async def visible(_turn_id: str) -> bool:
-                return True
-
-            bus.on(Method.CHAT_COMPLETE, capture_complete)
-            bus.on(Method.CHAT_TOKEN, capture_token)
             try:
-                with (
-                    patch.object(runtime_module, "runtime", runtime),
-                    patch.object(
-                        ChatHandler,
-                        "_turn_allows_visible_emit",
-                        new=staticmethod(visible),
-                    ),
-                    patch.object(
-                        ChatHandler,
-                        "_save_direct_turn",
-                        new=staticmethod(lambda **kwargs: saved_turns.append(dict(kwargs))),
-                    ),
-                    patch.object(
-                        ChatHandler,
-                        "_notify_coordinator_finished",
-                        new=staticmethod(lambda *_args, **_kwargs: None),
-                    ),
-                    patch("core.session_manager.set_current_session_id"),
-                    patch(
-                        "core.chat_runtime.get_chat_runtime",
-                        return_value=SimpleNamespace(enable_conversation=False),
-                    ),
-                ):
-                    await handler.send_text(
-                        "Open https://example.test/intermediate",
-                        session_id="chat-steer-session",
-                        turn_id="turn-1",
-                    )
-                    first_task = handler._stream_task
-                    assert first_task is not None
-                    await _wait_for_steer_revision(record, 1)
-
-                    await handler.send_text(
-                        "Open https://example.test/newest",
-                        session_id="chat-steer-session",
-                        turn_id="turn-2",
-                    )
-                    second_task = handler._stream_task
-                    assert second_task is not None and second_task is not first_task
-                    await _wait_for_steer_revision(record, 2)
-                    release_planner.set()
-                    gathered = await asyncio.wait_for(
-                        asyncio.gather(
-                            first_task,
-                            second_task,
-                            return_exceptions=True,
-                        ),
-                        timeout=4.0,
-                    )
-                    assert isinstance(gathered[0], asyncio.CancelledError)
-                    await asyncio.sleep(0)
+                first_lease = coordinator.capture_routing_lease(branch.parent_session_id)
+                assert first_lease is not None
+                first = await coordinator.continue_from_delegate(
+                    session_id=branch.parent_session_id,
+                    task="Open https://example.test/intermediate",
+                    source_user_text="Open https://example.test/intermediate",
+                    turn_id="turn-1", routing_lease=first_lease)
+                assert first is not None and first.accepted
+                await _wait_for_steer_revision(record, 1)
+                second_lease = coordinator.capture_routing_lease(branch.parent_session_id)
+                assert second_lease is not None
+                second = await coordinator.continue_from_delegate(
+                    session_id=branch.parent_session_id,
+                    task="Open https://example.test/newest",
+                    source_user_text="Open https://example.test/newest",
+                    turn_id="turn-2", routing_lease=second_lease)
+                assert second is not None and second.accepted
+                await _wait_for_steer_revision(record, 2)
+                assert first.run["run_id"] == second.run["run_id"] == record.run_id
+                release_planner.set()
+                assert record.task_handle is not None
+                await asyncio.wait_for(record.task_handle, 4.0)
             finally:
-                bus.off(Method.CHAT_COMPLETE, capture_complete)
-                bus.off(Method.CHAT_TOKEN, capture_token)
-                interaction_branch_module._current_coordinator = None
                 await adapter.shutdown()
 
         assert provider_runs == []
-        assert unexpected_llm_calls == []
         assert engine.executed == ["newest"]
         assert record.metadata["steering"]["applied_revisions"] == [2]
-        assert [item["turn_id"] for item in completed] == ["turn-2"]
-        assert tokens and {item["turn_id"] for item in tokens} == {"turn-2"}
-        assert len(spoken) == 1
-        assert [item["turn_id"] for item in saved_turns] == ["turn-2"]
-        assert handler._last_assistant_turn_id == "turn-2"
+        assert record.status == "done"
+        assert branch.accepted_instruction_revision == 2
+        assert [item["content"] for item in branch.visible_messages] == [
+            "Open https://example.test/intermediate", "Open https://example.test/newest"]
 
     asyncio.run(run())
 
 
-def test_retarget_stops_remaining_plan_and_tombstones_old_result() -> None:
+def test_captured_close_stops_remaining_plan_and_tombstones_old_result() -> None:
     async def run() -> None:
         engine = _SteerEngine()
 
@@ -1917,7 +1837,7 @@ def test_retarget_stops_remaining_plan_and_tombstones_old_result() -> None:
             await asyncio.wait_for(engine.first_action_started.wait(), timeout=2.0)
 
             async def provider_run(_params):
-                raise AssertionError("retarget must return to main chat")
+                raise AssertionError("closing a branch must not start another Browser run")
 
             async def provider_steer(params):
                 return await runtime.steer(
@@ -1949,14 +1869,10 @@ def test_retarget_stops_remaining_plan_and_tombstones_old_result() -> None:
             )
             coordinator._active_by_session[branch.parent_session_id] = branch
 
-            routed = await coordinator.try_route_user_message(
-                text="Open https://different.test/new-task",
-                session_id="retarget-session",
-                turn_id="retarget-turn",
-            )
-            assert routed is not None
-            assert routed["handled"] is False
-            assert routed["routing_scope_transition"]["state"] == "absent"
+            lease = coordinator.capture_routing_lease("retarget-session")
+            assert lease is not None
+            assert await coordinator.close_from_routing_lease(
+                lease, reason="replace_browser") is True
             assert coordinator.active_branch_for_session("retarget-session") is None
             engine.release_first_action.set()
             assert record.task_handle is not None
@@ -2096,90 +2012,6 @@ def test_steer_progress_is_visible_but_silent_and_buttonless() -> None:
         assert len(closed_notes) == 1
         assert closed_notes[0].get("observer_policy") == "silent"
         assert closed_notes[0].get("speak") is False
-
-    asyncio.run(run())
-
-
-def test_direct_branch_history_never_switches_the_loaded_session() -> None:
-    history = SimpleNamespace(add_user=Mock(), add_assistant=Mock(), dialog=[])
-    set_current = Mock()
-    with (
-        patch(
-            "core.session_manager.get_current_session_id",
-            return_value="session-b",
-        ),
-        patch("core.session_manager.set_current_session_id", new=set_current),
-        patch("core.session_manager.conversation_history", history),
-        patch("core.session_manager.save_session") as save_session,
-    ):
-        ChatHandler._save_direct_turn(
-            session_id="session-a",
-            user_text="continue in a",
-            assistant_text="done in a",
-            turn_id="turn-a",
-            branch_id="branch-a",
-        )
-
-    set_current.assert_not_called()
-    history.add_user.assert_not_called()
-    history.add_assistant.assert_not_called()
-    save_session.assert_not_called()
-
-
-def test_direct_route_exception_after_side_effect_never_falls_back_to_llm() -> None:
-    async def run() -> None:
-        route_calls = 0
-        llm_calls: list[str] = []
-
-        async def route(**_kwargs):
-            nonlocal route_calls
-            route_calls += 1
-            raise ValueError("projection failed after provider action")
-
-        async def llm(text, **_kwargs):
-            llm_calls.append(str(text))
-            return "must not run"
-
-        handler = ChatHandler()
-        handler.configure(
-            llm,
-            asyncio.Queue(),
-            interaction_branch_router=route,
-        )
-        handler._chat_epoch = 1
-        handler._active_turn_id = "failed-route-turn"
-        visible: list[str] = []
-        with (
-            patch.object(
-                ChatHandler,
-                "_turn_allows_visible_emit",
-                new=staticmethod(lambda _turn_id: _true_async()),
-            ),
-            patch.object(
-                ChatHandler,
-                "_notify_coordinator_finished",
-                new=staticmethod(lambda *_args, **_kwargs: None),
-            ),
-        ):
-            await handler._run_stream(
-                text="perform one action",
-                callback=visible.append,
-                turn_id="failed-route-turn",
-                session_id="",
-                chat_epoch=1,
-                interaction_branch_routing_lease={
-                    "state": "bound",
-                    "parent_session_id": "route-session",
-                    "branch_id": "route-branch",
-                },
-            )
-
-        assert route_calls == 1
-        assert llm_calls == []
-        assert visible and "did not submit the same request again" in visible[-1]
-
-    async def _true_async() -> bool:
-        return True
 
     asyncio.run(run())
 

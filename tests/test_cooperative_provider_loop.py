@@ -1141,7 +1141,6 @@ async def test_real_chat_grant_controls_cooperative_action_acceptance(loop_host,
                 host.receipts["chat-input"]["run_id"]
             )
             assert any(call.args[0] == "chat.complete" for call in emit.await_args_list)
-        assert host.handler._interaction_branch_router is None
     finally:
         release.set()
         await host.close()

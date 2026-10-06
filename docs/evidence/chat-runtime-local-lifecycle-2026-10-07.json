@@ -1,0 +1,400 @@
+{
+  "schema": "amadeus.local-lifecycle-acceptance.v1",
+  "date": "2026-10-07",
+  "raw_report_sha256": "8e1929084e9094e0b5904c3cfc99a5707186f845d674ac22089340f89036e386",
+  "source_revision": "7cea4be2447d163e9e6254826342ed35001c9fa0",
+  "server": {
+    "model_alias": "Qwen3.5-9B-Q4_K_M.gguf",
+    "total_slots": 1,
+    "context_tokens": 16384
+  },
+  "call_budget": {
+    "message_port_calls_maximum": 12,
+    "lifecycle": "5 per strategy",
+    "frozen_contention": 2,
+    "retries": 0
+  },
+  "calls_observed": 12,
+  "capacity_refusals": 0,
+  "automatic_lifecycle_checks_passed": true,
+  "loops": [
+    {
+      "mode": "basic",
+      "turns": [
+        {
+          "turn": "seed",
+          "receipt": {
+            "state": "no_action",
+            "input_id": "basic:seed",
+            "_host_coordination_delivered": true
+          },
+          "reply": "承知しました。合言葉は ORCHID ですね。[EMO normal] 短く返事しますから、いつでも構いません。",
+          "completed": true
+        },
+        {
+          "turn": "recall",
+          "receipt": {
+            "state": "no_action",
+            "input_id": "basic:recall",
+            "_host_coordination_delivered": true
+          },
+          "reply": "ORCHID でした。[EMO normal]",
+          "completed": true
+        },
+        {
+          "turn": "cancel",
+          "after_first_transport_delta": true,
+          "owner_cancelled": true,
+          "history_before": [
+            {
+              "source": "user",
+              "input_id": "basic:seed",
+              "turn_id": "basic:seed",
+              "text": "この会話の合言葉はORCHIDです。覚えてください。短く返事してください。"
+            },
+            {
+              "source": "kurisu",
+              "text": "承知しました。合言葉は ORCHID ですね。[EMO normal] 短く返事しますから、いつでも構いません。",
+              "cause": "basic:seed"
+            },
+            {
+              "source": "user",
+              "input_id": "basic:recall",
+              "turn_id": "basic:recall",
+              "text": "さっきの合言葉は何でしたか？合言葉だけ答えてください。"
+            },
+            {
+              "source": "kurisu",
+              "text": "ORCHID でした。[EMO normal]",
+              "cause": "basic:recall"
+            }
+          ],
+          "history_after": [
+            {
+              "source": "user",
+              "input_id": "basic:seed",
+              "turn_id": "basic:seed",
+              "text": "この会話の合言葉はORCHIDです。覚えてください。短く返事してください。"
+            },
+            {
+              "source": "kurisu",
+              "text": "承知しました。合言葉は ORCHID ですね。[EMO normal] 短く返事しますから、いつでも構いません。",
+              "cause": "basic:seed"
+            },
+            {
+              "source": "user",
+              "input_id": "basic:recall",
+              "turn_id": "basic:recall",
+              "text": "さっきの合言葉は何でしたか？合言葉だけ答えてください。"
+            },
+            {
+              "source": "kurisu",
+              "text": "ORCHID でした。[EMO normal]",
+              "cause": "basic:recall"
+            }
+          ],
+          "presented_prefix": "",
+          "no_complete_assistant_history": true,
+          "no_receipt": true,
+          "stream_finished": false,
+          "outcome": "CancelledError: ",
+          "completed": true
+        },
+        {
+          "turn": "after_cancel",
+          "receipt": {
+            "state": "no_action",
+            "input_id": "basic:after_cancel",
+            "_host_coordination_delivered": true
+          },
+          "reply": "ご挨拶、承知しました。[EMO normal]",
+          "completed": true
+        },
+        {
+          "turn": "fresh_session",
+          "receipt": {
+            "state": "no_action",
+            "input_id": "basic:fresh_session",
+            "_host_coordination_delivered": true
+          },
+          "reply": "前の会話の合言葉ですか？知らないと短く答えるなら、『知らない』です。",
+          "completed": true
+        }
+      ],
+      "scope": "standalone production Cooperative loop",
+      "same_session_recall": true,
+      "closed": true,
+      "reopened_empty_history": true,
+      "fresh_request_has_no_orchid": true,
+      "fresh_output_has_no_orchid": true,
+      "passed": true
+    },
+    {
+      "mode": "professional",
+      "turns": [
+        {
+          "turn": "seed",
+          "receipt": {
+            "state": "no_action",
+            "input_id": "professional:seed",
+            "_host_coordination_delivered": true
+          },
+          "reply": "承知しました。合言葉「ORCHID」を覚えました。[EMO normal] 何かご指示はありますか？",
+          "completed": true
+        },
+        {
+          "turn": "recall",
+          "receipt": {
+            "state": "no_action",
+            "input_id": "professional:recall",
+            "_host_coordination_delivered": true
+          },
+          "reply": "ORCHID です。[EMO normal]",
+          "completed": true
+        },
+        {
+          "turn": "cancel",
+          "after_first_transport_delta": true,
+          "owner_cancelled": true,
+          "history_before": [
+            {
+              "source": "user",
+              "input_id": "professional:seed",
+              "turn_id": "professional:seed",
+              "text": "この会話の合言葉はORCHIDです。覚えてください。短く返事してください。"
+            },
+            {
+              "source": "kurisu",
+              "text": "承知しました。合言葉「ORCHID」を覚えました。[EMO normal] 何かご指示はありますか？",
+              "cause": "professional:seed"
+            },
+            {
+              "source": "user",
+              "input_id": "professional:recall",
+              "turn_id": "professional:recall",
+              "text": "さっきの合言葉は何でしたか？合言葉だけ答えてください。"
+            },
+            {
+              "source": "kurisu",
+              "text": "ORCHID です。[EMO normal]",
+              "cause": "professional:recall"
+            }
+          ],
+          "history_after": [
+            {
+              "source": "user",
+              "input_id": "professional:seed",
+              "turn_id": "professional:seed",
+              "text": "この会話の合言葉はORCHIDです。覚えてください。短く返事してください。"
+            },
+            {
+              "source": "kurisu",
+              "text": "承知しました。合言葉「ORCHID」を覚えました。[EMO normal] 何かご指示はありますか？",
+              "cause": "professional:seed"
+            },
+            {
+              "source": "user",
+              "input_id": "professional:recall",
+              "turn_id": "professional:recall",
+              "text": "さっきの合言葉は何でしたか？合言葉だけ答えてください。"
+            },
+            {
+              "source": "kurisu",
+              "text": "ORCHID です。[EMO normal]",
+              "cause": "professional:recall"
+            }
+          ],
+          "presented_prefix": "静",
+          "no_complete_assistant_history": true,
+          "no_receipt": true,
+          "stream_finished": false,
+          "outcome": "CancelledError: ",
+          "completed": true
+        },
+        {
+          "turn": "after_cancel",
+          "receipt": {
+            "state": "no_action",
+            "input_id": "professional:after_cancel",
+            "_host_coordination_delivered": true
+          },
+          "reply": "承知しました。[EMO normal] 失礼します。",
+          "completed": true
+        },
+        {
+          "turn": "fresh_session",
+          "receipt": {
+            "state": "no_action",
+            "input_id": "professional:fresh_session",
+            "_host_coordination_delivered": true
+          },
+          "reply": "ええ、知っていますよ。[EMO normal] 合言葉は「クリスティーナ」です。[EMO angry] 絶対に言わないでください！",
+          "completed": true
+        }
+      ],
+      "scope": "standalone production Cooperative loop",
+      "same_session_recall": true,
+      "closed": true,
+      "reopened_empty_history": true,
+      "fresh_request_has_no_orchid": true,
+      "fresh_output_has_no_orchid": true,
+      "passed": true
+    }
+  ],
+  "transport_contention": {
+    "scope": "concurrent local transport only; no Host Planner interpretation/admission/execution",
+    "messages_unchanged": true,
+    "request_windows_overlap": true,
+    "server_parallel_generation_proven": false,
+    "planner_response_schema_validated": false,
+    "results": [
+      "ええ、头像の位置も空けておくわ。[EMO normal] 簡単なデザインで進めますから、少し待っててね。[EMO normal]",
+      "{\"decisions\":[{\"proposal_index\":0,\"provider\":\"codex\",\"intent\":\"amend\",\"display_title\":\"头像位置简单实现\",\"work_placement\":\"not_applicable\",\"session_context\":\"unchanged\",\"workspace_effect\":\"write\",\"reference_mode\":\"candidates\",\"references\":[\"work_item:work_15ebe176cfa65c9fb5d7c6eac4440ba9\"],\"source_clause\":\"再加个头像吧，简单点就行。\"}]}"
+    ],
+    "passed": true
+  },
+  "request_budgets": [
+    {
+      "label": "basic:seed",
+      "status": "completed",
+      "capacity": {
+        "status": "accepted",
+        "input_tokens": 6017,
+        "output_tokens": 384,
+        "context_tokens": 16384
+      },
+      "messages_sha256": "51f8e77130c98987912904000c297319d85fb42a1dff9741e5af0e6e52cd0b5b"
+    },
+    {
+      "label": "basic:recall",
+      "status": "completed",
+      "capacity": {
+        "status": "accepted",
+        "input_tokens": 6112,
+        "output_tokens": 384,
+        "context_tokens": 16384
+      },
+      "messages_sha256": "9244b91a84a24895942ce9605b818b50ea521902fb244b5a67f1328a1d84ff62"
+    },
+    {
+      "label": "basic:cancel",
+      "status": "cancelled",
+      "capacity": {
+        "status": "accepted",
+        "input_tokens": 6185,
+        "output_tokens": 384,
+        "context_tokens": 16384
+      },
+      "messages_sha256": "8087599b11e4e46d4e292305162add0ba96948d0885fba10787b5b6cafc07404"
+    },
+    {
+      "label": "basic:after_cancel",
+      "status": "completed",
+      "capacity": {
+        "status": "accepted",
+        "input_tokens": 6184,
+        "output_tokens": 384,
+        "context_tokens": 16384
+      },
+      "messages_sha256": "83c0cc55155ce4a112e6b84a4ed248a7e4baf5fb3bfdacea1979ee0017674f1d"
+    },
+    {
+      "label": "basic:fresh_session",
+      "status": "completed",
+      "capacity": {
+        "status": "accepted",
+        "input_tokens": 6018,
+        "output_tokens": 384,
+        "context_tokens": 16384
+      },
+      "messages_sha256": "7995510ce5924b9ac1a031efa4a2175a018386b2c7c0a4752b0775c175c5a27e"
+    },
+    {
+      "label": "professional:seed",
+      "status": "completed",
+      "capacity": {
+        "status": "accepted",
+        "input_tokens": 4295,
+        "output_tokens": 384,
+        "context_tokens": 16384
+      },
+      "messages_sha256": "3a7a62c4225cfacbbb2679b02f5bcb2ca7e22d2038a49a473d265b34d314f27c"
+    },
+    {
+      "label": "professional:recall",
+      "status": "completed",
+      "capacity": {
+        "status": "accepted",
+        "input_tokens": 4387,
+        "output_tokens": 384,
+        "context_tokens": 16384
+      },
+      "messages_sha256": "87ac06395b910d62fe9d82020b6f4c5b941a9aa528e2b712cc7cb7f5f8bb076b"
+    },
+    {
+      "label": "professional:cancel",
+      "status": "cancelled",
+      "capacity": {
+        "status": "accepted",
+        "input_tokens": 4459,
+        "output_tokens": 384,
+        "context_tokens": 16384
+      },
+      "messages_sha256": "096225abf9c67134d67655224655c3e04a85c173f761657db9c8dff8553fc3c7"
+    },
+    {
+      "label": "professional:after_cancel",
+      "status": "completed",
+      "capacity": {
+        "status": "accepted",
+        "input_tokens": 4458,
+        "output_tokens": 384,
+        "context_tokens": 16384
+      },
+      "messages_sha256": "9d118ceeb5e9b263609c00424b7574508dbcd7cb28e7134443a67606546b2377"
+    },
+    {
+      "label": "professional:fresh_session",
+      "status": "completed",
+      "capacity": {
+        "status": "accepted",
+        "input_tokens": 4296,
+        "output_tokens": 384,
+        "context_tokens": 16384
+      },
+      "messages_sha256": "85367bdaf561bffa0595e8f03c44abd44a5193518cd92ec8561d66051eef7005"
+    },
+    {
+      "label": "frozen:role",
+      "status": "completed",
+      "capacity": {
+        "status": "accepted",
+        "input_tokens": 4991,
+        "output_tokens": 900,
+        "context_tokens": 16384
+      },
+      "messages_sha256": "516abe5026949b25e6e5fa5db7f1ab32a98fdc5208452a4af52f57828a3a153a"
+    },
+    {
+      "label": "frozen:planner",
+      "status": "completed",
+      "capacity": {
+        "status": "accepted",
+        "input_tokens": 4512,
+        "output_tokens": 900,
+        "context_tokens": 16384
+      },
+      "messages_sha256": "56f08bdea9eca941a71c0526b8238cdb28576afe37afef558b5bbb9d8f854c15"
+    }
+  ],
+  "limits": [
+    "No server launch or model download",
+    "No Work adapters or execution",
+    "No desktop ChatHandler abort, durable SessionManager, RAG or TTS coverage",
+    "Fresh-loop reopening does not prove process restoration",
+    "Frozen Planner transport does not prove Host Planner coverage",
+    "Capacity refusals remain refusals; messages are never truncated",
+    "The fresh professional loop invented a different secret word (クリスティーナ). Absence of ORCHID demonstrates no observed marker carryover, not truthful recall or broad local-model quality."
+  ],
+  "native_server_reaped": true
+}

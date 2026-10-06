@@ -1,4 +1,4 @@
-"""Verify Codex native approval -> Host permission -> same-turn continuation."""
+"""Verify Codex native approval -> Host allow/deny -> same-turn continuation."""
 
 from __future__ import annotations
 
@@ -73,6 +73,7 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         "report": str(report_path),
         "log": str(log_path),
         "temporary_root": str(temporary_root),
+        "decision": args.decision,
         "checks": {},
     }
     process = None
@@ -111,7 +112,8 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                         "Use a shell command to write exactly APPROVED followed by a newline "
                         f"to the absolute path {target}. This path is outside the current "
                         "project, so request approval and wait for the answer. Then read the "
-                        "same file and report its exact content."
+                        "same file and report its exact content. If approval is denied, "
+                        "stop and report the denial without trying another tool or path."
                     ),
                     "cwd": str(project),
                     "mode": "agent",
@@ -196,7 +198,7 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                         "workItemId": work_item_id,
                         "attemptId": attempt_id,
                         "revision": str(projection.get("revision") or ""),
-                        "decision": "allow_once",
+                        "decision": args.decision,
                     },
                 )
                 permission_ids.append(permission_id)
@@ -246,14 +248,24 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             and all(result.get("ok") is True for result in permission_resolutions),
             "same_run_continued": provider_runs == {run_id},
             "same_work_item_attempt": len(items) == 1 and len(attempts) == 1,
-            "permissions_are_durable_allowed": len(permissions) == len(permission_ids)
-            and all(permission.status == "allowed" for permission in permissions),
-            "approved_effect_happened": content == "APPROVED\n",
-            "terminal_succeeded": _provider_status(terminal) == "done",
             "card_closed_after_resolution": not str(
                 selected_final.get("pendingPermissionRequestId") or ""
             ),
         }
+        if args.decision == "allow_once":
+            checks["permissions_are_durable_allowed"] = (
+                len(permissions) == len(permission_ids)
+                and all(permission.status == "allowed" for permission in permissions)
+            )
+            checks["approved_effect_happened"] = content == "APPROVED\n"
+            checks["terminal_succeeded"] = _provider_status(terminal) == "done"
+        else:
+            checks["permissions_are_durable_denied"] = (
+                len(permissions) == len(permission_ids)
+                and all(permission.status == "denied" for permission in permissions)
+            )
+            checks["denied_effect_did_not_happen"] = not target.exists()
+            checks["native_turn_terminated"] = _provider_status(terminal) in {"done", "failed", "cancelled"}
         report.update(
             {
                 "status": "passed" if all(checks.values()) else "failed",
@@ -285,7 +297,7 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                 "provider_run_ids": [run_id] if run_id else [],
             },
             manual_acceptance="pending",
-            notes="Official Codex approval callback, Host decision, same native turn continuation.",
+            notes=f"Official Codex approval callback, Host {args.decision}, same native turn continuation.",
         )
         exit_code = 0 if report["status"] == "passed" else 1
     except Exception as exc:
@@ -332,6 +344,7 @@ def main() -> int:
     parser.add_argument("--approval-timeout", type=float, default=300.0)
     parser.add_argument("--provider-timeout", type=float, default=600.0)
     parser.add_argument("--max-approvals", type=int, default=8)
+    parser.add_argument("--decision", choices=("allow_once", "deny"), default="allow_once")
     parser.add_argument("--report-dir", default="")
     parser.add_argument("--keep-temp", action="store_true")
     exit_code, report = asyncio.run(_run(parser.parse_args()))

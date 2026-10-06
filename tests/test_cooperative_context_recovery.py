@@ -1594,8 +1594,7 @@ async def test_production_manager_keeps_one_handler_and_shared_runtime_across_se
     runtime.set_request_preparer(prepare_request)
     runtime.set_native_session_checkpoint(manager.checkpoint_native_session)
     manager.install()
-    assert handler._stream_llm_query == manager.run
-    assert handler._interaction_branch_router is None and handler._control_ledger is ledger
+    assert handler._turn_runner == manager.run
     assert handler._control_authority_mode == "turn_decision"
     assert sm._activation_guard == handler.invalidate_session_context
 

@@ -619,23 +619,22 @@ export function buildCapabilityProfiles(
 ): CapabilityProfile[] {
   const profiles = buildSceneCapabilityProfiles(settings)
   const backendFactsAvailable = Array.isArray(settings.model_connections)
-  const workEnabled = settings.cooperative_chat_enabled === true
-  const workProviderId = String(settings.cooperative_chat_provider || 'pi').trim().toLowerCase()
+  const workProviderId = String(settings.work_execution_provider || settings.cooperative_chat_provider || 'pi').trim().toLowerCase()
   const workProvider = providerAvailability.find(item => item.provider_id === workProviderId)
-  const workReady = workEnabled && workProvider?.registered === true && workProvider?.ready === true
+  const workReady = workProvider?.registered === true && workProvider?.ready === true
   const workImplementation = `${providerDisplayName(workProviderId)} · ${backendFactsAvailable ? 'current selection' : 'recommended default'}`
   const workItem: SceneCapabilityItem = {
     id: 'work_execution',
     label: 'Work execution',
     implementation: workImplementation,
-    detail: workEnabled
-      ? workReady
+    detail: !backendFactsAvailable
+      ? 'Backend status is unavailable; Work Provider readiness is unknown.'
+      : workReady
         ? 'The configured Work Provider passed its startup registration boundary.'
-        : `The selected Work Provider is not ready: ${String(workProvider?.reason || 'provider unavailable')}.`
-      : 'Cooperative Work execution is disabled in the current startup profile.',
+        : `The selected Work Provider is not ready: ${String(workProvider?.reason || 'provider unavailable')}.`,
     importance: 'expected',
-    state: !backendFactsAvailable ? 'unknown' : workReady ? 'ready' : workEnabled ? 'attention' : 'inactive',
-    stateLabel: !backendFactsAvailable ? 'Backend not connected' : workReady ? 'Provider registered' : workEnabled ? 'Provider unavailable' : 'Disabled',
+    state: !backendFactsAvailable ? 'unknown' : workReady ? 'ready' : 'attention',
+    stateLabel: !backendFactsAvailable ? 'Backend not connected' : workReady ? 'Provider registered' : 'Provider unavailable',
     policyLabel: 'Delegated from Chat',
     currentLabel: workReady ? 'Ready' : 'Not ready',
     configureSection: 'providers',

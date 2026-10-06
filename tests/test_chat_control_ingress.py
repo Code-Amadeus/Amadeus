@@ -1,9 +1,7 @@
 """Explicit real-Handler ingress assembly; no production canary or live models."""
 
 import asyncio
-import ast
 from contextlib import closing
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -61,7 +59,7 @@ def context(tmp_path, monkeypatch):
             legacy = AsyncMock(return_value="legacy reply")
             direct = AsyncMock(return_value=None)
             handler = ChatHandler()
-            handler.configure(stream_llm_query=legacy, pending_sentence_items=None, interaction_branch_router=direct)
+            handler.configure(stream_llm_query=legacy, pending_sentence_items=None)
             handler.configure_control_ingress(ledger, fence_scope="foreground", authority_mode=mode, turn_runner=runner)
             monkeypatch.setattr(handler, "_prepare_visual_context", AsyncMock(return_value=None))
             return handler, legacy, direct
@@ -205,14 +203,15 @@ def test_unsupported_ingress_never_falls_back_or_admits(context, kind):
 
 def test_host_mode_is_not_taken_from_request_metadata(context):
     async def run():
-        handler, legacy, direct = context.make(mode="legacy", runner=AsyncMock())
-        await handler._handle_send({**request(), "authority_mode": "turn_decision", "chat_epoch": 999})
+        runner = AsyncMock(return_value="new")
+        handler, legacy, direct = context.make(runner=runner)
+        await handler._handle_send({**request(), "authority_mode": "legacy", "chat_epoch": 999})
         await handler._stream_task
-        assert context.ledger.find_admission("chat:A", "u1")["authority_mode"] == "legacy"
+        assert context.ledger.find_admission("chat:A", "u1")["authority_mode"] == "turn_decision"
         assert handler._chat_epoch == 1
-        legacy.assert_awaited_once()
-        direct.assert_awaited_once()
-        handler._control_turn_runner.assert_not_called()
+        legacy.assert_not_called()
+        direct.assert_not_called()
+        runner.assert_awaited_once()
     asyncio.run(run())
 
 
@@ -507,40 +506,3 @@ def test_core_watermark_restore_neither_opens_a_turn_nor_moves_backwards(context
         context.turns.synchronize_chat_epoch(19)
     assert context.turns.snapshot()["epochs"]["chat"] == 20
     assert context.turns.snapshot()["active_turn_id"] == ""
-
-
-@pytest.mark.parametrize("entry", ["runtime", "dispatcher", "browser", "b2", "auip_callback"])
-def test_explicit_new_mode_cannot_enter_legacy_execution(entry):
-    admission = capture_turn_admission(utterance_id="u", turn_id="t", session_id="A", transcript="Do it", chat_epoch=1, authority_mode="turn_decision")
-    async def run():
-        if entry == "runtime":
-            from core.chat_runtime import ChatRuntime
-            runtime = ChatRuntime()
-            queue = asyncio.Queue()
-            queue.put_nowait("old item")
-            runtime.configure(pending_sentence_items=queue, playback_manager=None, provider="local")
-            with pytest.raises(TurnAuthorityError):
-                await runtime.stream_llm_query("Do it", turn_admission=admission)
-            assert queue.get_nowait() == "old item"
-        elif entry == "dispatcher":
-            from server.host_action_dispatcher import record_actions
-            sink = Mock()
-            with pytest.raises(TurnAuthorityError):
-                record_actions([{"type": "EMO", "value": "happy"}], expression_sink=sink, turn_admission=admission)
-            sink.assert_not_called()
-        elif entry in {"browser", "b2"}:
-            from server.auip_b2 import AuipB2Coordinator
-            from server.interaction_branch import InteractionBranchCoordinator
-            cls = AuipB2Coordinator if entry == "b2" else InteractionBranchCoordinator
-            with pytest.raises(TurnAuthorityError):
-                await cls.try_route_user_message(object(), text="Do it", session_id="A", turn_id="t", turn_admission=admission)
-        else:
-            path = Path(__file__).resolve().parents[1] / "server" / "app.py"
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-            bootstrap = next(node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "bootstrap")
-            callback = next(node for node in bootstrap.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "_route_auip_control")
-            namespace = {}
-            exec(compile(ast.Module(body=[callback], type_ignores=[]), str(path), "exec"), namespace)
-            with pytest.raises(TurnAuthorityError):
-                await namespace["_route_auip_control"]({}, session_id="A", user_text="Do it", turn_id="t", turn_admission=admission)
-    asyncio.run(run())

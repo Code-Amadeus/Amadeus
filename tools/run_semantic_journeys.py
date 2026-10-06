@@ -103,17 +103,17 @@ def _permission_attention(args: argparse.Namespace, report_dir: Path) -> list[st
 
 
 def _auip_experience(args: argparse.Namespace, report_dir: Path) -> list[str]:
-    return [
-        sys.executable,
-        "-B",
-        "-X",
-        "utf8",
-        str(ROOT / "tools" / "e2e_auip_semantic_journey.py"),
-        "--model",
-        args.model,
-        "--report-dir",
-        str(report_dir),
-    ]
+    """Run the shipping Cooperative entry over an isolated complete app fixture."""
+    return [sys.executable, "-B", "-X", "utf8",
+        str(ROOT / "tools" / "e2e_live_product_journey.py"),
+        "--scenario", "gomoku", "--journey-layer", "interaction",
+        "--seed", str(ROOT / "examples" / "auip-gomoku"),
+        "--engagement-mode", "collaborate", "--interaction-steps", "1",
+        "--step-text", "你先下。", "--require-b2", "--complete-gomoku-round",
+        "--exercise-gomoku-post-round", "--exercise-post-leave-chat",
+        "--require-experience-history", "--chat-route", args.chat_route,
+        "--chat-provider", args.provider, "--model", args.model,
+        "--report-dir", str(report_dir)]
 
 
 JOURNEYS = {
@@ -163,7 +163,7 @@ JOURNEYS = {
         "J7",
         "AUIP natural control, verified participation, and bounded collapse",
         True,
-        "real model + Chromium + restricted WebSocket + one continuous AppSession",
+        "shipping Electron/Cooperative ingress and real app receipts; isolated app bundle and local player clicks are fixtures",
         _auip_experience,
     ),
 }
@@ -176,6 +176,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--provider", default=os.environ.get("LLM_PROVIDER", "deepseek"))
     parser.add_argument("--model", default=os.environ.get("LLM_MODEL", "deepseek-v4-flash"))
+    parser.add_argument("--chat-route", choices=("inherit", "professional", "basic"), default="inherit",
+        help="J7 records the actual installed runtime or pins Cooperative Work planning.")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--report-root", default="")
     return parser

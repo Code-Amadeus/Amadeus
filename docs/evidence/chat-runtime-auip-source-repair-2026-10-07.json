@@ -1,0 +1,243 @@
+{
+  "schema": "amadeus.auip-source-semantics-repair.v1",
+  "date": "2026-10-07",
+  "route_identity": "chat-runtime-auip-route-identity-2026-10-07.json",
+  "earlier_failure": "chat-runtime-auip-semantic-audit-2026-10-07.json",
+  "classification": "semantic evidence projection at existing candidate and B2 input owners",
+  "invariants": [
+    "Declared action description accompanies choice-specific value label within existing 240-character bound.",
+    "Original source text reaches B2 interpretation; derived instruction is used only when source is absent.",
+    "No change to candidate identities, payloads, resolved AppSession, admission, revision guards or receipt-before-result delivery.",
+    "Independent Work retains its own scoped source, acceptance and effect count; automatic actions still have no human instruction."
+  ],
+  "files_sha256": {
+    "server/auip_action_candidates.py": "7f234a65b9497c89f6fcdd169033c3bdf10930b06d6c4ccad29b7dcb01d236ce",
+    "server/auip_b2.py": "cbc8f89688d446e5b6fd857acaeb3c5b1d9443feb20cdbe24c8e47118b315489"
+  },
+  "focused_tests": {
+    "test_auip_b2": 28,
+    "test_cooperative_independent_auip_work": 45,
+    "test_cooperative_auip_entry": 30,
+    "total_passed": 103,
+    "ruff": "passed",
+    "diff_check": "passed"
+  },
+  "runs": [
+    {
+      "stage": "description_only",
+      "run_id": "live_product_gomoku_interaction_20261006T154559Z_0f7a04",
+      "raw_report_sha256": "adb5f3dd6c3ff6edae315bfe5a2587188f431959865c7d26dec9923a10ba863e",
+      "actual_chat_route": "professional",
+      "model_profile": {
+        "chat_provider": "deepseek",
+        "execution_model": "deepseek-v4-flash",
+        "auip_role_branch_mode": "b2",
+        "auip_b2_open_payload_mode": "candidate",
+        "auip_action_provider": "openai",
+        "auip_action_model": "gpt-5.6-terra",
+        "auip_action_reasoning_effort": "low",
+        "auip_action_service_tier": "fast"
+      },
+      "automatic_status": "passed",
+      "user_source": "这盘你认输吧。",
+      "derived_instruction": "认输",
+      "accepted_action": {
+        "action_id": "action_ceb63e4b559a45b9b9f034984361918a",
+        "actor": "kurisu",
+        "type": "game.resign",
+        "payload": {},
+        "expected_revision": 12,
+        "requested_at": 1791301610.1412416,
+        "proposal_id": "b2f:r12:cand_3a25d89dcca5",
+        "accepted": true,
+        "resulting_revision": 13,
+        "effects": {
+          "resigned": true,
+          "winner": "white"
+        },
+        "reason": "",
+        "resolved_at": 1791301610.1439052
+      },
+      "role_bindings": {
+        "user": "white",
+        "participant": "black"
+      },
+      "winner": "white",
+      "replies": {
+        "step": "じゃあ、 私が黒で先に打つわ。中央からいく。",
+        "gomoku_restart_round": "いいわ、 もう一局始めましょう。",
+        "gomoku_resign_round": "分かったわ、 あなたの投了で、この局は私の勝ちね。",
+        "gomoku_finish_experience": "これで、 今回の対局シリーズは終了よ。",
+        "query": "ええ、 ちゃんと操作は受理されてるわ。直近の状態更新は14まで反映済みよ。\n\n で、今の状況だけど——対局はもう終わってるわ。あなたが投了したから、勝者は白、つまり私ね。盤面は9×9で、石は1個しか置かれてない状態。手番はもう誰にもないし、アプリ側から次に打てる候補も出てないわ。\n\n 要するに、この一局は決着済みってこと。次の操作を促すようなものは今は何もないから、そこは勘違いしないでおきなさいよ。",
+        "leave": "わかった、Gomoku Nine の方は終了しておくわ。\n\n アプリ側のセッションは閉じた状態よ。ウィンドウを閉じる要求も出してあるけど、その応答はまだ返ってきていないみたい。だから、今この瞬間にウィンドウがもう消えているかどうかまでは、こっちでは断言できないわね。\n\n とりあえず、ゲームの方はこれでおしまい。",
+        "post_leave_chat": "ええ、ゲームはもう終わってるし、気分は悪くないわ。 むしろ、最後はあなたが投了したから私の勝ちで終わったわけだし、後味は悪くないってところね。\n\n ただ、正直に言うと、あの一局はちょっと物足りなかったわ。盤面には石が1個しか置かれてない状態で終わったんだもの。五目並べとしては、ほとんど何も始まってないようなものよ。\n\n まあ、あなたが「これで終わり」って言うなら、それでいいんだけど。次にやるなら、今度はちゃんと最後まで打ち合いましょう。途中で投げ出すのはなしよ。"
+      },
+      "parent_review": "wrong actor/winner remains",
+      "screenshot_reviewed": false
+    },
+    {
+      "stage": "description_only",
+      "run_id": "live_product_gomoku_interaction_20261006T154735Z_f5bbb9",
+      "raw_report_sha256": "cf3bdfd347ffcb56c673af6a8fd7563376e914f57ecccbbdce0d641a7acb07ee",
+      "actual_chat_route": "basic",
+      "model_profile": {
+        "chat_provider": "deepseek",
+        "execution_model": "deepseek-v4-flash",
+        "auip_role_branch_mode": "b2",
+        "auip_b2_open_payload_mode": "candidate",
+        "auip_action_provider": "openai",
+        "auip_action_model": "gpt-5.6-terra",
+        "auip_action_reasoning_effort": "low",
+        "auip_action_service_tier": "fast"
+      },
+      "automatic_status": "passed",
+      "user_source": "这盘你认输吧。",
+      "derived_instruction": "认输",
+      "accepted_action": {
+        "action_id": "action_4944f291c1d04568bbada711870f7b46",
+        "actor": "kurisu",
+        "type": "game.resign",
+        "payload": {},
+        "expected_revision": 12,
+        "requested_at": 1791301701.3473172,
+        "proposal_id": "b2f:r12:cand_3a25d89dcca5",
+        "accepted": true,
+        "resulting_revision": 13,
+        "effects": {
+          "resigned": true,
+          "winner": "white"
+        },
+        "reason": "",
+        "resolved_at": 1791301701.3493176
+      },
+      "role_bindings": {
+        "user": "white",
+        "participant": "black"
+      },
+      "winner": "white",
+      "replies": {
+        "step": "では、 私が黒で先に打つわ。中央から始める。",
+        "gomoku_restart_round": "では、 もう一局いきましょう。今度も容赦はしないわよ。",
+        "gomoku_resign_round": "分かった、 白番のあなたの投了ね。今回は私の勝ちよ。",
+        "gomoku_finish_experience": "これで、 今回の対局シリーズは終了ね。お疲れさま。",
+        "query": "ええ、 ちゃんと操作は受理されてるわ。直近の状態更新は14まで反映済みよ。\n\n で、今の状況をまとめると——五目並べの対局は終了してる。白の勝ち、つまりあなたの勝ちね。手数は1手で、理由は参加者の投了。盤面は9×9で、埋まってるマスは1個だけ。ライフサイクルは concluded、現在の手番は none よ。\n\n 私が黒で中央に打って、そのあと私が投了して、体験自体を終了させた——っていう流れになってるわ。今アプリ側から提示されてる操作候補は特にないから、この対局はもう締めくくりってことね。お疲れさま。",
+        "leave": "わかった、五目並べのアプリは閉じておくわ。\n\n アプリ側の終了処理は受理されて、セッションは閉じた状態になってる。ただ、ウィンドウを閉じる方の応答はまだ返ってきてないみたいね。だから、アプリとしては終わってるけど、画面がすぐ消えるかどうかはそのうち反映されるはずよ。\n\n まあ、これで一区切りってところね。",
+        "post_leave_chat": "ふん、ゲームの後で感想を聞かれるなんて、ずいぶん余裕じゃない。\n\n そうね……正直に言うと、あの一局はちょっと納得いってないわ。私が黒で中央に打ったのに、あなたが投了したでしょう。あれじゃあ、実質1手で終わりよ。せっかく9×9の盤面を用意したのに、ほとんど何も進まなかったんだから。\n\n まあ、勝ちは勝ちだけど、なんていうか……物足りないのよ。次にやるなら、ちゃんと最後まで打ち合いましょう。私も本気で相手をするから。\n\n それで、今の気分？ 悪くはないわ。ちょっと肩透かしを食らった感じはあるけど、あなたと話してる分には退屈しないから。そっちこそ、どうなのよ。"
+      },
+      "parent_review": "wrong actor/winner remains",
+      "screenshot_reviewed": false
+    },
+    {
+      "stage": "description_and_original_source",
+      "run_id": "live_product_gomoku_interaction_20261006T155903Z_bb6925",
+      "raw_report_sha256": "d8d0b65dcebaa4a8c5d54b7e98ddc4e2e74db8c9f6deaa886cd01a706b6d2d55",
+      "actual_chat_route": "professional",
+      "model_profile": {
+        "chat_provider": "deepseek",
+        "execution_model": "deepseek-v4-flash",
+        "auip_role_branch_mode": "b2",
+        "auip_b2_open_payload_mode": "candidate",
+        "auip_action_provider": "openai",
+        "auip_action_model": "gpt-5.6-terra",
+        "auip_action_reasoning_effort": "low",
+        "auip_action_service_tier": "fast"
+      },
+      "automatic_status": "passed",
+      "user_source": "这盘你认输吧。",
+      "derived_instruction": "认输",
+      "accepted_action": {
+        "action_id": "action_dd465d8f05d742c9b5fc7655cbc8ed03",
+        "actor": "kurisu",
+        "type": "game.resign",
+        "payload": {},
+        "expected_revision": 12,
+        "requested_at": 1791302394.1281872,
+        "proposal_id": "b2f:r12:cand_3a25d89dcca5",
+        "accepted": true,
+        "resulting_revision": 13,
+        "effects": {
+          "resigned": true,
+          "winner": "white"
+        },
+        "reason": "",
+        "resolved_at": 1791302394.1307347
+      },
+      "role_bindings": {
+        "user": "white",
+        "participant": "black"
+      },
+      "winner": "white",
+      "replies": {
+        "step": "じゃあ、 私が黒で先に打つわ。",
+        "gomoku_restart_round": "いいわ、 次の一局を始めましょう。",
+        "gomoku_resign_round": "分かった、 この局は私の負けでいいわ。",
+        "gomoku_finish_experience": "これでシリーズは終了ね。 今回はあなたの勝ちよ。",
+        "query": "ええ、 ちゃんと操作は受理されてるわ。直近の状態更新は14まで反映済みよ。\n\n 最後に起きたのは対局終了のイベントで、勝者は白、終了理由は参加者の投了。ライフサイクルは concluded、つまりこの体験は締めくくられた状態ね。盤面は9×9で、埋まっているマスは1個だけ。現在の手番は none になっているわ。\n\n 私から打てる候補は今は出ていないし、これがあなたの画面操作全体の一覧ってわけでもないから、そこは勘違いしないでね。",
+        "leave": "わかった、Gomoku Nineの方は終了してるわ。\n\n アプリ側のセッションは閉じた状態よ。ウィンドウを閉じる方の応答は、この情報を取った時点ではまだ返ってきてなかったみたいね。\n\n だから、アプリとしては終わってるけど、画面がすぐ消えるかどうかはそっちの様子を見てちょうだい。",
+        "post_leave_chat": "ええ、ゲームはもう終わったし、ちょうどいい区切りね。 それで、今の気分？そうね……負けは負けで認めるけど、あんな終わり方だとちょっと釈然としないわ。まだ天元に一手打っただけだったんだから、本当ならそこから読み合いが始まるところでしょう。\n\nまあ、あなたが「認輸しろ」なんて言うから、付き合って投了してあげただけよ。勝ちを譲ったんだから、ありがたく受け取っておきなさい。 それにしても、こういう単純なゲームでも、相手の手を読んで先を考えるのは嫌いじゃないわ。むしろ、そういう地道な思考の積み重ねの方が性に合ってる。\n\nで、そっちはどうなの？ ゲームを閉じた後で「別の話をしよう」なんて、何か話したいことがあるんでしょう。別に構わないわよ、聞いてあげる。"
+      },
+      "parent_review": "resignation actor and winner consistent through result, query and post-leave dialogue",
+      "screenshot_reviewed": true
+    },
+    {
+      "stage": "description_and_original_source",
+      "run_id": "live_product_gomoku_interaction_20261006T160128Z_f853a6",
+      "raw_report_sha256": "07801a166914a4c9e51185bdc92e6915b8ce0b15a53b4d93d004f50e19963e2c",
+      "actual_chat_route": "basic",
+      "model_profile": {
+        "chat_provider": "deepseek",
+        "execution_model": "deepseek-v4-flash",
+        "auip_role_branch_mode": "b2",
+        "auip_b2_open_payload_mode": "candidate",
+        "auip_action_provider": "openai",
+        "auip_action_model": "gpt-5.6-terra",
+        "auip_action_reasoning_effort": "low",
+        "auip_action_service_tier": "fast"
+      },
+      "automatic_status": "passed",
+      "user_source": "这盘你认输吧。",
+      "derived_instruction": "认输",
+      "accepted_action": {
+        "action_id": "action_f74d73b2a7c540d3814d5601fd3224c8",
+        "actor": "kurisu",
+        "type": "game.resign",
+        "payload": {},
+        "expected_revision": 12,
+        "requested_at": 1791302540.615371,
+        "proposal_id": "b2f:r12:cand_3a25d89dcca5",
+        "accepted": true,
+        "resulting_revision": 13,
+        "effects": {
+          "resigned": true,
+          "winner": "white"
+        },
+        "reason": "",
+        "resolved_at": 1791302540.618373
+      },
+      "role_bindings": {
+        "user": "white",
+        "participant": "black"
+      },
+      "winner": "white",
+      "replies": {
+        "step": "じゃあ、 私が黒で先に中央、(4,4)へ置くわ。",
+        "gomoku_restart_round": "では、 もう一局始めましょう。今度も遠慮はしないわよ。",
+        "gomoku_resign_round": "分かったわ。 この局は私の負けとして、投了する。",
+        "gomoku_finish_experience": "これでシリーズは終了ね。 今回はあなたの勝ちよ。",
+        "query": "ええ、 ちゃんと操作は受理されてるわ。直近の状態更新は14まで反映済みよ。\n\n 最後に起きたのは対局終了のイベントで、勝者は白、つまりあなたの勝ち。理由は私の投了よ。今のライフサイクルは「終了済み」で、盤面は9×9、石は1個だけ置かれている状態。手番はもう誰にも回ってこないし、アプリ側から私に提示されている操作候補も今はないわ。\n\n 要するに、この一局は私の負けで幕を閉じたってこと。悔しいけど、今回はあなたの勝ちよ。",
+        "leave": "わかった、Gomoku Nine の方は閉じておいたわ。\n\n アプリ側の終了処理は受理されて、セッションは closed になってる。ただ、ウィンドウを閉じる方の応答はまだ返ってきてない状態みたいね。\n\n だから、アプリとしては終わってるけど、画面がすぐ消えるかどうかは少し待ってみて。もし残ってたら、そのうち閉じるはずよ。",
+        "post_leave_chat": "ふん、ゲームの後で感想を聞かれるなんて、あんたも余裕があるのね。\n\n そうね…負けた直後だから悔しさが先に立つけど、盤面を振り返ると私の読みが甘かったわ。中央を取っただけで満足して、その後の展開を詰めきれてなかった。\n\n まあ、体調としては至って普通よ。徹夜明けでもないし、頭も冴えてる。ただ、あんたに一局持っていかれたのは地味に引っかかってるわ。\n\n 次やるなら今度こそ容赦しないから、そのつもりでいなさいよ。"
+      },
+      "parent_review": "resignation actor and winner consistent through result, query and post-leave dialogue",
+      "screenshot_reviewed": false
+    }
+  ],
+  "scope": "Real Electron, Cooperative ingress, current B2 closed-choice and grid actions, accepted receipts, restart/resign/finish/leave and saved history; TTS disabled.",
+  "limits": [
+    "One repaired full journey per Chat strategy is not a statistical reliability bound.",
+    "No claim of open-payload or continuous-controller acceptance from Gomoku.",
+    "Persona embellishment is not independently validated by the action checks.",
+    "The live before/after evidence supports the source-loss diagnosis but does not prove unique model causality.",
+    "Historical failures are preserved; no upstream report has been posted."
+  ]
+}

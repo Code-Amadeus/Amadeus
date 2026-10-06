@@ -1,0 +1,180 @@
+{
+  "schema": "amadeus.chat-latency-instrument-audit.v1",
+  "date": "2026-10-07",
+  "fault": "Refresh/readiness wait was incorrectly included in generation latency.",
+  "fixed_origin": "After input.fill returns, immediately before Enter. Separately report input_preparation_s and chat.user receipt.",
+  "corrected_five_pairs": {
+    "summary": {
+      "first_chat_token_s": {
+        "baseline_median": 1.219,
+        "candidate_median": 1.047,
+        "paired_delta_median": -0.07900000000000018,
+        "baseline_mean": 1.15,
+        "candidate_mean": 1.0594
+      },
+      "chat_complete_s": {
+        "baseline_median": 1.375,
+        "candidate_median": 1.235,
+        "paired_delta_median": -0.0950000000000002,
+        "baseline_mean": 1.4000000000000001,
+        "candidate_mean": 1.2624
+      }
+    },
+    "samples": [
+      {
+        "label": "baseline",
+        "index": 0,
+        "timings": {
+          "input_preparation_s": 2.828,
+          "backend_user_event_s": 0.016,
+          "first_chat_token_s": 1.25,
+          "chat_complete_s": 1.375
+        }
+      },
+      {
+        "label": "baseline",
+        "index": 1,
+        "timings": {
+          "input_preparation_s": 2.828,
+          "backend_user_event_s": 0.015,
+          "first_chat_token_s": 0.953,
+          "chat_complete_s": 1.359
+        }
+      },
+      {
+        "label": "baseline",
+        "index": 2,
+        "timings": {
+          "input_preparation_s": 2.812,
+          "backend_user_event_s": 0.016,
+          "first_chat_token_s": 1.219,
+          "chat_complete_s": 1.485
+        }
+      },
+      {
+        "label": "baseline",
+        "index": 3,
+        "timings": {
+          "input_preparation_s": 2.828,
+          "backend_user_event_s": 0.015,
+          "first_chat_token_s": 1.078,
+          "chat_complete_s": 1.328
+        }
+      },
+      {
+        "label": "baseline",
+        "index": 4,
+        "timings": {
+          "input_preparation_s": 2.812,
+          "backend_user_event_s": 0.016,
+          "first_chat_token_s": 1.25,
+          "chat_complete_s": 1.453
+        }
+      },
+      {
+        "label": "candidate",
+        "index": 0,
+        "timings": {
+          "input_preparation_s": 2.812,
+          "backend_user_event_s": 0.016,
+          "first_chat_token_s": 1.047,
+          "chat_complete_s": 1.156
+        }
+      },
+      {
+        "label": "candidate",
+        "index": 1,
+        "timings": {
+          "input_preparation_s": 2.828,
+          "backend_user_event_s": 0.016,
+          "first_chat_token_s": 1.157,
+          "chat_complete_s": 1.328
+        }
+      },
+      {
+        "label": "candidate",
+        "index": 2,
+        "timings": {
+          "input_preparation_s": 2.781,
+          "backend_user_event_s": 0.031,
+          "first_chat_token_s": 1.14,
+          "chat_complete_s": 1.39
+        }
+      },
+      {
+        "label": "candidate",
+        "index": 3,
+        "timings": {
+          "input_preparation_s": 2.812,
+          "backend_user_event_s": 0.016,
+          "first_chat_token_s": 1.0,
+          "chat_complete_s": 1.235
+        }
+      },
+      {
+        "label": "candidate",
+        "index": 4,
+        "timings": {
+          "input_preparation_s": 2.812,
+          "backend_user_event_s": 0.016,
+          "first_chat_token_s": 0.953,
+          "chat_complete_s": 1.203
+        }
+      }
+    ]
+  },
+  "direct_transport": {
+    "model": "deepseek-v4-flash",
+    "results": [
+      {
+        "index": 0,
+        "warmup": true,
+        "first_content_s": 1.7268,
+        "complete_s": 1.9045,
+        "reply": "[EMO normal] そう、たまには静かな一日も悪くないわね。"
+      },
+      {
+        "index": 1,
+        "warmup": false,
+        "first_content_s": 1.1038,
+        "complete_s": 1.3174,
+        "reply": "[EMO normal] そう、たまには静かな一日も悪くないわね。"
+      },
+      {
+        "index": 2,
+        "warmup": false,
+        "first_content_s": 0.8441,
+        "complete_s": 0.9982,
+        "reply": "[EMO smile] そう、たまには静かな一日も悪くないわね。"
+      },
+      {
+        "index": 3,
+        "warmup": false,
+        "first_content_s": 1.188,
+        "complete_s": 1.3912,
+        "reply": "[EMO normal] そう、たまには静かな一日も悪くないわね。"
+      },
+      {
+        "index": 4,
+        "warmup": false,
+        "first_content_s": 0.656,
+        "complete_s": 0.9911,
+        "reply": "[EMO smile] そう、たまには静かな一日も悪くないわね。"
+      },
+      {
+        "index": 5,
+        "warmup": false,
+        "first_content_s": 0.8812,
+        "complete_s": 1.0639,
+        "reply": "[EMO smile] そう、たまには静かな一日も悪くないわね。"
+      }
+    ],
+    "scope": "Production transport, same captured synthetic role prompt, direct callback; no GUI or physical audio.",
+    "warm_median_first_content_s": 0.8812
+  },
+  "validation": {
+    "journey_contract_tests_passed": 77,
+    "full_30_pair_measurement": "completed; see chat-runtime-corrected-default-latency-2026-10-07.json"
+  },
+  "interpretation": "The earlier 3.9s result is not evidence of a slow DeepSeek server. Its ~2.8s input-readiness component belongs to the test fixture, not the submitted turn."
+}

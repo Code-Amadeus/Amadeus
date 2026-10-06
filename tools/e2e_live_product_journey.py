@@ -68,11 +68,12 @@ from server.auip_bundle_validation import validate_staged_auip_web_bundle
 
 
 BACKEND_PORT = 17777
-SCHEMA = "amadeus.live-product-journey.v1"
+SCHEMA = "amadeus.live-product-journey.v2"
 SUCCESS_STATUSES = {"done", "succeeded", "completed"}
 JOURNEY_LAYERS = {"full", "adaptation", "interaction"}
 ENGAGEMENT_MODES = {"observe", "collaborate", "delegate"}
-CHAT_ROUTES = {"inherit", "cooperative", "default"}
+CHAT_ROUTES = {"inherit", "professional", "basic", "cooperative", "default"}
+PRODUCT_EVIDENCE_METHODS = EVIDENCE_METHODS | {"chat.role_message", "chat.token"}
 WORK_STATUS_ANSWER_SOURCES = frozenset(
     {
         "work_status_narrator",
@@ -82,44 +83,39 @@ WORK_STATUS_ANSWER_SOURCES = frozenset(
 )
 
 
-def _chat_route_profile(
-    route: str,
-    environ: Mapping[str, str] | None = None,
-) -> dict[str, Any]:
+def _chat_route_profile(route: str) -> dict[str, Any]:
+    """Describe requested overrides; only the running backend knows the assembly."""
     selected = str(route or "inherit").strip().lower()
     if selected not in CHAT_ROUTES:
         raise ValueError(f"unsupported Chat route: {selected}")
-    source = os.environ if environ is None else environ
-    overrides = (
-        {
-            "COOPERATIVE_CHAT_ENABLED": "1",
-            "COOPERATIVE_WORK_PLANNER_ENABLED": "1",
-        }
-        if selected == "cooperative"
-        else {
-            "COOPERATIVE_CHAT_ENABLED": "0",
-            "COOPERATIVE_WORK_PLANNER_ENABLED": "0",
-        }
-        if selected == "default"
-        else {}
-    )
-    effective = {**source, **overrides}
-
-    def enabled(name: str, default: bool) -> bool:
-        raw = effective.get(name)
-        if raw is None:
-            return default
-        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
-
+    canonical = {"cooperative": "professional", "default": "inherit"}.get(selected, selected)
+    planner = {"professional": "1", "basic": "0"}.get(canonical)
     return {
-        "selection": selected,
-        "source": "ambient" if selected == "inherit" else "cli",
-        "environment_overrides": overrides,
-        "cooperative_chat_enabled": enabled("COOPERATIVE_CHAT_ENABLED", True),
-        "cooperative_work_planner_enabled": enabled(
-            "COOPERATIVE_WORK_PLANNER_ENABLED", False
-        ),
+        "selection": canonical,
+        "requested_selection": selected,
+        "source": "ambient" if canonical == "inherit" else "cli",
+        "environment_overrides": {"COOPERATIVE_WORK_PLANNER_ENABLED": planner} if planner is not None else {},
+        "actual": None,
     }
+
+
+async def _capture_chat_route(probe, report: dict[str, Any]) -> None:
+    """Record effective settings before a journey can submit any user Work."""
+    profile = report["chat_route"]
+    config = await probe.request("system.get_config", {}, timeout=20.0)
+    fields = ("cooperative_chat_enabled", "cooperative_work_planner_enabled")
+    if not isinstance(config, dict) or any(type(config.get(key)) is not bool for key in fields):
+        raise RuntimeError("system.get_config omitted boolean Chat assembly facts")
+    cooperative, planner = (config[key] for key in fields)
+    if not cooperative:
+        raise RuntimeError("system.get_config did not report the installed cooperative Chat runtime")
+    mode = "professional" if planner else "basic"
+    profile["actual"] = {"source": "system.get_config", "mode": mode,
+                         **{key: config[key] for key in fields}}
+    requested = profile["selection"]
+    profile["matches_request"] = None if requested == "inherit" else requested == mode
+    if profile["matches_request"] is False:
+        raise RuntimeError(f"Chat assembly mismatch: requested {requested}, backend reported {mode}")
 
 
 def _has_host_auip_preparation_context(
@@ -1114,7 +1110,7 @@ class ElectronProduct:
 
     def _environment(self) -> dict[str, str]:
         env = os.environ.copy()
-        route = _chat_route_profile(self.chat_route, env)
+        route = _chat_route_profile(self.chat_route)
         env.update(route["environment_overrides"])
         for name in (
             "AMADEUS_PYTHON",
@@ -1257,6 +1253,7 @@ class ElectronProduct:
                 Array.from(element.options || []).some(option => option.value === value)
               )
               if (!target) return false
+              if (target.value === value) return true
               target.value = value
               target.dispatchEvent(new Event('change', { bubbles: true }))
               return true
@@ -1386,6 +1383,77 @@ def _persisted_turn_dialog(
     )
     rows = conversation.get("dialog")
     return [dict(row) for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+
+
+def _experience_history_evidence(
+    *, app_session_id: str, session: Mapping[str, Any], events: list[EventRecord],
+    post_leave_turn: TurnEvidence | None, dialog: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Verify collapsed Host facts and the actual ordinary turn saved after leave."""
+    from server.handlers.session_handler import _display_text
+
+    capsule = session.get("experience_capsule")
+    capsule = capsule if isinstance(capsule, dict) else {}
+    role = capsule.get("role_branch")
+    role = role if isinstance(role, dict) else {}
+    dialogue = role.get("dialogue_tail")
+    directives = role.get("strategy_directives")
+    verified = role.get("verified_actions")
+    self_actions = capsule.get("verified_self_actions")
+    terminal = role.get("terminal")
+    terminal = terminal if isinstance(terminal, dict) else {}
+
+    receipts = [event.params["receipt"] for event in events
+        if event.method == "auip.updated"
+        and event.params.get("app_session_id") == app_session_id
+        and isinstance(event.params.get("receipt"), dict)]
+    verified_linked = bool(isinstance(verified, list) and any(
+        isinstance(fact, dict) and fact.get("accepted") is True for fact in verified)) and all(
+        isinstance(fact, dict) and type(fact.get("resulting_revision")) is int
+        and fact["resulting_revision"] > 0 and any(
+            fact.get("accepted") == receipt.get("accepted")
+            and fact.get("action_type") == receipt.get("type")
+            and fact.get("payload") == receipt.get("payload")
+            and fact.get("resulting_revision") == receipt.get("resulting_revision")
+            for receipt in receipts)
+        for fact in verified or [])
+    dialogue_bounded = isinstance(dialogue, list) and len(dialogue) <= 4 and all(
+        isinstance(row, dict) and row.get("role") in {"user", "assistant"}
+        and isinstance(row.get("content"), str) for row in dialogue)
+    if dialogue_bounded:
+        dialogue_bounded = sum(len(row["content"]) for row in dialogue) <= 2600
+    saved_reply = bool(post_leave_turn and post_leave_turn.turn_id and any(
+        row.get("role") == "assistant"
+        and row.get("turn_id") == post_leave_turn.turn_id
+        and _display_text(row.get("content")) == post_leave_turn.reply
+        for row in dialog))
+    checks = {
+        "experience_capsule_kept_exact_app_identity": bool(app_session_id
+            and session.get("app_session_id") == app_session_id
+            and capsule.get("app_session_id") == app_session_id
+            and role.get("app_session_id") == app_session_id),
+        "experience_capsule_retained_terminal_result": bool(
+            session.get("status") in {"closed", "completed"}
+            and role.get("kind") == "auip_appsession_branch_capsule/v1"
+            and role.get("close_status") == "completed"
+            and terminal.get("type") == "game.experience_finished"),
+        "experience_capsule_dialogue_is_bounded": bool(dialogue_bounded),
+        "experience_capsule_directives_are_bounded": bool(
+            isinstance(directives, list) and len(directives) <= 3),
+        "experience_capsule_actions_are_bounded": bool(
+            isinstance(verified, list) and 0 < len(verified) <= 4
+            and isinstance(self_actions, list) and len(self_actions) <= 4),
+        "experience_capsule_actions_match_accepted_app_receipts": bool(verified_linked),
+        "post_leave_turn_retained_in_session_history": bool(saved_reply
+            and post_leave_turn.reply.strip()
+            and any(row.get("role") == "user" and row.get("turn_id") == post_leave_turn.turn_id
+                and row.get("content") == post_leave_turn.text
+                for row in dialog)),
+    }
+    return {"checks": checks, "app_session_id": app_session_id,
+        "dialogue_rows": len(dialogue) if isinstance(dialogue, list) else None,
+        "verified_action_rows": len(verified) if isinstance(verified, list) else None,
+        "post_leave_turn_id": post_leave_turn.turn_id if post_leave_turn else ""}
 
 
 def _requirement_identities(rows: object) -> set[tuple[str, str, str]]:
@@ -1614,14 +1682,18 @@ async def _send_ui_turn(
 ) -> TurnEvidence:
     if product.page is None:
         raise RuntimeError("Electron renderer is unavailable")
+    preparation_started = time.monotonic()
+    field = product.page.locator('textarea[placeholder*="Type a message"]')
+    # fill() waits for an editable input. A newly reloaded renderer can still
+    # be hydrating its Session; that wait is not Chat generation latency.
+    await field.fill(text)
     turn = TurnEvidence(
         label=label,
         text=text,
         event_start=len(probe.state.events),
         started_elapsed_s=time.monotonic() - probe.state.started_at,
     )
-    field = product.page.locator('textarea[placeholder*="Type a message"]')
-    await field.fill(text)
+    turn.timings["input_preparation_s"] = round(time.monotonic() - preparation_started, 3)
     await field.press("Enter")
     complete = await probe.wait_event(
         lambda event: event.method == "chat.complete",
@@ -1686,6 +1758,7 @@ def _populate_turn_timings(
             return -1.0
 
         timings = {
+            "backend_user_event_s": first_elapsed("chat.user"),
             "first_chat_token_s": first_elapsed("chat.token"),
             "application_action_requested_s": first_elapsed(
                 "auip.action.requested"
@@ -4175,6 +4248,65 @@ async def _wait_automatic_participant_action(
     return turn
 
 
+def _b2_foreground_acceptance(
+    *, events: list[EventRecord], turn: TurnEvidence, app_session_id: str,
+    requested: EventRecord, receipt_event: EventRecord,
+    latest_narration: Mapping[str, Any] | None = None,
+) -> dict[str, bool]:
+    """Bind the result line to accepted app facts; an early acknowledgement is allowed.
+
+    Cooperative Chat owns generic completion metadata. The AUIP delivery owner
+    records the exact action's result line, so candidate identity comes from the
+    request/receipt and delivery order comes from that action-bound narration.
+    """
+    from server.handlers.session_handler import _display_text
+
+    action = requested.params.get("action")
+    action = action if isinstance(action, dict) else {}
+    receipt = receipt_event.params.get("receipt")
+    receipt = receipt if isinstance(receipt, dict) else {}
+    action_id = str(action.get("action_id") or "")
+    candidate_id = str(requested.params.get("candidate_id") or "")
+    proposal_id = str(action.get("proposal_id") or "")
+    request_index = next((index for index, event in enumerate(events) if event is requested), -1)
+    receipt_index = next((index for index, event in enumerate(events) if event is receipt_event), -1)
+    narrations = [event.params["latest_delivered_narration"] for event in events[turn.event_start:]
+        if event.method == "auip.updated" and event.params.get("app_session_id") == app_session_id
+        and isinstance(event.params.get("latest_delivered_narration"), dict)]
+    if isinstance(latest_narration, Mapping):
+        narrations.append(latest_narration)
+    result_text = str(_display_text(turn.reply) or "")
+    delivered = bool(action_id and result_text and any(
+        narration.get("event_id") == action_id
+        and _display_text(narration.get("text")) == result_text
+        and float(narration.get("delivered_at") or 0) >= float(receipt.get("resolved_at") or 0) > 0
+        for narration in narrations))
+    result_events = [(index, event) for index, event in enumerate(events)
+        if index >= turn.event_start and (
+            (event.method == "chat.complete" and event.params.get("turn_id") == turn.turn_id
+                and event.params.get("session_id") == turn.session_id
+                and _display_text(event.params.get("full_text")) == result_text)
+            or (event.method == "chat.role_message" and event.params.get("session_id") == turn.session_id
+                and turn.turn_id in {event.params.get("turn_id"), event.params.get("message_id")}
+                and _display_text(event.params.get("text")) == result_text)
+            or (event.method == "chat.token" and event.params.get("turn_id") == turn.turn_id
+                and _display_text(event.params.get("token")) == result_text))]
+    linked = bool(app_session_id and action_id and candidate_id
+        and requested.params.get("app_session_id") == receipt_event.params.get("app_session_id") == app_session_id
+        and proposal_id.startswith("b2f:") and candidate_id in proposal_id
+        and receipt.get("accepted") is True
+        and receipt.get("action_id") == action_id and receipt.get("proposal_id") == proposal_id
+        and receipt.get("type") == action.get("type") and receipt.get("payload") == action.get("payload"))
+    return {
+        "b2_action_request_path": requested.params.get("decision_path") == "b2" and bool(candidate_id),
+        "b2_candidate_receipt_linked": linked,
+        "b2_visible_delivery_recorded": delivered,
+        "b2_receipt_precedes_visible_chat": bool(linked and delivered and result_events
+            and request_index >= 0 and receipt_index > request_index
+            and all(index > receipt_index for index, _event in result_events)),
+    }
+
+
 async def _exercise_foreground_b2_action(
     *,
     product: ElectronProduct,
@@ -4223,73 +4355,16 @@ async def _exercise_foreground_b2_action(
         description=f"{label} accepted receipt",
     )
     receipt = dict(receipt_event.params.get("receipt") or {})
-    candidate_id = str(requested.params.get("candidate_id") or "")
-    proposal_id = str(action.get("proposal_id") or "")
-    complete_index = next(
-        (
-            index
-            for index, event in enumerate(probe.state.events)
-            if event.method == "chat.complete"
-            and str(event.params.get("turn_id") or "") == turn.turn_id
-        ),
-        -1,
-    )
-    request_index = next(
-        (
-            index
-            for index, event in enumerate(probe.state.events)
-            if event is requested
-        ),
-        -1,
-    )
-    receipt_index = next(
-        (
-            index
-            for index, event in enumerate(probe.state.events)
-            if event is receipt_event
-        ),
-        -1,
-    )
-    complete_params = (
-        probe.state.events[complete_index].params
-        if complete_index >= 0
-        else {}
-    )
-    turn.checks.update(
-        {
-            "accepted_receipt": receipt.get("accepted") is True,
-            "expected_action_type": (
-                str(receipt.get("type") or "") == expected_action_type
-            ),
-            "b2_action_request_path": bool(
-                requested.params.get("decision_path") == "b2" and candidate_id
-            ),
-            "b2_candidate_receipt_linked": bool(
-                proposal_id.startswith("b2f:")
-                and candidate_id in proposal_id
-                and str(receipt.get("proposal_id") or "") == proposal_id
-                and str(complete_params.get("candidate_id") or "") == candidate_id
-                and str(complete_params.get("proposal_id") or "") == proposal_id
-                and str(complete_params.get("action_id") or "") == action_id
-            ),
-            "b2_receipt_precedes_visible_chat": bool(
-                request_index >= 0
-                and receipt_index > request_index
-                and complete_index > receipt_index
-                and not any(
-                    event.method == "chat.token"
-                    and str(event.params.get("turn_id") or "") == turn.turn_id
-                    for event in probe.state.events[
-                        turn.event_start:receipt_index
-                    ]
-                )
-            ),
-            "instruction_relation_follows": (
-                str(requested.params.get("instruction_relation") or "")
-                == "follows"
-            ),
-        }
-    )
+    session = await probe.request(
+        "auip.session.get", {"app_session_id": app_session_id}, timeout=20.0)
+    turn.checks.update({
+        "accepted_receipt": receipt.get("accepted") is True,
+        "expected_action_type": str(receipt.get("type") or "") == expected_action_type,
+        "instruction_relation_follows": requested.params.get("instruction_relation") == "follows",
+        **_b2_foreground_acceptance(events=probe.state.events, turn=turn,
+            app_session_id=app_session_id, requested=requested, receipt_event=receipt_event,
+            latest_narration=session.get("latest_delivered_narration")),
+    })
     failed = sorted(name for name, passed in turn.checks.items() if not passed)
     if failed:
         raise RuntimeError(
@@ -5210,6 +5285,10 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         raise ValueError(
             "--exercise-gomoku-post-round requires --complete-gomoku-round"
         )
+    if getattr(args, "require_experience_history", False) and not (
+        args.exercise_gomoku_post_round and args.exercise_post_leave_chat
+    ):
+        raise ValueError("--require-experience-history requires the Gomoku post-round lifecycle and post-leave Chat")
     human_steps = max(0, int(args.human_steps))
     controller_oracle = scenario.get("controller_oracle")
     controller_policy_expected = bool(scenario.get("controller_policy")) or isinstance(
@@ -5383,6 +5462,7 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             )
             report["runtime_status"] = _safe_excerpt(runtime, 5000)
             report["runtime_code_identity"] = runtime_identity
+            await _capture_chat_route(probe, report)
             await product.select_chat_provider(str(args.chat_provider))
             created: EventRecord | None = None
             create: TurnEvidence | None = None
@@ -5865,77 +5945,8 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                         timeout=args.auip_timeout,
                     )
                 if args.require_b2:
-                    action_payload = (
-                        action_requested.params.get("action")
-                        if isinstance(action_requested.params.get("action"), dict)
-                        else {}
-                    )
-                    candidate_id = str(
-                        action_requested.params.get("candidate_id") or ""
-                    )
-                    proposal_id = str(action_payload.get("proposal_id") or "")
-                    complete_index = next(
-                        (
-                            index
-                            for index, event in enumerate(probe.state.events)
-                            if event.method == "chat.complete"
-                            and str(event.params.get("turn_id") or "") == step.turn_id
-                        ),
-                        -1,
-                    )
-                    request_index = next(
-                        (
-                            index
-                            for index, event in enumerate(probe.state.events)
-                            if event is action_requested
-                        ),
-                        -1,
-                    )
-                    receipt_index = next(
-                        (
-                            index
-                            for index, event in enumerate(probe.state.events)
-                            if event is receipt_event
-                        ),
-                        -1,
-                    )
-                    complete_event = (
-                        probe.state.events[complete_index]
-                        if complete_index >= 0
-                        else None
-                    )
-                    complete_params = (
-                        complete_event.params
-                        if complete_event is not None
-                        else {}
-                    )
-                    step.checks["b2_action_request_path"] = bool(
-                        action_requested.params.get("decision_path") == "b2"
-                        and candidate_id
-                    )
-                    step.checks["b2_candidate_receipt_linked"] = bool(
-                        proposal_id
-                        and proposal_id.startswith("b2f:")
-                        and candidate_id in proposal_id
-                        and str(receipt.get("proposal_id") or "") == proposal_id
-                        and str(complete_params.get("candidate_id") or "")
-                        == candidate_id
-                        and str(complete_params.get("proposal_id") or "")
-                        == proposal_id
-                        and str(complete_params.get("action_id") or "") == action_id
-                    )
-                    step.checks["b2_receipt_precedes_visible_chat"] = bool(
-                        request_index >= 0
-                        and receipt_index > request_index
-                        and complete_index > receipt_index
-                        and not any(
-                            event.method == "chat.token"
-                            and str(event.params.get("turn_id") or "") == step.turn_id
-                            for event in probe.state.events[
-                                step.event_start:receipt_index
-                            ]
-                        )
-                    )
+                    receipt_index = next((index for index, event in enumerate(probe.state.events)
+                        if event is receipt_event), -1)
                     delivery_deadline = time.monotonic() + min(
                         15.0,
                         float(args.auip_timeout),
@@ -5958,15 +5969,10 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                         if str(latest_narration.get("event_id") or "") == action_id:
                             break
                         await asyncio.sleep(0.05)
-                    step.checks["b2_visible_delivery_recorded"] = bool(
-                        str(latest_narration.get("event_id") or "") == action_id
-                        and " ".join(
-                            str(latest_narration.get("text") or "").split()
-                        )
-                        == " ".join(str(step.reply or "").split())
-                        and float(latest_narration.get("delivered_at") or 0)
-                        >= float(receipt.get("resolved_at") or 0)
-                    )
+                    step.checks.update(_b2_foreground_acceptance(
+                        events=probe.state.events, turn=step, app_session_id=app_session_id,
+                        requested=action_requested, receipt_event=receipt_event,
+                        latest_narration=latest_narration))
                     if not args.no_tts:
                         b2_tts_start = await probe.wait_event(
                             lambda event: event.method == "tts.sentence_start",
@@ -7070,7 +7076,7 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                     "events": [
                         _compact_event(event, source_index=index)
                         for index, event in enumerate(events)
-                        if event.method in EVIDENCE_METHODS
+                        if event.method in PRODUCT_EVIDENCE_METHODS
                     ],
                 }
             )
@@ -7335,6 +7341,14 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                 )
             else:
                 checks["interaction_launch_started_no_provider"] = not prepare.run_ids
+            if args.require_experience_history:
+                post_leave = next((turn for turn in turns if turn.label == "post_leave_chat"), None)
+                history_evidence = _experience_history_evidence(
+                    app_session_id=app_session_id, session=final_auip_session, events=events,
+                    post_leave_turn=post_leave,
+                    dialog=_persisted_turn_dialog(run_root, post_leave.session_id) if post_leave else [])
+                report["experience_history"] = history_evidence
+                checks.update(history_evidence["checks"])
             failed_check_names = sorted(
                 name for name, passed in checks.items() if passed is not True
             )
@@ -7360,7 +7374,7 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                 # A no-TTS run is still the shipping Electron/backend path,
                 # but it cannot claim the audible half of L4 acceptance.
                 test_level="L3" if args.no_tts else "L4",
-                provider="codex",
+                provider=str(args.chat_provider) if journey_layer == "interaction" else "codex",
                 model=str(args.model),
                 report_path=report_path,
                 isolation_root=run_root,
@@ -7372,6 +7386,8 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                 notes=(
                     "Electron started the normal backend and rendered every Chat turn.",
                     f"Journey began at the declared {journey_layer} boundary.",
+                    *( ("The app bundle and local player clicks are fixtures; shipping Electron, Cooperative Chat, semantic model decisions and app receipts are live.",)
+                       if journey_layer == "interaction" else () ),
                     "AI/human review still owns audible naturalness and visual polish.",
                 ),
             )
@@ -7396,7 +7412,7 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                     [
                         _compact_event(event, source_index=index)
                         for index, event in enumerate(probe.state.events)
-                        if event.method in EVIDENCE_METHODS
+                        if event.method in PRODUCT_EVIDENCE_METHODS
                     ]
                     if probe is not None
                     else []
@@ -7567,9 +7583,8 @@ def _parser() -> argparse.ArgumentParser:
         choices=sorted(CHAT_ROUTES),
         default="inherit",
         help=(
-            "inherit preserves ambient configuration; cooperative pins the "
-            "professional cooperative Work planner on; default selects the "
-            "established non-cooperative Chat owner."
+            "inherit and default record the backend's effective configuration; professional "
+            "and basic pin Work planning. The cooperative alias selects professional."
         ),
     )
     parser.add_argument(
@@ -7620,6 +7635,10 @@ def _parser() -> argparse.ArgumentParser:
             "After Host leave, send one ordinary role-only Chat turn and "
             "record UI-to-action/receipt/TTS/complete timing evidence."
         ),
+    )
+    parser.add_argument(
+        "--require-experience-history", action="store_true",
+        help="Require bounded terminal capsule facts linked to accepted app receipts and the saved ordinary Chat turn after leave.",
     )
     parser.add_argument(
         "--no-build",

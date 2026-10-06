@@ -59,6 +59,35 @@ def test_ready_matrix_reports_all_existing_singletons():
     }
 
 
+def test_runtime_status_projects_retired_false_without_changing_chat_strategy(monkeypatch):
+    from config import settings
+
+    facts = ({"key": "COOPERATIVE_CHAT_ENABLED", "value": False,
+        "source": "dotenv", "effective_behavior": "cooperative_only"},)
+    monkeypatch.setattr(settings, "_RETIRED_SETTINGS", facts)
+    monkeypatch.setattr(settings, "COOPERATIVE_CHAT_ENABLED", False)
+    collector = RuntimeStatusCollector()
+    for professional in (True, False):
+        monkeypatch.setattr(settings, "COOPERATIVE_WORK_PLANNER_ENABLED", professional)
+        chat = collector._chat()
+        assert chat["cooperative_chat_enabled"] is True
+        assert chat["cooperative_work_planner_enabled"] is professional
+        assert chat["control_decision_mode"] == "retired"
+    assert collector._retired_settings() == list(facts)
+    assert _collector_with_fake_sections().collect()["retired_settings"] == list(facts)
+
+
+def test_session_status_uses_the_current_session_identity(monkeypatch):
+    from core import session_manager as sm
+
+    collector = RuntimeStatusCollector()
+    monkeypatch.setattr(sm, "get_current_session_id", lambda: "")
+    assert collector._session()["enable_conversation"] is False
+    monkeypatch.setattr(sm, "get_current_session_id", lambda: "session-current")
+    monkeypatch.setattr(sm, "get_session_title", lambda sid: "Current")
+    assert collector._session()["enable_conversation"] is True
+
+
 def test_failed_peek_degrades_to_false_without_breaking_snapshot():
     collector = _collector_with_fake_sections()
 
@@ -110,6 +139,30 @@ def test_server_status_exposes_the_frozen_process_code_identity():
 
     assert server["port"] == 17777
     assert server["code_identity"] == collector._code_identity
+
+
+def test_hybrid_status_reads_only_the_current_session_trace(monkeypatch):
+    from core import session_manager as sm
+    from llm import client
+
+    monkeypatch.setattr(client, "LLM_PROVIDER", "hybrid2")
+    monkeypatch.setattr(client, "LOCAL_LLM_TYPE", "cli")
+    collector = RuntimeStatusCollector()
+    manager = SimpleNamespace(ingresses={"A": SimpleNamespace(loop=SimpleNamespace(trace=[
+        {"kind":"hybrid_head", "turn_id":"first", "outcome":"empty"},
+        {"kind":"hybrid_head", "turn_id":"second", "outcome":"skipped_remote_ready"},
+        {"kind":"decision", "raw":"must not leak"},
+    ]))})
+    collector.configure(cooperative_chat_getter=lambda: manager)
+    monkeypatch.setattr(sm, "get_current_session_id", lambda: "A")
+    observed = collector.hybrid_head()
+    assert observed["enabled"] is True
+    assert observed["outcome"] == "skipped_remote_ready"
+    assert observed["turn_id"] == "second"
+    assert "raw" not in observed and "backend_type" not in observed
+    monkeypatch.setattr(sm, "get_current_session_id", lambda: "B")
+    assert collector.hybrid_head()["outcome"] == "not_observed"
+    assert list(manager.ingresses) == ["A"]
 
 
 def _asr_collector_with_vad(vad_state: str, vad_reason: str = "") -> RuntimeStatusCollector:

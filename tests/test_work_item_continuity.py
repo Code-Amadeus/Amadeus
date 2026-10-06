@@ -6,15 +6,10 @@ import asyncio
 import tempfile
 import time
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
 
 import config.settings as settings
-from agent_host.provider_catalog import CODEX_APP_SERVER_MANIFEST
-from agent_host.provider_contract import ProviderRequirements, ProviderSelection
 from agent_host.provider_types import ProviderRunRequest
 from agent_host.work_ledger_store import WorkLedgerStore
-from server.app import _handle_delegate
 from server.interaction_branch import (
     InteractionBranchCoordinator,
     InteractionBranchState,
@@ -212,69 +207,6 @@ def test_long_session_switches_goals_without_splitting_amendment_delivery() -> N
             settings.WORK_PROJECT_ALLOWLIST = previous_allowlist
 
 
-def test_host_delegate_passes_amend_as_work_item_operation_target() -> None:
-    async def run() -> None:
-        workspace = str(Path(__file__).resolve().parents[1])
-        start = AsyncMock(
-            return_value=SimpleNamespace(
-                task_handle=None,
-                result="updated",
-                error="",
-                metadata={"result_type": "ok"},
-            )
-        )
-        requirements = ProviderRequirements(
-            task_kind="workspace_write",
-            workspace_access="write",
-            workspace_ownership="negotiated",
-        )
-        selection = ProviderSelection(
-            provider_id="codex",
-            reason="test",
-            compatible_candidates=("codex",),
-        )
-        with (
-            patch(
-                "server.app._delegate_provider_selection",
-                return_value=(requirements, selection),
-            ),
-            patch(
-                "server.app._delegate_workspace_route",
-                return_value={
-                    "status": "resolved",
-                    "cwd": workspace,
-                    "projectId": "project-game",
-                    "workItemId": "work-game",
-                    "workspaceMode": "worktree",
-                    "source": "intent_workspace_ref",
-                },
-            ),
-            patch(
-                "agent_host.provider_runtime.runtime.get_manifest",
-                return_value=CODEX_APP_SERVER_MANIFEST,
-            ),
-            patch("agent_host.provider_runtime.runtime.start", new=start),
-            patch(
-                "server.work_ledger_coordinator.get_work_ledger_coordinator",
-                return_value=None,
-            ),
-        ):
-            result = await _handle_delegate(
-                "Make the game two-player",
-                {
-                    "provider": "codex",
-                    "intent": "amend",
-                    "workspace_ref": "work-game",
-                },
-            )
-        assert result == "updated"
-        request = start.await_args.args[0]
-        assert request.metadata["continuation"] == "amend"
-        assert request.metadata["work"]["work_item_id"] == "work-game"
-        assert request.metadata["work"]["workspace_ref"] == "work-game"
-        assert "related_work_item_id" not in request.metadata
-
-    asyncio.run(run())
 
 
 def test_browser_next_turn_reuses_work_item_but_mid_run_steer_reuses_attempt() -> None:

@@ -3,7 +3,7 @@
 import asyncio
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from server.control_decision import (
     _candidate_has_exact_handle,
@@ -103,32 +103,3 @@ def test_structured_query_diagnostic_observer_preserves_the_native_boundary():
     assert seen[0]["content"] is native_content
     assert seen[0]["content_type"] == "list"
     assert seen[0]["finish_reason"] == "length"
-
-
-def test_compound_reply_reaches_explicit_sink_but_not_routine_logs():
-    from server.compound_control import CompoundControlPlan
-    from server.control_adjudication import ControlDecisionAdjudicator
-
-    async def run():
-        raw = "[NOT_JSON_PRIVATE_REPLY]"
-        sink = []
-        adjudicator = ControlDecisionAdjudicator(query=AsyncMock(), compound_sink=sink.append)
-        batch = SimpleNamespace(
-            turn_id="turn", session_id="session", proposals=(), decision_payloads=lambda: (),
-        )
-        context = SimpleNamespace(
-            messages=(), candidates=(), catalog_complete=True,
-            provider_ids=frozenset(), exhaustive_candidate_limit=64,
-        )
-        with patch("server.control_adjudication.resolve_compound_control_plan", AsyncMock(
-            return_value=CompoundControlPlan(status="invalid", raw_reply=raw),
-        )):
-            evidence = await adjudicator.observe_compound(batch, context)
-        assert sink == [evidence]
-        assert evidence.decomposition_reply == raw
-        record = evidence.as_log_record()
-        assert record["decompositionReplyChars"] == len(raw)
-        assert len(record["decompositionReplySha256"]) == 64
-        assert raw not in json.dumps(record)
-
-    asyncio.run(run())

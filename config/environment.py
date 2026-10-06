@@ -29,9 +29,21 @@ class EnvironmentReader:
 
     _TRUE = frozenset({"1", "true", "yes"})
 
-    def __init__(self, values: Mapping[str, str]) -> None:
+    def __init__(
+        self, values: Mapping[str, str], *, dotenv_keys: frozenset[str] = frozenset(),
+    ) -> None:
         self._values = values
+        self._dotenv_keys = dotenv_keys
         self._fields: dict[str, ConfigField] = {}
+
+    def source(self, key: str) -> str:
+        """Report startup provenance; desktop-injected values are process environment."""
+        if key not in self._values:
+            return "default"
+        return "dotenv" if key in self._dotenv_keys else "environment"
+
+    def configured(self, key: str) -> bool:
+        return key in self._values
 
     def _register(
         self,
@@ -123,8 +135,11 @@ def load_project_environment(project_root: Path) -> EnvironmentReader:
     with _PROJECT_ENVIRONMENTS_LOCK:
         reader = _PROJECT_ENVIRONMENTS.get(resolved_root)
         if reader is None:
+            process_keys = frozenset(os.environ)
             load_dotenv(resolved_root / ".env", override=False)
-            reader = EnvironmentReader(os.environ)
+            reader = EnvironmentReader(
+                os.environ, dotenv_keys=frozenset(os.environ) - process_keys,
+            )
             _PROJECT_ENVIRONMENTS[resolved_root] = reader
         return reader
 

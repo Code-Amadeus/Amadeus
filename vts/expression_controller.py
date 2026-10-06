@@ -215,12 +215,12 @@ class ExpressionController:
                     self.transition_to(emotion)
 
         elif atype in ("EXPR", "PARAM", "HOTKEY"):
-            # 非 EMO 动作：走原有 record_actions 路径（避免重复导入，延迟绑定）
+            # Presentation goes directly to the expression sink, never the Host dispatcher.
             try:
-                from vts.action import record_actions
-                record_actions([act])
+                from vts.action import record_expression_actions
+                record_expression_actions([act])
             except Exception as e:
-                logger.error(f"[ExprCtrl] record_actions failed: {e}")
+                logger.error(f"[ExprCtrl] record_expression_actions failed: {e}")
 
     # ------------------------------------------------------------------
     # 状态机核心：过渡

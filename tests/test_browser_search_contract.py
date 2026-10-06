@@ -21,7 +21,6 @@ from agent_host.browser_interaction_policy import BrowserInteractionPolicy
 from agent_host.provider_catalog import BROWSER_MANIFEST
 from agent_host.provider_outcome import ProviderOutcomeEvidence
 from agent_host.provider_types import ProviderRunRequest, ProviderRunResult
-from llm.delegate_tool import DELEGATE_TOOL
 from server.provider_branch import ProviderBranchStore
 from server.outcome_verification import assess_provider_outcome
 from server.work_observer import ObserverSession, WorkObserverCoordinator
@@ -47,9 +46,6 @@ def _search_request(**metadata: Any) -> ProviderRunRequest:
 
 
 def test_search_is_a_declared_high_level_action() -> None:
-    action_schema = DELEGATE_TOOL["function"]["parameters"]["properties"]["action"]
-    assert "search" in action_schema["enum"]
-    assert "query" in DELEGATE_TOOL["function"]["parameters"]["properties"]
     operation = BROWSER_MANIFEST.capabilities.operation("search")
     assert operation is not None
     assert operation.atomic is False

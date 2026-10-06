@@ -169,7 +169,7 @@ async def test_runtime_planner_preserves_canonical_message_reference_states(
         TypedReferenceCandidate("work_item", "work-two", "Second Work",
             "session_draft"),
     )
-    monkeypatch.setattr("server.control_adjudication.candidate_catalog_from_coordinator",
+    monkeypatch.setattr("server.control_context.candidate_catalog_from_coordinator",
         lambda *_args, **_kwargs:(candidates, True, ""))
     ingress = await context.manager._ingress_for(context.session_id)
     source = "Ask the existing provider to explain the implementation."
@@ -216,7 +216,7 @@ async def test_runtime_planner_keeps_required_condition_amendment_and_zero_reque
     candidate = TypedReferenceCandidate("work_item", "work-required-condition",
         "Accepted delivery", "session_draft", session_current=True,
         state="open", execution="succeeded", relation="needs_attention")
-    monkeypatch.setattr("server.control_adjudication.candidate_catalog_from_coordinator",
+    monkeypatch.setattr("server.control_context.candidate_catalog_from_coordinator",
         lambda *_args, **_kwargs:((candidate,), True, ""))
     ingress = await context.manager._ingress_for(context.session_id)
     ingress.loop.recipient_work = lambda _context_id:{
@@ -355,7 +355,7 @@ async def test_current_source_policy_allows_nondefault_provider_after_model_cont
         ingress.loop.context_requirements[default_provider])
     candidate = TypedReferenceCandidate("work_item", "work-other-provider",
         "Existing Work", "session_draft", session_current=True)
-    monkeypatch.setattr("server.control_adjudication.candidate_catalog_from_coordinator",
+    monkeypatch.setattr("server.control_context.candidate_catalog_from_coordinator",
         lambda *_args, **_kwargs:((candidate,), True, ""))
     source = "Continue the existing Work."
 
@@ -538,15 +538,14 @@ async def test_runtime_planner_freezes_current_work_before_context_capture_await
     }
     ingress.loop.recipient_work = lambda _context_id: current
     entered, release = threading.Event(), threading.Event()
-    original_capture = work_planner_module.RuntimeControlDecisionResolver.capture_context
+    original_capture = work_planner_module.capture_control_context
 
-    def held_capture(self, batch, **kwargs):
+    def held_capture(coordinator, batch, **kwargs):
         entered.set()
         assert release.wait(3)
-        return original_capture(self, batch, **kwargs)
+        return original_capture(coordinator, batch, **kwargs)
 
-    monkeypatch.setattr(work_planner_module.RuntimeControlDecisionResolver,
-        "capture_context", held_capture)
+    monkeypatch.setattr(work_planner_module, "capture_control_context", held_capture)
     requests = []
 
     async def query(messages):
@@ -647,16 +646,15 @@ async def test_context_capture_runs_off_loop_while_coarse_role_publishes(
     monkeypatch.setattr("llm.prompts.registered_provider_ids",
         lambda:(context.manager.provider,))
     entered, release = threading.Event(), threading.Event()
-    original = __import__("server.control_adjudication", fromlist=[
-        "RuntimeControlDecisionResolver"]).RuntimeControlDecisionResolver.capture_context
+    from server import work_planner as work_planner_module
+    original = work_planner_module.capture_control_context
 
-    def held_capture(self, batch, **kwargs):
+    def held_capture(coordinator, batch, **kwargs):
         entered.set()
         assert release.wait(3)
-        return original(self, batch, **kwargs)
+        return original(coordinator, batch, **kwargs)
 
-    monkeypatch.setattr("server.control_adjudication.RuntimeControlDecisionResolver.capture_context",
-        held_capture)
+    monkeypatch.setattr(work_planner_module, "capture_control_context", held_capture)
     text = "Build after captured context."
 
     async def planner_query(_messages):

@@ -3,7 +3,7 @@
 - ConversationHistory：完整会话记录 + 发给模型的最近若干轮窗口
 - 会话持久化 CRUD（JSON 文件存储）
 
-注意：连续对话开关的运行时归属为 core.chat_runtime.ChatRuntime.enable_conversation，
+当前 Chat 始终使用所选 Session 的对话历史；旧 enable_conversation 字段仅作文件兼容，
 通过参数传入 save_session / load_session。（历史上该开关是 main.py 的模块全局，
 由已退役的 chatGui.py 直接读写。）
 """

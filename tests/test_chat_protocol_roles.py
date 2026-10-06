@@ -8,56 +8,25 @@ from unittest.mock import AsyncMock, Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from core.chat_control_envelope import parse_inline_control_chunk
 from core.chat_history_projection import (
     project_completed_turn,
     project_inline_role_history,
     stamp_branch_entries,
 )
-from core.chat_stream_consumption import consume_role_stream_text, iter_sync_stream
-from llm.stream_parser import StreamTagParser
+from core.chat_stream_consumption import consume_role_stream_text
+from llm.stream_parser import StreamTagParser, presentation_parts
 
 
-def test_inline_control_parser_returns_protocol_facts_without_dispatch() -> None:
-    parser = StreamTagParser(control_envelope_enabled=True)
-    parsed = parse_inline_control_chunk(
-        parser,
-        '了解。[CONTROL delegate="true" provider="locus" '
-        'intent="execute" task="create x"]',
-    )
-
-    assert parsed.cleaned_text == "了解。"
-    assert parsed.control_seen is True
-    assert parsed.control_valid is True
-    assert parsed.explicit_no_control is False
-    assert len(parsed.delegate_actions) == 1
-    assert parsed.delegate_actions[0]["attrs"]["provider"] == "locus"
-
-
-def test_inline_no_control_is_history_evidence_not_an_action() -> None:
-    parser = StreamTagParser(control_envelope_enabled=True)
-    parsed = parse_inline_control_chunk(
-        parser,
-        'そうね。[CONTROL delegate="false"]',
-    )
-
-    assert parsed.cleaned_text == "そうね。"
-    assert parsed.delegate_actions == ()
-    assert parsed.explicit_no_control is True
-    assert parsed.history_control_text == '[CONTROL delegate="false"]'
-
-
-def test_inline_parser_classifies_ordered_controls_separately_from_expressions() -> None:
+def test_presentation_parser_keeps_expression_order_and_discards_controls() -> None:
     parser = StreamTagParser(control_envelope_enabled=True, stop_after_control=False)
-    parsed = parse_inline_control_chunk(parser,
+    cleaned, parts = presentation_parts(parser,
         '[EMO shy]前[AUIP action="launch"]中'
         '[DELEGATE provider="codex" intent="execute" task="synthetic"]'
         '[CONTROL delegate="false"][PARAM id="ParamAngleX" value="1"]後')
-    assert [kind for kind, _ in parsed.ordered_parts] == [
-        'action', 'text', 'control', 'text', 'control', 'control', 'action', 'text']
-    assert [value for kind, value in parsed.ordered_parts if kind == 'action'] == list(parsed.expression_actions)
-    assert [action['type'] for action in parsed.expression_actions] == ['EMO', 'PARAM']
-    assert project_inline_role_history(parsed.ordered_parts, policy='preserve') == '[EMO shy]前中後'
+    assert cleaned == "前中後"
+    assert [kind for kind, _ in parts] == ['action', 'text', 'text', 'action', 'text']
+    assert [value['type'] for kind, value in parts if kind == 'action'] == ['EMO', 'PARAM']
+    assert project_inline_role_history(parts, policy='preserve') == '[EMO shy]前中後'
 
 
 def test_live_stream_keeps_its_single_control_gate_when_history_can_read_many() -> None:
@@ -74,21 +43,21 @@ def test_live_stream_keeps_its_single_control_gate_when_history_can_read_many() 
 
 def test_inline_parser_preserves_exact_text_action_order_for_history() -> None:
     parser = StreamTagParser()
-    first = parse_inline_control_chunk(parser, "前[EMO preset=thinking")
-    second = parse_inline_control_chunk(
+    _, first = presentation_parts(parser, "前[EMO preset=thinking")
+    _, second = presentation_parts(
         parser,
         " dur=12s]中[EMO preset=normal dur=4s]後",
     )
 
-    assert project_inline_role_history(first.ordered_parts, policy="preserve") == "前"
-    assert project_inline_role_history(second.ordered_parts, policy="preserve") == (
+    assert project_inline_role_history(first, policy="preserve") == "前"
+    assert project_inline_role_history(second, policy="preserve") == (
         "[EMO preset=thinking dur=12s]中[EMO preset=normal dur=4s]後"
     )
     assert project_inline_role_history(
-        second.ordered_parts,
+        second,
         policy="expressive_only",
     ) == "[EMO preset=thinking dur=12s]中後"
-    assert project_inline_role_history(second.ordered_parts, policy="strip") == "中後"
+    assert project_inline_role_history(second, policy="strip") == "中後"
 
 
 def test_stream_parser_hides_multilingual_delegate_payload_from_visible_text() -> None:
@@ -258,14 +227,6 @@ def test_stream_consumer_preserves_parse_projection_dispatch_order() -> None:
             ("gui", "before clean"),
             ("dispatch", "clean"),
         ]
-
-    asyncio.run(run())
-
-
-def test_sync_sdk_stream_is_consumed_off_the_event_loop() -> None:
-    async def run() -> None:
-        observed = [item async for item in iter_sync_stream(iter((1, 2, 3)))]
-        assert observed == [1, 2, 3]
 
     asyncio.run(run())
 

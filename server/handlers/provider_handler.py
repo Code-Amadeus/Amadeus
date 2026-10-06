@@ -289,8 +289,7 @@ class ProviderHandler(RequestHandler):
             acp_agents = []
         return {
             "providers": runtime.list_providers(),
-            "default_provider": (settings.COOPERATIVE_CHAT_PROVIDER if settings.COOPERATIVE_CHAT_ENABLED
-                else settings.PROVIDER_DELEGATE_DEFAULT_PROVIDER),
+            "default_provider": settings.WORK_EXECUTION_PROVIDER,
             "role_assignments": work_provider_roles(),
             "role_candidates": work_role_candidates(runtime.provider_manifests()),
             "provider_manifests": runtime.list_provider_manifests(),

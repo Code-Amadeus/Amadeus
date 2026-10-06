@@ -302,12 +302,8 @@ class CooperativeContextStore:
         with self.ledger._lock:
             return resolve(self.ledger._db)
 
-    def checkpoint(self, child, *, input_id=None, turn_id=None, text="", binding_token=None):
-        """Persist before native I/O; CAS rejects an obsolete Host snapshot.
-
-        User dispatch also rechecks its durable source and receiving binding in
-        this transaction. Terminal observations do not acquire new user authority.
-        """
+    def checkpoint(self, child):
+        """Persist observations with CAS, without granting user-dispatch authority."""
         handle = child.native_session
         if handle is not None and (handle.provider != child.provider
                 or (child.requirements.resume == "attach"
@@ -316,28 +312,14 @@ class CooperativeContextStore:
             raise ControlLedgerConflict("native context has foreign identity")
         encoded = json.dumps(handle.to_dict() if handle else None, ensure_ascii=False, sort_keys=True)
         with self.ledger._transaction() as db:
-            if input_id is not None:
-                if not isinstance(turn_id, str) or not turn_id.strip():
-                    raise ControlLedgerConflict("cooperative input requires its Chat turn identity")
-                source = db.execute("""SELECT * FROM control_admissions
-                    WHERE source_scope=? AND utterance_id=?""",
-                    ("chat:" + self.session_id, input_id)).fetchone()
-                if (source is None or source["lifecycle"] != "current"
-                        or source["authority_mode"] != "legacy"
-                        or source["transcript_hash"] != admission_transcript_hash(text)
-                        or not self.ledger._current(db, source)):
-                    raise ControlLedgerConflict("cooperative input source no longer authorizes dispatch")
-            if binding_token is not None:
-                self._binding(db, binding_token, child.child_id)
             changed = db.execute("""UPDATE cooperative_contexts SET closed=?,run_id=?,run_status=?,
-                native_session=?,output=?,last_input_id=COALESCE(?,last_input_id),
-                last_turn_id=COALESCE(?,last_turn_id),work_item_id=?,run_effect_id=?,
+                native_session=?,output=?,work_item_id=?,run_effect_id=?,
                 revision=revision+1
                 WHERE session_id=? AND context_id=? AND provider=? AND workspace=? AND revision=?
                     AND requirements=? AND workspace_route=? AND work_item_id=?
                     AND (? OR native_session='null' OR native_session=?)""",
                 (int(child.closed), child.run_id, child.run_status, encoded, child.output,
-                 input_id, turn_id, child.work_item_id, child.run_effect_id,
+                 child.work_item_id, child.run_effect_id,
                  self.session_id, child.child_id,
                  child.provider, child.workspace, child.revision,
                   json.dumps(child.requirements.to_dict(), sort_keys=True),
@@ -612,36 +594,6 @@ class CooperativeContextStore:
                 or str(metadata.get("cooperative_work_item_id") or "") != child.work_item_id
                 or metadata.get("source_user_text") != request.task):
             raise ControlLedgerConflict("request does not match the cooperative context")
-        if intake_authority is None:
-            # Compatibility seam for the provider-contract fixtures. The real
-            # Chat assembly installs an effect ledger and rejects this path
-            # before Runtime intake.
-            with self.ledger._transaction() as db:
-                row = db.execute(
-                    "SELECT * FROM cooperative_contexts WHERE session_id=? AND context_id=?",
-                    (self.session_id, child.child_id),
-                ).fetchone()
-                if (row is None or row["closed"] or row["run_id"]
-                        or row["run_status"] != "dispatching"
-                        or row["revision"] != child.revision
-                        or not row["last_input_id"] or not row["last_turn_id"]
-                        or row["last_input_id"] != metadata.get("source_utterance_id")
-                        or row["last_turn_id"] != metadata.get("turn_id")
-                        or row["work_item_id"] != child.work_item_id):
-                    raise ControlLedgerConflict("cooperative dispatch slot is not available")
-                source = db.execute("""SELECT * FROM control_admissions
-                    WHERE source_scope=? AND utterance_id=?""",
-                    ("chat:" + self.session_id, row["last_input_id"])).fetchone()
-                if (source is None or source["authority_mode"] != "legacy"
-                        or source["transcript_hash"] != admission_transcript_hash(request.task)):
-                    raise ControlLedgerConflict("cooperative dispatch source does not match")
-                db.execute("""UPDATE cooperative_contexts
-                    SET run_id=?,run_status='queued',revision=revision+1
-                    WHERE session_id=? AND context_id=?""",
-                    (run_id, self.session_id, child.child_id))
-            child.run_id, child.run_status = run_id, "queued"
-            child.revision += 1
-            return request
         if (not isinstance(intake_authority, ProviderRunIntakeAuthority)
                 or intake_authority.kind != "cooperative_provider_effect"
                 or intake_authority.effect_id != child.run_effect_id):

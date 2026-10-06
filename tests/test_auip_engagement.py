@@ -4,8 +4,6 @@ import asyncio
 import json
 from unittest.mock import patch
 
-from core.chat_runtime import ChatRuntime, _TurnState
-from llm.stream_parser import clean_sentence_for_tts
 from server.auip_contract import AuipProtocolError
 from server.auip_engagement import AuipEngagementCoordinator
 from server.auip_participant_llm import decide_with_auip_participant
@@ -1086,42 +1084,6 @@ def test_participant_failure_surfaces_operator_error_without_requesting_an_actio
     asyncio.run(scenario())
 
 
-def test_inline_auip_control_interleaves_with_role_text_without_vts_or_delegate() -> None:
-    async def scenario() -> None:
-        captured: list[tuple[dict, dict]] = []
-
-        async def route(attrs: dict, **context) -> None:
-            captured.append((attrs, context))
-
-        runtime = ChatRuntime()
-        runtime.configure(auip_control_callback=route)
-        state = _TurnState(
-            gui_callback=None,
-            turn_id="turn-auip",
-            question="下一步你来",
-            session_id="session-auip",
-        )
-        with patch("core.chat_runtime.record_actions") as record:
-            visible = runtime._consume_stream_chunk(
-                state,
-                'わかった。[AUIP action="step" instruction="Take the next turn"]続けるわ。',
-            )
-            await runtime._wait_for_auip_controls(state)
-        assert visible == "わかった。続けるわ。"
-        assert not record.called
-        assert captured[0][0]["action"] == "step"
-        assert captured[0][1]["session_id"] == "session-auip"
-        assert "[AUIP" in state.history_response
-
-        clean, expressions = clean_sentence_for_tts(
-            '話す。[AUIP action="observe"]まだ話す。'
-        )
-        assert clean == "話す。まだ話す。"
-        assert expressions == []
-
-    asyncio.run(scenario())
-
-
 def test_explicit_step_returns_blocked_reason_instead_of_silent_wait() -> None:
     async def scenario() -> None:
         runtime = AuipRuntime()
@@ -1703,27 +1665,3 @@ def test_rejected_receipt_does_not_authorize_a_second_action() -> None:
             await engagement.close()
 
     asyncio.run(scenario())
-
-
-def _main() -> None:
-    test_delegate_mode_schedules_declared_beats_but_not_kurisu_echoes()
-    test_collaborate_schedules_only_declared_participant_opportunities()
-    test_observe_invalidates_a_late_participant_proposal_and_leave_is_bounded()
-    test_event_deduplication_is_scoped_to_each_appsession()
-    test_host_controls_use_focused_appsession_and_do_not_create_work()
-    test_participant_failure_surfaces_operator_error_without_requesting_an_action()
-    test_explicit_step_returns_blocked_reason_instead_of_silent_wait()
-    test_assigned_participant_opportunity_never_fails_silently()
-    test_missing_app_receipt_becomes_an_unknown_outcome_instead_of_silence()
-    test_inline_auip_control_interleaves_with_role_text_without_vts_or_delegate()
-    test_explicit_step_is_bound_to_the_revision_where_consensus_was_formed()
-    test_explicit_chat_directive_supersedes_only_an_unsubmitted_autonomous_proposal()
-    test_silent_main_role_gate_sees_branch_state_and_can_block_execution()
-    test_current_visible_role_refusal_reaches_the_silent_gate_before_action()
-    test_role_quality_review_replans_once_and_invokes_only_the_approved_proposal()
-    test_rejected_receipt_does_not_authorize_a_second_action()
-    print("ok: AUIP engagement keeps control, scheduling, and execution truth separate")
-
-
-if __name__ == "__main__":
-    _main()

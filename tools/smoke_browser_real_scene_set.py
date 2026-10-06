@@ -231,14 +231,6 @@ async def _run_scene() -> None:
     assert "search.bilibili.com" in str(back_run["metadata"]["browser"].get("current_url") or ""), back_run
     assert any("\u3040" <= char <= "\u30ff" for char in back_display), back_display
 
-    print("[real] verifying new-topic turn is not eaten by browser branch")
-    unrelated = await branch_coordinator.try_route_user_message(
-        text="换个话题，我们聊一下量子退相干。",
-        session_id=SESSION_ID,
-        turn_id="real_new_topic",
-    )
-    assert unrelated is None, unrelated
-
     branch_store_path = str(
         back_run.get("metadata", {})
         .get("provider_branch", {})

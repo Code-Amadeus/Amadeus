@@ -132,6 +132,28 @@ def test_settings_only_publish_composed_work_providers() -> None:
     }
 
 
+@pytest.mark.parametrize("professional", [True, False])
+def test_retired_false_is_read_only_and_does_not_change_runtime_or_work_permissions(monkeypatch, professional):
+    from config import settings
+
+    facts = ({"key": "COOPERATIVE_CHAT_ENABLED", "value": False,
+        "source": "environment", "effective_behavior": "cooperative_only"},)
+    monkeypatch.setattr(settings, "COOPERATIVE_CHAT_ENABLED", False)
+    monkeypatch.setattr(settings, "_RETIRED_SETTINGS", facts)
+    monkeypatch.setattr(settings, "COOPERATIVE_WORK_PLANNER_ENABLED", professional)
+    monkeypatch.setattr(settings, "COOPERATIVE_CHAT_PERMISSION_POLICY", "ask")
+    config = asyncio.run(SystemHandler()._get_config({}))
+    assert config["cooperative_chat_enabled"] is True
+    assert config["cooperative_work_planner_enabled"] is professional
+    assert config["cooperative_permission_policy"] == "ask"
+    assert config["control_decision_mode"] == "retired"
+    assert config["retired_settings"] == list(facts)
+    planner = next(group for group in config["model_roles"] if group["id"] == "work_planner")
+    assert planner["active"] is professional
+    with pytest.raises(ValueError, match="unsupported runtime setting"):
+        asyncio.run(SystemHandler()._set_config({"values": {"COOPERATIVE_CHAT_ENABLED": True}}))
+
+
 def test_asr_handler_owns_desired_and_loaded_backend() -> None:
     async def run() -> None:
         handler = AsrHandler()
@@ -248,11 +270,9 @@ def test_cooperative_settings_preserve_all_existing_role_backend_choices() -> No
     async def run() -> None:
         from config import settings
         import llm.client as llm_client
-        from core.chat_runtime import get_chat_runtime
 
         handler = SystemHandler()
-        runtime = get_chat_runtime()
-        old_provider = runtime.provider
+        old_provider = llm_client.LLM_PROVIDER
         with (
             patch.object(settings, "COOPERATIVE_CHAT_ENABLED", True),
             patch.object(llm_client, "LLM_PROVIDER", "deepseek"),
@@ -271,9 +291,9 @@ def test_cooperative_settings_preserve_all_existing_role_backend_choices() -> No
                     {"values":{"llm_provider":"gemini"}})
                 assert changed["values"]["llm_provider"] == "gemini"
                 assert changed["values"]["chat_supports_images"] is True
-                assert runtime.provider == "gemini"
+                assert llm_client.LLM_PROVIDER == "gemini"
             finally:
-                runtime.set_provider(old_provider)
+                llm_client.configure(llm_provider=old_provider)
 
     asyncio.run(run())
 
@@ -455,48 +475,42 @@ def test_system_settings_reject_llm_routing_change_during_active_chat() -> None:
     asyncio.run(run())
 
 
-def test_llm_provider_update_syncs_both_runtime_owners() -> None:
+def test_llm_provider_update_syncs_configuration_owner_and_settings() -> None:
     async def run() -> None:
         import llm.client as llm_client
-        from core.chat_runtime import get_chat_runtime
+        from config import settings
 
         handler = SystemHandler()
-        runtime = get_chat_runtime()
         old_client_provider = llm_client.LLM_PROVIDER
-        old_runtime_provider = runtime.provider
         try:
             with patch("server.handlers.system_handler.bus.emit", new=AsyncMock()):
                 result = await handler._set_config({"values": {"llm_provider": "openai"}})
             assert llm_client.LLM_PROVIDER == "openai"
-            assert runtime.provider == "openai"
+            assert settings.LLM_PROVIDER == "openai"
             assert result["values"]["llm_provider"] == "openai"
         finally:
-            runtime.set_provider(old_runtime_provider)
             llm_client.configure(llm_provider=old_client_provider)
 
     asyncio.run(run())
 
 
-def test_pure_local_backend_type_syncs_runtime_and_fallback() -> None:
+def test_pure_local_backend_type_syncs_configuration_owner_and_settings() -> None:
     async def run() -> None:
         from config import settings
         import llm.client as llm_client
-        from core.chat_runtime import get_chat_runtime
 
         handler = SystemHandler()
-        runtime = get_chat_runtime()
-        old_type = runtime.local_llm_type
+        old_type = llm_client.LOCAL_LLM_TYPE
         try:
             with patch("server.handlers.system_handler.bus.emit", new=AsyncMock()):
                 result = await handler._set_config(
                     {"values": {"local_llm_type": "lmstudio"}}
                 )
-            assert runtime.local_llm_type == "lmstudio"
             assert llm_client.LOCAL_LLM_TYPE == "lmstudio"
             assert settings.LOCAL_LLM_TYPE == "lmstudio"
             assert result["values"]["local_llm_type"] == "lmstudio"
         finally:
-            runtime.set_local_llm_type(old_type)
+            llm_client.configure(local_llm_type=old_type)
 
     asyncio.run(run())
 
@@ -550,19 +564,17 @@ def test_runtime_provider_switch_keeps_managed_llama_server_lifecycle_aligned() 
     async def run() -> None:
         from config import settings
         import llm.client as llm_client
-        from core.chat_runtime import get_chat_runtime
 
         handler = SystemHandler()
-        runtime = get_chat_runtime()
-        old_provider = runtime.provider
-        old_type = runtime.local_llm_type
+        old_provider = llm_client.LLM_PROVIDER
+        old_type = llm_client.LOCAL_LLM_TYPE
         old_launch_mode = settings.LOCAL_LLM_LAUNCH_MODE
         start = AsyncMock()
         warmup = AsyncMock()
         stop = Mock()
         try:
             settings.LOCAL_LLM_LAUNCH_MODE = "managed"
-            runtime.set_local_llm_type("llama_server")
+            llm_client.configure(local_llm_type="llama_server")
             with (
                 patch.object(settings, "COOPERATIVE_CHAT_ENABLED", False),
                 patch("server.handlers.system_handler.bus.emit", new=AsyncMock()),
@@ -572,19 +584,15 @@ def test_runtime_provider_switch_keeps_managed_llama_server_lifecycle_aligned() 
             ):
                 await handler._set_config({"values": {"llm_provider": "local"}})
                 await asyncio.sleep(0)
-                assert runtime.provider == "local"
-                assert runtime.use_local_llm is True
+                assert llm_client.LLM_PROVIDER == "local"
                 start.assert_awaited_once()
                 warmup.assert_awaited_once()
 
                 await handler._set_config({"values": {"llm_provider": "openai"}})
-                assert runtime.provider == "openai"
-                assert runtime.use_local_llm is False
+                assert llm_client.LLM_PROVIDER == "openai"
                 stop.assert_called_once()
         finally:
             settings.LOCAL_LLM_LAUNCH_MODE = old_launch_mode
-            runtime.set_local_llm_type(old_type)
-            runtime.set_provider(old_provider)
             llm_client.configure(llm_provider=old_provider, local_llm_type=old_type)
 
     asyncio.run(run())

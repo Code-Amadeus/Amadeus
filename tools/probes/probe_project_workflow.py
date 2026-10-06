@@ -2,7 +2,7 @@
 
 This is a model-contract probe only: it classifies emitted labels and uses
 scripted assistant turns. It is not host or end-to-end evidence. Use
-``probe_project_host_matrix.py`` for parser → dispatcher → handler → ledger →
+``probe_project_provider_matrix.py`` for shipping runtime → handler → ledger →
 projection verification on the current code.
 
 probe_project_switch.py measured single utterances: an imperative switch lands

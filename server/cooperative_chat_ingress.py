@@ -735,6 +735,8 @@ class CooperativeChatManager:
                  permission_store: WorkLedgerStore | None = None,
                  destination: WorkDestinationService | None = None,
                  work_planner: Callable | None = None,
+                 role_reference: Callable | None = None,
+                 hybrid_head: Callable | None = None,
                  attention: AttentionRequestCoordinator = attention_requests):
         if not isinstance(handler, ChatHandler):
             raise TypeError("cooperative Chat requires the production ChatHandler")
@@ -749,6 +751,8 @@ class CooperativeChatManager:
         self.allocate = allocate
         self.query = query
         self.persona = persona
+        self.role_reference = role_reference
+        self.hybrid_head = hybrid_head
         self.publish_factory = publish_factory
         self.role_provider_selector = role_provider_selector
         self.permission_policy = str(permission_policy or "").strip().lower()
@@ -788,16 +792,15 @@ class CooperativeChatManager:
         self._activation_guard = handler.invalidate_session_context
 
     def install(self, *, pending_sentence_items=None, on_turn_finished=None,
-                assistant_voice_sink=None, presentation_interrupt=None,
+                presentation_interrupt=None,
                 background_interaction_interrupt=None) -> None:
         """Install the entire cohort while the production Handler is quiescent."""
         if self._installed or self._closed:
             raise TurnAuthorityError("cooperative Chat manager is not installable")
         if sm._activation_guard is not None:
             raise TurnAuthorityError("Session activation already has another fence owner")
-        self.handler.configure(stream_llm_query=self.run,
+        self.handler.configure(
             pending_sentence_items=pending_sentence_items, on_turn_finished=on_turn_finished,
-            interaction_branch_router=None, assistant_voice_sink=assistant_voice_sink,
             presentation_interrupt=presentation_interrupt,
             background_interaction_interrupt=background_interaction_interrupt,
             abort_sink=self.abort_turn, permission_sink=self.resolve_permission)
@@ -927,6 +930,8 @@ class CooperativeChatManager:
                     workspace_access="read") if requirements.workspace_access == "write" else requirements
                     for provider, requirements in self.context_requirements.items()},
                 persona=self.persona, publish=publisher, owns_runtime=False,
+                role_reference=self.role_reference,
+                hybrid_head=self.hybrid_head,
                 work_proposals_only=self.work_planner is not None,
                 initial_destination=initial_destination,
                 context_destination_validator=validate_context_destination,

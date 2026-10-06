@@ -5,8 +5,12 @@ from __future__ import annotations
 import tempfile
 import json
 import subprocess
+import asyncio
+from types import SimpleNamespace
 from argparse import Namespace
 from pathlib import Path
+
+import pytest
 
 from agent_host.work_ledger_store import WorkLedgerStore
 from tools.e2e_live_product_journey import (
@@ -17,6 +21,7 @@ from tools.e2e_live_product_journey import (
     _available_choice_actions,
     _b2_automatic_presentation_summary,
     _capture_final_runtime_status,
+    _capture_chat_route,
     _chat_route_profile,
     _runtime_ready_for_live_journey,
     _compact_event,
@@ -44,6 +49,7 @@ from tools.e2e_live_product_journey import (
     _require_windows_electron_profile,
     _resolve_safe_permission,
     _semantic_review,
+    _send_ui_turn,
     _seed_verified_app,
     _nested_state_fact_matches,
     _scalar_transition_checks,
@@ -56,6 +62,39 @@ from tools.e2e_live_product_journey import (
 )
 from tools.e2e_real_work_conversation import EventRecord
 from tools.e2e_work_preview_auip_handoff import _native_app_surface_windows
+
+
+async def test_chat_latency_excludes_waiting_for_an_editable_input(monkeypatch):
+    from tools import e2e_live_product_journey as journey
+
+    now = [1000.0]
+    monkeypatch.setattr(journey, "time", SimpleNamespace(monotonic=lambda: now[0]))
+
+    class Field:
+        async def fill(self, text):
+            now[0] += 4.0  # renderer hydration / input readiness
+
+        async def press(self, key):
+            assert key == "Enter"
+            now[0] += 0.1
+
+    async def completed(*_args, **_kwargs):
+        now[0] += 0.5
+        return SimpleNamespace(params={"turn_id":"turn", "session_id":"session", "full_text":"Hello."})
+
+    async def screenshot(_label):
+        return Path("synthetic.png")
+
+    events = [EventRecord(14.1, "chat.user", {}), EventRecord(14.4, "chat.token", {}),
+              EventRecord(14.6, "chat.complete", {"turn_id":"turn"})]
+    probe = SimpleNamespace(state=SimpleNamespace(started_at=990.0, events=[]), wait_event=completed)
+    product = SimpleNamespace(page=SimpleNamespace(locator=lambda _selector: Field()), screenshot=screenshot)
+    turn = await _send_ui_turn(product, probe, label="sample", text="Hello", chat_timeout=10)
+    turn.event_end = len(events)
+    _populate_turn_timings([turn], events)
+    assert turn.timings["input_preparation_s"] == 4.0
+    assert turn.timings["backend_user_event_s"] == 0.1
+    assert turn.timings["first_chat_token_s"] == 0.4
 
 
 def test_permission_settlement_selects_only_the_card_being_approved(tmp_path) -> None:
@@ -633,37 +672,105 @@ def test_active_query_rejects_wrong_identity_source_or_unsettled_delivery() -> N
         assert evidence["checks"][failed_check] is False
 
 
-def test_chat_route_profile_pins_both_authority_switches_or_inherits() -> None:
-    cooperative = _chat_route_profile("cooperative", {})
-    default = _chat_route_profile(
-        "default",
-        {
-            "COOPERATIVE_CHAT_ENABLED": "1",
-            "COOPERATIVE_WORK_PLANNER_ENABLED": "1",
-        },
-    )
-    inherited = _chat_route_profile(
-        "inherit",
-        {
-            "COOPERATIVE_CHAT_ENABLED": "1",
-            "COOPERATIVE_WORK_PLANNER_ENABLED": "0",
-        },
-    )
+def test_chat_route_profile_pins_work_planning_or_inherits() -> None:
+    cooperative = _chat_route_profile("cooperative")
+    default = _chat_route_profile("default")
+    basic = _chat_route_profile("basic")
+    inherited = _chat_route_profile("inherit")
 
     assert cooperative["environment_overrides"] == {
-        "COOPERATIVE_CHAT_ENABLED": "1",
         "COOPERATIVE_WORK_PLANNER_ENABLED": "1",
     }
-    assert cooperative["cooperative_chat_enabled"] is True
-    assert cooperative["cooperative_work_planner_enabled"] is True
-    assert default["environment_overrides"] == {
-        "COOPERATIVE_CHAT_ENABLED": "0",
+    assert cooperative["selection"] == "professional"
+    assert cooperative["actual"] is None
+    assert default["environment_overrides"] == {}
+    assert default["selection"] == "inherit"
+    assert default["requested_selection"] == "default"
+    assert default["source"] == "ambient"
+    assert default["actual"] is None
+    assert basic["environment_overrides"] == {
         "COOPERATIVE_WORK_PLANNER_ENABLED": "0",
     }
-    assert default["cooperative_chat_enabled"] is False
-    assert default["cooperative_work_planner_enabled"] is False
     assert inherited["environment_overrides"] == {}
     assert inherited["source"] == "ambient"
+    assert inherited["actual"] is None
+
+
+def test_retired_original_chat_route_cannot_be_selected() -> None:
+    with pytest.raises(ValueError, match="unsupported Chat route: original"):
+        _chat_route_profile("original")
+
+
+@pytest.mark.parametrize("cooperative,planner,mode", [
+    (True, True, "professional"), (True, False, "basic"),
+])
+@pytest.mark.parametrize("route", ["inherit", "default"])
+def test_inherited_chat_route_uses_backend_facts_not_launcher_environment(
+    monkeypatch, cooperative, planner, mode, route,
+) -> None:
+    # The backend may read .env or desktop settings absent from this process.
+    monkeypatch.setenv("COOPERATIVE_CHAT_ENABLED", "0")
+    monkeypatch.setenv("COOPERATIVE_WORK_PLANNER_ENABLED", "0")
+    report = {"chat_route": _chat_route_profile(route)}
+
+    class Probe:
+        async def request(self, method, params, *, timeout):
+            assert (method, params, timeout) == ("system.get_config", {}, 20.0)
+            return {"cooperative_chat_enabled": cooperative,
+                    "cooperative_work_planner_enabled": planner,
+                    "retired_settings": {"COOPERATIVE_CHAT_ENABLED": False}}
+
+    asyncio.run(_capture_chat_route(Probe(), report))
+    assert report["chat_route"]["actual"] == {
+        "source": "system.get_config", "mode": mode,
+        "cooperative_chat_enabled": cooperative,
+        "cooperative_work_planner_enabled": planner,
+    }
+    assert report["chat_route"]["matches_request"] is None
+
+
+@pytest.mark.parametrize("route,cooperative,planner", [
+    ("professional", True, True), ("basic", True, False),
+])
+def test_explicit_chat_route_records_matching_backend(route, cooperative, planner) -> None:
+    class Probe:
+        async def request(self, *args, **kwargs):
+            return {"cooperative_chat_enabled": cooperative,
+                    "cooperative_work_planner_enabled": planner}
+
+    report = {"chat_route": _chat_route_profile(route)}
+    asyncio.run(_capture_chat_route(Probe(), report))
+    assert report["chat_route"]["matches_request"] is True
+
+
+def test_chat_route_mismatch_retains_actual_evidence_and_stops_journey() -> None:
+    class Probe:
+        async def request(self, *args, **kwargs):
+            return {"cooperative_chat_enabled": True,
+                    "cooperative_work_planner_enabled": False}
+
+    report = {"chat_route": _chat_route_profile("professional")}
+    with pytest.raises(RuntimeError, match="Chat assembly mismatch"):
+        asyncio.run(_capture_chat_route(Probe(), report))
+    assert report["chat_route"]["actual"]["mode"] == "basic"
+    assert report["chat_route"]["matches_request"] is False
+
+
+@pytest.mark.parametrize("config", [
+    {}, None, {"cooperative_chat_enabled": True},
+    {"cooperative_chat_enabled": "true", "cooperative_work_planner_enabled": True},
+    {"cooperative_chat_enabled": False, "cooperative_work_planner_enabled": False},
+    {"cooperative_chat_enabled": False, "cooperative_work_planner_enabled": True},
+])
+def test_missing_or_inconsistent_backend_facts_cannot_be_scored_as_a_route(config) -> None:
+    class Probe:
+        async def request(self, *args, **kwargs):
+            return config
+
+    report = {"chat_route": _chat_route_profile("inherit")}
+    with pytest.raises(RuntimeError, match="system.get_config"):
+        asyncio.run(_capture_chat_route(Probe(), report))
+    assert report["chat_route"]["actual"] is None
 
 
 def test_natural_adaptation_authority_uses_host_contract_not_source_spelling() -> None:

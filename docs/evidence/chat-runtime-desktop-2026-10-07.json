@@ -1,0 +1,184 @@
+{
+  "schema": "amadeus.chat-convergence-desktop-evidence.v1",
+  "date": "2026-10-07",
+  "journeys": [
+    {
+      "identity": {
+        "commit_sha": "73e125e38f54e9d74091dd9fe56439e00c3924c4",
+        "workspace_dirty": true,
+        "workspace_fingerprint": "3b7ea0b07973ea040a07c9cc27dbe8c927804b896f70737d8557cd11c6d29a79"
+      },
+      "chat_route": {
+        "selection": "professional",
+        "requested_selection": "professional",
+        "source": "cli",
+        "environment_overrides": {
+          "COOPERATIVE_CHAT_ENABLED": "1",
+          "COOPERATIVE_WORK_PLANNER_ENABLED": "1"
+        },
+        "actual": {
+          "source": "system.get_config",
+          "mode": "professional",
+          "cooperative_chat_enabled": true,
+          "cooperative_work_planner_enabled": true
+        },
+        "matches_request": true
+      },
+      "status": "passed",
+      "checks": {
+        "provider_selected": true,
+        "ordinary_reply_no_work": true,
+        "explanation_no_work": true,
+        "work_terminal_success": true,
+        "requested_artifact": true,
+        "report_no_new_run": true,
+        "total_provider_runs": true,
+        "no_shell_commands": true,
+        "no_renderer_page_error": true
+      },
+      "chat_provider": "deepseek",
+      "effective_provider": "deepseek",
+      "work_provider": "codex",
+      "tool_names": [
+        "js"
+      ],
+      "work_terminal": {
+        "status": "done",
+        "error": null
+      },
+      "app_surface_diagnostics": {
+        "console_errors": [],
+        "page_errors": []
+      },
+      "process_reaped": true,
+      "only_requested_file_post_run_check": true,
+      "turns": [
+        {
+          "label": "ordinary",
+          "timings": {
+            "first_chat_token_s": 3.641,
+            "chat_complete_s": 4.766
+          }
+        },
+        {
+          "label": "explain",
+          "timings": {
+            "first_chat_token_s": 1.032,
+            "chat_complete_s": 2.079
+          }
+        },
+        {
+          "label": "single_work",
+          "timings": {
+            "first_chat_token_s": 0.906,
+            "chat_complete_s": 4.203
+          }
+        },
+        {
+          "label": "report",
+          "timings": {
+            "first_chat_token_s": 1.266,
+            "chat_complete_s": 2.36
+          }
+        }
+      ]
+    },
+    {
+      "identity": {
+        "commit_sha": "73e125e38f54e9d74091dd9fe56439e00c3924c4",
+        "workspace_dirty": true,
+        "workspace_fingerprint": "a9bab2efe1111ee52a9fd7ccc26d76fbde25ba5988f272c91e4d4d970a1f2b56"
+      },
+      "chat_route": {
+        "selection": "basic",
+        "requested_selection": "basic",
+        "source": "cli",
+        "environment_overrides": {
+          "COOPERATIVE_CHAT_ENABLED": "1",
+          "COOPERATIVE_WORK_PLANNER_ENABLED": "0"
+        },
+        "actual": {
+          "source": "system.get_config",
+          "mode": "basic",
+          "cooperative_chat_enabled": true,
+          "cooperative_work_planner_enabled": false
+        },
+        "matches_request": true
+      },
+      "status": "passed",
+      "checks": {
+        "provider_selected": true,
+        "ordinary_reply_no_work": true,
+        "explanation_no_work": true,
+        "work_terminal_success": true,
+        "requested_artifact": true,
+        "report_no_new_run": true,
+        "total_provider_runs": true,
+        "no_shell_commands": true,
+        "no_renderer_page_error": true
+      },
+      "chat_provider": "deepseek",
+      "effective_provider": "deepseek",
+      "work_provider": "pi",
+      "tool_names": [
+        "read",
+        "write"
+      ],
+      "work_terminal": {
+        "status": "done",
+        "error": null
+      },
+      "app_surface_diagnostics": {
+        "console_errors": [],
+        "page_errors": []
+      },
+      "process_reaped": true,
+      "only_requested_file_post_run_check": true,
+      "turns": [
+        {
+          "label": "ordinary",
+          "timings": {
+            "first_chat_token_s": 3.969,
+            "chat_complete_s": 4.969
+          }
+        },
+        {
+          "label": "explain",
+          "timings": {
+            "first_chat_token_s": 1.39,
+            "chat_complete_s": 2.343
+          }
+        },
+        {
+          "label": "single_work",
+          "timings": {
+            "chat_complete_s": 1.859
+          }
+        },
+        {
+          "label": "report",
+          "timings": {
+            "chat_complete_s": 5.609
+          }
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Two synthetic desktop journeys; not a performance benchmark.",
+    "Physical speech, real Hybrid and RAG were disabled.",
+    "Earlier native execution under the managed worktree violated the no-command constraint; see the separate preserved audit."
+  ],
+  "verification": {
+    "python_suites": 417,
+    "python_passed": 5020,
+    "python_skipped": 6,
+    "python_collected": 5031,
+    "runner_result": "PASS",
+    "ruff": "passed",
+    "architecture_views": "7 checked",
+    "readme_overview": "passed",
+    "electron_build": "passed; existing chunk-size warning",
+    "electron_model_less_smoke": "passed"
+  }
+}

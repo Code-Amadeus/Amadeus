@@ -12,7 +12,6 @@ import os
 import sys
 import tempfile
 import time
-from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -157,33 +156,6 @@ def test_checkpoint_records_region_start_and_deep_history():
         assert len(cp["recent_messages"]) == 16
         assert cp["recent_messages"][0]["content"] == "msg4"
         assert cp["recent_messages"][-1]["content"] == "msg19"
-
-
-def test_turnstate_marks_branch_continue():
-    from core.chat_runtime import ChatRuntime, _TurnState
-
-    rt = ChatRuntime()
-
-    def fresh_st():
-        # 解析器每轮只认第一个 DELEGATE（_delegate_seen 截断），
-        # 每个场景必须用新的 _TurnState/parser
-        return _TurnState(gui_callback=None, turn_id="t1")
-
-    # This test owns only the parser's branch marker. Host dispatch is covered
-    # by test_host_action_dispatcher and must not be silently wired here.
-    with patch("core.chat_runtime.record_actions", return_value=None):
-        # 普通 DELEGATE（无 branch 属性）不打标
-        st = fresh_st()
-        rt._consume_stream_chunk(st, '[DELEGATE provider="openclaw" task="調べて"]')
-        assert st.branch_continue_seen is False
-        # branch=new 不打标（开分支对白保留）
-        st = fresh_st()
-        rt._consume_stream_chunk(st, '[DELEGATE provider="browser" branch="new" task="開いて"]')
-        assert st.branch_continue_seen is False
-        # branch=continue 打标
-        st = fresh_st()
-        rt._consume_stream_chunk(st, '待ってて。[DELEGATE provider="browser" branch="continue" task="クリック"]')
-        assert st.branch_continue_seen is True
 
 
 def _main() -> None:

@@ -46,6 +46,35 @@ def test_cooperative_handoff_explains_return_channel_without_rewriting_message()
     assert "authorized execution task" in legacy
 
 
+def test_selected_operation_does_not_forward_another_providers_instruction():
+    clauses = (
+        "Create alpha.txt containing OK without using shell commands.",
+        "Delete beta.txt in the other project.",
+    )
+    source = " ".join(clauses)
+    for clause, other in (clauses, tuple(reversed(clauses))):
+        metadata = {"source_user_text": source, "source_user_operation_text": clause}
+        original = deepcopy(metadata)
+        for provider in ("codex", "pi", "openclaw"):
+            rendered = with_parent_conversation_context(clause,
+                metadata=metadata, execution_provider=provider)
+            assert rendered.startswith(clause + "\n\n")
+            assert json.dumps(clause) in rendered
+            assert other not in rendered
+        assert metadata == original
+        adapter = CodexAppServerAdapter()
+        request = ProviderRunRequest(provider="codex", task=clause, metadata=metadata)
+        assert json.dumps(clause) in adapter._task_text(request)
+        assert other not in adapter._task_text(request)
+
+
+def test_operation_excerpt_is_used_when_no_full_source_exists():
+    text = "Inspect the file; do not modify it."
+    rendered = with_parent_conversation_context(text,
+        metadata={"source_user_operation_text": text}, execution_provider="pi")
+    assert json.dumps(text) in rendered
+
+
 def test_role_reference_context_preserves_payload_and_separates_identities() -> None:
     task = "你能做一个关于你自己的网页吗？"
     rendered = with_main_role_reference(

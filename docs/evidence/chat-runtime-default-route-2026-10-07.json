@@ -1,0 +1,772 @@
+{
+  "schema": "amadeus.default-route-convergence-evidence.v1",
+  "date": "2026-10-07",
+  "baseline_commit": "f306bc1f443df5c70957c754e69ed7b20f89e638",
+  "candidate_commit": "61f6da8eadd946b8bcb204fe381d9e17b97ac9fd",
+  "configuration": {
+    "provider": "deepseek",
+    "route": "professional",
+    "rag": false,
+    "tts": false,
+    "session_history": "fresh per sample",
+    "model": "backend default",
+    "resolved_model": "deepseek-v4-flash",
+    "model_resolution_evidence": "Both checkouts resolve the same inherited and supplied model environment to this default; no explicit model override in the dotenv."
+  },
+  "sampling": {
+    "paired_samples": 30,
+    "distinct_prompts": 10,
+    "repetitions": 3,
+    "batch_size": 5,
+    "batches": 12,
+    "warmup_per_batch_excluded": 1,
+    "order": "AB, BA alternating by 5-pair batch",
+    "fresh_session_per_sample": true
+  },
+  "latency_summary_seconds": {
+    "first_chat_token_s": {
+      "baseline_median": 3.945,
+      "candidate_median": 3.891,
+      "paired_delta_median": -0.05500000000000016,
+      "baseline_mean": 4.032333333333333,
+      "candidate_mean": 3.9027,
+      "baseline_p95_nearest_rank": 5.14,
+      "candidate_p95_nearest_rank": 4.094
+    },
+    "chat_complete_s": {
+      "baseline_median": 4.1875,
+      "candidate_median": 4.18,
+      "paired_delta_median": -0.015499999999999847,
+      "baseline_mean": 4.2792,
+      "candidate_mean": 4.1667,
+      "baseline_p95_nearest_rank": 5.343,
+      "candidate_p95_nearest_rank": 4.328
+    }
+  },
+  "samples": [
+    {
+      "label": "baseline",
+      "index": 0,
+      "timings": {
+        "first_chat_token_s": 4.187,
+        "chat_complete_s": 4.312
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 1,
+      "timings": {
+        "first_chat_token_s": 3.969,
+        "chat_complete_s": 4.203
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 2,
+      "timings": {
+        "first_chat_token_s": 3.75,
+        "chat_complete_s": 4.016
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 3,
+      "timings": {
+        "first_chat_token_s": 3.719,
+        "chat_complete_s": 3.985
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 4,
+      "timings": {
+        "first_chat_token_s": 4.032,
+        "chat_complete_s": 4.219
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 0,
+      "timings": {
+        "first_chat_token_s": 4.157,
+        "chat_complete_s": 4.282
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 1,
+      "timings": {
+        "first_chat_token_s": 3.891,
+        "chat_complete_s": 4.172
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 2,
+      "timings": {
+        "first_chat_token_s": 4.078,
+        "chat_complete_s": 4.25
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 3,
+      "timings": {
+        "first_chat_token_s": 3.765,
+        "chat_complete_s": 3.984
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 4,
+      "timings": {
+        "first_chat_token_s": 3.906,
+        "chat_complete_s": 4.094
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 5,
+      "timings": {
+        "first_chat_token_s": 3.891,
+        "chat_complete_s": 4.25
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 6,
+      "timings": {
+        "first_chat_token_s": 3.859,
+        "chat_complete_s": 4.172
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 7,
+      "timings": {
+        "first_chat_token_s": 3.891,
+        "chat_complete_s": 4.078
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 8,
+      "timings": {
+        "first_chat_token_s": 3.828,
+        "chat_complete_s": 4.078
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 9,
+      "timings": {
+        "first_chat_token_s": 3.672,
+        "chat_complete_s": 3.875
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 5,
+      "timings": {
+        "first_chat_token_s": 3.813,
+        "chat_complete_s": 4.141
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 6,
+      "timings": {
+        "first_chat_token_s": 3.937,
+        "chat_complete_s": 4.172
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 7,
+      "timings": {
+        "first_chat_token_s": 3.828,
+        "chat_complete_s": 4.016
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 8,
+      "timings": {
+        "first_chat_token_s": 3.953,
+        "chat_complete_s": 4.203
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 9,
+      "timings": {
+        "first_chat_token_s": 3.829,
+        "chat_complete_s": 4.235
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 10,
+      "timings": {
+        "first_chat_token_s": 4.015,
+        "chat_complete_s": 4.109
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 11,
+      "timings": {
+        "first_chat_token_s": 3.875,
+        "chat_complete_s": 4.078
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 12,
+      "timings": {
+        "first_chat_token_s": 3.844,
+        "chat_complete_s": 4.141
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 13,
+      "timings": {
+        "first_chat_token_s": 3.984,
+        "chat_complete_s": 4.203
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 14,
+      "timings": {
+        "first_chat_token_s": 4.125,
+        "chat_complete_s": 4.344
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 10,
+      "timings": {
+        "first_chat_token_s": 3.843,
+        "chat_complete_s": 3.968
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 11,
+      "timings": {
+        "first_chat_token_s": 4.0,
+        "chat_complete_s": 4.234
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 12,
+      "timings": {
+        "first_chat_token_s": 3.891,
+        "chat_complete_s": 4.172
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 13,
+      "timings": {
+        "first_chat_token_s": 3.875,
+        "chat_complete_s": 4.172
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 14,
+      "timings": {
+        "first_chat_token_s": 3.703,
+        "chat_complete_s": 3.937
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 15,
+      "timings": {
+        "first_chat_token_s": 3.906,
+        "chat_complete_s": 4.235
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 16,
+      "timings": {
+        "first_chat_token_s": 3.766,
+        "chat_complete_s": 4.157
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 17,
+      "timings": {
+        "first_chat_token_s": 4.016,
+        "chat_complete_s": 4.25
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 18,
+      "timings": {
+        "first_chat_token_s": 3.718,
+        "chat_complete_s": 4.078
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 19,
+      "timings": {
+        "first_chat_token_s": 3.985,
+        "chat_complete_s": 4.281
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 15,
+      "timings": {
+        "first_chat_token_s": 3.953,
+        "chat_complete_s": 4.265
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 16,
+      "timings": {
+        "first_chat_token_s": 3.968,
+        "chat_complete_s": 4.281
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 17,
+      "timings": {
+        "first_chat_token_s": 3.5,
+        "chat_complete_s": 3.688
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 18,
+      "timings": {
+        "first_chat_token_s": 3.766,
+        "chat_complete_s": 4.016
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 19,
+      "timings": {
+        "first_chat_token_s": 3.797,
+        "chat_complete_s": 4.125
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 20,
+      "timings": {
+        "first_chat_token_s": 3.969,
+        "chat_complete_s": 4.015
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 21,
+      "timings": {
+        "first_chat_token_s": 4.078,
+        "chat_complete_s": 4.281
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 22,
+      "timings": {
+        "first_chat_token_s": 3.813,
+        "chat_complete_s": 4.125
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 23,
+      "timings": {
+        "first_chat_token_s": 3.89,
+        "chat_complete_s": 4.125
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 24,
+      "timings": {
+        "first_chat_token_s": 3.766,
+        "chat_complete_s": 4.032
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 20,
+      "timings": {
+        "first_chat_token_s": 4.063,
+        "chat_complete_s": 4.188
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 21,
+      "timings": {
+        "first_chat_token_s": 4.016,
+        "chat_complete_s": 4.297
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 22,
+      "timings": {
+        "first_chat_token_s": 3.688,
+        "chat_complete_s": 3.953
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 23,
+      "timings": {
+        "first_chat_token_s": 3.828,
+        "chat_complete_s": 4.125
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 24,
+      "timings": {
+        "first_chat_token_s": 4.032,
+        "chat_complete_s": 4.235
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 25,
+      "timings": {
+        "first_chat_token_s": 3.89,
+        "chat_complete_s": 4.265
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 26,
+      "timings": {
+        "first_chat_token_s": 4.031,
+        "chat_complete_s": 4.328
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 27,
+      "timings": {
+        "first_chat_token_s": 3.985,
+        "chat_complete_s": 4.219
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 28,
+      "timings": {
+        "first_chat_token_s": 3.813,
+        "chat_complete_s": 4.266
+      }
+    },
+    {
+      "label": "candidate",
+      "index": 29,
+      "timings": {
+        "first_chat_token_s": 4.094,
+        "chat_complete_s": 4.406
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 25,
+      "timings": {
+        "first_chat_token_s": 3.844,
+        "chat_complete_s": 4.266
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 26,
+      "timings": {
+        "first_chat_token_s": 4.329,
+        "chat_complete_s": 4.5
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 27,
+      "timings": {
+        "first_chat_token_s": 5.14,
+        "chat_complete_s": 5.343
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 28,
+      "timings": {
+        "first_chat_token_s": 6.172,
+        "chat_complete_s": 6.469
+      }
+    },
+    {
+      "label": "baseline",
+      "index": 29,
+      "timings": {
+        "first_chat_token_s": 4.125,
+        "chat_complete_s": 4.468
+      }
+    }
+  ],
+  "batch_routes": [
+    {
+      "label": "baseline",
+      "indexes": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "actual_route": {
+        "source": "system.get_config",
+        "mode": "professional",
+        "cooperative_chat_enabled": true,
+        "cooperative_work_planner_enabled": true
+      },
+      "process_reaped": true
+    },
+    {
+      "label": "candidate",
+      "indexes": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "actual_route": {
+        "source": "system.get_config",
+        "mode": "professional",
+        "cooperative_chat_enabled": true,
+        "cooperative_work_planner_enabled": true
+      },
+      "process_reaped": true
+    },
+    {
+      "label": "candidate",
+      "indexes": [
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actual_route": {
+        "source": "system.get_config",
+        "mode": "professional",
+        "cooperative_chat_enabled": true,
+        "cooperative_work_planner_enabled": true
+      },
+      "process_reaped": true
+    },
+    {
+      "label": "baseline",
+      "indexes": [
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "actual_route": {
+        "source": "system.get_config",
+        "mode": "professional",
+        "cooperative_chat_enabled": true,
+        "cooperative_work_planner_enabled": true
+      },
+      "process_reaped": true
+    },
+    {
+      "label": "baseline",
+      "indexes": [
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "actual_route": {
+        "source": "system.get_config",
+        "mode": "professional",
+        "cooperative_chat_enabled": true,
+        "cooperative_work_planner_enabled": true
+      },
+      "process_reaped": true
+    },
+    {
+      "label": "candidate",
+      "indexes": [
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "actual_route": {
+        "source": "system.get_config",
+        "mode": "professional",
+        "cooperative_chat_enabled": true,
+        "cooperative_work_planner_enabled": true
+      },
+      "process_reaped": true
+    },
+    {
+      "label": "candidate",
+      "indexes": [
+        15,
+        16,
+        17,
+        18,
+        19
+      ],
+      "actual_route": {
+        "source": "system.get_config",
+        "mode": "professional",
+        "cooperative_chat_enabled": true,
+        "cooperative_work_planner_enabled": true
+      },
+      "process_reaped": true
+    },
+    {
+      "label": "baseline",
+      "indexes": [
+        15,
+        16,
+        17,
+        18,
+        19
+      ],
+      "actual_route": {
+        "source": "system.get_config",
+        "mode": "professional",
+        "cooperative_chat_enabled": true,
+        "cooperative_work_planner_enabled": true
+      },
+      "process_reaped": true
+    },
+    {
+      "label": "baseline",
+      "indexes": [
+        20,
+        21,
+        22,
+        23,
+        24
+      ],
+      "actual_route": {
+        "source": "system.get_config",
+        "mode": "professional",
+        "cooperative_chat_enabled": true,
+        "cooperative_work_planner_enabled": true
+      },
+      "process_reaped": true
+    },
+    {
+      "label": "candidate",
+      "indexes": [
+        20,
+        21,
+        22,
+        23,
+        24
+      ],
+      "actual_route": {
+        "source": "system.get_config",
+        "mode": "professional",
+        "cooperative_chat_enabled": true,
+        "cooperative_work_planner_enabled": true
+      },
+      "process_reaped": true
+    },
+    {
+      "label": "candidate",
+      "indexes": [
+        25,
+        26,
+        27,
+        28,
+        29
+      ],
+      "actual_route": {
+        "source": "system.get_config",
+        "mode": "professional",
+        "cooperative_chat_enabled": true,
+        "cooperative_work_planner_enabled": true
+      },
+      "process_reaped": true
+    },
+    {
+      "label": "baseline",
+      "indexes": [
+        25,
+        26,
+        27,
+        28,
+        29
+      ],
+      "actual_route": {
+        "source": "system.get_config",
+        "mode": "professional",
+        "cooperative_chat_enabled": true,
+        "cooperative_work_planner_enabled": true
+      },
+      "process_reaped": true
+    }
+  ],
+  "wire_contract": {
+    "checks": {
+      "one_request_each": true,
+      "no_work": true,
+      "same_visible_reply": true,
+      "same_complete_request": true,
+      "no_page_errors": true,
+      "processes_reaped": true
+    },
+    "normalization": "Only current.input_id and current.turn_id; all other request data compared.",
+    "normalized_request_sha256": "3ba9c66aebac1444130b5280e1170d2be3041a248fc07213bc495df643d85236",
+    "parameters": {
+      "model": "contract-model",
+      "max_tokens": 900,
+      "stream": true,
+      "temperature": 0.0,
+      "thinking": {
+        "type": "disabled"
+      }
+    },
+    "reply_identical": true,
+    "real_model": false
+  },
+  "interpretation": "No observed ordinary-Chat latency regression in this sample. Differences are within remote/network variability; no claimed speedup or SLA.",
+  "limitations": [
+    "Remote model/network variability; small sample, not an SLA.",
+    "Measures UI input to backend visible-text event and completion; no physical speech or Work.",
+    "Adjacent batches are paired by prompt index, not simultaneous requests.",
+    "Work, visual input, RAG, Hybrid, microphone and physical speech are separate acceptance gates.",
+    "Initial measurement tool read the wrong session.create field and exited before collecting samples; its failed report is retained separately."
+  ],
+  "post_run_audit": {
+    "accepted_as_warm_chat_latency": false,
+    "reason": "The timing origin preceded Playwright fill() waiting roughly 2.8s for a freshly reloaded disabled input. These totals are not steady-state send-to-first-text latency.",
+    "original_numbers_preserved": true,
+    "correction": "tools.e2e_live_product_journey._send_ui_turn now starts immediately before Enter; input_preparation_s is separate. Full paired benchmark rerunning.",
+    "corrected_evidence": "chat-runtime-corrected-default-latency-2026-10-07.json"
+  }
+}

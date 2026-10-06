@@ -85,28 +85,22 @@ def test_eviction_never_wedges_playback_waiter():
     assert c.wait_turn_playback_complete("old_playback", timeout=0.1) is True
 
 
-def test_chat_runtime_skips_playback_wait_when_no_sentence():
+def test_role_presentation_skips_playback_tracking_when_no_sentence():
     async def run():
         from core.chat_runtime import ChatRuntime
 
         rt = ChatRuntime()
-        rt.configure(
-            pending_sentence_items=asyncio.Queue(),
-            playback_manager=None,
-            provider="local",
-        )
-        rt._ensure_clients = lambda _provider: None
+        from unittest.mock import Mock
 
-        async def _run_no_output(st, question, visual_context, enable_conv, llm_provider):
-            return None
-
-        rt._run_local = _run_no_output
-        result = await rt.stream_llm_query(
-            "no output",
-            preserve_emotion=True,
-            turn_id="empty_turn",
-        )
-        assert result == ""
+        playback = Mock()
+        queue = asyncio.Queue()
+        rt.configure(pending_sentence_items=queue, playback_manager=playback)
+        stream = rt.begin_role_text_stream(turn_id="empty_turn")
+        assert await stream.finish() == {
+            "status": "skipped", "reason": "no_speakable_sentence"}
+        assert stream.state.full_response == ""
+        assert queue.empty()
+        playback.mark_turn_last_sentence.assert_not_called()
 
     asyncio.run(run())
 

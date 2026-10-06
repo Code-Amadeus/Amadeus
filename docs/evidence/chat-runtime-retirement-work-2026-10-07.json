@@ -1,0 +1,73 @@
+{
+  "schema": "amadeus.retirement-work-acceptance.v1",
+  "date": "2026-10-07",
+  "identity": {
+    "commit_sha": "cb0774ba401eafeac732754d13bdb822e95f0b97",
+    "workspace_dirty": true,
+    "workspace_fingerprint": "6a4769e3d14b2f0d55fbd174e12e51afb42a67975da647a1bb0ca8d7bace7a82"
+  },
+  "actual_route": {
+    "source": "system.get_config",
+    "mode": "professional",
+    "cooperative_chat_enabled": true,
+    "cooperative_work_planner_enabled": true
+  },
+  "status": "passed",
+  "checks": {
+    "provider_selected": true,
+    "ordinary_reply_no_work": true,
+    "explanation_no_work": true,
+    "work_terminal_success": true,
+    "requested_artifact": true,
+    "only_requested_file": true,
+    "report_no_new_run": true,
+    "total_provider_runs": true,
+    "no_shell_commands": true,
+    "no_renderer_page_error": true
+  },
+  "work_provider": "codex",
+  "tool_names": [
+    "js"
+  ],
+  "process_reaped": true,
+  "turns": [
+    {
+      "label": "ordinary",
+      "reply": "こんにちは。 穏やかな一日、いいわね。"
+    },
+    {
+      "label": "explain",
+      "reply": "こんにちは。 虹が見えるのは、空気中の水滴が太陽光を屈折・反射させて、光が色ごとに分かれるからよ。\n 水滴に入った光は色によって曲がり方が違うため、赤から紫までが分かれて、私たちの目には弧を描く帯として見えるの。"
+    },
+    {
+      "label": "single_work",
+      "reply": "ええ、それくらいなら引き受けるわ。 現在のプロジェクトに `convergence_result.txt` を、中身が `CONVERGENCE_OK` だけの状態で一つ作成する——他のファイルには触らず、コードやコマンドの実行もしない、という条件ね。"
+    },
+    {
+      "label": "report",
+      "reply": "ええ、 記録を確認するわね。\n\n`convergence_result.txt` を作成するタスクは、実行担当の codex 側で「succeeded」——つまり実行自体は成功として記録されているわ。 ただし、成果の状態は `review_ready` で、完成度は `partial`、確認待ちの `attention: review` が付いたままよ。だから「実行は成功した」と「成果が完全に確認済み」は、今のところ別物ね。\n\n新しい作業や追加の実行はしないでおくわ。"
+    }
+  ],
+  "diagnosis": {
+    "owner": "test fixture",
+    "mkdtemp_acl": {
+      "inheritance_protected": true,
+      "explicit_calling_user_rules": 0,
+      "owner_rights_rules": 1
+    },
+    "ordinary_project_acl": {
+      "inheritance_protected": false,
+      "explicit_calling_user_rules": 1,
+      "owner_rights_rules": 0
+    },
+    "observed": "A sandbox-owned file in the owner-only fixture was readable by the executor and unreadable by Host even after shutdown. Normal project-directory inheritance allowed the Host readback.",
+    "fix": "Create the synthetic project with Path.mkdir in a unique ordinary temporary path; preserve the existing narrow WORK_PROJECT_ALLOWLIST.",
+    "product_permissions_changed": false,
+    "existing_acl_modified": false,
+    "source": "https://docs.python.org/3.12/library/os.html#os.mkdir"
+  },
+  "limits": [
+    "Single synthetic Work execution/report journey; previous failed samples remain in retirement evidence.",
+    "No physical speech, acoustic loopback or complete persona/routing evaluation."
+  ]
+}

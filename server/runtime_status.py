@@ -121,6 +121,7 @@ class RuntimeStatusCollector:
         self._provider_runtime_getter: Callable[[], Any] | None = None
         self._provider_availability_getter: Callable[[], Any] | None = None
         self._work_ledger_getter: Callable[[], Any] | None = None
+        self._cooperative_chat_getter: Callable[[], Any] | None = None
 
     def configure(
         self,
@@ -137,6 +138,7 @@ class RuntimeStatusCollector:
         provider_runtime_getter: Callable[[], Any] | None = None,
         provider_availability_getter: Callable[[], Any] | None = None,
         work_ledger_getter: Callable[[], Any] | None = None,
+        cooperative_chat_getter: Callable[[], Any] | None = None,
     ) -> None:
         if port is not None:
             self._port = port
@@ -162,6 +164,8 @@ class RuntimeStatusCollector:
             self._provider_availability_getter = provider_availability_getter
         if work_ledger_getter is not None:
             self._work_ledger_getter = work_ledger_getter
+        if cooperative_chat_getter is not None:
+            self._cooperative_chat_getter = cooperative_chat_getter
 
     # ── 快照入口 ─────────────────────────────────────────────────────────────
 
@@ -180,16 +184,27 @@ class RuntimeStatusCollector:
             "provider": self._section(self._provider),
             "coordinator": self._section(self._coordinator),
             "turn_decision_shadow": self._section(self._turn_decision_shadow),
+            "retired_settings": self._section(self._retired_settings),
         }
         snapshot["ready"] = self._ready(snapshot)
         snapshot["derived"] = self._section(lambda: self._derived(snapshot))
         return snapshot
 
     @staticmethod
+    def _retired_settings() -> list[dict[str, object]]:
+        from config import settings
+
+        return settings.retired_settings()
+
+    @staticmethod
     def _coordinator() -> dict[str, Any]:
         from core.turn_coordinator import get_turn_coordinator
 
-        return get_turn_coordinator().snapshot()
+        coordinator = get_turn_coordinator()
+        return {
+            **coordinator.snapshot(),
+            "first_audio_write_times": coordinator.first_audio_write_times(),
+        }
 
     @staticmethod
     def _turn_decision_shadow() -> dict[str, Any]:
@@ -218,31 +233,26 @@ class RuntimeStatusCollector:
 
     def _session(self) -> dict[str, Any]:
         from core import session_manager as sm
-        from core.chat_runtime import get_chat_runtime
-
         sid = sm.get_current_session_id() or ""
         return {
             "current_session_id": sid,
             "title": sm.get_session_title(sid) if sid else "",
-            "enable_conversation": bool(get_chat_runtime().enable_conversation),
+            "enable_conversation": bool(sid),
             "history_len": len(getattr(sm.conversation_history, "dialog", []) or []),
         }
 
     def _chat(self) -> dict[str, Any]:
-        from core.chat_runtime import get_chat_runtime
+        import llm.client as llm_client
+        from config import settings
 
-        rt = get_chat_runtime()
         out: dict[str, Any] = {
-            "provider": rt.provider,
-            "use_local_llm": bool(rt.use_local_llm),
-            "local_llm_type": rt.local_llm_type,
-            "control_decision_mode": (
-                "authority"
-                if bool(getattr(rt, "_control_proposal_authority", False))
-                else "shadow"
-                if getattr(rt, "_control_proposal_observer", None) is not None
-                else "disabled"
-            ),
+            "provider": llm_client.LLM_PROVIDER,
+            "use_local_llm": llm_client.LLM_PROVIDER == "local",
+            "local_llm_type": llm_client.LOCAL_LLM_TYPE,
+            "hybrid_head": self.hybrid_head(),
+            "control_decision_mode": "retired",
+            "cooperative_chat_enabled": True,
+            "cooperative_work_planner_enabled": bool(settings.COOPERATIVE_WORK_PLANNER_ENABLED),
         }
         h = self._chat_handler
         if h is not None:
@@ -253,6 +263,25 @@ class RuntimeStatusCollector:
                 "last_assistant_turn_id": str(getattr(h, "_last_assistant_turn_id", "") or ""),
             })
         return out
+
+    def hybrid_head(self) -> dict[str, Any]:
+        """Project the current Session's existing trace, without creating a loop."""
+        from config import settings
+        from core import session_manager as sm
+        from llm import client
+
+        session_id = sm.get_current_session_id() or ""
+        manager = self._cooperative_chat_getter() if self._cooperative_chat_getter else None
+        ingress = manager.ingresses.get(session_id) if manager is not None else None
+        recent = next((row for row in reversed(ingress.loop.trace)
+            if row.get("kind") == "hybrid_head"), {}) if ingress is not None else {}
+        return {
+            "enabled": client.LLM_PROVIDER in {"hybrid", "hybrid2", "hybrid3"},
+            "configured": bool(settings.HYBRID_LOCAL_LLM_URL and settings.HYBRID_LOCAL_LLM_MODEL),
+            "session_id": session_id,
+            "turn_id": recent.get("turn_id", ""),
+            "outcome": recent.get("outcome", "not_observed"),
+        }
 
     def _tts(self) -> dict[str, Any]:
         import tts.pipeline as tts_pipeline

@@ -222,16 +222,27 @@ test('VN companion reports the selected role connection instead of a fixed DeepS
   assert.equal(role.policyLabel, 'Current selection')
 })
 
-test('scene display keeps shared Work and AUIP visible when Work is currently off', () => {
+test('a retired false does not hide shared Work readiness or AUIP', () => {
   const snapshot = configuredSnapshot()
   snapshot.cooperative_chat_enabled = false
   snapshot.model_roles = [group('auip_action', true, {}, { active: true, status_ok: true })]
-  const capabilities = exports.buildCapabilityProfiles(snapshot)
+  const capabilities = exports.buildCapabilityProfiles(snapshot, [
+    { provider_id: 'pi', configured: true, ready: true, registered: true, reason: 'ready' },
+  ])
   for (const capabilityId of ['work_execution', 'application_interaction']) {
     const capability = capabilities.find(item => item.id === capabilityId)
     assert.deepEqual(capability.scenes.map(scene => [scene.sceneId, scene.used]), [
       ['chat', true], ['wallpaper', true], ['vn', false],
     ])
   }
-  assert.equal(capabilities.find(item => item.id === 'work_execution').state, 'inactive')
+  assert.equal(capabilities.find(item => item.id === 'work_execution').state, 'ready')
+})
+
+test('Work readiness remains unknown without backend facts regardless of a stored retired flag', () => {
+  for (const value of [true, false, undefined]) {
+    const capabilities = exports.buildCapabilityProfiles({ cooperative_chat_enabled: value }, [
+      { provider_id: 'pi', ready: true, registered: true },
+    ])
+    assert.equal(capabilities.find(item => item.id === 'work_execution').state, 'unknown')
+  }
 })

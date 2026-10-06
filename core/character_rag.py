@@ -8,6 +8,7 @@ Retrieved text is reference data, not user input or Host execution evidence.
 from __future__ import annotations
 
 import hashlib
+import asyncio
 import json
 import logging
 import math
@@ -139,7 +140,7 @@ def render_reference(hits: list[dict], max_chars: int = 2400) -> str:
 
 
 class CharacterRAG:
-    """One lazily loaded index per ChatRuntime, serialized off the async loop."""
+    """One lazily loaded index, serialized off the async loop."""
 
     def __init__(self):
         self._index = None
@@ -223,3 +224,20 @@ class CharacterRAG:
             (time.perf_counter() - started) * 1000,
         )
         return reference
+
+
+# The process owns the index. Session loops only receive a retrieval callback.
+# Construction is cheap: no filesystem/model access occurs until reference().
+_shared_rag = CharacterRAG()
+
+
+def get_character_rag() -> CharacterRAG:
+    return _shared_rag
+
+
+async def role_character_reference(query: str) -> str:
+    from config import settings
+
+    if not settings.RAG_ENABLED:
+        return ""
+    return await asyncio.to_thread(get_character_rag().reference, query)

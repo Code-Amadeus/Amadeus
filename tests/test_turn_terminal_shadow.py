@@ -4,7 +4,6 @@ import asyncio
 import json
 import threading
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from server.turn_decision_shadow import TurnDecisionShadowObserver
@@ -146,44 +145,6 @@ def test_direct_blocker_is_not_fabricated_as_an_accepted_browser_effect():
         )
 
 
-def test_runtime_normal_error_and_cancellation_all_close_observation():
-    from core.chat_runtime import ChatRuntime
-
-    async def run(status):
-        observer = TurnDecisionShadowObserver(enabled=True)
-        runtime = ChatRuntime()
-        runtime.configure(pending_sentence_items=asyncio.Queue(), playback_manager=None, provider="local")
-        runtime._ensure_clients = lambda _provider: None
-
-        async def model(*_args, **_kwargs):
-            if status == "failed":
-                raise RuntimeError("model unavailable")
-            if status == "cancelled":
-                raise asyncio.CancelledError()
-
-        runtime._run_local = model
-        with patch("server.turn_decision_shadow.observer", observer):
-            try:
-                result = await runtime.stream_llm_query("hello", preserve_emotion=True, turn_id="runtime-turn")
-                assert status != "cancelled"
-                assert ("LLM API Error" in result) == (status == "failed")
-            except asyncio.CancelledError:
-                assert status == "cancelled"
-            # The Handler sees a returned error string as a completed stream.
-            # That generic signal must not erase the more specific runtime failure.
-            from server.handlers.chat_handler import ChatHandler
-
-            ChatHandler._notify_coordinator_finished("runtime-turn", ok=True)
-        row = observer.snapshot()["recent"][0]
-        assert row["terminal"]["lifecycle"] == status
-        assert row["terminal"]["disposition"] == (
-            "observed_no_effect" if status == "completed" else status
-        )
-
-    for status in ("completed", "failed", "cancelled"):
-        asyncio.run(run(status))
-
-
 def test_handler_cancellation_before_coroutine_start_still_closes_admission():
     from core.turn_coordinator import TurnCoordinator
     from server.handlers.chat_handler import ChatHandler
@@ -253,30 +214,22 @@ def test_live_j5_failed_closed_fact_survives_zero_effects_and_ring_eviction():
     assert not any(event["stage"] == "control_authority_resolved" for event in row["events"])
 
 
-def test_control_resolution_observation_preserves_failure_not_empty_action_heuristic():
-    from core.chat_control_authority import observe_control_resolution
-    from server.control_authority import ControlAuthorityResolution
-
+def test_control_resolution_failure_fact_is_not_an_empty_action_heuristic():
     for disposition in ("accepted", "suppressed", "failed_closed"):
         observer = _observer()
-        with patch("server.turn_decision_shadow.observer", observer):
-            observe_control_resolution("turn-1", ControlAuthorityResolution(disposition=disposition))
+        observer.record_event("turn-1", stage="control_authority_resolved",
+            origin_kind="control_decision", payload={"disposition":disposition})
         observer.observe_settlement("turn-1")
         observer.mark_lifecycle("turn-1", "completed")
         row = observer.snapshot()["recent"][0]
         assert row["terminal"]["disposition"] == (
-            "failed_closed" if disposition == "failed_closed" else "observed_no_effect"
-        )
+            "failed_closed" if disposition == "failed_closed" else "observed_no_effect")
     observer = _observer()
-    with patch("server.turn_decision_shadow.observer", observer):
-        observe_control_resolution("turn-1", ControlAuthorityResolution(disposition="failed_closed"))
+    observer.record_event("turn-1", stage="control_authority_resolved",
+        origin_kind="control_decision", payload={"disposition":"failed_closed"})
     observer.observe_settlement("turn-1", effective_actions=(
-        {"type": "DELEGATE", "attrs": {"intent": "execute", "task": "already accepted witness"}},
-    ))
+        {"type":"DELEGATE", "attrs":{"intent":"execute", "task":"already accepted witness"}},))
     observer.mark_lifecycle("turn-1", "completed")
     terminal = observer.snapshot()["recent"][0]["terminal"]
     assert terminal["disposition"] == "failed_closed"
     assert terminal["observed_effect_count"] == 1
-    with patch("server.turn_decision_shadow.get_enabled_turn_decision_shadow_observer", return_value=None):
-        # Disabled telemetry must not require an observation-compatible object.
-        observe_control_resolution("turn-1", SimpleNamespace())

@@ -1,10 +1,13 @@
 schema: amadeus.architecture.interactions.v1
-observed_at: 2026-07-22
+observed_at: 2026-10-07
 scenarios:
   provider_work_and_narration:
     title: Provider work, concurrent status query, and narration
     sources:
       - core/chat_runtime.py
+      - server/cooperative_chat_ingress.py
+      - server/cooperative_provider_loop.py
+      - server/work_effect_executor.py
       - server/app.py
       - agent_host/provider_runtime.py
       - server/work_ledger_coordinator.py
@@ -14,8 +17,8 @@ scenarios:
     participants:
       user: User
       surface: Voice / chat surface
-      chat: ChatRuntime
-      gateway: ProviderHandler
+      chat: Cooperative Chat
+      gateway: WorkControl / WorkEffectExecutor
       work: WorkLedger control plane
       runtime: ProviderRuntime
       adapter: Codex / OpenClaw / browser adapter
@@ -36,15 +39,15 @@ scenarios:
       - type: message
         from: chat
         to: gateway
-        label: Structured delegation with provider, task, and cwd
+        label: Resolve proposal and accept one identity-bound Work effect
       - type: message
         from: gateway
         to: work
-        label: prepare_request creates or binds WorkItem and RunAttempt
+        label: Bind accepted effect to WorkItem and RunAttempt
       - type: message
         from: gateway
         to: runtime
-        label: Start normalized ProviderRunRequest
+        label: Start accepted ProviderRunRequest or replay its existing receipt
       - type: message
         from: runtime
         to: adapter

@@ -17,6 +17,26 @@ ReferenceKind = Literal["project", "work_item", "execution"]
 
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
+_FILE_TOKEN_RE = re.compile(
+    r"(?i)(?<![a-z0-9_.-])([a-z0-9_.-]+\."
+    r"(?:py|txt|json|md|js|jsx|ts|tsx|html|css|scss|yaml|yml|toml|ini|cfg|csv|xml|sql|sh|ps1|bat|go|rs|java|kt|c|cc|cpp|h|hpp))"
+    r"(?![a-z0-9_])"
+)
+
+
+def explicit_file_references(text: str) -> set[str]:
+    """Lexical filename evidence only; this does not determine intent or authority."""
+    return {match.group(1).lower() for match in _FILE_TOKEN_RE.finditer(str(text or ""))}
+
+
+def candidate_task_label(item: dict) -> str:
+    """A speakable title or produced filenames for a clarification candidate."""
+    title = " ".join(str(item.get("title") or "").split())[:60].strip()
+    if title:
+        return title
+    files = [str(name).strip() for name in (item.get("files") or []) if str(name).strip()]
+    return "/".join(files[:3])
+
 
 @dataclass(frozen=True, slots=True)
 class TypedReferenceCandidate:

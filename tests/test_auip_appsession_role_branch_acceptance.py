@@ -2,10 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from unittest.mock import patch
 
-from core.chat_runtime import ChatRuntime, _TurnState
-from server.auip_control_decision import AuipControlDecision
 from server.auip_engagement import AuipEngagementCoordinator
 from server.auip_runtime import AuipRuntime
 from server.event_bus import bus
@@ -88,8 +85,7 @@ def test_a1_full_lifecycle_keeps_short_downlink_and_automatic_turns_local() -> N
 
         bus.on(Method.AUIP_ACTION_REQUESTED, capture)
         try:
-            # This is the same ordering used by ChatRuntime: the visible role
-            # turn is staged before AUIP dispatch so a same-turn leave can still
+            # The visible role turn is staged before AUIP dispatch so a same-turn leave can still
             # be part of the close capsule.
             runtime.record_role_branch_turn(
                 conversation_id="branch-acceptance-chat",
@@ -168,30 +164,6 @@ def test_a1_full_lifecycle_keeps_short_downlink_and_automatic_turns_local() -> N
                 resulting_revision=3,
                 state={"turn": "user", "position": 0},
             )
-
-            # Independent Provider Work remains parent-scoped even while the
-            # AppSession is focused.
-            work_turn = _TurnState(
-                gui_callback=None,
-                turn_id="independent-work",
-                question="帮我查一下 Paxos 论文。",
-                session_id="branch-acceptance-chat",
-            )
-            work_turn.full_response = "調べてみるわ。"
-            work_turn.auip_decision_result = AuipControlDecision(
-                status="ok",
-                action="none",
-                work_relation="independent",
-            )
-            before = runtime.recent_role_branch_messages(
-                "branch-acceptance-chat"
-            )
-            with patch("server.auip_runtime.runtime", runtime):
-                ChatRuntime._record_auip_role_branch_turn(work_turn)
-            assert work_turn.auip_role_branch_isolated is False
-            assert runtime.recent_role_branch_messages(
-                "branch-acceptance-chat"
-            ) == before
 
             closed = runtime.close(
                 app_session_id=app_session_id,

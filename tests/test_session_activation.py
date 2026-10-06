@@ -50,7 +50,6 @@ def context(sessions, monkeypatch):
     coordinator.bind_session_context("A", project.project_id, source="test")
     handler = SessionHandler()
     handler.configure(work_coordinator=coordinator, is_chat_busy=lambda: False)
-    monkeypatch.setattr(handler, "_enable_conversation", lambda: None)
     projection = Mock()
     monkeypatch.setattr(handler, "_publish_context_projection_now", projection)
     emit = AsyncMock()

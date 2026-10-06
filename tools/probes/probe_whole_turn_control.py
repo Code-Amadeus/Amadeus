@@ -24,7 +24,7 @@ async def whole_input_single_owner(messages, proposals, candidates, *, complete,
             decision_queries=1 + decision.decision_protocol_retries,
             candidate_verdict_queries=decision.candidate_verdict_queries,
             candidate_protocol_retries=decision.candidate_protocol_retries)
-    source = compound._current_user_text(messages)
+    source = compound.current_user_text(messages)
     actions, notes = control_decision.reconcile_control_decision(
         proposals, decision, provider_ids=provider_ids,
         proposal_controls=proposal_controls, source_user_text=source)

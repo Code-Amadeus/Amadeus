@@ -12,6 +12,7 @@
 
 import os
 import platform
+import warnings
 from pathlib import Path
 
 from config.environment import load_project_environment
@@ -165,7 +166,12 @@ _LLM_MODEL_FILE    = _str("LOCAL_LLM_CLI_MODEL_PATH")        # .gguf 模型文�
 LOCAL_LLM_MODEL_PATH = _LLM_MODEL_FILE
 _LLM_PORT          = _str("LOCAL_LLM_CLI_PORT",         "8080")
 _LLM_THREADS       = _str("LOCAL_LLM_CLI_THREADS",      "4")
+# Shared CLI/Hybrid defaults remain 4k. Only the managed pure-local profile
+# needs the larger Cooperative prompt budget; explicit values apply to both.
 _LLM_CONTEXT       = _str("LOCAL_LLM_CLI_CONTEXT",      "4096")
+LOCAL_LLM_SERVER_CONTEXT = (
+    _LLM_CONTEXT if _ENV.configured("LOCAL_LLM_CLI_CONTEXT") else "16384"
+)
 _LLM_NGL           = _str("LOCAL_LLM_CLI_NGL",          "99")  # GPU 层数，99 = 全 GPU
 _LLM_UBATCH        = _str("LOCAL_LLM_CLI_UBATCH_SIZE",  "512")
 _LLM_BATCH         = _str("LOCAL_LLM_CLI_BATCH_SIZE",   "2048")
@@ -613,13 +619,54 @@ PROVIDER_RUN_EVENT_CAP = _int("PROVIDER_RUN_EVENT_CAP", 500)
 PROVIDER_WORK_HEARTBEAT_S = _int("PROVIDER_WORK_HEARTBEAT_S", 45)
 PROVIDER_WORK_QUIET_NOTICE_S = _int("PROVIDER_WORK_QUIET_NOTICE_S", 90)
 PROVIDER_WORK_QUIET_REPEAT_S = _int("PROVIDER_WORK_QUIET_REPEAT_S", 300)
-# Whole-instance routing selector. Keep both routing strategies and share their
-# execution/presentation facilities; false selects the original Chat authority
-# at restart. The JSON is a Host-authored ProviderRequirements contract, not a
-# capability inference.
+# Retired route selector, read only during migration. It cannot select a runtime
+# or grant/deny Work. Cooperative is the sole runtime with both routing strategies.
 COOPERATIVE_CHAT_ENABLED = _bool("COOPERATIVE_CHAT_ENABLED", True)
-# Professional cooperative routing is the default. False selects basic cooperative
-# routing; the whole-instance selector above restores original Chat at restart.
+_RETIRED_SETTINGS = (
+    ({
+        "key": "COOPERATIVE_CHAT_ENABLED",
+        "value": COOPERATIVE_CHAT_ENABLED,
+        "source": _ENV.source("COOPERATIVE_CHAT_ENABLED"),
+        "effective_behavior": "cooperative_only",
+    },)
+    if _ENV.configured("COOPERATIVE_CHAT_ENABLED") else ()
+)
+if _RETIRED_SETTINGS and not COOPERATIVE_CHAT_ENABLED:
+    warnings.warn(
+        "COOPERATIVE_CHAT_ENABLED=false is retired and ignored: Cooperative is "
+        "the sole Chat runtime. The old Off value selected the original runtime; "
+        "it never prohibited Work execution. Existing Work permissions still apply.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
+
+
+def retired_settings() -> list[dict[str, object]]:
+    """Known non-sensitive startup facts; no settings or source files are changed."""
+    return [dict(row) for row in _RETIRED_SETTINGS]
+
+
+def _retired_value(key: str, value: object, default: object, behavior: str) -> None:
+    """Keep explicit obsolete choices observable without exporting active knobs."""
+    global _RETIRED_SETTINGS
+    if not _ENV.configured(key) or value == default:
+        return
+    _RETIRED_SETTINGS += ({"key": key, "value": value, "source": _ENV.source(key),
+        "effective_behavior": behavior},)
+    warnings.warn(f"{key} is retired and ignored: {behavior}.", RuntimeWarning, stacklevel=2)
+
+
+def _retired_boolean(key: str, default: bool, behavior: str) -> None:
+    _retired_value(key, _bool(key, default), default, behavior)
+
+
+def _retired_choice(key: str, default: str, choices: frozenset[str], behavior: str) -> None:
+    value = _str(key, default).strip().lower()
+    # The retired-key projection only includes known non-sensitive choices.
+    _retired_value(key, value if value in choices else None, default, behavior)
+
+
+# Professional routing is the default. False selects basic cooperative routing.
 # A failed professional decision never falls back to a different route.
 COOPERATIVE_WORK_PLANNER_ENABLED = _bool("COOPERATIVE_WORK_PLANNER_ENABLED", True)
 # Optional model on the existing LLM backend; empty inherits the role model.
@@ -643,13 +690,6 @@ if COOPERATIVE_CHAT_PERMISSION_POLICY not in {"deny", "ask"}:
 # inspection read only this setting; retired Provider settings cannot widen it.
 WORK_PROJECT_ALLOWLIST = _str("WORK_PROJECT_ALLOWLIST", "")
 WORK_AUTO_ACCEPT_APPROVED_EXPORTS = _bool("WORK_AUTO_ACCEPT_APPROVED_EXPORTS", True)
-# Legacy omission instrumentation.  This used to turn a host keyword match
-# into execution authority when the role omitted DELEGATE.  Once
-# ControlDecision became authoritative that was the wrong direction of trust:
-# it can validate a proposal, but no proposal is evidence for no action.  Keep
-# the resolver available for explicit probes and log its observe-only result;
-# production does not synthesise work the role never proposed.
-WORK_DELEGATE_REPAIR = _bool("WORK_DELEGATE_REPAIR", False)
 # The roster's candidate list lets the model name which existing task it means
 # (workspace_ref) instead of leaving the host to infer it. Default **off**,
 # measured 2026-07-31: across A5 (one task, anaphoric follow-up) and B1 (two
@@ -668,13 +708,6 @@ WORK_DELEGATE_REPAIR = _bool("WORK_DELEGATE_REPAIR", False)
 # host resolver starts failing on references it cannot ground (titles without
 # filenames, three or more plausible targets).
 WORK_ROSTER_CANDIDATES = _bool("WORK_ROSTER_CANDIDATES", False)
-# Carry DELEGATE as a native tool call rather than an inline tag, on the
-# DeepSeek/OpenAI chat path. The turn shape is the same either way — the model
-# says one line and the turn ends on the call — so this does not touch turn or
-# epoch semantics. What changes is that provider, its three legal values and
-# the presence of a task stop being requests made in prose and become
-# constraints of the schema. Other providers keep the tag path.
-LLM_DELEGATE_TOOL_CALLS = _bool("LLM_DELEGATE_TOOL_CALLS", False)
 # Require every delegate to declare what the user asked for: execute the work,
 # or report on work already done. The read-only invariant — a status question
 # must never create work — was stated as prose telling the model to refrain,
@@ -732,20 +765,6 @@ DELEGATE_AMEND_INTENT = _bool("DELEGATE_AMEND_INTENT", True)
 # work keeps landing in an empty directory, and a conversation that never
 # declares one behaves exactly as before.
 DELEGATE_FOCUS_INTENT = _bool("DELEGATE_FOCUS_INTENT", True)
-# Reversible inline experiment for explicit action existence.  On asks for
-# exactly one CONTROL envelope per role turn;
-# delegate=true is decoded to the existing DELEGATE action at the stream parser
-# boundary and delegate=false never reaches dispatch.  It adds no model call,
-# retry, keyword rule, or second authority source.  Native tool-call transport
-# takes precedence if both switches are enabled.  The envelope is effective
-# only with ControlDecision authority.  Production-like streaming evidence on
-# 2026-08-20 found that the role model still omitted mandatory no-action
-# outcomes and handled a short confirmation less reliably than the single
-# DELEGATE contract.  Keep the candidate measurable but do not make an
-# unproven transport the product default.
-ACTION_EXISTENCE_CONTROL_ENVELOPE_ENABLED = _bool(
-    "ACTION_EXISTENCE_CONTROL_ENVELOPE_ENABLED", False
-)
 # Who gets to say how a task ended. The provider adapter maps a process exit
 # code straight to "done", which is honest about the process and says nothing
 # about the work: on 2026-07-31 a run whose every tool call was denied exited 0
@@ -760,49 +779,25 @@ ACTION_EXISTENCE_CONTROL_ENVELOPE_ENABLED = _bool(
 WORK_LEDGER_OWNS_TERMINAL_NARRATION = _bool(
     "WORK_LEDGER_OWNS_TERMINAL_NARRATION", True
 )
-# When the model omits a delegate the host used to synthesise one from the raw
-# utterance. That fired regardless of whether the model had agreed to anything:
-# on 2026-08-01 a turn where it was asking which project to use still started
-# work, so the user heard a clarifying question and a task beginning at once,
-# and the synthesised task carried the whole utterance -- preamble included --
-# through to the provider as instructions.
-#
-# A second model pass was introduced to re-emit omitted controls.  A real
-# conversation on 2026-08-13 showed why that cannot be an authority source: it
-# converted an ordinary comment, the user's correction, and an acknowledgement
-# into three new OpenClaw tasks.  It remains opt-in only for controlled probes;
-# the production path accepts only controls emitted in the original turn.
-DELEGATE_RESEND_ON_OMISSION = _bool("DELEGATE_RESEND_ON_OMISSION", False)
-# Reversible double-consent recovery for a role turn that verbally committed
-# to work but emitted no structured control. A neutral existence gate sees only
-# the current user speech act and bounded prior conversation; only ``work`` may
-# ask the speaking role to reconstruct its own already-visible commitment. The
-# two judgments must agree, and the reconstructed proposal still traverses the
-# ordinary ControlDecision/reference authority. ``shadow`` measures both calls
-# but never dispatches; ``candidate`` enables the recovered proposal.
-ACTION_EXISTENCE_COMMITMENT_RECOVERY_MODE = _str(
-    "ACTION_EXISTENCE_COMMITMENT_RECOVERY_MODE", "candidate"
-)
-# Observe one proposal-gated ControlDecision at the transport's complete-action
-# boundary. Shadow remains the default. The separate authority flag is a
-# reversible canary: it delays only Provider dispatch, never role text/TTS, and
-# does not rely on omission/focus safety nets. The Project list must be complete; a
-# catalog larger than the bounded prompt budget records ``incomplete`` without
-# asking the model or guessing from a prefix.
-CONTROL_DECISION_SHADOW_ENABLED = _bool("CONTROL_DECISION_SHADOW_ENABLED", True)
-CONTROL_DECISION_AUTHORITY_ENABLED = _bool(
-    # The authority path has a reversible environment escape hatch, but it is
-    # now the product path.  Keeping the default on prevents desktop launches
-    # from silently testing the legacy dispatcher while the real-machine
-    # journey tests the canonical decision layer.
-    "CONTROL_DECISION_AUTHORITY_ENABLED", True
-)
-# Overall deadline for the authority callback, including bounded per-candidate
-# evidence and its single protocol retry. The query client's own timeout is a
-# lower-level transport bound; this deadline guarantees dispatch recovery.
-CONTROL_DECISION_AUTHORITY_TIMEOUT_S = _float(
-    "CONTROL_DECISION_AUTHORITY_TIMEOUT_S", 30.0
-)
+# Old whole-turn choices have no execution or recovery authority. Read explicit
+# non-default values during the migration period so ignored choices remain visible.
+for _retired_key, _retired_default, _retired_behavior in (
+    ("WORK_DELEGATE_REPAIR", False, "work_requires_an_original_proposal"),
+    ("DELEGATE_RESEND_ON_OMISSION", False, "no_omission_resend"),
+    ("LLM_DELEGATE_TOOL_CALLS", False, "native_delegate_transport_retired"),
+    ("ACTION_EXISTENCE_CONTROL_ENVELOPE_ENABLED", False, "role_control_envelope_retired"),
+    ("CONTROL_DECISION_SHADOW_ENABLED", True, "old_control_shadow_retired"),
+    ("CONTROL_DECISION_AUTHORITY_ENABLED", True, "cooperative_owns_turn_authority"),
+    ("COMPOUND_CONTROL_AUTHORITY_ENABLED", True, "planner_owns_compound_decisions"),
+    ("COMPOUND_CONTROL_SHADOW_ENABLED", False, "old_compound_shadow_retired"),
+):
+    _retired_boolean(_retired_key, _retired_default, _retired_behavior)
+_retired_choice("ACTION_EXISTENCE_COMMITMENT_RECOVERY_MODE", "candidate",
+    frozenset({"off", "shadow", "candidate"}), "no_commitment_recovery")
+_retired_value("CONTROL_DECISION_AUTHORITY_TIMEOUT_S",
+    _float("CONTROL_DECISION_AUTHORITY_TIMEOUT_S", 30.0), 30.0,
+    "planner_uses_control_decision_timeout")
+# These budgets remain consumed by the professional Work Planner.
 CONTROL_DECISION_PROJECT_LIMIT = _int("CONTROL_DECISION_PROJECT_LIMIT", 200)
 CONTROL_DECISION_WORK_ITEM_LIMIT = _int("CONTROL_DECISION_WORK_ITEM_LIMIT", 200)
 CONTROL_DECISION_EXHAUSTIVE_CANDIDATE_LIMIT = _int(
@@ -810,18 +805,6 @@ CONTROL_DECISION_EXHAUSTIVE_CANDIDATE_LIMIT = _int(
 )
 CONTROL_DECISION_MAX_TOKENS = _int("CONTROL_DECISION_MAX_TOKENS", 900)
 CONTROL_DECISION_TIMEOUT_S = _int("CONTROL_DECISION_TIMEOUT_S", 45)
-
-# Exact-clause expansion for one proposal-gated turn that contains several
-# independently actionable clauses. The production resolver preserves A for
-# zero/one clause and uses the ordered B plan only for genuine multi-operation
-# turns. The authority flag is the reversible product switch; the shadow flag
-# retains an independent telemetry-only arm when authority is disabled.
-COMPOUND_CONTROL_AUTHORITY_ENABLED = _bool(
-    "COMPOUND_CONTROL_AUTHORITY_ENABLED", True
-)
-COMPOUND_CONTROL_SHADOW_ENABLED = _bool(
-    "COMPOUND_CONTROL_SHADOW_ENABLED", False
-)
 
 # Observe how the existing Work/AUIP/Browser witnesses converge for one origin
 # turn.  This adds no planner call and owns no dispatch: it records immutable

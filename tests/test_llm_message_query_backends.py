@@ -20,6 +20,20 @@ MESSAGES = [
 ]
 
 
+def _local_metadata(url, **kwargs):
+    if url.endswith("/props"):
+        data = {"default_generation_settings": {"n_ctx": 16384}}
+    elif url.endswith("/apply-template"):
+        assert kwargs["json"]["messages"]
+        data = {"prompt": "templated messages"}
+    elif url.endswith("/tokenize"):
+        assert kwargs["json"]["content"] == "templated messages"
+        data = {"tokens": [1, 2, 3]}
+    else:
+        raise AssertionError(url)
+    return SimpleNamespace(raise_for_status=lambda: None, json=lambda: data)
+
+
 def test_provider_change_drops_an_incompatible_openai_sdk_client() -> None:
     from llm import client
 
@@ -114,12 +128,15 @@ def test_local_openai_compatible_message_query_preserves_messages() -> None:
             return {"choices": [{"message": {"content": "<think>x</think>{\"say\":\"ok\",\"action\":null}"}}]}
 
     def post(url, **kwargs):
+        if not url.endswith("/chat/completions"):
+            return _local_metadata(url, **kwargs)
         seen.append((url, kwargs))
         return Response()
 
     with (
         patch.object(client, "LLM_PROVIDER", "local"),
         patch.object(client, "LOCAL_LLM_TYPE", "llama_server"),
+        patch.object(client.requests, "get", side_effect=_local_metadata),
         patch.object(client.requests, "post", side_effect=post),
     ):
         reply = client.remote_llm_messages_query(MESSAGES, max_tokens=111)
@@ -127,6 +144,8 @@ def test_local_openai_compatible_message_query_preserves_messages() -> None:
     assert reply == '{"say":"ok","action":null}'
     assert seen[0][1]["json"]["messages"] == MESSAGES
     assert seen[0][1]["json"]["max_tokens"] == 111
+    assert seen[0][1]["json"]["response_format"] == {
+        "type": "json_schema", "json_schema": {"name": "response", "schema": {"type": "object"}}}
 
 
 def test_original_hybrid_uses_bedrock_for_one_coherent_role_reply() -> None:
@@ -418,6 +437,8 @@ def test_message_stream_is_one_request_and_closes_on_callback_failure(backend, f
     stream = _Stream(chunks)
 
     def create(*args, **kwargs):
+        if backend == "llama_server" and args and not args[0].endswith("/chat/completions"):
+            return _local_metadata(*args, **kwargs)
         calls.append(kwargs)
         if backend in {"bedrock", "hybrid"}:
             return {"body": stream}
@@ -446,6 +467,7 @@ def test_message_stream_is_one_request_and_closes_on_callback_failure(backend, f
             models=SimpleNamespace(generate_content_stream=create),
         )))
         stack.enter_context(patch.object(client, "LOCAL_LLM_TYPE", backend))
+        stack.enter_context(patch.object(client.requests, "get", side_effect=_local_metadata))
         stack.enter_context(patch.object(client.requests, "post", side_effect=create))
         stack.enter_context(patch.object(client, "AWS_BEDROCK_AUTH_MODE", "bearer" if bearer else "auto"))
         stack.enter_context(patch.object(client, "AWS_BEDROCK_BEARER_TOKEN", "test-token"))
@@ -483,6 +505,8 @@ def test_message_stream_is_one_request_and_closes_on_callback_failure(backend, f
         assert calls[0]["json"]["stream"] is True
         if backend == "ollama":
             assert ("format" in calls[0]["json"]) is json_output
+        else:
+            assert ("response_format" in calls[0]["json"]) is json_output
     elif backend in {"bedrock", "hybrid"}:
         assert json.loads(calls[0]["body"])["stream"] is True
     elif bearer:
@@ -496,7 +520,7 @@ def test_message_stream_is_one_request_and_closes_on_callback_failure(backend, f
         assert ("response_mime_type" in calls[0]["config"]) is json_output
 
 
-def test_cli_callback_remains_one_complete_query_without_claiming_native_streaming():
+def test_persistent_cli_is_rejected_before_query_or_delivery():
     from llm import client
 
     delivered = []
@@ -505,9 +529,11 @@ def test_cli_callback_remains_one_complete_query_without_claiming_native_streami
         patch.object(client, "LOCAL_LLM_TYPE", "cli"),
         patch.object(client, "local_llm_query_cli", return_value='{"action":null,"say":"Hello"}') as query,
     ):
-        reply = client.remote_llm_messages_query(MESSAGES, on_text=delivered.append)
-    assert delivered == [reply]
-    query.assert_awaited_once_with("User: Current fact", stream=False, system_prompt="Return JSON.")
+        for _ in range(4):
+            with pytest.raises(RuntimeError, match="LOCAL_LLM_TYPE=llama_server"):
+                client.remote_llm_messages_query(MESSAGES, on_text=delivered.append)
+    assert delivered == []
+    query.assert_not_called()
 
 
 def test_bedrock_native_stream_error_closes_and_does_not_retry_with_bearer():

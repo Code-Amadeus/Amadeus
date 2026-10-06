@@ -576,8 +576,12 @@ OpenAI-compatible endpoint, and start it when needed:
 .\start_llm_server.bat
 ```
 
-LM Studio, Ollama, llama-cli, and hybrid profiles remain available, but none is
-an automatic fallback after a DeepSeek failure.
+Managed llama-server defaults to a 16k context and rejects insufficient capacity
+without truncating a Chat request. Persistent llama-cli sessions must migrate to
+llama-server. LM Studio and Ollama capacity behavior remains pending live acceptance.
+Hybrid uses its configured local HTTP first sentence plus the remote reply; it
+does not use the pure-local backend selector. No profile is an automatic fallback
+after a DeepSeek failure. See [Chat runtime and settings migration](docs/chat-runtime-convergence.md).
 
 ### Optional remote model recommendations
 

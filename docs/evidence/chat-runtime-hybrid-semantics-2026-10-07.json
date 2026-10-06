@@ -1,0 +1,438 @@
+{
+  "schema": "amadeus.hybrid-current-semantic-observation.v1",
+  "date": "2026-10-07",
+  "status": "full_corpus_observed_not_blanket_accepted",
+  "raw_report_sha256": "ad3a025d6050d8136c8be66be58f026b17b3c5c0b53db43b759cc9e2cd751313",
+  "fixture_sha256": "5a763aceac87eeb1d7e7726efd43b242bd43c57eb9b5641b3711c7978eef0a77",
+  "instrument_sha256": "9bf5baabc99eb24b603628596cdcce34863d29de6d8e1356d17dd980d867973d",
+  "current_seed_manifest_sha256": "9f4f492859463d318a3ee0d11f817437b9a880085d82fff7c266824612b69766",
+  "source_manifest": "../../tools/probes/fixtures/cooperative_hybrid_semantics_v1.json",
+  "scope": "New explicit current acceptance context; never a reconstruction or rescore of historical ledger/history.",
+  "configuration": {
+    "provider": "hybrid2",
+    "role_model": "deepseek-v4-flash",
+    "planner_model": "same selected role model",
+    "head_model": "qwen3.5-9b",
+    "rag_enabled": false,
+    "tts": false,
+    "registered_providers": [
+      "inert codex"
+    ],
+    "role_max_tokens": 900,
+    "planner_max_tokens": 900,
+    "serialized_configuration": true
+  },
+  "cases_per_arm": 47,
+  "total_user_turns": 188,
+  "routing_scored_per_arm": 26,
+  "routing_observational_per_arm": 4,
+  "existing_persona_inputs_per_arm": 15,
+  "new_persona_inputs_per_arm": 2,
+  "seed_only_check": {
+    "actual_host_setups": 188,
+    "paired_seed_projection_equal": true,
+    "model_calls": 0
+  },
+  "current_results": {
+    "basic-no-head": {
+      "routing_scored": 26,
+      "routing_matched": 20,
+      "routing_unscored": [
+        "b_howto_amend",
+        "b_indirect_new",
+        "b_tentative_amend",
+        "b_wish_export"
+      ],
+      "existing_persona_observed": 14,
+      "new_persona_observed": 2,
+      "errors": [
+        "b_multi_amend_exec",
+        "b_multi_msg_amend",
+        "b_multi_stop_exec",
+        "mid_18_explanation"
+      ],
+      "actual_calls_by_kind": {
+        "role": 47,
+        "reference": 13
+      }
+    },
+    "basic-head": {
+      "routing_scored": 26,
+      "routing_matched": 20,
+      "routing_unscored": [
+        "b_howto_amend",
+        "b_indirect_new",
+        "b_tentative_amend",
+        "b_wish_export"
+      ],
+      "existing_persona_observed": 15,
+      "new_persona_observed": 2,
+      "errors": [
+        "b_multi_amend_exec",
+        "b_multi_msg_amend",
+        "b_multi_stop_exec"
+      ],
+      "actual_calls_by_kind": {
+        "role": 47,
+        "head": 47,
+        "reference": 13
+      }
+    },
+    "professional-no-head": {
+      "routing_scored": 26,
+      "routing_matched": 23,
+      "routing_unscored": [
+        "b_howto_amend",
+        "b_indirect_new",
+        "b_tentative_amend",
+        "b_wish_export"
+      ],
+      "existing_persona_observed": 15,
+      "new_persona_observed": 2,
+      "errors": [],
+      "actual_calls_by_kind": {
+        "role": 47,
+        "planner": 73,
+        "reference": 3,
+        "presentation": 5,
+        "report_presentation": 3
+      }
+    },
+    "professional-head": {
+      "routing_scored": 26,
+      "routing_matched": 22,
+      "routing_unscored": [
+        "b_howto_amend",
+        "b_indirect_new",
+        "b_tentative_amend",
+        "b_wish_export"
+      ],
+      "existing_persona_observed": 15,
+      "new_persona_observed": 2,
+      "errors": [],
+      "actual_calls_by_kind": {
+        "head": 47,
+        "role": 47,
+        "planner": 73,
+        "reference": 3,
+        "presentation": 6,
+        "report_presentation": 3
+      }
+    }
+  },
+  "failed_scored_cases": [
+    {
+      "case": "b_multi_amend_exec",
+      "arm": "basic-no-head",
+      "source": "把便签页加个清空按钮，另外再帮我查下 Raft 的论文。",
+      "expected": [
+        "amend",
+        "execute"
+      ],
+      "observed": [
+        "none"
+      ],
+      "error": "Chat owner emitted an error; retained in transport_events",
+      "unresolved_receipts": []
+    },
+    {
+      "case": "b_multi_amend_exec",
+      "arm": "basic-head",
+      "source": "把便签页加个清空按钮，另外再帮我查下 Raft 的论文。",
+      "expected": [
+        "amend",
+        "execute"
+      ],
+      "observed": [
+        "none"
+      ],
+      "error": "Chat owner emitted an error; retained in transport_events",
+      "unresolved_receipts": []
+    },
+    {
+      "case": "b_multi_amend_exec",
+      "arm": "professional-no-head",
+      "source": "把便签页加个清空按钮，另外再帮我查下 Raft 的论文。",
+      "expected": [
+        "amend",
+        "execute"
+      ],
+      "observed": [
+        "refused"
+      ],
+      "error": null,
+      "unresolved_receipts": [
+        {
+          "state": "rejected",
+          "reason": "planned_work_shape_unsupported",
+          "input_id": "evaluate-b_multi_amend_exec",
+          "utterance_id": "evaluate-b_multi_amend_exec",
+          "turn_id": "evaluate-b_multi_amend_exec",
+          "child_id": "child_34d1f565fe40508889655b2e8bff9dd8",
+          "_host_coordination_delivered": true
+        }
+      ]
+    },
+    {
+      "case": "b_multi_amend_exec",
+      "arm": "professional-head",
+      "source": "把便签页加个清空按钮，另外再帮我查下 Raft 的论文。",
+      "expected": [
+        "amend",
+        "execute"
+      ],
+      "observed": [
+        "refused"
+      ],
+      "error": null,
+      "unresolved_receipts": [
+        {
+          "state": "rejected",
+          "reason": "planned_work_shape_unsupported",
+          "input_id": "evaluate-b_multi_amend_exec",
+          "utterance_id": "evaluate-b_multi_amend_exec",
+          "turn_id": "evaluate-b_multi_amend_exec",
+          "child_id": "child_34d1f565fe40508889655b2e8bff9dd8",
+          "_host_coordination_delivered": true
+        }
+      ]
+    },
+    {
+      "case": "b_multi_msg_amend",
+      "arm": "basic-no-head",
+      "source": "问问 Codex 这个怎么实现的，顺便把标题改成「我的清单」。",
+      "expected": [
+        "message",
+        "amend"
+      ],
+      "observed": [
+        "none"
+      ],
+      "error": "Chat owner emitted an error; retained in transport_events",
+      "unresolved_receipts": []
+    },
+    {
+      "case": "b_multi_msg_amend",
+      "arm": "basic-head",
+      "source": "问问 Codex 这个怎么实现的，顺便把标题改成「我的清单」。",
+      "expected": [
+        "message",
+        "amend"
+      ],
+      "observed": [
+        "none"
+      ],
+      "error": "Chat owner emitted an error; retained in transport_events",
+      "unresolved_receipts": []
+    },
+    {
+      "case": "b_multi_stop_exec",
+      "arm": "basic-no-head",
+      "source": "先停掉数独那个，然后做个计时器。",
+      "expected": [
+        "retract",
+        "execute"
+      ],
+      "observed": [
+        "none"
+      ],
+      "error": "Chat owner emitted an error; retained in transport_events",
+      "unresolved_receipts": []
+    },
+    {
+      "case": "b_multi_stop_exec",
+      "arm": "basic-head",
+      "source": "先停掉数独那个，然后做个计时器。",
+      "expected": [
+        "retract",
+        "execute"
+      ],
+      "observed": [
+        "none"
+      ],
+      "error": "Chat owner emitted an error; retained in transport_events",
+      "unresolved_receipts": []
+    },
+    {
+      "case": "b_multi_stop_exec",
+      "arm": "professional-no-head",
+      "source": "先停掉数独那个，然后做个计时器。",
+      "expected": [
+        "retract",
+        "execute"
+      ],
+      "observed": [
+        "retract"
+      ],
+      "error": null,
+      "unresolved_receipts": []
+    },
+    {
+      "case": "b_multi_stop_exec",
+      "arm": "professional-head",
+      "source": "先停掉数独那个，然后做个计时器。",
+      "expected": [
+        "retract",
+        "execute"
+      ],
+      "observed": [
+        "retract"
+      ],
+      "error": null,
+      "unresolved_receipts": []
+    },
+    {
+      "case": "b_two_recent",
+      "arm": "basic-no-head",
+      "source": "刚才那个先停一下。",
+      "expected": "clarify",
+      "observed": [
+        "none"
+      ],
+      "error": null,
+      "unresolved_receipts": []
+    },
+    {
+      "case": "b_two_recent",
+      "arm": "basic-head",
+      "source": "刚才那个先停一下。",
+      "expected": "clarify",
+      "observed": [
+        "none"
+      ],
+      "error": null,
+      "unresolved_receipts": []
+    },
+    {
+      "case": "b_two_recent",
+      "arm": "professional-no-head",
+      "source": "刚才那个先停一下。",
+      "expected": "clarify",
+      "observed": [
+        "none"
+      ],
+      "error": null,
+      "unresolved_receipts": []
+    },
+    {
+      "case": "b_two_recent",
+      "arm": "professional-head",
+      "source": "刚才那个先停一下。",
+      "expected": "clarify",
+      "observed": [
+        "none"
+      ],
+      "error": null,
+      "unresolved_receipts": []
+    },
+    {
+      "case": "budget_reply",
+      "arm": "basic-no-head",
+      "source": "一百块左右吧。",
+      "expected": "amend",
+      "observed": [
+        "message"
+      ],
+      "error": null,
+      "unresolved_receipts": []
+    },
+    {
+      "case": "budget_reply",
+      "arm": "basic-head",
+      "source": "一百块左右吧。",
+      "expected": "amend",
+      "observed": [
+        "message"
+      ],
+      "error": null,
+      "unresolved_receipts": []
+    },
+    {
+      "case": "continue_delivery",
+      "arm": "basic-no-head",
+      "source": "那就接着做吧。",
+      "expected": "amend",
+      "observed": [
+        "message"
+      ],
+      "error": null,
+      "unresolved_receipts": []
+    },
+    {
+      "case": "continue_delivery",
+      "arm": "basic-head",
+      "source": "那就接着做吧。",
+      "expected": "amend",
+      "observed": [
+        "message"
+      ],
+      "error": null,
+      "unresolved_receipts": []
+    },
+    {
+      "case": "new_research",
+      "arm": "professional-head",
+      "source": "那你帮我查下 Paxos 的论文呢？",
+      "expected": "execute",
+      "observed": [
+        "refused"
+      ],
+      "error": null,
+      "unresolved_receipts": [
+        {
+          "state": "rejected",
+          "reason": "planned_work_shape_unsupported",
+          "input_id": "evaluate-new_research",
+          "utterance_id": "evaluate-new_research",
+          "turn_id": "evaluate-new_research",
+          "child_id": "",
+          "_host_coordination_delivered": true
+        }
+      ]
+    }
+  ],
+  "head_attempts": 94,
+  "unfinished_sdk_observations": [
+    {
+      "case": "active_stop",
+      "arm": "professional-no-head",
+      "index": 40,
+      "kind": "report_presentation"
+    },
+    {
+      "case": "active_stop",
+      "arm": "professional-head",
+      "index": 45,
+      "kind": "report_presentation"
+    },
+    {
+      "case": "b_terse_stop",
+      "arm": "professional-no-head",
+      "index": 196,
+      "kind": "report_presentation"
+    },
+    {
+      "case": "b_terse_stop",
+      "arm": "professional-head",
+      "index": 201,
+      "kind": "report_presentation"
+    }
+  ],
+  "parent_review": {
+    "role_replies": "Japanese character voice generally retained; no persona input started Work. Length requests were not uniformly exact. One basic-no-head scientific answer had malformed JSON and produced chat.error rather than a visible answer.",
+    "head_delivery": "Almost all complete local generations were closed at a Japanese comma; merged replies contain incomplete topical fragments, repetition, and some copied Chinese wording. Do not count faster fragments as accepted complete first sentences.",
+    "diagnosed_implementation_defect": "_first_local_sentence treated Japanese comma and semicolons as sentence terminators despite the one-complete-sentence prompt; fix reuses existing strong sentence endings.",
+    "routing_difference": "Only one additional scored professional-head mismatch relative to no-head: new_research selected unavailable pi twice in a codex-only registered fixture, and Host refused planned_work_shape_unsupported. This single paired observation does not establish stable Hybrid regression.",
+    "new_acceptance_not_historical_rescore": true,
+    "historical_denominators_and_failures_retained": true
+  },
+  "limitations": [
+    "New controlled synthetic context: the old historical ledger/history seed was unavailable. Historical percentages are not comparable as a before/after experiment.",
+    "These 15 reused persona prompts are independent current turns, not the original 30-turn continuity journey.",
+    "Provider effect acceptance is real Host code but adapters are inert; no requested filesystem/browser execution occurs.",
+    "Four cancelled Narrator SDK calls remained started in per-case snapshots after coroutine teardown. Late SDK repair attribution may be noisy; counts are observed logical calls, not complete HTTP or billing totals.",
+    "Read-only lifecycle audit found no late Narrator route/history publication into later arms.",
+    "TTS off; no audio quality or acoustic timing claim.",
+    "All 188 results retained including failures; no outcome labels were relabeled or silently retried."
+  ]
+}

@@ -115,6 +115,7 @@ const VALUE_KEYS = new Set([
   'VN_SUBTITLE_TRANSLATE_MODEL',
   'VN_TTS_TRANSLATE_PROVIDER',
   'VN_TTS_TRANSLATE_MODEL',
+  // Transitional read whitelist: unrelated saves must preserve a retired value.
   'COOPERATIVE_CHAT_ENABLED',
   'GRAPHICS_PROFILE',
   'RENDER_MAX_FPS',
@@ -235,7 +236,6 @@ const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
   VN_LLM_PROVIDER: new Set(['deepseek', 'openai']),
   VN_SUBTITLE_TRANSLATE_PROVIDER: new Set(['deepseek', 'openai']),
   VN_TTS_TRANSLATE_PROVIDER: new Set(['deepseek', 'openai']),
-  COOPERATIVE_CHAT_ENABLED: new Set(['true', 'false']),
   COOPERATIVE_CHAT_PROVIDER: new Set(['codex', 'openclaw', 'browser', 'pi']),
   PI_PROVIDER_ENABLED: new Set(['true', 'false']),
   GRAPHICS_PROFILE: new Set(['standard', 'power_saving', 'custom']),
@@ -296,6 +296,7 @@ const INTEGER_KEYS = new Set(['RENDER_MAX_FPS', 'RAG_TOP_K', 'ASR_VAD_SILENCE_MS
 
 const MCP_CONNECTIONS_ENV = 'AMADEUS_MCP_CONNECTIONS'
 const FRONTEND_ONLY_VALUE_KEYS = new Set(['AMADEUS_UI_LOCALE', 'AMADEUS_UI_THEME', 'AMADEUS_WINDOWS_STARTUP_MODE'])
+const RETIRED_ROUTE_KEY = 'COOPERATIVE_CHAT_ENABLED'
 const MCP_ID_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/
 const MCP_ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/
 
@@ -563,8 +564,39 @@ export class DesktopSettingsStore {
   private write(value: StoredDesktopSettings): void {
     fs.mkdirSync(path.dirname(this.filePath), { recursive: true })
     const text = `${JSON.stringify(value, null, 2)}\n`
-    writeFileDurably(this.filePath, text)
+    // Commit the primary file last. If backup persistence fails, the caller
+    // must not observe a failed confirmation whose retired key already vanished.
     writeFileDurably(this.backupPath, text)
+    writeFileDurably(this.filePath, text)
+  }
+
+  private retiredSettings(environment: NodeJS.ProcessEnv, stored: StoredDesktopSettings): Array<Record<string, unknown>> {
+    const facts: Array<Record<string, unknown>> = []
+    const add = (raw: string, source: string) => facts.push({
+      key: RETIRED_ROUTE_KEY,
+      value: ['1', 'true', 'yes'].includes(raw.trim().toLowerCase()),
+      source,
+      effective_behavior: 'cooperative_only',
+    })
+    if (stored.values[RETIRED_ROUTE_KEY] !== undefined) add(stored.values[RETIRED_ROUTE_KEY], 'user')
+    if (environment[RETIRED_ROUTE_KEY] !== undefined) {
+      add(environment[RETIRED_ROUTE_KEY]!, 'environment')
+    } else if (stored.values[RETIRED_ROUTE_KEY] === undefined) {
+      // Only this retired boolean is read; no secret or general config value
+      // is projected. Match the existing dotenv key inventory syntax.
+      try {
+        const lines = fs.readFileSync(this.dotenvPath, 'utf8').split(/\r?\n/)
+        let raw: string | undefined
+        for (const line of lines) {
+          const match = line.match(/^\s*(?:export\s+)?COOPERATIVE_CHAT_ENABLED\s*=\s*(.*)$/)
+          if (match) raw = match[1].replace(/\s+#.*$/, '').trim().replace(/^(['"])(.*)\1$/, '$2')
+        }
+        // Interpolation needs the backend's dotenv parser. Without those
+        // resolved facts, do not guess that a nonliteral value means Off.
+        if (raw !== undefined && !raw.includes('${')) add(raw, 'dotenv')
+      } catch { /* No readable dotenv means no known retired fact. */ }
+    }
+    return facts
   }
 
   private dotenvKeys(): Set<string> {
@@ -607,6 +639,7 @@ export class DesktopSettingsStore {
       values: { ...stored.values, ...(environment.AMADEUS_WINDOWS_STARTUP_MODE !== undefined
         ? { AMADEUS_WINDOWS_STARTUP_MODE: environment.AMADEUS_WINDOWS_STARTUP_MODE } : {}) },
       sources,
+      retired_settings: this.retiredSettings(environment, stored),
       locked,
       secrets,
       encryptionAvailable: safeStorage.isEncryptionAvailable(),
@@ -722,6 +755,14 @@ export class DesktopSettingsStore {
 
     for (const [key, rawValue] of Object.entries(values)) {
       if (!VALUE_KEYS.has(key)) throw new Error(`Unsupported desktop setting: ${key}`)
+      if (key === RETIRED_ROUTE_KEY) {
+        if (rawValue !== null) throw new Error(`${key} is retired and read-only; confirmation may only remove the stored key`)
+        // Deleting a stored retired key never edits an overriding environment
+        // source. It is allowed even when that source locks ordinary settings.
+        delete stored.values[key]
+        delete stored.pendingRevisions[key]
+        continue
+      }
       if (explicitEnvironmentHas(environment, key)) {
         throw new Error(`${key} is locked by the parent process environment`)
       }

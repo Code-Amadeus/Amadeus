@@ -22,6 +22,7 @@ from config.settings import (
     LOCAL_LLM_URL,
     LOCAL_LLM_CLI_PATH,
     LOCAL_LLM_SERVER_ARGS,
+    LOCAL_LLM_SERVER_CONTEXT,
     LOCAL_LLM_MODEL_PATH,
     LOCAL_LLM_MODEL,
     LOCAL_LLM_CUDA_VISIBLE_DEVICES,
@@ -82,6 +83,13 @@ def build_llama_server_command(profile: str = "local") -> list[str]:
     _replace_option(args, "-m", str(model_file))
     _replace_option(args, "--port", str(_endpoint_port(endpoint)))
     _replace_option(args, "-a", str(model_alias))
+    if str(profile).strip().lower() == "local":
+        # The pure-local messages port budgets one complete role request.
+        # Hybrid's short HTTP head retains its existing launcher profile.
+        _replace_option(args, "-c", LOCAL_LLM_SERVER_CONTEXT)
+        _replace_option(args, "--parallel", "1")
+        if "--no-context-shift" not in args:
+            args.append("--no-context-shift")
     return [str(executable), *args]
 
 
