@@ -46,12 +46,12 @@ def test_cooperative_handoff_explains_return_channel_without_rewriting_message()
     assert "authorized execution task" in legacy
 
 
-def test_selected_operation_does_not_forward_another_providers_instruction():
+def test_operation_scope_and_complete_semantic_context_remain_distinct():
     clauses = (
         "Create alpha.txt containing OK without using shell commands.",
         "Delete beta.txt in the other project.",
     )
-    source = " ".join(clauses)
+    source = "\n".join(clauses) + "\nFor both tasks, preserve all other files."
     for clause, other in (clauses, tuple(reversed(clauses))):
         metadata = {"source_user_text": source, "source_user_operation_text": clause}
         original = deepcopy(metadata)
@@ -60,12 +60,35 @@ def test_selected_operation_does_not_forward_another_providers_instruction():
                 metadata=metadata, execution_provider=provider)
             assert rendered.startswith(clause + "\n\n")
             assert json.dumps(clause) in rendered
-            assert other not in rendered
+            assert json.dumps(source) in rendered
+            assert other not in rendered.split("[Amadeus parent conversation handoff]", 1)[0]
         assert metadata == original
         adapter = CodexAppServerAdapter()
         request = ProviderRunRequest(provider="codex", task=clause, metadata=metadata)
         assert json.dumps(clause) in adapter._task_text(request)
-        assert other not in adapter._task_text(request)
+        assert json.dumps(source) in adapter._task_text(request)
+        assert request.task == clause and request.metadata == original
+
+
+def test_complete_current_source_is_not_added_twice_for_a_single_whole_message():
+    source = "Inspect the file; do not modify it."
+    for metadata in ({"source_user_text":source},
+                     {"source_user_text":source, "source_user_operation_text":source}):
+        rendered = with_parent_conversation_context(source,
+            metadata=metadata, execution_provider="codex")
+        assert rendered.count(json.dumps(source)) == 1
+
+
+def test_surrounding_constraints_keep_exact_newlines_and_the_admitted_tail():
+    clause = "Create alpha.txt."
+    source = clause + "\n" + "Context detail. " * 200 + "\nDo not run any shell command."
+    assert len(source) <= 4000
+    rendered = with_parent_conversation_context(clause,
+        metadata={"source_user_text":source, "source_user_operation_text":clause},
+        execution_provider="pi")
+    quoted = [json.loads(line) for line in rendered.splitlines() if line.startswith('"')]
+    assert source in quoted
+    assert quoted[-1].endswith("\nDo not run any shell command.")
 
 
 def test_operation_excerpt_is_used_when_no_full_source_exists():

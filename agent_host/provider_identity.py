@@ -257,6 +257,14 @@ def with_parent_conversation_context(
     )
     source = " ".join(str(envelope.get("source_user_operation_text")
         or envelope.get("source_user_text") or "").split())[:4000]
+    # The Host already keeps both the exact admitted message and this
+    # operation's selected span. Preserve their different roles at delivery:
+    # surrounding conditions are context, never an expanded execution task.
+    full_source = str(envelope.get("source_user_text") or "")[:4000]
+    operation_source = str(envelope.get("source_user_operation_text") or "")
+    has_surrounding_source = bool(
+        operation_source and full_source and operation_source != full_source
+    )
     context = "\n".join(
         line.strip()
         for line in str(envelope.get("source_user_context") or "").splitlines()
@@ -295,11 +303,24 @@ def with_parent_conversation_context(
         if source:
             lines.extend(
                 [
-                    "Exact current user wording. Use it as intent evidence for actors, "
-                    "interaction mode, destination, exclusions, and references:",
+                    ("Current user wording selected for this operation. "
+                        if has_surrounding_source else "Exact current user wording. ")
+                    + "Use it as intent evidence for actors, interaction mode, "
+                    "destination, exclusions, and references:",
                     json.dumps(source, ensure_ascii=False),
                 ]
             )
+        if has_surrounding_source:
+            lines.extend([
+                "Full current user message (context only). Use it to resolve references "
+                "and apply conditions, prohibitions, and sequencing that govern the "
+                "assigned operation above. Other operations mentioned here remain "
+                "outside this assignment: do not perform them, adopt their targets, "
+                "or expand the supplied workspace or permissions. If an applicable "
+                "condition prevents this operation, report it instead of substituting "
+                "or carrying out another operation:",
+                json.dumps(full_source, ensure_ascii=False),
+            ])
         if context and context != source:
             lines.extend(
                 [
