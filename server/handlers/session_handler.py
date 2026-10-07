@@ -122,6 +122,7 @@ class SessionHandler(RequestHandler):
         return {
             "sessions": sessions,
             "current_session_id": sm.get_current_session_id(),
+            "current_character_id": character_prompts.active_character_id(),
             "projects": self._projects(),
         }
 

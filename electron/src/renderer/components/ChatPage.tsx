@@ -26,6 +26,7 @@ import {
 import {
   INTERRUPTED_MARKER,
   acceptedRoleMessage,
+  automaticSessionSelection,
   applyRoleMessage,
   assistantTurnAnchors,
   finishAssistantTurn,
@@ -151,6 +152,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   const [activeSession, setActiveSession] = useState<string | null>(null)
   const [sessionReady, setSessionReady] = useState(false)
   const [sessionSwitching, setSessionSwitching] = useState(false)
+  const [sessionSelectionNotice, setSessionSelectionNotice] = useState('')
   const sessionSelectionRef = useRef({ pending: 0 })
   const [projectCorrectionOpen, setProjectCorrectionOpen] = useState(false)
   const [projectViewId, setProjectViewId] = useState('')
@@ -223,6 +225,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     return {
       list,
       currentSessionId: String(res.current_session_id || ''),
+      currentCharacterId: res.current_character_id,
     }
   }, [send])
 
@@ -265,16 +268,29 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
 
   const selectSession = useCallback((method: string, params: Record<string, unknown> = {}) => (
     runSessionSelection(sessionSelectionRef.current, setSessionSwitching,
-      () => send(method, params), applySessionPayload)
+      () => send(method, params), applySessionPayload, setSessionSelectionNotice)
   ), [send, applySessionPayload])
 
-  const loadSession = useCallback(async (id: string) => {
-    const res = await selectSession('session.load', { session_id: id })
-    if (res.ok === false) return
-    const session = res.session as ChatSessionSummary | undefined
-    const sessionId = String(res.current_session_id || session?.id || id)
-    await hydrateWorkActivities(sessionId)
+  const loadSession = useCallback(async (id: string, closeArtifactView = false) => {
+    try {
+      const res = await selectSession('session.load', { session_id: id })
+      if (res.ok === false) return
+      if (closeArtifactView) setProjectViewId('')
+      const session = res.session as ChatSessionSummary | undefined
+      const sessionId = String(res.current_session_id || session?.id || id)
+      await hydrateWorkActivities(sessionId)
+    } catch {
+      // Selection feedback is separate from the current conversation/history.
+    }
   }, [selectSession, hydrateWorkActivities])
+
+  const restoreOwnedSession = useCallback(async (
+    list: ChatSessionSummary[], currentCharacterId: unknown, currentSessionId = '',
+  ) => {
+    const selected = automaticSessionSelection(list, currentCharacterId, currentSessionId)
+    if (selected) await loadSession(selected.id)
+    else await selectSession('session.create', {})
+  }, [loadSession, selectSession])
 
   useEffect(() => {
     void window.amadeus?.getChatAvatars().then(value => {
@@ -468,33 +484,18 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     let cancelled = false
     ;(async () => {
       try {
-        const { list, currentSessionId } = await refreshSessions()
+        const { list, currentSessionId, currentCharacterId } = await refreshSessions()
         if (cancelled) return
-        if (list.length > 0) {
-          const current = list.find(session => session.id === currentSessionId)
-          const latest = current || [...list].sort((a, b) => (Number(b.timestamp || 0) - Number(a.timestamp || 0)))[0]
-          await loadSession(latest.id)
-          return
-        }
-        const res = await selectSession('session.create', {})
-        if (cancelled) return
-        const session = res.session as ChatSessionSummary | undefined
-        const list2 = Array.isArray(res.sessions) ? res.sessions as unknown as ChatSessionSummary[] : (session ? [session] : [])
-        setSessions(list2)
-        if (session) {
-          activeSessionRef.current = session.id
-          setActiveSession(session.id)
-        }
-        setMessages([])
-        setWorkActivities([])
-      } catch {
-        // Keep the chat usable even if the session API is temporarily unavailable.
+        await restoreOwnedSession(list, currentCharacterId, currentSessionId)
+      } catch (error) {
+        if (!cancelled) setSessionSelectionNotice(error instanceof Error
+          ? error.message : 'Could not switch chats.')
       } finally {
         if (!cancelled) setSessionReady(true)
       }
     })()
     return () => { cancelled = true }
-  }, [connected, refreshSessions, loadSession, selectSession])
+  }, [connected, refreshSessions, restoreOwnedSession])
 
   // load initial config + subscribe to config changes (cross-page sync)
   useEffect(() => {
@@ -1148,26 +1149,17 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   const handleDeleteSession = useCallback(async (id: string) => {
     try {
       const res = await selectSession('session.delete', { session_id: id })
-    if (Array.isArray(res.projects)) setProjects(res.projects as unknown as ChatProjectSummary[])
+      if (res.ok === false) return
+      if (Array.isArray(res.projects)) setProjects(res.projects as unknown as ChatProjectSummary[])
       const next = Array.isArray(res.sessions) ? res.sessions as unknown as ChatSessionSummary[] : sessions.filter(s => s.id !== id)
       setSessions(next)
       if (activeSession === id) {
-        const latest = [...next].sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0))[0]
-        if (latest) {
-          await loadSession(latest.id)
-        } else {
-          activeSessionRef.current = ''
-          setActiveSession(null)
-          setMessages([])
-          setStreamingText('')
-          streamingTextRef.current = ''
-          setStreaming(false)
-        }
+        await restoreOwnedSession(next, res.current_character_id, String(res.current_session_id || ''))
       }
-    } catch {
-      setMessages(prev => [...prev, { role: 'system', text: 'Could not delete session' }])
+    } catch (error) {
+      setSessionSelectionNotice(error instanceof Error ? error.message : 'Could not switch chats.')
     }
-  }, [activeSession, loadSession, selectSession, sessions])
+  }, [activeSession, restoreOwnedSession, selectSession, sessions])
 
   const handleRenameSession = useCallback(async (id: string, currentTitle: string) => {
     const title = window.prompt('Rename session', currentTitle)?.trim()
@@ -1248,7 +1240,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
         projects={projects}
         activeId={activeSession}
         artifactViewId={projectViewId === DRAFT_APPS_VIEW_ID ? 'drafts' : projectViewId}
-        onSelect={id => { setProjectViewId(''); void loadSession(id) }}
+        onSelect={id => { void loadSession(id, true) }}
         onNew={() => { setProjectViewId(''); void handleNewSession() }}
         onNewProject={() => { void handleNewProject() }}
         onNewProjectSession={id => { void handleNewProjectSession(id) }}
@@ -1259,6 +1251,28 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       />
 
       <div className="flex flex-col min-w-0 flex-1 h-full relative">
+      {sessionSelectionNotice && (
+        <div
+          role="alert"
+          aria-label={t('Chat selection notice')}
+          className="flex items-start gap-2"
+          style={{ position: 'absolute', top: 8, left: 12, right: 12, zIndex: 9,
+            padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)',
+            backgroundColor: 'var(--surface)', color: 'var(--text)', fontSize: 12,
+            boxShadow: '0 4px 16px rgba(17,24,39,0.12)' }}
+        >
+          <span className="flex-1 min-w-0">{t(sessionSelectionNotice)}</span>
+          <button
+            type="button"
+            aria-label={t('Dismiss chat selection notice')}
+            onClick={() => setSessionSelectionNotice('')}
+            className="border-none bg-transparent cursor-pointer shrink-0"
+            style={{ color: 'var(--muted)', padding: 0, fontSize: 16, lineHeight: 1 }}
+          >
+            ×
+          </button>
+        </div>
+      )}
       {projectView && (
         <ProjectAppsPanel
           project={projectView}

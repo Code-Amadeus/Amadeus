@@ -16,6 +16,7 @@ export interface ChatSessionContext {
 export interface ChatSessionSummary {
   id: string
   title: string
+  character_id?: string
   timestamp?: number
   message_count?: number
   context?: ChatSessionContext | null
@@ -133,13 +134,21 @@ function SessionRow({
         onDoubleClick={onRename}
         className="flex-1 min-w-0 text-left border-none bg-transparent cursor-pointer"
         style={{ padding: '7px 5px 7px 9px', color: 'inherit' }}
-        title={session.title}
+        title={session.character_id ? `${session.title}\n${t('Character')}: ${session.character_id}` : session.title}
       >
         <span className="block truncate" style={{ fontSize: 11, fontWeight: active ? 600 : 500 }}>
           {session.title || t('Untitled chat')}
         </span>
         <span className="flex items-center gap-1 min-w-0" style={{ marginTop: 2, color: 'var(--faint)', fontSize: 9 }}>
           <span className="truncate">{detail}</span>
+          {session.character_id && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span className="shrink-0" title={`${t('Character')}: ${session.character_id}`}>
+                {session.character_id}
+              </span>
+            </>
+          )}
           <span aria-hidden="true">·</span>
           <span className="shrink-0">{formatSessionTime(session.timestamp)}</span>
         </span>

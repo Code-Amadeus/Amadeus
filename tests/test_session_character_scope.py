@@ -120,6 +120,31 @@ def test_same_character_switch_keeps_normal_activation(context):
     context.projection.assert_called_once_with("session.loaded")
 
 
+@pytest.mark.parametrize("character_id", ["kurisu", "testchar"])
+def test_session_list_reports_startup_identity_independent_of_selection(sessions, monkeypatch, character_id):
+    boot_as(monkeypatch, character_id)
+    sm.set_current_session_id(None)
+    handler = SessionHandler()
+    assert handler._list()["current_character_id"] == character_id
+    for sid in ("same-one", "same-two"):
+        sm.create_session(sid, activate=False)
+        result = handler._load({"session_id": sid})
+        assert result["ok"] is True
+        listed = handler._list()
+        assert listed["current_session_id"] == sid
+        assert listed["current_character_id"] == character_id
+    foreign_character = "testchar" if character_id == "kurisu" else "kurisu"
+    write_session("foreign", character_id=foreign_character)
+    assert handler._load({"session_id": "foreign"})["ok"] is False
+    listed = handler._list()
+    assert listed["current_session_id"] == "same-two"
+    assert listed["current_character_id"] == character_id
+    assert next(row for row in listed["sessions"] if row["id"] == "foreign")["character_id"] == foreign_character
+    deleted = handler._delete({"session_id": "same-two"})
+    assert deleted["ok"] is True and deleted["current_session_id"] is None
+    assert deleted["current_character_id"] == character_id
+
+
 @pytest.mark.parametrize("already_created", [False, True])
 async def test_cooperative_loop_creation_and_reuse_reject_foreign_owner(sessions, already_created):
     from server.cooperative_chat_ingress import CooperativeChatManager

@@ -23,6 +23,8 @@ Saving applies to subsequent applicable model requests, including existing
 Cooperative Chat, AUIP and browser branches. Existing messages and history are
 not rewritten. No backend restart is needed for an edit to the active Kurisu
 persona. Changing the startup character requires a backend restart.
+See [character startup and conversation ownership](character-runtime.md) for
+the startup setting and the boundary between role-specific chats and shared Work.
 Desktop settings persist across backend restarts. If the backend is disconnected
 or cannot apply the update, the UI reports that it is saved for the next start;
 the default placeholder is loaded from the backend and remains available
