@@ -519,7 +519,7 @@ class OpenClawAdapter:
         timeout: float,
         image_path: str | None,
         presentation_locale: object = None,
-        main_role_name: str,
+        main_role_name: str | None,
     ) -> str:
         """Send one Session message and normalize its Gateway event stream."""
 

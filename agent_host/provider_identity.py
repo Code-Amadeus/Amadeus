@@ -27,10 +27,12 @@ _SOURCE_CONTEXT_MODES = frozenset(
 )
 
 
-def request_main_role_name(metadata: Mapping[str, Any] | None) -> str:
-    """Use the accepted request name; only a missing field denotes legacy Work."""
+def request_main_role_name(metadata: Mapping[str, Any] | None) -> str | None:
+    """Read accepted conversation identity; absence denotes independent work."""
     envelope = metadata if isinstance(metadata, Mapping) else {}
-    name = envelope.get(MAIN_ROLE_NAME_METADATA_KEY, HISTORICAL_MAIN_ROLE_NAME)
+    if MAIN_ROLE_NAME_METADATA_KEY not in envelope:
+        return None
+    name = envelope[MAIN_ROLE_NAME_METADATA_KEY]
     if not isinstance(name, str) or not name.strip():
         raise ValueError("request main_role_name must be a nonempty string")
     return name

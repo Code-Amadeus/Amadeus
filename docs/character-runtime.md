@@ -57,11 +57,21 @@ presented by the startup character through existing delivery policy. Such narrat
 is not added as an assistant message to the foreign original conversation or
 copied into the current conversation as shared history.
 
-Retry and Resume retain the original accepted role name, including when another
-character is active. Caller metadata cannot replace that name. A newly accepted
-amendment retains its own source identity instead of inheriting the previous
-Attempt's role. These rules do not rewrite the accepted plan or add recovery
-authority.
+For Work accepted from a conversation, Retry and Resume retain the original
+accepted role name, including when another character is active. Caller metadata
+cannot replace that name. A newly accepted amendment retains its own source
+identity instead of inheriting the previous Attempt's role. The execution prompt
+therefore keeps the conversation's role-reference context on recovery, just as
+on its first execution. These rules do not rewrite the accepted plan or add
+recovery authority.
+
+Tasks created directly on the Work page have no source conversation role. Their
+initial execution, Retry and Resume omit that identity and its role-reference
+context; they do not reinterpret "yourself" as the conversational character.
+Execution guidance that needs to name the frontend character uses the fixed
+startup name for these independent tasks, without recording it as a task source.
+The historical Kurisu default applies only when reading an older accepted
+conversation plan, not when an independent request has no role field.
 
 Accepted Work addressed to a cooperative Provider context reads that context's
 existing persistent state without recreating its speaking loop. Existing checks

@@ -1,4 +1,4 @@
-"""Accepted names reach real adapter request assembly without mutable role lookup."""
+"""Accepted names and independent startup names reach native adapter requests."""
 import asyncio
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -24,9 +24,10 @@ def mira_startup_without_old_pack(monkeypatch):
     monkeypatch.setattr(characters, "_ACTIVE_CHARACTER", characters.CharacterPrompts("mira", values))
     forbidden = Mock(side_effect=AssertionError("accepted request must not load or read a character pack"))
     monkeypatch.setattr(characters, "load", forbidden)
-    monkeypatch.setattr("agent_host.provider_authoring.text", forbidden)
-    monkeypatch.setattr(openclaw_client, "text", forbidden)
-    return forbidden
+    startup_reads = Mock(wraps=characters.text)
+    monkeypatch.setattr("agent_host.provider_authoring.text", startup_reads)
+    monkeypatch.setattr(openclaw_client, "text", startup_reads)
+    return startup_reads
 
 
 def metadata(tmp_path, name):
@@ -35,13 +36,20 @@ def metadata(tmp_path, name):
 
 
 def assert_coding_prompt(prompt, name):
-    expected = "Kurisu" if name in (None, HISTORICAL) else name
+    expected = "Mira after rename" if name is None else "Kurisu" if name == HISTORICAL else name
     assert f"Amadeus/{expected} to watch" in prompt
-    assert "Mira after rename" not in prompt
     if name is not None:
+        assert "Mira after rename" not in prompt
         assert f'main role is "{name}"' in prompt
     else:
         assert "[Amadeus role-reference context]" not in prompt
+
+
+def assert_startup_name_reads(startup_reads, name):
+    if name is None:
+        startup_reads.assert_called_once_with("short_name")
+    else:
+        startup_reads.assert_not_called()
 
 
 @pytest.mark.parametrize("name", NAMES)
@@ -54,7 +62,7 @@ async def test_acp_native_prompt_uses_accepted_role_name(tmp_path, mira_startup_
     assert result.status == "done", result.error
     prompt = next(row["text"] for row in records(tmp_path) if row["kind"] == "prompt")
     assert_coding_prompt(prompt, name)
-    mira_startup_without_old_pack.assert_not_called()
+    assert_startup_name_reads(mira_startup_without_old_pack, name)
 
 
 @pytest.mark.parametrize("name", NAMES)
@@ -74,7 +82,7 @@ async def test_direct_codex_stdin_uses_accepted_role_name(tmp_path, mira_startup
     result = await provider.run(request, "accepted-direct", lambda _event: asyncio.sleep(0))
     assert result.status == "done", result.error
     assert_coding_prompt(prompts[0], name)
-    mira_startup_without_old_pack.assert_not_called()
+    assert_startup_name_reads(mira_startup_without_old_pack, name)
 
 
 @pytest.mark.parametrize("name", NAMES)
@@ -91,7 +99,7 @@ async def test_codex_app_server_native_developer_context_uses_accepted_role_name
     assert result.status == "done", result.error
     prompt = sdk.injected_items[0][1][0]["content"][0]["text"]
     assert_coding_prompt(prompt, name)
-    mira_startup_without_old_pack.assert_not_called()
+    assert_startup_name_reads(mira_startup_without_old_pack, name)
 
 
 @pytest.mark.parametrize("name", NAMES)
@@ -107,12 +115,19 @@ async def test_openclaw_gateway_native_message_uses_accepted_role_name(mira_star
     assert result.status == "done", result.error
     message = next(params["message"] for method, params in _FakeGatewayClient.instances[0].requests
                    if method == "sessions.send")
-    expected = "Kurisu" if name in (None, HISTORICAL) else name
+    expected = "Mira after rename" if name is None else "Kurisu" if name == HISTORICAL else name
     assert f"Do not roleplay as Amadeus or {expected}." in message
-    assert "Mira after rename" not in message
     if name is not None:
+        assert "Mira after rename" not in message
         assert f'main role is "{name}"' in message
-    mira_startup_without_old_pack.assert_not_called()
+    else:
+        assert "[Amadeus role-reference context]" not in message
+    assert_startup_name_reads(mira_startup_without_old_pack, name)
+
+
+@pytest.mark.parametrize("metadata", [None, {}, {"unrelated": "value"}])
+def test_absent_request_identity_has_no_conversation_name(metadata):
+    assert request_main_role_name(metadata) is None
 
 
 @pytest.mark.parametrize("name", [None, "", "  ", False, 3])

@@ -787,10 +787,14 @@ class WorkLedgerHandler(RequestHandler):
         )
         metadata_raw = params.get("metadata")
         metadata = dict(metadata_raw) if isinstance(metadata_raw, dict) else {}
+        main_role_name = self.coordinator.continuation_main_role_name(latest)
+        if main_role_name is None:
+            metadata.pop(MAIN_ROLE_NAME_METADATA_KEY, None)
+        else:
+            metadata[MAIN_ROLE_NAME_METADATA_KEY] = main_role_name
         metadata.update(
             {
                 "source": "work.retry",
-                MAIN_ROLE_NAME_METADATA_KEY: self.coordinator.continuation_main_role_name(latest),
                 "continuation": "retry",
                 "checkpoint_handoff": handoff,
                 "retry_of": latest.attempt_id,
@@ -878,10 +882,13 @@ class WorkLedgerHandler(RequestHandler):
                 acquired_resume_lease = True
         metadata_raw = params.get("metadata")
         metadata = dict(metadata_raw) if isinstance(metadata_raw, dict) else {}
+        if main_role_name is None:
+            metadata.pop(MAIN_ROLE_NAME_METADATA_KEY, None)
+        else:
+            metadata[MAIN_ROLE_NAME_METADATA_KEY] = main_role_name
         metadata.update(
             {
                 "source": "work.resume",
-                MAIN_ROLE_NAME_METADATA_KEY: main_role_name,
                 "work_surface": self._surface(params),
                 "work": {
                     "project_id": item.project_id,

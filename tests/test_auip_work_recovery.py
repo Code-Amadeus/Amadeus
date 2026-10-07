@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import replace
+from dataclasses import fields, replace
 import hashlib
 import json
 from pathlib import Path
@@ -17,8 +17,10 @@ from agent_host.provider_contract import (
     ProviderRequirements,
 )
 from agent_host.provider_runtime import ProviderRuntime
+from agent_host.provider_identity import HISTORICAL_MAIN_ROLE_NAME
 from agent_host.provider_types import (
     ProviderRunRequest,
+    ProviderRunIntakeAuthority,
     ProviderRunResult,
     ProviderSessionHandle,
 )
@@ -28,6 +30,7 @@ from server.auip_app_source import discover_registered_auip_app
 from server.work_context import run_work_notes
 from server.work_export_service import WorkExportService
 from server.work_ledger_coordinator import WorkLedgerCoordinator
+from server.work_control import WorkAmendPayloadV4, WorkEffectPayloadV3
 from test_auip_entry_preflight import _write_fixture
 from test_work_effect_executor import _admission, _host, _payload
 from tools.sync_auip_manifest import sync_manifest
@@ -602,7 +605,7 @@ async def test_app_boot_failure_retries_same_work_operation_with_host_feedback(
             "boot": None,
         }
         assert attempts[0].operation_id == attempts[1].operation_id
-        assert [request.metadata["main_role_name"] for request in adapter.requests] == ["Mira", "Mira"]
+        assert all("main_role_name" not in request.metadata for request in adapter.requests)
         marker = attempts[0].metadata["host_auip_bundle_validation"]
         assert marker["recovery_state"] == "started"
         assert marker["successor_attempt_id"] == attempts[1].attempt_id
@@ -627,9 +630,11 @@ async def test_app_boot_failure_retries_same_work_operation_with_host_feedback(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("amended", [False, True])
 async def test_control_work_effect_can_start_its_claimed_auip_repair(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    amended: bool,
 ) -> None:
     source = "Build a small game, then let us play it together."
     task = "Build a small game"
@@ -643,6 +648,15 @@ async def test_control_work_effect_can_start_its_claimed_auip_repair(
         validate,
     )
     async with _host(tmp_path, source=source, task=task) as host:
+        previous_binding = None
+        if amended:
+            # The initial accepted Operation belongs to Kurisu; the new amend
+            # below takes its own Mira identity and owns its automatic retry.
+            seed = host.coordinator.prepare_request(host.control.provider_request(host.effect_id),
+                "initial-accepted-run", ProviderRunIntakeAuthority(host.effect_id)).request
+            previous_binding = seed.metadata["work"]
+            host.work.update_attempt(previous_binding["attempt_id"], execution_status="failed")
+            host.work.release_writer_lease(previous_binding["attempt_id"], status="stale")
         host.control.source_role_identity_resolver = lambda _session: {
             "character_id": "testchar", "display_name": "Mira",
         }
@@ -713,6 +727,10 @@ async def test_control_work_effect_can_start_its_claimed_auip_repair(
             source=source,
             task=task,
         )
+        if amended:
+            payload = WorkAmendPayloadV4(**{field.name: getattr(payload, field.name)
+                for field in fields(WorkEffectPayloadV3)},
+                work_item_id=previous_binding["work_item_id"])
         evidence = {
             "cooperative_batch": {
                 "version": 1,
@@ -721,7 +739,7 @@ async def test_control_work_effect_can_start_its_claimed_auip_repair(
                     {
                         "index": 0,
                         "op": "work",
-                        "intent": "execute",
+                        "intent": "amend" if amended else "execute",
                         "source_start": source.index(task),
                         "source_end": source.index(task) + len(task),
                         "source_sha256": hashlib.sha256(task.encode()).hexdigest(),
@@ -758,6 +776,10 @@ async def test_control_work_effect_can_start_its_claimed_auip_repair(
         assert requests[1].recovery is not None
         assert requests[1].recovery.reason == "auip_validation_failed"
         assert [request.metadata["main_role_name"] for request in requests] == ["Mira", "Mira"]
+        assert requests[0].metadata["work"]["operation_id"] == requests[1].metadata["work"]["operation_id"]
+        if amended:
+            assert requests[0].metadata["work"]["operation_id"] != previous_binding["operation_id"]
+            assert host.control.accepted_main_role_name(host.effect_id) == HISTORICAL_MAIN_ROLE_NAME
 
 
 @pytest.mark.asyncio
