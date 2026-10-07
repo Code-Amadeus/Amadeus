@@ -29,7 +29,7 @@ from agent_host.provider_authoring import (
     requires_auip_authoring,
     with_host_authoring_capabilities,
 )
-from agent_host.provider_identity import with_parent_conversation_context
+from agent_host.provider_identity import request_main_role_name, with_parent_conversation_context
 from agent_host.mcp_connections import (
     McpConnectionSpec,
     codex_mcp_config_overrides,
@@ -301,6 +301,7 @@ class DirectCodexAdapter:
                         required_auip_mode=required_auip_engagement_mode(
                             request.metadata or {}
                         ),
+                        main_role_name=request_main_role_name(request.metadata),
                     ),
                     presentation_locale=(request.metadata or {}).get("presentation_locale"),
                 ),

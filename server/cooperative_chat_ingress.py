@@ -815,6 +815,9 @@ class CooperativeChatManager:
         self._installed = True
 
     async def _ingress_for(self, session_id: str) -> CooperativeChatIngress:
+        # This is the owner of both loop creation and reuse. A different startup
+        # character cannot revive a foreign conversation's speaking branches.
+        sm.require_session_character(session_id)
         existing = self.ingresses.get(session_id)
         if existing is not None:
             return existing
@@ -1008,11 +1011,11 @@ class CooperativeChatManager:
         session_id = str(getattr(admission, "session_id", "") or "")
         if not session_id:
             raise TurnAuthorityError("cooperative Chat requires an admitted Session")
+        ingress = await self._ingress_for(session_id)
         if self.role_provider_selector is not None and provider:
             selected = self.role_provider_selector(str(provider))
             if inspect.isawaitable(selected):
                 await selected
-        ingress = await self._ingress_for(session_id)
         return await ingress.run(text, turn_admission=admission, **kwargs)
 
     async def prepare_session(self, admission) -> None:
@@ -2304,12 +2307,12 @@ class CooperativeChatManager:
 
     def resolve_work_recipient(self, payload, *, cursor=None, workspace_path="",
                                require_current_binding=False):
-        ingress = self.ingresses.get(str(getattr(payload, "session_id", "")))
-        if ingress is None or self.destination is None:
+        if self.destination is None:
             raise WorkLedgerConflict("cooperative Work recipient Session is unavailable")
         if cursor is None:
             self.destination.available_project(str(getattr(payload, "project_id", "")))
-        return ingress.loop._state.work_recipient(payload, cursor=cursor,
+        return CooperativeContextStore.persisted_work_recipient(self.ledger,
+            str(getattr(payload, "session_id", "")), payload, cursor=cursor,
             workspace_path=workspace_path,
             require_current_binding=require_current_binding)
 

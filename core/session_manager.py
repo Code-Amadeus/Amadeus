@@ -18,6 +18,8 @@ import tempfile
 import time
 from typing import Any, Callable
 
+from llm import character_prompts
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,7 +32,10 @@ PROMPT_HISTORY_ROUNDS = 30
 
 
 class ConversationHistory:
-    def __init__(self, max_rounds: int = PROMPT_HISTORY_ROUNDS, summary_token_threshold: int = 3000):
+    def __init__(self, max_rounds: int = PROMPT_HISTORY_ROUNDS, summary_token_threshold: int = 3000,
+                 *, character_id: str | None = None):
+        self._character_id = character_prompts.validate_character_id(
+            character_prompts.active_character_id() if character_id is None else character_id)
         # The complete Session record: {role, content, turn_id?}.
         self.dialog: list[dict[str, Any]] = []
         # Rounds visible to a model; see recent().
@@ -41,13 +46,19 @@ class ConversationHistory:
         self.summary_token_threshold = summary_token_threshold
         self.last_summary = ""
 
+    @property
+    def character_id(self) -> str:
+        """Immutable owner of this conversation, independent of editable persona."""
+        return self._character_id
+
     def reset(self):
         self.dialog.clear()
 
     def snapshot(self) -> ConversationHistory:
         """Detach one turn's input from later active-Session mutations."""
 
-        history = ConversationHistory(self.max_rounds, self.summary_token_threshold)
+        history = ConversationHistory(self.max_rounds, self.summary_token_threshold,
+                                      character_id=self.character_id)
         history.dialog = deepcopy(self.dialog)
         history.last_summary = self.last_summary
         return history
@@ -282,6 +293,7 @@ def _install_session_state(
         conversation_history.dialog = history.dialog
         conversation_history.last_summary = history.last_summary
         conversation_history.summary_token_threshold = history.summary_token_threshold
+        conversation_history._character_id = history.character_id
     _CURRENT_SESSION_ID = session_id
     if independent_selection:
         _SESSION_SELECTION_REVISION += 1
@@ -293,6 +305,9 @@ def _activate_session(
 ) -> None:
     """Publish an already prepared context; failed preparation never gets here."""
     require_session_selection(expected_selection_revision)
+    if session_id is not None:
+        character_id = history.character_id if history is not None else get_session_character_id(session_id)
+        _require_active_character(character_id)
     if session_id == _CURRENT_SESSION_ID and history is None:
         return
     _check_activation(session_id)
@@ -380,13 +395,15 @@ def _persist_history(
     existing_title = None
     path = _session_path(sid)
     if not create and os.path.exists(path):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                existing_title = json.load(f).get("title")
-        except Exception:
-            pass
+        with open(path, "r", encoding="utf-8") as f:
+            existing = json.load(f)
+        existing_character_id = _stored_character_id(existing, sid)
+        if existing_character_id != history.character_id:
+            raise ValueError("A Session's character identity cannot be changed")
+        existing_title = existing.get("title")
     data = {
         "session_id": sid,
+        "character_id": history.character_id,
         "dialog": history.dialog,
         "last_summary": history.last_summary,
         "summary_token_threshold": history.summary_token_threshold,
@@ -433,13 +450,13 @@ def _persist_history(
 def _read_session_history(session_id: str) -> tuple[ConversationHistory, bool]:
     with open(_session_path(session_id), "r", encoding="utf-8") as source:
         data = json.load(source)
-    if not isinstance(data, dict) or data.get("session_id", session_id) != session_id:
-        raise ValueError("Session data does not match the requested identity")
+    character_id = _stored_character_id(data, session_id)
     # Older files also stored max_rounds. The model window is Host policy, so a
     # saved value no longer narrows what the loaded Session sends to a model.
     history = ConversationHistory(
         conversation_history.max_rounds,
         int(data.get("summary_token_threshold", conversation_history.summary_token_threshold)),
+        character_id=character_id,
     )
     history.dialog = data.get("dialog", [])
     history.last_summary = data.get("last_summary", "")
@@ -455,6 +472,38 @@ def _read_session_history(session_id: str) -> tuple[ConversationHistory, bool]:
     ):
         raise ValueError("Session history has an invalid shape")
     return history, bool(data.get("enable_conversation", False))
+
+
+def _stored_character_id(data: Any, session_id: str) -> str:
+    if not isinstance(data, dict) or data.get("session_id", session_id) != session_id:
+        raise ValueError("Session data does not match the requested identity")
+    # Only a missing legacy field has the historical default. An explicit bad
+    # identity must never be replaced by the startup character.
+    return character_prompts.validate_character_id(data.get("character_id", character_prompts.DEFAULT_CHARACTER_ID))
+
+
+def get_session_character_id(session_id: str) -> str:
+    """Read persisted ownership without activating history or loading a role pack."""
+    with open(_session_path(session_id), "r", encoding="utf-8") as source:
+        return _stored_character_id(json.load(source), session_id)
+
+
+class SessionCharacterMismatch(ValueError):
+    """A conversation belongs to a different backend startup character."""
+
+
+def _require_active_character(character_id: str) -> None:
+    if character_id != character_prompts.active_character_id():
+        raise SessionCharacterMismatch(
+            f"This conversation belongs to '{character_id}'. "
+            f"Restart the backend with AMADEUS_CHARACTER_ID={character_id} to open or continue it.")
+
+
+def require_session_character(session_id: str) -> str:
+    """Validate chat/role activation before replacing context or retiring a turn."""
+    character_id = get_session_character_id(session_id)
+    _require_active_character(character_id)
+    return character_id
 
 
 def append_session_message(session_id: str, *, role: str, content: str, turn_id: str,
@@ -552,9 +601,10 @@ def require_session_selection(expected_revision: int | None) -> None:
 
 
 def set_current_session_id(session_id: str | None) -> None:
-    # Nonempty relabelling is a legacy low-level API, not Session selection.
-    # Normal ingress must load/create the actual owned history first.
-    _activate_session(session_id, _empty_history() if session_id is None else None)
+    # The retained low-level selection API loads the persisted owner. It cannot
+    # manufacture a Session or relabel the currently loaded conversation.
+    history = _empty_history() if session_id is None else _read_session_history(session_id)[0]
+    _activate_session(session_id, history)
 
 
 def get_session_title(session_id: str) -> str:

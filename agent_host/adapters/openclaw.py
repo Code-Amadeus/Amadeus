@@ -21,6 +21,7 @@ from agent_host.provider_progress import (
 )
 from agent_host.provider_identity import (
     PARENT_CONTEXT_DELIVERED_EVENT,
+    request_main_role_name,
     with_parent_conversation_context,
 )
 from agent_host.provider_types import (
@@ -32,7 +33,7 @@ from agent_host.provider_types import (
     ProviderSessionHandle,
     ProviderSteerRequest,
 )
-from openclaw.client import OPENCLAW_EXECUTION_SYSTEM_PROMPT, _classify_openclaw_result
+from openclaw.client import execution_system_prompt, _classify_openclaw_result
 from openclaw.gateway_client import OpenClawGatewayClient, OpenClawGatewayError
 from config.settings import OPENCLAW_BASE_URL, OPENCLAW_TOKEN
 
@@ -234,6 +235,7 @@ class OpenClawAdapter:
                             timeout=float(current_metadata.get("timeout", 120.0)),
                             image_path=current_metadata.get("image_path"),
                             presentation_locale=current_metadata.get("presentation_locale"),
+                            main_role_name=request_main_role_name(current_metadata),
                         ),
                         name=f"openclaw-session:{run_id}",
                     )
@@ -517,6 +519,7 @@ class OpenClawAdapter:
         timeout: float,
         image_path: str | None,
         presentation_locale: object = None,
+        main_role_name: str,
     ) -> str:
         """Send one Session message and normalize its Gateway event stream."""
 
@@ -530,7 +533,7 @@ class OpenClawAdapter:
         params: dict[str, Any] = {
             "key": control.session.session_id,
             "message": (
-                f"{OPENCLAW_EXECUTION_SYSTEM_PROMPT}\n\n"
+                f"{execution_system_prompt(main_role_name)}\n\n"
                 f"{task_contract}"
             ),
             "timeoutMs": max(1, int(timeout * 1000)),

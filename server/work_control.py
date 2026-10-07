@@ -20,6 +20,7 @@ import uuid
 from agent_host.provider_contract import ProviderRequirements
 from agent_host.provider_authoring import auip_authoring_outcome_requirement
 from agent_host.provider_identity import (
+    HISTORICAL_MAIN_ROLE_NAME,
     MAIN_ROLE_NAME_METADATA_KEY,
     SOURCE_CONTEXT_SCOPE_METADATA_KEY,
     SOURCE_UTTERANCE_ID_METADATA_KEY,
@@ -37,7 +38,6 @@ from server.control_ledger import (
     ReconciliationPolicy,
 )
 from server.turn_admission import TurnAdmissionRecord, admission_transcript_hash
-from server.inherited_role_prompt import MAIN_CONVERSATION_ROLE_NAME
 from server.provider_session_binding import ProviderSessionAttachment
 from server.scratch_workspace import is_scratch_root, scratch_workspace_path
 from server.provider_event_ingestion import (
@@ -106,6 +106,10 @@ _PAYLOAD_V3_KEYS = frozenset(
 _SOURCE_DIGEST_ALGORITHM: Literal["sha256_utf8_v1"] = "sha256_utf8_v1"
 _MAX_SOURCE_USER_TEXT = 4000
 _BATCH_EVIDENCE_ADAPTER = "proposal_gated_current_turn_work_batch:v1"
+_HISTORICAL_ROLE_IDENTITY = {
+    "character_id": "kurisu",
+    "display_name": HISTORICAL_MAIN_ROLE_NAME,
+}
 _ACCEPTED_REQUEST_REQUIRED_METADATA_KEYS = frozenset(
     {
         "source",
@@ -941,12 +945,20 @@ class WorkControl:
     """Seal one proposal-gated Work plan and bind each selected effect."""
 
     def __init__(self, ledger: ControlLedgerStore, work: WorkLedgerStore, *,
-                 cooperative_context_resolver: Callable | None = None) -> None:
+                 cooperative_context_resolver: Callable | None = None,
+                 source_role_identity_resolver: Callable[[str], Mapping[str, str]] | None = None) -> None:
+        """Use source-session identity only when accepting a new Work plan.
+
+        Production supplies an ownership-checked resolver. Omitting it retains
+        historical Kurisu compatibility for standalone callers without a Session
+        store; it never looks up the current role or loads a character pack.
+        """
         if work.db_path == ":memory:" or Path(work.db_path).resolve() != ledger.path:
             raise ControlLedgerConflict("Work domain and Control Ledger must share one database")
         self.ledger = ledger
         self.work = work
         self.cooperative_context_resolver = cooperative_context_resolver
+        self.source_role_identity_resolver = source_role_identity_resolver
         self.reconcile_intake_rejections()
 
     def reconcile_intake_rejections(self) -> int:
@@ -1261,7 +1273,7 @@ class WorkControl:
             target_keys = tuple(retained_keys)
 
         extra_evidence = dict(plan_evidence or {})
-        if {"adapter", "transcript_hash"}.intersection(extra_evidence):
+        if {"adapter", "transcript_hash", "role_identity"}.intersection(extra_evidence):
             raise ControlLedgerConflict(
                 "additional Work plan evidence cannot replace source authority"
             )
@@ -1271,6 +1283,20 @@ class WorkControl:
                 raise ControlLedgerConflict(
                     "single-Work outcome evidence cannot authorize a multi-effect plan"
                 )
+        if stored["plan_id"] is None:
+            identity = (self.source_role_identity_resolver(admission.session_id)
+                if self.source_role_identity_resolver is not None else _HISTORICAL_ROLE_IDENTITY)
+            extra_evidence["role_identity"] = self._role_identity({"role_identity": identity})
+        else:
+            # Only this Host-owned fact is retained. Caller-supplied evidence
+            # and effects must still pass the Ledger's immutable comparison.
+            try:
+                retained_evidence = json.loads(stored["plan_json"])["evidence"]
+            except (TypeError, ValueError, KeyError) as exc:
+                raise ControlLedgerConflict("accepted Work plan evidence is invalid") from exc
+            identity = self._role_identity(retained_evidence)
+            if "role_identity" in retained_evidence:
+                extra_evidence["role_identity"] = identity
         accepted = self.ledger.accept(
             admission.root_id,
             chat_epoch=stored["chat_epoch"],
@@ -1346,6 +1372,7 @@ class WorkControl:
             raise ControlLedgerConflict("Work effect has no canonical accepted plan")
         plan_effects = accepted_plan["effects"]
         evidence = accepted_plan["evidence"]
+        self._role_identity(evidence)
         decoded_payloads: list[WorkEffectPayload] = []
         for ordinal, member in enumerate(plan_effects):
             if (
@@ -1493,6 +1520,30 @@ class WorkControl:
         plan = json.loads(admission["plan_json"])
         return self._cooperative_outcome_requirement(payload, plan.get("evidence") or {})
 
+    @staticmethod
+    def _role_identity(evidence: Mapping[str, Any]) -> dict[str, str]:
+        """Interpret one accepted identity; only absence denotes legacy Work."""
+        if not isinstance(evidence, Mapping):
+            raise ControlLedgerConflict("accepted Work plan evidence is invalid")
+        if "role_identity" not in evidence:
+            return dict(_HISTORICAL_ROLE_IDENTITY)
+        identity = evidence["role_identity"]
+        if not isinstance(identity, Mapping) or set(identity) != {"character_id", "display_name"}:
+            raise ControlLedgerConflict("Work role_identity must contain character_id and display_name")
+        for value in identity.values():
+            if not isinstance(value, str) or not value or value != value.strip() or "\x00" in value:
+                raise ControlLedgerConflict("Work role_identity values must be nonempty canonical strings")
+            try:
+                _strict_utf8(value, "role_identity")
+            except ValueError as exc:
+                raise ControlLedgerConflict(str(exc)) from exc
+        return {"character_id": identity["character_id"], "display_name": identity["display_name"]}
+
+    def _accepted_role_identity(self, effect) -> dict[str, str]:
+        admission = self.ledger.get_admission(effect["root_id"])
+        plan = json.loads(admission["plan_json"])
+        return self._role_identity(plan["evidence"])
+
     def provider_request(self, effect_id: str) -> ProviderRunRequest:
         """Reconstruct the bounded C2 Provider request from accepted facts."""
 
@@ -1529,7 +1580,7 @@ class WorkControl:
             "continuation": "amend" if item is not None else "new",
             "write_intent": payload.requirements.workspace_access == "write",
             "provider_requirements": payload.requirements.to_dict(),
-            MAIN_ROLE_NAME_METADATA_KEY: MAIN_CONVERSATION_ROLE_NAME,
+            MAIN_ROLE_NAME_METADATA_KEY: self._accepted_role_identity(_effect)["display_name"],
             "work": {
                 "project_id": payload.project_id,
                 "workspace_path": workspace_path,
@@ -1701,7 +1752,7 @@ class WorkControl:
             or metadata.get("provider_requirements")
             != payload.requirements.to_dict()
             or metadata.get(MAIN_ROLE_NAME_METADATA_KEY)
-            != MAIN_CONVERSATION_ROLE_NAME
+            != self._accepted_role_identity(effect)["display_name"]
             or work.get("project_id") != payload.project_id
             or work.get("workspace_path") != workspace_path
             or work.get("title") != (target.title if target is not None else payload.title)
