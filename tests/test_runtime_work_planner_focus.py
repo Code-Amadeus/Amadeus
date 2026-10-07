@@ -23,7 +23,7 @@ async def test_runtime_planner_reuses_focus_audit_and_preserves_work_on_denial(
     project = context.host.project.project_id
     audit = Mock(**({"side_effect": audit_reply} if isinstance(audit_reply, Exception)
         else {"return_value": audit_reply}))
-    monkeypatch.setattr("llm.client.remote_llm_query", audit)
+    monkeypatch.setattr("llm.client.remote_llm_messages_query", audit)
 
     async def query(_messages):
         if "[Independent candidate verdict - FINAL]" in _messages[0]["content"]:
@@ -53,7 +53,7 @@ async def test_runtime_planner_reuses_focus_audit_and_preserves_work_on_denial(
         assert action["one_off"] is True
     assert action["intent"] == "execute"
     audit.assert_called_once()
-    assert json.loads(audit.call_args.args[0])["user_message"] == source
+    assert json.loads(audit.call_args.args[0][-1]["content"])["user_message"] == source
     if audit_reply == modifier.upper():
         assert action["focus"] == modifier
         accepted = current_focus_modifier_audit(action)

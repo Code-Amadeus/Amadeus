@@ -14,8 +14,8 @@ def test_denied_focus_preserves_the_current_work(modifier, reply):
     async def run():
         attrs = {"intent": "execute", "focus": modifier, "task": "Update README",
             "project_id": "project-target", "_host_source_user_text": "Update README，先不要切换默认项目。"}
-        query = (patch("llm.client.remote_llm_query", side_effect=reply)
-            if isinstance(reply, Exception) else patch("llm.client.remote_llm_query", return_value=reply))
+        query = (patch("llm.client.remote_llm_messages_query", side_effect=reply)
+            if isinstance(reply, Exception) else patch("llm.client.remote_llm_messages_query", return_value=reply))
         with query:
             audit = await audit_focus_modifier(attrs)
         assert audit.allowed is False

@@ -31,6 +31,8 @@ lived.
 No backend, no Codex, no ledger: a fake coordinator serves the rows, and only
 the model is real. Answers are printed, not just scored -- the checks are
 substring approximations and the prose is the real evidence.
+Current picking runs use production role messages, temperature zero, and plain
+text output; historical scores above describe the earlier query interface.
 """
 
 from __future__ import annotations
@@ -209,39 +211,29 @@ FOLLOW_UP = (
 )
 
 
-def _is_infrastructure_failure(text: str) -> bool:
-    """A dead endpoint is not evidence about the model (lesson from 2026-07-31).
-
-    A 402 once got recorded as a routing result and misled a whole analysis.
-    """
-
-    lowered = str(text or "").lower()
-    return any(
-        marker in lowered
-        for marker in ("insufficient balance", "402", "api error", "connection", "timeout", "unauthorized")
-    ) and len(lowered) < 400
-
-
 async def main() -> int:
     repeats = int(sys.argv[1]) if len(sys.argv) > 1 else 3
     # Second argument narrows to a section, e.g. "F", so re-measuring one
     # question does not pay for the whole battery.
     wanted = set((sys.argv[2] if len(sys.argv) > 2 else "ABCEFD").upper())
-    from llm.client import remote_llm_query
+    from llm.client import remote_llm_messages_query
     from llm.prompts import get_system_prompt
     from server import task_lookup
 
     latencies: list[float] = []
     calls = {"n": 0}
-    real_query = remote_llm_query
+    real_query = remote_llm_messages_query
 
-    def counted(prompt: str, system: str | None = None) -> str:
+    def counted(messages: list[dict[str, str]], **kwargs) -> str:
         calls["n"] += 1
-        reply = real_query(prompt, system)
-        # Kept so a failure can show what actually came back. "Nothing was
-        # parsed" has three very different causes -- the model declined, the
-        # model answered in a shape the parser missed, or the endpoint hiccuped
-        # -- and only one of them is a finding.
+        try:
+            reply = real_query(messages, **kwargs)
+        except Exception as exc:
+            # Preserve infrastructure errors for resolve's existing catcher;
+            # never score an endpoint failure as a model response.
+            calls["last"] = f"{type(exc).__name__}: {exc}"
+            raise
+        # Keep the actual reply so a blank or wrong pick is inspectable.
         calls["last"] = str(reply or "")
         return reply
 
@@ -261,7 +253,7 @@ async def main() -> int:
             "server.work_ledger_coordinator.get_work_ledger_coordinator",
             return_value=coordinator,
         ),
-        patch("llm.client.remote_llm_query", counted),
+        patch("llm.client.remote_llm_messages_query", counted),
     ):
         ladder_ok = ladder_total = 0
         died: dict[str, int] = {}
@@ -346,13 +338,14 @@ async def main() -> int:
             for index in range(1, repeats + 1):
                 started = time.monotonic()
                 reply = str(
-                    await asyncio.to_thread(counted, prompt, base) or ""
+                    await asyncio.to_thread(
+                        counted,
+                        [{"role": "system", "content": base}, {"role": "user", "content": prompt}],
+                        temperature=0.7, max_tokens=900, timeout=10.0, json_output=False,
+                    ) or ""
                 ).strip()
                 elapsed = time.monotonic() - started
                 latencies.append(elapsed)
-                if _is_infrastructure_failure(reply):
-                    print(f"  skip {name:8s} #{index} infrastructure: {reply[:60]!r}")
-                    continue
                 found = [word for word in required if word in reply]
                 leaked = "[DELEGA" in reply.upper()
                 ok = bool(found) and not leaked

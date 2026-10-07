@@ -24,6 +24,8 @@ answerable from the code:
 
 Answers are printed, not just scored: the checks below are substring
 approximations and the prose is the real evidence.
+Current picking runs use the production role-free system instruction and text
+message interface; the historical scores above describe the earlier queries.
 """
 
 from __future__ import annotations
@@ -145,12 +147,17 @@ def _answer_prompt(question: str, facts: str) -> str:
 
 async def main() -> int:
     repeats = int(sys.argv[1]) if len(sys.argv) > 1 else 3
-    from llm.client import remote_llm_query
+    from llm.client import remote_llm_messages_query
     from llm.prompts import get_system_prompt
+    from server.task_lookup import _PICK_SYSTEM_PROMPT
 
-    async def ask(prompt: str, system: str | None) -> tuple[str, float]:
+    async def ask(prompt: str, system: str, *, temperature: float = 0.7) -> tuple[str, float]:
         started = time.monotonic()
-        text = await asyncio.to_thread(remote_llm_query, prompt, system)
+        text = await asyncio.to_thread(
+            remote_llm_messages_query,
+            [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+            temperature=temperature, max_tokens=900, timeout=10.0, json_output=False,
+        )
         return str(text or "").strip(), time.monotonic() - started
 
     latencies: list[float] = []
@@ -160,7 +167,7 @@ async def main() -> int:
     pick_ok = pick_total = 0
     for question, expected in PICK_CASES:
         for index in range(1, repeats + 1):
-            reply, elapsed = await ask(_pick_prompt(question), None)
+            reply, elapsed = await ask(_pick_prompt(question), _PICK_SYSTEM_PROMPT, temperature=0.0)
             latencies.append(elapsed)
             hit = expected in reply
             pick_ok += int(hit)

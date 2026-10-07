@@ -165,6 +165,80 @@ def test_original_hybrid_uses_bedrock_for_one_coherent_role_reply() -> None:
     assert query.call_args.args == (MESSAGES,)
 
 
+@pytest.mark.parametrize("provider", [
+    "deepseek", "openai", "gemini", "bedrock", "local", "hybrid", "hybrid2", "hybrid3",
+])
+def test_focus_validator_system_reaches_backend_and_plain_set_is_recognized(provider):
+    from llm import client
+    from server.focus_policy import audit_focus_modifier
+
+    calls = []
+    attrs = {"intent": "execute", "focus": "set", "project_id": "project-a",
+        "_host_source_user_text": "Switch to project A and create a checklist."}
+
+    def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="SET"))])
+
+    def generate(_client, **kwargs):
+        calls.append(kwargs)
+        return "SET"
+
+    def invoke(**kwargs):
+        calls.append(kwargs)
+        return {"body": SimpleNamespace(read=lambda: b'{"content":[{"text":"SET"}]}')}
+
+    def post(url, **kwargs):
+        if not url.endswith("/chat/completions"):
+            return _local_metadata(url, **kwargs)
+        calls.append(kwargs)
+        return SimpleNamespace(raise_for_status=lambda: None,
+            json=lambda: {"choices": [{"message": {"content": "<think>confirm</think>SET"}}]})
+
+    with (
+        patch.object(client, "LLM_PROVIDER", provider),
+        patch.object(client, "LOCAL_LLM_TYPE", "llama_server"),
+        patch.object(client, "init_llm_client", return_value=None),
+        patch.object(client, "llm_client", SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=create)))),
+        patch.object(client, "gemini_model", object()),
+        patch.object(client, "generate_gemini_text", side_effect=generate),
+        patch.object(client, "AWS_BEDROCK_AUTH_MODE", "boto3"),
+        patch.object(client, "bedrock_runtime_client", SimpleNamespace(invoke_model=invoke)),
+        patch.object(client.requests, "get", side_effect=_local_metadata),
+        patch.object(client.requests, "post", side_effect=post),
+    ):
+        audit = asyncio.run(audit_focus_modifier(attrs))
+
+    assert audit.allowed and audit.decision == "set" and audit.outcome == "confirmed"
+    assert len(calls) == 1
+    request = calls[0]
+    if provider == "gemini":
+        system = request["config"]["system_instruction"]
+        payload = request["contents"][0]["parts"][0]["text"]
+        assert request["contents"][0]["role"] == "user"
+        assert request["config"]["temperature"] == 0.0
+        assert request["config"]["max_output_tokens"] >= 900
+        assert "response_mime_type" not in request["config"]
+    else:
+        transport = json.loads(request["body"]) if provider in {"bedrock", "hybrid"} else (
+            request["json"] if provider == "local" else request)
+        messages = transport["messages"]
+        assert [message["role"] for message in messages] == ["system", "user"]
+        system, payload = messages[0]["content"], messages[1]["content"]
+        assert "response_format" not in transport
+        token_key = "max_completion_tokens" if provider in {"openai", "hybrid3"} else "max_tokens"
+        assert transport[token_key] >= 900
+        if provider not in {"openai", "hybrid3"}:
+            assert transport["temperature"] == 0.0
+        if provider not in {"bedrock", "hybrid"}:
+            assert request["timeout"] == 10.0
+    assert system.startswith("You are a narrow control-plane validator.")
+    assert "exactly one token: SET, CLEAR, or NONE" in system
+    assert json.loads(payload) == {"user_message": attrs["_host_source_user_text"],
+        "proposed_focus": "set", "operation_intent": "execute", "project_id_present": True}
+
+
 def _visual_context():
     from PIL import Image
 

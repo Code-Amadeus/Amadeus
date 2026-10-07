@@ -2,7 +2,7 @@
 
 负责：
   - 客户端初始化（init_llm_client）
-  - 远程 API 查询（remote_llm_query：DeepSeek / Gemini / AWS Bedrock）
+  - 消息查询（remote_llm_messages_query：远程 API / 本地模型）
   - 本地模型查询（local_llm_query：Ollama / LM Studio / llama-server / CLI）
 
 依赖注入（configure()）：
@@ -234,10 +234,11 @@ def remote_llm_messages_query(
     """Query the selected Chat backend with the supplied role messages.
 
     ControlDecision needs the production system message and prior conversation
-    as distinct roles. Flattening them into ``remote_llm_query(question)``
-    silently removes the very history that resolves follow-ups and Project
-    references. This narrow port therefore adapts the same message list to each
-    existing Chat backend instead of restricting which model the user may pick.
+    as distinct roles to resolve follow-ups and Project references. This port
+    adapts the same supplied message list to each existing Chat backend.
+
+    The current Gemini adapter does not forward ``timeout``. A caller's request
+    budget therefore does not bound that backend's request duration.
 
     ``on_text`` consumes deltas from that same request. Exceptions propagate and
     close its stream. CLI retains its existing complete-only query because its
@@ -702,202 +703,6 @@ def _local_messages_stream(url, payload, *, timeout, on_text, ollama=False) -> s
     return "".join(pieces)
 
 from llm.prompts import get_system_prompt as _get_system_prompt
-
-# 保留模块级别名，供外部直接引用（动态求值，每次调用都读当前语言）
-def _SYSTEM_PROMPT_BASE():         return _get_system_prompt("base")
-def _SYSTEM_PROMPT_WITH_DELEGATE(): return _get_system_prompt("with_delegate")
-
-
-def remote_llm_query(
-    question: str,
-    system_prompt: str | None = None,
-    *,
-    temperature: float = 0.7,
-) -> str:
-    """Call online API (DeepSeek, Gemini, or AWS Bedrock), with enhanced error handling.
-
-    `system_prompt` overrides the default for callers that need a different
-    contract in force — asking the model to re-emit a delegate it omitted needs
-    the variant that documents the tag, which the base prompt deliberately does
-    not.
-    """
-
-    global llm_client, gemini_model
-    _system = system_prompt if system_prompt else None
-
-    try:
-        if LLM_PROVIDER in ("deepseek", "hybrid2", "openai", "hybrid3") and llm_client is None:
-            llm_client = init_llm_client()
-        elif LLM_PROVIDER == "gemini" and gemini_model is None:
-            gemini_model = init_llm_client()
-        elif LLM_PROVIDER == "bedrock":
-            init_llm_client()
-
-        logger.info(f"Sending API request to {LLM_PROVIDER}...")
-
-        # ── DeepSeek ──────────────────────────────────────────────────────────
-        if LLM_PROVIDER in ("deepseek", "hybrid2"):
-            response = llm_client.chat.completions.create(
-                model=DEEPSEEK_MODEL_NAME,
-                messages=[
-                    {"role": "system", "content": _system or _SYSTEM_PROMPT_BASE()},
-                    {"role": "user", "content": question},
-                ],
-                temperature=temperature,
-                max_tokens=500,
-                stream=False,
-                timeout=5,
-                extra_body={"thinking": {"type": "disabled"}},
-            )
-            if not response or not hasattr(response, "choices") or not response.choices:
-                logger.warning("⚠️ DeepSeek API returned invalid response")
-                return "APIからの応答が無効です."
-            reply = response.choices[0].message.content
-
-        # ── OpenAI / GPT ─────────────────────────────────────────────────────
-        elif LLM_PROVIDER in ("openai", "hybrid3"):
-            response = llm_client.chat.completions.create(
-                model=OPENAI_MODEL_NAME,
-                messages=[
-                    {"role": "system", "content": _system or _SYSTEM_PROMPT_BASE()},
-                    {"role": "user", "content": question},
-                ],
-                max_completion_tokens=500,
-                reasoning_effort="low",
-                stream=False,
-                timeout=10,
-            )
-            if not response or not hasattr(response, "choices") or not response.choices:
-                logger.warning("⚠️ OpenAI API returned invalid response")
-                return "OpenAI APIからの応答が無効です."
-            reply = response.choices[0].message.content
-
-        # ── Gemini ────────────────────────────────────────────────────────────
-        elif LLM_PROVIDER == "gemini":
-            if gemini_model is None:
-                logger.info("Initializing Gemini LLM client")
-                gemini_model = create_gemini_client(GEMINI_API_KEY)
-            full_prompt = f"{_SYSTEM_PROMPT_WITH_DELEGATE()}\n\n質問:{question}"
-            generation_config = {
-                "temperature": temperature,
-                "top_p": 0.95,
-                "top_k": 64,
-                "max_output_tokens": 1000,
-            }
-            try:
-                reply = generate_gemini_text(
-                    gemini_model,
-                    model=GEMINI_MODEL_NAME,
-                    contents=full_prompt,
-                    config=generation_config,
-                )
-                if not reply:
-                    logger.warning("⚠️ Gemini API returned invalid response")
-                    return "Gemini APIからの応答が無効です."
-                logger.info(f"✓ Gemini API response successful, length: {len(reply)}")
-                return reply
-            except Exception as e:
-                logger.error(f"❌ Gemini API error: {str(e)}")
-                return f"Gemini APIエラー:{str(e)}"
-
-        # ── AWS Bedrock ───────────────────────────────────────────────────────
-        elif LLM_PROVIDER == "bedrock":
-            system_prompt = _get_system_prompt("bedrock")
-            if AWS_BEDROCK_USE_INFERENCE_PROFILE and AWS_BEDROCK_INFERENCE_PROFILE_ID:
-                model_id = AWS_BEDROCK_INFERENCE_PROFILE_ID
-            else:
-                model_id = AWS_BEDROCK_MODEL_ID
-            try:
-                boto3_error = None
-                try:
-                    if AWS_BEDROCK_AUTH_MODE == "bearer":
-                        raise ImportError("BEDROCK_AUTH_MODE=bearer")
-                    import boto3
-                    global bedrock_runtime_client
-                    if bedrock_runtime_client is None:
-                        bedrock_runtime_client = boto3.client(
-                            "bedrock-runtime", region_name=AWS_BEDROCK_REGION,
-                            aws_access_key_id=None, aws_secret_access_key=None,
-                        )
-                    payload = {
-                        "max_tokens": 500,
-                        "temperature": temperature,
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": question},
-                        ],
-                    }
-                    response = bedrock_runtime_client.invoke_model(
-                        modelId=model_id, body=json.dumps(payload)
-                    )
-                    result = json.loads(response["body"].read())
-                    if "content" in result and len(result["content"]) > 0:
-                        reply = result["content"][0]["text"]
-                    else:
-                        logger.warning(f"⚠️ Bedrock API returned invalid response: {result}")
-                        return "Bedrock APIからの応答が無効です."
-                    logger.info(f"✓ Bedrock API response successful (boto3), reply length: {len(reply)}")
-                    return reply
-                except ImportError as exc:
-                    boto3_error = exc
-                    if AWS_BEDROCK_AUTH_MODE == "bearer":
-                        logger.info("runtime log event at llm/client.py:314")
-                    else:
-                        logger.warning("runtime log event at llm/client.py:316")
-                except Exception as boto_error:
-                    boto3_error = boto_error
-                    logger.warning("runtime log event at llm/client.py:319")
-
-                if AWS_BEDROCK_AUTH_MODE == "boto3":
-                    raise RuntimeError(f"Bedrock boto3 auth failed and fallback is disabled: {boto3_error}")
-                if boto3_error and AWS_BEDROCK_AUTH_MODE == "auto":
-                    logger.info("runtime log event at llm/client.py:324")
-                if not AWS_BEDROCK_BEARER_TOKEN:
-                    raise RuntimeError("AWS_BEARER_TOKEN_BEDROCK未设置，无法使用HTTP Bearer fallback")
-
-                # HTTP 降级
-                url = f"{AWS_BEDROCK_ENDPOINT}/model/{model_id}/invoke"
-                headers = {
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {AWS_BEDROCK_BEARER_TOKEN}",
-                }
-                payload = {
-                    "max_tokens": 500,
-                    "temperature": temperature,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": question},
-                    ],
-                }
-                global bedrock_http_client
-                if bedrock_http_client is not None:
-                    response = bedrock_http_client.post(url, headers=headers, json=payload, timeout=30)
-                else:
-                    response = requests.post(url, headers=headers, json=payload, timeout=30)
-                if response.status_code != 200:
-                    error_detail = response.text
-                    logger.error("runtime log event at llm/client.py:349")
-                    return f"Bedrock APIエラー: {response.status_code} - {error_detail[:200]}"
-                result = response.json()
-                if "content" in result and len(result["content"]) > 0:
-                    reply = result["content"][0]["text"]
-                else:
-                    logger.warning(f"⚠️ Bedrock API returned invalid response: {result}")
-                    return "Bedrock APIからの応答が無効です."
-                logger.info(f"✓ Bedrock API response successful (HTTP), reply length: {len(reply)}")
-                return reply
-            except Exception as e:
-                logger.error(f"❌ Bedrock API error: {str(e)}")
-                logger.error("runtime log event at llm/client.py:361")
-                return f"Bedrock APIエラー:{str(e)}"
-
-        logger.info(f"✓ {LLM_PROVIDER} API response successful, reply length: {len(reply)}")
-        return reply
-
-    except Exception as e:
-        logger.error(f"❌ Failed to call online LLM ({LLM_PROVIDER}): {str(e)}")
-        return "すみません,今ちょっと調子が悪いです……."
-
 
 # =============================================================================
 # 本地模型查询（同步，非流式）
