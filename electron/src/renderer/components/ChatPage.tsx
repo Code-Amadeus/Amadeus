@@ -277,9 +277,11 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     }
   }, [send])
 
-  const selectSession = useCallback((method: string, params: Record<string, unknown> = {}) => (
+  const selectSession = useCallback((
+    method: string, params: Record<string, unknown> = {}, fallbackNotice?: string,
+  ) => (
     runSessionSelection(sessionSelectionRef.current, setSessionSwitching,
-      () => send(method, params), applySessionPayload, setSessionSelectionNotice)
+      () => send(method, params), applySessionPayload, setSessionSelectionNotice, fallbackNotice)
   ), [send, applySessionPayload])
 
   const loadSession = useCallback(async (id: string, closeArtifactView = false) => {
@@ -1159,7 +1161,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
 
   const handleDeleteSession = useCallback(async (id: string) => {
     try {
-      const res = await selectSession('session.delete', { session_id: id })
+      const res = await selectSession('session.delete', { session_id: id }, 'Could not delete this chat.')
       if (res.ok === false) return
       if (Array.isArray(res.projects)) setProjects(res.projects as unknown as ChatProjectSummary[])
       const next = Array.isArray(res.sessions) ? res.sessions as unknown as ChatSessionSummary[] : sessions.filter(s => s.id !== id)
@@ -1169,7 +1171,8 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
         if (selected) await loadSession(selected.id)
       }
     } catch (error) {
-      setSessionSelectionNotice(error instanceof Error ? error.message : 'Could not switch chats.')
+      setSessionSelectionNotice(error instanceof Error && error.message.trim()
+        ? error.message : 'Could not delete this chat.')
     }
   }, [activeSession, loadSession, selectSession, sessions])
 

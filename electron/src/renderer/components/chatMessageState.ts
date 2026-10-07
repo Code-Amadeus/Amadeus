@@ -25,6 +25,7 @@ export async function runSessionSelection(
   request: () => Promise<Record<string, unknown>>,
   apply: (payload: Record<string, unknown>) => void,
   feedback?: (notice: string) => void,
+  fallbackNotice = 'Could not switch chats.',
 ): Promise<Record<string, unknown>> {
   state.pending += 1
   changed(true)
@@ -33,15 +34,15 @@ export async function runSessionSelection(
     if (payload.ok === false) {
       const reason = [payload.message, payload.detail, payload.error]
         .find(value => typeof value === 'string' && value.trim())
-      feedback?.(typeof reason === 'string' ? reason : 'Could not switch chats.')
+      feedback?.(typeof reason === 'string' ? reason : fallbackNotice)
     } else {
       apply(payload)
       feedback?.('')
     }
     return payload
   } catch (error) {
-    feedback?.(error instanceof Error && error.message
-      ? error.message : 'Could not switch chats.')
+    feedback?.(error instanceof Error && error.message.trim()
+      ? error.message : fallbackNotice)
     throw error
   } finally {
     state.pending -= 1

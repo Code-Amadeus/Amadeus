@@ -102,6 +102,25 @@ test('transport failure has separate selection feedback and leaves the active co
   assert.equal(page.state.pending, false)
 })
 
+for (const [name, request] of [
+  ['response without a reason', async () => ({ ok: false })],
+  ['transport with an empty error', async () => { throw new Error('') }],
+  ['transport with a non-Error rejection', async () => { throw { offline: true } }],
+]) {
+  test(`failed selection ${name} retains its switching fallback`, async () => {
+    const page = harness(request)
+    const before = structuredClone(page.state)
+    await page.load('another-chat', true)
+    assert.equal(page.state.notice, 'Could not switch chats.')
+    assert.equal(page.state.session, before.session)
+    assert.deepEqual(page.state.messages, before.messages)
+    assert.deepEqual(page.state.context, before.context)
+    assert.equal(page.state.projectView, before.projectView)
+    assert.deepEqual(page.state.hydrated, [])
+    assert.equal(page.state.pending, false)
+  })
+}
+
 test('a successful selection applies its history and clears earlier selection feedback', async () => {
   let rejected = true
   const page = harness(async () => rejected ? { ok: false, detail: 'Please restart with Mira.' } : {
@@ -242,16 +261,30 @@ for (const ownedHistory of [false, true]) {
   })
 }
 
-for (const transportFailure of [false, true]) {
-  test(`failed deletion ${transportFailure ? 'transport' : 'response'} preserves the active history, context, and artifact view`, async () => {
-    const error = 'Could not delete this chat.'
+const deletionFailures = [
+  { name: 'response without a reason', response: { ok: false }, notice: 'Could not delete this chat.' },
+  { name: 'response with empty reasons', response: { ok: false, message: '', detail: '  ', error: '' },
+    notice: 'Could not delete this chat.' },
+  { name: 'response with a backend detail', response: { ok: false, detail: 'This chat is still in use.' },
+    notice: 'This chat is still in use.' },
+  { name: 'response with a backend error', response: { ok: false, error: 'Deletion was refused by the backend.' },
+    notice: 'Deletion was refused by the backend.' },
+  { name: 'transport with an error message', error: new Error('Backend connection closed before deletion.'),
+    notice: 'Backend connection closed before deletion.' },
+  { name: 'transport with an empty error', error: new Error(''), notice: 'Could not delete this chat.' },
+  { name: 'transport with a blank error', error: new Error('  '), notice: 'Could not delete this chat.' },
+  { name: 'transport with a non-Error rejection', error: { offline: true }, notice: 'Could not delete this chat.' },
+]
+
+for (const failure of deletionFailures) {
+  test(`failed deletion ${failure.name} reports its action and preserves the active history, context, and artifact view`, async () => {
     const page = harness(async () => {
-      if (transportFailure) throw new Error(error)
-      return { ok: false, error, current_session_id: null, sessions: [], messages: [] }
+      if ('error' in failure) throw failure.error
+      return { ...failure.response, current_session_id: null, sessions: [], messages: [] }
     })
     const before = structuredClone(page.state)
     await page.delete('current')
-    assert.equal(page.state.notice, error)
+    assert.equal(page.state.notice, failure.notice)
     for (const key of ['session', 'sessions', 'messages', 'context', 'projectView', 'activities',
       'translations', 'attention', 'artifactContext', 'streaming', 'streamingText']) {
       assert.deepEqual(page.state[key], before[key], key)
