@@ -7,6 +7,8 @@ decide from the user's task whether that capability is relevant.
 
 from __future__ import annotations
 
+from llm.character_prompts import text
+
 import hashlib
 import json
 import shutil
@@ -279,6 +281,7 @@ def with_host_authoring_capabilities(
     require_auip_preparation: bool = False,
     authoring_skill_path: str = "",
     required_auip_mode: str = "",
+    main_role_name: str | None = None,
 ) -> str:
     body = str(task or "").rstrip()
     source = " ".join(str(source_user_text or "").split())[:4000]
@@ -404,7 +407,7 @@ Computer Use for the required preparation:
         evidence = source_evidence + context_evidence
         return f"{body}{evidence}" if evidence else body
     capability = f"""Optional host authoring capability (this does not change the user's task):
-If and only if the user asks Amadeus/Kurisu to watch, comment on, play, or
+If and only if the user asks Amadeus/{text('short_name') if main_role_name is None else main_role_name} to watch, comment on, play, or
 operate a local interactive web app, read and follow this host-owned skill
 before editing: {skill_path}
 Use the official SDK named by that skill. Keep the app fully usable without

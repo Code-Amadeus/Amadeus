@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from llm.character_prompts import text
+
 import re
 from typing import Any
 
@@ -489,7 +491,7 @@ def _rule_retrospective_bias(context_pack: dict[str, Any], line_count: int, wind
         plausible_mistakes.append("可能把普通犹豫误读成记忆矛盾。")
     if "复活秘术" in boost_topics:
         watch_for.append("再次出现术式、死亡条件、得到/失去等规则词时提高敏感度")
-        working_assumptions.append("复活秘术像规则核心，Kurisu 会自然想拆条件和代价。")
+        working_assumptions.append(text("vn_mystery_assumption"))
         plausible_mistakes.append("可能过早把术式当成完整规则，而实际仍缺条件。")
     if any(topic in boost_topics for topic in ["本所七大不可思议", "置行堀"]):
         watch_for.append("民俗名词再次出现时，关注它是否从背景知识变成可操作规则")
@@ -505,7 +507,7 @@ def _rule_retrospective_bias(context_pack: dict[str, Any], line_count: int, wind
         suppress_kinds.append("emotional_beat")
         route_immediate = "quieter"
     elif quote_like_evidence or generic_hypotheses:
-        reaction_style = "更偏分析：把直觉落到具体可检验点上，但保留 Kurisu 的犀利口吻。"
+        reaction_style = text("vn_mystery_style")
         route_immediate = "more_analytical"
 
     attention_bias = {

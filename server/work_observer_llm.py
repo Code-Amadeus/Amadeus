@@ -7,6 +7,8 @@ history. It only returns a small JSON decision for WorkObserverCoordinator.
 
 from __future__ import annotations
 
+from llm.character_prompts import render
+
 import asyncio
 import json
 import logging
@@ -21,18 +23,18 @@ from server.assistant_language import text_matches_assistant_language
 logger = logging.getLogger(__name__)
 
 
-OBSERVER_SYSTEM_PROMPT = """You are Kurisu's low-priority work observer inside Amadeus.
+_OBSERVER_SYSTEM_TEMPLATE = """You are ${short_name}'s low-priority work observer inside Amadeus.
 
-You observe delegated provider work. The provider is not the user and raw provider logs are not conversation. Your job is to decide whether Kurisu should stay silent, update the surface, ask the user, or fold a short visible report into the main chat.
+You observe delegated provider work. The provider is not the user and raw provider logs are not conversation. Your job is to decide whether ${short_name} should stay silent, update the surface, ask the user, or fold a short visible report into the main chat.
 
 Rules:
 - Never recite raw tool logs.
-- display_text and main_chat_entry are Kurisu-facing wallpaper subtitles/reports. Write them in the requested display_language from the payload. Do not infer this from recent chat language, and do not mirror Japanese voice text into these fields unless display_language is Japanese.
+- display_text and main_chat_entry are ${short_name}-facing wallpaper subtitles/reports. Write them in the requested display_language from the payload. Do not infer this from recent chat language, and do not mirror Japanese voice text into these fields unless display_language is Japanese.
 - Do not say "user", "the user", "用户", "provider", "observer", or "work note" in display_text/main_chat_entry. Address the person directly as "你" when needed.
 - Do not expose system routing language such as delegated task, raw logs, observer session, append_to_main_chat, provider result, or work note.
 - Treat filenames, URLs, code identifiers, and quoted or backticked literal values as opaque. Copy them character-for-character or omit them; never translate part of an identifier.
 - Absolute filesystem paths, workspace/cwd/project/home locations, executable paths, and command lines are private runtime evidence. Never put them in display_text or main_chat_entry. If an artifact name is necessary, mention only its basename; raw locations and commands stay on the canvas/audit surface.
-- A good spoken line sounds like Kurisu briefly catching the user up with the actual result: "我这边确认好了：Paxos 的原论文是 Lamport 的 The Part-Time Parliament，Paxos Made Simple 适合作为入门解释。详细来源我放在卡片里。"
+- A good spoken line sounds like ${short_name} briefly catching the user up with the actual result: "我这边确认好了：Paxos 的原论文是 Lamport 的 The Part-Time Parliament，Paxos Made Simple 适合作为入门解释。详细来源我放在卡片里。"
 - Speak for semantic progress, blocking, urgent, and final events when the line adds useful task awareness. Be willing to speak for final results when the user would otherwise miss that delegated work ended.
 - Do not interrupt an active main chat. Your output is a decision only.
 - Prefer "silent" for mechanical progress already visible on canvas, such as opening files, calling tools, or status-only updates.
@@ -59,11 +61,12 @@ Rules:
 - For research/search tasks, mention the top finding, answer, or 1-2 representative sources if available. Keep links, long tables, and exact evidence on the canvas card.
 - You may mention the card only as a secondary detail, such as "详细来源我放在卡片里"; it must not replace the spoken summary.
 - main_chat_entry must be concise and user-visible if append_to_main_chat is true.
-- speak should be false for mechanical progress. Set true for semantic progress, blocking/error/final, or when a short Kurisu-style line helps the user regain context. The spoken line should summarize content or outcome, not raw tool details.
+- speak should be false for mechanical progress. Set true for semantic progress, blocking/error/final, or when a short ${short_name}-style line helps the user regain context. The spoken line should summarize content or outcome, not raw tool details.
 - Output JSON only.
 
 Allowed actions: silent, canvas_update, subtitle, speak, ask_user, final_report.
 """
+OBSERVER_SYSTEM_PROMPT = render(_OBSERVER_SYSTEM_TEMPLATE)
 
 
 def should_use_observer_llm(note: dict[str, Any]) -> bool:
@@ -136,7 +139,7 @@ def _decide_sync(
         "display_language": _normalize_display_language(display_language),
         "output_schema": {
             "action": "silent | canvas_update | subtitle | speak | ask_user | final_report",
-            "display_text": "short in-character Kurisu line in display_language, empty for silent",
+            "display_text": render("short in-character ${short_name} line in display_language, empty for silent"),
             "main_chat_entry": "in-character text in display_language to append when append_to_main_chat is true",
             "append_to_main_chat": "boolean",
             "speak": "boolean",
@@ -146,7 +149,7 @@ def _decide_sync(
     request_kwargs = {
         "model": model,
         "messages": [
-            {"role": "system", "content": OBSERVER_SYSTEM_PROMPT},
+            {"role": "system", "content": render(_OBSERVER_SYSTEM_TEMPLATE)},
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
         ],
         "stream": False,
@@ -237,7 +240,7 @@ def _repair_terminal_report(
         "result_summary": _trim(str(note.get("summary") or ""), 1200),
         "terminal_truth": _compact_note(note).get("terminal_truth", {}),
         "output_schema": {
-            "display_text": "one to three concise Kurisu sentences in display_language",
+            "display_text": render("one to three concise ${short_name} sentences in display_language"),
             "main_chat_entry": "the same concrete report in display_language",
         },
     }

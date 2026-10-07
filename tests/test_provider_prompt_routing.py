@@ -72,11 +72,6 @@ def test_delegate_prompts_follow_live_provider_registration() -> None:
 
     # The failing code/edit case must appear as a worked example, not only as a rule.
     assert "theme.txt" in codex_only["runtime_with_delegate"]
-    assert "[Provider routing]" in settings._DEFAULT_SYSTEM_PROMPT
-    assert 'provider="codex"' not in settings._DEFAULT_SYSTEM_PROMPT
-    assert 'provider="locus"' not in settings._DEFAULT_SYSTEM_PROMPT
-    # The local-LLM CLI prompt is a fifth copy of the same contract.
-    assert "外部ツールが必要な時だけ" not in settings._DEFAULT_SYSTEM_PROMPT
 
 
 def test_provider_routing_wording_tracks_the_output_language() -> None:

@@ -8,6 +8,8 @@ Participant controller and the AUIP runtime/app receipt respectively.
 
 from __future__ import annotations
 
+from server.auip_contract import AUIP_PARTICIPANT_ACTOR
+
 import asyncio
 import inspect
 import json
@@ -228,7 +230,7 @@ class AuipEngagementCoordinator:
         if not event_id or event_key in self._seen_event_set:
             return
         self._remember_event(event_key)
-        if str(event.get("actor") or "").strip().lower() == "kurisu":
+        if str(event.get("actor") or "").strip().lower() == AUIP_PARTICIPANT_ACTOR:
             return
         if bool(event.get("terminal")):
             return

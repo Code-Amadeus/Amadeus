@@ -38,7 +38,7 @@ Speak object if decision=speak:
   "target_line_id": "",
   "target_script_id": "",
   "emotion_intent": "normal | thinking | smile | happy | shy | blush | angry | sad | disappointed | surprised | serious_speaking",
-  "text": "spoken Kurisu line with optional [EMO preset=thinking dur=8s]"
+  "text": ${vn_spoken_example_json}
 }
 
 Context patch rules:
@@ -115,7 +115,7 @@ Return valid JSON only:
 }
 
 ${summary_quality}""",
-    'retrospective': """${reflection_scope}This is not a local summary lane. Your main job is to shape the character's next interpretive posture: what she is suspicious about, what she is emotionally carrying, what she may reasonably misunderstand, and what kind of future lines deserve attention.
+    'retrospective': """${reflection_scope}${vn_retrospective_posture}
 
 ${game_context}
 

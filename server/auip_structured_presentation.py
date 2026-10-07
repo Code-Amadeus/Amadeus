@@ -8,6 +8,9 @@ actor identity, receipts, actions, or delivery history.
 
 from __future__ import annotations
 
+from server.auip_contract import AUIP_PARTICIPANT_ACTOR
+from llm.character_prompts import active_character_id
+
 import copy
 import json
 from dataclasses import dataclass
@@ -159,15 +162,15 @@ def compile_auip_host_facts(observation: Mapping[str, Any]) -> list[dict[str, An
                 ),
                 "importance": "normal",
                 "terminal": False,
-                "actor": {"reported": "kurisu", "verified": "kurisu"},
-                "subject_owners": ["kurisu"],
+                "actor": {"reported": AUIP_PARTICIPANT_ACTOR, "verified": AUIP_PARTICIPANT_ACTOR},
+                "subject_owners": [AUIP_PARTICIPANT_ACTOR],
                 "details": receipt_details,
                 "omitted_fields": sorted(set(receipt_omitted)),
             }
         )
     facts.append(event_fact)
     _attach_declared_outcome(facts)
-    return _bound_fact_envelope(facts)
+    return _bound_fact_envelope(_presentation_role_facts(facts))
 
 
 def compile_auip_decision_context(observation: Mapping[str, Any]) -> dict[str, str]:
@@ -271,8 +274,8 @@ def compile_auip_operator_fact(
             "revision": _integer_or_none(revision),
             "importance": "blocking",
             "terminal": False,
-            "actor": {"reported": "kurisu", "verified": "kurisu"},
-            "subject_owners": ["kurisu"],
+            "actor": {"reported": AUIP_PARTICIPANT_ACTOR, "verified": AUIP_PARTICIPANT_ACTOR},
+            "subject_owners": [AUIP_PARTICIPANT_ACTOR],
             "outcome": {
                 "accepted": False,
                 "performed": False,
@@ -285,7 +288,29 @@ def compile_auip_operator_fact(
             "omitted_fields": [],
         }
     ]
-    return _bound_fact_envelope(facts)
+    return _bound_fact_envelope(_presentation_role_facts(facts))
+
+
+def _presentation_role_facts(facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Map only Host-verified identity fields in the model's display copy.
+
+    Receipt correlation and winner ownership have already used the stable wire
+    participant slot. Application strings, state, receipts and payloads retain
+    their original identities. No free-text or recursive replacement occurs.
+    """
+    character_id = active_character_id()
+    # These freshly compiled facts are already separate from application data;
+    # the final envelope boundary validates and copies the presentation result.
+    for fact in facts:
+        for key in ("reported", "verified"):
+            if fact.get("actor", {}).get(key) == AUIP_PARTICIPANT_ACTOR:
+                fact["actor"][key] = character_id
+        fact["subject_owners"] = [character_id if owner == AUIP_PARTICIPANT_ACTOR else owner
+                                  for owner in fact.get("subject_owners", [])]
+        for key in ("winner_owner", "loser_owner"):
+            if fact.get("outcome", {}).get(key) == AUIP_PARTICIPANT_ACTOR:
+                fact["outcome"][key] = character_id
+    return facts
 
 
 def bounded_user_context(
@@ -444,13 +469,13 @@ def _receipt_follows_event(event: Mapping[str, Any], receipt: Mapping[str, Any])
     action_id = _clean(receipt.get("action_id"), 160)
     if caused_by:
         return bool(action_id and caused_by == action_id)
-    return _clean(event.get("actor"), 40).lower() == "kurisu"
+    return _clean(event.get("actor"), 40).lower() == AUIP_PARTICIPANT_ACTOR
 
 
 def _verified_actor(reported: str, receipt: Mapping[str, Any]) -> str:
     clean = _clean(reported, 40).lower()
-    if clean == "kurisu":
-        return "kurisu" if receipt else "unknown"
+    if clean == AUIP_PARTICIPANT_ACTOR:
+        return AUIP_PARTICIPANT_ACTOR if receipt else "unknown"
     if clean in {"app", "system"}:
         return "application"
     if clean == "user":
@@ -503,7 +528,7 @@ def _attach_declared_outcome(facts: list[dict[str, Any]]) -> None:
         "winner_side": _clean(winner, 120) or "unknown",
         "winner_owner": owner,
         "loser_owner": (
-            "user" if owner == "kurisu" else "kurisu" if owner == "user" else "unknown"
+            "user" if owner == AUIP_PARTICIPANT_ACTOR else AUIP_PARTICIPANT_ACTOR if owner == "user" else "unknown"
         ),
         "method": method or "unknown",
     }
@@ -511,8 +536,8 @@ def _attach_declared_outcome(facts: list[dict[str, Any]]) -> None:
 
 def _owner_for_winner(facts: Sequence[Mapping[str, Any]], winner: Any) -> str:
     clean = _clean(winner, 120).lower()
-    if clean in {"kurisu", "assistant", "participant"}:
-        return "kurisu"
+    if clean in {AUIP_PARTICIPANT_ACTOR, "assistant", "participant"}:
+        return AUIP_PARTICIPANT_ACTOR
     if clean == "user":
         return "user"
     for fact in facts:
@@ -522,8 +547,8 @@ def _owner_for_winner(facts: Sequence[Mapping[str, Any]], winner: Any) -> str:
         ):
             if not isinstance(bindings, Mapping):
                 continue
-            if _clean(bindings.get("participant") or bindings.get("kurisu"), 120).lower() == clean:
-                return "kurisu"
+            if _clean(bindings.get("participant") or bindings.get(AUIP_PARTICIPANT_ACTOR), 120).lower() == clean:
+                return AUIP_PARTICIPANT_ACTOR
             if _clean(bindings.get("user"), 120).lower() == clean:
                 return "user"
     return "unknown"

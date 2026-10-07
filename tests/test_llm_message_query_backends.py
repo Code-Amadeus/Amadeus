@@ -601,7 +601,7 @@ def test_persistent_cli_is_rejected_before_query_or_delivery():
     with (
         patch.object(client, "LLM_PROVIDER", "local"),
         patch.object(client, "LOCAL_LLM_TYPE", "cli"),
-        patch.object(client, "local_llm_query_cli", return_value='{"action":null,"say":"Hello"}') as query,
+        patch("asyncio.create_subprocess_exec") as query,
     ):
         for _ in range(4):
             with pytest.raises(RuntimeError, match="LOCAL_LLM_TYPE=llama_server"):

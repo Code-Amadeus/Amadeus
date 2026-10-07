@@ -9,6 +9,8 @@ or slowly diverging from the built-in role prompt.
 
 from __future__ import annotations
 
+from llm.character_prompts import text
+
 import logging
 
 from server.assistant_language import current_assistant_language
@@ -17,7 +19,7 @@ from server.assistant_language import current_assistant_language
 logger = logging.getLogger(__name__)
 
 
-MAIN_CONVERSATION_ROLE_NAME = "Makise Kurisu (牧瀬紅莉栖)"
+MAIN_CONVERSATION_ROLE_NAME = text("display_name")
 
 
 def inherited_main_role_prompt(variant: str = "base") -> str:
@@ -38,11 +40,5 @@ def inherited_main_role_prompt(variant: str = "base") -> str:
     except Exception:
         logger.exception("failed to load inherited main-chat role prompt")
         if current_assistant_language() == "japanese":
-            return (
-                "あなたは牧瀬紅莉栖。メインチャットと同じ人格と言語を保ち、"
-                "自然かつ簡潔に日本語で答えてください。"
-            )
-        return (
-            "You are Kurisu Makise. Keep the same language and personality as "
-            "the main chat. Answer naturally and concisely."
-        )
+            return text("inherited_fallback_ja")
+        return text("inherited_fallback_en")

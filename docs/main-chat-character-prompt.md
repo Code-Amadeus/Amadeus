@@ -5,7 +5,7 @@ identity/personality override. When empty, the editor displays the built-in
 character as a placeholder. The placeholder is a hint, not editable content,
 and is never saved as the override. Enter a replacement in Japanese, then save.
 Clearing the editor and saving restores the built-in character. Whitespace-only
-input also restores it. The default remains in code and follows future updates.
+input also restores it. The default comes from `characters/kurisu.toml` and follows future updates.
 
 The override changes Japanese Main Chat identity/personality only. Language,
 reasoning disclosure, expression/TTS formatting, delegation, provider routing
@@ -25,5 +25,7 @@ The setting is `AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA` (maximum 8192 characters)
 An explicit parent-process value locks GUI editing, as for other desktop
 settings. An explicitly saved empty string takes precedence over a project
 `.env` override so restoring the built-in character survives restart.
-`LOCAL_LLM_SYSTEM_PROMPT` remains the independent whole-prompt override for
-legacy direct CLI calls that do not receive a Main Chat system prompt.
+The saved Japanese override belongs to Kurisu. Character prompt data is packaged
+independently of art and voice assets; loading it does not depend on the working
+directory. Retired direct CLI queries and `LOCAL_LLM_SYSTEM_PROMPT` are removed;
+the messages interface continues to reject the CLI backend.

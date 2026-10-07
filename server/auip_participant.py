@@ -7,6 +7,8 @@ that validates stance, declaration, revision, and the application's receipt.
 
 from __future__ import annotations
 
+from server.auip_contract import AUIP_PARTICIPANT_ACTOR
+
 import inspect
 import json
 import logging
@@ -247,7 +249,7 @@ class AuipParticipantCoordinator:
         )
         result = self.runtime.invoke_action(
             app_session_id=proposal.app_session_id,
-            actor="kurisu",
+            actor=AUIP_PARTICIPANT_ACTOR,
             type=proposal.action_type,
             payload=proposal.payload,
             expected_revision=proposal.expected_revision,

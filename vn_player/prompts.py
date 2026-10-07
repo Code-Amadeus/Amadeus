@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from llm.character_prompts import render, text, active_character_id
+
 import json
 import re
 from typing import Any
@@ -32,7 +34,7 @@ def immediate_context_view(context_pack: dict[str, Any]) -> str:
     target = ((lookahead.get("reaction_plan") or [{}])[0]) if isinstance(lookahead, dict) else {}
 
     parts = [
-        "Clean VN context for Kurisu.",
+        render('Clean VN context for ${short_name}.'),
         "",
         "Current displayed line:",
         _line_text(current),
@@ -46,8 +48,8 @@ def immediate_context_view(context_pack: dict[str, Any]) -> str:
         "Recent player dialogue history:",
         *_bullet_lines([_player_dialogue_text(item) for item in context_pack.get("recent_player_dialogue") or []]),
         "",
-        "Kurisu recently said:",
-        *_bullet_lines([_speech_text(item) for item in context_pack.get("recent_kurisu_speech") or []]),
+        render('${short_name} recently said:'),
+        *_bullet_lines([_speech_text(item) for item in context_pack.get(f"recent_{active_character_id()}_speech") or []]),
         "",
         "Local story context:",
         *_bullet_lines(_story_context_lines(context_pack)),
@@ -65,7 +67,7 @@ def immediate_context_view(context_pack: dict[str, Any]) -> str:
         "",
         (
             "Remember: displayed script is game evidence. Current player input must be answered when present. "
-            "Recent player dialogue is history, not an unanswered request. Kurisu's prior speech is only her own commentary, not game fact."
+            + text("vn_prior_speech")
         ),
     ]
     return "\n".join(part for part in parts if part is not None)

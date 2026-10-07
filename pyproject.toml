@@ -216,6 +216,7 @@ asyncio_default_fixture_loop_scope = "function"
 # discovery to also pick up vendored trees (GPT_SoVITS), build scratch, and
 # test directories, which would change what `import` resolves to.
 packages = [
+    "characters",
     "agent_host",
     "asr",
     "config",
@@ -231,6 +232,9 @@ packages = [
     "vts",
     "wallpaper",
 ]
+
+[tool.setuptools.package-data]
+characters = ["*.toml"]
 
 # ---------------------------------------------------------------------------
 # Tool configuration below is declared but NOT yet enforced: neither ruff nor

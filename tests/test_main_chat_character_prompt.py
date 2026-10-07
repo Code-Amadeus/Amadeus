@@ -21,7 +21,7 @@ def built_in_character(monkeypatch):
 def test_persona_override_preserves_output_and_execution_contracts(monkeypatch, intent):
     monkeypatch.setattr(prompts, "_delegate_intent_required", lambda: intent)
     monkeypatch.setattr(prompts, "registered_provider_ids", lambda: ("browser", "codex"))
-    variants = ("base", "with_delegate", "bedrock", "local_fallback", "hybrid_local")
+    variants = ("base", "with_delegate", "bedrock", "hybrid_local")
     original = {v: prompts.get_system_prompt(v) for v in variants}
     controls = prompts.get_structured_control_prompt()
     inherited = inherited_main_role_prompt()
@@ -42,8 +42,6 @@ def test_persona_override_preserves_output_and_execution_contracts(monkeypatch, 
     for variant in ("with_delegate", "bedrock"):
         custom = prompts.get_system_prompt(variant)
         assert custom[len(custom_base):] == original[variant][len(original["base"]):]
-    assert prompts.get_system_prompt("local_fallback") == (
-        override + "\n\n" + prompts._JA_LOCAL_FALLBACK_LANGUAGE)
     assert prompts.get_system_prompt("hybrid_local") == original["hybrid_local"]
     assert prompts.get_structured_control_prompt() == controls
     assert inherited_main_role_prompt() == inherited
@@ -55,7 +53,7 @@ def test_persona_override_preserves_output_and_execution_contracts(monkeypatch, 
 
 def test_japanese_override_does_not_change_english_role(monkeypatch):
     monkeypatch.setattr("tts.pipeline.TTS_OUTPUT_LANGUAGE", "英文")
-    variants = ("base", "with_delegate", "bedrock", "local_fallback", "hybrid_local")
+    variants = ("base", "with_delegate", "bedrock", "hybrid_local")
     original = {v: prompts.get_system_prompt(v) for v in variants}
     prompts.set_character_prompt("日本語の人物設定")
     assert {v: prompts.get_system_prompt(v) for v in variants} == original
