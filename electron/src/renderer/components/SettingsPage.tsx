@@ -697,7 +697,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
       setConfig((response.values as Record<string, unknown>) ?? response)
       const applied = await markRuntimeSettingsApplied({ [key]: value }, saved.pendingRevisions)
       if (applied) setDesktop(applied as unknown as DesktopSettingsSnapshot)
-      if (key === 'main_chat_character_prompt_ja') setNotice('Character prompt saved. New Main Chat replies use the current setting.')
+      if (key === 'main_chat_character_prompt_ja') setNotice('Kurisu Japanese persona saved. Later Japanese Main Chat and AUIP/browser requests use it when Kurisu is active.')
       return true
     } catch (reason) {
       if (persisted) {
@@ -1203,7 +1203,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                     onChange={value => void setTheme(value).catch(reason => setError(reason instanceof Error ? reason.message : 'Could not save interface theme'))}
                   />
                 </SettingsGroup>
-                <SettingsGroup title="Main Chat character" detail="Override the Japanese identity and personality used by Main Chat. Language, expression, voice and agent rules are kept separately.">
+                <SettingsGroup title="Kurisu Japanese persona" detail="Customize Kurisu’s Japanese personality for later Main Chat and AUIP/browser decisions and speech. Choices stay within the application’s rules.">
                   <MainChatCharacterSettings
                     savedOverride={desktop?.sources?.AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA === 'user'
                       ? desktop.values.AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA ?? ''

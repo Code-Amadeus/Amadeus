@@ -35,14 +35,15 @@ export default function MainChatCharacterSettings({ savedOverride, preview, canS
   return (
     <CardShell vertical>
       <div className="character-prompt-editor">
-        <label className="settings-field-label" htmlFor="main-chat-character-override">{t('Japanese character override')}</label>
+        <label className="settings-field-label" htmlFor="main-chat-character-override">{t('Kurisu Japanese persona override')}</label>
         <div className="settings-field-description">{t(locked
           ? 'Character prompt is controlled by your launch environment.'
-          : 'Write a Japanese override, or leave blank and save to use the built-in character shown as a placeholder. Applies to new replies.')}</div>
+          : 'Write a Japanese override for Kurisu, or leave blank and save to restore her built-in prompt shown as a placeholder.')}</div>
+        <div className="settings-field-description">{t('VN, work commentary, English replies and Hybrid opening lines keep their own prompts. This setting does not change the active character, permissions, art or voice.')}</div>
         <textarea id="main-chat-character-override" rows={7} maxLength={8192} value={draft}
-          placeholder={defaultPrompt || t('Connect the backend to load the default character prompt.')}
+          placeholder={defaultPrompt || t('Connect the backend to load Kurisu’s default Japanese persona.')}
           disabled={disabled} onChange={event => edit(event.target.value)} />
-        {info.active === false ? <div className="settings-field-description">{t('Japanese setting saved; English replies use the built-in English character.')}</div> : null}
+        {info.active === false ? <div className="settings-field-description">{t('This Kurisu setting is inactive for the current replies. It applies only when Kurisu is active and replies are Japanese.')}</div> : null}
         <div className="character-prompt-actions">
           <button type="button" disabled={disabled || !canSave || !dirty} onClick={() => void save()}>{t(saving ? 'Saving…' : 'Save character prompt')}</button>
           <button type="button" disabled={disabled} onClick={() => edit('')}>{t('Clear override')}</button>
