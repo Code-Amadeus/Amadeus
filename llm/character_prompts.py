@@ -5,7 +5,7 @@ authority. Startup identity and request-bound accepted identity are separate.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib.resources import files
 import json
@@ -14,6 +14,8 @@ from string import Template
 from types import MappingProxyType
 from typing import Mapping
 import tomllib
+
+from llm.character_voice_lines import validate_voice_lines
 
 
 DEFAULT_CHARACTER_ID = "kurisu"
@@ -46,6 +48,7 @@ def validate_character_id(value: object) -> str:
 class CharacterPrompts:
     character_id: str
     values: Mapping[str, str]
+    voice_lines: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         validate_character_id(self.character_id)
@@ -60,14 +63,16 @@ class CharacterPrompts:
         if not values["display_name"] or values["display_name"] != values["display_name"].strip():
             raise ValueError("character display_name must be nonempty with no surrounding whitespace")
         object.__setattr__(self, "values", MappingProxyType(values))
+        object.__setattr__(self, "voice_lines", validate_voice_lines(
+            self.voice_lines, max_chars=MAX_CHARACTER_PROMPT_CHARS))
 
 
 @lru_cache(maxsize=32)
 def load(character_id: str = DEFAULT_CHARACTER_ID) -> CharacterPrompts:
     validate_character_id(character_id)
     document = tomllib.loads(files("characters").joinpath(f"{character_id}.toml").read_text(encoding="utf-8"))
-    if not {"names"} <= document.keys() <= {"names", "texts"}:
-        raise ValueError("character file requires names and optional texts tables")
+    if not {"names"} <= document.keys() <= {"names", "texts", "voice_lines"}:
+        raise ValueError("character file requires names and optional texts/voice_lines tables")
     names, texts = document["names"], document.get("texts", {})
     if (not isinstance(names, dict) or not isinstance(texts, dict)
             or not names.keys() <= NAME_KEYS | {"name"} or not texts.keys() <= TEXT_KEYS):
@@ -82,7 +87,8 @@ def load(character_id: str = DEFAULT_CHARACTER_ID) -> CharacterPrompts:
     for key in NAME_KEYS - {"character_id", "work_title"}:
         if not isinstance(resolved[key], str) or not resolved[key].strip():
             raise ValueError(f"invalid character name: {key}")
-    return CharacterPrompts(character_id, resolved | _neutral_texts(resolved) | texts)
+    return CharacterPrompts(character_id, resolved | _neutral_texts(resolved) | texts,
+        document.get("voice_lines", {}))
 
 
 def _neutral_texts(names: Mapping[str, str]) -> dict[str, str]:

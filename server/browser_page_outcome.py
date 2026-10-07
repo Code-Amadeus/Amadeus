@@ -8,6 +8,8 @@ this module is the concrete ``browser.page_state`` facet implementation.
 
 from __future__ import annotations
 
+from llm.character_voice_lines import voice_line
+
 import re
 from dataclasses import asdict, dataclass
 from urllib.parse import parse_qsl, urlparse
@@ -316,10 +318,10 @@ def _obstruction_summary(
     missing_resource = kind == "missing_resource"
     if language == "japanese":
         if needs_person:
-            return "ページが本人確認を求めているため、依頼された結果にはまだ到達していないわ。"
+            return voice_line('browser_voice_identity_gate')
         if missing_resource:
-            return "指定されたページは存在しないため、依頼された内容には到達できなかったわ。"
-        return "ページ側でエラーまたはアクセス制限が発生し、依頼された結果には到達できなかったわ。"
+            return voice_line('browser_voice_page_missing')
+        return voice_line('browser_voice_access_error')
     if language == "simplified_chinese":
         if needs_person:
             return "页面要求人工验证或登录，尚未到达请求的结果。"
@@ -347,32 +349,32 @@ def _host_summary(
     if language == "japanese":
         if execution_status != "succeeded":
             return (
-                f"操作は完了しなかったわ。現在のページは{label}よ。"
+                voice_line('browser_voice_failed_page', label=label)
                 if label
-                else "操作は完了しなかったわ。"
+                else voice_line('browser_voice_failed')
             )
         if attention == "input":
             return (
-                f"続けるには追加の情報が必要よ。現在のページは{label}。"
+                voice_line('browser_voice_input_page', label=label)
                 if label
-                else "続けるには追加の情報が必要よ。"
+                else voice_line('browser_voice_input')
             )
         if attention == "conflict":
             return (
-                f"操作結果の報告と現在のページが一致していないわ。現在のページは{label}。確認が必要よ。"
+                voice_line('browser_voice_conflict_page', label=label)
                 if label
-                else "操作結果の報告を確認できなかったわ。確認が必要よ。"
+                else voice_line('browser_voice_conflict')
             )
         if verified:
             return (
-                f"操作は完了したわ。現在のページは{label}よ。"
+                voice_line('browser_voice_verified_page', label=label)
                 if label
-                else "操作は完了したわ。"
+                else voice_line('browser_voice_verified')
             )
         return (
-            f"操作は終了したわ。現在のページは{label}。報告の内容はまだ確認が必要よ。"
+            voice_line('browser_voice_unverified_page', label=label)
             if label
-            else "操作は終了したけれど、結果の内容はまだ確認が必要よ。"
+            else voice_line('browser_voice_unverified')
         )
     if language == "simplified_chinese":
         if execution_status != "succeeded":

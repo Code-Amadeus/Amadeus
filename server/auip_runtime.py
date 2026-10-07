@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from llm.character_voice_lines import voice_line
+
 from server.auip_contract import AUIP_PARTICIPANT_ACTOR
 
 import json
@@ -2155,7 +2157,7 @@ def _render_read_only_projection(
 def _receipt_fact(projection: Mapping[str, Any], *, japanese: bool) -> str:
     if isinstance(projection.get("pending_action"), Mapping):
         return (
-            "直近の操作はアプリの確認待ちで、まだ反映済みとは言えないわ。"
+            voice_line('auip_fact_receipt_pending')
             if japanese
             else "The latest action is still awaiting the app's receipt, so it is not confirmed yet."
         )
@@ -2164,9 +2166,9 @@ def _receipt_fact(projection: Mapping[str, Any], *, japanese: bool) -> str:
         detail = _presentation_label(projection.get("operator_error_detail"), 120)
         if japanese:
             return (
-                f"直近の操作はアプリに受理されなかったわ。理由は「{detail}」。"
+                voice_line('auip_fact_receipt_rejected_reason', detail=detail)
                 if detail
-                else "直近の操作はアプリに受理されなかったわ。"
+                else voice_line('auip_fact_receipt_rejected')
             )
         return (
             f'The app rejected the latest action with reason "{detail}".'
@@ -2176,7 +2178,7 @@ def _receipt_fact(projection: Mapping[str, Any], *, japanese: bool) -> str:
     expired = projection.get("last_expired_action")
     if isinstance(expired, Mapping):
         return (
-            "直近の操作にはアプリから結果が返っていないから、反映されたかは確認できないわ。"
+            voice_line('auip_fact_receipt_missing')
             if japanese
             else "The app returned no result for the latest action, so whether it took effect is unknown."
         )
@@ -2184,12 +2186,12 @@ def _receipt_fact(projection: Mapping[str, Any], *, japanese: bool) -> str:
     if isinstance(accepted, Mapping) and accepted.get("accepted") is True:
         revision = int(accepted.get("resulting_revision") or projection.get("revision") or 0)
         return (
-            f"私の直近の操作はアプリに受理され、状態更新 {revision} まで反映済みよ。"
+            voice_line('auip_fact_receipt_accepted', revision=revision)
             if japanese
             else f"The app accepted my latest action and reflected it in state revision {revision}."
         )
     return (
-        "このセッションでは、私の操作が受理された記録はまだないわ。"
+        voice_line('auip_fact_no_accepted_action')
         if japanese
         else "There is no accepted participant action recorded in this session yet."
     )
@@ -2216,13 +2218,10 @@ def _state_fact(
         facts.append(
             (
                 (
-                    "アプリから、現在の方針がHost発行のController lease中に少なくとも一度は"
-                    "実行されたという検証済みの報告があるわ。"
+                    voice_line('auip_fact_controller_execution_current')
                     if execution_scope == "current_policy"
-                    else "このセッションでは、以前のController方針が少なくとも一度は実行された"
-                    "という検証済みの報告があるわ。現在の方針についての実行証明ではない。"
+                    else voice_line('auip_fact_controller_execution_earlier')
                 )
-                + "個々の実行イベントは現在値や累計値ではないから、その payload を局面全体の数としては扱わない。"
                 if japanese
                 else (
                     "The app has verified that the current policy executed at least once under "
@@ -2247,9 +2246,7 @@ def _state_fact(
         )
         facts.append(
             (
-                "Hostが受理した直近の重要なアプリイベントは "
-                + compact_event
-                + " よ。これは一つの結果イベントで、現在の局面は続く state の事実を優先する。"
+                voice_line('auip_fact_latest_event', event=compact_event)
                 if japanese
                 else "The latest significant app event accepted by the Host is "
                 + compact_event
@@ -2271,22 +2268,22 @@ def _state_fact(
     )
     if has_controller_context and controller_status == "active":
         facts.append(
-            "Hostが発行した操作権限は現在も有効よ。"
+            voice_line('auip_fact_controller_authority_active')
             if japanese
             else "The Host-issued controller authority is currently active."
         )
     elif has_controller_context and controller_status == "stopping":
         facts.append(
-            "現在は操作権限を取り消して、安全な停止完了を待っているところよ。"
+            voice_line('auip_fact_controller_authority_stopping')
             if japanese
             else "Controller authority is being revoked and is awaiting a safe stop."
         )
     elif has_controller_context and controller_status == "idle":
         facts.append(
             (
-                "現在は操作していないけれど、それは過去の確認済み実行結果を取り消すものではないわ。"
+                voice_line('auip_fact_controller_idle_verified')
                 if verified_controller_execution
-                else "現在は操作していないわ。過去に実行したかどうかは、この現在状態だけでは判断できない。"
+                else voice_line('auip_fact_controller_idle_unverified')
             )
             if japanese
             else (
@@ -2329,7 +2326,7 @@ def _state_fact(
         )
         if completed >= len(steps):
             facts.append(
-                f"全 {len(steps)} 段階が完了しているわ。"
+                voice_line('auip_fact_sequence_complete', count=len(steps))
                 if japanese
                 else f"All {len(steps)} steps are complete."
             )
@@ -2337,7 +2334,7 @@ def _state_fact(
             shown_next = next_label or _presentation_label(next_id, 80)
             facts.append(
                 (
-                    f"全 {len(steps)} 段階中 {completed} 段階まで完了していて、次は「{shown_next}」よ。"
+                    voice_line('auip_fact_sequence_progress', count=len(steps), completed=completed, next_step=shown_next)
                     if japanese
                     else f'{completed} of {len(steps)} steps are complete; the next step is "{shown_next}."'
                 )
@@ -2352,7 +2349,7 @@ def _state_fact(
         occupied = sum(1 for row in rows for symbol in row if symbol != empty)
         facts.append(
             (
-                f"盤面は {width}×{height} で、埋まっているマスは {occupied} 個よ。"
+                voice_line('auip_fact_grid', width=width, height=height, occupied=occupied)
                 if japanese
                 else f"The board is {width} by {height}, with {occupied} occupied cells."
             )
@@ -2385,7 +2382,9 @@ def _state_fact(
                     f"{label} is {value}{unit} ({trend}, {'within' if in_range else 'outside'} its safe range)"
                 )
         if rendered:
-            facts.append(("、".join(rendered) + "よ。") if japanese else "; ".join(rendered) + ".")
+            facts.append(
+                voice_line("auip_fact_metrics", metrics="、".join(rendered))
+                if japanese else "; ".join(rendered) + ".")
 
     controller = situations.get("controller/v1")
     if isinstance(controller, Mapping):
@@ -2395,7 +2394,7 @@ def _state_fact(
         if status == "active":
             facts.append(
                 (
-                    f"アプリ内Controllerは「{summary}」という方針で稼働中よ。"
+                    voice_line('auip_fact_controller_policy', policy=summary)
                     if japanese
                     else f'The app-local Controller is active under policy "{summary}."'
                 )
@@ -2403,7 +2402,7 @@ def _state_fact(
         elif status == "stopping":
             facts.append(
                 (
-                    "アプリ内Controllerは安全な引き継ぎ地点で停止中よ。"
+                    voice_line('auip_fact_controller_safe_stop')
                     if japanese
                     else "The app-local Controller is stopping at an application-confirmed safe point."
                 )
@@ -2411,7 +2410,7 @@ def _state_fact(
         elif status == "blocked":
             facts.append(
                 (
-                    f"アプリ内Controllerは「{reason}」のため停止しているわ。"
+                    voice_line('auip_fact_controller_blocked', reason=reason)
                     if japanese
                     else f'The app-local Controller is blocked: "{reason}."'
                 )
@@ -2435,19 +2434,19 @@ def _state_fact(
         if available:
             facts.append(
                 (
-                    f"アプリが私向けに示している操作候補は「{'」「'.join(available)}」よ。"
+                    voice_line('auip_fact_action_candidates', options='」「'.join(available))
                     if japanese
                     else f"The app's action candidates for me are {', '.join(available)}."
                 )
             )
         else:
             facts.append(
-                "アプリが私向けに示している操作候補は今はないわ。"
+                voice_line('auip_fact_no_action_candidates')
                 if japanese
                 else "The app currently lists no action candidates for me."
             )
         facts.append(
-            "これはあなたの画面操作全体の一覧ではないわ。"
+            voice_line('auip_fact_user_controls_distinct')
             if japanese
             else "This is not a complete list of your direct UI controls."
         )
@@ -2456,12 +2455,18 @@ def _state_fact(
     if turn is not None:
         clean_turn = str(turn or "").strip().lower()
         if japanese:
-            owner = {"user": "あなた", "human": "あなた", AUIP_PARTICIPANT_ACTOR: "私", "participant": "私"}.get(
+            participant_owner = voice_line("auip_fact_participant_owner")
+            owner = {
+                "user": "あなた",
+                "human": "あなた",
+                AUIP_PARTICIPANT_ACTOR: participant_owner,
+                "participant": participant_owner,
+            }.get(
                 clean_turn,
                 _presentation_label(turn, 40),
             )
             if owner:
-                facts.append(f"現在の手番は{owner}よ。")
+                facts.append(voice_line('auip_fact_turn_owner', owner=owner))
         else:
             owner = {"user": "you", "human": "you", AUIP_PARTICIPANT_ACTOR: "me", "participant": "me"}.get(
                 clean_turn,
@@ -2474,7 +2479,7 @@ def _state_fact(
         return " ".join(facts)
     revision = int(projection.get("revision") or 0)
     return (
-        f"アプリは接続中で、現在の状態更新は {revision} よ。"
+        voice_line('auip_fact_connected_revision', revision=revision)
         if japanese
         else f"The app is connected at state revision {revision}."
     )
@@ -2541,7 +2546,7 @@ def _qualitative_custom_state_facts(
             continue
         label = _readable_state_label(key)
         rendered.append(
-            f"{label} は {shown_value} よ。"
+            voice_line('auip_fact_custom_state', label=label, value=shown_value)
             if japanese
             else f"{label} is {shown_value}."
         )
@@ -2595,7 +2600,7 @@ def _selected_state_path_fact(
         label = _presentation_label(segments[-1], 64)
         shown = _number_text(value)
         rendered.append(
-            f"現在の {label} は {shown} よ。"
+            voice_line('auip_fact_selected_state', label=label, value=shown)
             if japanese
             else f"The current {label} is {shown}."
         )
@@ -2627,9 +2632,9 @@ def _capability_fact(projection: Mapping[str, Any], *, japanese: bool) -> str:
     ]
     if japanese:
         return (
-            f"このアプリでは、私は{'、'.join(labels_ja)}ができるわ。"
+            voice_line('auip_fact_capabilities', modes='、'.join(labels_ja))
             if labels_ja
-            else "このアプリでは、私が参加できる方法は公開されていないわ。"
+            else voice_line('auip_fact_no_capabilities')
         )
     return (
         f"In this app I can {', '.join(labels_en)}."

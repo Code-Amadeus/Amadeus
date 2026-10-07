@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from llm.character_voice_lines import voice_line
+
 from agent_host.provider_outcome import ProviderOutcomeEvidence
 from server.outcome_verification import (
     ProviderOutcomeVerdict,
@@ -189,7 +191,7 @@ def _mcp_success_summary(provider_report: str, *, display_language: str) -> str:
         return report
     language = str(display_language or "english").strip().lower().replace("-", "_")
     if language in {"ja", "jp", "ja_jp", "japanese"}:
-        return "外部操作は完了し、結果も確認できたわ。"
+        return voice_line('outcome_voice_verified')
     if language in {"zh", "zh_cn", "chinese", "simplified_chinese"}:
         return "外部操作已经完成，结果也已确认。"
     return "The external operation completed and its result was verified."
@@ -200,9 +202,9 @@ def _mcp_failure_summary(execution_status: str, *, display_language: str) -> str
     language = str(display_language or "english").strip().lower().replace("-", "_")
     if language in {"ja", "jp", "ja_jp", "japanese"}:
         return (
-            "外部操作は終了したけれど、結果は確認できなかったわ。"
+            voice_line('outcome_voice_unverified')
             if succeeded
-            else "外部操作は完了しなかったわ。"
+            else voice_line('outcome_voice_failed')
         )
     if language in {"zh", "zh_cn", "chinese", "simplified_chinese"}:
         return "外部操作结束了，但结果未通过验证。" if succeeded else "外部操作没有完成。"
@@ -343,7 +345,7 @@ def verify_auip_application(
     language = str(display_language or "english").strip().lower().replace("-", "_")
     if verified:
         summary = (
-            "AUIPアプリとして検証できたわ。起動結果はHostの接続確認で確定する。"
+            voice_line('outcome_voice_auip_verified')
             if language in {"ja", "jp", "ja_jp", "japanese"}
             else "应用已通过 AUIP 验证；是否真正启动仍以 Host 的连接回执为准。"
             if language in {"zh", "zh_cn", "chinese", "simplified_chinese"}
@@ -352,7 +354,7 @@ def verify_auip_application(
     elif (required_mode and evidence.observed.get("application_verified") is True
             and not mode_supported):
         summary = (
-            "アプリは生成できたけど、依頼された参加方法にはまだ対応できていないわ。"
+            voice_line('outcome_voice_auip_mode_missing')
             if language in {"ja", "jp", "ja_jp", "japanese"}
             else "应用已生成，但还不支持所需的参与方式。"
             if language in {"zh", "zh_cn", "chinese", "simplified_chinese"}
@@ -360,7 +362,7 @@ def verify_auip_application(
         )
     else:
         summary = (
-            "AUIP対応のアプリを確認できなかったため、まだ起動できないわ。"
+            voice_line('outcome_voice_auip_missing')
             if language in {"ja", "jp", "ja_jp", "japanese"}
             else "没有验证到可用的 AUIP 应用，因此尚未启动。"
             if language in {"zh", "zh_cn", "chinese", "simplified_chinese"}

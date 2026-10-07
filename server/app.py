@@ -8,6 +8,8 @@ Usage:
     python -m server.app --port 9077  # custom port
 """
 
+from llm.character_voice_lines import voice_line
+
 import argparse
 import asyncio
 import json
@@ -3103,7 +3105,7 @@ async def _handle_declared_focus(
         await coordinator.publish_snapshot(reason="session_project.cleared")
         if announce_result:
             display = "已回到本会话的 Draft；后续未指定项目的工作会留在这里。"
-            voice_ja = "この会話の Draft に戻したわ。次の指定なしの作業は、ここに残る。"
+            voice_ja = voice_line("focus_voice_drafts")
             if _observer_display_language() == "japanese":
                 display = voice_ja
             _schedule_focus_confirmation(
@@ -3132,7 +3134,7 @@ async def _handle_declared_focus(
         await coordinator.publish_snapshot(reason="session_project.rejected")
         if announce_result:
             display = "项目没有切换成功；我保留了原来的工作位置。"
-            voice_ja = "プロジェクトの切り替えは失敗したわ。元の作業先はそのままにしてある。"
+            voice_ja = voice_line("focus_voice_failed")
             if _observer_display_language() == "japanese":
                 display = voice_ja
             _schedule_focus_confirmation(
@@ -3146,7 +3148,7 @@ async def _handle_declared_focus(
     if announce_result:
         project_name = str(chosen.get("projectName") or "").strip() or "项目"
         display = f"已经确认切换到“{project_name}”项目，接下来的项目工作会从这里继续。"
-        voice_ja = f"「{project_name}」プロジェクトへの切り替えを確認したわ。次の作業はここから続ける。"
+        voice_ja = voice_line("focus_voice_project", project_name=project_name)
         if _observer_display_language() == "japanese":
             display = voice_ja
         _schedule_focus_confirmation(

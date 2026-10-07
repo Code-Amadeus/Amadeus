@@ -19,6 +19,8 @@ on the WorkItem.
 
 from __future__ import annotations
 
+from llm.character_voice_lines import voice_line
+
 import logging
 import time
 import uuid
@@ -361,9 +363,7 @@ class AuipLaunchCoordinator:
         candidates = self.candidates(session_id)
         japanese = str(language or "").lower().startswith("ja")
         capability_boundary = (
-            "確認済みの対話型アプリでは観戦・共同参加・委任参加ができる。候補が none でも、"
-            "それは現在この会話で起動可能なアプリを確認できていないという意味であり、"
-            "『私はアプリを操作できない』という恒久的な能力否定に言い換えない。"
+            voice_line('auip_fact_launch_capability')
             if japanese
             else "Amadeus can observe, collaborate in, or take delegated participation "
             "in verified interactive applications. If the candidate list is none, say "
@@ -1440,9 +1440,9 @@ class AuipLaunchCoordinator:
 
         japanese = current_assistant_language() == "japanese"
         summary = (
-            "AUIP対応のアプリを確認できなかったため、ゲームは開いていないわ。"
+            voice_line('auip_voice_launch_missing')
             if japanese and reason in {"no_launchable_auip_app", "deferred_delivery_not_launchable"}
-            else "アプリを開けなかったため、ゲームはまだ開始していないわ。"
+            else voice_line('auip_voice_launch_failed')
             if japanese
             else "I could not verify an AUIP-capable application, so nothing was opened."
             if reason in {"no_launchable_auip_app", "deferred_delivery_not_launchable"}

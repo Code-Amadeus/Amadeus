@@ -7,6 +7,8 @@ visible report. Full DOM never enters main chat history.
 
 from __future__ import annotations
 
+from llm.character_voice_lines import voice_line
+
 from server.assistant_language import current_assistant_language
 
 import asyncio
@@ -336,7 +338,7 @@ def _deterministic_action_task(action: str, ref: str, item: dict[str, Any]) -> s
 def _fallback_visible_report(context: dict[str, Any]) -> str:
     if current_assistant_language() == "english":
         return "I checked the current page and kept the browser branch ready for the next instruction."
-    return "今のページは確認できたけど、具体的な操作対象を特定できなかったわ。"
+    return voice_line('browser_voice_target_unknown')
 
 
 def _parse_json_object(text: str) -> dict[str, Any] | None:

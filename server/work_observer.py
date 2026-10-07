@@ -14,6 +14,8 @@ This runtime is intentionally low priority:
 
 from __future__ import annotations
 
+from llm.character_voice_lines import voice_line
+
 import asyncio
 import logging
 import time
@@ -979,7 +981,7 @@ class WorkObserverCoordinator:
             "简体中文",
         }:
             return "这轮任务到这里已经结束。"
-        return "これで今回の作業は終わりよ。"
+        return voice_line('work_voice_closed')
 
     async def _submit_narration(self, decision: dict[str, Any]) -> tuple[bool, str]:
         """Get a real enqueue receipt before publishing a decision as spoken."""
@@ -1229,8 +1231,8 @@ class WorkObserverCoordinator:
             duration_ja = duration_zh = duration_en = ""
         if language == "japanese":
             if duration_ja:
-                return f"処理は続いているけど、確認できる新しい節目は{duration_ja}届いていないわ。"
-            return "まだ処理は続いているわ。今のところ、確認できる新しい節目は届いていない。"
+                return voice_line('work_voice_monitor_duration', duration=duration_ja)
+            return voice_line('work_voice_monitor')
         if language == "english":
             if duration_en:
                 return f"The work is still running. No new verified milestone has arrived {duration_en}."
@@ -1975,14 +1977,12 @@ class WorkObserverCoordinator:
                 excerpt = self._terminal_result_excerpt(summary)
                 if excerpt:
                     return (
-                        "作業は完了したわ。最終報告では"
-                        f"「{excerpt}」という結果になっている。"
-                        "詳しい内容はカードに残してある。"
+                        voice_line('work_voice_terminal_excerpt', excerpt=excerpt)
                     )
                 body = ""
             if not body:
-                return "こちらで確認したわ。この作業は終わっている。"
-            return f"こちらで確認したわ。この作業は終わった。概要は「{body}」。詳しい根拠はカードに残してある。"
+                return voice_line('work_voice_terminal')
+            return voice_line('work_voice_terminal_summary', summary=body)
         if language == "english":
             if body and not text_matches_assistant_language(body, language):
                 excerpt = self._terminal_result_excerpt(summary)
