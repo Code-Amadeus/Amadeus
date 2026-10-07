@@ -8,8 +8,6 @@ Usage:
     python -m server.app --port 9077  # custom port
 """
 
-from llm.character_voice_lines import voice_line
-
 import argparse
 import asyncio
 import json
@@ -31,6 +29,8 @@ from typing import Any, TYPE_CHECKING
 # whole CPU core. 1 ms still keeps workers warm across back-to-back CPU
 # inference. This must run before anything imports torch.
 os.environ.setdefault("KMP_BLOCKTIME", "1")
+
+from llm.character_voice_lines import voice_line
 
 if TYPE_CHECKING:
     pass
