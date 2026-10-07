@@ -54,7 +54,7 @@ class _CaptureComplete(BaseException):
     """Stop at the model boundary, before response handling or execution."""
 
 
-def _capture_prompts() -> dict[str, str]:
+def _capture_prompts(character_id: str = "kurisu", override: str = "", startup_facts: dict | None = None) -> dict[str, str]:
     # This must run only in the isolated --capture process: callers in pytest
     # retain their real module identities and settings after capture terminates.
     sys.path.insert(0, str(ROOT))
@@ -63,7 +63,9 @@ def _capture_prompts() -> dict[str, str]:
 
     language = ModuleType("tts.pipeline")
     language.TTS_OUTPUT_LANGUAGE = "日文"
-    settings_reader = environment.EnvironmentReader(SYNTHETIC_ENV)
+    capture_env = SYNTHETIC_ENV | {"AMADEUS_CHARACTER_ID": character_id,
+                                  "AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA": override}
+    settings_reader = environment.EnvironmentReader(capture_env)
     output: dict[str, str] = {}
 
     def forbidden_io(*_args, **_kwargs):
@@ -73,7 +75,7 @@ def _capture_prompts() -> dict[str, str]:
         # Windows creates a private socketpair for the event loop. Initialize
         # it before denying connections; all production I/O remains guarded.
         runner.get_loop()
-        stack.enter_context(patch.dict("os.environ", SYNTHETIC_ENV, clear=True))
+        stack.enter_context(patch.dict("os.environ", capture_env, clear=True))
         stack.enter_context(patch.object(environment, "load_project_environment",
                                         return_value=settings_reader))
         stack.enter_context(patch.dict(sys.modules, {"tts.pipeline": language}))
@@ -82,6 +84,17 @@ def _capture_prompts() -> dict[str, str]:
         stack.enter_context(patch("socket.create_connection", forbidden_io))
         stack.enter_context(patch("subprocess.Popen", forbidden_io))
         stack.enter_context(patch("platform.system", return_value="Windows"))
+
+        if character_id == "mira":
+            import importlib.resources as resources
+            original_files = resources.files
+            class SyntheticResources:
+                def joinpath(self, name):
+                    if name == "mira.toml":
+                        return ROOT / "tests/fixtures/mira_character.toml"
+                    return original_files("characters").joinpath(name)
+            stack.enter_context(patch.object(resources, "files", side_effect=lambda package:
+                SyntheticResources() if package == "characters" else original_files(package)))
 
         from config import settings
         from llm import prompts
@@ -108,7 +121,7 @@ def _capture_prompts() -> dict[str, str]:
         stack.enter_context(patch.object(runtime, "list_providers", return_value=PROVIDERS))
         # Empty override is already the synthetic startup value. Do not patch
         # prompt values or their renderers: migration must exercise those paths.
-        assert prompts.get_character_prompt_config()[prompts.CHARACTER_PROMPT_SETTING] == ""
+        assert prompts.get_character_prompt_config()[prompts.CHARACTER_PROMPT_SETTING] == override
 
         for lang, tts_language in (("ja", "日文"), ("en", "英文")):
             language.TTS_OUTPUT_LANGUAGE = tts_language
@@ -358,13 +371,37 @@ def _capture_prompts() -> dict[str, str]:
         pack = vn_runtime._build_retrospective_pack(line, {}, recent_lines=[line])
         output["vn/runtime/retrospective/messages"] = _json(vn_prompts.retrospective_prompt(vn_runtime.profile, pack))
 
+        if startup_facts is not None:
+            from llm import character_prompts as characters
+            from core import character_rag as rag
+            startup_facts["identity"] = characters.character_identity()
+            startup_facts["values"] = dict(characters.active_character().values)
+            language.TTS_OUTPUT_LANGUAGE = "日文"
+            startup_facts["editor"] = prompts.get_character_prompt_config()
+            language.TTS_OUTPUT_LANGUAGE = "英文"
+            startup_facts["english_editor"] = prompts.get_character_prompt_config()
+            settings.RAG_ENABLED = True
+            rag_calls = []
+            service = SimpleNamespace(reference=lambda query: rag_calls.append(query) or "Synthetic Kurisu corpus")
+            with patch.object(rag, "get_character_rag", return_value=service):
+                startup_facts["rag_result"] = runner.run(rag.role_character_reference("synthetic topic"))
+            startup_facts["rag_calls"] = rag_calls
+            settings.CHARACTER_ID = "missing-after-startup"
+            characters.load.cache_clear()
+            startup_facts["identity_after_configuration_change"] = characters.character_identity(character_id)
+            startup_facts["text_after_cache_clear"] = characters.text("ja_identity", character_id=character_id)
+
     assert output and all(isinstance(value, str) for value in output.values())
     return output
 
 
-def _isolated_capture() -> dict[str, str]:
+def _isolated_capture(character_id: str = "kurisu", override: str = "", *, include_startup: bool = False) -> dict:
+    arguments = [sys.executable, "-X", "utf8", str(Path(__file__).resolve()), "--capture",
+                 "--character", character_id, "--override", override]
+    if include_startup:
+        arguments.append("--startup-facts")
     completed = subprocess.run(
-        [sys.executable, "-X", "utf8", str(Path(__file__).resolve()), "--capture"],
+        arguments,
         cwd=ROOT, capture_output=True, encoding="utf-8", timeout=60)
     assert completed.returncode == 0, completed.stderr
     return json.loads(completed.stdout)
@@ -379,6 +416,14 @@ def test_character_prompts_match_pre_migration_utf8_bytes(captured_prompts):
     expected = json.loads(FIXTURE.read_text(encoding="utf-8"))["prompts"]
     assert captured_prompts.keys() == expected.keys(), "snapshot coverage changed"
     for name, value in captured_prompts.items():
+        if name == "llama/preheat/messages":
+            old_messages = json.loads(expected[name])
+            new_messages = json.loads(value)
+            assert new_messages[1:] == old_messages[1:]
+            assert new_messages[0] == {"role": "system", "content": captured_prompts[
+                "main/en/base/intent=1,amend=1,retract=1"]}
+            assert new_messages[0] != old_messages[0]
+            continue
         assert value.encode("utf-8") == expected[name].encode("utf-8"), name
 
 
@@ -387,9 +432,14 @@ if __name__ == "__main__":
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--capture", action="store_true", help=argparse.SUPPRESS)
     mode.add_argument("--record", action="store_true", help="explicitly replace the committed baseline")
+    parser.add_argument("--character", default="kurisu")
+    parser.add_argument("--override", default="")
+    parser.add_argument("--startup-facts", action="store_true")
     args = parser.parse_args()
     if args.capture:
-        sys.stdout.write(_json(_capture_prompts()))
+        facts = {} if args.startup_facts else None
+        captured = _capture_prompts(args.character, args.override, facts)
+        sys.stdout.write(_json({"prompts": captured, "startup": facts} if facts is not None else captured))
     else:
         document = {"baseline": BASELINE, "inputs": {
             "providers": list(PROVIDERS), "coding_provider": "codex", "execution_provider": "openclaw",

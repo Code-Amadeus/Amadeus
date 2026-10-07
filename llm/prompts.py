@@ -10,7 +10,7 @@
 """
 
 from llm.character_prompts import (
-    MAX_CHARACTER_PROMPT_CHARS, active_character_id, character_override, render, text,
+    DEFAULT_CHARACTER_ID, MAX_CHARACTER_PROMPT_CHARS, active_character_id, character_override, render, text,
 )
 
 from config import settings as _settings
@@ -52,7 +52,8 @@ _JA_OUTPUT_RULES = (
 _JA_BASE = (
     _JA_IDENTITY + _JA_LANGUAGE_RULES + "3) " + _JA_CHARACTER_RULE + _JA_OUTPUT_RULES
 )
-DEFAULT_CHARACTER_PROMPT_JA = (_JA_IDENTITY + _JA_CHARACTER_RULE).strip()
+DEFAULT_CHARACTER_PROMPT_JA = (text("ja_identity", character_id=DEFAULT_CHARACTER_ID)
+    + text("ja_character_rule", character_id=DEFAULT_CHARACTER_ID)).strip()
 CHARACTER_PROMPT_SETTING = "main_chat_character_prompt_ja"
 
 
@@ -78,7 +79,7 @@ def get_character_prompt_config() -> dict:
         "main_chat_character_prompt_preview": {
             "default": DEFAULT_CHARACTER_PROMPT_JA,
             "effective": _character_prompt_ja or DEFAULT_CHARACTER_PROMPT_JA,
-            "active": current_assistant_language() == "japanese",
+            "active": active_character_id() == DEFAULT_CHARACTER_ID and current_assistant_language() == "japanese",
         },
     }
 
@@ -115,7 +116,7 @@ _JA_CONTROL_SEMANTICS = (
     "後段で intent 属性が要求される場合は intent=\"report\" でホスト台帳へ問い合わせ、"
     "ない場合だけ制御アクションを出さずに答える。"
     "task値には「何を・どうする」を含む完全な指示文を書くこと（場所だけや名詞のみはNG）。"
-    "task値は、別の実行providerが会話履歴なしで理解できる自己完結した指示にすること。主対話のあなた自身が依頼対象なら${ja_name}と明記し、未解決の『あなた』『自分』を残さない。それ以外では${ja_name}/${short_name}/${work_title}/あなた自身の身元・専門・設定を task に足してはいけない。"
+    "task値は、別の実行providerが会話履歴なしで理解できる自己完結した指示にすること。主対話のあなた自身が依頼対象なら${ja_name}と明記し、未解決の『あなた』『自分』を残さない。それ以外では${role_identity_examples}/あなた自身の身元・専門・設定を task に足してはいけない。"
     "「私のためにXを探して」は「Xを探す」という意味であり、「${ja_name}のXを探す」と解釈しない。"
     "provider の選択例も [Provider routing] にある実際の登録状況に従うこと。"
     "実行結果は[RESULT]メッセージとして届くので、それを自然な会話として報告すること。"
@@ -640,8 +641,9 @@ def get_system_prompt(
 ) -> str:
     """Return the current role prompt with its established language contract.
 
-    use_character_override=False preserves the built-in role for inherited
-    experience branches. The override changes only Japanese identity/personality.
+    The override belongs to Kurisu's Japanese Main Chat and inherited AUIP/
+    Browser requests. Explicitly disabling it uses the selected role's built-in
+    values. VN and work observers keep their own character prompt sources.
     """
     try:
         import tts.pipeline as _p

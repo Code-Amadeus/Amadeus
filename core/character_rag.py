@@ -237,7 +237,8 @@ def get_character_rag() -> CharacterRAG:
 
 async def role_character_reference(query: str) -> str:
     from config import settings
+    from llm.character_prompts import DEFAULT_CHARACTER_ID, active_character_id
 
-    if not settings.RAG_ENABLED:
+    if active_character_id() != DEFAULT_CHARACTER_ID or not settings.RAG_ENABLED:
         return ""
     return await asyncio.to_thread(get_character_rag().reference, query)

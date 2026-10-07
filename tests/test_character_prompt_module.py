@@ -56,7 +56,7 @@ def test_malformed_selected_file_fails_without_default_fallback(monkeypatch, tmp
     document = tomllib.loads((ROOT / "characters/kurisu.toml").read_text(encoding="utf-8"))
     document["names"]["character_id"] = "invalid-test"
     if failure == "missing_key":
-        del document["texts"]["ja_identity"]
+        del document["names"]["short_name"]
     if failure == "wrong_type":
         document["texts"]["ja_identity"] = 42
     if failure == "extra_table":

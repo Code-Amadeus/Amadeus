@@ -171,7 +171,7 @@ def _story_context_lines(context_pack: dict[str, Any]) -> list[str]:
 
 def _orientation_lines(orientation: Any) -> list[str]:
     if not isinstance(orientation, dict) or not orientation:
-        return ["No retrospective orientation yet. Stay skeptical and avoid overclaiming."]
+        return [text("vn_no_orientation")]
     lines: list[str] = []
     for key, title in [
         ("working_assumptions", "working assumptions"),
@@ -189,7 +189,7 @@ def _orientation_lines(orientation: Any) -> list[str]:
         value = str(orientation.get(key) or "").strip()
         if value:
             lines.append(f"{title}: {value}")
-    return lines or ["No retrospective orientation yet. Stay skeptical and avoid overclaiming."]
+    return lines or [text("vn_no_orientation")]
 
 
 def lookahead_prompt(profile: VNProfile, context_pack: dict[str, Any]) -> list[dict[str, str]]:

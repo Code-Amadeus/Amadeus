@@ -1,6 +1,6 @@
 ---
 name: auip-authoring
-description: Add Amadeus AUIP v0 support to a local interactive web app so the character can observe semantic state and safely participate through typed actions. Use for games, simulations, or interactive tools when the user asks Amadeus/Kurisu to watch, comment, play, or operate them. Do not use for static pages, reports, ordinary sites, or unrelated code work.
+description: Add Amadeus AUIP v0 support to a local interactive web app so the character can observe semantic state and safely participate through typed actions. Use for games, simulations, or interactive tools when the user asks the main assistant to watch, comment, play, or operate them. Do not use for static pages, reports, ordinary sites, or unrelated code work.
 ---
 
 # AUIP authoring
