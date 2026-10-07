@@ -150,6 +150,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
   const [projects, setProjects] = useState<ChatProjectSummary[]>([])
   const [activeSession, setActiveSession] = useState<string | null>(null)
+  const [currentCharacterId, setCurrentCharacterId] = useState('')
   const [sessionReady, setSessionReady] = useState(false)
   const [sessionSwitching, setSessionSwitching] = useState(false)
   const [sessionSelectionNotice, setSessionSelectionNotice] = useState('')
@@ -221,6 +222,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     const res = await send('session.list', {})
     const list = Array.isArray(res.sessions) ? res.sessions as unknown as ChatSessionSummary[] : []
     setSessions(list)
+    setCurrentCharacterId(typeof res.current_character_id === 'string' ? res.current_character_id : '')
     if (Array.isArray(res.projects)) setProjects(res.projects as unknown as ChatProjectSummary[])
     return {
       list,
@@ -234,14 +236,23 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     if (Array.isArray(res.projects)) setProjects(res.projects as unknown as ChatProjectSummary[])
     const session = res.session as ChatSessionSummary | undefined
     const sessionId = String(res.current_session_id || session?.id || '')
-    if (sessionId) {
-      if (activeSessionRef.current && activeSessionRef.current !== sessionId) {
+    if (sessionId || 'current_session_id' in res) {
+      if (activeSessionRef.current !== sessionId) {
         setWorkActivities([])
       }
       activeSessionRef.current = sessionId
-      setActiveSession(sessionId)
+      setActiveSession(sessionId || null)
+      if (!sessionId) {
+        activeStreamTurnIdRef.current = ''
+        lastAssistantTurnIdRef.current = ''
+        interruptedTurnIdsRef.current.clear()
+        setAttentionRequests([])
+        setAttentionResolving('')
+        setAttentionError('')
+        setArtifactContext(null)
+      }
     }
-    if (Array.isArray(res.messages)) {
+    if (Array.isArray(res.messages) || ('current_session_id' in res && !sessionId)) {
       chatTranslationGenerationRef.current += 1
       chatTranslationRequestedRef.current.clear()
       setChatTranslations({})
@@ -1154,12 +1165,13 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       const next = Array.isArray(res.sessions) ? res.sessions as unknown as ChatSessionSummary[] : sessions.filter(s => s.id !== id)
       setSessions(next)
       if (activeSession === id) {
-        await restoreOwnedSession(next, res.current_character_id, String(res.current_session_id || ''))
+        const selected = automaticSessionSelection(next, res.current_character_id, String(res.current_session_id || ''))
+        if (selected) await loadSession(selected.id)
       }
     } catch (error) {
       setSessionSelectionNotice(error instanceof Error ? error.message : 'Could not switch chats.')
     }
-  }, [activeSession, restoreOwnedSession, selectSession, sessions])
+  }, [activeSession, loadSession, selectSession, sessions])
 
   const handleRenameSession = useCallback(async (id: string, currentTitle: string) => {
     const title = window.prompt('Rename session', currentTitle)?.trim()
@@ -1239,6 +1251,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
         sessions={sessions}
         projects={projects}
         activeId={activeSession}
+        currentCharacterId={currentCharacterId}
         artifactViewId={projectViewId === DRAFT_APPS_VIEW_ID ? 'drafts' : projectViewId}
         onSelect={id => { void loadSession(id, true) }}
         onNew={() => { setProjectViewId(''); void handleNewSession() }}

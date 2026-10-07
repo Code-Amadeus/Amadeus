@@ -38,6 +38,7 @@ interface Props {
   sessions: ChatSessionSummary[]
   projects: ChatProjectSummary[]
   activeId: string | null
+  currentCharacterId: string
   artifactViewId: string
   onSelect: (id: string) => void
   onNew: () => void
@@ -95,17 +96,21 @@ function formatSessionTime(value: number | undefined): string {
 function SessionRow({
   session,
   active,
+  currentCharacterId,
   onSelect,
   onRename,
   onDelete,
 }: {
   session: ChatSessionSummary
   active: boolean
+  currentCharacterId: string
   onSelect: () => void
   onRename: () => void
   onDelete: () => void
 }) {
   const { t } = useI18n()
+  const foreignCharacterId = currentCharacterId && session.character_id !== currentCharacterId
+    ? session.character_id : ''
   const detail = session.context?.bindingKind === 'work_item'
     ? session.context.workItemTitle || 'Task'
     : session.message_count
@@ -134,18 +139,18 @@ function SessionRow({
         onDoubleClick={onRename}
         className="flex-1 min-w-0 text-left border-none bg-transparent cursor-pointer"
         style={{ padding: '7px 5px 7px 9px', color: 'inherit' }}
-        title={session.character_id ? `${session.title}\n${t('Character')}: ${session.character_id}` : session.title}
+        title={foreignCharacterId ? `${session.title}\n${t('Character')}: ${foreignCharacterId}` : session.title}
       >
         <span className="block truncate" style={{ fontSize: 11, fontWeight: active ? 600 : 500 }}>
           {session.title || t('Untitled chat')}
         </span>
         <span className="flex items-center gap-1 min-w-0" style={{ marginTop: 2, color: 'var(--faint)', fontSize: 9 }}>
           <span className="truncate">{detail}</span>
-          {session.character_id && (
+          {foreignCharacterId && (
             <>
               <span aria-hidden="true">·</span>
-              <span className="shrink-0" title={`${t('Character')}: ${session.character_id}`}>
-                {session.character_id}
+              <span className="shrink-0" title={`${t('Character')}: ${foreignCharacterId}`}>
+                {foreignCharacterId}
               </span>
             </>
           )}
@@ -171,6 +176,7 @@ export default function ChatSessionRail({
   sessions,
   projects,
   activeId,
+  currentCharacterId,
   artifactViewId,
   onSelect,
   onNew,
@@ -494,6 +500,7 @@ export default function ChatSessionRail({
                   key={session.id}
                   session={session}
                   active={session.id === activeId}
+                  currentCharacterId={currentCharacterId}
                   onSelect={() => onSelect(session.id)}
                   onRename={() => onRename(session.id, session.title)}
                   onDelete={() => onDelete(session.id)}

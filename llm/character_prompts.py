@@ -118,7 +118,7 @@ def _neutral_texts(names: Mapping[str, str]) -> dict[str, str]:
         "vn_prior_speech": f"Recent player dialogue is history, not an unanswered request. {name}'s prior speech is only {name}'s own commentary, not game fact.",
         "vn_retrospective_posture": f"This is not a local summary lane. Your main job is to shape the character's next interpretive posture: what {name} is suspicious about, what {name} is emotionally carrying, what {name} may reasonably misunderstand, and what kind of future lines deserve attention.",
         "vn_tts_tone": f"Keep {name}'s tone.",
-        "vn_mystery_assumption": f"复活秘术像规则核心，{name} 会自然想拆条件和代价。",
+        "vn_mystery_assumption": "复活秘术像规则核心，其条件和代价仍需依据已显示文本确认。",
         "vn_mystery_style": f"更偏分析：把直觉落到具体可检验点上，但保留 {name} 的口吻。",
         "vn_no_orientation": "No retrospective orientation yet. Avoid overclaiming.",
     }
