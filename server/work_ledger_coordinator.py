@@ -43,6 +43,7 @@ from agent_host.provider_identity import (
     PARENT_CONTEXT_DELIVERY_METADATA_KEY,
     SOURCE_CONTEXT_SCOPE_METADATA_KEY,
     parent_conversation_context_delivery,
+    request_main_role_name,
     validated_parent_context_delivery,
 )
 from agent_host.provider_types import (
@@ -948,6 +949,24 @@ class WorkLedgerCoordinator:
                 "additional requirement is still unconfirmed; fulfillment is not verified."))
         return decision
 
+    def continuation_main_role_name(self, attempt: RunAttemptRecord) -> str:
+        """Retain the accepted Operation's role across retries and Resume."""
+        operation = self.store.get_operation(attempt.operation_id)
+        if operation is None or operation.work_item_id != attempt.work_item_id:
+            raise WorkLedgerConflict("continuation has no durable Work operation")
+        if operation.origin_effect_id:
+            if self._work_control is None:
+                raise WorkLedgerConflict("accepted Work identity owner is unavailable")
+            return self._work_control.accepted_main_role_name(operation.origin_effect_id)
+        # Older standalone intake has no Control origin. Its Runtime result is
+        # the existing durable request projection, not a new role lookup.
+        metadata = attempt.metadata
+        if MAIN_ROLE_NAME_METADATA_KEY not in metadata:
+            provider_result = metadata.get("provider_result")
+            if isinstance(provider_result, dict) and MAIN_ROLE_NAME_METADATA_KEY in provider_result:
+                metadata = provider_result
+        return request_main_role_name(metadata)
+
     def prepare_request(
         self,
         request: ProviderRunRequest,
@@ -1294,6 +1313,10 @@ class WorkLedgerCoordinator:
             request.cwd = existing_item.workspace_path or None
         if not intake_plan.creates_operation:
             assert existing_item is not None and previous_attempt is not None
+            if continuation == "retry":
+                metadata[MAIN_ROLE_NAME_METADATA_KEY] = self.continuation_main_role_name(
+                    previous_attempt
+                )
             continuation_lineage = self._validate_continuation_instruction(
                 existing_item,
                 previous_attempt,

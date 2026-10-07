@@ -1544,6 +1544,11 @@ class WorkControl:
         plan = json.loads(admission["plan_json"])
         return self._role_identity(plan["evidence"])
 
+    def accepted_main_role_name(self, effect_id: str) -> str:
+        """Read the frozen role without reconstructing a new execution request."""
+        effect, _payload = self._validate_effect(effect_id)
+        return self._accepted_role_identity(effect)["display_name"]
+
     def provider_request(self, effect_id: str) -> ProviderRunRequest:
         """Reconstruct the bounded C2 Provider request from accepted facts."""
 

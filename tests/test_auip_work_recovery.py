@@ -547,7 +547,9 @@ async def test_app_boot_failure_retries_same_work_operation_with_host_feedback(
     previous_isolation = settings.WORK_WORKTREE_ISOLATION
     settings.WORK_WORKTREE_ISOLATION = False
     try:
-        first = await runtime.start(_request(adapter, root))
+        request = _request(adapter, root)
+        request.metadata["main_role_name"] = "Mira"
+        first = await runtime.start(request)
         await asyncio.wait_for(adapter.first_ready.wait(), timeout=5)
         work = first.metadata["work"]
         accepted_requirement = (
@@ -600,6 +602,7 @@ async def test_app_boot_failure_retries_same_work_operation_with_host_feedback(
             "boot": None,
         }
         assert attempts[0].operation_id == attempts[1].operation_id
+        assert [request.metadata["main_role_name"] for request in adapter.requests] == ["Mira", "Mira"]
         marker = attempts[0].metadata["host_auip_bundle_validation"]
         assert marker["recovery_state"] == "started"
         assert marker["successor_attempt_id"] == attempts[1].attempt_id
@@ -640,6 +643,9 @@ async def test_control_work_effect_can_start_its_claimed_auip_repair(
         validate,
     )
     async with _host(tmp_path, source=source, task=task) as host:
+        host.control.source_role_identity_resolver = lambda _session: {
+            "character_id": "testchar", "display_name": "Mira",
+        }
         host.adapter.manifest = replace(
             host.adapter.manifest,
             capabilities=replace(
@@ -751,6 +757,7 @@ async def test_control_work_effect_can_start_its_claimed_auip_repair(
         assert requests[1].metadata["source"] == "control_work_effect"
         assert requests[1].recovery is not None
         assert requests[1].recovery.reason == "auip_validation_failed"
+        assert [request.metadata["main_role_name"] for request in requests] == ["Mira", "Mira"]
 
 
 @pytest.mark.asyncio
