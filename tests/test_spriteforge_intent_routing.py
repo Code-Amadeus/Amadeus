@@ -51,7 +51,7 @@ def test_headless_bridge_resolves_before_render_event_fanout() -> None:
 
     bridge.trigger_spriteforge_intent("thinking")
 
-    assert emitted[0][0] == Method.RENDER_SPRITEFORGE_INTENT
+    assert emitted[0][0] == Method.RENDER_CHARACTER_INTENT
     assert emitted[0][1]["label"] in {"speaking_trans", "thinking_trans"}
     assert emitted[0][1]["semantic_label"] == "thinking"
 
@@ -63,11 +63,11 @@ async def _assert_work_activity_bypass_uses_authoritative_router() -> None:
         captured.append(params)
 
     coordinator = WorkActivityCoordinator()
-    bus.on(Method.RENDER_SPRITEFORGE_INTENT, capture)
+    bus.on(Method.RENDER_CHARACTER_INTENT, capture)
     try:
         await coordinator._emit_behavior_intent(reason="tool.call", run_id="run-routing")
     finally:
-        bus.off(Method.RENDER_SPRITEFORGE_INTENT, capture)
+        bus.off(Method.RENDER_CHARACTER_INTENT, capture)
 
     assert len(captured) == 1
     assert captured[0]["label"] in {"speaking_trans", "thinking_trans"}

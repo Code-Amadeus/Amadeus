@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Preload script — exposes minimal backend IPC to the renderer via contextBridge.
  */
 
@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld('amadeus', {
   clearChatAvatar: (role: 'user' | 'assistant'): Promise<{ ok: boolean; error?: string; avatars?: { user: string; assistant: string } }> => ipcRenderer.invoke('chat-avatars.clear', role),
   focusMainWindow: (): Promise<boolean> => ipcRenderer.invoke('main-window.focus'),
   selectProjectDirectory: (): Promise<{ ok: boolean; cancelled: boolean; path: string; detail: string }> => ipcRenderer.invoke('project-directory.select'),
+  selectVisualFile: (kind: 'model' | 'core', startPath?: string): Promise<{ ok: boolean; cancelled: boolean; path: string; detail: string }> => ipcRenderer.invoke('visual-file.select', kind, startPath),
   selectVNFile: (kind: 'game' | 'agent' | 'hook' | 'script', startPath?: string): Promise<{ ok: boolean; cancelled: boolean; path: string; detail: string }> => ipcRenderer.invoke('vn-file.select', kind, startPath),
   openVNHelp: (page: 'agent' | 'scripts'): Promise<void> => ipcRenderer.invoke('vn-help.open', page),
   openElectronSlice: (bridge: { assetPort: number; bridgePort: number; assetVersion?: string; graphicsProfile: string; renderMaxFps: number; renderTextureSampling?: boolean; renderMaxResolution: number | null; sliceBounds?: { x: number; y: number; width: number; height: number } }): Promise<boolean> => ipcRenderer.invoke('electron-slice.open', bridge),

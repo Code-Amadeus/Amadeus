@@ -7,7 +7,7 @@ const vm = require("node:vm");
 const rendererPath = process.argv[2];
 const source = fs.readFileSync(rendererPath, "utf8");
 const start = source.indexOf("class SpriteForgeRuntime {");
-const end = source.indexOf("\n  // Live2DRenderer", start);
+const end = source.indexOf("\n  // Character rendering adapters", start);
 assert.ok(start >= 0 && end > start, "SpriteForgeRuntime source must be extractable");
 vm.runInThisContext(
   `${source.slice(start, end)}\nglobalThis.SpriteForgeRuntime = SpriteForgeRuntime;`,

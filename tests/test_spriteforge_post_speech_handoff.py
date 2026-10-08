@@ -32,10 +32,10 @@ def test_wallpaper_surface_receives_the_presentation_handoff_contract() -> None:
     calls: list[tuple[str, str | dict, dict | None]] = []
 
     class Host:
-        def trigger_spriteforge_intent(self, label: str, options: dict) -> None:
+        def trigger_character_intent(self, label: str, options: dict) -> None:
             calls.append(("intent", label, options))
 
-        def release_spriteforge(self, options: dict) -> None:
+        def release_character(self, options: dict) -> None:
             calls.append(("release", options, None))
 
     intent = {
@@ -45,12 +45,12 @@ def test_wallpaper_surface_receives_the_presentation_handoff_contract() -> None:
     release = {"presentation_handoff": "after_speech"}
     WallpaperHandler._apply_render_event(
         Host(),
-        Method.RENDER_SPRITEFORGE_INTENT,
+        Method.RENDER_CHARACTER_INTENT,
         intent,
     )
     WallpaperHandler._apply_render_event(
         Host(),
-        Method.RENDER_SPRITEFORGE_RELEASE,
+        Method.RENDER_CHARACTER_RELEASE,
         release,
     )
 

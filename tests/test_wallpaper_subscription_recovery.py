@@ -87,3 +87,26 @@ vm.runInContext(fragment, context);
     result = subprocess.run(["node", "-e", script], cwd=root,
         capture_output=True, text=True, encoding="utf-8", check=True, timeout=10)
     assert json.loads(result.stdout) == {"initialReads":1, "reads":2, "token":"second"}
+
+
+def test_wallpaper_reconnect_refreshes_status_auth_and_disconnect_closes_local_mouth():
+    root = Path(__file__).resolve().parents[1]
+    script = r'''
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const source=fs.readFileSync('render/web/wallpaper_engine_bridge.js','utf8');
+const fragment=source.slice(source.indexOf('  var _es = null;'),source.indexOf('  function patchPixiOpaque'));
+let token='old',postings=[],speech=[];const sockets=[];
+const current={surface:'wallpaper',state:'ready',runtime_id:'new-host'};
+const context={window:{wallpaperApp:{setSpeaking:v=>speech.push(['speaking',v]),setMouth:v=>speech.push(['mouth',v])},
+ renderApp:{getCharacterStatus:()=>current}},endpoint:()=>'/events',applyCall:()=>{},
+ resolveBridgePort:async()=>{await Promise.resolve();token='new';},
+ postCharacterStatus:status=>postings.push({token,status}),clientLog:()=>{},console:{warn:()=>{},error:()=>{}},
+ EventSource:class{constructor(){sockets.push(this);}close(){}},};
+vm.createContext(context);vm.runInContext(fragment,context);
+(async()=>{context.connectEvents();await sockets[0].onopen();
+ assert.deepEqual(postings,[{token:'new',status:current}]);sockets[0].onerror();
+ assert.deepEqual(speech,[['speaking',false],['mouth',0]]);
+})().catch(error=>{console.error(error);process.exit(1);});
+'''
+    subprocess.run(["node", "-e", script], cwd=root, capture_output=True,
+                   text=True, encoding="utf-8", check=True, timeout=10)

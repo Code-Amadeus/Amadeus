@@ -36,6 +36,9 @@ class WallpaperHandler(RequestHandler):
         self._project_root: Path | None = None
         self._render_bridge = None
         self._wallpaper_animator = None
+        self._visual_store = None
+        self._character_status = None
+        self._character_closed = None
         self._subscribed = False
         self._wake_start_fn: Callable[[], Any] | None = None
         self._wake_stop_fn: Callable[[], Any] | None = None
@@ -46,6 +49,7 @@ class WallpaperHandler(RequestHandler):
         self._canvas_projector: Callable[[dict[str, Any]], dict[str, Any]] | None = None
         self._attention_snapshot: Callable[[], list[dict[str, Any]]] | None = None
         self._current_activity: Callable[[], str] | None = None
+        self._current_presentation: Callable[[], Any] | None = None
         self._last_canvas_payload: dict[str, Any] | None = None
 
     def configure(
@@ -61,6 +65,10 @@ class WallpaperHandler(RequestHandler):
         canvas_projector: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
         attention_snapshot: Callable[[], list[dict[str, Any]]] | None = None,
         current_activity: Callable[[], str] | None = None,
+        current_presentation: Callable[[], Any] | None = None,
+        visual_store=None,
+        character_status=None,
+        character_closed=None,
     ) -> None:
         self._project_root = project_root
         self._render_bridge = render_bridge
@@ -73,6 +81,10 @@ class WallpaperHandler(RequestHandler):
         self._canvas_projector = canvas_projector
         self._attention_snapshot = attention_snapshot
         self._current_activity = current_activity
+        self._current_presentation = current_presentation
+        self._visual_store = visual_store
+        self._character_status = character_status
+        self._character_closed = character_closed
         if not self._subscribed:
             for method in self._render_event_methods():
                 bus.on(method, self._forward_render_event)
@@ -110,7 +122,6 @@ class WallpaperHandler(RequestHandler):
 
         try:
             from wallpaper.wallpaper_engine_bridge import WallpaperEngineBridgeHost
-            from render.spriteforge_animator import SpriteForgeAnimator
 
             requested_slice_host = str(
                 params.get("slice_host") or params.get("sliceHost") or "wallpaper"
@@ -120,8 +131,8 @@ class WallpaperHandler(RequestHandler):
             self._install_canvas_action_handler(self._wallpaper_host)
             self._install_chat_submit_handler(self._wallpaper_host)
             self._wallpaper_host.start()
-            if self._current_activity is not None:
-                self._apply_activity(self._current_activity())
+            if self._character_status is not None:
+                self._wallpaper_host.set_character_status_handler(self._character_status)
             from server import presentation_runtime
 
             self._wallpaper_host.set_canvas_presentation(
@@ -132,8 +143,15 @@ class WallpaperHandler(RequestHandler):
             # in-memory canvas.
             self._apply_canvas({})
             self._apply_attention_snapshot()
-            self._wallpaper_animator = SpriteForgeAnimator(self._wallpaper_host)
-            self._wallpaper_animator.start()
+            self.apply_visual_config()
+            if self._current_activity is not None:
+                self._apply_activity(self._current_activity())
+            if self._render_bridge is not None:
+                self._wallpaper_host.set_speaking(self._render_bridge._current_speaking)
+                self._wallpaper_host.set_mouth_value(0.0)
+            if self._current_presentation is not None:
+                transition = self._current_presentation()
+                self._apply_render_event(self._wallpaper_host, transition.method, dict(transition.payload))
             payload = self._status("started")
             await bus.emit(Method.WALLPAPER_READY, payload)
             if WAKE_ENABLED and WAKE_AUTO_START_WITH_WALLPAPER and self._wake_start_fn:
@@ -148,6 +166,8 @@ class WallpaperHandler(RequestHandler):
             logger.exception("wallpaper start failed")
             self._stop_wallpaper_animator()
             self._wallpaper_host = None
+            if self._character_closed is not None:
+                self._character_closed("wallpaper")
             return {"status": "error", "error": str(e)}
 
     def _install_canvas_action_handler(self, host) -> None:
@@ -235,6 +255,8 @@ class WallpaperHandler(RequestHandler):
     async def _stop(self, params: dict[str, Any]) -> dict[str, Any]:
         host = self._wallpaper_host
         self._wallpaper_host = None
+        if self._character_closed is not None:
+            self._character_closed("wallpaper")
         self._stop_wallpaper_animator()
         if self._chat_control_fn:
             try:
@@ -472,24 +494,43 @@ class WallpaperHandler(RequestHandler):
         except Exception:
             logger.exception("wallpaper animator stop failed")
 
+    def apply_visual_config(self) -> None:
+        host = self._wallpaper_host
+        if host is None:
+            return
+        backend = self._visual_store.backend if self._visual_store is not None else "sprite"
+        if backend == "sprite" and self._wallpaper_animator is None:
+            from render.spriteforge_animator import SpriteForgeAnimator
+            self._wallpaper_animator = SpriteForgeAnimator(host)
+            self._wallpaper_animator.start()
+        elif backend == "live2d":
+            self._stop_wallpaper_animator()
+        if self._visual_store is not None:
+            host.configure_character(self._visual_store.runtime_config(
+                "wallpaper", asset_server=host._asset_server))
+
     async def _forward_render_event(self, method: str, params: dict[str, Any]) -> None:
         host = self._wallpaper_host
         if host is None:
             return
         try:
-            self._apply_render_event(host, method, params or {})
+            if method == Method.RENDER_CHARACTER_CONFIG:
+                self.apply_visual_config()
+            else:
+                self._apply_render_event(host, method, params or {})
         except Exception:
             logger.exception("failed to forward render event to wallpaper: %s", method)
 
     @staticmethod
     def _render_event_methods() -> list[Method]:
         return [
+            Method.RENDER_CHARACTER_CONFIG,
             Method.RENDER_SPEAKING,
             Method.RENDER_MOUTH,
             Method.RENDER_SUBTITLE,
             Method.RENDER_MODE,
-            Method.RENDER_SPRITEFORGE_INTENT,
-            Method.RENDER_SPRITEFORGE_RELEASE,
+            Method.RENDER_CHARACTER_INTENT,
+            Method.RENDER_CHARACTER_RELEASE,
         ]
 
     @staticmethod
@@ -516,13 +557,13 @@ class WallpaperHandler(RequestHandler):
             host.set_mouth_value(float(params.get("value") or 0.0))
         elif method == Method.RENDER_SUBTITLE:
             host.set_subtitle(str(params.get("text") or ""))
-        elif method == Method.RENDER_SPRITEFORGE_INTENT:
-            host.trigger_spriteforge_intent(
+        elif method == Method.RENDER_CHARACTER_INTENT:
+            host.trigger_character_intent(
                 str(params.get("label") or ""),
                 params,
             )
-        elif method == Method.RENDER_SPRITEFORGE_RELEASE:
-            release = getattr(host, "release_spriteforge", None)
+        elif method == Method.RENDER_CHARACTER_RELEASE:
+            release = getattr(host, "release_character", None)
             if callable(release):
                 release(params)
             else:

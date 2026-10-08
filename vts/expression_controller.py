@@ -209,7 +209,7 @@ class ExpressionController:
                     if emotion == "disappointed":
                         emotion = "sad"
                     # graph 模式：neutral/normal 静默忽略，其余触发状态机
-                    if emotion not in ("neutral", "normal"):
+                    if emotion not in ("neutral", "normal") or getattr(self._sf_animator, "supports_neutral", False) is True:
                         self._sf_animator.trigger_expression(emotion)
                 else:
                     self.transition_to(emotion)

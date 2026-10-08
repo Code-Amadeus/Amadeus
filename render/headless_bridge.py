@@ -50,6 +50,7 @@ class HeadlessRenderBridge:
         self._current_speaking: bool = False
         self._current_mouth_value: float = 0.0
         self._held_frame = None
+        self._character_config: dict | None = None
 
     async def _event_worker(self) -> None:
         """Serialize render events to match PyQt runJavaScript call ordering."""
@@ -104,11 +105,27 @@ class HeadlessRenderBridge:
 
     def set_speaking(self, speaking: bool) -> None:
         self._current_speaking = bool(speaking)
-        self._emit(Method.RENDER_SPEAKING, {"speaking": speaking})
+        if not speaking:
+            self._current_mouth_value = 0.0
+        self._emit(Method.RENDER_SPEAKING, {"speaking": bool(speaking)})
+        if not speaking:
+            self._emit(Method.RENDER_MOUTH, {"value": 0.0})
 
     def set_mouth_value(self, value: float) -> None:
         self._current_mouth_value = float(max(0.0, min(1.0, value)))
         self._emit(Method.RENDER_MOUTH, {"value": self._current_mouth_value})
+
+    async def configure_character(self, config: dict) -> None:
+        self._character_config = dict(config)
+        await self._emit_async(Method.RENDER_CHARACTER_CONFIG, self._character_config)
+
+    async def replay_speech_state(self) -> None:
+        await self._emit_async(Method.RENDER_SPEAKING, {"speaking": self._current_speaking})
+        await self._emit_async(Method.RENDER_MOUTH, {"value": 0.0})
+
+    def close(self) -> None:
+        if self._event_worker_task is not None and self._loop is not None:
+            self._loop.call_soon_threadsafe(self._event_worker_task.cancel)
 
     def set_subtitle(self, text: str) -> None:
         self._emit(Method.RENDER_SUBTITLE, {"text": text})
@@ -144,7 +161,7 @@ class HeadlessRenderBridge:
 
     def trigger_spriteforge_intent(self, label: str) -> None:
         payload = spriteforge_intent_payload(label)
-        self._emit(Method.RENDER_SPRITEFORGE_INTENT, payload)
+        self._emit(Method.RENDER_CHARACTER_INTENT, payload)
 
     def hold_sprite_frame(self, which=None) -> None:
         self._held_frame = which
@@ -156,7 +173,7 @@ class HeadlessRenderBridge:
 
     def release_spriteforge(self) -> None:
         self._held_frame = None
-        self._emit(Method.RENDER_SPRITEFORGE_RELEASE, {})
+        self._emit(Method.RENDER_CHARACTER_RELEASE, {})
 
     async def replay_all(self) -> None:
         """Re-emit all registered state for a newly-connected iframe client.
@@ -166,6 +183,8 @@ class HeadlessRenderBridge:
         logger.info("[HeadlessBridge] replaying %d emotions, %d intervals, %d clips, %d mouth configs",
                     len(self._registered_frames), len(self._frame_intervals),
                     len(self._clip_configs), len(self._mouth_configs))
+        if self._character_config is not None:
+            await self._emit_async(Method.RENDER_CHARACTER_CONFIG, self._character_config)
         # Frames and configs first, then the live state. This matches the old
         # PyQt pending-call behavior where assets were registered before the
         # current mode/emotion/speaking state was applied.
@@ -184,7 +203,7 @@ class HeadlessRenderBridge:
         if self._current_emotion:
             await self._emit_async(Method.RENDER_EMOTION, {"emotion": self._current_emotion})
         await self._emit_async(Method.RENDER_SPEAKING, {"speaking": self._current_speaking})
-        await self._emit_async(Method.RENDER_MOUTH, {"value": self._current_mouth_value})
+        await self._emit_async(Method.RENDER_MOUTH, {"value": 0.0})
         if self._held_frame is not None:
             await self._emit_async(Method.RENDER_HOLD_FRAME, {"which": self._held_frame})
 

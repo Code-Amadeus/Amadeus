@@ -219,11 +219,11 @@
       try {
         const call = JSON.parse(event.data);
         if (call.method === 'composerEvent' || call.method === 'setAsrStatus') void refreshInputs();
-        const next = window.CompanionPresentation.apply(state, call);
+        const next = window.CompanionPresentation.apply(state, call, Object.keys(atlas?.manifest?.emotions || frames));
         if (next !== state) {
           const changed = next.emotion !== state.emotion || next.speaking !== state.speaking;
           const speechEnded = state.speaking && !next.speaking;
-          if (next.speaking || call.method === 'setEmotion' || call.method === 'triggerSpriteForgeIntent') cancelReturn();
+          if (next.speaking || call.method === 'setEmotion' || call.method === 'triggerCharacterIntent') cancelReturn();
           if (changed) frameIndex = 0;
           state = next;
           paint();

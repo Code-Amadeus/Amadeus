@@ -2307,6 +2307,32 @@ ipcMain.handle('vn-help.open', async (event, page: unknown) => {
   if (!url) throw new Error('Unknown VN help page.')
   await shell.openExternal(url)
 })
+ipcMain.handle('visual-file.select', async (event, kind: unknown, startPath: unknown) => {
+  if (!isMainRenderer(event.sender) || event.senderFrame !== event.sender.mainFrame) {
+    return { ok: false, cancelled: false, path: '', detail: 'Untrusted visual file requester.' }
+  }
+  if (kind !== 'model' && kind !== 'core') {
+    return { ok: false, cancelled: false, path: '', detail: 'Unknown visual file type.' }
+  }
+  const options: Electron.OpenDialogOptions = {
+    title: kind === 'model' ? 'Choose Live2D model' : 'Choose local Cubism Core',
+    buttonLabel: 'Use this file',
+    properties: ['openFile'],
+    defaultPath: typeof startPath === 'string' && path.isAbsolute(startPath) ? startPath : undefined,
+    filters: kind === 'model' ? [{ name: 'Cubism model settings (.model3.json)', extensions: ['json'] }]
+      : [{ name: 'Cubism Core (live2dcubismcore.min.js)', extensions: ['js'] }],
+  }
+  const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
+  const selectedPath = result.filePaths[0] || ''
+  if (result.canceled || !selectedPath) return { ok: true, cancelled: true, path: '', detail: '' }
+  const valid = path.isAbsolute(selectedPath) && (kind === 'model'
+    ? selectedPath.toLowerCase().endsWith('.model3.json')
+    : path.basename(selectedPath).toLowerCase() === 'live2dcubismcore.min.js')
+  return valid
+    ? { ok: true, cancelled: false, path: selectedPath, detail: '' }
+    : { ok: false, cancelled: false, path: '', detail: kind === 'model'
+      ? 'Select a .model3.json model settings file.' : 'Select the local live2dcubismcore.min.js SDK file.' }
+})
 ipcMain.handle('vn-file.select', async (event, kind: unknown, startPath: unknown) => {
   if (!isTrustedAmadeusRenderer(event.sender)) {
     return { ok: false, cancelled: false, path: '', detail: 'Untrusted VN file requester.' }

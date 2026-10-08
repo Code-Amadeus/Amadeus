@@ -4,7 +4,6 @@ import { ActiveCharacterContext, useActiveCharacterSnapshot } from './activeChar
 import Sidebar from './components/Sidebar'
 import ChatPage from './components/ChatPage'
 import WorkPage from './components/WorkPage'
-import ExpressionPage from './components/ExpressionPage'
 import SettingsPage from './components/SettingsPage'
 import BackendPage from './components/BackendPage'
 import VNPage from './components/VNPage'
@@ -12,7 +11,7 @@ import WorkPreviewPage from './components/WorkPreviewPage'
 import { ELECTRON_SLICE_START_PARAMS, stopElectronSliceHost, syncElectronSliceHost } from './wallpaperSlice'
 import appIconUrl from '@assets/icons/app/app_icon.png'
 
-export type Page = 'chat' | 'vn' | 'backend' | 'expressions' | 'settings'
+export type Page = 'chat' | 'vn' | 'backend' | 'settings'
 
 const WORK_FOCUS_RUN_KEY = 'amadeus.work.focusRunId'
 const WORK_FOCUS_ACTION_KEY = 'amadeus.work.focusAction'
@@ -21,10 +20,7 @@ const WORK_FOCUS_CWD_KEY = 'amadeus.work.focusCwd'
 
 function initialPage(): Page {
   const page = new URLSearchParams(window.location.search).get('page')
-  // `expressions` is a deprecated diagnostic deep link. It is intentionally
-  // no longer exposed by the Render surface, but remains available to older
-  // tooling that opens `?page=expressions` directly.
-  if (page === 'vn' || page === 'backend' || page === 'expressions' || page === 'settings') {
+  if (page === 'vn' || page === 'backend' || page === 'settings') {
     return page
   }
   return 'chat'
@@ -133,8 +129,6 @@ function AmadeusApp() {
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail
-      // Deprecated compatibility event retained for older renderer tooling.
-      if (detail === 'expressions') setPage('expressions')
       if (detail === 'toggle-render') handleToggleRender()
     }
     window.addEventListener('navigate', handler)
@@ -297,7 +291,6 @@ function AmadeusApp() {
         <div className="flex-1 flex flex-col min-w-0" style={{ backgroundColor: 'var(--bg)' }}>
           {page === 'chat' && <ChatPage send={send} subscribe={subscribe} connected={connected} renderActive={renderActive} renderAssetUrl={renderAssetUrl} />}
           {page === 'vn' && <VNPage send={send} subscribe={subscribe} connected={connected} />}
-          {page === 'expressions' && <ExpressionPage send={send} subscribe={subscribe} />}
           {page === 'backend' && <BackendPage send={send} subscribe={subscribe} connected={connected} renderActive={renderActive} wallpaperActive={wallpaperActive} />}
           {page === 'settings' && <SettingsPage send={send} subscribe={subscribe} connected={connected} reconnectBackend={reconnect} />}
         </div>

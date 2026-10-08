@@ -92,6 +92,8 @@ _WALLPAPER_CLIENT_ASSETS = (
     _PROJECT_ROOT / "render" / "web" / "texture_cache_worker.mjs",
     _PROJECT_ROOT / "render" / "web" / "vendor" / "zstd" / "zstd.wasm",
     _PROJECT_ROOT / "render" / "web" / "renderer.js",
+    _PROJECT_ROOT / "render" / "web" / "live2d_character.js",
+    _PROJECT_ROOT / "render" / "web" / "model_character.js",
 )
 
 
@@ -143,12 +145,18 @@ class _BridgeState:
         self.canvas_action_handler: Callable[[dict], dict] | None = None
         self.chat_submit_handler: Callable[[dict], dict] | None = None
         self.browser_action_handler: Callable[[dict], dict] | None = None
+        self.character_status_handler: Callable[[dict], bool] | None = None
 
     def snapshot(self) -> dict:
         with self.lock:
             calls = list(self.bootstrap_calls)
             calls.extend(self.last_calls.values())
-        return {"calls": calls}
+        return {"calls": [self._replay_call(call) for call in calls]}
+
+    @staticmethod
+    def _replay_call(call: dict) -> dict:
+        # Speaking may still be current; an old audio amplitude never is.
+        return {"method": "setMouth", "args": [0.0]} if call.get("method") == "setMouth" else call
 
     def canvas_snapshot(self) -> dict:
         with self.lock:
@@ -167,7 +175,7 @@ class _BridgeState:
             for event in (*self.bootstrap_calls, *self.last_calls.values()):
                 if retain_subtitle and event.get("method") == "setSubtitle":
                     event = self.last_caption or event
-                q.put_nowait(event)
+                q.put_nowait(self._replay_call(event))
             self.clients.append(q)
         return q
 
@@ -602,6 +610,17 @@ def _make_bridge_handler(
             if auth_error:
                 self._json_response({"ok": False, "error": auth_error}, 403)
                 return
+            if self.path == "/wallpaper/character-status":
+                if not self._action_authorized():
+                    self._json_response({"ok": False, "error": "unauthorized"}, 403)
+                    return
+                try:
+                    handler = state.character_status_handler
+                    accepted = bool(handler and handler(self._read_json()))
+                    self._json_response({"ok": True, "accepted": accepted})
+                except (ValueError, TypeError):
+                    self._json_response({"ok": False, "error": "bad_request"}, 400)
+                return
             if self.path.startswith("/wallpaper-engine/chat-action") or self.path.startswith("/wallpaper/chat-action"):
                 if not self._action_authorized():
                     logger.warning("[WallpaperBridge] unauthorized wallpaper chat action from=%s", self.client_address)
@@ -945,6 +964,20 @@ class WallpaperEngineBridgeHost:
         }
         self._event("initDesktopScene", payload, bootstrap=True, bootstrap_key="initDesktopScene")
 
+    def configure_character(self, config: dict) -> None:
+        self._event("configureCharacter", dict(config), bootstrap=True,
+                    bootstrap_key="characterConfig")
+
+    def set_character_status_handler(self, handler: Callable[[dict], bool] | None) -> None:
+        self._state.character_status_handler = handler
+
+    def trigger_character_intent(self, label: str, options: dict | None = None) -> None:
+        self._event("triggerCharacterIntent", str(label or ""), dict(options or {}),
+                    replay="characterIntent")
+
+    def release_character(self, options: dict | None = None) -> None:
+        self._event("releaseCharacter", dict(options or {}), replay="characterIntent")
+
     def set_mode(self, mode: str) -> None:
         self._event("setMode", str(mode), replay="mode")
 
@@ -1055,14 +1088,10 @@ class WallpaperEngineBridgeHost:
         )
 
     def trigger_spriteforge_intent(self, label: str, options: dict | None = None) -> None:
-        self._event("triggerSpriteForgeIntent", str(label or ""), dict(options or {}))
+        self.trigger_character_intent(label, options)
 
     def release_spriteforge(self, options: dict | None = None) -> None:
-        self._event(
-            "releaseSpriteForge",
-            dict(options or {}),
-            replay="spriteforgeRelease",
-        )
+        self.release_character(options)
 
     def set_canvas(self, payload: dict) -> None:
         self._event("setCanvas", self._rewrite_canvas_payload(payload or {}), replay="canvas")
