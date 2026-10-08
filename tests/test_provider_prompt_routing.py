@@ -7,7 +7,6 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import config.settings as settings
 from agent_host.provider_runtime import runtime as provider_runtime
 from llm import prompts
 
