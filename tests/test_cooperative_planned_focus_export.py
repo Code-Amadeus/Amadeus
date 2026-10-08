@@ -83,13 +83,14 @@ def configure_focus_owner(context):
 
 
 async def finalize_modifier(plan, monkeypatch, verdict):
-    monkeypatch.setattr("llm.client.remote_llm_query",
-        lambda *_args, **_kwargs: verdict)
     actions = [{"type": "DELEGATE", "attrs": dict(operation.action)}
         for operation in plan.operations]
     for operation, action in zip(plan.operations, actions):
         action["attrs"]["_host_source_user_text"] = operation.source_clause
-    await finalize_work_focus_modifiers(actions)
+    with monkeypatch.context() as audit_patch:
+        audit_patch.setattr("llm.client.remote_llm_messages_query",
+            lambda *_args, **_kwargs: verdict)
+        await finalize_work_focus_modifiers(actions)
     for action in actions:
         if action["attrs"].get("one_off") == "true":
             action["attrs"]["one_off"] = True

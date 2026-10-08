@@ -36,7 +36,9 @@ async def host(context, monkeypatch):
     runtime.register(adapter)
     runtime.set_request_preparer(coordinator.prepare_request)
     monkeypatch.setattr("agent_host.provider_runtime.runtime", runtime)
-    monkeypatch.setattr("llm.client.remote_llm_query", Mock(side_effect=AssertionError("unplanned query")))
+    # Role and control requests are injected below; any transport query is an
+    # unplanned extra request, including a persistent-focus or task-lookup pass.
+    monkeypatch.setattr("llm.client.remote_llm_messages_query", Mock(side_effect=AssertionError("unplanned query")))
     coordinator.configure()
     coordinator.bind_session_context("A", context.project.project_id)
     # The reused ingress fixture captures Chat emits. Also deliver real Provider

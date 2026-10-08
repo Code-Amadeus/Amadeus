@@ -72,7 +72,7 @@ async def test_runtime_planner_focus_and_work_reach_existing_domain_owners(
     monkeypatch.setattr("server.work_ledger_coordinator.get_work_ledger_coordinator",
         lambda: context.host.coordinator)
     audit = Mock(return_value="SET")
-    monkeypatch.setattr("llm.client.remote_llm_query", audit)
+    monkeypatch.setattr("llm.client.remote_llm_messages_query", audit)
     announce = Mock(side_effect=AssertionError("foreground owns its publication"))
     owner = focus_owner(announce)
     context.manager.configure_work(context.host.control, context.host.executor,
