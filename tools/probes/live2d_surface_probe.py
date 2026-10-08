@@ -7,13 +7,9 @@ audio and native desktop embedding are qualified separately.
 from __future__ import annotations
 
 import argparse
-import asyncio
-import copy
 import json
 from pathlib import Path
-import statistics
 import sys
-import time
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))

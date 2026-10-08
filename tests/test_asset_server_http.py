@@ -238,3 +238,53 @@ def test_static_security_boundaries_apply_to_get_head_and_options(asset_server) 
         )
         assert status == 421
         assert _BODY not in body
+
+
+def test_file_mount_replacement_keeps_inflight_lookup_and_revokes_future_requests(tmp_path):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    from urllib.error import HTTPError
+    from urllib.request import urlopen
+    from render.server import AssetServer
+
+    looked_up = threading.Event()
+    continue_lookup = threading.Event()
+    replaced = threading.Event()
+    class PausedLookup(dict):
+        def get(self, key, default=None):
+            value = super().get(key, default)
+            if key == "/model/old.bin":
+                looked_up.set()
+                assert continue_lookup.wait(3)
+            return value
+
+    first = tmp_path / "private/old.bin"
+    second = tmp_path / "private/new.bin"
+    first.parent.mkdir()
+    first.write_bytes(b"old")
+    second.write_bytes(b"new")
+    server = AssetServer(tmp_path / "public", start_port=18340)
+    shared = PausedLookup()
+    server._static_files = shared
+    server.mount_files("/model", {"old.bin": first})
+    base = f"http://127.0.0.1:{server.start()}"
+    def replace():
+        server.mount_files("/model", {"new.bin": second})
+        replaced.set()
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            pending = executor.submit(lambda: urlopen(base + "/model/old.bin", timeout=4).read())
+            assert looked_up.wait(3)
+            update = executor.submit(replace)
+            assert not replaced.wait(.05)
+            continue_lookup.set()
+            assert pending.result(timeout=4) == b"old"
+            update.result(timeout=4)
+        assert server._static_files is shared
+        with pytest.raises(HTTPError) as failure:
+            urlopen(base + "/model/old.bin", timeout=4)
+        assert failure.value.code == 404
+        assert urlopen(base + "/model/new.bin", timeout=4).read() == b"new"
+    finally:
+        continue_lookup.set()
+        server.stop()

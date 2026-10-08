@@ -236,6 +236,10 @@ def inspect_model(model_path: Path | str) -> tuple[dict, dict[str, Path]]:
 
 def draft_profile(model_path: str) -> tuple[dict, dict]:
     capabilities, _ = inspect_model(model_path)
+    return _draft_profile(model_path, capabilities), capabilities
+
+
+def _draft_profile(model_path: str, capabilities: dict) -> dict:
     available = {name.lower(): name for name in capabilities["expressions"]}
     profile = {
         "profile_id": str(uuid4()), "kind": "live2d",
@@ -247,7 +251,17 @@ def draft_profile(model_path: str) -> tuple[dict, dict]:
         "mouth": {"gain": 1.0, "smoothing_ms": 60.0, "parameter_ids": []},
         "layouts": {"render": dict(_LAYOUT), "wallpaper": dict(_LAYOUT)},
     }
-    return profile, capabilities
+    return profile
+
+
+def _inspect_profile(profile: dict | None) -> dict:
+    result = {"capabilities": {"expressions": [], "lip_sync_ids": [], "warnings": []}, "files": {}}
+    if profile is not None:
+        try:
+            result["capabilities"], result["files"] = inspect_model(profile["model_path"])
+        except (OSError, ValueError) as exc:
+            result["diagnostic"] = str(exc)
+    return result
 
 
 class VisualProfileStore:
@@ -265,6 +279,7 @@ class VisualProfileStore:
                 self._config = validate_config(json.loads(self.path.read_text(encoding="utf-8")))
             except (OSError, ValueError) as exc:
                 self.load_error = f"Cannot load visual profiles: {exc}"
+        self._inspection = _inspect_profile(self.selected_profile())
 
     @property
     def config(self) -> dict:
@@ -281,30 +296,56 @@ class VisualProfileStore:
         return next((item for item in config["profiles"]
                      if item["profile_id"] == config["selected_profile_id"]), None)
 
+    def snapshot(self) -> dict:
+        """Observed state reads the last inspection; it never parses model files."""
+        with self._lock:
+            result = {"config": copy.deepcopy(self._config),
+                      "capabilities": copy.deepcopy(self._inspection["capabilities"])}
+            diagnostic = self.load_error or self._inspection.get("diagnostic", "")
+            if diagnostic:
+                result["diagnostic"] = diagnostic
+            return result
+
+    def inspect(self, model_path: str) -> tuple[dict, dict]:
+        """An explicit inspection also refreshes the selected asset's cached facts."""
+        with self._lock:
+            inspection = _inspect_profile({"model_path": model_path})
+            selected = self.selected_profile()
+            if selected and Path(selected["model_path"]).resolve() == Path(model_path).resolve():
+                self._inspection = inspection
+            if inspection.get("diagnostic"):
+                raise ValueError(inspection["diagnostic"])
+            capabilities = inspection["capabilities"]
+            return _draft_profile(model_path, capabilities), copy.deepcopy(capabilities)
+
+    def reload(self) -> None:
+        with self._lock:
+            self.revision += 1
+            self.reload_revision += 1
+            self._inspection = _inspect_profile(self.selected_profile())
+
     def save(self, value: Any) -> dict:
         if self.load_error:
             raise ValueError(self.load_error + ". Repair the saved file before saving; the original file is preserved.")
         config = validate_config(value)
-        # Only the selected active model can constrain its mappings. A broken
-        # dormant profile must never prevent selecting Sprite or another asset.
-        selected = next((item for item in config["profiles"]
-                         if item["profile_id"] == config["selected_profile_id"]), None)
-        if config["backend"] == "live2d" and selected:
-            try:
-                capabilities, _ = inspect_model(selected["model_path"])
-            except (OSError, ValueError):
-                pass  # Runtime reports the selected asset failure with an editable config.
-            else:
-                unknown = set(selected["emotion_map"].values()) - {None} - set(capabilities["expressions"])
+        with self._lock:
+            # Saving is an explicit refresh boundary. Broken dormant assets
+            # never constrain another selection or the Sprite fallback.
+            selected = next((item for item in config["profiles"]
+                             if item["profile_id"] == config["selected_profile_id"]), None)
+            inspection = _inspect_profile(selected)
+            if config["backend"] == "live2d" and selected and not inspection.get("diagnostic"):
+                available = inspection["capabilities"]["expressions"]
+                unknown = set(selected["emotion_map"].values()) - {None} - set(available)
                 if unknown:
                     raise ValueError(f"Unregistered model expressions: {', '.join(sorted(unknown))}")
-        with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             temporary = self.path.with_suffix(".tmp")
             temporary.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n",
                                  encoding="utf-8")
             os.replace(temporary, self.path)
             self._config = config
+            self._inspection = inspection
             self.revision += 1
             self.load_error = ""
             return self.config
@@ -318,44 +359,62 @@ class VisualProfileStore:
     def runtime_config(self, surface: str, *, asset_server=None,
                        profile: dict | None = None, core_path: str | None = None,
                        preview: bool = False) -> dict:
-        if surface not in {"render", "wallpaper"}:
-            raise ValueError("unknown render surface")
-        saved = self.config
-        backend = "live2d" if preview else saved["backend"]
-        profile = validate_profile(profile) if profile is not None else self.selected_profile()
-        result = {"backend": backend, "profile_id": profile["profile_id"] if profile else "",
-                  "revision": self.revision, "runtime_id": self.runtime_id,
-                  "reload_revision": self.reload_revision, "surface": surface}
-        if backend == "sprite":
+        with self._lock:
+            if surface not in {"render", "wallpaper"}:
+                raise ValueError("unknown render surface")
+            saved = self.config
+            backend = "live2d" if preview else saved["backend"]
+            profile = validate_profile(profile) if profile is not None else self.selected_profile()
+            result = {"backend": backend, "profile_id": profile["profile_id"] if profile else "",
+                      "revision": self.revision, "runtime_id": self.runtime_id,
+                      "reload_revision": self.reload_revision, "surface": surface}
+            if backend == "sprite":
+                if asset_server is not None:
+                    asset_server.mount_files("/visual-model", {})
+                    asset_server.mount_files("/visual-core", {})
+                return result
+            if not profile:
+                if asset_server is not None:
+                    asset_server.mount_files("/visual-model", {})
+                    asset_server.mount_files("/visual-core", {})
+                return {**result, "error": "Select a Live2D visual profile."}
+            result.update(emotion_map=profile["emotion_map"], mouth=profile["mouth"],
+                          layout=profile["layouts"][surface])
+            try:
+                inspection = _inspect_profile(profile)
+                selected = self.selected_profile()
+                if selected and Path(selected["model_path"]).resolve() == Path(profile["model_path"]).resolve():
+                    self._inspection = inspection
+                if inspection.get("diagnostic"):
+                    raise ValueError(inspection["diagnostic"])
+                files = inspection["files"]
+                result["warnings"] = inspection["capabilities"]["warnings"]
+                entry = Path(profile["model_path"]).resolve()
+                core = Path(core_path or saved["core_path"] or
+                            self.project_root / "render/web/vendor/live2dcubismcore.min.js").resolve()
+                if not core.is_file():
+                    raise ValueError("Cubism Core is missing. Select your local live2dcubismcore.min.js SDK.")
+                if core.name.lower() != "live2dcubismcore.min.js":
+                    raise ValueError("Select the local live2dcubismcore.min.js SDK.")
+                core_stat = core.stat()
+                core_identity = hashlib.sha256(
+                    f"{core}:{core_stat.st_mtime_ns}:{core_stat.st_size}".encode("utf-8")
+                ).hexdigest()[:16]
+                model_version = f"{entry.stat().st_mtime_ns}-{self.reload_revision}"
+                if asset_server is None:
+                    result.update(model_url=entry.as_uri() + "?v=" + model_version,
+                                  core_url=core.as_uri() + "?v=" + core_identity)
+                else:
+                    prefix = f"/visual-model/{profile['profile_id']}"
+                    asset_server.mount_files("/visual-model", {
+                        f"{profile['profile_id']}/{relative}": target for relative, target in files.items()
+                    })
+                    asset_server.mount_files("/visual-core", {f"{core_identity}/live2dcubismcore.min.js": core})
+                    result.update(model_url=f"{prefix}/{quote(entry.name)}?v={model_version}",
+                                  core_url=f"/visual-core/{core_identity}/live2dcubismcore.min.js")
+            except (ValueError, OSError) as exc:
+                if asset_server is not None:
+                    asset_server.mount_files("/visual-model", {})
+                    asset_server.mount_files("/visual-core", {})
+                result["error"] = str(exc)
             return result
-        if not profile:
-            return {**result, "error": "Select a Live2D visual profile."}
-        result.update(emotion_map=profile["emotion_map"], mouth=profile["mouth"],
-                      layout=profile["layouts"][surface])
-        try:
-            capabilities, files = inspect_model(profile["model_path"])
-            result["warnings"] = capabilities["warnings"]
-            entry = Path(profile["model_path"]).resolve()
-            core = Path(core_path or saved["core_path"] or
-                        self.project_root / "render/web/vendor/live2dcubismcore.min.js").resolve()
-            if not core.is_file():
-                raise ValueError("Cubism Core is missing. Select your local live2dcubismcore.min.js SDK.")
-            if core.name.lower() != "live2dcubismcore.min.js":
-                raise ValueError("Select the local live2dcubismcore.min.js SDK.")
-            core_stat = core.stat()
-            core_identity = hashlib.sha256(
-                f"{core}:{core_stat.st_mtime_ns}:{core_stat.st_size}".encode("utf-8")
-            ).hexdigest()[:16]
-            model_version = f"{entry.stat().st_mtime_ns}-{self.reload_revision}"
-            if asset_server is None:
-                result.update(model_url=entry.as_uri() + "?v=" + model_version,
-                              core_url=core.as_uri() + "?v=" + core_identity)
-            else:
-                prefix = f"/visual-model/{profile['profile_id']}"
-                asset_server.mount_files(prefix, files)
-                asset_server.mount_files("/visual-core", {f"{core_identity}/live2dcubismcore.min.js": core})
-                result.update(model_url=f"{prefix}/{quote(entry.name)}?v={model_version}",
-                              core_url=f"/visual-core/{core_identity}/live2dcubismcore.min.js")
-        except (ValueError, OSError) as exc:
-            result["error"] = str(exc)
-        return result

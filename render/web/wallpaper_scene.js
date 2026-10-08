@@ -624,6 +624,14 @@
       this.enabled = this.configuredEnabled && this.characterBackend === "sprite";
       if (!this.enabled) {
         this._abortActivation("character backend changed", true);
+        if (this.sprite) {
+          this.sprite.texture = PIXI.Texture.EMPTY;
+          this.sprite.visible = false;
+        }
+        if (this._textureCache) {
+          for (const [url, entry] of this._textureCache) this._destroyCachedTexture(url, entry);
+          this._textureCache.clear();
+        }
         this._fadeCharacterIn = false;
         this._characterFadeTargets = null;
       }
@@ -1550,15 +1558,10 @@
       const tex = entry && (entry.texture || entry);
       const source = entry && entry.sourceTexture;
       const objectUrl = entry && entry.objectUrl;
+      // Entries own their image textures; shared URL-cache entries belong to other scene layers.
       try {
         if (tex && typeof tex.destroy === "function") {
           tex.destroy(!source);
-        }
-        if (PIXI.Texture && typeof PIXI.Texture.removeFromCache === "function") {
-          const removed = PIXI.Texture.removeFromCache(url);
-          if (removed && removed !== tex && removed !== source && typeof removed.destroy === "function") {
-            removed.destroy(true);
-          }
         }
         if (source && source !== tex && typeof source.destroy === "function") {
           source.destroy(true);

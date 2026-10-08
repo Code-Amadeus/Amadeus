@@ -22,7 +22,7 @@
 
 `profile_id` 是稳定的美术配置标识，`kind` 当前只能是 `live2d`。它不使用 `character_id`，不创建或切换会话、人格、Work 身份。未来的人格配置可以引用美术 `profile_id`；本分支没有加入自动人格关联。
 
-Host 的 [VisualProfileStore](../render/visual_profile.py) 是持久配置 owner。默认文件位于 Electron 用户数据目录下的 `visual_profiles.json`；可用 `AMADEUS_VISUAL_PROFILES_PATH` 指定另一位置。模型入口、映射、嘴型增益/平滑/参数、双展示面布局与 Core 路径保存于该 store。模型能力每次从源文件检查，不持久化另一份能力清单，也不写回原始 expression 文件或 renderer localStorage。
+Host 的 [VisualProfileStore](../render/visual_profile.py) 是持久配置 owner。默认文件位于 Electron 用户数据目录下的 `visual_profiles.json`；可用 `AMADEUS_VISUAL_PROFILES_PATH` 指定另一位置。模型入口、映射、嘴型增益/平滑/参数、双展示面布局与 Core 路径保存于该 store。模型能力在配置加载/保存、显式检查/重载和 Runtime 资源重建时从源文件检查；状态回执读取 Host 已检查的能力缓存，不重复解析模型文件。不持久化另一份能力清单，也不写回原始 expression 文件或 renderer localStorage。壁纸 AssetServer 按整个 `/visual-model/` 命名空间替换所选模型文件；切换模型、回到 Sprite 或加载失败时撤销旧映射，不影响其他挂载。
 
 初次资产定位发现导出的 1920×1980 canvas 不等于可见人物范围：所测 mesh 偏右且越过 canvas 底部。旧版胸腹截断资产与包含腰部、衣袋的较新版资产也不同。当前 SDK adapter 初次加载时测量实际可见 art bounds，包含模型原始偏移与变换，再统一按视口等比 fit、居中并底部对齐。profile 的 scale/x/y 在此基准上微调；取景基准不每帧随动作变化。其他 Live2D 模型沿用相同规则，因此整体占用比例与留白策略一致；不同身段、长宽比不能保证人脸绝对大小相同。
 
@@ -42,9 +42,11 @@ Host 的 [VisualProfileStore](../render/visual_profile.py) 是持久配置 owner
 
 语义事件使用 `render.character_config`、`render.character_intent`、`render.character_release`；真正的 Sprite 资产图事件 `render.spriteforge_graph` 保留专用命名。表达名称和 Cubism 参数 ID 不与 VTS 的 EXPR/PARAM/HOTKEY 命名空间混用。
 
+**公开协议迁移：** `render.spriteforge_intent` 与 `render.spriteforge_release` 分别改名为 `render.character_intent` 与 `render.character_release`。这项共享协议变更也影响只使用 Sprite 的外部订阅者；“Live2D 默认关闭”不代表旧订阅者自动兼容。Host 与随附前端应一同升级，外部订阅者需更新事件名称并按 payload 的 backend 处理人物表现。现有来源优先级、释放和播放语义不变，不发送永久并行的两套事件。旧 Expression 入口由 Settings → 角色形象替代，新 `visual.*` 控制及形象配置文件不迁移会话或人格。没有形象配置时仍默认 Sprite；回切 Sprite 不会恢复旧协议名称。迁移约定与合并前的产品决定跟踪于 [Issue #165](https://github.com/Code-Amadeus/Amadeus/issues/165)。
+
 状态为 `loading/ready/error/unloaded`，含 `profile_id`、Host 实例 `runtime_id` 和配置 `revision`。状态是观察，不是新的执行或选择权限。Host 拒绝旧实例/旧选择回执；Electron 只转发自己 iframe 的 render 状态。掉线时关闭该 iframe 的 speaking/mouth，已经完成加载的 iframe 在连接恢复时请求 `render.ready`，由 Host 重放当前选择。
 
-Live2D 模式禁用会隐藏前景、换成旧人物素材的活动场景及其专属动作音效；背景、环境、字幕与 Work Canvas 保留。回切 Sprite 后恢复原场景能力。
+Live2D 模式禁用会隐藏前景、换成旧人物素材的活动场景及其专属动作音效；背景、环境、字幕与 Work Canvas 保留。停用场景时释放其自有纹理缓存，既有加载令牌阻止晚完成的加载重新驻留；共享背景纹理不随场景销毁。回切 Sprite 后重新加载所需场景资源并恢复原场景能力。
 
 ## 后续 E-mote
 
@@ -52,7 +54,7 @@ Live2D 模式禁用会隐藏前景、换成旧人物素材的活动场景及其�
 
 ## 已取得证据与限制
 
-以下目录是本地忽略输出，原始模型与 Core 仅被引用，没有复制或提交。
+以下目录是本地忽略输出，原始模型与 Core 仅被引用，没有复制或提交。下表记录初次实现 `c071769` 的验收；后续审查修订的完整 CI 状态以 [PR #164](https://github.com/Code-Amadeus/Amadeus/pull/164) 当前提交为准。审查修订另已通过 9 个相关测试文件的 94 项回归、全库 Ruff、两项架构检查、标准 `npm run build` 和标准无模型桌面启动 smoke（11 项检查，含正常退出）。
 
 | 验证层 | 观察到的结果 | 范围 |
 | --- | --- | --- |

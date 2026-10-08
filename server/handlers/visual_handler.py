@@ -1,10 +1,9 @@
 """Authenticated desktop controls for visual assets and renderer diagnostics."""
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Callable
 
-from render.visual_profile import VisualProfileStore, draft_profile, inspect_model
+from render.visual_profile import VisualProfileStore, inspect_model
 from server.character_presentation import coordinator
 from server.event_bus import bus
 from server.protocol import Method
@@ -33,19 +32,7 @@ class VisualHandler(RequestHandler):
         if self.store is None:
             raise RuntimeError("visual handler is not configured")
         with coordinator.selection_lock:
-            config = self.store.config
-            result = {"config": config, "surfaces": dict(self._surfaces),
-                      "capabilities": {"expressions": [], "lip_sync_ids": [], "warnings": []}}
-            profile = next((item for item in config["profiles"]
-                            if item["profile_id"] == config["selected_profile_id"]), None)
-            if self.store.load_error:
-                result["diagnostic"] = self.store.load_error
-        if profile:
-            try:
-                result["capabilities"], _ = inspect_model(profile["model_path"])
-            except (ValueError, OSError) as exc:
-                result["diagnostic"] = str(exc)
-        return result
+            return {**self.store.snapshot(), "surfaces": dict(self._surfaces)}
 
     def report_status(self, params: dict) -> bool:
         """A surface observation can report readiness; it cannot choose a profile."""
@@ -97,7 +84,7 @@ class VisualHandler(RequestHandler):
         if method == Method.VISUAL_GET:
             return self.snapshot()
         if method == Method.VISUAL_INSPECT:
-            profile, capabilities = draft_profile(str(params.get("model_path") or ""))
+            profile, capabilities = self.store.inspect(str(params.get("model_path") or ""))
             return {"profile": profile, "capabilities": capabilities}
         if method == Method.VISUAL_SAVE:
             with coordinator.selection_lock:
@@ -109,8 +96,7 @@ class VisualHandler(RequestHandler):
             return await self._apply_selection()
         if method == Method.VISUAL_RELOAD:
             with coordinator.selection_lock:
-                self.store.revision += 1
-                self.store.reload_revision += 1
+                self.store.reload()
                 self._surfaces.clear()
             return await self._apply_selection()
         if method == Method.VISUAL_PREVIEW:

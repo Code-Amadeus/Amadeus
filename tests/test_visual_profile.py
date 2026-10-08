@@ -258,7 +258,6 @@ def test_layout_save_does_not_reselect_sprite_random_route(tmp_path, monkeypatch
 
 def test_old_surface_receipts_cannot_reappear_after_new_selection(tmp_path, monkeypatch):
     store, profile, _, _ = configured_store(tmp_path)
-    from server import character_presentation
     presentation = CharacterPresentationCoordinator(lambda *_: None, emit_now=lambda *_: None)
     monkeypatch.setattr("server.handlers.visual_handler.coordinator", presentation)
     monkeypatch.setattr("server.handlers.visual_handler.bus.emit_now", lambda *_: None)
@@ -309,3 +308,154 @@ def test_host_surface_stop_reports_unloaded_and_rejects_late_ready(tmp_path, mon
     assert visual.snapshot()["surfaces"][surface]["state"] == "unloaded"
     assert not visual.report_status(receipt)
     assert visual.snapshot()["surfaces"][surface]["state"] == "unloaded"
+
+
+def assert_http_missing(base, url):
+    with pytest.raises(HTTPError) as failure:
+        urlopen(base + url)
+    assert failure.value.code == 404
+
+
+def test_switching_selected_models_revokes_old_urls_and_preserves_other_mounts(tmp_path):
+    store, first_profile, _, _ = configured_store(tmp_path)
+    second_entry = model_fixture(tmp_path / "second-model")
+    second_profile, _ = draft_profile(str(second_entry))
+    unrelated = tmp_path / "unrelated.txt"
+    unrelated.write_bytes(b"another mount owner")
+    server = AssetServer(tmp_path / "public", start_port=18340)
+    server.mount_files("/other-owner", {"asset.txt": unrelated})
+    base = f"http://127.0.0.1:{server.start()}"
+    try:
+        first = store.runtime_config("wallpaper", asset_server=server)
+        assert urlopen(base + first["model_url"]).status == 200
+        changed = store.config
+        changed["profiles"].append(second_profile)
+        changed["selected_profile_id"] = second_profile["profile_id"]
+        store.save(changed)
+        second = store.runtime_config("wallpaper", asset_server=server)
+        assert_http_missing(base, first["model_url"])
+        assert urlopen(base + second["model_url"]).status == 200
+        # Removing the former profile cannot leave its old asset permissions behind.
+        changed["profiles"] = [second_profile]
+        store.save(changed)
+        current = store.runtime_config("wallpaper", asset_server=server)
+        assert_http_missing(base, first["model_url"])
+        assert urlopen(base + current["model_url"]).status == 200
+        assert urlopen(base + "/other-owner/asset.txt").read() == b"another mount owner"
+        assert first_profile["profile_id"] not in str(server._static_files)
+    finally:
+        server.stop()
+
+
+@pytest.mark.parametrize("change", ["sprite", "bad-model", "missing-core", "clear-profiles"])
+def test_disabled_or_invalid_runtime_revokes_model_and_core_mounts(tmp_path, change):
+    store, _, entry, _ = configured_store(tmp_path)
+    unrelated = tmp_path / "unrelated.txt"
+    unrelated.write_bytes(b"retained")
+    server = AssetServer(tmp_path / "public", start_port=18340)
+    server.mount_files("/other-owner", {"asset.txt": unrelated})
+    base = f"http://127.0.0.1:{server.start()}"
+    try:
+        previous = store.runtime_config("wallpaper", asset_server=server)
+        assert urlopen(base + previous["model_url"]).status == 200
+        config = store.config
+        if change == "sprite":
+            config["backend"] = "sprite"
+        elif change == "bad-model":
+            entry.write_text("[]", encoding="utf-8")
+        elif change == "missing-core":
+            config["core_path"] = str(tmp_path / "missing/live2dcubismcore.min.js")
+        else:
+            config.update(backend="sprite", selected_profile_id="", profiles=[])
+        store.save(config)
+        runtime = store.runtime_config("wallpaper", asset_server=server)
+        if change in {"bad-model", "missing-core"}:
+            assert runtime.get("error")
+        assert_http_missing(base, previous["model_url"])
+        assert_http_missing(base, previous["core_url"])
+        assert urlopen(base + "/other-owner/asset.txt").read() == b"retained"
+    finally:
+        server.stop()
+
+
+def configure_visual_handler(store, monkeypatch):
+    presentation = CharacterPresentationCoordinator(lambda *_: None, emit_now=lambda *_: None)
+    monkeypatch.setattr("server.handlers.visual_handler.coordinator", presentation)
+    monkeypatch.setattr("server.handlers.visual_handler.bus.emit_now", lambda *_: None)
+    async def emit(*_):
+        pass
+    monkeypatch.setattr("server.handlers.visual_handler.bus.emit", emit)
+    handler = VisualHandler()
+    handler.configure(store, lambda: None)
+    return handler
+
+
+def count_model_inspections(monkeypatch):
+    calls = []
+    original = inspect_model
+    def inspect(path):
+        calls.append(str(path))
+        return original(path)
+    monkeypatch.setattr("render.visual_profile.inspect_model", inspect)
+    return calls
+
+
+def test_repeated_status_and_snapshot_do_not_reinspect_model_files(tmp_path, monkeypatch):
+    store, profile, _, _ = configured_store(tmp_path)
+    handler = configure_visual_handler(store, monkeypatch)
+    calls = count_model_inspections(monkeypatch)
+    expected = handler.snapshot()["capabilities"]
+    receipt = {"surface": "wallpaper", "profile_id": profile["profile_id"],
+               "runtime_id": store.runtime_id, "revision": store.revision, "state": "ready"}
+    for _ in range(8):
+        assert handler.report_status(receipt)
+        assert handler.snapshot()["capabilities"] == expected
+        assert asyncio.run(handler.handle("visual.get", {}))["capabilities"] == expected
+    assert calls == []
+    # Returned diagnostics cannot mutate the owning store's capability facts.
+    returned = handler.snapshot()
+    returned["capabilities"]["expressions"].clear()
+    assert handler.snapshot()["capabilities"] == expected
+
+
+def test_capabilities_refresh_on_inspect_reload_save_and_resource_rebuild(tmp_path, monkeypatch):
+    store, _, entry, _ = configured_store(tmp_path)
+    handler = configure_visual_handler(store, monkeypatch)
+    calls = count_model_inspections(monkeypatch)
+    previous = handler.snapshot()["capabilities"]
+    settings = json.loads(entry.read_text(encoding="utf-8"))
+    settings["FileReferences"]["Expressions"].append({"Name": "New", "File": "New.exp3.json"})
+    (entry.parent / "New.exp3.json").write_text('{"Parameters": []}', encoding="utf-8")
+    entry.write_text(json.dumps(settings), encoding="utf-8")
+    assert handler.snapshot()["capabilities"] == previous
+    assert calls == []
+    asyncio.run(handler.handle("visual.inspect", {"model_path": str(entry)}))
+    assert "New" in handler.snapshot()["capabilities"]["expressions"]
+    assert len(calls) == 1
+    settings["FileReferences"]["Textures"] = ["missing.png"]
+    entry.write_text(json.dumps(settings), encoding="utf-8")
+    asyncio.run(handler.handle("visual.reload", {}))
+    broken = handler.snapshot()
+    assert "model asset is missing" in broken["diagnostic"]
+    assert broken["capabilities"]["expressions"] == []
+    assert len(calls) == 2
+    for _ in range(3):
+        assert handler.snapshot() == broken
+    assert len(calls) == 2
+    # Rebuilding the runtime resources is also an explicit refresh boundary.
+    settings["FileReferences"]["Textures"] = ["texture.png"]
+    entry.write_text(json.dumps(settings), encoding="utf-8")
+    assert "error" not in store.runtime_config("wallpaper")
+    assert "diagnostic" not in handler.snapshot()
+    assert "New" in handler.snapshot()["capabilities"]["expressions"]
+    assert len(calls) == 3
+    other = model_fixture(tmp_path / "other-model", ("Happy",))
+    other_profile, _ = draft_profile(str(other))
+    config = store.config
+    config["profiles"] = [other_profile]
+    config["selected_profile_id"] = other_profile["profile_id"]
+    before_save = len(calls)
+    asyncio.run(handler.handle("visual.save", {"config": config}))
+    assert len(calls) == before_save + 1
+    assert handler.snapshot()["capabilities"]["expressions"] == ["Happy"]
+    assert "diagnostic" not in handler.snapshot()
