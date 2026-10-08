@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useBackend } from './hooks/useBackend'
+import { ActiveCharacterContext, useActiveCharacterSnapshot } from './activeCharacter'
 import Sidebar from './components/Sidebar'
 import ChatPage from './components/ChatPage'
 import WorkPage from './components/WorkPage'
@@ -27,6 +28,7 @@ function initialPage(): Page {
 
 function AmadeusApp() {
   const { send, subscribe, connected, reconnect } = useBackend()
+  const activeCharacter = useActiveCharacterSnapshot(connected, send)
   const searchParams = new URLSearchParams(window.location.search)
   const desktopProjection = searchParams.get('desktopProjection') === '1'
   const panelWindow = searchParams.get('panelWindow') === '1'
@@ -35,6 +37,8 @@ function AmadeusApp() {
   const [renderActive, setRenderActive] = useState(false)
   const [wallpaperActive, setWallpaperActive] = useState(false)
   const [renderAssetUrl, setRenderAssetUrl] = useState('')
+  const projectionRequestRef = useRef(0)
+  const wallpaperGenerationRef = useRef(0)
 
   useEffect(() => {
     if (desktopProjection) return
@@ -75,24 +79,37 @@ function AmadeusApp() {
 
   // These toggles own projection visibility. The backend's shared graph signal
   // route must remain active for speech and expressions on either surface.
+  // Start replies belong to the latest toggle; Wallpaper stop confirmations
+  // belong to the activation observed when the stop was requested.
   const handleToggleRender = useCallback(async () => {
+    const request = ++projectionRequestRef.current
     const next = !renderActive
     setRenderActive(next)
     setPage('chat')
 
     if (next) {
       if (wallpaperActive) {
-        if (!await stopElectronSliceHost(send)) {
+        const generation = wallpaperGenerationRef.current
+        const stopped = await stopElectronSliceHost(send)
+        if (stopped && generation === wallpaperGenerationRef.current) setWallpaperActive(false)
+        if (request !== projectionRequestRef.current) return
+        if (!stopped) {
           setRenderActive(false)
           return
         }
-        setWallpaperActive(false)
       }
       // Start AssetServer and get the render page URL
       try {
         const res = await send('render.start', {})
-        if (res?.url) setRenderAssetUrl(String(res.url))
-      } catch { /* AssetServer might already be running */ }
+        if (request !== projectionRequestRef.current) return
+        const url = typeof res?.url === 'string' ? res.url : ''
+        setRenderAssetUrl(url)
+        setRenderActive(Boolean(url))
+      } catch {
+        if (request !== projectionRequestRef.current) return
+        setRenderActive(false)
+        setRenderAssetUrl('')
+      }
     } else {
       send('render.stop', {}).catch(() => {})
       setRenderAssetUrl('')
@@ -101,25 +118,32 @@ function AmadeusApp() {
 
   // Toggle the Electron Slice wallpaper projection.
   const handleToggleWallpaper = useCallback(async () => {
+    const request = ++projectionRequestRef.current
     const next = !wallpaperActive
     setPage('chat')
 
     if (next) {
+      wallpaperGenerationRef.current += 1
       setWallpaperActive(true)
       if (renderActive) {
-        try { await send('render.stop', {}) } catch {}
         setRenderActive(false)
         setRenderAssetUrl('')
+        try { await send('render.stop', {}) } catch {}
+        if (request !== projectionRequestRef.current) return
       }
       try {
         const res = await send('wallpaper.start', ELECTRON_SLICE_START_PARAMS)
+        if (request !== projectionRequestRef.current) return
         if (res?.status === 'error') setWallpaperActive(false)   // 失败回退
         else await syncElectronSliceHost(res)
       } catch {
+        if (request !== projectionRequestRef.current) return
         setWallpaperActive(false)     // 失败回退
       }
     } else {
-      if (await stopElectronSliceHost(send)) setWallpaperActive(false)
+      const generation = wallpaperGenerationRef.current
+      const stopped = await stopElectronSliceHost(send)
+      if (stopped && generation === wallpaperGenerationRef.current) setWallpaperActive(false)
     }
   }, [wallpaperActive, renderActive, send])
 
@@ -136,6 +160,7 @@ function AmadeusApp() {
   useEffect(() => {
     if (desktopProjection) return
     const unsubReady = subscribe('wallpaper.ready', (payload) => {
+      wallpaperGenerationRef.current += 1
       setWallpaperActive(true)
       void syncElectronSliceHost(payload)
     })
@@ -152,6 +177,7 @@ function AmadeusApp() {
   useEffect(() => {
     if (desktopProjection || !connected || !autoStartWallpaper || autoStartDoneRef.current) return
     autoStartDoneRef.current = true
+    wallpaperGenerationRef.current += 1
     void (async () => {
       try {
         const res = await send('wallpaper.start', ELECTRON_SLICE_START_PARAMS)
@@ -270,11 +296,13 @@ function AmadeusApp() {
   }
 
   if (desktopProjection) {
-    return <WorkPage send={send} subscribe={subscribe} connected={connected} />
+    return <ActiveCharacterContext.Provider value={activeCharacter}>
+      <WorkPage send={send} subscribe={subscribe} connected={connected} />
+    </ActiveCharacterContext.Provider>
   }
 
   return (
-    <>
+    <ActiveCharacterContext.Provider value={activeCharacter}>
       <div className="native-titlebar-drag-region" aria-hidden="true">
         <img className="native-titlebar-app-icon" src={appIconUrl} alt="" />
       </div>
@@ -291,7 +319,7 @@ function AmadeusApp() {
           {page === 'settings' && <SettingsPage send={send} subscribe={subscribe} connected={connected} reconnectBackend={reconnect} />}
         </div>
       </div>
-    </>
+    </ActiveCharacterContext.Provider>
   )
 }
 

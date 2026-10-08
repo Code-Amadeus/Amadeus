@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useActiveCharacter } from '../../activeCharacter'
 import type { AuipExperienceProjection } from './types'
 
 interface AuipExperienceCardProps {
@@ -35,6 +36,7 @@ export default function AuipExperienceCard({
   onStep,
   onLeave,
 }: AuipExperienceCardProps) {
+  const activeCharacter = useActiveCharacter()
   const [expanded, setExpanded] = useState(false)
   const summary = experience.latestNarration
     || experience.terminal
@@ -53,7 +55,7 @@ export default function AuipExperienceCard({
         aria-expanded={expanded}
         onClick={() => setExpanded(value => !value)}
       >
-        <span className="auip-experience-avatar" aria-hidden="true">K</span>
+        <span className="auip-experience-avatar" aria-hidden="true">{Array.from(activeCharacter?.short_name || '')[0] || 'A'}</span>
         <span className="auip-experience-heading">
           <small>ATTACHED EXPERIENCE</small>
           <strong>{experience.title}</strong>
@@ -74,7 +76,7 @@ export default function AuipExperienceCard({
                 >
                   <option value="observe">Watch</option>
                   <option value="collaborate">Take turns</option>
-                  <option value="delegate">Let Kurisu play</option>
+                  <option value="delegate">Let {activeCharacter?.short_name || 'the assistant'} play</option>
                 </select>
               </label>
               <span className={`auip-operator-state ${experience.operatorStatus || 'idle'}`}>

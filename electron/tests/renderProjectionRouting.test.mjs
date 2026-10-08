@@ -19,28 +19,67 @@ function callback(name, bindings) {
   return new Function(...Object.keys(bindings), `${compiled}; return handler;`)(...Object.values(bindings))
 }
 
-function desktop({ renderActive = false, wallpaperActive = false, wallpaperFails = false } = {}) {
+function desktop({ renderActive = false, wallpaperActive = false, wallpaperFails = false, wallpaperStarts = [], renderStarts = [], stops = [], stopConfirmations = [] } = {}) {
   const state = { renderActive, wallpaperActive, backend: 'graph', renderAssetUrl: '', page: 'chat' }
   const calls = []
+  const subscriptions = new Map()
+  const desktopWindow = { amadeus: { closeElectronSlice: async () => stopConfirmations.length ? stopConfirmations.shift() : true } }
+  const helpers = {}
+  const helperCode = ts.transpileModule(fs.readFileSync(new URL('../src/renderer/wallpaperSlice.ts', import.meta.url), 'utf8'), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText
+  new Function('exports', 'window', helperCode)(helpers, desktopWindow)
+  const projectionRequestRef = { current: 0 }
+  const wallpaperGenerationRef = { current: 0 }
+  const autoStartDoneRef = { current: false }
   const send = async (method, params) => {
     calls.push(method)
     if (method === 'expression.set_backend') state.backend = params.backend
-    if (method === 'wallpaper.start') return { status: wallpaperFails ? 'error' : 'started' }
-    if (method === 'render.start') return { url: 'render.html' }
-    return { status: 'stopped' }
+    if (method === 'wallpaper.start') return wallpaperStarts.length ? wallpaperStarts.shift() : { status: wallpaperFails ? 'error' : 'started' }
+    if (method === 'render.start') {
+      const result = renderStarts.length ? renderStarts.shift() : { url: 'render.html' }
+      if (result instanceof Error) throw result
+      return result
+    }
+    return stops.length ? stops.shift() : { status: 'stopped' }
   }
+  // Install the real event subscriptions as well as the actual toggle callbacks.
+  const effect = app.body.statements.find(statement => ts.isExpressionStatement(statement)
+    && ts.isCallExpression(statement.expression) && statement.expression.expression.getText(ast) === 'useEffect'
+    && statement.getText(ast).includes("subscribe('wallpaper.ready'"))
+  const eventCode = ts.transpileModule(`return (${effect.expression.arguments[0].getText(ast)})()`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  new Function('desktopProjection', 'subscribe', 'setWallpaperActive', 'syncElectronSliceHost', 'window', 'wallpaperGenerationRef', eventCode)(
+    false, (method, callback) => { subscriptions.set(method, callback); return () => {} },
+    value => { state.wallpaperActive = value }, async () => true, desktopWindow, wallpaperGenerationRef,
+  )
   return {
     state, calls,
+    emit(method, payload = {}) { subscriptions.get(method)(payload) },
+    autoStartWallpaper() {
+      const effect = app.body.statements.find(statement => ts.isExpressionStatement(statement)
+        && ts.isCallExpression(statement.expression) && statement.expression.expression.getText(ast) === 'useEffect'
+        && statement.getText(ast).includes('autoStartDoneRef.current = true'))
+      const code = ts.transpileModule(`return (${effect.expression.arguments[0].getText(ast)})()`, {
+        compilerOptions: { target: ts.ScriptTarget.ES2022 },
+      }).outputText
+      new Function('desktopProjection', 'connected', 'autoStartWallpaper', 'autoStartDoneRef',
+        'wallpaperGenerationRef', 'send', 'ELECTRON_SLICE_START_PARAMS', 'setWallpaperActive', 'syncElectronSliceHost', code)(
+        false, true, true, autoStartDoneRef, wallpaperGenerationRef, send, { slice_host: 'electron' },
+        value => { state.wallpaperActive = value }, async () => true,
+      )
+    },
     async toggle(surface) {
       await callback(surface === 'render' ? 'handleToggleRender' : 'handleToggleWallpaper', {
         renderActive: state.renderActive,
         wallpaperActive: state.wallpaperActive,
-        send,
+        send, projectionRequestRef, wallpaperGenerationRef,
         setRenderActive: value => { state.renderActive = value },
         setWallpaperActive: value => { state.wallpaperActive = value },
         setRenderAssetUrl: value => { state.renderAssetUrl = value },
         setPage: value => { state.page = value },
-        stopElectronSliceHost: async send => { await send('wallpaper.stop', {}); return true },
+        stopElectronSliceHost: helpers.stopElectronSliceHost,
         syncElectronSliceHost: async () => true,
         ELECTRON_SLICE_START_PARAMS: { slice_host: 'electron' },
       })()
@@ -77,4 +116,203 @@ test('closing or failing to open a projection preserves the shared signal route'
   await app.toggle('wallpaper')
   assert.equal(app.state.wallpaperActive, false)
   assert.equal(app.state.backend, 'graph')
+})
+
+
+test('failed Render starts close the empty projection and allow a later connected start', async () => {
+  for (const failure of [new Error('not connected'), new Error('start failed'), {}, { status: 'error' }, { url: '' }]) {
+    const app = desktop({ renderStarts: [failure] })
+    await app.toggle('render')
+    assert.equal(app.state.renderActive, false, 'a failed start must not leave an empty active iframe')
+    assert.equal(app.state.renderAssetUrl, '')
+    assert.equal(app.state.backend, 'graph')
+    await app.toggle('render')
+    assert.equal(app.state.renderActive, true)
+    assert.equal(app.state.renderAssetUrl, 'render.html')
+    assert.equal(app.state.backend, 'graph')
+    assert.deepEqual(app.calls, ['render.start', 'render.start'])
+  }
+})
+
+
+function deferred() {
+  let resolve, reject
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no })
+  return { promise, resolve, reject }
+}
+
+test('a pending Render start cannot reopen a projection closed before its reply', async () => {
+  const start = deferred(), stop = deferred()
+  const app = desktop({ renderStarts: [start.promise], stops: [stop.promise] })
+  const opening = app.toggle('render')
+  await app.toggle('render')
+  assert.equal(app.state.renderActive, false)
+  // Backend replies remain FIFO: start completes before stop.
+  start.resolve({ url: 'old.html' }); await opening
+  assert.equal(app.state.renderActive, false)
+  assert.equal(app.state.renderAssetUrl, '')
+  stop.resolve({ status: 'stopped' })
+})
+
+test('old Render success and failure cannot overwrite a newer open intent', async () => {
+  for (const failed of [false, true]) {
+    const first = deferred(), second = deferred(), stop = deferred()
+    const app = desktop({ renderStarts: [first.promise, second.promise], stops: [stop.promise] })
+    const opening = app.toggle('render')
+    await app.toggle('render')
+    const reopening = app.toggle('render')
+    if (failed) first.reject(new Error('old start failed'))
+    else first.resolve({ url: 'old.html' })
+    await opening
+    assert.equal(app.state.renderActive, true, 'the new open intent survives the old reply')
+    assert.equal(app.state.renderAssetUrl, '', 'the old URL must not mount an iframe')
+    stop.resolve({ status: 'stopped' })
+    second.resolve({ url: 'new.html' }); await reopening
+    assert.equal(app.state.renderActive, true)
+    assert.equal(app.state.renderAssetUrl, 'new.html')
+  }
+})
+
+test('switching to Wallpaper invalidates pending Render results before backend stop completes', async () => {
+  const start = deferred(), stop = deferred()
+  const app = desktop({ renderStarts: [start.promise], stops: [stop.promise] })
+  const opening = app.toggle('render')
+  const wallpaper = app.toggle('wallpaper')
+  start.resolve({ url: 'old.html' }); await opening
+  assert.equal(app.state.renderActive, false)
+  assert.equal(app.state.renderAssetUrl, '')
+  stop.resolve({ status: 'stopped' }); await wallpaper
+  assert.equal(app.state.wallpaperActive, true)
+  assert.deepEqual(app.calls, ['render.start', 'render.stop', 'wallpaper.start'])
+})
+
+
+test('a Render start waiting for Wallpaper to stop is cancelled by a later close', async () => {
+  const stop = deferred()
+  const app = desktop({ wallpaperActive: true, stops: [stop.promise] })
+  const opening = app.toggle('render')
+  await app.toggle('render')
+  stop.resolve({ status: 'stopped' }); await opening
+  assert.equal(app.state.renderActive, false)
+  assert.equal(app.state.renderAssetUrl, '')
+  assert.ok(!app.calls.includes('render.start'))
+  assert.equal(app.state.wallpaperActive, false, 'confirmed stop is retained even after the Render request is cancelled')
+  await app.toggle('wallpaper')
+  assert.equal(app.calls.at(-1), 'wallpaper.start', 'the next click must start, rather than stop, Wallpaper')
+  assert.equal(app.state.wallpaperActive, true)
+})
+
+test('an older Wallpaper switch cannot start after a newer Render intent', async () => {
+  const stop = deferred()
+  const app = desktop({ renderActive: true, stops: [stop.promise] })
+  const wallpaper = app.toggle('wallpaper')
+  const render = app.toggle('render')
+  stop.resolve({ status: 'stopped' })
+  await Promise.all([wallpaper, render])
+  assert.equal(app.state.renderActive, true)
+  assert.equal(app.state.wallpaperActive, false)
+  assert.equal(app.state.renderAssetUrl, 'render.html')
+  assert.ok(!app.calls.includes('wallpaper.start'))
+})
+
+
+const flush = () => new Promise(resolve => setImmediate(resolve))
+
+for (const stopped of [true, false]) {
+  test(`cancelled Render respects desktop stop confirmation ${stopped} after a failed WebSocket request`, async () => {
+    const stop = deferred()
+    const app = desktop({ wallpaperActive: true, stops: [stop.promise], stopConfirmations: [stopped] })
+    const opening = app.toggle('render')
+    await app.toggle('render')
+    // No wallpaper.exited event is available on the disconnected transport.
+    stop.reject(new Error('WebSocket closed'))
+    await opening
+    assert.equal(app.state.wallpaperActive, !stopped)
+    assert.equal(app.state.renderActive, false)
+    assert.equal(app.state.renderAssetUrl, '')
+    assert.ok(!app.calls.includes('render.start'))
+  })
+}
+
+for (const startingRender of [true, false]) {
+  test(`a confirmed ${startingRender ? 'Render transition' : 'Wallpaper stop'} cannot erase a new Wallpaper start`, async () => {
+    const stop = deferred(), desktopStop = deferred()
+    const app = desktop({ wallpaperActive: true, stops: [stop.promise], stopConfirmations: [true, desktopStop.promise] })
+    const closing = app.toggle(startingRender ? 'render' : 'wallpaper')
+    if (startingRender) await app.toggle('render')
+    // Real server ordering: exited event precedes the stop RPC reply.
+    app.emit('wallpaper.exited')
+    assert.equal(app.state.wallpaperActive, false)
+    stop.resolve({ status: 'stopped' })
+    await flush() // The original desktop cleanup acknowledgement is still pending.
+    await app.toggle('wallpaper')
+    app.emit('wallpaper.ready')
+    assert.equal(app.state.wallpaperActive, true)
+    desktopStop.resolve(true)
+    await closing
+    assert.equal(app.state.wallpaperActive, true, 'old confirmed stop cannot override the newer start')
+    assert.equal(app.state.renderActive, false)
+    assert.equal(app.calls.filter(method => method === 'wallpaper.start').length, 1)
+  })
+}
+
+test('an explicit Wallpaper stop still records success after later Render actions cancel each other', async () => {
+  const firstStop = deferred(), secondStop = deferred()
+  const app = desktop({ wallpaperActive: true, stops: [firstStop.promise, secondStop.promise] })
+  const closing = app.toggle('wallpaper')
+  const opening = app.toggle('render')
+  await app.toggle('render')
+  firstStop.resolve({ status: 'stopped' }); await closing
+  assert.equal(app.state.wallpaperActive, false)
+  secondStop.resolve({ status: 'stopped' }); await opening
+  assert.equal(app.state.renderActive, false)
+  assert.ok(!app.calls.includes('render.start'))
+})
+
+
+for (const stoppingSurface of ['render', 'wallpaper']) {
+  for (const newStart of ['manual', 'manual-and-ready', 'ready-event', 'auto-start']) {
+    test(`old ${stoppingSurface} stop cannot erase ${newStart} Wallpaper after a later Render stop fails`, async () => {
+      const stop = deferred(), oldCleanup = deferred()
+      const app = desktop({ wallpaperActive: true, stops: [stop.promise], stopConfirmations: [true, oldCleanup.promise, false] })
+      const closing = app.toggle(stoppingSurface)
+      if (stoppingSurface === 'render') await app.toggle('render')
+      app.emit('wallpaper.exited')
+      stop.resolve({ status: 'stopped' })
+      await flush() // Desktop cleanup for the old Wallpaper remains pending.
+
+      if (newStart.startsWith('manual')) await app.toggle('wallpaper')
+      if (newStart === 'ready-event' || newStart === 'manual-and-ready') app.emit('wallpaper.ready')
+      if (newStart === 'auto-start') { app.autoStartWallpaper(); await flush() }
+      assert.equal(app.state.wallpaperActive, true)
+
+      await app.toggle('render') // The new Wallpaper's stop fails confirmation.
+      assert.equal(app.state.renderActive, false)
+      assert.equal(app.state.wallpaperActive, true)
+      oldCleanup.resolve(true)
+      await closing
+      assert.equal(app.state.wallpaperActive, true, 'the old stop belongs to the preceding Wallpaper activation')
+      assert.equal(app.state.renderActive, false)
+      assert.equal(app.state.renderAssetUrl, '')
+      assert.ok(!app.calls.includes('render.start'))
+    })
+  }
+}
+
+
+test('ready followed by exited during a fast switch still completes the current Render request', async () => {
+  const start = deferred(), stop = deferred()
+  const app = desktop({ wallpaperStarts: [start.promise], stops: [stop.promise] })
+  const wallpaperOpening = app.toggle('wallpaper')
+  const opening = app.toggle('render')
+  // Each event precedes its RPC reply; start finishes before the queued stop.
+  // Render remains the latest user intent throughout.
+  app.emit('wallpaper.ready')
+  start.resolve({ status: 'started' }); await wallpaperOpening
+  app.emit('wallpaper.exited')
+  stop.resolve({ status: 'stopped' })
+  await opening
+  assert.equal(app.state.wallpaperActive, false)
+  assert.equal(app.state.renderActive, true)
+  assert.equal(app.state.renderAssetUrl, 'render.html')
 })

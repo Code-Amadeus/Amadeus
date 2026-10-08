@@ -30,7 +30,7 @@ def pinned_kurisu(monkeypatch):
 def mira(monkeypatch, tmp_path):
     (tmp_path / "mira.toml").write_bytes((ROOT / "tests/fixtures/mira_character.toml").read_bytes())
     with monkeypatch.context() as loading:
-        loading.setattr(characters, "files", lambda _package: tmp_path)
+        loading.setattr(characters, "user_character_directory", lambda: tmp_path)
         role = characters.load("mira")
     monkeypatch.setattr(characters, "_ACTIVE_CHARACTER", role)
     return role
@@ -103,6 +103,7 @@ def test_loader_rejects_invalid_voice_line_tables(monkeypatch, tmp_path, overrid
         document += "\n".join(f"{json.dumps(key)} = {json.dumps(value)}" for key, value in overrides.items())
         (tmp_path / "invalid-voice.toml").write_text(document, encoding="utf-8")
         monkeypatch.setattr(characters, "files", lambda _package: tmp_path)
+        monkeypatch.setattr(characters, "user_character_directory", lambda: tmp_path)
         with pytest.raises(ValueError):
             characters.load("invalid-voice")
 
@@ -132,6 +133,7 @@ def test_load_rejects_polarity_authority_and_state_overrides_for_every_role(
         f'[names]\ncharacter_id = "{character_id}"\nname = "Test"\n[voice_lines]\n'
         f'{key} = {json.dumps(wording)}\n', encoding="utf-8")
     monkeypatch.setattr(characters, "files", lambda _package: tmp_path)
+    monkeypatch.setattr(characters, "user_character_directory", lambda: tmp_path)
     characters.load.cache_clear()
     with pytest.raises(ValueError, match="Host-owned and cannot be overridden"):
         characters.load(character_id)
@@ -142,6 +144,7 @@ def test_missing_overrides_use_trusted_host_variants(monkeypatch, tmp_path, char
     (tmp_path / f"{character_id}.toml").write_text(
         f'[names]\ncharacter_id = "{character_id}"\nname = "Test"\n', encoding="utf-8")
     monkeypatch.setattr(characters, "files", lambda _package: tmp_path)
+    monkeypatch.setattr(characters, "user_character_directory", lambda: tmp_path)
     characters.load.cache_clear()
     role = characters.load(character_id)
     monkeypatch.setattr(characters, "_ACTIVE_CHARACTER", role)
@@ -160,6 +163,7 @@ def test_permitted_role_commentary_renders_without_changing_host_facts(monkeypat
         '[names]\ncharacter_id = "test-voice"\nname = "Test"\n[voice_lines]\n'
         f'vn_voice_choice = {json.dumps(commentary, ensure_ascii=False)}\n', encoding="utf-8")
     monkeypatch.setattr(characters, "files", lambda _package: tmp_path)
+    monkeypatch.setattr(characters, "user_character_directory", lambda: tmp_path)
     role = characters.load("test-voice")
     monkeypatch.setattr(characters, "_ACTIVE_CHARACTER", role)
     assert _fallback_speech("choice", "ja") == commentary
@@ -176,6 +180,7 @@ def test_overrides_are_immutable_and_explicit_active_id_uses_the_startup_snapsho
         '[names]\ncharacter_id = "kurisu"\nname = "Renamed"\n[voice_lines]\n'
         'focus_voice_drafts = "Later file edit."\n', encoding="utf-8")
     monkeypatch.setattr(characters, "files", lambda _package: tmp_path)
+    monkeypatch.setattr(characters, "user_character_directory", lambda: tmp_path)
     characters.load.cache_clear()
     assert voice_line("focus_voice_drafts") == expected
     assert voice_line("focus_voice_drafts", character_id="kurisu") == expected

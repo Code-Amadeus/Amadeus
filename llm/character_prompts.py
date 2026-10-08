@@ -13,13 +13,21 @@ import re
 from string import Template
 from types import MappingProxyType
 from typing import Mapping
-import tomllib
+import unicodedata
+from pathlib import Path
+
+from core.character_profiles import (
+    CharacterLoadError, CharacterValidationError, read_character_document,
+    user_character_directory,
+)
 
 from llm.character_voice_lines import validate_voice_lines
 
 
 DEFAULT_CHARACTER_ID = "kurisu"
 MAX_CHARACTER_PROMPT_CHARS = 8192
+MAX_CHARACTER_NAME_CHARS = 128
+MAX_CHARACTER_PERSONA_CHARS = 7900
 NAME_KEYS = frozenset({"character_id", "short_name", "en_name", "family_first_name",
                        "ja_name", "display_name", "work_title"})
 TEXT_KEYS = frozenset({
@@ -50,6 +58,10 @@ class CharacterPrompts:
     values: Mapping[str, str]
     # Resolved role commentary only. Fixed Host fact wording stays in its catalog.
     voice_lines: Mapping[str, str] = field(default_factory=dict)
+    # UI labels never enter prompt bindings or the model-visible name schema.
+    name: str = ""
+    persona: str = ""
+    ui_names: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         validate_character_id(self.character_id)
@@ -59,37 +71,109 @@ class CharacterPrompts:
         for key, value in values.items():
             if not isinstance(value, str) or "\0" in value or len(value) > MAX_CHARACTER_PROMPT_CHARS:
                 raise ValueError(f"invalid character prompt value: {key}")
+            value.encode("utf-8", errors="strict")
+            if key in NAME_KEYS - {"character_id"}:
+                validate_character_name(value, key, allow_empty=key == "work_title")
         if values["character_id"] != self.character_id:
             raise ValueError("character id does not match resource identity")
-        if not values["display_name"] or values["display_name"] != values["display_name"].strip():
-            raise ValueError("character display_name must be nonempty with no surrounding whitespace")
+        name = self.name if self.name != "" else values["short_name"]
+        validate_character_name(name)
+        persona = normalize_character_persona(self.persona)
+        if not self.ui_names.keys() <= {"ui_name", "accessible_name"}:
+            raise ValueError("invalid character UI labels")
+        ui_names = {"ui_name": values["display_name"], "accessible_name": values["display_name"]}
+        ui_names.update(self.ui_names)
+        for key, value in ui_names.items():
+            validate_character_name(value, key)
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "persona", persona)
+        object.__setattr__(self, "ui_names", MappingProxyType(ui_names))
         object.__setattr__(self, "values", MappingProxyType(values))
         object.__setattr__(self, "voice_lines", validate_voice_lines(
             self.voice_lines, max_chars=MAX_CHARACTER_PROMPT_CHARS))
 
 
-@lru_cache(maxsize=32)
-def load(character_id: str = DEFAULT_CHARACTER_ID) -> CharacterPrompts:
+def validate_character_name(value: object, field_name: str = "name", *, allow_empty: bool = False) -> str:
+    label = f"Character {field_name}"
+    if not isinstance(value, str) or (not value and not allow_empty):
+        raise ValueError(f"{label} must be a nonempty string.")
+    if any(unicodedata.category(char) in {"Cc", "Zl", "Zp"} for char in value):
+        raise ValueError(f"{label} must be one line without control characters.")
+    if value != value.strip():
+        raise ValueError(f"{label} must not have surrounding whitespace.")
+    if len(value) > MAX_CHARACTER_NAME_CHARS:
+        raise ValueError(f"{label} must contain at most {MAX_CHARACTER_NAME_CHARS} Unicode code points.")
+    try:
+        value.encode("utf-8", errors="strict")
+    except UnicodeError as exc:
+        raise ValueError(f"{label} must contain valid Unicode text.") from exc
+    return value
+
+
+def normalize_character_persona(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("Character persona must be a string.")
+    value = value.strip()
+    if "\0" in value:
+        raise ValueError("Character persona must not contain NUL.")
+    if len(value) > MAX_CHARACTER_PERSONA_CHARS:
+        raise ValueError(f"Character persona must contain at most {MAX_CHARACTER_PERSONA_CHARS} Unicode code points.")
+    try:
+        value.encode("utf-8", errors="strict")
+    except UnicodeError as exc:
+        raise ValueError("Character persona must contain valid Unicode text.") from exc
+    return value
+
+
+def parse_character_document(character_id: str, document: Mapping[str, object]) -> CharacterPrompts:
+    """Expand inert persona text once, within the existing identity slots only."""
     validate_character_id(character_id)
-    document = tomllib.loads(files("characters").joinpath(f"{character_id}.toml").read_text(encoding="utf-8"))
-    if not {"names"} <= document.keys() <= {"names", "texts", "voice_lines"}:
-        raise ValueError("character file requires names and optional texts/voice_lines tables")
-    names, texts = document["names"], document.get("texts", {})
-    if (not isinstance(names, dict) or not isinstance(texts, dict)
-            or not names.keys() <= NAME_KEYS | {"name"} or not texts.keys() <= TEXT_KEYS):
+    if not {"names"} <= document.keys() <= {"names", "texts", "voice_lines", "persona", "ui"}:
+        raise ValueError("character file requires names and optional texts/voice_lines/persona/ui")
+    names, texts, ui = document["names"], document.get("texts", {}), document.get("ui", {})
+    if (not isinstance(names, dict) or not isinstance(texts, dict) or not isinstance(ui, dict)
+            or not names.keys() <= NAME_KEYS | {"name"} or not texts.keys() <= TEXT_KEYS
+            or not ui.keys() <= {"ui_name", "accessible_name"}):
         raise ValueError("invalid character prompt tables")
     primary = names.get("name", names.get("short_name"))
-    if (not isinstance(primary, str) or not primary.strip()
-            or names.get("character_id") != character_id):
+    validate_character_name(primary)
+    if names.get("character_id") != character_id:
         raise ValueError("character file requires its stable id and a nonempty primary name")
+    persona = normalize_character_persona(document.get("persona", ""))
+    if persona and texts:
+        raise ValueError("character persona cannot be combined with explicit texts")
     resolved = {key: primary for key in NAME_KEYS - {"character_id", "work_title"}}
     resolved.update(character_id=character_id, work_title="")
     resolved.update({key: value for key, value in names.items() if key != "name"})
-    for key in NAME_KEYS - {"character_id", "work_title"}:
-        if not isinstance(resolved[key], str) or not resolved[key].strip():
-            raise ValueError(f"invalid character name: {key}")
-    return CharacterPrompts(character_id, resolved | _neutral_texts(resolved) | texts,
-        document.get("voice_lines", {}))
+    for key in NAME_KEYS - {"character_id"}:
+        validate_character_name(resolved[key], key, allow_empty=key == "work_title")
+    neutral = _neutral_texts(resolved)
+    if persona:
+        for key in ("ja_identity", "en_identity"):
+            neutral[key] += persona + "\n\n"
+    return CharacterPrompts(character_id, resolved | neutral | texts,
+        document.get("voice_lines", {}), name=primary, persona=persona, ui_names=ui)
+
+
+def load_fresh(character_id: str = DEFAULT_CHARACTER_ID, *, directory: Path | None = None) -> CharacterPrompts:
+    """Read the current disk role; built-in identity cannot be shadowed locally."""
+    try:
+        validate_character_id(character_id)
+        path = (files("characters").joinpath(f"{character_id}.toml")
+            if character_id == DEFAULT_CHARACTER_ID else
+            (Path(directory) if directory is not None else user_character_directory()) / f"{character_id}.toml")
+        return parse_character_document(character_id, read_character_document(path))
+    except CharacterLoadError:
+        raise
+    except UnicodeError as exc:
+        raise CharacterValidationError("character values are not valid UTF-8") from exc
+    except ValueError as exc:
+        raise CharacterValidationError(str(exc)) from exc
+
+
+@lru_cache(maxsize=32)
+def load(character_id: str = DEFAULT_CHARACTER_ID) -> CharacterPrompts:
+    return load_fresh(character_id)
 
 
 def _neutral_texts(names: Mapping[str, str]) -> dict[str, str]:
@@ -143,6 +227,14 @@ def _character(character_id: str | None) -> CharacterPrompts:
 def character_identity(character_id: str | None = None) -> dict[str, str]:
     character = _character(character_id)
     return {"character_id": character.character_id, "display_name": character.values["display_name"]}
+
+
+def active_ui_identity() -> dict[str, str]:
+    """The desktop identity is a projection of the immutable startup role."""
+    character = active_character()
+    return {"character_id": character.character_id, "name": character.name,
+        "display_name": character.values["display_name"], "short_name": character.values["short_name"],
+        **character.ui_names}
 
 
 def text(key: str, *, character_id: str | None = None) -> str:

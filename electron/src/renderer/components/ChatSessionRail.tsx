@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import FluentIcon from './FluentIcon'
 import { useI18n } from '../i18n'
+import type { CharacterRecord } from './characterManagement'
+import { foreignSessionCharacter, sessionCharacterNotice } from './chatSessionCharacter'
 
 export interface ChatSessionContext {
   bindingKind: 'project' | 'work_item'
@@ -39,6 +41,10 @@ interface Props {
   projects: ChatProjectSummary[]
   activeId: string | null
   currentCharacterId: string
+  characters: CharacterRecord[] | null
+  connected: boolean
+  startupCharacterLocked: boolean
+  onNotice: (notice: string) => void
   artifactViewId: string
   onSelect: (id: string) => void
   onNew: () => void
@@ -97,6 +103,10 @@ function SessionRow({
   session,
   active,
   currentCharacterId,
+  characters,
+  connected,
+  startupCharacterLocked,
+  onNotice,
   onSelect,
   onRename,
   onDelete,
@@ -104,17 +114,24 @@ function SessionRow({
   session: ChatSessionSummary
   active: boolean
   currentCharacterId: string
+  characters: CharacterRecord[] | null
+  connected: boolean
+  startupCharacterLocked: boolean
+  onNotice: (notice: string) => void
   onSelect: () => void
   onRename: () => void
   onDelete: () => void
 }) {
   const { t } = useI18n()
-  const foreignCharacterId = currentCharacterId && session.character_id !== currentCharacterId
-    ? session.character_id : ''
-  const canMutate = Boolean(currentCharacterId && session.character_id === currentCharacterId)
-  const mutationNotice = canMutate ? '' : foreignCharacterId
-    ? `${t('Switch character and restart the backend with')} AMADEUS_CHARACTER_ID=${foreignCharacterId} ${t('to open, rename, or delete this chat.')}`
-    : t('Chat character identity is unavailable. Reconnect to the backend.')
+  const character = foreignSessionCharacter(session.character_id, currentCharacterId, characters)
+  const canMutate = Boolean(connected && currentCharacterId && session.character_id === currentCharacterId)
+  const mutationNotice = sessionCharacterNotice(
+    session.character_id, currentCharacterId, characters, connected, startupCharacterLocked, t,
+  )
+  const characterLabel = character
+    ? `${character.name}${character.available === false ? ` · ${t('Unavailable role')}` : ''}` : ''
+  const characterTooltip = character
+    ? `${t('Character')}: ${characterLabel}${character.name === character.id ? '' : ` (${character.id})`}` : ''
   const detail = session.context?.bindingKind === 'work_item'
     ? session.context.workItemTitle || 'Task'
     : session.message_count
@@ -139,22 +156,22 @@ function SessionRow({
       <button
         type="button"
         data-chat-session-id={session.id}
-        onClick={onSelect}
-        onDoubleClick={() => { if (canMutate) onRename() }}
+        onClick={() => { if (canMutate) onSelect(); else onNotice(mutationNotice) }}
+        onDoubleClick={() => { if (canMutate) onRename(); else onNotice(mutationNotice) }}
         className="flex-1 min-w-0 text-left border-none bg-transparent cursor-pointer"
         style={{ padding: '7px 5px 7px 9px', color: 'inherit' }}
-        title={canMutate ? session.title : `${session.title}\n${foreignCharacterId ? `${t('Character')}: ${foreignCharacterId}\n` : ''}${mutationNotice}`}
+        title={canMutate ? session.title : `${session.title}\n${characterTooltip ? `${characterTooltip}\n` : ''}${mutationNotice}`}
       >
         <span className="block truncate" style={{ fontSize: 11, fontWeight: active ? 600 : 500 }}>
           {session.title || t('Untitled chat')}
         </span>
         <span className="flex items-center gap-1 min-w-0" style={{ marginTop: 2, color: 'var(--faint)', fontSize: 9 }}>
           <span className="truncate">{detail}</span>
-          {foreignCharacterId && (
+          {character && (
             <>
               <span aria-hidden="true">·</span>
-              <span className="shrink-0" title={`${t('Character')}: ${foreignCharacterId}`}>
-                {foreignCharacterId}
+              <span className="truncate" style={{ maxWidth: 90 }} title={characterTooltip}>
+                {characterLabel}
               </span>
             </>
           )}
@@ -165,7 +182,7 @@ function SessionRow({
       <button
         type="button"
         disabled={!canMutate}
-        onClick={event => { event.stopPropagation(); if (canMutate) onDelete() }}
+        onClick={event => { event.stopPropagation(); onDelete() }}
         title={mutationNotice || t('Delete chat')}
         aria-label={`${t('Delete')} ${session.title || t('chat')}`}
         className="opacity-0 group-hover:opacity-100 border-none bg-transparent cursor-pointer disabled:cursor-not-allowed"
@@ -182,6 +199,10 @@ export default function ChatSessionRail({
   projects,
   activeId,
   currentCharacterId,
+  characters,
+  connected,
+  startupCharacterLocked,
+  onNotice,
   artifactViewId,
   onSelect,
   onNew,
@@ -506,6 +527,10 @@ export default function ChatSessionRail({
                   session={session}
                   active={session.id === activeId}
                   currentCharacterId={currentCharacterId}
+                  characters={characters}
+                  connected={connected}
+                  startupCharacterLocked={startupCharacterLocked}
+                  onNotice={onNotice}
                   onSelect={() => onSelect(session.id)}
                   onRename={() => onRename(session.id, session.title)}
                   onDelete={() => onDelete(session.id)}

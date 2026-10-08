@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import type { BackendStartupFailure } from '../shared/characterStartup'
 
 export declare global {
   interface WorkPreviewDescriptor {
@@ -34,6 +35,8 @@ export declare global {
       authScheme: string
     } | null>
     restartBackend: () => Promise<boolean>
+    getBackendStartupFailure: () => Promise<BackendStartupFailure | null>
+    recoverCharacterStartup: () => Promise<{ ok: boolean; saved?: boolean; error?: string; settings?: Record<string, unknown>; failure?: BackendStartupFailure | null }>
     getDesktopSettings: () => Promise<Record<string, unknown> | null>
     setTitleBarTheme: (theme: 'classic' | 'wallpaper-slice') => Promise<boolean>
     getCompanionPortraitStatus: () => Promise<Record<string, unknown> | null>

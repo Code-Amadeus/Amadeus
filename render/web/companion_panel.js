@@ -5,6 +5,8 @@
   const status = document.getElementById("status");
   let portrait = document.getElementById("portrait");
   const fallback = document.getElementById("fallback");
+  const speaker = document.getElementById("speaker");
+  let accessibleName = 'Amadeus';
   let atlas = null;
   let returnTimer = null;
   let frames = {};
@@ -17,6 +19,22 @@
   const inputHint = document.getElementById('input-hint');
   const inputButtons = { voice: document.getElementById('voice'), vision: document.getElementById('vision') };
   let inputs = null, inputPending = false, inputStatusRequest = null, inputError = '', hoverInput = '', inputPoll = null;
+  function paintIdentity(identity) {
+    speaker.textContent = typeof identity?.ui_name === 'string' && identity.ui_name ? identity.ui_name : 'Amadeus';
+    accessibleName = typeof identity?.accessible_name === 'string' && identity.accessible_name ? identity.accessible_name : 'Amadeus';
+    if (portrait.tagName === 'IMG') portrait.alt = accessibleName;
+    else portrait.setAttribute('aria-label', accessibleName);
+  }
+  async function readIdentity() {
+    const connection = inputConnection;
+    try {
+      const identity = await api?.active?.();
+      if (connected && connection === inputConnection && typeof identity?.ui_name === 'string'
+        && identity.ui_name && typeof identity?.accessible_name === 'string' && identity.accessible_name) paintIdentity(identity);
+    } catch { /* Preserve the pinned startup name during a transient disconnect. */ }
+  }
+  // Main supplies the pinned identity before the hidden card is shown.
+  paintIdentity(api?.initialIdentity);
   function renderInputs() {
     const otherVoice = inputs?.voice?.active && inputs.voice.source !== 'wake';
     for (const [name, button] of Object.entries(inputButtons)) {
@@ -164,7 +182,7 @@
           const canvas = document.createElement('canvas');
           canvas.id = 'portrait';
           canvas.setAttribute('role', 'img');
-          canvas.setAttribute('aria-label', '牧濑红莉栖');
+          canvas.setAttribute('aria-label', accessibleName);
           portrait.replaceWith(canvas);
           portrait = canvas;
           atlas = new window.CompanionAtlas.Player(canvas, manifest, base);
@@ -181,6 +199,7 @@
     source = new EventSource(`http://127.0.0.1:${port}/wallpaper/events?retainSubtitle=true`);
     source.onopen = () => {
       connected = true;
+      void readIdentity();
       inputError = ''; renderInputs(); void refreshInputs();
       paint();
       void paintPortrait();

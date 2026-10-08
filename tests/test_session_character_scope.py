@@ -15,6 +15,13 @@ from test_cooperative_pending_turn import pending_host as pending_host
 from test_session_activation import context as context, sessions as sessions, state, write_session
 
 
+def assert_startup_guidance(error, character_id):
+    assert f"'{character_id}'" in error
+    assert "next backend startup" in error and "restart" in error
+    # This layer knows ownership, but does not own desktop/environment selection.
+    assert "AMADEUS_CHARACTER_ID" not in error
+
+
 def boot_as(monkeypatch, character_id):
     # Tests simulate separate backend startups without adding a runtime switch.
     monkeypatch.setattr(character_prompts, "active_character_id", lambda: character_id)
@@ -82,7 +89,7 @@ def test_foreign_load_preserves_current_history_fence_and_project_context(contex
     sm.configure_activation_guard(guard)
     response = context.handler._load({"session_id": "foreign"})
     assert response["ok"] is False
-    assert "Restart" in response["error"] and "AMADEUS_CHARACTER_ID=testchar" in response["error"]
+    assert_startup_guidance(response["error"], "testchar")
     assert "messages" not in response
     assert not sm.load_session("foreign")[0]
     with pytest.raises(sm.SessionCharacterMismatch):
@@ -105,7 +112,8 @@ def test_missing_foreign_pack_keeps_identity_and_restart_error(sessions, monkeyp
     monkeypatch.setattr(character_prompts, "load", forbidden)
     assert sm._read_session_history("foreign")[0].character_id == "removed-pack"
     response = SessionHandler()._load({"session_id": "foreign"})
-    assert response["ok"] is False and "AMADEUS_CHARACTER_ID=removed-pack" in response["error"]
+    assert response["ok"] is False
+    assert_startup_guidance(response["error"], "removed-pack")
     forbidden.assert_not_called()
 
 
@@ -153,7 +161,7 @@ async def test_foreign_mutation_is_refused_before_history_context_or_selection_c
     response = await context.handler.handle(method, {"session_id": target, "title": "Changed"})
 
     assert response["ok"] is False
-    assert "AMADEUS_CHARACTER_ID=testchar" in response["error"]
+    assert_startup_guidance(response["error"], "testchar")
     assert set(response) == {"ok", "error"}
     assert mutation_state(context) == before
     delete.assert_not_called()
@@ -186,7 +194,7 @@ async def test_legacy_mutation_uses_historical_kurisu_owner(context, monkeypatch
     response = await context.handler.handle(method, {"session_id": "legacy", "title": "Changed"})
     if character_id != "kurisu":
         assert response["ok"] is False
-        assert "AMADEUS_CHARACTER_ID=kurisu" in response["error"]
+        assert_startup_guidance(response["error"], "kurisu")
         assert mutation_state(context) == before
         context.projection.assert_not_called()
     else:

@@ -5,6 +5,7 @@ import test from 'node:test'
 import vm from 'node:vm'
 import ts from 'typescript'
 import { automaticSessionSelection, runSessionSelection } from '../src/renderer/components/chatMessageState.ts'
+import { foreignSessionCharacter, sessionCharacterNotice } from '../src/renderer/components/chatSessionCharacter.ts'
 
 const require = createRequire(import.meta.url)
 
@@ -12,7 +13,12 @@ const require = createRequire(import.meta.url)
 const source = fs.readFileSync(new URL('../src/renderer/components/ChatPage.tsx', import.meta.url), 'utf8')
 const tree = ts.createSourceFile('ChatPage.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
 const declarations = []
+let catalogEffectSource
 function visit(node) {
+  if (ts.isCallExpression(node) && node.expression.getText(tree) === 'useEffect'
+    && node.arguments[0]?.getText(tree).includes('setSessionCharacters')) {
+    catalogEffectSource = node.arguments[0].getText(tree)
+  }
   if (ts.isVariableDeclaration(node) && ['toMessages', 'refreshSessions', 'applySessionPayload', 'selectSession', 'loadSession', 'restoreOwnedSession', 'handleDeleteSession', 'handleRenameSession'].includes(node.name.getText(tree))) {
     declarations.push(`const ${node.getText(tree)};`)
   }
@@ -156,60 +162,109 @@ test('selection helper retains its rejection contract while reporting fallback f
   assert.equal(selection.pending, 0)
 })
 
-test('the session rail labels only roles different from the backend startup role', () => {
-  const source = fs.readFileSync(new URL('../src/renderer/components/ChatSessionRail.tsx', import.meta.url), 'utf8')
-  const code = ts.transpileModule(source, {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+function compileModule(relative, dependencies = {}) {
+  const code = ts.transpileModule(fs.readFileSync(new URL(relative, import.meta.url), 'utf8'), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
   }).outputText
-  const sessions = [
-    { id: 'own', title: 'Original own title', character_id: 'mira', message_count: 2 },
-    { id: 'foreign', title: 'Original foreign title', character_id: 'kurisu', message_count: 2 },
-  ]
-  let stateIndex = 0
-  const context = vm.createContext({ exports: {}, require: name => {
-    if (name === 'react') return { useMemo: fn => fn(), useEffect() {}, useRef: value => ({ current: value }),
-      useState: value => [stateIndex++ === 0 ? true : value, () => {}] }
-    if (name === './FluentIcon') return { default: () => null }
-    if (name === '../i18n') return { useI18n: () => ({ t: key => key }) }
-    return require(name)
-  }, props: { sessions, projects: [], activeId: 'foreign', currentCharacterId: 'mira', artifactViewId: '',
-    onSelect() {}, onRename() {}, onDelete() {} } })
-  vm.runInContext(code, context)
-  const markup = require('react-dom/server').renderToStaticMarkup(vm.runInContext('exports.default(props)', context))
-  const own = markup.match(/data-chat-session-id="own"[\s\S]*?<\/button>/)[0]
-  const foreign = markup.match(/data-chat-session-id="foreign"[\s\S]*?<\/button>/)[0]
-  assert.match(own, /title="Original own title"/)
-  assert.doesNotMatch(own, /Character:|>mira<\/span>/)
-  assert.match(foreign, /title="Original foreign title\nCharacter: kurisu\nSwitch character and restart the backend with AMADEUS_CHARACTER_ID=kurisu/)
-  assert.match(foreign, />kurisu<\/span>/)
-  assert.deepEqual(sessions.map(session => [session.title, session.character_id]),
-    [['Original own title', 'mira'], ['Original foreign title', 'kurisu']])
+  const exports = {}
+  new Function('require', 'exports', code)(name => dependencies[name] || require(name), exports)
+  return exports
+}
+const startup = compileModule('../src/shared/characterStartup.ts')
+const management = compileModule('../src/renderer/components/characterManagement.ts', { '../../shared/characterStartup': startup })
+assert.ok(catalogEffectSource)
+const catalogEffectCode = ts.transpileModule(`const catalogEffect = ${catalogEffectSource}`, {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+}).outputText
+const flush = () => new Promise(resolve => setImmediate(resolve))
+
+function catalogHarness(send, getDesktopSettings) {
+  const state = { characters: null, locked: false }
+  const context = vm.createContext({
+    connected: false, send, characterCatalog: management.characterCatalog,
+    startupCharacterSelection: startup.startupCharacterSelection,
+    window: getDesktopSettings ? { amadeus: { getDesktopSettings } } : {},
+    setSessionCharacters: value => { state.characters = value },
+    setStartupCharacterLocked: value => { state.locked = value },
+  })
+  vm.runInContext(catalogEffectCode, context)
+  let cleanup
+  return { state, render(connected) {
+    cleanup?.(); context.connected = connected
+    cleanup = vm.runInContext('catalogEffect()', context)
+  } }
+}
+
+test('ChatPage reads fresh catalog names on connection and ignores results after disconnect or unmount', async () => {
+  const catalogs = [], settings = []
+  const page = catalogHarness(method => new Promise(resolve => { catalogs.push({ method, resolve }) }),
+    () => new Promise(resolve => { settings.push(resolve) }))
+  page.render(false)
+  assert.equal(catalogs.length, 0)
+  page.render(true)
+  assert.equal(catalogs[0].method, 'character.list')
+  page.render(false); page.render(true)
+  catalogs[0].resolve({ characters: [role('other-role', 'Old name')] })
+  settings[0]({ sources: { AMADEUS_CHARACTER_ID: 'environment' }, locked: { AMADEUS_CHARACTER_ID: true } })
+  await flush()
+  assert.equal(page.state.characters, null)
+  assert.equal(page.state.locked, false)
+  catalogs[1].resolve({ characters: [role('other-role', 'New name')] })
+  settings[1]({ sources: { AMADEUS_CHARACTER_ID: 'user' } })
+  await flush()
+  assert.equal(page.state.characters[0].name, 'New name')
+  assert.equal(page.state.locked, false)
+  page.render(false)
+  assert.equal(page.state.characters[0].name, 'New name', 'known offline labels are retained')
+  const returnedPage = catalogHarness(async () => ({ characters: [role('other-role', 'Renamed in Settings')] }), async () => null)
+  returnedPage.render(true); await flush()
+  assert.equal(returnedPage.state.characters[0].name, 'Renamed in Settings')
 })
 
-test('the actual rail callbacks deny foreign and unknown-owner mutations while same-role controls work', () => {
-  const source = fs.readFileSync(new URL('../src/renderer/components/ChatSessionRail.tsx', import.meta.url), 'utf8')
-  const code = ts.transpileModule(source, {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
-  }).outputText
-  const calls = { select: [], rename: [], delete: [] }
-  const sessions = [
-    { id: 'own', title: 'Own chat', character_id: 'mira' },
-    { id: 'foreign', title: 'Foreign chat', character_id: 'kurisu' },
-    { id: 'missing', title: 'Missing owner chat' },
-    { id: 'invalid', title: 'Invalid owner chat', character_id: null },
+test('catalog lookup failures stay unknown and desktop lock facts select environment guidance', async () => {
+  const snapshots = [
+    [null, false],
+    [{ sources: { AMADEUS_CHARACTER_ID: 'user' } }, false],
+    [{ sources: { AMADEUS_CHARACTER_ID: 'dotenv' } }, false],
+    [{ sources: { AMADEUS_CHARACTER_ID: 'environment' }, locked: { AMADEUS_CHARACTER_ID: true } }, true],
+    [{ locked: { AMADEUS_CHARACTER_ID: true } }, true],
   ]
+  for (const [snapshot, expected] of snapshots) {
+    const page = catalogHarness(async () => ({ characters: [] }), async () => snapshot)
+    page.render(true); await flush()
+    assert.equal(page.state.locked, expected)
+    assert.deepEqual(page.state.characters, [])
+  }
+  for (const getSettings of [undefined, async () => { throw new Error('desktop unavailable') }]) {
+    const page = catalogHarness(async () => { throw new Error('catalog unavailable') }, getSettings)
+    page.render(true); await flush()
+    assert.equal(page.state.characters, null)
+    assert.equal(page.state.locked, false)
+  }
+})
+
+const translate = (key, variables = {}) => key.replace(/\{(\w+)\}/g, (_, name) => variables[name] ?? `{${name}}`)
+const railCode = ts.transpileModule(fs.readFileSync(new URL('../src/renderer/components/ChatSessionRail.tsx', import.meta.url), 'utf8'), {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+}).outputText
+
+function rail(sessions, overrides = {}) {
+  const calls = { select: [], rename: [], delete: [], notice: [] }
   let stateIndex = 0
   const context = vm.createContext({ exports: {}, require: name => {
     if (name === 'react') return { useMemo: fn => fn(), useEffect() {}, useRef: value => ({ current: value }),
       useState: value => [stateIndex++ === 0 ? true : value, () => {}] }
     if (name === './FluentIcon') return { default: () => null }
-    if (name === '../i18n') return { useI18n: () => ({ t: key => key }) }
+    if (name === '../i18n') return { useI18n: () => ({ t: translate }) }
+    if (name === './chatSessionCharacter') return { foreignSessionCharacter, sessionCharacterNotice }
     return require(name)
-  }, props: { sessions, projects: [], activeId: 'own', currentCharacterId: 'mira', artifactViewId: '',
+  }, props: { sessions, projects: [], activeId: sessions[0]?.id, currentCharacterId: 'mira', artifactViewId: '',
+    characters: [], connected: true, startupCharacterLocked: false,
     onSelect: id => calls.select.push(id),
     onRename: (id, title) => calls.rename.push([id, title]),
-    onDelete: id => calls.delete.push(id) } })
-  vm.runInContext(code, context)
+    onDelete: id => calls.delete.push(id), onNotice: notice => calls.notice.push(notice), ...overrides } })
+  vm.runInContext(railCode, context)
+  const element = vm.runInContext('exports.default(props)', context)
   const buttons = []
   const visit = node => {
     if (Array.isArray(node)) { node.forEach(visit); return }
@@ -218,7 +273,81 @@ test('the actual rail callbacks deny foreign and unknown-owner mutations while s
     if (node.type === 'button') buttons.push(node)
     visit(node.props.children)
   }
-  visit(vm.runInContext('exports.default(props)', context))
+  visit(element)
+  return { calls, buttons, markup: require('react-dom/server').renderToStaticMarkup(element) }
+}
+
+const role = (character_id, name, valid = true) => ({ character_id, name, valid, persona: '', builtin: false, editable: true })
+const rowMarkup = (markup, id) => markup.match(new RegExp(`data-chat-session-id="${id}"[\\s\\S]*?<\\/button>`))[0]
+
+test('the session rail displays catalog names only for foreign roles and preserves original chat titles', () => {
+  const sessions = [
+    { id: 'own', title: 'Original own title', character_id: 'mira', message_count: 2 },
+    { id: 'foreign', title: 'Original foreign title', character_id: 'kurisu', message_count: 2 },
+  ]
+  const { markup } = rail(sessions, { characters: [role('mira', 'Mira'), role('kurisu', 'Makise Kurisu')] })
+  const own = rowMarkup(markup, 'own')
+  const foreign = rowMarkup(markup, 'foreign')
+  assert.match(own, /title="Original own title"/)
+  assert.doesNotMatch(own, /Character:|>Mira<\/span>/)
+  assert.match(foreign, /title="Original foreign title\nCharacter: Makise Kurisu \(kurisu\)/)
+  assert.match(foreign, />Makise Kurisu<\/span>/)
+  assert.match(foreign, /Settings → General → Character roles.*Use at next start.*restart/)
+  assert.doesNotMatch(foreign, /AMADEUS_CHARACTER_ID/)
+  assert.deepEqual(sessions.map(session => [session.title, session.character_id]),
+    [['Original own title', 'mira'], ['Original foreign title', 'kurisu']])
+})
+
+test('same-named foreign roles retain full stable IDs in their tooltips and names fit the rail', () => {
+  const ids = ['role-0123456789', 'role-9876543210']
+  const name = '<Same & very long name>'
+  const { markup } = rail(ids.map(id => ({ id, title: `Chat ${id}`, character_id: id })), {
+    characters: ids.map(id => role(id, name)),
+  })
+  for (const id of ids) {
+    const row = rowMarkup(markup, id)
+    assert.ok(row.includes(`Character: &lt;Same &amp; very long name&gt; (${id})`))
+    assert.match(row, /class="truncate" style="max-width:90px"/)
+    assert.match(row, />&lt;Same &amp; very long name&gt;<\/span>/)
+  }
+})
+
+test('missing and invalid roles are explicitly unavailable and never inherit the current role name', () => {
+  const { markup } = rail([
+    { id: 'missing', title: 'Missing role chat', character_id: 'removed-pack' },
+    { id: 'invalid', title: 'Invalid role chat', character_id: 'broken-pack' },
+  ], { characters: [role('mira', 'Current Mira'), role('broken-pack', 'Broken role', false)] })
+  const missing = rowMarkup(markup, 'missing')
+  const invalid = rowMarkup(markup, 'invalid')
+  assert.match(missing, />removed-pack · Unavailable role<\/span>/)
+  assert.match(invalid, />Broken role · Unavailable role<\/span>/)
+  assert.match(invalid, /Character: Broken role · Unavailable role \(broken-pack\)/)
+  for (const row of [missing, invalid]) {
+    assert.match(row, /Restore or repair it before switching/)
+    assert.doesNotMatch(row, /Current Mira/)
+  }
+})
+
+test('an unreadable catalog uses a neutral stable ID rather than claiming a missing or invalid role', () => {
+  const { markup, calls, buttons } = rail([{ id: 'foreign', title: 'Foreign chat', character_id: 'other-role' }], { characters: null })
+  const row = rowMarkup(markup, 'foreign')
+  assert.match(row, />other-role<\/span>/)
+  assert.match(row, /title="Character: other-role"/)
+  assert.doesNotMatch(row, /Unavailable role|Restore or repair|other-role \(other-role\)/)
+  buttons.find(button => button.props['data-chat-session-id'] === 'foreign').props.onClick()
+  assert.match(calls.notice[0], /Use at next start.*restart/)
+  assert.doesNotMatch(calls.notice[0], /unavailable|Restore or repair/)
+  assert.deepEqual(calls.select, [])
+})
+
+test('the actual rail callbacks deny foreign and unknown-owner access while same-role controls work', () => {
+  const sessions = [
+    { id: 'own', title: 'Own chat', character_id: 'mira' },
+    { id: 'foreign', title: 'Foreign chat', character_id: 'kurisu' },
+    { id: 'missing', title: 'Missing owner chat' },
+    { id: 'invalid', title: 'Invalid owner chat', character_id: null },
+  ]
+  const { calls, buttons } = rail(sessions, { characters: [role('kurisu', 'Kurisu')] })
   for (const session of sessions) {
     const select = buttons.find(button => button.props['data-chat-session-id'] === session.id)
     const remove = buttons.find(button => button.props['aria-label'] === `Delete ${session.title}`)
@@ -227,20 +356,61 @@ test('the actual rail callbacks deny foreign and unknown-owner mutations while s
     assert.equal(select.props.children[0].props.children, session.title)
     assert.equal(Boolean(remove.props.disabled), session.id !== 'own')
     select.props.onDoubleClick()
-    // Call even the disabled control's handler, so the test covers the callback
-    // boundary as well as the native disabled-button behavior.
-    remove.props.onClick({ stopPropagation() {} })
+    // Native disabled buttons cannot dispatch clicks.
+    if (!remove.props.disabled) remove.props.onClick({ stopPropagation() {} })
     select.props.onClick()
     if (session.id === 'foreign') {
-      assert.match(select.props.title, /Character: kurisu/)
-      assert.match(remove.props.title, /Switch character.*restart.*AMADEUS_CHARACTER_ID=kurisu/)
+      assert.match(select.props.title, /Character: Kurisu \(kurisu\)/)
+      assert.match(remove.props.title, /Settings → General → Character roles.*Use at next start.*restart/)
     } else if (session.id !== 'own') {
       assert.match(remove.props.title, /identity is unavailable/)
     }
   }
   assert.deepEqual(calls.rename, [['own', 'Own chat']])
   assert.deepEqual(calls.delete, ['own'])
-  assert.deepEqual(calls.select, sessions.map(session => session.id)) // Open still reaches backend authority.
+  assert.deepEqual(calls.select, ['own'])
+  assert.equal(calls.notice.length, 6)
+})
+
+test('offline rail keeps known foreign names, omits current-role labels and denies all session actions', () => {
+  const sessions = [
+    { id: 'own', title: 'Own chat', character_id: 'mira' },
+    { id: 'foreign', title: 'Foreign chat', character_id: 'kurisu' },
+  ]
+  const { markup, calls, buttons } = rail(sessions, {
+    characters: [role('kurisu', 'Kurisu')], connected: false, startupCharacterLocked: true,
+  })
+  assert.doesNotMatch(rowMarkup(markup, 'own'), /Character:/)
+  assert.match(rowMarkup(markup, 'foreign'), />Kurisu<\/span>/)
+  for (const session of sessions) {
+    const select = buttons.find(button => button.props['data-chat-session-id'] === session.id)
+    const remove = buttons.find(button => button.props['aria-label'] === `Delete ${session.title}`)
+    assert.equal(remove.props.disabled, true)
+    select.props.onClick(); select.props.onDoubleClick()
+  }
+  assert.deepEqual(calls.select, [])
+  assert.deepEqual(calls.rename, [])
+  assert.deepEqual(calls.delete, [])
+  assert.equal(calls.notice.length, 4)
+  for (const notice of calls.notice) {
+    assert.match(notice, /Reconnect/)
+    assert.doesNotMatch(notice, /Use at next start|AMADEUS_CHARACTER_ID/)
+  }
+})
+
+test('only a known locked launch source displays environment instructions for a foreign chat', () => {
+  const sessions = [{ id: 'foreign', title: 'Foreign chat', character_id: 'kurisu' }]
+  for (const locked of [false, true]) {
+    const { calls, buttons } = rail(sessions, { characters: [role('kurisu', 'Kurisu')], startupCharacterLocked: locked })
+    buttons.find(button => button.props['data-chat-session-id'] === 'foreign').props.onClick()
+    assert.equal(calls.select.length, 0)
+    assert.equal(calls.notice.length, 1)
+    if (locked) assert.match(calls.notice[0], /Change AMADEUS_CHARACTER_ID to kurisu.*launch environment.*restart/)
+    else {
+      assert.match(calls.notice[0], /Settings → General → Character roles.*Use at next start.*restart/)
+      assert.doesNotMatch(calls.notice[0], /AMADEUS_CHARACTER_ID/)
+    }
+  }
 })
 
 test('automatic recovery chooses its own role even when the latest or current candidate is foreign', async () => {

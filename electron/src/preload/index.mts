@@ -3,6 +3,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron'
+import type { BackendStartupFailure } from '../shared/characterStartup.js'
 
 type WorkPreviewBounds = { x: number; y: number; width: number; height: number }
 type WorkPreviewListener = (payload: Record<string, unknown>) => void
@@ -15,6 +16,8 @@ contextBridge.exposeInMainWorld('amadeus', {
     authScheme: string
   } | null> => ipcRenderer.invoke('get-backend-connection'),
   restartBackend: (): Promise<boolean> => ipcRenderer.invoke('restart-backend'),
+  getBackendStartupFailure: (): Promise<BackendStartupFailure | null> => ipcRenderer.invoke('backend-startup.failure'),
+  recoverCharacterStartup: (): Promise<{ ok: boolean; saved?: boolean; error?: string; settings?: Record<string, unknown>; failure?: BackendStartupFailure | null }> => ipcRenderer.invoke('backend-startup.recover-character'),
   getDesktopSettings: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('desktop-settings.get'),
   setTitleBarTheme: (theme: 'classic' | 'wallpaper-slice'): Promise<boolean> => ipcRenderer.invoke('window-theme.set', theme),
   getCompanionPortraitStatus: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('companion-portraits.status'),

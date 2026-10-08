@@ -26,7 +26,7 @@ class VNOverlayControls:
         auth = LocalAuthPolicy.from_environment(os.environ)
         self._headers = {AUTH_TOKEN_HEADER: auth.token} if auth.required else {}
         self._lock = threading.Lock()
-        self._state = {"connected": False, "inputs": {}, "pending": False, "error": ""}
+        self._state = {"connected": False, "inputs": {}, "pending": False, "error": "", "active_character": None}
         self._commands = queue.Queue(maxsize=1)
         self._stop = threading.Event()
         self._socket = None
@@ -60,6 +60,7 @@ class VNOverlayControls:
                     self._socket = ws
                     status_request = json.dumps({"type": "req", "id": "status", "method": "vn.status", "params": {}})
                     ws.send(status_request)
+                    ws.send(json.dumps({"type": "req", "id": "character", "method": "character.active", "params": {}}))
                     pending_id, deadline = "", time.monotonic() + 30
                     while not self._stop.is_set():
                         try:
@@ -77,6 +78,9 @@ class VNOverlayControls:
                             continue
                         params = message.get("params") or {}
                         with self._lock:
+                            if message.get("type") == "res" and message.get("id") == "character":
+                                name = params.get("ui_name")
+                                self._state["active_character"] = {"ui_name": name} if isinstance(name, str) and name else None
                             is_status = (message.get("type") == "evt" and message.get("method") == "vn.status"
                                          or message.get("type") == "res" and message.get("id") == "status")
                             if is_status and isinstance(params.get("inputs"), dict):
@@ -97,7 +101,7 @@ class VNOverlayControls:
             finally:
                 self._socket = None
                 with self._lock:
-                    self._state.update(connected=False, pending=False, inputs={})
+                    self._state.update(connected=False, pending=False, inputs={}, active_character=None)
                     while not self._commands.empty():
                         self._commands.get_nowait()
             self._stop.wait(1)

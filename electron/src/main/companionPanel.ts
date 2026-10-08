@@ -8,6 +8,7 @@ type Bridge = { assetPort: number; bridgePort: number; assetVersion: string }
 type Options = {
   userDataDir: string; preload: string; portraitCacheDir: string
   bridge: () => Bridge | null
+  active: () => Promise<Record<string, unknown> | null>
   target: (workItemId: string) => BrowserWindow | null
   slice: () => (WebContents | null | undefined)[] | WebContents | null | undefined
 }
@@ -41,6 +42,10 @@ export class CompanionPanel {
     ipcMain.handle('companion.portraits', event => owns(event.sender)
       ? readCompanionPortraits(options.portraitCacheDir) : {})
     ipcMain.handle('companion.close', event => owns(event.sender) ? this.close() : false)
+    ipcMain.handle('companion.active', event => {
+      if (!owns(event.sender) || event.senderFrame !== event.sender.mainFrame) return null
+      return this.options.active()
+    })
     ipcMain.handle('companion.input', async (event, action: unknown) => {
       if (!owns(event.sender) || event.senderFrame !== event.sender.mainFrame || !this.bridge
         || typeof action !== 'string' || !['status', 'voice_start', 'voice_stop', 'vision_toggle'].includes(action)) {
@@ -115,6 +120,8 @@ export class CompanionPanel {
     this.bridge = bridge
     this.workItemId = workItemId
     try {
+      const active = await this.options.active()
+      const initialIdentity = active ? { ui_name: active.ui_name, accessible_name: active.accessible_name } : null
       const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea
       let bounds: Rect = { x: area.x + area.width - 486, y: area.y + 60, width: 470, height: 226 }
       try {
@@ -127,7 +134,8 @@ export class CompanionPanel {
         ...bounds, minWidth: 300, minHeight: 226, frame: false, transparent: true,
         backgroundColor: '#00000000', show: false, alwaysOnTop: true, skipTaskbar: true,
         title: 'Amadeus · Companion',
-        webPreferences: { preload: this.options.preload, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: true },
+        webPreferences: { preload: this.options.preload, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: true,
+          additionalArguments: [`--amadeus-companion-identity=${encodeURIComponent(JSON.stringify(initialIdentity))}`] },
       })
       this.window = window
       const url = `http://127.0.0.1:${bridge.assetPort}/render/web/companion_panel.html?bridgePort=${bridge.bridgePort}&v=${encodeURIComponent(bridge.assetVersion)}`

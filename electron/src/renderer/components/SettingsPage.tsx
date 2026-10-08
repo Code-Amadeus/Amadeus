@@ -1,3 +1,4 @@
+import { settingSourceLabel } from '../../shared/characterStartup'
 import { DEFAULT_WINDOWS_STARTUP_MODE } from '../../main/startupMode'
 import { useState, useEffect, useCallback, useMemo, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import FluentIcon, { type FluentIconName } from './FluentIcon'
@@ -6,6 +7,8 @@ import McpConnections, { type McpConnectionSummary } from './McpConnections'
 import ChatAvatarSettings from './ChatAvatarSettings'
 import CharacterVisualsPage from './CharacterVisualsPage'
 import MainChatCharacterSettings from './MainChatCharacterSettings'
+import CharacterManagementSettings from './CharacterManagementSettings'
+import BackendStartupRecovery from './BackendStartupRecovery'
 import RetiredRouteSetting, { RETIRED_ROUTE_KEY, retiredRouteMigration, removeStoredRetiredRouteSetting, type RetiredSettingFact } from './RetiredRouteSetting'
 import AcpProviders, { type AcpConfiguration } from './AcpProviders'
 import CapabilitiesPanel, { type RuntimePackageStatus } from './CapabilitiesPanel'
@@ -269,13 +272,6 @@ function RoleAssignmentCard({
   )
 }
 
-function sourceLabel(source: string): string {
-  if (source === 'environment') return 'Process environment'
-  if (source === 'user') return 'Desktop settings'
-  if (source === 'dotenv') return '.env'
-  return 'Built-in default'
-}
-
 function InlineFieldAction({ label, glyph, busy = false, tone = 'normal', disabled, onClick }: {
   label: string
   glyph: string
@@ -341,7 +337,7 @@ function StartupFieldRow({ field, desktop, onSave }: {
       <div className="flex-1 min-w-0">
         <div className="settings-field-label">{t(field.label)}</div>
         <div className="settings-field-description">
-          {field.description ? `${t(field.description)} · ` : ''}{t(sourceLabel(source))}{electronUnavailable ? ` · ${t('editable in Electron app')}` : environmentLocked ? ` · ${t('locked')}` : ''}{field.restart_required ? ` · ${t('restart required')}` : ''}
+          {field.description ? `${t(field.description)} · ` : ''}{t(settingSourceLabel(source))}{electronUnavailable ? ` · ${t('editable in Electron app')}` : environmentLocked ? ` · ${t('locked')}` : ''}{field.restart_required ? ` · ${t('restart required')}` : ''}
         </div>
       </div>
       <div className="settings-field-control flex items-center gap-1.5 shrink-0" style={{ width: 320, maxWidth: '43%' }}>
@@ -1140,6 +1136,9 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
           </div>
         ) : null}
 
+        <BackendStartupRecovery connected={connected} restarting={restarting}
+          reconnectBackend={reconnectBackend} onSettingsChanged={settings => setDesktop(settings as unknown as DesktopSettingsSnapshot)} />
+
         <RetiredRouteSetting migration={retiredRouteMigration(desktop, config.retired_settings)}
           saving={saving === RETIRED_ROUTE_KEY} onConfirm={confirmRetiredRoute} />
 
@@ -1222,6 +1221,12 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                     saving={saving === 'main_chat_character_prompt_ja'}
                     onSave={value => handleChange('main_chat_character_prompt_ja', value)}
                   />
+                </SettingsGroup>
+                <SettingsGroup title="Character roles" detail="Create user roles and choose the role for the next backend start.">
+                  <CharacterManagementSettings send={send} connected={connected} desktop={desktop}
+                    restarting={restarting} onRestart={restartBackend}
+                    kurisuPreview={config.main_chat_character_prompt_preview}
+                    onSettingsChanged={settings => setDesktop(settings as unknown as DesktopSettingsSnapshot)} />
                 </SettingsGroup>
                 <SettingsGroup title="Chat appearance" detail="Local presentation only; avatar images are never sent to the model.">
                   <ChatAvatarSettings />

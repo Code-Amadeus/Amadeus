@@ -496,7 +496,8 @@ def _require_active_character(character_id: str) -> None:
     if character_id != character_prompts.active_character_id():
         raise SessionCharacterMismatch(
             f"This conversation belongs to '{character_id}'. "
-            f"Restart the backend with AMADEUS_CHARACTER_ID={character_id} to open or continue it.")
+            "Select this conversation's character for the next backend startup and restart "
+            "the backend to open, continue, rename, or delete it.")
 
 
 def require_session_character(session_id: str) -> str:

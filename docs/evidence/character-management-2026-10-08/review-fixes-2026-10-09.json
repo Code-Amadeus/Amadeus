@@ -1,0 +1,100 @@
+{
+  "date": "2026-10-09",
+  "tested_product_revision": "37fa6c19a3995b5f51842b5b7f9045b4eb18488b",
+  "python": [
+    {
+      "shard": 0,
+      "files": 213,
+      "passed": 2427,
+      "skipped": 12,
+      "collected": 2439,
+      "xfailed": 0,
+      "exit_code": 0
+    },
+    {
+      "shard": 1,
+      "files": 213,
+      "passed": 2971,
+      "skipped": 4,
+      "collected": 2980,
+      "xfailed": 5,
+      "exit_code": 0
+    }
+  ],
+  "electron_passed": 307,
+  "build": "passed",
+  "ruff": {
+    "tracked_python_paths": 1016,
+    "force_exclude": true,
+    "status": "passed"
+  },
+  "prompt_captures": [
+    {
+      "case": "kurisu",
+      "count": 155,
+      "differences": []
+    },
+    {
+      "case": "mira",
+      "count": 155,
+      "differences": []
+    },
+    {
+      "case": "kurisu-override",
+      "count": 155,
+      "differences": []
+    }
+  ],
+  "official_desktop_smoke": {
+    "passed": 11,
+    "total": 11
+  },
+  "cold_recovery": {
+    "passed": 6,
+    "total": 6
+  },
+  "extended_management_journey": {
+    "passed": 22,
+    "total": 22,
+    "initial_attempt": "navigation timeout; retained as failed"
+  },
+  "real_live2d_assets_retested_this_round": false,
+  "wallpaper_stop_follow_up": {
+    "tested_product_revision": "17d15edc7398e45062eb6bab7ace5f9ad14a3d7c",
+    "targeted_projection_and_stop_passed": 22,
+    "electron_passed": 312,
+    "build": "passed",
+    "app_source_python_contracts_passed": 25,
+    "python_sources_changed": false,
+    "full_python_rerun": false,
+    "official_desktop_smoke": {
+      "passed": 11,
+      "total": 11
+    },
+    "normal_backend_exit_event_already_clears_state": true,
+    "regressions_before_fix": 3,
+    "overlap_validation": "production callbacks, event subscriptions and stop helper with controlled completions"
+  },
+  "wallpaper_activation_follow_up": {
+    "tested_product_revision": "522970f9ec8e815b9dc66f94fc37fb65e1dba4ed",
+    "supersedes": "latest-target stop acknowledgement guard",
+    "activation_sources": [
+      "manual start",
+      "startup auto-start",
+      "wallpaper.ready"
+    ],
+    "old_bug_regressions": 8,
+    "normal_fast_switch_regressions": 1,
+    "projection_and_stop_passed": 31,
+    "electron_passed": 321,
+    "build": "passed",
+    "app_source_python_contracts_passed": 25,
+    "official_desktop_smoke": {
+      "passed": 11,
+      "total": 11
+    },
+    "python_sources_changed": false,
+    "full_python_rerun": false,
+    "optional_assets_retested": false
+  }
+}

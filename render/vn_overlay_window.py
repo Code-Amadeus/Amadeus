@@ -53,7 +53,7 @@ class PortraitOverlayTk:
     """Window and local message transport; animation lives in AtlasPlayer."""
 
     def __init__(self, *, host: str = "127.0.0.1", port: int = 8788, x: int = 60, y: int = 80,
-                 backend_url: str = ""):
+                 backend_url: str = "", ui_name: str = ""):
         if sys.platform == "win32":
             # Render at monitor resolution instead of letting Windows enlarge a 96-DPI bitmap.
             ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
@@ -89,7 +89,8 @@ class PortraitOverlayTk:
         self._signal_label = self.frame.create_text(77, 211, text="STANDBY", anchor="w", fill="#6d9f96", font=("Consolas", -self._px(9)))
         self.avatar_label = tk.Label(self.frame, bg=CARD_BG, borderwidth=0)
         self.avatar_label.place(x=self._px(23), y=self._px(58), width=self.avatar_size, height=self.avatar_size)
-        self.frame.create_text(177, 65, text="牧瀬 紅莉栖", anchor="w", fill=CARD_ACCENT, font=("Microsoft YaHei UI", -self._px(12), "bold"))
+        self._ui_name = ui_name or "Amadeus"
+        self._name_label = self.frame.create_text(177, 65, text=self._ui_name, anchor="w", fill=CARD_ACCENT, font=("Microsoft YaHei UI", -self._px(12), "bold"))
         self.frame.scale("all", 0, 0, self._scale, self._scale)
         self.text_var = tk.StringVar(value="准备好了，继续故事吧。")
         caption = tk.Label(self.frame, textvariable=self.text_var, bg=CARD_BG, fg=CARD_TEXT,
@@ -321,6 +322,7 @@ class PortraitOverlayTk:
             changes = {"voice": not selected} if name == "voice" else {"vision_mode": "off" if selected else "on_question"}
             self._controls.set_inputs(self._control_state["inputs"]["session_id"], **changes)
             self._control_state = self._controls.snapshot()
+            self._draw_identity()
             self._draw_controls()
         return "break"
 
@@ -372,8 +374,14 @@ class PortraitOverlayTk:
             state = self._controls.snapshot()
             if state != self._control_state:
                 self._control_state = state
+                self._draw_identity()
                 self._draw_controls()
         self._poll_timer = self.root.after(40, self._poll)
+
+    def _draw_identity(self):
+        identity = self._control_state.get("active_character") or {}
+        self._ui_name = identity.get("ui_name") or self._ui_name
+        self.frame.itemconfigure(self._name_label, text=self._ui_name)
 
     def run(self):
         try:
