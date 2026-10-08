@@ -1,0 +1,156 @@
+{
+  "schema": "amadeus.character-management-live2d-acceptance.v1",
+  "date": "2026-10-09",
+  "mainline_revision": "0851af8a073b16a08a974531665b08f1b7c434fa",
+  "integration_revision": "3590c82acc7c9a14ecd23dc49fa4b5a033e80680",
+  "final_product_revision": "dbee4d8859a63212db44b335834fefb493e57b11",
+  "python": {
+    "tested_revision": "3590c82",
+    "python_sources_unchanged_after_full_run": true,
+    "shards": [
+      {
+        "shard": 0,
+        "files": 213,
+        "passed": 2417,
+        "skipped": 12,
+        "xfailed": 0,
+        "collected": 2429,
+        "exit_code": 0
+      },
+      {
+        "shard": 1,
+        "files": 213,
+        "passed": 2971,
+        "skipped": 4,
+        "xfailed": 5,
+        "collected": 2980,
+        "exit_code": 0
+      }
+    ],
+    "app_source_contract_checks_after_ts_repair": 25
+  },
+  "electron": {
+    "tests_passed": 296,
+    "build_passed": true
+  },
+  "ruff": {
+    "status": "passed",
+    "tracked_input_paths": 1016,
+    "repository_exclusions_respected": true
+  },
+  "prompt_cases": [
+    {
+      "case": "kurisu",
+      "count": 155,
+      "differences": 0
+    },
+    {
+      "case": "mira",
+      "count": 155,
+      "differences": 0
+    },
+    {
+      "case": "kurisu-override",
+      "count": 155,
+      "differences": 0
+    }
+  ],
+  "joint_functional": {
+    "status": "passed",
+    "checks": {
+      "electron_started_backend": true,
+      "authenticated_runtime_status": true,
+      "authenticated_wallpaper_stop": true,
+      "chat_connected": true,
+      "backend_page_connected": true,
+      "startup_mode_saved_in_gui": true,
+      "settings_and_runtime_packages_rendered": true,
+      "b2_unavailable_is_visible": true,
+      "project_navigation_rendered": true,
+      "artifact_navigation_opened": true,
+      "default_identity_preserved": true,
+      "unicode_name_and_persona_limits_match_host": true,
+      "ui_creates_distinct_same_name_roles_without_switching": true,
+      "selection_validated_and_pending_until_restart": true,
+      "restart_activates_new_identity_and_own_history": true,
+      "foreign_session_shows_name_keeps_title_and_id_and_guides_without_switching": true,
+      "pending_restart_survives_leaving_and_returning_to_settings": true,
+      "edit_keeps_id_and_history_and_requires_explicit_restart": true,
+      "invalid_saved_role_exposes_offline_recovery": true,
+      "explicit_recovery_restores_kurisu_without_erasing_role_or_history": true,
+      "electron_and_backend_exited": true,
+      "all_role_visual_session_desktop_and_work_state_isolated": true,
+      "kurisu_ui_saves_application_live2d_profile_without_identity_change": true,
+      "kurisu_settings_preview_ready_and_destroyed_on_general_navigation": true,
+      "kurisu_real_render_live2d_and_host_ready_receipt": true,
+      "kurisu_render_close_unloaded": true,
+      "kurisu_independent_companion_uses_current_speaker": true,
+      "mira_same_application_profile_survives_identity_restart": true,
+      "mira_sprite_live2d_roundtrip_preserves_role_and_profiles": true,
+      "mira_settings_preview_ready_and_destroyed_on_general_navigation": true,
+      "mira_real_render_live2d_and_host_ready_receipt": true,
+      "mira_render_close_unloaded": true,
+      "mira_independent_companion_uses_current_speaker": true,
+      "mira-revised_same_application_profile_survives_identity_restart": true,
+      "mira-revised_real_render_live2d_and_host_ready_receipt": true,
+      "mira-revised_render_close_unloaded": true,
+      "mira-revised_independent_companion_uses_current_speaker": true,
+      "kurisu-recovered_same_application_profile_survives_identity_restart": true,
+      "kurisu-recovered_real_render_live2d_and_host_ready_receipt": true,
+      "kurisu-recovered_render_close_unloaded": true,
+      "kurisu-recovered_independent_companion_uses_current_speaker": true,
+      "original_m1_journey_checks_preserved": true,
+      "disconnected_main_window_render_click_rolls_back_empty_iframe": true,
+      "same_backend_restart_preserves_role_visual_and_history": true,
+      "offline-recovered_real_render_live2d_and_host_ready_receipt": true,
+      "offline-recovered_render_close_unloaded": true,
+      "only_verified_optional_companion_manifest404_no_unexpected_app_errors": true,
+      "joint_normal_main_window_close_exits_electron_and_host": true
+    }
+  },
+  "joint_raw_diagnostics": {
+    "status": "failed",
+    "console_errors": 4,
+    "page_errors": 0,
+    "unexplained_errors": 0,
+    "known_cause": "Four Companion windows request the absent optional /assets/companion/kurisu/manifest.json and display the existing fallback.",
+    "raw_report_preserved": true
+  },
+  "standard_unmodified_smoke": {
+    "status": "passed",
+    "checks": {
+      "electron_started_backend": true,
+      "authenticated_runtime_status": true,
+      "authenticated_wallpaper_stop": true,
+      "chat_connected": true,
+      "backend_page_connected": true,
+      "startup_mode_saved_in_gui": true,
+      "settings_and_runtime_packages_rendered": true,
+      "b2_unavailable_is_visible": true,
+      "project_navigation_rendered": true,
+      "artifact_navigation_opened": true,
+      "electron_and_backend_exited": true
+    }
+  },
+  "cold_start_and_failed_render": {
+    "status": "passed",
+    "checks": {
+      "cold_failure_opens_gui_without_backend": true,
+      "failure_identifies_saved_character_not_other_error": true,
+      "failed_render_start_leaves_no_empty_projection": true,
+      "explicit_recovery_starts_real_builtin_backend": true,
+      "recovery_preserves_missing_user_file": true,
+      "owned_processes_exit_cleanly": true
+    }
+  },
+  "cleanup": {
+    "owned_processes_exited": true,
+    "backend_and_debug_ports_released": true
+  },
+  "limits": [
+    "No real language-model inference, microphone capture or speech synthesis.",
+    "Real Live2D verified in Electron Render; Companion keeps its existing fallback presentation.",
+    "No new Lively, Wallpaper Engine, cross-platform or long-duration performance qualification.",
+    "Artwork, asset paths and raw logs remain local; no model or Core files committed."
+  ]
+}

@@ -3,8 +3,7 @@
 Character management selects the conversational identity used by the next
 backend start. It does not select an animation, a voice, a rendering backend,
 a Provider, or execution permissions. All characters follow the application's
-existing appearance and voice settings, including optional Live2D support when
-that separate feature is installed.
+existing appearance and voice settings, including the optional Live2D rendering backend.
 
 ## Create and edit
 
@@ -125,6 +124,12 @@ must not be interpreted as solved by this management UI.
 The M1 branch changes profile loading/storage, settings/recovery, and visible
 identity projection. SpriteForge graph algorithms, rendering events, TTS,
 scene policy, shared presentation claims and model prompt assemblers remain
-owned by their existing modules. The parallel Live2D work owns application-level
-visual profiles; M1 neither stores nor overrides their IDs. Per-character asset
+owned by their existing modules. Live2D owns application-level visual profiles;
+M1 neither stores nor overrides their IDs. Per-character asset
 references belong to a later reviewed change.
+
+The integrated branch has been verified with both management and visual controls:
+changing startup identity preserves the shared Live2D selection, and changing the
+visual backend preserves conversation identity. A standalone Role page grouping
+identity, visuals and voice is a subsequent UI change; it does not introduce
+per-role asset binding or memory behavior in this iteration.

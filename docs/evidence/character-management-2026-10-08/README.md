@@ -1,8 +1,70 @@
 # Character management M1 acceptance — 2026-10-08
 
 Base: `f66c5f95a693727453a6eb614118500e271a730d`. Scope is local character
-management, active identity labels and explicit startup recovery. The parallel
-Live2D implementation is not included in these results.
+management, active identity labels and explicit startup recovery. The original
+M1 results exclude Live2D. The latest integration results below include the
+merged Live2D mainline.
+
+## Live2D mainline integration — 2026-10-09
+
+Merged main `0851af8` (Live2D #164) into M1 at `3590c82`. Only ChatPage imports and
+translation additions conflicted; both sides were retained. Role identity and
+application visual profiles remain independent. General role management and
+Character visuals keep their current sections; a unified Role page is a later UI
+change. [Sanitized integration evidence](integration-2026-10-09.json) records the
+exact revisions, checks and diagnostic distinction.
+
+Final product revision: **`dbee4d8`**. Joint testing exposed an existing main bug:
+clicking Render before its backend WebSocket was connected could leave an active
+empty iframe after the request failed. App now clears projection state on failure
+or a missing URL, preserving the shared presentation route. The actual-callback
+regression failed before the repair and passed after it. A real disconnected
+click followed by a normal reopen also passed.
+
+- Complete Python on `3590c82`: **426 files, 5388 passed, 16 skipped, 5 expected
+  failures**, both shards exit 0. Shard 0: 2417 passed/12 skipped; shard 1:
+  2971 passed/4 skipped/5 xfailed. The later repair changed only App.tsx and its
+  Electron test. All **25** Python contracts reading App's source were rerun;
+  Python runtime and test sources are unchanged from the complete regression.
+- Final Electron **296/296**, production build and Ruff with repository exclusions
+  passed. Ruff considered 1016 tracked Python paths without pulling excluded
+  upstream sources into first-party lint scope.
+- All **465** prompt captures match the original pre-M1 main baseline again.
+  Prompt and phrase fixtures were not rewritten.
+- Actual combined functionality: **48/48** checks passed. Kurisu, Mira, edited
+  Mira and recovered Kurisu retained the shared saved Live2D profile. Native
+  Render showed the real model/texture and matching Host ready receipt. Sprite
+  round trips preserved identity/profile; ready previews were destroyed on
+  navigation; independent Companion windows showed the current speaker. The
+  original M1 session, pending-restart, input-limit and recovery checks remain.
+- The real Render click was observed while Chat was disabled and the same
+  backend-restart promise was pending. After two animation frames no empty
+  iframe remained. The same restart completed with identity/profile/history
+  preserved; a normal open then loaded Live2D and reported ready again.
+- Parent independently ran the **unmodified official smoke: 11/11, passed**, and
+  **negative cold-start plus failed Render recovery: 6/6, passed**, on `dbee4d8`.
+  Test-owned windows/processes exited and backend/debug ports were released.
+
+**The extended joint run's raw generic smoke report remains `failed`.** Exactly
+four browser console errors came from the absent optional Companion Lite
+`manifest.json`, one per Companion window. Their real HTTP URLs, 404 responses
+and visible fallback were verified; there were no other console or page errors.
+The 48-check functional conclusion does not rewrite that original report. The
+ordinary unmodified smoke above does not add the Companion exercise and passed
+its original diagnostic gate.
+
+All attempts remain local. Earlier attempts exposed a harness-owned startup-mode
+lock, hover-rail screenshot instability, and queries into an iframe before its
+real URL loaded. The local harness was corrected without changing product CSS,
+CSP or adding retries. The separate failed Render start was repaired at its owning
+App layer as described above. Actual artwork, asset paths and raw reports remain
+in ignored local output; only sanitized facts are committed. Models/Core were
+read in place. No real Lively wallpaper, journal, user conversation or global
+setting was taken over.
+
+This closes M1's integration check against Live2D mainline. It does not add
+Companion Live2D, per-role asset binding, real voice/model qualification or a new
+Lively/Wallpaper Engine/long-term performance claim.
 
 ## Review fixes after `813390f`
 
