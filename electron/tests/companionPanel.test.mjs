@@ -106,7 +106,15 @@ test('companion projects the shared current display without acting on Work or AU
   state = apply(state, { method: 'setSpeaking', args: [true] })
   assert.equal(state.emotion, 'sided_thinking')
   assert.equal(state.speaking, true)
-  assert.equal(apply(state, { method: 'triggerSpriteForgeIntent', args: ['trans_smile'] }).emotion, 'happy')
+  assert.equal(apply(state, { method: 'triggerCharacterIntent', args: ['trans_smile'] }).emotion, 'happy')
+  assert.equal(apply(state, { method: 'triggerCharacterIntent', args: ['smile', { backend: 'live2d', semantic_label: 'smile' }] }).emotion, 'happy')
+  assert.equal(apply(state, { method: 'triggerCharacterIntent', args: ['work', { backend: 'live2d', semantic_label: 'work' }] }).emotion, 'sided_thinking')
+  assert.equal(apply(state, { method: 'triggerCharacterIntent', args: ['happy', { backend: 'live2d', semantic_label: 'happy' }] }).emotion, 'happy')
+  const canonical = ['normal', 'sided_thinking', 'sided_surprised', 'happy', 'blush', 'angry', 'sad', 'disappointed']
+  for (const emotion of ['normal', 'angry', 'sad', 'blush', 'disappointed']) {
+    assert.equal(apply(state, { method: 'triggerCharacterIntent', args: [emotion, { backend: 'live2d', semantic_label: emotion }] }, canonical).emotion, emotion)
+  }
+  assert.strictEqual(apply(state, { method: 'triggerCharacterIntent', args: ['unknown-emotion', { backend: 'live2d', semantic_label: 'unknown-emotion' }] }, canonical), state)
   assert.strictEqual(apply(state, { method: 'setCanvas', args: [{ text: 'provider output' }] }), state)
   state = apply(state, { method: 'setSpeaking', args: [false] })
   assert.equal(state.text, '按笔记上的线索想一想。')
@@ -137,7 +145,7 @@ test('suppression restores the exact renderable state and leaves scenario visibi
   const sprite = { renderable: true, visible: false }
   const live2d = { renderable: false, visible: true }
   const subtitle = { renderable: true, visible: true }
-  const window = { renderApp: { _sprite: { container: sprite }, _live2d: { container: live2d }, _subtitle: { container: subtitle } } }
+  const window = { renderApp: { _sprite: { container: sprite }, getModelCharacterContainer: () => live2d, _subtitle: { container: subtitle } } }
   const scope = vm.createContext({ window, console, URLSearchParams })
   vm.runInContext(await fs.readFile(new URL('../../render/web/wallpaper_scene.js', import.meta.url), 'utf8'), scope)
   window.wallpaperApp.setCompanionActive(true)

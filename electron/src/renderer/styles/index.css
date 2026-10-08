@@ -1626,10 +1626,11 @@ html[data-theme='wallpaper-slice'] .capability-page-tabs > button[aria-selected=
     position: static;
     width: 100% !important;
     flex-direction: row;
+    flex-wrap: wrap;
   }
 
   .settings-section-nav > button {
-    flex: 1;
+    flex: 1 1 110px;
     justify-content: center;
   }
 

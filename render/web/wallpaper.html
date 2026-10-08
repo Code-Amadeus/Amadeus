@@ -24,18 +24,12 @@
 
   <script>
     (function () {
-      var live2dValue = String(new URLSearchParams(window.location.search).get("live2d") || "").toLowerCase();
-      var live2dCompatEnabled = ["1", "true", "yes", "on"].indexOf(live2dValue) >= 0;
       var SCRIPTS = [
         { local: "/render/web/vendor/pixi.min.js", cdn: null },
         { local: "/render/web/vendor/pixi-basis-ktx2.global.js", cdn: null }
       ];
-      if (live2dCompatEnabled) {
-        SCRIPTS.push(
-          { local: "/render/web/vendor/live2dcubismcore.min.js", cdn: null },
-          { local: "/render/web/vendor/pixi-live2d-display.cubism4.min.js", cdn: null }
-        );
-      }
+      SCRIPTS.push({ local: "/render/web/live2d_character.js", cdn: null });
+      SCRIPTS.push({ local: "/render/web/model_character.js", cdn: null });
       SCRIPTS.push(
         { local: "/render/web/render_budget.js", cdn: null },
         { local: "/render/web/frame_store.js", cdn: null },

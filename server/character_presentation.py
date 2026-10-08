@@ -14,7 +14,7 @@ from __future__ import annotations
 import inspect
 import threading
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from render.spriteforge_intent import spriteforge_intent_payload
@@ -47,6 +47,7 @@ class _Claim:
     owner: PresentationOwner
     semantic_label: str
     render_payload: Mapping[str, Any]
+    metadata: Mapping[str, Any]
     order: int
 
 
@@ -77,6 +78,7 @@ class PresentationClaimSet:
         owner: PresentationOwner,
         semantic_label: str,
         render_payload: Mapping[str, Any],
+        metadata: Mapping[str, Any] | None = None,
     ) -> PresentationTransition | None:
         label = str(semantic_label or "").strip()
         if not label:
@@ -91,6 +93,7 @@ class PresentationClaimSet:
                 owner=owner,
                 semantic_label=label,
                 render_payload=dict(render_payload),
+                metadata=dict(metadata or {}),
                 order=self._sequence,
             )
             self._effective = self._select_effective()
@@ -115,6 +118,34 @@ class PresentationClaimSet:
                 handoff=handoff,
             )
 
+    def snapshot(self) -> PresentationTransition:
+        """Read current truth without making a claim or re-resolving Sprite routes."""
+        with self._lock:
+            return self._snapshot_locked()
+
+    def reproject(self, resolver: Callable[..., dict[str, Any]]) -> PresentationTransition:
+        """Change the selected visual backend while preserving source ownership."""
+        with self._lock:
+            self._claims = {
+                owner: replace(claim, render_payload=resolver(
+                    claim.semantic_label, **dict(claim.metadata)))
+                for owner, claim in self._claims.items()
+            }
+            self._effective = self._select_effective()
+            return self._snapshot_locked()
+
+    def _snapshot_locked(self) -> PresentationTransition:
+        if self._effective is None:
+            return PresentationTransition(Method.RENDER_CHARACTER_RELEASE,
+                                          {"source": "character_presentation"}, None)
+        claim = self._effective
+        return PresentationTransition(
+            Method.RENDER_CHARACTER_INTENT,
+            {**dict(claim.render_payload), "semantic_label": claim.semantic_label,
+             "source": "character_presentation", **_owner_payload(claim.owner)},
+            claim.owner,
+        )
+
     @property
     def effective_owner(self) -> PresentationOwner | None:
         with self._lock:
@@ -124,7 +155,7 @@ class PresentationClaimSet:
         """Return whether a not-yet-emitted transition still describes truth."""
 
         with self._lock:
-            if transition.method == Method.RENDER_SPRITEFORGE_RELEASE:
+            if transition.method == Method.RENDER_CHARACTER_RELEASE:
                 return self._effective is None
             if self._effective is None or transition.owner != self._effective.owner:
                 return False
@@ -157,19 +188,20 @@ class PresentationClaimSet:
             if handoff == "after_speech":
                 payload["presentation_handoff"] = handoff
             return PresentationTransition(
-                method=Method.RENDER_SPRITEFORGE_RELEASE,
+                method=Method.RENDER_CHARACTER_RELEASE,
                 payload=payload,
                 owner=None,
             )
         payload = {
             **dict(current.render_payload),
+            "semantic_label": current.semantic_label,
             "source": "character_presentation",
             **_owner_payload(current.owner),
         }
         if handoff == "after_speech":
             payload["presentation_handoff"] = handoff
         return PresentationTransition(
-            method=Method.RENDER_SPRITEFORGE_INTENT,
+            method=Method.RENDER_CHARACTER_INTENT,
             payload=payload,
             owner=current.owner,
         )
@@ -214,6 +246,8 @@ class CharacterPresentationCoordinator:
         self._computer_use = _ComputerUseSceneClaims()
         self._emitter = emitter
         self._emit_now = emit_now
+        self._payload_resolver = spriteforge_intent_payload
+        self.selection_lock = threading.RLock()
 
     async def claim(
         self,
@@ -303,6 +337,20 @@ class CharacterPresentationCoordinator:
         self._emit_transition_now(transition)
         return transition
 
+    def set_payload_resolver(self, resolver: Callable[..., dict[str, Any]]) -> None:
+        with self.selection_lock:
+            self._payload_resolver = resolver
+
+    def current_transition(self) -> PresentationTransition:
+        return self._claims.snapshot()
+
+    def reproject(self) -> PresentationTransition:
+        with self.selection_lock:
+            return self._claims.reproject(self._payload_resolver)
+
+    async def replay_current(self) -> None:
+        await self._emit_transition(self.current_transition())
+
     def current_activity(self) -> str:
         """Read the shared scene without adding or replaying a source claim."""
         return "work" if self._computer_use.active else ""
@@ -321,12 +369,14 @@ class CharacterPresentationCoordinator:
         metadata: Mapping[str, Any] | None,
     ) -> PresentationTransition | None:
         owner = _owner(source_kind=source_kind, source_id=source_id, tier=tier)
-        payload = spriteforge_intent_payload(label, **dict(metadata or {}))
-        return self._claims.claim(
-            owner=owner,
-            semantic_label=label,
-            render_payload=payload,
-        )
+        with self.selection_lock:
+            payload = self._payload_resolver(label, **dict(metadata or {}))
+            return self._claims.claim(
+                owner=owner,
+                semantic_label=label,
+                render_payload=payload,
+                metadata=metadata,
+            )
 
     async def _emit_transition(
         self,

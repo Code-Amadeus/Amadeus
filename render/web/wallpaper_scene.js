@@ -84,6 +84,7 @@
 
   const characterRuntime = {
     setMode(mode) { callRender("setMode", [mode]); },
+    configureCharacter(config) { return callRender("configureCharacter", [config]); },
     loadSpriteFrames(emotion, urls) { callRender("loadSpriteFrames", [emotion, urls]); },
     loadSpriteClipFrames(emotion, inUrls, loopUrls, outUrls) {
       callRender("loadSpriteClipFrames", [emotion, inUrls, loopUrls, outUrls]);
@@ -96,10 +97,10 @@
     setIdleAnimation(playing) { callRender("setIdleAnimation", [playing]); },
     setMouth(value) { callRender("setMouth", [value]); },
     loadSpriteForgeGraph(payload) { callRender("loadSpriteForgeGraph", [payload]); },
-    triggerSpriteForgeIntent(label, options) { callRender("triggerSpriteForgeIntent", [label, options || {}]); },
+    triggerCharacterIntent(label, options) { callRender("triggerCharacterIntent", [label, options || {}]); },
     holdSpriteFrame(frameIndex) { callRender("holdSpriteFrame", [frameIndex]); },
     clearSpriteHold() { callRender("clearSpriteHold", []); },
-    releaseSpriteForge(options) { callRender("releaseSpriteForge", [options || {}]); },
+    releaseCharacter(options) { callRender("releaseCharacter", [options || {}]); },
     setSubtitle(text) { callRender("setSubtitle", [text]); },
   };
 
@@ -510,6 +511,8 @@
     graph: { nodes: [], edges: [] },
     resources: {},
     enabled: false,
+    configuredEnabled: false,
+    characterBackend: "sprite",
     active: false,
     activeActivity: null,
     activityConfigs: {},
@@ -565,7 +568,8 @@
     init(app, payload) {
       this.app = app;
       this.payload = payload || {};
-      this.enabled = !!this.payload.enabled;
+      this.configuredEnabled = !!this.payload.enabled;
+      this.enabled = this.configuredEnabled && this.characterBackend === "sprite";
       this.graph = this.payload.graph || { nodes: [], edges: [] };
       this.resources = this.payload.resources || {};
       this.activityConfigs = Object.assign({}, this.activityDefaults, this.payload.activities || {});
@@ -615,6 +619,25 @@
       });
     },
 
+    setCharacterBackend(backend) {
+      this.characterBackend = backend === "live2d" ? "live2d" : "sprite";
+      this.enabled = this.configuredEnabled && this.characterBackend === "sprite";
+      if (!this.enabled) {
+        this._abortActivation("character backend changed", true);
+        if (this.sprite) {
+          this.sprite.texture = PIXI.Texture.EMPTY;
+          this.sprite.visible = false;
+        }
+        if (this._textureCache) {
+          for (const [url, entry] of this._textureCache) this._destroyCachedTexture(url, entry);
+          this._textureCache.clear();
+        }
+        this._fadeCharacterIn = false;
+        this._characterFadeTargets = null;
+      }
+      this._updateComputerUseSfx();
+    },
+
     layout(bounds, mask) {
       if (!this.container || !this.sprite) return;
       this._syncLayerOrder();
@@ -631,7 +654,7 @@
       const stage = this.app.stage;
       const renderApp = window.renderApp || {};
       const spriteLayer = renderApp._sprite && renderApp._sprite.container;
-      const live2dLayer = renderApp._live2d && renderApp._live2d.container;
+      const live2dLayer = renderApp.getModelCharacterContainer && renderApp.getModelCharacterContainer();
       const subtitleLayer = wallpaperSubtitle && wallpaperSubtitle.container;
       const characterLayers = [spriteLayer, live2dLayer].filter((layer) => layer && stage.children.includes(layer));
 
@@ -894,9 +917,11 @@
       this._heartbeat(true);
     },
 
-    _abortActivation(reason) {
-      console.warn("[ScenarioRuntime] idle scenario aborted:", reason);
-      diag("scenario.abort", { reason: reason }, "warning");
+    _abortActivation(reason, quiet = false) {
+      if (!quiet) {
+        console.warn("[ScenarioRuntime] idle scenario aborted:", reason);
+        diag("scenario.abort", { reason: reason }, "warning");
+      }
       this.active = false;
       this._pendingNode = null;
       this._fadingOut = false;
@@ -1533,15 +1558,10 @@
       const tex = entry && (entry.texture || entry);
       const source = entry && entry.sourceTexture;
       const objectUrl = entry && entry.objectUrl;
+      // Entries own their image textures; shared URL-cache entries belong to other scene layers.
       try {
         if (tex && typeof tex.destroy === "function") {
           tex.destroy(!source);
-        }
-        if (PIXI.Texture && typeof PIXI.Texture.removeFromCache === "function") {
-          const removed = PIXI.Texture.removeFromCache(url);
-          if (removed && removed !== tex && removed !== source && typeof removed.destroy === "function") {
-            removed.destroy(true);
-          }
         }
         if (source && source !== tex && typeof source.destroy === "function") {
           source.destroy(true);
@@ -1654,7 +1674,7 @@
     _saveAndHideCharacter() {
       const app = window.renderApp;
       const sprite = app && app._sprite && app._sprite.container;
-      const live2d = app && app._live2d && app._live2d.container;
+      const live2d = app && app.getModelCharacterContainer && app.getModelCharacterContainer();
       const fadeTargets = this._characterFadeTargets || {};
       this._savedVisibility = {
         spriteVisible: fadeTargets.spriteVisible !== undefined ? fadeTargets.spriteVisible : (sprite ? sprite.visible : null),
@@ -1676,7 +1696,7 @@
     _restoreCharacter(alphaProgress) {
       const app = window.renderApp;
       const sprite = app && app._sprite && app._sprite.container;
-      const live2d = app && app._live2d && app._live2d.container;
+      const live2d = app && app.getModelCharacterContainer && app.getModelCharacterContainer();
       const saved = this._savedVisibility || {};
       const progress = Number.isFinite(alphaProgress) ? Math.max(0, Math.min(1, alphaProgress)) : null;
       const targets = {
@@ -1703,7 +1723,7 @@
       const p = Math.max(0, Math.min(1, Number(progress) || 0));
       const app = window.renderApp;
       const sprite = app && app._sprite && app._sprite.container;
-      const live2d = app && app._live2d && app._live2d.container;
+      const live2d = app && app.getModelCharacterContainer && app.getModelCharacterContainer();
       if (sprite) {
         sprite.visible = targets.spriteVisible;
         sprite.alpha = targets.spriteAlpha * p;
@@ -1780,7 +1800,7 @@
         this.bottomVignette = this._createBottomVignette();
         this.app.stage.addChild(this.bottomVignette);
         this.scanlineLayer.mask = this.mask;
-        callRender("setSpriteViewportMask", [this.mask]);
+        callRender("setCharacterViewportMask", [this.mask]);
         this._resizeBound = () => this.layout();
         this._tickerBound = (delta) => this.tick(delta);
         window.addEventListener("resize", this._resizeBound);
@@ -1832,7 +1852,7 @@
     _applyCharacterColorGrade() {
       const renderApp = window.renderApp || {};
       applyWallpaperCharacterColorGrade(renderApp._sprite && renderApp._sprite.container);
-      applyWallpaperCharacterColorGrade(renderApp._live2d && renderApp._live2d.container);
+      applyWallpaperCharacterColorGrade(renderApp.getModelCharacterContainer && renderApp.getModelCharacterContainer());
     },
 
     setBackground(url) {
@@ -1909,7 +1929,12 @@
     _replaceAmbientLowSprite(texture) {
       if (this.ambientLowSprite) {
         this.ambientLayer.removeChild(this.ambientLowSprite);
-        this.ambientLowSprite.destroy({ texture: true, baseTexture: true });
+        // Pixi may return the existing cached texture on a Host replay.
+        // The previous display object must not destroy the incoming resource.
+        this.ambientLowSprite.destroy({
+          texture: this.ambientLowSprite.texture !== texture,
+          baseTexture: this.ambientLowSprite.texture.baseTexture !== texture.baseTexture,
+        });
       }
       this.ambientLowSprite = new PIXI.Sprite(texture);
       this._placeBackdrop(this.ambientLowSprite);
@@ -1938,7 +1963,12 @@
     _replaceAmbientSprite(texture, sourceKind) {
       if (this.ambientSprite) {
         this.ambientLayer.removeChild(this.ambientSprite);
-        this.ambientSprite.destroy({ texture: true, baseTexture: true });
+        // Pixi may return the existing cached texture on a Host replay.
+        // The previous display object must not destroy the incoming resource.
+        this.ambientSprite.destroy({
+          texture: this.ambientSprite.texture !== texture,
+          baseTexture: this.ambientSprite.texture.baseTexture !== texture.baseTexture,
+        });
       }
       this.ambientSprite = new PIXI.Sprite(texture);
       this._placeBackdrop(this.ambientSprite);
@@ -2096,7 +2126,7 @@
       this.staticOverlay.clear();
       this._drawPolygon(this.staticOverlay, points, 0x07121c, 0.10);
 
-      callRender("setSpriteViewportBounds", [bounds]);
+      callRender("setCharacterViewportBounds", [bounds]);
       scenarioRuntime.layout(bounds, this.mask);
       wallpaperSubtitle.layout(bounds);
       this.bottomVignette.width = bounds.width * 0.76;
@@ -2450,7 +2480,7 @@
     setCompanionActive(active) {
       const app = window.renderApp;
       const layers = [app && app._sprite && app._sprite.container,
-        app && app._live2d && app._live2d.container,
+        app && app.getModelCharacterContainer && app.getModelCharacterContainer(),
         app && app._subtitle && app._subtitle.container, wallpaperSubtitle.container];
       for (const layer of layers) {
         if (!layer) continue;
@@ -2473,6 +2503,10 @@
     toggleCanvas() { desktopScene.toggleCanvas(); },
     setDefaultSubtitleEnabled(enabled) { desktopScene.setDefaultSubtitleEnabled(enabled); },
 
+    configureCharacter(config) {
+      scenarioRuntime.setCharacterBackend(config.backend);
+      return characterRuntime.configureCharacter(config);
+    },
     setMode(mode) {
       const characterMode = desktopScene.setMode(mode);
       if (characterMode) characterRuntime.setMode(characterMode);
@@ -2498,10 +2532,10 @@
       characterRuntime.setMouth(value);
     },
     loadSpriteForgeGraph(payload) { characterRuntime.loadSpriteForgeGraph(payload || {}); },
-    triggerSpriteForgeIntent(label, options) { characterRuntime.triggerSpriteForgeIntent(label, options); },
+    triggerCharacterIntent(label, options) { characterRuntime.triggerCharacterIntent(label, options); },
     holdSpriteFrame(frameIndex) { characterRuntime.holdSpriteFrame(frameIndex); },
     clearSpriteHold() { characterRuntime.clearSpriteHold(); },
-    releaseSpriteForge(options) { characterRuntime.releaseSpriteForge(options); },
+    releaseCharacter(options) { characterRuntime.releaseCharacter(options); },
     setSubtitle(text) {
       const value = String(text || "");
       desktopScene._lastSubtitleText = value;

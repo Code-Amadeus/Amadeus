@@ -1228,15 +1228,38 @@ def test_missing_app_receipt_becomes_an_unknown_outcome_instead_of_silence() -> 
             role_authorizer=_approve,
             receipt_timeout_s=0.02,
         )
+        receipt_timeout = asyncio.Event()
+        original_sleep = asyncio.sleep
+
+        async def wait_for_receipt_timeout(delay: float) -> None:
+            if delay == engagement.receipt_timeout_s:
+                await receipt_timeout.wait()
+            else:
+                await original_sleep(delay)
+
         bus.on(Method.AUIP_UPDATED, capture)
         try:
-            with patch("server.auip_runtime.PENDING_ACTION_TIMEOUT_S", 0.01):
+            with (
+                patch("server.auip_runtime.PENDING_ACTION_TIMEOUT_S", 0.01),
+                patch("server.auip_runtime.time.time", return_value=1000.0) as clock,
+                patch(
+                    "server.auip_engagement.asyncio.sleep",
+                    side_effect=wait_for_receipt_timeout,
+                ),
+            ):
                 engagement.request_step(
                     app_session_id=sid,
                     instruction="Make the next move.",
                 )
                 await engagement.wait_for_idle(sid)
                 receipt_watch = engagement._receipt_tasks[sid]
+                snapshot = runtime.get(sid)
+                assert snapshot["pending_action"] is not None
+                assert snapshot["operator_status"] == "awaiting_receipt"
+                assert outcomes == []
+
+                clock.return_value = 1001.0
+                receipt_timeout.set()
                 await asyncio.wait_for(asyncio.shield(receipt_watch), timeout=1.0)
 
             assert len(outcomes) == 1

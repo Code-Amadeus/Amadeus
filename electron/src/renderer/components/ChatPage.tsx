@@ -1,4 +1,4 @@
-﻿import { prepareImageAttachment } from '../../../../render/web/chat_image_attachment.mjs'
+import { prepareImageAttachment } from '../../../../render/web/chat_image_attachment.mjs'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { Fragment, useMemo } from 'react'
 import type {
@@ -42,12 +42,13 @@ import {
   chatTranslationKey,
 } from './chatTranslationState'
 import { useI18n } from '../i18n'
+import { visualStatusFromFrame, type VisualSurfaceStatus } from './characterVisuals'
 
 interface Props {
   send: (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
   subscribe: (method: string, fn: (p: Record<string, unknown>) => void) => () => void
   connected: boolean
-  renderActive: boolean       // false=VTS, true=PixiJS
+  renderActive: boolean       // visibility of the embedded character surface
   renderAssetUrl: string      // URL served by backend AssetServer
 }
 
@@ -114,8 +115,9 @@ const RENDER_EVENT_METHODS = [
   'render.sprite_clip_config',
   'render.mouth_config',
   'render.spriteforge_graph',
-  'render.spriteforge_intent',
-  'render.spriteforge_release',
+  'render.character_config',
+  'render.character_intent',
+  'render.character_release',
   'render.hold_frame',
   'render.clear_hold',
 ] as const
@@ -185,6 +187,9 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const renderFrameRef = useRef<HTMLIFrameElement>(null)
+  const renderStatusRef = useRef<VisualSurfaceStatus | null>(null)
+  const renderFrameLoadedUrlRef = useRef('')
+  const renderConnectionRef = useRef(connected)
   const interruptedTurnIdsRef = useRef<Set<string>>(new Set())
   const activeStreamTurnIdRef = useRef('')
   const streamingTextRef = useRef('')
@@ -427,12 +432,60 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     }, '*')
   }, [])
 
+  const handleCharacterStatus = useCallback((event: MessageEvent) => {
+    const status = visualStatusFromFrame(event.source, renderFrameRef.current?.contentWindow,
+      event.data, 'amadeus.character.status')
+    if (!status) return
+    renderStatusRef.current = status
+    send('visual.status', { ...status, surface: 'render' }).catch(error => {
+      console.error('[render-bridge] character status report failed', error)
+    })
+  }, [send])
+
+  useEffect(() => {
+    if (!renderActive) return
+    window.addEventListener('message', handleCharacterStatus)
+    return () => {
+      window.removeEventListener('message', handleCharacterStatus)
+      const status = renderStatusRef.current
+      renderStatusRef.current = null
+      if (status && status.state !== 'unloaded') {
+        void send('visual.status', { ...status, state: 'unloaded', surface: 'render' }).catch(error => {
+          console.error('[render-bridge] unload status report failed', error)
+        })
+      }
+    }
+  }, [handleCharacterStatus, renderActive, send])
+
   const handleRenderFrameLoad = useCallback(() => {
-    if (!renderActive || !renderAssetUrl) return
+    if (!renderActive || !renderAssetUrl || !renderFrameRef.current) return
+    renderFrameLoadedUrlRef.current = renderAssetUrl
+    if (!connected) return
     send('render.ready', {}).catch(error => {
       console.error('[render-bridge] state replay failed', error)
     })
-  }, [renderActive, renderAssetUrl, send])
+  }, [connected, renderActive, renderAssetUrl, send])
+
+  useEffect(() => {
+    const wasConnected = renderConnectionRef.current
+    renderConnectionRef.current = connected
+    if (!renderActive || !renderAssetUrl || !renderFrameRef.current) {
+      renderFrameLoadedUrlRef.current = ''
+      return
+    }
+    if (!connected) {
+      if (wasConnected) {
+        postRenderEvent('render.speaking', { speaking: false })
+        postRenderEvent('render.mouth', { value: 0 })
+      }
+      return
+    }
+    if (!wasConnected && renderFrameLoadedUrlRef.current === renderAssetUrl) {
+      send('render.ready', {}).catch(error => {
+        console.error('[render-bridge] reconnect state replay failed', error)
+      })
+    }
+  }, [connected, postRenderEvent, renderActive, renderAssetUrl, send])
 
   useEffect(() => {
     if (!renderActive) return
@@ -1824,7 +1877,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
           <iframe
             ref={renderFrameRef}
             src={renderAssetUrl || 'about:blank'}
-            title="PixiJS Render"
+            title="Character Render"
             onLoad={handleRenderFrameLoad}
             className="flex-1 border-0"
             style={{ width: '100%', backgroundColor: 'var(--bg)', pointerEvents: isSplitResizing ? 'none' : 'auto' }}

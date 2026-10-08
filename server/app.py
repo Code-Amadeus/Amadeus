@@ -434,6 +434,15 @@ async def bootstrap(port: int = 17777) -> None:
     wake_h = WakeHandler()
     vts_h = VtsHandler()
     expr_h = ExpressionHandler()
+    from server.handlers.visual_handler import VisualHandler
+    from render.visual_profile import VisualProfileStore
+    visual_h = VisualHandler()
+    visual_user_data = Path(os.getenv("AMADEUS_ELECTRON_USER_DATA_DIR") or
+                            (Path(ROOT) / ".electron-user-data"))
+    visual_store = VisualProfileStore(
+        os.getenv("AMADEUS_VISUAL_PROFILES_PATH") or visual_user_data / "visual_profiles.json",
+        project_root=Path(ROOT),
+    )
     sys_h = SystemHandler()
     render_h = RenderHandler()
     wallpaper_h = WallpaperHandler()
@@ -603,7 +612,7 @@ async def bootstrap(port: int = 17777) -> None:
     handlers = (chat_h, session_h, tts_h, asr_h, wake_h, vts_h, expr_h, sys_h,
         render_h, wallpaper_h, provider_h, capability_h, mcp_connection_h,
         provider_activity_h, work_h, work_preview_h, attention_h, auip_h, vn_h,
-        vn_launch_h)
+        vn_launch_h, visual_h)
     handlers += (chat_role_delivery,)
     for h in handlers:
         _mgr.register_handler(h)
@@ -1125,6 +1134,10 @@ async def bootstrap(port: int = 17777) -> None:
         def __init__(self, engine) -> None:
             self.engine = engine
 
+        @property
+        def supports_neutral(self) -> bool:
+            return visual_store.backend == "live2d"
+
         def trigger_expression(self, expression_label: str) -> None:
             from server.character_presentation import coordinator as character_presentation
 
@@ -1166,41 +1179,55 @@ async def bootstrap(port: int = 17777) -> None:
 
     _gui_render_bridge = None
     _gui_sf_animator = None
+    _gui_visual_backend = None
     _gui_render_lock = threading.Lock()
 
     def _ensure_gui_render_runtime():
-        nonlocal _gui_render_bridge, _gui_sf_animator
+        nonlocal _gui_render_bridge, _gui_sf_animator, _gui_visual_backend
         with _gui_render_lock:
-            if _gui_render_bridge is not None:
+            backend = visual_store.backend
+            if _gui_render_bridge is None:
+                _gui_render_bridge = HeadlessRenderBridge(project_root=Path(ROOT))
+            if _gui_visual_backend == backend:
                 return _gui_render_bridge
-            bridge = HeadlessRenderBridge(project_root=Path(ROOT))
-            try:
-                from render.spriteforge_animator import SpriteForgeAnimator
-                animator = SpriteForgeAnimator(bridge)
-                if animator.start():
-                    _gui_sf_animator = animator
-                    logger.info("GUI SpriteForge animator started lazily")
-                else:
-                    _gui_sf_animator = None
-                    logger.info("GUI render started without the optional character pack")
-            except Exception as e:
-                logger.warning("GUI SpriteForge animator init failed: %s", e)
+            if _gui_sf_animator is not None:
+                _gui_sf_animator.stop()
                 _gui_sf_animator = None
-            _gui_render_bridge = bridge
+            if backend == "sprite":
+                try:
+                    from render.spriteforge_animator import SpriteForgeAnimator
+                    animator = SpriteForgeAnimator(_gui_render_bridge)
+                    if animator.start():
+                        _gui_sf_animator = animator
+                        logger.info("GUI SpriteForge animator started lazily")
+                    else:
+                        logger.info("GUI render started without the optional character pack")
+                except Exception as e:
+                    logger.warning("GUI SpriteForge animator init failed: %s", e)
+            _gui_visual_backend = backend
             return _gui_render_bridge
 
     def _stop_gui_render_runtime() -> None:
-        nonlocal _gui_render_bridge, _gui_sf_animator
+        nonlocal _gui_render_bridge, _gui_sf_animator, _gui_visual_backend
         with _gui_render_lock:
-            animator = _gui_sf_animator
+            animator, bridge = _gui_sf_animator, _gui_render_bridge
             _gui_sf_animator = None
             _gui_render_bridge = None
-        if animator is None:
-            return
-        try:
+            _gui_visual_backend = None
+        if animator is not None:
             animator.stop()
-        except Exception:
-            logger.exception("GUI SpriteForge animator stop failed")
+        if bridge is not None:
+            bridge.close()
+
+    async def _apply_visual_selection() -> None:
+        if _gui_render_bridge is not None:
+            _ensure_gui_render_runtime()
+        await _render_signal_bridge.configure_character(visual_store.runtime_config("render"))
+        await _render_signal_bridge.replay_speech_state()
+
+    visual_h.configure(visual_store, _apply_visual_selection,
+                       surface_active=lambda surface: (render_h.is_running() if surface == "render"
+                                                       else wallpaper_h.is_running()))
 
     # Local character rendering is the primary mouth sink. VTube Studio stays
     # attached to the router only as an optional compatibility output.
@@ -2255,6 +2282,8 @@ async def bootstrap(port: int = 17777) -> None:
         ensure_runtime=_ensure_gui_render_runtime,
         stop_runtime=_stop_gui_render_runtime,
         state_bridge=_render_signal_bridge,
+        visual_store=visual_store,
+        character_closed=visual_h.surface_closed,
     )
     from server.character_presentation import coordinator as character_presentation
 
@@ -2279,6 +2308,10 @@ async def bootstrap(port: int = 17777) -> None:
         ),
         canvas_projector=work_ledger.project_canvas,
         current_activity=character_presentation.current_activity,
+        current_presentation=character_presentation.current_transition,
+        visual_store=visual_store,
+        character_status=visual_h.report_status,
+        character_closed=visual_h.surface_closed,
         attention_snapshot=lambda: attention_requests.list_pending(
             _attention_session_manager.get_current_session_id() or ""
         ),

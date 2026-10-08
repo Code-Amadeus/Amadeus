@@ -172,7 +172,7 @@ try {
   assert.equal(await panel.webContents.executeJavaScript('window.companion.fitContent(100)'), false)
   const a = game.getBounds(), b = panel.getBounds()
   assert.equal(a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y, false)
-  publish({ method: 'triggerSpriteForgeIntent', args: ['trans_smile'] })
+  publish({ method: 'triggerCharacterIntent', args: ['trans_smile'] })
   publish({ method: 'setSpeaking', args: [true] })
   await until(() => panel.webContents.executeJavaScript('document.body.classList.contains("speaking")'), 'speaking did not reach card')
   await new Promise(resolve => setTimeout(resolve, 400))

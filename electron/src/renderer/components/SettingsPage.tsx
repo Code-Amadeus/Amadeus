@@ -4,6 +4,7 @@ import FluentIcon, { type FluentIconName } from './FluentIcon'
 import { GroupTitle, CardShell, CardIcon, StatusPill, SettingsGroup } from './SettingsPrimitives'
 import McpConnections, { type McpConnectionSummary } from './McpConnections'
 import ChatAvatarSettings from './ChatAvatarSettings'
+import CharacterVisualsPage from './CharacterVisualsPage'
 import MainChatCharacterSettings from './MainChatCharacterSettings'
 import RetiredRouteSetting, { RETIRED_ROUTE_KEY, retiredRouteMigration, removeStoredRetiredRouteSetting, type RetiredSettingFact } from './RetiredRouteSetting'
 import AcpProviders, { type AcpConfiguration } from './AcpProviders'
@@ -30,7 +31,7 @@ interface Props {
   reconnectBackend: () => Promise<void>
 }
 
-type SettingsSection = 'capabilities' | 'graphics' | SceneConfigureSection
+type SettingsSection = 'capabilities' | 'graphics' | 'visuals' | SceneConfigureSection
 type ModelsPage = 'roles' | 'connections'
 
 type StartupOption = string | { value: string; label: string }
@@ -617,7 +618,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   const { theme, setTheme } = useTheme()
   const [section, setSection] = useState<SettingsSection>(() => {
     const saved = window.localStorage.getItem('amadeus.settings.section')
-    return ['capabilities', 'general', 'graphics', 'models', 'voice', 'providers'].includes(String(saved))
+    return ['capabilities', 'general', 'graphics', 'visuals', 'models', 'voice', 'providers'].includes(String(saved))
       ? saved as SettingsSection
       : 'capabilities'
   })
@@ -1114,12 +1115,14 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
 
   return (
     <div className="settings-scroll-area flex-1 overflow-y-auto">
-      <div style={{ width: 'min(100%, 1010px)', padding: '20px 24px 32px' }}>
+      <div style={{ width: section === 'visuals' ? '100%' : 'min(100%, 1010px)', padding: '20px 24px 32px' }}>
         <div className="flex items-center justify-between gap-4" style={{ marginBottom: 16 }}>
           <div>
             <h2 className="settings-page-title">{t('Settings')}</h2>
             <div className="settings-page-context">
-              {t(section === 'capabilities' ? 'Shared capabilities, implementations, and scene use.' : 'Runtime controls and desktop connection profiles.')}
+              {t(section === 'capabilities' ? 'Shared capabilities, implementations, and scene use.'
+                : section === 'visuals' ? 'Visual profiles, expression mappings and local previews.'
+                : 'Runtime controls and desktop connection profiles.')}
             </div>
           </div>
           {restartPending ? (
@@ -1146,6 +1149,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
               ['capabilities', 'Capabilities', 'Tiles'],
               ['general', 'General', 'Setting'],
               ['graphics', 'Graphics', 'Video'],
+              ['visuals', 'Character visuals', 'Palette'],
               ['models', 'Models', 'Robot'],
               ['voice', 'Voice', 'Microphone'],
               ['providers', 'Providers', 'Work'],
@@ -1156,7 +1160,11 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
             ))}
           </nav>
 
-          <main className="settings-main flex-1 min-w-0" style={{ maxWidth: 760 }}>
+          <main className="settings-main flex-1 min-w-0" style={{ maxWidth: section === 'visuals' ? undefined : 760 }}>
+            {section === 'visuals' ? (
+              <CharacterVisualsPage send={send} subscribe={subscribe} connected={connected} />
+            ) : null}
+
             {section === 'capabilities' ? (
               <CapabilitiesPanel capabilities={capabilityProfiles} runtimePackages={runtimePackages} onOpenSection={openCapabilityTarget} />
             ) : null}
