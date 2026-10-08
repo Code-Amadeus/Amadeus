@@ -235,7 +235,9 @@ def test_floating_card_is_a_bounded_experience_status_not_an_embedded_app() -> N
     assert "Participating" in source
     assert "Take one turn" in source
     assert "Leave experience" in source
-    assert "Let Kurisu play" in source
+    # The delegate action is stable; exact role-aware labels are rendered in
+    # electron/tests/activeCharacter.test.mjs for both Kurisu and a user role.
+    assert '<option value="delegate">' in source
     assert "raw state stays outside the conversation" in source
     assert "iframe" not in source.lower()
     assert "payload.state" not in source

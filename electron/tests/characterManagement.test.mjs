@@ -1,0 +1,179 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { spawn } from 'node:child_process'
+import { createRequire } from 'node:module'
+import test from 'node:test'
+import ts from 'typescript'
+
+const require = createRequire(import.meta.url)
+function compile(relativePath, dependencies = require) {
+  const source = fs.readFileSync(new URL(relativePath, import.meta.url), 'utf8')
+  const code = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText
+  const exports = {}
+  new Function('require', 'exports', code)(dependencies, exports)
+  return exports
+}
+const startup = compile('../src/main/backendStartup.ts')
+const management = compile('../src/renderer/components/characterManagement.ts', name => name === '../../main/backendStartup' ? startup : require(name))
+const { DesktopSettingsStore } = compile('../src/main/desktopSettings.ts', name => name === 'electron'
+  ? { safeStorage: { isEncryptionAvailable: () => false } } : require(name))
+const selection = { characterId: 'missing-role', source: 'user', locked: false }
+const active = { character_id: 'one', name: 'Original', display_name: 'Original', short_name: 'Original', ui_name: 'Original', accessible_name: 'Original' }
+
+test('readiness observes an exited child even after its owner clears the slot', async () => {
+  const launched = spawn(process.execPath, ['-e', 'process.exit(78)'], { stdio: 'ignore' })
+  let owned = launched
+  launched.once('exit', () => { owned = null })
+  await assert.rejects(startup.waitForBackendReadiness(launched, async () => 'unavailable', 0, 3000), error => {
+    assert.equal(owned, null)
+    assert.equal(error.exitCode, 78)
+    assert.equal(startup.backendStartupFailure(error.exitCode, error.message, selection).kind, 'character')
+    return true
+  })
+})
+
+test('only the reserved exit code identifies a character failure', () => {
+  for (const code of [null, undefined, 0, 1, 77, 79]) {
+    assert.equal(startup.backendStartupFailure(code, 'character missing or invalid', selection).kind, 'backend')
+  }
+  assert.equal(startup.backendStartupFailure(78, 'unrelated words', selection).kind, 'character')
+})
+
+test('recovery persists literal Kurisu over an invalid dotenv selection, then stops and starts', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'am-m1-'))
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+  const dotenv = path.join(directory, '.env')
+  fs.writeFileSync(dotenv, 'AMADEUS_CHARACTER_ID=missing-role\n')
+  const file = path.join(directory, 'settings.json')
+  const store = new DesktopSettingsStore(file, dotenv)
+  const actions = []
+  await startup.recoverCharacterStartup(startup.backendStartupFailure(78, 'exit', { ...selection, source: 'dotenv' }), {
+    save: update => { actions.push('save'); return store.update({}, update) },
+    stop: async () => { actions.push('stop') },
+    start: async () => { actions.push('start'); assert.equal(store.backendEnvironment({}).AMADEUS_CHARACTER_ID, 'kurisu') },
+  })
+  assert.deepEqual(actions, ['save', 'stop', 'start'])
+  assert.equal(new DesktopSettingsStore(file, dotenv).snapshot({}).values.AMADEUS_CHARACTER_ID, 'kurisu')
+  assert.equal(fs.readFileSync(dotenv, 'utf8'), 'AMADEUS_CHARACTER_ID=missing-role\n')
+})
+
+test('recovery does not stop on save failure or when environment authority locks the choice', async () => {
+  const calls = []
+  const actions = { save: () => { calls.push('save'); throw new Error('disk failed') },
+    stop: async () => { calls.push('stop') }, start: async () => { calls.push('start') } }
+  await assert.rejects(startup.recoverCharacterStartup(startup.backendStartupFailure(78, 'exit', selection), actions), /disk failed/)
+  assert.deepEqual(calls, ['save'])
+  calls.length = 0
+  await assert.rejects(startup.recoverCharacterStartup(startup.backendStartupFailure(78, 'exit', { ...selection, source: 'environment', locked: true }), actions), /locked/)
+  await assert.rejects(startup.recoverCharacterStartup(startup.backendStartupFailure(1, 'other failure', selection), actions), /No character/)
+  assert.deepEqual(calls, [])
+})
+
+test('a failed restart leaves the saved selection and propagates the failure', async () => {
+  let saved
+  await assert.rejects(startup.recoverCharacterStartup(startup.backendStartupFailure(78, 'exit', selection), {
+    save: update => { saved = update; return {} }, stop: async () => {}, start: async () => { throw new Error('restart failed') },
+  }), /restart failed/)
+  assert.deepEqual(saved, { values: { AMADEUS_CHARACTER_ID: 'kurisu' } })
+})
+
+test('fresh validation prevents a deleted, invalid or mismatched role from being saved', async () => {
+  let saves = 0
+  const save = async () => { saves += 1; return { ok: true } }
+  for (const character of [{ character_id: 'one', valid: false, error: 'file was removed' }, { character_id: 'other', valid: true }]) {
+    await assert.rejects(management.saveStartupCharacter('one', async () => ({ character }), save))
+  }
+  await assert.rejects(management.saveStartupCharacter('one', async () => { throw new Error('validation unavailable') }, save), /validation unavailable/)
+  assert.equal(saves, 0)
+})
+
+test('new and edited roles save the visible persona without changing its names or requesting assets', async () => {
+  const calls = []
+  const send = async (method, params) => { calls.push({ method, params }); return { character: { character_id: 'host-generated-id' } } }
+  const persona = 'あなたは牧瀬紅莉栖。\nKurisu の文章をそのまま見せる。'
+  await management.saveCharacterDraft({ characterId: null, name: '  A role  ', persona }, send)
+  await management.saveCharacterDraft({ characterId: 'host-generated-id', name: 'Changed name', persona }, send)
+  assert.deepEqual(calls, [
+    { method: 'character.create', params: { name: 'A role', persona } },
+    { method: 'character.update', params: { character_id: 'host-generated-id', name: 'Changed name', persona } },
+  ])
+})
+
+test('valid startup selection saves only the existing identity setting and preserves save errors', async () => {
+  const calls = []
+  const send = async (method, params) => { calls.push({ method, params }); return { character: { character_id: 'one', valid: true } } }
+  const snapshot = { values: { AMADEUS_CHARACTER_ID: 'one' } }
+  assert.equal(await management.saveStartupCharacter('one', send, async update => { calls.push(update); return { ok: true, settings: snapshot } }), snapshot)
+  assert.deepEqual(calls, [{ method: 'character.validate', params: { character_id: 'one' } }, { values: { AMADEUS_CHARACTER_ID: 'one' } }])
+  await assert.rejects(management.saveStartupCharacter('one', send, async () => ({ ok: false, error: 'locked by environment' })), /locked by environment/)
+})
+
+test('fresh catalog edits do not replace the pinned active name and parent authority ignores stored selection', () => {
+  const response = { active, characters: [{ character_id: 'one', name: 'Edited', persona: 'changed', valid: true, builtin: false, editable: true }] }
+  const catalog = management.characterCatalog(response)
+  assert.equal(catalog.active.name, 'Original')
+  assert.equal(catalog.characters[0].name, 'Edited')
+  assert.equal(management.nextStartupCharacter({ values: { AMADEUS_CHARACTER_ID: 'saved-other' }, sources: { AMADEUS_CHARACTER_ID: 'environment' }, locked: { AMADEUS_CHARACTER_ID: true } }, active).characterId, 'one')
+  assert.equal(management.nextStartupCharacter({ sources: { AMADEUS_CHARACTER_ID: 'dotenv' } }, active).characterId, null)
+})
+
+const React = require('react')
+const { renderToStaticMarkup } = require('react-dom/server')
+const { StartupFailureCard } = compile('../src/renderer/components/BackendStartupRecovery.tsx', name => {
+  if (name === '../i18n') return { useI18n: () => ({ t: (value, variables = {}) => value.replace(/\{(\w+)\}/g, (_, key) => variables[key] ?? `{${key}}`) }) }
+  if (name === './SettingsPrimitives') return { CardShell: ({ children }) => React.createElement('div', null, children) }
+  return require(name)
+})
+
+const { default: CharacterManagementSettings, CharacterRoleLabel } = compile('../src/renderer/components/CharacterManagementSettings.tsx', name => {
+  if (name === './characterManagement') return management
+  if (name === '../i18n') return { useI18n: () => ({ t: (value, variables = {}) => value.replace(/\{(\w+)\}/g, (_, key) => variables[key] ?? `{${key}}`) }) }
+  if (name === './SettingsPrimitives') return { CardShell: ({ children }) => React.createElement('div', null, children) }
+  return require(name)
+})
+
+test('duplicate role names remain distinguishable by their full stable IDs in management labels', () => {
+  const roles = ['role-0123456789', 'role-9876543210'].map(character_id => ({
+    character_id, name: 'Same name', persona: '', builtin: false, valid: true, editable: true,
+  }))
+  const html = renderToStaticMarkup(React.createElement('div', null, roles.map(character => React.createElement(CharacterRoleLabel, {
+    key: character.character_id, character, active: false, nextStart: false,
+  }))))
+  assert.equal([...html.matchAll(/>Same name<\/div>/g)].length, 2)
+  for (const role of roles) assert.ok(html.includes(`>${role.character_id}</code>`))
+})
+
+test('role edits retain a restart affordance even when desktop selection has no pending revision', async () => {
+  await management.saveCharacterDraft({ characterId: 'one', name: 'Edited', persona: 'updated' }, async () => ({ character: {} }))
+  const html = renderToStaticMarkup(React.createElement(CharacterManagementSettings, {
+    send: async () => ({}), connected: true, restarting: false, onRestart: async () => {},
+    desktop: { values: { AMADEUS_CHARACTER_ID: 'one' }, sources: { AMADEUS_CHARACTER_ID: 'user' }, pendingRevisions: {} },
+    kurisuPreview: {}, onSettingsChanged: () => {},
+  }))
+  assert.match(html, /<button(?:(?!disabled)[^>])*>Restart backend to apply<\/button>/)
+})
+
+test('offline character recovery is explicit and environment locks disable it', () => {
+  const render = selection => renderToStaticMarkup(React.createElement(StartupFailureCard, {
+    failure: startup.backendStartupFailure(78, 'exit', selection), recovering: false, error: '', notice: '', onRecover: () => {},
+  }))
+  const html = render(selection)
+  assert.match(html, /missing or invalid/)
+  assert.match(html, /Use built-in Kurisu and restart/)
+  assert.doesNotMatch(html, /<button[^>]*disabled/)
+  const locked = render({ ...selection, source: 'environment', locked: true })
+  assert.match(locked, /<button[^>]*disabled/)
+  assert.match(locked, /parent process environment/)
+})
+
+test('ordinary startup errors never offer character recovery', () => {
+  const html = renderToStaticMarkup(React.createElement(StartupFailureCard, {
+    failure: startup.backendStartupFailure(1, 'Provider initialization failed', selection), recovering: false, error: '', notice: '', onRecover: () => {},
+  }))
+  assert.match(html, /Provider initialization failed/)
+  assert.doesNotMatch(html, /Kurisu|<button/)
+})

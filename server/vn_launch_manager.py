@@ -533,6 +533,9 @@ class VNLaunchManager:
         ]
         if self._backend_url:
             args.extend(["--backend-url", self._backend_url])
+        if helper.resolve() == (self.project_root / "tools/vn_portrait_overlay_lite.py").resolve():
+            from llm.character_prompts import active_ui_identity
+            args.extend(["--ui-name", active_ui_identity()["ui_name"]])
         # Bootstrap clears process-wide credentials before starting external
         # tools. Only our own control surface needs the retained desktop token.
         overlay_env = {AUTH_MODE_ENV: "disabled"}

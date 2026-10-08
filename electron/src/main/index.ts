@@ -30,6 +30,7 @@ import { ApplicationLifecycle } from './appLifecycle.js'
 import { applicationMenuTemplate } from './applicationMenu.js'
 import { defaultMpsFallbackEnvironment } from './mpsFallbackPolicy.js'
 import { auipStoragePartition } from './auipStorage.js'
+import { BackendStartupExitError, backendStartupFailure, recoverCharacterStartup, startupCharacterSelection, waitForBackendReadiness, type BackendStartupFailure } from './backendStartup.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -188,6 +189,7 @@ const companionPanel = new CompanionPanel({
   // Explicit legacy PNG override; the default Lite pack is served under assets/.
   portraitCacheDir: COMPANION_PORTRAIT_CACHE,
   bridge: () => companionBridge,
+  active: requestActiveCharacter,
   slice: () => [
     electronCanvasLifecycle.window?.webContents,
     electronSliceWindow?.webContents,
@@ -205,6 +207,8 @@ let pythonProcess: ChildProcess | null = null
 let backendStopping: Promise<void> | null = null
 const applicationLifecycle = new ApplicationLifecycle()
 let backendOwned = false
+let backendStarting: Promise<void> | null = null
+let startupFailure: BackendStartupFailure | null = null
 
 const BACKEND_PORT = 17777
 const BACKEND_WS = `ws://127.0.0.1:${BACKEND_PORT}/ws`
@@ -354,23 +358,21 @@ function backendHealthStatus(): Promise<BackendHealth> {
   })
 }
 
-async function waitForBackendReady(timeoutMs = 120_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    const health = await backendHealthStatus()
-    if (health === 'ready') {
-      backendOwned = true
-      return
-    }
-    if (health === 'foreign') {
-      throw new Error(`port ${BACKEND_PORT} is owned by another backend instance`)
-    }
-    if (pythonProcess && (pythonProcess.exitCode !== null || pythonProcess.signalCode !== null)) {
-      throw new Error(`backend exited before readiness (code ${pythonProcess.exitCode})`)
-    }
-    await new Promise(resolve => setTimeout(resolve, 250))
-  }
-  throw new Error(`backend did not become ready within ${timeoutMs}ms`)
+async function waitForBackendReady(timeoutMs = 120_000, proc = pythonProcess): Promise<void> {
+  await waitForBackendReadiness(proc, backendHealthStatus, BACKEND_PORT, timeoutMs)
+  backendOwned = true
+}
+
+async function requestActiveCharacter(): Promise<Record<string, unknown> | null> {
+  if (!backendOwned || await backendHealthStatus() !== 'ready') return null
+  try {
+    const response = await fetch(`http://127.0.0.1:${BACKEND_PORT}/character/active`, {
+      headers: { [BACKEND_TOKEN_HEADER]: BACKEND_TOKEN }, signal: AbortSignal.timeout(3000),
+    })
+    if (!response.ok) return null
+    const active = await response.json() as Record<string, unknown>
+    return typeof active.character_id === 'string' && typeof active.short_name === 'string' ? active : null
+  } catch { return null }
 }
 
 function requestBackendAction(endpoint: string, timeoutMs: number): Promise<boolean> {
@@ -416,7 +418,24 @@ function waitForProcessExit(proc: ChildProcess, timeoutMs: number): Promise<bool
   })
 }
 
-async function startBackend(): Promise<void> {
+function startBackend(): Promise<void> {
+  if (backendStarting) return backendStarting
+  const snapshot = desktopSettings.snapshot(process.env)
+  const selection = startupCharacterSelection({
+    ...snapshot,
+    values: { ...snapshot.values as Record<string, unknown>, ...(process.env.AMADEUS_CHARACTER_ID !== undefined
+      ? { AMADEUS_CHARACTER_ID: process.env.AMADEUS_CHARACTER_ID } : {}) },
+  })
+  startupFailure = null
+  backendStarting = launchBackend().catch(error => {
+    startupFailure = backendStartupFailure(error instanceof BackendStartupExitError ? error.exitCode : null,
+      error instanceof Error ? error.message : String(error), selection)
+    throw error
+  }).finally(() => { backendStarting = null })
+  return backendStarting
+}
+
+async function launchBackend(): Promise<void> {
   const health = await backendHealthStatus()
   if (health === 'ready') {
     backendOwned = true
@@ -468,19 +487,20 @@ async function startBackend(): Promise<void> {
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 
-  pythonProcess.stdout?.on('data', (data: Buffer) => {
+  const proc = pythonProcess
+  proc.stdout?.on('data', (data: Buffer) => {
     console.log(`[backend] ${data.toString('utf8').trim()}`)
   })
-  pythonProcess.stderr?.on('data', (data: Buffer) => {
+  proc.stderr?.on('data', (data: Buffer) => {
     console.error(`[backend:err] ${data.toString('utf8').trim()}`)
   })
-  pythonProcess.on('exit', (code: number | null) => {
+  proc.on('exit', (code: number | null) => {
     console.log(`[electron] backend exited with code ${code}`)
-    pythonProcess = null
+    if (pythonProcess === proc) pythonProcess = null
     backendOwned = false
     void windowsWallpaper?.stop().catch(error => console.error('[windows-wallpaper] backend exit cleanup:', error))
   })
-  await waitForBackendReady()
+  await waitForBackendReady(120_000, proc)
   desktopSettings.markApplied(process.env, launchPendingRevisions)
 }
 
@@ -2115,6 +2135,27 @@ ipcMain.handle('restart-backend', async (event) => {
     return false
   }
 })
+ipcMain.handle('backend-startup.failure', (event) => {
+  if (!isTrustedBackendRenderer(event.sender)) return null
+  return startupFailure
+})
+ipcMain.handle('backend-startup.recover-character', async (event) => {
+  if (!isTrustedBackendRenderer(event.sender)) return { ok: false, error: 'Untrusted startup recovery requester.' }
+  let saved = false
+  try {
+    await recoverCharacterStartup(startupFailure, {
+      save: update => {
+        const settings = desktopSettings.update(process.env, update)
+        saved = true
+        return settings
+      }, stop: stopBackend, start: startBackend,
+    })
+    return { ok: true, saved, settings: desktopSettings.snapshot(process.env) }
+  } catch (error) {
+    return { ok: false, saved, error: error instanceof Error ? error.message : String(error),
+      settings: desktopSettings.snapshot(process.env), failure: startupFailure }
+  }
+})
 ipcMain.handle('desktop-settings.get', (event) => {
   if (!isTrustedBackendRenderer(event.sender)) return null
   return desktopSettings.snapshot(process.env)
@@ -2190,8 +2231,10 @@ ipcMain.handle('chat-avatars.select', async (event, role: ChatAvatarRole) => {
   if (!isTrustedBackendRenderer(event.sender)) {
     return { ok: false, cancelled: false, error: 'Untrusted chat avatar requester.' }
   }
+  const active = role === 'assistant' ? await requestActiveCharacter() : null
   const options: Electron.OpenDialogOptions = {
-    title: role === 'assistant' ? 'Choose Kurisu avatar' : 'Choose your avatar',
+    title: role === 'assistant' ? active?.character_id === 'kurisu' ? 'Choose Kurisu avatar'
+      : typeof active?.short_name === 'string' ? `Choose ${active.short_name} avatar` : 'Choose assistant avatar' : 'Choose your avatar',
     buttonLabel: 'Use this image',
     properties: ['openFile'],
     filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] }],

@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useBackend } from './hooks/useBackend'
+import { ActiveCharacterContext, useActiveCharacterSnapshot } from './activeCharacter'
 import Sidebar from './components/Sidebar'
 import ChatPage from './components/ChatPage'
 import WorkPage from './components/WorkPage'
@@ -31,6 +32,7 @@ function initialPage(): Page {
 
 function AmadeusApp() {
   const { send, subscribe, connected, reconnect } = useBackend()
+  const activeCharacter = useActiveCharacterSnapshot(connected, send)
   const searchParams = new URLSearchParams(window.location.search)
   const desktopProjection = searchParams.get('desktopProjection') === '1'
   const panelWindow = searchParams.get('panelWindow') === '1'
@@ -276,11 +278,13 @@ function AmadeusApp() {
   }
 
   if (desktopProjection) {
-    return <WorkPage send={send} subscribe={subscribe} connected={connected} />
+    return <ActiveCharacterContext.Provider value={activeCharacter}>
+      <WorkPage send={send} subscribe={subscribe} connected={connected} />
+    </ActiveCharacterContext.Provider>
   }
 
   return (
-    <>
+    <ActiveCharacterContext.Provider value={activeCharacter}>
       <div className="native-titlebar-drag-region" aria-hidden="true">
         <img className="native-titlebar-app-icon" src={appIconUrl} alt="" />
       </div>
@@ -298,7 +302,7 @@ function AmadeusApp() {
           {page === 'settings' && <SettingsPage send={send} subscribe={subscribe} connected={connected} reconnectBackend={reconnect} />}
         </div>
       </div>
-    </>
+    </ActiveCharacterContext.Provider>
   )
 }
 

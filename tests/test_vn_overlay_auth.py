@@ -3,6 +3,7 @@ import asyncio
 from http import HTTPStatus
 import json
 import os
+import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -121,3 +122,22 @@ def test_credentials_cannot_be_forwarded_to_an_external_overlay(tmp_path):
         with pytest.raises(ValueError, match="repository-owned"):
             asyncio.run(manager._launch_overlay({"overlayHelper": str(helper)}, {}))
     manager._spawn.assert_not_called()
+
+
+@pytest.mark.parametrize("owned", [True, False])
+def test_startup_name_argument_is_only_added_to_the_owned_lite_helper(tmp_path, owned, monkeypatch):
+    helper = tmp_path / ("tools/vn_portrait_overlay_lite.py" if owned else "external.py")
+    helper.parent.mkdir(parents=True, exist_ok=True)
+    helper.touch()
+    manager = configured_handler(tmp_path, LocalAuthPolicy(mode="disabled"))._manager
+    process = Mock(pid=12345)
+    process.poll.return_value = None
+    manager._spawn = Mock(return_value=process)
+    monkeypatch.setattr("llm.character_prompts.active_ui_identity", lambda: {"ui_name": '<Mira & "friend">'})
+    with patch("server.vn_launch_manager._http_health", side_effect=[False, True]):
+        asyncio.run(manager._launch_overlay({"overlayHelper": str(helper)}, {}))
+    expected = [sys.executable, str(helper), "--host", "127.0.0.1", "--port", "8788", "--lite-dir",
+                str(tmp_path / "assets/companion/kurisu"), "--x", "60", "--y", "80", "--backend-url", manager._backend_url]
+    if owned:
+        expected.extend(["--ui-name", '<Mira & "friend">'])
+    assert manager._spawn.call_args.args[0] == expected

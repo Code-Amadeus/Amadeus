@@ -5,6 +5,8 @@ import { GroupTitle, CardShell, CardIcon, StatusPill, SettingsGroup } from './Se
 import McpConnections, { type McpConnectionSummary } from './McpConnections'
 import ChatAvatarSettings from './ChatAvatarSettings'
 import MainChatCharacterSettings from './MainChatCharacterSettings'
+import CharacterManagementSettings from './CharacterManagementSettings'
+import BackendStartupRecovery from './BackendStartupRecovery'
 import RetiredRouteSetting, { RETIRED_ROUTE_KEY, retiredRouteMigration, removeStoredRetiredRouteSetting, type RetiredSettingFact } from './RetiredRouteSetting'
 import AcpProviders, { type AcpConfiguration } from './AcpProviders'
 import CapabilitiesPanel, { type RuntimePackageStatus } from './CapabilitiesPanel'
@@ -1137,6 +1139,9 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
           </div>
         ) : null}
 
+        <BackendStartupRecovery connected={connected} restarting={restarting}
+          reconnectBackend={reconnectBackend} onSettingsChanged={settings => setDesktop(settings as unknown as DesktopSettingsSnapshot)} />
+
         <RetiredRouteSetting migration={retiredRouteMigration(desktop, config.retired_settings)}
           saving={saving === RETIRED_ROUTE_KEY} onConfirm={confirmRetiredRoute} />
 
@@ -1214,6 +1219,12 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                     saving={saving === 'main_chat_character_prompt_ja'}
                     onSave={value => handleChange('main_chat_character_prompt_ja', value)}
                   />
+                </SettingsGroup>
+                <SettingsGroup title="Character roles" detail="Create user roles and choose the role for the next backend start.">
+                  <CharacterManagementSettings send={send} connected={connected} desktop={desktop}
+                    restarting={restarting} onRestart={restartBackend}
+                    kurisuPreview={config.main_chat_character_prompt_preview}
+                    onSettingsChanged={settings => setDesktop(settings as unknown as DesktopSettingsSnapshot)} />
                 </SettingsGroup>
                 <SettingsGroup title="Chat appearance" detail="Local presentation only; avatar images are never sent to the model.">
                   <ChatAvatarSettings />

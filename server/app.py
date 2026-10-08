@@ -30,6 +30,17 @@ from typing import Any, TYPE_CHECKING
 # inference. This must run before anything imports torch.
 os.environ.setdefault("KMP_BLOCKTIME", "1")
 
+# Classify only selected-role load failures before eager runtime imports. A
+# library import retains the typed exception; only this executable maps it to 78.
+from core.character_profiles import CharacterLoadError, CHARACTER_LOAD_EXIT_CODE
+try:
+    from llm.character_prompts import active_ui_identity
+except CharacterLoadError as exc:
+    if __name__ == "__main__":
+        print(f"CHARACTER_LOAD_FAILED: {exc}", file=sys.stderr)
+        raise SystemExit(CHARACTER_LOAD_EXIT_CODE) from None
+    raise
+
 from llm.character_voice_lines import voice_line
 
 if TYPE_CHECKING:
@@ -379,6 +390,7 @@ async def bootstrap(port: int = 17777) -> None:
     from server.event_bus import bus
     from server.handlers.chat_handler import ChatHandler
     from server.handlers.session_handler import SessionHandler
+    from server.handlers.character_handler import CharacterHandler
     from server.handlers.tts_handler import TtsHandler
     from server.handlers.asr_handler import AsrHandler
     from server.handlers.wake_handler import WakeHandler
@@ -429,6 +441,7 @@ async def bootstrap(port: int = 17777) -> None:
 
     chat_role_delivery = ChatRoleDelivery()
     session_h = SessionHandler()
+    character_h = CharacterHandler()
     tts_h = TtsHandler()
     asr_h = AsrHandler()
     wake_h = WakeHandler()
@@ -600,7 +613,7 @@ async def bootstrap(port: int = 17777) -> None:
     vn_h = VNPlayerHandler()
     vn_launch_h = VNLaunchHandler()
 
-    handlers = (chat_h, session_h, tts_h, asr_h, wake_h, vts_h, expr_h, sys_h,
+    handlers = (chat_h, session_h, character_h, tts_h, asr_h, wake_h, vts_h, expr_h, sys_h,
         render_h, wallpaper_h, provider_h, capability_h, mcp_connection_h,
         provider_activity_h, work_h, work_preview_h, attention_h, auip_h, vn_h,
         vn_launch_h)
@@ -672,6 +685,14 @@ async def bootstrap(port: int = 17777) -> None:
             "cooperative_chat_mode": "authority",
             "cooperative_permission_policy": settings.COOPERATIVE_CHAT_PERMISSION_POLICY,
         }
+
+    @app.get("/character/active")
+    async def character_active(request: Request):
+        if not _http_request_authenticated(request.headers, auth_policy):
+            raise HTTPException(status_code=401, detail="Authentication required")
+        if not _http_request_origin_allowed(request.headers, backend_port=port):
+            raise HTTPException(status_code=403, detail="Untrusted request origin")
+        return active_ui_identity()
 
     @app.get("/runtime/status")
     async def runtime_status(request: Request):

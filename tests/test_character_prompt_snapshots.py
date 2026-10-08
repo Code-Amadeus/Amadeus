@@ -86,15 +86,16 @@ def _capture_prompts(character_id: str = "kurisu", override: str = "", startup_f
         stack.enter_context(patch("platform.system", return_value="Windows"))
 
         if character_id == "mira":
-            import importlib.resources as resources
-            original_files = resources.files
-            class SyntheticResources:
-                def joinpath(self, name):
-                    if name == "mira.toml":
-                        return ROOT / "tests/fixtures/mira_character.toml"
-                    return original_files("characters").joinpath(name)
-            stack.enter_context(patch.object(resources, "files", side_effect=lambda package:
-                SyntheticResources() if package == "characters" else original_files(package)))
+            # Name-only custom characters now come from the user-data directory.
+            # Keep the original fixture bytes and every captured output intact.
+            from tempfile import TemporaryDirectory
+            fixture_directory = Path(stack.enter_context(TemporaryDirectory()))
+            (fixture_directory / "mira.toml").write_bytes(
+                (ROOT / "tests/fixtures/mira_character.toml").read_bytes())
+            settings_reader = environment.EnvironmentReader(capture_env | {
+                "AMADEUS_CHARACTER_DIR": str(fixture_directory)})
+            stack.enter_context(patch.object(environment, "load_project_environment",
+                return_value=settings_reader))
 
         from config import settings
         from llm import prompts

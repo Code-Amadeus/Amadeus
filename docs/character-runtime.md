@@ -1,17 +1,18 @@
 # Character startup and conversation ownership
 
-`AMADEUS_CHARACTER_ID` selects the backend's character prompt pack. Its default is
-`kurisu`. Configure it through the existing startup environment, project `.env`,
-or persisted desktop setting, then restart the backend. A saved desktop value is
-pending until restart; an explicit parent-process environment value takes
-precedence. The settings store recognizes this key, but the GUI has no startup
-character field, selector, new/import/delete character controls, or per-character
-persona editor. Its existing persona editor is only for Kurisu's Japanese
-override. There is no live switching API. Changes to a character file also apply
-only after restart.
+`AMADEUS_CHARACTER_ID` selects the backend's conversational character. Its default
+is `kurisu`. Settings can create/edit user characters and select the next startup
+identity; the existing startup environment and project `.env` are still supported.
+A saved selection is pending until restart, and an explicit parent-process
+environment value takes precedence. The built-in Kurisu Japanese override keeps
+its existing immediate-request behavior. User definitions apply after restart;
+there is no live identity switch. See [local character management](character-management.md)
+for personality scope, shared appearance/voice, and offline startup recovery.
 
-A custom packaged role needs a matching `characters/<id>.toml` resource with a
-stable lowercase id and a recognizable name, for example:
+Built-in Kurisu remains in `characters/kurisu.toml`. User roles are read from
+`.amadeus/characters/<id>.toml` (or explicit `AMADEUS_CHARACTER_DIR`), not the
+program's `characters/` directory. The GUI generates stable IDs. Manually authored
+records can retain a valid existing ID and a recognizable name, for example:
 
 ```toml
 [names]

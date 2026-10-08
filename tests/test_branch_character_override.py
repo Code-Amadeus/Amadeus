@@ -381,7 +381,7 @@ async def test_mira_branch_requests_ignore_saved_kurisu_persona(monkeypatch, tmp
     resource = Path(__file__).parent / "fixtures/mira_character.toml"
     (tmp_path / "mira.toml").write_bytes(resource.read_bytes())
     with monkeypatch.context() as loading:
-        loading.setattr(characters, "files", lambda _package: tmp_path)
+        loading.setattr(characters, "user_character_directory", lambda: tmp_path)
         character = characters.load("mira")
     monkeypatch.setattr(characters, "_ACTIVE_CHARACTER", character)
     baseline, *_ = await _branch_requests(monkeypatch)

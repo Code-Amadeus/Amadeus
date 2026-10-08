@@ -54,3 +54,7 @@ vn_voice_emotion = "今の反応、少し不自然ね。[EMO preset=serious_spea
 vn_voice_contradiction = "今の言い方、少し引っかかる。[EMO preset=surprised dur=7s] 決定的じゃないけど、丸をつけておく価値はあるわ。"
 vn_voice_new_evidence = "この話は覚えておくべきね。[EMO preset=thinking dur=8s] 背景説明に見せて、ルールか動機の端が混じっている。"
 vn_voice_density = "情報密度が上がったわね。[EMO preset=thinking dur=8s] 背景音として流すには早い。"
+
+[ui]
+ui_name = "牧瀬 紅莉栖"
+accessible_name = "牧濑红莉栖"

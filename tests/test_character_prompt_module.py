@@ -55,7 +55,7 @@ def test_name_only_mystery_assumption_describes_evidence_without_assigning_perso
     for character_id, name in (("test-calm", "Calm companion"), ("test-exuberant", "Exuberant companion")):
         (tmp_path / f"{character_id}.toml").write_text(
             f'[names]\ncharacter_id = "{character_id}"\nname = "{name}"\n', encoding="utf-8")
-    monkeypatch.setattr(characters, "files", lambda _package: tmp_path)
+    monkeypatch.setattr(characters, "user_character_directory", lambda: tmp_path)
     assumptions = [characters.load(character_id).values["vn_mystery_assumption"]
                    for character_id in ("test-calm", "test-exuberant")]
     assert assumptions[0] == assumptions[1]
@@ -82,7 +82,7 @@ def test_malformed_selected_file_fails_without_default_fallback(monkeypatch, tmp
         for table, values in document.items())
     path = tmp_path / "invalid-test.toml"
     path.write_text("invalid = [" if failure == "invalid_toml" else contents, encoding="utf-8")
-    monkeypatch.setattr(characters, "files", lambda _package: tmp_path)
+    monkeypatch.setattr(characters, "user_character_directory", lambda: tmp_path)
     with pytest.raises(ValueError):
         characters.load("invalid-test")
 

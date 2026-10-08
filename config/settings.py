@@ -75,6 +75,8 @@ LOG_USER_CONTENT = _bool("LOG_USER_CONTENT", False)
 # Main Chat LLM routing — remote DeepSeek first-release baseline
 # ===========================================================================
 CHARACTER_ID = _str("AMADEUS_CHARACTER_ID", "kurisu")
+# User-created role data is local state; packaged characters remain read-only.
+CHARACTER_DIR = _str("AMADEUS_CHARACTER_DIR", str(_ROOT / ".amadeus" / "characters"))
 # Japanese Main Chat identity/personality only; empty uses the built-in role.
 MAIN_CHAT_CHARACTER_PROMPT_JA = _str("AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA", "")
 

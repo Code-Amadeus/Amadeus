@@ -55,6 +55,13 @@ class Method(StrEnum):
     CHAT_WORK_NOTE_DELIVERED = "chat.work_note_delivered"
     CHAT_OBSERVER_DECISION = "chat.observer_decision"
 
+    # Character catalog (selection takes effect at process startup only).
+    CHARACTER_LIST     = "character.list"
+    CHARACTER_ACTIVE   = "character.active"
+    CHARACTER_CREATE   = "character.create"
+    CHARACTER_UPDATE   = "character.update"
+    CHARACTER_VALIDATE = "character.validate"
+
     # Sessions
     SESSION_LIST       = "session.list"
     SESSION_CREATE     = "session.create"

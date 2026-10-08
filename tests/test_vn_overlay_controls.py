@@ -170,3 +170,38 @@ def test_disconnect_does_not_replay_unacknowledged_click(monkeypatch):
 def test_controls_never_send_desktop_credentials_to_a_remote_endpoint(url):
     with pytest.raises(ValueError, match="local backend"):
         VNOverlayControls(url)
+
+
+def test_native_heading_reads_active_identity_once_per_existing_connection(monkeypatch):
+    monkeypatch.setenv("AMADEUS_BACKEND_AUTH_MODE", "disabled")
+
+    async def run():
+        connections, requests = [], []
+        next_start_name = "牧瀬 紅莉栖"
+
+        async def connected(ws):
+            connections.append(ws)
+            active_name = next_start_name
+            async for raw in ws:
+                message = json.loads(raw)
+                requests.append(message["method"])
+                params = {"ui_name": active_name} if message["method"] == "character.active" else {"inputs": {"session_id": "game"}}
+                await ws.send(json.dumps({"type": "res", "id": message["id"], "params": params}))
+
+        async with websockets.serve(connected, "127.0.0.1", 0) as server:
+            client = VNOverlayControls(f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}/ws")
+            try:
+                first = await wait_state(client, lambda s: s["connected"] and s["active_character"])
+                assert first["active_character"]["ui_name"] == "牧瀬 紅莉栖"
+                next_start_name = '<Mira & "friend">'
+                assert client.snapshot()["active_character"]["ui_name"] == "牧瀬 紅莉栖"
+                await connections[0].close(1012, "synthetic backend restart")
+                disconnected = await wait_state(client, lambda s: not s["connected"])
+                assert disconnected["active_character"] is None
+                restarted = await wait_state(client, lambda s: s["connected"] and s["active_character"])
+                assert restarted["active_character"]["ui_name"] == '<Mira & "friend">'
+                assert requests.count("character.active") == 2
+                assert len(connections) == 2, "identity uses the existing controls socket"
+            finally:
+                await asyncio.to_thread(client.close)
+    asyncio.run(run())

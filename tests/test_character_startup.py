@@ -111,7 +111,7 @@ def test_empty_or_invalid_primary_name_fails_at_resource_loader(monkeypatch, tmp
     rendered = json.dumps(name) if name is not None else "42"
     (tmp_path / "invalid-name.toml").write_text(
         f'[names]\ncharacter_id="invalid-name"\nname={rendered}\n', encoding="utf-8")
-    monkeypatch.setattr(characters, "files", lambda _package: tmp_path)
+    monkeypatch.setattr(characters, "user_character_directory", lambda: tmp_path)
     with pytest.raises(ValueError):
         characters.load("invalid-name")
 
@@ -120,7 +120,7 @@ def test_invalid_explicit_display_name_fails_before_work_admission(monkeypatch, 
     (tmp_path / "invalid-display.toml").write_text(
         '[names]\ncharacter_id="invalid-display"\nname="Mira"\ndisplay_name=" Mira "\n',
         encoding="utf-8")
-    monkeypatch.setattr(characters, "files", lambda _package: tmp_path)
+    monkeypatch.setattr(characters, "user_character_directory", lambda: tmp_path)
     with pytest.raises(ValueError, match="display_name"):
         characters.load("invalid-display")
 

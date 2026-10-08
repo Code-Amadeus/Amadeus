@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from importlib.resources import files
 from pathlib import Path
 import sys
 
@@ -155,11 +156,19 @@ def main():
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8788)
     parser.add_argument("--backend-url", default="", help="Local backend /ws endpoint for VN session controls")
+    parser.add_argument("--ui-name", default=None, help="Pinned startup name supplied by the VN Host")
     parser.add_argument("--x", type=int, default=60)
     parser.add_argument("--y", type=int, default=80)
     args = parser.parse_args()
+    ui_name = args.ui_name
+    if ui_name is None and not args.backend_url:
+        # Existing standalone asset previews have no running backend role.
+        from core.character_profiles import BUILTIN_CHARACTER_ID, read_character_document
+        document = read_character_document(files("characters").joinpath(f"{BUILTIN_CHARACTER_ID}.toml"))
+        ui_name = document["ui"]["ui_name"]
     overlay = overlay_class()(lite_dir=args.lite_dir, static_idle=args.static_idle,
-                              host=args.host, port=args.port, x=args.x, y=args.y, backend_url=args.backend_url)
+                              host=args.host, port=args.port, x=args.x, y=args.y, backend_url=args.backend_url,
+                              ui_name=ui_name or "")
     return overlay.run()
 
 
