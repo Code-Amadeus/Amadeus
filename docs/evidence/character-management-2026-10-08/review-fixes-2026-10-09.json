@@ -58,5 +58,21 @@
     "total": 22,
     "initial_attempt": "navigation timeout; retained as failed"
   },
-  "real_live2d_assets_retested_this_round": false
+  "real_live2d_assets_retested_this_round": false,
+  "wallpaper_stop_follow_up": {
+    "tested_product_revision": "17d15edc7398e45062eb6bab7ace5f9ad14a3d7c",
+    "targeted_projection_and_stop_passed": 22,
+    "electron_passed": 312,
+    "build": "passed",
+    "app_source_python_contracts_passed": 25,
+    "python_sources_changed": false,
+    "full_python_rerun": false,
+    "official_desktop_smoke": {
+      "passed": 11,
+      "total": 11
+    },
+    "normal_backend_exit_event_already_clears_state": true,
+    "regressions_before_fix": 3,
+    "overlap_validation": "production callbacks, event subscriptions and stop helper with controlled completions"
+  }
 }

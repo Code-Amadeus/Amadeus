@@ -1,9 +1,45 @@
 # M1 review fixes — 2026-10-09
 
-Product revision: `37fa6c19a3995b5f51842b5b7f9045b4eb18488b`. Review base: `341eab2`.
+First repair revision: `37fa6c19a3995b5f51842b5b7f9045b4eb18488b`. Review base: `341eab2`.
 This repair covers findings 1–8, 10, 12 and 13 from the PR #167 review.
 No role hot switching, per-role media, new default UI decoration, or prompt
 assembly changes are added. Amadeus remains the application name.
+
+## Follow-up: confirmed Wallpaper stops
+
+Follow-up product revision: `17d15edc7398e45062eb6bab7ace5f9ad14a3d7c`. The second review found that a
+cancelled Render request discarded a completed Wallpaper stop. The original
+regression asserted only Render state and missed the Wallpaper state.
+
+The normal backend path emits `wallpaper.exited` before its stop response; the
+actual App subscription already clears the Wallpaper indicator. A callback-only
+probe omitting that notification cannot establish a stale indicator on that
+normal path. The gap matters when the notification is unavailable but desktop
+cleanup confirms the stop, including recovery after a failed WebSocket request.
+
+Moving the update unconditionally before the guard fixes that gap but creates
+the opposite race: an old desktop cleanup acknowledgement can clear a newer
+Wallpaper start. A probe of the actual callbacks and event subscription confirmed
+both boundaries. The fix keeps one request marker, now including its target:
+start continuations require current request ownership; a successful stop can
+update Wallpaper state unless a newer Wallpaper start owns it. Explicit
+Wallpaper stops use the same rule. Failure never invents a successful stop.
+
+The regression harness now runs the production stop helper and actual Wallpaper
+event subscriptions. Three tests failed on the previous product code: cancelled
+Render with a confirmed stop, disconnected-RPC recovery confirmation, and an
+explicit Wallpaper stop superseded by later Render cancellation. All pass after
+the repair. Tests also preserve failed-stop state, normal exited handling and a
+new Wallpaper start while an earlier cleanup acknowledgement is pending.
+
+- Projection/stop regression files: **22 passed**.
+- Full Electron: **312 passed**; `npm run build`: passed.
+- Python contracts reading App.tsx: **25 passed**. Python sources and prompts
+  are unchanged from the full 5398-pass run below; that full run was not repeated.
+- Fresh unmodified desktop smoke: **11/11 passed**, with owned processes exited.
+- Overlap ordering is covered deterministically using actual production
+  callbacks/helper code with controlled transport and cleanup completions. The
+  ordinary desktop smoke does not claim to reproduce that timing race.
 
 ## Repairs and regression boundaries
 

@@ -8,8 +8,8 @@ merged Live2D mainline.
 ## Review repairs — 2026-10-09
 
 [Review fix scope and fresh regression evidence](review-fixes-2026-10-09.md)
-records the later repairs, 307 Electron tests, exact prompt captures and desktop
-recovery revalidation. The integration evidence below describes its own earlier
+records the later repairs, including the confirmed-Wallpaper-stop follow-up,
+312 Electron tests, exact prompt captures and desktop recovery revalidation. The integration evidence below describes its own earlier
 revision and retains its original diagnostic limits.
 
 ## Live2D mainline integration — 2026-10-09
