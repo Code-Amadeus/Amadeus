@@ -5,6 +5,13 @@ management, active identity labels and explicit startup recovery. The original
 M1 results exclude Live2D. The latest integration results below include the
 merged Live2D mainline.
 
+## Review repairs — 2026-10-09
+
+[Review fix scope and fresh regression evidence](review-fixes-2026-10-09.md)
+records the later repairs, 307 Electron tests, exact prompt captures and desktop
+recovery revalidation. The integration evidence below describes its own earlier
+revision and retains its original diagnostic limits.
+
 ## Live2D mainline integration — 2026-10-09
 
 Merged main `0851af8` (Live2D #164) into M1 at `3590c82`. Only ChatPage imports and
@@ -14,7 +21,7 @@ Character visuals keep their current sections; a unified Role page is a later UI
 change. [Sanitized integration evidence](integration-2026-10-09.json) records the
 exact revisions, checks and diagnostic distinction.
 
-Final product revision: **`dbee4d8`**. Joint testing exposed an existing main bug:
+Integration acceptance revision: **`dbee4d8`**. Joint testing exposed an existing main bug:
 clicking Render before its backend WebSocket was connected could leave an active
 empty iframe after the request failed. App now clears projection state on failure
 or a missing URL, preserving the shared presentation route. The actual-callback
