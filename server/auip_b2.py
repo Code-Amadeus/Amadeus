@@ -12,6 +12,8 @@ the existing sparse event-presentation lane.
 
 from __future__ import annotations
 
+from server.auip_contract import AUIP_PARTICIPANT_ACTOR
+
 import asyncio
 import hashlib
 import inspect
@@ -388,7 +390,7 @@ class AuipB2Coordinator:
                     await checked
             invoked = self.runtime.invoke_action(
                 app_session_id=app_session_id,
-                actor="kurisu",
+                actor=AUIP_PARTICIPANT_ACTOR,
                 type=candidate.action_type,
                 payload=dict(candidate.payload),
                 expected_revision=candidate.revision,

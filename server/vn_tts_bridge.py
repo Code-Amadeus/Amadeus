@@ -13,6 +13,8 @@ in the immediate reaction prompt.
 
 from __future__ import annotations
 
+from llm.character_prompts import render
+
 import asyncio
 import logging
 import os
@@ -807,10 +809,7 @@ async def _stream_translate_zh_to_ja(chinese_text: str) -> AsyncIterator[str]:
 
     client = _get_client(provider, api_key, base_url)
     system = (
-        "You are a narrow VN TTS translation sidecar. Translate the Chinese Kurisu "
-        "Makise reaction into natural Japanese for speech synthesis. Return only "
-        "Japanese text. No Chinese, no markdown, no JSON, no quotes, no control tags, "
-        "no stage directions, and no new facts. Keep Kurisu's concise skeptical tone."
+        render('You are a narrow VN TTS translation sidecar. Translate the Chinese ${en_name} reaction into natural Japanese for speech synthesis. Return only Japanese text. No Chinese, no markdown, no JSON, no quotes, no control tags, no stage directions, and no new facts. ${vn_tts_tone}')
     )
     kwargs: dict[str, Any] = {
         "model": model,

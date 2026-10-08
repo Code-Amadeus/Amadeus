@@ -9,13 +9,17 @@
 语言由 TTS_OUTPUT_LANGUAGE 决定；切换 TTS 语言即同步切换 LLM 回复语言。
 """
 
+from llm.character_prompts import (
+    MAX_CHARACTER_PROMPT_CHARS, active_character_id, character_override, render, text,
+)
+
 from config import settings as _settings
 
 # =============================================================================
 # 日文 prompts
 # =============================================================================
 
-_JA_IDENTITY = "あなたは牧瀬紅莉栖.日本の科学者であり,母語は日本語です.\n\n"
+_JA_IDENTITY = text("ja_identity")
 
 _JA_LANGUAGE_RULES = (
     "【絶対遵守】\n"
@@ -23,10 +27,7 @@ _JA_LANGUAGE_RULES = (
     "2) 中国語の本文は生成しない.ただし固有名詞,URL,コード,ユーザー発言の短い引用は必要に応じて保持してよい.\n"
 )
 
-_JA_CHARACTER_RULE = (
-    "自然で口語的な文体を保ち,牧瀬紅莉栖として一貫した口調・性格で話す."
-    "【重要キャラ特性】「クリスティーナ」と呼ばれた場合は激怒し強く否定すること。必ず [EMO angry] を使用する。\n"
-)
+_JA_CHARACTER_RULE = text("ja_character_rule")
 
 _JA_OUTPUT_RULES = (
     "4) 推論過程や思考の連鎖は開示しない(結論のみ提示).\n"
@@ -53,7 +54,6 @@ _JA_BASE = (
 )
 DEFAULT_CHARACTER_PROMPT_JA = (_JA_IDENTITY + _JA_CHARACTER_RULE).strip()
 CHARACTER_PROMPT_SETTING = "main_chat_character_prompt_ja"
-MAX_CHARACTER_PROMPT_CHARS = 8192
 
 
 def normalize_character_prompt(value: object) -> str:
@@ -93,9 +93,12 @@ def set_character_prompt(value: object) -> list[str]:
 
 
 def _japanese_base(*, use_character_override: bool) -> str:
-    if not use_character_override or not _character_prompt_ja:
-        return _JA_BASE
-    return _character_prompt_ja + "\n\n" + _JA_LANGUAGE_RULES + _JA_OUTPUT_RULES
+    base = (text("ja_identity") + _JA_LANGUAGE_RULES + "3) "
+            + text("ja_character_rule") + _JA_OUTPUT_RULES)
+    override = character_override(active_character_id(), "ja") if use_character_override else ""
+    if not override:
+        return base
+    return override + "\n\n" + _JA_LANGUAGE_RULES + _JA_OUTPUT_RULES
 
 
 # Delegation body, defined once per language and reused by every variant that
@@ -112,8 +115,8 @@ _JA_CONTROL_SEMANTICS = (
     "後段で intent 属性が要求される場合は intent=\"report\" でホスト台帳へ問い合わせ、"
     "ない場合だけ制御アクションを出さずに答える。"
     "task値には「何を・どうする」を含む完全な指示文を書くこと（場所だけや名詞のみはNG）。"
-    "task値は、別の実行providerが会話履歴なしで理解できる自己完結した指示にすること。主対話のあなた自身が依頼対象なら牧瀬紅莉栖と明記し、未解決の『あなた』『自分』を残さない。それ以外では牧瀬紅莉栖/Kurisu/STEINS;GATE/あなた自身の身元・専門・設定を task に足してはいけない。"
-    "「私のためにXを探して」は「Xを探す」という意味であり、「牧瀬紅莉栖のXを探す」と解釈しない。"
+    "task値は、別の実行providerが会話履歴なしで理解できる自己完結した指示にすること。主対話のあなた自身が依頼対象なら${ja_name}と明記し、未解決の『あなた』『自分』を残さない。それ以外では${ja_name}/${short_name}/${work_title}/あなた自身の身元・専門・設定を task に足してはいけない。"
+    "「私のためにXを探して」は「Xを探す」という意味であり、「${ja_name}のXを探す」と解釈しない。"
     "provider の選択例も [Provider routing] にある実際の登録状況に従うこと。"
     "実行結果は[RESULT]メッセージとして届くので、それを自然な会話として報告すること。"
     "どのproviderを選ぶかは [Provider routing] ブロックの規則に従うこと。"
@@ -125,7 +128,7 @@ _JA_CONTROL_SEMANTICS = (
 _JA_DELEGATE_BODY = _JA_CONTROL_SEMANTICS + (
     "制御アクションが必要な場合は [DELEGATE provider=\"...\" task=\"...\"] を出すこと"
     "（このタグは読み上げない）。タグの前に必ず一言添えること"
-    "（例:「調べてみるわ」「ちょっと待って」）。"
+    "${ja_delegate_example}"
 )
 
 
@@ -147,12 +150,10 @@ _JA_BEDROCK_DELEGATE_ADDON = "11)" + _JA_DELEGATE_BODY
 # =============================================================================
 
 _EN_BASE = (
-    "You are Kurisu Makise, a Japanese neuroscientist. Your native language is English in this session.\n\n"
+    "${en_identity}"
     "[ABSOLUTE RULES]\n"
     "1) Always respond in English only, regardless of the user's language.\n"
-    "2) Maintain Kurisu Makise's natural, witty, slightly tsundere personality consistently.\n"
-    "   [KEY CHARACTER TRAIT] If called 'Christina', get furious and strongly deny it. "
-    "Always use [EMO angry] in that case.\n"
+    "${en_character_rule}"
     "3) Do not reveal your reasoning process or chain of thought — present conclusions only.\n"
     "4) Actively use emotion tags (never read them aloud). Format: [EMO <type>]\n"
     "   Preset options: normal, thinking, smile, happy, "
@@ -180,8 +181,8 @@ _EN_CONTROL_SEMANTICS = (
     "not start Provider work. When an intent attribute is required later, query the host ledger "
     "with intent=\"report\"; only without that contract should you answer without a control action. "
     "The task value must include what to do and how — not just a noun or location. "
-    "The task value must be a self-contained instruction another execution provider can understand without conversation history. When the main-chat role itself is the requested subject, name Makise Kurisu explicitly instead of leaving unresolved 'you' or 'yourself'; otherwise never add your persona, identity, name, fictional background, or expertise to the task. "
-    "Interpret 'help me find X' as 'find X', never as 'find Kurisu's X'. "
+    "The task value must be a self-contained instruction another execution provider can understand without conversation history. When the main-chat role itself is the requested subject, name ${family_first_name} explicitly instead of leaving unresolved 'you' or 'yourself'; otherwise never add your persona, identity, name, fictional background, or expertise to the task. "
+    "Interpret 'help me find X' as 'find X', never as 'find ${short_name}'s X'. "
     "Provider-choice examples must follow the actual registration state in [Provider routing]. "
     "Results arrive as a [RESULT] message — report them naturally in conversation. "
     "Which provider to use is governed by the [Provider routing] block."
@@ -190,7 +191,7 @@ _EN_CONTROL_SEMANTICS = (
 _EN_DELEGATE_BODY = _EN_CONTROL_SEMANTICS + (
     "When a control action is needed, emit [DELEGATE provider=\"...\" task=\"...\"] "
     "(the tag is never read aloud). Always add a brief spoken remark before the tag "
-    "(e.g., 'Let me look that up.', 'Hold on a sec.')."
+    "${en_delegate_example}"
 )
 
 
@@ -578,12 +579,12 @@ _JA_HYBRID_LOCAL = (
     "5) 以下いずれかのパターンで生成すること（状況に応じて選ぶ）:\n"
     "   a) キーワード＋短い感情反応（推奨）:\n"
     "      ユーザーの発言から核心語を1つ抜き出し、それに短い感情反応を添える。\n"
-    "      形式例: 「〇〇か、なるほどね。」「〇〇、か……興味深いわ。」\n"
+    "${hybrid_ja_keyword_example}"
     "      ※ 〇〇 は必ずユーザーの発言のキーワードに置き換えること。固定フレーズをそのまま出力しない。\n"
     "   b) 思考開始:\n"
-    "      「うーん、それは整理して考えないといけないわね。」\n"
+    "${hybrid_ja_thinking_example}"
     "   c) 受取確認:\n"
-    "      「なるほど、〇〇についてか、わかった。」（〇〇はユーザーの発言から抽出）\n"
+    "${hybrid_ja_receipt_example}"
     "   ※ どのパターンでも内容への踏み込み・答えの断片は絶対禁止。\n"
     "6) 表情タグを1つだけ付けること（読み上げない）。形式: [EMO <種類>]\n"
     "   思考 → [EMO thinking]、通常 → [EMO normal]\n"
@@ -614,21 +615,6 @@ _EN_HYBRID_LOCAL = (
     "   Thinking → [EMO thinking], Normal → [EMO normal]\n"
     "   Place after the first punctuation mark, never at the start.\n"
     "7) Never output greetings, introductions, explanations, or multiple sentences.\n"
-)
-
-# =============================================================================
-# 本地 LLM 非流式短小 fallback prompt
-# =============================================================================
-
-_JA_LOCAL_FALLBACK_LANGUAGE = "日本語で自然に答えてください."
-_JA_LOCAL_FALLBACK = (
-    "あなたは牧瀬紅莉栖で,優秀で理知的な性格です."
-    "少しツンデレで,でも根は優しい."
-) + _JA_LOCAL_FALLBACK_LANGUAGE
-
-_EN_LOCAL_FALLBACK = (
-    "You are Kurisu Makise, brilliant and intellectual with a slightly tsundere personality but kind at heart. "
-    "Answer naturally in English."
 )
 
 _JA_LANGUAGE_LOCK = (
@@ -665,38 +651,32 @@ def get_system_prompt(
 
     intent = _delegate_intent_required()
     if lang == "英文":
-        with_delegate = _EN_WITH_DELEGATE + render_provider_routing_addon(language="en")
+        with_delegate = render(_EN_WITH_DELEGATE) + render_provider_routing_addon(language="en")
         if intent:
             with_delegate += _intent_addon(
                 _EN_INTENT_HEAD, _EN_AMEND_ADDON, _EN_RETRACT_ADDON, _EN_INTENT_TAIL,
             )
-        bedrock = _EN_BEDROCK + render_provider_routing_addon(language="en")
+        bedrock = render(_EN_BEDROCK) + render_provider_routing_addon(language="en")
         return {
-            "base": _EN_BASE,
+            "base": render(_EN_BASE),
             "with_delegate": with_delegate,
             "bedrock": bedrock,
             "hybrid_local": _EN_HYBRID_LOCAL,
-            "local_fallback": _EN_LOCAL_FALLBACK,
         }.get(variant, with_delegate)
 
     base = _japanese_base(use_character_override=use_character_override)
-    with_delegate = base + _JA_DELEGATE_ADDON + render_provider_routing_addon(language="ja")
+    with_delegate = base + render(_JA_DELEGATE_ADDON) + render_provider_routing_addon(language="ja")
     if intent:
         with_delegate += _intent_addon(
             _JA_INTENT_HEAD, _JA_AMEND_ADDON, _JA_RETRACT_ADDON, _JA_INTENT_TAIL,
         )
     bedrock = (base + _JA_BEDROCK_VERBOSITY_ADDON
-        + _JA_BEDROCK_DELEGATE_ADDON) + render_provider_routing_addon(language="ja")
+        + render(_JA_BEDROCK_DELEGATE_ADDON)) + render_provider_routing_addon(language="ja")
     return {
         "base": base,
         "with_delegate": with_delegate,
         "bedrock": bedrock,
-        "hybrid_local": _JA_HYBRID_LOCAL,
-        "local_fallback": (
-            _character_prompt_ja + "\n\n" + _JA_LOCAL_FALLBACK_LANGUAGE
-            if use_character_override and _character_prompt_ja
-            else _JA_LOCAL_FALLBACK
-        ),
+        "hybrid_local": render(_JA_HYBRID_LOCAL),
     }.get(variant, with_delegate)
 
 

@@ -8,6 +8,8 @@ single-use attach ticket is consumed on the restricted app socket.
 
 from __future__ import annotations
 
+from llm.character_prompts import text
+
 import asyncio
 import re
 from collections.abc import Callable
@@ -94,7 +96,7 @@ class AuipSelfAttachCoordinator:
                     ),
                     (
                         "delegate",
-                        "Let Kurisu play",
+                        f"Let {text('short_name')} play",
                         "Let the participant lane take bounded AUIP actions for this session.",
                     ),
                 )

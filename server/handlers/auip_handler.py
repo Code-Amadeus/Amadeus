@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from server.auip_contract import AUIP_PARTICIPANT_ACTOR
+
 import inspect
 import logging
 import uuid
@@ -160,7 +162,7 @@ class AuipHandler(RequestHandler):
             elif method == Method.AUIP_ACTION_INVOKE:
                 result = self.runtime.invoke_action(
                     app_session_id=_session_id(data),
-                    actor=str(data.get("actor") or "kurisu"),
+                    actor=str(data.get("actor") or AUIP_PARTICIPANT_ACTOR),
                     type=str(data.get("action_type") or data.get("actionType") or data.get("type") or ""),
                     payload=data.get("payload") if isinstance(data.get("payload"), dict) else {},
                     expected_revision=data.get("expected_revision", data.get("expectedRevision")),

@@ -7,6 +7,8 @@ OpenClaw API 客户端
 """
 from __future__ import annotations
 
+from llm.character_prompts import render, text
+
 import asyncio
 import logging
 import os
@@ -20,9 +22,9 @@ logger = logging.getLogger(__name__)
 _openclaw_client: OpenAI | None = None
 
 
-OPENCLAW_EXECUTION_SYSTEM_PROMPT = (
+_EXECUTION_SYSTEM_TEMPLATE = (
     "You are an execution assistant working behind Amadeus. Execute the user's task directly and concisely. "
-    "Do not roleplay as Amadeus or Kurisu. Do not narrate raw tool calls. "
+    "Do not roleplay as Amadeus or ${execution_role_name}. Do not narrate raw tool calls. "
     "When you learn something meaningful about the task content during a longer task, emit a short standalone "
     "progress sentence. Use the user's language for progress and final results. "
     "A useful progress sentence says what was found, confirmed, filtered, compared, summarized, or blocked; "
@@ -30,6 +32,15 @@ OPENCLAW_EXECUTION_SYSTEM_PROMPT = (
     "When the task contains a progress reporting contract, follow its exact marker forms and do not invent a "
     "different marker. Never use a progress marker as the final completion claim."
 )
+
+
+def execution_system_prompt(main_role_name: str | None = None) -> str:
+    """An accepted request may supply its role name without loading that pack."""
+    return render(_EXECUTION_SYSTEM_TEMPLATE, execution_role_name=(
+        text("short_name") if main_role_name is None else main_role_name))
+
+
+OPENCLAW_EXECUTION_SYSTEM_PROMPT = execution_system_prompt()
 
 
 def _get_openclaw_client() -> OpenAI:
@@ -49,6 +60,7 @@ async def ask_openclaw(
     task: str,
     timeout: float = 120.0,
     image_path: str | None = None,
+    main_role_name: str | None = None,
 ) -> str:
     """
     向 OpenClaw 发送任务指令，返回执行结果文本。
@@ -84,7 +96,7 @@ async def ask_openclaw(
             lambda: client.chat.completions.create(
                 model="openclaw",
                 messages=[
-                    {"role": "system", "content": OPENCLAW_EXECUTION_SYSTEM_PROMPT},
+                    {"role": "system", "content": execution_system_prompt(main_role_name)},
                     {"role": "user", "content": user_content},
                 ],
                 timeout=timeout,
@@ -106,6 +118,7 @@ async def ask_openclaw_stream(
     timeout: float = 60.0,
     image_path: str | None = None,
     session_key: str | None = None,
+    main_role_name: str | None = None,
 ) -> str:
     """流式调用 OpenClaw，通过 raw SSE 解析同时处理文本块和工具事件。
 
@@ -153,7 +166,7 @@ async def ask_openclaw_stream(
     body = {
         "model": "openclaw",
         "messages": [
-            {"role": "system", "content": OPENCLAW_EXECUTION_SYSTEM_PROMPT},
+            {"role": "system", "content": execution_system_prompt(main_role_name)},
             {"role": "user", "content": user_content},
         ],
         "stream": True,

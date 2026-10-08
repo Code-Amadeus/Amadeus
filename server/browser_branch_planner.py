@@ -7,6 +7,8 @@ visible report. Full DOM never enters main chat history.
 
 from __future__ import annotations
 
+from server.assistant_language import current_assistant_language
+
 import asyncio
 import json
 import logging
@@ -332,8 +334,7 @@ def _deterministic_action_task(action: str, ref: str, item: dict[str, Any]) -> s
 
 
 def _fallback_visible_report(context: dict[str, Any]) -> str:
-    system_prompt = inherited_main_role_prompt("with_delegate")
-    if "English only" in system_prompt or "English" in system_prompt[:600]:
+    if current_assistant_language() == "english":
         return "I checked the current page and kept the browser branch ready for the next instruction."
     return "今のページは確認できたけど、具体的な操作対象を特定できなかったわ。"
 

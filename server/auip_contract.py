@@ -10,13 +10,15 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Iterable, Literal, Mapping
+from typing import Any, Iterable, Literal, Mapping, get_args
 
 
 AUIP_SCHEMA = "amadeus.auip/v0"
 MAX_MESSAGE_BYTES = 64 * 1024
 
 AuipActor = Literal["app", "user", "kurisu", "system"]
+AUIP_PARTICIPANT_ACTOR = "kurisu"
+assert AUIP_PARTICIPANT_ACTOR in get_args(AuipActor)
 AuipStance = Literal["spectator", "participant"]
 AuipImportance = Literal["ambient", "normal", "important", "blocking"]
 AuipActionRisk = Literal["none", "local_execution"]
@@ -31,7 +33,7 @@ _TYPE = re.compile(r"^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+$")
 _IMPORTANCE = frozenset({"ambient", "normal", "important", "blocking"})
 _STANCES = frozenset({"spectator", "participant"})
 _ACTION_RISKS = frozenset({"none", "local_execution"})
-_ACTORS = frozenset({"app", "user", "kurisu", "system"})
+_ACTORS = frozenset({"app", "user", AUIP_PARTICIPANT_ACTOR, "system"})
 _SITUATION_KINDS = frozenset(
     {
         "action_availability/v1",

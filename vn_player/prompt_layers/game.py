@@ -3,13 +3,19 @@
 No title matching, genre inference, generated glossary, or unseen script reading.
 PARANORMASIGHT's existing keyword scoring stays in its code policy, not this layer.
 """
+
+from llm.character_prompts import bindings
 import json
 
 from ..schemas import VNProfile
 
 
-def game_bindings(profile: VNProfile) -> dict[str, str]:
-    return {
+def game_bindings(profile: VNProfile, *, character_id: str | None = None) -> dict[str, str]:
+    character = bindings(character_id=character_id)
+    return character | {
+        "vn_spoken_example_json": json.dumps(
+            f"spoken {character['short_name']} line with optional [EMO preset=thinking dur=8s]",
+            ensure_ascii=False),
         "game_title": profile.game_title,
         "game_genre": profile.game_genre,
         "prompt_pack": profile.prompt_pack,

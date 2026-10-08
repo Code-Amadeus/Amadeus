@@ -243,16 +243,19 @@ def test_search_command_uses_applied_config_and_shows_filtered_candidates(tmp_pa
     assert result["hits"] == [] and result["candidates"][0]["distance"] == 0.3232
 
 
-def test_local_synchronous_fallback_sends_the_given_context(monkeypatch):
+def test_local_messages_query_sends_the_given_context(monkeypatch):
     from llm import client
 
     post = Mock(return_value=SimpleNamespace(
         raise_for_status=lambda: None,
-        json=lambda: {"choices": [{"message": {"content": "reply"}}]},
+        json=lambda: {"message": {"content": "reply"}},
     ))
-    monkeypatch.setattr(client, "LOCAL_LLM_TYPE", "llama_server")
+    monkeypatch.setattr(client, "LLM_PROVIDER", "local")
+    monkeypatch.setattr(client, "LOCAL_LLM_TYPE", "ollama")
     monkeypatch.setattr(client.requests, "post", post)
-    assert client.local_llm_query("question", system_prompt="persona plus reference") == "reply"
+    messages = [{"role": "system", "content": "persona plus reference"},
+                {"role": "user", "content": "question"}]
+    assert client.remote_llm_messages_query(messages, json_output=False) == "reply"
     assert post.call_args.kwargs["json"]["messages"] == [
         {"role": "system", "content": "persona plus reference"},
         {"role": "user", "content": "question"},

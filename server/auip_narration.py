@@ -12,6 +12,10 @@ model or shared voice resource is used.
 
 from __future__ import annotations
 
+from server.auip_contract import AUIP_PARTICIPANT_ACTOR
+
+from llm.character_prompts import text
+
 import asyncio
 import inspect
 import json
@@ -836,7 +840,7 @@ class AuipNarrationAdapter:
                 )
             else:
                 fact_brief = (
-                    "Kurisu's own assigned participant request was not confirmed as "
+                    f"{text('short_name')}'s own assigned participant request was not confirmed as "
                     "performed; this is not a failure by the user. "
                     f"Reason: {reason} No accepted execution receipt establishes that "
                     "the action happened. The line must not blame or direct the user."
@@ -1097,7 +1101,7 @@ def _follows_verified_self_action(
     verified_action_id = str(receipt.get("action_id") or "").strip()
     if caused_by_action_id and verified_action_id:
         return caused_by_action_id == verified_action_id
-    if str(event.get("actor") or "").strip().lower() != "kurisu":
+    if str(event.get("actor") or "").strip().lower() != AUIP_PARTICIPANT_ACTOR:
         return False
     try:
         event_revision = int(event.get("revision"))

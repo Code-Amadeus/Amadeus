@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from server.auip_contract import AUIP_PARTICIPANT_ACTOR
+
 import json
 import logging
 import secrets
@@ -501,11 +503,11 @@ class AuipRuntime:
             if session.revision <= 0:
                 raise AuipProtocolError("app_state_not_ready")
             clean_actor = validate_actor(actor)
-            if clean_actor not in {"user", "kurisu"}:
+            if clean_actor not in {"user", AUIP_PARTICIPANT_ACTOR}:
                 raise AuipProtocolError("invalid_action_actor", clean_actor)
-            if decision_context is not None and clean_actor != "kurisu":
+            if decision_context is not None and clean_actor != AUIP_PARTICIPANT_ACTOR:
                 raise AuipProtocolError("decision_context_requires_kurisu")
-            if clean_actor == "kurisu" and session.stance != "participant":
+            if clean_actor == AUIP_PARTICIPANT_ACTOR and session.stance != "participant":
                 raise AuipProtocolError("participant_stance_required")
             if (
                 expected_decision_generation is not None
@@ -521,7 +523,7 @@ class AuipRuntime:
             proposed_revision = _revision(expected_revision)
             controller_spec = session.manifest.controller
             is_controller_policy = bool(
-                clean_actor == "kurisu"
+                clean_actor == AUIP_PARTICIPANT_ACTOR
                 and controller_spec is not None
                 and action_type in controller_spec.policy_actions
             )
@@ -562,7 +564,7 @@ class AuipRuntime:
                 issued_at_ms = int(time.time() * 1000)
                 controller_lease = {
                     "lease_id": f"controller_{uuid.uuid4().hex}",
-                    "principal": "kurisu",
+                    "principal": AUIP_PARTICIPANT_ACTOR,
                     "executor": "app_controller",
                     "generation": session.controller_generation,
                     "policy_revision": session.controller_generation,
@@ -590,7 +592,7 @@ class AuipRuntime:
                 decision_context=_bounded_decision_context(decision_context),
             )
             session.pending_action = request
-            if clean_actor == "kurisu":
+            if clean_actor == AUIP_PARTICIPANT_ACTOR:
                 session.operator_status = "awaiting_receipt"
                 session.operator_error = ""
                 session.operator_error_detail = ""
@@ -715,7 +717,7 @@ class AuipRuntime:
                     reason=str(receipt.get("reason") or ""),
                 )
             operator_outcome: dict[str, Any] | None = None
-            if pending.actor == "kurisu":
+            if pending.actor == AUIP_PARTICIPANT_ACTOR:
                 if accepted:
                     session.verified_self_actions.append(receipt)
                     session.latest_decision_context = (
@@ -2454,14 +2456,14 @@ def _state_fact(
     if turn is not None:
         clean_turn = str(turn or "").strip().lower()
         if japanese:
-            owner = {"user": "あなた", "human": "あなた", "kurisu": "私", "participant": "私"}.get(
+            owner = {"user": "あなた", "human": "あなた", AUIP_PARTICIPANT_ACTOR: "私", "participant": "私"}.get(
                 clean_turn,
                 _presentation_label(turn, 40),
             )
             if owner:
                 facts.append(f"現在の手番は{owner}よ。")
         else:
-            owner = {"user": "you", "human": "you", "kurisu": "me", "participant": "me"}.get(
+            owner = {"user": "you", "human": "you", AUIP_PARTICIPANT_ACTOR: "me", "participant": "me"}.get(
                 clean_turn,
                 _presentation_label(turn, 40),
             )

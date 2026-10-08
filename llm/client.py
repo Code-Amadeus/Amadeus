@@ -3,7 +3,7 @@
 负责：
   - 客户端初始化（init_llm_client）
   - 消息查询（remote_llm_messages_query：远程 API / 本地模型）
-  - 本地模型查询（local_llm_query：Ollama / LM Studio / llama-server / CLI）
+  - 本地 messages 查询（Ollama / LM Studio / llama-server）
 
 依赖注入（configure()）：
   - llm_provider : str，覆盖默认 LLM_PROVIDER
@@ -34,7 +34,6 @@ from config.settings import (
     LLM_PROVIDER as DEFAULT_LLM_PROVIDER,
 )
 from llm.gemini_client import create_gemini_client, generate_gemini_text
-from llm.local_cli import local_llm_query_cli
 from llm.local_backends import local_chat_url, require_llama_message_capacity
 
 logger = logging.getLogger(__name__)
@@ -241,8 +240,8 @@ def remote_llm_messages_query(
     budget therefore does not bound that backend's request duration.
 
     ``on_text`` consumes deltas from that same request. Exceptions propagate and
-    close its stream. CLI retains its existing complete-only query because its
-    shared process has no per-query cancellation owner.
+    close its stream. The CLI backend is rejected before query or delivery
+    because its shared process has no per-query cancellation owner.
     """
 
     global llm_client, gemini_model
@@ -701,110 +700,3 @@ def _local_messages_stream(url, payload, *, timeout, on_text, ollama=False) -> s
             if ollama and data.get("done"):
                 break
     return "".join(pieces)
-
-from llm.prompts import get_system_prompt as _get_system_prompt
-
-# =============================================================================
-# 本地模型查询（同步，非流式）
-# =============================================================================
-
-def local_llm_query(question: str, *, system_prompt: str | None = None) -> str:
-    """调用本地模型(Ollama / LM Studio / llama-server / CLI) - 非流式版本"""
-    try:
-        _system = system_prompt or _get_system_prompt("local_fallback")
-
-        if LOCAL_LLM_TYPE == "ollama":
-            payload = {
-                "model": LOCAL_LLM_MODEL,
-                "messages": [
-                    {"role": "system", "content": _system},
-                    {"role": "user", "content": question},
-                ],
-                "stream": False,
-                "temperature": 0.7,
-            }
-            response = requests.post(
-                local_chat_url(
-                    "ollama",
-                    llama_server_url=LOCAL_LLM_URL,
-                    lmstudio_url=LOCAL_LLM_LM_STUDIO_URL,
-                    ollama_url=LOCAL_LLM_OLLAMA_URL,
-                ),
-                json=payload,
-                timeout=20,
-            )
-            response.raise_for_status()
-            reply = response.json()["message"]["content"]
-
-        elif LOCAL_LLM_TYPE == "lmstudio":
-            payload = {
-                "model": LOCAL_LLM_MODEL,
-                "messages": [
-                    {"role": "system", "content": _system},
-                    {"role": "user", "content": question},
-                ],
-                "stream": False,
-                "temperature": 0.7,
-            }
-            response = requests.post(
-                local_chat_url(
-                    "lmstudio",
-                    llama_server_url=LOCAL_LLM_URL,
-                    lmstudio_url=LOCAL_LLM_LM_STUDIO_URL,
-                    ollama_url=LOCAL_LLM_OLLAMA_URL,
-                ),
-                json=payload,
-                timeout=20,
-            )
-            response.raise_for_status()
-            reply = response.json()["choices"][0]["message"]["content"]
-
-        elif LOCAL_LLM_TYPE == "cli":
-            import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-            reply = loop.run_until_complete(
-                local_llm_query_cli(
-                    question, stream=False,
-                    **({"system_prompt": system_prompt} if system_prompt else {}),
-                )
-            )
-
-        elif LOCAL_LLM_TYPE == "llama_server":
-            payload = {
-                "model": LOCAL_LLM_MODEL,
-                "messages": [
-                    {"role": "system", "content": _system},
-                    {"role": "user", "content": question},
-                ],
-                "stream": False,
-                "temperature": 0.7,
-                "cache_prompt": True,
-            }
-            response = requests.post(
-                local_chat_url(
-                    "llama_server",
-                    llama_server_url=LOCAL_LLM_URL,
-                    lmstudio_url=LOCAL_LLM_LM_STUDIO_URL,
-                    ollama_url=LOCAL_LLM_OLLAMA_URL,
-                ),
-                json=payload,
-                timeout=20,
-            )
-            response.raise_for_status()
-            raw_reply = response.json()["choices"][0]["message"]["content"]
-            import re as _re
-            reply = _re.sub(r"<think>.*?</think>", "", raw_reply, flags=_re.DOTALL).strip()
-
-        else:
-            raise ValueError(f"未知的本地LLM类型: {LOCAL_LLM_TYPE}")
-
-        logger.info("runtime log event at llm/client.py:441")
-        return reply
-
-    except Exception:
-        logger.error("runtime log event at llm/client.py:445")
-        return "(ローカルモデルの応答に失敗しました……)"

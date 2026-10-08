@@ -6,6 +6,8 @@
 """
 from __future__ import annotations
 
+from llm.character_prompts import text
+
 import asyncio
 import argparse
 import logging
@@ -209,8 +211,7 @@ async def warmup_local_llm_cache() -> None:
         api_url = openai_chat_url(LOCAL_LLM_URL)
 
         system_prompt = (
-            "あなたは牧瀬紅莉栖で,優秀で理知的な性格です.少しツンデレで,でも根は優しい."
-            "必ず日本語のみで短く自然に答えてください。"
+            text("llama_preheat")
         )
         warmup_user = "これは事前ウォームアップ用のテストです。一言だけ返事してください。"
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from llm.character_prompts import active_character_id
+
 import asyncio
 from collections import deque
 from copy import deepcopy
@@ -1307,7 +1309,7 @@ class VNPlayerRuntime:
             "hypotheses": self.store.hypotheses()[-20:],
             "evidence_nodes": self.store.evidence_nodes()[-20:],
             "verifier_feedback": self.store.verifier_feedback()[-12:],
-            "recent_kurisu_speech": _recent_kurisu_speech(self.store.recent_reactions(80), limit=8),
+            f"recent_{active_character_id()}_speech": _recent_kurisu_speech(self.store.recent_reactions(80), limit=8),
             "lookahead_hint": public_lookahead,
             "retrospective_bias": retrospective_bias,
             "attention": attention,
@@ -1718,7 +1720,7 @@ class VNPlayerRuntime:
             "runtime_policy": {
                 "output_is_soft_bias": True,
                 "do_not_write_facts": True,
-                "kurisu_reactions_are_not_game_facts": True,
+                f"{active_character_id()}_reactions_are_not_game_facts": True,
                 "use_recent_lines_for_game_facts_only": True,
                 "do_not_spoil_future": True,
             },
@@ -2480,7 +2482,7 @@ def _retrospective_metrics(context_pack: dict[str, Any]) -> dict[str, Any]:
         "evidence_nodes": len(context_pack.get("evidence_nodes") or []),
         "verifier_feedback_items": len(context_pack.get("verifier_feedback") or []),
         "output_is_soft_bias": True,
-        "kurisu_reactions_are_not_game_facts": True,
+        f"{active_character_id()}_reactions_are_not_game_facts": True,
     }
 
 

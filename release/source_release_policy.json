@@ -9,6 +9,9 @@
   },
   "archive_prefix": "amadeus-{version}",
   "required_files": [
+    "characters/__init__.py",
+    "characters/kurisu.toml",
+    "llm/character_prompts.py",
     "scripts/setup_windows_wallpaper.ps1",
     "scripts/build_macos_wallpaper_app.sh",
     "scripts/launcher.c",
@@ -67,6 +70,7 @@
     "docs/alpha-0.15.2.md"
   ],
   "include_roots": [
+    "characters",
     ".github",
     "LICENSES",
     "agent_host",

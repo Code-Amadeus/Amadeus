@@ -11,9 +11,9 @@ from .common import PARTS
 from .game import game_bindings, with_terminology
 
 
-def system_prompt(profile: VNProfile, lane: str) -> str:
+def system_prompt(profile: VNProfile, lane: str, *, character_id: str | None = None) -> str:
     packs = {"base": base.SYSTEMS, "mystery": mystery.SYSTEMS}
-    bindings = game_bindings(profile)
+    bindings = game_bindings(profile, character_id=character_id)
     common = {name: Template(text).substitute(bindings) for name, text in PARTS.items()}
     return Template(packs[profile.prompt_pack][lane]).substitute(bindings | common)
 
