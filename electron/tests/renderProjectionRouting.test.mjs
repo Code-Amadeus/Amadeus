@@ -19,14 +19,18 @@ function callback(name, bindings) {
   return new Function(...Object.keys(bindings), `${compiled}; return handler;`)(...Object.values(bindings))
 }
 
-function desktop({ renderActive = false, wallpaperActive = false, wallpaperFails = false } = {}) {
+function desktop({ renderActive = false, wallpaperActive = false, wallpaperFails = false, renderStarts = [] } = {}) {
   const state = { renderActive, wallpaperActive, backend: 'graph', renderAssetUrl: '', page: 'chat' }
   const calls = []
   const send = async (method, params) => {
     calls.push(method)
     if (method === 'expression.set_backend') state.backend = params.backend
     if (method === 'wallpaper.start') return { status: wallpaperFails ? 'error' : 'started' }
-    if (method === 'render.start') return { url: 'render.html' }
+    if (method === 'render.start') {
+      const result = renderStarts.length ? renderStarts.shift() : { url: 'render.html' }
+      if (result instanceof Error) throw result
+      return result
+    }
     return { status: 'stopped' }
   }
   return {
@@ -77,4 +81,20 @@ test('closing or failing to open a projection preserves the shared signal route'
   await app.toggle('wallpaper')
   assert.equal(app.state.wallpaperActive, false)
   assert.equal(app.state.backend, 'graph')
+})
+
+
+test('failed Render starts close the empty projection and allow a later connected start', async () => {
+  for (const failure of [new Error('not connected'), new Error('start failed'), {}, { status: 'error' }, { url: '' }]) {
+    const app = desktop({ renderStarts: [failure] })
+    await app.toggle('render')
+    assert.equal(app.state.renderActive, false, 'a failed start must not leave an empty active iframe')
+    assert.equal(app.state.renderAssetUrl, '')
+    assert.equal(app.state.backend, 'graph')
+    await app.toggle('render')
+    assert.equal(app.state.renderActive, true)
+    assert.equal(app.state.renderAssetUrl, 'render.html')
+    assert.equal(app.state.backend, 'graph')
+    assert.deepEqual(app.calls, ['render.start', 'render.start'])
+  }
 })

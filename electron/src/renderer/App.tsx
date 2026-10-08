@@ -93,8 +93,13 @@ function AmadeusApp() {
       // Start AssetServer and get the render page URL
       try {
         const res = await send('render.start', {})
-        if (res?.url) setRenderAssetUrl(String(res.url))
-      } catch { /* AssetServer might already be running */ }
+        const url = typeof res?.url === 'string' ? res.url : ''
+        setRenderAssetUrl(url)
+        setRenderActive(Boolean(url))
+      } catch {
+        setRenderActive(false)
+        setRenderAssetUrl('')
+      }
     } else {
       send('render.stop', {}).catch(() => {})
       setRenderAssetUrl('')
