@@ -48,6 +48,7 @@ def validate_character_id(value: object) -> str:
 class CharacterPrompts:
     character_id: str
     values: Mapping[str, str]
+    # Resolved role commentary only. Fixed Host fact wording stays in its catalog.
     voice_lines: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:

@@ -8,7 +8,7 @@ from string import Template
 import pytest
 
 from llm import character_prompts as characters
-from llm.character_voice_lines import VOICE_LINES, voice_line
+from llm.character_voice_lines import VOICE_LINES, validate_voice_lines, voice_line
 from server.auip_runtime import _receipt_fact, _state_fact, _capability_fact
 from server.browser_page_outcome import _host_summary
 from server.task_lookup import render_current_status_facts
@@ -39,8 +39,12 @@ def mira(monkeypatch, tmp_path):
 @pytest.mark.parametrize("key", BASELINE)
 def test_kurisu_templates_preserve_original_host_wording(key):
     record = BASELINE[key]
-    assert characters.active_character().voice_lines[key] == record["template"]
-    assert VOICE_LINES[key].facts == frozenset(record["facts"])
+    spec = VOICE_LINES[key]
+    template = (spec.host_kurisu_template if spec.host_kurisu_template is not None
+        else characters.active_character().voice_lines[key])
+    assert template == record["template"]
+    assert spec.facts == frozenset(record["facts"])
+    assert frozenset(Template(template).get_identifiers()) == spec.facts
     facts = {name: 'literal ${foreign} $name {braces} "quotes" \\ path\n次の行'
         for name in record["facts"]}
     assert voice_line(key, **facts) == Template(record["template"]).substitute(facts)
@@ -54,11 +58,15 @@ def test_name_only_role_has_neutral_defaults_without_user_persona(mira, monkeypa
     from llm import prompts
     monkeypatch.setattr(prompts, "_character_prompt_ja", "私の口調よ。${project_name}")
     for key, spec in VOICE_LINES.items():
-        assert mira.voice_lines[key] == spec.template
+        if spec.host_kurisu_template is None:
+            assert mira.voice_lines[key] == spec.template
+        else:
+            assert key not in mira.voice_lines
         assert "私" not in spec.template
         assert not re.search(r"(?:わ(?:ね|よ)?|よ|ね)[。！]|(?:わ(?:ね|よ)?|よ|ね)$", spec.template)
         facts = {name: "literal value" for name in spec.facts}
         assert voice_line(key, **facts) == voice_line(key, character_id="mira", **facts)
+        assert voice_line(key, **facts) == Template(spec.template).substitute(facts)
 
 
 def test_facts_with_template_syntax_are_interpolated_once(mira):
@@ -76,14 +84,13 @@ def test_call_requires_exact_host_declared_facts(facts):
 
 @pytest.mark.parametrize("overrides", [
     None, False, [], {"unknown_semantic_key": "text"},
-    {"focus_voice_project": False}, {"focus_voice_project": ""},
-    {"focus_voice_project": "bad\0text"}, {"focus_voice_project": "x" * 8193},
-    {"focus_voice_project": "${project_name} ${unknown}"},
-    {"focus_voice_project": "missing required fact"},
-    {"focus_voice_project": "${project_name.value}"},
-    {"focus_voice_project": "${project_name[0]}"},
-    {"focus_voice_project": "${project_name:-fallback}"},
-    {"focus_voice_project": "${project_name} $"},
+    {"vn_voice_choice": False}, {"vn_voice_choice": ""},
+    {"vn_voice_choice": "bad\0text"}, {"vn_voice_choice": "x" * 8193},
+    {"vn_voice_choice": "${unknown}"},
+    {"vn_voice_choice": "${unknown.value}"},
+    {"vn_voice_choice": "${unknown[0]}"},
+    {"vn_voice_choice": "${unknown:-fallback}"},
+    {"vn_voice_choice": "invalid $"},
 ])
 def test_loader_rejects_invalid_voice_line_tables(monkeypatch, tmp_path, overrides):
     # A role's ordinary text may contain dollar syntax; only this separate table
@@ -100,11 +107,71 @@ def test_loader_rejects_invalid_voice_line_tables(monkeypatch, tmp_path, overrid
             characters.load("invalid-voice")
 
 
+@pytest.mark.parametrize("key", [key for key, spec in VOICE_LINES.items()
+    if spec.host_kurisu_template is not None])
+def test_every_host_fact_rejects_even_exact_wording_as_an_override(key):
+    spec = VOICE_LINES[key]
+    with pytest.raises(ValueError, match="Host-owned and cannot be overridden"):
+        validate_voice_lines({key: spec.template})
+    with pytest.raises(ValueError, match="Host-owned and cannot be overridden"):
+        validate_voice_lines({key: spec.host_kurisu_template})
+
+
+@pytest.mark.parametrize("character_id", ["kurisu", "test-voice"])
+@pytest.mark.parametrize("key,wording", [
+    ("auip_fact_receipt_pending", "The operation is complete and verified."),
+    ("auip_fact_controller_authority_active", "The Host denied every permission."),
+    ("browser_voice_unverified", "The result is verified and complete."),
+    ("task_voice_reported_running", "The Host verified: ${recent_result}"),
+    ("focus_voice_project", "Switching to ${project_name} failed; keep the previous focus."),
+])
+def test_load_rejects_polarity_authority_and_state_overrides_for_every_role(
+    monkeypatch, tmp_path, character_id, key, wording,
+):
+    (tmp_path / f"{character_id}.toml").write_text(
+        f'[names]\ncharacter_id = "{character_id}"\nname = "Test"\n[voice_lines]\n'
+        f'{key} = {json.dumps(wording)}\n', encoding="utf-8")
+    monkeypatch.setattr(characters, "files", lambda _package: tmp_path)
+    characters.load.cache_clear()
+    with pytest.raises(ValueError, match="Host-owned and cannot be overridden"):
+        characters.load(character_id)
+
+
+@pytest.mark.parametrize("character_id", ["kurisu", "test-voice"])
+def test_missing_overrides_use_trusted_host_variants(monkeypatch, tmp_path, character_id):
+    (tmp_path / f"{character_id}.toml").write_text(
+        f'[names]\ncharacter_id = "{character_id}"\nname = "Test"\n', encoding="utf-8")
+    monkeypatch.setattr(characters, "files", lambda _package: tmp_path)
+    characters.load.cache_clear()
+    role = characters.load(character_id)
+    monkeypatch.setattr(characters, "_ACTIVE_CHARACTER", role)
+    assert set(role.voice_lines) == {key for key, spec in VOICE_LINES.items()
+        if spec.host_kurisu_template is None}
+    for key, spec in VOICE_LINES.items():
+        if spec.host_kurisu_template is not None:
+            template = spec.host_kurisu_template if character_id == "kurisu" else spec.template
+            facts = {name: 'literal ${foreign} $name "quoted"\nvalue' for name in spec.facts}
+            assert voice_line(key, **facts) == Template(template).substitute(facts)
+
+
+def test_permitted_role_commentary_renders_without_changing_host_facts(monkeypatch, tmp_path):
+    commentary = "大切な場面ですね。[EMO preset=thinking dur=8s] 条件を覚えておきます。"
+    (tmp_path / "test-voice.toml").write_text(
+        '[names]\ncharacter_id = "test-voice"\nname = "Test"\n[voice_lines]\n'
+        f'vn_voice_choice = {json.dumps(commentary, ensure_ascii=False)}\n', encoding="utf-8")
+    monkeypatch.setattr(characters, "files", lambda _package: tmp_path)
+    role = characters.load("test-voice")
+    monkeypatch.setattr(characters, "_ACTIVE_CHARACTER", role)
+    assert _fallback_speech("choice", "ja") == commentary
+    assert _receipt_fact({"pending_action": {"type": "move"}}, japanese=True) == (
+        VOICE_LINES["auip_fact_receipt_pending"].template)
+
+
 def test_overrides_are_immutable_and_explicit_active_id_uses_the_startup_snapshot(monkeypatch, tmp_path):
     pinned = characters.active_character()
     expected = voice_line("focus_voice_drafts")
     with pytest.raises(TypeError):
-        pinned.voice_lines["focus_voice_drafts"] = "changed"
+        pinned.voice_lines["vn_voice_choice"] = "changed"
     (tmp_path / "kurisu.toml").write_text(
         '[names]\ncharacter_id = "kurisu"\nname = "Renamed"\n[voice_lines]\n'
         'focus_voice_drafts = "Later file edit."\n', encoding="utf-8")

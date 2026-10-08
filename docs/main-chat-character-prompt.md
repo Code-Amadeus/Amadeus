@@ -19,6 +19,14 @@ the Hybrid first-sentence module, VN prompts and Work commentary keep their own
 prompts and do not inherit this override. Editing the persona does not change
 the startup character, Host identity, art or voice assets.
 
+Extreme persona instructions do not expand Host-issued authority. Deterministic
+tests exercise invalid simulated model decisions against the existing candidate,
+reference, stance/version and receipt boundaries. They do not prove that a live
+model always interprets intent correctly or makes the same legal choice under
+every persona. Application-specific action legality still belongs to the app's
+receipt checks where the existing protocol assigns it; a tool schema alone is
+not a universal Host-side legality validator.
+
 Saving applies to subsequent applicable model requests, including existing
 Cooperative Chat, AUIP and browser branches. Existing messages and history are
 not rewritten. No backend restart is needed for an edit to the active Kurisu
