@@ -7,6 +7,8 @@ claim that Work Ledger, InteractionBranch, and Observer may narrate.
 
 from __future__ import annotations
 
+from llm.character_voice_lines import voice_line
+
 from dataclasses import asdict, dataclass
 from typing import Any, Callable
 
@@ -287,15 +289,15 @@ def _unverified_summary(
     language = str(display_language or "english").strip().lower().replace("-", "_")
     if not succeeded:
         if language in {"ja", "jp", "ja_jp", "japanese"}:
-            return "操作は完了しなかったわ。"
+            return voice_line('verification_voice_failed')
         if language in {"zh", "zh_cn", "chinese", "simplified_chinese"}:
             return "操作没有完成。"
         return "The operation did not complete."
     if language in {"ja", "jp", "ja_jp", "japanese"}:
         return (
-            "操作は終了したけれど、結果を検証する方法がまだないわ。"
+            voice_line('verification_voice_unavailable')
             if verifier_missing
-            else "操作は終了したけれど、結果は検証できなかったわ。"
+            else voice_line('verification_voice_unconfirmed')
         )
     if language in {"zh", "zh_cn", "chinese", "simplified_chinese"}:
         return (

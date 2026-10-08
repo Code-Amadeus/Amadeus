@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-from llm.character_prompts import text
+from llm.prompts import get_system_prompt
 
 import asyncio
 import argparse
@@ -210,9 +210,7 @@ async def warmup_local_llm_cache() -> None:
     try:
         api_url = openai_chat_url(LOCAL_LLM_URL)
 
-        system_prompt = (
-            text("llama_preheat")
-        )
+        system_prompt = get_system_prompt("base")
         warmup_user = "これは事前ウォームアップ用のテストです。一言だけ返事してください。"
 
         payload = {

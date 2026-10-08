@@ -143,8 +143,12 @@ class CooperativeContextStore:
         return result
 
     def _binding(self, db, token, context_id):
+        self._require_binding(db, self.session_id, token, context_id)
+
+    @staticmethod
+    def _require_binding(db, session_id, token, context_id):
         row = db.execute("SELECT * FROM cooperative_bindings WHERE session_id=?",
-            (self.session_id,)).fetchone()
+            (session_id,)).fetchone()
         if row is None or (row["token"], row["context_id"] or "") != (token, context_id):
             raise ControlLedgerConflict("durable cooperative binding changed")
 
@@ -248,20 +252,22 @@ class CooperativeContextStore:
         child.revision += 1
         return next_token
 
-    def work_recipient(self, payload, *, cursor=None, workspace_path="",
-                       require_current_binding=False):
+    @classmethod
+    def persisted_work_recipient(cls, ledger: ControlLedgerStore, session_id: str,
+                                 payload, *, cursor=None, workspace_path="",
+                                 require_current_binding=False):
         """Resolve a settled cooperative address for the existing Work owner."""
 
         def resolve(db):
-            if str(getattr(payload, "session_id", "")) != self.session_id:
+            if str(getattr(payload, "session_id", "")) != session_id:
                 raise ControlLedgerConflict("cooperative Work recipient Session changed")
             context_id = str(getattr(payload, "cooperative_context_id", ""))
             token = str(getattr(payload, "cooperative_binding_token", ""))
             if require_current_binding:
-                self._binding(db, token, context_id)
+                cls._require_binding(db, session_id, token, context_id)
             row = db.execute("""SELECT * FROM cooperative_contexts
                 WHERE session_id=? AND context_id=?""",
-                (self.session_id, context_id)).fetchone()
+                (session_id, context_id)).fetchone()
             if (row is None or row["closed"]
                     or row["revision"] != getattr(payload,
                         "cooperative_context_revision", -1)
@@ -276,7 +282,7 @@ class CooperativeContextStore:
                     != str(getattr(payload, "project_id", ""))):
                 raise ControlLedgerConflict(
                     "cooperative Work recipient Project changed")
-            if workspace_path and self._path_identity(workspace_path) != self._path_identity(
+            if workspace_path and cls._path_identity(workspace_path) != cls._path_identity(
                     row["workspace"]):
                 raise ControlLedgerConflict(
                     "cooperative Work recipient workspace changed")
@@ -299,8 +305,8 @@ class CooperativeContextStore:
 
         if cursor is not None:
             return resolve(cursor)
-        with self.ledger._lock:
-            return resolve(self.ledger._db)
+        with ledger._lock:
+            return resolve(ledger._db)
 
     def checkpoint(self, child):
         """Persist observations with CAS, without granting user-dispatch authority."""

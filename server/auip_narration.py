@@ -12,6 +12,8 @@ model or shared voice resource is used.
 
 from __future__ import annotations
 
+from llm.character_voice_lines import voice_line
+
 from server.auip_contract import AUIP_PARTICIPANT_ACTOR
 
 from llm.character_prompts import text
@@ -1221,7 +1223,7 @@ def _terminal_fallback_line(
     title = " ".join(str(app.get("title") or "").split())[:48]
     language = _display_language(display_language)
     if language == "japanese":
-        text = f"{title}は終了したわ。結果は画面で確認できる。" if title else "終了したわ。結果は画面で確認できる。"
+        text = voice_line('auip_voice_terminal_title', title=title) if title else voice_line('auip_voice_terminal')
     elif language == "simplified_chinese":
         text = f"{title}已结束，结果可以在画面中确认。" if title else "应用已结束，结果可以在画面中确认。"
     else:
@@ -1242,7 +1244,7 @@ def _operator_blocked_fallback_line(
 
     language = _display_language(display_language)
     if language == "japanese":
-        text = "私の操作は確認されなかったわ。今回は完了したとは言えない。"
+        text = voice_line('auip_voice_operator_unconfirmed')
     elif language == "simplified_chinese":
         text = "我的这次操作没有得到确认，所以目前不能说它已经完成。"
     else:
@@ -1259,7 +1261,7 @@ def _controller_effect_fallback_line(*, display_language: str) -> dict[str, Any]
 
     language = _display_language(display_language)
     if language == "japanese":
-        text = "制御は実際に動いているわ。詳しい状況は画面で確認できる。"
+        text = voice_line('auip_voice_controller_effect')
     elif language == "simplified_chinese":
         text = "控制器已经实际运行，具体情况可以在画面中确认。"
     else:
@@ -1272,7 +1274,7 @@ def _important_event_fallback_line(*, display_language: str) -> dict[str, Any]:
 
     language = _display_language(display_language)
     if language == "japanese":
-        text = "大きな変化が確定したわ。結果は画面で確認して。"
+        text = voice_line('auip_voice_important_event')
     elif language == "simplified_chinese":
         text = "一个重要变化已经确认，结果可以在画面中查看。"
     else:

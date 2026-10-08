@@ -2114,7 +2114,7 @@ async def test_legacy_writable_context_uses_the_shared_cross_owner_writer_lease(
             turn_id="work-v6-turn", session_id="writer-session",
             transcript=source, chat_epoch=99, authority_mode="turn_decision")
         control = WorkControl(ledger, work,
-            cooperative_context_resolver=ingress.loop._state.work_recipient)
+            cooperative_context_resolver=manager.resolve_work_recipient)
         control.admit(admission, fence_scope="work-v6-test")
         payload = WorkCooperativeContextPayloadV6(
             provider=child.provider, task=source,

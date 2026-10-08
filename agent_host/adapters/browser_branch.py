@@ -12,6 +12,8 @@ only when a run asks for branch semantics.
 
 from __future__ import annotations
 
+from llm.character_voice_lines import voice_line
+
 import inspect
 import json
 import logging
@@ -585,7 +587,7 @@ class BrowserBranchAdapter:
         self._persist_events(branch, events, label="provider_event_trace")
         if final_result.status != "done":
             detail = _short_text(final_result.error or final_result.result or "unknown browser error", 220)
-            final_report = f"ブラウザ操作で止まったわ: {detail}"
+            final_report = voice_line('browser_voice_action_error', detail=detail)
             compact_digest = f"Browser branch action failed after {len(branch.actions)} recorded action(s): {detail}"
         elif deferred_actions:
             final_report = (
@@ -943,7 +945,7 @@ async def _default_branch_planner(context: dict[str, Any]) -> dict[str, Any]:
     return {
         "assistant_message": "",
         "actions": [],
-        "final_report": "今のページは確認できたけど、操作対象を特定できなかったわ。もう少し具体的に指示して。",
+        "final_report": voice_line('browser_voice_instruction_needed'),
         "compact_digest": "Browser branch observed the page but could not determine a safe browser action.",
         "context_seen": {
             "title": context.get("page", {}).get("title"),
@@ -996,7 +998,7 @@ def _deterministic_branch_fallback(context: dict[str, Any]) -> dict[str, Any] | 
                 "task": f"Search current page for {query}",
             }
         ],
-        "final_report": f"{query} で検索したわ。結果ページを確認できる状態にしてある。",
+        "final_report": voice_line('browser_voice_search_result', query=query),
         "compact_digest": f"Deterministic fallback submitted current-page search for {query!r} using ref {ref}.",
         "reason": "LLM planner produced no usable browser action for an explicit current-page search.",
         "confidence": 0.68,

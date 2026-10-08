@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from llm.character_voice_lines import voice_line
+
 from llm.character_prompts import text
 
 import re
@@ -137,32 +139,32 @@ def _fallback_speech(kind: str, language: str, line_text: Any = "") -> str:
     text = strip_vn_tags(str(line_text or ""))
     if ja:
         if "复活" in text and any(marker in text for marker in {"只能", "使用1次", "使用１次", "一回", "一次"}):
-            return "ちょっと待って。[EMO preset=thinking dur=8s] 復活を一回だけ使える、なんて前提を軽く出してきたわね。条件と代償を先に疑うべきよ。"
+            return voice_line('vn_voice_resurrection_once')
         if "复活秘术" in text or "复活" in text:
-            return "復活の秘術、ね。[EMO preset=thinking dur=8s] ただの怪談扱いするには、条件の話が具体的すぎる。"
+            return voice_line('vn_voice_resurrection')
         if "诅咒珠" in text and any(marker in text for marker in {"交给", "使用", "拥有"}):
-            return "呪いの珠はただの小道具じゃないわ。[EMO preset=thinking dur=8s] 誰が条件を握るかが問題になる。"
+            return voice_line('vn_voice_curse_orb')
         if "满足条件" in text and "诅咒" in text and any(marker in text for marker in {"杀人", "杀死"}):
-            return "条件を満たせば殺せる、なんて危険すぎるわ。[EMO preset=serious_speaking dur=8s] 条件そのものが武器になる。"
+            return voice_line('vn_voice_lethal_condition')
         if "确凿的证据" in text:
-            return "証拠責任に話を戻したわね。[EMO preset=thinking dur=8s] 雑談じゃない、根拠を吐かせる流れよ。"
+            return voice_line('vn_voice_evidence')
         if "咒主" in text or "魂渣" in text:
-            return "呪主と魂滓は資源システムっぽいわね。[EMO preset=thinking dur=8s] まずはルール経済として記録するべきよ。"
+            return voice_line('vn_voice_resource_rules')
         if "真货" in text or "实际存在" in text:
-            return "「本物」って言い方、引っかかるわね。[EMO preset=thinking dur=8s] 噂を検証可能なルールに押し上げている。"
+            return voice_line('vn_voice_real_claim')
         if any(marker in text for marker in {"能看到", "能够看到", "看得见", "看不见"}):
-            return "視認条件が急に重要になったわ。[EMO preset=thinking dur=8s] 見えるかどうかは、普通の感覚の話じゃないかもしれない。"
+            return voice_line('vn_voice_visibility')
         if kind == "rule_anomaly":
-            return "七大なのに数が合わない？[EMO preset=thinking dur=8s] そういう命名のズレは、たいてい見落としじゃない。"
+            return voice_line('vn_voice_rule_anomaly')
         if kind == "choice":
-            return "急いで選ばないで。[EMO preset=thinking dur=8s] これは前の条件を覚えているか試している流れに見える。"
+            return voice_line('vn_voice_choice')
         if kind == "emotional_beat":
-            return "今の反応、少し不自然ね。[EMO preset=serious_speaking dur=8s] ただの感情じゃなく、後で効く信号かもしれない。"
+            return voice_line('vn_voice_emotion')
         if kind == "contradiction":
-            return "今の言い方、少し引っかかる。[EMO preset=surprised dur=7s] 決定的じゃないけど、丸をつけておく価値はあるわ。"
+            return voice_line('vn_voice_contradiction')
         if kind == "new_evidence":
-            return "この話は覚えておくべきね。[EMO preset=thinking dur=8s] 背景説明に見せて、ルールか動機の端が混じっている。"
-        return "情報密度が上がったわね。[EMO preset=thinking dur=8s] 背景音として流すには早い。"
+            return voice_line('vn_voice_new_evidence')
+        return voice_line('vn_voice_density')
     if not zh:
         return "Hold on.[EMO preset=thinking dur=8s] That line feels more like a clue than filler."
     if "复活秘术" in text and ("实际存在" in text or "相信" in text):

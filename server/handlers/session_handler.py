@@ -15,6 +15,7 @@ from typing import Any, Callable
 
 from agent_host.work_ledger_store import WorkLedgerConflict
 from core import session_manager as sm
+from llm import character_prompts
 from server.event_bus import bus
 from server.protocol import Method
 from server.ws_handler import RequestHandler
@@ -108,6 +109,7 @@ class SessionHandler(RequestHandler):
             data = self._read_data(sid)
             sessions.append({
                 "id": sid,
+                "character_id": data.get("character_id", character_prompts.DEFAULT_CHARACTER_ID),
                 "title": data.get("title") or sm.get_session_title(sid),
                 "timestamp": data.get("timestamp", 0),
                 "message_count": len(data.get("dialog", []) or []),
@@ -120,6 +122,7 @@ class SessionHandler(RequestHandler):
         return {
             "sessions": sessions,
             "current_session_id": sm.get_current_session_id(),
+            "current_character_id": character_prompts.active_character_id(),
             "projects": self._projects(),
         }
 
@@ -184,6 +187,12 @@ class SessionHandler(RequestHandler):
 
     def _load(self, params: dict[str, Any]) -> dict[str, Any]:
         sid = str(params.get("session_id") or "")
+        try:
+            sm.require_session_character(sid)
+        except FileNotFoundError:
+            return {"ok": False, "error": "session not found"}
+        except (ValueError, OSError) as exc:
+            return {"ok": False, "error": str(exc)}
         previous_sid = str(sm.get_current_session_id() or "").strip()
         if previous_sid and previous_sid != sid:
             if not sm.save_session(previous_sid, enable_conversation=True):
@@ -198,6 +207,12 @@ class SessionHandler(RequestHandler):
 
     def _delete(self, params: dict[str, Any]) -> dict[str, Any]:
         sid = str(params.get("session_id") or "")
+        try:
+            sm.require_session_character(sid)
+        except FileNotFoundError:
+            return {"ok": False, "error": "session not found"}
+        except (ValueError, OSError) as exc:
+            return {"ok": False, "error": str(exc)}
         ok = sm.delete_session(sid)
         if ok and self._work_coordinator is not None:
             self._work_coordinator.clear_session_project(sid)
@@ -208,16 +223,24 @@ class SessionHandler(RequestHandler):
 
     def _rename(self, params: dict[str, Any]) -> dict[str, Any]:
         sid = str(params.get("session_id") or "")
+        try:
+            sm.require_session_character(sid)
+        except FileNotFoundError:
+            return {"ok": False, "error": "session not found"}
+        except (ValueError, OSError) as exc:
+            return {"ok": False, "error": str(exc)}
         title = str(params.get("title") or "").strip()
         ok = bool(sid and title and sm.set_session_title(sid, title))
         return {"ok": ok, **self._list()}
 
     def _session_payload(self, sid: str) -> dict[str, Any]:
+        character_id = sm.require_session_character(sid)
         data = self._read_data(sid)
         return {
             "ok": True,
             "session": {
                 "id": sid,
+                "character_id": character_id,
                 "title": data.get("title") or sm.get_session_title(sid),
                 "timestamp": data.get("timestamp", 0),
                 "message_count": len(data.get("dialog", []) or []),
@@ -300,6 +323,10 @@ class SessionHandler(RequestHandler):
         ).strip()
         if not session_id or session_id not in sm.list_sessions():
             return {"ok": False, "error": "session_not_found"}
+        try:
+            sm.require_session_character(session_id)
+        except (ValueError, OSError) as exc:
+            return {"ok": False, "error": str(exc)}
         work_roster = self._work_coordinator.conversation_work_items_for_resolution(
             session_id,
             limit=200,
@@ -420,6 +447,11 @@ class SessionHandler(RequestHandler):
     def _matching_session(self, project_id: str, work_item_id: str) -> str:
         matches: list[tuple[float, str]] = []
         for sid in sm.list_sessions():
+            try:
+                if sm.get_session_character_id(sid) != character_prompts.active_character_id():
+                    continue
+            except (ValueError, OSError):
+                continue
             binding = self._work_coordinator.conversation_binding(sid)
             if not binding:
                 continue

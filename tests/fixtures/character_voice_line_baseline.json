@@ -1,0 +1,633 @@
+{
+  "auip_fact_receipt_pending": {
+    "template": "直近の操作はアプリの確認待ちで、まだ反映済みとは言えないわ。",
+    "facts": [],
+    "source": "server/auip_runtime.py:2158"
+  },
+  "auip_fact_receipt_rejected_reason": {
+    "template": "直近の操作はアプリに受理されなかったわ。理由は「${detail}」。",
+    "facts": [
+      "detail"
+    ],
+    "source": "server/auip_runtime.py:2167"
+  },
+  "auip_fact_receipt_rejected": {
+    "template": "直近の操作はアプリに受理されなかったわ。",
+    "facts": [],
+    "source": "server/auip_runtime.py:2169"
+  },
+  "auip_fact_receipt_missing": {
+    "template": "直近の操作にはアプリから結果が返っていないから、反映されたかは確認できないわ。",
+    "facts": [],
+    "source": "server/auip_runtime.py:2179"
+  },
+  "auip_fact_receipt_accepted": {
+    "template": "私の直近の操作はアプリに受理され、状態更新 ${revision} まで反映済みよ。",
+    "facts": [
+      "revision"
+    ],
+    "source": "server/auip_runtime.py:2187"
+  },
+  "auip_fact_no_accepted_action": {
+    "template": "このセッションでは、私の操作が受理された記録はまだないわ。",
+    "facts": [],
+    "source": "server/auip_runtime.py:2192"
+  },
+  "auip_fact_controller_execution_current": {
+    "template": "アプリから、現在の方針がHost発行のController lease中に少なくとも一度は実行されたという検証済みの報告があるわ。個々の実行イベントは現在値や累計値ではないから、その payload を局面全体の数としては扱わない。",
+    "facts": [],
+    "source": "server/auip_runtime.py:2219"
+  },
+  "auip_fact_controller_execution_earlier": {
+    "template": "このセッションでは、以前のController方針が少なくとも一度は実行されたという検証済みの報告があるわ。現在の方針についての実行証明ではない。個々の実行イベントは現在値や累計値ではないから、その payload を局面全体の数としては扱わない。",
+    "facts": [],
+    "source": "server/auip_runtime.py:2222"
+  },
+  "auip_fact_latest_event": {
+    "template": "Hostが受理した直近の重要なアプリイベントは ${event} よ。これは一つの結果イベントで、現在の局面は続く state の事実を優先する。",
+    "facts": [
+      "event"
+    ],
+    "source": "server/auip_runtime.py:2250"
+  },
+  "auip_fact_controller_authority_active": {
+    "template": "Hostが発行した操作権限は現在も有効よ。",
+    "facts": [],
+    "source": "server/auip_runtime.py:2274"
+  },
+  "auip_fact_controller_authority_stopping": {
+    "template": "現在は操作権限を取り消して、安全な停止完了を待っているところよ。",
+    "facts": [],
+    "source": "server/auip_runtime.py:2280"
+  },
+  "auip_fact_controller_idle_verified": {
+    "template": "現在は操作していないけれど、それは過去の確認済み実行結果を取り消すものではないわ。",
+    "facts": [],
+    "source": "server/auip_runtime.py:2287"
+  },
+  "auip_fact_controller_idle_unverified": {
+    "template": "現在は操作していないわ。過去に実行したかどうかは、この現在状態だけでは判断できない。",
+    "facts": [],
+    "source": "server/auip_runtime.py:2289"
+  },
+  "auip_fact_sequence_complete": {
+    "template": "全 ${count} 段階が完了しているわ。",
+    "facts": [
+      "count"
+    ],
+    "source": "server/auip_runtime.py:2332"
+  },
+  "auip_fact_sequence_progress": {
+    "template": "全 ${count} 段階中 ${completed} 段階まで完了していて、次は「${next_step}」よ。",
+    "facts": [
+      "completed",
+      "count",
+      "next_step"
+    ],
+    "source": "server/auip_runtime.py:2340"
+  },
+  "auip_fact_grid": {
+    "template": "盤面は ${width}×${height} で、埋まっているマスは ${occupied} 個よ。",
+    "facts": [
+      "height",
+      "occupied",
+      "width"
+    ],
+    "source": "server/auip_runtime.py:2355"
+  },
+  "auip_fact_metrics": {
+    "template": "${metrics}よ。",
+    "facts": [
+      "metrics"
+    ],
+    "source": "server/auip_runtime.py:2388"
+  },
+  "auip_fact_controller_policy": {
+    "template": "アプリ内Controllerは「${policy}」という方針で稼働中よ。",
+    "facts": [
+      "policy"
+    ],
+    "source": "server/auip_runtime.py:2398"
+  },
+  "auip_fact_controller_safe_stop": {
+    "template": "アプリ内Controllerは安全な引き継ぎ地点で停止中よ。",
+    "facts": [],
+    "source": "server/auip_runtime.py:2406"
+  },
+  "auip_fact_controller_blocked": {
+    "template": "アプリ内Controllerは「${reason}」のため停止しているわ。",
+    "facts": [
+      "reason"
+    ],
+    "source": "server/auip_runtime.py:2414"
+  },
+  "auip_fact_action_candidates": {
+    "template": "アプリが私向けに示している操作候補は「${options}」よ。",
+    "facts": [
+      "options"
+    ],
+    "source": "server/auip_runtime.py:2438"
+  },
+  "auip_fact_no_action_candidates": {
+    "template": "アプリが私向けに示している操作候補は今はないわ。",
+    "facts": [],
+    "source": "server/auip_runtime.py:2445"
+  },
+  "auip_fact_user_controls_distinct": {
+    "template": "これはあなたの画面操作全体の一覧ではないわ。",
+    "facts": [],
+    "source": "server/auip_runtime.py:2450"
+  },
+  "auip_fact_participant_owner": {
+    "template": "私",
+    "facts": [],
+    "source": "server/auip_runtime.py:2459"
+  },
+  "auip_fact_turn_owner": {
+    "template": "現在の手番は${owner}よ。",
+    "facts": [
+      "owner"
+    ],
+    "source": "server/auip_runtime.py:2464"
+  },
+  "auip_fact_connected_revision": {
+    "template": "アプリは接続中で、現在の状態更新は ${revision} よ。",
+    "facts": [
+      "revision"
+    ],
+    "source": "server/auip_runtime.py:2477"
+  },
+  "auip_fact_custom_state": {
+    "template": "${label} は ${value} よ。",
+    "facts": [
+      "label",
+      "value"
+    ],
+    "source": "server/auip_runtime.py:2544"
+  },
+  "auip_fact_selected_state": {
+    "template": "現在の ${label} は ${value} よ。",
+    "facts": [
+      "label",
+      "value"
+    ],
+    "source": "server/auip_runtime.py:2598"
+  },
+  "auip_fact_capabilities": {
+    "template": "このアプリでは、私は${modes}ができるわ。",
+    "facts": [
+      "modes"
+    ],
+    "source": "server/auip_runtime.py:2630"
+  },
+  "auip_fact_no_capabilities": {
+    "template": "このアプリでは、私が参加できる方法は公開されていないわ。",
+    "facts": [],
+    "source": "server/auip_runtime.py:2632"
+  },
+  "task_voice_queued": {
+    "template": "まだ実行待ちよ。今のところ問題はないから、次は${next_action}。",
+    "facts": [
+      "next_action"
+    ],
+    "source": "server/task_lookup.py:766"
+  },
+  "task_voice_direction_blocked": {
+    "template": "まだ作業中よ。進め方は更新されているけれど、${blocker}。次は${next_action}。",
+    "facts": [
+      "blocker",
+      "next_action"
+    ],
+    "source": "server/task_lookup.py:770"
+  },
+  "task_voice_direction_running": {
+    "template": "まだ作業中よ。進め方は更新されていて、内容は画面に出してある。まだ完了報告ではないけど、今のところ問題はないわ。",
+    "facts": [],
+    "source": "server/task_lookup.py:773"
+  },
+  "task_voice_reported_blocked": {
+    "template": "まだ作業中よ。実行側からは${recent_result}と報告されているけれど、まだホスト確認済みの結果ではなく、${blocker}。次は${next_action}。",
+    "facts": [
+      "blocker",
+      "next_action",
+      "recent_result"
+    ],
+    "source": "server/task_lookup.py:776"
+  },
+  "task_voice_reported_running": {
+    "template": "まだ作業中よ。実行側からは${recent_result}と報告されているけれど、まだホスト確認済みの結果ではないわ。今のところ問題はない。",
+    "facts": [
+      "recent_result"
+    ],
+    "source": "server/task_lookup.py:779"
+  },
+  "task_voice_result_blocked": {
+    "template": "まだ作業中よ。${recent_result}。ただ、${blocker}。次は${next_action}。",
+    "facts": [
+      "blocker",
+      "next_action",
+      "recent_result"
+    ],
+    "source": "server/task_lookup.py:782"
+  },
+  "task_voice_result_running": {
+    "template": "まだ作業中よ。${recent_result}。今のところ問題はなくて、次は${next_action}。",
+    "facts": [
+      "next_action",
+      "recent_result"
+    ],
+    "source": "server/task_lookup.py:785"
+  },
+  "task_voice_running_no_milestone": {
+    "template": "「${title}」を進めているところよ。確認できる新しい成果も問題も、今のところ出ていない。${next_action}から、検証結果が出たら知らせるわ。",
+    "facts": [
+      "next_action",
+      "title"
+    ],
+    "source": "server/task_lookup.py:789"
+  },
+  "task_voice_stalled": {
+    "template": "今はここで止まっているわ。${recent_clause}${blocker}。次は${next_action}。",
+    "facts": [
+      "blocker",
+      "next_action",
+      "recent_clause"
+    ],
+    "source": "server/task_lookup.py:806"
+  },
+  "task_voice_terminal": {
+    "template": "この作業は終わっているわ。確認できた結果は、${recent_result}。次は${next_action}。",
+    "facts": [
+      "next_action",
+      "recent_result"
+    ],
+    "source": "server/task_lookup.py:809"
+  },
+  "task_voice_stage": {
+    "template": "今は${stage}よ。${recent_result}。次は${next_action}。",
+    "facts": [
+      "next_action",
+      "recent_result",
+      "stage"
+    ],
+    "source": "server/task_lookup.py:812"
+  },
+  "task_fact_design": {
+    "template": "実装方針は固まっているわ",
+    "facts": [],
+    "source": "server/task_lookup.py:869"
+  },
+  "task_fact_diagnostic": {
+    "template": "対処すべき具体的な原因まで絞り込めているわ",
+    "facts": [],
+    "source": "server/task_lookup.py:870"
+  },
+  "task_fact_capability": {
+    "template": "主要な機能の実装まで進んでいるわ",
+    "facts": [],
+    "source": "server/task_lookup.py:871"
+  },
+  "task_fact_validation": {
+    "template": "新しい検証結果まで確認できているわ",
+    "facts": [],
+    "source": "server/task_lookup.py:872"
+  },
+  "task_fact_direction": {
+    "template": "現在の進め方は更新されていて、その方針で進めているわ",
+    "facts": [],
+    "source": "server/task_lookup.py:873"
+  },
+  "task_fact_terminal_result": {
+    "template": "最終結果は台帳に記録済みで、詳細は画面に表示しているわ",
+    "facts": [],
+    "source": "server/task_lookup.py:874"
+  },
+  "task_fact_no_result": {
+    "template": "確認できる新しい意味的成果はまだないわ",
+    "facts": [],
+    "source": "server/task_lookup.py:875"
+  },
+  "browser_voice_identity_gate": {
+    "template": "ページが本人確認を求めているため、依頼された結果にはまだ到達していないわ。",
+    "facts": [],
+    "source": "server/browser_page_outcome.py:319"
+  },
+  "browser_voice_page_missing": {
+    "template": "指定されたページは存在しないため、依頼された内容には到達できなかったわ。",
+    "facts": [],
+    "source": "server/browser_page_outcome.py:321"
+  },
+  "browser_voice_access_error": {
+    "template": "ページ側でエラーまたはアクセス制限が発生し、依頼された結果には到達できなかったわ。",
+    "facts": [],
+    "source": "server/browser_page_outcome.py:322"
+  },
+  "browser_voice_failed_page": {
+    "template": "操作は完了しなかったわ。現在のページは${label}よ。",
+    "facts": [
+      "label"
+    ],
+    "source": "server/browser_page_outcome.py:350"
+  },
+  "browser_voice_failed": {
+    "template": "操作は完了しなかったわ。",
+    "facts": [],
+    "source": "server/browser_page_outcome.py:352"
+  },
+  "browser_voice_input_page": {
+    "template": "続けるには追加の情報が必要よ。現在のページは${label}。",
+    "facts": [
+      "label"
+    ],
+    "source": "server/browser_page_outcome.py:356"
+  },
+  "browser_voice_input": {
+    "template": "続けるには追加の情報が必要よ。",
+    "facts": [],
+    "source": "server/browser_page_outcome.py:358"
+  },
+  "browser_voice_conflict_page": {
+    "template": "操作結果の報告と現在のページが一致していないわ。現在のページは${label}。確認が必要よ。",
+    "facts": [
+      "label"
+    ],
+    "source": "server/browser_page_outcome.py:362"
+  },
+  "browser_voice_conflict": {
+    "template": "操作結果の報告を確認できなかったわ。確認が必要よ。",
+    "facts": [],
+    "source": "server/browser_page_outcome.py:364"
+  },
+  "browser_voice_verified_page": {
+    "template": "操作は完了したわ。現在のページは${label}よ。",
+    "facts": [
+      "label"
+    ],
+    "source": "server/browser_page_outcome.py:368"
+  },
+  "browser_voice_verified": {
+    "template": "操作は完了したわ。",
+    "facts": [],
+    "source": "server/browser_page_outcome.py:370"
+  },
+  "browser_voice_unverified_page": {
+    "template": "操作は終了したわ。現在のページは${label}。報告の内容はまだ確認が必要よ。",
+    "facts": [
+      "label"
+    ],
+    "source": "server/browser_page_outcome.py:373"
+  },
+  "browser_voice_unverified": {
+    "template": "操作は終了したけれど、結果の内容はまだ確認が必要よ。",
+    "facts": [],
+    "source": "server/browser_page_outcome.py:375"
+  },
+  "outcome_voice_verified": {
+    "template": "外部操作は完了し、結果も確認できたわ。",
+    "facts": [],
+    "source": "server/outcome_facets.py:192"
+  },
+  "outcome_voice_unverified": {
+    "template": "外部操作は終了したけれど、結果は確認できなかったわ。",
+    "facts": [],
+    "source": "server/outcome_facets.py:203"
+  },
+  "outcome_voice_failed": {
+    "template": "外部操作は完了しなかったわ。",
+    "facts": [],
+    "source": "server/outcome_facets.py:205"
+  },
+  "outcome_voice_auip_verified": {
+    "template": "AUIPアプリとして検証できたわ。起動結果はHostの接続確認で確定する。",
+    "facts": [],
+    "source": "server/outcome_facets.py:346"
+  },
+  "outcome_voice_auip_mode_missing": {
+    "template": "アプリは生成できたけど、依頼された参加方法にはまだ対応できていないわ。",
+    "facts": [],
+    "source": "server/outcome_facets.py:355"
+  },
+  "outcome_voice_auip_missing": {
+    "template": "AUIP対応のアプリを確認できなかったため、まだ起動できないわ。",
+    "facts": [],
+    "source": "server/outcome_facets.py:363"
+  },
+  "work_voice_closed": {
+    "template": "これで今回の作業は終わりよ。",
+    "facts": [],
+    "source": "server/work_observer.py:982"
+  },
+  "work_voice_monitor_duration": {
+    "template": "処理は続いているけど、確認できる新しい節目は${duration}届いていないわ。",
+    "facts": [
+      "duration"
+    ],
+    "source": "server/work_observer.py:1232"
+  },
+  "work_voice_monitor": {
+    "template": "まだ処理は続いているわ。今のところ、確認できる新しい節目は届いていない。",
+    "facts": [],
+    "source": "server/work_observer.py:1233"
+  },
+  "work_voice_terminal_excerpt": {
+    "template": "作業は完了したわ。最終報告では「${excerpt}」という結果になっている。詳しい内容はカードに残してある。",
+    "facts": [
+      "excerpt"
+    ],
+    "source": "server/work_observer.py:1978"
+  },
+  "work_voice_terminal": {
+    "template": "こちらで確認したわ。この作業は終わっている。",
+    "facts": [],
+    "source": "server/work_observer.py:1984"
+  },
+  "work_voice_terminal_summary": {
+    "template": "こちらで確認したわ。この作業は終わった。概要は「${summary}」。詳しい根拠はカードに残してある。",
+    "facts": [
+      "summary"
+    ],
+    "source": "server/work_observer.py:1985"
+  },
+  "auip_voice_terminal_title": {
+    "template": "${title}は終了したわ。結果は画面で確認できる。",
+    "facts": [
+      "title"
+    ],
+    "source": "server/auip_narration.py:1224"
+  },
+  "auip_voice_terminal": {
+    "template": "終了したわ。結果は画面で確認できる。",
+    "facts": [],
+    "source": "server/auip_narration.py:1224"
+  },
+  "auip_voice_operator_unconfirmed": {
+    "template": "私の操作は確認されなかったわ。今回は完了したとは言えない。",
+    "facts": [],
+    "source": "server/auip_narration.py:1245"
+  },
+  "auip_voice_controller_effect": {
+    "template": "制御は実際に動いているわ。詳しい状況は画面で確認できる。",
+    "facts": [],
+    "source": "server/auip_narration.py:1262"
+  },
+  "auip_voice_important_event": {
+    "template": "大きな変化が確定したわ。結果は画面で確認して。",
+    "facts": [],
+    "source": "server/auip_narration.py:1275"
+  },
+  "verification_voice_failed": {
+    "template": "操作は完了しなかったわ。",
+    "facts": [],
+    "source": "server/outcome_verification.py:290"
+  },
+  "verification_voice_unavailable": {
+    "template": "操作は終了したけれど、結果を検証する方法がまだないわ。",
+    "facts": [],
+    "source": "server/outcome_verification.py:296"
+  },
+  "verification_voice_unconfirmed": {
+    "template": "操作は終了したけれど、結果は検証できなかったわ。",
+    "facts": [],
+    "source": "server/outcome_verification.py:298"
+  },
+  "auip_fact_launch_capability": {
+    "template": "確認済みの対話型アプリでは観戦・共同参加・委任参加ができる。候補が none でも、それは現在この会話で起動可能なアプリを確認できていないという意味であり、『私はアプリを操作できない』という恒久的な能力否定に言い換えない。",
+    "facts": [],
+    "source": "server/auip_launch.py:364"
+  },
+  "auip_voice_launch_missing": {
+    "template": "AUIP対応のアプリを確認できなかったため、ゲームは開いていないわ。",
+    "facts": [],
+    "source": "server/auip_launch.py:1443"
+  },
+  "auip_voice_launch_failed": {
+    "template": "アプリを開けなかったため、ゲームはまだ開始していないわ。",
+    "facts": [],
+    "source": "server/auip_launch.py:1445"
+  },
+  "browser_voice_target_unknown": {
+    "template": "今のページは確認できたけど、具体的な操作対象を特定できなかったわ。",
+    "facts": [],
+    "source": "server/browser_branch_planner.py:339"
+  },
+  "browser_voice_action_error": {
+    "template": "ブラウザ操作で止まったわ: ${detail}",
+    "facts": [
+      "detail"
+    ],
+    "source": "agent_host/adapters/browser_branch.py:588"
+  },
+  "browser_voice_instruction_needed": {
+    "template": "今のページは確認できたけど、操作対象を特定できなかったわ。もう少し具体的に指示して。",
+    "facts": [],
+    "source": "agent_host/adapters/browser_branch.py:946"
+  },
+  "browser_voice_search_result": {
+    "template": "${query} で検索したわ。結果ページを確認できる状態にしてある。",
+    "facts": [
+      "query"
+    ],
+    "source": "agent_host/adapters/browser_branch.py:999"
+  },
+  "vn_voice_resurrection_once": {
+    "template": "ちょっと待って。[EMO preset=thinking dur=8s] 復活を一回だけ使える、なんて前提を軽く出してきたわね。条件と代償を先に疑うべきよ。",
+    "facts": [],
+    "source": "vn_player/mystery_policy.py:140"
+  },
+  "vn_voice_resurrection": {
+    "template": "復活の秘術、ね。[EMO preset=thinking dur=8s] ただの怪談扱いするには、条件の話が具体的すぎる。",
+    "facts": [],
+    "source": "vn_player/mystery_policy.py:142"
+  },
+  "vn_voice_curse_orb": {
+    "template": "呪いの珠はただの小道具じゃないわ。[EMO preset=thinking dur=8s] 誰が条件を握るかが問題になる。",
+    "facts": [],
+    "source": "vn_player/mystery_policy.py:144"
+  },
+  "vn_voice_lethal_condition": {
+    "template": "条件を満たせば殺せる、なんて危険すぎるわ。[EMO preset=serious_speaking dur=8s] 条件そのものが武器になる。",
+    "facts": [],
+    "source": "vn_player/mystery_policy.py:146"
+  },
+  "vn_voice_evidence": {
+    "template": "証拠責任に話を戻したわね。[EMO preset=thinking dur=8s] 雑談じゃない、根拠を吐かせる流れよ。",
+    "facts": [],
+    "source": "vn_player/mystery_policy.py:148"
+  },
+  "vn_voice_resource_rules": {
+    "template": "呪主と魂滓は資源システムっぽいわね。[EMO preset=thinking dur=8s] まずはルール経済として記録するべきよ。",
+    "facts": [],
+    "source": "vn_player/mystery_policy.py:150"
+  },
+  "vn_voice_real_claim": {
+    "template": "「本物」って言い方、引っかかるわね。[EMO preset=thinking dur=8s] 噂を検証可能なルールに押し上げている。",
+    "facts": [],
+    "source": "vn_player/mystery_policy.py:152"
+  },
+  "vn_voice_visibility": {
+    "template": "視認条件が急に重要になったわ。[EMO preset=thinking dur=8s] 見えるかどうかは、普通の感覚の話じゃないかもしれない。",
+    "facts": [],
+    "source": "vn_player/mystery_policy.py:154"
+  },
+  "vn_voice_rule_anomaly": {
+    "template": "七大なのに数が合わない？[EMO preset=thinking dur=8s] そういう命名のズレは、たいてい見落としじゃない。",
+    "facts": [],
+    "source": "vn_player/mystery_policy.py:156"
+  },
+  "vn_voice_choice": {
+    "template": "急いで選ばないで。[EMO preset=thinking dur=8s] これは前の条件を覚えているか試している流れに見える。",
+    "facts": [],
+    "source": "vn_player/mystery_policy.py:158"
+  },
+  "vn_voice_emotion": {
+    "template": "今の反応、少し不自然ね。[EMO preset=serious_speaking dur=8s] ただの感情じゃなく、後で効く信号かもしれない。",
+    "facts": [],
+    "source": "vn_player/mystery_policy.py:160"
+  },
+  "vn_voice_contradiction": {
+    "template": "今の言い方、少し引っかかる。[EMO preset=surprised dur=7s] 決定的じゃないけど、丸をつけておく価値はあるわ。",
+    "facts": [],
+    "source": "vn_player/mystery_policy.py:162"
+  },
+  "vn_voice_new_evidence": {
+    "template": "この話は覚えておくべきね。[EMO preset=thinking dur=8s] 背景説明に見せて、ルールか動機の端が混じっている。",
+    "facts": [],
+    "source": "vn_player/mystery_policy.py:164"
+  },
+  "vn_voice_density": {
+    "template": "情報密度が上がったわね。[EMO preset=thinking dur=8s] 背景音として流すには早い。",
+    "facts": [],
+    "source": "vn_player/mystery_policy.py:165"
+  },
+  "focus_voice_drafts": {
+    "template": "この会話の Draft に戻したわ。次の指定なしの作業は、ここに残る。",
+    "facts": [],
+    "source": "server/app.py:3106"
+  },
+  "focus_voice_failed": {
+    "template": "プロジェクトの切り替えは失敗したわ。元の作業先はそのままにしてある。",
+    "facts": [],
+    "source": "server/app.py:3135"
+  },
+  "focus_voice_project": {
+    "template": "「${project_name}」プロジェクトへの切り替えを確認したわ。次の作業はここから続ける。",
+    "facts": [
+      "project_name"
+    ],
+    "source": "server/app.py:3149"
+  },
+  "task_fact_reported_clause": {
+    "template": "実行側からは${recent_result}と報告されているけれど、まだホスト確認済みではなく、",
+    "facts": [
+      "recent_result"
+    ],
+    "source": "server/task_lookup.py:798"
+  },
+  "task_fact_verified_clause": {
+    "template": "ここまでに${recent_result}は確認できているけれど、",
+    "facts": [
+      "recent_result"
+    ],
+    "source": "server/task_lookup.py:800"
+  }
+}

@@ -8,10 +8,12 @@
 
 from __future__ import annotations
 
+from contextlib import ExitStack
 import os
 import sys
 import tempfile
 import time
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -23,25 +25,28 @@ from server.interaction_branch import (
 
 
 class _SessionSandbox:
-    """临时接管 session_manager 单例状态：不落盘、测试后完全还原。"""
+    """使用独立的真实会话存储，测试后还原原单例与会话选择状态。"""
 
     def __init__(self, session_id: str):
         self.session_id = session_id
 
     def __enter__(self):
-        self._saved_dialog = list(sm.conversation_history.dialog)
-        self._saved_sid = sm.get_current_session_id()
-        self._saved_save = sm.save_session
-        sm.conversation_history.dialog.clear()
-        sm.set_current_session_id(self.session_id)
-        sm.save_session = lambda *a, **k: None  # 不写文件
-        return sm.conversation_history.dialog
+        self._stack = ExitStack()
+        try:
+            directory = self._stack.enter_context(tempfile.TemporaryDirectory(prefix="branch_squash_session_"))
+            self._stack.enter_context(patch.object(sm, "_SESSION_DIR", directory))
+            self._stack.enter_context(patch.object(sm, "_CURRENT_SESSION_ID", None))
+            self._stack.enter_context(patch.object(sm, "_SESSION_SELECTION_REVISION", 0))
+            self._stack.enter_context(patch.object(sm, "_activation_guard", None))
+            self._stack.enter_context(patch.object(sm, "conversation_history", sm.ConversationHistory()))
+            sm.create_session(self.session_id)
+            return sm.conversation_history.dialog
+        except BaseException:
+            self._stack.close()
+            raise
 
     def __exit__(self, *exc):
-        sm.save_session = self._saved_save
-        sm.conversation_history.dialog[:] = self._saved_dialog
-        sm.set_current_session_id(self._saved_sid)
-        return False
+        return self._stack.__exit__(*exc)
 
 
 def _make_coordinator():

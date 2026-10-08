@@ -9,6 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from agent_host.provider_identity import MAIN_ROLE_NAME_METADATA_KEY
 from agent_host.provider_types import ProviderInputDelivery, ProviderPermissionResponse
 from agent_host.work_ledger_store import WorkLedgerConflict, WorkLedgerNotFound
 from server.auip_app_source import discover_registered_auip_app
@@ -786,6 +787,11 @@ class WorkLedgerHandler(RequestHandler):
         )
         metadata_raw = params.get("metadata")
         metadata = dict(metadata_raw) if isinstance(metadata_raw, dict) else {}
+        main_role_name = self.coordinator.continuation_main_role_name(latest)
+        if main_role_name is None:
+            metadata.pop(MAIN_ROLE_NAME_METADATA_KEY, None)
+        else:
+            metadata[MAIN_ROLE_NAME_METADATA_KEY] = main_role_name
         metadata.update(
             {
                 "source": "work.retry",
@@ -861,6 +867,7 @@ class WorkLedgerHandler(RequestHandler):
             raise WorkLedgerConflict(
                 "Resume restores the interrupted run; submit changed intent as a new WorkItem"
             )
+        main_role_name = self.coordinator.continuation_main_role_name(attempt)
         resume_writer_mode = attempt.mode in {"agent", "delegate", "edit", "write", "execute"}
         acquired_resume_lease = False
         if resume_writer_mode:
@@ -875,6 +882,10 @@ class WorkLedgerHandler(RequestHandler):
                 acquired_resume_lease = True
         metadata_raw = params.get("metadata")
         metadata = dict(metadata_raw) if isinstance(metadata_raw, dict) else {}
+        if main_role_name is None:
+            metadata.pop(MAIN_ROLE_NAME_METADATA_KEY, None)
+        else:
+            metadata[MAIN_ROLE_NAME_METADATA_KEY] = main_role_name
         metadata.update(
             {
                 "source": "work.resume",

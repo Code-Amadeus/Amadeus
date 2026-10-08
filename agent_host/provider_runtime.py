@@ -23,6 +23,7 @@ from agent_host.provider_outcome import (
 )
 from agent_host.provider_progress import is_progress_only_workspace_completion
 from agent_host.provider_identity import (
+    MAIN_ROLE_NAME_METADATA_KEY,
     PARENT_CONTEXT_DELIVERED_EVENT,
     PARENT_CONTEXT_DELIVERY_METADATA_KEY,
     SOURCE_CONTEXT_SCOPE_METADATA_KEY,
@@ -65,6 +66,7 @@ class ProviderStartAdmissionRejected(RuntimeError):
 
 _CONTROL_PLANE_METADATA_KEYS = frozenset(
     {
+        MAIN_ROLE_NAME_METADATA_KEY,
         "work",
         "provider_manifest",
         "provider_operation",
@@ -1055,6 +1057,8 @@ class ProviderRuntime:
         request.cwd = record.cwd or request.cwd
         if record.cwd is None and request.cwd:
             record.cwd = request.cwd
+        # The Work owner restores conversation identity, including its absence.
+        record.metadata.pop(MAIN_ROLE_NAME_METADATA_KEY, None)
         record.metadata.update(dict(request.metadata))
         record.metadata["resume_task_authoritative"] = True
         workspace_binding = prepare_workspace_binding(request, manifest)

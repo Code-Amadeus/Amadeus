@@ -62,6 +62,7 @@ from agent_host.mcp_connections import (
 )
 from agent_host.provider_identity import (
     PARENT_CONTEXT_DELIVERED_EVENT,
+    request_main_role_name,
     with_parent_conversation_context,
 )
 from agent_host.provider_progress import split_progress_stream, with_progress_contract
@@ -1723,6 +1724,7 @@ class CodexAppServerAdapter:
                 require_auip_preparation=requires_auip_authoring(metadata),
                 authoring_skill_path=str(metadata.get("auip_authoring_skill_path") or ""),
                 required_auip_mode=required_auip_engagement_mode(metadata),
+                main_role_name=request_main_role_name(metadata),
             ),
             presentation_locale=metadata.get("presentation_locale"),
         )

@@ -51,12 +51,28 @@ def test_historic_identity_validation_does_not_load_a_pack():
         characters.load("missing-test-character")
 
 
+def test_name_only_mystery_assumption_describes_evidence_without_assigning_personality(monkeypatch, tmp_path):
+    for character_id, name in (("test-calm", "Calm companion"), ("test-exuberant", "Exuberant companion")):
+        (tmp_path / f"{character_id}.toml").write_text(
+            f'[names]\ncharacter_id = "{character_id}"\nname = "{name}"\n', encoding="utf-8")
+    monkeypatch.setattr(characters, "files", lambda _package: tmp_path)
+    assumptions = [characters.load(character_id).values["vn_mystery_assumption"]
+                   for character_id in ("test-calm", "test-exuberant")]
+    assert assumptions[0] == assumptions[1]
+    assert "已显示文本" in assumptions[0]
+    assert "条件和代价" in assumptions[0]
+    assert "自然想" not in assumptions[0]
+    assert "Calm companion" not in assumptions[0] and "Exuberant companion" not in assumptions[0]
+    kurisu = tomllib.loads((ROOT / "characters/kurisu.toml").read_text(encoding="utf-8"))
+    assert kurisu["texts"]["vn_mystery_assumption"] == "复活秘术像规则核心，Kurisu 会自然想拆条件和代价。"
+
+
 @pytest.mark.parametrize("failure", ["missing_key", "wrong_type", "extra_table", "invalid_toml"])
 def test_malformed_selected_file_fails_without_default_fallback(monkeypatch, tmp_path, failure):
     document = tomllib.loads((ROOT / "characters/kurisu.toml").read_text(encoding="utf-8"))
     document["names"]["character_id"] = "invalid-test"
     if failure == "missing_key":
-        del document["texts"]["ja_identity"]
+        del document["names"]["short_name"]
     if failure == "wrong_type":
         document["texts"]["ja_identity"] = 42
     if failure == "extra_table":

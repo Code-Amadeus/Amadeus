@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from unittest.mock import Mock
 
+from llm.character_voice_lines import voice_line
 from test_cooperative_pending_turn import pending_host as pending_host
 
 
@@ -14,7 +15,7 @@ def focus_owner(announce):
     definition = next(node for node in tree.body
         if isinstance(node, ast.AsyncFunctionDef) and node.name == "_handle_declared_focus")
     scope = {"logger": Mock(), "_observer_display_language": lambda: "japanese",
-        "_schedule_focus_confirmation": announce}
+        "_schedule_focus_confirmation": announce, "voice_line": voice_line}
     exec(compile(ast.Module(body=[definition], type_ignores=[]), str(path), "exec"), scope)
     return scope["_handle_declared_focus"]
 

@@ -30,6 +30,8 @@ from typing import Any, TYPE_CHECKING
 # inference. This must run before anything imports torch.
 os.environ.setdefault("KMP_BLOCKTIME", "1")
 
+from llm.character_voice_lines import voice_line
+
 if TYPE_CHECKING:
     pass
 
@@ -77,6 +79,33 @@ def _observer_display_language() -> str:
     from server.assistant_language import current_assistant_language
 
     return current_assistant_language()
+
+
+def _source_session_role_identity(session_id: str) -> dict[str, str]:
+    """Resolve first-acceptance identity from the persisted source conversation."""
+    from core import session_manager as sm
+    from llm.character_prompts import character_identity
+
+    return character_identity(sm.require_session_character(session_id))
+
+
+def _append_work_observer_to_history(decision: dict) -> None:
+    """Keep allowed Work narration in the conversation whose role presented it."""
+    entry = str(decision.get("main_chat_entry") or "").strip()
+    if not entry:
+        return
+    try:
+        from core import session_manager as sm
+
+        current_session_id = str(sm.get_current_session_id() or "")
+        source_session_id = str(decision.get("session_id") or "")
+        if not current_session_id or (source_session_id and source_session_id != current_session_id):
+            return
+        sm.require_session_character(current_session_id)
+        sm.conversation_history.add_assistant(f"[WORK_OBSERVER]\n{entry}")
+        sm.save_session(current_session_id, enable_conversation=True)
+    except Exception:
+        logger.exception("failed to append work observer decision to history")
 
 
 # force the project root onto sys.path.
@@ -305,6 +334,10 @@ async def bootstrap(port: int = 17777) -> None:
     global tts_executor, translation_executor, pending_actions, pending_sentence_items
     global exp_tts_semaphore, exp_play_condition, output_idle_probe, host_readonly_voice_sink
     global work_status_narrator
+
+    from llm.character_prompts import active_character
+
+    active_character()  # Validate the pinned startup pack before runtime composition.
 
     auth_policy = LocalAuthPolicy.from_environment(os.environ)
     clear_inherited_auth_environment(os.environ)
@@ -1753,6 +1786,7 @@ async def bootstrap(port: int = 17777) -> None:
 
     cooperative_work_control = WorkControl(cooperative_ledger,
         work_ledger_store,
+        source_role_identity_resolver=_source_session_role_identity,
         cooperative_context_resolver=cooperative_chat.resolve_work_recipient)
     work_ledger.configure_work_control(cooperative_work_control)
     cooperative_chat.configure_work(cooperative_work_control,
@@ -1947,23 +1981,6 @@ async def bootstrap(port: int = 17777) -> None:
         return receipt.to_dict()
 
     host_readonly_voice_sink = _speak_vn_reaction
-
-    def _append_work_observer_to_history(decision: dict) -> None:
-        entry = str(decision.get("main_chat_entry") or "").strip()
-        if not entry:
-            return
-        try:
-            from core import session_manager as sm
-
-            session_id = str(decision.get("session_id") or "")
-            if session_id and sm.get_current_session_id() != session_id:
-                return
-            sm.conversation_history.add_assistant(f"[WORK_OBSERVER]\n{entry}")
-            sid = sm.get_current_session_id()
-            if sid:
-                sm.save_session(sid, enable_conversation=True)
-        except Exception:
-            logger.exception("failed to append work observer decision to history")
 
     def _recent_parent_chat(session_id: str) -> list[dict[str, str]]:
         try:
@@ -3088,7 +3105,7 @@ async def _handle_declared_focus(
         await coordinator.publish_snapshot(reason="session_project.cleared")
         if announce_result:
             display = "已回到本会话的 Draft；后续未指定项目的工作会留在这里。"
-            voice_ja = "この会話の Draft に戻したわ。次の指定なしの作業は、ここに残る。"
+            voice_ja = voice_line("focus_voice_drafts")
             if _observer_display_language() == "japanese":
                 display = voice_ja
             _schedule_focus_confirmation(
@@ -3117,7 +3134,7 @@ async def _handle_declared_focus(
         await coordinator.publish_snapshot(reason="session_project.rejected")
         if announce_result:
             display = "项目没有切换成功；我保留了原来的工作位置。"
-            voice_ja = "プロジェクトの切り替えは失敗したわ。元の作業先はそのままにしてある。"
+            voice_ja = voice_line("focus_voice_failed")
             if _observer_display_language() == "japanese":
                 display = voice_ja
             _schedule_focus_confirmation(
@@ -3131,7 +3148,7 @@ async def _handle_declared_focus(
     if announce_result:
         project_name = str(chosen.get("projectName") or "").strip() or "项目"
         display = f"已经确认切换到“{project_name}”项目，接下来的项目工作会从这里继续。"
-        voice_ja = f"「{project_name}」プロジェクトへの切り替えを確認したわ。次の作業はここから続ける。"
+        voice_ja = voice_line("focus_voice_project", project_name=project_name)
         if _observer_display_language() == "japanese":
             display = voice_ja
         _schedule_focus_confirmation(

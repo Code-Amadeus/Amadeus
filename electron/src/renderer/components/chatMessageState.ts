@@ -8,18 +8,42 @@ export interface Message {
 
 export const INTERRUPTED_MARKER = '[interrupted by user]'
 
+export function automaticSessionSelection<T extends {
+  id: string; character_id?: string; timestamp?: number
+}>(sessions: T[], currentCharacterId: unknown, currentSessionId = ''): T | undefined {
+  if (typeof currentCharacterId !== 'string' || !currentCharacterId) {
+    throw new Error('Chat character identity is unavailable. Reconnect to the backend.')
+  }
+  const owned = sessions.filter(session => session.character_id === currentCharacterId)
+  return owned.find(session => session.id === currentSessionId)
+    || [...owned].sort((left, right) => Number(right.timestamp || 0) - Number(left.timestamp || 0))[0]
+}
+
 export async function runSessionSelection(
   state: { pending: number },
   changed: (pending: boolean) => void,
   request: () => Promise<Record<string, unknown>>,
   apply: (payload: Record<string, unknown>) => void,
+  feedback?: (notice: string) => void,
+  fallbackNotice = 'Could not switch chats.',
 ): Promise<Record<string, unknown>> {
   state.pending += 1
   changed(true)
   try {
     const payload = await request()
-    if (payload.ok !== false) apply(payload)
+    if (payload.ok === false) {
+      const reason = [payload.message, payload.detail, payload.error]
+        .find(value => typeof value === 'string' && value.trim())
+      feedback?.(typeof reason === 'string' ? reason : fallbackNotice)
+    } else {
+      apply(payload)
+      feedback?.('')
+    }
     return payload
+  } catch (error) {
+    feedback?.(error instanceof Error && error.message.trim()
+      ? error.message : fallbackNotice)
+    throw error
   } finally {
     state.pending -= 1
     changed(state.pending > 0)

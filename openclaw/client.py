@@ -7,11 +7,13 @@ OpenClaw API 客户端
 """
 from __future__ import annotations
 
-from llm.character_prompts import render, text
+from llm.character_prompts import text
+from agent_host.provider_identity import execution_role_name
 
 import asyncio
 import logging
 import os
+from string import Template
 
 from openai import OpenAI
 
@@ -36,11 +38,8 @@ _EXECUTION_SYSTEM_TEMPLATE = (
 
 def execution_system_prompt(main_role_name: str | None = None) -> str:
     """An accepted request may supply its role name without loading that pack."""
-    return render(_EXECUTION_SYSTEM_TEMPLATE, execution_role_name=(
-        text("short_name") if main_role_name is None else main_role_name))
-
-
-OPENCLAW_EXECUTION_SYSTEM_PROMPT = execution_system_prompt()
+    name = text("short_name") if main_role_name is None else execution_role_name(main_role_name)
+    return Template(_EXECUTION_SYSTEM_TEMPLATE).substitute(execution_role_name=name)
 
 
 def _get_openclaw_client() -> OpenAI:

@@ -91,3 +91,42 @@ for (const savedOverride of ['', '保存済みの人物設定']) {
     assert.ok(!textareas[0][1].includes('readonly'))
   })
 }
+
+test('inactive editor still edits Kurisu and explains both role and language applicability', () => {
+  const html = renderToStaticMarkup(React.createElement(CharacterEditor, {
+    savedOverride: '保存済みの紅莉栖設定',
+    preview: { default: '紅莉栖の既定設定', effective: '保存済みの紅莉栖設定', active: false },
+    canSave: true, locked: false, saving: false, onSave: async () => true,
+  }))
+  assert.match(html, /Kurisu Japanese persona override/)
+  assert.match(html, /inactive for the current replies/)
+  assert.match(html, /only when Kurisu is active and replies are Japanese/)
+  assert.match(html, /VN, work commentary, English replies and Hybrid opening lines/)
+  assert.match(html, /does not change the active character, permissions, art or voice/)
+  assert.match(html, /placeholder="紅莉栖の既定設定"/)
+  assert.match(html, />保存済みの紅莉栖設定<\/textarea>/)
+})
+
+test('Chinese editor preserves Kurisu ownership and inactive applicability', () => {
+  const i18n = compile('../src/renderer/i18n.tsx')
+  const { default: LocalizedEditor } = compile('../src/renderer/components/MainChatCharacterSettings.tsx', name => {
+    if (name === '../i18n') return i18n
+    if (name === './SettingsPrimitives') return { CardShell: ({ children }) => React.createElement('div', null, children) }
+    return require(name)
+  })
+  const previous = globalThis.localStorage
+  globalThis.localStorage = { getItem: () => 'zh-CN' }
+  try {
+    const html = renderToStaticMarkup(React.createElement(i18n.I18nProvider, null,
+      React.createElement(LocalizedEditor, {
+        savedOverride: '', preview: { default: '紅莉栖の既定設定', active: false },
+        canSave: true, locked: false, saving: false, onSave: async () => true,
+      })))
+    assert.match(html, /红莉栖日语人格覆盖/)
+    assert.match(html, /仅在启用红莉栖且使用日语回复时生效/)
+    assert.match(html, /不更换当前角色、权限、立绘或声音/)
+  } finally {
+    if (previous === undefined) delete globalThis.localStorage
+    else globalThis.localStorage = previous
+  }
+})

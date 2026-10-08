@@ -15,6 +15,7 @@ from agent_host.provider_types import ProviderRecoveryContext
 
 
 MAIN_ROLE_NAME_METADATA_KEY = "main_role_name"
+HISTORICAL_MAIN_ROLE_NAME = "Makise Kurisu (牧瀬紅莉栖)"
 PARENT_CONTEXT_DELIVERED_EVENT = "context.delivered"
 PARENT_CONTEXT_DELIVERY_METADATA_KEY = "parent_context_delivery"
 PARENT_CONTEXT_DELIVERY_SCHEMA = "amadeus.provider-parent-context-delivery.v1"
@@ -24,6 +25,22 @@ SOURCE_UTTERANCE_ID_METADATA_KEY = "source_utterance_id"
 _SOURCE_CONTEXT_MODES = frozenset(
     {"none", "snapshot", "delta", "snapshot_fallback"}
 )
+
+
+def request_main_role_name(metadata: Mapping[str, Any] | None) -> str | None:
+    """Read accepted conversation identity; absence denotes independent work."""
+    envelope = metadata if isinstance(metadata, Mapping) else {}
+    if MAIN_ROLE_NAME_METADATA_KEY not in envelope:
+        return None
+    name = envelope[MAIN_ROLE_NAME_METADATA_KEY]
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("request main_role_name must be a nonempty string")
+    return name
+
+
+def execution_role_name(main_role_name: str) -> str:
+    """Keep the historical prompt spelling without consulting a mutable pack."""
+    return "Kurisu" if main_role_name == HISTORICAL_MAIN_ROLE_NAME else main_role_name
 
 
 def _validated_auip_recovery(value: object) -> ProviderRecoveryContext | None:
@@ -221,9 +238,7 @@ def with_main_role_reference(
 
     body = str(task or "").rstrip()
     envelope = metadata if isinstance(metadata, Mapping) else {}
-    role_name = " ".join(
-        str(envelope.get(MAIN_ROLE_NAME_METADATA_KEY) or "").split()
-    )
+    role_name = str(envelope.get(MAIN_ROLE_NAME_METADATA_KEY) or "")
     if not role_name:
         return body
     provider = str(execution_provider or "").strip()

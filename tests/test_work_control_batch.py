@@ -137,6 +137,7 @@ def test_single_seal_keeps_legacy_identity_and_encoded_plan(tmp_path) -> None:
             "evidence": {
                 "adapter": "proposal_gated_current_turn_work:v3",
                 "transcript_hash": admission.transcript_hash,
+                "role_identity": {"character_id": "kurisu", "display_name": "Makise Kurisu (牧瀬紅莉栖)"},
             },
         }
         stored = ledger.get_admission(admission.root_id)

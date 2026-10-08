@@ -44,10 +44,11 @@ def test_persona_override_preserves_output_and_execution_contracts(monkeypatch, 
         assert custom[len(custom_base):] == original[variant][len(original["base"]):]
     assert prompts.get_system_prompt("hybrid_local") == original["hybrid_local"]
     assert prompts.get_structured_control_prompt() == controls
-    assert inherited_main_role_prompt() == inherited
+    assert inherited_main_role_prompt().startswith(override + "\n\n")
     assert prompts.get_system_prompt("base", use_character_override=False) == original["base"]
     assert prompts.set_character_prompt("\n \t") == [prompts.CHARACTER_PROMPT_SETTING]
     assert {v: prompts.get_system_prompt(v) for v in variants} == original
+    assert inherited_main_role_prompt() == inherited
     assert prompts.get_character_prompt_config()["main_chat_character_prompt_preview"]["effective"] == default
 
 

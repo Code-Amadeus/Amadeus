@@ -27,6 +27,8 @@ rule R7; it retires when the work order's acceptance holds).
 
 from __future__ import annotations
 
+from llm.character_voice_lines import voice_line
+
 import asyncio
 import contextvars
 import logging
@@ -763,30 +765,30 @@ def render_current_status_facts(
 
     if stage_key in {"queued"}:
         display = f"还在等待开始，目前没有发现阻碍；下一步会{next_zh}。"
-        voice_ja = f"まだ実行待ちよ。今のところ問題はないから、次は{next_ja}。"
+        voice_ja = voice_line('task_voice_queued', next_action=next_ja)
     elif stage_key in {"working", "running"}:
         if direction_only and has_blocker:
             display = f"还在处理中，当前执行方向是：{recent_zh}；不过{blocker_zh}，接下来会{next_zh}。"
-            voice_ja = f"まだ作業中よ。進め方は更新されているけれど、{blocker_ja}。次は{next_ja}。"
+            voice_ja = voice_line('task_voice_direction_blocked', blocker=blocker_ja, next_action=next_ja)
         elif direction_only:
             display = f"还在处理中，当前执行方向是：{recent_zh}；这还不是完成结果，目前没有发现阻碍。"
-            voice_ja = "まだ作業中よ。進め方は更新されていて、内容は画面に出してある。まだ完了報告ではないけど、今のところ問題はないわ。"
+            voice_ja = voice_line('task_voice_direction_running')
         elif reported_result and has_blocker:
             display = f"还在处理中，目前收到的执行报告是：{recent_zh}；这还不是宿主确认的结果，而且{blocker_zh}，接下来会{next_zh}。"
-            voice_ja = f"まだ作業中よ。実行側からは{recent_ja}と報告されているけれど、まだホスト確認済みの結果ではなく、{blocker_ja}。次は{next_ja}。"
+            voice_ja = voice_line('task_voice_reported_blocked', recent_result=recent_ja, blocker=blocker_ja, next_action=next_ja)
         elif reported_result:
             display = f"还在处理中，目前收到的执行报告是：{recent_zh}；这还不是宿主确认的结果，目前没有发现阻碍。"
-            voice_ja = f"まだ作業中よ。実行側からは{recent_ja}と報告されているけれど、まだホスト確認済みの結果ではないわ。今のところ問題はない。"
+            voice_ja = voice_line('task_voice_reported_running', recent_result=recent_ja)
         elif has_result and has_blocker:
             display = f"还在处理中，最近确认的是：{recent_zh}；不过{blocker_zh}，接下来会{next_zh}。"
-            voice_ja = f"まだ作業中よ。{recent_ja}。ただ、{blocker_ja}。次は{next_ja}。"
+            voice_ja = voice_line('task_voice_result_blocked', recent_result=recent_ja, blocker=blocker_ja, next_action=next_ja)
         elif has_result:
             display = f"还在处理中，最近确认的是：{recent_zh}；目前没有发现阻碍，接下来会{next_zh}。"
-            voice_ja = f"まだ作業中よ。{recent_ja}。今のところ問題はなくて、次は{next_ja}。"
+            voice_ja = voice_line('task_voice_result_running', recent_result=recent_ja, next_action=next_ja)
         else:
             title = _embedded_sentence(facts.get("title") or "当前任务")
             display = f"还在处理“{title}”。暂时没有新的可确认成果，也没有发现阻碍；我会{next_zh}，有验证结果就告诉你。"
-            voice_ja = f"「{title}」を進めているところよ。確認できる新しい成果も問題も、今のところ出ていない。{next_ja}から、検証結果が出たら知らせるわ。"
+            voice_ja = voice_line('task_voice_running_no_milestone', title=title, next_action=next_ja)
     elif stage_key in {"waiting_for_user", "stalled", "cancelling"} or has_blocker:
         recent_clause_zh = (
             f"目前收到的执行报告是：{recent_zh}，但尚未由宿主确认；"
@@ -796,20 +798,20 @@ def render_current_status_facts(
             else ""
         )
         recent_clause_ja = (
-            f"実行側からは{recent_ja}と報告されているけれど、まだホスト確認済みではなく、"
+            voice_line("task_fact_reported_clause", recent_result=recent_ja)
             if reported_result
-            else f"ここまでに{recent_ja}は確認できているけれど、"
+            else voice_line("task_fact_verified_clause", recent_result=recent_ja)
             if has_result
             else ""
         )
         display = f"这件事现在停在需要处理的环节。{recent_clause_zh}{blocker_zh}；接下来会{next_zh}。"
-        voice_ja = f"今はここで止まっているわ。{recent_clause_ja}{blocker_ja}。次は{next_ja}。"
+        voice_ja = voice_line('task_voice_stalled', recent_clause=recent_clause_ja, blocker=blocker_ja, next_action=next_ja)
     elif stage_key in {"review", "succeeded", "terminal", "failed", "cancelled"}:
         display = f"这轮工作已经结束。结果是：{recent_zh}；接下来会{next_zh}。"
-        voice_ja = f"この作業は終わっているわ。確認できた結果は、{recent_ja}。次は{next_ja}。"
+        voice_ja = voice_line('task_voice_terminal', recent_result=recent_ja, next_action=next_ja)
     else:
         display = f"现在是{facts.get('stage_zh') or '待确认状态'}。{recent_zh}；接下来会{next_zh}。"
-        voice_ja = f"今は{facts.get('stage_ja') or '確認待ち'}よ。{recent_ja}。次は{next_ja}。"
+        voice_ja = voice_line('task_voice_stage', stage=facts.get('stage_ja') or '確認待ち', recent_result=recent_ja, next_action=next_ja)
 
     if str(display_language or "").strip().lower() == "japanese":
         display = voice_ja
@@ -865,14 +867,14 @@ def _localized_status_fact(
             "direction": "The execution direction has been updated",
             "terminal_result": "The final result is recorded in the ledger",
         }.get(semantic_kind, "There is no new verified semantic result yet")
-    return {
-        "design": "実装方針は固まっているわ",
-        "diagnostic": "対処すべき具体的な原因まで絞り込めているわ",
-        "capability": "主要な機能の実装まで進んでいるわ",
-        "validation": "新しい検証結果まで確認できているわ",
-        "direction": "現在の進め方は更新されていて、その方針で進めているわ",
-        "terminal_result": "最終結果は台帳に記録済みで、詳細は画面に表示しているわ",
-    }.get(semantic_kind, "確認できる新しい意味的成果はまだないわ")
+    return voice_line({
+        "design": "task_fact_design",
+        "diagnostic": "task_fact_diagnostic",
+        "capability": "task_fact_capability",
+        "validation": "task_fact_validation",
+        "direction": "task_fact_direction",
+        "terminal_result": "task_fact_terminal_result",
+    }.get(semantic_kind, "task_fact_no_result"))
 
 
 def render_current_status_answer(
