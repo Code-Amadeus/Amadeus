@@ -43,18 +43,50 @@ namespaces. Optional-asset skips and expected failures are not counted as passes
 This full rerun closes the original implementation's final-rerun gap described
 in its historical results below.
 
-The current desktop application remains running at the user's request. **The
-new follow-up desktop journey has not been run.** It is prepared locally to check
-foreign-session name/title/ID display, Unicode input limits and the persistent
-restart label. The earlier 18-check and 5-check desktop results below belong to
-`813390f`, not to a rerun of these follow-up changes. Live2D combined validation
-also remains pending; no merge or combined-runtime result is claimed.
+### Final desktop acceptance on `053d6a1`
 
-Manual follow-up: edit the running role, save, leave Settings and return to see
-the pending label; restart and verify it clears. Open the session rail to verify
-foreign ownership names, stable IDs in tooltips, and Settings guidance without
-activating the foreign history. Then check limit feedback with 128/129-code-point
-names and 7900/7901-code-point personalities, including emoji.
+The deferred desktop checks were completed on 2026-10-08 after port 17777 became
+available. The actual built Electron application and Python backend passed
+**21/21** checks, and a separate negative cold-start recovery passed **5/5**.
+The machine-readable [acceptance record](desktop-acceptance.json) identifies the
+exact tested code revision and each check. No product code changed during this
+acceptance. All test-owned processes exited cleanly and released their ports.
+
+The final journey verifies two same-name roles with distinct IDs; unchanged
+session titles with foreign ownership names and full IDs in tooltips; Settings
+guidance without activating foreign history; 128/129-code-point name and
+7900/7901-code-point persona feedback (including emoji); trimmed saved persona;
+pending-restart visibility after leaving and returning to Settings; clearing
+that marker after restart; and recovery from a malformed role without erasing
+its file or synthetic conversation history. The separate cold-start journey
+starts with a nonexistent selected role, verifies that Electron opens without
+a ready backend, and uses its explicit recovery button to start builtin Kurisu.
+
+One initial harness attempt failed: it waited for the **Save role** button to
+become hidden, which also happens when its label changes to **Saving…** before
+the save is acknowledged. The corrected harness waits for the editor to close.
+The same unchanged product code then passed the entire journey. Failed evidence
+remains in local logs. A subsequent complete successful run recaptured separate
+sidebar and guidance images so the floating notice is not cropped by the sidebar
+screenshot bounds. These repeated successful runs are counted once, as 21 checks.
+
+The following images contain only synthetic test records. They were visually
+inspected; no user conversation, credentials, artwork or local filesystem paths
+are included.
+
+![Foreign session keeps its title and shows a readable ownership name](review-foreign-session-name.png)
+
+![Foreign session guidance retains the ID and points to the actual settings path](review-foreign-session-guidance.png)
+
+![Pending definition remains visible after leaving Settings and returning](review-pending-definition.png)
+
+![Cold-start recovery is available before the backend can become ready](review-cold-recovery.png)
+
+These checks use a model-less profile. They do not measure real model persona
+fidelity, voice quality or rendering performance. **Live2D combined validation
+is still pending**: the tested M1 revision does not include that independent
+branch. The original 18-check and 5-check results below remain historical evidence
+for `813390f`; the 21+5 results above cover the follow-up fixes.
 
 ## Original implementation verification (`813390f`)
 
