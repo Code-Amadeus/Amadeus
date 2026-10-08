@@ -19,9 +19,10 @@ function callback(name, bindings) {
   return new Function(...Object.keys(bindings), `${compiled}; return handler;`)(...Object.values(bindings))
 }
 
-function desktop({ renderActive = false, wallpaperActive = false, wallpaperFails = false, renderStarts = [] } = {}) {
+function desktop({ renderActive = false, wallpaperActive = false, wallpaperFails = false, renderStarts = [], stops = [] } = {}) {
   const state = { renderActive, wallpaperActive, backend: 'graph', renderAssetUrl: '', page: 'chat' }
   const calls = []
+  const projectionRequestRef = { current: 0 }
   const send = async (method, params) => {
     calls.push(method)
     if (method === 'expression.set_backend') state.backend = params.backend
@@ -31,7 +32,7 @@ function desktop({ renderActive = false, wallpaperActive = false, wallpaperFails
       if (result instanceof Error) throw result
       return result
     }
-    return { status: 'stopped' }
+    return stops.length ? stops.shift() : { status: 'stopped' }
   }
   return {
     state, calls,
@@ -39,7 +40,7 @@ function desktop({ renderActive = false, wallpaperActive = false, wallpaperFails
       await callback(surface === 'render' ? 'handleToggleRender' : 'handleToggleWallpaper', {
         renderActive: state.renderActive,
         wallpaperActive: state.wallpaperActive,
-        send,
+        send, projectionRequestRef,
         setRenderActive: value => { state.renderActive = value },
         setWallpaperActive: value => { state.wallpaperActive = value },
         setRenderAssetUrl: value => { state.renderAssetUrl = value },
@@ -97,4 +98,81 @@ test('failed Render starts close the empty projection and allow a later connecte
     assert.equal(app.state.backend, 'graph')
     assert.deepEqual(app.calls, ['render.start', 'render.start'])
   }
+})
+
+
+function deferred() {
+  let resolve, reject
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no })
+  return { promise, resolve, reject }
+}
+
+test('a pending Render start cannot reopen a projection closed before its reply', async () => {
+  const start = deferred(), stop = deferred()
+  const app = desktop({ renderStarts: [start.promise], stops: [stop.promise] })
+  const opening = app.toggle('render')
+  await app.toggle('render')
+  assert.equal(app.state.renderActive, false)
+  // Backend replies remain FIFO: start completes before stop.
+  start.resolve({ url: 'old.html' }); await opening
+  assert.equal(app.state.renderActive, false)
+  assert.equal(app.state.renderAssetUrl, '')
+  stop.resolve({ status: 'stopped' })
+})
+
+test('old Render success and failure cannot overwrite a newer open intent', async () => {
+  for (const failed of [false, true]) {
+    const first = deferred(), second = deferred(), stop = deferred()
+    const app = desktop({ renderStarts: [first.promise, second.promise], stops: [stop.promise] })
+    const opening = app.toggle('render')
+    await app.toggle('render')
+    const reopening = app.toggle('render')
+    if (failed) first.reject(new Error('old start failed'))
+    else first.resolve({ url: 'old.html' })
+    await opening
+    assert.equal(app.state.renderActive, true, 'the new open intent survives the old reply')
+    assert.equal(app.state.renderAssetUrl, '', 'the old URL must not mount an iframe')
+    stop.resolve({ status: 'stopped' })
+    second.resolve({ url: 'new.html' }); await reopening
+    assert.equal(app.state.renderActive, true)
+    assert.equal(app.state.renderAssetUrl, 'new.html')
+  }
+})
+
+test('switching to Wallpaper invalidates pending Render results before backend stop completes', async () => {
+  const start = deferred(), stop = deferred()
+  const app = desktop({ renderStarts: [start.promise], stops: [stop.promise] })
+  const opening = app.toggle('render')
+  const wallpaper = app.toggle('wallpaper')
+  start.resolve({ url: 'old.html' }); await opening
+  assert.equal(app.state.renderActive, false)
+  assert.equal(app.state.renderAssetUrl, '')
+  stop.resolve({ status: 'stopped' }); await wallpaper
+  assert.equal(app.state.wallpaperActive, true)
+  assert.deepEqual(app.calls, ['render.start', 'render.stop', 'wallpaper.start'])
+})
+
+
+test('a Render start waiting for Wallpaper to stop is cancelled by a later close', async () => {
+  const stop = deferred()
+  const app = desktop({ wallpaperActive: true, stops: [stop.promise] })
+  const opening = app.toggle('render')
+  await app.toggle('render')
+  stop.resolve({ status: 'stopped' }); await opening
+  assert.equal(app.state.renderActive, false)
+  assert.equal(app.state.renderAssetUrl, '')
+  assert.ok(!app.calls.includes('render.start'))
+})
+
+test('an older Wallpaper switch cannot start after a newer Render intent', async () => {
+  const stop = deferred()
+  const app = desktop({ renderActive: true, stops: [stop.promise] })
+  const wallpaper = app.toggle('wallpaper')
+  const render = app.toggle('render')
+  stop.resolve({ status: 'stopped' })
+  await Promise.all([wallpaper, render])
+  assert.equal(app.state.renderActive, true)
+  assert.equal(app.state.wallpaperActive, false)
+  assert.equal(app.state.renderAssetUrl, 'render.html')
+  assert.ok(!app.calls.includes('wallpaper.start'))
 })

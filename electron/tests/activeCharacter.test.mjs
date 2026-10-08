@@ -236,3 +236,42 @@ test('Companion launches with the pinned name before its window is created and s
     assert.equal(exposed.active(), 'companion.active')
   }
 })
+
+
+test('avatar interpolation preserves replacement-pattern characters in either locale', () => {
+  for (const name of ['Money$$', 'A$&B', 'Back$`tick', "End$'tail"]) {
+    for (const locale of ['en-US', 'zh-CN']) {
+      const markup = renderLabels(named(name), locale)
+      const text = renderToStaticMarkup(React.createElement('span', null, `${name}${locale === 'zh-CN' ? ' 头像' : ' avatar'}`)).slice(6, -7)
+      assert.ok(markup.includes(`>${text}<`), `name must stay literal: ${name} (${locale})`)
+    }
+  }
+})
+
+test('avatar fallbacks preserve astral code points and retain Kurisu and unknown defaults', () => {
+  for (const [identity, expected] of [[named('🌟Star'), '🌟'], [named('𠮷田'), '𠮷'], [kurisu, 'K'], [null, 'A']]) {
+    const markup = renderLabels(identity)
+    assert.ok(markup.includes(`class="auip-experience-avatar" aria-hidden="true">${expected}</span>`))
+    assert.ok(markup.includes(`>${expected}</div>`), 'settings preview uses the same complete initial')
+    assert.ok(markup.isWellFormed(), 'no unpaired surrogate is rendered')
+  }
+})
+
+
+test('Chinese role status and built-in edit explanations use the real translator', () => {
+  const i18n = load('i18n.tsx', {}, { localStorage: { getItem: () => 'zh-CN' } })
+  const shared = load('../shared/characterStartup.ts', {})
+  const management = load('components/characterManagement.ts', { '../../shared/characterStartup': shared })
+  const { CharacterRoleLabel } = load('components/CharacterManagementSettings.tsx', {
+    './characterManagement': management, '../i18n': i18n,
+    './SettingsPrimitives': { CardShell: ({ children }) => children },
+  })
+  function Explanation() {
+    return React.createElement('p', null, i18n.useI18n().t('Built-in characters are read-only.'))
+  }
+  const markup = renderToStaticMarkup(React.createElement(i18n.I18nProvider, null,
+    React.createElement(CharacterRoleLabel, { character: { character_id: 'kurisu', name: 'Kurisu', builtin: true }, active: true, nextStart: true }),
+    React.createElement(Explanation)))
+  for (const expected of ['Kurisu', '内置', '当前使用', '下次启动', '内置角色为只读。']) assert.ok(markup.includes(expected))
+  assert.doesNotMatch(markup, /Built-in|Active|Next start|read-only/)
+})

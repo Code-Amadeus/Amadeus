@@ -30,7 +30,8 @@ import { ApplicationLifecycle } from './appLifecycle.js'
 import { applicationMenuTemplate } from './applicationMenu.js'
 import { defaultMpsFallbackEnvironment } from './mpsFallbackPolicy.js'
 import { auipStoragePartition } from './auipStorage.js'
-import { BackendStartupExitError, backendStartupFailure, recoverCharacterStartup, startupCharacterSelection, waitForBackendReadiness, type BackendStartupFailure } from './backendStartup.js'
+import { BackendStartupExitError, backendStartupFailure, recoverCharacterStartup, waitForBackendReadiness } from './backendStartup.js'
+import { startupCharacterSelection, type BackendStartupFailure } from '../shared/characterStartup.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)

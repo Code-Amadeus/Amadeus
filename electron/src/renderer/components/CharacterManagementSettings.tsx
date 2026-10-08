@@ -50,31 +50,28 @@ export default function CharacterManagementSettings({ send, connected, restartin
   const personaTooLong = Boolean(limits && lengths && lengths.persona > limits.persona_max_chars)
 
   const refresh = useCallback(async () => {
-    const current = generation.current
-    const catalog = characterCatalog(await send('character.list'))
-    if (current !== generation.current) return
-    setCharacters(catalog.characters)
-    setActive(catalog.active)
-    setLimits(catalog.limits)
-  }, [send])
-
-  useEffect(() => {
-    generation.current += 1
-    setActive(null)
-    setLimits(null)
-    if (!connected) return
-    let current = true
-    void send('character.list').then(response => {
-      if (!current) return
-      const catalog = characterCatalog(response)
+    const current = ++generation.current
+    try {
+      const catalog = characterCatalog(await send('character.list'))
+      if (current !== generation.current) return
       setCharacters(catalog.characters)
       setActive(catalog.active)
       setLimits(catalog.limits)
-    }).catch(reason => { if (current) setError(reason instanceof Error ? reason.message : 'Could not load roles.') })
-    return () => { current = false }
-  }, [connected, send])
+      setError('')
+    } catch (reason) {
+      if (current === generation.current) setError(reason instanceof Error ? reason.message : 'Could not load roles.')
+    }
+  }, [send])
+
+  useEffect(() => {
+    setActive(null)
+    setLimits(null)
+    if (connected) void refresh()
+    return () => { generation.current += 1 }
+  }, [connected, refresh])
 
   const perform = async (action: () => Promise<void>) => {
+    generation.current += 1 // Earlier catalog replies must not clear this action’s error.
     setBusy(true)
     setError('')
     setNotice('')

@@ -9,6 +9,9 @@ const ZH_CN: Record<string, string> = {
   '{name} avatar': '{name} 头像',
   'Assistant avatar': '助手头像',
   'Character roles': '角色管理',
+  'Built-in': '内置',
+  'Active': '当前使用',
+  'Built-in characters are read-only.': '内置角色为只读。',
   'Create user roles and choose the role for the next backend start.': '创建用户角色，并选择下次启动后端时使用的角色。',
   'All roles follow the application’s appearance and voice settings.': '所有角色均使用应用的外观与语音设置。',
   'Active in this backend: {name}': '当前后端角色：{name}',
@@ -54,9 +57,6 @@ const ZH_CN: Record<string, string> = {
   'Backend could not start.': '后端无法启动。',
   'The selected role is missing or invalid. Its file and your other settings have been kept.': '选定的角色缺失或无效。角色文件及其他设置均已保留。',
   'Startup selection source: {source}': '启动选择来源：{source}',
-  'environment': '启动环境',
-  'user': '用户设置',
-  'default': '默认设置',
   'Change AMADEUS_CHARACTER_ID in the parent process environment, then reopen Amadeus. Desktop recovery is locked by that source.': '请修改父进程环境中的 AMADEUS_CHARACTER_ID，然后重新打开 Amadeus。此来源锁定了桌面恢复操作。',
   'Use built-in Kurisu and restart': '使用内置红莉栖并重启',
   'Built-in Kurisu was saved, but backend restart failed.': '内置红莉栖已保存，但后端重启失败。',
@@ -1177,7 +1177,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const t = useCallback((source: string, variables: TranslateVariables = {}) => {
     let result = locale === 'zh-CN' ? ZH_CN[source] || source : source
     for (const [key, value] of Object.entries(variables)) {
-      result = result.replaceAll(`{${key}}`, String(value))
+      result = result.replaceAll(`{${key}}`, () => String(value))
     }
     return result
   }, [locale])

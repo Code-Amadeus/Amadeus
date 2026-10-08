@@ -37,6 +37,7 @@ function AmadeusApp() {
   const [renderActive, setRenderActive] = useState(false)
   const [wallpaperActive, setWallpaperActive] = useState(false)
   const [renderAssetUrl, setRenderAssetUrl] = useState('')
+  const projectionRequestRef = useRef(0)
 
   useEffect(() => {
     if (desktopProjection) return
@@ -77,14 +78,18 @@ function AmadeusApp() {
 
   // These toggles own projection visibility. The backend's shared graph signal
   // route must remain active for speech and expressions on either surface.
+  // Async replies may only apply to the latest projection toggle.
   const handleToggleRender = useCallback(async () => {
+    const request = ++projectionRequestRef.current
     const next = !renderActive
     setRenderActive(next)
     setPage('chat')
 
     if (next) {
       if (wallpaperActive) {
-        if (!await stopElectronSliceHost(send)) {
+        const stopped = await stopElectronSliceHost(send)
+        if (request !== projectionRequestRef.current) return
+        if (!stopped) {
           setRenderActive(false)
           return
         }
@@ -93,10 +98,12 @@ function AmadeusApp() {
       // Start AssetServer and get the render page URL
       try {
         const res = await send('render.start', {})
+        if (request !== projectionRequestRef.current) return
         const url = typeof res?.url === 'string' ? res.url : ''
         setRenderAssetUrl(url)
         setRenderActive(Boolean(url))
       } catch {
+        if (request !== projectionRequestRef.current) return
         setRenderActive(false)
         setRenderAssetUrl('')
       }
@@ -108,25 +115,30 @@ function AmadeusApp() {
 
   // Toggle the Electron Slice wallpaper projection.
   const handleToggleWallpaper = useCallback(async () => {
+    const request = ++projectionRequestRef.current
     const next = !wallpaperActive
     setPage('chat')
 
     if (next) {
       setWallpaperActive(true)
       if (renderActive) {
-        try { await send('render.stop', {}) } catch {}
         setRenderActive(false)
         setRenderAssetUrl('')
+        try { await send('render.stop', {}) } catch {}
+        if (request !== projectionRequestRef.current) return
       }
       try {
         const res = await send('wallpaper.start', ELECTRON_SLICE_START_PARAMS)
+        if (request !== projectionRequestRef.current) return
         if (res?.status === 'error') setWallpaperActive(false)   // 失败回退
         else await syncElectronSliceHost(res)
       } catch {
+        if (request !== projectionRequestRef.current) return
         setWallpaperActive(false)     // 失败回退
       }
     } else {
-      if (await stopElectronSliceHost(send)) setWallpaperActive(false)
+      const stopped = await stopElectronSliceHost(send)
+      if (request === projectionRequestRef.current && stopped) setWallpaperActive(false)
     }
   }, [wallpaperActive, renderActive, send])
 

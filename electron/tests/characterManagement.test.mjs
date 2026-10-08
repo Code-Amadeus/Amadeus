@@ -17,8 +17,9 @@ function compile(relativePath, dependencies = require) {
   new Function('require', 'exports', code)(dependencies, exports)
   return exports
 }
-const startup = compile('../src/main/backendStartup.ts')
-const management = compile('../src/renderer/components/characterManagement.ts', name => name === '../../main/backendStartup' ? startup : require(name))
+const shared = compile('../src/shared/characterStartup.ts')
+const startup = compile('../src/main/backendStartup.ts', name => name === '../shared/characterStartup.js' ? shared : require(name))
+const management = compile('../src/renderer/components/characterManagement.ts', name => name === '../../shared/characterStartup' ? shared : require(name))
 const { DesktopSettingsStore } = compile('../src/main/desktopSettings.ts', name => name === 'electron'
   ? { safeStorage: { isEncryptionAvailable: () => false } } : require(name))
 const selection = { characterId: 'missing-role', source: 'user', locked: false }
@@ -124,6 +125,7 @@ test('fresh catalog edits do not replace the pinned active name and parent autho
 const React = require('react')
 const { renderToStaticMarkup } = require('react-dom/server')
 const { StartupFailureCard } = compile('../src/renderer/components/BackendStartupRecovery.tsx', name => {
+  if (name === '../../shared/characterStartup') return shared
   if (name === '../i18n') return { useI18n: () => ({ t: (value, variables = {}) => value.replace(/\{(\w+)\}/g, (_, key) => variables[key] ?? `{${key}}`) }) }
   if (name === './SettingsPrimitives') return { CardShell: ({ children }) => React.createElement('div', null, children) }
   return require(name)
@@ -131,6 +133,7 @@ const { StartupFailureCard } = compile('../src/renderer/components/BackendStartu
 
 const { default: CharacterManagementSettings, CharacterRoleLabel } = compile('../src/renderer/components/CharacterManagementSettings.tsx', name => {
   if (name === './characterManagement') return management
+  if (name === '../../shared/characterStartup') return shared
   if (name === '../i18n') return { useI18n: () => ({ t: (value, variables = {}) => value.replace(/\{(\w+)\}/g, (_, key) => variables[key] ?? `{${key}}`) }) }
   if (name === './SettingsPrimitives') return { CardShell: ({ children }) => React.createElement('div', null, children) }
   return require(name)
@@ -204,4 +207,89 @@ test('restart marker survives a fresh label render and is absent for unchanged, 
   assert.doesNotMatch(render({ ...record, pending_restart: false }), /Modified\./)
   assert.doesNotMatch(render({ ...record, valid: false }), /Modified\./)
   assert.doesNotMatch(render(record, false), /Modified\./)
+})
+
+
+const flush = () => new Promise(resolve => setImmediate(resolve))
+function catalogHarness(send) {
+  const source = fs.readFileSync(new URL('../src/renderer/components/CharacterManagementSettings.tsx', import.meta.url), 'utf8')
+  const ast = ts.createSourceFile('settings.tsx', source, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX)
+  const component = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'CharacterManagementSettings')
+  const refresh = component.body.statements.filter(ts.isVariableStatement)
+    .flatMap(node => [...node.declarationList.declarations]).find(node => node.name.getText(ast) === 'refresh')
+  const effect = component.body.statements.find(node => ts.isExpressionStatement(node)
+    && ts.isCallExpression(node.expression) && node.expression.expression.getText(ast) === 'useEffect').expression.arguments[0]
+  const perform = component.body.statements.filter(ts.isVariableStatement)
+    .flatMap(node => [...node.declarationList.declarations]).find(node => node.name.getText(ast) === 'perform')
+  const state = { characters: [], active: null, limits: null, error: '', notice: '', busy: false }
+  const bindings = { send, characterCatalog: management.characterCatalog, generation: { current: 0 },
+    ...Object.fromEntries(Object.keys(state).map(key => [`set${key[0].toUpperCase()}${key.slice(1)}`, value => { state[key] = value }])) }
+  const code = ts.transpileModule(`const refresh = ${refresh.initializer.arguments[0].getText(ast)};
+    const perform = ${perform.initializer.getText(ast)};
+    return { refresh, perform, effect: connected => (${effect.getText(ast)})() };`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const handlers = new Function(...Object.keys(bindings), code)(...Object.values(bindings))
+  let cleanup
+  return { state, ...handlers, connect(value) { cleanup?.(); cleanup = handlers.effect(value) }, unmount() { cleanup?.() } }
+}
+
+test('role catalog reconnect clears an earlier failure and ignores old connection results', async () => {
+  const pending = []
+  const page = catalogHarness(() => new Promise((resolve, reject) => pending.push({ resolve, reject })))
+  page.connect(true)
+  pending[0].reject(new Error('old connection failed')); await flush()
+  assert.equal(page.state.error, 'old connection failed')
+  page.connect(false); page.connect(true)
+  pending[1].resolve({ characters: [{ character_id: 'one', persona: '', name: 'Reconnected' }], active }); await flush()
+  assert.equal(page.state.error, '')
+  assert.equal(page.state.characters[0].name, 'Reconnected')
+  const previous = page.refresh()
+  page.connect(false); page.connect(true)
+  pending[3].reject(new Error('new connection failed')); await flush()
+  pending[2].resolve({ characters: [{ character_id: 'one', persona: '', name: 'Stale' }] }); await previous
+  assert.equal(page.state.error, 'new connection failed')
+  assert.equal(page.state.characters[0].name, 'Reconnected')
+  const last = page.refresh(); page.unmount()
+  pending[4].resolve({ characters: [] }); await last
+  assert.equal(page.state.error, 'new connection failed')
+  assert.equal(page.state.characters[0].name, 'Reconnected')
+})
+
+test('an older list response cannot clear a newer refresh or save failure', async () => {
+  const pending = []
+  const page = catalogHarness(() => new Promise((resolve, reject) => pending.push({ resolve, reject })))
+  const first = page.refresh(), second = page.refresh()
+  pending[1].reject(new Error('latest list failed')); await second
+  pending[0].resolve({ characters: [{ character_id: 'one', persona: '', name: 'Stale' }] }); await first
+  assert.equal(page.state.error, 'latest list failed')
+  assert.deepEqual(page.state.characters, [])
+  const third = page.refresh()
+  await page.perform(async () => { throw new Error('save failed') })
+  pending[2].resolve({ characters: [{ character_id: 'one', persona: '', name: 'Stale' }] }); await third
+  assert.equal(page.state.error, 'save failed')
+  assert.equal(page.state.busy, false)
+})
+
+test('shared selection authority matches actual desktop snapshots and all source labels', t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'am-m1-source-'))
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+  const dotenv = path.join(directory, '.env')
+  const store = new DesktopSettingsStore(path.join(directory, 'settings.json'), dotenv)
+  function check(env, source, label, locked = false) {
+    const value = shared.startupCharacterSelection(store.snapshot(env))
+    assert.equal(value.source, source)
+    assert.equal(value.locked, locked)
+    assert.equal(shared.settingSourceLabel(value.source), label)
+    const html = renderToStaticMarkup(React.createElement(StartupFailureCard, {
+      failure: startup.backendStartupFailure(78, 'exit', value), recovering: false, error: '', notice: '', onRecover() {},
+    }))
+    assert.ok(html.includes(`Startup selection source: ${label}`))
+  }
+  check({}, 'default', 'Built-in default')
+  fs.writeFileSync(dotenv, 'AMADEUS_CHARACTER_ID=dotenv-role\n')
+  check({}, 'dotenv', '.env')
+  store.update({}, { values: { AMADEUS_CHARACTER_ID: 'user-role' } })
+  check({}, 'user', 'Desktop settings')
+  check({ AMADEUS_CHARACTER_ID: 'environment-role' }, 'environment', 'Process environment', true)
 })

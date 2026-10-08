@@ -170,8 +170,8 @@ function compileModule(relative, dependencies = {}) {
   new Function('require', 'exports', code)(name => dependencies[name] || require(name), exports)
   return exports
 }
-const startup = compileModule('../src/main/backendStartup.ts')
-const management = compileModule('../src/renderer/components/characterManagement.ts', { '../../main/backendStartup': startup })
+const startup = compileModule('../src/shared/characterStartup.ts')
+const management = compileModule('../src/renderer/components/characterManagement.ts', { '../../shared/characterStartup': startup })
 assert.ok(catalogEffectSource)
 const catalogEffectCode = ts.transpileModule(`const catalogEffect = ${catalogEffectSource}`, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
@@ -205,7 +205,7 @@ test('ChatPage reads fresh catalog names on connection and ignores results after
   assert.equal(catalogs[0].method, 'character.list')
   page.render(false); page.render(true)
   catalogs[0].resolve({ characters: [role('other-role', 'Old name')] })
-  settings[0]({ sources: { AMADEUS_CHARACTER_ID: 'environment' } })
+  settings[0]({ sources: { AMADEUS_CHARACTER_ID: 'environment' }, locked: { AMADEUS_CHARACTER_ID: true } })
   await flush()
   assert.equal(page.state.characters, null)
   assert.equal(page.state.locked, false)
@@ -221,12 +221,12 @@ test('ChatPage reads fresh catalog names on connection and ignores results after
   assert.equal(returnedPage.state.characters[0].name, 'Renamed in Settings')
 })
 
-test('catalog lookup failures stay unknown and only desktop locked/environment facts select environment guidance', async () => {
+test('catalog lookup failures stay unknown and desktop lock facts select environment guidance', async () => {
   const snapshots = [
     [null, false],
     [{ sources: { AMADEUS_CHARACTER_ID: 'user' } }, false],
     [{ sources: { AMADEUS_CHARACTER_ID: 'dotenv' } }, false],
-    [{ sources: { AMADEUS_CHARACTER_ID: 'environment' } }, true],
+    [{ sources: { AMADEUS_CHARACTER_ID: 'environment' }, locked: { AMADEUS_CHARACTER_ID: true } }, true],
     [{ locked: { AMADEUS_CHARACTER_ID: true } }, true],
   ]
   for (const [snapshot, expected] of snapshots) {
@@ -356,8 +356,8 @@ test('the actual rail callbacks deny foreign and unknown-owner access while same
     assert.equal(select.props.children[0].props.children, session.title)
     assert.equal(Boolean(remove.props.disabled), session.id !== 'own')
     select.props.onDoubleClick()
-    // Also exercise the handler behind native disabled-button behavior.
-    remove.props.onClick({ stopPropagation() {} })
+    // Native disabled buttons cannot dispatch clicks.
+    if (!remove.props.disabled) remove.props.onClick({ stopPropagation() {} })
     select.props.onClick()
     if (session.id === 'foreign') {
       assert.match(select.props.title, /Character: Kurisu \(kurisu\)/)
@@ -369,7 +369,7 @@ test('the actual rail callbacks deny foreign and unknown-owner access while same
   assert.deepEqual(calls.rename, [['own', 'Own chat']])
   assert.deepEqual(calls.delete, ['own'])
   assert.deepEqual(calls.select, ['own'])
-  assert.equal(calls.notice.length, 9)
+  assert.equal(calls.notice.length, 6)
 })
 
 test('offline rail keeps known foreign names, omits current-role labels and denies all session actions', () => {
@@ -386,12 +386,12 @@ test('offline rail keeps known foreign names, omits current-role labels and deni
     const select = buttons.find(button => button.props['data-chat-session-id'] === session.id)
     const remove = buttons.find(button => button.props['aria-label'] === `Delete ${session.title}`)
     assert.equal(remove.props.disabled, true)
-    select.props.onClick(); select.props.onDoubleClick(); remove.props.onClick({ stopPropagation() {} })
+    select.props.onClick(); select.props.onDoubleClick()
   }
   assert.deepEqual(calls.select, [])
   assert.deepEqual(calls.rename, [])
   assert.deepEqual(calls.delete, [])
-  assert.equal(calls.notice.length, 6)
+  assert.equal(calls.notice.length, 4)
   for (const notice of calls.notice) {
     assert.match(notice, /Reconnect/)
     assert.doesNotMatch(notice, /Use at next start|AMADEUS_CHARACTER_ID/)

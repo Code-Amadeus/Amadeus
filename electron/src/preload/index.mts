@@ -3,7 +3,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron'
-import type { BackendStartupFailure } from '../main/backendStartup.js'
+import type { BackendStartupFailure } from '../shared/characterStartup.js'
 
 type WorkPreviewBounds = { x: number; y: number; width: number; height: number }
 type WorkPreviewListener = (payload: Record<string, unknown>) => void

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { BackendStartupFailure } from '../../main/backendStartup'
+import { settingSourceLabel, type BackendStartupFailure } from '../../shared/characterStartup'
 import { useI18n } from '../i18n'
 import { CardShell } from './SettingsPrimitives'
 
@@ -20,7 +20,7 @@ export function StartupFailureCard({ failure, recovering, error, notice, onRecov
       <div className="settings-field-description">{failure.kind === 'character'
         ? t('The selected role is missing or invalid. Its file and your other settings have been kept.') : failure.detail}</div>
       {failure.kind === 'character' ? <>
-        <div className="settings-field-description">{t('Startup selection source: {source}', { source: failure.selection.source === 'dotenv' ? '.env' : t(failure.selection.source) })}
+        <div className="settings-field-description">{t('Startup selection source: {source}', { source: t(settingSourceLabel(failure.selection.source)) })}
           {failure.selection.characterId ? ` · ${failure.selection.characterId}` : ''}</div>
         {failure.selection.locked ? <div className="settings-field-description">{t('Change AMADEUS_CHARACTER_ID in the parent process environment, then reopen Amadeus. Desktop recovery is locked by that source.')}</div> : null}
         <div className="character-prompt-actions"><button type="button" disabled={recovering || failure.selection.locked} onClick={onRecover}>{t(recovering ? 'Restarting…' : 'Use built-in Kurisu and restart')}</button></div>

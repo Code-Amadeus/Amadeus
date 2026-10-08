@@ -73,7 +73,7 @@ export default function ChatAvatarSettings() {
     { role: 'user', title: t('Your avatar'), detail: 'Shown beside your messages', fallback: 'U' },
     { role: 'assistant', title: activeCharacter
       ? t('{name} avatar', { name: activeCharacter.short_name }) : t('Assistant avatar'),
-      detail: 'Shown beside Amadeus responses', fallback: activeCharacter?.short_name.slice(0, 1) || 'A' },
+      detail: 'Shown beside Amadeus responses', fallback: Array.from(activeCharacter?.short_name || '')[0] || 'A' },
   ]
 
   return (

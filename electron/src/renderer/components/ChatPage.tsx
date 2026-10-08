@@ -42,7 +42,7 @@ import {
   chatTranslationKey,
 } from './chatTranslationState'
 import { useI18n } from '../i18n'
-import { startupCharacterSelection } from '../../main/backendStartup'
+import { startupCharacterSelection } from '../../shared/characterStartup'
 import { characterCatalog, type CharacterRecord } from './characterManagement'
 import { visualStatusFromFrame, type VisualSurfaceStatus } from './characterVisuals'
 
@@ -557,7 +557,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     void window.amadeus?.getDesktopSettings().then(snapshot => {
       if (!current || !snapshot) return
       const selection = startupCharacterSelection(snapshot)
-      setStartupCharacterLocked(selection.locked || selection.source === 'environment')
+      setStartupCharacterLocked(selection.locked)
     }).catch(() => {})
     return () => { current = false }
   }, [connected, send])

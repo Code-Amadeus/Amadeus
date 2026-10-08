@@ -14,7 +14,7 @@
   },
   "build": {
     "directories": { "output": "build" },
-    "files": ["dist/main/**/*", "dist/preload/**/*", "dist/renderer/**/*", "package.json"],
+    "files": ["dist/main/**/*", "dist/shared/**/*", "dist/preload/**/*", "dist/renderer/**/*", "package.json"],
     "beforePack": "scripts/build-windows-wallpaper.cjs",
     "win": {
       "icon": "../assets/icons/app/app_icon.ico",

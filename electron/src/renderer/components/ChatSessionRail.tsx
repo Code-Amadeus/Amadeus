@@ -182,7 +182,7 @@ function SessionRow({
       <button
         type="button"
         disabled={!canMutate}
-        onClick={event => { event.stopPropagation(); if (canMutate) onDelete(); else onNotice(mutationNotice) }}
+        onClick={event => { event.stopPropagation(); onDelete() }}
         title={mutationNotice || t('Delete chat')}
         aria-label={`${t('Delete')} ${session.title || t('chat')}`}
         className="opacity-0 group-hover:opacity-100 border-none bg-transparent cursor-pointer disabled:cursor-not-allowed"

@@ -1,3 +1,4 @@
+import { settingSourceLabel } from '../../shared/characterStartup'
 import { DEFAULT_WINDOWS_STARTUP_MODE } from '../../main/startupMode'
 import { useState, useEffect, useCallback, useMemo, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import FluentIcon, { type FluentIconName } from './FluentIcon'
@@ -271,13 +272,6 @@ function RoleAssignmentCard({
   )
 }
 
-function sourceLabel(source: string): string {
-  if (source === 'environment') return 'Process environment'
-  if (source === 'user') return 'Desktop settings'
-  if (source === 'dotenv') return '.env'
-  return 'Built-in default'
-}
-
 function InlineFieldAction({ label, glyph, busy = false, tone = 'normal', disabled, onClick }: {
   label: string
   glyph: string
@@ -343,7 +337,7 @@ function StartupFieldRow({ field, desktop, onSave }: {
       <div className="flex-1 min-w-0">
         <div className="settings-field-label">{t(field.label)}</div>
         <div className="settings-field-description">
-          {field.description ? `${t(field.description)} · ` : ''}{t(sourceLabel(source))}{electronUnavailable ? ` · ${t('editable in Electron app')}` : environmentLocked ? ` · ${t('locked')}` : ''}{field.restart_required ? ` · ${t('restart required')}` : ''}
+          {field.description ? `${t(field.description)} · ` : ''}{t(settingSourceLabel(source))}{electronUnavailable ? ` · ${t('editable in Electron app')}` : environmentLocked ? ` · ${t('locked')}` : ''}{field.restart_required ? ` · ${t('restart required')}` : ''}
         </div>
       </div>
       <div className="settings-field-control flex items-center gap-1.5 shrink-0" style={{ width: 320, maxWidth: '43%' }}>

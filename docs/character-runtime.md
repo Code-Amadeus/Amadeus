@@ -42,8 +42,10 @@ Every conversation stores an immutable `character_id`. New conversations use the
 startup character. Older session files without the field belong to `kurisu`;
 explicit invalid values fail validation. Opening, continuing, renaming or deleting
 another character's conversation is refused before its file, active history,
-project context or turn authority changes. The error names the startup setting
-needed to use the owning character. The conversation list retains its title and
+project context or turn authority changes. The error identifies the owning
+character and explains that selecting it for the next backend start and restarting
+is required. The desktop directs users to Settings → General → Character roles;
+CLI launches select the character with `AMADEUS_CHARACTER_ID` before restarting. The conversation list retains its title and
 character identity, with rename/delete controls disabled, without exposing its
 transcript through a separate history reader. This is the application's character
 ownership rule, not a separate local-user access-control system or global session

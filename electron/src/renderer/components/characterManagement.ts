@@ -1,4 +1,4 @@
-import { STARTUP_CHARACTER_KEY, startupCharacterSelection } from '../../main/backendStartup'
+import { STARTUP_CHARACTER_KEY, startupCharacterSelection } from '../../shared/characterStartup'
 
 export type CharacterRecord = {
   character_id: string

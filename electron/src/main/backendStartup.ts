@@ -1,21 +1,7 @@
 import type { ChildProcess } from 'node:child_process'
+import { STARTUP_CHARACTER_KEY, type BackendStartupFailure, type StartupCharacterSelection } from '../shared/characterStartup.js'
 
 export const CHARACTER_STARTUP_EXIT_CODE = 78
-export const STARTUP_CHARACTER_KEY = 'AMADEUS_CHARACTER_ID'
-
-export type CharacterSelectionSource = 'environment' | 'user' | 'dotenv' | 'default'
-export type StartupCharacterSelection = {
-  characterId: string | null
-  source: CharacterSelectionSource
-  locked: boolean
-}
-
-export type BackendStartupFailure = {
-  kind: 'character' | 'backend'
-  detail: string
-  selection: StartupCharacterSelection
-}
-
 export class BackendStartupExitError extends Error {
   constructor(readonly exitCode: number | null) {
     super(`Backend exited before readiness (code ${exitCode}).`)
@@ -40,20 +26,6 @@ export async function waitForBackendReadiness(proc: ChildProcess | null, health:
     }
     throw new Error(`backend did not become ready within ${timeoutMs}ms`)
   } finally { proc?.off('error', onError) }
-}
-
-export function startupCharacterSelection(snapshot: {
-  values?: Record<string, unknown>
-  sources?: Record<string, unknown>
-  locked?: Record<string, unknown>
-}): StartupCharacterSelection {
-  const source = snapshot.sources?.[STARTUP_CHARACTER_KEY] as CharacterSelectionSource || 'default'
-  const value = snapshot.values?.[STARTUP_CHARACTER_KEY]
-  return {
-    characterId: typeof value === 'string' ? value : source === 'default' ? 'kurisu' : null,
-    source,
-    locked: snapshot.locked?.[STARTUP_CHARACTER_KEY] === true,
-  }
 }
 
 export function backendStartupFailure(exitCode: number | null | undefined, detail: string, selection: StartupCharacterSelection): BackendStartupFailure {

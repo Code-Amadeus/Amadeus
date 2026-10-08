@@ -55,7 +55,7 @@ export default function AuipExperienceCard({
         aria-expanded={expanded}
         onClick={() => setExpanded(value => !value)}
       >
-        <span className="auip-experience-avatar" aria-hidden="true">{activeCharacter?.short_name.slice(0, 1) || 'A'}</span>
+        <span className="auip-experience-avatar" aria-hidden="true">{Array.from(activeCharacter?.short_name || '')[0] || 'A'}</span>
         <span className="auip-experience-heading">
           <small>ATTACHED EXPERIENCE</small>
           <strong>{experience.title}</strong>

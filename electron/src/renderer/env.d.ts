@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { BackendStartupFailure } from '../main/backendStartup'
+import type { BackendStartupFailure } from '../shared/characterStartup'
 
 export declare global {
   interface WorkPreviewDescriptor {
