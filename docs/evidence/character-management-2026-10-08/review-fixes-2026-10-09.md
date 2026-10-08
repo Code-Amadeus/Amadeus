@@ -5,7 +5,34 @@ This repair covers findings 1–8, 10, 12 and 13 from the PR #167 review.
 No role hot switching, per-role media, new default UI decoration, or prompt
 assembly changes are added. Amadeus remains the application name.
 
-## Follow-up: confirmed Wallpaper stops
+## Latest follow-up: stop acknowledgements belong to a Wallpaper activation
+
+Product revision: `522970f9ec8e815b9dc66f94fc37fb65e1dba4ed`. The prior latest-target check below is
+superseded. It forgot that Wallpaper had restarted as soon as a later click
+selected Render, allowing an old successful cleanup acknowledgement to clear the
+new Wallpaper indicator after its own stop failed.
+
+A monotonic activation generation now advances at manual start, startup
+auto-start and `wallpaper.ready`. Both stop callers capture that generation;
+only a matching successful acknowledgement can clear the Wallpaper state. The
+old target field and type are removed. The existing latest-request counter
+still owns start continuations. A normal fast switch where `ready` and `exited`
+precede their corresponding RPC replies continues into Render successfully.
+
+Eight regression cases reproduced the old defect: both stop callers crossed
+manual, manual-plus-ready, ready-only and automatic starts, followed by a failed
+new stop and a delayed old success. A ninth case preserves the normal fast-switch
+path with actual FIFO event/reply ordering. All tests use the production App
+callbacks, event subscriptions and stop helper with controlled completions.
+
+- Projection and stop files: **31 passed**; full Electron: **321 passed**.
+- `npm run build`: passed. Python contracts reading App.tsx: **25 passed**.
+- Final unmodified desktop smoke: **11/11 passed**, owned processes exited.
+- Python sources, prompt construction and assets are unchanged. The earlier
+  full Python and prompt evidence remains scoped to its recorded revisions;
+  no full Python or optional real-asset acceptance was repeated for this repair.
+
+## Earlier follow-up: confirmed Wallpaper stops
 
 Follow-up product revision: `17d15edc7398e45062eb6bab7ace5f9ad14a3d7c`. The second review found that a
 cancelled Render request discarded a completed Wallpaper stop. The original

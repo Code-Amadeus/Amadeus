@@ -74,5 +74,27 @@
     "normal_backend_exit_event_already_clears_state": true,
     "regressions_before_fix": 3,
     "overlap_validation": "production callbacks, event subscriptions and stop helper with controlled completions"
+  },
+  "wallpaper_activation_follow_up": {
+    "tested_product_revision": "522970f9ec8e815b9dc66f94fc37fb65e1dba4ed",
+    "supersedes": "latest-target stop acknowledgement guard",
+    "activation_sources": [
+      "manual start",
+      "startup auto-start",
+      "wallpaper.ready"
+    ],
+    "old_bug_regressions": 8,
+    "normal_fast_switch_regressions": 1,
+    "projection_and_stop_passed": 31,
+    "electron_passed": 321,
+    "build": "passed",
+    "app_source_python_contracts_passed": 25,
+    "official_desktop_smoke": {
+      "passed": 11,
+      "total": 11
+    },
+    "python_sources_changed": false,
+    "full_python_rerun": false,
+    "optional_assets_retested": false
   }
 }
