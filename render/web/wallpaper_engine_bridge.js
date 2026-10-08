@@ -344,7 +344,9 @@
         holdSpriteFrame: true,
         clearSpriteHold: true,
         setSubtitle: true,
-        loadLive2DModel: true,
+        configureCharacter: true,
+        triggerCharacterIntent: true,
+        releaseCharacter: true,
         loadTransitionFrames: true,
       },
       noSpriteFrames: {
@@ -355,7 +357,7 @@
         setIdleFrameIntervalMs: true,
       },
       noLive2D: {
-        loadLive2DModel: true,
+        configureCharacter: true,
       },
       noMouth: {
         loadMouthConfig: true,
@@ -512,6 +514,15 @@
   function connectEvents() {
     if (_es) { try { _es.close(); } catch (e) {} }
     _es = new EventSource(endpoint("events"));
+    _es.onopen = function () {
+      // A new Host owns a new bridge credential. Refresh it before reporting
+      // the currently configured surface; bootstrap may already have applied.
+      return resolveBridgePort().then(function () {
+        if (window.renderApp && window.renderApp.getCharacterStatus) {
+          postCharacterStatus(window.renderApp.getCharacterStatus());
+        }
+      });
+    };
     _es.onmessage = function (ev) {
       try {
         applyCall(JSON.parse(ev.data));
@@ -521,6 +532,10 @@
       }
     };
     _es.onerror = function () {
+      if (window.wallpaperApp) {
+        window.wallpaperApp.setSpeaking(false);
+        window.wallpaperApp.setMouth(0);
+      }
       console.warn("[WEBridge] event stream disconnected; browser will retry");
       clientLog("event.disconnected", {}, "warning");
     };
@@ -564,6 +579,21 @@
       clientLog("pixi.opaque_failed", { error: String(err && (err.stack || err)) }, "warning");
     }
   }
+
+  function postCharacterStatus(status) {
+    status = status || {};
+    var token = window.__amadeusBridgeToken;
+    if (!token || status.surface !== "wallpaper") return;
+    fetch("http://127.0.0.1:" + bridgePort() + "/wallpaper/character-status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Amadeus-Bridge-Token": token },
+      body: JSON.stringify(status),
+    }).catch(function (error) { console.warn("[WEBridge] character status failed", error); });
+  }
+
+  window.addEventListener("amadeus-character-status", function (event) {
+    postCharacterStatus(event.detail);
+  });
 
   function getPixiApp() {
     try {

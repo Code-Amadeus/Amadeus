@@ -39,6 +39,12 @@ def test_late_wallpaper_start_reads_shared_activity_and_last_release_clears_it(t
             def set_canvas(self, _payload):
                 pass
 
+            def trigger_character_intent(self, _label, options):
+                self.intent = options
+
+            def release_character(self, _options):
+                self.intent = None
+
         class Animator:
             def __init__(self, _bridge):
                 pass
@@ -53,7 +59,8 @@ def test_late_wallpaper_start_reads_shared_activity_and_last_release_clears_it(t
         monkeypatch.setattr("render.spriteforge_animator.SpriteForgeAnimator", Animator)
         presentation = CharacterPresentationCoordinator(bus.emit, emit_now=bus.emit_now)
         handler = WallpaperHandler()
-        handler.configure(project_root=tmp_path, current_activity=presentation.current_activity)
+        handler.configure(project_root=tmp_path, current_activity=presentation.current_activity,
+                          current_presentation=presentation.current_transition)
         scene_events = []
 
         async def capture(_method, params):
@@ -75,6 +82,8 @@ def test_late_wallpaper_start_reads_shared_activity_and_last_release_clears_it(t
         bridge = created[0]
         assert bridge.activities == ["work" if owners else ""]
         assert scene_events == before  # Restoring output never repeats a claim/event.
+        assert bridge.intent["semantic_label"] == "thinking"
+        assert bridge.intent["presentation_source_id"] == "speaking"
         for index, owner in enumerate(owners):
             await presentation.release(source_kind=owner, source_id=owner + "-owner",
                 scenario="computer-use")

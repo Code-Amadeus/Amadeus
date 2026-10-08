@@ -33,9 +33,9 @@ def test_releasing_one_source_restores_the_remaining_source() -> None:
         await presentation.release(source_kind="auip", source_id="app-1")
 
         assert [method for method, _ in emitted] == [
-            Method.RENDER_SPRITEFORGE_INTENT,
-            Method.RENDER_SPRITEFORGE_INTENT,
-            Method.RENDER_SPRITEFORGE_INTENT,
+            Method.RENDER_CHARACTER_INTENT,
+            Method.RENDER_CHARACTER_INTENT,
+            Method.RENDER_CHARACTER_INTENT,
         ]
         assert emitted[-1][1]["semantic_label"] == "work"
         assert emitted[-1][1]["presentation_source_kind"] == "work"
@@ -71,7 +71,7 @@ def test_utterance_temporarily_overrides_ambient_without_destroying_it() -> None
 
         assert emitted[1][1]["presentation_tier"] == "utterance"
         assert emitted[-1][1]["presentation_source_kind"] == "auip"
-        assert all(method != Method.RENDER_SPRITEFORGE_RELEASE for method, _ in emitted)
+        assert all(method != Method.RENDER_CHARACTER_RELEASE for method, _ in emitted)
 
     asyncio.run(run())
 
@@ -124,7 +124,7 @@ def test_last_release_is_the_only_global_release() -> None:
         await presentation.release(source_kind="work", source_id="active-work")
         await presentation.release(source_kind="work", source_id="active-work")
 
-        releases = [item for item in emitted if item[0] == Method.RENDER_SPRITEFORGE_RELEASE]
+        releases = [item for item in emitted if item[0] == Method.RENDER_CHARACTER_RELEASE]
         assert len(releases) == 1
 
     asyncio.run(run())
@@ -149,8 +149,8 @@ def test_auip_lifecycle_claims_and_releases_its_own_identity() -> None:
             target=presentation,
         )
 
-        intents = [item for item in emitted if item[0] == Method.RENDER_SPRITEFORGE_INTENT]
-        releases = [item for item in emitted if item[0] == Method.RENDER_SPRITEFORGE_RELEASE]
+        intents = [item for item in emitted if item[0] == Method.RENDER_CHARACTER_INTENT]
+        releases = [item for item in emitted if item[0] == Method.RENDER_CHARACTER_RELEASE]
         scenes = [item for item in emitted if item[0] == Method.WALLPAPER_ACTIVITY]
         assert intents[0][1]["presentation_source_kind"] == "auip"
         assert intents[0][1]["presentation_source_id"] == "app-1"
@@ -200,7 +200,7 @@ def test_playback_claim_spans_one_multi_sentence_turn_without_reentering() -> No
 
     playback.release_all()
     assert len(emitted) == 2
-    assert emitted[1][0] == Method.RENDER_SPRITEFORGE_RELEASE
+    assert emitted[1][0] == Method.RENDER_CHARACTER_RELEASE
 
 
 def test_normal_playback_release_marks_the_renderer_handoff_after_speech() -> None:
@@ -226,7 +226,7 @@ def test_normal_playback_release_marks_the_renderer_handoff_after_speech() -> No
 
     playback.release_all(handoff="after_speech")
 
-    assert emitted[-1][0] == Method.RENDER_SPRITEFORGE_RELEASE
+    assert emitted[-1][0] == Method.RENDER_CHARACTER_RELEASE
     assert emitted[-1][1]["presentation_handoff"] == "after_speech"
 
 
@@ -259,7 +259,7 @@ def test_after_speech_release_defers_the_restored_ambient_pose() -> None:
         handoff="after_speech",
     )
 
-    assert emitted[-1][0] == Method.RENDER_SPRITEFORGE_INTENT
+    assert emitted[-1][0] == Method.RENDER_CHARACTER_INTENT
     assert emitted[-1][1]["presentation_source_kind"] == "work"
     assert emitted[-1][1]["presentation_handoff"] == "after_speech"
 
@@ -286,7 +286,7 @@ def test_interrupt_release_remains_immediate() -> None:
 
     playback.release_all(handoff="immediate")
 
-    assert emitted[-1][0] == Method.RENDER_SPRITEFORGE_RELEASE
+    assert emitted[-1][0] == Method.RENDER_CHARACTER_RELEASE
     assert "presentation_handoff" not in emitted[-1][1]
 
 
@@ -314,7 +314,7 @@ def test_sentence_scoped_playback_still_releases_at_sentence_end() -> None:
     assert emitted[0][1]["presentation_source_id"] == (
         "vn-session-1:vn-sentence-1"
     )
-    assert emitted[1][0] == Method.RENDER_SPRITEFORGE_RELEASE
+    assert emitted[1][0] == Method.RENDER_CHARACTER_RELEASE
 
 
 def test_work_and_auip_share_one_computer_use_scene_until_both_finish() -> None:

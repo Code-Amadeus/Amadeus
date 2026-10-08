@@ -67,13 +67,10 @@ def test_ap_bwe_boundary_reports_missing_optional_component(monkeypatch) -> None
         "render/web/wallpaper_engine.html",
     ],
 )
-def test_live2d_vendor_is_local_and_explicit_opt_in(relative: str) -> None:
+def test_default_html_has_no_eager_live2d_sdk_requests(relative: str) -> None:
     source = (ROOT / relative).read_text(encoding="utf-8")
-    before_opt_in = source.split("if (live2dCompatEnabled)", 1)[0]
-
-    assert "live2dcubismcore.min.js" not in before_opt_in
-    assert "pixi-live2d-display.cubism4.min.js" not in before_opt_in
-    assert "live2dcubismcore.min.js" in source
-    assert "pixi-live2d-display.cubism4.min.js" in source
+    assert "live2dcubismcore.min.js" not in source
+    assert "pixi-live2d-display.cubism4.min.js" not in source
+    assert "live2dCompatEnabled" not in source
     assert "cubism.live2d.com" not in source
     assert "cdn.jsdelivr.net/npm/pixi-live2d-display" not in source

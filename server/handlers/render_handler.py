@@ -30,6 +30,8 @@ class RenderHandler(RequestHandler):
         self._ensure_runtime: Callable[[], Any] | None = None
         self._stop_runtime: Callable[[], None] | None = None
         self._backend_port = 17777
+        self._visual_store = None
+        self._character_closed = None
 
     def configure(
         self,
@@ -39,6 +41,8 @@ class RenderHandler(RequestHandler):
         ensure_runtime: Callable[[], Any] | None = None,
         stop_runtime: Callable[[], None] | None = None,
         state_bridge=None,
+        visual_store=None,
+        character_closed=None,
     ) -> None:
         self._project_root = project_root
         self._render_bridge = render_bridge
@@ -46,6 +50,11 @@ class RenderHandler(RequestHandler):
         self._ensure_runtime = ensure_runtime
         self._stop_runtime = stop_runtime
         self._state_bridge = state_bridge
+        self._visual_store = visual_store
+        self._character_closed = character_closed
+
+    def is_running(self) -> bool:
+        return self._render_bridge is not None
 
     async def handle(self, method: str, params: dict[str, Any]) -> dict[str, Any] | None:
         if method == Method.RENDER_START:
@@ -91,7 +100,9 @@ class RenderHandler(RequestHandler):
         _params: dict[str, Any],
     ) -> dict[str, Any]:
         """Replay registered SpriteForge state for a ready render surface."""
-        logger.info("[RenderHandler] render surface ready, replaying frames")
+        logger.info("[RenderHandler] render surface ready, replaying current selection")
+        if self._ensure_runtime is not None:
+            self._render_bridge = self._ensure_runtime()
         asyncio.create_task(self._do_replay())
         return {"status": "ok"}
 
@@ -99,9 +110,14 @@ class RenderHandler(RequestHandler):
         """Re-emit all registered state for newly-connected iframe clients."""
         if self._render_bridge is None:
             return
-        await self._replay_bridge(self._render_bridge)
+        if self._visual_store is not None and self._state_bridge is not None:
+            await self._state_bridge.configure_character(self._visual_store.runtime_config("render"))
+        if self._visual_store is None or self._visual_store.backend == "sprite":
+            await self._replay_bridge(self._render_bridge)
         if self._state_bridge is not None and self._state_bridge is not self._render_bridge:
             await self._replay_bridge(self._state_bridge)
+        from server.character_presentation import coordinator
+        await coordinator.replay_current()
 
     async def _replay_bridge(self, bridge) -> None:
         replay = getattr(bridge, "replay_all", None)
@@ -123,4 +139,6 @@ class RenderHandler(RequestHandler):
         if self._stop_runtime is not None:
             self._stop_runtime()
         self._render_bridge = None
+        if self._character_closed is not None:
+            self._character_closed("render")
         return {"status": "stopped"}

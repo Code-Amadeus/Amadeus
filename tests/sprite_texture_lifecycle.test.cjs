@@ -142,7 +142,7 @@ function fixture(t, { budgetBytes = 100, sampling = false, fps = 30 } = {}) {
       try { return select(); } finally { guardedMath.random = original; }
     },
     runtime() {
-      const runtimeEnd = source.indexOf('class Live2DRenderer {', end);
+      const runtimeEnd = source.indexOf('class SubtitleOverlay {', end);
       assert.ok(runtimeEnd > end);
       vm.runInContext(source.slice(end, runtimeEnd) + '\nglobalThis.SpriteForgeRuntime=SpriteForgeRuntime;', context);
       return new context.SpriteForgeRuntime(sprite);
@@ -670,7 +670,7 @@ test('rolling lookahead under a tiny budget evicts behind playback and reloads a
 
 test('graph entry-head hints use existing edges and config without extra decisions or clock resets', () => {
   const runtimeStart = source.indexOf('class SpriteForgeRuntime {');
-  const runtimeEnd = source.indexOf('class Live2DRenderer {', runtimeStart);
+  const runtimeEnd = source.indexOf('class SubtitleOverlay {', runtimeStart);
   assert.ok(runtimeStart >= 0 && runtimeEnd > runtimeStart);
   const hints = [], selections = [];
   let randomCalls = 0, autoDecisions = 0, holdsCleared = 0;

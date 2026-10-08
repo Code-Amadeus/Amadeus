@@ -7,12 +7,12 @@
  *   renderApp.setMouth(value 0-1)
  *   renderApp.setSubtitle(text)
  *   renderApp.loadSpriteFrames(emotion, [url, ...])
- *   renderApp.loadLive2DModel(url)
+ *   renderApp.configureCharacter(hostConfig)
  *   renderApp.loadTransitionFrames(fromEmotion, toEmotion, [url, ...])
- *   renderApp.setMode('sprite'|'live2d'|'both')
+ *   renderApp.triggerCharacterIntent(label, ownershipOptions)
  *
  * Deprecated compatibility boundary:
- * - SpriteRenderer and Live2DRenderer are the legacy foreground character paths.
+ * - SpriteRenderer retains the established SpriteForge frame contract.
  * - New wallpaper/work behavior should prefer SpriteForgeRuntime or
  *   wallpaper_scene.js scenario activities instead of adding new VTS/single
  *   sprite state here.
@@ -111,6 +111,17 @@
       this.sprite.addChild(this._mouthOverlay);
       this._mouthConfigs = {};     // label → js_cfg
 
+      this._characterActive = true;
+      this._openFrameResources();
+      window.addEventListener("unload", () => {
+        this._frameStore.destroy();
+        this._frameBackend.dispose();
+      }, { once: true });
+
+      this._startIdleTicker();
+    }
+
+    _openFrameResources() {
       this._frameBackend = window.FrameTextureBackend.createFrameTextureBackend({ renderer: app.renderer });
       this._frameStore = window.FrameStore.createFrameStore({
         backend: this._frameBackend,
@@ -120,12 +131,38 @@
         maxInFlight: 3,
         onViewChange: (view, index, texture) => this._onTextureViewChange(view, index, texture),
       });
-      window.addEventListener("unload", () => {
+    }
+
+    setActive(active) {
+      const enabled = active === true;
+      if (this._characterActive === enabled) return;
+      this._characterActive = enabled;
+      if (!enabled) {
+        this.sprite.texture = PIXI.Texture.EMPTY;
+        this._mouthOverlay.texture = PIXI.Texture.EMPTY;
+        this._hideMouthLayer();
+        this._transitionQueue = [];
         this._frameStore.destroy();
         this._frameBackend.dispose();
-      }, { once: true });
-
-      this._startIdleTicker();
+        return;
+      }
+      this._openFrameResources();
+      this._cycleDemandKey = "";
+      this._textureDemandRevision++;
+      for (const hint of this._prefetchHints.values()) hint.load = undefined;
+      for (const [label, urls] of Object.entries(this._frameUrls)) {
+        this._frames[label] = new Array(urls.length);
+        this._frameStore.replaceViews("frames:" + label, urls);
+        this._updateRequiredPins(label);
+      }
+      for (const [label, urls] of Object.entries(this._transitionUrls)) {
+        this._transitions[label] = new Array(urls.length);
+        this._frameStore.replaceViews("transition:" + label, urls);
+        this._frameStore.replacePins("transition:" + label, urls);
+      }
+      this._mouthConfigSignatures = {};
+      for (const [label, config] of Object.entries(this._mouthConfigs)) this.loadMouthConfig(label, config);
+      this._refreshTextureDemand();
     }
 
     // ---- Asset loading ----
@@ -726,7 +763,7 @@
             Math.round(app.ticker.deltaMS));
         }
 
-        if (!this._idleAnimationEnabled) { silentGuardHit++; return; }
+        if (!this._characterActive || !this._idleAnimationEnabled) { silentGuardHit++; return; }
         if (this._held) return;
         if (this._transitionQueue.length > 0) return;
 
@@ -830,8 +867,6 @@
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Live2DRenderer — optional pixi-live2d-display wrapper
   // ---------------------------------------------------------------------------
   class SpriteForgeRuntime {
     constructor(sprite) {
@@ -1283,77 +1318,7 @@
     }
   }
 
-  // Live2DRenderer — deprecated VTS/Live2D foreground path kept for compatibility.
-  class Live2DRenderer {
-    constructor(stage) {
-      this.stage = stage;
-      this.container = new PIXI.Container();
-      stage.addChild(this.container);
-      this._model = null;
-      this._available = typeof PIXI.live2d !== "undefined";
-      if (!this._available) {
-        console.warn("[Live2DRenderer] pixi-live2d-display is not loaded; Live2D is unavailable");
-      }
-    }
-
-    async loadModel(url) {
-      if (!this._available) return;
-      try {
-        const { Live2DModel } = PIXI.live2d;
-        const model = await Live2DModel.from(url);
-        if (this._model) {
-          this.container.removeChild(this._model);
-          this._model.destroy();
-        }
-        this._model = model;
-        this.container.addChild(model);
-        this._fitToStage();
-        console.log("[Live2DRenderer] model loaded:", url);
-      } catch (e) {
-        console.error("[Live2DRenderer] model load failed:", e);
-      }
-    }
-
-    setExpression(name) {
-      if (!this._model) return;
-      try {
-        this._model.expression(name);
-      } catch (e) {}
-    }
-
-    setMotion(group, priority) {
-      if (!this._model) return;
-      try {
-        this._model.motion(group, undefined, priority);
-      } catch (e) {}
-    }
-
-    setMouth(value) {
-      if (!this._model) return;
-      try {
-        this._model.internalModel.coreModel.setParameterValueById(
-          "ParamMouthOpenY", value
-        );
-      } catch (e) {}
-    }
-
-    resize(w, h) {
-      if (!this._model) return;
-      this._fitToStage();
-    }
-
-    _fitToStage() {
-      if (!this._model) return;
-      const w = app.renderer.width;
-      const h = app.renderer.height;
-      this._model.x = w / 2;
-      this._model.y = h / 2;
-      const scaleX = w / this._model.width;
-      const scaleY = h / this._model.height;
-      this._model.scale.set(Math.min(scaleX, scaleY));
-      this._model.anchor.set(0.5);
-    }
-  }
+  // Character rendering adapters live at their owning SDK boundary.
 
   // ---------------------------------------------------------------------------
   // Subtitle overlay
@@ -1411,19 +1376,25 @@
     constructor() {
       this.graphicsProfile = graphicsProfile;
       this._sprite = new SpriteRenderer(app.stage);
-      this._live2d = new Live2DRenderer(app.stage);
+      this._modelAdapter = null;
+      this._modelKind = "";
+      this._modelContainer = new PIXI.Container();
       this._subtitle = new SubtitleOverlay(app.stage);
       this._spriteforgeRuntime = new SpriteForgeRuntime(this._sprite);
       this._sprite.setCycleCompleteHandler((label) => this._spriteforgeRuntime.onCycleComplete(label));
-      this._mode = "sprite";  // 'sprite' | 'live2d' | 'both'
+      this._mode = "sprite";
+      this._currentIntent = null;
+      this._speaking = false;
+      this._mouth = 0;
+      this._characterConfig = null;
 
       // Initialize layers: sprite below, Live2D above, subtitles on top.
       app.stage.removeChildren();
       app.stage.addChild(this._sprite.container);
-      app.stage.addChild(this._live2d.container);
+      app.stage.addChild(this._modelContainer);
       app.stage.addChild(this._subtitle.container);
 
-      this._live2d.container.visible = false;
+      this._modelContainer.visible = false;
 
       // PixiJS' own resize event, fired after resizeTo applies, is more
       // reliable than window.resize. The callback w/h are physical pixels, so
@@ -1432,7 +1403,7 @@
         const w = app.screen.width;
         const h = app.screen.height;
         this._sprite.resize(w, h);
-        this._live2d.resize(w, h);
+        this._modelAdapter?.setViewport(this._characterViewport || null);
         this._subtitle.resize(w, h);
         this._sprite._showFrame(this._sprite._frameIdx);
       });
@@ -1445,21 +1416,90 @@
     // ---- Public API ----
 
     setEmotion(emotion) {
-      if (this._mode !== "live2d") this._sprite.setEmotion(emotion);
-      if (this._mode !== "sprite") this._live2d.setExpression(emotion);
+      if (this._mode === "sprite") this._sprite.setEmotion(emotion);
+      else this._modelAdapter?.applyIntent(emotion);
     }
 
     setSpeaking(speaking) {
-      if (this._spriteforgeRuntime.currentNodeId) {
-        this._spriteforgeRuntime.setSpeaking(speaking);
-      } else if (this._mode !== "live2d") {
-        this._sprite.setSpeaking(speaking);
-      }
+      this._speaking = speaking === true;
+      if (!this._speaking) this._mouth = 0;
+      if (this._mode === "sprite") {
+        if (this._spriteforgeRuntime.currentNodeId) this._spriteforgeRuntime.setSpeaking(speaking);
+        else this._sprite.setSpeaking(speaking);
+      } else this._modelAdapter?.setSpeaking(this._speaking);
     }
 
     setMouth(value) {
-      if (this._mode !== "live2d") this._sprite.setMouth(value);
-      if (this._mode !== "sprite") this._live2d.setMouth(value);
+      if (this._mode === "sprite") this._sprite.setMouth(value);
+      else {
+        this._mouth = this._speaking ? Math.max(0, Math.min(1, Number(value) || 0)) : 0;
+        this._modelAdapter?.setMouth(this._mouth);
+      }
+    }
+
+    configureCharacter(config) {
+      if (this._characterConfig?.runtime_id === config.runtime_id &&
+          Number(config.revision) < Number(this._characterConfig.revision)) return Promise.resolve();
+      if (this._characterConfig && this._characterConfig.runtime_id !== config.runtime_id) {
+        this._currentIntent = null;
+        this._speaking = false;
+        this._mouth = 0;
+      }
+      if (this._characterConfig && JSON.stringify(this._characterConfig) === JSON.stringify(config)) return this._modelAdapter?.pending;
+      const selected = config.backend || "sprite";
+      const changed = this._mode !== selected;
+      this._characterConfig = config;
+      this._mode = selected;
+      this._mouth = 0;
+      if (changed) {
+        this._spriteforgeRuntime.release();
+        this._sprite.setSpeaking(false);
+        this._sprite.setMouth(0);
+      }
+      this._sprite.setActive(selected === "sprite");
+      this._sprite.container.visible = selected === "sprite";
+      this._modelContainer.visible = selected !== "sprite";
+      if (selected !== "sprite") {
+        if (!this._modelAdapter || this._modelKind !== selected) {
+          this._modelAdapter?.destroy();
+          this._modelAdapter = window.createModelCharacter(
+            selected, app, status => this._reportCharacterStatus(status));
+          this._modelKind = selected;
+          this._modelContainer.addChild(this._modelAdapter.container);
+          this._modelAdapter.setViewport(this._characterViewport || null);
+          this._modelAdapter.setPaused(document.hidden);
+        }
+        this._modelAdapter.applyIntent(this._currentIntent?.semantic_label || this._currentIntent?.label || "normal");
+        const adapter = this._modelAdapter;
+        return adapter.configure(config).then(() => {
+          if (adapter === this._modelAdapter && this._mode !== "sprite" &&
+              this._characterConfig.runtime_id === config.runtime_id &&
+              this._characterConfig.revision === config.revision && adapter.state === "ready") {
+            adapter.setSpeaking(this._speaking);
+            adapter.setMouth(this._mouth);
+          }
+        });
+      }
+      this._modelAdapter?.unload();
+      this._sprite.setSpeaking(this._speaking);
+      this._reportCharacterStatus(this.getCharacterStatus());
+      return Promise.resolve();
+    }
+
+    getCharacterStatus() {
+      if (this._mode !== "sprite") return this._modelAdapter?.status();
+      const config = this._characterConfig || {};
+      return {
+        surface: config.surface || "render", profile_id: config.profile_id || "",
+        revision: config.revision || 0, runtime_id: config.runtime_id || "", state: "ready",
+      };
+    }
+
+    _reportCharacterStatus(status) {
+      if (window.parent !== window) {
+        window.parent.postMessage({ type: "amadeus.character.status", status }, "*");
+      }
+      window.dispatchEvent(new CustomEvent("amadeus-character-status", { detail: status }));
     }
 
     setSubtitle(text) {
@@ -1472,10 +1512,6 @@
 
     loadTransitionFrames(fromEmotion, toEmotion, urls) {
       this._sprite.loadTransitionFrames(fromEmotion, toEmotion, urls);
-    }
-
-    async loadLive2DModel(url) {
-      await this._live2d.loadModel(url);
     }
 
     setIdleAnimation(enabled) {
@@ -1498,12 +1534,19 @@
       this._spriteforgeRuntime.loadGraph(payload || {});
     }
 
-    triggerSpriteForgeIntent(label, options = {}) {
-      this._spriteforgeRuntime.trigger(label, options);
+    triggerCharacterIntent(label, options = {}) {
+      // A queued event resolved before a selection change belongs to that old
+      // backend. Current semantic truth is replayed after the new config.
+      if (options.backend && options.backend !== this._mode) return;
+      this._currentIntent = { ...options, label };
+      if (this._mode === "sprite") this._spriteforgeRuntime.trigger(label, options);
+      else this._modelAdapter?.applyIntent(options.semantic_label || label);
     }
 
-    releaseSpriteForge(options = {}) {
-      this._spriteforgeRuntime.release(options);
+    releaseCharacter(options = {}) {
+      this._currentIntent = null;
+      if (this._mode === "sprite") this._spriteforgeRuntime.release(options);
+      else this._modelAdapter?.release();
     }
 
     holdSpriteFrame(which) {
@@ -1518,13 +1561,20 @@
       this._sprite.clearHold();
     }
 
-    setSpriteViewportBounds(bounds) {
+    setCharacterViewportBounds(bounds) {
+      this._characterViewport = bounds || null;
       this._sprite.setViewportBounds(bounds);
+      this._modelAdapter?.setViewport(bounds);
     }
 
-    setSpriteViewportMask(mask) {
+    setCharacterViewportMask(mask) {
       this._sprite.container.mask = mask || null;
+      this._modelContainer.mask = mask || null;
     }
+
+    getModelCharacterContainer() { return this._modelContainer; }
+
+    getCharacterLayers() { return [this._sprite.container, this._modelContainer]; }
 
     getTextureStats() {
       return { ...this._sprite._frameStore.stats(), displayMiss: this._sprite._displayMisses };
@@ -1536,17 +1586,13 @@
 
     setMode(mode) {
       const value = String(mode || "sprite").toLowerCase();
-      if (value === "work" || value === "working" || value === "work_surface" || value === "provider_work") {
-        return;
-      }
-      const normalized = value === "hybrid" ? "both" : value;
-      if (["sprite", "live2d", "both"].indexOf(normalized) < 0) {
-        console.warn("[RenderApp] ignoring unknown legacy render mode:", mode);
-        return;
-      }
-      this._mode = normalized;
-      this._sprite.container.visible = (normalized !== "live2d");
-      this._live2d.container.visible = (normalized !== "sprite");
+      if (["work", "working", "work_surface", "provider_work"].includes(value)) return;
+      // The selected Host profile owns the backend. Legacy graph bootstrap
+      // mode calls cannot override a selection or start loading a model.
+      if (this._characterConfig || value !== "sprite") return;
+      this._mode = "sprite";
+      this._sprite.container.visible = true;
+      this._modelContainer.visible = false;
     }
 
     // ---- Internals ----
@@ -1555,15 +1601,17 @@
       const w = app.screen.width;
       const h = app.screen.height;
       this._sprite.resize(w, h);
-      this._live2d.resize(w, h);
+      this._modelAdapter?.setViewport(this._characterViewport || null);
       this._subtitle.resize(w, h);
       this._sprite._showFrame(this._sprite._frameIdx);
     }
   }
 
-  // Mount globally for Python runJavaScript() calls.
+  // Mount the surface adapter for the existing Host bridge.
   window.renderApp = new RenderApp();
   console.log("[RenderEngine] renderer.js initialized");
+  document.addEventListener("visibilitychange", () => window.renderApp._modelAdapter?.setPaused(document.hidden));
+  window.addEventListener("unload", () => window.renderApp._modelAdapter?.destroy(), { once: true });
 
   // ---------------------------------------------------------------------------
   // Render bridge. Embedded GUI renderers reuse the authenticated parent
@@ -1598,6 +1646,9 @@
         case "render.sprite_frames":
           app.loadSpriteFrames(p.emotion, p.urls || []);
           break;
+        case "render.character_config":
+          app.configureCharacter(p);
+          break;
         case "render.mode":
           app.setMode(p.mode);
           break;
@@ -1616,11 +1667,11 @@
         case "render.spriteforge_graph":
           app.loadSpriteForgeGraph(p);
           break;
-        case "render.spriteforge_intent":
-          app.triggerSpriteForgeIntent(p.label, p);
+        case "render.character_intent":
+          app.triggerCharacterIntent(p.label, p);
           break;
-        case "render.spriteforge_release":
-          app.releaseSpriteForge(p);
+        case "render.character_release":
+          app.releaseCharacter(p);
           break;
         case "render.hold_frame":
           app.holdSpriteFrame(p.which);

@@ -112,6 +112,7 @@ class AssetServer:
         self._server: http.server.HTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._static_mounts: dict[str, Path] = {}
+        self._static_files: dict[str, Path] = {}
         # 动态路由表：路径 → 返回 dict 的 callable（序列化为 JSON 响应）
         self._dynamic_routes: dict[str, object] = {}
         self._texture_cache_enabled = texture_cache
@@ -144,11 +145,20 @@ class AssetServer:
         clean = "/" + prefix.strip("/") + "/"
         self._static_mounts[clean] = Path(root)
 
+    def mount_files(self, prefix: str, files: dict[str, Path]) -> None:
+        """Replace a mount with only the approved model references or SDK file."""
+        clean = "/" + prefix.strip("/") + "/"
+        for path in tuple(self._static_files):
+            if path.startswith(clean):
+                del self._static_files[path]
+        for relative, target in files.items():
+            self._static_files[clean + relative] = Path(target).resolve()
+
     # ------------------------------------------------------------------
 
     def start(self) -> int:
         """启动服务器并返回实际监听端口。"""
-        handler = _make_handler(self.root, self._dynamic_routes, self._static_mounts, self._get_texture_cache)
+        handler = _make_handler(self.root, self._dynamic_routes, self._static_mounts, self._get_texture_cache, self._static_files)
         for p in range(self.start_port, self.start_port + 20):
             if _port_free(p):
                 self._server = _QuietThreadingHTTPServer(("127.0.0.1", p), handler)
@@ -177,7 +187,7 @@ class AssetServer:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_handler(root: Path, dynamic_routes: dict | None = None, static_mounts: dict | None = None, texture_cache=None):
+def _make_handler(root: Path, dynamic_routes: dict | None = None, static_mounts: dict | None = None, texture_cache=None, static_files: dict | None = None):
     """工厂：创建固定 directory 的 handler 类（避免 os.chdir）。
 
     dynamic_routes: {path: callable}，callable 无参，返回可 JSON 序列化的对象。
@@ -186,6 +196,7 @@ def _make_handler(root: Path, dynamic_routes: dict | None = None, static_mounts:
     root_str = str(root)
     routes = dynamic_routes if dynamic_routes is not None else {}
     mounts = static_mounts if static_mounts is not None else {}
+    files = static_files if static_files is not None else {}
 
     def blocked_path(raw_path: str) -> bool:
         decoded = urllib.parse.unquote(urllib.parse.urlsplit(raw_path).path)
@@ -326,7 +337,9 @@ def _make_handler(root: Path, dynamic_routes: dict | None = None, static_mounts:
                 if bare.endswith("/"):
                     self.send_error(404)
                     return None
-            target = (base / rel).resolve()
+            target = files.get(urllib.parse.unquote(bare), (base / rel).resolve())
+            if urllib.parse.unquote(bare) in files:
+                base = target.parent
             if (
                 (base != target and base not in target.parents)
                 or not target.is_file()
