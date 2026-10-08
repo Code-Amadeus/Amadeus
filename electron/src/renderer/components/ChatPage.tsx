@@ -1180,11 +1180,14 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     const title = window.prompt('Rename session', currentTitle)?.trim()
     if (!title) return
     try {
-      const res = await send('session.rename', { session_id: id, title })
-      if (Array.isArray(res.sessions)) setSessions(res.sessions as unknown as ChatSessionSummary[])
-      if (Array.isArray(res.projects)) setProjects(res.projects as unknown as ChatProjectSummary[])
+      await runSessionSelection({ pending: 0 }, () => {},
+        () => send('session.rename', { session_id: id, title }),
+        res => {
+          if (Array.isArray(res.sessions)) setSessions(res.sessions as unknown as ChatSessionSummary[])
+          if (Array.isArray(res.projects)) setProjects(res.projects as unknown as ChatProjectSummary[])
+        }, setSessionSelectionNotice, 'Could not rename this chat.')
     } catch {
-      setMessages(prev => [...prev, { role: 'system', text: 'Could not rename session' }])
+      // Mutation feedback is separate from the current conversation/history.
     }
   }, [send])
 

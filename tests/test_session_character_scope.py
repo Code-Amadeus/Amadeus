@@ -10,6 +10,7 @@ import pytest
 from core import session_manager as sm
 from llm import character_prompts
 from server.handlers.session_handler import SessionHandler
+from server.protocol import Method
 from test_cooperative_pending_turn import pending_host as pending_host
 from test_session_activation import context as context, sessions as sessions, state, write_session
 
@@ -118,6 +119,121 @@ def test_same_character_switch_keeps_normal_activation(context):
     assert response["messages"][0]["content"] == "ONLY_same"
     guard.assert_called_once_with("A", "same")
     context.projection.assert_called_once_with("session.loaded")
+
+
+def mutation_state(context):
+    """Observable history, selection, and Work context at the request boundary."""
+    ids = sm.list_sessions()
+    return (
+        {sid: Path(sm._session_path(sid)).read_bytes() for sid in ids},
+        state(),
+        sm.get_session_selection_revision(),
+        {sid: deepcopy(context.coordinator.conversation_binding(sid)) for sid in ids},
+        {sid: context.store.get_session_work_context(sid) for sid in ids},
+    )
+
+
+@pytest.mark.parametrize("method", [Method.SESSION_RENAME, Method.SESSION_DELETE])
+@pytest.mark.parametrize("target", ["foreign", "A"])
+async def test_foreign_mutation_is_refused_before_history_context_or_selection_changes(context, monkeypatch, method, target):
+    # Rechecking persisted ownership also protects a loaded chat whose file was
+    # externally changed; the loaded character cannot grant mutation authority.
+    write_session(target, character_id="testchar", title="Foreign original", last_summary="Foreign summary")
+    context.coordinator.bind_session_context(target, context.project.project_id, source="test")
+    before = mutation_state(context)
+    guard = Mock(return_value=None)
+    sm.configure_activation_guard(guard)
+    delete = Mock(wraps=sm.delete_session)
+    rename = Mock(wraps=sm.set_session_title)
+    clear = Mock(wraps=context.coordinator.clear_session_project)
+    monkeypatch.setattr(sm, "delete_session", delete)
+    monkeypatch.setattr(sm, "set_session_title", rename)
+    monkeypatch.setattr(context.coordinator, "clear_session_project", clear)
+
+    response = await context.handler.handle(method, {"session_id": target, "title": "Changed"})
+
+    assert response["ok"] is False
+    assert "AMADEUS_CHARACTER_ID=testchar" in response["error"]
+    assert set(response) == {"ok", "error"}
+    assert mutation_state(context) == before
+    delete.assert_not_called()
+    rename.assert_not_called()
+    clear.assert_not_called()
+    guard.assert_not_called()
+    context.projection.assert_not_called()
+    context.emit.assert_not_called()
+
+
+@pytest.mark.parametrize("method", [Method.SESSION_RENAME, Method.SESSION_DELETE])
+@pytest.mark.parametrize("character_id", [None, "", 0, {}, "Kurisu", "../../kurisu", "system"])
+async def test_invalid_owner_cannot_bypass_mutation_check(context, method, character_id):
+    write_session("invalid", character_id=character_id, title="Original")
+    context.coordinator.bind_session_context("invalid", context.project.project_id, source="test")
+    before = mutation_state(context)
+    response = await context.handler.handle(method, {"session_id": "invalid", "title": "Changed"})
+    assert response == {"ok": False, "error": "invalid character id"}
+    assert mutation_state(context) == before
+    context.projection.assert_not_called()
+    context.emit.assert_not_called()
+
+
+@pytest.mark.parametrize("method", [Method.SESSION_RENAME, Method.SESSION_DELETE])
+@pytest.mark.parametrize("character_id", ["kurisu", "testchar"])
+async def test_legacy_mutation_uses_historical_kurisu_owner(context, monkeypatch, method, character_id):
+    write_session("legacy", title="Legacy original")
+    boot_as(monkeypatch, character_id)
+    before = mutation_state(context)
+    response = await context.handler.handle(method, {"session_id": "legacy", "title": "Changed"})
+    if character_id != "kurisu":
+        assert response["ok"] is False
+        assert "AMADEUS_CHARACTER_ID=kurisu" in response["error"]
+        assert mutation_state(context) == before
+        context.projection.assert_not_called()
+    else:
+        assert response["ok"] is True
+        if method == Method.SESSION_DELETE:
+            assert "legacy" not in sm.list_sessions()
+        else:
+            data = json.loads(Path(sm._session_path("legacy")).read_text(encoding="utf-8"))
+            assert data["title"] == "Changed"
+            assert "character_id" not in data
+
+
+@pytest.mark.parametrize("method", [Method.SESSION_RENAME, Method.SESSION_DELETE])
+@pytest.mark.parametrize("target", ["owned", "A"])
+async def test_owned_mutation_preserves_existing_rename_and_delete_semantics(context, method, target):
+    if target != "A":
+        write_session(target, character_id="kurisu", title="Original")
+    context.coordinator.bind_session_context(target, context.project.project_id, source="test")
+    before = state()
+    data = json.loads(Path(sm._session_path(target)).read_text(encoding="utf-8"))
+    binding = deepcopy(context.coordinator.conversation_binding(target))
+    response = await context.handler.handle(method, {"session_id": target, "title": "  Changed  "})
+    assert response["ok"] is True
+    if method == Method.SESSION_RENAME:
+        assert json.loads(Path(sm._session_path(target)).read_text(encoding="utf-8")) == {**data, "title": "Changed"}
+        assert context.coordinator.conversation_binding(target) == binding
+        assert state() == before
+        context.projection.assert_not_called()
+    else:
+        assert target not in sm.list_sessions()
+        assert context.coordinator.conversation_binding(target) is None
+        context.projection.assert_called_once_with("session.deleted")
+        if target == "A":
+            assert response["current_session_id"] is None
+            assert sm.conversation_history.dialog == []
+            assert sm.conversation_history.last_summary == ""
+        else:
+            assert state() == before
+
+
+@pytest.mark.parametrize("method", [Method.SESSION_RENAME, Method.SESSION_DELETE])
+async def test_missing_mutation_target_has_standalone_error_and_no_side_effects(context, method):
+    before = mutation_state(context)
+    response = await context.handler.handle(method, {"session_id": "missing", "title": "Changed"})
+    assert response == {"ok": False, "error": "session not found"}
+    assert mutation_state(context) == before
+    context.projection.assert_not_called()
 
 
 @pytest.mark.parametrize("character_id", ["kurisu", "testchar"])

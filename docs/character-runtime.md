@@ -4,8 +4,11 @@
 `kurisu`. Configure it through the existing startup environment, project `.env`,
 or persisted desktop setting, then restart the backend. A saved desktop value is
 pending until restart; an explicit parent-process environment value takes
-precedence. There is no character selector or live switching API. Changes to a
-character file also apply only after restart.
+precedence. The settings store recognizes this key, but the GUI has no startup
+character field, selector, new/import/delete character controls, or per-character
+persona editor. Its existing persona editor is only for Kurisu's Japanese
+override. There is no live switching API. Changes to a character file also apply
+only after restart.
 
 A custom packaged role needs a matching `characters/<id>.toml` resource with a
 stable lowercase id and a recognizable name, for example:
@@ -16,19 +19,34 @@ character_id = "mira"
 name = "Mira"
 ```
 
-Other name forms, persona text and Japanese Host phrases are optional. Missing
-entries use name-based or neutral defaults; they do not inherit Kurisu's persona
-or character-reference corpus. The built-in Kurisu resource remains a required
-part of the application and its Kurisu-specific persona editor. Selecting a
-prompt role does not select or reload voice models, images or emotion assets.
+Other name forms, persona text and the 14 Japanese VN commentary lines are
+optional. Missing entries use name-based or neutral defaults; they do not inherit
+Kurisu's persona or character-reference corpus. The existing RAG corpus belongs
+to Kurisu: other characters return no reference and do not query that index.
+Per-character knowledge-base management is not implemented. The built-in Kurisu
+resource remains a required part of the application and its Kurisu-specific
+persona editor. Selecting a prompt role does not select or reload voice models,
+images or emotion assets.
+
+The 93 Japanese Host fact/status lines are fixed Host templates, including their
+reviewed Kurisu wording and neutral wording for other characters. Character
+files cannot override execution, verification, receipt, permission or focus
+conclusions, even with matching template variables. The optional `voice_lines`
+table accepts only VN commentary keys used by the story reaction path; those
+comments are not Host execution evidence. An experimental pack written against
+an earlier draft must remove Host fact keys from `voice_lines`; explicitly
+providing one fails loading, including for the built-in character id.
 
 Every conversation stores an immutable `character_id`. New conversations use the
 startup character. Older session files without the field belong to `kurisu`;
-explicit invalid values fail validation. Opening or continuing another character's
-conversation is refused before the active history, project context, or turn
-authority changes. The error names the startup setting needed to reopen it. The
-conversation list retains its title and character identity without exposing its
-transcript through a separate history reader.
+explicit invalid values fail validation. Opening, continuing, renaming or deleting
+another character's conversation is refused before its file, active history,
+project context or turn authority changes. The error names the startup setting
+needed to use the owning character. The conversation list retains its title and
+character identity, with rename/delete controls disabled, without exposing its
+transcript through a separate history reader. This is the application's character
+ownership rule, not a separate local-user access-control system or global session
+administration interface.
 
 Only conversations belonging to another character show a role label in the list.
 Startup restores a conversation for the selected character, or creates one if

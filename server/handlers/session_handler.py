@@ -207,6 +207,12 @@ class SessionHandler(RequestHandler):
 
     def _delete(self, params: dict[str, Any]) -> dict[str, Any]:
         sid = str(params.get("session_id") or "")
+        try:
+            sm.require_session_character(sid)
+        except FileNotFoundError:
+            return {"ok": False, "error": "session not found"}
+        except (ValueError, OSError) as exc:
+            return {"ok": False, "error": str(exc)}
         ok = sm.delete_session(sid)
         if ok and self._work_coordinator is not None:
             self._work_coordinator.clear_session_project(sid)
@@ -217,6 +223,12 @@ class SessionHandler(RequestHandler):
 
     def _rename(self, params: dict[str, Any]) -> dict[str, Any]:
         sid = str(params.get("session_id") or "")
+        try:
+            sm.require_session_character(sid)
+        except FileNotFoundError:
+            return {"ok": False, "error": "session not found"}
+        except (ValueError, OSError) as exc:
+            return {"ok": False, "error": str(exc)}
         title = str(params.get("title") or "").strip()
         ok = bool(sid and title and sm.set_session_title(sid, title))
         return {"ok": ok, **self._list()}

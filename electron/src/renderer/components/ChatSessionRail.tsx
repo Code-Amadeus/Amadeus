@@ -111,6 +111,10 @@ function SessionRow({
   const { t } = useI18n()
   const foreignCharacterId = currentCharacterId && session.character_id !== currentCharacterId
     ? session.character_id : ''
+  const canMutate = Boolean(currentCharacterId && session.character_id === currentCharacterId)
+  const mutationNotice = canMutate ? '' : foreignCharacterId
+    ? `${t('Switch character and restart the backend with')} AMADEUS_CHARACTER_ID=${foreignCharacterId} ${t('to open, rename, or delete this chat.')}`
+    : t('Chat character identity is unavailable. Reconnect to the backend.')
   const detail = session.context?.bindingKind === 'work_item'
     ? session.context.workItemTitle || 'Task'
     : session.message_count
@@ -136,10 +140,10 @@ function SessionRow({
         type="button"
         data-chat-session-id={session.id}
         onClick={onSelect}
-        onDoubleClick={onRename}
+        onDoubleClick={() => { if (canMutate) onRename() }}
         className="flex-1 min-w-0 text-left border-none bg-transparent cursor-pointer"
         style={{ padding: '7px 5px 7px 9px', color: 'inherit' }}
-        title={foreignCharacterId ? `${session.title}\n${t('Character')}: ${foreignCharacterId}` : session.title}
+        title={canMutate ? session.title : `${session.title}\n${foreignCharacterId ? `${t('Character')}: ${foreignCharacterId}\n` : ''}${mutationNotice}`}
       >
         <span className="block truncate" style={{ fontSize: 11, fontWeight: active ? 600 : 500 }}>
           {session.title || t('Untitled chat')}
@@ -160,10 +164,11 @@ function SessionRow({
       </button>
       <button
         type="button"
-        onClick={event => { event.stopPropagation(); onDelete() }}
-        title={t('Delete chat')}
+        disabled={!canMutate}
+        onClick={event => { event.stopPropagation(); if (canMutate) onDelete() }}
+        title={mutationNotice || t('Delete chat')}
         aria-label={`${t('Delete')} ${session.title || t('chat')}`}
-        className="opacity-0 group-hover:opacity-100 border-none bg-transparent cursor-pointer"
+        className="opacity-0 group-hover:opacity-100 border-none bg-transparent cursor-pointer disabled:cursor-not-allowed"
         style={{ color: 'var(--faint)', padding: '7px 7px 7px 3px', fontSize: 11 }}
       >
         x

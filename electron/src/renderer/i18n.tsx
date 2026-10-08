@@ -77,6 +77,8 @@ const ZH_CN: Record<string, string> = {
   'Dismiss chat selection notice': '关闭会话选择提示',
   'Could not switch chats.': '无法切换会话，请重试。',
   'Chat character identity is unavailable. Reconnect to the backend.': '无法确定本次对话角色，请重新连接后端。',
+  'Switch character and restart the backend with': '请切换角色，并使用以下设置重启后端：',
+  'to open, rename, or delete this chat.': '之后才能打开、重命名或删除此会话。',
   'Render': '渲染',
   'Wallpaper': '壁纸',
   'VN Player': '视觉小说',
