@@ -4,6 +4,60 @@ Base: `f66c5f95a693727453a6eb614118500e271a730d`. Scope is local character
 management, active identity labels and explicit startup recovery. The parallel
 Live2D implementation is not included in these results.
 
+## Review fixes after `813390f`
+
+The follow-up addresses F1–F3 from the M1 review:
+
+- Session titles and the shared user/assistant avatars remain unchanged. Foreign
+  ownership labels resolve the saved name from the character catalog, retaining
+  full stable IDs in tooltips. Unknown catalogs do not imply a missing file.
+  Ordinary guidance uses Settings → General → Character roles; only known
+  environment locks direct the user to `AMADEUS_CHARACTER_ID`.
+- Edited active definitions retain a Host-derived pending-restart label across
+  page visits. Comparison uses parsed definitions, not modification times or
+  saved flags. Reversion/restart clears it; invalid or missing files show errors.
+- User names are single-line and at most 128 Unicode code points; personality
+  text is trimmed at its outer boundary and limited to 7900 code points. Host
+  limits drive GUI code-point counters, including astral Unicode. The unchanged
+  8192-character slot limit is also checked after composition.
+- The redundant Kurisu avatar-dialog branch is removed. Default generic labels
+  while identity is unknown (**Assistant avatar** / **A**, initial Companion
+  **Amadeus**) are explicitly documented as visible changes in the local PR draft.
+
+The final three prompt captures (Kurisu, name-only Mira, Kurisu Japanese
+customization) again match the pre-M1 main baseline in all **465/465** entries.
+The 107 phrase templates remain unchanged. Electron **280/280** tests and build
+pass; changed Python files pass Ruff. Both complete Python shards were rerun on
+the final frozen product code, without subsequent product-code edits:
+
+| Final shard | Files | Passed | Skipped | Expected failures | Collected | Result |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 0 | 211 | 2515 | 3 | 0 | 2518 | PASS, exit 0 |
+| 1 | 211 | 2841 | 13 | 5 | 2859 | PASS, exit 0 |
+| Total | 422 | 5356 | 16 | 5 | 5377 | No unexpected failures |
+
+The commands are the same two `tools/run_tests.py --shard-count 2` invocations
+listed below, plus `npm test`, `npm run build` and Ruff on the changed Python
+files. Both shards ran in the actual Git worktree with isolated temporary
+namespaces. Optional-asset skips and expected failures are not counted as passes.
+This full rerun closes the original implementation's final-rerun gap described
+in its historical results below.
+
+The current desktop application remains running at the user's request. **The
+new follow-up desktop journey has not been run.** It is prepared locally to check
+foreign-session name/title/ID display, Unicode input limits and the persistent
+restart label. The earlier 18-check and 5-check desktop results below belong to
+`813390f`, not to a rerun of these follow-up changes. Live2D combined validation
+also remains pending; no merge or combined-runtime result is claimed.
+
+Manual follow-up: edit the running role, save, leave Settings and return to see
+the pending label; restart and verify it clears. Open the session rail to verify
+foreign ownership names, stable IDs in tooltips, and Settings guidance without
+activating the foreign history. Then check limit feedback with 128/129-code-point
+names and 7900/7901-code-point personalities, including emoji.
+
+## Original implementation verification (`813390f`)
+
 ## Default behavior evidence
 
 Before editing, three isolated captures from unmodified main recorded 155 model

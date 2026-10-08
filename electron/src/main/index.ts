@@ -2233,8 +2233,7 @@ ipcMain.handle('chat-avatars.select', async (event, role: ChatAvatarRole) => {
   }
   const active = role === 'assistant' ? await requestActiveCharacter() : null
   const options: Electron.OpenDialogOptions = {
-    title: role === 'assistant' ? active?.character_id === 'kurisu' ? 'Choose Kurisu avatar'
-      : typeof active?.short_name === 'string' ? `Choose ${active.short_name} avatar` : 'Choose assistant avatar' : 'Choose your avatar',
+    title: role === 'assistant' ? typeof active?.short_name === 'string' ? `Choose ${active.short_name} avatar` : 'Choose assistant avatar' : 'Choose your avatar',
     buttonLabel: 'Use this image',
     properties: ['openFile'],
     filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] }],

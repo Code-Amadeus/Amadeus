@@ -4,7 +4,9 @@ from __future__ import annotations
 from typing import Any
 
 from core.character_profiles import CharacterStore
-from llm.character_prompts import active_ui_identity
+from llm.character_prompts import (
+    MAX_CHARACTER_NAME_CHARS, MAX_CHARACTER_PERSONA_CHARS, active_ui_identity,
+)
 from server.protocol import Method
 from server.ws_handler import RequestHandler
 
@@ -18,7 +20,9 @@ class CharacterHandler(RequestHandler):
 
     async def handle(self, method: str, params: dict[str, Any]) -> dict[str, Any] | None:
         if method == Method.CHARACTER_LIST:
-            return {"characters": self.store.list(), "active": active_ui_identity()}
+            return {"characters": self.store.list(), "active": active_ui_identity(),
+                "limits": {"name_max_chars": MAX_CHARACTER_NAME_CHARS,
+                    "persona_max_chars": MAX_CHARACTER_PERSONA_CHARS}}
         if method == Method.CHARACTER_ACTIVE:
             return active_ui_identity()
         if method == Method.CHARACTER_CREATE:

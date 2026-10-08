@@ -121,11 +121,11 @@ class CharacterStore:
         return self.directory / f"{character_id}.toml"
 
     def _record(self, character_id: str, document: dict[str, Any] | None = None) -> dict[str, Any]:
-        from llm.character_prompts import load_fresh, parse_character_document
+        from llm.character_prompts import active_character, load_fresh, parse_character_document
 
         builtin = character_id == BUILTIN_CHARACTER_ID
         record: dict[str, Any] = {"character_id": character_id, "name": character_id,
-            "persona": "", "builtin": builtin, "valid": False, "editable": False}
+            "persona": "", "builtin": builtin, "valid": False, "editable": False, "pending_restart": False}
         try:
             if not builtin:
                 document = document if document is not None else read_character_document(self._path(character_id))
@@ -134,11 +134,13 @@ class CharacterStore:
                 if isinstance(name, str):
                     record["name"] = name
                 if isinstance(document.get("persona", ""), str):
-                    record["persona"] = document.get("persona", "")
+                    record["persona"] = document.get("persona", "").strip()
                 record["editable"] = _editable(document)
             role = (load_fresh(character_id) if builtin else
                 parse_character_document(character_id, document))
-            record.update(name=role.name, persona=role.persona, valid=True)
+            active = active_character()
+            record.update(name=role.name, persona=role.persona, valid=True,
+                pending_restart=character_id == active.character_id and role != active)
         except (CharacterLoadError, ValueError) as exc:
             record["error"] = str(exc)
         if not record["editable"]:
@@ -147,10 +149,15 @@ class CharacterStore:
         return record
 
     def list(self) -> list[dict[str, Any]]:
+        from llm.character_prompts import active_character_id
+
         records = [self._record(BUILTIN_CHARACTER_ID)]
         if self.directory.exists():
             records.extend(self._record(path.stem) for path in sorted(self.directory.glob("*.toml"))
                 if path.is_file() and path.stem.casefold() != BUILTIN_CHARACTER_ID)
+        active_id = active_character_id()
+        if not any(record["character_id"] == active_id for record in records):
+            records.append(self._record(active_id))
         return records
 
     def validate(self, character_id: str) -> dict[str, Any]:
@@ -166,7 +173,8 @@ class CharacterStore:
             if path.exists():
                 raise ValueError("generated character identity already exists")
             document = {"persona": persona, "names": {"character_id": character_id, "name": name}}
-            parse_character_document(character_id, document)
+            role = parse_character_document(character_id, document)
+            document["persona"] = role.persona
             _atomic_write(path, document)
             return self._record(character_id)
 
@@ -181,6 +189,7 @@ class CharacterStore:
             if not _editable(document):
                 raise ValueError("This character uses advanced fields; edit its TOML file on disk.")
             document = {"persona": persona, "names": {"character_id": character_id, "name": name}}
-            parse_character_document(character_id, document)
+            role = parse_character_document(character_id, document)
+            document["persona"] = role.persona
             _atomic_write(path, document)
             return self._record(character_id)

@@ -103,7 +103,7 @@ def test_builtin_cannot_be_shadowed_or_updated(store):
     (store.directory / "kurisu.toml").write_text('[names]\ncharacter_id="kurisu"\nname="Impostor"\n', encoding="utf-8")
     before = (store.directory / "kurisu.toml").read_bytes()
     assert store.list() == [{"character_id": "kurisu", "name": "Kurisu", "persona": "",
-        "builtin": True, "valid": True, "editable": False, "edit_error": "Built-in characters are read-only."}]
+        "builtin": True, "valid": True, "editable": False, "pending_restart": False, "edit_error": "Built-in characters are read-only."}]
     assert characters.load_fresh("kurisu", directory=store.directory).values["short_name"] == "Kurisu"
     with pytest.raises(ValueError, match="read-only"):
         store.update("kurisu", name="Impostor", persona="Invented authority")
@@ -306,18 +306,18 @@ async def test_active_http_endpoint_enforces_existing_auth_and_origin_without_bo
     assert await call(SimpleNamespace(headers=headers)) == characters.active_ui_identity()
 
 
-def test_persona_expansion_bound_fails_before_any_replacement(store):
-    record = store.create(name="Mira", persona="Original")
+def test_fixed_persona_bound_with_maximum_name_fails_before_any_replacement(store):
+    name = "🌟" * 128
+    record = store.create(name=name, persona="Original")
     path = store.directory / f"{record['character_id']}.toml"
-    original = path.read_bytes()
-    neutral = characters.parse_character_document(record["character_id"], {"names": {
-        "character_id": record["character_id"], "name": "Mira"}})
-    maximum = min(8192 - len(neutral.values[key]) - 2 for key in ("ja_identity", "en_identity"))
-    assert store.update(record["character_id"], name="Mira", persona="x" * maximum)["valid"]
+    assert store.update(record["character_id"], name=name, persona="🌟" * 7900)["valid"]
+    role = characters.load_fresh(record["character_id"], directory=store.directory)
+    assert len(role.name) == 128 and len(role.persona) == 7900
+    assert max(len(role.values[key]) for key in ("ja_identity", "en_identity")) < 8192
     valid_bytes = path.read_bytes()
-    with pytest.raises(ValueError, match="identity"):
-        store.update(record["character_id"], name="Mira", persona="x" * (maximum + 1))
-    assert path.read_bytes() == valid_bytes and valid_bytes != original
+    with pytest.raises(ValueError, match="7900 Unicode code points"):
+        store.update(record["character_id"], name=name, persona="🌟" * 7901)
+    assert path.read_bytes() == valid_bytes
 
 
 @pytest.mark.parametrize("character_id", [None, "", "../role", "Kurisu", "app", "user", "system"])
@@ -368,8 +368,8 @@ def test_failed_concurrent_save_cannot_replace_the_last_successful_save(store, m
 
 
 @pytest.mark.parametrize("literal", ["\x7f", '\x01\t\n\r\b\f\\"${name}你好 🌟', "\x7f你好 🌟\n$persona"])
-def test_saved_name_and_persona_roundtrip_toml_controls_and_astral_unicode(store, literal):
-    name, persona = f"Name {literal} end", f"Persona {literal} end"
+def test_saved_persona_roundtrips_toml_controls_and_astral_unicode(store, literal):
+    name, persona = 'Name 你好 🌟 $name "quoted" \\ end', f"Persona {literal} end"
     record = store.create(name=name, persona=persona)
     assert record["valid"] and record["name"] == name and record["persona"] == persona
     path = store.directory / f"{record['character_id']}.toml"
@@ -384,3 +384,151 @@ def test_saved_name_and_persona_roundtrip_toml_controls_and_astral_unicode(store
     if "\x7f" in literal:
         assert "\x7f" not in path.read_text(encoding="utf-8")
         assert r"\u007f" in path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("name,message", [
+    ("Mira\nSecond", "one line"), ("Mira\rSecond", "one line"),
+    ("Mira\tSecond", "control characters"), ("Mira\x7fSecond", "control characters"),
+    ("Mira\x85Second", "control characters"), ("Mira\u2028Second", "one line"),
+    ("Mira\u2029Second", "one line"), ("🌟" * 129, "128 Unicode code points"),
+    ("x" * 129, "128 Unicode code points"), ("\ud800", "valid Unicode"),
+])
+def test_names_reject_multiple_lines_controls_and_overlong_code_point_counts(store, name, message):
+    record = store.create(name="Original")
+    path = store.directory / f"{record['character_id']}.toml"
+    original = path.read_bytes()
+    for operation in (lambda: store.create(name=name),
+            lambda: store.update(record["character_id"], name=name)):
+        with pytest.raises(ValueError, match=message):
+            operation()
+    assert path.read_bytes() == original
+    assert list(store.directory.iterdir()) == [path]
+
+
+@pytest.mark.parametrize("key", sorted(characters.NAME_KEYS - {"character_id"}) + ["ui_name", "accessible_name"])
+@pytest.mark.parametrize("invalid", ["Bypass\nName", "Bypass\x7fName", "🌟" * 129])
+def test_explicit_name_and_ui_overrides_cannot_bypass_name_rules(key, invalid):
+    document = {"names": {"character_id": "manual", "name": "Manual"}}
+    document.setdefault("ui" if key in {"ui_name", "accessible_name"} else "names", {})[key] = invalid
+    with pytest.raises(ValueError, match=key):
+        characters.parse_character_document("manual", document)
+
+
+@pytest.mark.parametrize("name", ["🌟" * 128, "你" * 128, "👩‍🔬" * 42 + "🌟🌟"])
+def test_names_count_unicode_code_points_and_preserve_combined_unicode(store, name):
+    assert len(name) == 128
+    record = store.create(name=name)
+    assert record["name"] == name and record["valid"]
+    role = characters.load_fresh(record["character_id"], directory=store.directory)
+    assert role.name == name and role.values["display_name"] == name
+
+
+@pytest.mark.parametrize("persona", [" \t\r\n", "\u3000\u00a0", " \n Calm ${name} 🌟 \n\t ", " " * 8000])
+def test_persona_strip_is_shared_by_saved_and_loaded_definition(store, persona):
+    normalized = persona.strip()
+    record = store.create(name="Mira", persona=persona)
+    path = store.directory / f"{record['character_id']}.toml"
+    saved = tomllib.loads(path.read_text(encoding="utf-8"))
+    assert record["persona"] == saved["persona"] == normalized
+    role = characters.load_fresh(record["character_id"], directory=store.directory)
+    assert role.persona == normalized
+    neutral = characters.parse_character_document(role.character_id, {"names": {
+        "character_id": role.character_id, "name": "Mira"}})
+    for key in ("ja_identity", "en_identity"):
+        assert role.values[key] == neutral.values[key] + (normalized + "\n\n" if normalized else "")
+    manual = characters.parse_character_document(role.character_id, {"persona": persona,
+        "names": {"character_id": role.character_id, "name": "Mira"}})
+    assert manual == role
+    updated = store.update(role.character_id, name="Mira", persona="\n " + persona + " \n")
+    assert updated["persona"] == normalized
+
+
+def test_persona_limit_applies_after_strip_on_save_and_manual_load(store):
+    persona = " \t" + "🌟" * 7900 + "\n "
+    record = store.create(name="Mira", persona=persona)
+    assert len(record["persona"]) == 7900
+    manual = {"persona": persona, "names": {"character_id": record["character_id"], "name": "Mira"}}
+    assert len(characters.parse_character_document(record["character_id"], manual).persona) == 7900
+    manual["persona"] = " \t" + "🌟" * 7901 + "\n "
+    with pytest.raises(ValueError, match="7900 Unicode code points"):
+        characters.parse_character_document(record["character_id"], manual)
+
+
+def test_whitespace_persona_is_empty_for_explicit_text_collision_and_name_only_output():
+    names = {"character_id": "manual", "name": "Mira"}
+    document = {"names": names, "persona": " \n\t ", "texts": {"ja_identity": "Explicit"}}
+    assert characters.parse_character_document("manual", document).persona == ""
+    empty = characters.parse_character_document("manual", {"names": names})
+    whitespace = characters.parse_character_document("manual", {"names": names, "persona": " \n\t "})
+    assert empty == whitespace
+
+
+def _catalog_record(store, character_id):
+    return next(record for record in store.list() if record["character_id"] == character_id)
+
+
+def test_pending_restart_follows_changed_definition_reversion_and_restart(store, monkeypatch):
+    record = store.create(name="Original", persona="Original persona")
+    role = characters.load_fresh(record["character_id"], directory=store.directory)
+    monkeypatch.setattr(characters, "_ACTIVE_CHARACTER", role)
+    original_text = characters.text("ja_identity")
+    assert not _catalog_record(store, role.character_id)["pending_restart"]
+    changed = store.update(role.character_id, name="Updated", persona="Updated persona")
+    assert changed["pending_restart"] and _catalog_record(store, role.character_id)["pending_restart"]
+    characters.load.cache_clear()
+    assert characters.active_character() is role
+    assert characters.text("ja_identity") == original_text
+    reverted = store.update(role.character_id, name="Original", persona=" Original persona ")
+    assert not reverted["pending_restart"] and not _catalog_record(store, role.character_id)["pending_restart"]
+    store.update(role.character_id, name="Restarted", persona="New persona")
+    restarted = characters.load_fresh(role.character_id, directory=store.directory)
+    monkeypatch.setattr(characters, "_ACTIVE_CHARACTER", restarted)
+    assert not _catalog_record(store, role.character_id)["pending_restart"]
+    assert characters.active_ui_identity()["name"] == "Restarted"
+    assert "New persona" in characters.text("ja_identity")
+
+
+def test_pending_restart_uses_parsed_definition_not_toml_spelling_or_comments(store, monkeypatch):
+    record = store.create(name="Mira", persona="Calm persona")
+    role = characters.load_fresh(record["character_id"], directory=store.directory)
+    monkeypatch.setattr(characters, "_ACTIVE_CHARACTER", role)
+    path = store.directory / f"{role.character_id}.toml"
+    path.write_text(f"# Comment-only edit and equivalent TOML ordering.\npersona = ' Calm persona '\n\n[names]\nname = 'Mira'\ncharacter_id = '{role.character_id}'\n", encoding="utf-8")
+    assert not _catalog_record(store, role.character_id)["pending_restart"]
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write('display_name = "Mira"\n[voice_lines]\nvn_voice_choice = "Changed commentary"\n')
+    advanced = _catalog_record(store, role.character_id)
+    assert advanced["valid"] and advanced["pending_restart"] and not advanced["editable"]
+    assert characters.active_character() is role
+
+
+def test_nonactive_disk_changes_do_not_request_runtime_restart(store):
+    record = store.create(name="Inactive")
+    updated = store.update(record["character_id"], name="Edited")
+    assert not updated["pending_restart"]
+    assert not _catalog_record(store, record["character_id"])["pending_restart"]
+
+
+@pytest.mark.parametrize("failure", ["malformed", "invalid_name", "missing"])
+def test_invalid_or_missing_active_definition_is_visible_without_changing_runtime(store, monkeypatch, failure):
+    record = store.create(name="Original", persona="Original persona")
+    role = characters.load_fresh(record["character_id"], directory=store.directory)
+    monkeypatch.setattr(characters, "_ACTIVE_CHARACTER", role)
+    path = store.directory / f"{role.character_id}.toml"
+    if failure == "missing":
+        path.unlink()
+    elif failure == "malformed":
+        path.write_text('broken = [', encoding="utf-8")
+    else:
+        path.write_text(f'[names]\ncharacter_id="{role.character_id}"\nname=""\n', encoding="utf-8")
+    invalid = _catalog_record(store, role.character_id)
+    assert not invalid["valid"] and invalid["error"] and not invalid["pending_restart"]
+    assert characters.active_character() is role
+    assert characters.active_ui_identity()["name"] == "Original"
+    assert "Original persona" in characters.text("ja_identity")
+
+
+@pytest.mark.asyncio
+async def test_character_list_projects_fixed_unicode_limits_for_ui(store):
+    listing = await CharacterHandler(store).handle(Method.CHARACTER_LIST, {})
+    assert listing["limits"] == {"name_max_chars": 128, "persona_max_chars": 7900}

@@ -42,6 +42,8 @@ import {
   chatTranslationKey,
 } from './chatTranslationState'
 import { useI18n } from '../i18n'
+import { startupCharacterSelection } from '../../main/backendStartup'
+import { characterCatalog, type CharacterRecord } from './characterManagement'
 
 interface Props {
   send: (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
@@ -151,6 +153,8 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   const [projects, setProjects] = useState<ChatProjectSummary[]>([])
   const [activeSession, setActiveSession] = useState<string | null>(null)
   const [currentCharacterId, setCurrentCharacterId] = useState('')
+  const [sessionCharacters, setSessionCharacters] = useState<CharacterRecord[] | null>(null)
+  const [startupCharacterLocked, setStartupCharacterLocked] = useState(false)
   const [sessionReady, setSessionReady] = useState(false)
   const [sessionSwitching, setSessionSwitching] = useState(false)
   const [sessionSelectionNotice, setSessionSelectionNotice] = useState('')
@@ -486,6 +490,24 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       window.removeEventListener('pointercancel', handlePointerUp)
     }
   }, [isSplitResizing])
+
+  // ChatPage remounts when returning from Settings; each live connection reads
+  // fresh names and the desktop-owned launch source without changing ownership.
+  useEffect(() => {
+    if (!connected) return
+    let current = true
+    setSessionCharacters(null)
+    setStartupCharacterLocked(false)
+    void send('character.list').then(response => {
+      if (current) setSessionCharacters(characterCatalog(response).characters)
+    }).catch(() => {})
+    void window.amadeus?.getDesktopSettings().then(snapshot => {
+      if (!current || !snapshot) return
+      const selection = startupCharacterSelection(snapshot)
+      setStartupCharacterLocked(selection.locked || selection.source === 'environment')
+    }).catch(() => {})
+    return () => { current = false }
+  }, [connected, send])
 
   // restore legacy persisted sessions
   useEffect(() => {
@@ -1258,6 +1280,10 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
         projects={projects}
         activeId={activeSession}
         currentCharacterId={currentCharacterId}
+        characters={sessionCharacters}
+        connected={connected}
+        startupCharacterLocked={startupCharacterLocked}
+        onNotice={setSessionSelectionNotice}
         artifactViewId={projectViewId === DRAFT_APPS_VIEW_ID ? 'drafts' : projectViewId}
         onSelect={id => { void loadSession(id, true) }}
         onNew={() => { setProjectViewId(''); void handleNewSession() }}

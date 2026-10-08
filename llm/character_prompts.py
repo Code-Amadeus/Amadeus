@@ -13,6 +13,7 @@ import re
 from string import Template
 from types import MappingProxyType
 from typing import Mapping
+import unicodedata
 from pathlib import Path
 
 from core.character_profiles import (
@@ -25,6 +26,8 @@ from llm.character_voice_lines import validate_voice_lines
 
 DEFAULT_CHARACTER_ID = "kurisu"
 MAX_CHARACTER_PROMPT_CHARS = 8192
+MAX_CHARACTER_NAME_CHARS = 128
+MAX_CHARACTER_PERSONA_CHARS = 7900
 NAME_KEYS = frozenset({"character_id", "short_name", "en_name", "family_first_name",
                        "ja_name", "display_name", "work_title"})
 TEXT_KEYS = frozenset({
@@ -69,31 +72,56 @@ class CharacterPrompts:
             if not isinstance(value, str) or "\0" in value or len(value) > MAX_CHARACTER_PROMPT_CHARS:
                 raise ValueError(f"invalid character prompt value: {key}")
             value.encode("utf-8", errors="strict")
+            if key in NAME_KEYS - {"character_id"}:
+                validate_character_name(value, key, allow_empty=key == "work_title")
         if values["character_id"] != self.character_id:
             raise ValueError("character id does not match resource identity")
-        if not values["display_name"] or values["display_name"] != values["display_name"].strip():
-            raise ValueError("character display_name must be nonempty with no surrounding whitespace")
-        name = self.name or values["short_name"]
-        _validate_role_text(name, "name", nonempty=True)
-        _validate_role_text(self.persona, "persona")
+        name = self.name if self.name != "" else values["short_name"]
+        validate_character_name(name)
+        persona = normalize_character_persona(self.persona)
         if not self.ui_names.keys() <= {"ui_name", "accessible_name"}:
             raise ValueError("invalid character UI labels")
         ui_names = {"ui_name": values["display_name"], "accessible_name": values["display_name"]}
         ui_names.update(self.ui_names)
-        for value in ui_names.values():
-            _validate_role_text(value, "UI label", nonempty=True)
+        for key, value in ui_names.items():
+            validate_character_name(value, key)
         object.__setattr__(self, "name", name)
+        object.__setattr__(self, "persona", persona)
         object.__setattr__(self, "ui_names", MappingProxyType(ui_names))
         object.__setattr__(self, "values", MappingProxyType(values))
         object.__setattr__(self, "voice_lines", validate_voice_lines(
             self.voice_lines, max_chars=MAX_CHARACTER_PROMPT_CHARS))
 
 
-def _validate_role_text(value: object, field_name: str, *, nonempty: bool = False) -> str:
-    if (not isinstance(value, str) or "\0" in value or len(value) > MAX_CHARACTER_PROMPT_CHARS
-            or (nonempty and (not value or value != value.strip()))):
-        raise ValueError(f"invalid character {field_name}")
-    value.encode("utf-8", errors="strict")
+def validate_character_name(value: object, field_name: str = "name", *, allow_empty: bool = False) -> str:
+    label = f"Character {field_name}"
+    if not isinstance(value, str) or (not value and not allow_empty):
+        raise ValueError(f"{label} must be a nonempty string.")
+    if any(unicodedata.category(char) in {"Cc", "Zl", "Zp"} for char in value):
+        raise ValueError(f"{label} must be one line without control characters.")
+    if value != value.strip():
+        raise ValueError(f"{label} must not have surrounding whitespace.")
+    if len(value) > MAX_CHARACTER_NAME_CHARS:
+        raise ValueError(f"{label} must contain at most {MAX_CHARACTER_NAME_CHARS} Unicode code points.")
+    try:
+        value.encode("utf-8", errors="strict")
+    except UnicodeError as exc:
+        raise ValueError(f"{label} must contain valid Unicode text.") from exc
+    return value
+
+
+def normalize_character_persona(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("Character persona must be a string.")
+    value = value.strip()
+    if "\0" in value:
+        raise ValueError("Character persona must not contain NUL.")
+    if len(value) > MAX_CHARACTER_PERSONA_CHARS:
+        raise ValueError(f"Character persona must contain at most {MAX_CHARACTER_PERSONA_CHARS} Unicode code points.")
+    try:
+        value.encode("utf-8", errors="strict")
+    except UnicodeError as exc:
+        raise ValueError("Character persona must contain valid Unicode text.") from exc
     return value
 
 
@@ -108,18 +136,17 @@ def parse_character_document(character_id: str, document: Mapping[str, object]) 
             or not ui.keys() <= {"ui_name", "accessible_name"}):
         raise ValueError("invalid character prompt tables")
     primary = names.get("name", names.get("short_name"))
-    _validate_role_text(primary, "primary name", nonempty=True)
+    validate_character_name(primary)
     if names.get("character_id") != character_id:
         raise ValueError("character file requires its stable id and a nonempty primary name")
-    persona = _validate_role_text(document.get("persona", ""), "persona")
+    persona = normalize_character_persona(document.get("persona", ""))
     if persona and texts:
         raise ValueError("character persona cannot be combined with explicit texts")
     resolved = {key: primary for key in NAME_KEYS - {"character_id", "work_title"}}
     resolved.update(character_id=character_id, work_title="")
     resolved.update({key: value for key, value in names.items() if key != "name"})
-    for key in NAME_KEYS - {"character_id", "work_title"}:
-        if not isinstance(resolved[key], str) or not resolved[key].strip():
-            raise ValueError(f"invalid character name: {key}")
+    for key in NAME_KEYS - {"character_id"}:
+        validate_character_name(resolved[key], key, allow_empty=key == "work_title")
     neutral = _neutral_texts(resolved)
     if persona:
         for key in ("ja_identity", "en_identity"):

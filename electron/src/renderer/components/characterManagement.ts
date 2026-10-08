@@ -7,6 +7,7 @@ export type CharacterRecord = {
   builtin: boolean
   valid: boolean
   editable: boolean
+  pending_restart?: boolean
   error?: string
   edit_error?: string
 }
@@ -25,21 +26,33 @@ export type CharacterDesktopSettings = {
 }
 type Send = (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
 
+export type CharacterLimits = { name_max_chars: number; persona_max_chars: number }
+
+// Count Unicode code points, matching the Host rather than DOM UTF-16 lengths.
+export function characterDraftLengths(draft: CharacterDraft) {
+  return { name: Array.from(draft.name.trim()).length, persona: Array.from(draft.persona.trim()).length }
+}
+
 export type CharacterDraft = { characterId: string | null; name: string; persona: string }
 
 export function saveCharacterDraft(draft: CharacterDraft, send: Send): Promise<Record<string, unknown>> {
   return send(draft.characterId ? 'character.update' : 'character.create', {
     ...(draft.characterId ? { character_id: draft.characterId } : {}),
-    name: draft.name.trim(), persona: draft.persona,
+    name: draft.name.trim(), persona: draft.persona.trim(),
   })
 }
 
-export function characterCatalog(response: Record<string, unknown>): { characters: CharacterRecord[]; active: ActiveCharacter | null } {
+export function characterCatalog(response: Record<string, unknown>): { characters: CharacterRecord[]; active: ActiveCharacter | null; limits: CharacterLimits | null } {
   const characters = Array.isArray(response.characters) ? response.characters.filter((record): record is CharacterRecord =>
     Boolean(record && typeof record === 'object' && typeof record.character_id === 'string'
       && typeof record.name === 'string' && typeof record.persona === 'string')) : []
   const active = response.active as ActiveCharacter | undefined
-  return { characters, active: active && typeof active.character_id === 'string' && typeof active.name === 'string' ? active : null }
+  const limits = response.limits as CharacterLimits | undefined
+  return {
+    characters, active: active && typeof active.character_id === 'string' && typeof active.name === 'string' ? active : null,
+    limits: limits && Number.isSafeInteger(limits.name_max_chars) && limits.name_max_chars > 0
+      && Number.isSafeInteger(limits.persona_max_chars) && limits.persona_max_chars > 0 ? limits : null,
+  }
 }
 
 export function nextStartupCharacter(settings: CharacterDesktopSettings | null, active: ActiveCharacter | null) {

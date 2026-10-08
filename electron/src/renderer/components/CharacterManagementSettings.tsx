@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useI18n } from '../i18n'
 import { CardShell } from './SettingsPrimitives'
-import { characterCatalog, nextStartupCharacter, saveCharacterDraft, saveStartupCharacter, type CharacterDraft, type CharacterRecord, type ActiveCharacter, type CharacterDesktopSettings } from './characterManagement'
+import { characterDraftLengths, characterCatalog, nextStartupCharacter, saveCharacterDraft, saveStartupCharacter, type CharacterLimits, type CharacterDraft, type CharacterRecord, type ActiveCharacter, type CharacterDesktopSettings } from './characterManagement'
 
 interface Props {
   send: (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
@@ -24,6 +24,8 @@ export function CharacterRoleLabel({ character, active, nextStart }: {
       {nextStart ? ` · ${t('Next start')}` : ''}
     </div>
     <div className="settings-field-description"><code style={{ overflowWrap: 'anywhere' }}>{character.character_id}</code></div>
+    {active && character.valid && character.pending_restart
+      ? <div role="status" className="settings-field-description">{t('Modified. Restart the backend to apply.')}</div> : null}
   </>
 }
 
@@ -31,6 +33,7 @@ export default function CharacterManagementSettings({ send, connected, restartin
   const { t } = useI18n()
   const [characters, setCharacters] = useState<CharacterRecord[]>([])
   const [active, setActive] = useState<ActiveCharacter | null>(null)
+  const [limits, setLimits] = useState<CharacterLimits | null>(null)
   const [editor, setEditor] = useState<CharacterDraft | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -42,6 +45,9 @@ export default function CharacterManagementSettings({ send, connected, restartin
   const preview = kurisuPreview && typeof kurisuPreview === 'object' ? kurisuPreview as Record<string, unknown> : {}
   const kurisuPersona = typeof preview.effective === 'string' ? preview.effective : ''
   const disabled = busy || restarting || !connected
+  const lengths = editor ? characterDraftLengths(editor) : null
+  const nameTooLong = Boolean(limits && lengths && lengths.name > limits.name_max_chars)
+  const personaTooLong = Boolean(limits && lengths && lengths.persona > limits.persona_max_chars)
 
   const refresh = useCallback(async () => {
     const current = generation.current
@@ -49,11 +55,13 @@ export default function CharacterManagementSettings({ send, connected, restartin
     if (current !== generation.current) return
     setCharacters(catalog.characters)
     setActive(catalog.active)
+    setLimits(catalog.limits)
   }, [send])
 
   useEffect(() => {
     generation.current += 1
     setActive(null)
+    setLimits(null)
     if (!connected) return
     let current = true
     void send('character.list').then(response => {
@@ -61,6 +69,7 @@ export default function CharacterManagementSettings({ send, connected, restartin
       const catalog = characterCatalog(response)
       setCharacters(catalog.characters)
       setActive(catalog.active)
+      setLimits(catalog.limits)
     }).catch(reason => { if (current) setError(reason instanceof Error ? reason.message : 'Could not load roles.') })
     return () => { current = false }
   }, [connected, send])
@@ -83,7 +92,7 @@ export default function CharacterManagementSettings({ send, connected, restartin
   })
 
   const save = () => perform(async () => {
-    if (!editor) return
+    if (!editor || !limits || nameTooLong || personaTooLong) return
     await saveCharacterDraft(editor, send)
     setEditor(null)
     setNotice('Role saved for the next backend start. The active role remains unchanged.')
@@ -123,20 +132,27 @@ export default function CharacterManagementSettings({ send, connected, restartin
       {editor ? <div>
         <div className="settings-field-label">{t(editor.characterId ? 'Edit user role' : 'Create user role')}</div>
         <label className="settings-field-label" htmlFor="character-role-name">{t('Role name')}</label>
-        <input id="character-role-name" type="text" maxLength={8192} value={editor.name} disabled={disabled}
+        <input id="character-role-name" type="text" aria-describedby="character-name-limits" aria-invalid={nameTooLong} value={editor.name} disabled={disabled}
           onChange={event => setEditor({ ...editor, name: event.target.value })}
           className="w-full min-w-0 text-[12px] bg-[var(--surface-alt)] border border-[var(--border)] rounded-lg px-3 outline-none focus:border-[var(--accent)] disabled:opacity-50"
           style={{ height: 34, marginBottom: 8 }} />
+        {limits && lengths ? <div id="character-name-limits" className="settings-field-description">
+          {t('Name: {count}/{limit} characters. Use a single line.', { count: lengths.name, limit: limits.name_max_chars })}
+        </div> : null}
         <label className="settings-field-label" htmlFor="character-role-persona">{t('Persona')}</label>
         <div className="settings-field-description">{t('Write the role’s personality and speaking style. An empty persona uses the application’s ordinary defaults.')}</div>
-        <textarea id="character-role-persona" rows={8} maxLength={8192} value={editor.persona} disabled={disabled}
+        <textarea id="character-role-persona" rows={8} aria-describedby="character-persona-limits" aria-invalid={personaTooLong} value={editor.persona} disabled={disabled}
           onChange={event => setEditor({ ...editor, persona: event.target.value })} />
+        {limits && lengths ? <div id="character-persona-limits" className="settings-field-description">
+          {t('Persona: {count}/{limit} characters. Leading and trailing whitespace is removed.', { count: lengths.persona, limit: limits.persona_max_chars })}
+        </div> : null}
+        {nameTooLong || personaTooLong ? <div role="alert" className="settings-field-description">{t('Shorten the highlighted field before saving.')}</div> : null}
         {!editor.characterId ? <div className="character-prompt-actions">
           <button type="button" disabled={disabled || !kurisuPersona} onClick={() => setEditor({ ...editor, persona: kurisuPersona })}>{t('Prefill from current Kurisu Japanese persona')}</button>
           <span className="settings-field-description">{t('This text may contain Kurisu’s name. Review and edit the visible text before saving your new role.')}</span>
         </div> : null}
         <div className="character-prompt-actions">
-          <button type="button" disabled={disabled || !editor.name.trim()} onClick={() => void save()}>{t(busy ? 'Saving…' : 'Save role')}</button>
+          <button type="button" disabled={disabled || !limits || !editor.name.trim() || nameTooLong || personaTooLong} onClick={() => void save()}>{t(busy ? 'Saving…' : 'Save role')}</button>
           <button type="button" disabled={busy} onClick={() => setEditor(null)}>{t('Cancel')}</button>
         </div>
       </div> : null}

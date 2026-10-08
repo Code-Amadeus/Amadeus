@@ -89,7 +89,7 @@ def test_malformed_selected_file_fails_without_default_fallback(monkeypatch, tmp
 
 def synthetic_character(monkeypatch):
     values = dict(characters.load().values)
-    values.update(character_id="synthetic-role", short_name='A "quoted" \\ name\n${short_name}',
+    values.update(character_id="synthetic-role", short_name='A "quoted" \\ name ${short_name}',
                   cooperative_json_say='Quoted "speech" \\ path\n${display_name} $short_name',
                   vn_voice="Literal ${display_name} and $short_name",
                   vn_analyst="Literal ${game_context} and $output_language",

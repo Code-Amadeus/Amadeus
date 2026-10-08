@@ -177,3 +177,31 @@ test('ordinary startup errors never offer character recovery', () => {
   assert.match(html, /Provider initialization failed/)
   assert.doesNotMatch(html, /Kurisu|<button/)
 })
+
+
+test('persona boundaries trim user whitespace without rewriting interior text', async () => {
+  const calls = []
+  const send = async (method, params) => { calls.push(params); return {} }
+  await management.saveCharacterDraft({ characterId: null, name: ' Mira ', persona: ' \nCalm.\n  Keep this indent. \n' }, send)
+  await management.saveCharacterDraft({ characterId: 'one', name: 'Mira', persona: ' \n\t' }, send)
+  assert.equal(calls[0].persona, 'Calm.\n  Keep this indent.')
+  assert.equal(calls[1].persona, '')
+})
+
+test('editor counts match Host Unicode code points and consume advertised limits', () => {
+  const limits = { name_max_chars: 128, persona_max_chars: 7900 }
+  assert.deepEqual(management.characterCatalog({ characters: [], limits }).limits, limits)
+  assert.equal(management.characterCatalog({ characters: [], limits: { name_max_chars: 128 } }).limits, null)
+  assert.deepEqual(management.characterDraftLengths({ characterId: null, name: ` ${'😀'.repeat(128)} `, persona: `\n${'😀'.repeat(7900)}\n` }), { name: 128, persona: 7900 })
+  assert.equal(management.characterDraftLengths({ name: 'Mira', persona: 'x'.repeat(7901) }).persona, 7901)
+})
+
+test('restart marker survives a fresh label render and is absent for unchanged, invalid or inactive roles', () => {
+  const record = { character_id: 'one', name: 'Mira', persona: 'Edited', valid: true, builtin: false, editable: true, pending_restart: true }
+  const render = (character, active = true) => renderToStaticMarkup(React.createElement(CharacterRoleLabel, { character, active, nextStart: true }))
+  const catalog = management.characterCatalog({ characters: [record], active })
+  for (let mount = 0; mount < 2; mount += 1) assert.match(render(catalog.characters[0]), /Modified\. Restart the backend to apply\./)
+  assert.doesNotMatch(render({ ...record, pending_restart: false }), /Modified\./)
+  assert.doesNotMatch(render({ ...record, valid: false }), /Modified\./)
+  assert.doesNotMatch(render(record, false), /Modified\./)
+})

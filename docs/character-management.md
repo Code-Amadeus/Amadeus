@@ -10,6 +10,12 @@ that separate feature is installed.
 
 In Settings, create a character with a name and optional personality text.
 The Host generates a stable ID; names may contain non-Latin text or be repeated.
+Names use a single line without control characters, up to 128 Unicode code
+points. Personality text allows 7900 code points after trimming its outer
+whitespace; internal paragraphs are preserved. An all-whitespace personality is
+empty. The GUI reads these limits from the Host and counts emoji in the same
+units. These limits also apply to manually authored user records; shorten an
+oversized name/personality without changing its stable ID.
 The new character starts with no conversation history. An optional Kurisu
 Japanese-persona prefill copies only the visible editable text; it may contain
 Kurisu's name, which should be reviewed before saving. It does not copy history,
@@ -29,6 +35,10 @@ They still use the same loader validation and cannot override Host fact wording.
 
 Updating a user character keeps its ID and conversation history. Saving changes
 does not change the running character; restart the backend to apply them.
+An edited active role retains a **Modified. Restart the backend to apply.**
+label when revisiting Settings. The Host compares parsed saved content with the
+fixed running definition; formatting-only changes do not set this label, and
+reverting the content clears it. Missing or invalid files are shown as errors.
 There is no copy, hide, delete, per-character media switch, or hot-switch API in
 this iteration.
 
@@ -40,10 +50,24 @@ Settings distinguishes the actual running identity from the saved next-start
 selection. A parent-process environment override remains locked; the GUI cannot
 overwrite that source. Other existing configuration precedence remains unchanged.
 
-The main chat, AUIP option labels, Companion speaker heading and avatar controls
+The main chat, AUIP option labels, Companion speaker heading, VN overlay heading and avatar controls
 use the running identity, not the pending selection. The actual avatar image,
 animation, scene and voice remain application-level resources shared by all roles.
 Changing those application settings therefore affects every character using them.
+Chat avatars distinguish the user and assistant; they are not per-character
+identifiers. Session titles remain unchanged. Foreign-character sessions show
+their character's saved name, with the full stable ID in the tooltip so repeated
+names remain distinguishable. An unavailable character is labeled explicitly.
+The switch guidance points to **Settings → General → Character roles**; an
+explicit parent-environment lock instead directs the user to that launch setting.
+Renaming a role changes its display label, not historic session ownership or
+accepted Work identity.
+
+Before a running identity can be obtained, avatar settings use **Assistant
+avatar** / **A**, and a Companion without an initial identity uses **Amadeus**.
+This is an intentional visible fallback change from fixed Kurisu labels. Once
+identity is known, the original Kurisu labels are retained. Amadeus remains the
+application/system name.
 
 ## Recover an invalid startup selection
 
@@ -67,7 +91,8 @@ With an empty personality, the existing name-only behavior is preserved.
 
 VN reactions and Work commentary continue to follow the role's name without
 receiving this new personality field. Hybrid opening examples retain neutral
-user-role defaults. These are current scope limits, not claims of a fully uniform
+user-role defaults. The inherited-branch fallback used when the main prompt
+cannot load also retains its existing name-only text. These are current scope limits, not claims of a fully uniform
 personality across every surface. A model trained for one character may also be
 less reliable at portraying a different personality.
 
