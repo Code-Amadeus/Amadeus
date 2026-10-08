@@ -12,6 +12,7 @@ import { ELECTRON_SLICE_START_PARAMS, stopElectronSliceHost, syncElectronSliceHo
 import appIconUrl from '@assets/icons/app/app_icon.png'
 
 export type Page = 'chat' | 'vn' | 'backend' | 'settings'
+type ProjectionRequest = { target: 'render' | 'wallpaper' | null }
 
 const WORK_FOCUS_RUN_KEY = 'amadeus.work.focusRunId'
 const WORK_FOCUS_ACTION_KEY = 'amadeus.work.focusAction'
@@ -37,7 +38,7 @@ function AmadeusApp() {
   const [renderActive, setRenderActive] = useState(false)
   const [wallpaperActive, setWallpaperActive] = useState(false)
   const [renderAssetUrl, setRenderAssetUrl] = useState('')
-  const projectionRequestRef = useRef(0)
+  const projectionRequestRef = useRef<ProjectionRequest>({ target: null })
 
   useEffect(() => {
     if (desktopProjection) return
@@ -78,22 +79,26 @@ function AmadeusApp() {
 
   // These toggles own projection visibility. The backend's shared graph signal
   // route must remain active for speech and expressions on either surface.
-  // Async replies may only apply to the latest projection toggle.
+  // Start replies belong to the latest toggle. A confirmed stop still applies
+  // unless a newer start owns that surface.
   const handleToggleRender = useCallback(async () => {
-    const request = ++projectionRequestRef.current
     const next = !renderActive
+    const request: ProjectionRequest = { target: next ? 'render' : null }
+    projectionRequestRef.current = request
     setRenderActive(next)
     setPage('chat')
 
     if (next) {
       if (wallpaperActive) {
         const stopped = await stopElectronSliceHost(send)
+        // Cancelling Render does not undo a confirmed Wallpaper stop. Only a
+        // newer Wallpaper start can supersede that confirmation.
+        if (stopped && projectionRequestRef.current.target !== 'wallpaper') setWallpaperActive(false)
         if (request !== projectionRequestRef.current) return
         if (!stopped) {
           setRenderActive(false)
           return
         }
-        setWallpaperActive(false)
       }
       // Start AssetServer and get the render page URL
       try {
@@ -115,8 +120,9 @@ function AmadeusApp() {
 
   // Toggle the Electron Slice wallpaper projection.
   const handleToggleWallpaper = useCallback(async () => {
-    const request = ++projectionRequestRef.current
     const next = !wallpaperActive
+    const request: ProjectionRequest = { target: next ? 'wallpaper' : null }
+    projectionRequestRef.current = request
     setPage('chat')
 
     if (next) {
@@ -138,7 +144,7 @@ function AmadeusApp() {
       }
     } else {
       const stopped = await stopElectronSliceHost(send)
-      if (request === projectionRequestRef.current && stopped) setWallpaperActive(false)
+      if (stopped && projectionRequestRef.current.target !== 'wallpaper') setWallpaperActive(false)
     }
   }, [wallpaperActive, renderActive, send])
 
