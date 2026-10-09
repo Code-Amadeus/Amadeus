@@ -1,0 +1,82 @@
+{
+  "base": "5a353f0f753cb1b69563662ab0d07d1c9d4cb1bc",
+  "electron_tests": 330,
+  "python_targeted_tests": 287,
+  "build": "passed",
+  "desktop": {
+    "status": "passed",
+    "checks": {
+      "electron_started_backend": true,
+      "authenticated_runtime_status": true,
+      "authenticated_wallpaper_stop": true,
+      "chat_connected": true,
+      "backend_page_connected": true,
+      "startup_mode_saved_in_gui": true,
+      "settings_and_runtime_packages_rendered": true,
+      "b2_unavailable_is_visible": true,
+      "project_navigation_rendered": true,
+      "artifact_navigation_opened": true,
+      "character_page_creates_and_selects_without_hot_switch": true,
+      "header_restart_applies_selected_role": true,
+      "role_restart_available_without_pending_desktop_revision": true,
+      "keyboard_tabs_preserve_history_and_reference_boundaries": true,
+      "appearance_uses_existing_sprite_default_without_loading_preview": true,
+      "voice_has_one_editor_for_engines_models_and_reference_audio": true,
+      "overview_has_no_duplicate_voice_editor_and_saved_value_survives_navigation": true,
+      "old_visual_section_opens_nested_character_appearance": true,
+      "narrow_character_layout_has_no_horizontal_overflow": true,
+      "active_summary_and_catalog_agree_after_restart_and_tab_navigation": true,
+      "chinese_character_navigation_and_content_render": true,
+      "electron_and_backend_exited": true
+    }
+  },
+  "visual_fixture": {
+    "host": "control fixture",
+    "runtime": "production visual_preview + Live2DCharacter",
+    "checks": [
+      "Settings contains Characters; its Appearance tab lazily opens the visual editor",
+      "default Sprite; no preview or Cubism instance",
+      "draft selection is distinct from applied Sprite",
+      "real model ready with structured diagnostic; expression and mouth tests isolated",
+      "Host status update preserves draft and renders object diagnostics",
+      "reload uses applied configuration and preserves draft",
+      "reset closes mouth; save applies profile; closing removes the independent instance",
+      "leaving the Appearance tab disposes its preview; returning restores saved profiles without a hidden instance",
+      "bad model displays error and cannot mutate applied configuration"
+    ],
+    "passed": true,
+    "errors": []
+  },
+  "prompt_comparison": [
+    {
+      "case": "kurisu",
+      "count": 155,
+      "differences": []
+    },
+    {
+      "case": "mira",
+      "count": 155,
+      "differences": []
+    },
+    {
+      "case": "kurisu-override",
+      "count": 155,
+      "differences": []
+    }
+  ],
+  "review_followup": {
+    "electron_tests": 331,
+    "build": "passed",
+    "resource_classification_regression": "failed before fix; passed after fix",
+    "classification": {
+      "visual": [
+        "visual_runtime_pack",
+        "character_pack",
+        "vn_companion_portraits"
+      ],
+      "voice": [
+        "emotion_reference_pack"
+      ]
+    }
+  }
+}

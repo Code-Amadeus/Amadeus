@@ -150,14 +150,14 @@ test('duplicate role names remain distinguishable by their full stable IDs in ma
   for (const role of roles) assert.ok(html.includes(`>${role.character_id}</code>`))
 })
 
-test('role edits retain a restart affordance even when desktop selection has no pending revision', async () => {
+test('role editor leaves backend restart to its Settings owner', async () => {
   await management.saveCharacterDraft({ characterId: 'one', name: 'Edited', persona: 'updated' }, async () => ({ character: {} }))
   const html = renderToStaticMarkup(React.createElement(CharacterManagementSettings, {
-    send: async () => ({}), connected: true, restarting: false, onRestart: async () => {},
+    send: async () => ({}), connected: true, restarting: false,
     desktop: { values: { AMADEUS_CHARACTER_ID: 'one' }, sources: { AMADEUS_CHARACTER_ID: 'user' }, pendingRevisions: {} },
     kurisuPreview: {}, onSettingsChanged: () => {},
   }))
-  assert.match(html, /<button(?:(?!disabled)[^>])*>Restart backend to apply<\/button>/)
+  assert.doesNotMatch(html, />Restart backend to apply<\/button>/)
 })
 
 test('offline character recovery is explicit and environment locks disable it', () => {
@@ -292,4 +292,20 @@ test('shared selection authority matches actual desktop snapshots and all source
   store.update({}, { values: { AMADEUS_CHARACTER_ID: 'user-role' } })
   check({}, 'user', 'Desktop settings')
   check({ AMADEUS_CHARACTER_ID: 'environment-role' }, 'environment', 'Process environment', true)
+})
+
+
+test('reconnecting clears obsolete save/restart notices and online loading does not expose a generated next-role ID', () => {
+  const page = catalogHarness(() => new Promise(() => {}))
+  page.state.notice = 'Startup role saved. Restart the backend to apply.'
+  page.connect(false)
+  assert.equal(page.state.notice, '')
+  const html = renderToStaticMarkup(React.createElement(CharacterManagementSettings, {
+    send: async () => ({}), connected: true, restarting: false,
+    desktop: { values: { AMADEUS_CHARACTER_ID: 'character-synthetic-pending' }, sources: { AMADEUS_CHARACTER_ID: 'user' } },
+    kurisuPreview: {}, onSettingsChanged() {},
+  }))
+  assert.match(html, /Loading active role…/)
+  assert.match(html, /Loading role details…/)
+  assert.doesNotMatch(html, /character-synthetic-pending/)
 })

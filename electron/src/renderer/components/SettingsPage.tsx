@@ -6,12 +6,14 @@ import { GroupTitle, CardShell, CardIcon, StatusPill, SettingsGroup } from './Se
 import McpConnections, { type McpConnectionSummary } from './McpConnections'
 import ChatAvatarSettings from './ChatAvatarSettings'
 import CharacterVisualsPage from './CharacterVisualsPage'
+import CharacterPage from './CharacterPage'
+import { CHARACTER_SECTION_KEY, characterSection, type CharacterSection } from './characterWorkspace'
 import MainChatCharacterSettings from './MainChatCharacterSettings'
 import CharacterManagementSettings from './CharacterManagementSettings'
 import BackendStartupRecovery from './BackendStartupRecovery'
 import RetiredRouteSetting, { RETIRED_ROUTE_KEY, retiredRouteMigration, removeStoredRetiredRouteSetting, type RetiredSettingFact } from './RetiredRouteSetting'
 import AcpProviders, { type AcpConfiguration } from './AcpProviders'
-import CapabilitiesPanel, { type RuntimePackageStatus } from './CapabilitiesPanel'
+import CapabilitiesPanel, { RuntimePackages, type RuntimePackageStatus } from './CapabilitiesPanel'
 import { buildCapabilityProfiles, type SceneConfigureSection } from './sceneCapabilityProjection'
 import { useI18n, type UiLocale } from '../i18n'
 import { useTheme, type UiTheme } from '../theme'
@@ -34,7 +36,7 @@ interface Props {
   reconnectBackend: () => Promise<void>
 }
 
-type SettingsSection = 'capabilities' | 'graphics' | 'visuals' | SceneConfigureSection
+type SettingsSection = 'capabilities' | 'characters' | 'graphics' | SceneConfigureSection
 type ModelsPage = 'roles' | 'connections'
 
 type StartupOption = string | { value: string; label: string }
@@ -614,10 +616,15 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   const { theme, setTheme } = useTheme()
   const [section, setSection] = useState<SettingsSection>(() => {
     const saved = window.localStorage.getItem('amadeus.settings.section')
-    return ['capabilities', 'general', 'graphics', 'visuals', 'models', 'voice', 'providers'].includes(String(saved))
+    if (saved === 'visuals') return 'characters'
+    return ['capabilities', 'general', 'characters', 'graphics', 'models', 'voice', 'providers'].includes(String(saved))
       ? saved as SettingsSection
       : 'capabilities'
   })
+  const [characterTab, setCharacterTab] = useState<CharacterSection>(() =>
+    window.localStorage.getItem('amadeus.settings.section') === 'visuals' ? 'appearance'
+      : characterSection(window.localStorage.getItem(CHARACTER_SECTION_KEY)))
+  const openCharacters = useCallback((tab: CharacterSection) => { setCharacterTab(tab); setSection('characters') }, [])
   const [modelsPage, setModelsPage] = useState<ModelsPage>('roles')
   const [advancedRolesOpen, setAdvancedRolesOpen] = useState(false)
   const [config, setConfig] = useState<Record<string, unknown>>({})
@@ -637,9 +644,8 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   const [visionWindows, setVisionWindows] = useState<VisionWindowItem[]>([])
   const [visionWindowsLoading, setVisionWindowsLoading] = useState(false)
 
-  useEffect(() => {
-    window.localStorage.setItem('amadeus.settings.section', section)
-  }, [section])
+  useEffect(() => { window.localStorage.setItem('amadeus.settings.section', section) }, [section])
+  useEffect(() => { window.localStorage.setItem(CHARACTER_SECTION_KEY, characterTab) }, [characterTab])
 
   const refreshDesktop = useCallback(async () => {
     const snapshot = await window.amadeus?.getDesktopSettings()
@@ -1037,11 +1043,17 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
       status_detail: backend.status_detail,
     } : base
   })
-  const primaryVoiceIds = new Set(['conversation_asr', 'speech_synthesis', 'wake_asr', 'acoustic_pipeline', 'tts_emotion_references'])
-  const remoteVoiceIds = new Set(['asr_remote', 'tts_fish_audio', 'tts_remote'])
-  const primaryVoiceConfiguration = voiceConfiguration.filter(group => primaryVoiceIds.has(group.id))
+  // Keep complete voice groups together; voice files and engine settings share one editor.
+  const outputVoiceIds = new Set(['speech_synthesis', 'tts_embedded_v3', 'voice_reference_profile', 'tts_emotion_references'])
+  const inputVoiceIds = new Set(['conversation_asr', 'wake_asr', 'acoustic_pipeline'])
+  const remoteVoiceIds = new Set(['asr_remote', 'tts_fish_audio', 'tts_remote', 'tts_mimo'])
+  const outputVoiceConfiguration = voiceConfiguration.filter(group => outputVoiceIds.has(group.id))
+  const inputVoiceConfiguration = voiceConfiguration.filter(group => inputVoiceIds.has(group.id))
   const remoteVoiceConfiguration = voiceConfiguration.filter(group => remoteVoiceIds.has(group.id))
-  const advancedVoiceConfiguration = voiceConfiguration.filter(group => !primaryVoiceIds.has(group.id) && !remoteVoiceIds.has(group.id))
+  const advancedVoiceConfiguration = voiceConfiguration.filter(group => !outputVoiceIds.has(group.id) && !inputVoiceIds.has(group.id) && !remoteVoiceIds.has(group.id))
+  const speechBackend = voiceConfiguration.find(group => group.id === 'speech_synthesis')?.fields.find(field => field.key === 'TTS_BACKEND')
+  const speechBackendOption = speechBackend?.options?.find(option => typeof option !== 'string' && option.value === speechBackend.value)
+  const voiceSummary = typeof speechBackendOption === 'object' ? speechBackendOption.label : String(speechBackend?.value || '')
   const visionWindowHandle = String(config.vision_window_handle
     ?? (desktop?.sources?.AMADEUS_VISION_WINDOW_HANDLE === 'user' ? desktop.values.AMADEUS_VISION_WINDOW_HANDLE : ''))
   const visionWindowOptions: ComboOption[] = [
@@ -1092,6 +1104,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   }
 
   const openCapabilityTarget = useCallback((targetSection: SceneConfigureSection, targetId?: string) => {
+    if (targetId === 'character_rag') { openCharacters('knowledge'); return }
     setSection(targetSection)
     let anchor = ''
     if (targetSection === 'models') {
@@ -1107,23 +1120,67 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
       anchor = targetId?.includes('visual') ? 'settings-vision' : targetId?.includes('translation') ? 'settings-language' : ''
     }
     if (anchor) window.setTimeout(() => document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
-  }, [])
+  }, [openCharacters])
+
+  const characterWorkspace = <CharacterPage connected={connected} section={characterTab} onSectionChange={setCharacterTab}
+    voiceSummary={(connected ? config.tts_backend : desktop) ? voiceSummary : ''} onOpenVoice={() => setSection('voice')}
+    panels={{
+      identity: <>
+                <SettingsGroup title="Character roles" detail="Create user roles and choose the role for the next backend start.">
+                  <CharacterManagementSettings send={send} connected={connected} desktop={desktop}
+                    restarting={restarting}
+                    kurisuPreview={config.main_chat_character_prompt_preview}
+                    onSettingsChanged={settings => setDesktop(settings as unknown as DesktopSettingsSnapshot)} />
+                </SettingsGroup>
+        <details className="character-persona-details"><summary>{t('Kurisu Japanese persona')}</summary><div>
+                <SettingsGroup title="Kurisu Japanese persona" detail="Customize Kurisu’s Japanese personality for later Main Chat and AUIP/browser decisions and speech. Choices stay within the application’s rules.">
+                  <MainChatCharacterSettings
+                    savedOverride={desktop?.sources?.AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA === 'user'
+                      ? desktop.values.AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA ?? ''
+                      : String(config.main_chat_character_prompt_ja ?? '')}
+                    preview={config.main_chat_character_prompt_preview}
+                    canSave={connected || Boolean(desktop)}
+                    locked={Boolean(desktop?.locked?.AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA)}
+                    saving={saving === 'main_chat_character_prompt_ja'}
+                    onSave={value => handleChange('main_chat_character_prompt_ja', value)}
+                  />
+                </SettingsGroup>
+        </div></details>
+      </>,
+      appearance: <>
+        <CharacterVisualsPage send={send} subscribe={subscribe} connected={connected} />
+                <SettingsGroup title="Chat appearance" detail="Local presentation only; avatar images are never sent to the model.">
+                  <ChatAvatarSettings />
+                </SettingsGroup>
+        {connected ? <SettingsGroup title="Installed visual resources">
+          <RuntimePackages runtimePackages={runtimePackages.filter(item => ['visual_runtime_pack', 'character_pack', 'vn_companion_portraits'].includes(item.id))} />
+        </SettingsGroup> : null}
+      </>,
+      knowledge: <>
+        <div className="character-history-grid">
+          <article><h4>{t('Conversations stay with their role')}</h4><p>{t('Each role keeps its own conversation history. Restart with the owning role to continue or manage its chats.')}</p></article>
+          <article><h4>{t('Projects and Work remain shared')}</h4><p>{t('Retained projects, tasks and deliverables keep their existing sharing rules. Switching roles does not move or rewrite them.')}</p></article>
+        </div>
+        <SettingsGroup title="Kurisu reference library" detail="Uses the existing built-in Kurisu reference index. Other roles do not inherit this library.">
+          {optionalModelConnections.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible defaultOpen />)}
+        </SettingsGroup>
+      </>,
+    }} />
 
   return (
     <div className="settings-scroll-area flex-1 overflow-y-auto">
-      <div style={{ width: section === 'visuals' ? '100%' : 'min(100%, 1010px)', padding: '20px 24px 32px' }}>
+      <div style={{ width: section === 'characters' && characterTab === 'appearance' ? '100%' : 'min(100%, 1010px)', padding: '20px 24px 32px' }}>
         <div className="flex items-center justify-between gap-4" style={{ marginBottom: 16 }}>
           <div>
             <h2 className="settings-page-title">{t('Settings')}</h2>
             <div className="settings-page-context">
               {t(section === 'capabilities' ? 'Shared capabilities, implementations, and scene use.'
-                : section === 'visuals' ? 'Visual profiles, expression mappings and local previews.'
                 : 'Runtime controls and desktop connection profiles.')}
             </div>
           </div>
-          {restartPending ? (
+          {restartPending || (section === 'characters' && desktop) ? (
             <button onClick={() => void restartBackend()} disabled={restarting} className="text-[11px] font-[600] rounded-md disabled:opacity-50" style={{ height: 32, padding: '0 12px', whiteSpace: 'nowrap', flexShrink: 0, color: 'white', background: 'var(--accent)', border: 0 }}>
-              {t(restarting ? 'Restarting…' : 'Restart backend to apply')}
+              {t(restarting ? 'Restarting…' : restartPending ? 'Restart backend to apply' : 'Restart backend')}
             </button>
           ) : null}
         </div>
@@ -1147,8 +1204,8 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
             {([
               ['capabilities', 'Capabilities', 'Tiles'],
               ['general', 'General', 'Setting'],
+              ['characters', 'Characters', 'People'],
               ['graphics', 'Graphics', 'Video'],
-              ['visuals', 'Character visuals', 'Palette'],
               ['models', 'Models', 'Robot'],
               ['voice', 'Voice', 'Microphone'],
               ['providers', 'Providers', 'Work'],
@@ -1159,11 +1216,8 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
             ))}
           </nav>
 
-          <main className="settings-main flex-1 min-w-0" style={{ maxWidth: section === 'visuals' ? undefined : 760 }}>
-            {section === 'visuals' ? (
-              <CharacterVisualsPage send={send} subscribe={subscribe} connected={connected} />
-            ) : null}
-
+          <main className="settings-main flex-1 min-w-0" style={{ maxWidth: section === 'characters' && characterTab === 'appearance' ? undefined : 760 }}>
+            {section === 'characters' ? characterWorkspace : null}
             {section === 'capabilities' ? (
               <CapabilitiesPanel capabilities={capabilityProfiles} runtimePackages={runtimePackages} onOpenSection={openCapabilityTarget} />
             ) : null}
@@ -1210,26 +1264,8 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                     onChange={value => void setTheme(value).catch(reason => setError(reason instanceof Error ? reason.message : 'Could not save interface theme'))}
                   />
                 </SettingsGroup>
-                <SettingsGroup title="Kurisu Japanese persona" detail="Customize Kurisu’s Japanese personality for later Main Chat and AUIP/browser decisions and speech. Choices stay within the application’s rules.">
-                  <MainChatCharacterSettings
-                    savedOverride={desktop?.sources?.AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA === 'user'
-                      ? desktop.values.AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA ?? ''
-                      : String(config.main_chat_character_prompt_ja ?? '')}
-                    preview={config.main_chat_character_prompt_preview}
-                    canSave={connected || Boolean(desktop)}
-                    locked={Boolean(desktop?.locked?.AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA)}
-                    saving={saving === 'main_chat_character_prompt_ja'}
-                    onSave={value => handleChange('main_chat_character_prompt_ja', value)}
-                  />
-                </SettingsGroup>
-                <SettingsGroup title="Character roles" detail="Create user roles and choose the role for the next backend start.">
-                  <CharacterManagementSettings send={send} connected={connected} desktop={desktop}
-                    restarting={restarting} onRestart={restartBackend}
-                    kurisuPreview={config.main_chat_character_prompt_preview}
-                    onSettingsChanged={settings => setDesktop(settings as unknown as DesktopSettingsSnapshot)} />
-                </SettingsGroup>
-                <SettingsGroup title="Chat appearance" detail="Local presentation only; avatar images are never sent to the model.">
-                  <ChatAvatarSettings />
+                <SettingsGroup title="Characters" detail="Manage personalities, artwork, voice and reference knowledge together.">
+                  <button className="character-secondary-button" onClick={() => openCharacters('overview')}>{t('Open Characters')}</button>
                 </SettingsGroup>
                 <div id="settings-language"><SettingsGroup title="Language & captions" detail="Desktop settings are saved across restarts and applied to the current runtime immediately when possible.">
                   <ComboCard
@@ -1367,8 +1403,8 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                     <SettingsGroup title="Local model runtimes" detail="Local and hybrid endpoints are configured independently from remote API credentials.">
                       {localModelConnections.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible defaultOpen={Boolean(group.active)} optionalWhenInactive />)}
                     </SettingsGroup>
-                    <SettingsGroup title="Optional model services" detail="Supporting services shared by one or more model roles.">
-                      {optionalModelConnections.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible defaultOpen={Boolean(group.active)} optionalWhenInactive />)}
+                    <SettingsGroup title="Character knowledge" detail="Reference knowledge and history boundaries are managed in Characters.">
+                      <button className="character-secondary-button" onClick={() => openCharacters('knowledge')}>{t('Open character knowledge')}</button>
                     </SettingsGroup>
                   </div>
                 )}
@@ -1381,15 +1417,24 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                 <BoundaryNote title="Voice data boundary">
                   Wake and Conversation recognition are independent roles. Selecting a remote backend sends confirmed conversation audio or synthesis text to the configured endpoint; Amadeus never silently falls back from local to remote.
                 </BoundaryNote>
-                <SettingsGroup title="Voice backends" detail="Startup configuration. Secrets are encrypted by the operating system and never returned to this page.">
-                  {primaryVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible optionalWhenInactive />)}
-                </SettingsGroup>
-                <SettingsGroup title="Remote voice services" detail="Configure credentials and endpoints for remote transcription and speech synthesis.">
-                  {remoteVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible defaultOpen={Boolean(group.active)} optionalWhenInactive />)}
+                <BoundaryNote title="Shared voice setup">
+                  {t('All roles use this voice setup. Model weights, voice profiles, reference audio and speech services are configured here. Changing personality does not change the voice.')}
+                </BoundaryNote>
+                <SettingsGroup title="Speech output" detail="Choose a synthesis engine, then its model weights and reference audio. Save and restart the backend to apply startup settings.">
+                  {outputVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible defaultOpen={group.id === 'speech_synthesis'} optionalWhenInactive />)}
                 </SettingsGroup>
                 <SettingsGroup title="Speech language" detail="User-facing language for generated speech.">
                   <ComboCard icon="Language" title="TTS output language" content="Language used for sentence splitting and the matching voice reference." value={val('tts_output_language', 'ja')} onChange={value => handleChange('tts_output_language', value)} options={[{ value: 'ja', label: 'Japanese' }, { value: 'en', label: 'English' }]} />
                 </SettingsGroup>
+                <SettingsGroup title="Listening & recognition" detail="Configure conversation transcription, wake listening and microphone processing.">
+                  {inputVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible optionalWhenInactive />)}
+                </SettingsGroup>
+                <SettingsGroup title="Remote voice services" detail="Configure credentials and endpoints for remote transcription and speech synthesis.">
+                  {remoteVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible defaultOpen={Boolean(group.active)} optionalWhenInactive />)}
+                </SettingsGroup>
+                {connected ? <SettingsGroup title="Installed voice resources">
+                  <RuntimePackages runtimePackages={runtimePackages.filter(item => item.id === 'emotion_reference_pack')} />
+                </SettingsGroup> : <BoundaryNote title="Backend status unavailable">{t('Connect the backend to inspect installed voice resources. Saved voice selections remain editable.')}</BoundaryNote>}
                 <details className="model-advanced-roles">
                   <summary>
                     <span>{t('Advanced voice settings')}</span>
@@ -1399,9 +1444,9 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                     <SettingsGroup title="Local speech performance" detail="Performance tuning for the embedded GPT-SoVITS engine.">
                       <ComboCard icon="Tiles" title="Local TTS inference mode" content="Choose standard single synthesis, CUDA Graph, or explicit parallel generation while speech is idle." value={val('tts_mode', 'parallel')} onChange={value => handleChange('tts_mode', value)} options={[{ value: 'parallel', label: 'Standard ×1' }, { value: 'cuda_graph', label: 'CUDA Graph ×1' }, { value: 'parallel2', label: 'Parallel ×2' }]} disabled={val('tts_backend', 'gpt_sovits') !== 'gpt_sovits'} />
                     </SettingsGroup>
-                    <SettingsGroup title="Voice implementation details" detail="Model paths, reference audio, and additional voice services.">
+                    {advancedVoiceConfiguration.length > 0 ? <SettingsGroup title="Voice implementation details" detail="Engine paths, performance and additional voice services.">
                       {advancedVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible optionalWhenInactive />)}
-                    </SettingsGroup>
+                    </SettingsGroup> : null}
                   </div>
                 </details>
               </div>
