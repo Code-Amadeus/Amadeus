@@ -21,8 +21,10 @@ export function createProjectionController(actions: {
   let snapshot = { renderActive: false, wallpaperActive: false, renderAssetUrl: '' }
   const publish = () => {
     snapshot = {
-      renderActive: active === 'render' && wanted === 'render',
-      wallpaperActive: active === 'wallpaper' || wanted === 'wallpaper',
+      // Toggle presentation and toggle() must use the same intent. The URL
+      // separately gates the actual embedded surface while a start is pending.
+      renderActive: wanted === 'render',
+      wallpaperActive: wanted === 'wallpaper',
       renderAssetUrl: active === 'render' && wanted === 'render' ? url : '',
     }
     listeners.forEach(listener => listener())
@@ -33,7 +35,7 @@ export function createProjectionController(actions: {
     tail = result.then(() => {}, () => {})
     return result
   }
-  const request = (next: Mode): Promise<Result> => {
+  const request = (next: Mode, stopMode?: Projection): Promise<Result> => {
     const owner = ++revision
     wanted = next
     publish()
@@ -42,17 +44,22 @@ export function createProjectionController(actions: {
       if (superseded()) return { status: 'superseded' }
       let result: Result = { status: 'already_running', ...(next === 'render' ? { url } : {}) }
       try {
-        if (active && active !== next) {
-          if (active === 'wallpaper') {
+        // Explicit Backend Stop also reaches a Host that survived a renderer
+        // reload. Local absence is not evidence that the Host has stopped.
+        const stops = new Set<Projection>()
+        if (active && active !== next) stops.add(active)
+        if (stopMode) stops.add(stopMode)
+        for (const mode of stops) {
+          if (mode === 'wallpaper') {
             operation = 'stop-wallpaper'
             if (!await actions.stopWallpaper()) throw new Error('Wallpaper could not be stopped.')
           } else {
             // Removing the iframe ends this projection even when the transport
             // is unavailable. It does not change the shared expression route.
-            try { await actions.send('render.stop', {}) } catch {}
+            if (stopMode === 'render') await actions.send('render.stop', {})
+            else { try { await actions.send('render.stop', {}) } catch {} }
           }
-          active = null
-          url = ''
+          if (active === mode) { active = null; url = '' }
           operation = null
           publish()
         }
@@ -78,7 +85,7 @@ export function createProjectionController(actions: {
           result = { status: 'stopped' }
         }
         publish()
-        return superseded() ? { status: 'superseded' } : result
+        return superseded() ? { status: 'superseded' } : stopMode ? { status: 'stopped' } : result
       } catch (error) {
         if (!superseded()) wanted = active
         publish()
@@ -91,7 +98,7 @@ export function createProjectionController(actions: {
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener) } },
     start: (mode: Projection) => request(mode),
     startAutomatically: () => revision === 0 ? request('wallpaper') : Promise.resolve({ status: 'superseded' }),
-    stop: (mode: Projection) => active === mode || wanted === mode ? request(null) : Promise.resolve({ status: 'stopped' }),
+    stop: (mode: Projection) => request(wanted === mode ? null : wanted, mode),
     toggle: (mode: Projection) => request(wanted === mode ? null : mode),
     ready(payload: Result) {
       wallpaper = payload

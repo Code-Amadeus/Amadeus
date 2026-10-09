@@ -6,9 +6,9 @@ import { createProjectionController } from '../src/renderer/projectionController
 
 const flush = () => new Promise(resolve => setImmediate(resolve))
 function deferred() { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
-function desktop({ starts = [], renders = [], stops = [], mounts = [] } = {}) {
+function desktop({ starts = [], renders = [], stops = [], mounts = [], existingHost = false } = {}) {
   const calls = [], errors = []
-  let host = false, native = false, controller
+  let host = existingHost, native = existingHost, controller
   controller = createProjectionController({
     send: async method => {
       calls.push(method)
@@ -240,4 +240,141 @@ test('Backend controls route all four explicit actions through the projection ow
   }
   assert.deepEqual(calls, ['start:render', 'stop:render', 'start:wallpaper', 'stop:wallpaper'])
   assert.ok(feedback.includes('{"status":"started"}'))
+})
+
+
+test('Wallpaper button shows off during stop; clicking it once requests a settled on state', async () => {
+  const stop = deferred(), app = desktop({ stops: [stop.promise] })
+  await app.start('wallpaper')
+  const closing = app.toggle('wallpaper'); await flush()
+  assert.equal(app.host(), true, 'native/Host stop has not completed')
+  assert.equal(app.state().wallpaperActive, false, 'button already reflects the off choice')
+  const clicked = app.toggle('wallpaper')
+  assert.equal(app.state().wallpaperActive, true)
+  stop.resolve(true); await Promise.all([closing, clicked])
+  assert.equal(app.state().wallpaperActive, true)
+  assert.equal(app.host(), true)
+  assert.equal(app.native(), true)
+})
+
+test('Render button shows on while loading; clicking it once settles off without mounting its URL', async () => {
+  const start = deferred(), app = desktop({ renders: [start.promise] })
+  const opening = app.toggle('render'); await flush()
+  assert.equal(app.state().renderActive, true, 'button reflects the on choice before a URL exists')
+  assert.equal(app.state().renderAssetUrl, '')
+  const clicked = app.toggle('render')
+  assert.equal(app.state().renderActive, false)
+  start.resolve({ url: 'cancelled.html' }); await Promise.all([opening, clicked])
+  assert.deepEqual(app.state(), { renderActive: false, wallpaperActive: false, renderAssetUrl: '' })
+  assert.deepEqual(app.calls, ['render.start', 'render.stop'])
+})
+
+test('Wallpaper to Render shows only Render selected; clicking Wallpaper once settles back on Wallpaper', async () => {
+  const stop = deferred(), app = desktop({ stops: [stop.promise] })
+  await app.start('wallpaper')
+  const switching = app.toggle('render'); await flush()
+  assert.deepEqual(app.state(), { renderActive: true, wallpaperActive: false, renderAssetUrl: '' })
+  const clicked = app.toggle('wallpaper')
+  assert.deepEqual(app.state(), { renderActive: false, wallpaperActive: true, renderAssetUrl: '' })
+  stop.resolve(true); await Promise.all([switching, clicked])
+  assert.equal(app.state().wallpaperActive, true)
+  assert.equal(app.native(), true)
+  assert.equal(app.calls.includes('render.start'), false)
+})
+
+test('failed stop restores the running Wallpaper button after the pending off choice', async () => {
+  const stop = deferred(), app = desktop({ stops: [stop.promise] })
+  await app.start('wallpaper')
+  const closing = app.toggle('wallpaper'), rejected = assert.rejects(closing, /could not be stopped/)
+  await flush()
+  assert.equal(app.state().wallpaperActive, false)
+  stop.resolve(false); await rejected
+  assert.equal(app.state().wallpaperActive, true)
+  assert.equal(app.host(), true)
+})
+
+function appProjectionProps(component, state) {
+  const file = '../src/renderer/App.tsx'
+  const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8')
+  const ast = ts.createSourceFile(file, source, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX)
+  let attributes
+  const visit = node => {
+    if ((ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) && node.tagName.getText(ast) === component) attributes = node.attributes.properties
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+  assert.ok(attributes, component)
+  return Object.fromEntries(attributes.filter(node => ts.isJsxAttribute(node) && node.name.text in state).map(node => {
+    const expression = node.initializer.expression.getText(ast)
+    return [node.name.text, new Function(...Object.keys(state), `return (${expression})`)(...Object.values(state))]
+  }))
+}
+
+test('production App exposes pending intent to Sidebar but gives Chat a surface only after a valid URL', async () => {
+  const start = deferred(), app = desktop({ renders: [start.promise] })
+  const opening = app.start('render'); await flush()
+  assert.equal(appProjectionProps('Sidebar', app.state()).renderActive, true)
+  assert.deepEqual(appProjectionProps('ChatPage', app.state()), { renderActive: false, renderAssetUrl: '' })
+  start.resolve({ url: 'render.html' }); await opening
+  assert.deepEqual(appProjectionProps('ChatPage', app.state()), { renderActive: true, renderAssetUrl: 'render.html' })
+})
+
+test('Backend Stop Wallpaper stops a Host that survived a renderer reload without starting it first', async () => {
+  const app = desktop({ existingHost: true })
+  assert.equal(app.state().wallpaperActive, false)
+  assert.equal((await app.stop('wallpaper')).status, 'stopped')
+  assert.deepEqual(app.calls, ['wallpaper.stop'])
+  assert.equal(app.host(), false)
+  assert.equal(app.native(), false)
+})
+
+test('stopping an untracked Wallpaper reports failure and preserves an active Render', async () => {
+  const app = desktop({ existingHost: true, stops: [false] })
+  await app.start('render')
+  await assert.rejects(app.stop('wallpaper'), /could not be stopped/)
+  assert.deepEqual(app.state(), { renderActive: true, wallpaperActive: false, renderAssetUrl: 'render.html' })
+  assert.equal(app.host(), true)
+  await app.stop('wallpaper')
+  assert.equal(app.host(), false)
+  assert.equal(app.state().renderActive, true)
+})
+
+test('Backend Stop Render still reaches the Host when local state is empty', async () => {
+  const app = desktop()
+  await app.stop('render')
+  assert.deepEqual(app.calls, ['render.stop'])
+})
+
+test('diagnostic stop shares cleanup ordering with a later Wallpaper start', async () => {
+  const stop = deferred(), app = desktop({ existingHost: true, stops: [stop.promise] })
+  const closing = app.stop('wallpaper'); await flush()
+  const opening = app.toggle('wallpaper'); await flush()
+  assert.deepEqual(app.calls, ['wallpaper.stop'])
+  stop.resolve(true); await Promise.all([closing, opening])
+  assert.deepEqual(app.calls, ['wallpaper.stop', 'wallpaper.start', 'native.open'])
+  assert.equal(app.state().wallpaperActive, true)
+  assert.equal(app.native(), true)
+})
+
+test('an explicit Wallpaper stop preserves a pending Render choice', async () => {
+  const stop = deferred(), app = desktop({ stops: [stop.promise] })
+  await app.start('wallpaper')
+  const render = app.toggle('render'); await flush()
+  const explicitStop = app.stop('wallpaper')
+  assert.deepEqual(app.state(), { renderActive: true, wallpaperActive: false, renderAssetUrl: '' })
+  stop.resolve(true); await Promise.all([render, explicitStop])
+  assert.equal(app.state().renderActive, true)
+  assert.equal(app.state().renderAssetUrl, 'render.html')
+  assert.equal(app.host(), false)
+})
+
+test('an explicit Render stop preserves a pending Wallpaper choice and its native mount', async () => {
+  const start = deferred(), app = desktop({ starts: [start.promise] })
+  const wallpaper = app.toggle('wallpaper'); await flush()
+  const explicitStop = app.stop('render')
+  start.resolve({ status: 'started' }); await Promise.all([wallpaper, explicitStop])
+  assert.equal(app.state().wallpaperActive, true)
+  assert.equal(app.native(), true)
+  assert.equal(app.calls.filter(call => call === 'native.open').length, 1)
+  assert.equal(app.calls.includes('render.stop'), true)
 })
