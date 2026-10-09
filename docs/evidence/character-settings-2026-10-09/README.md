@@ -77,3 +77,17 @@ No user configuration, private media, model files or Live2D artwork is included.
 No live model conversation or ASR/TTS inference was invoked. Voice persistence
 was verified, not voice quality. Local desktop configuration, assets and existing
 conversations were not changed. Real-model preview screenshots stay local.
+
+
+## Review follow-up
+
+`character_pack` contains SpriteForge visual frames, not voice material. Its
+resource card now joins Visual Runtime Pack and VN Companion Portraits under
+Appearance. Voice's installed-resource group contains the emotion reference
+audio pack. A production Settings rendering regression verifies both inclusions
+and exclusions; it failed against the prior head and passes after the correction.
+
+Fresh complete Electron tests: **331 passed**; production build: passed. This
+classification repair changes no asset loading, prompt, identity, restart or
+voice configuration behavior. Earlier Python, prompt-capture and native desktop
+results above retain their original scope; they were not rerun for this card move.

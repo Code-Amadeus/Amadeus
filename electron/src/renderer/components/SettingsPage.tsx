@@ -1153,7 +1153,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                   <ChatAvatarSettings />
                 </SettingsGroup>
         {connected ? <SettingsGroup title="Installed visual resources">
-          <RuntimePackages runtimePackages={runtimePackages.filter(item => ['visual_runtime_pack', 'vn_companion_portraits'].includes(item.id))} />
+          <RuntimePackages runtimePackages={runtimePackages.filter(item => ['visual_runtime_pack', 'character_pack', 'vn_companion_portraits'].includes(item.id))} />
         </SettingsGroup> : null}
       </>,
       knowledge: <>
@@ -1433,7 +1433,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                   {remoteVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible defaultOpen={Boolean(group.active)} optionalWhenInactive />)}
                 </SettingsGroup>
                 {connected ? <SettingsGroup title="Installed voice resources">
-                  <RuntimePackages runtimePackages={runtimePackages.filter(item => ['character_pack', 'emotion_reference_pack'].includes(item.id))} />
+                  <RuntimePackages runtimePackages={runtimePackages.filter(item => item.id === 'emotion_reference_pack')} />
                 </SettingsGroup> : <BoundaryNote title="Backend status unavailable">{t('Connect the backend to inspect installed voice resources. Saved voice selections remain editable.')}</BoundaryNote>}
                 <details className="model-advanced-roles">
                   <summary>

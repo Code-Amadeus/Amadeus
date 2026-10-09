@@ -71,7 +71,7 @@ test('active-role header distinguishes a connected lookup from a disconnected ba
 
 // Render the production Settings owner: the navigation must not create a second
 // set of voice controls or mount the visual editor from the overview.
-function settingsMarkup(section, characterTab = null) {
+function settingsMarkup(section, characterTab = null, connected = false) {
   const store = { getItem: key => key === 'amadeus.settings.section' ? section
     : key === workspace.CHARACTER_SECTION_KEY ? characterTab : null }
   const cache = new Map()
@@ -100,7 +100,7 @@ function settingsMarkup(section, characterTab = null) {
   }
   const Settings = load(new URL('../src/renderer/components/SettingsPage.tsx', import.meta.url)).default
   return renderToStaticMarkup(React.createElement(Settings, {
-    send: async () => ({}), subscribe: () => () => {}, connected: false, reconnectBackend: async () => {},
+    send: async () => ({}), subscribe: () => () => {}, connected, reconnectBackend: async () => {},
   }))
 }
 
@@ -127,4 +127,16 @@ test('all voice controls remain in one Settings section, including offline model
   assert.ok(html.includes('Listening &amp; recognition'))
   assert.ok(html.includes('TTS output language'))
   assert.ok(!html.includes('character-panel-voice'))
+})
+
+
+test('SpriteForge frame packs belong to Appearance while audio reference packs belong to Voice', () => {
+  const appearance = settingsMarkup('characters', 'appearance', true)
+  const voice = settingsMarkup('voice', null, true)
+  for (const label of ['Kurisu Character Pack', 'Visual Runtime Pack', 'VN Companion Portraits']) {
+    assert.ok(appearance.includes(label), `${label} must appear with visual resources`)
+    assert.ok(!voice.includes(label), `${label} must not be described as a voice resource`)
+  }
+  assert.ok(voice.includes('Kurisu V3 Emotion Reference Pack'))
+  assert.ok(!appearance.includes('Kurisu V3 Emotion Reference Pack'))
 })

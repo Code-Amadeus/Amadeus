@@ -63,5 +63,20 @@
       "count": 155,
       "differences": []
     }
-  ]
+  ],
+  "review_followup": {
+    "electron_tests": 331,
+    "build": "passed",
+    "resource_classification_regression": "failed before fix; passed after fix",
+    "classification": {
+      "visual": [
+        "visual_runtime_pack",
+        "character_pack",
+        "vn_companion_portraits"
+      ],
+      "voice": [
+        "emotion_reference_pack"
+      ]
+    }
+  }
 }
