@@ -1,0 +1,38 @@
+.character-workspace { min-width:0; color:var(--text); }
+.character-workspace-header { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:16px; margin-bottom:18px; }
+.character-workspace-title h3 { margin:0 0 5px; font-size:20px; font-weight:650; letter-spacing:-.25px; }
+.character-workspace-title p { margin:0; color:var(--muted); font-size:11px; line-height:1.6; }
+.character-active-label { display:flex; flex-direction:column; gap:3px; color:var(--muted); font-size:10px; }
+.character-active-label strong { color:var(--text); font-size:12px; font-weight:600; max-width:240px; overflow-wrap:anywhere; }
+.character-secondary-button { display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:8px 11px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--text); font-size:11px; cursor:pointer; }
+.character-secondary-button:hover { background:var(--hover); }
+.character-workspace-tabs { display:flex; gap:4px; flex-wrap:wrap; border-bottom:1px solid var(--border); margin:0 0 22px; padding-bottom:8px; }
+.character-workspace-tabs button { display:flex; align-items:center; gap:7px; border:0; border-radius:7px; padding:9px 11px; color:var(--muted); background:transparent; cursor:pointer; font-size:11px; }
+.character-workspace-tabs button:hover { background:var(--hover); }
+.character-workspace-tabs button[aria-selected=true] { background:var(--selected-fill); color:var(--accent); font-weight:650; }
+.character-workspace button:focus-visible, .character-workspace-panel:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.character-section-intro { margin-bottom:18px; }
+.character-section-intro h4 { margin:0 0 6px; font-size:15px; font-weight:650; }
+.character-section-intro p { margin:0; font-size:12px; color:var(--muted); line-height:1.6; }
+.character-shared-note { display:flex; align-items:flex-start; gap:9px; background:var(--surface); color:var(--muted); font-size:11px; line-height:1.65; padding:11px 14px; border:1px solid var(--border); border-radius:8px; margin-bottom:20px; }
+.character-shared-note svg { flex-shrink:0; margin-top:1px; }
+.character-panel-content { display:flex; flex-direction:column; gap:24px; }
+.character-overview-grid, .character-history-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.character-overview-card { display:flex; flex-direction:column; align-items:flex-start; padding:20px; border:1px solid var(--border); border-radius:12px; background:var(--surface); }
+.character-card-top { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; margin-bottom:15px; color:var(--muted); font-size:10px; }
+.character-card-icon { display:flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:9px; color:var(--accent); background:var(--selected-fill); }
+.character-overview-card h4 { font-size:14px; margin:0 0 9px; font-weight:600; }
+.character-overview-card p { color:var(--muted); font-size:11px; line-height:1.75; margin:0 0 16px; }
+.character-overview-card small { font-size:10px; color:var(--muted); margin-bottom:15px; overflow-wrap:anywhere; }
+.character-card-link { display:flex; align-items:center; gap:8px; margin-top:auto; padding:4px 0; border:0; background:transparent; color:var(--accent); font-size:11px; cursor:pointer; }
+.character-card-link:hover { text-decoration:underline; }
+.character-persona-details { border:1px solid var(--border); border-radius:10px; padding:15px 18px; background:var(--surface); }
+.character-persona-details>summary { cursor:pointer; font-size:12px; font-weight:600; }
+.character-persona-details>div { margin-top:18px; }
+.character-history-grid article { border:1px solid var(--border); border-radius:10px; padding:18px; background:var(--surface); }
+.character-history-grid h4 { font-size:12px; margin:0 0 8px; }
+.character-history-grid p { color:var(--muted); font-size:11px; line-height:1.7; margin:0; }
+.character-workspace .runtime-package-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr)); }
+.character-workspace .visuals-header { position:static; }
+@media(max-width:850px) { .character-workspace-tabs button { padding:9px 8px; } .character-history-grid { grid-template-columns:1fr; } }
+@media(max-width:650px) { .character-overview-grid { grid-template-columns:1fr; } }

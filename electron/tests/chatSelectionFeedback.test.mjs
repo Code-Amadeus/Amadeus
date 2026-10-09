@@ -292,7 +292,7 @@ test('the session rail displays catalog names only for foreign roles and preserv
   assert.doesNotMatch(own, /Character:|>Mira<\/span>/)
   assert.match(foreign, /title="Original foreign title\nCharacter: Makise Kurisu \(kurisu\)/)
   assert.match(foreign, />Makise Kurisu<\/span>/)
-  assert.match(foreign, /Settings → General → Character roles.*Use at next start.*restart/)
+  assert.match(foreign, /Settings → Characters → Identity &amp; persona.*Use at next start.*restart/)
   assert.doesNotMatch(foreign, /AMADEUS_CHARACTER_ID/)
   assert.deepEqual(sessions.map(session => [session.title, session.character_id]),
     [['Original own title', 'mira'], ['Original foreign title', 'kurisu']])
@@ -361,7 +361,7 @@ test('the actual rail callbacks deny foreign and unknown-owner access while same
     select.props.onClick()
     if (session.id === 'foreign') {
       assert.match(select.props.title, /Character: Kurisu \(kurisu\)/)
-      assert.match(remove.props.title, /Settings → General → Character roles.*Use at next start.*restart/)
+      assert.match(remove.props.title, /Settings → Characters → Identity & persona.*Use at next start.*restart/)
     } else if (session.id !== 'own') {
       assert.match(remove.props.title, /identity is unavailable/)
     }
@@ -407,7 +407,7 @@ test('only a known locked launch source displays environment instructions for a 
     assert.equal(calls.notice.length, 1)
     if (locked) assert.match(calls.notice[0], /Change AMADEUS_CHARACTER_ID to kurisu.*launch environment.*restart/)
     else {
-      assert.match(calls.notice[0], /Settings → General → Character roles.*Use at next start.*restart/)
+      assert.match(calls.notice[0], /Settings → Characters → Identity & persona.*Use at next start.*restart/)
       assert.doesNotMatch(calls.notice[0], /AMADEUS_CHARACTER_ID/)
     }
   }

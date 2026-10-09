@@ -1,6 +1,6 @@
 # Kurisu Japanese persona
 
-Settings → General → Kurisu Japanese persona has one editor for Kurisu's Japanese
+Settings → Characters → Identity & persona → Kurisu Japanese persona has one editor for Kurisu's Japanese
 identity/personality override. When empty, the editor displays her built-in
 character as a placeholder. The placeholder is a hint, not editable content,
 and is never saved as the override. Enter a replacement in Japanese, then save.

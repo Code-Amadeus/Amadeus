@@ -4,7 +4,7 @@
 
 ## 使用
 
-从侧栏打开 **Settings / 设置 → Character visuals / 角色形象**。形象管理是设置内的独立分区；全局侧栏只保留功能窗口、后端和设置入口。
+从侧栏打开 **Settings / 设置 → Characters / 角色 → Appearance / 外观**。形象管理与人格、声音、资料入口集中在角色页；视觉配置仍由整个应用共享，不随会话角色自动切换。
 
 1. 使用 **添加 Live2D 模型** 选择本地 `.model3.json`。也可以输入绝对路径，再点 **检查并添加**。检查读取模型注册的表情、LipSync 声明和资源引用，不复制模型包。
 2. 使用 **选择 Core** 指定已有的 `live2dcubismcore.min.js`。留空时只尝试已有的本地默认文件，不下载 SDK。Core 不随 public 源码分发，参见 [Core exclusion notice](../LICENSES/Live2D-Cubism-Core-NOTICE.md)。

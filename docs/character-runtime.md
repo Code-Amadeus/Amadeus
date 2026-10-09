@@ -44,7 +44,7 @@ explicit invalid values fail validation. Opening, continuing, renaming or deleti
 another character's conversation is refused before its file, active history,
 project context or turn authority changes. The error identifies the owning
 character and explains that selecting it for the next backend start and restarting
-is required. The desktop directs users to Settings → General → Character roles;
+is required. The desktop directs users to Settings → Characters → Identity & persona;
 CLI launches select the character with `AMADEUS_CHARACTER_ID` before restarting. The conversation list retains its title and
 character identity, with rename/delete controls disabled, without exposing its
 transcript through a separate history reader. This is the application's character
