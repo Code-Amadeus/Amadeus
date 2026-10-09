@@ -40,6 +40,7 @@ const subscribe = (method: string, listener: (payload: Record<string, unknown>) 
 }
 const send = async (method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> => {
   calls.push({ method, params: structuredClone(params) })
+  if (method === 'character.list') return { characters: [{ character_id: 'kurisu', name: 'Kurisu', persona: '', valid: true, builtin: true, editable: false }], active: { character_id: 'kurisu', name: 'Kurisu' }, limits: { name_max_chars: 128, persona_max_chars: 7900 } }
   if (method === 'system.get_config') return { values: {} }
   if (method === 'provider.list') return { provider_availability: [], provider_manifests: [], acp_agents: [], provider_configurations: [] }
   if (method === 'capability.list') return { packages: [] }

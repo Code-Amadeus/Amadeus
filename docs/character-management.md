@@ -7,7 +7,7 @@ existing appearance and voice settings, including the optional Live2D rendering 
 
 ## Create and edit
 
-In Settings, create a character with a name and optional personality text.
+In **Settings → Characters → Identity & persona**, create a character with a name and optional personality text.
 The Host generates a stable ID; names may contain non-Latin text or be repeated.
 Names use a single line without control characters, up to 128 Unicode code
 points. Personality text allows 7900 code points after trimming its outer
@@ -35,7 +35,7 @@ They still use the same loader validation and cannot override Host fact wording.
 Updating a user character keeps its ID and conversation history. Saving changes
 does not change the running character; restart the backend to apply them.
 An edited active role retains a **Modified. Restart the backend to apply.**
-label when revisiting Settings. The Host compares parsed saved content with the
+label when revisiting Characters. The Host compares parsed saved content with the
 fixed running definition; formatting-only changes do not set this label, and
 reverting the content clears it. Missing or invalid files are shown as errors.
 There is no copy, hide, delete, per-character media switch, or hot-switch API in
@@ -45,7 +45,7 @@ this iteration.
 
 The selection uses the existing `AMADEUS_CHARACTER_ID` desktop setting, default
 `kurisu`. The Host validates the saved definition before the GUI selects it.
-Settings distinguishes the actual running identity from the saved next-start
+The Characters page distinguishes the actual running identity from the saved next-start
 selection. A parent-process environment override remains locked; the GUI cannot
 overwrite that source. Other existing configuration precedence remains unchanged.
 
@@ -57,7 +57,7 @@ Chat avatars distinguish the user and assistant; they are not per-character
 identifiers. Session titles remain unchanged. Foreign-character sessions show
 their character's saved name, with the full stable ID in the tooltip so repeated
 names remain distinguishable. An unavailable character is labeled explicitly.
-The switch guidance points to **Settings → General → Character roles**; an
+The switch guidance points to **Settings → Characters → Identity & persona**; an
 explicit parent-environment lock instead directs the user to that launch setting.
 Renaming a role changes its display label, not historic session ownership or
 accepted Work identity.
@@ -130,6 +130,32 @@ references belong to a later reviewed change.
 
 The integrated branch has been verified with both management and visual controls:
 changing startup identity preserves the shared Live2D selection, and changing the
-visual backend preserves conversation identity. A standalone Role page grouping
-identity, visuals and voice is a subsequent UI change; it does not introduce
-per-role asset binding or memory behavior in this iteration.
+visual backend preserves conversation identity. Settings now groups role identity, visuals and knowledge with a shortcut to the
+shared Voice configuration. This does not introduce per-role asset binding or
+new memory behavior.
+
+
+## Character overview inside Settings
+
+**Settings → Characters** opens an overview of identity/persona, appearance,
+voice and knowledge/history. Its tabs contain the existing identity editor,
+Sprite/Live2D editor, shared chat avatars and reference-library settings. Leaving
+Appearance unmounts its preview; the overview never starts a rendering runtime.
+The main sidebar retains its existing Settings entry.
+
+The overview's Voice card is a summary and shortcut to **Settings → Voice**.
+That is the sole voice editor: model weights/checkpoint profiles, reference
+audio/transcripts, emotion references, voice IDs, synthesis/recognition backends,
+devices, speech language, performance, endpoints and credentials stay together.
+The engine summary describes the saved selection; it does not claim a pending
+selection is already running. Existing restart requirements still apply.
+
+Appearance and voice remain application-wide selections. Adding a role requires
+no new asset or voice setup and creates no per-role media binding. Installed
+resource cards report runtime facts; this page adds no package installer or
+media downloads. Unavailable backend resource status is not shown as missing assets.
+
+**Knowledge & memory** exposes the existing Kurisu reference-library settings
+and explains current history ownership. Other roles do not inherit Kurisu's
+index. No new long-term-memory store or cross-role history reader is introduced.
+The old saved Settings visual section opens **Settings → Characters → Appearance**.

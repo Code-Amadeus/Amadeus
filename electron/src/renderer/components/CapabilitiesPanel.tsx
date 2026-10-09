@@ -327,7 +327,7 @@ function SceneStatus({ capabilities, onOpenSection }: Props) {
   )
 }
 
-function RuntimePackages({ runtimePackages }: Pick<Props, 'runtimePackages'>) {
+export function RuntimePackages({ runtimePackages }: Pick<Props, 'runtimePackages'>) {
   const { t } = useI18n()
   return (
     <div className="runtime-package-page">

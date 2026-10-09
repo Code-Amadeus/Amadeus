@@ -26,6 +26,6 @@ export function sessionCharacterNotice(
     character.available === false ? t('This role is unavailable. Restore or repair it before switching.') : '',
     startupCharacterLocked
       ? t('Change AMADEUS_CHARACTER_ID to {characterId} in your launch environment and restart the backend to open, rename, or delete this chat.', { characterId: character.id })
-      : t('In Settings → General → Character roles, select this role with Use at next start, then restart the backend to open, rename, or delete this chat.'),
+      : t('In Settings → Characters → Identity & persona, select this role with Use at next start, then restart the backend to open, rename, or delete this chat.'),
   ].filter(Boolean).join(' ')
 }

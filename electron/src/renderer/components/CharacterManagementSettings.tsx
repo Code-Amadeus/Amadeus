@@ -7,7 +7,6 @@ interface Props {
   send: (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
   connected: boolean
   restarting: boolean
-  onRestart: () => Promise<void>
   desktop: CharacterDesktopSettings | null
   kurisuPreview: unknown
   onSettingsChanged: (settings: Record<string, unknown>) => void
@@ -29,7 +28,7 @@ export function CharacterRoleLabel({ character, active, nextStart }: {
   </>
 }
 
-export default function CharacterManagementSettings({ send, connected, restarting, onRestart, desktop, kurisuPreview, onSettingsChanged }: Props) {
+export default function CharacterManagementSettings({ send, connected, restarting, desktop, kurisuPreview, onSettingsChanged }: Props) {
   const { t } = useI18n()
   const [characters, setCharacters] = useState<CharacterRecord[]>([])
   const [active, setActive] = useState<ActiveCharacter | null>(null)
@@ -66,6 +65,7 @@ export default function CharacterManagementSettings({ send, connected, restartin
   useEffect(() => {
     setActive(null)
     setLimits(null)
+    setNotice('')
     if (connected) void refresh()
     return () => { generation.current += 1 }
   }, [connected, refresh])
@@ -99,9 +99,9 @@ export default function CharacterManagementSettings({ send, connected, restartin
   return <CardShell vertical>
     <div className="character-prompt-editor">
       <div className="settings-field-description">{t('All roles follow the application’s appearance and voice settings.')}</div>
-      <div className="settings-field-label">{runtimeActive ? t('Active in this backend: {name}', { name: runtimeActive.name }) : t('Active role unavailable until the backend connects.')}</div>
+      <div className="settings-field-label">{runtimeActive ? t('Active in this backend: {name}', { name: runtimeActive.name }) : t(!connected ? 'Active role unavailable until the backend connects.' : error ? 'Active role unavailable.' : 'Loading active role…')}</div>
       <div className="settings-field-description">{selection.characterId
-        ? t('Next backend start: {name}', { name: next?.name || selection.characterId })
+        ? t('Next backend start: {name}', { name: next?.name || (connected && !active && !error ? t('Loading role details…') : selection.characterId) })
         : t('Next backend start: resolved from {source} at startup.', { source: selection.source === 'dotenv' ? '.env' : t('launch environment') })}</div>
       <div className="settings-field-description">{selection.locked
         ? t('Startup role is controlled by your launch environment (AMADEUS_CHARACTER_ID).')
@@ -110,7 +110,6 @@ export default function CharacterManagementSettings({ send, connected, restartin
       <div className="character-prompt-actions">
         <button type="button" disabled={disabled} onClick={() => { setError(''); setNotice(''); setEditor({ characterId: null, name: '', persona: '' }) }}>{t('New role')}</button>
         <button type="button" disabled={disabled} onClick={() => void perform(refresh)}>{t('Refresh roles')}</button>
-        <button type="button" disabled={disabled || !desktop} onClick={() => void onRestart()}>{t(restarting ? 'Restarting…' : 'Restart backend to apply')}</button>
       </div>
       <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0' }} aria-label={t('Character roles')}>
         {characters.map(character => <li key={character.character_id} data-character-id={character.character_id} style={{ padding: '10px 0', borderTop: '1px solid var(--card-border)' }}>
