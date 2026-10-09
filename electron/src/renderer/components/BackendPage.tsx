@@ -1,9 +1,10 @@
 ﻿import { useState, useEffect, useCallback, useRef } from 'react'
 import FluentIcon from './FluentIcon'
-import { ELECTRON_SLICE_START_PARAMS } from '../wallpaperSlice'
+import type { ProjectionController, Projection } from '../projectionController'
 import { useI18n } from '../i18n'
 
 interface Props {
+  projections: ProjectionController
   send: (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
   subscribe: (method: string, fn: (p: Record<string, unknown>) => void) => () => void
   connected: boolean
@@ -11,7 +12,7 @@ interface Props {
   wallpaperActive: boolean
 }
 
-export default function BackendPage({ send, subscribe, connected, renderActive, wallpaperActive }: Props) {
+export default function BackendPage({ projections, send, subscribe, connected, renderActive, wallpaperActive }: Props) {
   const { t } = useI18n()
   const [status, setStatus] = useState<Record<string, unknown>>({})
   const [logLines, setLogLines] = useState<string[]>([])
@@ -50,21 +51,21 @@ export default function BackendPage({ send, subscribe, connected, renderActive, 
   }, [logLines])
 
   const doAction = useCallback(async (
-    method: string,
+    mode: Projection,
+    start: boolean,
     setter: (v: string) => void,
-    params: Record<string, unknown> = {},
   ) => {
     setActionsDisabled(true)
     setter('...')
     try {
-      const res = await send(method, params)
+      const res = await (start ? projections.start(mode) : projections.stop(mode))
       setter(JSON.stringify(res))
     } catch (e) {
       setter(`ERROR: ${e}`)
     }
     setActionsDisabled(false)
     fetchLog()
-  }, [send, fetchLog])
+  }, [projections, fetchLog])
 
   const statusColor = connected ? '#107C10' : '#C42B1C'
   const dot = (ok: unknown) => (
@@ -180,16 +181,16 @@ export default function BackendPage({ send, subscribe, connected, renderActive, 
         <div style={{ padding: '0 12px 12px', borderTop: '1px solid var(--border)' }}>
           <div className="flex items-center flex-wrap gap-2" style={{ padding: '10px 0' }}>
             <span style={{ marginRight: 6, color: 'var(--faint)', fontSize: 10 }}>ws://127.0.0.1:17777/ws</span>
-            <button disabled={!connected || actionsDisabled} onClick={() => doAction('render.start', setRenderStatus)} className="inline-flex items-center gap-1.5 disabled:opacity-40" style={actionButtonStyle}>
+            <button disabled={!connected || actionsDisabled} onClick={() => doAction('render', true, setRenderStatus)} className="inline-flex items-center gap-1.5 disabled:opacity-40" style={actionButtonStyle}>
               <FluentIcon name="Video" size={13} /> {t('Start Render')}
             </button>
-            <button disabled={!connected || actionsDisabled} onClick={() => doAction('render.stop', setRenderStatus)} className="inline-flex items-center gap-1.5 disabled:opacity-40" style={actionButtonStyle}>
+            <button disabled={!connected || actionsDisabled} onClick={() => doAction('render', false, setRenderStatus)} className="inline-flex items-center gap-1.5 disabled:opacity-40" style={actionButtonStyle}>
               <FluentIcon name="Video" size={13} /> {t('Stop Render')}
             </button>
-            <button disabled={!connected || actionsDisabled} onClick={() => doAction('wallpaper.start', setWallpaperStatus, ELECTRON_SLICE_START_PARAMS)} className="inline-flex items-center gap-1.5 disabled:opacity-40" style={actionButtonStyle}>
+            <button disabled={!connected || actionsDisabled} onClick={() => doAction('wallpaper', true, setWallpaperStatus)} className="inline-flex items-center gap-1.5 disabled:opacity-40" style={actionButtonStyle}>
               <FluentIcon name="Tiles" size={13} /> {t('Start Wallpaper')}
             </button>
-            <button disabled={!connected || actionsDisabled} onClick={() => doAction('wallpaper.stop', setWallpaperStatus)} className="inline-flex items-center gap-1.5 disabled:opacity-40" style={actionButtonStyle}>
+            <button disabled={!connected || actionsDisabled} onClick={() => doAction('wallpaper', false, setWallpaperStatus)} className="inline-flex items-center gap-1.5 disabled:opacity-40" style={actionButtonStyle}>
               <FluentIcon name="Tiles" size={13} /> {t('Stop Wallpaper')}
             </button>
           </div>

@@ -1,5 +1,3 @@
-export const ELECTRON_SLICE_START_PARAMS = Object.freeze({ slice_host: 'electron' })
-
 export async function syncElectronSliceHost(payload: Record<string, unknown>): Promise<boolean> {
   if (String(payload.sliceHost || '') !== 'electron') return false
   const assetPort = Number(payload.assetPort)
