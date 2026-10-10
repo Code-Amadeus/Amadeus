@@ -778,7 +778,7 @@ class SystemHandler(RequestHandler):
                 values[key] = value
         if "tts_mode" in values:
             mode = str(values["tts_mode"] or "").strip().lower()
-            if mode not in {"cuda_graph", "parallel", "parallel2", "cuda graph ×1", "parallel ×2", "graph"}:
+            if mode not in {"auto", "cuda_graph", "parallel", "parallel2", "cuda graph ×1", "parallel ×2", "graph"}:
                 raise ValueError(f"unsupported TTS mode: {values['tts_mode']!r}")
         if "tts_output_language" in values:
             language = str(values["tts_output_language"] or "").strip().lower()

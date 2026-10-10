@@ -520,16 +520,13 @@ class Text2SemanticDecoder(nn.Module):
         
         # 🚀 CUDA Graph 分桶优化（Bucketing Strategy）
         # 依赖于 use_static_kv_cache = True
-        # 环境变量 ENABLE_CUDA_GRAPH=1 可以启用（默认禁用）
-        cuda_graph_env = os.environ.get('ENABLE_CUDA_GRAPH', '0')  # 默认禁用，可通过环境变量开启
-        self.cuda_graph_enabled = self.use_static_kv_cache and (cuda_graph_env == '1')
+        # The inference owner configures acceleration after moving weights to
+        # the actual speech device; host CUDA availability alone is insufficient.
+        self.cuda_graph_enabled = False
         # Stream dependencies already order graph replay before sampling.
         # A device-wide sync after every token serializes the CPU/GPU pipeline;
         # retain it only as an opt-in diagnostic for graph failures.
         self.cuda_graph_replay_sync = _env_flag_enabled("CUDA_GRAPH_REPLAY_SYNC", False)
-        
-        if not self.cuda_graph_enabled and self.use_static_kv_cache:
-            print(f"[CUDA Graph] disabled (ENABLE_CUDA_GRAPH={cuda_graph_env}); using static KV cache with concurrency")
         
         # 🔒 CUDA Graph 并发锁
         # CUDA Graph 不支持多线程并发 replay，需要加锁保护
@@ -616,18 +613,6 @@ class Text2SemanticDecoder(nn.Module):
         self.t2s_transformer_static = T2STransformerWithStaticCache(self.num_layers, blocks_static)
         self.use_flash_attn_kvcache = False
         self.flash_attn_kvcache_mode = "off"
-        flash_attn_env = os.environ.get(
-            "TTS_T2S_FLASH_ATTN",
-            os.environ.get("ENABLE_T2S_FLASH_ATTN_KVCACHE", "0"),
-        ).strip().lower()
-        if flash_attn_env in {"1", "true", "on", "yes"}:
-            flash_mode = os.environ.get("TTS_T2S_FLASH_ATTN_MODE", "valid").strip().lower()
-            try:
-                from AR.models.t2s_flash_attn import apply_flash_attn_patch
-
-                apply_flash_attn_patch(self, mode=flash_mode)
-            except Exception as exc:
-                print(f"[T2S FlashAttn] setup failed; keeping SDPA path: {exc}")
 
     # 选桶时保留的最小生成槽位数。
     # 必须满足 aligned_kv + _BUCKET_MIN_GEN_SLOTS < bucket_size 才会选该桶。

@@ -20,6 +20,7 @@ from config.local_model_loading import enforce_local_model_loading
 enforce_local_model_loading()
 
 from tts.optional_ap_bwe import APBWEUnavailable, create_ap_bwe
+from tts.acceleration import acceleration_mode, cuda_graph_enabled, flash_attention_eligible
 from tts.semantic_stability import (
     SemanticGenerationError,
     assess_semantic_candidate,
@@ -366,7 +367,7 @@ class TTSInferencer:
                 temperature=temperature,
                 repetition_penalty=repetition_penalty,
                 early_stop_num=max_generation_tokens,
-                enable_cuda_graph=enable_cuda_graph,
+                enable_cuda_graph=self.cuda_graph_enabled if enable_cuda_graph is None else enable_cuda_graph,
                 enable_static_kv=enable_static_kv,
             )
             generated_count = max(0, int(idx))
@@ -615,7 +616,34 @@ class TTSInferencer:
         self.t2s_model = self.t2s_model.to(self.device)
         self.t2s_model.eval()
 
+        self._configure_t2s_acceleration()
         self._maybe_precapture_t2s_graph()
+
+    @property
+    def cuda_graph_enabled(self) -> bool:
+        return cuda_graph_enabled(self.device, is_rocm=self.is_rocm)
+
+    def _configure_t2s_acceleration(self):
+        decoder = self.t2s_model.model
+        decoder.use_static_kv_cache = self._uses_torch_cuda_api
+        decoder.cuda_graph_enabled = self.cuda_graph_enabled
+        logger.info("[TTS acceleration] CUDA Graph preference=%s enabled=%s device=%s",
+                    acceleration_mode("ENABLE_CUDA_GRAPH"), decoder.cuda_graph_enabled, self.device)
+        mode = acceleration_mode("TTS_T2S_FLASH_ATTN", legacy_key="ENABLE_T2S_FLASH_ATTN_KVCACHE")
+        if mode == "0" or not self._allows_nvidia_cuda_extensions:
+            logger.info("[TTS acceleration] FlashAttention inactive (preference=%s, device=%s)", mode, self.device)
+            return
+        dtype = str(next(self.t2s_model.parameters()).dtype)
+        capability = torch.cuda.get_device_capability(self.device)
+        if not flash_attention_eligible(self.device, is_rocm=self.is_rocm, dtype=dtype, capability=capability):
+            logger.info("[TTS acceleration] FlashAttention unavailable for dtype=%s capability=%s; using SDPA", dtype, capability)
+            return
+        try:
+            from AR.models.t2s_flash_attn import apply_flash_attn_patch
+            with self._device_context():
+                apply_flash_attn_patch(decoder, mode=os.environ.get("TTS_T2S_FLASH_ATTN_MODE", "valid").strip().lower())
+        except (ImportError, OSError, RuntimeError) as exc:
+            logger.warning("[TTS acceleration] FlashAttention unavailable; using SDPA: %s", exc)
 
     def _maybe_precapture_t2s_graph(self):
         """根据环境变量可选地预捕获 T2S 阶段的 CUDA Graph"""
@@ -624,11 +652,9 @@ class TTSInferencer:
             decoder = getattr(self.t2s_model, "model", None)
             if not enable_precapture or decoder is None:
                 return
-            # cuda_graph_enabled 由 ENABLE_CUDA_GRAPH 环境变量控制，
-            # 但 force_graph=True 路径在运行时可以绕过该标志直接使用 graph。
-            # 因此，只要 use_static_kv_cache=True（CUDA 可用即成立），就应该预捕获。
-            can_use_graph = (getattr(decoder, "cuda_graph_enabled", False)
-                             or getattr(decoder, "use_static_kv_cache", False))
+            # Respect explicit off and the actual TTS device, including CPU on
+            # a CUDA-capable host. A later live opt-in can capture lazily.
+            can_use_graph = self.cuda_graph_enabled
             if not can_use_graph:
                 return
 
@@ -1199,7 +1225,7 @@ class TTSInferencer:
               if_freeze=False,
               inp_refs=None,
               if_sr=False,
-              enable_cuda_graph=False,
+              enable_cuda_graph=None,
               enable_static_kv=True,
               max_sec_override=None,
               semantic_reference=None):
@@ -1594,7 +1620,7 @@ class TTSInferencer:
                      if_freeze=False,
                      inp_refs=None,
                      if_sr=False,
-                     enable_cuda_graph=False,
+                     enable_cuda_graph=None,
                      enable_static_kv=True,
                      chunk_size_seconds: float = None,
                      max_sec_override: float = None,
