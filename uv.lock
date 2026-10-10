@@ -195,7 +195,7 @@ wheels = [
 
 [[package]]
 name = "amadeus"
-version = "0.16.0a0"
+version = "0.16.1a0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },

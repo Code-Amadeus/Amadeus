@@ -94,7 +94,7 @@ jobs:
         working-directory: ${{ env.SOURCE_ROOT }}/electron
         run: >-
           node -e "require('node:child_process').execFileSync(require('electron'),
-          ['scripts/smoke-settings-upgrade.cjs', 'v0.15.2-alpha.0'],
+          ['scripts/smoke-settings-upgrade.cjs', 'v0.16.0-alpha.0'],
           {stdio: 'inherit', windowsHide: true, timeout: 45000})"
 
       - name: Package extracted Windows sources

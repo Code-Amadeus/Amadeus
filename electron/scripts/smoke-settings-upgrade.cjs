@@ -18,13 +18,25 @@ app.setPath('userData', path.join(output, 'profile'))
 
 app.whenReady().then(async () => {
   assert.ok(safeStorage.isEncryptionAvailable(), 'Native credential encryption must be available')
-  const oldSource = execFileSync('git', [
-    'show', previousRef + ':electron/src/main/desktopSettings.ts',
-  ], { cwd: root, encoding: 'utf8', windowsHide: true })
-  const previousModule = path.join(output, 'previous-settings.mjs')
-  fs.writeFileSync(previousModule, ts.transpileModule(oldSource, {
-    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
-  }).outputText)
+  // Preserve the previous tag's module layout and catalog, rather than mixing
+  // its settings store with the current release's shared configuration.
+  const previousRoot = path.join(output, 'previous')
+  const previousFiles = execFileSync('git', [
+    'ls-tree', '-r', '--full-tree', '--name-only', previousRef, '--',
+    'electron/src/main/desktopSettings.ts', 'electron/src/shared',
+  ], { cwd: root, encoding: 'utf8', windowsHide: true }).trim().split(/\r?\n/)
+  for (const sourcePath of previousFiles.filter(file => file.endsWith('.ts'))) {
+    const source = execFileSync('git', ['show', previousRef + ':' + sourcePath], {
+      cwd: root, encoding: 'utf8', windowsHide: true,
+    })
+    const relative = sourcePath.slice('electron/src/'.length).replace(/\.ts$/, '.js')
+    const target = path.join(previousRoot, relative)
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.writeFileSync(target, ts.transpileModule(source, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+    }).outputText)
+  }
+  const previousModule = path.join(previousRoot, 'main/desktopSettings.js')
   const { DesktopSettingsStore: PreviousStore } = await import(pathToFileURL(previousModule).href)
   const { DesktopSettingsStore: CurrentStore } = await import(
     pathToFileURL(path.join(root, 'electron/dist/main/desktopSettings.js')).href
