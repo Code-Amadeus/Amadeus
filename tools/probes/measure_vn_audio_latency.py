@@ -81,8 +81,6 @@ async def run(args, output):
             stage = "enqueue_ms"
         elif "first audio chunk generated" in message:
             stage = "audio_ready_ms"
-        elif "first sound started" in message:
-            stage = "first_sound_ms"
         if stage:
             current.setdefault(stage, round((record.created - current["started_at"]) * 1000))
             changed.set()
@@ -94,16 +92,23 @@ async def run(args, output):
     observer = Observer()
     logging.getLogger().addHandler(observer)
     logging.getLogger("PlaybackManager").setLevel(logging.INFO)
-    original_write = player.write_audio_async
+    # Both complete/cached playback and streaming reach PortAudio here. The
+    # async player method covers only streaming and is not device evidence.
+    import pyaudio
+    original_write = pyaudio.PyAudio.Stream.write
 
-    async def observe_audio(audio, *positional, **kwargs):
+    def observe_audio(stream, frames, *positional, **kwargs):
+        result = original_write(stream, frames, *positional, **kwargs)
+        if stream is not player.stream:
+            return result
         import numpy as np
-        array = audio.cpu().detach().numpy() if hasattr(audio, "detach") else np.asarray(audio)
+        array = np.frombuffer(frames, dtype=np.float32)
         if array.size:
+            current.setdefault("first_device_write_ms", round((time.time() - current["started_at"]) * 1000))
             current["peak"] = max(current.get("peak", 0), float(np.abs(array).max()))
             current["samples"] = current.get("samples", 0) + int(array.size)
-        await original_write(audio, *positional, **kwargs)
-    player.write_audio_async = observe_audio
+        return result
+    pyaudio.PyAudio.Stream.write = observe_audio
 
     async def speak(payload):
         current.setdefault("speech_submitted_ms", round((time.time() - current["started_at"]) * 1000))
@@ -120,7 +125,7 @@ async def run(args, output):
             while current.get("last_sentence_id") not in completed:
                 changed.clear()
                 await changed.wait()
-        if not current.get("first_sound_ms") or not current.get("peak", 0) > 0:
+        if "first_device_write_ms" not in current or not current.get("peak", 0) > 0:
             raise AssertionError("No nonzero device-playback evidence; silence placeholders do not pass")
 
     workers = [asyncio.create_task(pipeline.play_sentence_worker()), asyncio.create_task(playback.run())]
@@ -184,6 +189,7 @@ async def run(args, output):
             task.cancel()
         await asyncio.gather(*list(bridge._SUBTITLE_TASKS), return_exceptions=True)
         player.cleanup()
+        pyaudio.PyAudio.Stream.write = original_write
         synthesizer.backend.close()
         executor.shutdown(wait=True)
         logging.getLogger().removeHandler(observer)

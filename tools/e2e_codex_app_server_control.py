@@ -137,7 +137,8 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         async with WsProbe(f"ws://127.0.0.1:{port}/ws") as probe:
             await probe.request(
                 "session.create",
-                {"session_id": session_id, "title": "Codex active control probe"},
+                {"session_id": session_id, "title": "Codex active control probe",
+                 "project_id": project_record.project_id},
             )
             create_turn, create_after, create_complete = await _send_chat(
                 probe,
@@ -146,7 +147,7 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                 chat_provider=args.chat_provider,
                 timeout_s=args.chat_timeout,
                 text=(
-                    "切换到 control-lab 项目并交给 codex 做：先在项目根运行 "
+                    "交给 codex 做：先在当前项目根运行 "
                     "python slow_gate.py，必须等它结束；然后创建 control.txt，"
                     "内容恰好是 ORIGINAL 加一个换行，并读取验证。"
                 ),
@@ -198,15 +199,20 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                     "仍然交给 codex，这是同一项工作的运行中修改。"
                 ),
             )
-            steer = await probe.wait_event(
-                lambda event: event.method == "provider.event"
-                and event.params.get("run_id") == run_id
-                and event.params.get("type") == "run.status"
-                and event.params.get("payload", {}).get("stage") == "steer_queued",
-                timeout=args.activity_timeout,
-                after=amend_after,
-                description="Codex native steer queued",
-            )
+            # Work amendments use durable input delivery receipts. The retired
+            # steer_queued presentation event is not a delivery authority fact.
+            input_receipt = None
+            async with asyncio.timeout(args.activity_timeout):
+                while input_receipt is None:
+                    with WorkLedgerStore(ledger_path) as store:
+                        for item in store.list_work_items(limit=20):
+                            for receipt in store.list_provider_inputs(item.work_item_id):
+                                if receipt["input_id"] == amend_turn:
+                                    input_receipt = receipt
+                    if input_receipt is None:
+                        await asyncio.sleep(0.1)
+            if input_receipt["state"] != "delivered" or input_receipt["provider_run_id"] != run_id:
+                raise RuntimeError("Amendment was not delivered to the original Provider run")
             amend_created_runs = [
                 event
                 for event in probe.state.events[amend_after:]
@@ -244,10 +250,8 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
             "status_reply_is_visible": bool(
                 str(status_complete.params.get("full_text") or "").strip()
             ),
-            "native_steer_was_queued": int(
-                steer.params.get("payload", {}).get("revision") or 0
-            )
-            >= 1,
+            "amendment_delivered_to_same_run": input_receipt["state"] == "delivered"
+            and input_receipt["provider_run_id"] == run_id,
             "amend_did_not_start_second_run": not amend_created_runs,
             "one_work_item_one_attempt": len(ledger_items) == 1 and len(attempts) == 1,
             "steered_result_is_current": content == "STEERED\n",

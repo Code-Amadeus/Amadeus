@@ -83,6 +83,9 @@ device, operating system or experimental surface has been qualified.
   cross-session semantic memory are not part of this release.
 - Platform and optional GPU-profile support remains limited to the evidence
   documented in [installation profiles](install_profiles.md).
+- Dependency audits are not clean: the pinned Pi runtime retains a known
+  brace-expansion denial-of-service risk, and Electron build tooling retains
+  moderate findings. See the [exact audit disposition](alpha-0.16-acceptance.md#dependency-audit-disposition).
 
 ## 中文摘要
 
