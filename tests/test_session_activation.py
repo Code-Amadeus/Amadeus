@@ -54,6 +54,28 @@ def test_title_save_preserves_history_and_character_on_reload(sessions):
     assert sm.get_session_title("A") == "会话 🌟"
 
 
+def test_chat_loop_history_and_title_saves_fail_without_blocking_backoff(sessions, monkeypatch):
+    from config import durable_io
+    path = Path(sm._session_path("A"))
+    previous, before = path.read_bytes(), state()
+    attempts = []
+    def denied(*args):
+        attempts.append(True)
+        error = PermissionError("synthetic Session sharing conflict")
+        error.winerror = 32
+        raise error
+    monkeypatch.setattr(durable_io, "_WINDOWS", True)
+    monkeypatch.setattr(durable_io.os, "replace", denied)
+    monkeypatch.setattr(durable_io.time, "sleep", lambda _: pytest.fail("chat-loop backoff"))
+    async def complete_turn():
+        assert sm.save_session("A", enable_conversation=True) is False
+        assert sm.set_session_title("A", "Updated") is False
+    asyncio.run(complete_turn())
+    assert len(attempts) == 2
+    assert path.read_bytes() == previous
+    assert state() == before
+
+
 def write_session(sid, **changes):
     data = {"session_id": sid, "dialog": [{"role": "user", "content": f"ONLY_{sid}"}]}
     data.update(changes)

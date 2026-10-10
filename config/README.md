@@ -321,11 +321,27 @@ These are not pending mechanical migrations:
 | `vn_player/runtime.py` | `VN_*` values | These describe one VN session, not the application startup snapshot. |
 | `server/runtime_status.py` | build/workspace metadata | The launcher supplies diagnostic facts for the current process. |
 | `asr/qwen3_asr_sidecar.py` | `QWEN3_ASR_DEVICE`, `QWEN3_ASR_REQUIRE_CUDA` | The isolated interpreter reads the environment supplied by its parent. |
+| `tts/gpt_sovits_sidecar.py` | `TTS_REQUIRE_CUDA` | The isolated interpreter enforces the device requirement supplied by its parent. |
 | `server/presentation_runtime.py` | `AMADEUS_PRESENTATION_LOCALE`, `AMADEUS_WALLPAPER_CAPTION_MODE` | Presentation resolves its current, component-owned preferences. |
 | `server/handlers/system_handler.py` | Browser/VN role provider and model overrides | Existing status projections distinguish explicit overrides from inherited values. Their empty-value semantics are retained; the ratchet does not mechanically replace these reads. |
+| `server/app.py` | `AMADEUS_ALLOW_MAIN_VOICE_DURING_VN` | The existing voice-route callback checks this override while deciding whether main voice may run during a VN session. |
+| `server/vn_tts_bridge.py`, `tts/utterance_scheduler.py` | dispatch, queue and utterance limits | Existing bridge/scheduler owners resolve their timing and grouping controls. Changing when they are read requires a separate behavior review. |
+| `server/wallpaper_subtitle_translator.py` | translation timeout and token budget | Each translator resolves its own request limits at construction. |
+
+The inventory also retains startup reads in `server/visual_runtime.py` and
+`server/chat_translation_runtime.py`. These initialize component-owned mutable
+state using catalog defaults, then accept live changes through `set_config`.
+They are legacy parsing sites, not justification for introducing new raw reads.
+The helper-aware audit added 47 existing file/key pairs across eight files;
+eight of these refer to declared catalog keys. No runtime reads were moved.
 
 `catalog_legacy.json.environment_reads` records exact file/key pairs, including
-process-boundary and remaining legacy reads. New product settings belong in the
+process-boundary and remaining legacy reads. The AST scan recognizes literal
+keys in direct reads and same-file parameter-forwarding helpers, including
+nested helpers and positional/keyword calls. It does not resolve arbitrary
+runtime expressions, callbacks, or helpers imported from other modules; this
+is a bounded source guardrail, not a complete runtime inventory.
+New product settings belong in the
 catalog. A new intentional late read needs an explicit baseline review and an
 explanation here; moving a read to another file is not automatically permitted.
 `python tools/maintainability_ratchet.py --update` only tightens existing
@@ -338,7 +354,11 @@ inspection; that observation is not a CI gate.
 application settings. Callers own serialization, parent-directory creation,
 locking, validation, exclusive creation and recovery. The file is written and
 synced in the destination directory before replacement. On Windows, known
-sharing/access conflicts receive bounded retries; other errors propagate.
+sharing/access conflicts receive bounded retries on ordinary threads. A call
+on a running asyncio event-loop thread propagates the first conflict without
+sleeping, preserving synchronous caller ordering and avoiding retry backoff
+that would stall unrelated events. Other errors propagate immediately. The
+write and file sync themselves remain synchronous.
 
 Replacement is the commit point. Pre-commit I/O errors preserve the previous
 file. A later directory-sync error logs a warning and returns normally: the new

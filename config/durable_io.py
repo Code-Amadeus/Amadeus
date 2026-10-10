@@ -10,6 +10,7 @@ publication contracts. VN context migration is explicitly deferred.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -28,6 +29,15 @@ def _replace(source: str, destination: Path) -> None:
             return
         except PermissionError as exc:
             if not _WINDOWS or getattr(exc, "winerror", None) not in (5, 32) or attempt == len(_RETRY_DELAYS):
+                raise
+            # Synchronous stores also serve event-loop callbacks. Preserve
+            # their fail-fast ordering rather than sleeping on that thread or
+            # moving stateful Session operations to a concurrent worker.
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+            else:
                 raise
             time.sleep(_RETRY_DELAYS[attempt])
 

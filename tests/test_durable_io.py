@@ -1,5 +1,6 @@
 """Atomic publication contracts, without application settings or model imports."""
 from contextlib import contextmanager
+import asyncio
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -99,6 +100,28 @@ def test_other_permission_errors_are_not_retried(tmp_path, monkeypatch):
         durable_io.write_bytes(tmp_path / "state", b"next")
     assert attempts == [True]
     assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("winerror", [5, 32])
+def test_event_loop_sharing_failure_never_sleeps_or_replaces_old_state(tmp_path, monkeypatch, winerror):
+    path = tmp_path / "state"
+    path.write_bytes(b"previous")
+    attempts = []
+    def denied(*args):
+        attempts.append(True)
+        error = PermissionError("synthetic sharing violation")
+        error.winerror = winerror
+        raise error
+    monkeypatch.setattr(durable_io, "_WINDOWS", True)
+    monkeypatch.setattr(durable_io.os, "replace", denied)
+    monkeypatch.setattr(durable_io.time, "sleep", lambda _: pytest.fail("event-loop backoff"))
+    async def save():
+        with pytest.raises(PermissionError):
+            durable_io.write_bytes(path, b"next")
+    asyncio.run(save())
+    assert attempts == [True]
+    assert path.read_bytes() == b"previous"
+    assert list(tmp_path.iterdir()) == [path]
 
 
 def test_postcommit_directory_failure_returns_with_new_file_and_warning(tmp_path, monkeypatch, caplog):

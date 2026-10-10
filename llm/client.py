@@ -27,7 +27,7 @@ from config.settings import (
     AWS_BEDROCK_BEARER_TOKEN, AWS_BEDROCK_AUTH_MODE, AWS_BEDROCK_REGION,
     AWS_BEDROCK_MODEL_ID, AWS_BEDROCK_USE_INFERENCE_PROFILE,
     AWS_BEDROCK_INFERENCE_PROFILE_ID, AWS_BEDROCK_ENDPOINT,
-    AWS_BEDROCK_USE_CACHE, AWS_BEDROCK_CONNECTION_POOL_SIZE, AWS_BEDROCK_MAX_KEEPALIVE,
+    AWS_BEDROCK_USE_CACHE, AWS_BEDROCK_CACHE_TTL, AWS_BEDROCK_CONNECTION_POOL_SIZE, AWS_BEDROCK_MAX_KEEPALIVE,
     AWS_BEDROCK_KEEPALIVE_EXPIRY,
     LOCAL_LLM_TYPE, LOCAL_LLM_MODEL,
     LOCAL_LLM_URL, LOCAL_LLM_LM_STUDIO_URL, LOCAL_LLM_OLLAMA_URL,
@@ -173,21 +173,19 @@ def init_llm_client():
 
         if AWS_BEDROCK_USE_INFERENCE_PROFILE and AWS_BEDROCK_INFERENCE_PROFILE_ID:
             model_id = AWS_BEDROCK_INFERENCE_PROFILE_ID
-            logger.info("Bedrock inference profile routing enabled")
-            logger.info("Bedrock requests will use the configured inference profile")
-            logger.info(f"   Inference Profile ID: {model_id}")
+            route = "inference_profile"
         else:
             model_id = AWS_BEDROCK_MODEL_ID
-            logger.info("Bedrock requests will use the configured model directly")
-            logger.info("Bedrock inference profile routing is inactive")
-            logger.info("Verify regional access to the configured Bedrock model")
+            route = "model"
             if AWS_BEDROCK_USE_INFERENCE_PROFILE:
                 logger.warning("Bedrock inference profile requested without an ID; using the model ID")
-
-        if AWS_BEDROCK_USE_CACHE:
-            logger.info("Bedrock prompt caching enabled")
-        else:
-            logger.info("Bedrock prompt caching disabled")
+        logger.info("Bedrock default configuration: region=%s model=%s route=%s auth_mode=%s",
+                    AWS_BEDROCK_REGION, model_id, route, AWS_BEDROCK_AUTH_MODE)
+        # These legacy settings are not applied by the current request builder.
+        # Report configured facts without promising cache behavior to operators.
+        logger.info("Bedrock prompt-cache settings: enabled=%s configured_ttl_seconds=%s; "
+                    "this client does not send cache controls",
+                    AWS_BEDROCK_USE_CACHE, AWS_BEDROCK_CACHE_TTL)
 
         return "bedrock_client"
 

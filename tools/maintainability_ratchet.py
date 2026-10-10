@@ -48,8 +48,10 @@ def python_sources(root: Path, *, include_bundled: bool = False):
 def inspect_source(source: str, filename: str) -> dict:
     tree = ast.parse(source, filename=filename)
     aliases = {}
+    imported_modules = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
+            imported_modules.update(a.asname or a.name.split(".")[0] for a in node.names)
             aliases.update((a.asname or a.name.split(".")[0], a.name if a.asname else a.name.split(".")[0]) for a in node.names)
         elif isinstance(node, ast.ImportFrom) and not node.level:
             aliases.update((a.asname or a.name, f"{node.module}.{a.name}") for a in node.names)
@@ -60,6 +62,72 @@ def inspect_source(source: str, filename: str) -> dict:
         if isinstance(node, ast.Attribute):
             return f"{name(node.value)}.{node.attr}"
         return ""
+
+    # Infer local forwarding helpers from their parameter use, not their names.
+    # The fixed point also covers a local helper calling another local helper.
+    nodes = list(ast.walk(tree))
+    parents = {child: node for node in nodes for child in ast.iter_child_nodes(node)}
+
+    def enclosing_scope(node):
+        node = parents.get(node)
+        while node is not None and not isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            node = parents.get(node)
+        return node
+
+    scopes = {node: enclosing_scope(node) for node in nodes}
+    functions = [node for node in nodes if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    bindings = {}
+    for fn in functions:
+        bindings.setdefault(scopes[fn], {})[fn.name] = fn
+    positional = {fn: [arg.arg for arg in fn.args.posonlyargs + fn.args.args] for fn in functions}
+    parameters = {fn: set(positional[fn]) | {arg.arg for arg in fn.args.kwonlyargs} for fn in functions}
+    bodies = {fn: [] for fn in functions}
+    for node in nodes:
+        if scopes[node] in bodies:
+            bodies[scopes[node]].append(node)
+    forwarded = {fn: set() for fn in functions}
+
+    def local_helper(call):
+        if not isinstance(call.func, ast.Name):
+            return None
+        scope = scopes[call]
+        while scope is not None:
+            if call.func.id in parameters.get(scope, set()):
+                return None
+            # A class namespace is not a lexical closure for its methods.
+            if not isinstance(scope, ast.ClassDef) and call.func.id in bindings.get(scope, {}):
+                return bindings[scope][call.func.id]
+            scope = scopes[scope]
+        return None
+
+    def environment_keys(node):
+        if isinstance(node, ast.Call):
+            function = name(node.func)
+            helper = local_helper(node)
+            if helper is not None:
+                for parameter in forwarded[helper]:
+                    index = positional[helper].index(parameter) if parameter in positional[helper] else len(node.args)
+                    yield node.args[index] if index < len(node.args) else next((k.value for k in node.keywords if k.arg == parameter), None)
+            elif function in {"os.getenv", "os.environ.get"}:
+                yield node.args[0] if node.args else next((k.value for k in node.keywords if k.arg == "key"), None)
+        elif isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load) and name(node.value) == "os.environ":
+            yield node.slice
+        elif isinstance(node, ast.Compare) and len(node.ops) == 1 and isinstance(node.ops[0], (ast.In, ast.NotIn)) and name(node.comparators[0]) == "os.environ":
+            yield node.left
+
+    while True:
+        updated = {fn: forwarded[fn] | {
+            expression.id for node in bodies[fn] for expression in environment_keys(node)
+            if isinstance(expression, ast.Name) and expression.id in parameters[fn]
+        } for fn in functions}
+        if updated == forwarded:
+            break
+        forwarded = updated
+
+    def module_receiver(node):
+        while isinstance(node, ast.Attribute):
+            node = node.value
+        return isinstance(node, ast.Name) and node.id in imported_modules
 
     imports, environment, writes, silent = set(), set(), [], []
     layer = LAYERS.get(filename.split("/")[0], 0)
@@ -76,15 +144,8 @@ def inspect_source(source: str, filename: str) -> dict:
                 module = node.module or ""
             targets = [module] if module not in LAYERS else [f"{module}.{a.name}" for a in node.names]
         imports.update(t for t in targets if LAYERS.get(t.split(".")[0], -1) > layer and t not in SHARED)
-        key = None
-        if isinstance(node, ast.Call) and name(node.func) in {"os.getenv", "os.environ.get"} and node.args:
-            key = node.args[0]
-        elif isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load) and name(node.value) == "os.environ":
-            key = node.slice
-        elif isinstance(node, ast.Compare) and len(node.ops) == 1 and isinstance(node.ops[0], (ast.In, ast.NotIn)) and name(node.comparators[0]) == "os.environ":
-            key = node.left
-        if isinstance(key, ast.Constant) and isinstance(key.value, str):
-            environment.add(key.value)
+        environment.update(key.value for key in environment_keys(node)
+                           if isinstance(key, ast.Constant) and isinstance(key.value, str))
         if isinstance(node, ast.ExceptHandler) and (node.type is None or isinstance(node.type, ast.Name) and node.type.id in {"Exception", "BaseException"}):
             children = [child for statement in node.body for child in ast.walk(statement)]
             handled = any(isinstance(child, ast.Raise)
@@ -134,6 +195,7 @@ def inspect_source(source: str, filename: str) -> dict:
         def visit_Call(self, node):
             function, kind = name(node.func), None
             if function == "os.replace" or (isinstance(node.func, ast.Attribute) and node.func.attr == "replace"
+                    and not module_receiver(node.func.value)
                     and (len(node.args) == 1 or any(k.arg == "target" for k in node.keywords))):
                 kind = "replace"
             elif isinstance(node.func, ast.Attribute) and node.func.attr == "write_text" and node.args and any(
