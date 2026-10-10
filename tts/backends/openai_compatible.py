@@ -243,3 +243,26 @@ class OpenAICompatibleTTSBackend(BaseTTSBackend):
             yielded = True
         if not yielded:
             raise TTSBackendError("remote TTS stream completed without audio")
+
+
+def probe() -> tuple[str, str]:
+    from config import settings
+
+    if not str(settings.TTS_API_BASE_URL or "").strip():
+        return "unavailable", "TTS API endpoint is not configured"
+    if not str(settings.TTS_API_MODEL or "").strip():
+        return "unavailable", "TTS API model is not configured"
+    if not str(settings.TTS_API_VOICE or "").strip():
+        return "unavailable", "TTS API voice is not configured"
+    protocol = str(settings.TTS_API_STREAM_PROTOCOL or "buffered").strip().lower()
+    if protocol not in {"buffered", "openai_sse"}:
+        return "unavailable", f"Unsupported remote TTS stream protocol: {protocol}"
+    if protocol == "openai_sse":
+        return "remote", "Remote endpoint configured for OpenAI SSE PCM streaming"
+    return "remote", "Remote endpoint configured for buffered WAV responses"
+
+
+def streaming_enabled() -> bool:
+    from config import settings
+
+    return str(settings.TTS_API_STREAM_PROTOCOL or "buffered").strip().lower() == "openai_sse"

@@ -2,12 +2,12 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { createRequire } from 'node:module'
+import { createSourceRequire } from './helpers/loadTypeScript.mjs'
 import test from 'node:test'
 import ts from 'typescript'
 
-const require = createRequire(import.meta.url)
-function compile(relativePath, dependencies = require) {
+const require = createSourceRequire(new URL('../src/main/desktopSettings.ts', import.meta.url))
+function compile(relativePath, dependencies = createSourceRequire(new URL(relativePath, import.meta.url))) {
   const source = fs.readFileSync(new URL(relativePath, import.meta.url), 'utf8')
   const code = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true, jsx: ts.JsxEmit.ReactJSX },
@@ -74,7 +74,7 @@ const { renderToStaticMarkup } = require('react-dom/server')
 const { default: CharacterEditor } = compile('../src/renderer/components/MainChatCharacterSettings.tsx', name => {
   if (name === '../i18n') return { useI18n: () => ({ t: value => value }) }
   if (name === './SettingsPrimitives') return { CardShell: ({ children }) => React.createElement('div', null, children) }
-  return require(name)
+  return createSourceRequire(new URL('../src/renderer/components/MainChatCharacterSettings.tsx', import.meta.url))(name)
 })
 
 for (const savedOverride of ['', '保存済みの人物設定']) {
@@ -112,7 +112,7 @@ test('Chinese editor preserves Kurisu ownership and inactive applicability', () 
   const { default: LocalizedEditor } = compile('../src/renderer/components/MainChatCharacterSettings.tsx', name => {
     if (name === '../i18n') return i18n
     if (name === './SettingsPrimitives') return { CardShell: ({ children }) => React.createElement('div', null, children) }
-    return require(name)
+    return createSourceRequire(new URL('../src/renderer/components/MainChatCharacterSettings.tsx', import.meta.url))(name)
   })
   const previous = globalThis.localStorage
   globalThis.localStorage = { getItem: () => 'zh-CN' }

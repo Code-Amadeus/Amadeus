@@ -27,6 +27,127 @@ precedence, and records every setting declared through it. New startup
 configuration should use this boundary rather than calling `load_dotenv`
 again.
 
+## Shared configuration declarations
+
+The shared catalog covers the TTS selector, all four built-in TTS connection/model
+groups, graphics, voice input/reference controls, model connections, model roles,
+Provider connections, character, desktop and live presentation/vision settings:
+145 fields in 42 groups. Edit the owning JSON for defaults, types, options,
+ranges, desktop editability, application policy, and English/Chinese labels. The
+configuration keys retain their existing environment-variable names.
+Run `npm run generate:config` from `electron` after editing a declaration.
+
+Python reads the JSON through `config/catalog/__init__.py` and the existing
+`EnvironmentReader`; `settings.FISH_TTS_*` callers keep working. The generator
+maintains explicit, typed bindings in a marked block of `settings.py`, so Ruff
+and editors can resolve the same public names without `globals()` injection.
+Electron consumes
+the generated `src/shared/configCatalog.generated.ts`, which is compiled into
+both main and renderer bundles. Offline Settings never requires a running Python
+process or access to the source checkout. The generator also maintains marked
+sections of `.env.example`. Empty strings are quoted so option comments cannot
+become values; secret examples stay commented out. Uncomment and fill only the
+credentials you use. Commit generated output with its declaration;
+`npm test` and `npm run build` reject stale output. Removed or renamed groups
+lose their old managed env sections; duplicate declared keys outside those sections
+are rejected. `catalog_legacy.json` bounds the remaining handwritten declarations:
+new keys and migrated keys cannot be added to legacy desktop lists/forms or Python
+parsing/status definitions. The desktop list now contains only structured ACP
+records and removal of the retired route key. Internal Python tuning fields
+outside Settings remain in the bounded legacy inventory.
+
+Desktop snapshots distinguish stored overrides from known non-secret startup
+inputs. The form follows source precedence even when offline. Dotenv interpolation
+remains Python-owned: an unresolved offline value is shown as unknown, and a
+pending clear never reuses the running backend's superseded value. Secrets expose
+only configured state. Computed defaults for the next launch use the projected
+inputs, so changing a local model also changes an unset Hybrid model without
+being overwritten by the old running value.
+
+`desktop_default: { "value": true, "platforms": ["win32"] }` declares a
+desktop-only launch default; omit `platforms` to apply it on every desktop OS.
+The launch environment and offline snapshot derive it from the same declaration,
+after process, saved-user and dotenv overrides. Python's headless default stays
+unchanged. Defaults equal to Python's must not be injected unnecessarily: AEC
+delay key presence denotes an explicit override of device-class calibration.
+Catalog JSON resources are packaged recursively; adding a new folder does not
+require new package entries in `pyproject.toml`.
+
+`apply` is `frontend`, `host`, `backend_restart` or `desktop_restart`, with a
+field override when its group has mixed behavior. Desktop-only fields never
+enter the backend environment. A one-to-one Host setting declares its
+`runtime_key`; forms, persistence mapping and basic runtime validation derive
+from that declaration. The implementation still owns applying the value.
+Save failures never apply a change, and live application failures leave the
+saved revision pending. Only the matching application acknowledgment clears it.
+
+Supported field types are string, path, URL, enum, boolean, integer and number.
+Move existing labels, explanations, icons and translations intact when migrating a
+field. Option descriptions belong in their localized `description`; a renderer
+that displays them must retain that content. An option marked `hidden` remains
+an accepted configuration value but is not newly offered by the form. This
+preserves the existing Vision and AUIP choice sets without rejecting saved or
+environment inputs. Field `icon` preserves an existing control's icon instead of
+replacing it with the group's default. Voice groups may use their existing group `order` for UI
+placement independently of backend registration order. The local-engine owner
+keeps the CLI executable label specific to the selected engine.
+Where existing UI guidance differs from backend diagnostic copy, the group
+retains both through `ui_description` and `description`, instead of replacing
+one audience's explanation with the other's.
+Fields use the same override; `ui_description: null` preserves an intentionally
+absent form explanation while retaining an existing backend diagnostic.
+`computed_default: true` omits the static default: its owner supplies a value
+when resolving it. Texture sampling still defaults to whether the effective
+frame rate is 60 FPS, with explicit choices taking precedence. Graphics presets,
+TTS device selection and atomic checkpoint-pair resolution remain ordinary code.
+The wallpaper caption default belongs to the presentation owner because the
+legacy combined subtitle input may select source, bilingual or disabled captions.
+An unresolved offline computed value stays unknown and editable.
+An `example` may differ from the runtime default (for example the curated Kurisu
+setup); `example_active` preserves whether that env example is enabled.
+Boolean `true_values` is used only where an existing owner accepts additional
+spellings such as `on`; other booleans retain the shared parser's contract.
+
+Each TTS declaration has `voice_backend` metadata and a `section` (`output` or
+`remote`). These drive the existing TTS registry, offline selector, Settings
+placement and backend status projection. To add a built-in TTS backend, add its
+declaration plus implementation: `factory` names its constructor, `probe` reports
+readiness, and `streaming` is either a boolean or an implementation function.
+Entry points are resolved lazily; listing backends never constructs a model.
+The implementation owns protocol validation and optional dependency checks.
+Add backend-specific tests, then regenerate; no central backend switch or
+Settings allowlist needs editing. New env sections are appended automatically.
+
+This is an internal catalog of packaged application data, not an extension
+manifest loader. Third-party code still needs the extension host's lifecycle
+and authorization boundary. ASR fields, shared reference/emotion controls and
+live runtime application retain their existing owners. TTS mode/language remain
+bounded composite conversions; window enumeration, character management and
+theme previews keep their dedicated UI behavior. ACP/MCP records keep their
+existing structured validation, encrypted storage and authorization boundaries.
+
+The catalog describes fields; it does not store user values or prove that a
+backend is available. `DesktopSettingsStore` still owns encryption, process
+locks, clearing, durable saves and pending revisions. Runtime probes still own
+availability; an incomplete unselected provider must not prevent startup.
+Secret declarations have no default, and status responses expose only whether
+a credential is configured. Protocol-specific validation stays in the backend.
+
+## Handler composition
+
+`server/handlers/voice.py` owns construction and binding of TTS, ASR and Wake
+handlers. The built-in composition table registers the domain's handlers before
+starting the server; `app.py` supplies runtime dependencies later through
+`configure()`. Add a handler
+using existing voice dependencies inside this domain; `app.py` does not need a
+new import, constructor, registration entry or configure call. New cross-domain
+dependencies still belong at the application composition root.
+
+The domain closes the current Wake and ASR instances before the shared microphone;
+shutdown never invokes lazy factories. Shared service creation and replacement
+remain with the existing scene/runtime owners. WebSocket registration rejects
+duplicate method ownership before inserting any methods from the new handler.
+
 ## Chat image input
 
 DeepSeek image input is available with `DEEPSEEK_MODEL_NAME=deepseek-flash`.
@@ -117,7 +238,7 @@ asset request after a 30-second cooldown, without changing the configured flag.
 
 - Credentials, model paths, ports, startup feature flags: `.env` ->
   `config/settings.py` -> imported constant or injected constructor argument.
-- Electron launch-profile defaults: `electron/src/main/index.ts`. These may be
+- Electron launch-profile defaults: the field's `desktop_default` in the catalog. These may be
   intentionally different from headless Python defaults. The current desktop
   profile enables realtime AEC/barge-in while headless Python does not.
 - Runtime choices changed by UI or request handling: a named runtime owner.
@@ -193,8 +314,7 @@ These are not pending mechanical migrations:
 
 | Owner | Values | Why they remain late-bound |
 | --- | --- | --- |
-| `asr/microphone.py` | microphone selector overrides | Standalone device-selection helpers read at call time and avoid importing the full settings facade when a valid explicit selector is present. |
-| `tts/aec_realtime.py` | explicit AEC delay | Presence of an explicit value changes whether device-class delay calibration is used; tests exercise that distinction. |
+| `tts/aec_realtime.py` | explicit AEC delay | Only presence is checked; the value comes from parsed settings. An explicit value disables device-class calibration. |
 | `tts/pipeline.py` | `ENABLE_CUDA_GRAPH` | The compatibility mode function and bundled inference code read the value at synthesis time. There is no active mainline UI caller today, so no replacement runtime contract is invented yet. |
 | provider/session storage helpers | `AMADEUS_*_PATH` values | Helpers accept explicit path injection and subprocess tests supply isolated stores at their process boundary. |
 | wallpaper scenario helpers | wallpaper/scenario overrides | Both wallpaper hosts resolve component-local media overrides without importing the heavyweight application settings facade. |
@@ -221,3 +341,36 @@ These are not pending mechanical migrations:
 - The legacy root GPT-SoVITS WebUI/API entry points and their conflicting
   `config.py` were removed. A future HTTP API should be designed around the
   current `server.app` contracts instead of reviving that compatibility layer.
+
+Model connection inheritance stays in the model owner. The catalog records legacy
+names (`aliases`), facade attribute bindings (`setting`), and local engine field
+visibility (`visible_when`). CLI numeric controls remain parsed strings;
+`control: "number"` supplies UI hints without changing command argument types.
+Bedrock bearer credentials now use the same surrounding-quote/whitespace
+normalization as other API secrets. AWS credential discovery remains unchanged.
+
+Role/session fields use `scope: "session"`: their owner calls `read_catalog_value`
+against its current environment, preserving per-session overrides without loading
+all application settings. `scope: "virtual"` marks composite controls such as
+Codex transport; the desktop owner translates these into the real launch keys.
+They are not emitted as synthetic environment variables or Python settings.
+`visible_when` permits only equality against declared selectors in the same group;
+it contains no executable expressions. Provider availability and authorization
+remain runtime facts. String selectors offer choices without turning a previously
+open provider identifier into a new hard-coded enum. Structured ACP/MCP profiles
+retain their existing dedicated storage, validation and authorization owners.
+
+## Built-in handler composition
+
+`server/handlers/composition.py` is the built-in factory table. It constructs all
+request handlers against explicitly supplied startup services and registers every
+result before the server accepts clients. Adding a handler changes its
+implementation and this table, without editing `server/app.py`. Runtime owners
+still bind their live services and callbacks; this table is not a plugin loader
+and grants no new extension permissions. Duplicate request methods fail startup
+instead of replacing the existing owner.
+
+Run `python tools/smoke_builtin_handler_catalog.py` to start an isolated backend
+with models and external agents disabled. The smoke adds a synthetic factory,
+verifies an authenticated WebSocket round trip, reads the real configuration,
+checks voice routes, and shuts the process down cleanly.

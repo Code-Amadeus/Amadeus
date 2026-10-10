@@ -502,7 +502,9 @@ def test_actual_app_finally_drains_chat_before_provider_and_continues_after_fenc
         monkeypatch.setitem(sys.modules, "asr.mic_input_service", SimpleNamespace(close_mic_input_service=Mock()))
         monkeypatch.setitem(sys.modules, "llm.llama_server", SimpleNamespace(stop_llama_server=Mock()))
         logger = Mock()
+        from server.handlers.voice import close_voice_input_services
         namespace = dict(asyncio=asyncio, chat_h=handler, logger=logger, bus=SimpleNamespace(off=Mock()),
+            close_voice_input_services=close_voice_input_services,
             vts_worker_stop=vts_worker_stop, vts_workers=vts_workers,
             Method=Method, auip_launch_callback=None, work_preview_auip_callback=None,
             auip_result_entry_callback=None,

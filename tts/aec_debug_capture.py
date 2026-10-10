@@ -44,7 +44,11 @@ def _safe_label(label: str) -> str:
 
 
 def _mic_index() -> int | None:
-    raw = os.environ.get("AEC_DEBUG_MIC_INDEX") or os.environ.get("MICROPHONE_DEVICE_INDEX", "")
+    raw = os.environ.get("AEC_DEBUG_MIC_INDEX")
+    if not raw:
+        from config.settings import MICROPHONE_DEVICE_INDEX
+
+        return MICROPHONE_DEVICE_INDEX if MICROPHONE_DEVICE_INDEX >= 0 else None
     try:
         value = int(str(raw).strip())
     except Exception:

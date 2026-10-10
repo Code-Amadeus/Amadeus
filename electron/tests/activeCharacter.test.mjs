@@ -6,6 +6,7 @@ import ts from 'typescript'
 import * as React from 'react'
 import * as jsxRuntime from 'react/jsx-runtime'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { createSourceRequire } from './helpers/loadTypeScript.mjs'
 
 const root = new URL('../src/renderer/', import.meta.url)
 function load(relative, imports, globals = {}) {
@@ -20,6 +21,7 @@ function load(relative, imports, globals = {}) {
       if (name in imports) return imports[name]
       if (name === 'react') return React
       if (name === 'react/jsx-runtime') return jsxRuntime
+      if (name.startsWith('.')) return createSourceRequire(new URL(relative, root))(name)
       throw new Error(`Unexpected import: ${name}`)
     }, ...globals,
   })

@@ -1,0 +1,50 @@
+{
+  "id": "vts_compatibility",
+  "title": {
+    "en-US": "VTube Studio compatibility",
+    "zh-CN": "VTube Studio 兼容"
+  },
+  "description": {
+    "en-US": "Optional downstream mouth-signal and parameter forwarding. SpriteForge browser animation remains independent of this compatibility path.",
+    "zh-CN": "可选的下游口型信号与参数转发；SpriteForge 浏览器动画独立于此兼容路径。"
+  },
+  "desktop": true,
+  "apply": "backend_restart",
+  "config": {
+    "VTS_ENABLED": {
+      "type": "boolean",
+      "title": {
+        "en-US": "Enable compatibility output",
+        "zh-CN": "启用兼容输出"
+      },
+      "default": false,
+      "example_active": true
+    },
+    "VTS_WS_URL": {
+      "type": "url",
+      "title": {
+        "en-US": "WebSocket URL",
+        "zh-CN": "WebSocket 地址"
+      },
+      "default": "ws://127.0.0.1:8001",
+      "schemes": [
+        "ws",
+        "wss"
+      ],
+      "example_active": true
+    },
+    "VTS_TOKEN_FILE": {
+      "type": "path",
+      "title": {
+        "en-US": "Authentication token file",
+        "zh-CN": "认证令牌文件"
+      },
+      "default": "vts_auth_token.json",
+      "example_active": true,
+      "description": {
+        "en-US": "Local token cache path; the token itself is never shown in Settings.",
+        "zh-CN": "本地令牌缓存路径；设置页面不会显示令牌本身。"
+      }
+    }
+  }
+}

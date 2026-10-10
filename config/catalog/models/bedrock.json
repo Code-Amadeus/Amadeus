@@ -1,0 +1,75 @@
+{
+  "id": "bedrock",
+  "title": {
+    "en-US": "AWS Bedrock",
+    "zh-CN": "AWS Bedrock"
+  },
+  "description": {
+    "en-US": "Uses the AWS credential chain or an explicitly stored Bedrock bearer token.",
+    "zh-CN": "使用 AWS 凭据链或显式保存的 Bedrock Bearer Token。"
+  },
+  "desktop": true,
+  "config": {
+    "BEDROCK_AUTH_MODE": {
+      "type": "enum",
+      "title": {
+        "en-US": "Authentication",
+        "zh-CN": "认证方式"
+      },
+      "default": "auto",
+      "setting": "AWS_BEDROCK_AUTH_MODE",
+      "options": [
+        "auto",
+        "boto3",
+        "bearer"
+      ]
+    },
+    "AWS_BEARER_TOKEN_BEDROCK": {
+      "type": "string",
+      "title": {
+        "en-US": "Bearer token",
+        "zh-CN": "Bearer 令牌"
+      },
+      "secret": true,
+      "setting": "AWS_BEDROCK_BEARER_TOKEN",
+      "example_active": true
+    },
+    "AWS_BEDROCK_REGION": {
+      "type": "string",
+      "title": {
+        "en-US": "Region",
+        "zh-CN": "区域"
+      },
+      "default": "us-west-2",
+      "example_active": true
+    },
+    "AWS_BEDROCK_MODEL_ID": {
+      "type": "string",
+      "title": {
+        "en-US": "Model ID",
+        "zh-CN": "模型 ID"
+      },
+      "default": "deepseek.v3-v1:0",
+      "example_active": true
+    },
+    "AWS_BEDROCK_USE_INFERENCE_PROFILE": {
+      "type": "boolean",
+      "title": {
+        "en-US": "Use inference profile",
+        "zh-CN": "使用推理配置"
+      },
+      "default": false,
+      "example_active": true
+    },
+    "AWS_BEDROCK_INFERENCE_PROFILE_ID": {
+      "type": "string",
+      "title": {
+        "en-US": "Inference profile ID",
+        "zh-CN": "推理配置 ID"
+      },
+      "default": "",
+      "example_active": true
+    }
+  },
+  "apply": "backend_restart"
+}

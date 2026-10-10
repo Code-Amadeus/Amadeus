@@ -1,0 +1,77 @@
+{
+  "id": "desktop_interface",
+  "title": {
+    "en-US": "Desktop interface",
+    "zh-CN": "桌面界面"
+  },
+  "description": {
+    "en-US": "Choose the visual style and language used across the Electron frontend.",
+    "zh-CN": "选择 Electron 前端使用的界面风格和语言。"
+  },
+  "desktop": true,
+  "apply": "frontend",
+  "config": {
+    "AMADEUS_UI_LOCALE": {
+      "type": "enum",
+      "title": {
+        "en-US": "Console language",
+        "zh-CN": "控制台语言"
+      },
+      "default": "en-US",
+      "description": {
+        "en-US": "Controls Electron navigation, Settings, and capability status pages.",
+        "zh-CN": "控制 Electron 导航、设置页和能力状态页的显示语言。"
+      },
+      "scope": "desktop",
+      "options": [
+        {
+          "value": "en-US",
+          "label": {
+            "en-US": "English",
+            "zh-CN": "English"
+          }
+        },
+        {
+          "value": "zh-CN",
+          "label": {
+            "en-US": "Simplified Chinese",
+            "zh-CN": "简体中文"
+          }
+        }
+      ]
+    },
+    "AMADEUS_UI_THEME": {
+      "type": "enum",
+      "title": {
+        "en-US": "Interface theme",
+        "zh-CN": "界面主题"
+      },
+      "default": "wallpaper-slice",
+      "scope": "desktop",
+      "options": [
+        {
+          "value": "classic",
+          "label": {
+            "en-US": "Classic light",
+            "zh-CN": "经典浅色"
+          },
+          "description": {
+            "en-US": "Clean neutral desktop palette.",
+            "zh-CN": "简洁、中性的桌面配色。"
+          }
+        },
+        {
+          "value": "wallpaper-slice",
+          "label": {
+            "en-US": "Wallpaper slice",
+            "zh-CN": "壁纸切片"
+          },
+          "description": {
+            "en-US": "Dark translucent surfaces inspired by the Wallpaper Slice.",
+            "zh-CN": "以壁纸切片为灵感的深色半透明界面。"
+          }
+        }
+      ]
+    }
+  }
+}

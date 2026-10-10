@@ -17,17 +17,21 @@ import time
 from dataclasses import dataclass, asdict
 from typing import Any
 
+from config.catalog import configuration_field, configuration_groups
+
 logger = logging.getLogger(__name__)
 
 
-def _bool_env(key: str, default: bool) -> bool:
+def _bool_env(key: str) -> bool:
+    default = configuration_field(key)["default"]
     value = os.getenv(key)
     if value is None:
         return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+    return value.strip().lower() in configuration_field(key)["true_values"]
 
 
-def _int_env(key: str, default: int) -> int:
+def _int_env(key: str) -> int:
+    default = configuration_field(key)["default"]
     value = os.getenv(key)
     if value is None:
         return default
@@ -37,7 +41,9 @@ def _int_env(key: str, default: int) -> int:
         return default
 
 
-def _str_env(key: str, default: str) -> str:
+def _str_env(key: str, default: str | None = None) -> str:
+    if default is None:
+        default = configuration_field(key)["default"]
     return os.getenv(key, default).strip() or default
 
 
@@ -66,14 +72,14 @@ _VISION_TRIGGERS = (
 
 @dataclass
 class VisionConfig:
-    enabled: bool = _bool_env("AMADEUS_VISION_ENABLED", False)
-    mode: str = _str_env("AMADEUS_VISION_MODE", "off")
-    scope: str = _str_env("AMADEUS_VISION_SCOPE", "full_screen")
+    enabled: bool = _bool_env("AMADEUS_VISION_ENABLED")
+    mode: str = _str_env("AMADEUS_VISION_MODE")
+    scope: str = _str_env("AMADEUS_VISION_SCOPE")
     provider: str = _str_env("AMADEUS_VISION_PROVIDER", "auto")
-    max_long_side: int = _int_env("AMADEUS_VISION_MAX_LONG_SIDE", 960)
-    jpeg_quality: int = _int_env("AMADEUS_VISION_JPEG_QUALITY", 68)
-    region: str = _str_env("AMADEUS_VISION_REGION", "")
-    window_handle: str = _str_env("AMADEUS_VISION_WINDOW_HANDLE", "")
+    max_long_side: int = _int_env("AMADEUS_VISION_MAX_LONG_SIDE")
+    jpeg_quality: int = _int_env("AMADEUS_VISION_JPEG_QUALITY")
+    region: str = _str_env("AMADEUS_VISION_REGION")
+    window_handle: str = _str_env("AMADEUS_VISION_WINDOW_HANDLE")
 
 
 _config = VisionConfig()
@@ -87,16 +93,10 @@ def set_config(values: dict[str, Any]) -> list[str]:
     """Update non-VN visual config from system.set_config values."""
 
     updated: list[str] = []
-    aliases = {
-        "vision_enabled": "enabled",
-        "vision_mode": "mode",
-        "vision_scope": "scope",
-        "vision_provider": "provider",
-        "vision_max_long_side": "max_long_side",
-        "vision_jpeg_quality": "jpeg_quality",
-        "vision_region": "region",
-        "vision_window_handle": "window_handle",
-    }
+    aliases = {field["runtime_key"]: field["runtime_key"].removeprefix("vision_")
+               for field in configuration_groups()["vision"]["config"].values()}
+    # Provider selection is internal capture context, outside desktop settings.
+    aliases["vision_provider"] = "provider"
     for raw_key, value in (values or {}).items():
         key = aliases.get(str(raw_key))
         if not key or not hasattr(_config, key):

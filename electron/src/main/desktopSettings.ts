@@ -2,6 +2,7 @@ import { safeStorage } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import process from 'node:process'
+import { catalogApplication, catalogInputKeys, catalogLaunchDefaults, catalogOptionValues, desktopCatalogFields } from '../shared/configCatalog.js'
 
 type StoredDesktopSettings = {
   version: 2
@@ -50,160 +51,15 @@ type StoredMcpConnection = {
   encryptedEnvironment: Record<string, string>
 }
 
+// Structured records and retired-key removal have dedicated validators below.
+const STRUCTURED_VALUE_KEYS = new Set(['AMADEUS_ACP_PROVIDERS', 'COOPERATIVE_CHAT_ENABLED'])
 const VALUE_KEYS = new Set([
-  'AMADEUS_CHARACTER_ID',
-  'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA',
-  'AMADEUS_UI_LOCALE',
-  'AMADEUS_UI_THEME',
-  'AMADEUS_WINDOWS_STARTUP_MODE',
-  'AMADEUS_PRESENTATION_LOCALE',
-  'AMADEUS_WALLPAPER_CAPTION_MODE',
-  'AMADEUS_CHAT_TRANSLATION_SUBTITLES_ENABLED',
-  'AMADEUS_VISION_ENABLED',
-  'AMADEUS_VISION_MODE',
-  'AMADEUS_VISION_SCOPE',
-  'AMADEUS_VISION_MAX_LONG_SIDE',
-  'AMADEUS_VISION_JPEG_QUALITY',
-  'AMADEUS_VISION_REGION',
-  'AMADEUS_VISION_WINDOW_HANDLE',
-  'ENABLE_CUDA_GRAPH',
-  'EXP_TTS_MAX_CONCURRENCY',
-  'TTS_OUTPUT_LANGUAGE',
-  'LLM_PROVIDER',
-  'DEEPSEEK_BASE_URL',
-  'DEEPSEEK_MODEL_NAME',
-  'OPENAI_BASE_URL',
-  'OPENAI_MODEL_NAME',
-  'GEMINI_MODEL_NAME',
-  'BEDROCK_AUTH_MODE',
-  'AWS_BEDROCK_REGION',
-  'AWS_BEDROCK_MODEL_ID',
-  'AWS_BEDROCK_USE_INFERENCE_PROFILE',
-  'AWS_BEDROCK_INFERENCE_PROFILE_ID',
-  'RAG_ENABLED',
-  'RAG_INDEX_DIR',
-  'RAG_TOP_K',
-  'RAG_MAX_DISTANCE',
-  'LOCAL_LLM_TYPE',
-  'LOCAL_LLM_LAUNCH_MODE',
-  'LOCAL_LLM_MODEL',
-  'LOCAL_LLM_URL',
-  'LM_STUDIO_URL',
-  'LOCAL_LLM_LM_STUDIO_URL',
-  'LOCAL_LLM_OLLAMA_URL',
-  'HYBRID_LOCAL_LLM_URL',
-  'HYBRID_LOCAL_LLM_MODEL',
-  'LOCAL_LLM_CLI_PATH',
-  'LOCAL_LLM_CLI_MODEL_PATH',
-  'LOCAL_LLM_CLI_THREADS',
-  'LOCAL_LLM_CLI_CONTEXT',
-  'LOCAL_LLM_CLI_NGL',
-  'LOCAL_LLM_CUDA_VISIBLE_DEVICES',
-  'COOPERATIVE_WORK_PLANNER_MODEL',
-  'WORK_OBSERVER_PROVIDER',
-  'WORK_OBSERVER_MODEL',
-  'AUIP_NARRATION_PROVIDER',
-  'AUIP_NARRATION_MODEL',
-  'AUIP_ACTION_PROVIDER',
-  'AUIP_ACTION_MODEL',
-  'AUIP_ACTION_REASONING_EFFORT',
-  'AUIP_ACTION_SERVICE_TIER',
-  'BROWSER_BRANCH_PROVIDER',
-  'BROWSER_BRANCH_MODEL',
-  'VN_LLM_PROVIDER',
-  'VN_LLM_MODEL',
-  'VN_SUBTITLE_TRANSLATE_PROVIDER',
-  'VN_SUBTITLE_TRANSLATE_MODEL',
-  'VN_TTS_TRANSLATE_PROVIDER',
-  'VN_TTS_TRANSLATE_MODEL',
-  // Transitional read whitelist: unrelated saves must preserve a retired value.
-  'COOPERATIVE_CHAT_ENABLED',
-  'GRAPHICS_PROFILE',
-  'RENDER_MAX_FPS',
-  'RENDER_MAX_RESOLUTION',
-  'RENDER_TEXTURE_SAMPLING',
-  'RENDER_BC7_CACHE',
-  'COOPERATIVE_CHAT_PROVIDER',
-  'WORK_CODING_PROVIDER',
-  'WORK_EXECUTION_PROVIDER',
-  'PI_PROVIDER_ENABLED',
-  'PI_NODE_PATH',
-  'PI_AGENT_DIR',
-  'PI_MODEL_PROVIDER',
-  'PI_MODEL',
-  'OPENCLAW_BASE_URL',
-  'OPENCLAW_PROJECT_DIR',
-  'CODEX_PROVIDER_TRANSPORT',
-  'CODEX_APP_SERVER_AUTH_MODE',
-  'CODEX_APP_SERVER_CODEX_BIN',
-  'CODEX_APP_SERVER_MODEL_PROVIDER',
-  'CODEX_APP_SERVER_PROVIDER_BASE_URL',
-  'CODEX_APP_SERVER_MODEL',
-  'CODEX_APP_SERVER_CHATGPT_MODEL',
-  'CODEX_APP_SERVER_REASONING_EFFORT',
-  'CODEX_APP_SERVER_SERVICE_TIER',
-  'DIRECT_CODEX_CLI_PATH',
-  'AMADEUS_ACP_PROVIDERS',
-  'ASR_BACKEND',
-  'ASR_LANGUAGE',
-  'ASR_CONTEXT',
-  'ASR_API_BASE_URL',
-  'ASR_API_MODEL',
-  'ASR_LISTEN_TIMEOUT_SECONDS',
-  'ASR_VAD_SILENCE_MS',
-  'QWEN3_ASR_MODEL_PATH',
-  'QWEN3_ASR_DEVICE',
-  'QWEN3_ASR_REQUIRE_CUDA',
-  'WAKE_ENABLED',
-  'WAKE_ASR_BACKEND',
-  'WAKE_PHRASES',
-  'WAKE_AUTO_SEND_TO_CHAT',
-  'WAKE_SENSEVOICE_LANGUAGES',
-  'SENSEVOICE_LANGUAGE',
-  'SENSEVOICE_MODEL_PATH',
-  'MICROPHONE_DEVICE_INDEX',
-  'MICROPHONE_PREFERRED_NAME',
-  'AEC_REALTIME_ENABLED',
-  'AEC_REALTIME_BARGE_IN',
-  'AEC_REALTIME_DELAY_MS',
-  'TTS_BACKEND',
-  'ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING',
-  'TTS_DEVICE',
-  'TTS_VOICE_PROFILE',
-  'TTS_GPT_MODEL_PATH',
-  'TTS_SOVITS_MODEL_PATH',
-  'TTS_REF_AUDIO_JA',
-  'TTS_REF_TEXT_JA',
-  'TTS_REF_AUDIO_EN',
-  'TTS_REF_TEXT_EN',
-  'TTS_API_BASE_URL',
-  'TTS_API_MODEL',
-  'TTS_API_VOICE',
-  'TTS_API_STREAM_PROTOCOL',
-  'MIMO_TTS_BASE_URL',
-  'MIMO_TTS_MODEL',
-  'MIMO_TTS_VOICE',
-  'FISH_TTS_WS_URL',
-  'FISH_TTS_MODEL',
-  'FISH_TTS_REFERENCE_ID',
-  'FISH_TTS_LATENCY',
-  'VTS_ENABLED',
-  'AUIP_ARTIFACT_STYLE_ENABLED',
-  'VTS_WS_URL',
-  'VTS_TOKEN_FILE',
+  ...STRUCTURED_VALUE_KEYS,
+  ...Object.keys(desktopCatalogFields).filter(key => !desktopCatalogFields[key].secret),
 ])
 
 const SECRET_KEYS = new Set([
-  'ANTHROPIC_API_KEY',
-  'DEEPSEEK_API_KEY',
-  'OPENAI_API_KEY',
-  'GEMINI_API_KEY',
-  'AWS_BEARER_TOKEN_BEDROCK',
-  'OPENCLAW_GATEWAY_TOKEN',
-  'ASR_API_KEY',
-  'TTS_API_KEY',
-  'MIMO_TTS_API_KEY',
-  'FISH_TTS_API_KEY',
+  ...Object.keys(desktopCatalogFields).filter(key => desktopCatalogFields[key].secret),
 ])
 
 const CODEX_TRANSPORT_KEYS = [
@@ -211,92 +67,13 @@ const CODEX_TRANSPORT_KEYS = [
   'DIRECT_CODEX_PROVIDER_ENABLED',
 ] as const
 
-const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
-  AMADEUS_UI_LOCALE: new Set(['en-US', 'zh-CN']),
-  AMADEUS_UI_THEME: new Set(['classic', 'wallpaper-slice']),
-  AMADEUS_WINDOWS_STARTUP_MODE: new Set(['window', 'wallpaper']),
-  AMADEUS_PRESENTATION_LOCALE: new Set(['en-US', 'zh-CN', 'ja-JP']),
-  AMADEUS_WALLPAPER_CAPTION_MODE: new Set(['translated', 'source', 'bilingual', 'off']),
-  AMADEUS_CHAT_TRANSLATION_SUBTITLES_ENABLED: new Set(['true', 'false']),
-  AMADEUS_VISION_ENABLED: new Set(['true', 'false']),
-  AMADEUS_VISION_MODE: new Set(['off', 'on_demand', 'watching', 'self_aware']),
-  AMADEUS_VISION_SCOPE: new Set(['full_screen', 'current_window', 'selected_window', 'wallpaper_surface', 'region']),
-  ENABLE_CUDA_GRAPH: new Set(['1', '0']),
-  ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING: new Set(['true', 'false', '1', '0', 'yes', 'no']),
-  TTS_OUTPUT_LANGUAGE: new Set(['日文', '英文']),
-  TTS_VOICE_PROFILE: new Set(['custom', 'kurisu_v3', 'kurisu_v2pro']),
-  LLM_PROVIDER: new Set(['deepseek', 'openai', 'gemini', 'bedrock', 'local', 'hybrid', 'hybrid2', 'hybrid3']),
-  BEDROCK_AUTH_MODE: new Set(['auto', 'boto3', 'bearer']),
-  AWS_BEDROCK_USE_INFERENCE_PROFILE: new Set(['true', 'false']),
-  RAG_ENABLED: new Set(['true', 'false']),
-  LOCAL_LLM_TYPE: new Set(['llama_server', 'lmstudio', 'ollama', 'cli']),
-  LOCAL_LLM_LAUNCH_MODE: new Set(['external', 'managed']),
-  AUIP_ACTION_REASONING_EFFORT: new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']),
-  AUIP_ACTION_SERVICE_TIER: new Set(['auto', 'default', 'fast', 'priority']),
-  BROWSER_BRANCH_PROVIDER: new Set(['deepseek', 'openai']),
-  VN_LLM_PROVIDER: new Set(['deepseek', 'openai']),
-  VN_SUBTITLE_TRANSLATE_PROVIDER: new Set(['deepseek', 'openai']),
-  VN_TTS_TRANSLATE_PROVIDER: new Set(['deepseek', 'openai']),
-  COOPERATIVE_CHAT_PROVIDER: new Set(['codex', 'openclaw', 'browser', 'pi']),
-  PI_PROVIDER_ENABLED: new Set(['true', 'false']),
-  GRAPHICS_PROFILE: new Set(['standard', 'power_saving', 'custom']),
-  RENDER_TEXTURE_SAMPLING: new Set(['true', 'false']),
-  RENDER_BC7_CACHE: new Set(['true', 'false']),
-  CODEX_PROVIDER_TRANSPORT: new Set(['app_server', 'direct', 'disabled']),
-  CODEX_APP_SERVER_AUTH_MODE: new Set(['model_api', 'chatgpt']),
-  CODEX_APP_SERVER_MODEL_PROVIDER: new Set(['deepseek', 'openai']),
-  CODEX_APP_SERVER_REASONING_EFFORT: new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
-  CODEX_APP_SERVER_SERVICE_TIER: new Set(['', 'auto', 'default', 'flex', 'priority', 'fast', 'ultrafast']),
-  QWEN3_ASR_DEVICE: new Set(['auto', 'cpu', 'cuda']),
-  QWEN3_ASR_REQUIRE_CUDA: new Set(['true', 'false']),
-  WAKE_ENABLED: new Set(['true', 'false']),
-  WAKE_AUTO_SEND_TO_CHAT: new Set(['true', 'false']),
-  WAKE_ASR_BACKEND: new Set(['sense_voice', 'qwen3_asr']),
-  SENSEVOICE_LANGUAGE: new Set(['auto', 'en', 'zh', 'ja', 'yue', 'ko']),
-  AEC_REALTIME_ENABLED: new Set(['true', 'false']),
-  AEC_REALTIME_BARGE_IN: new Set(['true', 'false']),
-  TTS_API_STREAM_PROTOCOL: new Set(['buffered', 'openai_sse']),
-  FISH_TTS_LATENCY: new Set(['normal', 'balanced', 'low']),
-  VTS_ENABLED: new Set(['true', 'false']),
-  AUIP_ARTIFACT_STYLE_ENABLED: new Set(['true', 'false']),
-}
+const VALUE_CHOICES: Record<string, ReadonlySet<string>> = Object.fromEntries(Object.entries(desktopCatalogFields)
+  .filter(([, field]) => field.type === 'enum' || field.type === 'boolean')
+  .map(([key, field]) => [key, new Set(field.type === 'boolean' ? field.accepted_values ?? ['true', 'false'] : catalogOptionValues(field))]))
 
-const IDENTIFIER_KEYS = new Set(['AMADEUS_CHARACTER_ID', 'ASR_BACKEND', 'TTS_BACKEND', 'WORK_CODING_PROVIDER', 'WORK_EXECUTION_PROVIDER'])
-
-const URL_KEYS = new Set([
-  'DEEPSEEK_BASE_URL',
-  'OPENAI_BASE_URL',
-  'LOCAL_LLM_URL',
-  'LM_STUDIO_URL',
-  'LOCAL_LLM_LM_STUDIO_URL',
-  'LOCAL_LLM_OLLAMA_URL',
-  'HYBRID_LOCAL_LLM_URL',
-  'OPENCLAW_BASE_URL',
-  'CODEX_APP_SERVER_PROVIDER_BASE_URL',
-  'ASR_API_BASE_URL',
-  'TTS_API_BASE_URL',
-  'MIMO_TTS_BASE_URL',
-])
-
-const WEBSOCKET_URL_KEYS = new Set(['VTS_WS_URL', 'FISH_TTS_WS_URL'])
-
-const NUMBER_RANGES: Record<string, readonly [number, number]> = {
-  RENDER_MAX_FPS: [10, 240],
-  RENDER_MAX_RESOLUTION: [0.25, 4],
-  RAG_TOP_K: [1, 20],
-  RAG_MAX_DISTANCE: [0, 4],
-  ASR_LISTEN_TIMEOUT_SECONDS: [1, 120],
-  ASR_VAD_SILENCE_MS: [100, 3000],
-  AEC_REALTIME_DELAY_MS: [0, 2000],
-  AMADEUS_VISION_MAX_LONG_SIDE: [320, 4096],
-  AMADEUS_VISION_JPEG_QUALITY: [35, 92],
-  EXP_TTS_MAX_CONCURRENCY: [1, 2],
-}
-
-const INTEGER_KEYS = new Set(['RENDER_MAX_FPS', 'RAG_TOP_K', 'ASR_VAD_SILENCE_MS', 'AMADEUS_VISION_MAX_LONG_SIDE', 'AMADEUS_VISION_JPEG_QUALITY', 'EXP_TTS_MAX_CONCURRENCY'])
-
+const IDENTIFIER_KEYS = new Set(Object.keys(desktopCatalogFields).filter(key => desktopCatalogFields[key].identifier))
 const MCP_CONNECTIONS_ENV = 'AMADEUS_MCP_CONNECTIONS'
-const FRONTEND_ONLY_VALUE_KEYS = new Set(['AMADEUS_UI_LOCALE', 'AMADEUS_UI_THEME', 'AMADEUS_WINDOWS_STARTUP_MODE'])
+const FRONTEND_ONLY_VALUE_KEYS = new Set(Object.keys(desktopCatalogFields).filter(key => desktopCatalogFields[key].scope === 'desktop'))
 const RETIRED_ROUTE_KEY = 'COOPERATIVE_CHAT_ENABLED'
 const MCP_ID_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/
 const MCP_ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/
@@ -473,7 +250,7 @@ function explicitEnvironmentHas(
   if (key === 'CODEX_PROVIDER_TRANSPORT') {
     return CODEX_TRANSPORT_KEYS.some(candidate => environment[candidate] !== undefined)
   }
-  return environment[key] !== undefined
+  return catalogInputKeys(key).some(candidate => environment[candidate] !== undefined)
 }
 
 function sourceFor(
@@ -483,10 +260,10 @@ function sourceFor(
   dotenvKeys: ReadonlySet<string>,
 ): 'environment' | 'user' | 'dotenv' | 'default' {
   if (explicitEnvironmentHas(environment, key)) return 'environment'
-  if (stored.values[key] !== undefined || stored.encryptedSecrets[key] !== undefined) return 'user'
+  if (catalogInputKeys(key).some(candidate => stored.values[candidate] !== undefined || stored.encryptedSecrets[candidate] !== undefined)) return 'user'
   if (key === 'CODEX_PROVIDER_TRANSPORT') {
     if (CODEX_TRANSPORT_KEYS.some(candidate => dotenvKeys.has(candidate))) return 'dotenv'
-  } else if (dotenvKeys.has(key)) {
+  } else if (catalogInputKeys(key).some(candidate => dotenvKeys.has(candidate))) {
     return 'dotenv'
   }
   return 'default'
@@ -527,6 +304,7 @@ export class DesktopSettingsStore {
   constructor(
     private readonly filePath: string,
     private readonly dotenvPath: string,
+    private readonly platform: string = process.platform,
   ) {}
 
   private get backupPath(): string {
@@ -625,21 +403,29 @@ export class DesktopSettingsStore {
     )
     const secrets = Object.fromEntries(
       [...SECRET_KEYS].map(key => [key, {
-        configured: Boolean(
-          environment[key]
-          || stored.encryptedSecrets[key]
-          || dotenvKeys.has(key)
-        ),
+        configured: sources[key] === 'environment' ? Boolean(environment[key])
+          : sources[key] === 'user' ? Boolean(stored.encryptedSecrets[key]) : dotenvKeys.has(key),
         source: sources[key],
         locked: locked[key],
       }]),
     )
     const pendingKeys = Object.keys(stored.pendingRevisions)
+    const launchDefaults = catalogLaunchDefaults(this.platform)
+    const startupValues = Object.fromEntries([...VALUE_KEYS].flatMap(key => {
+      // Compound transport and dotenv interpolation need their owning parser.
+      const inputs = catalogInputKeys(key)
+      const value = sources[key] === 'environment' ? (key === 'CODEX_PROVIDER_TRANSPORT' ? undefined
+        : inputs.map(candidate => environment[candidate]).find(value => value !== undefined))
+        : sources[key] === 'user' ? inputs.map(candidate => stored.values[candidate]).find(value => value !== undefined)
+        : sources[key] === 'default' ? launchDefaults[key] : undefined
+      return value === undefined ? [] : [[key, value]]
+    }))
     return {
       platform: process.platform,
       values: { ...stored.values, ...(environment.AMADEUS_WINDOWS_STARTUP_MODE !== undefined
         ? { AMADEUS_WINDOWS_STARTUP_MODE: environment.AMADEUS_WINDOWS_STARTUP_MODE } : {}) },
       sources,
+      startupValues,
       retired_settings: this.retiredSettings(environment, stored),
       locked,
       secrets,
@@ -769,41 +555,41 @@ export class DesktopSettingsStore {
       }
       // Keep an explicit empty character prompt so restoring the built-in
       // role also overrides any project .env value on the next start.
-      if (rawValue === null || (rawValue === '' && key !== 'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA')) {
-        if (stored.values[key] !== undefined) changedKeys.add(key)
-        delete stored.values[key]
+      if (rawValue === null || (rawValue === '' && !desktopCatalogFields[key]?.allow_empty)) {
+        for (const candidate of catalogInputKeys(key)) {
+          if (stored.values[candidate] !== undefined) {
+            changedKeys.add(candidate)
+            changedKeys.add(catalogInputKeys(key)[0])
+          }
+          delete stored.values[candidate]
+        }
         continue
       }
-      if (key === 'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA' && typeof rawValue !== 'string') throw new Error('Character prompt must be a string')
-      const value = key === 'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA' ? String(rawValue).trim()
+      if (desktopCatalogFields[key]?.trim && typeof rawValue !== 'string') throw new Error(`${key} must be a string`)
+      const value = desktopCatalogFields[key]?.trim ? String(rawValue).trim()
         : typeof rawValue === 'boolean' ? (rawValue ? 'true' : 'false') : String(rawValue)
-      const maxLength = key === 'AMADEUS_ACP_PROVIDERS' ? 65536 : key === 'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA' ? 8192 : 4096
+      const maxLength = key === 'AMADEUS_ACP_PROVIDERS' ? 65536 : desktopCatalogFields[key]?.max_length ?? 4096
       if (value.includes('\0') || String(rawValue).length > maxLength) throw new Error(`Invalid value for ${key}`)
       if (key === 'AMADEUS_ACP_PROVIDERS') validateAcpProviders(value)
       const choices = VALUE_CHOICES[key]
       if (choices && !choices.has(value)) throw new Error(`Invalid value for ${key}: ${value}`)
+      const schemes = desktopCatalogFields[key]?.schemes
+      if (schemes) {
+        let protocol = ''
+        try { protocol = new URL(value).protocol.slice(0, -1) } catch { /* rejected below */ }
+        if (!schemes.includes(protocol)) throw new Error(`${key} must use ${schemes.join(' or ')} URL`)
+      }
       if (IDENTIFIER_KEYS.has(key) && !/^[a-z][a-z0-9_-]{0,63}$/.test(value)) {
         throw new Error(`Invalid backend identifier for ${key}`)
       }
-      const numberRange = NUMBER_RANGES[key]
-      if (numberRange) {
+      const definition = desktopCatalogFields[key]
+      if (definition && ['integer', 'number'].includes(definition.type)) {
         const parsed = Number(value)
-        if (!Number.isFinite(parsed) || parsed < numberRange[0] || parsed > numberRange[1]) {
-          throw new Error(`${key} must be between ${numberRange[0]} and ${numberRange[1]}`)
+        if (!Number.isFinite(parsed)) throw new Error(`${key} must be a number`)
+        if (definition.type === 'integer' && !Number.isInteger(parsed)) throw new Error(`${key} must be an integer`)
+        if (definition.min !== undefined && parsed < definition.min || definition.max !== undefined && parsed > definition.max) {
+          throw new Error(`${key} must be between ${definition.min} and ${definition.max}`)
         }
-        if (INTEGER_KEYS.has(key) && !Number.isInteger(parsed)) {
-          throw new Error(`${key} must be an integer`)
-        }
-      }
-      if (URL_KEYS.has(key)) {
-        let protocol = ''
-        try { protocol = new URL(value).protocol } catch { /* rejected below */ }
-        if (!['http:', 'https:'].includes(protocol)) throw new Error(`${key} must be an HTTP(S) URL`)
-      }
-      if (WEBSOCKET_URL_KEYS.has(key)) {
-        let protocol = ''
-        try { protocol = new URL(value).protocol } catch { /* rejected below */ }
-        if (!['ws:', 'wss:'].includes(protocol)) throw new Error(`${key} must be a WebSocket URL`)
       }
       if (stored.values[key] !== value) changedKeys.add(key)
       stored.values[key] = value
@@ -830,7 +616,7 @@ export class DesktopSettingsStore {
       changedKeys.add(key)
     }
 
-    markPending(stored, [...changedKeys].filter(key => !FRONTEND_ONLY_VALUE_KEYS.has(key)))
+    markPending(stored, [...changedKeys].filter(key => !['frontend', 'desktop_restart'].includes(catalogApplication(key))))
     this.write(stored)
     return this.snapshot(environment)
   }
@@ -854,11 +640,21 @@ export class DesktopSettingsStore {
 
   backendEnvironment(
     environment: NodeJS.ProcessEnv,
-    launchDefaults: Readonly<Record<string, string>> = {},
   ): NodeJS.ProcessEnv {
     const stored = this.read()
     const dotenvKeys = this.dotenvKeys()
     const result: NodeJS.ProcessEnv = {}
+    // Canonicalize both parent and stored legacy inputs before Python loads
+    // dotenv. Within one source the canonical name wins; every parent input
+    // precedes every stored input, and both precede the project file.
+    for (const key of VALUE_KEYS) {
+      if (FRONTEND_ONLY_VALUE_KEYS.has(key)) continue
+      const inputs = catalogInputKeys(key)
+      if (inputs.length < 2 || inputs[0] !== key || environment[key] !== undefined) continue
+      const inherited = inputs.slice(1).map(alias => environment[alias]).find(value => value !== undefined)
+        ?? inputs.map(candidate => stored.values[candidate]).find(value => value !== undefined)
+      if (inherited !== undefined) result[key] = inherited
+    }
     for (const [key, value] of Object.entries(stored.values)) {
       if (key === 'CODEX_PROVIDER_TRANSPORT' || FRONTEND_ONLY_VALUE_KEYS.has(key) || explicitEnvironmentHas(environment, key)) continue
       result[key] = value
@@ -880,13 +676,8 @@ export class DesktopSettingsStore {
         console.error(`[electron] could not decrypt desktop secret ${key}`, error)
       }
     }
-    for (const [key, value] of Object.entries(launchDefaults)) {
-      if (
-        environment[key] === undefined
-        && stored.values[key] === undefined
-        && stored.encryptedSecrets[key] === undefined
-        && !dotenvKeys.has(key)
-      ) {
+    for (const [key, value] of Object.entries(catalogLaunchDefaults(this.platform))) {
+      if (sourceFor(key, environment, stored, dotenvKeys) === 'default') {
         result[key] = value
       }
     }

@@ -1,0 +1,55 @@
+{
+  "id": "vn_companion",
+  "title": {
+    "en-US": "VN companion",
+    "zh-CN": "VN 伴侣"
+  },
+  "description": {
+    "en-US": "Dedicated VN reasoning and reaction role. DeepSeek is the recommended default; OpenAI-compatible is also supported.",
+    "zh-CN": "独立的 VN 推理与反应职责。DeepSeek 是推荐默认值，也支持 OpenAI 兼容服务。"
+  },
+  "desktop": true,
+  "config": {
+    "VN_LLM_PROVIDER": {
+      "type": "enum",
+      "title": {
+        "en-US": "Model connection",
+        "zh-CN": "模型连接"
+      },
+      "default": "deepseek",
+      "scope": "session",
+      "options": [
+        {
+          "value": "deepseek",
+          "label": {
+            "en-US": "DeepSeek · Recommended",
+            "zh-CN": "DeepSeek · 推荐"
+          }
+        },
+        {
+          "value": "openai",
+          "label": {
+            "en-US": "OpenAI-compatible",
+            "zh-CN": "OpenAI 兼容"
+          }
+        }
+      ]
+    },
+    "VN_LLM_MODEL": {
+      "type": "string",
+      "title": {
+        "en-US": "Model override",
+        "zh-CN": "模型覆盖"
+      },
+      "description": {
+        "en-US": "Optional. Leave blank to use the model from the selected connection.",
+        "zh-CN": "可选。留空则使用所选连接配置的模型。"
+      },
+      "default": "",
+      "scope": "session"
+    }
+  },
+  "section": "roles",
+  "order": 0,
+  "apply": "backend_restart"
+}

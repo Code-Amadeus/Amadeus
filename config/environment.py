@@ -75,7 +75,10 @@ class EnvironmentReader:
                 return value
         return None
 
-    def boolean(self, key: str, default: bool, *, aliases: tuple[str, ...] = ()) -> bool:
+    def boolean(
+        self, key: str, default: bool, *, aliases: tuple[str, ...] = (),
+        true_values: tuple[str, ...] | None = None,
+    ) -> bool:
         self._register(key, "bool", default, aliases)
         raw = self._raw(key, aliases)
         if raw is None:
@@ -84,7 +87,7 @@ class EnvironmentReader:
         # Preserve the legacy settings contract: known truthy values enable a
         # feature; every other configured value is false. Tightening this is a
         # separate user-visible validation decision.
-        return normalized in self._TRUE
+        return normalized in (self._TRUE if true_values is None else true_values)
 
     def integer(self, key: str, default: int, *, aliases: tuple[str, ...] = ()) -> int:
         self._register(key, "int", default, aliases)

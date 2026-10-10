@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import importlib.util
+import importlib
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
+from functools import partial
 from typing import Any
 
+from config.catalog import voice_backend_groups
 from tts.backend import BaseTTSBackend, TTSRuntimeAdapter
 
 
@@ -54,8 +55,6 @@ class TTSBackendDescriptor:
 _REGISTRY: dict[str, TTSBackendDescriptor] = {}
 _LOCK = threading.Lock()
 _BUILTINS_READY = False
-_PROJECT_ROOT = Path(__file__).resolve().parents[1]
-_BUILTIN_IDS = frozenset({"gpt_sovits", "openai_compatible", "mimo", "fish_audio"})
 
 
 def register_tts_backend(
@@ -73,103 +72,11 @@ def register_tts_backend(
         _REGISTRY[backend_id] = descriptor
 
 
-def _local_factory() -> BaseTTSBackend:
-    from tts.backends.gpt_sovits import GPTSoVITSBackend
-
-    return GPTSoVITSBackend()
-
-
-def _remote_factory() -> BaseTTSBackend:
-    from tts.backends.openai_compatible import OpenAICompatibleTTSBackend
-
-    return OpenAICompatibleTTSBackend()
-
-
-def _mimo_factory() -> BaseTTSBackend:
-    from tts.backends.mimo import MiMoTTSBackend
-
-    return MiMoTTSBackend()
-
-
-def _fish_factory() -> BaseTTSBackend:
-    from tts.backends.fish_audio import FishAudioTTSBackend
-
-    return FishAudioTTSBackend()
-
-
-def _fish_probe() -> tuple[str, str]:
-    from tts.backend import TTSBackendError
-
-    if importlib.util.find_spec("msgpack") is None:
-        return "not_installed", "Fish Audio requires the voice extra (msgpack)"
-    try:
-        _fish_factory().load()
-    except (TTSBackendError, ValueError) as exc:
-        return "unavailable", str(exc)
-    return "remote", "Fish Audio WebSocket configured for streaming PCM16"
-
-
-def _mimo_probe() -> tuple[str, str]:
-    from config import settings
-    from tts.backends.mimo import MIMO_TTS_MODEL_ID
-
-    if not str(settings.MIMO_TTS_BASE_URL or "").strip():
-        return "unavailable", "MiMo TTS endpoint is not configured"
-    if not str(settings.MIMO_TTS_API_KEY or "").strip():
-        return "unavailable", "MiMo TTS API key is not configured"
-    model = str(settings.MIMO_TTS_MODEL or "").strip()
-    if model != MIMO_TTS_MODEL_ID:
-        return "unavailable", f"MiMo TTS supports only {MIMO_TTS_MODEL_ID}"
-    if not str(settings.MIMO_TTS_VOICE or "").strip():
-        return "unavailable", "MiMo TTS voice is not configured"
-    return "remote", "MiMo TTS endpoint configured for PCM16 SSE streaming"
-
-
-def _local_probe() -> tuple[str, str]:
-    from config import settings
-
-    if importlib.util.find_spec("soundfile") is None:
-        return "not_installed", "Local GPT-SoVITS dependencies are not installed"
-    model_root = _PROJECT_ROOT / "assets" / "models" / "gpt-sovits"
-
-    def configured_path(raw: str, fallback: Path) -> Path:
-        path = Path(str(raw or "")) if str(raw or "").strip() else fallback
-        return path if path.is_absolute() else _PROJECT_ROOT / path
-
-    gpt = configured_path(
-        settings.TTS_GPT_MODEL_PATH,
-        model_root / "weights" / "gpt" / "v3" / "xxx-e15.ckpt",
-    )
-    sovits = configured_path(
-        settings.TTS_SOVITS_MODEL_PATH,
-        model_root / "weights" / "sovits" / "v3" / "xxx_e2_s174_l32.pth",
-    )
-    if gpt.is_file() and sovits.is_file():
-        return "installed", f"Embedded GPT-SoVITS checkpoint pair found ({settings.TTS_VOICE_PROFILE})"
-    return "not_installed", f"Embedded GPT-SoVITS checkpoint pair is not installed ({settings.TTS_VOICE_PROFILE})"
-
-
-def _remote_probe() -> tuple[str, str]:
-    from config import settings
-
-    if not str(settings.TTS_API_BASE_URL or "").strip():
-        return "unavailable", "TTS API endpoint is not configured"
-    if not str(settings.TTS_API_MODEL or "").strip():
-        return "unavailable", "TTS API model is not configured"
-    if not str(settings.TTS_API_VOICE or "").strip():
-        return "unavailable", "TTS API voice is not configured"
-    protocol = str(settings.TTS_API_STREAM_PROTOCOL or "buffered").strip().lower()
-    if protocol not in {"buffered", "openai_sse"}:
-        return "unavailable", f"Unsupported remote TTS stream protocol: {protocol}"
-    if protocol == "openai_sse":
-        return "remote", "Remote endpoint configured for OpenAI SSE PCM streaming"
-    return "remote", "Remote endpoint configured for buffered WAV responses"
-
-
-def _remote_streaming_enabled() -> bool:
-    from config import settings
-
-    return str(settings.TTS_API_STREAM_PROTOCOL or "buffered").strip().lower() == "openai_sse"
+def _call_entrypoint(reference: str):
+    # References come only from the packaged builtin catalog. Resolving lazily
+    # keeps registry discovery independent of optional voice/model dependencies.
+    module, name = reference.split(":", 1)
+    return getattr(importlib.import_module(module), name)()
 
 
 def _ensure_builtins() -> None:
@@ -179,47 +86,22 @@ def _ensure_builtins() -> None:
     with _LOCK:
         if _BUILTINS_READY:
             return
-        _REGISTRY.update(
-            {
-                "gpt_sovits": TTSBackendDescriptor(
-                    "gpt_sovits",
-                    "GPT-SoVITS · Amadeus",
-                    "embedded",
-                    _local_factory,
-                    _local_probe,
-                    "Amadeus low-latency runtime for v1, v2, v2Pro, v2ProPlus, and v3 checkpoints.",
-                    supports_streaming=True,
-                    supports_reference_conditioning=True,
-                ),
-                "openai_compatible": TTSBackendDescriptor(
-                    "openai_compatible",
-                    "OpenAI-compatible API",
-                    "remote",
-                    _remote_factory,
-                    _remote_probe,
-                    "Buffered WAV compatibility or explicit OpenAI SSE first-packet playback.",
-                    supports_streaming=_remote_streaming_enabled,
-                ),
-                "mimo": TTSBackendDescriptor(
-                    "mimo",
-                    "MiMo TTS (Xiaomi)",
-                    "remote",
-                    _mimo_factory,
-                    _mimo_probe,
-                    "MiMo chat-completions speech synthesis; PCM16 SSE streaming on mimo-v2.5-tts.",
-                    supports_streaming=True,
-                ),
-                "fish_audio": TTSBackendDescriptor(
-                    "fish_audio",
-                    "Fish Audio",
-                    "remote",
-                    _fish_factory,
-                    _fish_probe,
-                    "WebSocket text/audio streaming with a hosted voice reference.",
-                    supports_streaming=True,
-                ),
-            }
-        )
+        descriptors = {}
+        for group in voice_backend_groups():
+            backend = group["voice_backend"]
+            backend_id = backend["id"]
+            if backend_id in descriptors or backend_id == "disabled":
+                raise ValueError(f"duplicate/reserved builtin TTS backend: {backend_id}")
+            streaming = backend["streaming"]
+            descriptors[backend_id] = TTSBackendDescriptor(
+                backend_id, backend["label"]["en-US"], backend["deployment"],
+                partial(_call_entrypoint, backend["factory"]),
+                partial(_call_entrypoint, backend["probe"]),
+                backend["summary"],
+                supports_streaming=partial(_call_entrypoint, streaming) if isinstance(streaming, str) else streaming,
+                supports_reference_conditioning=backend["reference_conditioning"],
+            )
+        _REGISTRY.update(descriptors)
         _BUILTINS_READY = True
 
 
@@ -231,7 +113,7 @@ def tts_backend_ids() -> tuple[str, ...]:
 def unregister_tts_backend(backend_id: str) -> None:
     _ensure_builtins()
     clean = str(backend_id or "").strip().lower()
-    if clean in _BUILTIN_IDS or clean == "disabled":
+    if clean in {group["voice_backend"]["id"] for group in voice_backend_groups()} or clean == "disabled":
         raise ValueError(f"cannot unregister built-in TTS backend: {clean}")
     with _LOCK:
         _REGISTRY.pop(clean, None)

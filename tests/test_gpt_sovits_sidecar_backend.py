@@ -37,6 +37,11 @@ def test_explicit_gpu_isolation_remains_supported(monkeypatch, switch, value):
 
 
 def test_embedded_backend_preserves_synthesis_request(monkeypatch):
+    from config import settings
+
+    # This fixture models ordinary synthesis; emotion-pack behavior has its own
+    # tests and must not be enabled by a developer's local startup profile.
+    monkeypatch.setattr(settings, "ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING", False)
     observed = {}
 
     class FakeInferencer:

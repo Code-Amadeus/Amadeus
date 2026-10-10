@@ -1,26 +1,29 @@
-const RUNTIME_VALUE_KEYS: Record<string, string> = {
-  main_chat_character_prompt_ja: 'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA',
-  llm_provider: 'LLM_PROVIDER',
-  local_llm_type: 'LOCAL_LLM_TYPE',
-  asr_backend: 'ASR_BACKEND',
-  vision_enabled: 'AMADEUS_VISION_ENABLED',
-  vision_mode: 'AMADEUS_VISION_MODE',
-  vision_scope: 'AMADEUS_VISION_SCOPE',
-  vision_max_long_side: 'AMADEUS_VISION_MAX_LONG_SIDE',
-  vision_jpeg_quality: 'AMADEUS_VISION_JPEG_QUALITY',
-  vision_region: 'AMADEUS_VISION_REGION',
-  vision_window_handle: 'AMADEUS_VISION_WINDOW_HANDLE',
-  presentation_locale: 'AMADEUS_PRESENTATION_LOCALE',
-  wallpaper_caption_mode: 'AMADEUS_WALLPAPER_CAPTION_MODE',
-  chat_translation_subtitles_enabled: 'AMADEUS_CHAT_TRANSLATION_SUBTITLES_ENABLED',
+import { desktopCatalogFields, runtimeCatalogFields } from '../../shared/configCatalog.js'
+import { startupValue, type StartupSnapshot } from '../../shared/startupSettings.js'
+
+// TTS mode and language are composite projections owned by the existing TTS controls.
+const COMPOSITE_RUNTIME_INPUTS: Record<string, string[]> = {
+  tts_mode: ['ENABLE_CUDA_GRAPH', 'EXP_TTS_MAX_CONCURRENCY'],
+  tts_output_language: ['TTS_OUTPUT_LANGUAGE'],
 }
 
-const BOOLEAN_RUNTIME_KEYS = new Set([
-  'vision_enabled',
-  'chat_translation_subtitles_enabled',
-])
-
-const NUMBER_RUNTIME_KEYS = new Set(['vision_max_long_side', 'vision_jpeg_quality'])
+export function runtimeSettingValue(runtimeKey: string, snapshot?: StartupSnapshot | null, effective?: unknown): unknown {
+  const field = runtimeCatalogFields[runtimeKey]
+  if (field) {
+    const defaultValue = field.computed_default && !snapshot?.pendingRevisions?.[field.key] ? effective : field.default
+    const value = startupValue(field.key, snapshot, defaultValue as string | number | boolean | undefined, effective as string | number | boolean | undefined)
+    return value === undefined ? undefined : runtimeSettingFromDesktopValues(runtimeKey, { [field.key]: String(value) })
+  }
+  const inputs = COMPOSITE_RUNTIME_INPUTS[runtimeKey]
+  if (!inputs) return effective
+  // An existing backend owns the composite value unless an input is pending or
+  // explicitly saved/known. Without it, use declared defaults for each input.
+  if (effective !== undefined && !inputs.some(key => snapshot?.pendingRevisions?.[key]
+    || snapshot?.sources?.[key] === 'user' || snapshot?.startupValues?.[key] !== undefined)) return effective
+  const values = Object.fromEntries(inputs.map(key => [key, startupValue(key, snapshot, desktopCatalogFields[key].default)]))
+  if (Object.values(values).some(value => value === undefined)) return undefined
+  return runtimeSettingFromDesktopValues(runtimeKey, Object.fromEntries(Object.entries(values).map(([key, value]) => [key, String(value)])))
+}
 
 export function runtimeSettingFromDesktopValues(
   runtimeKey: string,
@@ -30,18 +33,18 @@ export function runtimeSettingFromDesktopValues(
   if (runtimeKey === 'tts_mode') {
     if (values.ENABLE_CUDA_GRAPH === undefined && values.EXP_TTS_MAX_CONCURRENCY === undefined) return undefined
     if (values.ENABLE_CUDA_GRAPH === '1') return 'cuda_graph'
-    return Number(values.EXP_TTS_MAX_CONCURRENCY || '1') > 1 ? 'parallel2' : 'parallel'
+    return Number(values.EXP_TTS_MAX_CONCURRENCY || desktopCatalogFields.EXP_TTS_MAX_CONCURRENCY.default) > 1 ? 'parallel2' : 'parallel'
   }
   if (runtimeKey === 'tts_output_language') {
     const value = values.TTS_OUTPUT_LANGUAGE
     if (value === undefined) return undefined
     return value === '英文' ? 'en' : 'ja'
   }
-  const desktopKey = RUNTIME_VALUE_KEYS[runtimeKey]
-  const value = desktopKey ? values[desktopKey] : undefined
+  const field = runtimeCatalogFields[runtimeKey]
+  const value = field ? values[field.key] : undefined
   if (value === undefined) return undefined
-  if (BOOLEAN_RUNTIME_KEYS.has(runtimeKey)) return value === 'true'
-  if (NUMBER_RUNTIME_KEYS.has(runtimeKey)) return Number(value)
+  if (field.type === 'boolean') return (field.true_values || ['true', '1', 'yes']).includes(value.trim().toLowerCase())
+  if (['integer', 'number'].includes(field.type)) return Number(value)
   return value
 }
 
@@ -60,7 +63,7 @@ export function desktopValuesForRuntimeSettings(
       desktopValues.TTS_OUTPUT_LANGUAGE = String(rawValue).toLowerCase().startsWith('en') ? '英文' : '日文'
       continue
     }
-    const desktopKey = RUNTIME_VALUE_KEYS[runtimeKey]
+    const desktopKey = runtimeCatalogFields[runtimeKey]?.key
     if (desktopKey) desktopValues[desktopKey] = rawValue as string | boolean | null
   }
   return desktopValues

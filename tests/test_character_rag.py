@@ -137,6 +137,7 @@ def test_miss_after_hit_does_not_reuse_previous_reference(monkeypatch):
 
 
 def test_shared_settings_group_and_restart_contract():
+    from config.catalog import configuration_groups
     from config import settings
     from server.handlers.system_handler import _model_connections
 
@@ -145,7 +146,8 @@ def test_shared_settings_group_and_restart_contract():
     fields = {field["key"]: field for field in group["fields"]}
     assert fields.keys() == {"RAG_ENABLED", "RAG_INDEX_DIR", "RAG_TOP_K", "RAG_MAX_DISTANCE"}
     assert all(field["restart_required"] for field in fields.values())
-    assert "remote APIs" in group["description"]
+    # The disclosure now has one owner; status must carry the declared copy.
+    assert group["description"] == configuration_groups()["character_rag"]["description"]["en-US"]
     assert not any(field["key"].startswith("RAG_") for field in groups["local"]["fields"])
 
 

@@ -74,10 +74,11 @@ def test_registry_rejects_ambiguous_identity_and_inline_secrets():
 
 
 def test_acp_credential_descriptors_never_expose_values(monkeypatch):
+    from config import settings
     from server.handlers.system_handler import _acp_credentials
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "private-credential")
-    fields = _acp_credentials()
+    fields = _acp_credentials(settings)
     assert all(field["type"] == "secret" and "value" not in field for field in fields)
     assert "private-credential" not in str(fields)
 

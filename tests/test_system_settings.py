@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -363,24 +362,15 @@ def test_voice_settings_keep_wake_and_conversation_recognition_independent() -> 
     }
 
 
-def test_mimo_desktop_settings_persist_values_and_encrypt_the_key() -> None:
-    source = (
-        Path(__file__).resolve().parents[1]
-        / "electron"
-        / "src"
-        / "main"
-        / "desktopSettings.ts"
-    ).read_text(encoding="utf-8")
-    value_block = source[source.index("const VALUE_KEYS"):source.index("const SECRET_KEYS")]
-    secret_block = source[
-        source.index("const SECRET_KEYS"):source.index("const CODEX_TRANSPORT_KEYS")
-    ]
+def test_mimo_catalog_separates_credentials_from_connection_values() -> None:
+    from config.catalog import configuration_groups
 
-    assert all(
-        f"'{key}'" in value_block
-        for key in ("MIMO_TTS_BASE_URL", "MIMO_TTS_MODEL", "MIMO_TTS_VOICE")
-    )
-    assert "'MIMO_TTS_API_KEY'" in secret_block
+    fields = configuration_groups()["tts_mimo"]["config"]
+    assert fields["MIMO_TTS_API_KEY"]["secret"] is True
+    assert "default" not in fields["MIMO_TTS_API_KEY"]
+    assert all(not fields[key].get("secret") for key in (
+        "MIMO_TTS_BASE_URL", "MIMO_TTS_MODEL", "MIMO_TTS_VOICE",
+    ))
 
 
 def test_voice_settings_publish_microphone_choices_without_recording_audio() -> None:

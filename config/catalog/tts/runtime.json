@@ -1,0 +1,69 @@
+{
+  "id": "tts_runtime",
+  "title": {
+    "en-US": "Speech runtime",
+    "zh-CN": "语音运行时"
+  },
+  "description": {
+    "en-US": "Synthesis mode and output language use the existing live TTS conversion.",
+    "zh-CN": "合成模式和输出语言沿用现有 TTS 实时转换。"
+  },
+  "desktop": true,
+  "apply": "host",
+  "config": {
+    "ENABLE_CUDA_GRAPH": {
+      "type": "enum",
+      "title": {
+        "en-US": "CUDA Graph",
+        "zh-CN": "CUDA Graph"
+      },
+      "default": "0",
+      "scope": "session",
+      "options": [
+        "0",
+        "1"
+      ]
+    },
+    "EXP_TTS_MAX_CONCURRENCY": {
+      "type": "integer",
+      "title": {
+        "en-US": "Synthesis concurrency",
+        "zh-CN": "合成并发"
+      },
+      "default": 1,
+      "min": 1,
+      "max": 2,
+      "step": 1,
+      "example_active": true
+    },
+    "TTS_OUTPUT_LANGUAGE": {
+      "type": "enum",
+      "title": {
+        "en-US": "TTS output language",
+        "zh-CN": "TTS 输出语言"
+      },
+      "default": "日文",
+      "options": [
+        {
+          "value": "日文",
+          "label": {
+            "en-US": "Japanese",
+            "zh-CN": "日语"
+          }
+        },
+        {
+          "value": "英文",
+          "label": {
+            "en-US": "English",
+            "zh-CN": "English"
+          }
+        }
+      ],
+      "example_active": true,
+      "description": {
+        "en-US": "Language used for sentence splitting and the matching voice reference.",
+        "zh-CN": "用于分句并选择匹配的参考声音。"
+      }
+    }
+  }
+}

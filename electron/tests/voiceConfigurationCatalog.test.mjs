@@ -1,25 +1,26 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import fs from 'node:fs'
-import ts from 'typescript'
+import { loadTypeScript } from './helpers/loadTypeScript.mjs'
 
-const source = fs.readFileSync(new URL('../src/renderer/components/voiceConfigurationCatalog.ts', import.meta.url), 'utf8')
-const compiled = ts.transpileModule(source, {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-}).outputText
-const exports = {}
-new Function('exports', compiled)(exports)
+const exports = loadTypeScript(new URL('../src/renderer/components/voiceConfigurationCatalog.ts', import.meta.url))
+const { voiceBackendGroups } = loadTypeScript(new URL('../src/shared/configCatalog.ts', import.meta.url))
 
 test('voice setup remains discoverable without a running backend', () => {
   const groups = exports.buildVoiceConfigurationCatalog({
     asrBackend: 'qwen3_asr', ttsBackend: 'gpt_sovits', wakeEnabled: false, aecEnabled: true,
   }, null)
-  assert.deepEqual(groups.map(group => group.id), [
+  assert.deepEqual(new Set(groups.map(group => group.id)), new Set([
     'conversation_asr', 'asr_remote', 'wake_asr', 'acoustic_pipeline',
-    'speech_synthesis', 'tts_embedded_v3', 'voice_reference_profile', 'tts_fish_audio', 'tts_emotion_references', 'tts_remote', 'tts_mimo',
-  ])
+    'speech_synthesis', 'voice_reference_profile', 'tts_emotion_references',
+    ...voiceBackendGroups.map(group => group.id),
+  ]))
   assert.equal(groups.find(group => group.id === 'asr_remote').status, 'Optional')
+  assert.equal(groups.find(group => group.id === 'speech_synthesis').description,
+    'Select the shared TTS implementation used by Chat, Wallpaper, and VN speech policies.')
+  assert.equal(groups.find(group => group.id === 'tts_embedded_v3').description,
+    'Choose a compatible voice profile or provide a custom GPT/SoVITS checkpoint pair.')
   assert.equal(groups.find(group => group.id === 'tts_remote').status, 'Optional')
+  assert.equal(groups.find(group => group.id === 'tts_remote').fields.find(field => field.key === 'TTS_API_STREAM_PROTOCOL').description, undefined)
   assert.equal(groups.find(group => group.id === 'tts_fish_audio').status, 'Optional')
   assert.ok(groups.find(group => group.id === 'conversation_asr').fields.some(field => field.key === 'ASR_BACKEND'))
   assert.ok(groups.find(group => group.id === 'speech_synthesis').fields.some(field => field.key === 'TTS_BACKEND'))
@@ -33,6 +34,7 @@ test('Fish Audio is selectable offline and exposes its native WebSocket settings
   }, null)
   const selector = groups.find(group => group.id === 'speech_synthesis').fields.find(field => field.key === 'TTS_BACKEND')
   assert.equal(selector.value, 'fish_audio')
+  assert.deepEqual(selector.options.map(option => option.value), ['gpt_sovits', 'fish_audio', 'openai_compatible', 'mimo', 'disabled'])
   assert.ok(selector.options.some(option => option.value === 'fish_audio' && option.label === 'Fish Audio'))
   const fish = groups.find(group => group.id === 'tts_fish_audio')
   assert.equal(fish.active, true)
@@ -91,4 +93,23 @@ test('effective dotenv emotion setting is visible until a stored override change
   const field = snapshot => exports.buildVoiceConfigurationCatalog(selection, snapshot).find(group => group.id === 'tts_emotion_references').fields[0]
   assert.equal(field(null).value, true)
   assert.equal(field({ values: { ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING: 'false' } }).value, false)
+})
+
+test('voice activation follows the same parsed startup booleans as its controls', () => {
+  const selection = { asrBackend: 'qwen3_asr', ttsBackend: 'gpt_sovits', wakeEnabled: false, aecEnabled: false }
+  const groups = exports.buildVoiceConfigurationCatalog(selection, { startupValues: {
+    WAKE_ENABLED: ' YES ', AEC_REALTIME_ENABLED: '1',
+  }, sources: { WAKE_ENABLED: 'environment', AEC_REALTIME_ENABLED: 'environment' } })
+  for (const [id, key] of [['wake_asr', 'WAKE_ENABLED'], ['acoustic_pipeline', 'AEC_REALTIME_ENABLED']]) {
+    const group = groups.find(group => group.id === id)
+    assert.equal(group.fields.find(field => field.key === key).value, true)
+    assert.equal(group.active, true)
+    assert.notEqual(group.status, 'Off')
+  }
+  const cleared = exports.buildVoiceConfigurationCatalog({ ...selection, wakeEnabled: true }, {
+    sources: { WAKE_ENABLED: 'default' }, pendingRevisions: { WAKE_ENABLED: 4 },
+  }).find(group => group.id === 'wake_asr')
+  assert.equal(cleared.fields[0].value, false)
+  assert.equal(cleared.active, false)
+  assert.equal(cleared.status, 'Off')
 })

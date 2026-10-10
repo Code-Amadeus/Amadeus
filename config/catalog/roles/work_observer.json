@@ -1,0 +1,63 @@
+{
+  "id": "work_observer",
+  "title": {
+    "en-US": "Work observer",
+    "zh-CN": "工作观察器"
+  },
+  "description": {
+    "en-US": "Summarizes Provider progress; empty overrides inherit the main conversation model.",
+    "zh-CN": "汇总 Provider 进度；覆盖值留空时继承主对话模型。"
+  },
+  "desktop": true,
+  "config": {
+    "WORK_OBSERVER_PROVIDER": {
+      "type": "string",
+      "title": {
+        "en-US": "Provider override",
+        "zh-CN": "服务提供方覆盖"
+      },
+      "default": "",
+      "control": "select",
+      "options": [
+        {
+          "value": "",
+          "label": {
+            "en-US": "Inherit",
+            "zh-CN": "继承默认值"
+          }
+        },
+        {
+          "value": "deepseek",
+          "label": {
+            "en-US": "DeepSeek",
+            "zh-CN": "DeepSeek"
+          }
+        },
+        {
+          "value": "openai",
+          "label": {
+            "en-US": "OpenAI-compatible",
+            "zh-CN": "OpenAI 兼容"
+          }
+        }
+      ],
+      "example_active": true
+    },
+    "WORK_OBSERVER_MODEL": {
+      "type": "string",
+      "title": {
+        "en-US": "Model override",
+        "zh-CN": "模型覆盖"
+      },
+      "description": {
+        "en-US": "Leave blank to use the selected provider connection model.",
+        "zh-CN": "留空以使用所选提供商连接的模型。"
+      },
+      "default": "",
+      "example_active": true
+    }
+  },
+  "section": "roles",
+  "order": 2,
+  "apply": "backend_restart"
+}

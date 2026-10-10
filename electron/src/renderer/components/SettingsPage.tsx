@@ -1,5 +1,6 @@
+import { projectStartupFields, startupValues } from '../../shared/startupSettings.js'
+import { catalogApplication, catalogConfiguration, catalogGroups, desktopCatalogFields, optionsWithCurrentValue, runtimeCatalogFields } from '../../shared/configCatalog.js'
 import { settingSourceLabel } from '../../shared/characterStartup'
-import { DEFAULT_WINDOWS_STARTUP_MODE } from '../../main/startupMode'
 import { useState, useEffect, useCallback, useMemo, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import FluentIcon, { type FluentIconName } from './FluentIcon'
 import { GroupTitle, CardShell, CardIcon, StatusPill, SettingsGroup } from './SettingsPrimitives'
@@ -23,11 +24,11 @@ import {
   buildOptionalModelServiceCatalog,
   buildRemoteModelConnectionCatalog,
 } from './modelConnectionCatalog'
-import { buildVoiceConfigurationCatalog } from './voiceConfigurationCatalog'
+import { buildVoiceConfigurationCatalog, voiceConfigurationSections } from './voiceConfigurationCatalog'
 import { buildWorkProviderCatalog } from './providerConnectionCatalog'
 import { buildModelRoleCatalog } from './modelRoleCatalog'
 import { buildGraphicsConfiguration, type GraphicsRuntimeSettings } from './graphicsConfigurationCatalog'
-import { markRuntimeSettingsApplied, persistDesktopRuntimeSettings, runtimeSettingFromDesktopValues } from './desktopRuntimeSettings'
+import { markRuntimeSettingsApplied, persistDesktopRuntimeSettings, runtimeSettingFromDesktopValues, runtimeSettingValue } from './desktopRuntimeSettings'
 
 interface Props {
   send: (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
@@ -115,6 +116,7 @@ interface CapabilityPackage {
 
 interface DesktopSettingsSnapshot {
   platform: string
+  startupValues?: Record<string, string>
   values: Record<string, string>
   sources: Record<string, 'environment' | 'user' | 'dotenv' | 'default'>
   locked: Record<string, boolean>
@@ -192,7 +194,7 @@ function ComboCard({ icon, title, content, value, onChange, options, disabled }:
         className="text-[12px] bg-[var(--surface-alt)] border border-[var(--border)] rounded-lg px-3 text-[var(--text)] outline-none hover:border-[var(--border-strong)] focus:border-[var(--accent)] disabled:opacity-40 shrink-0"
         style={{ minWidth: 145, height: 35 }}
       >
-        {options.map(option => {
+        {optionsWithCurrentValue(options, value).map(option => {
           const optionValue = typeof option === 'string' ? option : option.value
           const label = typeof option === 'string' ? option : option.label
           return <option key={optionValue} value={optionValue}>{t(label)}</option>
@@ -202,8 +204,8 @@ function ComboCard({ icon, title, content, value, onChange, options, disabled }:
   )
 }
 
-function SwitchCard({ icon, title, content, checked, onChange }: {
-  icon: FluentIconName; title: string; content: string; checked: boolean; onChange: (v: boolean) => void
+function SwitchCard({ icon, title, content, checked, onChange, disabled }: {
+  icon: FluentIconName; title: string; content: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean
 }) {
   const { t } = useI18n()
   return (
@@ -215,6 +217,7 @@ function SwitchCard({ icon, title, content, checked, onChange }: {
       </div>
       <button
         onClick={() => onChange(!checked)}
+        disabled={disabled}
         className="relative shrink-0 transition-colors cursor-pointer"
         style={{ width: 38, height: 22, borderRadius: 11, backgroundColor: checked ? 'var(--accent)' : 'var(--border-strong)', border: 'none' }}
         aria-pressed={checked}
@@ -306,8 +309,8 @@ function StartupFieldRow({ field, desktop, onSave }: {
 }) {
   const { t } = useI18n()
   const source = field.key ? desktop?.sources?.[field.key] || 'default' : 'default'
-  const storedValue = field.key && source === 'user' ? desktop?.values?.[field.key] : undefined
-  const initial = storedValue !== undefined ? storedValue : field.value ?? ''
+  const initial = field.value ?? ''
+  const unknown = field.type !== 'secret' && field.value === undefined
   const [draft, setDraft] = useState<string | boolean>(initial)
   const [busy, setBusy] = useState(false)
   const [secretDraft, setSecretDraft] = useState('')
@@ -319,8 +322,8 @@ function StartupFieldRow({ field, desktop, onSave }: {
     : false
 
   useEffect(() => {
-    setDraft(storedValue !== undefined ? storedValue : field.value ?? '')
-  }, [storedValue, field.value])
+    setDraft(initial)
+  }, [initial])
 
   const save = async (value: string | boolean | null, secret: boolean) => {
     setBusy(true)
@@ -339,7 +342,7 @@ function StartupFieldRow({ field, desktop, onSave }: {
       <div className="flex-1 min-w-0">
         <div className="settings-field-label">{t(field.label)}</div>
         <div className="settings-field-description">
-          {field.description ? `${t(field.description)} · ` : ''}{t(settingSourceLabel(source))}{electronUnavailable ? ` · ${t('editable in Electron app')}` : environmentLocked ? ` · ${t('locked')}` : ''}{field.restart_required ? ` · ${t('restart required')}` : ''}
+          {field.description ? `${t(field.description)} · ` : ''}{t(settingSourceLabel(source))}{electronUnavailable ? ` · ${t('editable in Electron app')}` : environmentLocked ? ` · ${t('locked')}` : ''}{field.restart_required ? ` · ${t('restart required')}` : ''}{unknown ? ` · ${t('Value unavailable until backend connects')}` : ''}
         </div>
       </div>
       <div className="settings-field-control flex items-center gap-1.5 shrink-0" style={{ width: 320, maxWidth: '43%' }}>
@@ -409,7 +412,8 @@ function StartupFieldRow({ field, desktop, onSave }: {
             className="min-w-0 flex-1 text-[12px] bg-[var(--surface-alt)] border border-[var(--border)] rounded-lg px-3 outline-none focus:border-[var(--accent)] disabled:opacity-50"
             style={{ height: 34 }}
           >
-            {(field.options || []).map(option => {
+            {unknown ? <option value="">{t('Unknown')}</option> : null}
+            {(unknown ? field.options || [] : optionsWithCurrentValue(field.options || [], String(draft))).map(option => {
               const optionValue = typeof option === 'string' ? option : option.value
               const optionLabel = typeof option === 'string' ? option || 'Inherit' : option.label
               return <option key={optionValue} value={optionValue}>{t(optionLabel)}</option>
@@ -428,6 +432,7 @@ function StartupFieldRow({ field, desktop, onSave }: {
             className="min-w-0 flex-1 text-[12px] bg-[var(--surface-alt)] border border-[var(--border)] rounded-lg px-3 outline-none focus:border-[var(--accent)] disabled:opacity-50"
             style={{ height: 34 }}
           >
+            {unknown ? <option value="">{t('Unknown')}</option> : null}
             <option value="true">{t('On')}</option>
             <option value="false">{t('Off')}</option>
           </select>
@@ -435,6 +440,7 @@ function StartupFieldRow({ field, desktop, onSave }: {
           <input
             aria-label={t(field.label)}
             type={field.type === 'url' ? 'url' : field.type === 'number' ? 'number' : 'text'}
+            placeholder={unknown ? t('Unknown') : undefined}
             min={field.min}
             max={field.max}
             step={field.step}
@@ -570,14 +576,15 @@ function BoundaryNote({ title, children }: { title: string; children: ReactNode 
   )
 }
 
-function ThemePicker({ value, onChange }: { value: UiTheme; onChange: (theme: UiTheme) => void }) {
+function ThemePicker({ value, onChange, disabled }: { value: UiTheme; onChange: (theme: UiTheme) => void; disabled?: boolean }) {
   const { t } = useI18n()
-  const choices: Array<{ id: UiTheme; title: string; description: string }> = [
-    { id: 'classic', title: 'Classic light', description: 'Clean neutral desktop palette.' },
-    { id: 'wallpaper-slice', title: 'Wallpaper slice', description: 'Dark translucent surfaces inspired by the Wallpaper Slice.' },
-  ]
+  const choices = desktopCatalogFields.AMADEUS_UI_THEME.options!.map(option => ({
+    id: (typeof option === 'string' ? option : option.value) as UiTheme,
+    title: typeof option === 'string' ? option : option.label['en-US'],
+    description: typeof option === 'string' ? undefined : option.description?.['en-US'],
+  }))
   return (
-    <div className="settings-theme-picker" role="radiogroup" aria-label={t('Interface theme')}>
+    <div className="settings-theme-picker" role="radiogroup" aria-label={t(desktopCatalogFields.AMADEUS_UI_THEME.title['en-US'])}>
       {choices.map(choice => {
         const selected = value === choice.id
         return (
@@ -586,6 +593,7 @@ function ThemePicker({ value, onChange }: { value: UiTheme; onChange: (theme: Ui
             type="button"
             role="radio"
             aria-checked={selected}
+            disabled={disabled}
             className="settings-theme-option"
             data-preview-theme={choice.id}
             data-selected={selected ? 'true' : undefined}
@@ -601,7 +609,7 @@ function ThemePicker({ value, onChange }: { value: UiTheme; onChange: (theme: Ui
             </span>
             <span className="settings-theme-option-copy">
               <strong>{t(choice.title)}</strong>
-              <span>{t(choice.description)}</span>
+              {choice.description ? <span>{t(choice.description)}</span> : null}
             </span>
             <span className="settings-theme-radio" aria-hidden="true"><i /></span>
           </button>
@@ -730,13 +738,31 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
       )
       if (!result.ok) throw new Error(result.error || `Could not save ${field.key}`)
       if (result.settings) setDesktop(result.settings as unknown as DesktopSettingsSnapshot)
+      const runtimeField = Object.entries(runtimeCatalogFields).find(([, definition]) => definition.key === field.key)
+      if (!secret && runtimeField && catalogApplication(field.key) === 'host') {
+        const snapshot = result.settings as unknown as DesktopSettingsSnapshot
+        const next = runtimeSettingValue(runtimeField[0], snapshot)
+        if (next === undefined) {
+          setNotice('Saved for the next backend start; the current runtime did not change.')
+          return
+        }
+        try {
+          const values = { [runtimeField[0]]: next }
+          const response = await send('system.set_config', { values })
+          setConfig((response.values as Record<string, unknown>) ?? response)
+          const applied = await markRuntimeSettingsApplied(values, snapshot.pendingRevisions || {})
+          if (applied) setDesktop(applied as unknown as DesktopSettingsSnapshot)
+        } catch {
+          setNotice('Saved for the next backend start; the current runtime did not change.')
+        }
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : `Could not save ${field.key}`)
       throw reason
     } finally {
       setSaving(null)
     }
-  }, [])
+  }, [send])
 
   const confirmRetiredRoute = useCallback(async () => {
     if (!window.amadeus) return
@@ -783,7 +809,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   }, [reconnectBackend, refreshBackend, refreshDesktop])
 
   const handleVisionEnabled = useCallback(async (value: boolean) => {
-    const currentMode = String(config.vision_mode ?? 'off')
+    const currentMode = runtimeSettingValue('vision_mode', desktop, connected ? config.vision_mode : undefined)
     const nextMode = value && currentMode === 'off' ? 'on_demand' : currentMode
     const values = value && currentMode === 'off'
       ? { vision_enabled: true, vision_mode: nextMode }
@@ -806,7 +832,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     } finally {
       setSaving(null)
     }
-  }, [send, config])
+  }, [send, config, desktop, connected])
 
   const loadVisionWindows = useCallback(async () => {
     if (!connected) return
@@ -850,8 +876,45 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     }
   }, [section, connected, config.vision_enabled, config.vision_scope, loadVisionWindows])
 
-  const val = (key: string, fallback: string) => String(config[key] ?? runtimeSettingFromDesktopValues(key, desktop?.values) ?? fallback)
-  const bool = (key: string) => Boolean(config[key] ?? runtimeSettingFromDesktopValues(key, desktop?.values))
+  const runtimeValue = (key: string, fallback?: string) => runtimeSettingValue(key, desktop, connected ? config[key] : undefined) ?? (runtimeCatalogFields[key] ? undefined : fallback)
+  const val = (key: string, fallback?: string) => String(runtimeValue(key, fallback) ?? '')
+  const bool = (key: string) => Boolean(runtimeValue(key))
+  const runtimeControl = (key: string) => {
+    const definition = runtimeCatalogFields[key]
+    return {
+      title: definition.title['en-US'],
+      content: runtimeValue(key) === undefined ? 'Value unavailable until backend connects' : definition.description?.['en-US'] || '',
+      disabled: saving === key || Boolean(desktop?.locked?.[definition.key]),
+      options: [
+        ...(runtimeValue(key) === undefined ? [{ value: '', label: 'Unknown' }] : []),
+        ...(definition.options || []).filter(option => typeof option === 'string' || !option.hidden).map(option => typeof option === 'string' ? option : { value: option.value, label: option.label['en-US'] }),
+      ],
+    }
+  }
+  const startupConfiguration = catalogConfiguration('desktop_startup', desktop)
+  const interfaceConfiguration = catalogConfiguration('desktop_interface', desktop)
+  const renderRuntimeGroup = (id: string, icon: FluentIconName) => {
+    const group = catalogGroups.find(group => group.id === id)!
+    const context = Object.fromEntries(Object.entries(group.config).filter(([, field]) => field.computed_default)
+      .map(([key, field]) => [key, runtimeValue(field.runtime_key!) as string | number | boolean | undefined]))
+    const fields = catalogConfiguration(id, desktop, context).fields
+    return Object.entries(group.config).map(([key, definition]) => {
+      const runtimeKey = definition.runtime_key!
+      const fieldIcon = (definition.icon as FluentIconName | undefined) ?? icon
+      if (runtimeKey === 'vision_window_handle' || runtimeKey === 'vision_region' && val('vision_scope') !== 'region') return null
+      const disabled = runtimeControl(runtimeKey).disabled || id === 'vision' && runtimeKey !== 'vision_enabled' && !bool('vision_enabled')
+      if (definition.type === 'boolean' && runtimeValue(runtimeKey) === undefined) {
+        const field = fields.find(field => field.key === key)!
+        return <StartupFieldRow key={key} field={{ ...field, editable: !disabled, value: undefined }} desktop={desktop} onSave={handleStartupSave} />
+      }
+      if (definition.type === 'boolean') return <SwitchCard key={key} icon={fieldIcon} {...runtimeControl(runtimeKey)} disabled={disabled}
+        checked={bool(runtimeKey)} onChange={runtimeKey === 'vision_enabled' ? handleVisionEnabled : value => handleChange(runtimeKey, value)} />
+      if (definition.options) return <ComboCard key={key} icon={fieldIcon} {...runtimeControl(runtimeKey)} disabled={disabled}
+        value={val(runtimeKey)} onChange={value => handleChange(runtimeKey, ['integer', 'number'].includes(definition.type) ? Number(value) : value)} />
+      const field = fields.find(field => field.key === key)!
+      return <StartupFieldRow key={key} field={{ ...field, editable: !disabled, value: runtimeValue(runtimeKey) === undefined ? undefined : val(runtimeKey) }} desktop={desktop} onSave={handleStartupSave} />
+    })
+  }
   const visualPack = asRecord(config.visual_asset_pack)
   const visualPackInstalled = Boolean(visualPack.installed)
   const visualPackState = String(visualPack.state ?? 'not_installed')
@@ -928,44 +991,43 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     },
   ]
 
+  const catalogDesktop = desktop ? { ...desktop, values: startupValues(desktop) } : null
+  const mergeGroups = (bases: ConfigurationGroup[], running: ConfigurationGroup[]) => bases.map(base => {
+    const backend = running.find(group => group.id === base.id)
+    return { ...base, ...backend, fields: projectStartupFields(base.fields, backend?.fields, desktop) }
+  })
   const modelConnections = asConfigurationGroups(config.model_connections)
+  const backendProviderConfiguration = asConfigurationGroups(config.work_provider_configuration)
+  const effectiveStartupValues = Object.fromEntries([...modelConnections, ...backendProviderConfiguration].flatMap(group =>
+    group.fields.flatMap(field => field.key && field.type !== 'secret' && field.value !== undefined ? [[field.key, field.value]] : [])))
   const backendModelRoles = asConfigurationGroups(config.model_roles)
-  const modelRoleCatalog = buildModelRoleCatalog(desktop)
+  const modelRoleCatalog = buildModelRoleCatalog(catalogDesktop)
   const modelRoles: ConfigurationGroup[] = [
     ...modelRoleCatalog.map(base => {
       const backend = backendModelRoles.find(group => group.id === base.id)
       return backend ? {
         ...backend,
         ...base,
-        fields: base.fields,
+        fields: projectStartupFields(base.fields, backend.fields, desktop),
         active: backend.active ?? base.active,
         configured: backend.configured ?? base.configured,
         status: backend.status || base.status,
         status_ok: backend.status_ok ?? base.status_ok,
         status_detail: backend.status_detail,
-      } : base
+      } : { ...base, fields: projectStartupFields(base.fields, undefined, desktop) }
     }),
     ...backendModelRoles.filter(group => !modelRoleCatalog.some(base => base.id === group.id)),
   ]
-  const savedMainModelProvider = desktop?.sources?.LLM_PROVIDER === 'user' ? desktop.values.LLM_PROVIDER : ''
-  const mainModelProvider = val('llm_provider', savedMainModelProvider || 'deepseek').toLowerCase()
+  const mainModelProvider = val('llm_provider').trim().toLowerCase()
   const remoteModelConnectionIds = new Set(['deepseek', 'openai', 'gemini', 'bedrock'])
   const backendRemoteModelConnections = modelConnections.filter(group => remoteModelConnectionIds.has(group.id))
-  const remoteModelConnections: ConfigurationGroup[] = backendRemoteModelConnections.length
-    ? backendRemoteModelConnections
-    : buildRemoteModelConnectionCatalog(mainModelProvider, desktop)
+  const remoteModelConnections = mergeGroups(buildRemoteModelConnectionCatalog(mainModelProvider, catalogDesktop), backendRemoteModelConnections)
   const backendLocalModelConnections = modelConnections.filter(group => ['local', 'hybrid_local'].includes(group.id))
-  const localModelConnections: ConfigurationGroup[] = backendLocalModelConnections.length
-    ? backendLocalModelConnections
-    : buildLocalModelConnectionCatalog(mainModelProvider, desktop)
+  const localModelConnections = mergeGroups(buildLocalModelConnectionCatalog(mainModelProvider, catalogDesktop, effectiveStartupValues), backendLocalModelConnections)
   const backendOptionalModelConnections = modelConnections.filter(group => group.id === 'character_rag')
-  const optionalModelConnections: ConfigurationGroup[] = backendOptionalModelConnections.length
-    ? backendOptionalModelConnections
-    : buildOptionalModelServiceCatalog(desktop)
-  const modelProviderLabels: Record<string, string> = {
-    deepseek: 'DeepSeek', openai: 'OpenAI-compatible', gemini: 'Gemini', bedrock: 'AWS Bedrock',
-    local: 'Pure-local model', hybrid: 'Hybrid local + Bedrock', hybrid2: 'Hybrid local + DeepSeek', hybrid3: 'Hybrid local + OpenAI',
-  }
+  const optionalModelConnections = mergeGroups(buildOptionalModelServiceCatalog(catalogDesktop), backendOptionalModelConnections)
+  const modelProviderLabels: Record<string, string> = Object.fromEntries(desktopCatalogFields.LLM_PROVIDER.options!.map(option =>
+    typeof option === 'string' ? [option, option] : [option.value, option.label['en-US']]))
   const modelGroupReady = (id: string) => {
     const group = modelConnections.find(item => item.id === id)
     return Boolean(group && (typeof group.status_ok === 'boolean' ? group.status_ok : group.configured))
@@ -984,17 +1046,15 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   const configuredTranslationModels = modelConnections
     .filter(group => ['deepseek', 'openai', 'gemini'].includes(group.id) && (group.status_ok ?? group.configured))
     .map(group => group.label || modelProviderLabels[group.id] || group.id)
-  const selectedWorkProvider = String(
-    desktop?.sources?.WORK_EXECUTION_PROVIDER === 'user'
-      ? desktop.values.WORK_EXECUTION_PROVIDER
-      : desktop?.sources?.COOPERATIVE_CHAT_PROVIDER === 'user'
-        ? desktop.values.COOPERATIVE_CHAT_PROVIDER
-      : val('cooperative_chat_provider', 'pi'),
-  ).toLowerCase()
-  const selectedCodingProvider = String(desktop?.sources?.WORK_CODING_PROVIDER === 'user'
-    ? desktop.values.WORK_CODING_PROVIDER : val('work_coding_provider', 'codex')).toLowerCase()
+  const providerCatalog = buildWorkProviderCatalog({
+    provider: connected ? String(config.cooperative_chat_provider ?? '') : '',
+    codingProvider: connected ? String(config.work_coding_provider ?? '') : '',
+    roleCandidates: providerRoleCandidates,
+  }, catalogDesktop, effectiveStartupValues)
+  const selectedWorkProvider = String(providerCatalog.routing.fields.find(field => field.key === 'WORK_EXECUTION_PROVIDER')?.value ?? '').toLowerCase()
+  const selectedCodingProvider = String(providerCatalog.routing.fields.find(field => field.key === 'WORK_CODING_PROVIDER')?.value ?? '').toLowerCase()
   const workProviderLabels: Record<string, string> = { codex: 'Codex agent', openclaw: 'OpenClaw agent', browser: 'Browser provider', pi: 'Pi daily agent' }
-  const workProviderAssignment = `${t('Coding')}: ${workProviderLabels[selectedCodingProvider] || selectedCodingProvider} · ${t('Everyday execution')}: ${workProviderLabels[selectedWorkProvider] || selectedWorkProvider}`
+  const workProviderAssignment = `${t('Coding')}: ${workProviderLabels[selectedCodingProvider] || selectedCodingProvider || t('Unknown')} · ${t('Everyday execution')}: ${workProviderLabels[selectedWorkProvider] || selectedWorkProvider || t('Unknown')}`
   const roleGroups = Object.fromEntries(modelRoles.map(group => [group.id, group])) as Record<string, ConfigurationGroup>
   const advancedRoleIds = [
     'work_planner', 'work_observer', 'browser_branch_planner', 'auip_narration',
@@ -1005,48 +1065,43 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
       || (roleGroups[id]?.fields || []).some(item => item.key && desktop?.sources?.[item.key] === 'user'),
   ).length
   const graphicsRuntime = connected ? config.graphics as GraphicsRuntimeSettings | undefined : undefined
-  const graphicsConfiguration = buildGraphicsConfiguration(graphicsRuntime, desktop)
-  const backendProviderConfiguration = asConfigurationGroups(config.work_provider_configuration)
-  const providerCatalog = buildWorkProviderCatalog({ provider: selectedWorkProvider,
-    codingProvider: selectedCodingProvider, roleCandidates: providerRoleCandidates }, desktop)
+  const graphicsConfiguration = buildGraphicsConfiguration(graphicsRuntime, catalogDesktop)
   const providerConfiguration: ConfigurationGroup[] = providerCatalog.connections.map(base => {
     const backend = backendProviderConfiguration.find(group => group.id === base.id)
     return backend ? {
       ...backend,
       ...base,
-      fields: base.fields,
+      fields: projectStartupFields(base.fields, backend.fields, desktop),
       active: base.active,
       configured: backend.configured ?? base.configured,
       status: backend.status || base.status,
       status_ok: backend.status_ok ?? base.status_ok,
       status_detail: backend.status_detail,
-    } : base
+    } : { ...base, fields: projectStartupFields(base.fields, undefined, desktop) }
   })
-  const artifactConfiguration = asConfigurationGroups(config.artifact_configuration)
+  const artifactConfiguration = mergeGroups([catalogConfiguration("auip_artifact_style", catalogDesktop)], asConfigurationGroups(config.artifact_configuration))
   const backendVoiceConfiguration = asConfigurationGroups(config.voice_configuration)
   const voiceCatalog = buildVoiceConfigurationCatalog({
         asrBackend: desktop?.sources?.ASR_BACKEND === 'user' ? desktop.values.ASR_BACKEND : val('asr_backend', 'qwen3_asr'),
         ttsBackend: desktop?.sources?.TTS_BACKEND === 'user' ? desktop.values.TTS_BACKEND : val('tts_backend', 'gpt_sovits'),
         wakeEnabled: desktop?.sources?.WAKE_ENABLED === 'user' ? desktop.values.WAKE_ENABLED === 'true' : bool('wake_enabled'),
-        aecEnabled: desktop?.sources?.AEC_REALTIME_ENABLED === 'user' ? desktop.values.AEC_REALTIME_ENABLED === 'true' : config.aec_realtime_enabled === undefined ? true : bool('aec_realtime_enabled'),
+        aecEnabled: desktop?.sources?.AEC_REALTIME_ENABLED === 'user' ? desktop.values.AEC_REALTIME_ENABLED === 'true' : config.aec_realtime_enabled === undefined ? Boolean(desktopCatalogFields.AEC_REALTIME_ENABLED.default) : bool('aec_realtime_enabled'),
         emotionReferencesEnabled: backendVoiceConfiguration.find(group => group.id === 'tts_emotion_references')?.fields.find(field => field.key === 'ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING')?.value === true,
-      }, desktop)
+      }, catalogDesktop)
   const voiceConfiguration: ConfigurationGroup[] = voiceCatalog.map(base => {
     const backend = backendVoiceConfiguration.find(group => group.id === base.id)
     return backend ? {
       ...backend,
       ...base,
-      fields: base.fields,
+      fields: projectStartupFields(base.fields, backend.fields, desktop),
       configured: backend.configured ?? base.configured,
       status: backend.status || base.status,
       status_ok: backend.status_ok ?? base.status_ok,
       status_detail: backend.status_detail,
-    } : base
+    } : { ...base, fields: projectStartupFields(base.fields, undefined, desktop) }
   })
   // Keep complete voice groups together; voice files and engine settings share one editor.
-  const outputVoiceIds = new Set(['speech_synthesis', 'tts_embedded_v3', 'voice_reference_profile', 'tts_emotion_references'])
-  const inputVoiceIds = new Set(['conversation_asr', 'wake_asr', 'acoustic_pipeline'])
-  const remoteVoiceIds = new Set(['asr_remote', 'tts_fish_audio', 'tts_remote', 'tts_mimo'])
+  const { output: outputVoiceIds, input: inputVoiceIds, remote: remoteVoiceIds } = voiceConfigurationSections
   const outputVoiceConfiguration = voiceConfiguration.filter(group => outputVoiceIds.has(group.id))
   const inputVoiceConfiguration = voiceConfiguration.filter(group => inputVoiceIds.has(group.id))
   const remoteVoiceConfiguration = voiceConfiguration.filter(group => remoteVoiceIds.has(group.id))
@@ -1054,8 +1109,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   const speechBackend = voiceConfiguration.find(group => group.id === 'speech_synthesis')?.fields.find(field => field.key === 'TTS_BACKEND')
   const speechBackendOption = speechBackend?.options?.find(option => typeof option !== 'string' && option.value === speechBackend.value)
   const voiceSummary = typeof speechBackendOption === 'object' ? speechBackendOption.label : String(speechBackend?.value || '')
-  const visionWindowHandle = String(config.vision_window_handle
-    ?? (desktop?.sources?.AMADEUS_VISION_WINDOW_HANDLE === 'user' ? desktop.values.AMADEUS_VISION_WINDOW_HANDLE : ''))
+  const visionWindowHandle = val('vision_window_handle')
   const visionWindowOptions: ComboOption[] = [
     { value: '', label: 'Select a window…' },
     ...visionWindows.map(item => ({
@@ -1066,7 +1120,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   if (visionWindowHandle && !visionWindowOptions.some(option => typeof option !== 'string' && option.value === visionWindowHandle)) {
     visionWindowOptions.splice(1, 0, { value: visionWindowHandle, label: 'Previously selected window · unavailable' })
   }
-  const avatarConfiguration = asConfigurationGroups(config.avatar_configuration)
+  const avatarConfiguration = mergeGroups([catalogConfiguration("vts_compatibility", catalogDesktop)], asConfigurationGroups(config.avatar_configuration))
   const capabilityProfiles = useMemo(
     () => buildCapabilityProfiles(connected ? config : {}, connected ? providerAvailability : []),
     [connected, config, providerAvailability],
@@ -1135,9 +1189,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
         <details className="character-persona-details"><summary>{t('Kurisu Japanese persona')}</summary><div>
                 <SettingsGroup title="Kurisu Japanese persona" detail="Customize Kurisu’s Japanese personality for later Main Chat and AUIP/browser decisions and speech. Choices stay within the application’s rules.">
                   <MainChatCharacterSettings
-                    savedOverride={desktop?.sources?.AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA === 'user'
-                      ? desktop.values.AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA ?? ''
-                      : String(config.main_chat_character_prompt_ja ?? '')}
+                    savedOverride={val('main_chat_character_prompt_ja')}
                     preview={config.main_chat_character_prompt_preview}
                     canSave={connected || Boolean(desktop)}
                     locked={Boolean(desktop?.locked?.AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA)}
@@ -1241,58 +1293,44 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
             {section === 'general' ? (
               <div className="flex flex-col gap-5">
                 {desktop?.platform === 'win32' ? (
-                  <SettingsGroup title="Startup" detail="Quit and reopen Amadeus to apply. Wallpaper is always available in the sidebar.">
-                    <ComboCard icon="Setting" title="Startup mode"
-                      content={desktop.locked?.AMADEUS_WINDOWS_STARTUP_MODE
-                        ? 'Startup mode is controlled by your launch environment.'
-                        : 'Choose whether to open the control panel first or enter wallpaper directly.'}
-                      value={desktop.values.AMADEUS_WINDOWS_STARTUP_MODE || DEFAULT_WINDOWS_STARTUP_MODE}
-                      disabled={saving === 'AMADEUS_WINDOWS_STARTUP_MODE' || desktop.locked?.AMADEUS_WINDOWS_STARTUP_MODE}
-                      options={[{ value: 'window', label: 'Open control panel first' }, { value: 'wallpaper', label: 'Enter wallpaper directly' }]}
-                      onChange={value => {
-                        void handleStartupSave({ key: 'AMADEUS_WINDOWS_STARTUP_MODE', label: 'Startup mode',
-                          type: 'select', editable: true, restart_required: false }, value, false)
+                  <SettingsGroup title={startupConfiguration.label} detail={startupConfiguration.description}>
+                    {startupConfiguration.fields.map(field => field.options ? <ComboCard key={field.key} icon="Setting" title={field.label}
+                      content={desktop.locked?.[field.key] ? 'Startup mode is controlled by your launch environment.' : field.description || ''}
+                      value={String(field.value ?? '')} disabled={saving === field.key || desktop.locked?.[field.key]}
+                      options={field.value === undefined ? [{ value: '', label: 'Unknown' }, ...field.options] : field.options} onChange={value => {
+                        void handleStartupSave(field, value, false)
                           .then(() => setNotice('Startup mode saved. Quit and reopen Amadeus to apply.'))
                           .catch(() => { /* handleStartupSave displays the save error. */ })
-                      }}
-                    />
+                      }} /> : <StartupFieldRow key={field.key} field={field} desktop={desktop} onSave={handleStartupSave} />)}
                   </SettingsGroup>
                 ) : null}
                 <SettingsGroup title="Appearance" detail="Choose the visual style used across the Electron frontend.">
                   <ThemePicker
                     value={theme}
+                    disabled={Boolean(desktop?.locked?.AMADEUS_UI_THEME)}
                     onChange={value => void setTheme(value).catch(reason => setError(reason instanceof Error ? reason.message : 'Could not save interface theme'))}
                   />
                 </SettingsGroup>
                 <SettingsGroup title="Characters" detail="Manage personalities, artwork, voice and reference knowledge together.">
                   <button className="character-secondary-button" onClick={() => openCharacters('overview')}>{t('Open Characters')}</button>
                 </SettingsGroup>
-                <div id="settings-language"><SettingsGroup title="Language & captions" detail="Desktop settings are saved across restarts and applied to the current runtime immediately when possible.">
-                  <ComboCard
-                    icon="Language"
-                    title="Console language"
-                    content="Controls Electron navigation, Settings, and capability status pages."
-                    value={locale}
-                    onChange={value => void setLocale(value as UiLocale).catch(reason => setError(reason instanceof Error ? reason.message : 'Could not save console language'))}
-                    options={[
-                      { value: 'en-US', label: 'English' },
-                      { value: 'zh-CN', label: 'Simplified Chinese' },
-                    ]}
-                  />
-                  <ComboCard icon="Language" title="Slice Language" content="Language for process cards and Provider summaries" value={val('presentation_locale', 'en-US')} onChange={value => handleChange('presentation_locale', value)} options={['en-US', 'zh-CN', 'ja-JP']} />
-                  <SwitchCard icon="Language" title="Chat Translation Subtitles" content="Show Simplified Chinese below completed Japanese assistant messages. Display-only; never added to conversation history." checked={bool('chat_translation_subtitles_enabled')} onChange={value => handleChange('chat_translation_subtitles_enabled', value)} />
-                  <ComboCard icon="Language" title="Wallpaper Caption Mode" content="Choose translated, source, bilingual, or no captions" value={val('wallpaper_caption_mode', 'translated')} onChange={value => handleChange('wallpaper_caption_mode', value)} options={['translated', 'source', 'bilingual', 'off']} />
+                <div id="settings-language"><SettingsGroup title={catalogGroups.find(group => group.id === 'presentation')!.title['en-US']} detail={catalogGroups.find(group => group.id === 'presentation')!.description['en-US']}>
+                  {interfaceConfiguration.fields.filter(field => field.key !== 'AMADEUS_UI_THEME').map(field => field.key === 'AMADEUS_UI_LOCALE'
+                    ? <ComboCard key={field.key} icon="Language" title={field.label} content={field.description || ''} value={locale}
+                        disabled={Boolean(desktop?.locked?.[field.key])}
+                        onChange={value => void setLocale(value as UiLocale).catch(reason => setError(reason instanceof Error ? reason.message : 'Could not save console language'))}
+                        options={field.options || []} />
+                    : <StartupFieldRow key={field.key} field={field} desktop={desktop} onSave={handleStartupSave} />)}
+                  {renderRuntimeGroup('presentation', 'Language')}
                 </SettingsGroup></div>
-                <div id="settings-vision"><SettingsGroup title="Multimodal & Vision" detail="General chat and desktop capture use these settings. VN vision is controlled separately in its game session.">
-                  <SwitchCard icon="Camera" title="General vision (excluding VN)" content="Controls vision outside VN. Each VN session has its own vision setting." checked={bool('vision_enabled')} onChange={handleVisionEnabled} />
-                  <ComboCard icon="Video" title="Vision Mode" content="On-demand captures when asked; watching attaches one fresh frame to each chat turn" value={val('vision_mode', 'off')} onChange={value => handleChange('vision_mode', value)} options={['off', 'on_demand', 'watching', 'self_aware']} disabled={!bool('vision_enabled')} />
-                  <ComboCard icon="Video" title="Vision Scope" content="Choose what Amadeus may capture for a visual turn" value={val('vision_scope', 'full_screen')} onChange={value => handleChange('vision_scope', value)} options={['full_screen', 'current_window', 'selected_window']} disabled={!bool('vision_enabled')} />
+                <div id="settings-vision"><SettingsGroup title={catalogGroups.find(group => group.id === 'vision')!.title['en-US']} detail={catalogGroups.find(group => group.id === 'vision')!.description['en-US']}>
+                  {renderRuntimeGroup('vision', 'Camera')}
                   {bool('vision_enabled') && val('vision_scope', 'full_screen') === 'selected_window' ? (
                     visionWindows.length || visionWindowHandle ? (
                       <ComboCard
                         icon="Tiles"
-                        title="Vision target window"
-                        content="Capture stops if this window closes or can no longer be verified."
+                        title={runtimeControl('vision_window_handle').title}
+                        content={runtimeControl('vision_window_handle').content}
                         value={visionWindowHandle}
                         onChange={value => { if (value) void handleVisionWindowTarget(value) }}
                         options={visionWindowOptions}
@@ -1307,8 +1345,6 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                       </BoundaryNote>
                     )
                   ) : null}
-                  <ComboCard icon="Photo" title="Vision Image Size" content="Maximum long edge sent to the model" value={val('vision_max_long_side', '960')} onChange={value => handleChange('vision_max_long_side', Number(value))} options={['640', '960', '1280', '1600']} disabled={!bool('vision_enabled')} />
-                  <ComboCard icon="Photo" title="Vision JPEG Quality" content="Higher quality increases request payload size" value={val('vision_jpeg_quality', '68')} onChange={value => handleChange('vision_jpeg_quality', Number(value))} options={['50', '68', '80', '90']} disabled={!bool('vision_enabled')} />
                 </SettingsGroup></div>
                 <SettingsGroup title="Avatar compatibility" detail="Optional output paths are disabled unless explicitly enabled.">
                   {avatarConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} />)}
@@ -1327,16 +1363,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                 {modelsPage === 'roles' ? (
                   <div className="flex flex-col gap-5">
                     <SettingsGroup title="Conversation roles" detail="Each role may inherit a shared model or declare an explicit override when the runtime supports it.">
-                      <ComboCard icon="Robot" title="Main conversation" content="Primary model assignment shared by Chat and Wallpaper-originated turns" value={mainModelProvider} onChange={value => void handleMainProviderChange(value)} options={[
-                        { value: 'deepseek', label: 'DeepSeek' },
-                        { value: 'openai', label: 'OpenAI-compatible' },
-                        { value: 'gemini', label: 'Gemini' },
-                        { value: 'bedrock', label: 'AWS Bedrock' },
-                        { value: 'local', label: 'Pure-local model' },
-                        { value: 'hybrid', label: 'Hybrid · Local + Bedrock' },
-                        { value: 'hybrid2', label: 'Hybrid · Local + DeepSeek' },
-                        { value: 'hybrid3', label: 'Hybrid · Local + OpenAI-compatible' },
-                      ]} />
+                      <ComboCard icon="Robot" {...runtimeControl('llm_provider')} value={val('llm_provider')} onChange={value => void handleMainProviderChange(value)} />
                       <RoleAssignmentCard
                         icon="Camera"
                         title="Visual understanding"
@@ -1424,7 +1451,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                   {outputVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible defaultOpen={group.id === 'speech_synthesis'} optionalWhenInactive />)}
                 </SettingsGroup>
                 <SettingsGroup title="Speech language" detail="User-facing language for generated speech.">
-                  <ComboCard icon="Language" title="TTS output language" content="Language used for sentence splitting and the matching voice reference." value={val('tts_output_language', 'ja')} onChange={value => handleChange('tts_output_language', value)} options={[{ value: 'ja', label: 'Japanese' }, { value: 'en', label: 'English' }]} />
+                  <ComboCard icon="Language" title={desktopCatalogFields.TTS_OUTPUT_LANGUAGE.title['en-US']} content={desktopCatalogFields.TTS_OUTPUT_LANGUAGE.description?.['en-US'] || ''} value={val('tts_output_language', 'ja')} onChange={value => handleChange('tts_output_language', value)} options={desktopCatalogFields.TTS_OUTPUT_LANGUAGE.options!.map(option => ({ value: String(runtimeSettingFromDesktopValues('tts_output_language', { TTS_OUTPUT_LANGUAGE: typeof option === 'string' ? option : option.value })), label: typeof option === 'string' ? option : option.label['en-US'] }))} />
                 </SettingsGroup>
                 <SettingsGroup title="Listening & recognition" detail="Configure conversation transcription, wake listening and microphone processing.">
                   {inputVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible optionalWhenInactive />)}

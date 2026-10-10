@@ -1,0 +1,1 @@
+"""Packaged visual capture declarations."""

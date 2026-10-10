@@ -1,0 +1,43 @@
+{
+  "id": "work_routing",
+  "title": {
+    "en-US": "Work role assignments",
+    "zh-CN": "Work 角色分工"
+  },
+  "description": {
+    "en-US": "Assign coding and everyday execution independently. Routing follows these roles after backend restart; existing Work keeps its owner. Registration and connections are configured below.",
+    "zh-CN": "分别指定编码与日常执行角色。重启后端后按此分工路由；现有任务保留原归属。注册和连接设置在下方配置。"
+  },
+  "desktop": true,
+  "config": {
+    "WORK_CODING_PROVIDER": {
+      "type": "string",
+      "title": {
+        "en-US": "Coding",
+        "zh-CN": "编码"
+      },
+      "default": "codex",
+      "control": "select",
+      "example_active": true,
+      "identifier": true
+    },
+    "WORK_EXECUTION_PROVIDER": {
+      "type": "string",
+      "title": {
+        "en-US": "Everyday execution",
+        "zh-CN": "日常执行"
+      },
+      "default": "pi",
+      "aliases": [
+        "COOPERATIVE_CHAT_PROVIDER",
+        "PROVIDER_DELEGATE_DEFAULT_PROVIDER"
+      ],
+      "control": "select",
+      "example_active": true,
+      "identifier": true
+    }
+  },
+  "section": "routing",
+  "order": 8,
+  "apply": "backend_restart"
+}

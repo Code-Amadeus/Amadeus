@@ -11,9 +11,13 @@ import os
 from collections.abc import Callable, Mapping
 
 
-VALID_PRESENTATION_LOCALES = {"zh-CN", "en-US", "ja-JP"}
-VALID_CAPTION_MODES = {"translated", "source", "bilingual", "off"}
-DEFAULT_PRESENTATION_LOCALE = "en-US"
+from config.catalog import configuration_field, option_values
+
+VALID_PRESENTATION_LOCALES = set(option_values(configuration_field("AMADEUS_PRESENTATION_LOCALE")))
+VALID_CAPTION_MODES = set(option_values(configuration_field("AMADEUS_WALLPAPER_CAPTION_MODE")))
+DEFAULT_PRESENTATION_LOCALE = configuration_field("AMADEUS_PRESENTATION_LOCALE")["default"]
+# The legacy combined subtitle input determines the effective default.
+DEFAULT_CAPTION_MODE = "translated"
 
 
 def normalize_presentation_locale(value: object) -> str:
@@ -54,7 +58,7 @@ def normalize_caption_mode(value: object) -> str:
         "off": "off",
     }
     normalized = aliases.get(raw, raw)
-    return normalized if normalized in VALID_CAPTION_MODES else "translated"
+    return normalized if normalized in VALID_CAPTION_MODES else DEFAULT_CAPTION_MODE
 
 
 def _legacy_profile(value: object) -> tuple[str, str]:

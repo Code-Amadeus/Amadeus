@@ -3,11 +3,11 @@ import test from 'node:test'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { createRequire } from 'node:module'
+import { createSourceRequire } from './helpers/loadTypeScript.mjs'
 import ts from 'typescript'
 
-const require = createRequire(import.meta.url)
-function load(relative, imports = require) {
+const require = createSourceRequire(new URL('../src/main/desktopSettings.ts', import.meta.url))
+function load(relative, imports = createSourceRequire(new URL(relative, import.meta.url))) {
   const source = fs.readFileSync(new URL(relative, import.meta.url), 'utf8')
   const compiled = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
@@ -85,4 +85,50 @@ test('saved choices do not overwrite the separately reported running renderer bu
   assert.equal(sampling.fields[1].value, true)
   const explicit = buildGraphicsConfiguration(undefined, { values: { RENDER_TEXTURE_SAMPLING: 'false' } })
   assert.equal(explicit[1].fields[0].value, false)
+})
+
+test('clearing a preset projects sampling from the next startup choice', t => {
+  const store = fixture(t)
+  store.update({}, { values: { GRAPHICS_PROFILE: 'power_saving' } })
+  store.markApplied({})
+  const cleared = store.update({}, { values: { GRAPHICS_PROFILE: null } })
+  const runtime = { profile: 'power_saving', custom_max_fps: 60, custom_max_resolution: 1,
+    texture_sampling: false, effective_max_fps: 30, effective_max_resolution: 1 }
+  const [budget, sampling] = buildGraphicsConfiguration(runtime, cleared)
+  assert.equal(budget.status, 'Standard')
+  assert.equal(budget.fields[0].value, 'standard')
+  assert.equal(sampling.fields[0].value, true)
+  assert.equal(runtime.profile, 'power_saving')
+})
+
+test('clearing explicit sampling recomputes instead of retaining the running override', t => {
+  const store = fixture(t)
+  store.update({}, { values: { RENDER_TEXTURE_SAMPLING: false } })
+  store.markApplied({})
+  const cleared = store.update({}, { values: { RENDER_TEXTURE_SAMPLING: null } })
+  const runtime = { profile: 'standard', custom_max_fps: 60, custom_max_resolution: 1,
+    texture_sampling: false, effective_max_fps: 60, effective_max_resolution: 1 }
+  assert.equal(buildGraphicsConfiguration(runtime, cleared)[1].fields[0].value, true)
+})
+
+test('an unresolved dotenv preset keeps derived sampling unknown while offline', t => {
+  const store = fixture(t)
+  const snapshot = store.snapshot({})
+  snapshot.sources.GRAPHICS_PROFILE = 'dotenv'
+  const [budget, sampling] = buildGraphicsConfiguration(undefined, snapshot)
+  assert.equal(budget.fields[0].value, undefined)
+  assert.equal(budget.status, 'Backend status unavailable')
+  assert.equal(sampling.fields[0].value, undefined)
+})
+
+test('changing the preset preserves explicit dotenv sampling instead of substituting the derived default', () => {
+  const snapshot = { values: { GRAPHICS_PROFILE: 'power_saving' }, sources: {
+    GRAPHICS_PROFILE: 'user', RENDER_TEXTURE_SAMPLING: 'dotenv',
+  }, pendingRevisions: { GRAPHICS_PROFILE: 2 } }
+  const runtime = { profile: 'standard', custom_max_fps: 30, custom_max_resolution: 1.5,
+    texture_sampling: true, effective_max_fps: 60, effective_max_resolution: null }
+  assert.equal(buildGraphicsConfiguration(runtime, snapshot)[1].fields[0].value, true)
+  assert.equal(buildGraphicsConfiguration(runtime, { ...snapshot,
+    sources: { ...snapshot.sources, RENDER_TEXTURE_SAMPLING: 'default' },
+  })[1].fields[0].value, false)
 })

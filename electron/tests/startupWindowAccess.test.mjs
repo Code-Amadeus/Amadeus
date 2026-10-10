@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import test from 'node:test'
 import ts from 'typescript'
-import { isWallpaperStartup } from '../src/main/startupMode.ts'
+import { loadTypeScript } from './helpers/loadTypeScript.mjs'
+const { isWallpaperStartup } = loadTypeScript(new URL('../src/main/startupMode.ts', import.meta.url))
 
 const source = fs.readFileSync(new URL('../src/main/index.ts', import.meta.url), 'utf8')
 const ast = ts.createSourceFile('index.ts', source, ts.ScriptTarget.ES2022, true)

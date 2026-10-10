@@ -1,14 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import fs from 'node:fs'
-import ts from 'typescript'
-
-const source = fs.readFileSync(new URL('../src/renderer/components/providerConnectionCatalog.ts', import.meta.url), 'utf8')
-const compiled = ts.transpileModule(source, {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-}).outputText
-const exports = {}
-new Function('exports', compiled)(exports)
+import { loadTypeScript } from './helpers/loadTypeScript.mjs'
+const exports = loadTypeScript(new URL('../src/renderer/components/providerConnectionCatalog.ts', import.meta.url))
 
 test('built-in Work Provider connections remain discoverable without the backend', () => {
   const catalog = exports.buildWorkProviderCatalog({ provider: 'codex', enabled: true }, null)
@@ -91,4 +84,24 @@ test('Codex separates ChatGPT subscription auth from reusable model API connecti
   }).connections.find(group => group.id === 'codex')
   assert.notEqual(api.status, 'Needs setup')
   assert.ok(api.fields.find(field => field.key === 'CODEX_APP_SERVER_MODEL_PROVIDER').options.some(option => option.value === 'openai'))
+})
+
+test('Codex uses resolved dotenv authentication to select subscription controls', () => {
+  const snapshot = { sources: { CODEX_PROVIDER_TRANSPORT: 'dotenv', CODEX_APP_SERVER_AUTH_MODE: 'dotenv' } }
+  const group = exports.buildWorkProviderCatalog({ provider: 'codex' }, snapshot, {
+    CODEX_PROVIDER_TRANSPORT: 'app_server', CODEX_APP_SERVER_AUTH_MODE: 'chatgpt',
+  }).connections.find(group => group.id === 'codex')
+  assert.ok(group.fields.some(field => field.key === 'CODEX_APP_SERVER_CHATGPT_MODEL'))
+  assert.ok(!group.fields.some(field => field.key === 'CODEX_APP_SERVER_MODEL_PROVIDER'))
+  assert.equal(group.fields.find(field => field.key === 'CODEX_APP_SERVER_AUTH_MODE').value, 'chatgpt')
+})
+
+test('Codex inherited model follows the planned connection instead of the running model', () => {
+  const snapshot = { values: { OPENAI_MODEL_NAME: 'next-model', CODEX_APP_SERVER_MODEL_PROVIDER: 'openai' }, sources: {
+    OPENAI_MODEL_NAME: 'user', CODEX_APP_SERVER_MODEL_PROVIDER: 'user', CODEX_APP_SERVER_MODEL: 'default',
+  }, pendingRevisions: { OPENAI_MODEL_NAME: 3 }, secrets: { OPENAI_API_KEY: { configured: true } } }
+  const group = exports.buildWorkProviderCatalog({ provider: 'codex' }, snapshot, {
+    OPENAI_MODEL_NAME: 'old-model', CODEX_APP_SERVER_MODEL: 'old-model',
+  }).connections.find(group => group.id === 'codex')
+  assert.equal(group.fields.find(field => field.key === 'CODEX_APP_SERVER_MODEL').value, 'next-model')
 })

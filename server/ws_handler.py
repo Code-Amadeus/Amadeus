@@ -34,7 +34,13 @@ class ConnectionManager:
         self._queued_chats: set[_QueuedRequest] = set()
 
     def register_handler(self, handler: "RequestHandler") -> None:
-        for method in handler.methods:
+        methods = tuple(handler.methods)
+        if len(set(methods)) != len(methods):
+            raise ValueError("handler declares duplicate methods")
+        conflicts = set(methods).intersection(self._request_handlers)
+        if conflicts:
+            raise ValueError(f"request methods already registered: {sorted(conflicts)}")
+        for method in methods:
             self._request_handlers[method] = handler
         logger.info("registered handler for methods: %s", handler.methods)
 

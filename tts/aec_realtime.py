@@ -41,10 +41,7 @@ def _normalize_device_class(device_class: str | None) -> str:
 
 def select_aec_delay_ms(device_class: str | None) -> tuple[float, str]:
     if "AEC_REALTIME_DELAY_MS" in os.environ:
-        try:
-            return float(os.environ.get("AEC_REALTIME_DELAY_MS", "")), "explicit AEC_REALTIME_DELAY_MS"
-        except Exception:
-            return float(AEC_REALTIME_DELAY_MS), "explicit AEC_REALTIME_DELAY_MS"
+        return float(AEC_REALTIME_DELAY_MS), "explicit AEC_REALTIME_DELAY_MS"
     normalized = _normalize_device_class(device_class)
     if normalized == "bluetooth":
         return float(AEC_DELAY_MS_BLUETOOTH), "bluetooth device_class"
@@ -138,8 +135,10 @@ class RealtimeAECProcessor:
             ap.set_stream_delay(int(round(max(0.0, self._delay_ms))))
             self._ap = ap
             logger.info(
-                "[AEC:Realtime] enabled delay_ms=%.1f ns=%s agc=%s barge_in=%s",
+                "[AEC:Realtime] enabled delay_ms=%.1f device_class=%s reason=%s ns=%s agc=%s barge_in=%s",
                 self._delay_ms,
+                self._device_class,
+                self._delay_reason,
                 bool(AEC_REALTIME_ENABLE_NS),
                 bool(AEC_REALTIME_ENABLE_AGC),
                 self.barge_in_enabled,

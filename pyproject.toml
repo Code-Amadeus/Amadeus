@@ -220,6 +220,7 @@ packages = [
     "agent_host",
     "asr",
     "config",
+    "config.catalog",
     "core",
     "llm",
     "openclaw",
@@ -235,6 +236,7 @@ packages = [
 
 [tool.setuptools.package-data]
 characters = ["*.toml"]
+"config.catalog" = ["**/*.json"]
 
 # ---------------------------------------------------------------------------
 # Tool configuration below is declared but NOT yet enforced: neither ruff nor

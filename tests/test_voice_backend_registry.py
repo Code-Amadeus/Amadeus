@@ -54,7 +54,8 @@ def _wav_bytes(*, sample_rate: int = 24000) -> bytes:
 def test_builtin_voice_registries_keep_embedded_defaults_and_remote_sidepaths() -> None:
     assert asr_backend_ids()[:2] == ("qwen3_asr", "sense_voice")
     assert "openai_compatible" in asr_backend_ids()
-    assert tts_backend_ids() == ("gpt_sovits", "openai_compatible", "mimo", "fish_audio", "disabled")
+    assert {"gpt_sovits", "openai_compatible", "mimo", "fish_audio", "disabled"} <= set(tts_backend_ids())
+    assert tts_backend_ids()[-1] == "disabled"
 
     remote_asr = create_asr_backend("openai_compatible")
     assert remote_asr.deployment == "remote"

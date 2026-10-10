@@ -295,9 +295,11 @@ uv sync --locked
 cp .env.example .env
 ```
 
-Edit `.env`, provide `DEEPSEEK_API_KEY`, set `TTS_BACKEND=disabled`, and keep
-`WAKE_ENABLED=false` to try the text-only path first. Verify the environment from
-the project root:
+Edit `.env`: remove the leading `# ` from `# DEEPSEEK_API_KEY=<your-api-key>`
+and replace `<your-api-key>` with your key, producing an active
+`DEEPSEEK_API_KEY=...` line. Leave unused providers' keys commented out.
+Set `TTS_BACKEND=disabled` and keep `WAKE_ENABLED=false` to try the text-only path
+first. Verify the environment from the project root:
 
 ```bash
 uv run --locked --no-sync python tools/verify_python_environment.py --profile cpu
@@ -481,7 +483,9 @@ uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('
 ### Configure and launch
 
 Copy `.env.example` to `.env` (`Copy-Item .env.example .env` on Windows;
-`cp .env.example .env` on macOS), provide the DeepSeek API key, then review Settings:
+`cp .env.example .env` on macOS). In `.env`, remove the leading `# ` from
+`# DEEPSEEK_API_KEY=<your-api-key>` and replace `<your-api-key>` with your key.
+Leave unused providers' keys commented out, then review Settings:
 
 - **Models:** `deepseek`, the official endpoint, `deepseek-v4-flash`, and an API key;
 - **Voice:** Fish Audio S2.1 + Kurisu is the recommended remote TTS profile; MiMo and OpenAI-compatible endpoints are also supported. The L4 local stack also needs a Qwen model directory, a compatible GPT-SoVITS checkpoint pair (**Kurisu v3** by default or experimental **Kurisu v2Pro**), reference audio/text, microphone, AEC, and barge-in;

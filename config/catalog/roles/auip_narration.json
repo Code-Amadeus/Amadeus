@@ -1,0 +1,59 @@
+{
+  "id": "auip_narration",
+  "title": {
+    "en-US": "AUIP narration",
+    "zh-CN": "AUIP 叙述"
+  },
+  "description": {
+    "en-US": "Narrates verified application outcomes; empty overrides inherit Work observer and then Main conversation.",
+    "zh-CN": "播报已验证的应用操作结果；覆盖值留空时依次继承 Work 观察者和主对话模型。"
+  },
+  "desktop": true,
+  "config": {
+    "AUIP_NARRATION_PROVIDER": {
+      "type": "string",
+      "title": {
+        "en-US": "Provider override",
+        "zh-CN": "服务提供方覆盖"
+      },
+      "default": "",
+      "control": "select",
+      "options": [
+        {
+          "value": "",
+          "label": {
+            "en-US": "Inherit",
+            "zh-CN": "继承默认值"
+          }
+        },
+        {
+          "value": "deepseek",
+          "label": {
+            "en-US": "DeepSeek",
+            "zh-CN": "DeepSeek"
+          }
+        },
+        {
+          "value": "openai",
+          "label": {
+            "en-US": "OpenAI-compatible",
+            "zh-CN": "OpenAI 兼容"
+          }
+        }
+      ],
+      "example_active": true
+    },
+    "AUIP_NARRATION_MODEL": {
+      "type": "string",
+      "title": {
+        "en-US": "Model override",
+        "zh-CN": "模型覆盖"
+      },
+      "default": "",
+      "example_active": true
+    }
+  },
+  "section": "roles",
+  "order": 5,
+  "apply": "backend_restart"
+}

@@ -1,5 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 
+import { desktopCatalogFields } from '../shared/configCatalog.js'
+import { startupValue } from '../shared/startupSettings.js'
+
 export type UiTheme = 'classic' | 'wallpaper-slice'
 
 const DESKTOP_THEME_KEY = 'AMADEUS_UI_THEME'
@@ -11,12 +14,13 @@ interface ThemeContextValue {
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
-  theme: 'wallpaper-slice',
+  theme: desktopCatalogFields.AMADEUS_UI_THEME.default as UiTheme,
   setTheme: async () => {},
 })
 
 function normalizeTheme(value: unknown): UiTheme {
-  return value === 'classic' ? 'classic' : 'wallpaper-slice'
+  return desktopCatalogFields.AMADEUS_UI_THEME.options!.some(option => (typeof option === 'string' ? option : option.value) === value)
+    ? value as UiTheme : desktopCatalogFields.AMADEUS_UI_THEME.default as UiTheme
 }
 
 function applyTheme(theme: UiTheme): void {
@@ -36,10 +40,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     let active = true
     void window.amadeus?.getDesktopSettings().then(snapshot => {
       if (!active || !snapshot) return
-      const values = snapshot.values && typeof snapshot.values === 'object'
-        ? snapshot.values as Record<string, unknown>
-        : {}
-      const saved = values[DESKTOP_THEME_KEY]
+      const saved = startupValue(DESKTOP_THEME_KEY, snapshot, desktopCatalogFields.AMADEUS_UI_THEME.default)
       if (saved !== undefined) setThemeState(normalizeTheme(saved))
     }).catch(() => {})
     return () => { active = false }
@@ -52,12 +53,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setTheme = useCallback(async (nextTheme: UiTheme) => {
     const normalized = normalizeTheme(nextTheme)
-    setThemeState(normalized)
-    localStorage.setItem(LOCAL_THEME_KEY, normalized)
-    applyTheme(normalized)
-    if (!window.amadeus) return
+    if (!window.amadeus) { setThemeState(normalized); return }
     const result = await window.amadeus.updateDesktopSettings({ values: { [DESKTOP_THEME_KEY]: normalized } })
     if (!result.ok) throw new Error(result.error || 'Could not save interface theme')
+    setThemeState(normalized)
   }, [])
 
   const value = useMemo(() => ({ theme, setTheme }), [theme, setTheme])

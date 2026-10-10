@@ -1,4 +1,6 @@
-export const DEFAULT_WINDOWS_STARTUP_MODE = 'window'
+import { desktopCatalogFields } from '../shared/configCatalog.js'
+
+export const DEFAULT_WINDOWS_STARTUP_MODE = String(desktopCatalogFields.AMADEUS_WINDOWS_STARTUP_MODE.default)
 
 export function isWallpaperStartup(
   args: readonly string[],

@@ -32,6 +32,8 @@ import { defaultMpsFallbackEnvironment } from './mpsFallbackPolicy.js'
 import { auipStoragePartition } from './auipStorage.js'
 import { BackendStartupExitError, backendStartupFailure, recoverCharacterStartup, waitForBackendReadiness } from './backendStartup.js'
 import { startupCharacterSelection, type BackendStartupFailure } from '../shared/characterStartup.js'
+import { desktopCatalogFields } from '../shared/configCatalog.js'
+import { startupValue } from '../shared/startupSettings.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -460,15 +462,7 @@ async function launchBackend(): Promise<void> {
   console.log(`[electron] project root: ${PROJECT_ROOT}`)
 
   const launchPendingRevisions = desktopSettings.pendingRevisionSnapshot()
-  const backendEnvironment = desktopSettings.backendEnvironment(process.env, {
-    // Enable standby when Wallpaper is selected later too; this flag does not
-    // start the wake service during ordinary console startup. Explicit settings win.
-    ...(process.platform === 'win32' ? { WAKE_ENABLED: '1' } : {}),
-    AEC_REALTIME_ENABLED: '1',
-    AEC_REALTIME_BARGE_IN: '1',
-    AEC_REALTIME_DELAY_MS: '280',
-    ASR_ECHO_TAIL_GUARD_MS: '650',
-  })
+  const backendEnvironment = desktopSettings.backendEnvironment(process.env)
   const backendProcessEnvironment = {
     ...backendEnvironment,
     ...process.env,
@@ -570,8 +564,10 @@ function guardTrustedRendererShell(window: BrowserWindow): void {
 
 function createWindow(): void {
   const isWallpaperOnly = wantsWallpaper()
-  const values = desktopSettings.snapshot(process.env).values as Record<string, string>
-  const theme = values.AMADEUS_UI_THEME === 'classic' ? 'classic' : 'wallpaper-slice'
+  const themeDefinition = desktopCatalogFields.AMADEUS_UI_THEME
+  const startupTheme = startupValue('AMADEUS_UI_THEME', desktopSettings.snapshot(process.env), themeDefinition.default)
+  const theme = (themeDefinition.options!.some(option => (typeof option === 'string' ? option : option.value) === startupTheme)
+    ? String(startupTheme) : String(themeDefinition.default)) as keyof typeof TITLE_BAR_THEMES
   mainWindow = new BrowserWindow({
     width: 1100,
     height: 800,

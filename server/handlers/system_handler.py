@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 
+from config.catalog import application_policy, configuration_groups, option_values, read_catalog_value, runtime_fields, voice_backend_groups
 from server.event_bus import bus
 from server.protocol import Method
 from server.ws_handler import RequestHandler
@@ -31,7 +33,6 @@ def _startup_field(
         "label": label,
         "type": field_type,
         "description": description,
-        "restart_required": True,
         "editable": bool(editable),
     }
     if options:
@@ -47,6 +48,74 @@ def _startup_field(
     else:
         field["value"] = value
     return field
+
+
+def _catalog_field(key: str, settings: Any, values: dict[str, Any] | None = None) -> dict[str, Any]:
+    group = next(group for group in configuration_groups().values() if key in group["config"])
+    definition = group["config"][key]
+    secret = definition.get("secret", False)
+    if values is not None and key in values:
+        value = values[key]
+    elif definition.get("scope") == "session":
+        import os
+        from config.environment import EnvironmentReader
+        value = read_catalog_value(EnvironmentReader(os.environ), key)
+    else:
+        value = getattr(settings, definition.get("setting", key))
+    field = _startup_field(
+        key, definition["title"]["en-US"], "" if secret else value,
+        field_type="secret" if secret else {
+            "string": "text", "path": "path", "url": "url", "enum": "select",
+            "boolean": "boolean", "integer": "number", "number": "number",
+        }[definition["type"]],
+        options=tuple({"value": option, "label": option} if isinstance(option, str) else {
+            "value": option["value"], "label": option["label"]["en-US"],
+        } for option in definition.get("options", ()) if isinstance(option, str) or not option.get("hidden")),
+        description=definition.get("description", {}).get("en-US", ""),
+        minimum=definition.get("min"), maximum=definition.get("max"), step=definition.get("step"),
+        secret_configured=bool(value) if secret else None,
+        editable=group["desktop"],
+    )
+    field["apply"] = application_policy(key)
+    field["restart_required"] = field["apply"] == "backend_restart"
+    if "true_values" in definition:
+        field["true_values"] = definition["true_values"]
+    if definition.get("control"):
+        field["type"] = definition["control"]
+    return field
+
+
+def _catalog_configuration(
+    group_id: str, settings: Any, *, options: dict[str, list[dict[str, str]]] | None = None,
+    values: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    group = configuration_groups()[group_id]
+    fields = [_catalog_field(key, settings, values) for key in group["config"]]
+    controls = {field["key"]: field.get("value") for field in fields}
+    fields = [field for field in fields if all(
+        controls.get(selector) is None or str(controls[selector]) in choices
+        for selector, choices in group["config"][field["key"]].get("visible_when", {}).items()
+    )]
+    for field in fields:
+        if options and field["key"] in options:
+            field.update(type="select", options=options[field["key"]])
+    return {
+        "id": group["id"], "label": group["title"]["en-US"],
+        "description": group["description"]["en-US"], "fields": fields,
+    }
+
+
+def _voice_backend_configuration(group: dict[str, Any], settings: Any, statuses: list[dict[str, Any]], selected: str) -> dict[str, Any]:
+    backend_id = group["voice_backend"]["id"]
+    status = next((item for item in statuses if item["id"] == backend_id), {})
+    return {
+        **_catalog_configuration(group["id"], settings),
+        "active": selected == backend_id,
+        "configured": bool(status.get("available")),
+        "status": str(status.get("state") or "unavailable"),
+        "status_ok": bool(status.get("available")),
+        "status_detail": str(status.get("detail") or ""),
+    }
 
 
 def _voice_configuration(settings: Any, emotion_pack: dict[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -67,22 +136,8 @@ def _voice_configuration(settings: Any, emotion_pack: dict[str, Any] | None = No
     tts_statuses = tts_backend_statuses(tts_selected)
     asr_status = next((item for item in asr_statuses if item["selected"]), {})
     tts_status = next((item for item in tts_statuses if item["selected"]), {})
-    embedded_tts_status = next(
-        (item for item in tts_statuses if item["id"] == "gpt_sovits"),
-        {},
-    )
-    remote_tts_status = next(
-        (item for item in tts_statuses if item["id"] == "openai_compatible"),
-        {},
-    )
-    mimo_tts_status = next(
-        (item for item in tts_statuses if item["id"] == "mimo"),
-        {},
-    )
-    fish_tts_status = next(
-        (item for item in tts_statuses if item["id"] == "fish_audio"),
-        {},
-    )
+
+
     reference_consumers = [
         str(item.get("label") or item.get("id") or "")
         for item in tts_statuses
@@ -118,157 +173,42 @@ def _voice_configuration(settings: Any, emotion_pack: dict[str, Any] | None = No
     )
     return [
         {
-            "id": "conversation_asr",
-            "label": "Conversation recognition",
-            "description": "Full transcription after manual listening or Wake handoff. Qwen remains the embedded default and owns speculative endpoint optimization.",
+            **_catalog_configuration("conversation_asr", settings, options={"ASR_BACKEND": [{"value": item["id"], "label": item["label"]} for item in asr_statuses], "MICROPHONE_DEVICE_INDEX": microphone_options}),
+
             "active": True,
             "configured": bool(asr_status.get("available")),
             "status": str(asr_status.get("state") or "unavailable"),
             "status_ok": bool(asr_status.get("available")),
             "status_detail": str(asr_status.get("detail") or ""),
-            "fields": [
-                _startup_field(
-                    "ASR_BACKEND", "Backend", settings.ASR_BACKEND,
-                    field_type="select",
-                    options=tuple(
-                        {"value": item["id"], "label": item["label"]}
-                        for item in asr_statuses
-                    ),
-                ),
-                _startup_field(
-                    "ASR_LANGUAGE", "Recognition language", settings.ASR_LANGUAGE,
-                    description="auto or an ISO-639-1 language code such as en, ja, or zh.",
-                ),
-                _startup_field(
-                    "ASR_CONTEXT", "Context and terminology", settings.ASR_CONTEXT,
-                    description="Prompt or domain vocabulary used by compatible full recognizers.",
-                ),
-                _startup_field(
-                    "QWEN3_ASR_MODEL_PATH", "Qwen model directory",
-                    settings.QWEN3_ASR_MODEL_PATH, field_type="path",
-                    description=(
-                        "Leave blank to use assets/models/asr/qwen3-asr-0.6b, then a legacy "
-                        "Hugging Face cache if present."
-                    ),
-                ),
-                _startup_field(
-                    "QWEN3_ASR_DEVICE", "Qwen device", settings.QWEN3_ASR_DEVICE,
-                    field_type="select", options=("auto", "cpu", "cuda"),
-                    description="Used only by the embedded Qwen recognizer.",
-                ),
-                _startup_field(
-                    "QWEN3_ASR_REQUIRE_CUDA", "Require Qwen CUDA",
-                    bool(settings.QWEN3_ASR_REQUIRE_CUDA), field_type="boolean",
-                    description="Fail visibly instead of falling back to CPU when CUDA is requested but unavailable.",
-                ),
-                _startup_field(
-                    "MICROPHONE_DEVICE_INDEX", "Microphone", settings.MICROPHONE_DEVICE_INDEX,
-                    field_type="select", options=tuple(microphone_options),
-                ),
-                _startup_field(
-                    "MICROPHONE_PREFERRED_NAME", "Preferred microphone name",
-                    settings.MICROPHONE_PREFERRED_NAME,
-                    description="Optional partial-name fallback when device indices change.",
-                ),
-                _startup_field(
-                    "ASR_LISTEN_TIMEOUT_SECONDS", "Wait for speech",
-                    settings.ASR_LISTEN_TIMEOUT_SECONDS, field_type="number",
-                    minimum=1, maximum=120, step=1,
-                    description="Seconds to wait for speech to begin after listening starts.",
-                ),
-                _startup_field(
-                    "ASR_VAD_SILENCE_MS", "End-of-speech pause",
-                    settings.ASR_VAD_SILENCE_MS, field_type="number",
-                    minimum=100, maximum=3000, step=50,
-                    description="Silence required before a spoken turn is considered complete. Increase this if natural pauses are cut off.",
-                ),
-            ],
         },
         {
-            "id": "asr_remote",
-            "label": "Remote transcription API",
-            "description": "OpenAI-compatible POST /audio/transcriptions. Used only when Conversation recognition selects openai_compatible.",
+            **_catalog_configuration("asr_remote", settings),
+
             "active": asr_selected == "openai_compatible",
             "configured": bool(settings.ASR_API_BASE_URL and settings.ASR_API_MODEL),
             "status": "remote" if asr_selected == "openai_compatible" else "available",
             "status_ok": bool(settings.ASR_API_BASE_URL and settings.ASR_API_MODEL),
-            "fields": [
-                _startup_field("ASR_API_BASE_URL", "API base URL", settings.ASR_API_BASE_URL, field_type="url"),
-                _startup_field("ASR_API_KEY", "API key", field_type="secret", secret_configured=bool(settings.ASR_API_KEY)),
-                _startup_field("ASR_API_MODEL", "Model", settings.ASR_API_MODEL),
-            ],
         },
         {
-            "id": "wake_asr",
-            "label": "Wake recognition",
-            "description": "Independent always-on recognizer. It can stay on SenseVoice while Conversation recognition uses Qwen or a remote API.",
+            **_catalog_configuration("wake_asr", settings),
+
             "active": bool(settings.WAKE_ENABLED),
             "configured": not bool(settings.WAKE_ENABLED) or bool(wake_status.get("available")),
             "status": "disabled" if not settings.WAKE_ENABLED else str(wake_status.get("state") or "unavailable"),
             "status_ok": not bool(settings.WAKE_ENABLED) or bool(wake_status.get("available")),
             "status_detail": str(wake_status.get("detail") or ""),
-            "fields": [
-                _startup_field("WAKE_ENABLED", "Wake service", bool(settings.WAKE_ENABLED), field_type="boolean"),
-                _startup_field(
-                    "WAKE_PHRASES", "Wake phrases", settings.WAKE_PHRASES,
-                    description="Comma-separated phrases matched by the wake recognizer.",
-                ),
-                _startup_field(
-                    "WAKE_AUTO_SEND_TO_CHAT", "Send command to Chat",
-                    bool(settings.WAKE_AUTO_SEND_TO_CHAT), field_type="boolean",
-                    description="Submit the recognized command after a wake handoff.",
-                ),
-                _startup_field(
-                    "WAKE_ASR_BACKEND", "Wake backend", settings.WAKE_ASR_BACKEND,
-                    field_type="select", options=("sense_voice", "qwen3_asr"),
-                ),
-                _startup_field(
-                    "WAKE_SENSEVOICE_LANGUAGES", "Wake languages",
-                    settings.WAKE_SENSEVOICE_LANGUAGES,
-                    description="Comma-separated SenseVoice language passes.",
-                ),
-                _startup_field(
-                    "SENSEVOICE_LANGUAGE", "SenseVoice conversation language",
-                    settings.SENSEVOICE_LANGUAGE, field_type="select",
-                    options=("auto", "en", "zh", "ja", "yue", "ko"),
-                ),
-                _startup_field(
-                    "SENSEVOICE_MODEL_PATH", "SenseVoice model path",
-                    settings.SENSEVOICE_MODEL_PATH, field_type="path",
-                    description="Optional local model directory when it is not installed in the default cache.",
-                ),
-            ],
         },
         {
-            "id": "acoustic_pipeline",
-            "label": "Echo cancellation & interruption",
-            "description": "Desktop startup controls for realtime AEC and barge-in. These settings affect when microphone speech may interrupt playback.",
+            **_catalog_configuration("acoustic_pipeline", settings),
+
             "active": bool(settings.AEC_REALTIME_ENABLED),
             "configured": True,
             "status": "available",
             "status_ok": True,
-            "fields": [
-                _startup_field(
-                    "AEC_REALTIME_ENABLED", "Realtime echo cancellation",
-                    bool(settings.AEC_REALTIME_ENABLED), field_type="boolean",
-                ),
-                _startup_field(
-                    "AEC_REALTIME_BARGE_IN", "Allow microphone interruption",
-                    bool(settings.AEC_REALTIME_BARGE_IN), field_type="boolean",
-                    description="When enabled, confirmed near-end speech may stop current playback.",
-                ),
-                _startup_field(
-                    "AEC_REALTIME_DELAY_MS", "AEC reference delay",
-                    settings.AEC_REALTIME_DELAY_MS, field_type="number",
-                    minimum=0, maximum=2000, step=10,
-                    description="Explicit playback-to-microphone reference delay in milliseconds.",
-                ),
-            ],
         },
         {
-            "id": "voice_reference_profile",
-            "label": "Voice reference profile",
-            "description": "Shared reference-conditioning inputs carried by the common TTS request contract. Backends that do not declare this capability ignore them.",
+            **_catalog_configuration("voice_reference_profile", settings),
+
             "active": selected_reference_consumer,
             "configured": bool(
                 settings.TTS_REF_AUDIO_JA or settings.TTS_REF_AUDIO_EN
@@ -286,209 +226,44 @@ def _voice_configuration(settings: Any, emotion_pack: dict[str, Any] | None = No
                     else ""
                 )
             ),
-            "fields": [
-                _startup_field(
-                    "TTS_REF_AUDIO_JA", "Japanese reference audio",
-                    settings.TTS_REF_AUDIO_JA, field_type="path",
-                ),
-                _startup_field(
-                    "TTS_REF_TEXT_JA", "Japanese reference transcript",
-                    settings.TTS_REF_TEXT_JA,
-                ),
-                _startup_field(
-                    "TTS_REF_AUDIO_EN", "English reference audio",
-                    settings.TTS_REF_AUDIO_EN, field_type="path",
-                ),
-                _startup_field(
-                    "TTS_REF_TEXT_EN", "English reference transcript",
-                    settings.TTS_REF_TEXT_EN,
-                ),
-            ],
         },
         {
-            "id": "speech_synthesis",
-            "label": "Speech synthesis",
-            "description": "The embedded default is Amadeus's low-latency GPT-SoVITS runtime and accepts v1, v2, v2Pro, v2ProPlus, and v3 checkpoints. Remote audio enters the same playback, subtitle, AEC, and mouth-signal pipeline.",
+            **_catalog_configuration("speech_synthesis", settings, options={
+                "TTS_BACKEND": [{"value": item["id"], "label": item["label"]} for item in tts_statuses],
+            }),
             "active": tts_selected != "disabled",
             "configured": bool(tts_status.get("available")),
             "status": str(tts_status.get("state") or "unavailable"),
             "status_ok": bool(tts_status.get("available")),
             "status_detail": str(tts_status.get("detail") or ""),
-            "fields": [
-                _startup_field(
-                    "TTS_BACKEND", "Backend", settings.TTS_BACKEND,
-                    field_type="select",
-                    options=tuple(
-                        {"value": item["id"], "label": item["label"]}
-                        for item in tts_statuses
-                    ),
-                ),
-            ],
         },
+        *(_voice_backend_configuration(group, settings, tts_statuses, tts_selected)
+              for group in voice_backend_groups()),
         {
-            "id": "tts_embedded_v3",
-            "label": "Embedded GPT-SoVITS model",
-            "description": "Checkpoint pair for the Amadeus low-latency runtime. The SoVITS checkpoint header selects the v1, v2, v2Pro, v2ProPlus, or v3 decoder.",
-            "active": tts_selected == "gpt_sovits",
-            "configured": bool(embedded_tts_status.get("available")),
-            "status": str(embedded_tts_status.get("state") or "not_installed"),
-            "status_ok": bool(embedded_tts_status.get("available")),
-            "status_detail": str(embedded_tts_status.get("detail") or ""),
-            "fields": [
-                _startup_field(
-                    "TTS_VOICE_PROFILE", "Voice checkpoint profile",
-                    settings.TTS_VOICE_PROFILE,
-                    field_type="select",
-                    options=(
-                        {"value": "kurisu_v3", "label": "Kurisu v3"},
-                        {"value": "kurisu_v2pro", "label": "Kurisu v2Pro · experimental"},
-                        {"value": "custom", "label": "Custom checkpoint pair"},
-                    ),
-                    description="Named profiles select compatible GPT and SoVITS paths together. Restart the voice runtime after changing this setting.",
-                ),
-                _startup_field(
-                    "TTS_DEVICE", "Inference device", settings.TTS_DEVICE,
-                    description="auto/cuda, cuda:N, or cpu. Used only by the embedded backend.",
-                ),
-                _startup_field(
-                    "TTS_GPT_MODEL_PATH", "Custom GPT semantic checkpoint",
-                    settings.TTS_GPT_MODEL_PATH,
-                    description="Used only with the Custom checkpoint pair profile; relative paths resolve from the repository root.",
-                ),
-                _startup_field(
-                    "TTS_SOVITS_MODEL_PATH", "Custom SoVITS acoustic checkpoint",
-                    settings.TTS_SOVITS_MODEL_PATH,
-                    description="Used only with the Custom checkpoint pair profile; relative paths resolve from the repository root.",
-                ),
-            ],
-        },
-        {
-            "id": "tts_emotion_references",
-            "label": "Emotion voice references",
-            "description": "Use an optional emotion voice pack for Windows CUDA V3 Japanese speech. References are prepared at startup.",
+            **_catalog_configuration("tts_emotion_references", settings),
+
             "active": tts_selected == "gpt_sovits" and emotion_requested,
             "configured": not emotion_requested or bool(emotion_pack["installed"]),
             "status": str(emotion_runtime["state"]),
             "status_ok": not emotion_requested or bool(emotion_runtime["ready"]),
             "status_detail": str(emotion_runtime["detail"]),
-            "fields": [
-                _startup_field(
-                    "ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING", "Enable emotion voice references",
-                    bool(settings.ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING), field_type="boolean",
-                    description="Default off. Install the optional voice-kurisu-emotions pack and restart. Turning this off restores default reference speech.",
-                ),
-            ],
         },
-        {
-            "id": "tts_remote",
-            "label": "Remote speech API",
-            "description": "Buffered WAV keeps broad OpenAI-compatible support. OpenAI SSE streams PCM into first-packet playback and must be explicitly selected.",
-            "active": tts_selected == "openai_compatible",
-            "configured": bool(remote_tts_status.get("available")),
-            "status": str(remote_tts_status.get("state") or "unavailable"),
-            "status_ok": bool(remote_tts_status.get("available")),
-            "status_detail": str(remote_tts_status.get("detail") or ""),
-            "fields": [
-                _startup_field("TTS_API_BASE_URL", "API base URL", settings.TTS_API_BASE_URL, field_type="url"),
-                _startup_field("TTS_API_KEY", "API key", field_type="secret", secret_configured=bool(settings.TTS_API_KEY)),
-                _startup_field("TTS_API_MODEL", "Model", settings.TTS_API_MODEL),
-                _startup_field("TTS_API_VOICE", "Voice", settings.TTS_API_VOICE),
-                _startup_field(
-                    "TTS_API_STREAM_PROTOCOL", "Response mode",
-                    settings.TTS_API_STREAM_PROTOCOL,
-                    field_type="select",
-                    options=(
-                        {"value": "buffered", "label": "Buffered WAV · compatible"},
-                        {"value": "openai_sse", "label": "OpenAI SSE · streaming PCM"},
-                    ),
-                    description="Use OpenAI SSE only when the endpoint implements speech.audio.delta events.",
-                ),
-            ],
-        },
-        {
-            "id": "tts_mimo",
-            "label": "MiMo speech API (Xiaomi)",
-            "description": "MiMo-TTS chat-completions synthesis. Streaming PCM16 runs on mimo-v2.5-tts; voicedesign/voiceclone variants are not supported by this runtime.",
-            "active": tts_selected == "mimo",
-            "configured": bool(mimo_tts_status.get("available")),
-            "status": str(mimo_tts_status.get("state") or "unavailable"),
-            "status_ok": bool(mimo_tts_status.get("available")),
-            "status_detail": str(mimo_tts_status.get("detail") or ""),
-            "fields": [
-                _startup_field("MIMO_TTS_BASE_URL", "API base URL", settings.MIMO_TTS_BASE_URL, field_type="url"),
-                _startup_field("MIMO_TTS_API_KEY", "API key", field_type="secret", secret_configured=bool(settings.MIMO_TTS_API_KEY)),
-                _startup_field("MIMO_TTS_MODEL", "Model", settings.MIMO_TTS_MODEL),
-                _startup_field("MIMO_TTS_VOICE", "Voice", settings.MIMO_TTS_VOICE),
-            ],
-        },
-        {
-            "id": "tts_fish_audio",
-            "label": "Fish Audio speech API",
-            "description": "WebSocket streaming speech with a hosted voice. Voice reference ID selects the voice; model selects the inference engine.",
-            "active": tts_selected == "fish_audio",
-            "configured": bool(fish_tts_status.get("available")),
-            "status": str(fish_tts_status.get("state") or "unavailable"),
-            "status_ok": bool(fish_tts_status.get("available")),
-            "status_detail": str(fish_tts_status.get("detail") or ""),
-            "fields": [
-                _startup_field("FISH_TTS_WS_URL", "WebSocket URL", settings.FISH_TTS_WS_URL, field_type="url"),
-                _startup_field("FISH_TTS_API_KEY", "API key", field_type="secret", secret_configured=bool(settings.FISH_TTS_API_KEY)),
-                _startup_field("FISH_TTS_MODEL", "Inference model", settings.FISH_TTS_MODEL),
-                _startup_field("FISH_TTS_REFERENCE_ID", "Voice reference ID", settings.FISH_TTS_REFERENCE_ID),
-                _startup_field(
-                    "FISH_TTS_LATENCY", "Latency mode", settings.FISH_TTS_LATENCY,
-                    field_type="select",
-                    options=tuple({"value": mode, "label": mode} for mode in ("normal", "balanced", "low")),
-                ),
-            ],
-        },
+
     ]
 
 
 def _artifact_configuration(settings: Any) -> list[dict[str, Any]]:
-    return [{
-        "id": "auip_artifact_style",
-        "label": "Artifact appearance",
-        "configured": True,
-        "status_ok": True,
-        "status": "enabled" if settings.AUIP_ARTIFACT_STYLE_ENABLED else "disabled",
-        "description": "A shared visual language for newly authored AUIP apps; each app keeps its own content and layout.",
-        "fields": [_startup_field(
-            "AUIP_ARTIFACT_STYLE_ENABLED", "Use Amadeus style",
-            settings.AUIP_ARTIFACT_STYLE_ENABLED, field_type="boolean",
-            description="After a backend restart, provide the style guide and CSS for future AUIP creation. Existing apps keep their design; explicit user design requests take priority.",
-        )],
-    }]
+    return [{**_catalog_configuration("auip_artifact_style", settings),
+             "configured": True, "status_ok": True,
+             "status": "enabled" if settings.AUIP_ARTIFACT_STYLE_ENABLED else "disabled"}]
 
 
 def _avatar_configuration(settings: Any) -> list[dict[str, Any]]:
     enabled = bool(settings.VTS_ENABLED)
-    return [
-        {
-            "id": "vts_compatibility",
-            "label": "VTube Studio compatibility",
-            "description": "Optional downstream mouth-signal and parameter forwarding. SpriteForge browser animation remains independent of this compatibility path.",
-            "active": enabled,
-            "configured": not enabled or bool(str(settings.VTS_WS_URL or "").strip()),
-            "status": "available" if enabled else "disabled",
-            "status_ok": not enabled or bool(str(settings.VTS_WS_URL or "").strip()),
-            "fields": [
-                _startup_field(
-                    "VTS_ENABLED", "Enable compatibility output", enabled,
-                    field_type="boolean",
-                ),
-                _startup_field(
-                    "VTS_WS_URL", "WebSocket URL", settings.VTS_WS_URL,
-                    field_type="url",
-                ),
-                _startup_field(
-                    "VTS_TOKEN_FILE", "Authentication token file",
-                    settings.VTS_TOKEN_FILE, field_type="path",
-                    description="Local token cache path; the token itself is never shown in Settings.",
-                ),
-            ],
-        }
-    ]
+    configured = not enabled or bool(str(settings.VTS_WS_URL or "").strip())
+    return [{**_catalog_configuration("vts_compatibility", settings),
+             "active": enabled, "configured": configured,
+             "status": "available" if enabled else "disabled", "status_ok": configured}]
 
 
 def _model_connections(
@@ -521,207 +296,62 @@ def _model_connections(
         "hybrid2": {"hybrid_local", "deepseek"},
         "hybrid3": {"hybrid_local", "openai"},
     }.get(active, {active})
-    local_type = str(settings.LOCAL_LLM_TYPE or "llama_server").strip().lower()
-    local_fields = [
-        _startup_field(
-            "LOCAL_LLM_TYPE", "Backend type", local_type,
-            field_type="select", options=("llama_server", "lmstudio", "ollama", "cli"),
-        ),
-        _startup_field("LOCAL_LLM_MODEL", "Model", settings.LOCAL_LLM_MODEL),
-    ]
-    if local_type == "llama_server":
-        local_fields.extend(
-            [
-                _startup_field(
-                    "LOCAL_LLM_LAUNCH_MODE", "Server ownership",
-                    settings.LOCAL_LLM_LAUNCH_MODE,
-                    field_type="select", options=(
-                        {"value": "external", "label": "External server"},
-                        {"value": "managed", "label": "Managed by Amadeus"},
-                    ),
-                    description="External reuses an existing llama.cpp server; managed starts and stops it with Amadeus.",
-                ),
-                _startup_field(
-                    "LOCAL_LLM_URL", "llama.cpp server URL", settings.LOCAL_LLM_URL,
-                    field_type="url",
-                ),
-            ]
-        )
-        local_fields.extend(
-            [
-                _startup_field(
-                    "LOCAL_LLM_CLI_PATH", "llama-server executable",
-                    settings.LOCAL_LLM_CLI_PATH, field_type="path",
-                    description="Used by managed mode and the repository BAT launchers; optional for an independently managed external server.",
-                ),
-                _startup_field(
-                    "LOCAL_LLM_CLI_MODEL_PATH", "GGUF model file",
-                    settings.LOCAL_LLM_MODEL_PATH, field_type="path",
-                    description="Used by managed mode and the repository BAT launchers.",
-                ),
-                _startup_field(
-                    "LOCAL_LLM_CLI_CONTEXT", "Context size",
-                    getattr(settings, "_LLM_CONTEXT", "4096"),
-                ),
-                _startup_field(
-                    "LOCAL_LLM_CLI_THREADS", "CPU threads",
-                    getattr(settings, "_LLM_THREADS", "4"),
-                ),
-                _startup_field(
-                    "LOCAL_LLM_CLI_NGL", "GPU layers",
-                    getattr(settings, "_LLM_NGL", "99"),
-                ),
-                _startup_field(
-                    "LOCAL_LLM_CUDA_VISIBLE_DEVICES", "Visible GPU IDs",
-                    settings.LOCAL_LLM_CUDA_VISIBLE_DEVICES,
-                    description="Optional nvidia-smi indices, for example 1. Leave blank for automatic visibility.",
-                ),
-            ]
-        )
-    elif local_type == "lmstudio":
-        local_fields.append(
-            _startup_field(
-                "LOCAL_LLM_LM_STUDIO_URL", "LM Studio URL",
-                settings.LOCAL_LLM_LM_STUDIO_URL, field_type="url",
-            )
-        )
-    elif local_type == "ollama":
-        local_fields.append(
-            _startup_field(
-                "LOCAL_LLM_OLLAMA_URL", "Ollama URL",
-                settings.LOCAL_LLM_OLLAMA_URL, field_type="url",
-            )
-        )
-    else:
-        local_fields.extend(
-            [
-                _startup_field(
-                    "LOCAL_LLM_CLI_PATH", "llama-cli executable",
-                    settings.LOCAL_LLM_CLI_PATH, field_type="path",
-                ),
-                _startup_field(
-                    "LOCAL_LLM_CLI_MODEL_PATH", "GGUF model file",
-                    settings.LOCAL_LLM_MODEL_PATH, field_type="path",
-                ),
-            ]
-        )
+    local_fields = _catalog_configuration("local", settings)["fields"]
 
     local_status = dict(local_status or {})
     hybrid_status = dict(hybrid_status or {})
     return [
         {
-            "id": "profile",
-            "label": "Desktop default",
-            "description": "The model profile selected when the desktop backend starts.",
+            **_catalog_configuration("profile", settings),
             "active": True,
             "configured": True,
-            "fields": [
-                _startup_field(
-                    "LLM_PROVIDER", "Default model profile", settings.LLM_PROVIDER,
-                    field_type="select",
-                    options=("deepseek", "openai", "gemini", "bedrock", "local", "hybrid", "hybrid2", "hybrid3"),
-                ),
-            ],
         },
         {
-            "id": "character_rag",
-            "label": "Character knowledge (optional RAG)",
-            "description": "Local retrieval for all chat models. Build an index first; retrieved excerpts are sent to the selected model, including remote APIs. Restart after changes.",
+            **_catalog_configuration("character_rag", settings),
+
+
             "active": bool(settings.RAG_ENABLED),
             "configured": bool(rag_status["index_present"]),
             "status": rag_status["state"],
             "status_ok": rag_status["state"] in {"ready", "disabled"},
             "status_detail": rag_detail,
-            "fields": [
-                _startup_field("RAG_ENABLED", "Enable character knowledge", bool(settings.RAG_ENABLED), field_type="boolean"),
-                _startup_field("RAG_INDEX_DIR", "Built index directory", settings.RAG_INDEX_DIR, field_type="path"),
-                _startup_field("RAG_TOP_K", "Maximum results", settings.RAG_TOP_K, field_type="number", minimum=1, maximum=20, step=1),
-                _startup_field("RAG_MAX_DISTANCE", "Maximum squared L2 distance", settings.RAG_MAX_DISTANCE, field_type="number", minimum=0, maximum=4, step=0.01),
-            ],
+
         },
         {
-            "id": "deepseek",
-            "label": "DeepSeek",
+            **_catalog_configuration("deepseek", settings),
+
             "active": "deepseek" in active_connections,
             "configured": bool(settings.DEEPSEEK_API_KEY),
-            "fields": [
-                _startup_field(
-                    "DEEPSEEK_API_KEY", "API key", field_type="secret",
-                    secret_configured=bool(settings.DEEPSEEK_API_KEY),
-                ),
-                _startup_field(
-                    "DEEPSEEK_BASE_URL", "Base URL", settings.DEEPSEEK_BASE_URL,
-                    field_type="url",
-                ),
-                _startup_field(
-                    "DEEPSEEK_MODEL_NAME", "Model", settings.DEEPSEEK_MODEL_NAME,
-                    description="Independent from the Codex Work Provider model.",
-                ),
-            ],
+
         },
         {
-            "id": "openai",
-            "label": "OpenAI-compatible",
+            **_catalog_configuration("openai", settings),
+
             "active": "openai" in active_connections,
             "configured": bool(settings.OPENAI_API_KEY),
-            "fields": [
-                _startup_field(
-                    "OPENAI_API_KEY", "API key", field_type="secret",
-                    secret_configured=bool(settings.OPENAI_API_KEY),
-                ),
-                _startup_field(
-                    "OPENAI_BASE_URL", "Base URL", settings.OPENAI_BASE_URL,
-                    field_type="url",
-                ),
-                _startup_field("OPENAI_MODEL_NAME", "Model", settings.OPENAI_MODEL_NAME),
-            ],
+
         },
         {
-            "id": "gemini",
-            "label": "Gemini",
+            **_catalog_configuration("gemini", settings),
+
             "active": "gemini" in active_connections,
             "configured": bool(settings.GEMINI_API_KEY),
-            "fields": [
-                _startup_field(
-                    "GEMINI_API_KEY", "API key", field_type="secret",
-                    secret_configured=bool(settings.GEMINI_API_KEY),
-                ),
-                _startup_field("GEMINI_MODEL_NAME", "Model", settings.GEMINI_MODEL_NAME),
-            ],
+
         },
         {
-            "id": "bedrock",
-            "label": "AWS Bedrock",
+            **_catalog_configuration("bedrock", settings),
+
             "active": "bedrock" in active_connections,
             "configured": bool(
                 settings.AWS_BEDROCK_BEARER_TOKEN
                 or settings.AWS_BEDROCK_AUTH_MODE in {"auto", "boto3"}
             ),
-            "fields": [
-                _startup_field(
-                    "BEDROCK_AUTH_MODE", "Authentication", settings.AWS_BEDROCK_AUTH_MODE,
-                    field_type="select", options=("auto", "boto3", "bearer"),
-                ),
-                _startup_field(
-                    "AWS_BEARER_TOKEN_BEDROCK", "Bearer token", field_type="secret",
-                    secret_configured=bool(settings.AWS_BEDROCK_BEARER_TOKEN),
-                ),
-                _startup_field("AWS_BEDROCK_REGION", "Region", settings.AWS_BEDROCK_REGION),
-                _startup_field("AWS_BEDROCK_MODEL_ID", "Model ID", settings.AWS_BEDROCK_MODEL_ID),
-                _startup_field(
-                    "AWS_BEDROCK_USE_INFERENCE_PROFILE", "Use inference profile",
-                    bool(settings.AWS_BEDROCK_USE_INFERENCE_PROFILE), field_type="boolean",
-                ),
-                _startup_field(
-                    "AWS_BEDROCK_INFERENCE_PROFILE_ID", "Inference profile ID",
-                    settings.AWS_BEDROCK_INFERENCE_PROFILE_ID,
-                ),
-            ],
+
         },
         {
-            "id": "local",
-            "label": "Pure-local model",
-            "description": "Within the optional pure-local profile, llama.cpp is the default backend; LM Studio, Ollama, and llama-cli remain compatibility choices.",
+            **_catalog_configuration("local", settings),
+
+
             "active": "local" in active_connections,
             "configured": bool(local_status.get("configured")),
             "status": str(local_status.get("state") or "unavailable"),
@@ -730,24 +360,15 @@ def _model_connections(
             "fields": local_fields,
         },
         {
-            "id": "hybrid_local",
-            "label": "Hybrid local head",
-            "description": "Shared fast first-sentence endpoint. Hybrid pairs it with Bedrock, Hybrid2 with DeepSeek, and Hybrid3 with OpenAI-compatible. The optional Hybrid BAT launcher shares the llama.cpp executable and GGUF settings above.",
+            **_catalog_configuration("hybrid_local", settings),
+
+
             "active": "hybrid_local" in active_connections,
             "configured": bool(hybrid_status.get("configured")),
             "status": str(hybrid_status.get("state") or "unavailable"),
             "status_ok": bool(hybrid_status.get("available")),
             "status_detail": str(hybrid_status.get("detail") or "Status is checked at startup."),
-            "fields": [
-                _startup_field(
-                    "HYBRID_LOCAL_LLM_URL", "Head endpoint",
-                    settings.HYBRID_LOCAL_LLM_URL, field_type="url",
-                ),
-                _startup_field(
-                    "HYBRID_LOCAL_LLM_MODEL", "Head model",
-                    settings.HYBRID_LOCAL_LLM_MODEL,
-                ),
-            ],
+
         },
     ]
 
@@ -792,178 +413,87 @@ def _model_role_configuration(settings: Any) -> list[dict[str, Any]]:
 
     return [
         {
-            "id": "vn_companion",
-            "label": "VN companion",
-            "description": "Dedicated VN reasoning and reaction role. DeepSeek is the recommended default; OpenAI-compatible is also supported.",
+            **_catalog_configuration("vn_companion", settings, values={"VN_LLM_PROVIDER": vn_provider, "VN_LLM_MODEL": vn_model_override}),
+
+
             "active": True,
             "configured": vn_configured,
             "status": "needs_setup" if not vn_configured else "override" if vn_provider_override or vn_model_override else "recommended",
             "status_ok": vn_configured,
-            "fields": [
-                _startup_field(
-                    "VN_LLM_PROVIDER", "Model connection",
-                    vn_provider,
-                    field_type="select",
-                    options=(
-                        {"value": "deepseek", "label": "DeepSeek · Recommended"},
-                        {"value": "openai", "label": "OpenAI-compatible"},
-                    ),
-                ),
-                _startup_field(
-                    "VN_LLM_MODEL", "Model override",
-                    vn_model_override,
-                    description="Optional. Leave blank to use the model from the selected connection.",
-                ),
-            ],
+
         },
         {
-            "id": "work_planner",
-            "label": "Work planner / router",
-            "description": "Plans and routes cooperative Work; an empty model inherits the main conversation model on the existing backend.",
+            **_catalog_configuration("work_planner", settings),
+
+
             "active": bool(
                 getattr(settings, "COOPERATIVE_WORK_PLANNER_ENABLED", False)
             ),
             "configured": True,
             "status": "override" if settings.COOPERATIVE_WORK_PLANNER_MODEL else "inherited",
             "status_ok": True,
-            "fields": [
-                _startup_field(
-                    "COOPERATIVE_WORK_PLANNER_MODEL", "Model override",
-                    settings.COOPERATIVE_WORK_PLANNER_MODEL,
-                    description="Leave empty to inherit the main conversation model.",
-                ),
-            ],
+
         },
         {
-            "id": "work_observer",
-            "label": "Work observer",
-            "description": "Summarizes Provider progress; inherits the main model when left blank.",
+            **_catalog_configuration("work_observer", settings),
+
+
             "configured": True,
-            "fields": [
-                _startup_field("WORK_OBSERVER_PROVIDER", "Provider override", settings.WORK_OBSERVER_PROVIDER),
-                _startup_field("WORK_OBSERVER_MODEL", "Model override", settings.WORK_OBSERVER_MODEL),
-            ],
+
         },
         {
-            "id": "browser_branch_planner",
-            "label": "Browser branch planner",
-            "description": "Chooses bounded browser branches; inherits a supported main provider and its model when left blank.",
+            **_catalog_configuration("browser_branch_planner", settings),
+
+
             "configured": True,
             "status": "override" if os.environ.get("BROWSER_BRANCH_PROVIDER") or os.environ.get("BROWSER_BRANCH_MODEL") else "inherited",
             "status_ok": True,
-            "fields": [
-                _startup_field(
-                    "BROWSER_BRANCH_PROVIDER", "Provider override",
-                    os.environ.get("BROWSER_BRANCH_PROVIDER", ""),
-                    field_type="select",
-                    options=(
-                        {"value": "", "label": "Inherit supported main provider"},
-                        {"value": "deepseek", "label": "DeepSeek"},
-                        {"value": "openai", "label": "OpenAI-compatible"},
-                    ),
-                ),
-                _startup_field(
-                    "BROWSER_BRANCH_MODEL", "Model override",
-                    os.environ.get("BROWSER_BRANCH_MODEL", ""),
-                    description="Leave empty to use the selected provider's configured model.",
-                ),
-            ],
+
         },
         {
-            "id": "auip_narration",
-            "label": "AUIP narration",
-            "description": "Narrates verified application outcomes; inherits Work observer/main model.",
+            **_catalog_configuration("auip_narration", settings),
+
+
             "configured": True,
-            "fields": [
-                _startup_field("AUIP_NARRATION_PROVIDER", "Provider override", settings.AUIP_NARRATION_PROVIDER),
-                _startup_field("AUIP_NARRATION_MODEL", "Model override", settings.AUIP_NARRATION_MODEL),
-            ],
+
         },
         {
-            "id": "auip_action",
-            "label": "AUIP action decision",
-            "description": "Decision-quality model used by the default B2 AppSession action path.",
+            **_catalog_configuration("auip_action", settings),
+
+
             "active": b2_active,
             "configured": not bool(b2_unavailable),
             "status": "needs_setup" if b2_unavailable else "available" if b2_active else "optional",
             "status_ok": not bool(b2_unavailable),
             "status_detail": b2_status_detail,
-            "fields": [
-                _startup_field("AUIP_ACTION_PROVIDER", "Provider override", settings.AUIP_ACTION_PROVIDER),
-                _startup_field("AUIP_ACTION_MODEL", "Model override", settings.AUIP_ACTION_MODEL),
-                _startup_field(
-                    "AUIP_ACTION_REASONING_EFFORT", "Reasoning effort",
-                    settings.AUIP_ACTION_REASONING_EFFORT, field_type="select",
-                    options=("none", "minimal", "low", "medium", "high", "max"),
-                ),
-                _startup_field(
-                    "AUIP_ACTION_SERVICE_TIER", "Service tier",
-                    settings.AUIP_ACTION_SERVICE_TIER, field_type="select",
-                    options=("auto", "default", "fast", "priority"),
-                ),
-            ],
+
         },
         {
-            "id": "vn_subtitle_translation",
-            "label": "VN subtitle translation",
-            "description": "Translates Japanese game dialogue into Simplified Chinese for display.",
+            **_catalog_configuration("vn_subtitle_translation", settings),
+
+
             "configured": True,
             "status": "override" if os.environ.get("VN_SUBTITLE_TRANSLATE_PROVIDER") or os.environ.get("VN_SUBTITLE_TRANSLATE_MODEL") else "inherited",
             "status_ok": True,
-            "fields": [
-                _startup_field(
-                    "VN_SUBTITLE_TRANSLATE_PROVIDER", "Provider override",
-                    os.environ.get("VN_SUBTITLE_TRANSLATE_PROVIDER", ""),
-                    field_type="select",
-                    options=(
-                        {"value": "", "label": "DeepSeek default"},
-                        {"value": "deepseek", "label": "DeepSeek"},
-                        {"value": "openai", "label": "OpenAI-compatible"},
-                    ),
-                ),
-                _startup_field(
-                    "VN_SUBTITLE_TRANSLATE_MODEL", "Model override",
-                    os.environ.get("VN_SUBTITLE_TRANSLATE_MODEL", ""),
-                    description="Leave empty to use the selected provider's configured model.",
-                ),
-            ],
+
         },
         {
-            "id": "vn_speech_translation",
-            "label": "VN speech translation",
-            "description": "Translates Chinese companion reactions into Japanese before speech synthesis.",
+            **_catalog_configuration("vn_speech_translation", settings),
+
+
             "configured": True,
             "status": "override" if os.environ.get("VN_TTS_TRANSLATE_PROVIDER") or os.environ.get("VN_TTS_TRANSLATE_MODEL") else "inherited",
             "status_ok": True,
-            "fields": [
-                _startup_field(
-                    "VN_TTS_TRANSLATE_PROVIDER", "Provider override",
-                    os.environ.get("VN_TTS_TRANSLATE_PROVIDER", ""),
-                    field_type="select",
-                    options=(
-                        {"value": "", "label": "DeepSeek default"},
-                        {"value": "deepseek", "label": "DeepSeek"},
-                        {"value": "openai", "label": "OpenAI-compatible"},
-                    ),
-                ),
-                _startup_field(
-                    "VN_TTS_TRANSLATE_MODEL", "Model override",
-                    os.environ.get("VN_TTS_TRANSLATE_MODEL", ""),
-                    description="Leave empty to use the selected provider's configured model.",
-                ),
-            ],
+
         },
     ]
 
 
-def _acp_credentials() -> list[dict[str, Any]]:
-    import os
+def _acp_credentials(settings: Any) -> list[dict[str, Any]]:
 
     return [
-        _startup_field("ANTHROPIC_API_KEY", "Anthropic API key", field_type="secret",
-                       secret_configured=bool(os.environ.get("ANTHROPIC_API_KEY"))),
-        _startup_field("DEEPSEEK_API_KEY", "DeepSeek API key", field_type="secret",
-                       secret_configured=bool(os.environ.get("DEEPSEEK_API_KEY"))),
+        _catalog_field("ANTHROPIC_API_KEY", settings),
+        {**_catalog_field("DEEPSEEK_API_KEY", settings), "label": "DeepSeek API key"},
     ]
 
 
@@ -973,9 +503,6 @@ def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
         else "direct" if settings.DIRECT_CODEX_PROVIDER_ENABLED
         else "disabled"
     )
-    codex_auth_mode = str(
-        getattr(settings, "CODEX_APP_SERVER_AUTH_MODE", "model_api") or "model_api"
-    ).strip().lower()
     codex_model_provider = str(
         getattr(settings, "CODEX_APP_SERVER_MODEL_PROVIDER", "deepseek") or "deepseek"
     ).strip().lower()
@@ -990,75 +517,14 @@ def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
             "value": "openai",
             "label": "OpenAI-compatible" if getattr(settings, "OPENAI_API_KEY", "") else "OpenAI-compatible · Not configured",
         })
-    codex_fields = [
-        _startup_field(
-            "CODEX_PROVIDER_TRANSPORT", "Transport", codex_transport,
-            field_type="select", options=("app_server", "direct", "disabled"),
-        ),
-    ]
-    if codex_transport == "app_server":
-        codex_fields.extend([
-            _startup_field(
-            "CODEX_APP_SERVER_CODEX_BIN", "App Server executable",
-            settings.CODEX_APP_SERVER_CODEX_BIN, field_type="path",
-            ),
-            _startup_field(
-            "CODEX_APP_SERVER_AUTH_MODE", "App Server authentication",
-            codex_auth_mode, field_type="select", options=(
-                {"value": "chatgpt", "label": "ChatGPT subscription"},
-                {"value": "model_api", "label": "Model API connection"},
-            ),
-            description="Run `codex login` once for subscription use. Model API reuses a connection from Models.",
-            ),
-        ])
-        if codex_auth_mode == "chatgpt":
-            codex_fields.append(_startup_field(
-                "CODEX_APP_SERVER_CHATGPT_MODEL", "Subscription model override",
-                settings.CODEX_APP_SERVER_CHATGPT_MODEL,
-                description="Optional. Leave blank to use the model selected by the signed-in Codex client.",
-            ))
-        else:
-            codex_fields.extend([
-            _startup_field(
-                "CODEX_APP_SERVER_MODEL_PROVIDER", "Model API connection",
-                settings.CODEX_APP_SERVER_MODEL_PROVIDER,
-                field_type="select", options=tuple(codex_connection_options),
-                description="Reuses the API key and endpoint configured in Models.",
-            ),
-            _startup_field(
-                "CODEX_APP_SERVER_MODEL", "Model", settings.CODEX_APP_SERVER_MODEL,
-                description="Defaults to the model from the selected Models connection.",
-            ),
-            ])
-        codex_fields.extend([
-            _startup_field(
-            "CODEX_APP_SERVER_REASONING_EFFORT", "Reasoning effort",
-            settings.CODEX_APP_SERVER_REASONING_EFFORT, field_type="select",
-            options=("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"),
-            ),
-            _startup_field(
-            "CODEX_APP_SERVER_SERVICE_TIER", "Service tier",
-            settings.CODEX_APP_SERVER_SERVICE_TIER, field_type="select",
-            options=("", "auto", "default", "flex", "priority", "fast", "ultrafast"),
-            ),
-        ])
-    elif codex_transport == "direct":
-        codex_fields.append(_startup_field(
-            "DIRECT_CODEX_CLI_PATH", "Direct CLI executable",
-            settings.DIRECT_CODEX_CLI_PATH, field_type="path",
-            description="Direct CLI uses the existing local `codex login` session.",
-        ))
+    codex_fields = _catalog_configuration("codex", settings,
+        values={"CODEX_PROVIDER_TRANSPORT": codex_transport},
+        options={"CODEX_APP_SERVER_MODEL_PROVIDER": codex_connection_options})["fields"]
     return [
         {
-            "id": "pi", "label": "Pi",
-            "description": "Default daily agent using the desktop-installed native RPC runtime and shared Models credentials; Work role assignment is independent.",
-            "fields": [
-                _startup_field("PI_PROVIDER_ENABLED", "Enable Pi", settings.PI_PROVIDER_ENABLED, field_type="boolean"),
-                _startup_field("PI_NODE_PATH", "Node executable", settings.PI_NODE_PATH, field_type="path"),
-                _startup_field("PI_AGENT_DIR", "Pi configuration and sessions", settings.PI_AGENT_DIR, field_type="path"),
-                _startup_field("PI_MODEL_PROVIDER", "Pi model provider", settings.PI_MODEL_PROVIDER),
-                _startup_field("PI_MODEL", "Pi model", settings.PI_MODEL),
-            ],
+            **_catalog_configuration("pi", settings),
+
+
         },
         {
             "id": "browser",
@@ -1067,28 +533,15 @@ def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
             "fields": [],
         },
         {
-            "id": "openclaw",
-            "label": "OpenClaw",
-            "description": "Optional Gateway provider; Work role assignment is independent. Existing sessions remain supported.",
-            "fields": [
-                _startup_field(
-                    "OPENCLAW_BASE_URL", "Gateway URL", settings.OPENCLAW_BASE_URL,
-                    field_type="url",
-                ),
-                _startup_field(
-                    "OPENCLAW_GATEWAY_TOKEN", "Gateway token", field_type="secret",
-                    secret_configured=bool(settings.OPENCLAW_TOKEN),
-                ),
-                _startup_field(
-                    "OPENCLAW_PROJECT_DIR", "OpenClaw project directory",
-                    settings.OPENCLAW_PROJECT_DIR, field_type="path",
-                ),
-            ],
+            **_catalog_configuration("openclaw", settings),
+
+
+
         },
         {
-            "id": "codex",
-            "label": "Codex",
-            "description": "Coding Provider. Exactly one App Server or Direct transport may own this id.",
+            **_catalog_configuration("codex", settings, values={"CODEX_PROVIDER_TRANSPORT": codex_transport}),
+
+
             "fields": codex_fields,
         },
     ]
@@ -1234,7 +687,7 @@ class SystemHandler(RequestHandler):
                 "effective_max_fps": settings.RENDER_EFFECTIVE_MAX_FPS,
                 "effective_max_resolution": settings.RENDER_EFFECTIVE_MAX_RESOLUTION,
             },
-            "acp_credentials": _acp_credentials(),
+            "acp_credentials": _acp_credentials(settings),
             "artifact_configuration": _artifact_configuration(settings),
             "voice_configuration": voice_configuration,
             "avatar_configuration": _avatar_configuration(settings),
@@ -1242,14 +695,9 @@ class SystemHandler(RequestHandler):
             "tts_backends": tts_backend_statuses(
                 str(getattr(settings, "TTS_BACKEND", "gpt_sovits"))
             ),
-            "vision_enabled": vision.get("enabled", False),
-            "vision_mode": vision.get("mode", "off"),
-            "vision_scope": vision.get("scope", "full_screen"),
-            "vision_provider": vision.get("provider", "auto"),
-            "vision_max_long_side": vision.get("max_long_side", 960),
-            "vision_jpeg_quality": vision.get("jpeg_quality", 68),
-            "vision_region": vision.get("region", ""),
-            "vision_window_handle": vision.get("window_handle", ""),
+            **{field["runtime_key"]: vision[field["runtime_key"].removeprefix("vision_")]
+               for field in configuration_groups()["vision"]["config"].values()},
+            "vision_provider": vision["provider"],
             **presentation_runtime.get_config(),
             **chat_translation_runtime.get_config(),
             "control_decision_mode": "retired",
@@ -1292,25 +740,9 @@ class SystemHandler(RequestHandler):
 
         from llm.prompts import CHARACTER_PROMPT_SETTING, normalize_character_prompt, set_character_prompt
 
-        allowed = {
-            CHARACTER_PROMPT_SETTING,
-            "llm_provider",
-            "local_llm_type",
-            "tts_mode",
-            "tts_output_language",
-            "asr_backend",
-            "vision_enabled",
-            "vision_mode",
-            "vision_scope",
-            "vision_max_long_side",
-            "vision_jpeg_quality",
-            "vision_region",
-            "vision_window_handle",
-            "presentation_locale",
-            "wallpaper_caption_mode",
-            "wallpaper_subtitle_language",
-            "chat_translation_subtitles_enabled",
-        }
+        # The three compound/legacy inputs are owned by TTS and presentation.
+        declared_runtime = runtime_fields()
+        allowed = {*declared_runtime, "tts_mode", "tts_output_language", "wallpaper_subtitle_language"}
         unknown = sorted(str(key) for key in values if str(key) not in allowed)
         if unknown:
             raise ValueError(f"unsupported runtime setting(s): {', '.join(unknown)}")
@@ -1319,17 +751,31 @@ class SystemHandler(RequestHandler):
         if CHARACTER_PROMPT_SETTING in values:
             values[CHARACTER_PROMPT_SETTING] = normalize_character_prompt(values[CHARACTER_PROMPT_SETTING])
 
-        if "llm_provider" in values:
-            provider = str(values["llm_provider"] or "").strip().lower()
-            if provider not in {
-                "deepseek", "openai", "gemini", "bedrock", "local",
-                "hybrid", "hybrid2", "hybrid3",
-            }:
-                raise ValueError(f"unsupported LLM provider: {provider!r}")
-        if "local_llm_type" in values:
-            local_type = str(values["local_llm_type"] or "").strip().lower()
-            if local_type not in {"llama_server", "lmstudio", "ollama", "cli"}:
-                raise ValueError(f"unsupported local LLM type: {local_type!r}")
+        for key, definition in declared_runtime.items():
+            if key not in values:
+                continue
+            value = values[key]
+            if definition["type"] == "boolean" and not isinstance(value, bool):
+                raise ValueError(f"{key} must be a boolean")
+            if definition["type"] == "enum":
+                choices = option_values(definition)
+                value = str(value or "").strip()
+                if all(choice == choice.lower() for choice in choices):
+                    value = value.lower()
+                if value not in choices:
+                    raise ValueError(f"unsupported {key}: {value!r}")
+                values[key] = value
+            if definition["type"] in {"integer", "number"}:
+                try:
+                    value = (int if definition["type"] == "integer" else float)(value)
+                except (TypeError, ValueError, OverflowError) as exc:
+                    raise ValueError(f"{key} must be an {definition['type']}") from exc
+                if not math.isfinite(value):
+                    raise ValueError(f"{key} must be a finite number")
+                minimum, maximum = definition.get("min"), definition.get("max")
+                if (minimum is not None and value < minimum) or (maximum is not None and value > maximum):
+                    raise ValueError(f"{key} must be between {minimum} and {maximum}")
+                values[key] = value
         if "tts_mode" in values:
             mode = str(values["tts_mode"] or "").strip().lower()
             if mode not in {"cuda_graph", "parallel", "parallel2", "cuda graph ×1", "parallel ×2", "graph"}:
@@ -1344,52 +790,6 @@ class SystemHandler(RequestHandler):
             backend = str(values["asr_backend"] or "").strip().lower()
             if backend not in set(asr_backend_ids()):
                 raise ValueError(f"unsupported ASR backend: {backend!r}")
-        if "vision_enabled" in values and not isinstance(values["vision_enabled"], bool):
-            raise ValueError("vision_enabled must be a boolean")
-        if "vision_mode" in values:
-            mode = str(values["vision_mode"] or "").strip().lower()
-            if mode not in {"off", "on_demand", "watching", "self_aware"}:
-                raise ValueError(f"unsupported vision mode: {mode!r}")
-            values["vision_mode"] = mode
-        if "vision_scope" in values:
-            scope = str(values["vision_scope"] or "").strip().lower()
-            if scope not in {
-                "full_screen", "current_window", "selected_window",
-                "wallpaper_surface", "region",
-            }:
-                raise ValueError(f"unsupported vision scope: {scope!r}")
-            values["vision_scope"] = scope
-        if "vision_max_long_side" in values:
-            try:
-                max_long_side = int(values["vision_max_long_side"])
-            except (TypeError, ValueError) as exc:
-                raise ValueError("vision_max_long_side must be an integer") from exc
-            if not 320 <= max_long_side <= 4096:
-                raise ValueError("vision_max_long_side must be between 320 and 4096")
-            values["vision_max_long_side"] = max_long_side
-        if "vision_jpeg_quality" in values:
-            try:
-                jpeg_quality = int(values["vision_jpeg_quality"])
-            except (TypeError, ValueError) as exc:
-                raise ValueError("vision_jpeg_quality must be an integer") from exc
-            if not 35 <= jpeg_quality <= 92:
-                raise ValueError("vision_jpeg_quality must be between 35 and 92")
-            values["vision_jpeg_quality"] = jpeg_quality
-        if "presentation_locale" in values:
-            locale = str(values["presentation_locale"] or "").strip()
-            if locale not in presentation_runtime.VALID_PRESENTATION_LOCALES:
-                raise ValueError(f"unsupported presentation locale: {locale!r}")
-        if "wallpaper_caption_mode" in values:
-            caption_mode = str(values["wallpaper_caption_mode"] or "").strip().lower()
-            if caption_mode not in presentation_runtime.VALID_CAPTION_MODES:
-                raise ValueError(f"unsupported wallpaper caption mode: {caption_mode!r}")
-            values["wallpaper_caption_mode"] = caption_mode
-        if (
-            "chat_translation_subtitles_enabled" in values
-            and not isinstance(values["chat_translation_subtitles_enabled"], bool)
-        ):
-            raise ValueError("chat_translation_subtitles_enabled must be a boolean")
-
         if {"llm_provider", "local_llm_type"}.intersection(values):
             if self._is_chat_busy is not None and self._is_chat_busy():
                 raise RuntimeError("wait for the active chat turn before changing LLM routing")

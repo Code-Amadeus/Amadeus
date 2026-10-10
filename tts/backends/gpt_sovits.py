@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib.util
+
 import base64
 import json
 import logging
@@ -409,3 +411,27 @@ class GPTSoVITSBackend(BaseTTSBackend):
                 proc.wait(timeout=5)
             except (OSError, subprocess.TimeoutExpired):
                 pass
+
+
+def probe() -> tuple[str, str]:
+    from config import settings
+
+    if importlib.util.find_spec("soundfile") is None:
+        return "not_installed", "Local GPT-SoVITS dependencies are not installed"
+    model_root = _PROJECT_ROOT / "assets" / "models" / "gpt-sovits"
+
+    def configured_path(raw: str, fallback: Path) -> Path:
+        path = Path(str(raw or "")) if str(raw or "").strip() else fallback
+        return path if path.is_absolute() else _PROJECT_ROOT / path
+
+    gpt = configured_path(
+        settings.TTS_GPT_MODEL_PATH,
+        model_root / "weights" / "gpt" / "v3" / "xxx-e15.ckpt",
+    )
+    sovits = configured_path(
+        settings.TTS_SOVITS_MODEL_PATH,
+        model_root / "weights" / "sovits" / "v3" / "xxx_e2_s174_l32.pth",
+    )
+    if gpt.is_file() and sovits.is_file():
+        return "installed", f"Embedded GPT-SoVITS checkpoint pair found ({settings.TTS_VOICE_PROFILE})"
+    return "not_installed", f"Embedded GPT-SoVITS checkpoint pair is not installed ({settings.TTS_VOICE_PROFILE})"

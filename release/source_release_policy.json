@@ -101,6 +101,9 @@
     "wallpaper"
   ],
   "include_files": [
+    "docs/configuration_convergence_plan_2026-10-10.md",
+    "docs/images/configuration-convergence-before.png",
+    "docs/images/configuration-convergence-after.png",
     "scripts/setup_windows_wallpaper.ps1",
     "scripts/build_macos_wallpaper_app.sh",
     "scripts/launcher.c",

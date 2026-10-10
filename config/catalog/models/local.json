@@ -1,0 +1,242 @@
+{
+  "id": "local",
+  "title": {
+    "en-US": "Pure-local model",
+    "zh-CN": "纯本地模型"
+  },
+  "description": {
+    "en-US": "Choose and configure the local runtime used by the pure-local Main conversation profile.",
+    "zh-CN": "选择并配置纯本地主对话配置所使用的本地运行时。"
+  },
+  "desktop": true,
+  "config": {
+    "LOCAL_LLM_TYPE": {
+      "type": "enum",
+      "title": {
+        "en-US": "Backend type",
+        "zh-CN": "后端类型"
+      },
+      "default": "llama_server",
+      "options": [
+        "llama_server",
+        "lmstudio",
+        "ollama",
+        "cli"
+      ],
+      "example_active": true,
+      "runtime_key": "local_llm_type",
+      "apply": "host"
+    },
+    "LOCAL_LLM_MODEL": {
+      "type": "string",
+      "title": {
+        "en-US": "Model",
+        "zh-CN": "模型"
+      },
+      "default": "qwen3-30b-a3b-instruct-2507@q4_k_m",
+      "example_active": true,
+      "example": ""
+    },
+    "LOCAL_LLM_LAUNCH_MODE": {
+      "type": "enum",
+      "title": {
+        "en-US": "Server ownership",
+        "zh-CN": "服务器管理方式"
+      },
+      "description": {
+        "en-US": "External reuses an existing llama.cpp server; managed starts and stops it with Amadeus.",
+        "zh-CN": "外部模式复用已运行的 llama.cpp 服务器；托管模式由 Amadeus 启停。"
+      },
+      "default": "external",
+      "options": [
+        {
+          "value": "external",
+          "label": {
+            "en-US": "External server",
+            "zh-CN": "外部服务器"
+          }
+        },
+        {
+          "value": "managed",
+          "label": {
+            "en-US": "Managed by Amadeus",
+            "zh-CN": "由 Amadeus 管理"
+          }
+        }
+      ],
+      "example_active": true,
+      "visible_when": {
+        "LOCAL_LLM_TYPE": [
+          "llama_server"
+        ]
+      }
+    },
+    "LOCAL_LLM_URL": {
+      "type": "url",
+      "title": {
+        "en-US": "llama.cpp server URL",
+        "zh-CN": "llama.cpp 服务器 URL"
+      },
+      "default": "http://127.0.0.1:8080/v1",
+      "schemes": [
+        "http",
+        "https"
+      ],
+      "example_active": true,
+      "visible_when": {
+        "LOCAL_LLM_TYPE": [
+          "llama_server"
+        ]
+      }
+    },
+    "LOCAL_LLM_CLI_PATH": {
+      "type": "path",
+      "title": {
+        "en-US": "llama-server executable",
+        "zh-CN": "llama-server 可执行文件"
+      },
+      "default": "",
+      "example_active": true,
+      "example": "C:\\path\\to\\llama-server.exe",
+      "visible_when": {
+        "LOCAL_LLM_TYPE": [
+          "llama_server",
+          "cli"
+        ]
+      }
+    },
+    "LOCAL_LLM_CLI_MODEL_PATH": {
+      "type": "path",
+      "title": {
+        "en-US": "GGUF model file",
+        "zh-CN": "GGUF 模型文件"
+      },
+      "default": "",
+      "setting": "LOCAL_LLM_MODEL_PATH",
+      "example_active": true,
+      "example": "C:\\path\\to\\model.gguf",
+      "visible_when": {
+        "LOCAL_LLM_TYPE": [
+          "llama_server",
+          "cli"
+        ]
+      }
+    },
+    "LOCAL_LLM_CLI_CONTEXT": {
+      "type": "string",
+      "title": {
+        "en-US": "Context size",
+        "zh-CN": "上下文长度"
+      },
+      "default": "4096",
+      "setting": "_LLM_CONTEXT",
+      "control": "number",
+      "min": 1,
+      "step": 1,
+      "example_active": false,
+      "example": "16384",
+      "visible_when": {
+        "LOCAL_LLM_TYPE": [
+          "llama_server"
+        ]
+      }
+    },
+    "LOCAL_LLM_CLI_THREADS": {
+      "type": "string",
+      "title": {
+        "en-US": "CPU threads",
+        "zh-CN": "CPU 线程数"
+      },
+      "default": "4",
+      "setting": "_LLM_THREADS",
+      "control": "number",
+      "min": 1,
+      "step": 1,
+      "example_active": true,
+      "example": "12",
+      "visible_when": {
+        "LOCAL_LLM_TYPE": [
+          "llama_server"
+        ]
+      }
+    },
+    "LOCAL_LLM_CLI_NGL": {
+      "type": "string",
+      "title": {
+        "en-US": "GPU layers",
+        "zh-CN": "GPU 层数"
+      },
+      "default": "99",
+      "setting": "_LLM_NGL",
+      "control": "number",
+      "min": 0,
+      "step": 1,
+      "example_active": true,
+      "example": "0",
+      "visible_when": {
+        "LOCAL_LLM_TYPE": [
+          "llama_server"
+        ]
+      }
+    },
+    "LOCAL_LLM_CUDA_VISIBLE_DEVICES": {
+      "type": "string",
+      "title": {
+        "en-US": "Visible GPU IDs",
+        "zh-CN": "可见 GPU 编号"
+      },
+      "description": {
+        "en-US": "Optional nvidia-smi indices, for example 1. Leave blank for automatic visibility.",
+        "zh-CN": "可选的 nvidia-smi 编号，例如 1。留空以自动选择可见设备。"
+      },
+      "default": "",
+      "example_active": true,
+      "example": "# optional nvidia-smi indices; blank = no filtering",
+      "visible_when": {
+        "LOCAL_LLM_TYPE": [
+          "llama_server"
+        ]
+      }
+    },
+    "LOCAL_LLM_LM_STUDIO_URL": {
+      "type": "url",
+      "title": {
+        "en-US": "LM Studio URL",
+        "zh-CN": "LM Studio 地址"
+      },
+      "default": "http://127.0.0.1:1234",
+      "aliases": [
+        "LM_STUDIO_URL"
+      ],
+      "schemes": [
+        "http",
+        "https"
+      ],
+      "example_active": true,
+      "visible_when": {
+        "LOCAL_LLM_TYPE": [
+          "lmstudio"
+        ]
+      }
+    },
+    "LOCAL_LLM_OLLAMA_URL": {
+      "type": "url",
+      "title": {
+        "en-US": "Ollama URL",
+        "zh-CN": "Ollama 地址"
+      },
+      "default": "http://127.0.0.1:11434",
+      "schemes": [
+        "http",
+        "https"
+      ],
+      "example_active": true,
+      "visible_when": {
+        "LOCAL_LLM_TYPE": [
+          "ollama"
+        ]
+      }
+    }
+  },
+  "apply": "backend_restart"
+}

@@ -1,0 +1,75 @@
+{
+  "id": "presentation",
+  "title": {
+    "en-US": "Language & captions",
+    "zh-CN": "语言与字幕"
+  },
+  "description": {
+    "en-US": "Desktop settings are saved across restarts and applied to the current runtime immediately when possible.",
+    "zh-CN": "桌面设置会跨重启保存，并在条件允许时立即应用到当前运行时。"
+  },
+  "desktop": true,
+  "apply": "host",
+  "config": {
+    "AMADEUS_PRESENTATION_LOCALE": {
+      "type": "enum",
+      "title": {
+        "en-US": "Slice Language",
+        "zh-CN": "过程信息语言"
+      },
+      "default": "en-US",
+      "description": {
+        "en-US": "Language for process cards and Provider summaries",
+        "zh-CN": "过程卡片和服务提供方摘要使用的语言"
+      },
+      "scope": "session",
+      "runtime_key": "presentation_locale",
+      "options": [
+        "en-US",
+        "zh-CN",
+        "ja-JP"
+      ]
+    },
+    "AMADEUS_CHAT_TRANSLATION_SUBTITLES_ENABLED": {
+      "type": "boolean",
+      "title": {
+        "en-US": "Chat Translation Subtitles",
+        "zh-CN": "聊天翻译字幕"
+      },
+      "default": false,
+      "description": {
+        "en-US": "Show Simplified Chinese below completed Japanese assistant messages. Display-only; never added to conversation history.",
+        "zh-CN": "在完成的日语助手消息下显示简体中文。仅用于显示，不会写入对话历史。"
+      },
+      "scope": "session",
+      "runtime_key": "chat_translation_subtitles_enabled",
+      "true_values": [
+        "1",
+        "true",
+        "yes",
+        "on"
+      ]
+    },
+    "AMADEUS_WALLPAPER_CAPTION_MODE": {
+      "type": "enum",
+      "title": {
+        "en-US": "Wallpaper Caption Mode",
+        "zh-CN": "壁纸字幕模式"
+      },
+      "description": {
+        "en-US": "Choose translated, source, bilingual, or no captions",
+        "zh-CN": "选择译文、原文、双语或关闭字幕"
+      },
+      "scope": "session",
+      "runtime_key": "wallpaper_caption_mode",
+      "options": [
+        "translated",
+        "source",
+        "bilingual",
+        "off"
+      ],
+      "computed_default": true,
+      "example": "translated"
+    }
+  }
+}
