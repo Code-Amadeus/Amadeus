@@ -1,0 +1,36 @@
+{
+  "id": "tts_emotion_references",
+  "title": {
+    "en-US": "Emotion voice references",
+    "zh-CN": "情绪语音参考"
+  },
+  "description": {
+    "en-US": "Use an optional emotion voice pack for Windows CUDA V3 Japanese speech. References are prepared at startup.",
+    "zh-CN": "为 Windows CUDA V3 日语语音启用可选情绪包，启动时提前准备参考音频。"
+  },
+  "desktop": true,
+  "restart_required": true,
+  "config": {
+    "ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING": {
+      "type": "boolean",
+      "title": {
+        "en-US": "Enable emotion voice references",
+        "zh-CN": "启用情绪语音参考"
+      },
+      "description": {
+        "en-US": "Default off. Install the optional voice-kurisu-emotions pack and restart. Turning this off restores default reference speech.",
+        "zh-CN": "默认关闭。安装可选情绪参考包并重启后生效，关闭后恢复默认参考语音。"
+      },
+      "default": false,
+      "accepted_values": [
+        "true",
+        "false",
+        "1",
+        "0",
+        "yes",
+        "no"
+      ],
+      "example_active": true
+    }
+  }
+}

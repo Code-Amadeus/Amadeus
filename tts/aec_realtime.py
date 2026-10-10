@@ -41,10 +41,7 @@ def _normalize_device_class(device_class: str | None) -> str:
 
 def select_aec_delay_ms(device_class: str | None) -> tuple[float, str]:
     if "AEC_REALTIME_DELAY_MS" in os.environ:
-        try:
-            return float(os.environ.get("AEC_REALTIME_DELAY_MS", "")), "explicit AEC_REALTIME_DELAY_MS"
-        except Exception:
-            return float(AEC_REALTIME_DELAY_MS), "explicit AEC_REALTIME_DELAY_MS"
+        return float(AEC_REALTIME_DELAY_MS), "explicit AEC_REALTIME_DELAY_MS"
     normalized = _normalize_device_class(device_class)
     if normalized == "bluetooth":
         return float(AEC_DELAY_MS_BLUETOOTH), "bluetooth device_class"

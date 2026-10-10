@@ -69,7 +69,7 @@ def main():
     from qwen_asr import Qwen3ASRModel
     from asr.qwen_model import resolve_qwen_model_source
 
-    requested_device = os.environ.get("QWEN3_ASR_DEVICE", "auto").strip().lower()
+    requested_device = os.environ["QWEN3_ASR_DEVICE"]
     cuda_available = bool(torch.cuda.is_available())
     if requested_device in {"cuda", "cuda:0", "gpu"}:
         device_map = "cuda:0" if cuda_available else "cpu"
@@ -78,12 +78,8 @@ def main():
     else:
         device_map = "cuda:0" if cuda_available else "cpu"
     dtype = torch.bfloat16 if "cuda" in device_map else torch.float32
-    require_cuda = os.environ.get("QWEN3_ASR_REQUIRE_CUDA", "0").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    # Parent supplies its parsed startup snapshot, alongside the resolved device.
+    require_cuda = os.environ["QWEN3_ASR_REQUIRE_CUDA"] == "true"
     if requested_device in {"cuda", "cuda:0", "gpu"} and device_map == "cpu" and require_cuda:
         _emit({
             "type": "error",

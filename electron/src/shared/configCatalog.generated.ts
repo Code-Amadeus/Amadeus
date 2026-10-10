@@ -496,5 +496,430 @@ export const catalogGroups: CatalogGroup[] = [
       }
     },
     "section": "output"
+  },
+  {
+    "id": "acoustic_pipeline",
+    "title": {
+      "en-US": "Echo cancellation & interruption",
+      "zh-CN": "回声消除与语音打断"
+    },
+    "description": {
+      "en-US": "Realtime AEC and barge-in controls shared by scene microphone paths.",
+      "zh-CN": "各场景麦克风路径共享的实时 AEC 与语音打断控制。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "AEC_REALTIME_ENABLED": {
+        "type": "boolean",
+        "title": {
+          "en-US": "Realtime echo cancellation",
+          "zh-CN": "实时回声消除"
+        },
+        "default": false,
+        "example_active": false,
+        "example": true
+      },
+      "AEC_REALTIME_BARGE_IN": {
+        "type": "boolean",
+        "title": {
+          "en-US": "Allow microphone interruption",
+          "zh-CN": "允许麦克风打断"
+        },
+        "default": false,
+        "example_active": false,
+        "example": true
+      },
+      "AEC_REALTIME_DELAY_MS": {
+        "type": "number",
+        "title": {
+          "en-US": "AEC reference delay",
+          "zh-CN": "AEC 参考延迟"
+        },
+        "description": {
+          "en-US": "Playback-to-microphone reference delay in milliseconds.",
+          "zh-CN": "播放到麦克风的参考延迟，单位毫秒。"
+        },
+        "default": 280,
+        "min": 0,
+        "max": 2000,
+        "step": 10,
+        "example_active": false
+      }
+    }
+  },
+  {
+    "id": "asr_remote",
+    "title": {
+      "en-US": "Remote transcription API",
+      "zh-CN": "远程语音转写 API"
+    },
+    "description": {
+      "en-US": "OpenAI-compatible POST /audio/transcriptions, used only when selected above.",
+      "zh-CN": "兼容 OpenAI 的 /audio/transcriptions 接口，仅在上方选择后使用。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "ASR_API_BASE_URL": {
+        "type": "url",
+        "title": {
+          "en-US": "API base URL",
+          "zh-CN": "API 基础地址"
+        },
+        "default": "https://api.openai.com/v1",
+        "schemes": [
+          "http",
+          "https"
+        ],
+        "example_active": false
+      },
+      "ASR_API_KEY": {
+        "type": "string",
+        "title": {
+          "en-US": "API key",
+          "zh-CN": "API 密钥"
+        },
+        "secret": true,
+        "example_active": false
+      },
+      "ASR_API_MODEL": {
+        "type": "string",
+        "title": {
+          "en-US": "Model",
+          "zh-CN": "模型"
+        },
+        "default": "gpt-4o-mini-transcribe",
+        "example_active": false
+      }
+    }
+  },
+  {
+    "id": "conversation_asr",
+    "title": {
+      "en-US": "Conversation recognition",
+      "zh-CN": "对话语音识别"
+    },
+    "description": {
+      "en-US": "Full transcription after manual listening or Wake handoff. Qwen is the embedded default.",
+      "zh-CN": "手动监听或唤醒移交后的完整语音转写；Qwen 是内置默认实现。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "ASR_BACKEND": {
+        "type": "string",
+        "title": {
+          "en-US": "Backend",
+          "zh-CN": "后端"
+        },
+        "default": "qwen3_asr",
+        "example_active": true
+      },
+      "ASR_LANGUAGE": {
+        "type": "string",
+        "title": {
+          "en-US": "Recognition language",
+          "zh-CN": "识别语言"
+        },
+        "description": {
+          "en-US": "auto or an ISO-639-1 language code such as en, ja, or zh.",
+          "zh-CN": "auto 或 ISO-639-1 语言代码，例如 en、ja、zh。"
+        },
+        "default": "auto",
+        "example_active": true
+      },
+      "ASR_CONTEXT": {
+        "type": "string",
+        "title": {
+          "en-US": "Context and terminology",
+          "zh-CN": "上下文与术语"
+        },
+        "description": {
+          "en-US": "Prompt or domain vocabulary used by compatible full recognizers.",
+          "zh-CN": "供兼容的完整识别器使用的提示或领域词汇。"
+        },
+        "default": "",
+        "example_active": true
+      },
+      "QWEN3_ASR_MODEL_PATH": {
+        "type": "path",
+        "title": {
+          "en-US": "Qwen model directory",
+          "zh-CN": "Qwen 模型目录"
+        },
+        "description": {
+          "en-US": "Leave blank to use the bundled asset path or a compatible model cache.",
+          "zh-CN": "留空以使用内置资源路径或兼容的模型缓存。"
+        },
+        "default": "",
+        "example_active": false,
+        "example": "assets/models/asr/qwen3-asr-0.6b"
+      },
+      "QWEN3_ASR_DEVICE": {
+        "type": "enum",
+        "title": {
+          "en-US": "Qwen device",
+          "zh-CN": "Qwen 设备"
+        },
+        "default": "auto",
+        "options": [
+          "auto",
+          "cpu",
+          "cuda"
+        ],
+        "example_active": true
+      },
+      "QWEN3_ASR_REQUIRE_CUDA": {
+        "type": "boolean",
+        "title": {
+          "en-US": "Require Qwen CUDA",
+          "zh-CN": "要求 Qwen 使用 CUDA"
+        },
+        "default": false,
+        "example_active": true
+      },
+      "MICROPHONE_DEVICE_INDEX": {
+        "type": "integer",
+        "title": {
+          "en-US": "Microphone",
+          "zh-CN": "麦克风"
+        },
+        "description": {
+          "en-US": "Connect the backend to enumerate installed microphones.",
+          "zh-CN": "连接后端以列出已安装的麦克风。"
+        },
+        "default": -1,
+        "example_active": false
+      },
+      "MICROPHONE_PREFERRED_NAME": {
+        "type": "string",
+        "title": {
+          "en-US": "Preferred microphone name",
+          "zh-CN": "首选麦克风名称"
+        },
+        "description": {
+          "en-US": "Optional partial-name fallback when device indices change.",
+          "zh-CN": "设备索引变化时，可用部分名称匹配备用设备。"
+        },
+        "default": "",
+        "example_active": false,
+        "example": "FreeBuds"
+      },
+      "ASR_LISTEN_TIMEOUT_SECONDS": {
+        "type": "number",
+        "title": {
+          "en-US": "Wait for speech",
+          "zh-CN": "等待说话"
+        },
+        "description": {
+          "en-US": "Seconds to wait for speech to begin after listening starts.",
+          "zh-CN": "开始聆听后等待说话的秒数。"
+        },
+        "default": 15,
+        "min": 1,
+        "max": 120,
+        "step": 1,
+        "example_active": true
+      },
+      "ASR_VAD_SILENCE_MS": {
+        "type": "integer",
+        "title": {
+          "en-US": "End-of-speech pause",
+          "zh-CN": "语音结束停顿"
+        },
+        "description": {
+          "en-US": "Silence required before a spoken turn is considered complete.",
+          "zh-CN": "将本轮语音视为结束前所需的静音时长。"
+        },
+        "default": 350,
+        "min": 100,
+        "max": 3000,
+        "step": 50,
+        "example_active": true
+      }
+    }
+  },
+  {
+    "id": "tts_emotion_references",
+    "title": {
+      "en-US": "Emotion voice references",
+      "zh-CN": "情绪语音参考"
+    },
+    "description": {
+      "en-US": "Use an optional emotion voice pack for Windows CUDA V3 Japanese speech. References are prepared at startup.",
+      "zh-CN": "为 Windows CUDA V3 日语语音启用可选情绪包，启动时提前准备参考音频。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING": {
+        "type": "boolean",
+        "title": {
+          "en-US": "Enable emotion voice references",
+          "zh-CN": "启用情绪语音参考"
+        },
+        "description": {
+          "en-US": "Default off. Install the optional voice-kurisu-emotions pack and restart. Turning this off restores default reference speech.",
+          "zh-CN": "默认关闭。安装可选情绪参考包并重启后生效，关闭后恢复默认参考语音。"
+        },
+        "default": false,
+        "accepted_values": [
+          "true",
+          "false",
+          "1",
+          "0",
+          "yes",
+          "no"
+        ],
+        "example_active": true
+      }
+    }
+  },
+  {
+    "id": "voice_reference_profile",
+    "title": {
+      "en-US": "Voice reference profile",
+      "zh-CN": "声音参考配置"
+    },
+    "description": {
+      "en-US": "Shared reference audio and transcripts used only by TTS backends that support reference conditioning.",
+      "zh-CN": "共享参考音频与文本，仅由支持参考条件的 TTS 后端使用。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "TTS_REF_AUDIO_JA": {
+        "type": "path",
+        "title": {
+          "en-US": "Japanese reference audio",
+          "zh-CN": "日文参考音频"
+        },
+        "default": "./assets/audio/reference/kurisu_reference.wav",
+        "example_active": true,
+        "example": "assets/audio/reference/kurisu_reference.wav"
+      },
+      "TTS_REF_TEXT_JA": {
+        "type": "string",
+        "title": {
+          "en-US": "Japanese reference transcript",
+          "zh-CN": "日文参考文本"
+        },
+        "default": "そういえば,正式に自己紹介していませんでしたね……牧瀬紅莉栖です.改めてまして,よろしく",
+        "example_active": true,
+        "example": "そういえば、まともに自己紹介してませんでしたね。マキセクリスです。改めまして、よろしく。"
+      },
+      "TTS_REF_AUDIO_EN": {
+        "type": "path",
+        "title": {
+          "en-US": "English reference audio",
+          "zh-CN": "英文参考音频"
+        },
+        "default": "./assets/audio/reference/english_recording.wav",
+        "example_active": true,
+        "example": "assets/audio/reference/english_recording.wav"
+      },
+      "TTS_REF_TEXT_EN": {
+        "type": "string",
+        "title": {
+          "en-US": "English reference transcript",
+          "zh-CN": "英文参考文本"
+        },
+        "default": "",
+        "example_active": true
+      }
+    }
+  },
+  {
+    "id": "wake_asr",
+    "title": {
+      "en-US": "Wake recognition",
+      "zh-CN": "唤醒识别"
+    },
+    "description": {
+      "en-US": "Independent always-on recognizer; it may use a different local backend from Conversation recognition.",
+      "zh-CN": "独立的常驻唤醒识别器，可以使用与对话识别不同的本地后端。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "WAKE_ENABLED": {
+        "type": "boolean",
+        "title": {
+          "en-US": "Wake service",
+          "zh-CN": "唤醒服务"
+        },
+        "default": false,
+        "example_active": true
+      },
+      "WAKE_PHRASES": {
+        "type": "string",
+        "title": {
+          "en-US": "Wake phrases",
+          "zh-CN": "唤醒词"
+        },
+        "default": "hi amadeus,hey amadeus,hello amadeus,high amadeus,hi amadues,hey amadues,hello amadues,high amadues,hi amadius,hey amadius,hello amadius,hi i'm as,hi im as,hi ims,hi i'ms,hi i am as,嗨阿玛迪斯,嘿阿玛迪斯,你好阿玛迪斯,嗨阿马迪斯,嘿阿马迪斯,你好阿马迪斯,ハイアマデウス,ヘイアマデウス,アマデウス",
+        "example_active": false,
+        "example": "Hey Amadeus,Hi Amadeus"
+      },
+      "WAKE_AUTO_SEND_TO_CHAT": {
+        "type": "boolean",
+        "title": {
+          "en-US": "Send command to Chat",
+          "zh-CN": "将指令发送至聊天"
+        },
+        "default": true,
+        "example_active": true
+      },
+      "WAKE_ASR_BACKEND": {
+        "type": "enum",
+        "title": {
+          "en-US": "Wake backend",
+          "zh-CN": "唤醒后端"
+        },
+        "default": "sense_voice",
+        "options": [
+          "sense_voice",
+          "qwen3_asr"
+        ],
+        "example_active": true
+      },
+      "WAKE_SENSEVOICE_LANGUAGES": {
+        "type": "string",
+        "title": {
+          "en-US": "Wake languages",
+          "zh-CN": "唤醒语言"
+        },
+        "default": "en",
+        "example_active": true
+      },
+      "SENSEVOICE_LANGUAGE": {
+        "type": "enum",
+        "title": {
+          "en-US": "SenseVoice conversation language",
+          "zh-CN": "SenseVoice 对话语言"
+        },
+        "default": "en",
+        "options": [
+          "auto",
+          "en",
+          "zh",
+          "ja",
+          "yue",
+          "ko"
+        ],
+        "example_active": true
+      },
+      "SENSEVOICE_MODEL_PATH": {
+        "type": "path",
+        "title": {
+          "en-US": "SenseVoice model path",
+          "zh-CN": "SenseVoice 模型路径"
+        },
+        "default": "",
+        "example_active": false,
+        "example": "C:\\path\\to\\SenseVoiceSmall"
+      }
+    }
   }
 ]

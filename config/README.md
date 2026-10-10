@@ -30,8 +30,8 @@ again.
 ## Shared startup declarations
 
 The shared catalog covers the TTS selector, all four built-in TTS connection/model
-groups, and graphics settings: 24 fields in `config/catalog/tts/` and
-`config/catalog/graphics/`. Edit the owning JSON for defaults, types, options,
+groups, graphics settings, and voice input/reference controls: 52 fields in
+`config/catalog/tts/`, `config/catalog/graphics/` and `config/catalog/voice/`. Edit the owning JSON for defaults, types, options,
 ranges, desktop editability, restart policy, and English/Chinese labels. The
 configuration keys retain their existing environment-variable names.
 Run `npm run generate:config` from `electron` after editing a declaration.
@@ -264,8 +264,7 @@ These are not pending mechanical migrations:
 
 | Owner | Values | Why they remain late-bound |
 | --- | --- | --- |
-| `asr/microphone.py` | microphone selector overrides | Standalone device-selection helpers read at call time and avoid importing the full settings facade when a valid explicit selector is present. |
-| `tts/aec_realtime.py` | explicit AEC delay | Presence of an explicit value changes whether device-class delay calibration is used; tests exercise that distinction. |
+| `tts/aec_realtime.py` | explicit AEC delay | Only presence is checked; the value comes from parsed settings. An explicit value disables device-class calibration. |
 | `tts/pipeline.py` | `ENABLE_CUDA_GRAPH` | The compatibility mode function and bundled inference code read the value at synthesis time. There is no active mainline UI caller today, so no replacement runtime contract is invented yet. |
 | provider/session storage helpers | `AMADEUS_*_PATH` values | Helpers accept explicit path injection and subprocess tests supply isolated stores at their process boundary. |
 | wallpaper scenario helpers | wallpaper/scenario overrides | Both wallpaper hosts resolve component-local media overrides without importing the heavyweight application settings facade. |

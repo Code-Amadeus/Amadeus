@@ -1,4 +1,5 @@
 import { projectStartupFields, startupValues } from '../../shared/startupSettings.js'
+import { desktopCatalogFields } from '../../shared/configCatalog.js'
 import { settingSourceLabel } from '../../shared/characterStartup'
 import { DEFAULT_WINDOWS_STARTUP_MODE } from '../../main/startupMode'
 import { useState, useEffect, useCallback, useMemo, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
@@ -1032,7 +1033,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
         asrBackend: desktop?.sources?.ASR_BACKEND === 'user' ? desktop.values.ASR_BACKEND : val('asr_backend', 'qwen3_asr'),
         ttsBackend: desktop?.sources?.TTS_BACKEND === 'user' ? desktop.values.TTS_BACKEND : val('tts_backend', 'gpt_sovits'),
         wakeEnabled: desktop?.sources?.WAKE_ENABLED === 'user' ? desktop.values.WAKE_ENABLED === 'true' : bool('wake_enabled'),
-        aecEnabled: desktop?.sources?.AEC_REALTIME_ENABLED === 'user' ? desktop.values.AEC_REALTIME_ENABLED === 'true' : config.aec_realtime_enabled === undefined ? true : bool('aec_realtime_enabled'),
+        aecEnabled: desktop?.sources?.AEC_REALTIME_ENABLED === 'user' ? desktop.values.AEC_REALTIME_ENABLED === 'true' : config.aec_realtime_enabled === undefined ? Boolean(desktopCatalogFields.AEC_REALTIME_ENABLED.default) : bool('aec_realtime_enabled'),
         emotionReferencesEnabled: backendVoiceConfiguration.find(group => group.id === 'tts_emotion_references')?.fields.find(field => field.key === 'ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING')?.value === true,
       }, catalogDesktop)
   const voiceConfiguration: ConfigurationGroup[] = voiceCatalog.map(base => {

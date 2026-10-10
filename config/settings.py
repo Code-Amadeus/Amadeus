@@ -331,16 +331,12 @@ TTS_GPT_MODEL_PATH, TTS_SOVITS_MODEL_PATH = _resolve_tts_voice_paths(
 # 输出语言："日文" | "英文"（对应 dict_language 中的键名）
 # 切换此项即可在日文 LoRA 管线和英文 base 管线之间手动选择
 TTS_OUTPUT_LANGUAGE   = _str("TTS_OUTPUT_LANGUAGE", "日文")
-ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING = _bool("ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING", False)
 
 # 日文管线参考音频 / 文本
-TTS_REF_AUDIO_JA = _str("TTS_REF_AUDIO_JA", "./assets/audio/reference/kurisu_reference.wav")
-TTS_REF_TEXT_JA  = _str("TTS_REF_TEXT_JA",
-    "そういえば,正式に自己紹介していませんでしたね……牧瀬紅莉栖です.改めてまして,よろしく")
+
 
 # 英文管线参考音频 / 文本（请在 .env 中填写对应的英文参考文字）
-TTS_REF_AUDIO_EN = _str("TTS_REF_AUDIO_EN", "./assets/audio/reference/english_recording.wav")
-TTS_REF_TEXT_EN  = _str("TTS_REF_TEXT_EN", "")
+
 
 # 调度器合并相邻句子时是否受播放余量预算约束。
 TTS_DEADLINE_AGGREGATION = _bool("TTS_DEADLINE_AGGREGATION", True)
@@ -381,10 +377,9 @@ VAD_ENERGY_THRESHOLD = _int("VAD_ENERGY_THRESHOLD", 600)
 # ===========================================================================
 # Conversation recognizer. Wake recognition has its own WAKE_ASR_BACKEND and
 # may run alongside this backend on the shared microphone service.
-ASR_BACKEND = _str("ASR_BACKEND", "qwen3_asr")
-ASR_LANGUAGE = _str("ASR_LANGUAGE", "auto")
-QWEN3_ASR_MODEL_PATH = _str("QWEN3_ASR_MODEL_PATH", "")
-QWEN3_ASR_DEVICE = _str("QWEN3_ASR_DEVICE", "auto").strip().lower()
+
+
+QWEN3_ASR_DEVICE = QWEN3_ASR_DEVICE.strip().lower()
 if QWEN3_ASR_DEVICE in {"cuda:0", "gpu"}:
     QWEN3_ASR_DEVICE = "cuda"
 if QWEN3_ASR_DEVICE not in {"auto", "cpu", "cuda"}:
@@ -392,13 +387,11 @@ if QWEN3_ASR_DEVICE not in {"auto", "cpu", "cuda"}:
         "QWEN3_ASR_DEVICE must be auto, cpu, or cuda; "
         f"observed {QWEN3_ASR_DEVICE!r}"
     )
-QWEN3_ASR_REQUIRE_CUDA = _bool("QWEN3_ASR_REQUIRE_CUDA", False)
+
 # Qwen3-ASR context：作为 system prompt 注入，用于偏置混合中英文识别
 # 填入领域热词和指令；SenseVoice 后端会忽略此项
-ASR_CONTEXT = _str("ASR_CONTEXT", "")
-ASR_API_BASE_URL = _str("ASR_API_BASE_URL", "https://api.openai.com/v1")
-ASR_API_KEY = _secret("ASR_API_KEY", "")
-ASR_API_MODEL = _str("ASR_API_MODEL", "gpt-4o-mini-transcribe")
+
+
 ASR_API_TIMEOUT_SECONDS = _float("ASR_API_TIMEOUT_SECONDS", 45.0)
 # Qwen3-ASR stays in VRAM this long after the last conversation activity. A wake
 # session (continuous voice too, when the wake word is enabled) then returns to
@@ -411,11 +404,11 @@ ASR_RAM_UNLOAD_SECONDS = _float("ASR_RAM_UNLOAD_SECONDS", 0.0)
 ASR_TURN_COMPLETE_TIMEOUT_SECONDS = _float("ASR_TURN_COMPLETE_TIMEOUT_SECONDS", 45.0)
 ASR_ECHO_TAIL_GUARD_MS = _float("ASR_ECHO_TAIL_GUARD_MS", 650.0)
 ASR_VAD_THRESHOLD = _float("ASR_VAD_THRESHOLD", 0.45)
-ASR_VAD_SILENCE_MS = _int("ASR_VAD_SILENCE_MS", 350)
+
 ASR_SPEECH_PAD_MS = _int("ASR_SPEECH_PAD_MS", 60)
 ASR_MIN_SPEECH_MS = _int("ASR_MIN_SPEECH_MS", 150)
 ASR_MAX_SPEECH_SECONDS = _float("ASR_MAX_SPEECH_SECONDS", 30.0)
-ASR_LISTEN_TIMEOUT_SECONDS = _float("ASR_LISTEN_TIMEOUT_SECONDS", 15.0)
+
 ASR_PREROLL_MS = _int("ASR_PREROLL_MS", 500)
 ASR_ENERGY_END_RMS = _float("ASR_ENERGY_END_RMS", 0.008)
 # 能量端点回退（无 vad 梯级时）：语音起始阈值，需高于结束阈值形成迟滞
@@ -892,29 +885,18 @@ WORK_TERMINAL_NARRATION_MAX_WAIT_S = _float(
 
 # Wake word settings. SenseVoice is intended to be the lightweight always-on
 # recognizer; Qwen-ASR remains the lazy-loaded full recognizer.
-WAKE_ENABLED = _bool("WAKE_ENABLED", False)
-WAKE_ASR_BACKEND = _str("WAKE_ASR_BACKEND", "sense_voice")
-WAKE_PHRASES = _str(
-    "WAKE_PHRASES",
-    "hi amadeus,hey amadeus,hello amadeus,high amadeus,"
-    "hi amadues,hey amadues,hello amadues,high amadues,"
-    "hi amadius,hey amadius,hello amadius,"
-    "hi i'm as,hi im as,hi ims,hi i'ms,hi i am as,"
-    "嗨阿玛迪斯,嘿阿玛迪斯,你好阿玛迪斯,"
-    "嗨阿马迪斯,嘿阿马迪斯,你好阿马迪斯,"
-    "ハイアマデウス,ヘイアマデウス,アマデウス",
-)
+
+
 WAKE_MATCH_THRESHOLD = _float("WAKE_MATCH_THRESHOLD", 0.10)
 WAKE_AUTO_START_WITH_WALLPAPER = _bool("WAKE_AUTO_START_WITH_WALLPAPER", True)
-WAKE_AUTO_SEND_TO_CHAT = _bool("WAKE_AUTO_SEND_TO_CHAT", True)
+
 WAKE_AWAKE_SECONDS = _float("WAKE_AWAKE_SECONDS", 60.0)
 WAKE_BRIDGE_MAX_SECONDS = _float("WAKE_BRIDGE_MAX_SECONDS", 45.0)
 WAKE_BRIDGE_AUTO_SEND = _bool("WAKE_BRIDGE_AUTO_SEND", False)
 WAKE_VAD_THRESHOLD = _float("WAKE_VAD_THRESHOLD", 0.45)
 WAKE_MIN_SEGMENT_RMS = _float("WAKE_MIN_SEGMENT_RMS", 0.003)
-WAKE_SENSEVOICE_LANGUAGES = _str("WAKE_SENSEVOICE_LANGUAGES", "en")
-SENSEVOICE_LANGUAGE = _str("SENSEVOICE_LANGUAGE", "en")
-SENSEVOICE_MODEL_PATH = _str("SENSEVOICE_MODEL_PATH", "")
+
+
 WAKE_TEMPLATE_CACHE_ENABLED = _bool("WAKE_TEMPLATE_CACHE_ENABLED", True)
 WAKE_TEMPLATE_CACHE_DIR = _str("WAKE_TEMPLATE_CACHE_DIR", str(_ROOT / "runtime" / "wake_templates"))
 WAKE_TEMPLATE_CACHE_THRESHOLD = _float("WAKE_TEMPLATE_CACHE_THRESHOLD", 0.68)
@@ -930,15 +912,15 @@ WAKE_DEBUG_AUDIO = _bool("WAKE_DEBUG_AUDIO", False)
 # ===========================================================================
 # Realtime acoustic echo cancellation
 # ===========================================================================
-AEC_REALTIME_ENABLED = _bool("AEC_REALTIME_ENABLED", False)
-AEC_REALTIME_DELAY_MS = _float("AEC_REALTIME_DELAY_MS", 280.0)
+
+
 # 初始猜测值，后续按真机实测调整；显式 AEC_REALTIME_DELAY_MS 会覆盖这些分类默认值。
 AEC_DELAY_MS_BLUETOOTH = _float("AEC_DELAY_MS_BLUETOOTH", 220.0)
 AEC_DELAY_MS_INTERNAL = _float("AEC_DELAY_MS_INTERNAL", 80.0)
 AEC_DELAY_MS_USB = _float("AEC_DELAY_MS_USB", 120.0)
 AEC_REALTIME_ENABLE_NS = _bool("AEC_REALTIME_ENABLE_NS", False)
 AEC_REALTIME_ENABLE_AGC = _bool("AEC_REALTIME_ENABLE_AGC", False)
-AEC_REALTIME_BARGE_IN = _bool("AEC_REALTIME_BARGE_IN", False)
+
 AEC_REALTIME_DEBUG = _bool("AEC_REALTIME_DEBUG", False)
 ASR_ECHO_GUARD_ENABLED = _bool("ASR_ECHO_GUARD_ENABLED", True)
 ASR_ECHO_GUARD_CORR_THRESHOLD = _float("ASR_ECHO_GUARD_CORR_THRESHOLD", 0.74)
@@ -959,11 +941,10 @@ BARGE_IN_ECHO_CONFIRM_MS = _float("BARGE_IN_ECHO_CONFIRM_MS", 96.0)
 # 麦克风选择
 # ===========================================================================
 # 优先匹配的设备名称关键词（部分匹配，不区分大小写），留空则纯靠 RMS 竞争
-MICROPHONE_PREFERRED_NAME = _str("MICROPHONE_PREFERRED_NAME")
+
 MICROPHONE_FALLBACK_DEVICE_INDEX = _int("MICROPHONE_FALLBACK_DEVICE_INDEX", -1)
 MICROPHONE_FALLBACK_NAME = _str("MICROPHONE_FALLBACK_NAME", "")
 # 直接指定设备索引（-1 = 不强制，使用自动选择）
-MICROPHONE_DEVICE_INDEX   = _int("MICROPHONE_DEVICE_INDEX", -1)
 
 # ===========================================================================
 # OpenClaw

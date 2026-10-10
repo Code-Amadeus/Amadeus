@@ -563,7 +563,7 @@ def configure(
     if exp_tts_semaphore is not None:
         _exp_tts_semaphore = exp_tts_semaphore
         _exp_tts_concurrency = selectable_tts_concurrency(
-            os.environ.get("EXP_TTS_MAX_CONCURRENCY", EXP_TTS_MAX_CONCURRENCY)
+            EXP_TTS_MAX_CONCURRENCY
         )
 
 

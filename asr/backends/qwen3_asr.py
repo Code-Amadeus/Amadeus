@@ -26,7 +26,7 @@ import numpy as np
 from asr.backend import ASRBackendFatalError, BaseASRBackend
 from asr.qwen_model import resolve_qwen_model_source
 from config.environment import venv_python as _venv_python
-from config.settings import QWEN3_ASR_REQUIRE_CUDA
+from config.settings import QWEN3_ASR_DEVICE, QWEN3_ASR_REQUIRE_CUDA
 from config.local_model_loading import enforce_local_model_loading
 
 logger = logging.getLogger(__name__)
@@ -414,6 +414,7 @@ class Qwen3ASRBackend(BaseASRBackend):
                 )
 
             logger.info("[ASR:Qwen3ASR] starting sidecar process: %s", python)
+            self._device = str(device)
             proc = subprocess.Popen(
                 [python, str(_SIDECAR_SCRIPT)],
                 stdin=subprocess.PIPE,
@@ -421,6 +422,11 @@ class Qwen3ASRBackend(BaseASRBackend):
                 stderr=subprocess.PIPE,
                 text=False,
                 cwd=str(_PROJECT_ROOT),
+                env={
+                    **os.environ,
+                    "QWEN3_ASR_DEVICE": str(device),
+                    "QWEN3_ASR_REQUIRE_CUDA": "true" if QWEN3_ASR_REQUIRE_CUDA else "false",
+                },
             )
             self._proc = proc
             self._owns_proc = True
@@ -481,7 +487,7 @@ class Qwen3ASRBackend(BaseASRBackend):
 
         if not self._is_running(self._proc):
             logger.warning("[ASR:Qwen3ASR] sidecar is not running; restarting")
-            self.load("cuda")
+            self.load(self._device or QWEN3_ASR_DEVICE)
 
         if self._proc is None or self._proc.stdin is None or self._proc.stdout is None:
             return None

@@ -1,0 +1,54 @@
+{
+  "id": "voice_reference_profile",
+  "title": {
+    "en-US": "Voice reference profile",
+    "zh-CN": "声音参考配置"
+  },
+  "description": {
+    "en-US": "Shared reference audio and transcripts used only by TTS backends that support reference conditioning.",
+    "zh-CN": "共享参考音频与文本，仅由支持参考条件的 TTS 后端使用。"
+  },
+  "desktop": true,
+  "restart_required": true,
+  "config": {
+    "TTS_REF_AUDIO_JA": {
+      "type": "path",
+      "title": {
+        "en-US": "Japanese reference audio",
+        "zh-CN": "日文参考音频"
+      },
+      "default": "./assets/audio/reference/kurisu_reference.wav",
+      "example_active": true,
+      "example": "assets/audio/reference/kurisu_reference.wav"
+    },
+    "TTS_REF_TEXT_JA": {
+      "type": "string",
+      "title": {
+        "en-US": "Japanese reference transcript",
+        "zh-CN": "日文参考文本"
+      },
+      "default": "そういえば,正式に自己紹介していませんでしたね……牧瀬紅莉栖です.改めてまして,よろしく",
+      "example_active": true,
+      "example": "そういえば、まともに自己紹介してませんでしたね。マキセクリスです。改めまして、よろしく。"
+    },
+    "TTS_REF_AUDIO_EN": {
+      "type": "path",
+      "title": {
+        "en-US": "English reference audio",
+        "zh-CN": "英文参考音频"
+      },
+      "default": "./assets/audio/reference/english_recording.wav",
+      "example_active": true,
+      "example": "assets/audio/reference/english_recording.wav"
+    },
+    "TTS_REF_TEXT_EN": {
+      "type": "string",
+      "title": {
+        "en-US": "English reference transcript",
+        "zh-CN": "英文参考文本"
+      },
+      "default": "",
+      "example_active": true
+    }
+  }
+}

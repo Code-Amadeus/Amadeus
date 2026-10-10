@@ -11,6 +11,7 @@ interface CatalogField {
   example?: string | number | boolean
   example_active?: boolean
   secret?: boolean
+  accepted_values?: string[]
   options?: Array<string | { value: string; label: LocalizedText }>
   schemes?: string[]
   min?: number

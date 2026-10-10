@@ -1,0 +1,46 @@
+{
+  "id": "asr_remote",
+  "title": {
+    "en-US": "Remote transcription API",
+    "zh-CN": "远程语音转写 API"
+  },
+  "description": {
+    "en-US": "OpenAI-compatible POST /audio/transcriptions, used only when selected above.",
+    "zh-CN": "兼容 OpenAI 的 /audio/transcriptions 接口，仅在上方选择后使用。"
+  },
+  "desktop": true,
+  "restart_required": true,
+  "config": {
+    "ASR_API_BASE_URL": {
+      "type": "url",
+      "title": {
+        "en-US": "API base URL",
+        "zh-CN": "API 基础地址"
+      },
+      "default": "https://api.openai.com/v1",
+      "schemes": [
+        "http",
+        "https"
+      ],
+      "example_active": false
+    },
+    "ASR_API_KEY": {
+      "type": "string",
+      "title": {
+        "en-US": "API key",
+        "zh-CN": "API 密钥"
+      },
+      "secret": true,
+      "example_active": false
+    },
+    "ASR_API_MODEL": {
+      "type": "string",
+      "title": {
+        "en-US": "Model",
+        "zh-CN": "模型"
+      },
+      "default": "gpt-4o-mini-transcribe",
+      "example_active": false
+    }
+  }
+}

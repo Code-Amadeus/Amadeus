@@ -52,7 +52,7 @@ for (const group of groups) {
   assert.equal(group.restart_required, true)
   assert.ok(Object.keys(group.config).length, 'Empty configuration group')
   for (const [key, field] of Object.entries(group.config)) {
-    knownKeys(field, ['type', 'title', 'description', 'default', 'secret', 'options', 'schemes', 'min', 'max', 'step', 'computed_default', 'example', 'example_active'])
+    knownKeys(field, ['type', 'title', 'description', 'default', 'secret', 'options', 'schemes', 'min', 'max', 'step', 'computed_default', 'example', 'example_active', 'accepted_values'])
     assert.match(key, /^[A-Z][A-Z0-9_]*$/)
     assert.ok(!keys.has(key), `Duplicate setting ${key}`)
     keys.add(key)
@@ -62,6 +62,10 @@ for (const group of groups) {
     if ('secret' in field) assert.equal(typeof field.secret, 'boolean')
     if ('options' in field) assert.equal(field.type, 'enum')
     if ('schemes' in field) assert.equal(field.type, 'url')
+    if (field.accepted_values) {
+      assert.equal(field.type, 'boolean')
+      assert.ok(field.accepted_values.every(value => ['true', 'false', '1', '0', 'yes', 'no'].includes(value)))
+    }
     if (field.secret) {
       assert.equal(field.type, 'string')
       assert.ok(!('default' in field), `Secret ${key} must not declare a default`)
@@ -79,11 +83,12 @@ for (const group of groups) {
       assert.ok(!/[\r\n\0]/.test(String(value)), `Invalid env example for ${key}`)
       if (field.type === 'boolean') assert.equal(typeof value, 'boolean')
       if (['integer', 'number'].includes(field.type)) {
-        assert.ok(Number.isFinite(value) && value >= field.min && value <= field.max, `Invalid numeric default/example for ${key}`)
+        assert.ok(Number.isFinite(value) && (field.min === undefined || value >= field.min) && (field.max === undefined || value <= field.max), `Invalid numeric default/example for ${key}`)
         if (field.type === 'integer') assert.ok(Number.isInteger(value))
       }
     }
-    if (['integer', 'number'].includes(field.type)) {
+    if (['min', 'max', 'step'].some(name => name in field)) {
+      assert.ok(['integer', 'number'].includes(field.type))
       assert.ok(Number.isFinite(field.min) && Number.isFinite(field.max) && field.min <= field.max)
       assert.ok(Number.isFinite(field.step) && field.step > 0)
     }

@@ -1,0 +1,146 @@
+{
+  "id": "conversation_asr",
+  "title": {
+    "en-US": "Conversation recognition",
+    "zh-CN": "对话语音识别"
+  },
+  "description": {
+    "en-US": "Full transcription after manual listening or Wake handoff. Qwen is the embedded default.",
+    "zh-CN": "手动监听或唤醒移交后的完整语音转写；Qwen 是内置默认实现。"
+  },
+  "desktop": true,
+  "restart_required": true,
+  "config": {
+    "ASR_BACKEND": {
+      "type": "string",
+      "title": {
+        "en-US": "Backend",
+        "zh-CN": "后端"
+      },
+      "default": "qwen3_asr",
+      "example_active": true
+    },
+    "ASR_LANGUAGE": {
+      "type": "string",
+      "title": {
+        "en-US": "Recognition language",
+        "zh-CN": "识别语言"
+      },
+      "description": {
+        "en-US": "auto or an ISO-639-1 language code such as en, ja, or zh.",
+        "zh-CN": "auto 或 ISO-639-1 语言代码，例如 en、ja、zh。"
+      },
+      "default": "auto",
+      "example_active": true
+    },
+    "ASR_CONTEXT": {
+      "type": "string",
+      "title": {
+        "en-US": "Context and terminology",
+        "zh-CN": "上下文与术语"
+      },
+      "description": {
+        "en-US": "Prompt or domain vocabulary used by compatible full recognizers.",
+        "zh-CN": "供兼容的完整识别器使用的提示或领域词汇。"
+      },
+      "default": "",
+      "example_active": true
+    },
+    "QWEN3_ASR_MODEL_PATH": {
+      "type": "path",
+      "title": {
+        "en-US": "Qwen model directory",
+        "zh-CN": "Qwen 模型目录"
+      },
+      "description": {
+        "en-US": "Leave blank to use the bundled asset path or a compatible model cache.",
+        "zh-CN": "留空以使用内置资源路径或兼容的模型缓存。"
+      },
+      "default": "",
+      "example_active": false,
+      "example": "assets/models/asr/qwen3-asr-0.6b"
+    },
+    "QWEN3_ASR_DEVICE": {
+      "type": "enum",
+      "title": {
+        "en-US": "Qwen device",
+        "zh-CN": "Qwen 设备"
+      },
+      "default": "auto",
+      "options": [
+        "auto",
+        "cpu",
+        "cuda"
+      ],
+      "example_active": true
+    },
+    "QWEN3_ASR_REQUIRE_CUDA": {
+      "type": "boolean",
+      "title": {
+        "en-US": "Require Qwen CUDA",
+        "zh-CN": "要求 Qwen 使用 CUDA"
+      },
+      "default": false,
+      "example_active": true
+    },
+    "MICROPHONE_DEVICE_INDEX": {
+      "type": "integer",
+      "title": {
+        "en-US": "Microphone",
+        "zh-CN": "麦克风"
+      },
+      "description": {
+        "en-US": "Connect the backend to enumerate installed microphones.",
+        "zh-CN": "连接后端以列出已安装的麦克风。"
+      },
+      "default": -1,
+      "example_active": false
+    },
+    "MICROPHONE_PREFERRED_NAME": {
+      "type": "string",
+      "title": {
+        "en-US": "Preferred microphone name",
+        "zh-CN": "首选麦克风名称"
+      },
+      "description": {
+        "en-US": "Optional partial-name fallback when device indices change.",
+        "zh-CN": "设备索引变化时，可用部分名称匹配备用设备。"
+      },
+      "default": "",
+      "example_active": false,
+      "example": "FreeBuds"
+    },
+    "ASR_LISTEN_TIMEOUT_SECONDS": {
+      "type": "number",
+      "title": {
+        "en-US": "Wait for speech",
+        "zh-CN": "等待说话"
+      },
+      "description": {
+        "en-US": "Seconds to wait for speech to begin after listening starts.",
+        "zh-CN": "开始聆听后等待说话的秒数。"
+      },
+      "default": 15.0,
+      "min": 1,
+      "max": 120,
+      "step": 1,
+      "example_active": true
+    },
+    "ASR_VAD_SILENCE_MS": {
+      "type": "integer",
+      "title": {
+        "en-US": "End-of-speech pause",
+        "zh-CN": "语音结束停顿"
+      },
+      "description": {
+        "en-US": "Silence required before a spoken turn is considered complete.",
+        "zh-CN": "将本轮语音视为结束前所需的静音时长。"
+      },
+      "default": 350,
+      "min": 100,
+      "max": 3000,
+      "step": 50,
+      "example_active": true
+    }
+  }
+}

@@ -140,33 +140,6 @@ const VALUE_KEYS = new Set([
   'CODEX_APP_SERVER_SERVICE_TIER',
   'DIRECT_CODEX_CLI_PATH',
   'AMADEUS_ACP_PROVIDERS',
-  'ASR_BACKEND',
-  'ASR_LANGUAGE',
-  'ASR_CONTEXT',
-  'ASR_API_BASE_URL',
-  'ASR_API_MODEL',
-  'ASR_LISTEN_TIMEOUT_SECONDS',
-  'ASR_VAD_SILENCE_MS',
-  'QWEN3_ASR_MODEL_PATH',
-  'QWEN3_ASR_DEVICE',
-  'QWEN3_ASR_REQUIRE_CUDA',
-  'WAKE_ENABLED',
-  'WAKE_ASR_BACKEND',
-  'WAKE_PHRASES',
-  'WAKE_AUTO_SEND_TO_CHAT',
-  'WAKE_SENSEVOICE_LANGUAGES',
-  'SENSEVOICE_LANGUAGE',
-  'SENSEVOICE_MODEL_PATH',
-  'MICROPHONE_DEVICE_INDEX',
-  'MICROPHONE_PREFERRED_NAME',
-  'AEC_REALTIME_ENABLED',
-  'AEC_REALTIME_BARGE_IN',
-  'AEC_REALTIME_DELAY_MS',
-  'ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING',
-  'TTS_REF_AUDIO_JA',
-  'TTS_REF_TEXT_JA',
-  'TTS_REF_AUDIO_EN',
-  'TTS_REF_TEXT_EN',
   ...Object.keys(desktopCatalogFields).filter(key => !desktopCatalogFields[key].secret),
   'VTS_ENABLED',
   'AUIP_ARTIFACT_STYLE_ENABLED',
@@ -181,7 +154,6 @@ const SECRET_KEYS = new Set([
   'GEMINI_API_KEY',
   'AWS_BEARER_TOKEN_BEDROCK',
   'OPENCLAW_GATEWAY_TOKEN',
-  'ASR_API_KEY',
   ...Object.keys(desktopCatalogFields).filter(key => desktopCatalogFields[key].secret),
 ])
 
@@ -201,7 +173,6 @@ const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
   AMADEUS_VISION_MODE: new Set(['off', 'on_demand', 'watching', 'self_aware']),
   AMADEUS_VISION_SCOPE: new Set(['full_screen', 'current_window', 'selected_window', 'wallpaper_surface', 'region']),
   ENABLE_CUDA_GRAPH: new Set(['1', '0']),
-  ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING: new Set(['true', 'false', '1', '0', 'yes', 'no']),
   TTS_OUTPUT_LANGUAGE: new Set(['日文', '英文']),
   LLM_PROVIDER: new Set(['deepseek', 'openai', 'gemini', 'bedrock', 'local', 'hybrid', 'hybrid2', 'hybrid3']),
   BEDROCK_AUTH_MODE: new Set(['auto', 'boto3', 'bearer']),
@@ -222,17 +193,9 @@ const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
   CODEX_APP_SERVER_MODEL_PROVIDER: new Set(['deepseek', 'openai']),
   CODEX_APP_SERVER_REASONING_EFFORT: new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
   CODEX_APP_SERVER_SERVICE_TIER: new Set(['', 'auto', 'default', 'flex', 'priority', 'fast', 'ultrafast']),
-  QWEN3_ASR_DEVICE: new Set(['auto', 'cpu', 'cuda']),
-  QWEN3_ASR_REQUIRE_CUDA: new Set(['true', 'false']),
-  WAKE_ENABLED: new Set(['true', 'false']),
-  WAKE_AUTO_SEND_TO_CHAT: new Set(['true', 'false']),
-  WAKE_ASR_BACKEND: new Set(['sense_voice', 'qwen3_asr']),
-  SENSEVOICE_LANGUAGE: new Set(['auto', 'en', 'zh', 'ja', 'yue', 'ko']),
-  AEC_REALTIME_ENABLED: new Set(['true', 'false']),
-  AEC_REALTIME_BARGE_IN: new Set(['true', 'false']),
   ...Object.fromEntries(Object.entries(desktopCatalogFields)
     .filter(([, field]) => field.options || field.type === 'boolean')
-    .map(([key, field]) => [key, new Set(field.type === 'boolean' ? ['true', 'false'] : catalogOptionValues(field))])),
+    .map(([key, field]) => [key, new Set(field.type === 'boolean' ? field.accepted_values ?? ['true', 'false'] : catalogOptionValues(field))])),
   VTS_ENABLED: new Set(['true', 'false']),
   AUIP_ARTIFACT_STYLE_ENABLED: new Set(['true', 'false']),
 }
@@ -249,7 +212,6 @@ const URL_KEYS = new Set([
   'HYBRID_LOCAL_LLM_URL',
   'OPENCLAW_BASE_URL',
   'CODEX_APP_SERVER_PROVIDER_BASE_URL',
-  'ASR_API_BASE_URL',
 ])
 
 const WEBSOCKET_URL_KEYS = new Set(['VTS_WS_URL'])
@@ -259,15 +221,12 @@ const NUMBER_RANGES: Record<string, readonly [number, number]> = {
     .map(([key, field]) => [key, [field.min!, field.max!] as const])),
   RAG_TOP_K: [1, 20],
   RAG_MAX_DISTANCE: [0, 4],
-  ASR_LISTEN_TIMEOUT_SECONDS: [1, 120],
-  ASR_VAD_SILENCE_MS: [100, 3000],
-  AEC_REALTIME_DELAY_MS: [0, 2000],
   AMADEUS_VISION_MAX_LONG_SIDE: [320, 4096],
   AMADEUS_VISION_JPEG_QUALITY: [35, 92],
   EXP_TTS_MAX_CONCURRENCY: [1, 2],
 }
 
-const INTEGER_KEYS = new Set([...Object.keys(desktopCatalogFields).filter(key => desktopCatalogFields[key].type === 'integer'), 'RAG_TOP_K', 'ASR_VAD_SILENCE_MS', 'AMADEUS_VISION_MAX_LONG_SIDE', 'AMADEUS_VISION_JPEG_QUALITY', 'EXP_TTS_MAX_CONCURRENCY'])
+const INTEGER_KEYS = new Set([...Object.keys(desktopCatalogFields).filter(key => desktopCatalogFields[key].type === 'integer'), 'RAG_TOP_K', 'AMADEUS_VISION_MAX_LONG_SIDE', 'AMADEUS_VISION_JPEG_QUALITY', 'EXP_TTS_MAX_CONCURRENCY'])
 
 const MCP_CONNECTIONS_ENV = 'AMADEUS_MCP_CONNECTIONS'
 const FRONTEND_ONLY_VALUE_KEYS = new Set(['AMADEUS_UI_LOCALE', 'AMADEUS_UI_THEME', 'AMADEUS_WINDOWS_STARTUP_MODE'])

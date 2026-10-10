@@ -138,8 +138,10 @@ def test_running_shared_mic_keeps_its_actual_opened_index() -> None:
 
 def test_aec_delay_by_device_class_and_explicit_override():
     from config import settings
+    from tts import aec_realtime
     from tts.aec_realtime import select_aec_delay_ms
 
+    old_delay = aec_realtime.AEC_REALTIME_DELAY_MS
     old = os.environ.pop("AEC_REALTIME_DELAY_MS", None)
     try:
         assert select_aec_delay_ms("bluetooth")[0] == float(settings.AEC_DELAY_MS_BLUETOOTH)
@@ -147,12 +149,14 @@ def test_aec_delay_by_device_class_and_explicit_override():
         assert select_aec_delay_ms("usb")[0] == float(settings.AEC_DELAY_MS_USB)
         assert select_aec_delay_ms("unknown")[0] == float(settings.AEC_REALTIME_DELAY_MS)
 
-        os.environ["AEC_REALTIME_DELAY_MS"] = "80"
+        os.environ["AEC_REALTIME_DELAY_MS"] = "999"
+        aec_realtime.AEC_REALTIME_DELAY_MS = 80.0
         for device_class in ("bluetooth", "internal", "usb", "unknown"):
             delay_ms, reason = select_aec_delay_ms(device_class)
             assert delay_ms == 80.0
             assert "explicit" in reason
     finally:
+        aec_realtime.AEC_REALTIME_DELAY_MS = old_delay
         if old is None:
             os.environ.pop("AEC_REALTIME_DELAY_MS", None)
         else:

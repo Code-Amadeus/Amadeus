@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import audioop
 import logging
-import os
 import re
 import time
 from dataclasses import dataclass, asdict
@@ -154,61 +153,29 @@ def device_descriptor_for_index(index: int | None, pa: pyaudio.PyAudio | None = 
 
 
 def configured_device_index() -> int | None:
-    raw = os.environ.get("MICROPHONE_DEVICE_INDEX", "").strip()
-    if raw:
-        try:
-            index = int(raw)
-            return index if index >= 0 else None
-        except ValueError:
-            pass
-    try:
-        from config import settings
+    from config import settings
 
-        index = int(getattr(settings, "MICROPHONE_DEVICE_INDEX", -1))
-        return index if index >= 0 else None
-    except Exception:
-        return None
+    index = settings.MICROPHONE_DEVICE_INDEX
+    return index if index >= 0 else None
 
 
 def configured_preferred_name() -> str:
-    raw = os.environ.get("MICROPHONE_PREFERRED_NAME", "").strip()
-    if raw:
-        return raw
-    try:
-        from config import settings
+    from config import settings
 
-        return str(getattr(settings, "MICROPHONE_PREFERRED_NAME", "") or "").strip()
-    except Exception:
-        return ""
+    return settings.MICROPHONE_PREFERRED_NAME.strip()
 
 
 def configured_fallback_device_index() -> int | None:
-    raw = os.environ.get("MICROPHONE_FALLBACK_DEVICE_INDEX", "").strip()
-    if raw:
-        try:
-            index = int(raw)
-            return index if index >= 0 else None
-        except ValueError:
-            pass
-    try:
-        from config import settings
+    from config import settings
 
-        index = int(getattr(settings, "MICROPHONE_FALLBACK_DEVICE_INDEX", -1))
-        return index if index >= 0 else None
-    except Exception:
-        return None
+    index = settings.MICROPHONE_FALLBACK_DEVICE_INDEX
+    return index if index >= 0 else None
 
 
 def configured_fallback_name() -> str:
-    raw = os.environ.get("MICROPHONE_FALLBACK_NAME", "").strip()
-    if raw:
-        return raw
-    try:
-        from config import settings
+    from config import settings
 
-        return str(getattr(settings, "MICROPHONE_FALLBACK_NAME", "") or "").strip()
-    except Exception:
-        return ""
+    return settings.MICROPHONE_FALLBACK_NAME.strip()
 
 
 def _is_virtual_input(name: str) -> bool:

@@ -150,157 +150,42 @@ def _voice_configuration(settings: Any, emotion_pack: dict[str, Any] | None = No
     )
     return [
         {
-            "id": "conversation_asr",
-            "label": "Conversation recognition",
-            "description": "Full transcription after manual listening or Wake handoff. Qwen remains the embedded default and owns speculative endpoint optimization.",
+            **_catalog_configuration("conversation_asr", settings, options={"ASR_BACKEND": [{"value": item["id"], "label": item["label"]} for item in asr_statuses], "MICROPHONE_DEVICE_INDEX": microphone_options}),
+
             "active": True,
             "configured": bool(asr_status.get("available")),
             "status": str(asr_status.get("state") or "unavailable"),
             "status_ok": bool(asr_status.get("available")),
             "status_detail": str(asr_status.get("detail") or ""),
-            "fields": [
-                _startup_field(
-                    "ASR_BACKEND", "Backend", settings.ASR_BACKEND,
-                    field_type="select",
-                    options=tuple(
-                        {"value": item["id"], "label": item["label"]}
-                        for item in asr_statuses
-                    ),
-                ),
-                _startup_field(
-                    "ASR_LANGUAGE", "Recognition language", settings.ASR_LANGUAGE,
-                    description="auto or an ISO-639-1 language code such as en, ja, or zh.",
-                ),
-                _startup_field(
-                    "ASR_CONTEXT", "Context and terminology", settings.ASR_CONTEXT,
-                    description="Prompt or domain vocabulary used by compatible full recognizers.",
-                ),
-                _startup_field(
-                    "QWEN3_ASR_MODEL_PATH", "Qwen model directory",
-                    settings.QWEN3_ASR_MODEL_PATH, field_type="path",
-                    description=(
-                        "Leave blank to use assets/models/asr/qwen3-asr-0.6b, then a legacy "
-                        "Hugging Face cache if present."
-                    ),
-                ),
-                _startup_field(
-                    "QWEN3_ASR_DEVICE", "Qwen device", settings.QWEN3_ASR_DEVICE,
-                    field_type="select", options=("auto", "cpu", "cuda"),
-                    description="Used only by the embedded Qwen recognizer.",
-                ),
-                _startup_field(
-                    "QWEN3_ASR_REQUIRE_CUDA", "Require Qwen CUDA",
-                    bool(settings.QWEN3_ASR_REQUIRE_CUDA), field_type="boolean",
-                    description="Fail visibly instead of falling back to CPU when CUDA is requested but unavailable.",
-                ),
-                _startup_field(
-                    "MICROPHONE_DEVICE_INDEX", "Microphone", settings.MICROPHONE_DEVICE_INDEX,
-                    field_type="select", options=tuple(microphone_options),
-                ),
-                _startup_field(
-                    "MICROPHONE_PREFERRED_NAME", "Preferred microphone name",
-                    settings.MICROPHONE_PREFERRED_NAME,
-                    description="Optional partial-name fallback when device indices change.",
-                ),
-                _startup_field(
-                    "ASR_LISTEN_TIMEOUT_SECONDS", "Wait for speech",
-                    settings.ASR_LISTEN_TIMEOUT_SECONDS, field_type="number",
-                    minimum=1, maximum=120, step=1,
-                    description="Seconds to wait for speech to begin after listening starts.",
-                ),
-                _startup_field(
-                    "ASR_VAD_SILENCE_MS", "End-of-speech pause",
-                    settings.ASR_VAD_SILENCE_MS, field_type="number",
-                    minimum=100, maximum=3000, step=50,
-                    description="Silence required before a spoken turn is considered complete. Increase this if natural pauses are cut off.",
-                ),
-            ],
         },
         {
-            "id": "asr_remote",
-            "label": "Remote transcription API",
-            "description": "OpenAI-compatible POST /audio/transcriptions. Used only when Conversation recognition selects openai_compatible.",
+            **_catalog_configuration("asr_remote", settings),
+
             "active": asr_selected == "openai_compatible",
             "configured": bool(settings.ASR_API_BASE_URL and settings.ASR_API_MODEL),
             "status": "remote" if asr_selected == "openai_compatible" else "available",
             "status_ok": bool(settings.ASR_API_BASE_URL and settings.ASR_API_MODEL),
-            "fields": [
-                _startup_field("ASR_API_BASE_URL", "API base URL", settings.ASR_API_BASE_URL, field_type="url"),
-                _startup_field("ASR_API_KEY", "API key", field_type="secret", secret_configured=bool(settings.ASR_API_KEY)),
-                _startup_field("ASR_API_MODEL", "Model", settings.ASR_API_MODEL),
-            ],
         },
         {
-            "id": "wake_asr",
-            "label": "Wake recognition",
-            "description": "Independent always-on recognizer. It can stay on SenseVoice while Conversation recognition uses Qwen or a remote API.",
+            **_catalog_configuration("wake_asr", settings),
+
             "active": bool(settings.WAKE_ENABLED),
             "configured": not bool(settings.WAKE_ENABLED) or bool(wake_status.get("available")),
             "status": "disabled" if not settings.WAKE_ENABLED else str(wake_status.get("state") or "unavailable"),
             "status_ok": not bool(settings.WAKE_ENABLED) or bool(wake_status.get("available")),
             "status_detail": str(wake_status.get("detail") or ""),
-            "fields": [
-                _startup_field("WAKE_ENABLED", "Wake service", bool(settings.WAKE_ENABLED), field_type="boolean"),
-                _startup_field(
-                    "WAKE_PHRASES", "Wake phrases", settings.WAKE_PHRASES,
-                    description="Comma-separated phrases matched by the wake recognizer.",
-                ),
-                _startup_field(
-                    "WAKE_AUTO_SEND_TO_CHAT", "Send command to Chat",
-                    bool(settings.WAKE_AUTO_SEND_TO_CHAT), field_type="boolean",
-                    description="Submit the recognized command after a wake handoff.",
-                ),
-                _startup_field(
-                    "WAKE_ASR_BACKEND", "Wake backend", settings.WAKE_ASR_BACKEND,
-                    field_type="select", options=("sense_voice", "qwen3_asr"),
-                ),
-                _startup_field(
-                    "WAKE_SENSEVOICE_LANGUAGES", "Wake languages",
-                    settings.WAKE_SENSEVOICE_LANGUAGES,
-                    description="Comma-separated SenseVoice language passes.",
-                ),
-                _startup_field(
-                    "SENSEVOICE_LANGUAGE", "SenseVoice conversation language",
-                    settings.SENSEVOICE_LANGUAGE, field_type="select",
-                    options=("auto", "en", "zh", "ja", "yue", "ko"),
-                ),
-                _startup_field(
-                    "SENSEVOICE_MODEL_PATH", "SenseVoice model path",
-                    settings.SENSEVOICE_MODEL_PATH, field_type="path",
-                    description="Optional local model directory when it is not installed in the default cache.",
-                ),
-            ],
         },
         {
-            "id": "acoustic_pipeline",
-            "label": "Echo cancellation & interruption",
-            "description": "Desktop startup controls for realtime AEC and barge-in. These settings affect when microphone speech may interrupt playback.",
+            **_catalog_configuration("acoustic_pipeline", settings),
+
             "active": bool(settings.AEC_REALTIME_ENABLED),
             "configured": True,
             "status": "available",
             "status_ok": True,
-            "fields": [
-                _startup_field(
-                    "AEC_REALTIME_ENABLED", "Realtime echo cancellation",
-                    bool(settings.AEC_REALTIME_ENABLED), field_type="boolean",
-                ),
-                _startup_field(
-                    "AEC_REALTIME_BARGE_IN", "Allow microphone interruption",
-                    bool(settings.AEC_REALTIME_BARGE_IN), field_type="boolean",
-                    description="When enabled, confirmed near-end speech may stop current playback.",
-                ),
-                _startup_field(
-                    "AEC_REALTIME_DELAY_MS", "AEC reference delay",
-                    settings.AEC_REALTIME_DELAY_MS, field_type="number",
-                    minimum=0, maximum=2000, step=10,
-                    description="Explicit playback-to-microphone reference delay in milliseconds.",
-                ),
-            ],
         },
         {
-            "id": "voice_reference_profile",
-            "label": "Voice reference profile",
-            "description": "Shared reference-conditioning inputs carried by the common TTS request contract. Backends that do not declare this capability ignore them.",
+            **_catalog_configuration("voice_reference_profile", settings),
+
             "active": selected_reference_consumer,
             "configured": bool(
                 settings.TTS_REF_AUDIO_JA or settings.TTS_REF_AUDIO_EN
@@ -318,24 +203,6 @@ def _voice_configuration(settings: Any, emotion_pack: dict[str, Any] | None = No
                     else ""
                 )
             ),
-            "fields": [
-                _startup_field(
-                    "TTS_REF_AUDIO_JA", "Japanese reference audio",
-                    settings.TTS_REF_AUDIO_JA, field_type="path",
-                ),
-                _startup_field(
-                    "TTS_REF_TEXT_JA", "Japanese reference transcript",
-                    settings.TTS_REF_TEXT_JA,
-                ),
-                _startup_field(
-                    "TTS_REF_AUDIO_EN", "English reference audio",
-                    settings.TTS_REF_AUDIO_EN, field_type="path",
-                ),
-                _startup_field(
-                    "TTS_REF_TEXT_EN", "English reference transcript",
-                    settings.TTS_REF_TEXT_EN,
-                ),
-            ],
         },
         {
             **_catalog_configuration("speech_synthesis", settings, options={
@@ -350,21 +217,13 @@ def _voice_configuration(settings: Any, emotion_pack: dict[str, Any] | None = No
         *(_voice_backend_configuration(group, settings, tts_statuses, tts_selected)
               for group in voice_backend_groups()),
         {
-            "id": "tts_emotion_references",
-            "label": "Emotion voice references",
-            "description": "Use an optional emotion voice pack for Windows CUDA V3 Japanese speech. References are prepared at startup.",
+            **_catalog_configuration("tts_emotion_references", settings),
+
             "active": tts_selected == "gpt_sovits" and emotion_requested,
             "configured": not emotion_requested or bool(emotion_pack["installed"]),
             "status": str(emotion_runtime["state"]),
             "status_ok": not emotion_requested or bool(emotion_runtime["ready"]),
             "status_detail": str(emotion_runtime["detail"]),
-            "fields": [
-                _startup_field(
-                    "ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING", "Enable emotion voice references",
-                    bool(settings.ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING), field_type="boolean",
-                    description="Default off. Install the optional voice-kurisu-emotions pack and restart. Turning this off restores default reference speech.",
-                ),
-            ],
         },
 
     ]
