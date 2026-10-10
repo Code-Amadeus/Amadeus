@@ -86,3 +86,37 @@ test('saved choices do not overwrite the separately reported running renderer bu
   const explicit = buildGraphicsConfiguration(undefined, { values: { RENDER_TEXTURE_SAMPLING: 'false' } })
   assert.equal(explicit[1].fields[0].value, false)
 })
+
+test('clearing a preset projects sampling from the next startup choice', t => {
+  const store = fixture(t)
+  store.update({}, { values: { GRAPHICS_PROFILE: 'power_saving' } })
+  store.markApplied({})
+  const cleared = store.update({}, { values: { GRAPHICS_PROFILE: null } })
+  const runtime = { profile: 'power_saving', custom_max_fps: 60, custom_max_resolution: 1,
+    texture_sampling: false, effective_max_fps: 30, effective_max_resolution: 1 }
+  const [budget, sampling] = buildGraphicsConfiguration(runtime, cleared)
+  assert.equal(budget.status, 'Standard')
+  assert.equal(budget.fields[0].value, 'standard')
+  assert.equal(sampling.fields[0].value, true)
+  assert.equal(runtime.profile, 'power_saving')
+})
+
+test('clearing explicit sampling recomputes instead of retaining the running override', t => {
+  const store = fixture(t)
+  store.update({}, { values: { RENDER_TEXTURE_SAMPLING: false } })
+  store.markApplied({})
+  const cleared = store.update({}, { values: { RENDER_TEXTURE_SAMPLING: null } })
+  const runtime = { profile: 'standard', custom_max_fps: 60, custom_max_resolution: 1,
+    texture_sampling: false, effective_max_fps: 60, effective_max_resolution: 1 }
+  assert.equal(buildGraphicsConfiguration(runtime, cleared)[1].fields[0].value, true)
+})
+
+test('an unresolved dotenv preset keeps derived sampling unknown while offline', t => {
+  const store = fixture(t)
+  const snapshot = store.snapshot({})
+  snapshot.sources.GRAPHICS_PROFILE = 'dotenv'
+  const [budget, sampling] = buildGraphicsConfiguration(undefined, snapshot)
+  assert.equal(budget.fields[0].value, undefined)
+  assert.equal(budget.status, 'Backend status unavailable')
+  assert.equal(sampling.fields[0].value, undefined)
+})

@@ -935,7 +935,7 @@ async def bootstrap(port: int = 17777) -> None:
         "aec realtime enabled=%s barge_in=%s delay_ms=%s tail_guard_ms=%s",
         AEC_REALTIME_ENABLED,
         AEC_REALTIME_BARGE_IN,
-        os.environ.get("AEC_REALTIME_DELAY_MS", ""),
+        settings.AEC_REALTIME_DELAY_MS,
         ASR_ECHO_TAIL_GUARD_MS,
     )
 

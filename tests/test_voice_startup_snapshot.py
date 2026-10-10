@@ -31,6 +31,20 @@ def test_pipeline_configuration_uses_parsed_concurrency(monkeypatch):
     assert pipeline._exp_tts_concurrency == 2
 
 
+def test_debug_capture_falls_back_to_parsed_microphone_unless_debug_override_exists(monkeypatch):
+    from config import settings
+    from tts.aec_debug_capture import _mic_index
+
+    monkeypatch.setattr(settings, 'MICROPHONE_DEVICE_INDEX', 7)
+    monkeypatch.setenv('MICROPHONE_DEVICE_INDEX', 'changed-after-startup')
+    monkeypatch.delenv('AEC_DEBUG_MIC_INDEX', raising=False)
+    assert _mic_index() == 7
+    monkeypatch.setenv('AEC_DEBUG_MIC_INDEX', '3')
+    assert _mic_index() == 3
+    monkeypatch.setenv('AEC_DEBUG_MIC_INDEX', 'invalid')
+    assert _mic_index() is None
+
+
 def test_qwen_child_receives_parent_device_and_parsed_cuda_requirement(monkeypatch):
     from asr.backends import qwen3_asr as module
 

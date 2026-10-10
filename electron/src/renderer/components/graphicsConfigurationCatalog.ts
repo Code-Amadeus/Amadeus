@@ -1,5 +1,6 @@
 import type { ModelConnectionCatalogGroup } from './modelConnectionCatalog'
-import { catalogConfiguration, desktopCatalogFields } from '../../shared/configCatalog.js'
+import { catalogConfiguration } from '../../shared/configCatalog.js'
+import type { StartupSnapshot } from '../../shared/startupSettings.js'
 
 export interface GraphicsRuntimeSettings {
   profile: string
@@ -13,27 +14,30 @@ export interface GraphicsRuntimeSettings {
 
 export function buildGraphicsConfiguration(
   runtime?: GraphicsRuntimeSettings,
-  snapshot?: { values?: Record<string, string> } | null,
+  snapshot?: StartupSnapshot | null,
 ): ModelConnectionCatalogGroup[] {
-  const values = snapshot?.values || {}
-  const profile = values.GRAPHICS_PROFILE ?? runtime?.profile ?? String(desktopCatalogFields.GRAPHICS_PROFILE.default)
-  const customFps = values.RENDER_MAX_FPS ?? runtime?.custom_max_fps ?? Number(desktopCatalogFields.RENDER_MAX_FPS.default)
-  const selectedFps = profile === 'standard' ? 60 : profile === 'power_saving' ? 30 : Number(customFps)
+  const budget = catalogConfiguration('graphics_budget', snapshot, {
+    GRAPHICS_PROFILE: runtime?.profile,
+    RENDER_MAX_FPS: runtime?.custom_max_fps,
+    RENDER_MAX_RESOLUTION: runtime?.custom_max_resolution,
+  })
+  const value = (key: string) => budget.fields.find(field => field.key === key)?.value
+  const profile = value('GRAPHICS_PROFILE')
+  const customFps = value('RENDER_MAX_FPS')
+  const selectedFps = profile === 'standard' ? 60 : profile === 'power_saving' ? 30
+    : profile === 'custom' && customFps !== undefined ? Number(customFps) : undefined
   // Preserve an explicit running choice only while describing that same profile.
   // An unset value otherwise follows the selected preset, including offline edits.
   const sampling = runtime && profile === runtime.profile && selectedFps === runtime.effective_max_fps
-    ? runtime.texture_sampling : selectedFps === 60
-  const budget = catalogConfiguration('graphics_budget', snapshot, {
-    GRAPHICS_PROFILE: profile,
-    RENDER_MAX_FPS: customFps,
-    RENDER_MAX_RESOLUTION: runtime?.custom_max_resolution ?? Number(desktopCatalogFields.RENDER_MAX_RESOLUTION.default),
-  })
+    && !snapshot?.pendingRevisions?.RENDER_TEXTURE_SAMPLING
+    ? runtime.texture_sampling : selectedFps === undefined ? undefined : selectedFps === 60
   return [{
     ...budget,
     active: false, configured: true,
-    status: profile === 'standard' ? 'Standard' : profile === 'power_saving' ? 'Power saving' : 'Custom',
+    status: profile === undefined ? 'Backend status unavailable'
+      : profile === 'standard' ? 'Standard' : profile === 'power_saving' ? 'Power saving' : 'Custom',
     status_ok: true,
-    fields: budget.fields.filter(field => profile === 'custom' || field.key === 'GRAPHICS_PROFILE'),
+    fields: budget.fields.filter(field => profile === undefined || profile === 'custom' || field.key === 'GRAPHICS_PROFILE'),
   }, {
     ...catalogConfiguration('graphics_sampling', snapshot, {
       RENDER_TEXTURE_SAMPLING: sampling,
