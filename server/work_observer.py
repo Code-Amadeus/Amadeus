@@ -1028,7 +1028,9 @@ class WorkObserverCoordinator:
         candidates: list[tuple[int, int, str]] = []
         for index, item in enumerate(relevant):
             keypoint = WorkNarrationGovernor.keypoint_for(item)
-            summary = self._trim(str(item.get("summary") or item.get("title") or ""), 180)
+            summary = str(item.get("summary") or item.get("title") or "")
+            if str(item.get("phase") or "").lower() != "result":
+                summary = self._trim(summary, 180)
             # Intake and the first tool normally use the task as their fallback
             # summary.  It is useful on the visual work surface but is not a
             # progress fact and must never leak into a later merged utterance.
@@ -1049,7 +1051,11 @@ class WorkObserverCoordinator:
             if len(selected) >= 4:
                 break
         selected.sort(key=lambda value: value[1])
-        merged_summary = " / ".join(value[2] for value in selected)
+        merged_summary = " / ".join(value[2] for value in selected) or str(current.get("summary") or "")
+        # Keep report evidence intact; only progress and the resulting speech
+        # have presentation budgets. Selected progress milestones stay bounded.
+        if str(current.get("phase") or "").lower() != "result":
+            merged_summary = self._trim(merged_summary, 420)
         metadata = dict(current.get("metadata") if isinstance(current.get("metadata"), dict) else {})
         metadata.update(
             {
@@ -1060,7 +1066,7 @@ class WorkObserverCoordinator:
         )
         return {
             **dict(current),
-            "summary": self._trim(merged_summary or str(current.get("summary") or ""), 420),
+            "summary": merged_summary,
             "metadata": metadata,
         }
 

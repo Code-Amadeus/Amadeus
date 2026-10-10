@@ -1,4 +1,6 @@
-"""Byte-exact pre-migration snapshots of model-visible character prompts.
+"""Byte-exact snapshots of model-visible character prompts.
+
+The recorded baseline includes intentional default-persona and coordination updates.
 
 Verification never updates the expected data. Explicit baseline recording:
   uv run --locked --no-sync python -X utf8 tests/test_character_prompt_snapshots.py --record
@@ -413,7 +415,7 @@ def captured_prompts():
     return _isolated_capture()
 
 
-def test_character_prompts_match_pre_migration_utf8_bytes(captured_prompts):
+def test_character_prompts_match_recorded_utf8_bytes(captured_prompts):
     expected = json.loads(FIXTURE.read_text(encoding="utf-8"))["prompts"]
     assert captured_prompts.keys() == expected.keys(), "snapshot coverage changed"
     for name, value in captured_prompts.items():

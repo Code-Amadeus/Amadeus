@@ -119,3 +119,18 @@ def test_existing_cooperative_chat_reads_updated_persona_on_the_next_request(tmp
         finally:
             await loop.close()
     asyncio.run(run())
+
+
+def test_default_japanese_brevity_is_flexible_and_can_be_replaced():
+    preview = prompts.get_character_prompt_config()
+    default = preview["main_chat_character_prompt_preview"]["default"]
+    assert preview[prompts.CHARACTER_PROMPT_SETTING] == ""
+    assert "通常の返答は6文以内" in default
+    assert "詳しい説明を求めた場合" in default
+    assert "正確かつ十分に答えるために必要な場合" in default
+    assert "6文を超えてよい" in default
+    assert "通常の返答は6文以内" in prompts.get_system_prompt("base")
+    prompts.set_character_prompt("あなたは牧瀬紅莉栖。詳しく説明してください。")
+    assert "通常の返答は6文以内" not in prompts.get_system_prompt("base")
+    prompts.set_character_prompt("")
+    assert "通常の返答は6文以内" in prompts.get_system_prompt("base")
