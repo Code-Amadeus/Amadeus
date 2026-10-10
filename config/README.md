@@ -38,11 +38,16 @@ configuration keys retain their existing environment-variable names.
 Run `npm run generate:config` from `electron` after editing a declaration.
 
 Python reads the JSON through `config/catalog/__init__.py` and the existing
-`EnvironmentReader`; `settings.FISH_TTS_*` callers keep working. Electron consumes
+`EnvironmentReader`; `settings.FISH_TTS_*` callers keep working. The generator
+maintains explicit, typed bindings in a marked block of `settings.py`, so Ruff
+and editors can resolve the same public names without `globals()` injection.
+Electron consumes
 the generated `src/shared/configCatalog.generated.ts`, which is compiled into
 both main and renderer bundles. Offline Settings never requires a running Python
 process or access to the source checkout. The generator also maintains marked
-sections of `.env.example`. Commit generated output with its declaration;
+sections of `.env.example`. Empty strings are quoted so option comments cannot
+become values; secret examples stay commented out. Uncomment and fill only the
+credentials you use. Commit generated output with its declaration;
 `npm test` and `npm run build` reject stale output. Removed or renamed groups
 lose their old managed env sections; duplicate declared keys outside those sections
 are rejected. `catalog_legacy.json` bounds the remaining handwritten declarations:
@@ -58,6 +63,15 @@ pending clear never reuses the running backend's superseded value. Secrets expos
 only configured state. Computed defaults for the next launch use the projected
 inputs, so changing a local model also changes an unset Hybrid model without
 being overwritten by the old running value.
+
+`desktop_default: { "value": true, "platforms": ["win32"] }` declares a
+desktop-only launch default; omit `platforms` to apply it on every desktop OS.
+The launch environment and offline snapshot derive it from the same declaration,
+after process, saved-user and dotenv overrides. Python's headless default stays
+unchanged. Defaults equal to Python's must not be injected unnecessarily: AEC
+delay key presence denotes an explicit override of device-class calibration.
+Catalog JSON resources are packaged recursively; adding a new folder does not
+require new package entries in `pyproject.toml`.
 
 `apply` is `frontend`, `host`, `backend_restart` or `desktop_restart`, with a
 field override when its group has mixed behavior. Desktop-only fields never
@@ -224,7 +238,7 @@ asset request after a 30-second cooldown, without changing the configured flag.
 
 - Credentials, model paths, ports, startup feature flags: `.env` ->
   `config/settings.py` -> imported constant or injected constructor argument.
-- Electron launch-profile defaults: `electron/src/main/index.ts`. These may be
+- Electron launch-profile defaults: the field's `desktop_default` in the catalog. These may be
   intentionally different from headless Python defaults. The current desktop
   profile enables realtime AEC/barge-in while headless Python does not.
 - Runtime choices changed by UI or request handling: a named runtime owner.

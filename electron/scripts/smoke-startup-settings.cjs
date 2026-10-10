@@ -30,6 +30,7 @@ app.whenReady().then(async () => {
   store.update({}, { values: {
     AMADEUS_UI_LOCALE: 'en-US', AMADEUS_UI_THEME: 'wallpaper-slice', TTS_BACKEND: null, FISH_TTS_MODEL: null, FISH_TTS_LATENCY: null,
     MIMO_TTS_VOICE: null, TTS_API_VOICE: null,
+    WAKE_ENABLED: null, AEC_REALTIME_ENABLED: null, AEC_REALTIME_BARGE_IN: null, AEC_REALTIME_DELAY_MS: null,
     GRAPHICS_PROFILE: null, RENDER_MAX_FPS: null, RENDER_TEXTURE_SAMPLING: null,
     WORK_EXECUTION_PROVIDER: null, COOPERATIVE_CHAT_PROVIDER: 'openclaw',
     AMADEUS_VISION_ENABLED: 'false', AMADEUS_VISION_MODE: 'watching',
@@ -87,6 +88,15 @@ app.whenReady().then(async () => {
   // while every backend/network request remains blocked above.
   await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Voice').click(); true`)
   await until(`Boolean(document.querySelector('select[aria-label="Backend"] option[value="fish_audio"]'))`)
+  for (const [key, label] of [
+    ['WAKE_ENABLED', 'Wake service'], ['AEC_REALTIME_ENABLED', 'Realtime echo cancellation'],
+    ['AEC_REALTIME_BARGE_IN', 'Allow microphone interruption'],
+  ]) {
+    const expected = store.backendEnvironment(environment)[key] === 'true'
+    assert.equal(await win.webContents.executeJavaScript(`document.querySelector('select[aria-label="${label}"]').value`), String(expected))
+  }
+  assert.equal(store.backendEnvironment(environment).AEC_REALTIME_DELAY_MS, undefined)
+  console.log('PASS offline Wake/AEC controls agree with desktop launch defaults and preserve automatic delay selection')
   await win.webContents.executeJavaScript(`(() => {
     const select = document.querySelector('select[aria-label="Backend"] option[value="fish_audio"]').parentElement;
     select.value = 'fish_audio'; select.dispatchEvent(new Event('change', { bubbles: true })); return true;

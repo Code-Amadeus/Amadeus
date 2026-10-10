@@ -2644,6 +2644,9 @@ export const catalogGroups: CatalogGroup[] = [
           "zh-CN": "实时回声消除"
         },
         "default": false,
+        "desktop_default": {
+          "value": true
+        },
         "example_active": false,
         "example": true
       },
@@ -2654,6 +2657,9 @@ export const catalogGroups: CatalogGroup[] = [
           "zh-CN": "允许麦克风打断"
         },
         "default": false,
+        "desktop_default": {
+          "value": true
+        },
         "example_active": false,
         "example": true
       },
@@ -2802,6 +2808,12 @@ export const catalogGroups: CatalogGroup[] = [
       },
       "QWEN3_ASR_REQUIRE_CUDA": {
         "type": "boolean",
+        "true_values": [
+          "1",
+          "true",
+          "yes",
+          "on"
+        ],
         "title": {
           "en-US": "Require Qwen CUDA",
           "zh-CN": "要求 Qwen 使用 CUDA"
@@ -2980,6 +2992,12 @@ export const catalogGroups: CatalogGroup[] = [
           "zh-CN": "唤醒服务"
         },
         "default": false,
+        "desktop_default": {
+          "value": true,
+          "platforms": [
+            "win32"
+          ]
+        },
         "example_active": true
       },
       "WAKE_PHRASES": {

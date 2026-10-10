@@ -27,7 +27,7 @@ function makeStore(t) {
 test('saved character identity remains pending until a new backend launch applies it', t => {
   const { store, file, dotenv } = makeStore(t)
   fs.writeFileSync(dotenv, `${key}=kurisu\n`)
-  const firstLaunch = { ...store.backendEnvironment({}, { [key]: 'kurisu' }) }
+  const firstLaunch = { ...store.backendEnvironment({}) }
   const saved = store.update({}, { values: { [key]: 'test-char' } })
   assert.equal(firstLaunch[key], undefined)
   assert.ok(saved.pendingRevisions[key] > 0)

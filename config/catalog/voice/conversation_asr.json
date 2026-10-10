@@ -78,6 +78,7 @@
     },
     "QWEN3_ASR_REQUIRE_CUDA": {
       "type": "boolean",
+      "true_values": ["1", "true", "yes", "on"],
       "title": {
         "en-US": "Require Qwen CUDA",
         "zh-CN": "要求 Qwen 使用 CUDA"

@@ -10,6 +10,7 @@ export interface CatalogField {
   ui_description?: LocalizedText | null
   icon?: string
   default?: string | boolean | number
+  desktop_default?: { value: string | boolean | number; platforms?: string[] }
   computed_default?: boolean
   example?: string | number | boolean
   example_active?: boolean
@@ -57,6 +58,12 @@ export interface CatalogGroup {
 }
 
 export const catalogGroups = generatedGroups
+export function catalogLaunchDefaults(platform: string): Record<string, string> {
+  return Object.fromEntries(catalogGroups.flatMap(group => Object.entries(group.config).flatMap(([key, field]) => {
+    const launch = field.desktop_default
+    return launch && (!launch.platforms || launch.platforms.includes(platform)) ? [[key, String(launch.value)]] : []
+  })))
+}
 export function catalogApplication(key: string): SettingApplication {
   const group = catalogGroups.find(group => key in group.config || Object.values(group.config).some(field => field.aliases?.includes(key)))
   return desktopCatalogFields[key]?.apply ?? group?.apply ?? 'backend_restart'

@@ -5,7 +5,6 @@ kept under .pytest_tmp/config-catalog for inspection.
 """
 import http.client
 import json
-import os
 from pathlib import Path
 import socket
 import subprocess

@@ -13,6 +13,51 @@ from config.environment import EnvironmentReader
 from server.handlers import system_handler
 
 
+def test_generated_env_template_round_trips_through_dotenv_without_fake_credentials():
+    from pathlib import Path
+    from dotenv import dotenv_values
+
+    values = dotenv_values(Path(__file__).parents[1] / '.env.example')
+    for group in catalog.configuration_groups().values():
+        for key, field in group['config'].items():
+            if field.get('secret'):
+                assert not values.get(key), f'{key} must not configure a placeholder credential'
+            elif field.get('example_active') and field.get('scope') not in {'desktop', 'virtual'}:
+                expected = field.get('example', field.get('default'))
+                if field['type'] in {'integer', 'number'}:
+                    assert float(values[key]) == expected, key
+                else:
+                    assert values[key] == (str(expected).lower() if isinstance(expected, bool) else str(expected)), key
+                if field['type'] == 'enum':
+                    assert values[key] in catalog.option_values(field)
+    parsed = catalog.read_catalog_environment(EnvironmentReader(values))
+    assert parsed['AUIP_ACTION_PROVIDER'] == parsed['AUIP_NARRATION_PROVIDER'] == ''
+    assert parsed['WORK_OBSERVER_PROVIDER'] == parsed['CODEX_APP_SERVER_SERVICE_TIER'] == ''
+
+
+def test_settings_facade_imports_from_copied_example_with_only_one_real_key(tmp_path):
+    import subprocess
+    from pathlib import Path
+
+    root = Path(__file__).parents[1]
+    dotenv = tmp_path / '.env'
+    dotenv.write_text((root / '.env.example').read_text(encoding='utf-8') + '\nDEEPSEEK_API_KEY=synthetic-key\n', encoding='utf-8')
+    probe = '''
+import sys
+from dotenv import dotenv_values
+import config.environment as environment
+environment.load_project_environment = lambda _: environment.EnvironmentReader(dotenv_values(sys.argv[1]))
+from config import settings
+assert settings.DEEPSEEK_API_KEY == 'synthetic-key'
+assert not settings.OPENAI_API_KEY
+assert not settings.GEMINI_API_KEY
+assert not settings.AWS_BEDROCK_BEARER_TOKEN
+assert settings.CODEX_APP_SERVER_SERVICE_TIER == ''
+assert settings.AUIP_ACTION_PROVIDER == settings.AUIP_NARRATION_PROVIDER == settings.WORK_OBSERVER_PROVIDER == ''
+'''
+    subprocess.run([sys.executable, '-c', probe, str(dotenv)], cwd=root, check=True, capture_output=True, text=True)
+
+
 def test_no_new_or_migrated_handwritten_config_declarations() -> None:
     import ast
     from pathlib import Path

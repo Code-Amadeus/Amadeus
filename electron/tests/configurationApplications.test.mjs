@@ -47,6 +47,19 @@ test('theme choices retain their explanatory text in English and Chinese', t => 
   }
 })
 
+test('shared page labels and persona heading retain Chinese translations after catalog migration', t => {
+  const previous = globalThis.localStorage
+  globalThis.localStorage = { getItem: () => 'zh-CN' }
+  t.after(() => { globalThis.localStorage = previous })
+  const { I18nProvider, useI18n } = loadTypeScript(new URL('../src/renderer/i18n.tsx', import.meta.url))
+  function Labels() {
+    const { t: translate } = useI18n()
+    return React.createElement('span', null, ['Backend', 'Character', 'Model', 'Kurisu Japanese persona'].map(key => translate(key)).join(' / '))
+  }
+  const markup = renderToStaticMarkup(React.createElement(I18nProvider, null, React.createElement(Labels)))
+  assert.equal(markup, '<span>后端 / 角色 / 模型 / 红莉栖日语人格</span>')
+})
+
 test('legacy accepted values stay valid without adding new choices to the existing forms', t => {
   const store = makeStore(t)
   store.update({}, { values: { AUIP_ACTION_REASONING_EFFORT: 'ultra', AMADEUS_VISION_SCOPE: 'region' } })
@@ -65,7 +78,7 @@ test('frontend and desktop startup settings have explicit policies and do not en
   } })
   assert.equal(saved.restartRequired, false)
   assert.deepEqual(saved.pendingRevisions, {})
-  assert.deepEqual(store.backendEnvironment({}), {})
+  assert.deepEqual(store.backendEnvironment({}), catalog.catalogLaunchDefaults(process.platform))
   assert.equal(catalog.catalogApplication('AMADEUS_WINDOWS_STARTUP_MODE'), 'desktop_restart')
   assert.equal(catalog.catalogApplication('AMADEUS_UI_LOCALE'), 'frontend')
   assert.equal(catalog.catalogApplication('AMADEUS_VISION_ENABLED'), 'host')
@@ -81,8 +94,8 @@ test('frontend aliases also remain outside backend launch inputs', t => {
   }
   const store = makeStore(t, { './configCatalog.generated.js': { catalogGroups: groups } })
   store.update({}, { values: { OLD_FRONTEND_CHOICE: 'second' } })
-  assert.deepEqual(store.backendEnvironment({}), {})
-  assert.deepEqual(store.backendEnvironment({ OLD_FRONTEND_CHOICE: 'first' }), {})
+  assert.deepEqual(store.backendEnvironment({}), catalog.catalogLaunchDefaults(process.platform))
+  assert.deepEqual(store.backendEnvironment({ OLD_FRONTEND_CHOICE: 'first' }), catalog.catalogLaunchDefaults(process.platform))
 })
 
 test('a new ordinary live declaration reaches the production form, runtime conversion, persistence and validation', t => {

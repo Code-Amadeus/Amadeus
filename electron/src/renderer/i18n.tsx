@@ -10,6 +10,10 @@ const LOCAL_LOCALE_KEY = 'amadeus.ui.locale'
 
 const ZH_CN: Record<string, string> = {
   ...catalogTranslations,
+  'Backend': '后端',
+  'Character': '角色',
+  'Model': '模型',
+  'Kurisu Japanese persona': '红莉栖日语人格',
   'Start with a personality. Keep the appearance and voice you already use.': '从人格开始，沿用现有的形象与声音。',
   'Create a role with a name and personality. Switching roles takes effect after a backend restart.': '用名字和人格创建角色。更换角色后，重启后端生效。',
   'Manage roles': '管理角色',

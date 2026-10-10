@@ -221,16 +221,6 @@ packages = [
     "asr",
     "config",
     "config.catalog",
-    "config.catalog.tts",
-    "config.catalog.graphics",
-    "config.catalog.voice",
-    "config.catalog.models",
-    "config.catalog.roles",
-    "config.catalog.providers",
-    "config.catalog.desktop",
-    "config.catalog.general",
-    "config.catalog.character",
-    "config.catalog.visual",
     "core",
     "llm",
     "openclaw",
@@ -246,16 +236,7 @@ packages = [
 
 [tool.setuptools.package-data]
 characters = ["*.toml"]
-"config.catalog.tts" = ["*.json"]
-"config.catalog.graphics" = ["*.json"]
-"config.catalog.voice" = ["*.json"]
-"config.catalog.models" = ["*.json"]
-"config.catalog.roles" = ["*.json"]
-"config.catalog.providers" = ["*.json"]
-"config.catalog.desktop" = ["*.json"]
-"config.catalog.general" = ["*.json"]
-"config.catalog.character" = ["*.json"]
-"config.catalog.visual" = ["*.json"]
+"config.catalog" = ["**/*.json"]
 
 # ---------------------------------------------------------------------------
 # Tool configuration below is declared but NOT yet enforced: neither ruff nor

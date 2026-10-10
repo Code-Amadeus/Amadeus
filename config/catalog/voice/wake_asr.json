@@ -17,6 +17,7 @@
         "zh-CN": "唤醒服务"
       },
       "default": false,
+      "desktop_default": { "value": true, "platforms": ["win32"] },
       "example_active": true
     },
     "WAKE_PHRASES": {

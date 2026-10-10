@@ -55,7 +55,7 @@ for (const group of groups) {
   assert.ok(applications.includes(group.apply), `Missing/invalid application policy for ${group.id}`)
   assert.ok(Object.keys(group.config).length, 'Empty configuration group')
   for (const [key, field] of Object.entries(group.config)) {
-    knownKeys(field, ['type', 'title', 'description', 'ui_description', 'icon', 'default', 'secret', 'options', 'schemes', 'min', 'max', 'step', 'computed_default', 'example', 'example_active', 'accepted_values', 'true_values', 'aliases', 'setting', 'control', 'scope', 'visible_when', 'apply', 'runtime_key', 'identifier', 'max_length', 'allow_empty', 'trim'])
+    knownKeys(field, ['type', 'title', 'description', 'ui_description', 'icon', 'default', 'desktop_default', 'secret', 'options', 'schemes', 'min', 'max', 'step', 'computed_default', 'example', 'example_active', 'accepted_values', 'true_values', 'aliases', 'setting', 'control', 'scope', 'visible_when', 'apply', 'runtime_key', 'identifier', 'max_length', 'allow_empty', 'trim'])
     assert.match(key, /^[A-Z][A-Z0-9_]*$/)
     assert.ok(!keys.has(key), `Duplicate setting ${key}`)
     keys.add(key)
@@ -114,7 +114,13 @@ for (const group of groups) {
       assert.equal(typeof field.default, type, `Missing/invalid static default for ${key}`)
     }
     if (field.example_active !== undefined) assert.equal(typeof field.example_active, 'boolean')
-    for (const value of [field.default, field.example].filter(value => value !== undefined)) {
+    if (field.desktop_default !== undefined) {
+      knownKeys(field.desktop_default, ['value', 'platforms'])
+      assert.ok(group.desktop && !field.secret && !field.computed_default && (field.scope ?? 'backend') === 'backend')
+      assert.equal(typeof field.desktop_default.value, typeof field.default)
+      if (field.desktop_default.platforms) assert.ok(field.desktop_default.platforms.length && field.desktop_default.platforms.every(value => ['win32', 'darwin', 'linux'].includes(value)))
+    }
+    for (const value of [field.default, field.example, field.desktop_default?.value].filter(value => value !== undefined)) {
       assert.ok(!/[\r\n\0]/.test(String(value)), `Invalid env example for ${key}`)
       if (field.type === 'boolean') assert.equal(typeof value, 'boolean')
       if (['integer', 'number'].includes(field.type)) {
@@ -143,11 +149,12 @@ for (const group of groups) {
       assert.equal(new Set(values).size, values.length)
       if (field.default !== undefined) assert.ok(values.includes(String(field.default)), `Invalid enum default for ${key}`)
       if (field.example !== undefined) assert.ok(values.includes(String(field.example)))
+      if (field.desktop_default) assert.ok(values.includes(String(field.desktop_default.value)))
     }
     if (field.type === 'url') {
       assert.ok(Array.isArray(field.schemes) && field.schemes.length)
       assert.ok(field.schemes.every(value => ['http', 'https', 'ws', 'wss'].includes(value)))
-      for (const value of [field.default, field.example].filter(value => value !== undefined && value !== '')) {
+      for (const value of [field.default, field.example, field.desktop_default?.value].filter(value => value !== undefined && value !== '')) {
         assert.ok(field.schemes.includes(new URL(value).protocol.slice(0, -1)), `Invalid URL default for ${key}`)
       }
     }
@@ -175,9 +182,9 @@ function renderGroup(group) {
   for (const [key, field] of Object.entries(group.config)) {
     if (['virtual', 'desktop'].includes(field.scope)) continue
     const value = field.secret ? '<your-api-key>' : field.example ?? field.default
-    const rendered = typeof value === 'string' && /[\s#"'\\]/.test(value) ? JSON.stringify(value) : String(value)
+    const rendered = typeof value === 'string' && (value === '' || /[\s#"'\\]/.test(value)) ? JSON.stringify(value) : String(value)
     const options = field.options ? `  # ${field.options.map(option => typeof option === 'string' ? option : option.value).join(' | ')}` : ''
-    lines.push(`${field.example_active ? '' : '# '}${key}=${rendered}${options}`)
+    lines.push(`${field.example_active && !field.secret ? '' : '# '}${key}=${rendered}${options}`)
   }
   return [...lines, `# END GENERATED CONFIG: ${group.id}`, ''].join('\n')
 }
@@ -192,6 +199,20 @@ env = env.replace(block, (_, id) => {
   return group ? renderGroup(group) : ''
 })
 for (const group of groups) if (!seen.has(group.id)) env += `\n${renderGroup(group)}`
+// Keep the public Python facade statically visible without handwritten bindings.
+const bindings = groups.flatMap(group => Object.entries(group.config))
+  .filter(([, field]) => (field.scope ?? 'backend') === 'backend' && !field.computed_default)
+  .map(([key, field]) => `${key}: ${{ boolean: 'bool', integer: 'int', number: 'float' }[field.type] ?? 'str'} = _catalog_values["${key}"]`)
+const settingsPath = path.join(root, 'config/settings.py')
+const settings = fs.readFileSync(settingsPath, 'utf8').replaceAll('\r\n', '\n')
+const bindingBlock = /^# BEGIN GENERATED CATALOG BINDINGS\n[\s\S]*?^# END GENERATED CATALOG BINDINGS/gm
+assert.equal([...settings.matchAll(bindingBlock)].length, 1, 'Missing/duplicate Python catalog binding markers')
+output('config/settings.py', settings.replace(bindingBlock, [
+  '# BEGIN GENERATED CATALOG BINDINGS',
+  '# Generated from config/catalog/**/*.json. Run npm run generate:config; do not edit.',
+  '_catalog_values = read_catalog_environment(_ENV)', ...bindings, 'del _catalog_values',
+  '# END GENERATED CATALOG BINDINGS',
+].join('\n')))
 output('electron/src/shared/configCatalog.generated.ts',
   '// Generated from config/catalog/**/*.json. Run npm run generate:config; do not edit.\n'
   + "import type { CatalogGroup } from './configCatalog.js'\n"

@@ -503,9 +503,6 @@ def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
         else "direct" if settings.DIRECT_CODEX_PROVIDER_ENABLED
         else "disabled"
     )
-    codex_auth_mode = str(
-        getattr(settings, "CODEX_APP_SERVER_AUTH_MODE", "model_api") or "model_api"
-    ).strip().lower()
     codex_model_provider = str(
         getattr(settings, "CODEX_APP_SERVER_MODEL_PROVIDER", "deepseek") or "deepseek"
     ).strip().lower()

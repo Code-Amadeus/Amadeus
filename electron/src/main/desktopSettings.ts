@@ -2,7 +2,7 @@ import { safeStorage } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import process from 'node:process'
-import { catalogApplication, catalogInputKeys, catalogOptionValues, desktopCatalogFields } from '../shared/configCatalog.js'
+import { catalogApplication, catalogInputKeys, catalogLaunchDefaults, catalogOptionValues, desktopCatalogFields } from '../shared/configCatalog.js'
 
 type StoredDesktopSettings = {
   version: 2
@@ -304,6 +304,7 @@ export class DesktopSettingsStore {
   constructor(
     private readonly filePath: string,
     private readonly dotenvPath: string,
+    private readonly platform: string = process.platform,
   ) {}
 
   private get backupPath(): string {
@@ -409,12 +410,14 @@ export class DesktopSettingsStore {
       }]),
     )
     const pendingKeys = Object.keys(stored.pendingRevisions)
+    const launchDefaults = catalogLaunchDefaults(this.platform)
     const startupValues = Object.fromEntries([...VALUE_KEYS].flatMap(key => {
       // Compound transport and dotenv interpolation need their owning parser.
       const inputs = catalogInputKeys(key)
       const value = sources[key] === 'environment' ? (key === 'CODEX_PROVIDER_TRANSPORT' ? undefined
         : inputs.map(candidate => environment[candidate]).find(value => value !== undefined))
-        : sources[key] === 'user' ? inputs.map(candidate => stored.values[candidate]).find(value => value !== undefined) : undefined
+        : sources[key] === 'user' ? inputs.map(candidate => stored.values[candidate]).find(value => value !== undefined)
+        : sources[key] === 'default' ? launchDefaults[key] : undefined
       return value === undefined ? [] : [[key, value]]
     }))
     return {
@@ -637,7 +640,6 @@ export class DesktopSettingsStore {
 
   backendEnvironment(
     environment: NodeJS.ProcessEnv,
-    launchDefaults: Readonly<Record<string, string>> = {},
   ): NodeJS.ProcessEnv {
     const stored = this.read()
     const dotenvKeys = this.dotenvKeys()
@@ -674,13 +676,8 @@ export class DesktopSettingsStore {
         console.error(`[electron] could not decrypt desktop secret ${key}`, error)
       }
     }
-    for (const [key, value] of Object.entries(launchDefaults)) {
-      if (
-        environment[key] === undefined
-        && stored.values[key] === undefined
-        && stored.encryptedSecrets[key] === undefined
-        && !dotenvKeys.has(key)
-      ) {
+    for (const [key, value] of Object.entries(catalogLaunchDefaults(this.platform))) {
+      if (sourceFor(key, environment, stored, dotenvKeys) === 'default') {
         result[key] = value
       }
     }

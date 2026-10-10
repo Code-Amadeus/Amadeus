@@ -23,6 +23,54 @@ function store(t, overrides = {}) {
   return new DesktopSettingsStore(path.join(directory, 'settings.json'), path.join(directory, '.env'))
 }
 
+test('desktop launch defaults and offline voice controls agree on every platform', t => {
+  const { DesktopSettingsStore } = loadTypeScript(new URL('../src/main/desktopSettings.ts', import.meta.url), {
+    electron: { safeStorage: credentials },
+  })
+  const voice = loadTypeScript(new URL('../src/renderer/components/voiceConfigurationCatalog.ts', import.meta.url))
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'amadeus-launch-defaults-'))
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+  for (const platform of ['win32', 'darwin', 'linux']) {
+    const dotenv = path.join(directory, `${platform}.env`)
+    const settings = new DesktopSettingsStore(path.join(directory, `${platform}.json`), dotenv, platform)
+    const fields = snapshot => voice.buildVoiceConfigurationCatalog({
+      asrBackend: 'qwen3_asr', ttsBackend: 'gpt_sovits', wakeEnabled: false, aecEnabled: false,
+    }, snapshot).flatMap(group => group.fields)
+    const launch = settings.backendEnvironment({})
+    const snapshot = settings.snapshot({})
+    for (const key of ['WAKE_ENABLED', 'AEC_REALTIME_ENABLED', 'AEC_REALTIME_BARGE_IN']) {
+      const expected = key !== 'WAKE_ENABLED' || platform === 'win32'
+      assert.equal(fields(snapshot).find(field => field.key === key).value, expected)
+      assert.equal(launch[key], expected ? 'true' : undefined)
+      assert.equal(snapshot.sources[key], 'default')
+    }
+    // No synthetic delay override: Python must still select the device class.
+    assert.ok(!('AEC_REALTIME_DELAY_MS' in launch))
+    settings.update({}, { values: { AEC_REALTIME_ENABLED: false, AEC_REALTIME_DELAY_MS: '80' } })
+    assert.equal(settings.backendEnvironment({}).AEC_REALTIME_ENABLED, 'false')
+    assert.equal(settings.backendEnvironment({}).AEC_REALTIME_DELAY_MS, '80')
+    assert.equal(fields(settings.snapshot({})).find(field => field.key === 'AEC_REALTIME_ENABLED').value, false)
+    assert.ok(!('AEC_REALTIME_ENABLED' in settings.backendEnvironment({ AEC_REALTIME_ENABLED: 'true' })))
+    const cleared = settings.update({}, { values: { AEC_REALTIME_ENABLED: null, AEC_REALTIME_DELAY_MS: null } })
+    assert.equal(fields(cleared).find(field => field.key === 'AEC_REALTIME_ENABLED').value, true)
+    assert.ok(!('AEC_REALTIME_DELAY_MS' in settings.backendEnvironment({})))
+    fs.writeFileSync(dotenv, 'AEC_REALTIME_ENABLED=false\nAEC_REALTIME_DELAY_MS=90\n')
+    assert.ok(!('AEC_REALTIME_ENABLED' in settings.backendEnvironment({})))
+    assert.ok(!('AEC_REALTIME_DELAY_MS' in settings.backendEnvironment({})))
+    assert.equal(settings.snapshot({}).sources.AEC_REALTIME_ENABLED, 'dotenv')
+    assert.ok(!('AEC_REALTIME_ENABLED' in settings.snapshot({}).startupValues))
+  }
+})
+
+test('copied env template does not mark untouched credentials configured', t => {
+  const settings = store(t)
+  fs.copyFileSync(new URL('../../.env.example', import.meta.url), settings.dotenvPath)
+  const snapshot = settings.snapshot({})
+  for (const [key, field] of Object.entries(catalog.desktopCatalogFields)) {
+    if (field.secret) assert.equal(snapshot.secrets[key].configured, false, key)
+  }
+})
+
 test('committed Electron catalog and env examples match the canonical JSON', () => {
   execFileSync(process.execPath, [fileURLToPath(new URL('../scripts/generate-config-catalog.mjs', import.meta.url)), '--check'])
   const directory = new URL('../../config/catalog/', import.meta.url)
@@ -150,6 +198,7 @@ test('generation rejects stale output and invalid declarations before they reach
   fs.mkdirSync(path.join(root, 'config/catalog/tts'), { recursive: true })
   const script = path.join(root, 'electron/scripts/generate-config-catalog.mjs')
   fs.copyFileSync(new URL('../scripts/generate-config-catalog.mjs', import.meta.url), script)
+  fs.writeFileSync(path.join(root, 'config/settings.py'), '# BEGIN GENERATED CATALOG BINDINGS\n# END GENERATED CATALOG BINDINGS\n')
   const declaration = path.join(root, 'config/catalog/tts/fish_audio.json')
   const write = group => fs.writeFileSync(declaration, JSON.stringify(group))
   write(definition)

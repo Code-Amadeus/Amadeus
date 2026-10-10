@@ -17,6 +17,7 @@
         "zh-CN": "实时回声消除"
       },
       "default": false,
+      "desktop_default": { "value": true },
       "example_active": false,
       "example": true
     },
@@ -27,6 +28,7 @@
         "zh-CN": "允许麦克风打断"
       },
       "default": false,
+      "desktop_default": { "value": true },
       "example_active": false,
       "example": true
     },

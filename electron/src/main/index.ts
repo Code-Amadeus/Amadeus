@@ -462,15 +462,7 @@ async function launchBackend(): Promise<void> {
   console.log(`[electron] project root: ${PROJECT_ROOT}`)
 
   const launchPendingRevisions = desktopSettings.pendingRevisionSnapshot()
-  const backendEnvironment = desktopSettings.backendEnvironment(process.env, {
-    // Enable standby when Wallpaper is selected later too; this flag does not
-    // start the wake service during ordinary console startup. Explicit settings win.
-    ...(process.platform === 'win32' ? { WAKE_ENABLED: '1' } : {}),
-    AEC_REALTIME_ENABLED: '1',
-    AEC_REALTIME_BARGE_IN: '1',
-    AEC_REALTIME_DELAY_MS: '280',
-    ASR_ECHO_TAIL_GUARD_MS: '650',
-  })
+  const backendEnvironment = desktopSettings.backendEnvironment(process.env)
   const backendProcessEnvironment = {
     ...backendEnvironment,
     ...process.env,
