@@ -1,34 +1,34 @@
-name: Bug report
-description: Report a reproducible product failure.
+name: Bug report / 问题反馈
+description: Report a product problem. / 反馈使用中遇到的问题。
 body:
   - type: textarea
     id: behavior
     attributes:
-      label: Expected and actual behavior
-      description: Describe the user action, what you expected, and what happened.
+      label: Expected and actual behavior / 实际现象与期望
+      description: Describe what you did, what you expected, and what happened. / 你做了什么、希望发生什么、实际发生了什么？
     validations:
       required: true
   - type: textarea
     id: reproduction
     attributes:
-      label: Steps to reproduce
-      description: Include a minimal example with synthetic inputs where possible.
+      label: Steps to reproduce / 复现步骤
+      description: List the steps if known; say if the problem is intermittent or you are unsure. / 写下已知的操作步骤；如果偶发或不确定如何复现，也请说明。
     validations:
       required: true
   - type: textarea
     id: environment
     attributes:
-      label: Relevant environment
-      description: OS, Amadeus revision, install profile (L1–L4 / CPU / CUDA / ROCm / MPS), and relevant Provider, model, ASR, TTS or character package.
+      label: Relevant environment / 使用环境
+      description: Share what you know about your OS, Amadeus version, install profile, and relevant model or voice backend; unknown details are fine. / 填写已知的系统、Amadeus 版本、安装方式及相关模型或语音后端；不清楚的部分可以注明。
     validations:
       required: true
   - type: textarea
     id: evidence
     attributes:
-      label: Sanitized evidence
-      description: Paste a short relevant error or screenshot. Remove credentials, private paths and conversations. Logs may contain sensitive information, especially with LOG_USER_CONTENT enabled; review them before sharing.
+      label: Sanitized evidence / 错误信息或截图（请先脱敏）
+      description: Share a short error or screenshot after removing credentials, private paths and conversations. Review logs before sharing, especially with LOG_USER_CONTENT enabled. / 可贴简短报错或截图，请先移除密钥、私人路径和对话。日志分享前请检查，尤其是开启过 LOG_USER_CONTENT 时。
   - type: textarea
     id: related
     attributes:
-      label: Related issues or fixes
-      description: Link existing reports and state whether a newer revision was checked.
+      label: Related issues or fixes / 相关问题或修复
+      description: Link related reports if known, and mention whether you tried a newer version. / 如有相关问题链接可以附上，也可以说明是否试过更新版本。

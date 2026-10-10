@@ -1,24 +1,24 @@
-name: Feature request
-description: Propose a concrete user journey or capability.
+name: Feature request / 功能建议
+description: Tell us what you would like to do. / 说说你希望实现什么。
 body:
   - type: textarea
     id: scenario
     attributes:
-      label: User scenario
-      description: What are you trying to do, and where does the current product stop you?
+      label: User scenario / 使用场景
+      description: What are you trying to do, and where does the current product stop you? / 你想做什么？目前在哪里遇到了限制？
     validations:
       required: true
   - type: input
     id: subsystem
     attributes:
-      label: Affected product area
-      placeholder: Chat, Work, Settings, voice, character, extension, or another area
+      label: Affected product area / 相关功能
+      placeholder: Chat / 聊天、Work / 工作、Settings / 设置、语音、角色、扩展或其他
     validations:
       required: true
   - type: textarea
     id: outcome
     attributes:
-      label: Smallest useful change and acceptance example
-      description: Describe the expected behavior, who owns it, and any settings, data or permission changes. See ROADMAP.md for current directions.
+      label: Smallest useful change and example / 最小改动与预期示例（选填）
+      description: Describe the smallest improvement that would help; an example of the desired result is enough. / 如果已有想法，可以举例说明怎样改会更好，不需要提供技术方案。
     validations:
-      required: true
+      required: false
