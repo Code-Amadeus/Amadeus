@@ -48,7 +48,7 @@ from tts.first_sentence_audio_cache import get_first_sentence_audio_cache
 from tts.latency_clock import log_latency_marker
 from tts.synthesis_backend import SynthesisBackends, select_synthesis
 from tts.utterance_scheduler import TTSUtteranceScheduler
-from tts.acceleration import acceleration_mode
+from config.tts_acceleration import acceleration_mode
 
 logger = logging.getLogger(__name__)
 _utterance_scheduler = TTSUtteranceScheduler(logger=logger)

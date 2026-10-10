@@ -106,7 +106,7 @@ class GPTSoVITSBackend(BaseTTSBackend):
 
     @property
     def cuda_graph_enabled(self) -> bool:
-        from tts.acceleration import cuda_graph_enabled
+        from config.tts_acceleration import cuda_graph_enabled
         device = (self._ready_info.get("device", "") if self.deployment == "subprocess"
                   else getattr(self._inferencer, "device", ""))
         return cuda_graph_enabled(device, is_rocm=self.is_rocm)

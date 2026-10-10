@@ -20,7 +20,7 @@ from config.local_model_loading import enforce_local_model_loading
 enforce_local_model_loading()
 
 from tts.optional_ap_bwe import APBWEUnavailable, create_ap_bwe
-from tts.acceleration import acceleration_mode, cuda_graph_enabled, flash_attention_eligible
+from config.tts_acceleration import acceleration_mode, cuda_graph_enabled, flash_attention_eligible
 from tts.semantic_stability import (
     SemanticGenerationError,
     assess_semantic_candidate,

@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tts.acceleration import acceleration_mode, cuda_graph_enabled, flash_attention_eligible
+from config.tts_acceleration import acceleration_mode, cuda_graph_enabled, flash_attention_eligible
 from tts.backend import TTSRuntimeAdapter, BaseTTSBackend
 from tts.backends.gpt_sovits import GPTSoVITSBackend
 
