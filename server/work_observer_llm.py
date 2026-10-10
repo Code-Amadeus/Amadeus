@@ -237,7 +237,7 @@ def _repair_terminal_report(
     language = _normalize_display_language(display_language)
     payload = {
         "display_language": language,
-        "result_summary": _trim(str(note.get("summary") or ""), 1200),
+        "result_summary": str(note.get("summary") or ""),
         "terminal_truth": _compact_note(note).get("terminal_truth", {}),
         "output_schema": {
             "display_text": render("one to three concise ${short_name} sentences in display_language"),
@@ -397,7 +397,9 @@ def _compact_note(note: dict[str, Any]) -> dict[str, Any]:
         "phase": str(note.get("phase") or ""),
         "importance": str(note.get("importance") or "normal"),
         "title": _trim(str(note.get("title") or ""), 160),
-        "summary": _trim(str(note.get("summary") or ""), 420),
+        "summary": (str(note.get("summary") or "")
+            if str(note.get("phase") or "").strip().lower() == "result"
+            else _trim(str(note.get("summary") or ""), 420)),
         "signals": signals[:5],
         "progress_context": {
             key: metadata.get(key)

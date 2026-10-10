@@ -385,6 +385,14 @@ FlashAttention 保持可选；已找到匹配 cp312/Torch 2.7/cu128 的 Windows 
 和 Linux 上游 wheel，来源、哈希与验证范围见
 [Torch 2.7 与 FlashAttention 候选](docs/torch27_candidates.md)。
 
+### 对话长度与 Work 报告
+
+内置红莉栖日语人格通常最多回复 6 句；用户要求详细解释，或准确、充分回答确有需要时，
+可以超过 6 句。Settings 中的日语人格覆盖仍优先替换内置默认人格，覆盖值默认留空。
+这是表达长度规则，不限制报告上下文。当前会话接收的 Work，其最新终态报告会完整提供给
+后续对话，重启后仍可读取；过程播报和完成时的口头汇报保持简短。
+报告仍标明 Provider 来源，不替代 Host 的完成度与验证状态。
+
 ### 安装外部运行资产
 
 另提供默认关闭的[角色知识 RAG 选项](docs/character_rag.md)，支持远程和本地 Main Chat。

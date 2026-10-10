@@ -634,7 +634,8 @@ def work_note_payload(
         "session_id": str(session_id or ""),
         "phase": normalize_phase(phase),
         "title": trim_text(title, 160),
-        "summary": trim_text(summary, 520),
+        # Result is report input, not the bounded progress/spoken presentation.
+        "summary": str(summary or "") if normalize_phase(phase) == "Result" else trim_text(summary, 520),
         "signals": [normalize_signal(dict(item)) for item in signals],
         "importance": normalize_importance(importance),
         "observer_policy": normalize_observer_policy(observer_policy),

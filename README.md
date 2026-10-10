@@ -426,6 +426,17 @@ and upstream Linux wheels have been located; see
 [Torch 2.7 and FlashAttention candidates](docs/torch27_candidates.md) for sources,
 hashes and verification limits.
 
+### Conversation length and Work reports
+
+The built-in Japanese Kurisu persona normally replies in at most six sentences;
+requests for detail or a sufficiently accurate answer may go longer. The Japanese
+persona override in Settings still replaces this default, and stays empty by default.
+This is a speaking-style rule, not a limit on report context. The latest terminal
+report for the Work accepted in the current conversation remains available in full
+for follow-up questions, including after restart. Progress updates and spoken
+completion reports remain brief. Provider reports retain their source and do not
+replace the Host's completion/verification state.
+
 ### Install external runtime assets
 
 [Optional character RAG](docs/character_rag.md) is off by default and works with

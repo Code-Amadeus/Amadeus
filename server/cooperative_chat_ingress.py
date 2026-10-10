@@ -2183,6 +2183,11 @@ class CooperativeChatManager:
             "workspace":item.workspace_path,
             "export_target":"desktop" if isinstance(export_plan, dict)
                 and export_plan.get("kind") == "desktop" else ""}
+        # Read the same durable report used by the result card. Narration in
+        # chat history is a short presentation, not the Work's knowledge store.
+        # Never surface a predecessor's result while a newer attempt is active.
+        if attempt.execution_status in {"succeeded", "failed", "cancelled"} and attempt.result:
+            projected["result"] = attempt.result
         if input_requirements:
             projected["input_requirements"] = input_requirements
         return projected
