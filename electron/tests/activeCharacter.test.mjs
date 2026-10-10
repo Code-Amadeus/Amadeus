@@ -12,7 +12,7 @@ const root = new URL('../src/renderer/', import.meta.url)
 function load(relative, imports, globals = {}) {
   const source = readFileSync(new URL(relative, root), 'utf8')
   const compiled = ts.transpileModule(source, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
   }).outputText
   const module = { exports: {} }
   vm.runInNewContext(compiled, {
@@ -82,7 +82,7 @@ function renderLabels(identity, locale = 'en-US') {
   const i18n = load('i18n.tsx', {}, { localStorage: { getItem: () => locale } })
   const avatar = load('components/ChatAvatarSettings.tsx', {
     '../activeCharacter': active, '../i18n': i18n,
-    './FluentIcon': { default: () => React.createElement('svg') },
+    './FluentIcon': { __esModule: true, default: () => React.createElement('svg') },
   }).default
   const card = load('components/work/AuipExperienceCard.tsx', {
     '../../activeCharacter': active,
