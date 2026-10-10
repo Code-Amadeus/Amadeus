@@ -13,6 +13,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
+from threading import Lock
 from typing import Any
 
 import aiohttp
@@ -22,6 +23,7 @@ from config import settings
 logger = logging.getLogger(__name__)
 
 _CLIENTS: dict[tuple[str, str], Any] = {}
+_CLIENTS_LOCK = Lock()
 
 _SYSTEM_PROMPT = (
     "Translate Japanese assistant speech into concise, natural Simplified Chinese "
@@ -180,7 +182,6 @@ async def _translate_openai_compatible(text: str, config: SubtitleTranslatorConf
     if not api_key:
         raise RuntimeError(f"{config.provider} API key is not configured")
 
-    client = _get_openai_client(config.provider, api_key, config.base_url)
     kwargs: dict[str, Any] = {
         "model": config.model,
         "messages": [
@@ -199,7 +200,13 @@ async def _translate_openai_compatible(text: str, config: SubtitleTranslatorConf
     if config.provider == "deepseek":
         kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
 
-    response = await asyncio.to_thread(lambda: client.chat.completions.create(**kwargs))
+    def request():
+        # SDK/HTTP client construction also blocks (including TLS setup).
+        # Keep the entire synchronous path off the shared audio event loop.
+        client = _get_openai_client(config.provider, api_key, config.base_url)
+        return client.chat.completions.create(**kwargs)
+
+    response = await asyncio.to_thread(request)
     try:
         return str(response.choices[0].message.content or "")
     except Exception:
@@ -247,21 +254,24 @@ async def _translate_gemini(text: str, config: SubtitleTranslatorConfig) -> str:
 
 def _get_openai_client(provider: str, api_key: str, base_url: str):
     key = (provider, base_url)
-    cached = _CLIENTS.get(key)
-    if cached is not None:
-        return cached
+    # Concurrent first subtitles share one client. Only construction is
+    # serialized; provider requests run outside this lock.
+    with _CLIENTS_LOCK:
+        cached = _CLIENTS.get(key)
+        if cached is not None:
+            return cached
 
-    import httpx
-    from openai import OpenAI
+        import httpx
+        from openai import OpenAI
 
-    http_client = httpx.Client(
-        limits=httpx.Limits(max_connections=10, max_keepalive_connections=5, keepalive_expiry=60.0),
-        timeout=httpx.Timeout(30.0),
-        http2=False,
-    )
-    client = OpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
-    _CLIENTS[key] = client
-    return client
+        http_client = httpx.Client(
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5, keepalive_expiry=60.0),
+            timeout=httpx.Timeout(30.0),
+            http2=False,
+        )
+        client = OpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
+        _CLIENTS[key] = client
+        return client
 
 
 def _clean_translation(value: str) -> str:
