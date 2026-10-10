@@ -1,7 +1,7 @@
 import { projectStartupFields, startupValues } from '../../shared/startupSettings.js'
 import { catalogApplication, catalogConfiguration, catalogGroups, desktopCatalogFields, optionsWithCurrentValue, runtimeCatalogFields } from '../../shared/configCatalog.js'
 import { settingSourceLabel } from '../../shared/characterStartup'
-import { useState, useEffect, useCallback, useMemo, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import FluentIcon, { type FluentIconName } from './FluentIcon'
 import { GroupTitle, CardShell, CardIcon, StatusPill, SettingsGroup } from './SettingsPrimitives'
 import McpConnections, { type McpConnectionSummary } from './McpConnections'
@@ -14,6 +14,7 @@ import CharacterManagementSettings from './CharacterManagementSettings'
 import BackendStartupRecovery from './BackendStartupRecovery'
 import RetiredRouteSetting, { RETIRED_ROUTE_KEY, retiredRouteMigration, removeStoredRetiredRouteSetting, type RetiredSettingFact } from './RetiredRouteSetting'
 import AcpProviders, { type AcpConfiguration } from './AcpProviders'
+import { canLeaveSettingsEditors, DISCARD_CONNECTION_CHANGES, type SettingsEditorState } from './settingsDraft'
 import CapabilitiesPanel, { RuntimePackages, type RuntimePackageStatus } from './CapabilitiesPanel'
 import { buildCapabilityProfiles, type SceneConfigureSection } from './sceneCapabilityProjection'
 import { useI18n, type UiLocale } from '../i18n'
@@ -31,6 +32,7 @@ import { buildGraphicsConfiguration, type GraphicsRuntimeSettings } from './grap
 import { markRuntimeSettingsApplied, persistDesktopRuntimeSettings, runtimeSettingFromDesktopValues, runtimeSettingValue } from './desktopRuntimeSettings'
 
 interface Props {
+  onNavigationGuardChange?: (guard: (() => boolean) | null) => void
   send: (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
   subscribe: (method: string, fn: (p: Record<string, unknown>) => void) => () => void
   connected: boolean
@@ -619,20 +621,36 @@ function ThemePicker({ value, onChange, disabled }: { value: UiTheme; onChange: 
   )
 }
 
-export default function SettingsPage({ send, subscribe, connected, reconnectBackend }: Props) {
+export default function SettingsPage({ send, subscribe, connected, reconnectBackend, onNavigationGuardChange }: Props) {
   const { locale, setLocale, t } = useI18n()
   const { theme, setTheme } = useTheme()
-  const [section, setSection] = useState<SettingsSection>(() => {
+  const [section, setSectionState] = useState<SettingsSection>(() => {
     const saved = window.localStorage.getItem('amadeus.settings.section')
     if (saved === 'visuals') return 'characters'
     return ['capabilities', 'general', 'characters', 'graphics', 'models', 'voice', 'providers'].includes(String(saved))
       ? saved as SettingsSection
       : 'capabilities'
   })
+  const scrollArea = useRef<HTMLDivElement>(null)
+  const editors = useRef<Record<string, SettingsEditorState>>({})
+  const acpEditorChanged = useCallback((state: SettingsEditorState) => { editors.current.acp = state }, [])
+  const mcpEditorChanged = useCallback((state: SettingsEditorState) => { editors.current.mcp = state }, [])
+  const canLeave = useCallback(() => canLeaveSettingsEditors(Object.values(editors.current),
+    () => window.confirm(t(DISCARD_CONNECTION_CHANGES))), [t])
+  useEffect(() => {
+    onNavigationGuardChange?.(canLeave)
+    return () => onNavigationGuardChange?.(null)
+  }, [canLeave, onNavigationGuardChange])
+  const setSection = useCallback((next: SettingsSection) => {
+    if (section === next) return true
+    if (!canLeave()) return false
+    setSectionState(next)
+    return true
+  }, [section, canLeave])
   const [characterTab, setCharacterTab] = useState<CharacterSection>(() =>
     window.localStorage.getItem('amadeus.settings.section') === 'visuals' ? 'appearance'
       : characterSection(window.localStorage.getItem(CHARACTER_SECTION_KEY)))
-  const openCharacters = useCallback((tab: CharacterSection) => { setCharacterTab(tab); setSection('characters') }, [])
+  const openCharacters = useCallback((tab: CharacterSection) => { if (setSection('characters')) setCharacterTab(tab) }, [setSection])
   const [modelsPage, setModelsPage] = useState<ModelsPage>('roles')
   const [advancedRolesOpen, setAdvancedRolesOpen] = useState(false)
   const [config, setConfig] = useState<Record<string, unknown>>({})
@@ -652,6 +670,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   const [visionWindows, setVisionWindows] = useState<VisionWindowItem[]>([])
   const [visionWindowsLoading, setVisionWindowsLoading] = useState(false)
 
+  useLayoutEffect(() => { scrollArea.current?.scrollTo({ top: 0 }) }, [section, characterTab, modelsPage])
   useEffect(() => { window.localStorage.setItem('amadeus.settings.section', section) }, [section])
   useEffect(() => { window.localStorage.setItem(CHARACTER_SECTION_KEY, characterTab) }, [characterTab])
 
@@ -1159,7 +1178,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
 
   const openCapabilityTarget = useCallback((targetSection: SceneConfigureSection, targetId?: string) => {
     if (targetId === 'character_rag') { openCharacters('knowledge'); return }
-    setSection(targetSection)
+    if (!setSection(targetSection)) return
     let anchor = ''
     if (targetSection === 'models') {
       if (targetId === 'application_interaction' || targetId?.startsWith('auip_')) {
@@ -1174,7 +1193,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
       anchor = targetId?.includes('visual') ? 'settings-vision' : targetId?.includes('translation') ? 'settings-language' : ''
     }
     if (anchor) window.setTimeout(() => document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0)
-  }, [openCharacters])
+  }, [openCharacters, setSection])
 
   const characterWorkspace = <CharacterPage connected={connected} section={characterTab} onSectionChange={setCharacterTab}
     voiceSummary={(connected ? config.tts_backend : desktop) ? voiceSummary : ''} onOpenVoice={() => setSection('voice')}
@@ -1220,7 +1239,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     }} />
 
   return (
-    <div className="settings-scroll-area flex-1 overflow-y-auto">
+    <div ref={scrollArea} className="settings-scroll-area flex-1 overflow-y-auto">
       <div style={{ width: section === 'characters' && characterTab === 'appearance' ? '100%' : 'min(100%, 1010px)', padding: '20px 24px 32px' }}>
         <div className="flex items-center justify-between gap-4" style={{ marginBottom: 16 }}>
           <div>
@@ -1486,7 +1505,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                 </BoundaryNote>
                 <BoundaryNote title="Work role assignments">
                   <span>{workProviderAssignment}</span>{' '}
-                  <button className="settings-action" onClick={() => { setSection('models'); setModelsPage('roles') }}>{t('Configure roles')}</button>
+                  <button className="settings-action" onClick={() => { if (setSection('models')) setModelsPage('roles') }}>{t('Configure roles')}</button>
                 </BoundaryNote>
                 <SettingsGroup title="Work Provider connections" detail="Registered means the adapter passed its startup boundary. Remote availability is verified when that Provider connects.">
                   {providerConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} availability={providerAvailability.find(item => item.provider_id === group.id)} onSave={handleStartupSave} collapsible optionalWhenInactive />)}
@@ -1497,6 +1516,8 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                     locked={!desktop || Boolean(desktop.locked?.AMADEUS_ACP_PROVIDERS)}
                     electronUnavailable={!desktop}
                     configurations={acpConfigurations}
+                    restartPending={Boolean(desktop?.pendingKeys?.includes('AMADEUS_ACP_PROVIDERS'))}
+                    onEditorStateChange={acpEditorChanged}
                     onSave={async value => {
                       await handleStartupSave({ key: 'AMADEUS_ACP_PROVIDERS', label: 'ACP agents', type: 'text', editable: true, restart_required: true }, value, false)
                     }}
@@ -1520,6 +1541,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                     send={send}
                     onSettingsChanged={settings => setDesktop(settings as unknown as DesktopSettingsSnapshot)}
                     onRestartRequired={() => setRestartPending(true)}
+                    onEditorStateChange={mcpEditorChanged}
                   />
                 </SettingsGroup>
                 <SettingsGroup title="Shared Provider capabilities" detail="Installed once by the Host, then projected only to Providers that explicitly support the capability shape.">

@@ -215,13 +215,36 @@ test('App sidebar callbacks use the same owner as automatic startup', async () =
   const app = desktop(), pages = []
   for (const [name, expected] of [['handleToggleRender', 'render'], ['handleToggleWallpaper', 'wallpaper']]) {
     const fn = bindCallback(productionCallback('../src/renderer/App.tsx', 'AmadeusApp', name), {
-      projections: app, setPage: page => pages.push(page), console,
+      projections: app, setPage: page => pages.push(page), console, settingsNavigationGuard: { current: null },
     })
     fn(); await flush()
     assert.equal(app.state()[`${expected}Active`], true)
   }
   assert.deepEqual(pages, ['chat', 'chat'])
   assert.equal((await app.startAutomatically()).status, 'superseded')
+})
+
+test('declining to leave Settings does not open a projection or change the page', async () => {
+  for (const name of ['handleToggleRender', 'handleToggleWallpaper']) {
+    const app = desktop(), pages = []
+    const fn = bindCallback(productionCallback('../src/renderer/App.tsx', 'AmadeusApp', name), {
+      projections: app, setPage: page => pages.push(page), console, settingsNavigationGuard: { current: () => false },
+    })
+    fn(); await flush()
+    assert.deepEqual(pages, [])
+    assert.deepEqual(app.calls, [])
+  }
+})
+
+test('sidebar navigation follows the current Settings discard decision', () => {
+  for (const accepted of [false, true]) {
+    const pages = []
+    const fn = bindCallback(productionCallback('../src/renderer/App.tsx', 'AmadeusApp', 'handleNavigate'), {
+      setPage: page => pages.push(page), settingsNavigationGuard: { current: () => accepted },
+    })
+    fn('chat'); fn('vn')
+    assert.deepEqual(pages, accepted ? ['chat', 'vn'] : [])
+  }
 })
 
 test('Backend controls route all four explicit actions through the projection owner', async () => {

@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useI18n } from '../i18n'
 import FluentIcon from './FluentIcon'
+import { SettingsButton, SettingsField, StatusPill } from './SettingsPrimitives'
+import { canLeaveSettingsEditors, DISCARD_CONNECTION_CHANGES, type SettingsEditorState } from './settingsDraft'
 
 type Profile = {
   id: string; name: string; command: string; args: string[]; enabled: boolean; resume: boolean
@@ -8,9 +10,6 @@ type Profile = {
 }
 type Option = { id: string; name: string; type: string; currentValue: string; options?: Array<{ value?: string; name: string; options?: Array<{ value: string; name: string }> }> }
 export type AcpConfiguration = { provider_id: string; config_options?: Option[] }
-const inputStyle = 'w-full text-xs text-[var(--text)] border border-[var(--border)] rounded-md p-2 bg-[var(--surface-alt)]'
-const controlStyle = { padding: '7px 9px', fontSize: 12, minHeight: 34, marginTop: 4 }
-const buttonStyle = { padding: '6px 10px', fontSize: 12, border: '1px solid var(--border)', borderRadius: 6, background: 'var(--surface)', cursor: 'pointer' }
 const providerEnvironmentNames = { deepseek: 'DEEPSEEK_API_KEY', claude: 'ANTHROPIC_API_KEY' }
 
 function pairs(text: string): Record<string, string> {
@@ -23,8 +22,9 @@ function pairs(text: string): Record<string, string> {
   return Object.fromEntries(entries)
 }
 
-export default function AcpProviders({ encoded, locked, electronUnavailable = false, configurations, onSave, onRefresh }: {
-  encoded: string; locked: boolean; electronUnavailable?: boolean; configurations: AcpConfiguration[]
+export default function AcpProviders({ encoded, locked, electronUnavailable = false, restartPending = false, configurations, onSave, onRefresh, onEditorStateChange }: {
+  encoded: string; locked: boolean; electronUnavailable?: boolean; restartPending?: boolean; configurations: AcpConfiguration[]
+  onEditorStateChange?: (state: SettingsEditorState) => void
   onSave: (encoded: string) => Promise<void>; onRefresh: () => Promise<void>
 }) {
   const { t } = useI18n()
@@ -36,6 +36,14 @@ export default function AcpProviders({ encoded, locked, electronUnavailable = fa
   const [options, setOptions] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [removePending, setRemovePending] = useState(false)
+  const initialDraft = useRef('')
+  const dirty = draft !== null && JSON.stringify([draft, environment, options]) !== initialDraft.current
+  useEffect(() => {
+    onEditorStateChange?.({ dirty, busy })
+    return () => onEditorStateChange?.({ dirty: false, busy: false })
+  }, [dirty, busy, onEditorStateChange])
+  const canLeave = () => canLeaveSettingsEditors([{ dirty, busy }], () => window.confirm(t(DISCARD_CONNECTION_CHANGES)))
   useEffect(() => {
     try {
       const parsed = JSON.parse(encoded || '[]')
@@ -46,9 +54,14 @@ export default function AcpProviders({ encoded, locked, electronUnavailable = fa
   const edit = (profile: Profile, index: number, key: string) => {
     setSelected(index)
     setEditorKey(key)
-    setDraft({ ...profile, args: profile.args || [], environment: profile.environment || {}, config_options: profile.config_options || {} })
-    setEnvironment(Object.entries(profile.environment || {}).map(([k, v]) => `${k}=${v}`).join('\n'))
-    setOptions(Object.entries(profile.config_options || {}).map(([k, v]) => `${k}=${v}`).join('\n'))
+    const next = { ...profile, args: profile.args || [], environment: profile.environment || {}, config_options: profile.config_options || {} }
+    const nextEnvironment = Object.entries(next.environment).map(([k, v]) => `${k}=${v}`).join('\n')
+    const nextOptions = Object.entries(next.config_options).map(([k, v]) => `${k}=${v}`).join('\n')
+    initialDraft.current = JSON.stringify([next, nextEnvironment, nextOptions])
+    setDraft(next)
+    setEnvironment(nextEnvironment)
+    setOptions(nextOptions)
+    setRemovePending(false)
     setError('')
   }
   const add = (kind: 'deepseek' | 'claude' | 'custom', key: string) => edit({
@@ -86,46 +99,79 @@ export default function AcpProviders({ encoded, locked, electronUnavailable = fa
   })
   cards.push({ key: 'add-custom', index: -1, kind: 'custom', title: 'Add custom ACP agent', description: 'Register another installed ACP v1 command.' })
 
-  const renderEditor = () => draft ? <div className="acp-agent-editor">
-    <div className="grid grid-cols-2 gap-3">
-      <label>{t('Agent id')}<input className={inputStyle} style={controlStyle} value={draft.id} disabled={locked || selected >= 0} onChange={e => setDraft({ ...draft, id: e.target.value })}/></label>
-      <label>{t('Display name')}<input className={inputStyle} style={controlStyle} value={draft.name} disabled={locked} onChange={e => setDraft({ ...draft, name: e.target.value })}/></label>
-    </div>
-    <label className="block">{t('Executable')}<input className={inputStyle} style={controlStyle} value={draft.command} disabled={locked} onChange={e => setDraft({ ...draft, command: e.target.value })}/></label>
-    <label className="block">{t('Arguments — one per line')}<textarea className={inputStyle} style={controlStyle} rows={3} value={draft.args.join('\n')} disabled={locked} onChange={e => setDraft({ ...draft, args: e.target.value.split('\n') })} placeholder={'C:\\path\\to\\installed-agent\\cli.js\n--profile\nacp'}/></label>
-    <p className="settings-card-description">{t("On Windows, use node.exe and the installed agent's JavaScript entry file. Commands are launched directly; shell scripts and automatic package installation are not used.")}</p>
-    <label className="block">{t('Environment references — child variable=Host variable')}<textarea className={inputStyle} style={controlStyle} rows={2} value={environment} disabled={locked} onChange={e => setEnvironment(e.target.value)}/></label>
-    <p className="settings-card-description">{t("Reference API keys saved in Settings or supplied in the backend environment. Enter variable names here, not secret values. Omit the reference when using an agent's existing login.")}</p>
-    <div className="flex justify-between items-center gap-3"><span>{t('Model and agent options')}</span><button style={buttonStyle} disabled={locked} onClick={() => void onRefresh().catch(e => setError(String(e)))}>{t('Refresh available choices')}</button></div>
-    {known.length === 0 && <p className="settings-card-description">{t("Choices become available after this agent opens its first task. Leave overrides empty to use the agent's defaults.")}</p>}
-    {known.filter(option => option.type === 'select').map(option => {
-      let selectedValue = ''
-      try { selectedValue = pairs(options)[option.id] || '' } catch { /* preserve an unfinished advanced entry */ }
-      return <label className="block" key={option.id}>{option.name}<select className={inputStyle} style={controlStyle} value={selectedValue} disabled={locked} onChange={e => {
-        try {
-          const next = pairs(options)
-          if (e.target.value) next[option.id] = e.target.value; else delete next[option.id]
-          setOptions(Object.entries(next).map(([k, v]) => `${k}=${v}`).join('\n'))
-        } catch (reason) { setError(String(reason)) }
-      }}>
-        <option value="">{t('Agent default')} ({option.currentValue})</option>
-        {(option.options || []).flatMap(item => item.options || (item.value ? [{ value: item.value, name: item.name }] : [])).map(item => <option key={item.value} value={item.value}>{item.name}</option>)}
-      </select></label>
-    })}
-    <details><summary>{t('Explicit option overrides')}</summary><textarea className={inputStyle} style={controlStyle} value={options} rows={2} disabled={locked} placeholder="model=agent-model-id" onChange={e => setOptions(e.target.value)}/></details>
-    <div className="flex gap-5 flex-wrap">
-      <label><input type="checkbox" checked={draft.enabled} disabled={locked} onChange={e => setDraft({ ...draft, enabled: e.target.checked })}/> {t('Enable agent')}</label>
-      <label><input type="checkbox" checked={draft.resume} disabled={locked} onChange={e => setDraft({ ...draft, resume: e.target.checked })}/> {t('Reuse persistent native sessions')}</label>
-    </div>
-    <div className="flex items-center gap-3 flex-wrap">
-      <button style={buttonStyle} disabled={locked || busy} onClick={() => {
-        try {
-          const updated = { ...draft, environment: pairs(environment), config_options: pairs(options) }
-          void save(selected < 0 ? [...profiles, updated] : profiles.map((item, index) => index === selected ? updated : item))
-        } catch (reason) { setError(String(reason)) }
-      }}>{t(busy ? 'Saving…' : 'Save agent')}</button>
-      {selected >= 0 ? <button style={buttonStyle} disabled={locked || busy} onClick={() => void save(profiles.filter((_, index) => index !== selected))}>{t('Remove')}</button> : null}
-      <button style={buttonStyle} disabled={busy} onClick={closeEditor}>{t('Cancel')}</button>
+  const renderEditor = () => draft ? <div className="settings-form acp-agent-editor">
+    <fieldset disabled={locked || busy} className="settings-form-body">
+      <section className="settings-form-section" aria-label={t('Connection details')}>
+        <h4 className="settings-card-title">{t('Connection details')}</h4>
+        <SettingsField id="acp-name" label="Display name" description={selected >= 0 ? `${t('Agent id')}: ${draft.id}` : undefined}>
+          <input id="acp-name" aria-describedby={selected >= 0 ? 'acp-name-hint' : undefined} className="settings-form-input" value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })}/>
+        </SettingsField>
+        {selected < 0 ? <SettingsField id="acp-id" label="Agent id" description="Use a unique identifier for this connection.">
+          <input id="acp-id" aria-describedby="acp-id-hint" className="settings-form-input settings-form-code" value={draft.id} onChange={e => setDraft({ ...draft, id: e.target.value })}/>
+        </SettingsField> : null}
+        <SettingsField id="acp-command" label="Executable" description="Choose an installed executable. On Windows, use node.exe for a JavaScript agent.">
+          <input id="acp-command" aria-describedby="acp-command-hint" className="settings-form-input settings-form-code" value={draft.command} onChange={e => setDraft({ ...draft, command: e.target.value })}/>
+        </SettingsField>
+        <SettingsField id="acp-arguments" label="Arguments — one per line" description="For a JavaScript agent, put its entry file first. Commands run directly; no shell or automatic installation.">
+          <textarea id="acp-arguments" aria-describedby="acp-arguments-hint" className="settings-form-input settings-form-code" rows={3} value={draft.args.join('\n')} onChange={e => setDraft({ ...draft, args: e.target.value.split('\n') })} placeholder={'C:\\path\\to\\installed-agent\\cli.js\n--profile\nacp'}/>
+        </SettingsField>
+        <SettingsField id="acp-enabled" label="Enable agent" description="Applies after saving and restarting the backend.">
+          <div className="settings-form-switch"><input id="acp-enabled" aria-describedby="acp-enabled-hint" type="checkbox" role="switch" checked={draft.enabled} onChange={e => setDraft({ ...draft, enabled: e.target.checked })}/><span>{t(draft.enabled ? 'On' : 'Off')}</span></div>
+        </SettingsField>
+      </section>
+      <section className="settings-form-section" aria-label={t('Credential references')}>
+        <h4 className="settings-card-title">{t('Credential references')}</h4>
+        <SettingsField id="acp-environment" label="Environment references" description="One child variable=Host variable per line. Use variable names, not secret values; leave empty for the agent’s existing login.">
+          <textarea id="acp-environment" aria-describedby="acp-environment-hint" className="settings-form-input settings-form-code" rows={2} value={environment} onChange={e => setEnvironment(e.target.value)}/>
+        </SettingsField>
+      </section>
+      <details className="settings-form-advanced">
+        <summary><span>{t('Advanced agent settings')}</span><span className="settings-meta-text">{t('Model overrides and session reuse')}</span></summary>
+        <div className="settings-form-advanced-body">
+          <div className="settings-form-section-heading"><h4 className="settings-card-title">{t('Model and agent options')}</h4><SettingsButton onClick={() => void onRefresh().catch(e => setError(e instanceof Error ? e.message : String(e)))}>{t('Refresh available choices')}</SettingsButton></div>
+          {known.length === 0 && <p className="settings-field-description">{t("Choices become available after this agent opens its first task. Leave overrides empty to use the agent's defaults.")}</p>}
+          {known.filter(option => option.type === 'select').map((option, index) => {
+            let selectedValue = ''
+            try { selectedValue = pairs(options)[option.id] || '' } catch { /* preserve an unfinished advanced entry */ }
+            const id = `acp-option-${index}`
+            return <SettingsField id={id} label={option.name} key={option.id}><select id={id} className="settings-form-input" value={selectedValue} onChange={e => {
+              try {
+                const next = pairs(options)
+                if (e.target.value) next[option.id] = e.target.value; else delete next[option.id]
+                setOptions(Object.entries(next).map(([k, v]) => `${k}=${v}`).join('\n'))
+              } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+            }}>
+              <option value="">{t('Agent default')} ({option.currentValue})</option>
+              {(option.options || []).flatMap(item => item.options || (item.value ? [{ value: item.value, name: item.name }] : [])).map(item => <option key={item.value} value={item.value}>{item.name}</option>)}
+            </select></SettingsField>
+          })}
+          <SettingsField id="acp-options" label="Explicit option overrides" description="Optional. Use one name=value entry per line.">
+            <textarea id="acp-options" aria-describedby="acp-options-hint" className="settings-form-input settings-form-code" value={options} rows={2} placeholder="model=agent-model-id" onChange={e => setOptions(e.target.value)}/>
+          </SettingsField>
+          <SettingsField id="acp-resume" label="Reuse persistent native sessions">
+            <div className="settings-form-switch"><input id="acp-resume" type="checkbox" role="switch" checked={draft.resume} onChange={e => setDraft({ ...draft, resume: e.target.checked })}/><span>{t(draft.resume ? 'On' : 'Off')}</span></div>
+          </SettingsField>
+        </div>
+      </details>
+    </fieldset>
+    <div className="settings-form-footer">
+      {error ? <p role="alert" className="settings-form-error">{t(error)}</p> : null}
+      {removePending ? <div className="settings-form-remove" role="group" aria-label={t('Confirm remove')}>
+        <span>{t('Remove this saved connection?')}</span><SettingsButton disabled={busy} onClick={() => setRemovePending(false)}>{t('Keep connection')}</SettingsButton>
+        <SettingsButton tone="danger" disabled={locked || busy} onClick={() => void save(profiles.filter((_, index) => index !== selected))}>{t('Confirm remove')}</SettingsButton>
+      </div> : <>
+        <div className="settings-form-save-hint" role="status">{t(dirty ? 'Unsaved changes' : 'Changes are saved together. Restart the backend to apply.')}</div>
+        <div className="settings-form-actions">
+          {selected >= 0 ? <SettingsButton tone="danger" disabled={locked || busy} onClick={() => setRemovePending(true)}>{t('Remove')}</SettingsButton> : <span />}
+          <div className="settings-form-actions-end"><SettingsButton tone="quiet" disabled={busy} onClick={() => { if (canLeave()) closeEditor() }}>{t('Cancel')}</SettingsButton>
+            <SettingsButton tone="primary" disabled={locked || busy || selected >= 0 && !dirty} onClick={() => {
+              try {
+                const updated = { ...draft, environment: pairs(environment), config_options: pairs(options) }
+                void save(selected < 0 ? [...profiles, updated] : profiles.map((item, index) => index === selected ? updated : item))
+              } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+            }}>{t(busy ? 'Saving…' : 'Save agent')}</SettingsButton></div>
+        </div>
+      </>}
     </div>
   </div> : null
 
@@ -133,14 +179,15 @@ export default function AcpProviders({ encoded, locked, electronUnavailable = fa
     <p className="settings-card-description">{t('Connect an installed agent. Save and restart the backend to apply changes. Each agent keeps its own model, tools and native permissions.')}</p>
     {cards.map(card => {
       const open = editorKey === card.key
-      const status = card.profile ? (card.profile.enabled ? 'Enabled' : 'Disabled') : card.kind === 'custom' ? 'Add' : 'Optional'
-      const tone = card.profile?.enabled ? 'success' : 'neutral'
+      const status = card.profile ? (restartPending ? 'Restart required' : card.profile.enabled ? 'Enabled on startup' : 'Disabled') : card.kind === 'custom' ? 'Add' : 'Optional'
+      const tone = card.profile && restartPending ? 'warning' : 'neutral'
       const model = card.profile?.config_options?.model
       const command = card.profile ? [card.profile.command, ...(card.profile.args || [])].filter(Boolean).join(' ') : ''
       const detail = model ? `${command} · ${model}` : command || card.description
       return <details key={card.key} className="setting-card configuration-card-details acp-agent-card" open={open}>
-        <summary onClick={event => {
+        <summary aria-disabled={busy} onClick={event => {
           event.preventDefault()
+          if (!canLeave()) return
           if (open) closeEditor()
           else if (card.profile) edit(card.profile, card.index, card.key)
           else add(card.kind || 'custom', card.key)
@@ -148,16 +195,16 @@ export default function AcpProviders({ encoded, locked, electronUnavailable = fa
           <div className="configuration-card-header flex items-start gap-2.5">
             <span className="model-role-icon"><FluentIcon name={card.kind === 'custom' && !card.profile ? 'Edit' : 'Robot'} size={16}/></span>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2"><strong>{t(card.title)}</strong>{card.profile?.enabled ? <small className="acp-active-label">{t('ACTIVE')}</small> : null}</div>
+              <div className="flex items-center gap-2"><strong>{t(card.title)}</strong></div>
               <div className="acp-agent-summary-detail">{t(detail)}</div>
             </div>
-            <span className="text-[10px] font-[700] rounded-full px-2.5 py-1 shrink-0" data-tone={tone}>{t(status)}</span>
+            <StatusPill ok={false} tone={tone}>{t(status)}</StatusPill>
           </div>
         </summary>
         {open ? renderEditor() : null}
       </details>
     })}
     {locked && <p className="settings-card-description">{t(electronUnavailable ? 'Agent configuration is editable in the Electron app.' : 'Agent configuration is controlled by the parent process environment.')}</p>}
-    {error && <p role="alert" className="settings-card-description text-red-700">{error}</p>}
+    {error && !draft && <p role="alert" className="settings-form-error">{t(error)}</p>}
   </div>
 }

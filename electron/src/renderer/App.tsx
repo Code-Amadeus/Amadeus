@@ -64,7 +64,12 @@ function AmadeusApp() {
     }
   }, [desktopProjection, subscribe])
 
-  const handleNavigate = useCallback((p: Page) => setPage(p), [])
+  const settingsNavigationGuard = useRef<(() => boolean) | null>(null)
+  const registerSettingsGuard = useCallback((guard: (() => boolean) | null) => { settingsNavigationGuard.current = guard }, [])
+  const handleNavigate = useCallback((p: Page) => {
+    if (p !== 'settings' && settingsNavigationGuard.current && !settingsNavigationGuard.current()) return
+    setPage(p)
+  }, [])
 
   useEffect(() => {
     document.documentElement.classList.toggle('desktop-work-overlay', desktopProjection)
@@ -84,11 +89,13 @@ function AmadeusApp() {
   }, [desktopProjection, glowWindow, panelWindow])
 
   const handleToggleRender = useCallback(() => {
+    if (settingsNavigationGuard.current && !settingsNavigationGuard.current()) return
     setPage('chat')
     void projections.toggle('render').catch(error => console.error('[render]', error))
   }, [projections])
 
   const handleToggleWallpaper = useCallback(() => {
+    if (settingsNavigationGuard.current && !settingsNavigationGuard.current()) return
     setPage('chat')
     void projections.toggle('wallpaper').catch(error => console.error('[wallpaper]', error))
   }, [projections])
@@ -243,7 +250,7 @@ function AmadeusApp() {
           {page === 'chat' && <ChatPage send={send} subscribe={subscribe} connected={connected} renderActive={Boolean(renderAssetUrl)} renderAssetUrl={renderAssetUrl} />}
           {page === 'vn' && <VNPage send={send} subscribe={subscribe} connected={connected} />}
           {page === 'backend' && <BackendPage projections={projections} send={send} subscribe={subscribe} connected={connected} renderActive={renderActive} wallpaperActive={wallpaperActive} />}
-          {page === 'settings' && <SettingsPage send={send} subscribe={subscribe} connected={connected} reconnectBackend={reconnect} />}
+          {page === 'settings' && <SettingsPage send={send} subscribe={subscribe} connected={connected} reconnectBackend={reconnect} onNavigationGuardChange={registerSettingsGuard} />}
         </div>
       </div>
     </ActiveCharacterContext.Provider>

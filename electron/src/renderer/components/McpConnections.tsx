@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import FluentIcon from './FluentIcon'
 import { useI18n } from '../i18n'
+import { SettingsButton, SettingsField, StatusPill } from './SettingsPrimitives'
+import { canLeaveSettingsEditors, DISCARD_CONNECTION_CHANGES, type SettingsEditorState } from './settingsDraft'
 
 export interface McpConnectionSummary {
   id: string
@@ -31,6 +33,7 @@ interface Props {
   send: (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
   onSettingsChanged: (settings: Record<string, unknown>) => void
   onRestartRequired: () => void
+  onEditorStateChange?: (state: SettingsEditorState) => void
 }
 
 interface Draft {
@@ -100,13 +103,6 @@ function endpointLabel(connection: McpConnectionSummary): string {
   return [connection.command, ...connection.arguments].filter(Boolean).join(' ')
 }
 
-function FieldLabel({ children }: { children: string }) {
-  const { t } = useI18n()
-  return <label className="settings-field-label">{t(children)}</label>
-}
-
-const inputClass = 'w-full text-[12px] text-[var(--text)] bg-[var(--surface-alt)] border border-[var(--border)] rounded-lg px-3 outline-none focus:border-[var(--accent)]'
-
 export default function McpConnections({
   connections,
   locked,
@@ -115,13 +111,29 @@ export default function McpConnections({
   send,
   onSettingsChanged,
   onRestartRequired,
+  onEditorStateChange,
 }: Props) {
   const { t } = useI18n()
   const [draft, setDraft] = useState<Draft | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [removeCandidate, setRemoveCandidate] = useState('')
-  const [testState, setTestState] = useState<Record<string, string>>({})
+  const [testState, setTestState] = useState<Record<string, { message: string; ok: boolean }>>({})
+  const initialDraft = useRef('')
+  const dirty = draft !== null && JSON.stringify(draft) !== initialDraft.current
+  useEffect(() => {
+    onEditorStateChange?.({ dirty, busy: saving })
+    return () => onEditorStateChange?.({ dirty: false, busy: false })
+  }, [dirty, saving, onEditorStateChange])
+  const canLeave = () => canLeaveSettingsEditors([{ dirty, busy: saving }], () => window.confirm(t(DISCARD_CONNECTION_CHANGES)))
+  const beginEdit = (next: Draft) => {
+    if (!canLeave()) return
+    initialDraft.current = JSON.stringify(next)
+    setDraft(next)
+    setError('')
+    setRemoveCandidate('')
+  }
+  const closeEditor = () => { if (canLeave()) { setDraft(null); setError('') } }
   const compatibleProviders = useMemo(() => providers.filter(provider =>
     (provider.capabilities?.capability_projections || []).includes('mcp_connection'),
   ), [providers])
@@ -181,17 +193,17 @@ export default function McpConnections({
   }
 
   const test = async (connectionId: string) => {
-    setTestState(current => ({ ...current, [connectionId]: 'Connecting…' }))
+    setTestState(current => ({ ...current, [connectionId]: { message: t('Connecting…'), ok: false } }))
     try {
       const result = await send('mcp.connection.test', { connection_id: connectionId })
       const detail = result.status === 'connected'
-        ? `Connected · ${Number(result.tool_count || 0)} tools discovered`
-        : String(result.detail || result.code || 'Connection failed')
-      setTestState(current => ({ ...current, [connectionId]: detail }))
+        ? t('Connected · {count} tools discovered', { count: Number(result.tool_count || 0) })
+        : t(String(result.detail || result.code || 'Connection failed'))
+      setTestState(current => ({ ...current, [connectionId]: { message: detail, ok: result.status === 'connected' } }))
     } catch (reason) {
       setTestState(current => ({
         ...current,
-        [connectionId]: reason instanceof Error ? reason.message : 'Connection failed',
+        [connectionId]: { message: reason instanceof Error ? reason.message : t('Connection failed'), ok: false },
       }))
     }
   }
@@ -216,69 +228,80 @@ export default function McpConnections({
               </div>
               <div className="settings-card-description truncate">{endpointLabel(connection)}</div>
             </div>
-            <span className="text-[10px] font-[700] rounded-full px-2.5 py-1" style={{ color: connection.enabled ? 'var(--success)' : 'var(--neutral-pill)', background: connection.enabled ? 'var(--success-bg)' : 'var(--neutral-pill-bg)' }}>{t(connection.enabled ? 'Enabled' : 'Disabled')}</span>
+            <StatusPill ok={false} tone={restartPending ? 'warning' : 'neutral'}>{t(restartPending ? 'Restart required' : connection.enabled ? 'Enabled on startup' : 'Disabled')}</StatusPill>
           </div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-2.5 pt-2.5 text-[10px]" style={{ borderTop: '1px solid var(--divider)', color: 'var(--muted)' }}>
+          <div className="settings-connection-facts" style={{ borderTop: '1px solid var(--divider)', color: 'var(--muted)' }}>
             <div><span className="font-[600]">{t('Providers')}:</span> {connection.providerIds.length ? connection.providerIds.join(', ') : t('Not bound')}</div>
             <div><span className="font-[600]">{t('Main Chat')}:</span> {t('No access')}</div>
             <div className="col-span-2"><span className="font-[600]">{t('Encrypted environment')}:</span> {connection.environmentKeys.length ? connection.environmentKeys.join(', ') : t('None')}</div>
           </div>
-          {testState[connection.id] ? <div className="text-[10.5px] mt-2" style={{ color: testState[connection.id].startsWith('Connected') ? '#107C10' : 'var(--muted)' }}>{testState[connection.id]}</div> : null}
-          <div className="flex items-center justify-end gap-1 mt-2">
-            <button onClick={() => void test(connection.id)} disabled={restartPending || saving} className="text-[10.5px] rounded-md px-2.5 disabled:opacity-35" style={{ height: 28, color: 'var(--muted)', background: 'transparent', border: 0 }} title={t(restartPending ? 'Restart the backend before testing' : 'Connect and discover tools')}>{t('Test')}</button>
-            <button onClick={() => { setDraft(draftFrom(connection)); setError('') }} disabled={locked || saving} className="text-[10.5px] rounded-md px-2.5 disabled:opacity-35" style={{ height: 28, color: 'var(--text)', background: 'var(--subtle-fill)', border: 0 }}>{t('Edit')}</button>
-            <button onClick={() => removeCandidate === connection.id ? void remove(connection.id) : setRemoveCandidate(connection.id)} disabled={locked || saving} className="text-[10.5px] rounded-md px-2.5 disabled:opacity-35" style={{ height: 28, color: removeCandidate === connection.id ? '#b42318' : 'var(--muted)', background: 'transparent', border: 0 }}>{t(removeCandidate === connection.id ? 'Confirm remove' : 'Remove')}</button>
+          {testState[connection.id] ? <div role="status" className="settings-field-description" style={{ color: testState[connection.id].ok ? 'var(--success)' : 'var(--muted)' }}>{testState[connection.id].message}</div> : null}
+          <div className="settings-form-actions-end">
+            <SettingsButton tone="quiet" onClick={() => void test(connection.id)} disabled={restartPending || saving} title={t(restartPending ? 'Restart the backend before testing' : 'Connect and discover tools')}>{t('Test')}</SettingsButton>
+            <SettingsButton onClick={() => beginEdit(draftFrom(connection))} disabled={locked || saving}>{t('Edit')}</SettingsButton>
+            <SettingsButton tone="danger" onClick={() => removeCandidate === connection.id ? void remove(connection.id) : setRemoveCandidate(connection.id)} disabled={locked || saving}>{t(removeCandidate === connection.id ? 'Confirm remove' : 'Remove')}</SettingsButton>
+            {removeCandidate === connection.id ? <SettingsButton tone="quiet" disabled={saving} onClick={() => setRemoveCandidate('')}>{t('Keep connection')}</SettingsButton> : null}
           </div>
         </div>
       ))}
 
       {draft ? (
-        <div className="setting-card" style={{ background: 'var(--surface)', border: '1px solid var(--border-strong)', borderRadius: 11, padding: 12, boxShadow: '0 1px 2px color-mix(in srgb, var(--shadow-color) 25%, transparent)' }}>
-          <div className="flex items-start justify-between gap-4 mb-4">
-            <div>
-              <div className="settings-card-title">{t(draft.id ? 'Edit MCP connection' : 'Add MCP server')}</div>
-              <div className="settings-card-description">{t('Saved by the Host and applied to selected Work Providers after restart.')}</div>
-            </div>
-            <button onClick={() => setDraft(null)} className="text-[18px]" style={{ color: 'var(--muted)', background: 'transparent', border: 0, lineHeight: 1 }} aria-label={t('Close MCP editor')}>×</button>
+        <div className="setting-card settings-connection-editor">
+          <div className="settings-form-section-heading settings-connection-editor-heading">
+            <div><h4 className="settings-card-title">{t(draft.id ? 'Edit MCP connection' : 'Add MCP server')}</h4>
+              <p className="settings-card-description">{t('Saved by the Host and applied to selected Work Providers after restart.')}</p></div>
+            <SettingsButton tone="quiet" disabled={saving} onClick={closeEditor} aria-label={t('Close MCP editor')}>×</SettingsButton>
           </div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-            <div className="flex flex-col gap-1"><FieldLabel>Name</FieldLabel><input className={inputClass} style={{ height: 34 }} value={draft.name} onChange={event => updateDraft('name', event.target.value)} placeholder="GitHub" /></div>
-            <div className="flex flex-col gap-1"><FieldLabel>Transport</FieldLabel><select className={inputClass} style={{ height: 34 }} value={draft.transport} onChange={event => updateDraft('transport', event.target.value as 'stdio' | 'http')}><option value="stdio">stdio command</option><option value="http">Streamable HTTP</option></select></div>
-            {draft.transport === 'stdio' ? (
-              <>
-                <div className="col-span-2 flex flex-col gap-1"><FieldLabel>Command</FieldLabel><input className={inputClass} style={{ height: 34 }} value={draft.command} onChange={event => updateDraft('command', event.target.value)} placeholder="npx" /></div>
-                <div className="flex flex-col gap-1"><FieldLabel>Arguments</FieldLabel><textarea className={inputClass} style={{ minHeight: 76, paddingTop: 8, resize: 'vertical' }} value={draft.argumentsText} onChange={event => updateDraft('argumentsText', event.target.value)} placeholder={'-y\n@modelcontextprotocol/server-filesystem'} /></div>
-                <div className="flex flex-col gap-1"><FieldLabel>Working directory</FieldLabel><input className={inputClass} style={{ height: 34 }} value={draft.cwd} onChange={event => updateDraft('cwd', event.target.value)} placeholder="Optional" /></div>
-              </>
-            ) : (
-              <>
-                <div className="col-span-2 flex flex-col gap-1"><FieldLabel>Server URL</FieldLabel><input type="url" className={inputClass} style={{ height: 34 }} value={draft.url} onChange={event => updateDraft('url', event.target.value)} placeholder="https://example.com/mcp" /></div>
-                <div className="col-span-2 flex flex-col gap-1"><FieldLabel>Bearer token environment variable</FieldLabel><input className={inputClass} style={{ height: 34 }} value={draft.bearerTokenEnvVar} onChange={event => updateDraft('bearerTokenEnvVar', event.target.value)} placeholder="Optional · for example MCP_TOKEN" /></div>
-              </>
-            )}
-            <div className="col-span-2 flex flex-col gap-1">
-              <FieldLabel>Encrypted environment values</FieldLabel>
-              <textarea className={inputClass} style={{ minHeight: 70, paddingTop: 8, resize: 'vertical' }} value={draft.environmentText} onChange={event => updateDraft('environmentText', event.target.value)} placeholder={draft.environmentKeys.length ? 'Leave blank to keep stored values; use KEY= to remove one' : 'Optional · one KEY=value per line'} />
-              {draft.environmentKeys.length ? <div className="text-[10px]" style={{ color: 'var(--muted)' }}>Stored: {draft.environmentKeys.join(', ')}</div> : null}
+          <div className="settings-form">
+            <fieldset disabled={locked || saving} className="settings-form-body">
+              <section className="settings-form-section" aria-label={t('Connection details')}>
+                <SettingsField id="mcp-name" label="Name"><input id="mcp-name" className="settings-form-input" value={draft.name} onChange={event => updateDraft('name', event.target.value)} placeholder="GitHub" /></SettingsField>
+                <SettingsField id="mcp-transport" label="Transport"><select id="mcp-transport" className="settings-form-input" value={draft.transport} onChange={event => updateDraft('transport', event.target.value as 'stdio' | 'http')}><option value="stdio">{t('Local command (stdio)')}</option><option value="http">Streamable HTTP</option></select></SettingsField>
+                {draft.transport === 'stdio' ? <>
+                  <SettingsField id="mcp-command" label="Command"><input id="mcp-command" className="settings-form-input settings-form-code" value={draft.command} onChange={event => updateDraft('command', event.target.value)} placeholder="npx" /></SettingsField>
+                  <SettingsField id="mcp-arguments" label="Arguments — one per line"><textarea id="mcp-arguments" className="settings-form-input settings-form-code" rows={3} value={draft.argumentsText} onChange={event => updateDraft('argumentsText', event.target.value)} placeholder={'-y\n@modelcontextprotocol/server-filesystem'} /></SettingsField>
+                  <SettingsField id="mcp-directory" label="Working directory" description="Optional."><input id="mcp-directory" aria-describedby="mcp-directory-hint" className="settings-form-input settings-form-code" value={draft.cwd} onChange={event => updateDraft('cwd', event.target.value)} /></SettingsField>
+                </> : <>
+                  <SettingsField id="mcp-url" label="Server URL"><input id="mcp-url" type="url" className="settings-form-input settings-form-code" value={draft.url} onChange={event => updateDraft('url', event.target.value)} placeholder="https://example.com/mcp" /></SettingsField>
+                  <SettingsField id="mcp-token" label="Bearer token environment variable" description="Enter a variable name, not a token value."><input id="mcp-token" aria-describedby="mcp-token-hint" className="settings-form-input settings-form-code" value={draft.bearerTokenEnvVar} onChange={event => updateDraft('bearerTokenEnvVar', event.target.value)} placeholder="MCP_TOKEN" /></SettingsField>
+                </>}
+              </section>
+              <details className="settings-form-advanced">
+                <summary><span>{t('Encrypted environment values')}</span><span className="settings-meta-text">{t('Optional')}</span></summary>
+                <div className="settings-form-advanced-body">
+                  <SettingsField id="mcp-environment" label="Environment values" description="Leave blank to keep stored values; use KEY= to remove one. Values are stored encrypted by the Host.">
+                    <textarea id="mcp-environment" aria-describedby="mcp-environment-hint" className="settings-form-input settings-form-code" rows={3} value={draft.environmentText} onChange={event => updateDraft('environmentText', event.target.value)} placeholder={t('One KEY=value per line')} autoComplete="off" spellCheck={false} />
+                  </SettingsField>
+                  {draft.environmentKeys.length ? <div className="settings-meta-text">{t('Stored variables')}: {draft.environmentKeys.join(', ')}</div> : null}
+                </div>
+              </details>
+              <section className="settings-form-section" aria-labelledby="mcp-providers-label">
+                <h4 id="mcp-providers-label" className="settings-card-title">{t('Compatible Work Providers')}</h4>
+                <p className="settings-field-description">{t('Saving a connection does not grant it to Main Chat.')}</p>
+                <div role="group" aria-labelledby="mcp-providers-label" className="settings-form-provider-choices">
+                  {compatibleProviders.length ? compatibleProviders.map(provider => {
+                    const checked = draft.providerIds.includes(provider.provider_id)
+                    return <label key={provider.provider_id}><input type="checkbox" checked={checked} onChange={() => updateDraft('providerIds', checked ? draft.providerIds.filter(value => value !== provider.provider_id) : [...draft.providerIds, provider.provider_id])} />{provider.display_name || provider.provider_id}</label>
+                  }) : <p className="settings-field-description">{t('No installed Work Provider currently accepts MCP connections.')}</p>}
+                </div>
+                <SettingsField id="mcp-enabled" label="Enable for selected Providers" description="Applies after saving and restarting the backend.">
+                  <div className="settings-form-switch"><input id="mcp-enabled" type="checkbox" role="switch" aria-describedby="mcp-enabled-hint" checked={draft.enabled} onChange={event => updateDraft('enabled', event.target.checked)} /><span>{t(draft.enabled ? 'On' : 'Off')}</span></div>
+                </SettingsField>
+              </section>
+            </fieldset>
+            <div className="settings-form-footer">
+              {error ? <div role="alert" className="settings-form-error">{t(error)}</div> : null}
+              <div className="settings-form-save-hint" role="status">{t(dirty ? 'Unsaved changes' : 'Changes are saved together. Restart the backend to apply.')}</div>
+              <div className="settings-form-actions-end"><SettingsButton tone="quiet" disabled={saving} onClick={closeEditor}>{t('Cancel')}</SettingsButton><SettingsButton tone="primary" onClick={() => void save()} disabled={locked || saving || Boolean(draft.id) && !dirty}>{t(saving ? 'Saving…' : 'Save connection')}</SettingsButton></div>
             </div>
-            <div className="col-span-2 flex flex-col gap-1.5">
-              <FieldLabel>Compatible Work Providers</FieldLabel>
-              {compatibleProviders.length ? compatibleProviders.map(provider => {
-                const checked = draft.providerIds.includes(provider.provider_id)
-                return <label key={provider.provider_id} className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text)' }}><input type="checkbox" checked={checked} onChange={() => updateDraft('providerIds', checked ? draft.providerIds.filter(value => value !== provider.provider_id) : [...draft.providerIds, provider.provider_id])} />{provider.display_name || provider.provider_id}</label>
-              }) : <div className="text-[10.5px]" style={{ color: 'var(--warning)' }}>No installed Work Provider currently accepts MCP connections.</div>}
-            </div>
-            <label className="col-span-2 flex items-start gap-2 text-[11px]" style={{ color: 'var(--text)' }}><input type="checkbox" checked={draft.enabled} onChange={event => updateDraft('enabled', event.target.checked)} style={{ marginTop: 2 }} /><span><span className="font-[600]">Enable for selected Providers</span><span className="block text-[10px] mt-0.5" style={{ color: 'var(--muted)' }}>Saving a connection does not grant it to Main Chat.</span></span></label>
           </div>
-          {error ? <div className="text-[10.5px] mt-3" style={{ color: 'var(--danger)' }}>{error}</div> : null}
-          <div className="flex justify-end gap-2 mt-4"><button onClick={() => setDraft(null)} className="text-[11px] rounded-md px-3" style={{ height: 31, color: 'var(--muted)', background: 'transparent', border: 0 }}>{t('Cancel')}</button><button onClick={() => void save()} disabled={saving} className="text-[11px] font-[600] rounded-md px-3 disabled:opacity-50" style={{ height: 31, color: 'white', background: 'var(--accent)', border: 0 }}>{t(saving ? 'Saving…' : 'Save connection')}</button></div>
         </div>
       ) : (
-        <button onClick={() => { setDraft({ ...EMPTY_DRAFT }); setError('') }} disabled={locked} className="self-start text-[11px] font-[600] rounded-md px-3 disabled:opacity-40" style={{ height: 32, color: 'var(--text)', background: 'var(--selected-fill)', border: '1px solid var(--divider)' }}>+ {t('Add MCP server')}</button>
+        <SettingsButton className="self-start" onClick={() => beginEdit({ ...EMPTY_DRAFT })} disabled={locked}>+ {t('Add MCP server')}</SettingsButton>
       )}
       {locked ? <div className="text-[10.5px]" style={{ color: 'var(--muted)' }}>{t('MCP registry is locked by the parent process environment.')}</div> : null}
       {!connections.length && !draft ? <div className="text-[10.5px]" style={{ color: 'var(--muted)' }}>{t('No MCP connections configured.')}</div> : null}
-      {error && !draft ? <div className="text-[10.5px]" style={{ color: 'var(--danger)' }}>{error}</div> : null}
+      {error && !draft ? <div role="alert" className="settings-form-error">{t(error)}</div> : null}
     </div>
   )
 }
