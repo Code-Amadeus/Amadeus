@@ -10,7 +10,7 @@
 <p>
   <a href="https://www.bilibili.com/video/BV1783G6hEYY/"><img src="https://img.shields.io/badge/demo-Bilibili-b94b43?labelColor=191a1d&amp;logo=bilibili&amp;logoColor=e8e2d4" alt="Bilibili demo"/></a>
   <a href="#architecture"><img src="https://img.shields.io/badge/architecture-current-444449?labelColor=191a1d" alt="Current architecture"/></a>
-  <a href="./docs/alpha-0.16.md"><img src="https://img.shields.io/badge/version-0.16.0_Alpha-b94b43?labelColor=191a1d" alt="0.16.0 Alpha"/></a>
+  <a href="./docs/alpha-0.16.1.md"><img src="https://img.shields.io/badge/version-0.16.1_Alpha-b94b43?labelColor=191a1d" alt="0.16.1 Alpha"/></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-444449?labelColor=191a1d" alt="AGPL-3.0 license"/></a>
   <br/>
   <a href="#quick-start"><img src="https://img.shields.io/badge/Windows-reference-444449?labelColor=191a1d" alt="Windows — reference platform"/></a>
@@ -51,7 +51,7 @@ the Host owns identity, state, permissions, persistence, and recovery.
 
 > [!IMPORTANT]
 > This repository contains buildable, runnable source. This branch targets
-> **0.16.0 Alpha**, not a packaged desktop release.
+> **0.16.1 Alpha**, not a packaged desktop release.
 > Amadeus first-party code is open-source under the
 > [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
 > Third-party code and external assets retain their own terms.

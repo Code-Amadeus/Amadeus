@@ -10,7 +10,7 @@
 <p>
   <a href="https://www.bilibili.com/video/BV1783G6hEYY/"><img src="https://img.shields.io/badge/demo-Bilibili-b94b43?labelColor=191a1d&amp;logo=bilibili&amp;logoColor=e8e2d4" alt="Bilibili demo"/></a>
   <a href="#系统架构"><img src="https://img.shields.io/badge/architecture-current-444449?labelColor=191a1d" alt="系统架构"/></a>
-  <a href="./docs/alpha-0.16.md"><img src="https://img.shields.io/badge/version-0.16.0_Alpha-b94b43?labelColor=191a1d" alt="0.16.0 Alpha"/></a>
+  <a href="./docs/alpha-0.16.1.md"><img src="https://img.shields.io/badge/version-0.16.1_Alpha-b94b43?labelColor=191a1d" alt="0.16.1 Alpha"/></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-444449?labelColor=191a1d" alt="AGPL-3.0 license"/></a>
   <br/>
   <a href="#快速开始"><img src="https://img.shields.io/badge/Windows-reference-444449?labelColor=191a1d" alt="Windows — 参考平台"/></a>
@@ -49,7 +49,7 @@ Amadeus 试图把这些体验连成一个闭环：
 持久化与恢复。
 
 > [!IMPORTANT]
-> 本仓库包含可构建、可运行的公开源码，本分支为 **0.16.0 Alpha**，
+> 本仓库包含可构建、可运行的公开源码，本分支为 **0.16.1 Alpha**，
 > 不是带安装器的正式桌面发行版。Amadeus 第一方代码依据
 > [GNU Affero General Public License v3.0（AGPL-3.0）](LICENSE) 开源。
 > 第三方代码与外部资产保留各自条款。
