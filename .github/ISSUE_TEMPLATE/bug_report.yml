@@ -1,0 +1,34 @@
+name: Bug report
+description: Report a reproducible product failure.
+body:
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+      description: Describe the user action, what you expected, and what happened.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include a minimal example with synthetic inputs where possible.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Relevant environment
+      description: OS, Amadeus revision, install profile (L1–L4 / CPU / CUDA / ROCm / MPS), and relevant Provider, model, ASR, TTS or character package.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Paste a short relevant error or screenshot. Remove credentials, private paths and conversations. Logs may contain sensitive information, especially with LOG_USER_CONTENT enabled; review them before sharing.
+  - type: textarea
+    id: related
+    attributes:
+      label: Related issues or fixes
+      description: Link existing reports and state whether a newer revision was checked.

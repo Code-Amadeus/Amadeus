@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Setup and usage questions
+    url: https://github.com/Code-Amadeus/Amadeus/discussions
+    about: Ask for help with installation or an existing feature.
+  - name: Security reports
+    url: https://github.com/Code-Amadeus/Amadeus/blob/main/SECURITY.md
+    about: Follow the private reporting instructions for security-sensitive findings.

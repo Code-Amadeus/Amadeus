@@ -1,4 +1,4 @@
-﻿"""
+"""
 IPC protocol contract between frontend and Python backend.
 
 Every message is JSON with this envelope:
@@ -12,18 +12,7 @@ Every message is JSON with this envelope:
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, TypedDict
-
-class StrEnum(str, Enum):
-    """Python 3.10 compat: str Enum, added to stdlib in 3.11."""
-    pass
-
-# NotRequired added in 3.11; use typing_extensions fallback
-try:
-    from typing import NotRequired
-except ImportError:
-    from typing_extensions import NotRequired  # type: ignore[assignment]
-
+from typing import Any, NotRequired, TypedDict
 
 # ── envelope ────────────────────────────────────────────────────────────────
 
@@ -36,7 +25,7 @@ class Envelope(TypedDict):
 
 # ── method constants ────────────────────────────────────────────────────────
 
-class Method(StrEnum):
+class Method(str, Enum):
     # Chat
     CHAT_SEND          = "chat.send"
     CHAT_ABORT         = "chat.abort"

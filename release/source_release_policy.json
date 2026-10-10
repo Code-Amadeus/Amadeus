@@ -194,7 +194,6 @@
     "docs/evidence/texture-pipeline-2026-10-03/tier_quality.py"
   ],
   "exclude_globs": [
-    ".github/ISSUE_TEMPLATE/config.yml",
     "docs/reports/**",
     "docs/cn/README.md",
     "docs/ja/README.md",

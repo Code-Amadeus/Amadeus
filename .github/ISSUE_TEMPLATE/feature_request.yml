@@ -1,0 +1,24 @@
+name: Feature request
+description: Propose a concrete user journey or capability.
+body:
+  - type: textarea
+    id: scenario
+    attributes:
+      label: User scenario
+      description: What are you trying to do, and where does the current product stop you?
+    validations:
+      required: true
+  - type: input
+    id: subsystem
+    attributes:
+      label: Affected product area
+      placeholder: Chat, Work, Settings, voice, character, extension, or another area
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Smallest useful change and acceptance example
+      description: Describe the expected behavior, who owns it, and any settings, data or permission changes. See ROADMAP.md for current directions.
+    validations:
+      required: true

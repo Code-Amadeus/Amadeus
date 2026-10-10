@@ -114,6 +114,19 @@ wallpaper/      Electron/Lively hosts and Win32 desktop placement
 vn_player/      experimental VN Player integration
 assets/         Git-owned UI assets and external runtime-asset destinations
 release/        public-source selection, provenance, and deterministic archive policy
+config/         startup parsing, shared declarations in config/catalog/, state I/O
+llm/            model clients, transports, and character prompt composition
+characters/     built-in character definitions
+sdk/            AUIP integration libraries
+schemas/        machine-readable protocol and package contracts
+examples/       external application and integration examples
+skills/         Provider-scoped authoring instructions
+tools/          maintenance and acceptance entry points (see tools/README.md)
+tests/          deterministic product and boundary contracts
+docs/           setup guides, contracts, and dated engineering evidence
+architecture/   architecture sources and generated views
+scripts/        platform launch and installation helpers
+local_tts_infer.py  GPT-SoVITS inference integration used by tts/
 ```
 
 `main.py` is not an application entry; it prints a retirement notice. The

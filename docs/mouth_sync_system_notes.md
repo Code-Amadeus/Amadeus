@@ -253,7 +253,7 @@ This made mouth overlay safe during async texture loads and frame switches.
 
 Character render mode received mouth amplitude, but wallpaper mode looked frozen/closed because the wallpaper animator did not receive the VTS mouth callback.
 
-Resolution: add `chatGui.py::_bind_wallpaper_mouth_value`, which wraps `vts_mgr.on_mouth_value` and forwards the value both to the previous callback and to the wallpaper animator.
+Historical resolution used a GUI callback to fan out VTS mouth values. That GUI entrypoint has since been retired. Current PCM-derived mouth routing is owned by `tts/mouth_signal.py`; consult that module for the supported render and wallpaper path.
 
 ### 8. Full amplitude-to-mouth-frame mapping was too ambitious for now
 
@@ -349,9 +349,8 @@ For each speaking expression:
   - texture readiness
   - per-frame anchor selection
 
-- `chatGui.py`
-  - normal renderer mouth config push
-  - wallpaper mouth amplitude fan-out
+- `tts/mouth_signal.py` (current runtime owner; replaces the retired GUI callback)
+  - PCM-derived mouth signal routing
 
 - `assets/spriteforge/runtime/kurisu/runtime_manifest.json`
 - `assets/spriteforge/runtime/kurisu/spriteforge_mouth_config.json`

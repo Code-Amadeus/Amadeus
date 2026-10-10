@@ -1,3 +1,15 @@
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+# Preserve the five vendored files already committed with CRLF.
+/vendor/aec-audio-processing/PKG-INFO -text
+/vendor/aec-audio-processing/setup.cfg -text
+/vendor/aec-audio-processing/src/audio_processing_wrap.cpp -text
+/vendor/aec-audio-processing/src/webrtc_audio_processing.py -text
+/vendor/aec-audio-processing/webrtc-audio-processing/AUTHORS -text
+# Generated from config/catalog; check:config verifies the output.
+/electron/src/shared/configCatalog.generated.ts linguist-generated=true
+
 # Registered protocols and test instruments hash exact source bytes.
 # Keep these text inputs stable across Windows checkouts with autocrlf enabled.
 /docs/**/*.md text eol=lf
