@@ -5541,6 +5541,18 @@ input[type="range"]::-webkit-slider-thumb:hover { background: var(--focus-fill);
 .crt-render-stage {
   position: relative;
   overflow: hidden;
+  background-color: var(--bg);
+}
+
+html[data-theme='wallpaper-slice'] .crt-render-stage {
+  background-color: #000;
+}
+
+.crt-render-stage > iframe {
+  /* The transparent render document uses the normal scheme. A mismatch makes
+     the browser composite it over an opaque canvas instead of this stage. */
+  color-scheme: normal;
+  background: transparent;
 }
 
 .crt-widget-layer {

@@ -1898,7 +1898,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     <div ref={splitRootRef} className="flex-1 flex min-h-0" style={{ backgroundColor: 'var(--bg)' }}>
       {/* Character render area (left, PixiJS mode only) */}
       {renderActive && (
-        <div className="crt-render-stage flex flex-col min-w-0" style={{ minWidth: CHARACTER_MIN_W, flex: '1 1 auto', backgroundColor: 'var(--bg)' }}>
+          <div className="crt-render-stage flex flex-col min-w-0" style={{ minWidth: CHARACTER_MIN_W, flex: '1 1 auto' }}>
           {/* PixiJS render iframe */}
           <iframe
             ref={renderFrameRef}
@@ -1906,7 +1906,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
             title="Character Render"
             onLoad={handleRenderFrameLoad}
             className="flex-1 border-0"
-            style={{ width: '100%', backgroundColor: 'var(--bg)', pointerEvents: isSplitResizing ? 'none' : 'auto' }}
+              style={{ width: '100%', pointerEvents: isSplitResizing ? 'none' : 'auto' }}
           />
           {CRT_WORK_WIDGET_DEMO_ENABLED && <CrtWorkWidget />}
 
