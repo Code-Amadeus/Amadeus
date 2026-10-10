@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react'
+import { type ButtonHTMLAttributes, type ReactNode } from 'react'
 import FluentIcon, { type FluentIconName } from './FluentIcon'
 import { useI18n } from '../i18n'
 
@@ -60,4 +60,24 @@ export function SettingsGroup({ title, detail, children }: { title: string; deta
       <div className="settings-group-body">{children}</div>
     </section>
   )
+}
+
+/** Presentation only: each editor retains its own draft and save boundary. */
+export function SettingsField({ id, label, description, children }: {
+  id: string; label: string; description?: string; children: ReactNode
+}) {
+  const { t } = useI18n()
+  return <div className="settings-form-field">
+    <div className="settings-form-field-copy">
+      <label className="settings-field-label" htmlFor={id}>{t(label)}</label>
+      {description ? <div id={`${id}-hint`} className="settings-field-description">{t(description)}</div> : null}
+    </div>
+    <div className="settings-form-field-control">{children}</div>
+  </div>
+}
+
+export function SettingsButton({ tone = 'secondary', className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & {
+  tone?: 'primary' | 'secondary' | 'quiet' | 'danger'
+}) {
+  return <button type="button" {...props} className={`settings-button ${className}`} data-tone={tone} />
 }
