@@ -277,6 +277,7 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                 "permission_request_ids": permission_ids,
                 "native_permission_request_ids": sorted(native_request_ids),
                 "target_content": content,
+                "provider_result": terminal.to_dict(),
             }
         )
         report["semantic_evidence"] = build_evidence(
@@ -297,7 +298,7 @@ async def _run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                 "provider_run_ids": [run_id] if run_id else [],
             },
             manual_acceptance="pending",
-            notes=f"Official Codex approval callback, Host {args.decision}, same native turn continuation.",
+            notes=[f"Official Codex approval callback, Host {args.decision}, same native turn continuation."],
         )
         exit_code = 0 if report["status"] == "passed" else 1
     except Exception as exc:
