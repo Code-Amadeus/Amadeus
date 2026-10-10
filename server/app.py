@@ -1288,13 +1288,36 @@ async def bootstrap(port: int = 17777) -> None:
         asyncio.create_task(playback_manager.run())
         asyncio.create_task(_psw())
 
+    from server.cooperative_chat_ingress import prepared_auip_entry_scope
+
+    cooperative_chat = None
+    asr_entry_preparation = None
+
+    def _prepare_asr_entry() -> None:
+        nonlocal asr_entry_preparation
+        from core import session_manager as sm
+
+        state = asr_h.listening_state()
+        asr_entry_preparation = None
+        if (WAKE_AUTO_SEND_TO_CHAT and state["active"] and state["source"] == "wake"
+                and cooperative_chat is not None):
+            asr_entry_preparation = cooperative_chat.prefetch_auip_entry_context(
+                sm.get_current_session_id())
+
+    def _on_asr_speech_start() -> None:
+        server_loop.call_soon_threadsafe(_prepare_asr_entry)
+
+    async def _launch_prepared_speculative_text(text: str) -> None:
+        from server.speculative_turn import get_speculative_launcher
+
+        with prepared_auip_entry_scope(asr_entry_preparation):
+            await get_speculative_launcher().launch(text)
+
     def _on_speculative_asr_text(text: str) -> None:
         """ASR 工作线程 → 事件循环：投机文本就绪，尝试发起投机 LLM 轮。"""
         try:
-            from server.speculative_turn import get_speculative_launcher
-
             asyncio.run_coroutine_threadsafe(
-                get_speculative_launcher().launch(text), server_loop
+                _launch_prepared_speculative_text(text), server_loop
             )
         except Exception:
             logger.debug("speculative text dispatch failed", exc_info=True)
@@ -1311,6 +1334,7 @@ async def bootstrap(port: int = 17777) -> None:
             try:
                 mgr._tts_playing_fn = _tts_is_raw_playing
                 mgr._tts_block_mic_fn = _tts_should_block_mic
+                mgr._on_speech_start_fn = _on_asr_speech_start
             except Exception:
                 pass
             try:
@@ -1430,13 +1454,16 @@ async def bootstrap(port: int = 17777) -> None:
         )
 
     async def _handle_asr_recognized(payload: dict) -> None:
+        nonlocal asr_entry_preparation
+        prepared, asr_entry_preparation = asr_entry_preparation, None
         source = str(payload.get("source") or "")
         if source == "vn_player":
             await _handle_vn_player_asr_recognized(payload)
             return
         if source != "wake":
             return
-        await _send_wake_text(str(payload.get("text") or ""), source="wake ASR")
+        with prepared_auip_entry_scope(prepared):
+            await _send_wake_text(str(payload.get("text") or ""), source="wake ASR")
 
     async def _handle_vn_player_asr_recognized(payload: dict) -> None:
         text = str(payload.get("text") or "").strip()
@@ -1723,6 +1750,8 @@ async def bootstrap(port: int = 17777) -> None:
 
         return await query_role_messages(_llm_client_mod.remote_llm_messages_query,
             role_messages,
+            turn_id=str((frame.get("current") or {}).get("turn_id") or "")
+                if isinstance(frame, dict) and isinstance(frame.get("current"), dict) else "",
             json_output=(source_kind not in ("provider", "host_receipt")
                 if json_output is None else json_output),
             on_text=on_text, visual_context=visual_context, temperature=0.0,

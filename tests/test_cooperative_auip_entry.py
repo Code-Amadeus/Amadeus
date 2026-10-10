@@ -104,8 +104,8 @@ def entry_host(pending_host, tmp_path, request):
     context.manager.query = query
     context.manager.configure_auip(AuipControlDecisionResolver(query=source_query,
         app_runtime=_Runtime(), launch_catalog=launch), AsyncMock(side_effect=route),
-        entry_context=lambda session:launch.render_prompt_context(session,
-            language="ja", include_control_contract=False))
+        entry_context=lambda session:launch.render_prompt_context(
+            session, language="ja", include_control_contract=False))
     assert len(launch.candidates(context.session_id)) == int(parameter is not False)
     return context, state, launch, item, attempt, artifact
 
@@ -458,6 +458,72 @@ async def test_explicit_browser_url_does_not_wait_for_inactive_app_capture(
     planner.assert_not_awaited()
     assert context.host.adapter.calls == 0
     state.release.set()
+
+
+@pytest.mark.parametrize("focused", [False, True])
+async def test_catalog_discovery_cannot_delay_the_role_request(streaming_role, monkeypatch, focused):
+    import threading
+    from server.cooperative_chat_ingress import CooperativeChatManager
+    from server.handlers.chat_handler import ChatHandler
+
+    monkeypatch.setattr("server.chat_role_delivery.sm.get_current_session_id", lambda:"A")
+    monkeypatch.setattr(ChatHandler, "_turn_allows_visible_emit", AsyncMock(return_value=True))
+    host = streaming_role
+    discovery_started, finish_discovery = threading.Event(), threading.Event()
+
+    class SlowCatalog:
+        def entry_candidates(self, *_args, **_kwargs):
+            if not focused:
+                assert host.queue.qsize() >= 1
+            discovery_started.set()
+            assert finish_discovery.wait(3)
+            return [], []
+
+    first_sentence = asyncio.Event()
+
+    async def query(_messages, *, on_text=None):
+        if not focused:
+            assert not discovery_started.is_set()
+        await on_text('{"action":null,"say":"先に話すわ。')
+        assert host.queue.qsize() == 1
+        assert await asyncio.to_thread(discovery_started.wait, 1)
+        assert not finish_discovery.is_set()
+        first_sentence.set()
+        await on_text('続きを話す。"}')
+        return '{"action":null,"say":"先に話すわ。続きを話す。"}'
+
+    loop = role_loop(query, host.delivery)
+    manager = CooperativeChatManager.__new__(CooperativeChatManager)
+    manager.auip_decider = AuipControlDecisionResolver(
+        query=AsyncMock(return_value='{"action":"none"}'),
+        app_runtime=_Runtime({"status":"active", "app_session_id":"focused-app",
+            "app":{"title":"Board"}, "state":{}} if focused else None),
+        launch_catalog=SlowCatalog())
+    manager.auip_router = object()
+    manager.work_planner = object() if focused else None
+    manager.auip_entry_context = lambda _session:"Existing application information"
+    ingress = SimpleNamespace(session_id="A", loop=loop)
+    entry = None
+    submission = None
+    try:
+        result = await asyncio.wait_for(manager.handle_auip_action(
+            ingress, "reply", "話そう。", None, lambda:None), 1)
+        entry = result["entry"]
+        submission = asyncio.create_task(loop.submit("話そう。", turn_id="reply", auip_entry=entry))
+        await asyncio.wait_for(first_sentence.wait(), 2)
+        assert not entry["pending"].done()
+        finish_discovery.set()
+        result = await submission
+        assert result["state"] == "no_action"
+        assert host.queue.qsize() == 2
+    finally:
+        finish_discovery.set()
+        if entry is not None:
+            entry["release"].set()
+            await entry["pending"]
+        if submission is not None:
+            await asyncio.gather(submission, return_exceptions=True)
+        await loop.close()
 
 
 async def test_inactive_capture_does_not_gate_shared_first_sentence(streaming_role, monkeypatch):
