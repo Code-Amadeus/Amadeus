@@ -693,11 +693,12 @@ async def test_production_role_query_keeps_shared_language_contract_after_coordi
     assembled = production_query(query)
     original = [{"role":"system", "content":"Persona\nCoordination JSON contract"},
         {"role":"user", "content":json.dumps({"source_kind":source_kind,
-            "current":{"text":"你好"}}, ensure_ascii=False)}]
+            "current":{"text":"你好", "turn_id":"role-turn"}}, ensure_ascii=False)}]
 
     assert await assembled(original) == reply
 
     query.assert_called_once()
+    assert query.call_args.kwargs["turn_id"] == "role-turn"
     assert query.call_args.kwargs["json_output"] is (source_kind == "user")
     sent = query.call_args.args[0]
     assert sent[0]["content"].startswith(original[0]["content"])

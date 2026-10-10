@@ -143,6 +143,11 @@ def test_draft_apps_are_bounded_to_the_five_most_recent_launchable_items() -> No
                             attempt.attempt_id,
                             execution_status="succeeded",
                         )
+                        store.register_artifact(
+                            item.work_item_id, attempt_id=attempt.attempt_id,
+                            kind="business.file", path=workspace / "auip.manifest.json",
+                            title="auip.manifest.json", status="registered",
+                        )
                         discovered[item.work_item_id] = {
                             "artifact_id": f"artifact-{index}",
                             "artifact_ref": f"artifact:artifact-{index}@verified",
@@ -179,3 +184,33 @@ def test_draft_apps_are_bounded_to_the_five_most_recent_launchable_items() -> No
                 settings.WORK_SCRATCH_ROOT = previous_scratch
 
     asyncio.run(run())
+
+
+def test_draft_catalog_skips_non_app_history_and_revalidates_changed_files(tmp_path, monkeypatch):
+    from test_auip_launch import _seed_app
+
+    scratch = tmp_path / "scratch"
+    monkeypatch.setattr(settings, "WORK_SCRATCH_ROOT", str(scratch))
+    with WorkLedgerStore(tmp_path / "ledger.sqlite3") as store:
+        project = store.create_or_get_project(scratch)
+        app, _, _ = _seed_app(store, project, scratch, title="Old App", turn_id="app")
+        # More ordinary Work than the old 500-row scan could see past.
+        for index in range(501):
+            store.create_work_item(project.project_id, title=f"Notes {index}",
+                workspace_path=scratch / f"missing-{index}")
+        coordinator = WorkLedgerCoordinator(store)
+        checked = []
+        original = coordinator.read_model._is_unkept_draft
+
+        def check(path):
+            checked.append(path)
+            return original(path)
+
+        monkeypatch.setattr(coordinator.read_model, "_is_unkept_draft", check)
+        shelf = coordinator.draft_apps()
+        assert shelf["complete"] is True
+        assert [row["workItemId"] for row in shelf["apps"]] == [app.work_item_id]
+        assert checked == [app.workspace_path]
+        # Ledger recall is not permission to use stale bytes, even on the next call.
+        Path(app.workspace_path, "index.html").write_text("changed", encoding="utf-8")
+        assert coordinator.draft_apps()["apps"] == []

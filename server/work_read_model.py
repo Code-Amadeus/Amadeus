@@ -149,7 +149,13 @@ class WorkReadModel:
 
         app_limit = max(1, min(int(limit), 20))
         scan_limit = 500
-        items = self.store.list_work_items(limit=scan_limit)
+        # Both workspace and approved-export apps require a recorded manifest.
+        # Narrow in SQL, preserving Work recency and all validation below;
+        # ordinary historical Work never needs filesystem inspection here.
+        items = self.store.list_work_items(
+            artifact_name="auip.manifest.json", limit=scan_limit,
+            include_presentation=False,
+        )
         apps: list[dict[str, Any]] = []
         for item in items:
             if not self._is_unkept_draft(item.workspace_path):

@@ -473,8 +473,10 @@ def _aws_frame(payload):
 ])
 @pytest.mark.parametrize("failure", [None, RuntimeError, asyncio.CancelledError])
 @pytest.mark.parametrize("json_output", [True, False])
-def test_message_stream_is_one_request_and_closes_on_callback_failure(backend, failure, json_output):
+def test_message_stream_is_one_request_and_closes_on_callback_failure(backend, failure, json_output, caplog):
     from llm import client
+
+    caplog.set_level("INFO", logger="llm.client")
 
     parts = ['{"action":null,"say":"', 'Hello。', '"}'] if json_output else ['完了したわ。', '結果は', 'こちら。']
     calls = []
@@ -555,6 +557,7 @@ def test_message_stream_is_one_request_and_closes_on_callback_failure(backend, f
             reply = client.remote_llm_messages_query(
                 messages, on_text=on_text, visual_context=visual, response_observer=observed.append,
                 json_output=json_output,
+                turn_id="timed-turn",
             )
             assert reply == "".join(parts)
             assert delivered == parts
@@ -566,10 +569,17 @@ def test_message_stream_is_one_request_and_closes_on_callback_failure(backend, f
         else:
             with pytest.raises(failure, match="stop this query"):
                 client.remote_llm_messages_query(messages, on_text=on_text, visual_context=visual,
-                    json_output=json_output)
+                    json_output=json_output, turn_id="timed-turn")
             assert stream.consumed == 1
     assert len(calls) == 1
     assert stream.closed
+    timing = [record.getMessage() for record in caplog.records
+        if "[MODEL-LATENCY]" in record.getMessage()]
+    assert len(timing) == 2
+    assert "stage=request_start" in timing[0] and "stage=first_text" in timing[1]
+    assert all("turn_id=timed-turn" in line for line in timing)
+    assert timing[0].split("request_id=")[1].split()[0] == timing[1].split("request_id=")[1].split()[0]
+    assert all(part not in line for part in parts for line in timing)
     assert messages == MESSAGES
     if backend in sdk_backends:
         assert calls[0]["stream"] is True
@@ -592,6 +602,31 @@ def test_message_stream_is_one_request_and_closes_on_callback_failure(backend, f
     if backend == "gemini":
         assert calls[0]["contents"][-1].parts[1].inline_data.mime_type == "image/png"
         assert ("response_mime_type" in calls[0]["config"]) is json_output
+
+
+def test_model_timing_excludes_client_preparation_and_ignores_empty_chunks(monkeypatch, caplog):
+    from llm import client
+
+    caplog.set_level("INFO", logger="llm.client")
+    ticks = iter([10.0, 10.1, 10.35, 20.0, 20.2, 20.7])
+    monkeypatch.setattr(client, "time", SimpleNamespace(perf_counter=lambda:next(ticks)))
+    monkeypatch.setattr(client, "LLM_PROVIDER", "deepseek")
+
+    def create(**kwargs):
+        assert "turn_id" not in kwargs
+        return _Stream([SimpleNamespace(choices=[SimpleNamespace(
+            delta=SimpleNamespace(content=part), finish_reason=None)])
+            for part in (None, "", "first", "second")])
+
+    monkeypatch.setattr(client, "llm_client", SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+    for turn in ("one", "two"):
+        assert client.remote_llm_messages_query(MESSAGES, turn_id=turn,
+            on_text=lambda _:None) == "firstsecond"
+    timing = [record.getMessage() for record in caplog.records if "[MODEL-LATENCY]" in record.getMessage()]
+    assert "prepare_ms=100.0" in timing[0] and "ms=250.0" in timing[1]
+    assert "prepare_ms=200.0" in timing[2] and "ms=500.0" in timing[3]
+    assert timing[0].split("request_id=")[1].split()[0] != timing[2].split("request_id=")[1].split()[0]
 
 
 def test_persistent_cli_is_rejected_before_query_or_delivery():

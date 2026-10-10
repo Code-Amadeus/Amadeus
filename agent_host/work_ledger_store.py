@@ -581,6 +581,13 @@ def _validate_origin_effect_id(value: str, *, required: bool = False) -> None:
         raise ValueError("origin_effect_id must be a non-blank string (or empty for legacy writes)")
 
 
+_ARTIFACT_NAME_MATCH_SQL = (
+    "(path LIKE ? ESCAPE '!' "
+    "OR path LIKE '%/' || ? ESCAPE '!' "
+    "OR path LIKE '%\\' || ? ESCAPE '!')"
+)
+
+
 def _escape_like(value: str) -> str:
     """Neutralise LIKE wildcards so a filename is matched literally."""
 
@@ -1846,6 +1853,7 @@ class WorkLedgerStore:
         states: Sequence[str] | None = None,
         limit: int = 200,
         include_presentation: bool = True,
+        artifact_name: str = "",
     ) -> list[WorkItemRecord]:
         clauses: list[str] = []
         params: list[Any] = []
@@ -1867,6 +1875,15 @@ class WorkLedgerStore:
                 raise ValueError(f"unsupported work item state: {invalid[0]!r}")
             clauses.append("state IN (" + ",".join("?" for _ in clean_states) + ")")
             params.extend(clean_states)
+        if artifact_name:
+            # Recall candidates from ledger evidence before touching workspaces.
+            # This deliberately includes stale/rejected revisions: the caller
+            # still owns current-revision, status and file-content validation.
+            escaped = _escape_like(str(artifact_name))
+            clauses.append("EXISTS (SELECT 1 FROM artifacts a "
+                "WHERE a.work_item_id = work_items.work_item_id AND "
+                + _ARTIFACT_NAME_MATCH_SQL + ")")
+            params.extend((escaped, escaped, escaped))
         projection = "*" if include_presentation else self._record_projection(
             WorkItemRecord, "json_remove(metadata_json, '$.presentation')")
         sql = f"SELECT {projection} FROM work_items"
@@ -3081,11 +3098,8 @@ class WorkLedgerStore:
         escaped = _escape_like(clean)
         rows = self._fetchall(
             "SELECT work_item_id, MAX(updated_at) AS latest FROM artifacts "
-            "WHERE kind = ? AND path <> '' AND ("
-            "path LIKE ? ESCAPE '!' "
-            "OR path LIKE '%/' || ? ESCAPE '!' "
-            "OR path LIKE '%\\' || ? ESCAPE '!'"
-            ") GROUP BY work_item_id ORDER BY latest DESC LIMIT ?",
+            "WHERE kind = ? AND path <> '' AND " + _ARTIFACT_NAME_MATCH_SQL
+            + " GROUP BY work_item_id ORDER BY latest DESC LIMIT ?",
             (str(kind), escaped, escaped, escaped, max(1, min(int(limit), 200))),
         )
         return [str(row["work_item_id"]) for row in rows]
