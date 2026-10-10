@@ -41,7 +41,12 @@ def test_settings_facade_imports_from_copied_example_with_only_one_real_key(tmp_
 
     root = Path(__file__).parents[1]
     dotenv = tmp_path / '.env'
-    dotenv.write_text((root / '.env.example').read_text(encoding='utf-8') + '\nDEEPSEEK_API_KEY=synthetic-key\n', encoding='utf-8')
+    template = (root / '.env.example').read_text(encoding='utf-8')
+    # Follow the README on the existing line: uncomment, then fill the key.
+    # Appending another assignment would hide a broken setup instruction.
+    example = '# DEEPSEEK_API_KEY=<your-api-key>'
+    assert template.count(example) == 1
+    dotenv.write_text(template.replace(example, 'DEEPSEEK_API_KEY=synthetic-key'), encoding='utf-8')
     probe = '''
 import sys
 from dotenv import dotenv_values

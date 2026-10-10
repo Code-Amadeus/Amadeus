@@ -135,8 +135,10 @@ class RealtimeAECProcessor:
             ap.set_stream_delay(int(round(max(0.0, self._delay_ms))))
             self._ap = ap
             logger.info(
-                "[AEC:Realtime] enabled delay_ms=%.1f ns=%s agc=%s barge_in=%s",
+                "[AEC:Realtime] enabled delay_ms=%.1f device_class=%s reason=%s ns=%s agc=%s barge_in=%s",
                 self._delay_ms,
+                self._device_class,
+                self._delay_reason,
                 bool(AEC_REALTIME_ENABLE_NS),
                 bool(AEC_REALTIME_ENABLE_AGC),
                 self.barge_in_enabled,

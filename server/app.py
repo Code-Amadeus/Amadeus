@@ -932,10 +932,9 @@ async def bootstrap(port: int = 17777) -> None:
         return bool(AEC_REALTIME_ENABLED and AEC_REALTIME_BARGE_IN)
 
     logger.info(
-        "aec realtime enabled=%s barge_in=%s delay_ms=%s tail_guard_ms=%s",
+        "aec realtime enabled=%s barge_in=%s tail_guard_ms=%s; delay is selected by the AEC processor for the opened device",
         AEC_REALTIME_ENABLED,
         AEC_REALTIME_BARGE_IN,
-        settings.AEC_REALTIME_DELAY_MS,
         ASR_ECHO_TAIL_GUARD_MS,
     )
 

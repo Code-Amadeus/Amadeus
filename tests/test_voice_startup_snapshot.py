@@ -140,3 +140,29 @@ def test_aec_device_calibration_and_explicit_delay_without_audio_dependencies(mo
     monkeypatch.setattr(aec, 'AEC_REALTIME_DELAY_MS', 80.0)
     for device in ['bluetooth', 'internal', 'usb', 'unknown']:
         assert aec.select_aec_delay_ms(device) == (80.0, 'explicit AEC_REALTIME_DELAY_MS')
+
+
+@pytest.mark.parametrize('device', ['bluetooth', 'internal', 'usb', 'unknown'])
+def test_aec_activation_logs_the_delay_given_to_native_processor(monkeypatch, caplog, device):
+    from types import SimpleNamespace
+    from tts import aec_realtime as aec
+
+    monkeypatch.delenv('AEC_REALTIME_DELAY_MS', raising=False)
+    monkeypatch.setattr(aec, 'AEC_REALTIME_ENABLED', True)
+    monkeypatch.setattr(aec, '_peek_mic_device_class', lambda: device)
+    native = Mock()
+    monkeypatch.setitem(sys.modules, 'aec_audio_processing', SimpleNamespace(AudioProcessor=Mock(return_value=native)))
+    processor = aec.RealtimeAECProcessor()
+    expected, reason = aec.select_aec_delay_ms(device)
+    with caplog.at_level('INFO', logger=aec.__name__):
+        assert processor._ensure()
+    native.set_stream_delay.assert_called_once_with(round(expected))
+    assert f'delay_ms={expected:.1f}' in caplog.text
+    assert f'device_class={device}' in caplog.text
+    assert f'reason={reason}' in caplog.text
+    # The existing device-switch path must also log the newly applied value.
+    caplog.clear()
+    with caplog.at_level('INFO', logger=aec.__name__):
+        processor.set_delay_for_device_class('internal')
+    native.set_stream_delay.assert_called_with(round(aec.AEC_DELAY_MS_INTERNAL))
+    assert f'delay_ms={aec.AEC_DELAY_MS_INTERNAL:.1f}' in caplog.text
