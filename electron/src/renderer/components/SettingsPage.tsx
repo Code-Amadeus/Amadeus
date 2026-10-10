@@ -23,7 +23,7 @@ import {
   buildOptionalModelServiceCatalog,
   buildRemoteModelConnectionCatalog,
 } from './modelConnectionCatalog'
-import { buildVoiceConfigurationCatalog } from './voiceConfigurationCatalog'
+import { buildVoiceConfigurationCatalog, voiceConfigurationSections } from './voiceConfigurationCatalog'
 import { buildWorkProviderCatalog } from './providerConnectionCatalog'
 import { buildModelRoleCatalog } from './modelRoleCatalog'
 import { buildGraphicsConfiguration, type GraphicsRuntimeSettings } from './graphicsConfigurationCatalog'
@@ -1044,9 +1044,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     } : base
   })
   // Keep complete voice groups together; voice files and engine settings share one editor.
-  const outputVoiceIds = new Set(['speech_synthesis', 'tts_embedded_v3', 'voice_reference_profile', 'tts_emotion_references'])
-  const inputVoiceIds = new Set(['conversation_asr', 'wake_asr', 'acoustic_pipeline'])
-  const remoteVoiceIds = new Set(['asr_remote', 'tts_fish_audio', 'tts_remote', 'tts_mimo'])
+  const { output: outputVoiceIds, input: inputVoiceIds, remote: remoteVoiceIds } = voiceConfigurationSections
   const outputVoiceConfiguration = voiceConfiguration.filter(group => outputVoiceIds.has(group.id))
   const inputVoiceConfiguration = voiceConfiguration.filter(group => inputVoiceIds.has(group.id))
   const remoteVoiceConfiguration = voiceConfiguration.filter(group => remoteVoiceIds.has(group.id))

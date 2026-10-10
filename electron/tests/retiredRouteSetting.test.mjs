@@ -2,11 +2,11 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { createRequire } from 'node:module'
+import { createSourceRequire } from './helpers/loadTypeScript.mjs'
 import test from 'node:test'
 import ts from 'typescript'
 
-const require = createRequire(import.meta.url)
+const require = createSourceRequire(new URL('../src/main/desktopSettings.ts', import.meta.url))
 const React = require('react')
 const { renderToStaticMarkup } = require('react-dom/server')
 function compile(relativePath, dependencies = require) {

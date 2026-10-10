@@ -1,0 +1,41 @@
+{
+  "id": "graphics_sampling",
+  "title": {
+    "en-US": "Texture loading",
+    "zh-CN": "纹理加载"
+  },
+  "description": {
+    "en-US": "Reduce repeated texture conversion while keeping the memory budget bounded.",
+    "zh-CN": "在限制纹理内存预算的同时，减少重复转码。"
+  },
+  "desktop": true,
+  "restart_required": true,
+  "config": {
+    "RENDER_TEXTURE_SAMPLING": {
+      "type": "boolean",
+      "title": {
+        "en-US": "Sample animation textures",
+        "zh-CN": "启用动画纹理采样"
+      },
+      "computed_default": true,
+      "example": false,
+      "description": {
+        "en-US": "Skip source frames above the selected frame rate. On by default at 60 FPS; explicit choices are preserved. Restart the backend and reopen the character or wallpaper to apply.",
+        "zh-CN": "跳过所选帧率下用不到的源帧。60 FPS 默认开启，保留手动选择。重启后端并重新打开角色或壁纸后生效。"
+      }
+    },
+    "RENDER_BC7_CACHE": {
+      "type": "boolean",
+      "title": {
+        "en-US": "Reuse converted textures on disk",
+        "zh-CN": "复用磁盘中的已转码纹理"
+      },
+      "example": false,
+      "description": {
+        "en-US": "Builds a local cache as animations play, targeting 4 GiB of disk space. Reduces repeated conversion on supported wallpaper GPUs. Requires a backend restart.",
+        "zh-CN": "随动画播放建立本地缓存，磁盘空间目标为 4 GiB。在支持的壁纸渲染设备上减少重复转码，重启后端后生效。"
+      },
+      "default": true
+    }
+  }
+}

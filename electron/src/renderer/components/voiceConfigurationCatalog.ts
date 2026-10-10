@@ -1,4 +1,5 @@
 import type { ModelConnectionCatalogField, ModelConnectionCatalogGroup } from './modelConnectionCatalog'
+import { catalogConfiguration, desktopCatalogFields, voiceBackendGroups, voiceBackendOptions } from '../../shared/configCatalog.js'
 
 interface VoiceDesktopSnapshot {
   values?: Record<string, string>
@@ -42,7 +43,10 @@ export function buildVoiceConfigurationCatalog(
   const secret = (key: string) => Boolean(snapshot?.secrets?.[key]?.configured)
   const bool = (key: string, fallback: boolean) => values[key] === undefined ? fallback : values[key] === 'true'
   const asrBackend = value('ASR_BACKEND', selection.asrBackend || 'qwen3_asr')
-  const ttsBackend = value('TTS_BACKEND', selection.ttsBackend || 'gpt_sovits')
+  const synthesis = catalogConfiguration('speech_synthesis', snapshot, {
+    TTS_BACKEND: selection.ttsBackend || String(desktopCatalogFields.TTS_BACKEND.default),
+  })
+  const ttsBackend = String(synthesis.fields[0].value)
   const wakeEnabled = bool('WAKE_ENABLED', selection.wakeEnabled)
   const aecEnabled = bool('AEC_REALTIME_ENABLED', selection.aecEnabled)
   const emotionEnabled = values.ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING === undefined
@@ -123,40 +127,22 @@ export function buildVoiceConfigurationCatalog(
       ],
     },
     {
-      id: 'speech_synthesis',
-      label: 'Speech synthesis',
-      description: 'Select the shared TTS implementation used by Chat, Wallpaper, and VN speech policies.',
-      active: ttsBackend !== 'disabled',
-      configured: false,
+      ...synthesis,
+      active: ttsBackend !== 'disabled', configured: false,
       status: ttsBackend === 'disabled' ? 'Off' : unknown,
       status_ok: ttsBackend === 'disabled',
-      fields: [field('TTS_BACKEND', 'Backend', 'select', ttsBackend, [
-        { value: 'gpt_sovits', label: 'GPT-SoVITS · Amadeus' },
-        { value: 'fish_audio', label: 'Fish Audio' },
-        { value: 'openai_compatible', label: 'OpenAI-compatible API' },
-        { value: 'mimo', label: 'MiMo TTS (Xiaomi)' },
-        { value: 'disabled', label: 'Disabled' },
-      ])],
+      fields: synthesis.fields.map(item => ({ ...item, type: 'select' as const, options: voiceBackendOptions })),
     },
-    {
-      id: 'tts_embedded_v3',
-      label: 'Embedded GPT-SoVITS model',
-      description: 'Choose a compatible voice profile or provide a custom GPT/SoVITS checkpoint pair.',
-      active: ttsBackend === 'gpt_sovits',
-      configured: false,
-      status: ttsBackend === 'gpt_sovits' ? unknown : 'Optional',
-      status_ok: false,
-      fields: [
-        field('TTS_VOICE_PROFILE', 'Voice checkpoint profile', 'select', value('TTS_VOICE_PROFILE', 'custom'), [
-          { value: 'kurisu_v3', label: 'Kurisu v3' },
-          { value: 'kurisu_v2pro', label: 'Kurisu v2Pro · experimental' },
-          { value: 'custom', label: 'Custom checkpoint pair' },
-        ], 'Named profiles select compatible GPT and SoVITS paths together. Restart the voice runtime after changing this setting.'),
-        field('TTS_DEVICE', 'Inference device', 'text', value('TTS_DEVICE', 'auto'), undefined, 'auto/cuda, cuda:N, mps, or cpu.'),
-        field('TTS_GPT_MODEL_PATH', 'Custom GPT semantic checkpoint', 'path', value('TTS_GPT_MODEL_PATH'), undefined, 'Used only with the Custom checkpoint pair profile.'),
-        field('TTS_SOVITS_MODEL_PATH', 'Custom SoVITS acoustic checkpoint', 'path', value('TTS_SOVITS_MODEL_PATH'), undefined, 'Used only with the Custom checkpoint pair profile.'),
-      ],
-    },
+    ...voiceBackendGroups.map(group => {
+      const backend = group.voice_backend!;
+      const configured = backend.deployment === 'remote'
+        && Object.entries(group.config).filter(([, field]) => field.secret).every(([key]) => secret(key));
+      return {
+        ...catalogConfiguration(group.id, snapshot, { TTS_DEVICE: 'auto' }),
+        active: ttsBackend === backend.id, configured, status_ok: false,
+        status: ttsBackend === backend.id ? (backend.deployment === 'remote' && !configured ? 'Needs setup' : unknown) : 'Optional',
+      };
+    }),
     {
       id: 'voice_reference_profile',
       label: 'Voice reference profile',
@@ -172,22 +158,7 @@ export function buildVoiceConfigurationCatalog(
         field('TTS_REF_TEXT_EN', 'English reference transcript', 'text', value('TTS_REF_TEXT_EN')),
       ],
     },
-    {
-      id: 'tts_fish_audio',
-      label: 'Fish Audio speech API',
-      description: 'WebSocket streaming speech with a hosted voice. Voice reference ID selects the voice; model selects the inference engine.',
-      active: ttsBackend === 'fish_audio',
-      configured: secret('FISH_TTS_API_KEY'),
-      status: ttsBackend === 'fish_audio' ? (secret('FISH_TTS_API_KEY') ? unknown : 'Needs setup') : 'Optional',
-      status_ok: false,
-      fields: [
-        field('FISH_TTS_WS_URL', 'WebSocket URL', 'url', value('FISH_TTS_WS_URL', 'wss://api.fish.audio/v1/tts/live')),
-        field('FISH_TTS_API_KEY', 'API key', 'secret'),
-        field('FISH_TTS_MODEL', 'Inference model', 'text', value('FISH_TTS_MODEL', 's2.1-pro-free')),
-        field('FISH_TTS_REFERENCE_ID', 'Voice reference ID', 'text', value('FISH_TTS_REFERENCE_ID', 'b450b19370434173b121446057622e9b')),
-        field('FISH_TTS_LATENCY', 'Latency mode', 'select', value('FISH_TTS_LATENCY', 'balanced'), ['normal', 'balanced', 'low']),
-      ],
-    },
+
     {
       id: 'tts_emotion_references',
       label: 'Emotion voice references',
@@ -202,39 +173,13 @@ export function buildVoiceConfigurationCatalog(
           undefined, 'Default off. Install the optional voice-kurisu-emotions pack and restart. Turning this off restores default reference speech.'),
       ],
     },
-    {
-      id: 'tts_remote',
-      label: 'Remote speech API',
-      description: 'OpenAI-compatible speech synthesis with buffered WAV or explicit SSE streaming.',
-      active: ttsBackend === 'openai_compatible',
-      configured: secret('TTS_API_KEY'),
-      status: ttsBackend === 'openai_compatible' ? (secret('TTS_API_KEY') ? unknown : 'Needs setup') : 'Optional',
-      status_ok: false,
-      fields: [
-        field('TTS_API_BASE_URL', 'API base URL', 'url', value('TTS_API_BASE_URL', 'https://api.openai.com/v1')),
-        field('TTS_API_KEY', 'API key', 'secret'),
-        field('TTS_API_MODEL', 'Model', 'text', value('TTS_API_MODEL', 'gpt-4o-mini-tts')),
-        field('TTS_API_VOICE', 'Voice', 'text', value('TTS_API_VOICE', 'alloy')),
-        field('TTS_API_STREAM_PROTOCOL', 'Response mode', 'select', value('TTS_API_STREAM_PROTOCOL', 'buffered'), [
-          { value: 'buffered', label: 'Buffered WAV · compatible' },
-          { value: 'openai_sse', label: 'OpenAI SSE · streaming PCM' },
-        ]),
-      ],
-    },
-    {
-      id: 'tts_mimo',
-      label: 'MiMo speech API (Xiaomi)',
-      description: 'MiMo chat-completions synthesis with PCM16 SSE streaming.',
-      active: ttsBackend === 'mimo',
-      configured: secret('MIMO_TTS_API_KEY'),
-      status: ttsBackend === 'mimo' ? (secret('MIMO_TTS_API_KEY') ? unknown : 'Needs setup') : 'Optional',
-      status_ok: false,
-      fields: [
-        field('MIMO_TTS_BASE_URL', 'API base URL', 'url', value('MIMO_TTS_BASE_URL', 'https://api.xiaomimimo.com/v1')),
-        field('MIMO_TTS_API_KEY', 'API key', 'secret'),
-        field('MIMO_TTS_MODEL', 'Model', 'text', value('MIMO_TTS_MODEL', 'mimo-v2.5-tts')),
-        field('MIMO_TTS_VOICE', 'Voice', 'text', value('MIMO_TTS_VOICE', '冰糖')),
-      ],
-    },
+
   ]
+}
+
+export const voiceConfigurationSections = {
+  output: new Set(['speech_synthesis', 'voice_reference_profile', 'tts_emotion_references',
+    ...voiceBackendGroups.filter(group => group.section === 'output').map(group => group.id)]),
+  input: new Set(['conversation_asr', 'wake_asr', 'acoustic_pipeline']),
+  remote: new Set(['asr_remote', ...voiceBackendGroups.filter(group => group.section === 'remote').map(group => group.id)]),
 }

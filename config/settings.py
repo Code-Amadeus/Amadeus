@@ -16,6 +16,7 @@ import warnings
 from pathlib import Path
 
 from config.environment import load_project_environment
+from config.catalog import configuration_groups, option_values, read_catalog_environment
 
 # 加载项目根目录的 .env
 _ROOT = Path(__file__).resolve().parent.parent
@@ -257,29 +258,14 @@ VTS_RECONNECT_ENABLED = _bool("VTS_RECONNECT_ENABLED", True)
 # ===========================================================================
 # TTS（Amadeus 低延迟 GPT-SoVITS v3 推理；本地后端仅支持 v3 权重）
 # ===========================================================================
-TTS_BACKEND = _str("TTS_BACKEND", "gpt_sovits").strip().lower()
-TTS_API_BASE_URL = _str("TTS_API_BASE_URL", "https://api.openai.com/v1")
-TTS_API_KEY = _secret("TTS_API_KEY", "")
-TTS_API_MODEL = _str("TTS_API_MODEL", "gpt-4o-mini-tts")
-TTS_API_VOICE = _str("TTS_API_VOICE", "alloy")
-TTS_API_STREAM_PROTOCOL = _str("TTS_API_STREAM_PROTOCOL", "buffered").strip().lower()
+# Static catalog fields retain the settings.NAME interface used by backends.
+globals().update(read_catalog_environment(_ENV))
+TTS_BACKEND = TTS_BACKEND.strip().lower()
+TTS_API_STREAM_PROTOCOL = TTS_API_STREAM_PROTOCOL.strip().lower()
 TTS_API_TIMEOUT_SECONDS = _float("TTS_API_TIMEOUT_SECONDS", 60.0)
 
-# MiMo TTS（小米远程后端，chat-completions 音频协议，非 /audio/speech）
-MIMO_TTS_BASE_URL = _str("MIMO_TTS_BASE_URL", "https://api.xiaomimimo.com/v1")
-MIMO_TTS_API_KEY = _secret("MIMO_TTS_API_KEY", "")
-MIMO_TTS_MODEL = _str("MIMO_TTS_MODEL", "mimo-v2.5-tts")
-MIMO_TTS_VOICE = _str("MIMO_TTS_VOICE", "冰糖")
 
-# Fish Audio: the voice reference ID is distinct from the inference model header.
-FISH_TTS_WS_URL = _str("FISH_TTS_WS_URL", "wss://api.fish.audio/v1/tts/live")
-FISH_TTS_API_KEY = _secret("FISH_TTS_API_KEY", "")
-FISH_TTS_MODEL = _str("FISH_TTS_MODEL", "s2.1-pro-free")
-FISH_TTS_REFERENCE_ID = _str("FISH_TTS_REFERENCE_ID", "b450b19370434173b121446057622e9b")
-FISH_TTS_LATENCY = _str("FISH_TTS_LATENCY", "balanced")
-
-
-def _resolve_tts_device() -> str:
+def _resolve_tts_device(raw_value: str) -> str:
     """
     自动选择 TTS 设备：
       - .env / 环境变量明确写了 cuda:0 / cuda:1 / mps / cpu → 直接使用
@@ -289,7 +275,7 @@ def _resolve_tts_device() -> str:
     本地 LLM 的 endpoint 并不能证明它占用了哪张 GPU；多 GPU 分配必须由
     TTS_DEVICE 与 LOCAL_LLM_CUDA_VISIBLE_DEVICES 分别显式声明。
     """
-    raw = _str("TTS_DEVICE", "").strip()
+    raw = raw_value.strip()
     if TTS_BACKEND != "gpt_sovits":
         if TTS_BACKEND == "openai_compatible":
             return "remote"
@@ -308,7 +294,7 @@ def _resolve_tts_device() -> str:
     return device
 
 
-TTS_DEVICE = _resolve_tts_device()
+TTS_DEVICE = _resolve_tts_device(TTS_DEVICE)
 
 _TTS_VOICE_PROFILE_PATHS = {
     "kurisu_v3": (
@@ -335,11 +321,11 @@ def _resolve_tts_voice_paths(profile: str, gpt_path: str, sovits_path: str) -> t
 
 # A named profile keeps compatible GPT/SoVITS pairs atomic. `custom` preserves
 # existing installations that provide explicit relative or absolute paths.
-TTS_VOICE_PROFILE = _str("TTS_VOICE_PROFILE", "custom").strip().lower()
+TTS_VOICE_PROFILE = TTS_VOICE_PROFILE.strip().lower()
 TTS_GPT_MODEL_PATH, TTS_SOVITS_MODEL_PATH = _resolve_tts_voice_paths(
     TTS_VOICE_PROFILE,
-    _str("TTS_GPT_MODEL_PATH"),
-    _str("TTS_SOVITS_MODEL_PATH"),
+    TTS_GPT_MODEL_PATH,
+    TTS_SOVITS_MODEL_PATH,
 )
 
 # 输出语言："日文" | "英文"（对应 dict_language 中的键名）
@@ -450,11 +436,9 @@ ASR_SPECULATIVE_END_MS = _int("ASR_SPECULATIVE_END_MS", 160)
 ASR_SPECULATIVE_LLM_START = _bool("ASR_SPECULATIVE_LLM_START", True)
 
 # Global PixiJS render budget shared by the chat and wallpaper surfaces.
-GRAPHICS_PROFILES = frozenset({"standard", "power_saving", "custom"})
-GRAPHICS_PROFILE = _str("GRAPHICS_PROFILE", "standard").strip().lower()
-RENDER_MAX_FPS = _int("RENDER_MAX_FPS", 30)
-RENDER_MAX_RESOLUTION = _float("RENDER_MAX_RESOLUTION", 1.5)
-RENDER_BC7_CACHE = _bool("RENDER_BC7_CACHE", True)
+_GRAPHICS_FIELDS = configuration_groups()["graphics_budget"]["config"]
+GRAPHICS_PROFILES = frozenset(option_values(_GRAPHICS_FIELDS["GRAPHICS_PROFILE"]))
+GRAPHICS_PROFILE = GRAPHICS_PROFILE.strip().lower()
 
 
 def _resolve_graphics_profile(
@@ -468,10 +452,10 @@ def _resolve_graphics_profile(
             + ", ".join(sorted(GRAPHICS_PROFILES))
             + f"; observed {profile!r}"
         )
-    if not 10 <= custom_max_fps <= 240:
-        raise ValueError("RENDER_MAX_FPS must be between 10 and 240")
-    if not 0.25 <= custom_max_resolution <= 4.0:
-        raise ValueError("RENDER_MAX_RESOLUTION must be between 0.25 and 4.0")
+    for key, value in (("RENDER_MAX_FPS", custom_max_fps), ("RENDER_MAX_RESOLUTION", custom_max_resolution)):
+        field = _GRAPHICS_FIELDS[key]
+        if not field["min"] <= value <= field["max"]:
+            raise ValueError(f"{key} must be between {field['min']} and {field['max']}")
     if profile == "standard":
         return 60, None
     if profile == "power_saving":
@@ -484,7 +468,9 @@ RENDER_EFFECTIVE_MAX_FPS, RENDER_EFFECTIVE_MAX_RESOLUTION = _resolve_graphics_pr
     RENDER_MAX_FPS,
     RENDER_MAX_RESOLUTION,
 )
-RENDER_TEXTURE_SAMPLING = _bool("RENDER_TEXTURE_SAMPLING", RENDER_EFFECTIVE_MAX_FPS == 60)
+globals().update(read_catalog_environment(
+    _ENV, computed_defaults={"RENDER_TEXTURE_SAMPLING": RENDER_EFFECTIVE_MAX_FPS == 60},
+))
 
 # Wallpaper diagnostics. keyboard_sfx.gate is a high-frequency client-side
 # gate snapshot; keep it out of WARNING unless explicitly diagnosing SFX.

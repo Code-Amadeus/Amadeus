@@ -6,6 +6,7 @@ import ts from 'typescript'
 import * as React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import * as workspace from '../src/renderer/components/characterWorkspace.ts'
+import { createSourceRequire } from './helpers/loadTypeScript.mjs'
 const require = createRequire(import.meta.url)
 function compile(relative, imports = {}, globals = {}) {
   const source = fs.readFileSync(new URL(relative, import.meta.url), 'utf8')
@@ -14,7 +15,7 @@ function compile(relative, imports = {}, globals = {}) {
   } }).outputText
   const exports = {}
   new Function('require', 'exports', ...Object.keys(globals), code)(
-    name => name in imports ? imports[name] : require(name), exports, ...Object.values(globals))
+    name => name in imports ? imports[name] : createSourceRequire(new URL(relative, import.meta.url))(name), exports, ...Object.values(globals))
   return exports
 }
 test('fresh and obsolete nested routes return to the character overview', () => {
@@ -92,7 +93,8 @@ function settingsMarkup(section, characterTab = null, connected = false) {
     new Function('require', 'exports', 'window', 'localStorage', code)(name => {
       if (!name.startsWith('.')) return require(name)
       const base = new URL(name, url)
-      const resolved = [base, new URL(base.href + '.ts'), new URL(base.href + '.tsx')].find(value => fs.existsSync(value))
+      const stem = base.href.replace(/\.js$/, '')
+      const resolved = [base, new URL(stem + '.ts'), new URL(stem + '.tsx')].find(value => fs.existsSync(value))
       assert.ok(resolved, `${name} from ${url.href}`)
       return load(resolved)
     }, exports, { localStorage: store }, store)

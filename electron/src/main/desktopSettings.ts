@@ -2,6 +2,7 @@ import { safeStorage } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import process from 'node:process'
+import { catalogOptionValues, desktopCatalogFields } from '../shared/configCatalog.js'
 
 type StoredDesktopSettings = {
   version: 2
@@ -118,11 +119,6 @@ const VALUE_KEYS = new Set([
   'VN_TTS_TRANSLATE_MODEL',
   // Transitional read whitelist: unrelated saves must preserve a retired value.
   'COOPERATIVE_CHAT_ENABLED',
-  'GRAPHICS_PROFILE',
-  'RENDER_MAX_FPS',
-  'RENDER_MAX_RESOLUTION',
-  'RENDER_TEXTURE_SAMPLING',
-  'RENDER_BC7_CACHE',
   'COOPERATIVE_CHAT_PROVIDER',
   'WORK_CODING_PROVIDER',
   'WORK_EXECUTION_PROVIDER',
@@ -166,27 +162,12 @@ const VALUE_KEYS = new Set([
   'AEC_REALTIME_ENABLED',
   'AEC_REALTIME_BARGE_IN',
   'AEC_REALTIME_DELAY_MS',
-  'TTS_BACKEND',
   'ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING',
-  'TTS_DEVICE',
-  'TTS_VOICE_PROFILE',
-  'TTS_GPT_MODEL_PATH',
-  'TTS_SOVITS_MODEL_PATH',
   'TTS_REF_AUDIO_JA',
   'TTS_REF_TEXT_JA',
   'TTS_REF_AUDIO_EN',
   'TTS_REF_TEXT_EN',
-  'TTS_API_BASE_URL',
-  'TTS_API_MODEL',
-  'TTS_API_VOICE',
-  'TTS_API_STREAM_PROTOCOL',
-  'MIMO_TTS_BASE_URL',
-  'MIMO_TTS_MODEL',
-  'MIMO_TTS_VOICE',
-  'FISH_TTS_WS_URL',
-  'FISH_TTS_MODEL',
-  'FISH_TTS_REFERENCE_ID',
-  'FISH_TTS_LATENCY',
+  ...Object.keys(desktopCatalogFields).filter(key => !desktopCatalogFields[key].secret),
   'VTS_ENABLED',
   'AUIP_ARTIFACT_STYLE_ENABLED',
   'VTS_WS_URL',
@@ -201,9 +182,7 @@ const SECRET_KEYS = new Set([
   'AWS_BEARER_TOKEN_BEDROCK',
   'OPENCLAW_GATEWAY_TOKEN',
   'ASR_API_KEY',
-  'TTS_API_KEY',
-  'MIMO_TTS_API_KEY',
-  'FISH_TTS_API_KEY',
+  ...Object.keys(desktopCatalogFields).filter(key => desktopCatalogFields[key].secret),
 ])
 
 const CODEX_TRANSPORT_KEYS = [
@@ -224,7 +203,6 @@ const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
   ENABLE_CUDA_GRAPH: new Set(['1', '0']),
   ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING: new Set(['true', 'false', '1', '0', 'yes', 'no']),
   TTS_OUTPUT_LANGUAGE: new Set(['日文', '英文']),
-  TTS_VOICE_PROFILE: new Set(['custom', 'kurisu_v3', 'kurisu_v2pro']),
   LLM_PROVIDER: new Set(['deepseek', 'openai', 'gemini', 'bedrock', 'local', 'hybrid', 'hybrid2', 'hybrid3']),
   BEDROCK_AUTH_MODE: new Set(['auto', 'boto3', 'bearer']),
   AWS_BEDROCK_USE_INFERENCE_PROFILE: new Set(['true', 'false']),
@@ -239,9 +217,6 @@ const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
   VN_TTS_TRANSLATE_PROVIDER: new Set(['deepseek', 'openai']),
   COOPERATIVE_CHAT_PROVIDER: new Set(['codex', 'openclaw', 'browser', 'pi']),
   PI_PROVIDER_ENABLED: new Set(['true', 'false']),
-  GRAPHICS_PROFILE: new Set(['standard', 'power_saving', 'custom']),
-  RENDER_TEXTURE_SAMPLING: new Set(['true', 'false']),
-  RENDER_BC7_CACHE: new Set(['true', 'false']),
   CODEX_PROVIDER_TRANSPORT: new Set(['app_server', 'direct', 'disabled']),
   CODEX_APP_SERVER_AUTH_MODE: new Set(['model_api', 'chatgpt']),
   CODEX_APP_SERVER_MODEL_PROVIDER: new Set(['deepseek', 'openai']),
@@ -255,8 +230,9 @@ const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
   SENSEVOICE_LANGUAGE: new Set(['auto', 'en', 'zh', 'ja', 'yue', 'ko']),
   AEC_REALTIME_ENABLED: new Set(['true', 'false']),
   AEC_REALTIME_BARGE_IN: new Set(['true', 'false']),
-  TTS_API_STREAM_PROTOCOL: new Set(['buffered', 'openai_sse']),
-  FISH_TTS_LATENCY: new Set(['normal', 'balanced', 'low']),
+  ...Object.fromEntries(Object.entries(desktopCatalogFields)
+    .filter(([, field]) => field.options || field.type === 'boolean')
+    .map(([key, field]) => [key, new Set(field.type === 'boolean' ? ['true', 'false'] : catalogOptionValues(field))])),
   VTS_ENABLED: new Set(['true', 'false']),
   AUIP_ARTIFACT_STYLE_ENABLED: new Set(['true', 'false']),
 }
@@ -274,15 +250,13 @@ const URL_KEYS = new Set([
   'OPENCLAW_BASE_URL',
   'CODEX_APP_SERVER_PROVIDER_BASE_URL',
   'ASR_API_BASE_URL',
-  'TTS_API_BASE_URL',
-  'MIMO_TTS_BASE_URL',
 ])
 
-const WEBSOCKET_URL_KEYS = new Set(['VTS_WS_URL', 'FISH_TTS_WS_URL'])
+const WEBSOCKET_URL_KEYS = new Set(['VTS_WS_URL'])
 
 const NUMBER_RANGES: Record<string, readonly [number, number]> = {
-  RENDER_MAX_FPS: [10, 240],
-  RENDER_MAX_RESOLUTION: [0.25, 4],
+  ...Object.fromEntries(Object.entries(desktopCatalogFields).filter(([, field]) => field.min !== undefined)
+    .map(([key, field]) => [key, [field.min!, field.max!] as const])),
   RAG_TOP_K: [1, 20],
   RAG_MAX_DISTANCE: [0, 4],
   ASR_LISTEN_TIMEOUT_SECONDS: [1, 120],
@@ -293,7 +267,7 @@ const NUMBER_RANGES: Record<string, readonly [number, number]> = {
   EXP_TTS_MAX_CONCURRENCY: [1, 2],
 }
 
-const INTEGER_KEYS = new Set(['RENDER_MAX_FPS', 'RAG_TOP_K', 'ASR_VAD_SILENCE_MS', 'AMADEUS_VISION_MAX_LONG_SIDE', 'AMADEUS_VISION_JPEG_QUALITY', 'EXP_TTS_MAX_CONCURRENCY'])
+const INTEGER_KEYS = new Set([...Object.keys(desktopCatalogFields).filter(key => desktopCatalogFields[key].type === 'integer'), 'RAG_TOP_K', 'ASR_VAD_SILENCE_MS', 'AMADEUS_VISION_MAX_LONG_SIDE', 'AMADEUS_VISION_JPEG_QUALITY', 'EXP_TTS_MAX_CONCURRENCY'])
 
 const MCP_CONNECTIONS_ENV = 'AMADEUS_MCP_CONNECTIONS'
 const FRONTEND_ONLY_VALUE_KEYS = new Set(['AMADEUS_UI_LOCALE', 'AMADEUS_UI_THEME', 'AMADEUS_WINDOWS_STARTUP_MODE'])
@@ -782,6 +756,12 @@ export class DesktopSettingsStore {
       if (key === 'AMADEUS_ACP_PROVIDERS') validateAcpProviders(value)
       const choices = VALUE_CHOICES[key]
       if (choices && !choices.has(value)) throw new Error(`Invalid value for ${key}: ${value}`)
+      const schemes = desktopCatalogFields[key]?.schemes
+      if (schemes) {
+        let protocol = ''
+        try { protocol = new URL(value).protocol.slice(0, -1) } catch { /* rejected below */ }
+        if (!schemes.includes(protocol)) throw new Error(`${key} must use ${schemes.join(' or ')} URL`)
+      }
       if (IDENTIFIER_KEYS.has(key) && !/^[a-z][a-z0-9_-]{0,63}$/.test(value)) {
         throw new Error(`Invalid backend identifier for ${key}`)
       }

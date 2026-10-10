@@ -6,9 +6,11 @@
   "main": "dist/main/index.js",
   "scripts": {
     "postinstall": "install-electron && npm ci --ignore-scripts --prefix ../agent_host/pi_runtime",
-    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "generate:config": "node scripts/generate-config-catalog.mjs",
+    "check:config": "node scripts/generate-config-catalog.mjs --check",
+    "test": "npm run check:config && node --experimental-strip-types --test tests/*.test.mjs",
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "npm run check:config && tsc && vite build",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "electron:build": "npm run build && electron-builder"
   },

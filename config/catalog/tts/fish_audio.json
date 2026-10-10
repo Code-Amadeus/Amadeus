@@ -1,0 +1,79 @@
+{
+  "id": "tts_fish_audio",
+  "title": {
+    "en-US": "Fish Audio speech API",
+    "zh-CN": "Fish Audio 语音 API"
+  },
+  "description": {
+    "en-US": "WebSocket streaming speech with a hosted voice. Voice reference ID selects the voice; model selects the inference engine.",
+    "zh-CN": "通过 WebSocket 流式生成语音；声音 ID 用于选择声音，模型用于选择推理引擎。"
+  },
+  "desktop": true,
+  "restart_required": true,
+  "config": {
+    "FISH_TTS_WS_URL": {
+      "type": "url",
+      "title": {
+        "en-US": "WebSocket URL",
+        "zh-CN": "WebSocket 地址"
+      },
+      "default": "wss://api.fish.audio/v1/tts/live",
+      "schemes": [
+        "ws",
+        "wss"
+      ]
+    },
+    "FISH_TTS_API_KEY": {
+      "type": "string",
+      "title": {
+        "en-US": "API key",
+        "zh-CN": "API 密钥"
+      },
+      "secret": true
+    },
+    "FISH_TTS_MODEL": {
+      "type": "string",
+      "title": {
+        "en-US": "Inference model",
+        "zh-CN": "推理模型"
+      },
+      "default": "s2.1-pro-free"
+    },
+    "FISH_TTS_REFERENCE_ID": {
+      "type": "string",
+      "title": {
+        "en-US": "Voice reference ID",
+        "zh-CN": "声音 ID"
+      },
+      "default": "b450b19370434173b121446057622e9b"
+    },
+    "FISH_TTS_LATENCY": {
+      "type": "enum",
+      "title": {
+        "en-US": "Latency mode",
+        "zh-CN": "延迟模式"
+      },
+      "default": "balanced",
+      "options": [
+        "normal",
+        "balanced",
+        "low"
+      ]
+    }
+  },
+  "section": "remote",
+  "voice_backend": {
+    "id": "fish_audio",
+    "label": {
+      "en-US": "Fish Audio",
+      "zh-CN": "Fish Audio"
+    },
+    "deployment": "remote",
+    "factory": "tts.backends.fish_audio:FishAudioTTSBackend",
+    "probe": "tts.backends.fish_audio:probe",
+    "summary": "WebSocket text/audio streaming with a hosted voice reference.",
+    "order": 3,
+    "streaming": true,
+    "reference_conditioning": false
+  }
+}

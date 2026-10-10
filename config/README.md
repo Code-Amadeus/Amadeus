@@ -27,6 +27,67 @@ precedence, and records every setting declared through it. New startup
 configuration should use this boundary rather than calling `load_dotenv`
 again.
 
+## Shared startup declarations
+
+The shared catalog covers the TTS selector, all four built-in TTS connection/model
+groups, and graphics settings: 24 fields in `config/catalog/tts/` and
+`config/catalog/graphics/`. Edit the owning JSON for defaults, types, options,
+ranges, desktop editability, restart policy, and English/Chinese labels. The
+configuration keys retain their existing environment-variable names.
+Run `npm run generate:config` from `electron` after editing a declaration.
+
+Python reads the JSON through `config/catalog/__init__.py` and the existing
+`EnvironmentReader`; `settings.FISH_TTS_*` callers keep working. Electron consumes
+the generated `src/shared/configCatalog.generated.ts`, which is compiled into
+both main and renderer bundles. Offline Settings never requires a running Python
+process or access to the source checkout. The generator also maintains marked
+sections of `.env.example`. Commit generated output with its declaration;
+`npm test` and `npm run build` reject stale output.
+
+Supported field types are string, path, URL, enum, boolean, integer and number.
+`computed_default: true` omits the static default: its owner supplies a value
+when resolving it. Texture sampling still defaults to whether the effective
+frame rate is 60 FPS, with explicit choices taking precedence. Graphics presets,
+TTS device selection and atomic checkpoint-pair resolution remain ordinary code.
+An `example` may differ from the runtime default (for example the curated Kurisu
+setup); `example_active` preserves whether that env example is enabled.
+
+Each TTS declaration has `voice_backend` metadata and a `section` (`output` or
+`remote`). These drive the existing TTS registry, offline selector, Settings
+placement and backend status projection. To add a built-in TTS backend, add its
+declaration plus implementation: `factory` names its constructor, `probe` reports
+readiness, and `streaming` is either a boolean or an implementation function.
+Entry points are resolved lazily; listing backends never constructs a model.
+The implementation owns protocol validation and optional dependency checks.
+Add backend-specific tests, then regenerate; no central backend switch or
+Settings allowlist needs editing. New env sections are appended automatically.
+
+This is an internal catalog of packaged application data, not an extension
+manifest loader. Third-party code still needs the extension host's lifecycle
+and authorization boundary. ASR fields, shared reference/emotion controls and
+live runtime controls retain their existing owners.
+
+The catalog describes fields; it does not store user values or prove that a
+backend is available. `DesktopSettingsStore` still owns encryption, process
+locks, clearing, durable saves and pending revisions. Runtime probes still own
+availability; an incomplete unselected provider must not prevent startup.
+Secret declarations have no default, and status responses expose only whether
+a credential is configured. Protocol-specific validation stays in the backend.
+
+## Handler composition
+
+`server/handlers/voice.py` owns construction and binding of TTS, ASR and Wake
+handlers. `app.py` registers the domain's `handlers` before starting the server
+and supplies runtime dependencies later through `configure()`. Add a handler
+using existing voice dependencies inside this domain; `app.py` does not need a
+new import, constructor, registration entry or configure call. New cross-domain
+dependencies still belong at the application composition root.
+
+The domain closes the current Wake and ASR instances before the shared microphone;
+shutdown never invokes lazy factories. Shared service creation and replacement
+remain with the existing scene/runtime owners. WebSocket registration rejects
+duplicate method ownership before inserting any methods from the new handler.
+
 ## Chat image input
 
 DeepSeek image input is available with `DEEPSEEK_MODEL_NAME=deepseek-flash`.

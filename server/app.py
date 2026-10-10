@@ -391,9 +391,7 @@ async def bootstrap(port: int = 17777) -> None:
     from server.handlers.chat_handler import ChatHandler
     from server.handlers.session_handler import SessionHandler
     from server.handlers.character_handler import CharacterHandler
-    from server.handlers.tts_handler import TtsHandler
-    from server.handlers.asr_handler import AsrHandler
-    from server.handlers.wake_handler import WakeHandler
+    from server.handlers.voice import VoiceHandlers, close_voice_input_services
     from server.handlers.vts_handler import VtsHandler
     from server.handlers.expression_handler import ExpressionHandler
     from server.handlers.system_handler import SystemHandler
@@ -442,9 +440,8 @@ async def bootstrap(port: int = 17777) -> None:
     chat_role_delivery = ChatRoleDelivery()
     session_h = SessionHandler()
     character_h = CharacterHandler()
-    tts_h = TtsHandler()
-    asr_h = AsrHandler()
-    wake_h = WakeHandler()
+    voice_handlers = VoiceHandlers()
+    tts_h, asr_h, wake_h = voice_handlers.tts, voice_handlers.asr, voice_handlers.wake
     vts_h = VtsHandler()
     expr_h = ExpressionHandler()
     from server.handlers.visual_handler import VisualHandler
@@ -622,7 +619,7 @@ async def bootstrap(port: int = 17777) -> None:
     vn_h = VNPlayerHandler()
     vn_launch_h = VNLaunchHandler()
 
-    handlers = (chat_h, session_h, character_h, tts_h, asr_h, wake_h, vts_h, expr_h, sys_h,
+    handlers = (chat_h, session_h, character_h, *voice_handlers.handlers, vts_h, expr_h, sys_h,
         render_h, wallpaper_h, provider_h, capability_h, mcp_connection_h,
         provider_activity_h, work_h, work_preview_h, attention_h, auip_h, vn_h,
         vn_launch_h, visual_h)
@@ -2270,22 +2267,20 @@ async def bootstrap(port: int = 17777) -> None:
         work_ledger_getter=lambda: work_ledger,
         cooperative_chat_getter=lambda: cooperative_chat,
     )
-    tts_h.configure(
+    voice_handlers.configure(
         playback_manager=playback_manager,
         player=player,
         on_interrupt=_handle_tts_interrupt,
-    )
-    asr_h.configure(
         asr_manager_factory=_get_or_create_asr_manager,
-        on_unload=_clear_asr_manager,
+        on_asr_unload=_clear_asr_manager,
         on_recognized=_handle_asr_recognized,
         on_listening_stopped=_handle_asr_listening_stopped,
         on_ready_to_listen=_handle_asr_ready_to_listen,
         tts_playing_fn=_tts_should_block_mic,
         # _handle_asr_listening_stopped restores wake standby under the same flag.
         wake_resumable_fn=lambda: bool(WAKE_ENABLED),
+        wake_service_factory=_get_or_create_wake_service,
     )
-    wake_h.configure(wake_service_factory=_get_or_create_wake_service)
     vts_h.configure(vts_manager=vts_manager)
     expr_h.configure(expression_controller=_expr_ctrl)
     sys_h.configure(
@@ -2488,19 +2483,7 @@ async def bootstrap(port: int = 17777) -> None:
             await work_preview.close_all()
             work_ledger.close()
             _stop_gui_render_runtime()
-            if wake_service is not None:
-                close = getattr(wake_service, "close", None)
-                if callable(close):
-                    close()
-            if asr_manager is not None:
-                close = getattr(asr_manager, "close", None)
-                if callable(close):
-                    close()
-            try:
-                from asr.mic_input_service import close_mic_input_service
-                close_mic_input_service()
-            except Exception:
-                pass
+            close_voice_input_services(wake_service, asr_manager)
             try:
                 from llm.llama_server import stop_llama_server
 

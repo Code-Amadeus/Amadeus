@@ -7,6 +7,7 @@ from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 
+from config.catalog import configuration_groups, voice_backend_groups
 from server.event_bus import bus
 from server.protocol import Method
 from server.ws_handler import RequestHandler
@@ -49,6 +50,51 @@ def _startup_field(
     return field
 
 
+def _catalog_configuration(
+    group_id: str, settings: Any, *, options: dict[str, list[dict[str, str]]] | None = None,
+) -> dict[str, Any]:
+    group = configuration_groups()[group_id]
+    fields = []
+    for key, definition in group["config"].items():
+        secret = definition.get("secret", False)
+        value = getattr(settings, key)
+        field = _startup_field(
+            key, definition["title"]["en-US"], "" if secret else value,
+            field_type="secret" if secret else {
+                "string": "text", "path": "path", "url": "url", "enum": "select",
+                "boolean": "boolean", "integer": "number", "number": "number",
+            }[definition["type"]],
+            options=tuple({"value": option, "label": option} if isinstance(option, str) else {
+                "value": option["value"], "label": option["label"]["en-US"],
+            } for option in definition.get("options", ())),
+            description=definition.get("description", {}).get("en-US", ""),
+            minimum=definition.get("min"), maximum=definition.get("max"), step=definition.get("step"),
+            secret_configured=bool(value) if secret else None,
+            editable=group["desktop"],
+        )
+        field["restart_required"] = group["restart_required"]
+        if options and key in options:
+            field.update(type="select", options=options[key])
+        fields.append(field)
+    return {
+        "id": group["id"], "label": group["title"]["en-US"],
+        "description": group["description"]["en-US"], "fields": fields,
+    }
+
+
+def _voice_backend_configuration(group: dict[str, Any], settings: Any, statuses: list[dict[str, Any]], selected: str) -> dict[str, Any]:
+    backend_id = group["voice_backend"]["id"]
+    status = next((item for item in statuses if item["id"] == backend_id), {})
+    return {
+        **_catalog_configuration(group["id"], settings),
+        "active": selected == backend_id,
+        "configured": bool(status.get("available")),
+        "status": str(status.get("state") or "unavailable"),
+        "status_ok": bool(status.get("available")),
+        "status_detail": str(status.get("detail") or ""),
+    }
+
+
 def _voice_configuration(settings: Any, emotion_pack: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     from asr.registry import asr_backend_statuses
     from tts.registry import tts_backend_statuses
@@ -67,22 +113,8 @@ def _voice_configuration(settings: Any, emotion_pack: dict[str, Any] | None = No
     tts_statuses = tts_backend_statuses(tts_selected)
     asr_status = next((item for item in asr_statuses if item["selected"]), {})
     tts_status = next((item for item in tts_statuses if item["selected"]), {})
-    embedded_tts_status = next(
-        (item for item in tts_statuses if item["id"] == "gpt_sovits"),
-        {},
-    )
-    remote_tts_status = next(
-        (item for item in tts_statuses if item["id"] == "openai_compatible"),
-        {},
-    )
-    mimo_tts_status = next(
-        (item for item in tts_statuses if item["id"] == "mimo"),
-        {},
-    )
-    fish_tts_status = next(
-        (item for item in tts_statuses if item["id"] == "fish_audio"),
-        {},
-    )
+
+
     reference_consumers = [
         str(item.get("label") or item.get("id") or "")
         for item in tts_statuses
@@ -306,62 +338,17 @@ def _voice_configuration(settings: Any, emotion_pack: dict[str, Any] | None = No
             ],
         },
         {
-            "id": "speech_synthesis",
-            "label": "Speech synthesis",
-            "description": "The embedded default is Amadeus's low-latency GPT-SoVITS runtime and accepts v1, v2, v2Pro, v2ProPlus, and v3 checkpoints. Remote audio enters the same playback, subtitle, AEC, and mouth-signal pipeline.",
+            **_catalog_configuration("speech_synthesis", settings, options={
+                "TTS_BACKEND": [{"value": item["id"], "label": item["label"]} for item in tts_statuses],
+            }),
             "active": tts_selected != "disabled",
             "configured": bool(tts_status.get("available")),
             "status": str(tts_status.get("state") or "unavailable"),
             "status_ok": bool(tts_status.get("available")),
             "status_detail": str(tts_status.get("detail") or ""),
-            "fields": [
-                _startup_field(
-                    "TTS_BACKEND", "Backend", settings.TTS_BACKEND,
-                    field_type="select",
-                    options=tuple(
-                        {"value": item["id"], "label": item["label"]}
-                        for item in tts_statuses
-                    ),
-                ),
-            ],
         },
-        {
-            "id": "tts_embedded_v3",
-            "label": "Embedded GPT-SoVITS model",
-            "description": "Checkpoint pair for the Amadeus low-latency runtime. The SoVITS checkpoint header selects the v1, v2, v2Pro, v2ProPlus, or v3 decoder.",
-            "active": tts_selected == "gpt_sovits",
-            "configured": bool(embedded_tts_status.get("available")),
-            "status": str(embedded_tts_status.get("state") or "not_installed"),
-            "status_ok": bool(embedded_tts_status.get("available")),
-            "status_detail": str(embedded_tts_status.get("detail") or ""),
-            "fields": [
-                _startup_field(
-                    "TTS_VOICE_PROFILE", "Voice checkpoint profile",
-                    settings.TTS_VOICE_PROFILE,
-                    field_type="select",
-                    options=(
-                        {"value": "kurisu_v3", "label": "Kurisu v3"},
-                        {"value": "kurisu_v2pro", "label": "Kurisu v2Pro · experimental"},
-                        {"value": "custom", "label": "Custom checkpoint pair"},
-                    ),
-                    description="Named profiles select compatible GPT and SoVITS paths together. Restart the voice runtime after changing this setting.",
-                ),
-                _startup_field(
-                    "TTS_DEVICE", "Inference device", settings.TTS_DEVICE,
-                    description="auto/cuda, cuda:N, or cpu. Used only by the embedded backend.",
-                ),
-                _startup_field(
-                    "TTS_GPT_MODEL_PATH", "Custom GPT semantic checkpoint",
-                    settings.TTS_GPT_MODEL_PATH,
-                    description="Used only with the Custom checkpoint pair profile; relative paths resolve from the repository root.",
-                ),
-                _startup_field(
-                    "TTS_SOVITS_MODEL_PATH", "Custom SoVITS acoustic checkpoint",
-                    settings.TTS_SOVITS_MODEL_PATH,
-                    description="Used only with the Custom checkpoint pair profile; relative paths resolve from the repository root.",
-                ),
-            ],
-        },
+        *(_voice_backend_configuration(group, settings, tts_statuses, tts_selected)
+              for group in voice_backend_groups()),
         {
             "id": "tts_emotion_references",
             "label": "Emotion voice references",
@@ -379,69 +366,7 @@ def _voice_configuration(settings: Any, emotion_pack: dict[str, Any] | None = No
                 ),
             ],
         },
-        {
-            "id": "tts_remote",
-            "label": "Remote speech API",
-            "description": "Buffered WAV keeps broad OpenAI-compatible support. OpenAI SSE streams PCM into first-packet playback and must be explicitly selected.",
-            "active": tts_selected == "openai_compatible",
-            "configured": bool(remote_tts_status.get("available")),
-            "status": str(remote_tts_status.get("state") or "unavailable"),
-            "status_ok": bool(remote_tts_status.get("available")),
-            "status_detail": str(remote_tts_status.get("detail") or ""),
-            "fields": [
-                _startup_field("TTS_API_BASE_URL", "API base URL", settings.TTS_API_BASE_URL, field_type="url"),
-                _startup_field("TTS_API_KEY", "API key", field_type="secret", secret_configured=bool(settings.TTS_API_KEY)),
-                _startup_field("TTS_API_MODEL", "Model", settings.TTS_API_MODEL),
-                _startup_field("TTS_API_VOICE", "Voice", settings.TTS_API_VOICE),
-                _startup_field(
-                    "TTS_API_STREAM_PROTOCOL", "Response mode",
-                    settings.TTS_API_STREAM_PROTOCOL,
-                    field_type="select",
-                    options=(
-                        {"value": "buffered", "label": "Buffered WAV · compatible"},
-                        {"value": "openai_sse", "label": "OpenAI SSE · streaming PCM"},
-                    ),
-                    description="Use OpenAI SSE only when the endpoint implements speech.audio.delta events.",
-                ),
-            ],
-        },
-        {
-            "id": "tts_mimo",
-            "label": "MiMo speech API (Xiaomi)",
-            "description": "MiMo-TTS chat-completions synthesis. Streaming PCM16 runs on mimo-v2.5-tts; voicedesign/voiceclone variants are not supported by this runtime.",
-            "active": tts_selected == "mimo",
-            "configured": bool(mimo_tts_status.get("available")),
-            "status": str(mimo_tts_status.get("state") or "unavailable"),
-            "status_ok": bool(mimo_tts_status.get("available")),
-            "status_detail": str(mimo_tts_status.get("detail") or ""),
-            "fields": [
-                _startup_field("MIMO_TTS_BASE_URL", "API base URL", settings.MIMO_TTS_BASE_URL, field_type="url"),
-                _startup_field("MIMO_TTS_API_KEY", "API key", field_type="secret", secret_configured=bool(settings.MIMO_TTS_API_KEY)),
-                _startup_field("MIMO_TTS_MODEL", "Model", settings.MIMO_TTS_MODEL),
-                _startup_field("MIMO_TTS_VOICE", "Voice", settings.MIMO_TTS_VOICE),
-            ],
-        },
-        {
-            "id": "tts_fish_audio",
-            "label": "Fish Audio speech API",
-            "description": "WebSocket streaming speech with a hosted voice. Voice reference ID selects the voice; model selects the inference engine.",
-            "active": tts_selected == "fish_audio",
-            "configured": bool(fish_tts_status.get("available")),
-            "status": str(fish_tts_status.get("state") or "unavailable"),
-            "status_ok": bool(fish_tts_status.get("available")),
-            "status_detail": str(fish_tts_status.get("detail") or ""),
-            "fields": [
-                _startup_field("FISH_TTS_WS_URL", "WebSocket URL", settings.FISH_TTS_WS_URL, field_type="url"),
-                _startup_field("FISH_TTS_API_KEY", "API key", field_type="secret", secret_configured=bool(settings.FISH_TTS_API_KEY)),
-                _startup_field("FISH_TTS_MODEL", "Inference model", settings.FISH_TTS_MODEL),
-                _startup_field("FISH_TTS_REFERENCE_ID", "Voice reference ID", settings.FISH_TTS_REFERENCE_ID),
-                _startup_field(
-                    "FISH_TTS_LATENCY", "Latency mode", settings.FISH_TTS_LATENCY,
-                    field_type="select",
-                    options=tuple({"value": mode, "label": mode} for mode in ("normal", "balanced", "low")),
-                ),
-            ],
-        },
+
     ]
 
 

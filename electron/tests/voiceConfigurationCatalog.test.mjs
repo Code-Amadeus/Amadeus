@@ -1,23 +1,19 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import fs from 'node:fs'
-import ts from 'typescript'
+import { loadTypeScript } from './helpers/loadTypeScript.mjs'
 
-const source = fs.readFileSync(new URL('../src/renderer/components/voiceConfigurationCatalog.ts', import.meta.url), 'utf8')
-const compiled = ts.transpileModule(source, {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-}).outputText
-const exports = {}
-new Function('exports', compiled)(exports)
+const exports = loadTypeScript(new URL('../src/renderer/components/voiceConfigurationCatalog.ts', import.meta.url))
+const { voiceBackendGroups } = loadTypeScript(new URL('../src/shared/configCatalog.ts', import.meta.url))
 
 test('voice setup remains discoverable without a running backend', () => {
   const groups = exports.buildVoiceConfigurationCatalog({
     asrBackend: 'qwen3_asr', ttsBackend: 'gpt_sovits', wakeEnabled: false, aecEnabled: true,
   }, null)
-  assert.deepEqual(groups.map(group => group.id), [
+  assert.deepEqual(new Set(groups.map(group => group.id)), new Set([
     'conversation_asr', 'asr_remote', 'wake_asr', 'acoustic_pipeline',
-    'speech_synthesis', 'tts_embedded_v3', 'voice_reference_profile', 'tts_fish_audio', 'tts_emotion_references', 'tts_remote', 'tts_mimo',
-  ])
+    'speech_synthesis', 'voice_reference_profile', 'tts_emotion_references',
+    ...voiceBackendGroups.map(group => group.id),
+  ]))
   assert.equal(groups.find(group => group.id === 'asr_remote').status, 'Optional')
   assert.equal(groups.find(group => group.id === 'tts_remote').status, 'Optional')
   assert.equal(groups.find(group => group.id === 'tts_fish_audio').status, 'Optional')

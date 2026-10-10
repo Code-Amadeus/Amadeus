@@ -3,10 +3,10 @@ import test from 'node:test'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { createRequire } from 'node:module'
+import { createSourceRequire } from './helpers/loadTypeScript.mjs'
 import ts from 'typescript'
 
-const require = createRequire(import.meta.url)
+const require = createSourceRequire(new URL('../src/main/desktopSettings.ts', import.meta.url))
 const source = fs.readFileSync(new URL('../src/main/desktopSettings.ts', import.meta.url), 'utf8')
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText
 const exports = {}

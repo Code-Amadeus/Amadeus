@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import importlib.util
+
 import asyncio
 from collections.abc import AsyncIterable, AsyncIterator, Iterator
 from urllib.parse import urlsplit
 
-import msgpack
 import numpy as np
 from websockets.asyncio.client import connect
 from websockets.exceptions import WebSocketException
@@ -166,6 +167,8 @@ class FishAudioTTSBackend(BaseTTSBackend):
         forcing a synthesis boundary after every token can degrade prosody.
         Callers that stop consuming early must close this async generator.
         """
+        import msgpack
+
         self.load()
         pending = bytearray()
         received_bytes = 0
@@ -288,3 +291,15 @@ class FishAudioTTSBackend(BaseTTSBackend):
             raise TTSBackendError("Fish Audio returned an incomplete PCM16 sample")
         if not yielded:
             raise TTSBackendError("Fish Audio stream completed without audio")
+
+
+def probe() -> tuple[str, str]:
+    from tts.backend import TTSBackendError
+
+    if importlib.util.find_spec("msgpack") is None:
+        return "not_installed", "Fish Audio requires the voice extra (msgpack)"
+    try:
+        FishAudioTTSBackend().load()
+    except (TTSBackendError, ValueError) as exc:
+        return "unavailable", str(exc)
+    return "remote", "Fish Audio WebSocket configured for streaming PCM16"

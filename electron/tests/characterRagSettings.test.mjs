@@ -2,13 +2,13 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { createRequire } from 'node:module'
+import { createSourceRequire } from './helpers/loadTypeScript.mjs'
 import vm from 'node:vm'
 import test from 'node:test'
 import ts from 'typescript'
 
 // Exercise the real persistence boundary without starting an Electron process.
-const require = createRequire(import.meta.url)
+const require = createSourceRequire(new URL('../src/main/desktopSettings.ts', import.meta.url))
 const source = fs.readFileSync(new URL('../src/main/desktopSettings.ts', import.meta.url), 'utf8')
 const code = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
