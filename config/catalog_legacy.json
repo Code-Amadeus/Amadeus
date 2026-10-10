@@ -334,9 +334,6 @@
       "AMADEUS_PRE_TRANSLATION_ENABLED",
       "AMADUES_PRE_TRANSLATION_ENABLED"
     ],
-    "tts/synthesis_backend.py": [
-      "ENABLE_CUDA_GRAPH"
-    ],
     "tts/utterance_scheduler.py": [
       "ENABLE_TTS_KV_WINDOW",
       "ENABLE_TTS_UTTERANCE_SCHEDULER",

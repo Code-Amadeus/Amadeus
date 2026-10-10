@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from contextlib import AbstractContextManager
 
 import pytest
@@ -208,3 +210,85 @@ def test_nvidia_cuda_device_allows_nvidia_extensions(
 
     assert uses_torch_cuda_api is True
     assert _allows_nvidia_cuda_extensions(uses_torch_cuda_api) is True
+
+
+@pytest.mark.parametrize("device,rocm,mode,expected", [
+    ("cuda:1", False, "auto", True), ("cuda:1", False, "0", False),
+    ("cpu", False, "auto", False), ("cpu", False, "1", False),
+    ("mps", False, "auto", False), ("cuda:0", True, "auto", False),
+])
+def test_acceleration_setup_uses_loaded_device_and_respects_off(monkeypatch, device, rocm, mode, expected):
+    from types import SimpleNamespace
+    infer = _inferencer(device, uses_torch_cuda_api=device.startswith("cuda"))
+    infer.is_rocm = rocm
+    infer._allows_nvidia_cuda_extensions = device.startswith("cuda") and not rocm
+    decoder = SimpleNamespace(use_static_kv_cache=True, cuda_graph_enabled=False)
+    infer.t2s_model = SimpleNamespace(model=decoder)
+    monkeypatch.setenv("ENABLE_CUDA_GRAPH", mode)
+    monkeypatch.setenv("TTS_T2S_FLASH_ATTN", "0")
+    infer._configure_t2s_acceleration()
+    assert decoder.cuda_graph_enabled is expected
+    assert decoder.use_static_kv_cache is device.startswith("cuda")
+    if not expected:
+        decoder.precapture_cuda_graph = lambda *_: pytest.fail("disabled acceleration captured a graph")
+        infer._maybe_precapture_t2s_graph()
+
+
+@pytest.mark.parametrize("mode,major,dtype,extension", [
+    ("auto", 8, torch.float16, True), ("1", 8, torch.float16, True),
+    ("auto", 8, torch.float16, False), ("0", 8, torch.float16, True),
+    ("auto", 7, torch.float16, True), ("auto", 8, torch.float32, True),
+])
+def test_flash_setup_selects_actual_device_and_keeps_sdpa_when_unavailable(monkeypatch, mode, major, dtype, extension):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+    import AR.models.t2s_flash_attn as flash
+    infer = _inferencer("cuda:1", uses_torch_cuda_api=True)
+    infer.is_rocm = False
+    decoder = SimpleNamespace(use_flash_attn_kvcache=False, flash_attn_kvcache_mode="off")
+    infer.t2s_model = SimpleNamespace(model=decoder, parameters=lambda: iter([SimpleNamespace(dtype=dtype)]))
+    monkeypatch.setenv("ENABLE_CUDA_GRAPH", "auto")
+    monkeypatch.setenv("TTS_T2S_FLASH_ATTN", mode)
+    devices = []
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda device: devices.append(str(device)) or (major, 0))
+    monkeypatch.setattr(infer, "_device_context", nullcontext)
+    monkeypatch.setattr(flash, "_flash_attn_with_kvcache", object() if extension else None)
+    selected = object()
+    monkeypatch.setattr(flash, "build_flash_static_transformer", lambda *_args, **_kwargs: selected)
+    infer._configure_t2s_acceleration()
+    eligible = mode != "0" and major >= 8 and dtype == torch.float16
+    assert devices == (["cuda:1"] if mode != "0" else [])
+    assert decoder.use_flash_attn_kvcache is (eligible and extension)
+    if eligible and extension:
+        assert decoder.t2s_transformer_static is selected
+
+
+@pytest.mark.skipif(os.environ.get("AMADEUS_RUN_GPU_TESTS") != "1", reason="explicit NVIDIA kernel probe")
+def test_auto_graph_and_flash_capture_replay_on_nvidia(monkeypatch):
+    pytest.importorskip("flash_attn")
+    if not torch.cuda.is_available() or torch.version.hip or torch.cuda.get_device_capability(0)[0] < 8:
+        pytest.skip("requires NVIDIA Ampere or newer")
+    from AR.models.t2s_model import Text2SemanticDecoder
+    monkeypatch.setenv("ENABLE_CUDA_GRAPH", "auto")
+    monkeypatch.setenv("TTS_T2S_FLASH_ATTN", "auto")
+    monkeypatch.setenv("TTS_T2S_FLASH_ATTN_MODE", "valid")
+    infer = _inferencer("cuda:0", uses_torch_cuda_api=True)
+    infer.is_rocm = False
+    config = {"model": {"hidden_dim": 128, "embedding_dim": 128, "head": 2,
+                       "n_layer": 1, "vocab_size": 17, "phoneme_vocab_size": 32,
+                       "dropout": 0.0, "EOS": 16}}
+    model = torch.nn.Module()
+    model.model = Text2SemanticDecoder(config).half().to(infer.device).eval()
+    infer.t2s_model = model
+    with torch.inference_mode():
+        infer._configure_t2s_acceleration()
+        decoder = model.model
+        assert decoder.cuda_graph_enabled and decoder.use_flash_attn_kvcache
+        # Use one actual aligned graph key; this is not a model or audio benchmark.
+        assert decoder.precapture_cuda_graph([256], kv_len_range=(32, 32)) == {256: True}
+        key = (256, 32)
+        decoder._replay_cuda_graph(decoder.bucket_graphs[key], infer.device)
+        torch.cuda.synchronize(infer.device)
+        assert torch.isfinite(decoder.bucket_static_outputs[key]["logits"]).all()
+    monkeypatch.setenv("ENABLE_CUDA_GRAPH", "0")
+    assert not infer.cuda_graph_enabled

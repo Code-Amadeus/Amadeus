@@ -37,6 +37,7 @@ class BaseTTSBackend(ABC):
     backend_id = "unknown"
     deployment = "embedded"
     supports_streaming = False
+    cuda_graph_enabled = False
 
     def load(self) -> None:
         """Initialize backend resources. Remote backends may only validate config."""
@@ -82,6 +83,10 @@ class TTSRuntimeAdapter:
     @property
     def supports_streaming(self) -> bool:
         return bool(self.backend.supports_streaming)
+
+    @property
+    def cuda_graph_enabled(self) -> bool:
+        return bool(self.backend.cuda_graph_enabled)
 
     @property
     def is_rocm(self) -> bool:
@@ -133,7 +138,7 @@ class TTSRuntimeAdapter:
         if_freeze: bool = False,
         inp_refs=None,
         if_sr: bool = False,
-        enable_cuda_graph: bool = False,
+        enable_cuda_graph: bool | None = None,
         enable_static_kv: bool = True,
         max_sec_override: float | None = None,
         emotion: str = "",
@@ -182,7 +187,7 @@ class TTSRuntimeAdapter:
         if_freeze: bool = False,
         inp_refs=None,
         if_sr: bool = False,
-        enable_cuda_graph: bool = False,
+        enable_cuda_graph: bool | None = None,
         enable_static_kv: bool = True,
         chunk_size_seconds: float | None = None,
         max_sec_override: float | None = None,
