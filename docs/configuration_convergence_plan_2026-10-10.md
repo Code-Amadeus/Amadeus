@@ -7,7 +7,7 @@
 - 分支：`codex/configuration-convergence`。
 - 基线提交：`019e29e`，包含前一轮完成的 24 个配置字段和语音域 handler 组装。
 - 基线遗留：桌面白名单中仍有 118 个普通键、7 个密钥键手写；不是全部环境变量的数量。
-- 每阶段单独提交实现、相关测试和本计划的执行记录。代码不推送、不合并、不发布。
+- 每阶段单独提交实现、相关测试和本计划的执行记录。首轮施工仅保留本地提交；后续经用户明确授权，审计修复后推送本分支并创建草稿 PR，不合并、不发布。
 - 保留本轮开始前的 ChatPage、视觉测试、资源和其他草稿修改；提交只包含本任务路径。
 - 继续使用当前分支工作区，不搬动用户已有修改。构建和运行验证使用独立测试数据目录；不启动真实模型、麦克风或收费 API。
 
@@ -118,3 +118,41 @@ ACP 和 MCP 的结构化连接记录沿用现有专用校验器、加密存储�
 - ACP/MCP 结构化记录、秘密存储和授权沿用既有 owner；已退役的路由键只允许清除。
 - 不在桌面 Settings 范围内的内部 Python 调优参数留在递减基线中；本轮没有把所有内部环境变量变成用户设置。
 - 这份目录只接受随应用打包的数据。第三方插件生命周期与权限、记忆试点属于后续扩展协议工作，本轮不新增执行权限。
+
+## 草稿 PR 前复审（2026-10-10）
+
+审计范围为 `c07e009..codex/configuration-convergence`，包括首批 TTS/图形目录。远端主线检查至 `f61ce25`；其新增提交仅调整 source-map-js 锁文件，与本分支无重叠。机械核对迁移前 149 个桌面键后，未覆盖项为零：145 个 canonical 字段、兼容别名及 ACP/退役键的专用 owner 覆盖全部入口。另以 7 组隔离合成输入执行迁移前后 settings，旧公开值保持一致。
+
+发现并修复以下来源边界问题（`5491850`）：
+
+1. 保存的旧别名没有在加载 dotenv 前转成 canonical 名称，可能被 dotenv 中的新名称覆盖；Provider 摘要还可能把只保存旧别名的选择显示成 `undefined`。启动输入与摘要现在遵循同一来源优先级。
+2. 图形预设变更时，dotenv 中明确设置的纹理采样可能被新的自动默认值代替。计算默认值与后端解析出的显式值已分开。
+3. 语音卡片状态只认字符串 `true`，与控件对 `1/yes` 的解析、清空后的默认值不一致。状态现在直接读取同一投影结果。
+4. 离线开启视觉功能时，旧运行快照可能把已保存的 `watching` 改回 `on_demand`。控制动作现在读取拟启动模式；离线保存仍保持 pending，直到真实应用回执到达。
+
+验证与限制：
+
+- 完整 Python 隔离入口按 4 个分片运行，共收集 5,457 个用例。首轮 5,437 通过，5 个跳过、5 个预期失败；10 个失败集中在 4 个旧测试文件。两个 AST 生命周期夹具补齐提取后的真实语音清理函数；RAG 文案断言改为验证唯一声明；普通合成夹具显式关闭其不测试的实验情绪功能。4 个文件共 78 个用例复验全部通过，关闭次序、取消与异常继续清理等原断言保留。合计验证 5,447 个通过用例；未把首轮失败报告成一次全绿运行。
+- 工作区 Electron 373 个测试通过；从提交中提取、排除用户其他修改的干净快照另跑 371 个测试全部通过，类型检查和生产构建通过。
+- 干净快照真实离线表单覆盖主题来源锁定、启动方式、TTS/图形、旧 Provider 别名及离线视觉保存；真实整应用模型关闭冒烟覆盖后端认证、导航、重连与退出；新增 handler 的真实 WebSocket 往返与关闭通过。
+- GPU/CUDA/ROCm 真实模型推理、付费远端 API 和完整安装器发布未执行；相关运行契约由无模型测试与既有隔离夹具覆盖。未发现这些已审路径之外的新回归证据，不以测试替代独立代码审查。
+
+可复验命令（Python 使用已有开发环境；四个分片的 `N` 分别为 0、1、2、3）：
+
+```text
+python -X utf8 tools/run_tests.py --shard-count 4 --shard-index N
+python -m pytest -q tests/test_character_rag.py tests/test_chat_ingress_lifecycle.py tests/test_gpt_sovits_sidecar_backend.py tests/test_vts_worker_lifecycle.py
+cd electron
+npm test
+npm run build
+electron scripts/smoke-startup-settings.cjs
+cd ..
+python -X utf8 tools/smoke_electron_model_less.py
+python tools/smoke_builtin_handler_catalog.py
+```
+
+界面对照采用同样的隔离配置与隐藏窗口。基线截图的 IPC fixture 补齐空后端失败状态，不改产品实现；新版截图中的主题由环境锁定。
+
+| 迁移前（`c07e009`） | 迁移后（`5491850`） |
+| --- | --- |
+| ![迁移前](images/configuration-convergence-before.png) | ![迁移后](images/configuration-convergence-after.png) |

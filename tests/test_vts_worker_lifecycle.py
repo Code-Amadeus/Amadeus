@@ -235,7 +235,9 @@ def test_actual_bootstrap_owns_workers_even_if_second_submit_fails(isolated_acti
         server_task.set_result(None)
         monkeypatch.setitem(sys.modules, "asr.mic_input_service", SimpleNamespace(close_mic_input_service=Mock()))
         monkeypatch.setitem(sys.modules, "llm.llama_server", SimpleNamespace(stop_llama_server=Mock()))
+        from server.handlers.voice import close_voice_input_services
         namespace = dict(asyncio=asyncio, threading=SimpleNamespace(Event=Event),
+            close_voice_input_services=close_voice_input_services,
             loop=SimpleNamespace(run_in_executor=submit), _vts_action_mod=action,
             vts_manager=isolated_action, VTS_HEARTBEAT_ENABLED=True, port=0,
                     server_task=server_task, chat_h=SimpleNamespace(close=AsyncMock()), logger=Mock(),
