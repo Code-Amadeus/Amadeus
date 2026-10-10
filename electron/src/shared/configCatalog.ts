@@ -1,4 +1,5 @@
 import { catalogGroups as generatedGroups } from './configCatalog.generated.js'
+import { startupValue, type StartupSnapshot } from './startupSettings.js'
 
 type LocalizedText = { 'en-US': string; 'zh-CN': string }
 interface CatalogField {
@@ -62,7 +63,7 @@ export const voiceBackendOptions = [
 
 export function catalogConfiguration(
   id: string,
-  snapshot?: { values?: Record<string, string>; secrets?: Record<string, { configured?: boolean }> } | null,
+  snapshot?: StartupSnapshot & { secrets?: Record<string, { configured?: boolean }> } | null,
   effectiveValues: Record<string, string | number | boolean> = {},
 ) {
   const group = catalogGroups.find(item => item.id === id)
@@ -72,8 +73,8 @@ export function catalogConfiguration(
     label: group.title['en-US'],
     description: group.description['en-US'],
     fields: Object.entries(group.config).map(([key, field]) => {
-      const raw = snapshot?.values?.[key] ?? effectiveValues[key] ?? field.default
-      if (!field.secret && raw === undefined) throw new Error(`Missing computed default for ${key}`)
+      const raw = startupValue(key, snapshot, field.default ?? effectiveValues[key], effectiveValues[key])
+      if (!field.secret && raw === undefined && !snapshot?.sources?.[key]) throw new Error(`Missing computed default for ${key}`)
       return {
       key,
       label: field.title['en-US'],
@@ -81,7 +82,8 @@ export function catalogConfiguration(
         : field.type === 'url' ? 'url' as const : field.type === 'path' ? 'path' as const
         : field.type === 'boolean' ? 'boolean' as const
         : ['integer', 'number'].includes(field.type) ? 'number' as const : 'text' as const,
-      value: field.secret ? '' : field.type === 'boolean' ? raw === true || raw === 'true' : String(raw),
+      value: field.secret ? '' : raw === undefined ? undefined : field.type === 'boolean'
+        ? raw === true || ['1', 'true', 'yes'].includes(String(raw).toLowerCase()) : String(raw),
       ...(field.description ? { description: field.description['en-US'] } : {}),
       ...(field.secret ? { configured: Boolean(snapshot?.secrets?.[key]?.configured) } : {}),
       ...(field.options ? { options: field.options.map(option => typeof option === 'string' ? option

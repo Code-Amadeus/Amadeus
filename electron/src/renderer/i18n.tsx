@@ -370,6 +370,7 @@ const ZH_CN: Record<string, string> = {
   'Disabled': '已关闭',
   'Off': '关闭',
   'Unknown': '未知',
+  'Value unavailable until backend connects': '连接后端后才能读取此值',
   'Unverified': '未验证',
   '{count} unverified': '{count} 项未验证',
   'View status reason': '查看状态原因',

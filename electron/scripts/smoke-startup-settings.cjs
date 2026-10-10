@@ -26,6 +26,7 @@ app.whenReady().then(async () => {
   const { isWallpaperStartup } = await import(pathToFileURL(path.join(root, 'electron/dist/main/startupMode.js')).href)
   const file = path.join(profile, 'settings.json')
   const store = new DesktopSettingsStore(file, path.join(profile, '.env'))
+  const environment = {}
   store.update({}, { values: {
     AMADEUS_UI_LOCALE: 'en-US', TTS_BACKEND: null, FISH_TTS_MODEL: null, FISH_TTS_LATENCY: null,
     MIMO_TTS_VOICE: null, TTS_API_VOICE: null,
@@ -34,8 +35,8 @@ app.whenReady().then(async () => {
   store.markApplied({})
   ipcMain.handle('get-backend-connection', () => null)
   ipcMain.handle('backend-startup.failure', () => null)
-  ipcMain.handle('desktop-settings.get', () => store.snapshot({}))
-  ipcMain.handle('desktop-settings.update', (_event, update) => ({ ok: true, settings: store.update({}, update) }))
+  ipcMain.handle('desktop-settings.get', () => store.snapshot(environment))
+  ipcMain.handle('desktop-settings.update', (_event, update) => ({ ok: true, settings: store.update(environment, update) }))
   ipcMain.handle('window-theme.set', () => true)
   ipcMain.handle('chat-avatars.get', () => ({ user: '', assistant: '' }))
   ipcMain.handle('companion-portraits.status', () => ({ installed: false }))
@@ -132,6 +133,15 @@ app.whenReady().then(async () => {
   await until(`Boolean(document.querySelector('input[aria-label="Frame-rate limit"]'))`)
   assert.equal(await win.webContents.executeJavaScript(`document.querySelector('select[aria-label="Sample animation textures"]').value`), 'true')
   console.log('PASS packaged MiMo/OpenAI controls and graphics automatic/explicit settings work offline')
+  environment.FISH_TTS_MODEL = 'locked-environment-model'
+  await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim().endsWith('Chat')).click(); true`)
+  await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim().endsWith('Settings')).click(); true`)
+  await until(`Array.from(document.querySelectorAll('button')).some(b => b.textContent.trim() === 'Voice')`)
+  await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Voice').click(); true`)
+  await until(`(() => { const input = document.querySelector('input[aria-label="Inference model"]');
+    return input?.disabled && input.value === 'locked-environment-model'; })()`)
+  assert.equal(store.snapshot(environment).values.FISH_TTS_MODEL, 'smoke-fish-model')
+  console.log('PASS real form shows and locks environment input while preserving the saved override')
   app.quit()
 }).catch(error => { console.error(error); app.exit(1) })
 setTimeout(() => { console.error('Startup settings smoke timed out'); app.exit(1) }, 45000).unref()

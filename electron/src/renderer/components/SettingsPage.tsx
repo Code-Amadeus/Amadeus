@@ -1,3 +1,4 @@
+import { projectStartupFields, startupValues } from '../../shared/startupSettings.js'
 import { settingSourceLabel } from '../../shared/characterStartup'
 import { DEFAULT_WINDOWS_STARTUP_MODE } from '../../main/startupMode'
 import { useState, useEffect, useCallback, useMemo, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
@@ -115,6 +116,7 @@ interface CapabilityPackage {
 
 interface DesktopSettingsSnapshot {
   platform: string
+  startupValues?: Record<string, string>
   values: Record<string, string>
   sources: Record<string, 'environment' | 'user' | 'dotenv' | 'default'>
   locked: Record<string, boolean>
@@ -306,8 +308,8 @@ function StartupFieldRow({ field, desktop, onSave }: {
 }) {
   const { t } = useI18n()
   const source = field.key ? desktop?.sources?.[field.key] || 'default' : 'default'
-  const storedValue = field.key && source === 'user' ? desktop?.values?.[field.key] : undefined
-  const initial = storedValue !== undefined ? storedValue : field.value ?? ''
+  const initial = field.value ?? ''
+  const unknown = field.type !== 'secret' && field.value === undefined
   const [draft, setDraft] = useState<string | boolean>(initial)
   const [busy, setBusy] = useState(false)
   const [secretDraft, setSecretDraft] = useState('')
@@ -319,8 +321,8 @@ function StartupFieldRow({ field, desktop, onSave }: {
     : false
 
   useEffect(() => {
-    setDraft(storedValue !== undefined ? storedValue : field.value ?? '')
-  }, [storedValue, field.value])
+    setDraft(initial)
+  }, [initial])
 
   const save = async (value: string | boolean | null, secret: boolean) => {
     setBusy(true)
@@ -339,7 +341,7 @@ function StartupFieldRow({ field, desktop, onSave }: {
       <div className="flex-1 min-w-0">
         <div className="settings-field-label">{t(field.label)}</div>
         <div className="settings-field-description">
-          {field.description ? `${t(field.description)} · ` : ''}{t(settingSourceLabel(source))}{electronUnavailable ? ` · ${t('editable in Electron app')}` : environmentLocked ? ` · ${t('locked')}` : ''}{field.restart_required ? ` · ${t('restart required')}` : ''}
+          {field.description ? `${t(field.description)} · ` : ''}{t(settingSourceLabel(source))}{electronUnavailable ? ` · ${t('editable in Electron app')}` : environmentLocked ? ` · ${t('locked')}` : ''}{field.restart_required ? ` · ${t('restart required')}` : ''}{unknown ? ` · ${t('Value unavailable until backend connects')}` : ''}
         </div>
       </div>
       <div className="settings-field-control flex items-center gap-1.5 shrink-0" style={{ width: 320, maxWidth: '43%' }}>
@@ -409,6 +411,7 @@ function StartupFieldRow({ field, desktop, onSave }: {
             className="min-w-0 flex-1 text-[12px] bg-[var(--surface-alt)] border border-[var(--border)] rounded-lg px-3 outline-none focus:border-[var(--accent)] disabled:opacity-50"
             style={{ height: 34 }}
           >
+            {unknown ? <option value="">{t('Unknown')}</option> : null}
             {(field.options || []).map(option => {
               const optionValue = typeof option === 'string' ? option : option.value
               const optionLabel = typeof option === 'string' ? option || 'Inherit' : option.label
@@ -428,6 +431,7 @@ function StartupFieldRow({ field, desktop, onSave }: {
             className="min-w-0 flex-1 text-[12px] bg-[var(--surface-alt)] border border-[var(--border)] rounded-lg px-3 outline-none focus:border-[var(--accent)] disabled:opacity-50"
             style={{ height: 34 }}
           >
+            {unknown ? <option value="">{t('Unknown')}</option> : null}
             <option value="true">{t('On')}</option>
             <option value="false">{t('Off')}</option>
           </select>
@@ -435,6 +439,7 @@ function StartupFieldRow({ field, desktop, onSave }: {
           <input
             aria-label={t(field.label)}
             type={field.type === 'url' ? 'url' : field.type === 'number' ? 'number' : 'text'}
+            placeholder={unknown ? t('Unknown') : undefined}
             min={field.min}
             max={field.max}
             step={field.step}
@@ -928,22 +933,27 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     },
   ]
 
+  const catalogDesktop = desktop ? { ...desktop, values: startupValues(desktop) } : null
+  const mergeGroups = (bases: ConfigurationGroup[], running: ConfigurationGroup[]) => bases.map(base => {
+    const backend = running.find(group => group.id === base.id)
+    return { ...base, ...backend, fields: projectStartupFields(base.fields, backend?.fields, desktop) }
+  })
   const modelConnections = asConfigurationGroups(config.model_connections)
   const backendModelRoles = asConfigurationGroups(config.model_roles)
-  const modelRoleCatalog = buildModelRoleCatalog(desktop)
+  const modelRoleCatalog = buildModelRoleCatalog(catalogDesktop)
   const modelRoles: ConfigurationGroup[] = [
     ...modelRoleCatalog.map(base => {
       const backend = backendModelRoles.find(group => group.id === base.id)
       return backend ? {
         ...backend,
         ...base,
-        fields: base.fields,
+        fields: projectStartupFields(base.fields, backend.fields, desktop),
         active: backend.active ?? base.active,
         configured: backend.configured ?? base.configured,
         status: backend.status || base.status,
         status_ok: backend.status_ok ?? base.status_ok,
         status_detail: backend.status_detail,
-      } : base
+      } : { ...base, fields: projectStartupFields(base.fields, undefined, desktop) }
     }),
     ...backendModelRoles.filter(group => !modelRoleCatalog.some(base => base.id === group.id)),
   ]
@@ -951,17 +961,11 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   const mainModelProvider = val('llm_provider', savedMainModelProvider || 'deepseek').toLowerCase()
   const remoteModelConnectionIds = new Set(['deepseek', 'openai', 'gemini', 'bedrock'])
   const backendRemoteModelConnections = modelConnections.filter(group => remoteModelConnectionIds.has(group.id))
-  const remoteModelConnections: ConfigurationGroup[] = backendRemoteModelConnections.length
-    ? backendRemoteModelConnections
-    : buildRemoteModelConnectionCatalog(mainModelProvider, desktop)
+  const remoteModelConnections = mergeGroups(buildRemoteModelConnectionCatalog(mainModelProvider, catalogDesktop), backendRemoteModelConnections)
   const backendLocalModelConnections = modelConnections.filter(group => ['local', 'hybrid_local'].includes(group.id))
-  const localModelConnections: ConfigurationGroup[] = backendLocalModelConnections.length
-    ? backendLocalModelConnections
-    : buildLocalModelConnectionCatalog(mainModelProvider, desktop)
+  const localModelConnections = mergeGroups(buildLocalModelConnectionCatalog(mainModelProvider, catalogDesktop), backendLocalModelConnections)
   const backendOptionalModelConnections = modelConnections.filter(group => group.id === 'character_rag')
-  const optionalModelConnections: ConfigurationGroup[] = backendOptionalModelConnections.length
-    ? backendOptionalModelConnections
-    : buildOptionalModelServiceCatalog(desktop)
+  const optionalModelConnections = mergeGroups(buildOptionalModelServiceCatalog(catalogDesktop), backendOptionalModelConnections)
   const modelProviderLabels: Record<string, string> = {
     deepseek: 'DeepSeek', openai: 'OpenAI-compatible', gemini: 'Gemini', bedrock: 'AWS Bedrock',
     local: 'Pure-local model', hybrid: 'Hybrid local + Bedrock', hybrid2: 'Hybrid local + DeepSeek', hybrid3: 'Hybrid local + OpenAI',
@@ -1005,22 +1009,22 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
       || (roleGroups[id]?.fields || []).some(item => item.key && desktop?.sources?.[item.key] === 'user'),
   ).length
   const graphicsRuntime = connected ? config.graphics as GraphicsRuntimeSettings | undefined : undefined
-  const graphicsConfiguration = buildGraphicsConfiguration(graphicsRuntime, desktop)
+  const graphicsConfiguration = buildGraphicsConfiguration(graphicsRuntime, catalogDesktop)
   const backendProviderConfiguration = asConfigurationGroups(config.work_provider_configuration)
   const providerCatalog = buildWorkProviderCatalog({ provider: selectedWorkProvider,
-    codingProvider: selectedCodingProvider, roleCandidates: providerRoleCandidates }, desktop)
+    codingProvider: selectedCodingProvider, roleCandidates: providerRoleCandidates }, catalogDesktop)
   const providerConfiguration: ConfigurationGroup[] = providerCatalog.connections.map(base => {
     const backend = backendProviderConfiguration.find(group => group.id === base.id)
     return backend ? {
       ...backend,
       ...base,
-      fields: base.fields,
+      fields: projectStartupFields(base.fields, backend.fields, desktop),
       active: base.active,
       configured: backend.configured ?? base.configured,
       status: backend.status || base.status,
       status_ok: backend.status_ok ?? base.status_ok,
       status_detail: backend.status_detail,
-    } : base
+    } : { ...base, fields: projectStartupFields(base.fields, undefined, desktop) }
   })
   const artifactConfiguration = asConfigurationGroups(config.artifact_configuration)
   const backendVoiceConfiguration = asConfigurationGroups(config.voice_configuration)
@@ -1030,18 +1034,18 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
         wakeEnabled: desktop?.sources?.WAKE_ENABLED === 'user' ? desktop.values.WAKE_ENABLED === 'true' : bool('wake_enabled'),
         aecEnabled: desktop?.sources?.AEC_REALTIME_ENABLED === 'user' ? desktop.values.AEC_REALTIME_ENABLED === 'true' : config.aec_realtime_enabled === undefined ? true : bool('aec_realtime_enabled'),
         emotionReferencesEnabled: backendVoiceConfiguration.find(group => group.id === 'tts_emotion_references')?.fields.find(field => field.key === 'ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING')?.value === true,
-      }, desktop)
+      }, catalogDesktop)
   const voiceConfiguration: ConfigurationGroup[] = voiceCatalog.map(base => {
     const backend = backendVoiceConfiguration.find(group => group.id === base.id)
     return backend ? {
       ...backend,
       ...base,
-      fields: base.fields,
+      fields: projectStartupFields(base.fields, backend.fields, desktop),
       configured: backend.configured ?? base.configured,
       status: backend.status || base.status,
       status_ok: backend.status_ok ?? base.status_ok,
       status_detail: backend.status_detail,
-    } : base
+    } : { ...base, fields: projectStartupFields(base.fields, undefined, desktop) }
   })
   // Keep complete voice groups together; voice files and engine settings share one editor.
   const { output: outputVoiceIds, input: inputVoiceIds, remote: remoteVoiceIds } = voiceConfigurationSections

@@ -599,21 +599,25 @@ export class DesktopSettingsStore {
     )
     const secrets = Object.fromEntries(
       [...SECRET_KEYS].map(key => [key, {
-        configured: Boolean(
-          environment[key]
-          || stored.encryptedSecrets[key]
-          || dotenvKeys.has(key)
-        ),
+        configured: sources[key] === 'environment' ? Boolean(environment[key])
+          : sources[key] === 'user' ? Boolean(stored.encryptedSecrets[key]) : dotenvKeys.has(key),
         source: sources[key],
         locked: locked[key],
       }]),
     )
     const pendingKeys = Object.keys(stored.pendingRevisions)
+    const startupValues = Object.fromEntries([...VALUE_KEYS].flatMap(key => {
+      // Compound transport and dotenv interpolation need their owning parser.
+      const value = sources[key] === 'environment' ? (key === 'CODEX_PROVIDER_TRANSPORT' ? undefined : environment[key])
+        : sources[key] === 'user' ? stored.values[key] : undefined
+      return value === undefined ? [] : [[key, value]]
+    }))
     return {
       platform: process.platform,
       values: { ...stored.values, ...(environment.AMADEUS_WINDOWS_STARTUP_MODE !== undefined
         ? { AMADEUS_WINDOWS_STARTUP_MODE: environment.AMADEUS_WINDOWS_STARTUP_MODE } : {}) },
       sources,
+      startupValues,
       retired_settings: this.retiredSettings(environment, stored),
       locked,
       secrets,
