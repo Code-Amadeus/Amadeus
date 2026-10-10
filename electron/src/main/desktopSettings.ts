@@ -71,45 +71,8 @@ const VALUE_KEYS = new Set([
   'EXP_TTS_MAX_CONCURRENCY',
   'TTS_OUTPUT_LANGUAGE',
   'LLM_PROVIDER',
-  'COOPERATIVE_WORK_PLANNER_MODEL',
-  'WORK_OBSERVER_PROVIDER',
-  'WORK_OBSERVER_MODEL',
-  'AUIP_NARRATION_PROVIDER',
-  'AUIP_NARRATION_MODEL',
-  'AUIP_ACTION_PROVIDER',
-  'AUIP_ACTION_MODEL',
-  'AUIP_ACTION_REASONING_EFFORT',
-  'AUIP_ACTION_SERVICE_TIER',
-  'BROWSER_BRANCH_PROVIDER',
-  'BROWSER_BRANCH_MODEL',
-  'VN_LLM_PROVIDER',
-  'VN_LLM_MODEL',
-  'VN_SUBTITLE_TRANSLATE_PROVIDER',
-  'VN_SUBTITLE_TRANSLATE_MODEL',
-  'VN_TTS_TRANSLATE_PROVIDER',
-  'VN_TTS_TRANSLATE_MODEL',
   // Transitional read whitelist: unrelated saves must preserve a retired value.
   'COOPERATIVE_CHAT_ENABLED',
-  'COOPERATIVE_CHAT_PROVIDER',
-  'WORK_CODING_PROVIDER',
-  'WORK_EXECUTION_PROVIDER',
-  'PI_PROVIDER_ENABLED',
-  'PI_NODE_PATH',
-  'PI_AGENT_DIR',
-  'PI_MODEL_PROVIDER',
-  'PI_MODEL',
-  'OPENCLAW_BASE_URL',
-  'OPENCLAW_PROJECT_DIR',
-  'CODEX_PROVIDER_TRANSPORT',
-  'CODEX_APP_SERVER_AUTH_MODE',
-  'CODEX_APP_SERVER_CODEX_BIN',
-  'CODEX_APP_SERVER_MODEL_PROVIDER',
-  'CODEX_APP_SERVER_PROVIDER_BASE_URL',
-  'CODEX_APP_SERVER_MODEL',
-  'CODEX_APP_SERVER_CHATGPT_MODEL',
-  'CODEX_APP_SERVER_REASONING_EFFORT',
-  'CODEX_APP_SERVER_SERVICE_TIER',
-  'DIRECT_CODEX_CLI_PATH',
   'AMADEUS_ACP_PROVIDERS',
   ...Object.keys(desktopCatalogFields).filter(key => !desktopCatalogFields[key].secret),
   'VTS_ENABLED',
@@ -119,8 +82,6 @@ const VALUE_KEYS = new Set([
 ])
 
 const SECRET_KEYS = new Set([
-  'ANTHROPIC_API_KEY',
-  'OPENCLAW_GATEWAY_TOKEN',
   ...Object.keys(desktopCatalogFields).filter(key => desktopCatalogFields[key].secret),
 ])
 
@@ -142,32 +103,14 @@ const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
   ENABLE_CUDA_GRAPH: new Set(['1', '0']),
   TTS_OUTPUT_LANGUAGE: new Set(['日文', '英文']),
   LLM_PROVIDER: new Set(['deepseek', 'openai', 'gemini', 'bedrock', 'local', 'hybrid', 'hybrid2', 'hybrid3']),
-  AUIP_ACTION_REASONING_EFFORT: new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']),
-  AUIP_ACTION_SERVICE_TIER: new Set(['auto', 'default', 'fast', 'priority']),
-  BROWSER_BRANCH_PROVIDER: new Set(['deepseek', 'openai']),
-  VN_LLM_PROVIDER: new Set(['deepseek', 'openai']),
-  VN_SUBTITLE_TRANSLATE_PROVIDER: new Set(['deepseek', 'openai']),
-  VN_TTS_TRANSLATE_PROVIDER: new Set(['deepseek', 'openai']),
-  COOPERATIVE_CHAT_PROVIDER: new Set(['codex', 'openclaw', 'browser', 'pi']),
-  PI_PROVIDER_ENABLED: new Set(['true', 'false']),
-  CODEX_PROVIDER_TRANSPORT: new Set(['app_server', 'direct', 'disabled']),
-  CODEX_APP_SERVER_AUTH_MODE: new Set(['model_api', 'chatgpt']),
-  CODEX_APP_SERVER_MODEL_PROVIDER: new Set(['deepseek', 'openai']),
-  CODEX_APP_SERVER_REASONING_EFFORT: new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
-  CODEX_APP_SERVER_SERVICE_TIER: new Set(['', 'auto', 'default', 'flex', 'priority', 'fast', 'ultrafast']),
   ...Object.fromEntries(Object.entries(desktopCatalogFields)
-    .filter(([, field]) => field.options || field.type === 'boolean')
+    .filter(([, field]) => field.type === 'enum' || field.type === 'boolean')
     .map(([key, field]) => [key, new Set(field.type === 'boolean' ? field.accepted_values ?? ['true', 'false'] : catalogOptionValues(field))])),
   VTS_ENABLED: new Set(['true', 'false']),
   AUIP_ARTIFACT_STYLE_ENABLED: new Set(['true', 'false']),
 }
 
 const IDENTIFIER_KEYS = new Set(['AMADEUS_CHARACTER_ID', 'ASR_BACKEND', 'TTS_BACKEND', 'WORK_CODING_PROVIDER', 'WORK_EXECUTION_PROVIDER'])
-
-const URL_KEYS = new Set([
-  'OPENCLAW_BASE_URL',
-  'CODEX_APP_SERVER_PROVIDER_BASE_URL',
-])
 
 const WEBSOCKET_URL_KEYS = new Set(['VTS_WS_URL'])
 
@@ -697,11 +640,6 @@ export class DesktopSettingsStore {
         if (INTEGER_KEYS.has(key) && !Number.isInteger(parsed)) {
           throw new Error(`${key} must be an integer`)
         }
-      }
-      if (URL_KEYS.has(key)) {
-        let protocol = ''
-        try { protocol = new URL(value).protocol } catch { /* rejected below */ }
-        if (!['http:', 'https:'].includes(protocol)) throw new Error(`${key} must be an HTTP(S) URL`)
       }
       if (WEBSOCKET_URL_KEYS.has(key)) {
         let protocol = ''

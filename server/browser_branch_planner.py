@@ -7,6 +7,9 @@ visible report. Full DOM never enters main chat history.
 
 from __future__ import annotations
 
+from config.catalog import read_catalog_value
+from config.environment import EnvironmentReader
+
 from llm.character_voice_lines import voice_line
 
 from server.assistant_language import current_assistant_language
@@ -363,16 +366,16 @@ def _client(provider: str) -> OpenAI:
     if provider == "openai":
         return OpenAI(
             api_key=_secret("OPENAI_API_KEY"),
-            base_url=_env("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+            base_url=read_catalog_value(EnvironmentReader(os.environ), "OPENAI_BASE_URL").strip(),
         )
     return OpenAI(
         api_key=_secret("DEEPSEEK_API_KEY"),
-        base_url=_env("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+        base_url=read_catalog_value(EnvironmentReader(os.environ), "DEEPSEEK_BASE_URL").strip(),
     )
 
 
 def _provider() -> str:
-    raw = _env("BROWSER_BRANCH_PROVIDER") or _env("LLM_PROVIDER", "deepseek")
+    raw = read_catalog_value(EnvironmentReader(os.environ), "BROWSER_BRANCH_PROVIDER").strip() or _env("LLM_PROVIDER", "deepseek")
     provider = raw.strip().lower()
     if provider == "openai" and _secret("OPENAI_API_KEY"):
         return "openai"
@@ -386,12 +389,12 @@ def _provider() -> str:
 
 
 def _model(provider: str) -> str:
-    override = os.environ.get("BROWSER_BRANCH_MODEL", "").strip()
+    override = read_catalog_value(EnvironmentReader(os.environ), "BROWSER_BRANCH_MODEL").strip()
     if override:
         return override
     if provider == "openai":
-        return _env("OPENAI_MODEL_NAME", "gpt-5.4-mini")
-    return _env("DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
+        return read_catalog_value(EnvironmentReader(os.environ), "OPENAI_MODEL_NAME").strip()
+    return read_catalog_value(EnvironmentReader(os.environ), "DEEPSEEK_MODEL_NAME").strip()
 
 
 def _extra_kwargs(provider: str) -> dict[str, Any]:

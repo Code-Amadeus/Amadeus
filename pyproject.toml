@@ -225,6 +225,8 @@ packages = [
     "config.catalog.graphics",
     "config.catalog.voice",
     "config.catalog.models",
+    "config.catalog.roles",
+    "config.catalog.providers",
     "core",
     "llm",
     "openclaw",
@@ -244,6 +246,8 @@ characters = ["*.toml"]
 "config.catalog.graphics" = ["*.json"]
 "config.catalog.voice" = ["*.json"]
 "config.catalog.models" = ["*.json"]
+"config.catalog.roles" = ["*.json"]
+"config.catalog.providers" = ["*.json"]
 
 # ---------------------------------------------------------------------------
 # Tool configuration below is declared but NOT yet enforced: neither ruff nor

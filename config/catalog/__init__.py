@@ -38,6 +38,17 @@ def option_values(field: dict[str, Any]) -> tuple[str, ...]:
     return tuple(option if isinstance(option, str) else option["value"] for option in field["options"])
 
 
+def read_catalog_value(reader: EnvironmentReader, key: str) -> Any:
+    """Read a declared session input without importing the application facade."""
+    field = next(group["config"][key] for group in configuration_groups().values() if key in group["config"])
+    if field.get("computed_default") or field.get("scope") in {"virtual", "desktop"}:
+        raise ValueError(f"{key} requires its owning configuration context")
+    read = reader.secret if field.get("secret") else {
+        "boolean": reader.boolean, "integer": reader.integer, "number": reader.number,
+    }.get(field["type"], reader.string)
+    return read(key, field.get("default", ""), aliases=tuple(field.get("aliases", ())))
+
+
 def read_catalog_environment(
     reader: EnvironmentReader, *, computed_defaults: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -49,6 +60,8 @@ incomplete configuration must not prevent the application from starting.
     values = {}
     for group in configuration_groups().values():
         for key, field in group["config"].items():
+            if field.get("scope", "backend") != "backend":
+                continue
             if field.get("computed_default"):
                 if computed_defaults is None or key not in computed_defaults:
                     continue

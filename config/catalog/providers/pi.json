@@ -1,0 +1,67 @@
+{
+  "id": "pi",
+  "title": {
+    "en-US": "Pi",
+    "zh-CN": "Pi"
+  },
+  "description": {
+    "en-US": "Default daily agent over native RPC. Desktop setup installs its pinned runtime; known model providers reuse credentials configured in Models.",
+    "zh-CN": "通过原生 RPC 运行的默认日常 Agent。桌面安装会包含其固定版本运行时；已知模型提供方复用“模型”中配置的凭据。"
+  },
+  "desktop": true,
+  "restart_required": true,
+  "config": {
+    "PI_PROVIDER_ENABLED": {
+      "type": "boolean",
+      "title": {
+        "en-US": "Enable Pi",
+        "zh-CN": "启用 Pi"
+      },
+      "default": true,
+      "example_active": true
+    },
+    "PI_NODE_PATH": {
+      "type": "path",
+      "title": {
+        "en-US": "Node executable",
+        "zh-CN": "Node 可执行文件"
+      },
+      "default": "node",
+      "example_active": true
+    },
+    "PI_AGENT_DIR": {
+      "type": "path",
+      "title": {
+        "en-US": "Pi configuration and sessions",
+        "zh-CN": "Pi 配置与会话"
+      },
+      "default": "runtime/pi",
+      "example_active": true
+    },
+    "PI_MODEL_PROVIDER": {
+      "type": "string",
+      "title": {
+        "en-US": "Pi model provider",
+        "zh-CN": "Pi 模型提供商"
+      },
+      "description": {
+        "en-US": "DeepSeek, OpenAI, and Google reuse the corresponding API key saved under Models; custom providers may use native Pi authentication.",
+        "zh-CN": "DeepSeek、OpenAI 和 Google 复用“模型”中保存的对应 API 密钥；自定义提供商可使用 Pi 原生认证。"
+      },
+      "default": "deepseek",
+      "example_active": true
+    },
+    "PI_MODEL": {
+      "type": "string",
+      "title": {
+        "en-US": "Pi model",
+        "zh-CN": "Pi 模型"
+      },
+      "computed_default": true,
+      "example": "deepseek-v4-flash",
+      "example_active": true
+    }
+  },
+  "section": "providers",
+  "order": 9
+}

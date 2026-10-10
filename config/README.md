@@ -30,8 +30,8 @@ again.
 ## Shared startup declarations
 
 The shared catalog covers the TTS selector, all four built-in TTS connection/model
-groups, graphics, voice input/reference controls, and model connections: 84 fields
-in `config/catalog/tts/`, `graphics/`, `voice/` and `models/`. Edit the owning JSON for defaults, types, options,
+groups, graphics, voice input/reference controls, model connections, model roles
+and Provider connections: 122 fields in the catalog domain directories. Edit the owning JSON for defaults, types, options,
 ranges, desktop editability, restart policy, and English/Chinese labels. The
 configuration keys retain their existing environment-variable names.
 Run `npm run generate:config` from `electron` after editing a declaration.
@@ -298,3 +298,14 @@ visibility (`local_engines`). CLI numeric controls remain parsed strings;
 `control: "number"` supplies UI hints without changing command argument types.
 Bedrock bearer credentials now use the same surrounding-quote/whitespace
 normalization as other API secrets. AWS credential discovery remains unchanged.
+
+Role/session fields use `scope: "session"`: their owner calls `read_catalog_value`
+against its current environment, preserving per-session overrides without loading
+all application settings. `scope: "virtual"` marks composite controls such as
+Codex transport; the desktop owner translates these into the real launch keys.
+They are not emitted as synthetic environment variables or Python settings.
+`visible_when` permits only equality against declared selectors in the same group;
+it contains no executable expressions. Provider availability and authorization
+remain runtime facts. String selectors offer choices without turning a previously
+open provider identifier into a new hard-coded enum. Structured ACP/MCP profiles
+retain their existing dedicated storage, validation and authorization owners.

@@ -41,6 +41,11 @@ def test_catalog_defaults_remain_registered_in_the_environment_reader() -> None:
     declared = {field.key: field for field in reader.fields()}
     for group in catalog.configuration_groups().values():
         for key, field in group["config"].items():
+            if field.get("scope", "backend") != "backend":
+                assert key not in values
+                if field.get("scope") == "session":
+                    assert catalog.read_catalog_value(EnvironmentReader({}), key) == field.get("default", "")
+                continue
             if field.get("computed_default"):
                 assert key not in values
                 continue
@@ -165,3 +170,18 @@ def test_model_catalog_keeps_legacy_alias_and_cli_string_contract():
     explicit = catalog.read_catalog_environment(EnvironmentReader({'HYBRID_LOCAL_LLM_MODEL': ''}),
         computed_defaults={'HYBRID_LOCAL_LLM_MODEL': 'inherited'})
     assert explicit['HYBRID_LOCAL_LLM_MODEL'] == ''
+
+
+def test_vn_session_defaults_remain_late_bound_with_catalog_defaults(monkeypatch):
+    from vn_player.runtime import VNPlayerRuntime
+    state = SimpleNamespace(_retrospective_enabled=False)
+    monkeypatch.delenv('VN_LLM_PROVIDER', raising=False)
+    monkeypatch.delenv('VN_LLM_MODEL', raising=False)
+    default = VNPlayerRuntime._profile_defaults(state, 'base')
+    assert default['provider'] == 'deepseek'
+    assert default['model'] == ''
+    monkeypatch.setenv('VN_LLM_PROVIDER', 'openai')
+    monkeypatch.setenv('VN_LLM_MODEL', 'session-model')
+    explicit = VNPlayerRuntime._profile_defaults(state, 'base')
+    assert explicit['provider'] == 'openai'
+    assert explicit['model'] == 'session-model'

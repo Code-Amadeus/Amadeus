@@ -1,0 +1,253 @@
+{
+  "id": "codex",
+  "title": {
+    "en-US": "Codex",
+    "zh-CN": "Codex"
+  },
+  "description": {
+    "en-US": "Coding Work Provider. Exactly one App Server or Direct transport owns this Provider id.",
+    "zh-CN": "编码工作服务提供方；App Server 与 Direct 传输中只能有一个持有此 Provider 标识。"
+  },
+  "desktop": true,
+  "restart_required": true,
+  "config": {
+    "CODEX_PROVIDER_TRANSPORT": {
+      "type": "enum",
+      "title": {
+        "en-US": "Transport",
+        "zh-CN": "传输方式"
+      },
+      "default": "app_server",
+      "scope": "virtual",
+      "options": [
+        {
+          "value": "app_server",
+          "label": {
+            "en-US": "App Server",
+            "zh-CN": "App Server"
+          }
+        },
+        {
+          "value": "direct",
+          "label": {
+            "en-US": "Direct CLI",
+            "zh-CN": "直接 CLI"
+          }
+        },
+        {
+          "value": "disabled",
+          "label": {
+            "en-US": "Disabled",
+            "zh-CN": "已禁用"
+          }
+        }
+      ]
+    },
+    "CODEX_APP_SERVER_CODEX_BIN": {
+      "type": "path",
+      "title": {
+        "en-US": "App Server executable",
+        "zh-CN": "App Server 可执行文件"
+      },
+      "default": "",
+      "visible_when": {
+        "CODEX_PROVIDER_TRANSPORT": [
+          "app_server"
+        ]
+      },
+      "example_active": true
+    },
+    "CODEX_APP_SERVER_AUTH_MODE": {
+      "type": "enum",
+      "title": {
+        "en-US": "App Server authentication",
+        "zh-CN": "App Server 认证方式"
+      },
+      "description": {
+        "en-US": "Run `codex login` once for subscription use. Model API reuses a connection from Models.",
+        "zh-CN": "若要使用订阅额度，请先运行一次 `codex login`；模型 API 模式复用 Models 页面中的连接。"
+      },
+      "default": "model_api",
+      "options": [
+        {
+          "value": "model_api",
+          "label": {
+            "en-US": "Model API connection",
+            "zh-CN": "模型 API 连接"
+          }
+        },
+        {
+          "value": "chatgpt",
+          "label": {
+            "en-US": "ChatGPT subscription",
+            "zh-CN": "ChatGPT 订阅"
+          }
+        }
+      ],
+      "visible_when": {
+        "CODEX_PROVIDER_TRANSPORT": [
+          "app_server"
+        ]
+      }
+    },
+    "CODEX_APP_SERVER_MODEL_PROVIDER": {
+      "type": "enum",
+      "title": {
+        "en-US": "Model API connection",
+        "zh-CN": "模型 API 连接"
+      },
+      "description": {
+        "en-US": "Reuses the API key and endpoint configured in Models.",
+        "zh-CN": "复用 Models 页面中配置的 API key 与端点。"
+      },
+      "default": "deepseek",
+      "options": [
+        "deepseek",
+        "openai"
+      ],
+      "visible_when": {
+        "CODEX_PROVIDER_TRANSPORT": [
+          "app_server"
+        ],
+        "CODEX_APP_SERVER_AUTH_MODE": [
+          "model_api"
+        ]
+      },
+      "example_active": true
+    },
+    "CODEX_APP_SERVER_MODEL": {
+      "type": "string",
+      "title": {
+        "en-US": "Model",
+        "zh-CN": "模型"
+      },
+      "description": {
+        "en-US": "Defaults to the model from the selected Models connection.",
+        "zh-CN": "默认继承所选 Models 连接中的模型。"
+      },
+      "computed_default": true,
+      "example": "deepseek-v4-flash",
+      "visible_when": {
+        "CODEX_PROVIDER_TRANSPORT": [
+          "app_server"
+        ],
+        "CODEX_APP_SERVER_AUTH_MODE": [
+          "model_api"
+        ]
+      },
+      "example_active": true
+    },
+    "CODEX_APP_SERVER_REASONING_EFFORT": {
+      "type": "enum",
+      "title": {
+        "en-US": "Reasoning effort",
+        "zh-CN": "推理强度"
+      },
+      "default": "max",
+      "options": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "visible_when": {
+        "CODEX_PROVIDER_TRANSPORT": [
+          "app_server"
+        ]
+      },
+      "example_active": true
+    },
+    "CODEX_APP_SERVER_SERVICE_TIER": {
+      "type": "enum",
+      "title": {
+        "en-US": "Service tier",
+        "zh-CN": "服务层级"
+      },
+      "default": "",
+      "options": [
+        "",
+        "auto",
+        "default",
+        "flex",
+        "priority",
+        "fast",
+        "ultrafast"
+      ],
+      "visible_when": {
+        "CODEX_PROVIDER_TRANSPORT": [
+          "app_server"
+        ]
+      },
+      "example_active": true
+    },
+    "DIRECT_CODEX_CLI_PATH": {
+      "type": "path",
+      "title": {
+        "en-US": "Direct CLI executable",
+        "zh-CN": "直接 CLI 可执行文件"
+      },
+      "description": {
+        "en-US": "Direct CLI uses the existing local `codex login` session.",
+        "zh-CN": "Direct CLI 使用本机已有的 `codex login` 会话。"
+      },
+      "default": "codex",
+      "visible_when": {
+        "CODEX_PROVIDER_TRANSPORT": [
+          "direct"
+        ]
+      },
+      "example_active": true
+    },
+    "CODEX_APP_SERVER_CHATGPT_MODEL": {
+      "type": "string",
+      "title": {
+        "en-US": "Subscription model override",
+        "zh-CN": "订阅模型覆盖"
+      },
+      "description": {
+        "en-US": "Optional. Leave blank to use the model selected by the signed-in Codex client.",
+        "zh-CN": "可选。留空则使用已登录 Codex 客户端选择的模型。"
+      },
+      "default": "",
+      "visible_when": {
+        "CODEX_PROVIDER_TRANSPORT": [
+          "app_server"
+        ],
+        "CODEX_APP_SERVER_AUTH_MODE": [
+          "chatgpt"
+        ]
+      }
+    },
+    "CODEX_APP_SERVER_PROVIDER_BASE_URL": {
+      "type": "url",
+      "title": {
+        "en-US": "Provider base URL override",
+        "zh-CN": "Provider 基础 URL 覆盖"
+      },
+      "description": {
+        "en-US": "Optional endpoint override; blank inherits the selected model connection.",
+        "zh-CN": "可选的端点覆盖；留空继承所选模型连接。"
+      },
+      "computed_default": true,
+      "example": "https://api.deepseek.com",
+      "schemes": [
+        "http",
+        "https"
+      ],
+      "visible_when": {
+        "CODEX_PROVIDER_TRANSPORT": [
+          "app_server"
+        ],
+        "CODEX_APP_SERVER_AUTH_MODE": [
+          "model_api"
+        ]
+      },
+      "example_active": true
+    }
+  },
+  "section": "providers",
+  "order": 11
+}

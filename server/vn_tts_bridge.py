@@ -13,6 +13,9 @@ in the immediate reaction prompt.
 
 from __future__ import annotations
 
+from config.catalog import read_catalog_value
+from config.environment import EnvironmentReader
+
 from llm.character_prompts import render
 
 import asyncio
@@ -749,18 +752,18 @@ def _post_json(url: str, payload: dict[str, Any], timeout: float) -> None:
 
 
 async def _translate_ja_to_zh(japanese_text: str) -> str:
-    provider = os.environ.get("VN_SUBTITLE_TRANSLATE_PROVIDER", "deepseek").strip().lower()
+    provider = read_catalog_value(EnvironmentReader(os.environ), "VN_SUBTITLE_TRANSLATE_PROVIDER").strip().lower()
     if provider not in {"deepseek", "openai"}:
         provider = "deepseek"
 
     if provider == "openai":
         api_key = getattr(settings, "OPENAI_API_KEY", "")
         base_url = os.environ.get("VN_SUBTITLE_TRANSLATE_BASE_URL") or getattr(settings, "OPENAI_BASE_URL", "")
-        model = os.environ.get("VN_SUBTITLE_TRANSLATE_MODEL") or getattr(settings, "OPENAI_MODEL_NAME", "gpt-5.4-mini")
+        model = read_catalog_value(EnvironmentReader(os.environ), "VN_SUBTITLE_TRANSLATE_MODEL") or getattr(settings, "OPENAI_MODEL_NAME", "gpt-5.4-mini")
     else:
         api_key = getattr(settings, "DEEPSEEK_API_KEY", "")
         base_url = os.environ.get("VN_SUBTITLE_TRANSLATE_BASE_URL") or getattr(settings, "DEEPSEEK_BASE_URL", "")
-        model = os.environ.get("VN_SUBTITLE_TRANSLATE_MODEL") or getattr(settings, "DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
+        model = read_catalog_value(EnvironmentReader(os.environ), "VN_SUBTITLE_TRANSLATE_MODEL") or getattr(settings, "DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
     if not api_key:
         raise RuntimeError(f"{provider} API key is not configured")
 
@@ -792,18 +795,18 @@ async def _translate_ja_to_zh(japanese_text: str) -> str:
 
 
 async def _stream_translate_zh_to_ja(chinese_text: str) -> AsyncIterator[str]:
-    provider = os.environ.get("VN_TTS_TRANSLATE_PROVIDER", "deepseek").strip().lower()
+    provider = read_catalog_value(EnvironmentReader(os.environ), "VN_TTS_TRANSLATE_PROVIDER").strip().lower()
     if provider not in {"deepseek", "openai"}:
         provider = "deepseek"
 
     if provider == "openai":
         api_key = getattr(settings, "OPENAI_API_KEY", "")
         base_url = os.environ.get("VN_TTS_TRANSLATE_BASE_URL") or getattr(settings, "OPENAI_BASE_URL", "")
-        model = os.environ.get("VN_TTS_TRANSLATE_MODEL") or getattr(settings, "OPENAI_MODEL_NAME", "gpt-5.4-mini")
+        model = read_catalog_value(EnvironmentReader(os.environ), "VN_TTS_TRANSLATE_MODEL") or getattr(settings, "OPENAI_MODEL_NAME", "gpt-5.4-mini")
     else:
         api_key = getattr(settings, "DEEPSEEK_API_KEY", "")
         base_url = os.environ.get("VN_TTS_TRANSLATE_BASE_URL") or getattr(settings, "DEEPSEEK_BASE_URL", "")
-        model = os.environ.get("VN_TTS_TRANSLATE_MODEL") or getattr(settings, "DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
+        model = read_catalog_value(EnvironmentReader(os.environ), "VN_TTS_TRANSLATE_MODEL") or getattr(settings, "DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
     if not api_key:
         raise RuntimeError(f"{provider} API key is not configured")
 

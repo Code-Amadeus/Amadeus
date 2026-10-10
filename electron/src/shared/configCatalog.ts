@@ -14,7 +14,9 @@ interface CatalogField {
   accepted_values?: string[]
   aliases?: string[]
   setting?: string
-  control?: 'number'
+  control?: 'number' | 'select'
+  scope?: 'backend' | 'session' | 'virtual' | 'desktop'
+  visible_when?: Record<string, string[]>
   local_engines?: string[]
   options?: Array<string | { value: string; label: LocalizedText }>
   schemes?: string[]
@@ -29,7 +31,8 @@ export interface CatalogGroup {
   desktop: boolean
   restart_required: boolean
   config: Record<string, CatalogField>
-  section?: 'output' | 'remote'
+  section?: 'output' | 'remote' | 'input' | 'roles' | 'providers' | 'routing'
+  order?: number
   voice_backend?: {
     id: string
     label: LocalizedText
@@ -61,6 +64,12 @@ export function catalogInputKeys(key: string): string[] {
   return entry ? [entry[0], ...(entry[1].aliases || [])] : [key]
 }
 
+export function visibleCatalogFields<T extends { key: string; value?: string | boolean }>(fields: T[]): T[] {
+  const values = Object.fromEntries(fields.map(field => [field.key, field.value]))
+  return fields.filter(field => Object.entries(desktopCatalogFields[field.key]?.visible_when || {})
+    .every(([selector, choices]) => values[selector] === undefined || choices.includes(String(values[selector]))))
+}
+
 export const voiceBackendGroups = catalogGroups.filter(group => group.voice_backend)
   .sort((left, right) => left.voice_backend!.order - right.voice_backend!.order)
 
@@ -90,7 +99,7 @@ export function catalogConfiguration(
       return {
       key,
       label: field.title['en-US'],
-      type: field.secret ? 'secret' as const : field.type === 'enum' ? 'select' as const
+      type: field.secret ? 'secret' as const : field.type === 'enum' || field.control === 'select' ? 'select' as const
         : field.type === 'url' ? 'url' as const : field.type === 'path' ? 'path' as const
         : field.type === 'boolean' ? 'boolean' as const
         : field.control === 'number' || ['integer', 'number'].includes(field.type) ? 'number' as const : 'text' as const,

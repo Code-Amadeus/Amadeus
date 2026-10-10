@@ -1,14 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import fs from 'node:fs'
-import ts from 'typescript'
-
-const source = fs.readFileSync(new URL('../src/renderer/components/providerConnectionCatalog.ts', import.meta.url), 'utf8')
-const compiled = ts.transpileModule(source, {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-}).outputText
-const exports = {}
-new Function('exports', compiled)(exports)
+import { loadTypeScript } from './helpers/loadTypeScript.mjs'
+const exports = loadTypeScript(new URL('../src/renderer/components/providerConnectionCatalog.ts', import.meta.url))
 
 test('built-in Work Provider connections remain discoverable without the backend', () => {
   const catalog = exports.buildWorkProviderCatalog({ provider: 'codex', enabled: true }, null)

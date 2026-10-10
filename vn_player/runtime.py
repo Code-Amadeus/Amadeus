@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from config.catalog import read_catalog_value
+from config.environment import EnvironmentReader
+
 from llm.character_prompts import active_character_id
 
 import asyncio
@@ -826,8 +829,8 @@ class VNPlayerRuntime:
                 "game_genre": "general",
                 "prompt_pack": "base",
                 "output_language": os.environ.get("VN_OUTPUT_LANGUAGE", "zh"),
-                "provider": os.environ.get("VN_LLM_PROVIDER", "deepseek"),
-                "model": os.environ.get("VN_LLM_MODEL", ""),
+                "provider": read_catalog_value(EnvironmentReader(os.environ), "VN_LLM_PROVIDER"),
+                "model": read_catalog_value(EnvironmentReader(os.environ), "VN_LLM_MODEL"),
                 "base_url": os.environ.get("VN_LLM_BASE_URL", ""),
                 "short_memory_lines": _safe_int("VN_SHORT_MEMORY_LINES", 50),
                 "max_reactions_per_minute": _safe_int("VN_MAX_REACTIONS_PER_MINUTE", 8),
@@ -839,8 +842,8 @@ class VNPlayerRuntime:
             "game_genre": os.environ.get("VN_GAME_GENRE", "mystery"),
             "prompt_pack": os.environ.get("VN_PROMPT_PACK", os.environ.get("VN_GAME_GENRE", "mystery")),
             "output_language": os.environ.get("VN_OUTPUT_LANGUAGE", "zh"),
-            "provider": os.environ.get("VN_LLM_PROVIDER", "deepseek"),
-            "model": os.environ.get("VN_LLM_MODEL", ""),
+            "provider": read_catalog_value(EnvironmentReader(os.environ), "VN_LLM_PROVIDER"),
+            "model": read_catalog_value(EnvironmentReader(os.environ), "VN_LLM_MODEL"),
             "base_url": os.environ.get("VN_LLM_BASE_URL", ""),
             "short_memory_lines": _safe_int("VN_SHORT_MEMORY_LINES", 50),
             "lookahead_enabled": _env_bool("VN_LOOKAHEAD_ENABLED", True),

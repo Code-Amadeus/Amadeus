@@ -646,6 +646,930 @@ export const catalogGroups: CatalogGroup[] = [
     }
   },
   {
+    "id": "acp_credentials",
+    "title": {
+      "en-US": "ACP credentials",
+      "zh-CN": "ACP 凭据"
+    },
+    "description": {
+      "en-US": "Credentials for explicitly configured ACP agents.",
+      "zh-CN": "供已明确配置的 ACP 代理使用的凭据。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "ANTHROPIC_API_KEY": {
+        "type": "string",
+        "title": {
+          "en-US": "Anthropic API key",
+          "zh-CN": "Anthropic API 密钥"
+        },
+        "secret": true,
+        "scope": "session",
+        "example_active": false
+      }
+    },
+    "section": "providers",
+    "order": 12
+  },
+  {
+    "id": "codex",
+    "title": {
+      "en-US": "Codex",
+      "zh-CN": "Codex"
+    },
+    "description": {
+      "en-US": "Coding Work Provider. Exactly one App Server or Direct transport owns this Provider id.",
+      "zh-CN": "编码工作服务提供方；App Server 与 Direct 传输中只能有一个持有此 Provider 标识。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "CODEX_PROVIDER_TRANSPORT": {
+        "type": "enum",
+        "title": {
+          "en-US": "Transport",
+          "zh-CN": "传输方式"
+        },
+        "default": "app_server",
+        "scope": "virtual",
+        "options": [
+          {
+            "value": "app_server",
+            "label": {
+              "en-US": "App Server",
+              "zh-CN": "App Server"
+            }
+          },
+          {
+            "value": "direct",
+            "label": {
+              "en-US": "Direct CLI",
+              "zh-CN": "直接 CLI"
+            }
+          },
+          {
+            "value": "disabled",
+            "label": {
+              "en-US": "Disabled",
+              "zh-CN": "已禁用"
+            }
+          }
+        ]
+      },
+      "CODEX_APP_SERVER_CODEX_BIN": {
+        "type": "path",
+        "title": {
+          "en-US": "App Server executable",
+          "zh-CN": "App Server 可执行文件"
+        },
+        "default": "",
+        "visible_when": {
+          "CODEX_PROVIDER_TRANSPORT": [
+            "app_server"
+          ]
+        },
+        "example_active": true
+      },
+      "CODEX_APP_SERVER_AUTH_MODE": {
+        "type": "enum",
+        "title": {
+          "en-US": "App Server authentication",
+          "zh-CN": "App Server 认证方式"
+        },
+        "description": {
+          "en-US": "Run `codex login` once for subscription use. Model API reuses a connection from Models.",
+          "zh-CN": "若要使用订阅额度，请先运行一次 `codex login`；模型 API 模式复用 Models 页面中的连接。"
+        },
+        "default": "model_api",
+        "options": [
+          {
+            "value": "model_api",
+            "label": {
+              "en-US": "Model API connection",
+              "zh-CN": "模型 API 连接"
+            }
+          },
+          {
+            "value": "chatgpt",
+            "label": {
+              "en-US": "ChatGPT subscription",
+              "zh-CN": "ChatGPT 订阅"
+            }
+          }
+        ],
+        "visible_when": {
+          "CODEX_PROVIDER_TRANSPORT": [
+            "app_server"
+          ]
+        }
+      },
+      "CODEX_APP_SERVER_MODEL_PROVIDER": {
+        "type": "enum",
+        "title": {
+          "en-US": "Model API connection",
+          "zh-CN": "模型 API 连接"
+        },
+        "description": {
+          "en-US": "Reuses the API key and endpoint configured in Models.",
+          "zh-CN": "复用 Models 页面中配置的 API key 与端点。"
+        },
+        "default": "deepseek",
+        "options": [
+          "deepseek",
+          "openai"
+        ],
+        "visible_when": {
+          "CODEX_PROVIDER_TRANSPORT": [
+            "app_server"
+          ],
+          "CODEX_APP_SERVER_AUTH_MODE": [
+            "model_api"
+          ]
+        },
+        "example_active": true
+      },
+      "CODEX_APP_SERVER_MODEL": {
+        "type": "string",
+        "title": {
+          "en-US": "Model",
+          "zh-CN": "模型"
+        },
+        "description": {
+          "en-US": "Defaults to the model from the selected Models connection.",
+          "zh-CN": "默认继承所选 Models 连接中的模型。"
+        },
+        "computed_default": true,
+        "example": "deepseek-v4-flash",
+        "visible_when": {
+          "CODEX_PROVIDER_TRANSPORT": [
+            "app_server"
+          ],
+          "CODEX_APP_SERVER_AUTH_MODE": [
+            "model_api"
+          ]
+        },
+        "example_active": true
+      },
+      "CODEX_APP_SERVER_REASONING_EFFORT": {
+        "type": "enum",
+        "title": {
+          "en-US": "Reasoning effort",
+          "zh-CN": "推理强度"
+        },
+        "default": "max",
+        "options": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "visible_when": {
+          "CODEX_PROVIDER_TRANSPORT": [
+            "app_server"
+          ]
+        },
+        "example_active": true
+      },
+      "CODEX_APP_SERVER_SERVICE_TIER": {
+        "type": "enum",
+        "title": {
+          "en-US": "Service tier",
+          "zh-CN": "服务层级"
+        },
+        "default": "",
+        "options": [
+          "",
+          "auto",
+          "default",
+          "flex",
+          "priority",
+          "fast",
+          "ultrafast"
+        ],
+        "visible_when": {
+          "CODEX_PROVIDER_TRANSPORT": [
+            "app_server"
+          ]
+        },
+        "example_active": true
+      },
+      "DIRECT_CODEX_CLI_PATH": {
+        "type": "path",
+        "title": {
+          "en-US": "Direct CLI executable",
+          "zh-CN": "直接 CLI 可执行文件"
+        },
+        "description": {
+          "en-US": "Direct CLI uses the existing local `codex login` session.",
+          "zh-CN": "Direct CLI 使用本机已有的 `codex login` 会话。"
+        },
+        "default": "codex",
+        "visible_when": {
+          "CODEX_PROVIDER_TRANSPORT": [
+            "direct"
+          ]
+        },
+        "example_active": true
+      },
+      "CODEX_APP_SERVER_CHATGPT_MODEL": {
+        "type": "string",
+        "title": {
+          "en-US": "Subscription model override",
+          "zh-CN": "订阅模型覆盖"
+        },
+        "description": {
+          "en-US": "Optional. Leave blank to use the model selected by the signed-in Codex client.",
+          "zh-CN": "可选。留空则使用已登录 Codex 客户端选择的模型。"
+        },
+        "default": "",
+        "visible_when": {
+          "CODEX_PROVIDER_TRANSPORT": [
+            "app_server"
+          ],
+          "CODEX_APP_SERVER_AUTH_MODE": [
+            "chatgpt"
+          ]
+        }
+      },
+      "CODEX_APP_SERVER_PROVIDER_BASE_URL": {
+        "type": "url",
+        "title": {
+          "en-US": "Provider base URL override",
+          "zh-CN": "Provider 基础 URL 覆盖"
+        },
+        "description": {
+          "en-US": "Optional endpoint override; blank inherits the selected model connection.",
+          "zh-CN": "可选的端点覆盖；留空继承所选模型连接。"
+        },
+        "computed_default": true,
+        "example": "https://api.deepseek.com",
+        "schemes": [
+          "http",
+          "https"
+        ],
+        "visible_when": {
+          "CODEX_PROVIDER_TRANSPORT": [
+            "app_server"
+          ],
+          "CODEX_APP_SERVER_AUTH_MODE": [
+            "model_api"
+          ]
+        },
+        "example_active": true
+      }
+    },
+    "section": "providers",
+    "order": 11
+  },
+  {
+    "id": "openclaw",
+    "title": {
+      "en-US": "OpenClaw",
+      "zh-CN": "OpenClaw"
+    },
+    "description": {
+      "en-US": "Optional Gateway provider. Assign a role above or select it explicitly for a task; existing sessions remain supported.",
+      "zh-CN": "可选的 Gateway 提供商。可在上方分配角色或在任务中明确选择；继续支持现有会话。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "OPENCLAW_BASE_URL": {
+        "type": "url",
+        "title": {
+          "en-US": "Gateway URL",
+          "zh-CN": "网关 URL"
+        },
+        "default": "http://127.0.0.1:18789",
+        "schemes": [
+          "http",
+          "https"
+        ],
+        "example_active": true
+      },
+      "OPENCLAW_GATEWAY_TOKEN": {
+        "type": "string",
+        "title": {
+          "en-US": "Gateway token",
+          "zh-CN": "网关令牌"
+        },
+        "secret": true,
+        "setting": "OPENCLAW_TOKEN",
+        "example_active": false
+      },
+      "OPENCLAW_PROJECT_DIR": {
+        "type": "path",
+        "title": {
+          "en-US": "OpenClaw project directory",
+          "zh-CN": "OpenClaw 项目目录"
+        },
+        "default": "",
+        "example_active": false,
+        "example": "C:\\path\\to\\openclaw"
+      }
+    },
+    "section": "providers",
+    "order": 10
+  },
+  {
+    "id": "pi",
+    "title": {
+      "en-US": "Pi",
+      "zh-CN": "Pi"
+    },
+    "description": {
+      "en-US": "Default daily agent over native RPC. Desktop setup installs its pinned runtime; known model providers reuse credentials configured in Models.",
+      "zh-CN": "通过原生 RPC 运行的默认日常 Agent。桌面安装会包含其固定版本运行时；已知模型提供方复用“模型”中配置的凭据。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "PI_PROVIDER_ENABLED": {
+        "type": "boolean",
+        "title": {
+          "en-US": "Enable Pi",
+          "zh-CN": "启用 Pi"
+        },
+        "default": true,
+        "example_active": true
+      },
+      "PI_NODE_PATH": {
+        "type": "path",
+        "title": {
+          "en-US": "Node executable",
+          "zh-CN": "Node 可执行文件"
+        },
+        "default": "node",
+        "example_active": true
+      },
+      "PI_AGENT_DIR": {
+        "type": "path",
+        "title": {
+          "en-US": "Pi configuration and sessions",
+          "zh-CN": "Pi 配置与会话"
+        },
+        "default": "runtime/pi",
+        "example_active": true
+      },
+      "PI_MODEL_PROVIDER": {
+        "type": "string",
+        "title": {
+          "en-US": "Pi model provider",
+          "zh-CN": "Pi 模型提供商"
+        },
+        "description": {
+          "en-US": "DeepSeek, OpenAI, and Google reuse the corresponding API key saved under Models; custom providers may use native Pi authentication.",
+          "zh-CN": "DeepSeek、OpenAI 和 Google 复用“模型”中保存的对应 API 密钥；自定义提供商可使用 Pi 原生认证。"
+        },
+        "default": "deepseek",
+        "example_active": true
+      },
+      "PI_MODEL": {
+        "type": "string",
+        "title": {
+          "en-US": "Pi model",
+          "zh-CN": "Pi 模型"
+        },
+        "computed_default": true,
+        "example": "deepseek-v4-flash",
+        "example_active": true
+      }
+    },
+    "section": "providers",
+    "order": 9
+  },
+  {
+    "id": "work_routing",
+    "title": {
+      "en-US": "Work role assignments",
+      "zh-CN": "Work 角色分工"
+    },
+    "description": {
+      "en-US": "Assign coding and everyday execution independently. Routing follows these roles after backend restart; existing Work keeps its owner. Registration and connections are configured below.",
+      "zh-CN": "分别指定编码与日常执行角色。重启后端后按此分工路由；现有任务保留原归属。注册和连接设置在下方配置。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "WORK_CODING_PROVIDER": {
+        "type": "string",
+        "title": {
+          "en-US": "Coding",
+          "zh-CN": "编码"
+        },
+        "default": "codex",
+        "control": "select",
+        "example_active": true
+      },
+      "WORK_EXECUTION_PROVIDER": {
+        "type": "string",
+        "title": {
+          "en-US": "Everyday execution",
+          "zh-CN": "日常执行"
+        },
+        "default": "pi",
+        "aliases": [
+          "COOPERATIVE_CHAT_PROVIDER",
+          "PROVIDER_DELEGATE_DEFAULT_PROVIDER"
+        ],
+        "control": "select",
+        "example_active": true
+      }
+    },
+    "section": "routing",
+    "order": 8
+  },
+  {
+    "id": "auip_action",
+    "title": {
+      "en-US": "AUIP action decision",
+      "zh-CN": "AUIP 动作决策"
+    },
+    "description": {
+      "en-US": "Decision-quality model used by the B2 application action path.",
+      "zh-CN": "B2 应用操作流程使用的决策模型。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "AUIP_ACTION_PROVIDER": {
+        "type": "string",
+        "title": {
+          "en-US": "Provider override",
+          "zh-CN": "Provider 覆盖"
+        },
+        "default": "",
+        "control": "select",
+        "options": [
+          {
+            "value": "",
+            "label": {
+              "en-US": "Inherit",
+              "zh-CN": "继承"
+            }
+          },
+          {
+            "value": "deepseek",
+            "label": {
+              "en-US": "DeepSeek",
+              "zh-CN": "DeepSeek"
+            }
+          },
+          {
+            "value": "openai",
+            "label": {
+              "en-US": "OpenAI-compatible",
+              "zh-CN": "OpenAI 兼容"
+            }
+          }
+        ],
+        "example_active": true
+      },
+      "AUIP_ACTION_MODEL": {
+        "type": "string",
+        "title": {
+          "en-US": "Model override",
+          "zh-CN": "模型覆盖"
+        },
+        "default": "",
+        "example_active": true
+      },
+      "AUIP_ACTION_REASONING_EFFORT": {
+        "type": "enum",
+        "title": {
+          "en-US": "Reasoning effort",
+          "zh-CN": "推理强度"
+        },
+        "default": "none",
+        "options": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max",
+          "ultra"
+        ],
+        "example_active": true
+      },
+      "AUIP_ACTION_SERVICE_TIER": {
+        "type": "enum",
+        "title": {
+          "en-US": "Service tier",
+          "zh-CN": "服务层级"
+        },
+        "default": "auto",
+        "options": [
+          "auto",
+          "default",
+          "fast",
+          "priority"
+        ],
+        "example_active": true
+      }
+    },
+    "section": "roles",
+    "order": 4
+  },
+  {
+    "id": "auip_narration",
+    "title": {
+      "en-US": "AUIP narration",
+      "zh-CN": "AUIP 叙述"
+    },
+    "description": {
+      "en-US": "Narrates verified application outcomes; empty overrides inherit Work observer and then Main conversation.",
+      "zh-CN": "播报已验证的应用操作结果；覆盖值留空时依次继承 Work 观察者和主对话模型。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "AUIP_NARRATION_PROVIDER": {
+        "type": "string",
+        "title": {
+          "en-US": "Provider override",
+          "zh-CN": "Provider 覆盖"
+        },
+        "default": "",
+        "control": "select",
+        "options": [
+          {
+            "value": "",
+            "label": {
+              "en-US": "Inherit",
+              "zh-CN": "继承"
+            }
+          },
+          {
+            "value": "deepseek",
+            "label": {
+              "en-US": "DeepSeek",
+              "zh-CN": "DeepSeek"
+            }
+          },
+          {
+            "value": "openai",
+            "label": {
+              "en-US": "OpenAI-compatible",
+              "zh-CN": "OpenAI 兼容"
+            }
+          }
+        ],
+        "example_active": true
+      },
+      "AUIP_NARRATION_MODEL": {
+        "type": "string",
+        "title": {
+          "en-US": "Model override",
+          "zh-CN": "模型覆盖"
+        },
+        "default": "",
+        "example_active": true
+      }
+    },
+    "section": "roles",
+    "order": 5
+  },
+  {
+    "id": "browser_branch_planner",
+    "title": {
+      "en-US": "Browser branch planner",
+      "zh-CN": "浏览器分支规划器"
+    },
+    "description": {
+      "en-US": "Chooses bounded browser branches; empty overrides inherit a supported main provider.",
+      "zh-CN": "选择范围明确的浏览器分支；覆盖值留空时继承受支持的主模型提供商。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "BROWSER_BRANCH_PROVIDER": {
+        "type": "enum",
+        "title": {
+          "en-US": "Provider override",
+          "zh-CN": "Provider 覆盖"
+        },
+        "default": "",
+        "scope": "session",
+        "options": [
+          {
+            "value": "",
+            "label": {
+              "en-US": "Inherit",
+              "zh-CN": "继承"
+            }
+          },
+          {
+            "value": "deepseek",
+            "label": {
+              "en-US": "DeepSeek",
+              "zh-CN": "DeepSeek"
+            }
+          },
+          {
+            "value": "openai",
+            "label": {
+              "en-US": "OpenAI-compatible",
+              "zh-CN": "OpenAI 兼容"
+            }
+          }
+        ]
+      },
+      "BROWSER_BRANCH_MODEL": {
+        "type": "string",
+        "title": {
+          "en-US": "Model override",
+          "zh-CN": "模型覆盖"
+        },
+        "description": {
+          "en-US": "Leave blank to use the selected provider connection model.",
+          "zh-CN": "留空以使用所选提供商连接的模型。"
+        },
+        "default": "",
+        "scope": "session"
+      }
+    },
+    "section": "roles",
+    "order": 3
+  },
+  {
+    "id": "vn_companion",
+    "title": {
+      "en-US": "VN companion",
+      "zh-CN": "VN 伴侣"
+    },
+    "description": {
+      "en-US": "Dedicated VN reasoning and reaction role. DeepSeek is the recommended default; OpenAI-compatible is also supported.",
+      "zh-CN": "独立的 VN 推理与反应职责。DeepSeek 是推荐默认值，也支持 OpenAI 兼容服务。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "VN_LLM_PROVIDER": {
+        "type": "enum",
+        "title": {
+          "en-US": "Model connection",
+          "zh-CN": "模型连接"
+        },
+        "default": "deepseek",
+        "scope": "session",
+        "options": [
+          {
+            "value": "deepseek",
+            "label": {
+              "en-US": "DeepSeek · Recommended",
+              "zh-CN": "DeepSeek · 推荐"
+            }
+          },
+          {
+            "value": "openai",
+            "label": {
+              "en-US": "OpenAI-compatible",
+              "zh-CN": "OpenAI 兼容"
+            }
+          }
+        ]
+      },
+      "VN_LLM_MODEL": {
+        "type": "string",
+        "title": {
+          "en-US": "Model override",
+          "zh-CN": "模型覆盖"
+        },
+        "description": {
+          "en-US": "Optional. Leave blank to use the model from the selected connection.",
+          "zh-CN": "可选。留空则使用所选连接配置的模型。"
+        },
+        "default": "",
+        "scope": "session"
+      }
+    },
+    "section": "roles",
+    "order": 0
+  },
+  {
+    "id": "vn_speech_translation",
+    "title": {
+      "en-US": "VN speech translation",
+      "zh-CN": "VN 语音翻译"
+    },
+    "description": {
+      "en-US": "Translates Chinese companion reactions into Japanese before speech synthesis.",
+      "zh-CN": "在语音合成前将中文伴侣回应翻译为日语。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "VN_TTS_TRANSLATE_PROVIDER": {
+        "type": "enum",
+        "title": {
+          "en-US": "Model connection",
+          "zh-CN": "模型连接"
+        },
+        "default": "",
+        "scope": "session",
+        "options": [
+          {
+            "value": "",
+            "label": {
+              "en-US": "Inherit",
+              "zh-CN": "继承"
+            }
+          },
+          {
+            "value": "deepseek",
+            "label": {
+              "en-US": "DeepSeek",
+              "zh-CN": "DeepSeek"
+            }
+          },
+          {
+            "value": "openai",
+            "label": {
+              "en-US": "OpenAI-compatible",
+              "zh-CN": "OpenAI 兼容"
+            }
+          }
+        ]
+      },
+      "VN_TTS_TRANSLATE_MODEL": {
+        "type": "string",
+        "title": {
+          "en-US": "Model override",
+          "zh-CN": "模型覆盖"
+        },
+        "description": {
+          "en-US": "Leave blank to use the model from the selected connection.",
+          "zh-CN": "留空以使用所选连接的模型。"
+        },
+        "default": "",
+        "scope": "session"
+      }
+    },
+    "section": "roles",
+    "order": 7
+  },
+  {
+    "id": "vn_subtitle_translation",
+    "title": {
+      "en-US": "VN subtitle translation",
+      "zh-CN": "VN 字幕翻译"
+    },
+    "description": {
+      "en-US": "Translates Japanese game dialogue into Simplified Chinese for display.",
+      "zh-CN": "将日语游戏对话翻译为简体中文用于显示。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "VN_SUBTITLE_TRANSLATE_PROVIDER": {
+        "type": "enum",
+        "title": {
+          "en-US": "Model connection",
+          "zh-CN": "模型连接"
+        },
+        "default": "",
+        "scope": "session",
+        "options": [
+          {
+            "value": "",
+            "label": {
+              "en-US": "Inherit",
+              "zh-CN": "继承"
+            }
+          },
+          {
+            "value": "deepseek",
+            "label": {
+              "en-US": "DeepSeek",
+              "zh-CN": "DeepSeek"
+            }
+          },
+          {
+            "value": "openai",
+            "label": {
+              "en-US": "OpenAI-compatible",
+              "zh-CN": "OpenAI 兼容"
+            }
+          }
+        ]
+      },
+      "VN_SUBTITLE_TRANSLATE_MODEL": {
+        "type": "string",
+        "title": {
+          "en-US": "Model override",
+          "zh-CN": "模型覆盖"
+        },
+        "description": {
+          "en-US": "Leave blank to use the model from the selected connection.",
+          "zh-CN": "留空以使用所选连接的模型。"
+        },
+        "default": "",
+        "scope": "session"
+      }
+    },
+    "section": "roles",
+    "order": 6
+  },
+  {
+    "id": "work_observer",
+    "title": {
+      "en-US": "Work observer",
+      "zh-CN": "工作观察器"
+    },
+    "description": {
+      "en-US": "Summarizes Provider progress; empty overrides inherit the main conversation model.",
+      "zh-CN": "汇总 Provider 进度；覆盖值留空时继承主对话模型。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "WORK_OBSERVER_PROVIDER": {
+        "type": "string",
+        "title": {
+          "en-US": "Provider override",
+          "zh-CN": "Provider 覆盖"
+        },
+        "default": "",
+        "control": "select",
+        "options": [
+          {
+            "value": "",
+            "label": {
+              "en-US": "Inherit",
+              "zh-CN": "继承"
+            }
+          },
+          {
+            "value": "deepseek",
+            "label": {
+              "en-US": "DeepSeek",
+              "zh-CN": "DeepSeek"
+            }
+          },
+          {
+            "value": "openai",
+            "label": {
+              "en-US": "OpenAI-compatible",
+              "zh-CN": "OpenAI 兼容"
+            }
+          }
+        ],
+        "example_active": true
+      },
+      "WORK_OBSERVER_MODEL": {
+        "type": "string",
+        "title": {
+          "en-US": "Model override",
+          "zh-CN": "模型覆盖"
+        },
+        "description": {
+          "en-US": "Leave blank to use the selected provider connection model.",
+          "zh-CN": "留空以使用所选提供商连接的模型。"
+        },
+        "default": "",
+        "example_active": true
+      }
+    },
+    "section": "roles",
+    "order": 2
+  },
+  {
+    "id": "work_planner",
+    "title": {
+      "en-US": "Work planner / router",
+      "zh-CN": "工作规划与路由"
+    },
+    "description": {
+      "en-US": "Plans and routes cooperative Work; an empty model inherits the main conversation model.",
+      "zh-CN": "规划并路由协作任务；模型留空时继承主对话模型。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "COOPERATIVE_WORK_PLANNER_MODEL": {
+        "type": "string",
+        "title": {
+          "en-US": "Model override",
+          "zh-CN": "模型覆盖"
+        },
+        "description": {
+          "en-US": "Leave blank to inherit the main conversation model.",
+          "zh-CN": "留空以继承主对话模型。"
+        },
+        "default": "",
+        "example_active": true
+      }
+    },
+    "section": "roles",
+    "order": 1
+  },
+  {
     "id": "tts_fish_audio",
     "title": {
       "en-US": "Fish Audio speech API",

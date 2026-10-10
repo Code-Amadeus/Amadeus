@@ -478,10 +478,8 @@ BRANCH_SQUASH_MERGE = _bool("BRANCH_SQUASH_MERGE", True)
 # ===========================================================================
 # Execution providers
 # ===========================================================================
-WORK_CODING_PROVIDER = _str("WORK_CODING_PROVIDER", "codex").strip().lower()
-WORK_EXECUTION_PROVIDER = _str("WORK_EXECUTION_PROVIDER", "pi", aliases=(
-    "COOPERATIVE_CHAT_PROVIDER", "PROVIDER_DELEGATE_DEFAULT_PROVIDER",
-)).strip().lower()
+WORK_CODING_PROVIDER = WORK_CODING_PROVIDER.strip().lower()
+WORK_EXECUTION_PROVIDER = WORK_EXECUTION_PROVIDER.strip().lower()
 # Existing routing callers retain their names; both read the execution role.
 # Legacy startup keys are migration aliases, not independent assignments.
 PROVIDER_DELEGATE_DEFAULT_PROVIDER = WORK_EXECUTION_PROVIDER
@@ -489,17 +487,14 @@ PROVIDER_DELEGATE_DEFAULT_PROVIDER = WORK_EXECUTION_PROVIDER
 # official persistent SDK/App Server transport is the local product default;
 # the turn-scoped CLI remains an explicit compatibility transport.
 CODEX_APP_SERVER_PROVIDER_ENABLED = _bool("CODEX_APP_SERVER_PROVIDER_ENABLED", True)
-CODEX_APP_SERVER_CODEX_BIN = _str("CODEX_APP_SERVER_CODEX_BIN", "")
-CODEX_APP_SERVER_AUTH_MODE = _str("CODEX_APP_SERVER_AUTH_MODE", "model_api").strip().lower()
+
+CODEX_APP_SERVER_AUTH_MODE = CODEX_APP_SERVER_AUTH_MODE.strip().lower()
 if CODEX_APP_SERVER_AUTH_MODE not in {"model_api", "chatgpt"}:
     raise ValueError("CODEX_APP_SERVER_AUTH_MODE must be model_api or chatgpt")
 # Provider-native execution settings belong to the Provider adapter, not to
 # the user's Codex Desktop profile.  Keeping all four values explicit prevents
 # an unrelated Desktop model/effort change from silently changing Amadeus work.
-CODEX_APP_SERVER_MODEL_PROVIDER = _str(
-    "CODEX_APP_SERVER_MODEL_PROVIDER",
-    "deepseek",
-).strip().lower()
+CODEX_APP_SERVER_MODEL_PROVIDER = CODEX_APP_SERVER_MODEL_PROVIDER.strip().lower()
 _CODEX_CONNECTION_DEFAULTS = {
     "deepseek": (DEEPSEEK_BASE_URL, DEEPSEEK_MODEL_NAME, "DEEPSEEK_API_KEY"),
     "openai": (OPENAI_BASE_URL, OPENAI_MODEL_NAME, "OPENAI_API_KEY"),
@@ -510,20 +505,11 @@ _CODEX_PROVIDER_BASE_DEFAULT, _CODEX_MODEL_DEFAULT, _CODEX_API_KEY_ENV_DEFAULT =
         (DEEPSEEK_BASE_URL, DEEPSEEK_MODEL_NAME, "DEEPSEEK_API_KEY"),
     )
 )
-CODEX_APP_SERVER_MODEL = _str("CODEX_APP_SERVER_MODEL", _CODEX_MODEL_DEFAULT)
-CODEX_APP_SERVER_CHATGPT_MODEL = _str("CODEX_APP_SERVER_CHATGPT_MODEL", "").strip()
-CODEX_APP_SERVER_REASONING_EFFORT = _str(
-    "CODEX_APP_SERVER_REASONING_EFFORT",
-    "max",
-).strip().lower()
-CODEX_APP_SERVER_SERVICE_TIER = _str(
-    "CODEX_APP_SERVER_SERVICE_TIER",
-    "",
-).strip().lower()
-CODEX_APP_SERVER_PROVIDER_BASE_URL = _str(
-    "CODEX_APP_SERVER_PROVIDER_BASE_URL",
-    _CODEX_PROVIDER_BASE_DEFAULT,
-).strip()
+CODEX_APP_SERVER_MODEL = read_catalog_environment(_ENV, computed_defaults={"CODEX_APP_SERVER_MODEL": _CODEX_MODEL_DEFAULT})["CODEX_APP_SERVER_MODEL"]
+CODEX_APP_SERVER_CHATGPT_MODEL = CODEX_APP_SERVER_CHATGPT_MODEL.strip()
+CODEX_APP_SERVER_REASONING_EFFORT = CODEX_APP_SERVER_REASONING_EFFORT.strip().lower()
+CODEX_APP_SERVER_SERVICE_TIER = CODEX_APP_SERVER_SERVICE_TIER.strip().lower()
+CODEX_APP_SERVER_PROVIDER_BASE_URL = read_catalog_environment(_ENV, computed_defaults={"CODEX_APP_SERVER_PROVIDER_BASE_URL": _CODEX_PROVIDER_BASE_DEFAULT})["CODEX_APP_SERVER_PROVIDER_BASE_URL"].strip()
 CODEX_APP_SERVER_PROVIDER_API_KEY_ENV = _str(
     "CODEX_APP_SERVER_PROVIDER_API_KEY_ENV",
     _CODEX_API_KEY_ENV_DEFAULT,
@@ -547,7 +533,7 @@ CODEX_APP_SERVER_CANCEL_CONFIRM_TIMEOUT_S = _int(
     30,
 )
 DIRECT_CODEX_PROVIDER_ENABLED = _bool("DIRECT_CODEX_PROVIDER_ENABLED", False)
-DIRECT_CODEX_CLI_PATH = _str("DIRECT_CODEX_CLI_PATH", "codex")
+
 DIRECT_CODEX_CLI_PREFIX_ARGS = _str("DIRECT_CODEX_CLI_PREFIX_ARGS", "")
 DIRECT_CODEX_IGNORE_USER_CONFIG = _bool("DIRECT_CODEX_IGNORE_USER_CONFIG", False)
 DIRECT_CODEX_PREFLIGHT_TIMEOUT_S = _int("DIRECT_CODEX_PREFLIGHT_TIMEOUT_S", 8)
@@ -555,11 +541,11 @@ DIRECT_CODEX_TIMEOUT_S = _int("DIRECT_CODEX_TIMEOUT_S", 7200)
 DIRECT_CODEX_EVENT_SILENCE_WARN_S = _int("DIRECT_CODEX_EVENT_SILENCE_WARN_S", 60)
 DIRECT_CODEX_STDERR_CAP_BYTES = _int("DIRECT_CODEX_STDERR_CAP_BYTES", 12000)
 # Optional pinned Pi CLI; RPC controls execution while the Host owns Work.
-PI_PROVIDER_ENABLED = _bool("PI_PROVIDER_ENABLED", True)
-PI_NODE_PATH = _str("PI_NODE_PATH", "node")
-PI_AGENT_DIR = _str("PI_AGENT_DIR", "runtime/pi")
-PI_MODEL_PROVIDER = _str("PI_MODEL_PROVIDER", "deepseek")
-PI_MODEL = _str("PI_MODEL", DEEPSEEK_MODEL_NAME)
+
+
+
+
+PI_MODEL = read_catalog_environment(_ENV, computed_defaults={"PI_MODEL": DEEPSEEK_MODEL_NAME})["PI_MODEL"]
 PI_EXTENSIONS_JSON = _str("PI_EXTENSIONS_JSON", "[]")
 PI_TIMEOUT_S = _int("PI_TIMEOUT_S", 1800)
 PROVIDER_RUN_EVENT_CAP = _int("PROVIDER_RUN_EVENT_CAP", 500)
@@ -617,7 +603,7 @@ def _retired_choice(key: str, default: str, choices: frozenset[str], behavior: s
 # A failed professional decision never falls back to a different route.
 COOPERATIVE_WORK_PLANNER_ENABLED = _bool("COOPERATIVE_WORK_PLANNER_ENABLED", True)
 # Optional model on the existing LLM backend; empty inherits the role model.
-COOPERATIVE_WORK_PLANNER_MODEL = _str("COOPERATIVE_WORK_PLANNER_MODEL", "").strip()
+COOPERATIVE_WORK_PLANNER_MODEL = COOPERATIVE_WORK_PLANNER_MODEL.strip()
 COOPERATIVE_CHAT_PROVIDER = WORK_EXECUTION_PROVIDER
 COOPERATIVE_CHAT_REQUIREMENTS_JSON = _str(
     "COOPERATIVE_CHAT_REQUIREMENTS_JSON",
@@ -846,18 +832,18 @@ AUIP_B2_OPEN_PAYLOAD_MODE = _str(
 ).strip().lower()
 if AUIP_B2_OPEN_PAYLOAD_MODE not in {"off", "candidate"}:
     raise ValueError("AUIP_B2_OPEN_PAYLOAD_MODE must be off or candidate")
-AUIP_NARRATION_PROVIDER = _str("AUIP_NARRATION_PROVIDER", "")
-AUIP_NARRATION_MODEL = _str("AUIP_NARRATION_MODEL", "")
-WORK_OBSERVER_PROVIDER = _str("WORK_OBSERVER_PROVIDER", "")
-WORK_OBSERVER_MODEL = _str("WORK_OBSERVER_MODEL", "")
+
+
+
+
 AUIP_NARRATION_TIMEOUT_S = _float("AUIP_NARRATION_TIMEOUT_S", 12.0)
 # Participant proposal and silent main-role authorization are decision-quality
 # lanes, not narration. They reuse the typed tool transport but may select a
 # stronger model profile without making routine commentary equally expensive.
-AUIP_ACTION_PROVIDER = _str("AUIP_ACTION_PROVIDER", "")
-AUIP_ACTION_MODEL = _str("AUIP_ACTION_MODEL", "")
-AUIP_ACTION_REASONING_EFFORT = _str("AUIP_ACTION_REASONING_EFFORT", "none")
-AUIP_ACTION_SERVICE_TIER = _str("AUIP_ACTION_SERVICE_TIER", "auto").strip().lower()
+
+
+
+AUIP_ACTION_SERVICE_TIER = AUIP_ACTION_SERVICE_TIER.strip().lower()
 if AUIP_ACTION_SERVICE_TIER not in {"auto", "default", "fast", "priority"}:
     raise ValueError(
         "AUIP_ACTION_SERVICE_TIER must be auto, default, fast, or priority"
@@ -941,6 +927,6 @@ MICROPHONE_FALLBACK_NAME = _str("MICROPHONE_FALLBACK_NAME", "")
 # ===========================================================================
 # OpenClaw
 # ===========================================================================
-OPENCLAW_BASE_URL    = _str("OPENCLAW_BASE_URL",      "http://127.0.0.1:18789")
-OPENCLAW_TOKEN       = _str("OPENCLAW_GATEWAY_TOKEN")
-OPENCLAW_PROJECT_DIR = _str("OPENCLAW_PROJECT_DIR")   # Node.js 项目根目录（本机路径）
+
+OPENCLAW_TOKEN       = OPENCLAW_GATEWAY_TOKEN
+OPENCLAW_PROJECT_DIR = OPENCLAW_PROJECT_DIR   # Node.js 项目根目录（本机路径）

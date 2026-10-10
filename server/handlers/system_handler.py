@@ -7,7 +7,7 @@ from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 
-from config.catalog import configuration_groups, voice_backend_groups
+from config.catalog import configuration_groups, read_catalog_value, voice_backend_groups
 from server.event_bus import bus
 from server.protocol import Method
 from server.ws_handler import RequestHandler
@@ -50,11 +50,18 @@ def _startup_field(
     return field
 
 
-def _catalog_field(key: str, settings: Any) -> dict[str, Any]:
+def _catalog_field(key: str, settings: Any, values: dict[str, Any] | None = None) -> dict[str, Any]:
     group = next(group for group in configuration_groups().values() if key in group["config"])
     definition = group["config"][key]
     secret = definition.get("secret", False)
-    value = getattr(settings, definition.get("setting", key))
+    if values is not None and key in values:
+        value = values[key]
+    elif definition.get("scope") == "session":
+        import os
+        from config.environment import EnvironmentReader
+        value = read_catalog_value(EnvironmentReader(os.environ), key)
+    else:
+        value = getattr(settings, definition.get("setting", key))
     field = _startup_field(
         key, definition["title"]["en-US"], "" if secret else value,
         field_type="secret" if secret else {
@@ -77,9 +84,15 @@ def _catalog_field(key: str, settings: Any) -> dict[str, Any]:
 
 def _catalog_configuration(
     group_id: str, settings: Any, *, options: dict[str, list[dict[str, str]]] | None = None,
+    values: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     group = configuration_groups()[group_id]
-    fields = [_catalog_field(key, settings) for key in group["config"]]
+    fields = [_catalog_field(key, settings, values) for key in group["config"]]
+    controls = {field["key"]: field.get("value") for field in fields}
+    fields = [field for field in fields if all(
+        controls.get(selector) is None or str(controls[selector]) in choices
+        for selector, choices in group["config"][field["key"]].get("visible_when", {}).items()
+    )]
     for field in fields:
         if options and field["key"] in options:
             field.update(type="select", options=options[field["key"]])
@@ -441,176 +454,86 @@ def _model_role_configuration(settings: Any) -> list[dict[str, Any]]:
 
     return [
         {
-            "id": "vn_companion",
-            "label": "VN companion",
-            "description": "Dedicated VN reasoning and reaction role. DeepSeek is the recommended default; OpenAI-compatible is also supported.",
+            **_catalog_configuration("vn_companion", settings, values={"VN_LLM_PROVIDER": vn_provider, "VN_LLM_MODEL": vn_model_override}),
+
+
             "active": True,
             "configured": vn_configured,
             "status": "needs_setup" if not vn_configured else "override" if vn_provider_override or vn_model_override else "recommended",
             "status_ok": vn_configured,
-            "fields": [
-                _startup_field(
-                    "VN_LLM_PROVIDER", "Model connection",
-                    vn_provider,
-                    field_type="select",
-                    options=(
-                        {"value": "deepseek", "label": "DeepSeek · Recommended"},
-                        {"value": "openai", "label": "OpenAI-compatible"},
-                    ),
-                ),
-                _startup_field(
-                    "VN_LLM_MODEL", "Model override",
-                    vn_model_override,
-                    description="Optional. Leave blank to use the model from the selected connection.",
-                ),
-            ],
+
         },
         {
-            "id": "work_planner",
-            "label": "Work planner / router",
-            "description": "Plans and routes cooperative Work; an empty model inherits the main conversation model on the existing backend.",
+            **_catalog_configuration("work_planner", settings),
+
+
             "active": bool(
                 getattr(settings, "COOPERATIVE_WORK_PLANNER_ENABLED", False)
             ),
             "configured": True,
             "status": "override" if settings.COOPERATIVE_WORK_PLANNER_MODEL else "inherited",
             "status_ok": True,
-            "fields": [
-                _startup_field(
-                    "COOPERATIVE_WORK_PLANNER_MODEL", "Model override",
-                    settings.COOPERATIVE_WORK_PLANNER_MODEL,
-                    description="Leave empty to inherit the main conversation model.",
-                ),
-            ],
+
         },
         {
-            "id": "work_observer",
-            "label": "Work observer",
-            "description": "Summarizes Provider progress; inherits the main model when left blank.",
+            **_catalog_configuration("work_observer", settings),
+
+
             "configured": True,
-            "fields": [
-                _startup_field("WORK_OBSERVER_PROVIDER", "Provider override", settings.WORK_OBSERVER_PROVIDER),
-                _startup_field("WORK_OBSERVER_MODEL", "Model override", settings.WORK_OBSERVER_MODEL),
-            ],
+
         },
         {
-            "id": "browser_branch_planner",
-            "label": "Browser branch planner",
-            "description": "Chooses bounded browser branches; inherits a supported main provider and its model when left blank.",
+            **_catalog_configuration("browser_branch_planner", settings),
+
+
             "configured": True,
             "status": "override" if os.environ.get("BROWSER_BRANCH_PROVIDER") or os.environ.get("BROWSER_BRANCH_MODEL") else "inherited",
             "status_ok": True,
-            "fields": [
-                _startup_field(
-                    "BROWSER_BRANCH_PROVIDER", "Provider override",
-                    os.environ.get("BROWSER_BRANCH_PROVIDER", ""),
-                    field_type="select",
-                    options=(
-                        {"value": "", "label": "Inherit supported main provider"},
-                        {"value": "deepseek", "label": "DeepSeek"},
-                        {"value": "openai", "label": "OpenAI-compatible"},
-                    ),
-                ),
-                _startup_field(
-                    "BROWSER_BRANCH_MODEL", "Model override",
-                    os.environ.get("BROWSER_BRANCH_MODEL", ""),
-                    description="Leave empty to use the selected provider's configured model.",
-                ),
-            ],
+
         },
         {
-            "id": "auip_narration",
-            "label": "AUIP narration",
-            "description": "Narrates verified application outcomes; inherits Work observer/main model.",
+            **_catalog_configuration("auip_narration", settings),
+
+
             "configured": True,
-            "fields": [
-                _startup_field("AUIP_NARRATION_PROVIDER", "Provider override", settings.AUIP_NARRATION_PROVIDER),
-                _startup_field("AUIP_NARRATION_MODEL", "Model override", settings.AUIP_NARRATION_MODEL),
-            ],
+
         },
         {
-            "id": "auip_action",
-            "label": "AUIP action decision",
-            "description": "Decision-quality model used by the default B2 AppSession action path.",
+            **_catalog_configuration("auip_action", settings),
+
+
             "active": b2_active,
             "configured": not bool(b2_unavailable),
             "status": "needs_setup" if b2_unavailable else "available" if b2_active else "optional",
             "status_ok": not bool(b2_unavailable),
             "status_detail": b2_status_detail,
-            "fields": [
-                _startup_field("AUIP_ACTION_PROVIDER", "Provider override", settings.AUIP_ACTION_PROVIDER),
-                _startup_field("AUIP_ACTION_MODEL", "Model override", settings.AUIP_ACTION_MODEL),
-                _startup_field(
-                    "AUIP_ACTION_REASONING_EFFORT", "Reasoning effort",
-                    settings.AUIP_ACTION_REASONING_EFFORT, field_type="select",
-                    options=("none", "minimal", "low", "medium", "high", "max"),
-                ),
-                _startup_field(
-                    "AUIP_ACTION_SERVICE_TIER", "Service tier",
-                    settings.AUIP_ACTION_SERVICE_TIER, field_type="select",
-                    options=("auto", "default", "fast", "priority"),
-                ),
-            ],
+
         },
         {
-            "id": "vn_subtitle_translation",
-            "label": "VN subtitle translation",
-            "description": "Translates Japanese game dialogue into Simplified Chinese for display.",
+            **_catalog_configuration("vn_subtitle_translation", settings),
+
+
             "configured": True,
             "status": "override" if os.environ.get("VN_SUBTITLE_TRANSLATE_PROVIDER") or os.environ.get("VN_SUBTITLE_TRANSLATE_MODEL") else "inherited",
             "status_ok": True,
-            "fields": [
-                _startup_field(
-                    "VN_SUBTITLE_TRANSLATE_PROVIDER", "Provider override",
-                    os.environ.get("VN_SUBTITLE_TRANSLATE_PROVIDER", ""),
-                    field_type="select",
-                    options=(
-                        {"value": "", "label": "DeepSeek default"},
-                        {"value": "deepseek", "label": "DeepSeek"},
-                        {"value": "openai", "label": "OpenAI-compatible"},
-                    ),
-                ),
-                _startup_field(
-                    "VN_SUBTITLE_TRANSLATE_MODEL", "Model override",
-                    os.environ.get("VN_SUBTITLE_TRANSLATE_MODEL", ""),
-                    description="Leave empty to use the selected provider's configured model.",
-                ),
-            ],
+
         },
         {
-            "id": "vn_speech_translation",
-            "label": "VN speech translation",
-            "description": "Translates Chinese companion reactions into Japanese before speech synthesis.",
+            **_catalog_configuration("vn_speech_translation", settings),
+
+
             "configured": True,
             "status": "override" if os.environ.get("VN_TTS_TRANSLATE_PROVIDER") or os.environ.get("VN_TTS_TRANSLATE_MODEL") else "inherited",
             "status_ok": True,
-            "fields": [
-                _startup_field(
-                    "VN_TTS_TRANSLATE_PROVIDER", "Provider override",
-                    os.environ.get("VN_TTS_TRANSLATE_PROVIDER", ""),
-                    field_type="select",
-                    options=(
-                        {"value": "", "label": "DeepSeek default"},
-                        {"value": "deepseek", "label": "DeepSeek"},
-                        {"value": "openai", "label": "OpenAI-compatible"},
-                    ),
-                ),
-                _startup_field(
-                    "VN_TTS_TRANSLATE_MODEL", "Model override",
-                    os.environ.get("VN_TTS_TRANSLATE_MODEL", ""),
-                    description="Leave empty to use the selected provider's configured model.",
-                ),
-            ],
+
         },
     ]
 
 
 def _acp_credentials(settings: Any) -> list[dict[str, Any]]:
-    import os
 
     return [
-        _startup_field("ANTHROPIC_API_KEY", "Anthropic API key", field_type="secret",
-                       secret_configured=bool(os.environ.get("ANTHROPIC_API_KEY"))),
+        _catalog_field("ANTHROPIC_API_KEY", settings),
         {**_catalog_field("DEEPSEEK_API_KEY", settings), "label": "DeepSeek API key"},
     ]
 
@@ -638,75 +561,14 @@ def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
             "value": "openai",
             "label": "OpenAI-compatible" if getattr(settings, "OPENAI_API_KEY", "") else "OpenAI-compatible · Not configured",
         })
-    codex_fields = [
-        _startup_field(
-            "CODEX_PROVIDER_TRANSPORT", "Transport", codex_transport,
-            field_type="select", options=("app_server", "direct", "disabled"),
-        ),
-    ]
-    if codex_transport == "app_server":
-        codex_fields.extend([
-            _startup_field(
-            "CODEX_APP_SERVER_CODEX_BIN", "App Server executable",
-            settings.CODEX_APP_SERVER_CODEX_BIN, field_type="path",
-            ),
-            _startup_field(
-            "CODEX_APP_SERVER_AUTH_MODE", "App Server authentication",
-            codex_auth_mode, field_type="select", options=(
-                {"value": "chatgpt", "label": "ChatGPT subscription"},
-                {"value": "model_api", "label": "Model API connection"},
-            ),
-            description="Run `codex login` once for subscription use. Model API reuses a connection from Models.",
-            ),
-        ])
-        if codex_auth_mode == "chatgpt":
-            codex_fields.append(_startup_field(
-                "CODEX_APP_SERVER_CHATGPT_MODEL", "Subscription model override",
-                settings.CODEX_APP_SERVER_CHATGPT_MODEL,
-                description="Optional. Leave blank to use the model selected by the signed-in Codex client.",
-            ))
-        else:
-            codex_fields.extend([
-            _startup_field(
-                "CODEX_APP_SERVER_MODEL_PROVIDER", "Model API connection",
-                settings.CODEX_APP_SERVER_MODEL_PROVIDER,
-                field_type="select", options=tuple(codex_connection_options),
-                description="Reuses the API key and endpoint configured in Models.",
-            ),
-            _startup_field(
-                "CODEX_APP_SERVER_MODEL", "Model", settings.CODEX_APP_SERVER_MODEL,
-                description="Defaults to the model from the selected Models connection.",
-            ),
-            ])
-        codex_fields.extend([
-            _startup_field(
-            "CODEX_APP_SERVER_REASONING_EFFORT", "Reasoning effort",
-            settings.CODEX_APP_SERVER_REASONING_EFFORT, field_type="select",
-            options=("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"),
-            ),
-            _startup_field(
-            "CODEX_APP_SERVER_SERVICE_TIER", "Service tier",
-            settings.CODEX_APP_SERVER_SERVICE_TIER, field_type="select",
-            options=("", "auto", "default", "flex", "priority", "fast", "ultrafast"),
-            ),
-        ])
-    elif codex_transport == "direct":
-        codex_fields.append(_startup_field(
-            "DIRECT_CODEX_CLI_PATH", "Direct CLI executable",
-            settings.DIRECT_CODEX_CLI_PATH, field_type="path",
-            description="Direct CLI uses the existing local `codex login` session.",
-        ))
+    codex_fields = _catalog_configuration("codex", settings,
+        values={"CODEX_PROVIDER_TRANSPORT": codex_transport},
+        options={"CODEX_APP_SERVER_MODEL_PROVIDER": codex_connection_options})["fields"]
     return [
         {
-            "id": "pi", "label": "Pi",
-            "description": "Default daily agent using the desktop-installed native RPC runtime and shared Models credentials; Work role assignment is independent.",
-            "fields": [
-                _startup_field("PI_PROVIDER_ENABLED", "Enable Pi", settings.PI_PROVIDER_ENABLED, field_type="boolean"),
-                _startup_field("PI_NODE_PATH", "Node executable", settings.PI_NODE_PATH, field_type="path"),
-                _startup_field("PI_AGENT_DIR", "Pi configuration and sessions", settings.PI_AGENT_DIR, field_type="path"),
-                _startup_field("PI_MODEL_PROVIDER", "Pi model provider", settings.PI_MODEL_PROVIDER),
-                _startup_field("PI_MODEL", "Pi model", settings.PI_MODEL),
-            ],
+            **_catalog_configuration("pi", settings),
+
+
         },
         {
             "id": "browser",
@@ -715,28 +577,15 @@ def _work_provider_configuration(settings: Any) -> list[dict[str, Any]]:
             "fields": [],
         },
         {
-            "id": "openclaw",
-            "label": "OpenClaw",
-            "description": "Optional Gateway provider; Work role assignment is independent. Existing sessions remain supported.",
-            "fields": [
-                _startup_field(
-                    "OPENCLAW_BASE_URL", "Gateway URL", settings.OPENCLAW_BASE_URL,
-                    field_type="url",
-                ),
-                _startup_field(
-                    "OPENCLAW_GATEWAY_TOKEN", "Gateway token", field_type="secret",
-                    secret_configured=bool(settings.OPENCLAW_TOKEN),
-                ),
-                _startup_field(
-                    "OPENCLAW_PROJECT_DIR", "OpenClaw project directory",
-                    settings.OPENCLAW_PROJECT_DIR, field_type="path",
-                ),
-            ],
+            **_catalog_configuration("openclaw", settings),
+
+
+
         },
         {
-            "id": "codex",
-            "label": "Codex",
-            "description": "Coding Provider. Exactly one App Server or Direct transport may own this id.",
+            **_catalog_configuration("codex", settings, values={"CODEX_PROVIDER_TRANSPORT": codex_transport}),
+
+
             "fields": codex_fields,
         },
     ]

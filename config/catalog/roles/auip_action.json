@@ -1,0 +1,93 @@
+{
+  "id": "auip_action",
+  "title": {
+    "en-US": "AUIP action decision",
+    "zh-CN": "AUIP 动作决策"
+  },
+  "description": {
+    "en-US": "Decision-quality model used by the B2 application action path.",
+    "zh-CN": "B2 应用操作流程使用的决策模型。"
+  },
+  "desktop": true,
+  "restart_required": true,
+  "config": {
+    "AUIP_ACTION_PROVIDER": {
+      "type": "string",
+      "title": {
+        "en-US": "Provider override",
+        "zh-CN": "Provider 覆盖"
+      },
+      "default": "",
+      "control": "select",
+      "options": [
+        {
+          "value": "",
+          "label": {
+            "en-US": "Inherit",
+            "zh-CN": "继承"
+          }
+        },
+        {
+          "value": "deepseek",
+          "label": {
+            "en-US": "DeepSeek",
+            "zh-CN": "DeepSeek"
+          }
+        },
+        {
+          "value": "openai",
+          "label": {
+            "en-US": "OpenAI-compatible",
+            "zh-CN": "OpenAI 兼容"
+          }
+        }
+      ],
+      "example_active": true
+    },
+    "AUIP_ACTION_MODEL": {
+      "type": "string",
+      "title": {
+        "en-US": "Model override",
+        "zh-CN": "模型覆盖"
+      },
+      "default": "",
+      "example_active": true
+    },
+    "AUIP_ACTION_REASONING_EFFORT": {
+      "type": "enum",
+      "title": {
+        "en-US": "Reasoning effort",
+        "zh-CN": "推理强度"
+      },
+      "default": "none",
+      "options": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "example_active": true
+    },
+    "AUIP_ACTION_SERVICE_TIER": {
+      "type": "enum",
+      "title": {
+        "en-US": "Service tier",
+        "zh-CN": "服务层级"
+      },
+      "default": "auto",
+      "options": [
+        "auto",
+        "default",
+        "fast",
+        "priority"
+      ],
+      "example_active": true
+    }
+  },
+  "section": "roles",
+  "order": 4
+}

@@ -1,14 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import fs from 'node:fs'
-import ts from 'typescript'
-
-const source = fs.readFileSync(new URL('../src/renderer/components/modelRoleCatalog.ts', import.meta.url), 'utf8')
-const compiled = ts.transpileModule(source, {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-}).outputText
-const exports = {}
-new Function('require', 'exports', compiled)(() => ({}), exports)
+import { loadTypeScript } from './helpers/loadTypeScript.mjs'
+const exports = loadTypeScript(new URL('../src/renderer/components/modelRoleCatalog.ts', import.meta.url))
 
 test('role catalog stays configurable while the backend is offline', () => {
   const roles = exports.buildModelRoleCatalog({ values: {} })
@@ -33,4 +26,12 @@ test('saved role selections replace recommendations without changing the catalog
   assert.equal(vn.fields.find(field => field.key === 'VN_LLM_PROVIDER').value, 'openai')
   assert.equal(vn.fields.find(field => field.key === 'VN_LLM_MODEL').value, 'gpt-vn')
   assert.equal(roles.find(role => role.id === 'vn_subtitle_translation').fields[0].value, 'openai')
+})
+
+test('role defaults and choices come from the startup contract', () => {
+  const action = exports.buildModelRoleCatalog().find(group => group.id === 'auip_action')
+  const effort = action.fields.find(field => field.key === 'AUIP_ACTION_REASONING_EFFORT')
+  assert.equal(effort.value, 'none')
+  assert.ok(effort.options.includes('xhigh'))
+  assert.ok(effort.options.includes('ultra'))
 })

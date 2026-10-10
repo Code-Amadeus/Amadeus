@@ -23,13 +23,14 @@ function localized(text) {
   translations[text['en-US']] = text['zh-CN']
 }
 for (const group of groups) {
-  knownKeys(group, ['id', 'title', 'description', 'desktop', 'restart_required', 'config', 'section', 'voice_backend'])
+  knownKeys(group, ['id', 'title', 'description', 'desktop', 'restart_required', 'config', 'section', 'voice_backend', 'order'])
   assert.match(group.id, /^[a-z][a-z0-9_]*$/)
   assert.ok(!ids.has(group.id), `Duplicate group ${group.id}`)
   ids.add(group.id)
   localized(group.title)
   localized(group.description)
-  if (group.section) assert.ok(['output', 'remote'].includes(group.section))
+  if (group.section) assert.ok(['output', 'remote', 'input', 'roles', 'providers', 'routing'].includes(group.section))
+  if (group.order !== undefined) assert.ok(Number.isInteger(group.order))
   if (group.voice_backend) {
     const backend = group.voice_backend
     knownKeys(backend, ['id', 'label', 'deployment', 'factory', 'probe', 'summary', 'order', 'streaming', 'reference_conditioning'])
@@ -52,7 +53,7 @@ for (const group of groups) {
   assert.equal(group.restart_required, true)
   assert.ok(Object.keys(group.config).length, 'Empty configuration group')
   for (const [key, field] of Object.entries(group.config)) {
-    knownKeys(field, ['type', 'title', 'description', 'default', 'secret', 'options', 'schemes', 'min', 'max', 'step', 'computed_default', 'example', 'example_active', 'accepted_values', 'aliases', 'setting', 'control', 'local_engines'])
+    knownKeys(field, ['type', 'title', 'description', 'default', 'secret', 'options', 'schemes', 'min', 'max', 'step', 'computed_default', 'example', 'example_active', 'accepted_values', 'aliases', 'setting', 'control', 'local_engines', 'scope', 'visible_when'])
     assert.match(key, /^[A-Z][A-Z0-9_]*$/)
     assert.ok(!keys.has(key), `Duplicate setting ${key}`)
     keys.add(key)
@@ -62,13 +63,18 @@ for (const group of groups) {
       assert.ok(!keys.has(alias), `Duplicate setting alias ${alias}`)
       keys.add(alias)
     }
-    if (field.control) assert.ok(field.type === 'string' && field.control === 'number')
+    if (field.control) assert.ok(field.type === 'string' && ['number', 'select'].includes(field.control))
+    if (field.scope) assert.ok(['backend', 'session', 'virtual', 'desktop'].includes(field.scope))
+    if (field.visible_when) for (const [selector, choices] of Object.entries(field.visible_when)) {
+      assert.ok(selector in group.config, `Unknown visibility selector ${selector}`)
+      assert.ok(Array.isArray(choices) && choices.length && choices.every(value => typeof value === 'string'))
+    }
     if (field.local_engines) assert.ok(group.id === 'local' && field.local_engines.every(engine => ['llama_server', 'lmstudio', 'ollama', 'cli'].includes(engine)))
     localized(field.title)
     if (field.description) localized(field.description)
     assert.ok(['string', 'path', 'url', 'enum', 'boolean', 'integer', 'number'].includes(field.type), `Unsupported type for ${key}`)
     if ('secret' in field) assert.equal(typeof field.secret, 'boolean')
-    if ('options' in field) assert.equal(field.type, 'enum')
+    if ('options' in field) assert.ok(field.type === 'enum' || field.control === 'select')
     if ('schemes' in field) assert.equal(field.type, 'url')
     if (field.accepted_values) {
       assert.equal(field.type, 'boolean')
@@ -102,7 +108,7 @@ for (const group of groups) {
       if (field.min !== undefined && field.max !== undefined) assert.ok(field.min <= field.max)
       assert.ok(Number.isFinite(field.step) && field.step > 0)
     }
-    if (field.type === 'enum') {
+    if (field.type === 'enum' || field.control === 'select' && field.options) {
       assert.ok(Array.isArray(field.options) && field.options.length)
       const values = field.options.map(option => {
         if (typeof option === 'string') return option
@@ -144,6 +150,7 @@ assert.equal(matches.length * 2, markers.length, 'Unpaired or nested .env.exampl
 function renderGroup(group) {
   const lines = [`# BEGIN GENERATED CONFIG: ${group.id}`, `# ${group.title['en-US']}`]
   for (const [key, field] of Object.entries(group.config)) {
+    if (['virtual', 'desktop'].includes(field.scope)) continue
     const value = field.secret ? '<your-api-key>' : field.example ?? field.default
     const rendered = typeof value === 'string' && /[\s#"'\\]/.test(value) ? JSON.stringify(value) : String(value)
     const options = field.options ? `  # ${field.options.map(option => typeof option === 'string' ? option : option.value).join(' | ')}` : ''

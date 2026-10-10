@@ -1,0 +1,62 @@
+{
+  "id": "vn_speech_translation",
+  "title": {
+    "en-US": "VN speech translation",
+    "zh-CN": "VN 语音翻译"
+  },
+  "description": {
+    "en-US": "Translates Chinese companion reactions into Japanese before speech synthesis.",
+    "zh-CN": "在语音合成前将中文伴侣回应翻译为日语。"
+  },
+  "desktop": true,
+  "restart_required": true,
+  "config": {
+    "VN_TTS_TRANSLATE_PROVIDER": {
+      "type": "enum",
+      "title": {
+        "en-US": "Model connection",
+        "zh-CN": "模型连接"
+      },
+      "default": "",
+      "scope": "session",
+      "options": [
+        {
+          "value": "",
+          "label": {
+            "en-US": "Inherit",
+            "zh-CN": "继承"
+          }
+        },
+        {
+          "value": "deepseek",
+          "label": {
+            "en-US": "DeepSeek",
+            "zh-CN": "DeepSeek"
+          }
+        },
+        {
+          "value": "openai",
+          "label": {
+            "en-US": "OpenAI-compatible",
+            "zh-CN": "OpenAI 兼容"
+          }
+        }
+      ]
+    },
+    "VN_TTS_TRANSLATE_MODEL": {
+      "type": "string",
+      "title": {
+        "en-US": "Model override",
+        "zh-CN": "模型覆盖"
+      },
+      "description": {
+        "en-US": "Leave blank to use the model from the selected connection.",
+        "zh-CN": "留空以使用所选连接的模型。"
+      },
+      "default": "",
+      "scope": "session"
+    }
+  },
+  "section": "roles",
+  "order": 7
+}

@@ -71,8 +71,8 @@ test('all migrated controls share defaults, validation, translations and storage
         const value = field.computed_default ? field.example : field.default
         assert.equal(control.value, typeof value === 'boolean' ? value : String(value))
         settings.update({}, { values: { [key]: typeof value === 'number' ? String(value) : value } })
-        if (value !== '') assert.equal(settings.backendEnvironment({})[key], String(value))
-        if (field.options) assert.throws(() => settings.update({}, { values: { [key]: 'unlisted-choice' } }))
+        if (value !== '' && !['virtual', 'desktop'].includes(field.scope)) assert.equal(settings.backendEnvironment({})[key], String(value))
+        if (field.type === 'enum') assert.throws(() => settings.update({}, { values: { [key]: 'unlisted-choice' } }))
       }
     }
   }
