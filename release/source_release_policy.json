@@ -69,7 +69,11 @@
     "docs/evidence/routing-accuracy-2026-09-12.json",
     "docs/alpha-0.15-impact.md",
     "docs/alpha-0.15.1.md",
-    "docs/alpha-0.15.2.md"
+    "docs/alpha-0.15.2.md",
+    "docs/alpha-0.16.md",
+    "docs/alpha-0.16-acceptance.md",
+    "docs/chat-runtime-convergence.md",
+    "docs/live2d_character_visuals.md"
   ],
   "include_roots": [
     "characters",
@@ -181,6 +185,15 @@
     "docs/provider_parent_conversation_handoff_2026-08-31.md",
     "docs/alpha-0.15.1-acceptance.md",
     "docs/alpha-0.15.2.md",
+    "docs/alpha-0.16.md",
+    "docs/alpha-0.16-acceptance.md",
+    "docs/chat-runtime-convergence.md",
+    "docs/live2d_character_visuals.md",
+    "docs/main-chat-character-prompt.md",
+    "docs/provider-handoff-context.md",
+    "docs/tts_adaptive_aggregation.md",
+    "docs/tts_emotion_references.md",
+    "docs/texture_cache_implementation_2026-10-05.md",
     "docs/texture_pipeline_acceptance_2026-10-04.md",
     "docs/evidence/texture-store-2026-10-04.json",
     "docs/evidence/texture-egpu-comparison-2026-10-04.json",
