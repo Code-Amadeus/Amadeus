@@ -22,6 +22,7 @@ import asyncio
 import logging
 import os
 import re
+from threading import Lock
 from typing import Any, AsyncIterator
 from urllib import request
 
@@ -32,6 +33,7 @@ from tts.sentence_state import sentence_state_manager
 logger = logging.getLogger(__name__)
 
 _CLIENTS: dict[tuple[str, str], Any] = {}
+_CLIENTS_LOCK = Lock()
 _TASKS: set[asyncio.Task[Any]] = set()
 _TASK_META: dict[asyncio.Task[Any], dict[str, Any]] = {}
 _SUBTITLE_TASKS: set[asyncio.Task[Any]] = set()
@@ -767,7 +769,6 @@ async def _translate_ja_to_zh(japanese_text: str) -> str:
     if not api_key:
         raise RuntimeError(f"{provider} API key is not configured")
 
-    client = _get_client(provider, api_key, base_url)
     system = (
         "You are a narrow VN subtitle translation sidecar. Translate Japanese game "
         "dialogue into concise natural Simplified Chinese. Return only Chinese text. "
@@ -787,7 +788,12 @@ async def _translate_ja_to_zh(japanese_text: str) -> str:
     if provider == "deepseek":
         kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
 
-    response = await asyncio.to_thread(lambda: client.chat.completions.create(**kwargs))
+    def request():
+        # SDK/HTTP client construction also blocks, including cold TLS setup.
+        client = _get_client(provider, api_key, base_url)
+        return client.chat.completions.create(**kwargs)
+
+    response = await asyncio.to_thread(request)
     try:
         return str(response.choices[0].message.content or "").strip()
     except Exception:
@@ -810,7 +816,6 @@ async def _stream_translate_zh_to_ja(chinese_text: str) -> AsyncIterator[str]:
     if not api_key:
         raise RuntimeError(f"{provider} API key is not configured")
 
-    client = _get_client(provider, api_key, base_url)
     system = (
         render('You are a narrow VN TTS translation sidecar. Translate the Chinese ${en_name} reaction into natural Japanese for speech synthesis. Return only Japanese text. No Chinese, no markdown, no JSON, no quotes, no control tags, no stage directions, and no new facts. ${vn_tts_tone}')
     )
@@ -828,7 +833,12 @@ async def _stream_translate_zh_to_ja(chinese_text: str) -> AsyncIterator[str]:
     if provider == "deepseek":
         kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
 
-    stream = await asyncio.to_thread(lambda: client.chat.completions.create(**kwargs))
+    def request():
+        # Keep client setup and stream creation off the shared audio loop.
+        client = _get_client(provider, api_key, base_url)
+        return client.chat.completions.create(**kwargs)
+
+    stream = await asyncio.to_thread(request)
     async for chunk in _aiter_sync_iter(stream):
         try:
             piece = chunk.choices[0].delta.content or ""
@@ -841,20 +851,23 @@ async def _stream_translate_zh_to_ja(chinese_text: str) -> AsyncIterator[str]:
 
 def _get_client(provider: str, api_key: str, base_url: str):
     key = (provider, base_url)
-    cached = _CLIENTS.get(key)
-    if cached is not None:
-        return cached
-    import httpx
-    from openai import OpenAI
+    # Subtitle and speech translation share cold initialization. Provider
+    # requests and stream iteration happen outside this lock.
+    with _CLIENTS_LOCK:
+        cached = _CLIENTS.get(key)
+        if cached is not None:
+            return cached
+        import httpx
+        from openai import OpenAI
 
-    http_client = httpx.Client(
-        limits=httpx.Limits(max_connections=10, max_keepalive_connections=5, keepalive_expiry=60.0),
-        timeout=httpx.Timeout(30.0),
-        http2=False,
-    )
-    client = OpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
-    _CLIENTS[key] = client
-    return client
+        http_client = httpx.Client(
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5, keepalive_expiry=60.0),
+            timeout=httpx.Timeout(30.0),
+            http2=False,
+        )
+        client = OpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
+        _CLIENTS[key] = client
+        return client
 
 
 async def _aiter_sync_iter(sync_iterable) -> AsyncIterator[Any]:
