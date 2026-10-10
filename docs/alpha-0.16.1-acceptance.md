@@ -19,6 +19,16 @@ archive identity is recorded in `source-manifest.json` and the GitHub Release.
 - Source Release CI uses `v0.16.0-alpha.0` for the previous-release native
   encrypted-settings upgrade. It installs, builds, packages and launches the
   application from the extracted allowlisted ZIP, not the full Git checkout.
+- Local Electron build passed. The native encrypted-settings upgrade probe
+  passed from both 0.16.0 and 0.15.2 after a test-instrument repair: the original
+  single-file extraction failed with `ERR_MODULE_NOT_FOUND` for the previous
+  settings store's shared catalog. The probe now transpiles that tag's settings
+  module and shared TypeScript directory with their original layout. Production
+  settings code is unchanged; the initial failed invocation is not counted as
+  a passing upgrade check.
+- Clean candidate archive preflight passed with 3,891 selected files and zero
+  errors/warnings; every ZIP file hash and the embedded manifest were verified.
+  Final merged/tagged artifacts require separate verification.
 - Publication requires the final candidate checks, source/provenance gates,
   applicable mainline/tag workflows, and final asset hash verification. Earlier
   feature passes do not replace the final candidate or tagged-archive checks.
