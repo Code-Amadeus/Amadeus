@@ -24,8 +24,10 @@ archive identity is recorded in `source-manifest.json` and the GitHub Release.
   single-file extraction failed with `ERR_MODULE_NOT_FOUND` for the previous
   settings store's shared catalog. The probe now transpiles that tag's settings
   module and shared TypeScript directory with their original layout. Production
-  settings code is unchanged; the initial failed invocation is not counted as
-  a passing upgrade check.
+  settings code is unchanged. The first extracted-source CI then exposed Git's
+  subdirectory-relative tree listing; `--full-tree` makes the historical paths
+  identical from the checkout and extracted ZIP. Both failed invocations remain
+  failed evidence, not passing upgrade checks.
 - Clean candidate archive preflight passed with 3,891 selected files and zero
   errors/warnings; every ZIP file hash and the embedded manifest were verified.
   Final merged/tagged artifacts require separate verification.

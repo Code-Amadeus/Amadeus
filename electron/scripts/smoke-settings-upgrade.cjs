@@ -22,7 +22,7 @@ app.whenReady().then(async () => {
   // its settings store with the current release's shared configuration.
   const previousRoot = path.join(output, 'previous')
   const previousFiles = execFileSync('git', [
-    'ls-tree', '-r', '--name-only', previousRef, '--',
+    'ls-tree', '-r', '--full-tree', '--name-only', previousRef, '--',
     'electron/src/main/desktopSettings.ts', 'electron/src/shared',
   ], { cwd: root, encoding: 'utf8', windowsHide: true }).trim().split(/\r?\n/)
   for (const sourcePath of previousFiles.filter(file => file.endsWith('.ts'))) {
