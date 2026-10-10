@@ -591,15 +591,15 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     send('system.get_config', {}).then(res => {
       if (res?.llm_provider) setProvider(String(res.llm_provider))
       setCanUseMultimodal(res?.chat_supports_images === true)
-      if (res?.vision_mode) setVisionVideoMode(String(res.vision_mode) === 'watching')
+      // The selected mode survives disabling vision; it is not the enabled state.
+      setVisionVideoMode(res?.vision_enabled === true && res?.vision_mode === 'watching')
     }).catch(() => {})
 
     const unsub = subscribe('system.config', (p) => {
       const values = (p.values ?? p) as Record<string, unknown>
       if (values.llm_provider !== undefined) setProvider(String(values.llm_provider))
       if (values.chat_supports_images !== undefined) setCanUseMultimodal(values.chat_supports_images === true)
-      if (values.vision_mode !== undefined) setVisionVideoMode(String(values.vision_mode) === 'watching')
-      if (values.vision_enabled !== undefined && !values.vision_enabled) setVisionVideoMode(false)
+      setVisionVideoMode(values.vision_enabled === true && values.vision_mode === 'watching')
     })
     return unsub
   }, [subscribe, send, connected])
