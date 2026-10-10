@@ -42,6 +42,25 @@ def test_disabling_visual_context_preserves_the_selected_mode_for_reenable() -> 
         })
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_remembered_watching_mode_captures_only_while_enabled(monkeypatch, enabled) -> None:
+    monkeypatch.setattr(visual_runtime, "_config", visual_runtime.VisionConfig(enabled=enabled, mode="watching"))
+    captures = []
+    frame = {"frame": {"dataUrl": "data:image/jpeg;base64,synthetic"}}
+
+    def capture(**kwargs):
+        captures.append(kwargs)
+        return frame
+
+    monkeypatch.setattr(visual_runtime, "capture_visual_context", capture)
+    result = await visual_runtime.prepare_for_chat_turn("Hello")
+    assert result == (frame if enabled else None)
+    assert len(captures) == int(enabled)
+    if enabled:
+        assert captures[0]["reason"] == "turn_start"
+
+
 def test_selected_window_scope_never_expands_to_full_screen(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(visual_runtime, "_configured_window_rect", lambda: None)
     with pytest.raises(RuntimeError, match="selected vision window"):
