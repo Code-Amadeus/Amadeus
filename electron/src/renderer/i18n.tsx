@@ -295,8 +295,6 @@ const ZH_CN: Record<string, string> = {
   'You can save graphics settings while disconnected. Current renderer limits will appear when the backend connects.': '后端未连接时仍可保存图形设置；连接后将显示当前渲染上限。',
   'Appearance': '外观',
   'Choose the visual style used across the Electron frontend.': '选择整个 Electron 前端使用的视觉风格。',
-  'Clean neutral desktop palette.': '简洁、中性的桌面配色。',
-  'Dark translucent surfaces inspired by the Wallpaper Slice.': '以壁纸切片为灵感的深色半透明界面。',
   'Models': '模型',
   'Remote model services': '远程模型服务',
   'Add credentials here before assigning a service to a role. Connections remain visible even when the backend is offline.': '先在这里添加凭据，再把服务分配给角色。即使后端离线，连接入口也会保持可见。',

@@ -92,8 +92,8 @@
     "LOCAL_LLM_CLI_PATH": {
       "type": "path",
       "title": {
-        "en-US": "llama.cpp executable",
-        "zh-CN": "llama.cpp 可执行文件"
+        "en-US": "llama-server executable",
+        "zh-CN": "llama-server 可执行文件"
       },
       "default": "",
       "example_active": true,

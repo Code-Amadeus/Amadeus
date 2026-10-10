@@ -7,6 +7,8 @@ export interface CatalogField {
   type: 'string' | 'path' | 'url' | 'enum' | 'boolean' | 'integer' | 'number'
   title: LocalizedText
   description?: LocalizedText
+  ui_description?: LocalizedText | null
+  icon?: string
   default?: string | boolean | number
   computed_default?: boolean
   example?: string | number | boolean
@@ -25,7 +27,7 @@ export interface CatalogField {
   max_length?: number
   allow_empty?: boolean
   trim?: boolean
-  options?: Array<string | { value: string; label: LocalizedText }>
+  options?: Array<string | { value: string; label: LocalizedText; description?: LocalizedText; hidden?: boolean }>
   schemes?: string[]
   min?: number
   max?: number
@@ -35,6 +37,7 @@ export interface CatalogGroup {
   id: string
   title: LocalizedText
   description: LocalizedText
+  ui_description?: LocalizedText
   desktop: boolean
   apply: SettingApplication
   config: Record<string, CatalogField>
@@ -65,9 +68,9 @@ export const desktopCatalogFields = Object.fromEntries(
     .flatMap(([key, field]) => [[key, field] as const, ...(field.aliases || []).map(alias => [alias, field] as const)])),
 )
 export const catalogTranslations = Object.fromEntries(catalogGroups.flatMap(group =>
-  [group.title, group.description, ...(group.voice_backend ? [group.voice_backend.label] : []),
-    ...Object.values(group.config).flatMap(field => [field.title, ...(field.description ? [field.description] : []),
-      ...(field.options || []).flatMap(option => typeof option === 'string' ? [] : [option.label])])]
+  [group.title, group.description, ...(group.ui_description ? [group.ui_description] : []), ...(group.voice_backend ? [group.voice_backend.label] : []),
+    ...Object.values(group.config).flatMap(field => [field.title, ...(field.description ? [field.description] : []), ...(field.ui_description ? [field.ui_description] : []),
+      ...(field.options || []).flatMap(option => typeof option === 'string' ? [] : [option.label, ...(option.description ? [option.description] : [])])])]
     .map(text => [text['en-US'], text['zh-CN']]),
 ))
 
@@ -84,7 +87,7 @@ export function visibleCatalogFields<T extends { key: string; value?: string | b
 }
 
 export const voiceBackendGroups = catalogGroups.filter(group => group.voice_backend)
-  .sort((left, right) => left.voice_backend!.order - right.voice_backend!.order)
+  .sort((left, right) => (left.order ?? left.voice_backend!.order) - (right.order ?? right.voice_backend!.order))
 
 export function catalogOptionValues(field: CatalogField): string[] | undefined {
   return field.options?.map(option => typeof option === 'string' ? option : option.value)
@@ -111,9 +114,10 @@ export function catalogConfiguration(
   return {
     id: group.id,
     label: group.title['en-US'],
-    description: group.description['en-US'],
+    description: (group.ui_description ?? group.description)['en-US'],
     fields: Object.entries(group.config).map(([key, field]) => {
       const raw = startupValue(key, snapshot, field.default ?? contextValues[key], effectiveValues[key])
+      const description = field.ui_description === null ? undefined : field.ui_description ?? field.description
       if (!field.secret && raw === undefined && !snapshot?.sources?.[key] && !(key in contextValues)) throw new Error(`Missing computed default for ${key}`)
       return {
       key,
@@ -124,10 +128,10 @@ export function catalogConfiguration(
         : field.control === 'number' || ['integer', 'number'].includes(field.type) ? 'number' as const : 'text' as const,
       value: field.secret ? '' : raw === undefined ? undefined : field.type === 'boolean'
         ? raw === true || (field.true_values || ['1', 'true', 'yes']).includes(String(raw).trim().toLowerCase()) : String(raw),
-      ...(field.description ? { description: field.description['en-US'] } : {}),
+      ...(description ? { description: description['en-US'] } : {}),
       ...(field.true_values ? { true_values: field.true_values } : {}),
       ...(field.secret ? { configured: Boolean(snapshot?.secrets?.[key]?.configured) } : {}),
-      ...(field.options ? { options: field.options.map(option => typeof option === 'string' ? option
+      ...(field.options ? { options: field.options.filter(option => typeof option === 'string' || !option.hidden).map(option => typeof option === 'string' ? option
         : { value: option.value, label: option.label['en-US'] }) } : {}),
       ...(field.min !== undefined ? { min: field.min, max: field.max, step: field.step } : {}),
       editable: group.desktop,

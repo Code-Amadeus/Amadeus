@@ -59,6 +59,8 @@ app.whenReady().then(async () => {
   })()`)
   assert.equal(store.snapshot(environment).values.AMADEUS_UI_THEME, 'wallpaper-slice')
   assert.equal(store.backendEnvironment(environment).AMADEUS_UI_THEME, undefined)
+  assert.equal(await win.webContents.executeJavaScript(`document.querySelector('[data-preview-theme="classic"] .settings-theme-option-copy span')?.textContent`), 'Clean neutral desktop palette.')
+  assert.equal(await win.webContents.executeJavaScript(`document.querySelector('[data-preview-theme="wallpaper-slice"] .settings-theme-option-copy span')?.textContent`), 'Dark translucent surfaces inspired by the Wallpaper Slice.')
   console.log('PASS frontend theme follows the locked source and stays outside backend inputs')
   for (const mode of ['window', 'wallpaper']) {
     await win.webContents.executeJavaScript(`(() => { const s = document.querySelector('select[aria-label="Startup mode"]');

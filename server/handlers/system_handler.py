@@ -70,7 +70,7 @@ def _catalog_field(key: str, settings: Any, values: dict[str, Any] | None = None
         }[definition["type"]],
         options=tuple({"value": option, "label": option} if isinstance(option, str) else {
             "value": option["value"], "label": option["label"]["en-US"],
-        } for option in definition.get("options", ())),
+        } for option in definition.get("options", ()) if isinstance(option, str) or not option.get("hidden")),
         description=definition.get("description", {}).get("en-US", ""),
         minimum=definition.get("min"), maximum=definition.get("max"), step=definition.get("step"),
         secret_configured=bool(value) if secret else None,

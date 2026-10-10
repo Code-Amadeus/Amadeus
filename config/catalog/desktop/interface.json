@@ -20,7 +20,7 @@
       "default": "en-US",
       "description": {
         "en-US": "Controls Electron navigation, Settings, and capability status pages.",
-        "zh-CN": "控制 Electron 导航、设置和能力状态页面。"
+        "zh-CN": "控制 Electron 导航、设置页和能力状态页的显示语言。"
       },
       "scope": "desktop",
       "options": [
@@ -28,7 +28,7 @@
           "value": "en-US",
           "label": {
             "en-US": "English",
-            "zh-CN": "英语"
+            "zh-CN": "English"
           }
         },
         {
@@ -54,6 +54,10 @@
           "label": {
             "en-US": "Classic light",
             "zh-CN": "经典浅色"
+          },
+          "description": {
+            "en-US": "Clean neutral desktop palette.",
+            "zh-CN": "简洁、中性的桌面配色。"
           }
         },
         {
@@ -61,6 +65,10 @@
           "label": {
             "en-US": "Wallpaper slice",
             "zh-CN": "壁纸切片"
+          },
+          "description": {
+            "en-US": "Dark translucent surfaces inspired by the Wallpaper Slice.",
+            "zh-CN": "以壁纸切片为灵感的深色半透明界面。"
           }
         }
       ]

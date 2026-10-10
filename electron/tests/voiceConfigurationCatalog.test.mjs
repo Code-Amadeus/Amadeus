@@ -15,7 +15,12 @@ test('voice setup remains discoverable without a running backend', () => {
     ...voiceBackendGroups.map(group => group.id),
   ]))
   assert.equal(groups.find(group => group.id === 'asr_remote').status, 'Optional')
+  assert.equal(groups.find(group => group.id === 'speech_synthesis').description,
+    'Select the shared TTS implementation used by Chat, Wallpaper, and VN speech policies.')
+  assert.equal(groups.find(group => group.id === 'tts_embedded_v3').description,
+    'Choose a compatible voice profile or provide a custom GPT/SoVITS checkpoint pair.')
   assert.equal(groups.find(group => group.id === 'tts_remote').status, 'Optional')
+  assert.equal(groups.find(group => group.id === 'tts_remote').fields.find(field => field.key === 'TTS_API_STREAM_PROTOCOL').description, undefined)
   assert.equal(groups.find(group => group.id === 'tts_fish_audio').status, 'Optional')
   assert.ok(groups.find(group => group.id === 'conversation_asr').fields.some(field => field.key === 'ASR_BACKEND'))
   assert.ok(groups.find(group => group.id === 'speech_synthesis').fields.some(field => field.key === 'TTS_BACKEND'))
@@ -29,6 +34,7 @@ test('Fish Audio is selectable offline and exposes its native WebSocket settings
   }, null)
   const selector = groups.find(group => group.id === 'speech_synthesis').fields.find(field => field.key === 'TTS_BACKEND')
   assert.equal(selector.value, 'fish_audio')
+  assert.deepEqual(selector.options.map(option => option.value), ['gpt_sovits', 'fish_audio', 'openai_compatible', 'mimo', 'disabled'])
   assert.ok(selector.options.some(option => option.value === 'fish_audio' && option.label === 'Fish Audio'))
   const fish = groups.find(group => group.id === 'tts_fish_audio')
   assert.equal(fish.active, true)

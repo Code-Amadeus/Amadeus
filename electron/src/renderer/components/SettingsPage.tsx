@@ -581,6 +581,7 @@ function ThemePicker({ value, onChange, disabled }: { value: UiTheme; onChange: 
   const choices = desktopCatalogFields.AMADEUS_UI_THEME.options!.map(option => ({
     id: (typeof option === 'string' ? option : option.value) as UiTheme,
     title: typeof option === 'string' ? option : option.label['en-US'],
+    description: typeof option === 'string' ? undefined : option.description?.['en-US'],
   }))
   return (
     <div className="settings-theme-picker" role="radiogroup" aria-label={t(desktopCatalogFields.AMADEUS_UI_THEME.title['en-US'])}>
@@ -608,6 +609,7 @@ function ThemePicker({ value, onChange, disabled }: { value: UiTheme; onChange: 
             </span>
             <span className="settings-theme-option-copy">
               <strong>{t(choice.title)}</strong>
+              {choice.description ? <span>{t(choice.description)}</span> : null}
             </span>
             <span className="settings-theme-radio" aria-hidden="true"><i /></span>
           </button>
@@ -885,7 +887,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
       disabled: saving === key || Boolean(desktop?.locked?.[definition.key]),
       options: [
         ...(runtimeValue(key) === undefined ? [{ value: '', label: 'Unknown' }] : []),
-        ...(definition.options || []).map(option => typeof option === 'string' ? option : { value: option.value, label: option.label['en-US'] }),
+        ...(definition.options || []).filter(option => typeof option === 'string' || !option.hidden).map(option => typeof option === 'string' ? option : { value: option.value, label: option.label['en-US'] }),
       ],
     }
   }
@@ -898,15 +900,16 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     const fields = catalogConfiguration(id, desktop, context).fields
     return Object.entries(group.config).map(([key, definition]) => {
       const runtimeKey = definition.runtime_key!
+      const fieldIcon = (definition.icon as FluentIconName | undefined) ?? icon
       if (runtimeKey === 'vision_window_handle' || runtimeKey === 'vision_region' && val('vision_scope') !== 'region') return null
       const disabled = runtimeControl(runtimeKey).disabled || id === 'vision' && runtimeKey !== 'vision_enabled' && !bool('vision_enabled')
       if (definition.type === 'boolean' && runtimeValue(runtimeKey) === undefined) {
         const field = fields.find(field => field.key === key)!
         return <StartupFieldRow key={key} field={{ ...field, editable: !disabled, value: undefined }} desktop={desktop} onSave={handleStartupSave} />
       }
-      if (definition.type === 'boolean') return <SwitchCard key={key} icon={icon} {...runtimeControl(runtimeKey)} disabled={disabled}
+      if (definition.type === 'boolean') return <SwitchCard key={key} icon={fieldIcon} {...runtimeControl(runtimeKey)} disabled={disabled}
         checked={bool(runtimeKey)} onChange={runtimeKey === 'vision_enabled' ? handleVisionEnabled : value => handleChange(runtimeKey, value)} />
-      if (definition.options) return <ComboCard key={key} icon={icon} {...runtimeControl(runtimeKey)} disabled={disabled}
+      if (definition.options) return <ComboCard key={key} icon={fieldIcon} {...runtimeControl(runtimeKey)} disabled={disabled}
         value={val(runtimeKey)} onChange={value => handleChange(runtimeKey, ['integer', 'number'].includes(definition.type) ? Number(value) : value)} />
       const field = fields.find(field => field.key === key)!
       return <StartupFieldRow key={key} field={{ ...field, editable: !disabled, value: runtimeValue(runtimeKey) === undefined ? undefined : val(runtimeKey) }} desktop={desktop} onSave={handleStartupSave} />

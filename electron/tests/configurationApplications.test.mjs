@@ -24,6 +24,40 @@ function withWindow(t, value) {
   t.after(() => { globalThis.window = previous })
 }
 
+test('theme choices retain their explanatory text in English and Chinese', t => {
+  withWindow(t, { localStorage: { getItem: key => key === 'amadeus.settings.section' ? 'general' : null } })
+  for (const locale of ['en-US', 'zh-CN']) {
+    const Settings = loadTypeScript(new URL('../src/renderer/components/SettingsPage.tsx', import.meta.url), {
+      '../i18n': { useI18n: () => ({ locale, t: value => locale === 'zh-CN' ? catalog.catalogTranslations[value] || value : value, setLocale() {} }) },
+      '../theme': { useTheme: () => ({ theme: 'classic', setTheme() {} }) },
+      '../activeCharacter': { useActiveCharacter: () => null },
+      './FluentIcon': { __esModule: true, default: () => null },
+      '../styles/characterWorkspace.css': {}, '../styles/characterVisuals.css': {}, '../styles/workPreview.css': {},
+    }).default
+    const markup = renderToStaticMarkup(React.createElement(Settings, {
+      send: async () => ({}), subscribe: () => () => {}, connected: false, reconnectBackend: async () => {},
+    }))
+    for (const description of locale === 'en-US' ? [
+      'Clean neutral desktop palette.', 'Dark translucent surfaces inspired by the Wallpaper Slice.',
+    ] : ['简洁、中性的桌面配色。', '以壁纸切片为灵感的深色半透明界面。']) {
+      assert.ok(markup.includes(`<span>${description}</span>`), `${locale}: missing theme explanation ${description}`)
+    }
+    assert.ok(!markup.includes('<option value="wallpaper_surface"'))
+    assert.ok(!markup.includes('<option value="region"'))
+  }
+})
+
+test('legacy accepted values stay valid without adding new choices to the existing forms', t => {
+  const store = makeStore(t)
+  store.update({}, { values: { AUIP_ACTION_REASONING_EFFORT: 'ultra', AMADEUS_VISION_SCOPE: 'region' } })
+  assert.equal(store.backendEnvironment({}).AMADEUS_VISION_SCOPE, 'region')
+  assert.equal(store.backendEnvironment({}).AUIP_ACTION_REASONING_EFFORT, 'ultra')
+  assert.deepEqual(catalog.catalogConfiguration('auip_action').fields.find(field => field.key === 'AUIP_ACTION_REASONING_EFFORT').options,
+    ['none', 'minimal', 'low', 'medium', 'high', 'max'])
+  assert.deepEqual(catalog.catalogConfiguration('vision').fields.find(field => field.key === 'AMADEUS_VISION_SCOPE').options,
+    ['full_screen', 'current_window', 'selected_window'])
+})
+
 test('frontend and desktop startup settings have explicit policies and do not enter the backend environment', t => {
   const store = makeStore(t)
   const saved = store.update({}, { values: {

@@ -14,7 +14,7 @@
       "type": "string",
       "title": {
         "en-US": "Provider override",
-        "zh-CN": "Provider 覆盖"
+        "zh-CN": "服务提供方覆盖"
       },
       "default": "",
       "control": "select",
@@ -23,7 +23,7 @@
           "value": "",
           "label": {
             "en-US": "Inherit",
-            "zh-CN": "继承"
+            "zh-CN": "继承默认值"
           }
         },
         {

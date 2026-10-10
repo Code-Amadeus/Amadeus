@@ -103,5 +103,10 @@
     "streaming": true,
     "reference_conditioning": true
   },
-  "apply": "backend_restart"
+  "apply": "backend_restart",
+  "order": 0,
+  "ui_description": {
+    "en-US": "Choose a compatible voice profile or provide a custom GPT/SoVITS checkpoint pair.",
+    "zh-CN": "选择兼容的声音预设，或提供自定义 GPT/SoVITS 权重组合。"
+  }
 }

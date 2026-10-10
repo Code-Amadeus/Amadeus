@@ -73,7 +73,8 @@
         "zh-CN": "仅在端点支持 speech.audio.delta 事件时使用 OpenAI SSE。"
       },
       "default": "buffered",
-      "example": "openai_sse"
+      "example": "openai_sse",
+      "ui_description": null
     }
   },
   "section": "remote",
@@ -91,5 +92,6 @@
     "streaming": "tts.backends.openai_compatible:streaming_enabled",
     "reference_conditioning": false
   },
-  "apply": "backend_restart"
+  "apply": "backend_restart",
+  "order": 2
 }

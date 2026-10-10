@@ -55,14 +55,14 @@
           "value": "英文",
           "label": {
             "en-US": "English",
-            "zh-CN": "英语"
+            "zh-CN": "English"
           }
         }
       ],
       "example_active": true,
       "description": {
         "en-US": "Language used for sentence splitting and the matching voice reference.",
-        "zh-CN": "用于句子分段和匹配语音参考的语言。"
+        "zh-CN": "用于分句并选择匹配的参考声音。"
       }
     }
   }

@@ -37,7 +37,7 @@
           "value": "disabled",
           "label": {
             "en-US": "Disabled",
-            "zh-CN": "已禁用"
+            "zh-CN": "已关闭"
           }
         }
       ]
@@ -60,7 +60,7 @@
       "type": "enum",
       "title": {
         "en-US": "App Server authentication",
-        "zh-CN": "App Server 认证方式"
+        "zh-CN": "App Server 认证来源"
       },
       "description": {
         "en-US": "Run `codex login` once for subscription use. Model API reuses a connection from Models.",
@@ -69,17 +69,17 @@
       "default": "model_api",
       "options": [
         {
-          "value": "model_api",
-          "label": {
-            "en-US": "Model API connection",
-            "zh-CN": "模型 API 连接"
-          }
-        },
-        {
           "value": "chatgpt",
           "label": {
             "en-US": "ChatGPT subscription",
             "zh-CN": "ChatGPT 订阅"
+          }
+        },
+        {
+          "value": "model_api",
+          "label": {
+            "en-US": "Model API connection",
+            "zh-CN": "模型 API 连接"
           }
         }
       ],

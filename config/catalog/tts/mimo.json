@@ -62,5 +62,6 @@
     "streaming": true,
     "reference_conditioning": false
   },
-  "apply": "backend_restart"
+  "apply": "backend_restart",
+  "order": 3
 }

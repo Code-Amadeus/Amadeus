@@ -22,5 +22,9 @@
     }
   },
   "section": "output",
-  "apply": "backend_restart"
+  "apply": "backend_restart",
+  "ui_description": {
+    "en-US": "Select the shared TTS implementation used by Chat, Wallpaper, and VN speech policies.",
+    "zh-CN": "选择聊天、壁纸和 VN 语音策略共享的 TTS 实现。"
+  }
 }

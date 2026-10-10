@@ -25,12 +25,13 @@ function localized(text) {
   translations[text['en-US']] = text['zh-CN']
 }
 for (const group of groups) {
-  knownKeys(group, ['id', 'title', 'description', 'desktop', 'apply', 'config', 'section', 'voice_backend', 'order'])
+  knownKeys(group, ['id', 'title', 'description', 'ui_description', 'desktop', 'apply', 'config', 'section', 'voice_backend', 'order'])
   assert.match(group.id, /^[a-z][a-z0-9_]*$/)
   assert.ok(!ids.has(group.id), `Duplicate group ${group.id}`)
   ids.add(group.id)
   localized(group.title)
   localized(group.description)
+  if (group.ui_description !== undefined) localized(group.ui_description)
   if (group.section) assert.ok(['output', 'remote', 'input', 'roles', 'providers', 'routing'].includes(group.section))
   if (group.order !== undefined) assert.ok(Number.isInteger(group.order))
   if (group.voice_backend) {
@@ -54,7 +55,7 @@ for (const group of groups) {
   assert.ok(applications.includes(group.apply), `Missing/invalid application policy for ${group.id}`)
   assert.ok(Object.keys(group.config).length, 'Empty configuration group')
   for (const [key, field] of Object.entries(group.config)) {
-    knownKeys(field, ['type', 'title', 'description', 'default', 'secret', 'options', 'schemes', 'min', 'max', 'step', 'computed_default', 'example', 'example_active', 'accepted_values', 'true_values', 'aliases', 'setting', 'control', 'scope', 'visible_when', 'apply', 'runtime_key', 'identifier', 'max_length', 'allow_empty', 'trim'])
+    knownKeys(field, ['type', 'title', 'description', 'ui_description', 'icon', 'default', 'secret', 'options', 'schemes', 'min', 'max', 'step', 'computed_default', 'example', 'example_active', 'accepted_values', 'true_values', 'aliases', 'setting', 'control', 'scope', 'visible_when', 'apply', 'runtime_key', 'identifier', 'max_length', 'allow_empty', 'trim'])
     assert.match(key, /^[A-Z][A-Z0-9_]*$/)
     assert.ok(!keys.has(key), `Duplicate setting ${key}`)
     keys.add(key)
@@ -85,6 +86,8 @@ for (const group of groups) {
     }
     localized(field.title)
     if (field.description) localized(field.description)
+    if (field.ui_description !== undefined && field.ui_description !== null) localized(field.ui_description)
+    if (field.icon !== undefined) assert.match(field.icon, /^[A-Z][A-Za-z0-9]*$/)
     assert.ok(['string', 'path', 'url', 'enum', 'boolean', 'integer', 'number'].includes(field.type), `Unsupported type for ${key}`)
     if ('secret' in field) assert.equal(typeof field.secret, 'boolean')
     if ('options' in field) assert.ok(field.type === 'enum' || field.control === 'select')
@@ -130,8 +133,10 @@ for (const group of groups) {
       assert.ok(Array.isArray(field.options) && field.options.length)
       const values = field.options.map(option => {
         if (typeof option === 'string') return option
-        knownKeys(option, ['value', 'label'])
+        knownKeys(option, ['value', 'label', 'description', 'hidden'])
         localized(option.label)
+        if (option.description !== undefined) localized(option.description)
+        if (option.hidden !== undefined) assert.equal(typeof option.hidden, 'boolean')
         assert.equal(typeof option.value, 'string')
         return option.value
       })

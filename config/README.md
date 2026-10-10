@@ -68,6 +68,20 @@ Save failures never apply a change, and live application failures leave the
 saved revision pending. Only the matching application acknowledgment clears it.
 
 Supported field types are string, path, URL, enum, boolean, integer and number.
+Move existing labels, explanations, icons and translations intact when migrating a
+field. Option descriptions belong in their localized `description`; a renderer
+that displays them must retain that content. An option marked `hidden` remains
+an accepted configuration value but is not newly offered by the form. This
+preserves the existing Vision and AUIP choice sets without rejecting saved or
+environment inputs. Field `icon` preserves an existing control's icon instead of
+replacing it with the group's default. Voice groups may use their existing group `order` for UI
+placement independently of backend registration order. The local-engine owner
+keeps the CLI executable label specific to the selected engine.
+Where existing UI guidance differs from backend diagnostic copy, the group
+retains both through `ui_description` and `description`, instead of replacing
+one audience's explanation with the other's.
+Fields use the same override; `ui_description: null` preserves an intentionally
+absent form explanation while retaining an existing backend diagnostic.
 `computed_default: true` omits the static default: its owner supplies a value
 when resolving it. Texture sampling still defaults to whether the effective
 frame rate is 60 FPS, with explicit choices taking precedence. Graphics presets,

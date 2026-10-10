@@ -61,7 +61,8 @@ export function buildLocalModelConnectionCatalog(
     const active = group.id === 'local' ? activeProvider === 'local' : ['hybrid', 'hybrid2', 'hybrid3'].includes(activeProvider)
     return { ...group, active, configured: false,
       status: active ? 'Backend status unavailable' : 'Optional', status_ok: false,
-      fields: visibleCatalogFields(group.fields),
+      fields: visibleCatalogFields(group.fields).map(field => field.key === 'LOCAL_LLM_CLI_PATH' && value('LOCAL_LLM_TYPE') === 'cli'
+        ? { ...field, label: 'llama-cli executable' } : field),
     }
   })
 }

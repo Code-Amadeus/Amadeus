@@ -63,7 +63,7 @@ export const catalogGroups: CatalogGroup[] = [
         "default": "en-US",
         "description": {
           "en-US": "Controls Electron navigation, Settings, and capability status pages.",
-          "zh-CN": "控制 Electron 导航、设置和能力状态页面。"
+          "zh-CN": "控制 Electron 导航、设置页和能力状态页的显示语言。"
         },
         "scope": "desktop",
         "options": [
@@ -71,7 +71,7 @@ export const catalogGroups: CatalogGroup[] = [
             "value": "en-US",
             "label": {
               "en-US": "English",
-              "zh-CN": "英语"
+              "zh-CN": "English"
             }
           },
           {
@@ -97,6 +97,10 @@ export const catalogGroups: CatalogGroup[] = [
             "label": {
               "en-US": "Classic light",
               "zh-CN": "经典浅色"
+            },
+            "description": {
+              "en-US": "Clean neutral desktop palette.",
+              "zh-CN": "简洁、中性的桌面配色。"
             }
           },
           {
@@ -104,6 +108,10 @@ export const catalogGroups: CatalogGroup[] = [
             "label": {
               "en-US": "Wallpaper slice",
               "zh-CN": "壁纸切片"
+            },
+            "description": {
+              "en-US": "Dark translucent surfaces inspired by the Wallpaper Slice.",
+              "zh-CN": "以壁纸切片为灵感的深色半透明界面。"
             }
           }
         ]
@@ -118,7 +126,7 @@ export const catalogGroups: CatalogGroup[] = [
     },
     "description": {
       "en-US": "Quit and reopen Amadeus to apply. Wallpaper is always available in the sidebar.",
-      "zh-CN": "退出并重新打开 Amadeus 后生效；侧边栏始终可进入壁纸。"
+      "zh-CN": "完全退出并重新打开 Amadeus 后生效。你也随时可以通过侧栏的 Wallpaper 切换壁纸模式。"
     },
     "desktop": true,
     "apply": "desktop_restart",
@@ -127,12 +135,12 @@ export const catalogGroups: CatalogGroup[] = [
         "type": "enum",
         "title": {
           "en-US": "Startup mode",
-          "zh-CN": "启动模式"
+          "zh-CN": "启动方式"
         },
         "default": "window",
         "description": {
           "en-US": "Choose whether to open the control panel first or enter wallpaper directly.",
-          "zh-CN": "选择先打开控制面板，或直接进入壁纸。"
+          "zh-CN": "选择启动时先打开控制台，还是直接进入壁纸模式。"
         },
         "scope": "desktop",
         "options": [
@@ -140,7 +148,7 @@ export const catalogGroups: CatalogGroup[] = [
             "value": "window",
             "label": {
               "en-US": "Open control panel first",
-              "zh-CN": "先打开控制面板"
+              "zh-CN": "先打开控制台"
             }
           },
           {
@@ -240,7 +248,7 @@ export const catalogGroups: CatalogGroup[] = [
     },
     "description": {
       "en-US": "Desktop settings are saved across restarts and applied to the current runtime immediately when possible.",
-      "zh-CN": "桌面设置在重启后保留，并在条件允许时立即应用到当前运行时。"
+      "zh-CN": "桌面设置会跨重启保存，并在条件允许时立即应用到当前运行时。"
     },
     "desktop": true,
     "apply": "host",
@@ -249,12 +257,12 @@ export const catalogGroups: CatalogGroup[] = [
         "type": "enum",
         "title": {
           "en-US": "Slice Language",
-          "zh-CN": "切片语言"
+          "zh-CN": "过程信息语言"
         },
         "default": "en-US",
         "description": {
           "en-US": "Language for process cards and Provider summaries",
-          "zh-CN": "流程卡片和服务提供方摘要的语言"
+          "zh-CN": "过程卡片和服务提供方摘要使用的语言"
         },
         "scope": "session",
         "runtime_key": "presentation_locale",
@@ -273,7 +281,7 @@ export const catalogGroups: CatalogGroup[] = [
         "default": false,
         "description": {
           "en-US": "Show Simplified Chinese below completed Japanese assistant messages. Display-only; never added to conversation history.",
-          "zh-CN": "在已完成的日文助手消息下显示简体中文。仅用于展示，不加入对话历史。"
+          "zh-CN": "在完成的日语助手消息下显示简体中文。仅用于显示，不会写入对话历史。"
         },
         "scope": "session",
         "runtime_key": "chat_translation_subtitles_enabled",
@@ -292,7 +300,7 @@ export const catalogGroups: CatalogGroup[] = [
         },
         "description": {
           "en-US": "Choose translated, source, bilingual, or no captions",
-          "zh-CN": "选择翻译、原文、双语或关闭字幕"
+          "zh-CN": "选择译文、原文、双语或关闭字幕"
         },
         "scope": "session",
         "runtime_key": "wallpaper_caption_mode",
@@ -779,8 +787,8 @@ export const catalogGroups: CatalogGroup[] = [
       "LOCAL_LLM_CLI_PATH": {
         "type": "path",
         "title": {
-          "en-US": "llama.cpp executable",
-          "zh-CN": "llama.cpp 可执行文件"
+          "en-US": "llama-server executable",
+          "zh-CN": "llama-server 可执行文件"
         },
         "default": "",
         "example_active": true,
@@ -1122,7 +1130,7 @@ export const catalogGroups: CatalogGroup[] = [
             "value": "disabled",
             "label": {
               "en-US": "Disabled",
-              "zh-CN": "已禁用"
+              "zh-CN": "已关闭"
             }
           }
         ]
@@ -1145,7 +1153,7 @@ export const catalogGroups: CatalogGroup[] = [
         "type": "enum",
         "title": {
           "en-US": "App Server authentication",
-          "zh-CN": "App Server 认证方式"
+          "zh-CN": "App Server 认证来源"
         },
         "description": {
           "en-US": "Run `codex login` once for subscription use. Model API reuses a connection from Models.",
@@ -1154,17 +1162,17 @@ export const catalogGroups: CatalogGroup[] = [
         "default": "model_api",
         "options": [
           {
-            "value": "model_api",
-            "label": {
-              "en-US": "Model API connection",
-              "zh-CN": "模型 API 连接"
-            }
-          },
-          {
             "value": "chatgpt",
             "label": {
               "en-US": "ChatGPT subscription",
               "zh-CN": "ChatGPT 订阅"
+            }
+          },
+          {
+            "value": "model_api",
+            "label": {
+              "en-US": "Model API connection",
+              "zh-CN": "模型 API 连接"
             }
           }
         ],
@@ -1512,7 +1520,7 @@ export const catalogGroups: CatalogGroup[] = [
         "type": "string",
         "title": {
           "en-US": "Provider override",
-          "zh-CN": "Provider 覆盖"
+          "zh-CN": "服务提供方覆盖"
         },
         "default": "",
         "control": "select",
@@ -1521,7 +1529,7 @@ export const catalogGroups: CatalogGroup[] = [
             "value": "",
             "label": {
               "en-US": "Inherit",
-              "zh-CN": "继承"
+              "zh-CN": "继承默认值"
             }
           },
           {
@@ -1563,9 +1571,23 @@ export const catalogGroups: CatalogGroup[] = [
           "low",
           "medium",
           "high",
-          "xhigh",
+          {
+            "value": "xhigh",
+            "label": {
+              "en-US": "xhigh",
+              "zh-CN": "xhigh"
+            },
+            "hidden": true
+          },
           "max",
-          "ultra"
+          {
+            "value": "ultra",
+            "label": {
+              "en-US": "ultra",
+              "zh-CN": "ultra"
+            },
+            "hidden": true
+          }
         ],
         "example_active": true
       },
@@ -1605,7 +1627,7 @@ export const catalogGroups: CatalogGroup[] = [
         "type": "string",
         "title": {
           "en-US": "Provider override",
-          "zh-CN": "Provider 覆盖"
+          "zh-CN": "服务提供方覆盖"
         },
         "default": "",
         "control": "select",
@@ -1614,7 +1636,7 @@ export const catalogGroups: CatalogGroup[] = [
             "value": "",
             "label": {
               "en-US": "Inherit",
-              "zh-CN": "继承"
+              "zh-CN": "继承默认值"
             }
           },
           {
@@ -1664,7 +1686,7 @@ export const catalogGroups: CatalogGroup[] = [
         "type": "enum",
         "title": {
           "en-US": "Provider override",
-          "zh-CN": "Provider 覆盖"
+          "zh-CN": "服务提供方覆盖"
         },
         "default": "",
         "scope": "session",
@@ -1673,7 +1695,7 @@ export const catalogGroups: CatalogGroup[] = [
             "value": "",
             "label": {
               "en-US": "Inherit",
-              "zh-CN": "继承"
+              "zh-CN": "继承默认值"
             }
           },
           {
@@ -1789,8 +1811,8 @@ export const catalogGroups: CatalogGroup[] = [
           {
             "value": "",
             "label": {
-              "en-US": "Inherit",
-              "zh-CN": "继承"
+              "en-US": "Recommended default · DeepSeek",
+              "zh-CN": "推荐默认 · DeepSeek"
             }
           },
           {
@@ -1851,8 +1873,8 @@ export const catalogGroups: CatalogGroup[] = [
           {
             "value": "",
             "label": {
-              "en-US": "Inherit",
-              "zh-CN": "继承"
+              "en-US": "Recommended default · DeepSeek",
+              "zh-CN": "推荐默认 · DeepSeek"
             }
           },
           {
@@ -1905,7 +1927,7 @@ export const catalogGroups: CatalogGroup[] = [
         "type": "string",
         "title": {
           "en-US": "Provider override",
-          "zh-CN": "Provider 覆盖"
+          "zh-CN": "服务提供方覆盖"
         },
         "default": "",
         "control": "select",
@@ -1914,7 +1936,7 @@ export const catalogGroups: CatalogGroup[] = [
             "value": "",
             "label": {
               "en-US": "Inherit",
-              "zh-CN": "继承"
+              "zh-CN": "继承默认值"
             }
           },
           {
@@ -2059,7 +2081,8 @@ export const catalogGroups: CatalogGroup[] = [
       "streaming": true,
       "reference_conditioning": false
     },
-    "apply": "backend_restart"
+    "apply": "backend_restart",
+    "order": 1
   },
   {
     "id": "tts_embedded_v3",
@@ -2166,7 +2189,12 @@ export const catalogGroups: CatalogGroup[] = [
       "streaming": true,
       "reference_conditioning": true
     },
-    "apply": "backend_restart"
+    "apply": "backend_restart",
+    "order": 0,
+    "ui_description": {
+      "en-US": "Choose a compatible voice profile or provide a custom GPT/SoVITS checkpoint pair.",
+      "zh-CN": "选择兼容的声音预设，或提供自定义 GPT/SoVITS 权重组合。"
+    }
   },
   {
     "id": "tts_mimo",
@@ -2232,7 +2260,8 @@ export const catalogGroups: CatalogGroup[] = [
       "streaming": true,
       "reference_conditioning": false
     },
-    "apply": "backend_restart"
+    "apply": "backend_restart",
+    "order": 3
   },
   {
     "id": "tts_remote",
@@ -2309,7 +2338,8 @@ export const catalogGroups: CatalogGroup[] = [
           "zh-CN": "仅在端点支持 speech.audio.delta 事件时使用 OpenAI SSE。"
         },
         "default": "buffered",
-        "example": "openai_sse"
+        "example": "openai_sse",
+        "ui_description": null
       }
     },
     "section": "remote",
@@ -2327,7 +2357,8 @@ export const catalogGroups: CatalogGroup[] = [
       "streaming": "tts.backends.openai_compatible:streaming_enabled",
       "reference_conditioning": false
     },
-    "apply": "backend_restart"
+    "apply": "backend_restart",
+    "order": 2
   },
   {
     "id": "tts_runtime",
@@ -2386,14 +2417,14 @@ export const catalogGroups: CatalogGroup[] = [
             "value": "英文",
             "label": {
               "en-US": "English",
-              "zh-CN": "英语"
+              "zh-CN": "English"
             }
           }
         ],
         "example_active": true,
         "description": {
           "en-US": "Language used for sentence splitting and the matching voice reference.",
-          "zh-CN": "用于句子分段和匹配语音参考的语言。"
+          "zh-CN": "用于分句并选择匹配的参考声音。"
         }
       }
     }
@@ -2422,7 +2453,11 @@ export const catalogGroups: CatalogGroup[] = [
       }
     },
     "section": "output",
-    "apply": "backend_restart"
+    "apply": "backend_restart",
+    "ui_description": {
+      "en-US": "Select the shared TTS implementation used by Chat, Wallpaper, and VN speech policies.",
+      "zh-CN": "选择聊天、壁纸和 VN 语音策略共享的 TTS 实现。"
+    }
   },
   {
     "id": "vision",
@@ -2432,7 +2467,7 @@ export const catalogGroups: CatalogGroup[] = [
     },
     "description": {
       "en-US": "General chat and desktop capture use these settings. VN vision is controlled separately in its game session.",
-      "zh-CN": "一般聊天和桌面捕获使用这些设置；VN 视觉由各游戏会话单独控制。"
+      "zh-CN": "这些设置用于通用聊天与桌面取图。VN 视觉在对应游戏会话中单独控制。"
     },
     "desktop": true,
     "apply": "host",
@@ -2441,12 +2476,12 @@ export const catalogGroups: CatalogGroup[] = [
         "type": "boolean",
         "title": {
           "en-US": "General vision (excluding VN)",
-          "zh-CN": "一般视觉（不含 VN）"
+          "zh-CN": "通用视觉（不含 VN）"
         },
         "default": false,
         "description": {
           "en-US": "Controls vision outside VN. Each VN session has its own vision setting.",
-          "zh-CN": "控制 VN 以外的视觉。每个 VN 会话使用独立的视觉设置。"
+          "zh-CN": "控制 VN 以外场景的视觉。每个 VN 会话使用自己的视觉设置。"
         },
         "scope": "session",
         "runtime_key": "vision_enabled",
@@ -2466,7 +2501,7 @@ export const catalogGroups: CatalogGroup[] = [
         "default": "off",
         "description": {
           "en-US": "On-demand captures when asked; watching attaches one fresh frame to each chat turn",
-          "zh-CN": "按需模式在请求时捕获；观察模式在每轮聊天附上一帧新画面"
+          "zh-CN": "按需模式在请求时截图；持续观察模式为每轮对话附加新画面"
         },
         "scope": "session",
         "runtime_key": "vision_mode",
@@ -2475,7 +2510,8 @@ export const catalogGroups: CatalogGroup[] = [
           "on_demand",
           "watching",
           "self_aware"
-        ]
+        ],
+        "icon": "Video"
       },
       "AMADEUS_VISION_SCOPE": {
         "type": "enum",
@@ -2486,7 +2522,7 @@ export const catalogGroups: CatalogGroup[] = [
         "default": "full_screen",
         "description": {
           "en-US": "Choose what Amadeus may capture for a visual turn",
-          "zh-CN": "选择 Amadeus 在视觉请求中可捕获的范围"
+          "zh-CN": "选择 Amadeus 在视觉轮次中可以采集的范围"
         },
         "scope": "session",
         "runtime_key": "vision_scope",
@@ -2494,9 +2530,24 @@ export const catalogGroups: CatalogGroup[] = [
           "full_screen",
           "current_window",
           "selected_window",
-          "wallpaper_surface",
-          "region"
-        ]
+          {
+            "value": "wallpaper_surface",
+            "label": {
+              "en-US": "wallpaper_surface",
+              "zh-CN": "wallpaper_surface"
+            },
+            "hidden": true
+          },
+          {
+            "value": "region",
+            "label": {
+              "en-US": "region",
+              "zh-CN": "region"
+            },
+            "hidden": true
+          }
+        ],
+        "icon": "Video"
       },
       "AMADEUS_VISION_MAX_LONG_SIDE": {
         "type": "integer",
@@ -2507,7 +2558,7 @@ export const catalogGroups: CatalogGroup[] = [
         "default": 960,
         "description": {
           "en-US": "Maximum long edge sent to the model",
-          "zh-CN": "发送给模型的图像最大长边"
+          "zh-CN": "发送给模型的最大长边尺寸"
         },
         "scope": "session",
         "runtime_key": "vision_max_long_side",
@@ -2520,7 +2571,8 @@ export const catalogGroups: CatalogGroup[] = [
           "960",
           "1280",
           "1600"
-        ]
+        ],
+        "icon": "Photo"
       },
       "AMADEUS_VISION_JPEG_QUALITY": {
         "type": "integer",
@@ -2531,7 +2583,7 @@ export const catalogGroups: CatalogGroup[] = [
         "default": 68,
         "description": {
           "en-US": "Higher quality increases request payload size",
-          "zh-CN": "更高质量会增加请求数据量"
+          "zh-CN": "更高质量会增加请求体积"
         },
         "scope": "session",
         "runtime_key": "vision_jpeg_quality",
@@ -2544,7 +2596,8 @@ export const catalogGroups: CatalogGroup[] = [
           "68",
           "80",
           "90"
-        ]
+        ],
+        "icon": "Photo"
       },
       "AMADEUS_VISION_REGION": {
         "type": "string",
@@ -2565,7 +2618,7 @@ export const catalogGroups: CatalogGroup[] = [
         "default": "",
         "description": {
           "en-US": "Capture stops if this window closes or can no longer be verified.",
-          "zh-CN": "窗口关闭或无法验证时停止捕获。"
+          "zh-CN": "如果窗口关闭或无法继续验证，采集会停止。"
         },
         "scope": "session",
         "runtime_key": "vision_window_handle"

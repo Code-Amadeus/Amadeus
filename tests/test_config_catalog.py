@@ -101,6 +101,15 @@ def test_invalid_unselected_fish_configuration_is_left_to_the_backend_owner() ->
     assert values["FISH_TTS_LATENCY"] == "invalid"
 
 
+def test_backend_descriptors_keep_existing_choices_without_rejecting_accepted_values():
+    values = catalog.read_catalog_environment(EnvironmentReader({"AUIP_ACTION_REASONING_EFFORT": "ultra"}))
+    group = system_handler._catalog_configuration("auip_action", SimpleNamespace(**values))
+    field = next(field for field in group["fields"] if field["key"] == "AUIP_ACTION_REASONING_EFFORT")
+    assert field["value"] == "ultra"
+    assert [option["value"] for option in field["options"]] == ["none", "minimal", "low", "medium", "high", "max"]
+    assert "region" in catalog.option_values(catalog.configuration_field("AMADEUS_VISION_SCOPE"))
+
+
 @pytest.mark.parametrize("default", [False, True])
 @pytest.mark.parametrize("override", [None, "true", "false"])
 def test_computed_sampling_default_keeps_explicit_environment_authority(default, override) -> None:
