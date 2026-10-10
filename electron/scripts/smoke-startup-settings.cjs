@@ -31,6 +31,8 @@ app.whenReady().then(async () => {
     AMADEUS_UI_LOCALE: 'en-US', AMADEUS_UI_THEME: 'wallpaper-slice', TTS_BACKEND: null, FISH_TTS_MODEL: null, FISH_TTS_LATENCY: null,
     MIMO_TTS_VOICE: null, TTS_API_VOICE: null,
     GRAPHICS_PROFILE: null, RENDER_MAX_FPS: null, RENDER_TEXTURE_SAMPLING: null,
+    WORK_EXECUTION_PROVIDER: null, COOPERATIVE_CHAT_PROVIDER: 'openclaw',
+    AMADEUS_VISION_ENABLED: 'false', AMADEUS_VISION_MODE: 'watching',
   } })
   store.markApplied({})
   ipcMain.handle('get-backend-connection', () => null)
@@ -71,6 +73,14 @@ app.whenReady().then(async () => {
   fs.mkdirSync(output, { recursive: true })
   fs.writeFileSync(path.join(output, 'startup-settings.png'), (await win.webContents.capturePage(undefined, { stayHidden: true })).toPNG())
   console.log('PASS offline GUI startup choices persist and select the next launch without backend restart')
+  await win.webContents.executeJavaScript(`(() => {
+    const section = document.getElementById('settings-vision');
+    section.querySelector('button[aria-pressed]').click(); return true;
+  })()`)
+  await until(`(async () => (await window.amadeus.getDesktopSettings()).values.AMADEUS_VISION_ENABLED === 'true')()`)
+  assert.equal(store.snapshot(environment).values.AMADEUS_VISION_MODE, 'watching')
+  assert.ok(store.snapshot(environment).pendingRevisions.AMADEUS_VISION_ENABLED)
+  console.log('PASS offline live save preserves the selected vision mode and waits for application acknowledgment')
   // The built renderer, preload and main store consume the packaged catalog,
   // while every backend/network request remains blocked above.
   await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Voice').click(); true`)
@@ -150,6 +160,10 @@ app.whenReady().then(async () => {
     return input?.disabled && input.value === 'locked-environment-model'; })()`)
   assert.equal(store.snapshot(environment).values.FISH_TTS_MODEL, 'smoke-fish-model')
   console.log('PASS real form shows and locks environment input while preserving the saved override')
+  await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Providers').click(); true`)
+  await until(`document.body.textContent.includes('Everyday execution: OpenClaw agent')`)
+  assert.equal(store.backendEnvironment(environment).WORK_EXECUTION_PROVIDER, 'openclaw')
+  console.log('PASS legacy saved routing agrees with the real summary and canonical backend input')
   app.quit()
 }).catch(error => { console.error(error); app.exit(1) })
 setTimeout(() => { console.error('Startup settings smoke timed out'); app.exit(1) }, 45000).unref()

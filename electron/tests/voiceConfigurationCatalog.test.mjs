@@ -88,3 +88,22 @@ test('effective dotenv emotion setting is visible until a stored override change
   assert.equal(field(null).value, true)
   assert.equal(field({ values: { ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING: 'false' } }).value, false)
 })
+
+test('voice activation follows the same parsed startup booleans as its controls', () => {
+  const selection = { asrBackend: 'qwen3_asr', ttsBackend: 'gpt_sovits', wakeEnabled: false, aecEnabled: false }
+  const groups = exports.buildVoiceConfigurationCatalog(selection, { startupValues: {
+    WAKE_ENABLED: ' YES ', AEC_REALTIME_ENABLED: '1',
+  }, sources: { WAKE_ENABLED: 'environment', AEC_REALTIME_ENABLED: 'environment' } })
+  for (const [id, key] of [['wake_asr', 'WAKE_ENABLED'], ['acoustic_pipeline', 'AEC_REALTIME_ENABLED']]) {
+    const group = groups.find(group => group.id === id)
+    assert.equal(group.fields.find(field => field.key === key).value, true)
+    assert.equal(group.active, true)
+    assert.notEqual(group.status, 'Off')
+  }
+  const cleared = exports.buildVoiceConfigurationCatalog({ ...selection, wakeEnabled: true }, {
+    sources: { WAKE_ENABLED: 'default' }, pendingRevisions: { WAKE_ENABLED: 4 },
+  }).find(group => group.id === 'wake_asr')
+  assert.equal(cleared.fields[0].value, false)
+  assert.equal(cleared.active, false)
+  assert.equal(cleared.status, 'Off')
+})

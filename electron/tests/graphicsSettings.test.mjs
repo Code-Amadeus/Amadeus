@@ -120,3 +120,15 @@ test('an unresolved dotenv preset keeps derived sampling unknown while offline',
   assert.equal(budget.status, 'Backend status unavailable')
   assert.equal(sampling.fields[0].value, undefined)
 })
+
+test('changing the preset preserves explicit dotenv sampling instead of substituting the derived default', () => {
+  const snapshot = { values: { GRAPHICS_PROFILE: 'power_saving' }, sources: {
+    GRAPHICS_PROFILE: 'user', RENDER_TEXTURE_SAMPLING: 'dotenv',
+  }, pendingRevisions: { GRAPHICS_PROFILE: 2 } }
+  const runtime = { profile: 'standard', custom_max_fps: 30, custom_max_resolution: 1.5,
+    texture_sampling: true, effective_max_fps: 60, effective_max_resolution: null }
+  assert.equal(buildGraphicsConfiguration(runtime, snapshot)[1].fields[0].value, true)
+  assert.equal(buildGraphicsConfiguration(runtime, { ...snapshot,
+    sources: { ...snapshot.sources, RENDER_TEXTURE_SAMPLING: 'default' },
+  })[1].fields[0].value, false)
+})

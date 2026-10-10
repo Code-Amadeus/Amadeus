@@ -26,11 +26,7 @@ export function buildGraphicsConfiguration(
   const customFps = value('RENDER_MAX_FPS')
   const selectedFps = profile === 'standard' ? 60 : profile === 'power_saving' ? 30
     : profile === 'custom' && customFps !== undefined ? Number(customFps) : undefined
-  // Preserve an explicit running choice only while describing that same profile.
-  // An unset value otherwise follows the selected preset, including offline edits.
-  const sampling = runtime && profile === runtime.profile && selectedFps === runtime.effective_max_fps
-    && !snapshot?.pendingRevisions?.RENDER_TEXTURE_SAMPLING
-    ? runtime.texture_sampling : selectedFps === undefined ? undefined : selectedFps === 60
+  const sampling = selectedFps === undefined ? undefined : selectedFps === 60
   return [{
     ...budget,
     active: false, configured: true,
@@ -41,6 +37,10 @@ export function buildGraphicsConfiguration(
   }, {
     ...catalogConfiguration('graphics_sampling', snapshot, {
       RENDER_TEXTURE_SAMPLING: sampling,
+    }, {
+      // Explicit dotenv input is independent of the selected preset. Keep it
+      // separate from the computed default; pending clears remain unknown.
+      ...(runtime ? { RENDER_TEXTURE_SAMPLING: runtime.texture_sampling } : {}),
       ...(runtime?.bc7_cache !== undefined ? { RENDER_BC7_CACHE: runtime.bc7_cache } : {}),
     }),
     active: false, configured: true, status: 'Configured', status_ok: true,

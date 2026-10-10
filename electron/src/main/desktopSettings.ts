@@ -642,13 +642,15 @@ export class DesktopSettingsStore {
     const stored = this.read()
     const dotenvKeys = this.dotenvKeys()
     const result: NodeJS.ProcessEnv = {}
-    // Canonicalize a parent-provided legacy name before Python loads dotenv.
-    // This keeps process authority above canonical names from the project file.
+    // Canonicalize both parent and stored legacy inputs before Python loads
+    // dotenv. Within one source the canonical name wins; every parent input
+    // precedes every stored input, and both precede the project file.
     for (const key of VALUE_KEYS) {
       if (FRONTEND_ONLY_VALUE_KEYS.has(key)) continue
       const inputs = catalogInputKeys(key)
-      if (inputs[0] !== key || environment[key] !== undefined) continue
+      if (inputs.length < 2 || inputs[0] !== key || environment[key] !== undefined) continue
       const inherited = inputs.slice(1).map(alias => environment[alias]).find(value => value !== undefined)
+        ?? inputs.map(candidate => stored.values[candidate]).find(value => value !== undefined)
       if (inherited !== undefined) result[key] = inherited
     }
     for (const [key, value] of Object.entries(stored.values)) {

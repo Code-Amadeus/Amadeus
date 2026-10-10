@@ -209,3 +209,15 @@ test('LM Studio legacy inputs have the same authority, locking and canonical for
   const legacyClear = settings.update({}, { values: { LOCAL_LLM_LM_STUDIO_URL: null } })
   assert.ok(legacyClear.pendingRevisions.LOCAL_LLM_LM_STUDIO_URL)
 })
+
+test('stored legacy inputs are canonicalized before dotenv loads the canonical key', t => {
+  const settings = store(t)
+  settings.update({}, { values: { LM_STUDIO_URL: 'http://localhost:1240', COOPERATIVE_CHAT_PROVIDER: 'openclaw' } })
+  const launch = settings.backendEnvironment({})
+  assert.equal(launch.LOCAL_LLM_LM_STUDIO_URL, 'http://localhost:1240')
+  assert.equal(launch.WORK_EXECUTION_PROVIDER, 'openclaw')
+  // Both the form and Python's canonical-first parser must observe the saved input.
+  assert.equal(settings.snapshot({}).startupValues.LOCAL_LLM_LM_STUDIO_URL, launch.LOCAL_LLM_LM_STUDIO_URL)
+  settings.update({}, { values: { LOCAL_LLM_LM_STUDIO_URL: 'http://localhost:1241' } })
+  assert.equal(settings.backendEnvironment({}).LOCAL_LLM_LM_STUDIO_URL, 'http://localhost:1241')
+})

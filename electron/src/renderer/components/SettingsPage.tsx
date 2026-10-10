@@ -807,7 +807,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   }, [reconnectBackend, refreshBackend, refreshDesktop])
 
   const handleVisionEnabled = useCallback(async (value: boolean) => {
-    const currentMode = String(config.vision_mode ?? 'off')
+    const currentMode = runtimeSettingValue('vision_mode', desktop, connected ? config.vision_mode : undefined)
     const nextMode = value && currentMode === 'off' ? 'on_demand' : currentMode
     const values = value && currentMode === 'off'
       ? { vision_enabled: true, vision_mode: nextMode }
@@ -830,7 +830,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
     } finally {
       setSaving(null)
     }
-  }, [send, config])
+  }, [send, config, desktop, connected])
 
   const loadVisionWindows = useCallback(async () => {
     if (!connected) return
@@ -1043,17 +1043,15 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   const configuredTranslationModels = modelConnections
     .filter(group => ['deepseek', 'openai', 'gemini'].includes(group.id) && (group.status_ok ?? group.configured))
     .map(group => group.label || modelProviderLabels[group.id] || group.id)
-  const selectedWorkProvider = String(
-    desktop?.sources?.WORK_EXECUTION_PROVIDER === 'user'
-      ? desktop.values.WORK_EXECUTION_PROVIDER
-      : desktop?.sources?.COOPERATIVE_CHAT_PROVIDER === 'user'
-        ? desktop.values.COOPERATIVE_CHAT_PROVIDER
-      : val('cooperative_chat_provider', 'pi'),
-  ).toLowerCase()
-  const selectedCodingProvider = String(desktop?.sources?.WORK_CODING_PROVIDER === 'user'
-    ? desktop.values.WORK_CODING_PROVIDER : val('work_coding_provider', 'codex')).toLowerCase()
+  const providerCatalog = buildWorkProviderCatalog({
+    provider: connected ? String(config.cooperative_chat_provider ?? '') : '',
+    codingProvider: connected ? String(config.work_coding_provider ?? '') : '',
+    roleCandidates: providerRoleCandidates,
+  }, catalogDesktop, effectiveStartupValues)
+  const selectedWorkProvider = String(providerCatalog.routing.fields.find(field => field.key === 'WORK_EXECUTION_PROVIDER')?.value ?? '').toLowerCase()
+  const selectedCodingProvider = String(providerCatalog.routing.fields.find(field => field.key === 'WORK_CODING_PROVIDER')?.value ?? '').toLowerCase()
   const workProviderLabels: Record<string, string> = { codex: 'Codex agent', openclaw: 'OpenClaw agent', browser: 'Browser provider', pi: 'Pi daily agent' }
-  const workProviderAssignment = `${t('Coding')}: ${workProviderLabels[selectedCodingProvider] || selectedCodingProvider} · ${t('Everyday execution')}: ${workProviderLabels[selectedWorkProvider] || selectedWorkProvider}`
+  const workProviderAssignment = `${t('Coding')}: ${workProviderLabels[selectedCodingProvider] || selectedCodingProvider || t('Unknown')} · ${t('Everyday execution')}: ${workProviderLabels[selectedWorkProvider] || selectedWorkProvider || t('Unknown')}`
   const roleGroups = Object.fromEntries(modelRoles.map(group => [group.id, group])) as Record<string, ConfigurationGroup>
   const advancedRoleIds = [
     'work_planner', 'work_observer', 'browser_branch_planner', 'auip_narration',
@@ -1065,8 +1063,6 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   ).length
   const graphicsRuntime = connected ? config.graphics as GraphicsRuntimeSettings | undefined : undefined
   const graphicsConfiguration = buildGraphicsConfiguration(graphicsRuntime, catalogDesktop)
-  const providerCatalog = buildWorkProviderCatalog({ provider: selectedWorkProvider,
-    codingProvider: selectedCodingProvider, roleCandidates: providerRoleCandidates }, catalogDesktop, effectiveStartupValues)
   const providerConfiguration: ConfigurationGroup[] = providerCatalog.connections.map(base => {
     const backend = backendProviderConfiguration.find(group => group.id === base.id)
     return backend ? {

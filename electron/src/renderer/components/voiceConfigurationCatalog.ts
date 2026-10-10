@@ -22,33 +22,34 @@ export function buildVoiceConfigurationCatalog(
   const values = startupValues(snapshot)
   const value = (key: string, fallback = '') => values[key] ?? String(desktopCatalogFields[key]?.default ?? fallback)
   const secret = (key: string) => Boolean(snapshot?.secrets?.[key]?.configured)
-  const bool = (key: string, fallback: boolean) => values[key] === undefined ? fallback : values[key] === 'true'
-  const asrBackend = values.ASR_BACKEND ?? selection.asrBackend ?? String(desktopCatalogFields.ASR_BACKEND.default)
   const synthesis = catalogConfiguration('speech_synthesis', snapshot, {
     TTS_BACKEND: selection.ttsBackend || String(desktopCatalogFields.TTS_BACKEND.default),
   })
   const ttsBackend = String(synthesis.fields[0].value)
-  const wakeEnabled = bool('WAKE_ENABLED', selection.wakeEnabled)
-  const aecEnabled = bool('AEC_REALTIME_ENABLED', selection.aecEnabled)
-  const emotionEnabled = values.ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING === undefined
-    ? Boolean(selection.emotionReferencesEnabled)
-    : ['true', '1', 'yes'].includes(value('ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING').toLowerCase())
   const runtimeValues = {
     ASR_BACKEND: selection.asrBackend, WAKE_ENABLED: selection.wakeEnabled,
     AEC_REALTIME_ENABLED: selection.aecEnabled,
     ...(selection.emotionReferencesEnabled === undefined ? {} : { ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING: selection.emotionReferencesEnabled }),
   }
   const unknown = 'Backend status unavailable'
+  const conversation = catalogConfiguration('conversation_asr', snapshot, runtimeValues)
+  const wake = catalogConfiguration('wake_asr', snapshot, runtimeValues)
+  const acoustic = catalogConfiguration('acoustic_pipeline', snapshot, runtimeValues)
+  const emotion = catalogConfiguration('tts_emotion_references', snapshot, runtimeValues)
+  const asrBackend = conversation.fields.find(field => field.key === 'ASR_BACKEND')?.value
+  const wakeEnabled = wake.fields.find(field => field.key === 'WAKE_ENABLED')?.value
+  const aecEnabled = acoustic.fields.find(field => field.key === 'AEC_REALTIME_ENABLED')?.value
+  const emotionEnabled = emotion.fields.find(field => field.key === 'ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING')?.value
 
   return [
     {
-      ...catalogConfiguration('conversation_asr', snapshot, runtimeValues),
+      ...conversation,
 
       active: true,
       configured: false,
       status: unknown,
       status_ok: false,
-      fields: catalogConfiguration('conversation_asr', snapshot, runtimeValues).fields.map(item => item.key === 'ASR_BACKEND'
+      fields: conversation.fields.map(item => item.key === 'ASR_BACKEND'
         ? { ...item, type: 'select' as const, options: [
           { value: 'qwen3_asr', label: 'Qwen3-ASR' }, { value: 'sense_voice', label: 'SenseVoice' },
           { value: 'openai_compatible', label: 'OpenAI-compatible API' },
@@ -63,20 +64,20 @@ export function buildVoiceConfigurationCatalog(
       status_ok: false,
     },
     {
-      ...catalogConfiguration('wake_asr', snapshot, runtimeValues),
+      ...wake,
 
-      active: wakeEnabled,
-      configured: !wakeEnabled,
-      status: wakeEnabled ? unknown : 'Off',
-      status_ok: !wakeEnabled,
+      active: wakeEnabled === true,
+      configured: wakeEnabled === false,
+      status: wakeEnabled === false ? 'Off' : unknown,
+      status_ok: wakeEnabled === false,
     },
     {
-      ...catalogConfiguration('acoustic_pipeline', snapshot, runtimeValues),
+      ...acoustic,
 
-      active: aecEnabled,
+      active: aecEnabled === true,
       configured: true,
-      status: aecEnabled ? 'Enabled' : 'Off',
-      status_ok: true,
+      status: aecEnabled === undefined ? unknown : aecEnabled ? 'Enabled' : 'Off',
+      status_ok: aecEnabled !== undefined,
     },
     {
       ...synthesis,
@@ -105,12 +106,12 @@ export function buildVoiceConfigurationCatalog(
     },
 
     {
-      ...catalogConfiguration('tts_emotion_references', snapshot, runtimeValues),
+      ...emotion,
 
-      active: ttsBackend === 'gpt_sovits' && emotionEnabled,
-      configured: !emotionEnabled,
-      status: emotionEnabled ? unknown : 'Off',
-      status_ok: !emotionEnabled,
+      active: ttsBackend === 'gpt_sovits' && emotionEnabled === true,
+      configured: emotionEnabled === false,
+      status: emotionEnabled === false ? 'Off' : unknown,
+      status_ok: emotionEnabled === false,
     },
 
   ]
