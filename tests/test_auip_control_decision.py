@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import json
 from types import SimpleNamespace
 
@@ -28,7 +29,8 @@ class _Runtime:
         self.read_calls: list[dict] = []
 
     def focused_projection(self, _session_id: str):
-        return self.projection
+        # Match AuipRuntime's detached snapshot contract.
+        return deepcopy(self.projection)
 
     def render_read_only_answer(self, app_session_id: str, **kwargs):
         self.read_calls.append({"app_session_id": app_session_id, **kwargs})

@@ -49,6 +49,11 @@ def test_work_item_artifact_recall_keeps_recency_and_all_statuses(tmp_path):
             row.work_item_id for row in all_rows if row.work_item_id in ids[:3]]
         assert store.list_work_items(artifact_name="auip.manifest.json", limit=1) == recalled[:1]
         assert [row.work_item_id for row in store.list_work_items(artifact_name="a%_.json")] == ids[4:]
+        # Same basename rule, while the finder retains its own kind filter.
+        assert set(store.find_work_item_ids_by_artifact_name("auip.manifest.json")) == {ids[0], ids[2]}
+        assert store.find_work_item_ids_by_artifact_name("auip.manifest.json",
+            kind="business.export") == [ids[1]]
+        assert store.find_work_item_ids_by_artifact_name("a%_.json") == ids[4:]
 
 
 def test_lightweight_reads_trim_json_before_decode_without_changing_full_records(tmp_path, monkeypatch):

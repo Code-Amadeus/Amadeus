@@ -17,7 +17,6 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass, replace
-from copy import deepcopy
 from functools import partial
 from typing import Any, Awaitable, Callable, Iterable, Mapping, Protocol
 
@@ -77,7 +76,9 @@ def reconcile_active_auip_control(
 
 
 class _AppRuntime(Protocol):
-    def focused_projection(self, conversation_id: str) -> dict[str, Any] | None: ...
+    def focused_projection(self, conversation_id: str) -> dict[str, Any] | None:
+        """Return a detached snapshot of the focused AppSession."""
+        ...
 
 
 class _LaunchCatalog(Protocol):
@@ -790,9 +791,8 @@ class AuipControlDecisionResolver:
             active = None
         if active_required and active is None:
             return None
-        # Preserve the receiving AppSession/history before yielding. Historical
-        # candidate discovery is filesystem work, not an admission prerequisite.
-        active = deepcopy(active)
+        # The runtime owns the detached AppSession snapshot. Freeze history
+        # before yielding; historical discovery is not an admission prerequisite.
         frozen_history = _bounded_prior_messages(prior_messages)
 
         def prepare_decision():

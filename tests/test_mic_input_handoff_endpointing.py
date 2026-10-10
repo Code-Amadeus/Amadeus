@@ -5,6 +5,7 @@ import sys
 from types import ModuleType, SimpleNamespace
 
 import numpy as np
+import pytest
 
 import asr.echo_guard as echo_guard
 import asr.mic_input_service as mic_module
@@ -101,6 +102,7 @@ def _capture(
     timeout_s: float = 15.0,
     max_speech_sec: float = 30.0,
     handoff_max_capture_sec: float = 5.0,
+    on_speech_start=None,
 ) -> np.ndarray | None:
     service = MicInputService()
     monkeypatch.setattr(service, "start", lambda *args, **kwargs: None)
@@ -110,7 +112,9 @@ def _capture(
         "consume_handoff_frames",
         lambda *args, **kwargs: list(handoff_frames or []),
     )
-    monkeypatch.setattr(mic_module.time, "monotonic", cursor.clock.monotonic)
+    # Only the capture clock is scripted; an async caller's event loop keeps
+    # its real clock while the microphone fixture runs in a worker thread.
+    monkeypatch.setattr(mic_module, "time", SimpleNamespace(monotonic=cursor.clock.monotonic))
 
     fake_silero_vad = ModuleType("silero_vad")
     fake_silero_vad.VADIterator = lambda *args, **kwargs: vad
@@ -140,7 +144,30 @@ def _capture(
         energy_end_ms=450,
         handoff_max_capture_sec=handoff_max_capture_sec,
         consume_handoff=True,
+        on_speech_start=on_speech_start,
     )
+
+
+@pytest.mark.parametrize("handoff,vad_start", [(False, True), (True, True), (True, False)])
+@pytest.mark.parametrize("callback_fails", [False, True])
+def test_each_capture_announces_speech_once(monkeypatch, handoff, vad_start, callback_fails):
+    calls = []
+
+    def on_start():
+        calls.append("started")
+        if callback_fails:
+            raise RuntimeError("optional speech callback failed")
+
+    events = {10:{"end":1}}
+    if vad_start:
+        events[1] = {"start":0}
+    audio = _capture(monkeypatch,
+        cursor=_ScriptedCursor(_FakeClock(), frame_count=20),
+        vad=_ScriptedVAD(events),
+        handoff_frames=_handoff_frames() if handoff else [],
+        on_speech_start=on_start)
+    assert audio is not None
+    assert calls == ["started"]
 
 
 def test_handoff_vad_takeover_disarms_recovery_watchdog_and_preserves_preroll(
@@ -221,9 +248,12 @@ def test_wait_for_speech_still_times_out_when_no_speech_starts(monkeypatch) -> N
     cursor = _ScriptedCursor(clock, frame_count=700, rms=0.0, value=0.0)
     vad = _ScriptedVAD()
 
-    audio = _capture(monkeypatch, cursor=cursor, vad=vad)
+    calls = []
+    audio = _capture(monkeypatch, cursor=cursor, vad=vad,
+        on_speech_start=lambda:calls.append("started"))
 
     assert audio is None
+    assert calls == []
     assert 468 <= cursor.read_count <= 470
 
 

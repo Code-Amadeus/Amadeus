@@ -171,3 +171,72 @@ async def test_production_asr_callbacks_scope_only_the_recognized_utterance(
     await callbacks["_handle_asr_recognized"]({"source":"wake", "text":"next"})
     assert observed[-1] is None
     create_session.assert_not_called()
+
+
+@pytest.mark.parametrize("handoff", [False, True])
+async def test_unrecognized_speech_snapshot_is_replaced_by_next_capture(monkeypatch, tmp_path, handoff):
+    from agent_host.work_ledger_store import WorkLedgerStore
+    from server.auip_launch import AuipLaunchCoordinator
+    from server.work_ledger_coordinator import WorkLedgerCoordinator
+    from test_auip_launch import _seed_app
+    from test_mic_input_handoff_endpointing import (
+        _capture, _FakeClock, _ScriptedCursor, _ScriptedVAD, _handoff_frames,
+    )
+
+    scratch = tmp_path / "scratch"
+    monkeypatch.setattr("config.settings.WORK_SCRATCH_ROOT", str(scratch))
+    monkeypatch.setattr("core.session_manager.get_current_session_id", lambda:"A")
+    with WorkLedgerStore(tmp_path / "ledger.sqlite3") as store:
+        project = store.create_or_get_project(scratch)
+        launch = AuipLaunchCoordinator(artifacts=store,
+            work_roster=WorkLedgerCoordinator(store), attention=None)
+        context = Mock(side_effect=lambda session:launch.render_prompt_context(
+            session, language="ja", include_control_contract=False))
+        manager = entry_manager(context)
+        preparations, prompts = [], []
+        prefetch = manager.prefetch_auip_entry_context
+
+        def track_preparation(session):
+            prepared = prefetch(session)
+            preparations.append(prepared)
+            return prepared
+
+        manager.prefetch_auip_entry_context = track_preparation
+
+        async def send(*_args, **_kwargs):
+            prompts.append(await asyncio.create_task(entry_prompt(manager)))
+
+        callbacks = production_callbacks({"cooperative_chat":manager,
+            "asr_h":SimpleNamespace(listening_state=lambda:{"active":True, "source":"wake"}),
+            "server_loop":asyncio.get_running_loop(), "WAKE_AUTO_SEND_TO_CHAT":True,
+            "prepared_auip_entry_scope":prepared_auip_entry_scope,
+            "_send_wake_text":send, "_handle_vn_player_asr_recognized":AsyncMock()})
+
+        async def capture(buffered):
+            with monkeypatch.context() as capture_patch:
+                audio = await asyncio.to_thread(_capture, capture_patch,
+                    cursor=_ScriptedCursor(_FakeClock(), frame_count=20),
+                    vad=_ScriptedVAD({1:{"start":0}, 10:{"end":1}}),
+                    handoff_frames=_handoff_frames() if buffered else [],
+                    on_speech_start=callbacks["_on_asr_speech_start"])
+            assert audio is not None
+            # Flush the thread-safe speech notification before inspecting it.
+            await asyncio.sleep(0)
+
+        try:
+            await capture(False)
+            assert len(preparations) == 1
+            old_prompt = await preparations[0][2]
+            assert "launchable_apps:\n- none" in old_prompt
+            # ASR returns no text: no recognized callback consumes this snapshot.
+            # Work then completes while the user can be listening to its result.
+            _seed_app(store, project, scratch, title="Board", turn_id="completed-work")
+            await capture(handoff)
+            await callbacks["_handle_asr_recognized"]({"source":"wake", "text":"打开它"})
+            assert len(prompts) == 1 and "- app=Board;" in prompts[0]
+            assert len(preparations) == 2
+            assert prompts[0] == await preparations[1][2]
+            assert context.call_count == 2  # Reuse the new snapshot, without a third lookup.
+            manager.auip_router.assert_not_called()
+        finally:
+            await asyncio.gather(*(prepared[2] for prepared in preparations), return_exceptions=True)
