@@ -42,7 +42,17 @@ the generated `src/shared/configCatalog.generated.ts`, which is compiled into
 both main and renderer bundles. Offline Settings never requires a running Python
 process or access to the source checkout. The generator also maintains marked
 sections of `.env.example`. Commit generated output with its declaration;
-`npm test` and `npm run build` reject stale output.
+`npm test` and `npm run build` reject stale output. Removed or renamed groups
+lose their old managed env sections; duplicate declared keys outside those sections
+are rejected. `catalog_legacy.json` bounds the remaining handwritten declarations:
+new keys and migrated keys cannot be added to legacy desktop lists/forms or Python
+parsing/status definitions. Shrink that inventory when migrating an owner.
+
+Desktop snapshots distinguish stored overrides from known non-secret startup
+inputs. The form follows source precedence even when offline. Dotenv interpolation
+remains Python-owned: an unresolved offline value is shown as unknown, and a
+pending clear never reuses the running backend's superseded value. Secrets expose
+only configured state.
 
 Supported field types are string, path, URL, enum, boolean, integer and number.
 `computed_default: true` omits the static default: its owner supplies a value

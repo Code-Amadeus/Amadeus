@@ -117,27 +117,37 @@ function output(relative, expected) {
   fs.writeFileSync(target, expected)
 }
 
-output('electron/src/shared/configCatalog.generated.ts',
-  '// Generated from config/catalog/**/*.json. Run npm run generate:config; do not edit.\n'
-  + "import type { CatalogGroup } from './configCatalog.js'\n"
-  + `export const catalogGroups: CatalogGroup[] = ${JSON.stringify(groups, null, 2)}\n`)
-
 const envPath = path.join(root, '.env.example')
 let env = fs.readFileSync(envPath, 'utf8').replaceAll('\r\n', '\n')
-for (const group of groups) {
-  const begin = `# BEGIN GENERATED CONFIG: ${group.id}`
-  const end = `# END GENERATED CONFIG: ${group.id}`
-  if (!env.includes(begin) && !env.includes(end)) env += `\n${begin}\n${end}\n`
-  const start = env.indexOf(begin)
-  const finish = env.indexOf(end)
-  assert.ok(start >= 0 && finish > start, `Invalid .env.example markers for ${group.id}`)
-  const lines = [begin, `# ${group.title['en-US']}`]
+const seen = new Set()
+const block = /^# BEGIN GENERATED CONFIG: ([a-z][a-z0-9_]*)\n[\s\S]*?^# END GENERATED CONFIG: \1(?:\n|$)/gm
+const markers = env.match(/^# (?:BEGIN|END) GENERATED CONFIG:.*$/gm) || []
+const matches = [...env.matchAll(block)]
+assert.equal(matches.length * 2, markers.length, 'Unpaired or nested .env.example markers')
+function renderGroup(group) {
+  const lines = [`# BEGIN GENERATED CONFIG: ${group.id}`, `# ${group.title['en-US']}`]
   for (const [key, field] of Object.entries(group.config)) {
     const value = field.secret ? '<your-api-key>' : field.example ?? field.default
     const rendered = typeof value === 'string' && /[\s#"'\\]/.test(value) ? JSON.stringify(value) : String(value)
     const options = field.options ? `  # ${field.options.map(option => typeof option === 'string' ? option : option.value).join(' | ')}` : ''
     lines.push(`${field.example_active ? '' : '# '}${key}=${rendered}${options}`)
   }
-  env = env.slice(0, start) + [...lines, end].join('\n') + env.slice(finish + end.length)
+  return [...lines, `# END GENERATED CONFIG: ${group.id}`, ''].join('\n')
 }
+const outside = env.replace(block, '')
+for (const [, key] of outside.matchAll(/^\s*(?:#\s*)?(?:export\s+)?([A-Z][A-Z0-9_]*)\s*=/gm)) {
+  assert.ok(!keys.has(key), `Declared setting ${key} duplicated outside generated sections`)
+}
+env = env.replace(block, (_, id) => {
+  assert.ok(!seen.has(id), `Duplicate .env.example section ${id}`)
+  seen.add(id)
+  const group = groups.find(group => group.id === id)
+  return group ? renderGroup(group) : ''
+})
+for (const group of groups) if (!seen.has(group.id)) env += `\n${renderGroup(group)}`
+output('electron/src/shared/configCatalog.generated.ts',
+  '// Generated from config/catalog/**/*.json. Run npm run generate:config; do not edit.\n'
+  + "import type { CatalogGroup } from './configCatalog.js'\n"
+  + `export const catalogGroups: CatalogGroup[] = ${JSON.stringify(groups, null, 2)}\n`)
+
 output('.env.example', env)

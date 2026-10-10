@@ -13,6 +13,28 @@ from config.environment import EnvironmentReader
 from server.handlers import system_handler
 
 
+def test_no_new_or_migrated_handwritten_config_declarations() -> None:
+    import ast
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    baseline = json.loads((root / "config/catalog_legacy.json").read_text(encoding="utf-8"))
+    declared = {key for group in catalog.configuration_groups().values() for key in group["config"]}
+    for filename, allowed in baseline["python"].items():
+        for node in ast.walk(ast.parse((root / filename).read_text(encoding="utf-8"))):
+            if not isinstance(node, ast.Call) or not node.args or not isinstance(node.args[0], ast.Constant):
+                continue
+            func = node.func
+            environment_read = (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)
+                                and func.value.id == "_ENV" and func.attr in {"boolean", "integer", "number", "string", "secret"})
+            handwritten_field = isinstance(func, ast.Name) and func.id in {
+                "_startup_field", "_str", "_bool", "_int", "_float", "_secret",
+            }
+            if environment_read or handwritten_field:
+                key = node.args[0].value
+                assert key in allowed and key not in declared, f"{filename}:{node.lineno}: declare {key} in the catalog"
+
+
 def test_catalog_defaults_remain_registered_in_the_environment_reader() -> None:
     reader = EnvironmentReader({})
     values = catalog.read_catalog_environment(reader)

@@ -7,7 +7,7 @@
   "scripts": {
     "postinstall": "install-electron && npm ci --ignore-scripts --prefix ../agent_host/pi_runtime",
     "generate:config": "node scripts/generate-config-catalog.mjs",
-    "check:config": "node scripts/generate-config-catalog.mjs --check",
+    "check:config": "node scripts/generate-config-catalog.mjs --check && node scripts/check-config-ownership.mjs",
     "test": "npm run check:config && node --experimental-strip-types --test tests/*.test.mjs",
     "dev": "vite",
     "build": "npm run check:config && tsc && vite build",
