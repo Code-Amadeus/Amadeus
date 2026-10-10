@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -22,15 +21,13 @@ class SynthesisBackends:
 def select_synthesis(
     job: Any,
     *,
-    cuda_graph_enabled: bool | None = None,
+    cuda_graph_enabled: bool,
     experimental_enabled: bool | None = None,
     backends: SynthesisBackends,
     logger=None,
 ) -> tuple[str, SynthesisFn]:
     """Return (backend_name, synthesis coroutine factory)."""
     del job  # reserved for later per-job routing without changing the worker API
-    if cuda_graph_enabled is None:
-        cuda_graph_enabled = os.environ.get("ENABLE_CUDA_GRAPH", "0") == "1"
     if experimental_enabled is None:
         experimental_enabled = bool(USE_EXPERIMENTAL_TTS_STREAM)
 

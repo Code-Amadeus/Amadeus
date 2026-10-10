@@ -464,7 +464,7 @@ TTS_DIAG_VERBOSE             = _bool("TTS_DIAG_VERBOSE", False)
 # Optional T2S FlashAttention2 KV-cache decode path. Default off: the SDPA
 # static-KV/CUDA-Graph path remains the production baseline unless explicitly
 # enabled for benchmarking.
-TTS_T2S_FLASH_ATTN           = _bool("TTS_T2S_FLASH_ATTN", False)
+TTS_T2S_FLASH_ATTN           = _str("TTS_T2S_FLASH_ATTN", "auto").strip().lower()
 TTS_T2S_FLASH_ATTN_MODE      = _str("TTS_T2S_FLASH_ATTN_MODE", "valid").strip().lower()
 # 首句更早切分：仅首句；累计可见字符（strip 后长度）≥此值且仍未遇到句末标点时，强制送 TTS。
 # 0 = 关闭，行为与原先「仅靠标点切首句」一致。试跑可设 14～22；过短易切碎，过长收益小。

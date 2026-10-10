@@ -2379,12 +2379,14 @@ export const catalogGroups: CatalogGroup[] = [
           "en-US": "CUDA Graph",
           "zh-CN": "CUDA Graph"
         },
-        "default": "0",
+        "default": "auto",
         "scope": "session",
         "options": [
+          "auto",
           "0",
           "1"
-        ]
+        ],
+        "example_active": true
       },
       "EXP_TTS_MAX_CONCURRENCY": {
         "type": "integer",

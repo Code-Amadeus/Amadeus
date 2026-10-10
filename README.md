@@ -477,8 +477,8 @@ the backend. For `.env` configuration, set `TTS_VOICE_PROFILE=kurisu_v2pro`;
 checkpoints together. The embedded runtime supports v1, v2, v2Pro, v2ProPlus,
 and v3 checkpoints; use `custom` with `TTS_GPT_MODEL_PATH` and
 `TTS_SOVITS_MODEL_PATH` for another compatible pair. v2Pro/v2ProPlus also require
-the speaker-encoder weight supplied in the add-on. Selecting v2Pro does not
-enable the optional `TTS_T2S_FLASH_ATTN` path; it remains off by default.
+the speaker-encoder weight supplied in the add-on. Acceleration follows the
+actual speech device and available extensions, independently of the voice preset.
 
 **v2ProPlus is also supported by the same inference pipeline**, including
 speaker conditioning, session caching, CUDA Graph, and streaming playback.
@@ -503,6 +503,34 @@ use. Prewarm it once if the normal application launch must remain offline:
 ```powershell
 uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('準備完了'))"
 ```
+
+### Recommended NVIDIA speech acceleration
+
+Leave **Settings → Voice → Advanced voice settings → Local TTS inference mode**
+on **Automatic (recommended)**. For `.env` configuration:
+
+```dotenv
+ENABLE_CUDA_GRAPH=auto
+TTS_T2S_FLASH_ATTN=auto
+```
+
+These are also the defaults when unset. CUDA Graph automatically enables for
+GPT-SoVITS actually running on NVIDIA CUDA, including a GPU sidecar. CPU, MPS,
+ROCm and remote TTS do not automatically enable it. An NVIDIA GPU elsewhere in
+the host does not enable acceleration for a CPU speech runtime.
+
+The optional FlashAttention KV-cache path is selected on NVIDIA Ampere or newer
+with FP16/BF16 weights when a compatible `flash-attn` extension is available.
+Without it, the existing PyTorch SDPA path remains active. The application does
+not install extensions automatically; see [optional extension installation and
+verification](docs/torch27_candidates.md#flashattention-wheel-inventory).
+
+Both settings accept `0` (off), `1` (request on) and `auto`. Explicit values in
+existing `.env` or desktop settings keep precedence; choose **Automatic** or
+replace an old `0` to opt in. Manual requests still require compatible runtime
+capabilities. Change the desktop mode while speech is idle; restart the backend
+after changing `.env` or the FlashAttention setting. Startup diagnostics report
+the selected path. Utterance grouping remains unchanged and opt-in.
 
 ### Configure and launch
 

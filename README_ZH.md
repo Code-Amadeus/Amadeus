@@ -428,7 +428,7 @@ uv run --locked --no-sync python tools\external_assets.py install C:\Downloads\a
 使用 `kurisu_v3`。预设会同时选择匹配的两份权重。内嵌运行时支持 v1、v2、v2Pro、
 v2ProPlus 和 v3；其他兼容权重组合可选择 `custom`，并填写 `TTS_GPT_MODEL_PATH`
 与 `TTS_SOVITS_MODEL_PATH`。v2Pro/v2ProPlus 还需要附加包中的说话人编码器权重。
-选择 v2Pro 不会自动开启可选的 `TTS_T2S_FLASH_ATTN` 路径，该开关默认关闭。
+加速路径根据实际语音设备与可用扩展选择，不由声音权重预设单独决定。
 
 **v2ProPlus 也受支持，并复用同一条推理管线**，包括说话人条件、会话缓存、
 CUDA Graph 和流式播放。使用时选择 **Custom checkpoint pair**
@@ -450,6 +450,30 @@ GPT-SoVITS 日文前端第一次使用会准备 OpenJTalk 字典。希望正式�
 ```powershell
 uv run --locked --no-sync python -c "import pyopenjtalk; print(pyopenjtalk.g2p('準備完了'))"
 ```
+
+### 推荐的 NVIDIA 语音加速配置
+
+建议保持 **Settings → Voice → Advanced voice settings → Local TTS inference mode**
+为 **自动（推荐）**。使用 `.env` 时：
+
+```dotenv
+ENABLE_CUDA_GRAPH=auto
+TTS_T2S_FLASH_ATTN=auto
+```
+
+未设置时也采用上述默认值。仅当 GPT-SoVITS 实际运行在 NVIDIA CUDA 上时自动
+开启 CUDA Graph，GPU 独立语音进程也适用。CPU、MPS、ROCm 和远程 TTS 不自动开启；
+即使主机有 NVIDIA 显卡，使用 CPU 的语音运行时也不会因此开启。
+
+FlashAttention KV-cache 路径在 NVIDIA Ampere 或更新架构、FP16/BF16 权重，且
+兼容的 `flash-attn` 扩展可用时自动选择；否则继续使用现有 PyTorch SDPA 路径。
+应用不会自动安装扩展，安装与验证见[可选扩展说明](docs/torch27_candidates.md#flashattention-wheel-inventory)。
+
+两个开关均支持 `0`（关闭）、`1`（请求开启）与 `auto`。已有 `.env` 或桌面设置中的
+显式值继续优先；旧配置为 `0` 时，改为 `auto` 或在界面选择“自动”即可采用新策略。
+手动开启也需要运行时能力支持。桌面模式请在语音空闲时切换；修改 `.env` 或
+FlashAttention 设置后重启后端。启动诊断会报告实际选择的路径。
+本次不改变句内片段合并策略，该调度仍需手动开启。
 
 ### 配置与启动
 

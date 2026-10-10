@@ -55,3 +55,14 @@ test('standard synthesis defaults to one task while explicit parallel mode keeps
     ENABLE_CUDA_GRAPH: '0', EXP_TTS_MAX_CONCURRENCY: '2',
   }), 'parallel2')
 })
+
+
+test('automatic TTS mode survives defaults, saving and offline reload', () => {
+  assert.equal(exports.runtimeSettingValue('tts_mode'), 'auto')
+  const saved = exports.desktopValuesForRuntimeSettings({ tts_mode: 'auto' })
+  assert.deepEqual(saved, { ENABLE_CUDA_GRAPH: 'auto', EXP_TTS_MAX_CONCURRENCY: '1' })
+  assert.equal(exports.runtimeSettingFromDesktopValues('tts_mode', saved), 'auto')
+  assert.equal(exports.runtimeSettingValue('tts_mode', {
+    values: saved, sources: { ENABLE_CUDA_GRAPH: 'user' },
+  }, 'parallel'), 'auto')
+})

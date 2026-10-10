@@ -48,6 +48,7 @@ from tts.first_sentence_audio_cache import get_first_sentence_audio_cache
 from tts.latency_clock import log_latency_marker
 from tts.synthesis_backend import SynthesisBackends, select_synthesis
 from tts.utterance_scheduler import TTSUtteranceScheduler
+from config.tts_acceleration import acceleration_mode
 
 logger = logging.getLogger(__name__)
 _utterance_scheduler = TTSUtteranceScheduler(logger=logger)
@@ -161,7 +162,7 @@ def _cost_profile(params: dict) -> tuple:
 
 
 def predict_synthesis_seconds(text: str) -> float:
-    backend, _ = select_synthesis(None, backends=_SYNTHESIS_BACKENDS)
+    backend, _ = select_synthesis(None, cuda_graph_enabled=_current_cuda_graph_enabled(), backends=_SYNTHESIS_BACKENDS)
     prepared, params = _prepare_synthesis_request(text, enhanced=backend == "enhanced")
     steps_ratio = (1.0 if getattr(_tts_runtime, "deployment", "embedded") == "remote"
                    else params["sample_steps"] / 16)
@@ -254,25 +255,29 @@ def reconfigure_tts_language_code(value: str) -> str:
     return current_tts_language_code()
 
 
-def reconfigure_tts_mode(cuda_graph: bool, concurrency: int) -> None:
+def reconfigure_tts_mode(cuda_graph: bool | None, concurrency: int) -> None:
     """热更新 TTS 推理模式（GUI 切换时调用，当前无任务时最安全）。
 
+    cuda_graph=None + concurrency=1 → 根据实际语音设备自动选择
     cuda_graph=True  + concurrency=1 → CUDA Graph 串行模式
     cuda_graph=False + concurrency=1 → 常规串行模式
     cuda_graph=False + concurrency=2 → 显式并行模式
     """
     global _exp_tts_semaphore, _exp_tts_concurrency
-    os.environ['ENABLE_CUDA_GRAPH'] = '1' if cuda_graph else '0'
+    os.environ['ENABLE_CUDA_GRAPH'] = 'auto' if cuda_graph is None else '1' if cuda_graph else '0'
     _exp_tts_concurrency = selectable_tts_concurrency(concurrency)
     _exp_tts_semaphore = asyncio.Semaphore(_exp_tts_concurrency)
     logger.info(
-        f"[TTS Mode] switched -> CUDA_Graph={'ON' if cuda_graph else 'OFF'}, "
+        f"[TTS Mode] switched -> CUDA_Graph={os.environ['ENABLE_CUDA_GRAPH']}, "
         f"semaphore={_exp_tts_concurrency}"
     )
 
 
 def current_tts_mode() -> str:
-    if os.environ.get("ENABLE_CUDA_GRAPH", "0") == "1":
+    mode = acceleration_mode("ENABLE_CUDA_GRAPH")
+    if mode == "auto":
+        return "auto"
+    if mode == "1":
         return "cuda_graph"
     return "parallel2" if _exp_tts_concurrency > 1 else "parallel"
 
@@ -280,6 +285,7 @@ def current_tts_mode() -> str:
 def reconfigure_tts_mode_name(value: str) -> str:
     raw = str(value or "").strip().lower()
     aliases = {
+        "auto": "auto",
         "cuda_graph": "cuda_graph",
         "cuda graph ×1": "cuda_graph",
         "graph": "cuda_graph",
@@ -290,8 +296,8 @@ def reconfigure_tts_mode_name(value: str) -> str:
     mode = aliases.get(raw)
     if mode is None:
         raise ValueError(f"unsupported TTS mode: {value!r}")
-    if mode == "cuda_graph":
-        reconfigure_tts_mode(cuda_graph=True, concurrency=1)
+    if mode in {"auto", "cuda_graph"}:
+        reconfigure_tts_mode(cuda_graph=None if mode == "auto" else True, concurrency=1)
     else:
         reconfigure_tts_mode(
             cuda_graph=False,
@@ -574,11 +580,11 @@ def configure(
 def get_sovits_params(text: str, is_first_sentence: bool = False):
     """根据文本长度和是否为首句返回合适的推理参数。
 
-    CUDA Graph 开关仅由环境变量 ENABLE_CUDA_GRAPH 控制，静态 KV Cache 始终开启。
+    CUDA Graph 由运行时结合实际设备与 ENABLE_CUDA_GRAPH 偏好选择。
     各句末尾统一追加 400 ms 停顿，不改变首句起音前的缓冲。
     """
     length = len(text.strip())
-    cuda_graph_enabled = os.environ.get("ENABLE_CUDA_GRAPH", "0") == "1"
+    cuda_graph_enabled = _current_cuda_graph_enabled()
 
     long_text = length >= 45
     steps = 4 if is_first_sentence else (32 if long_text else 16)
@@ -1175,7 +1181,7 @@ async def speak_stream_enhanced_asyncio_queue(
 
 
 def _current_cuda_graph_enabled() -> bool:
-    return os.environ.get("ENABLE_CUDA_GRAPH", "0") == "1"
+    return bool(getattr(_tts_runtime, "cuda_graph_enabled", False))
 
 
 def _current_experimental_tts_enabled() -> bool:
@@ -1419,7 +1425,7 @@ async def play_sentence_worker():
 async def warmup_graph_pipeline():
     """在启用 CUDA Graph 时进行一次隐式预热（不产生可听播放）。"""
     try:
-        if os.environ.get('ENABLE_CUDA_GRAPH', '0') != '1':
+        if not _current_cuda_graph_enabled():
             return
         if _tts_runtime is None:
             return
