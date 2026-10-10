@@ -1,0 +1,33 @@
+{
+  "id": "gemini",
+  "title": {
+    "en-US": "Gemini",
+    "zh-CN": "Gemini"
+  },
+  "description": {
+    "en-US": "Gemini",
+    "zh-CN": "Gemini"
+  },
+  "desktop": true,
+  "restart_required": true,
+  "config": {
+    "GEMINI_API_KEY": {
+      "type": "string",
+      "title": {
+        "en-US": "API key",
+        "zh-CN": "API 密钥"
+      },
+      "secret": true,
+      "example_active": true
+    },
+    "GEMINI_MODEL_NAME": {
+      "type": "string",
+      "title": {
+        "en-US": "Model",
+        "zh-CN": "模型"
+      },
+      "default": "gemini-2.5-flash",
+      "example_active": true
+    }
+  }
+}

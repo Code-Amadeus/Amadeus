@@ -30,8 +30,8 @@ again.
 ## Shared startup declarations
 
 The shared catalog covers the TTS selector, all four built-in TTS connection/model
-groups, graphics settings, and voice input/reference controls: 52 fields in
-`config/catalog/tts/`, `config/catalog/graphics/` and `config/catalog/voice/`. Edit the owning JSON for defaults, types, options,
+groups, graphics, voice input/reference controls, and model connections: 84 fields
+in `config/catalog/tts/`, `graphics/`, `voice/` and `models/`. Edit the owning JSON for defaults, types, options,
 ranges, desktop editability, restart policy, and English/Chinese labels. The
 configuration keys retain their existing environment-variable names.
 Run `npm run generate:config` from `electron` after editing a declaration.
@@ -291,3 +291,10 @@ These are not pending mechanical migrations:
 - The legacy root GPT-SoVITS WebUI/API entry points and their conflicting
   `config.py` were removed. A future HTTP API should be designed around the
   current `server.app` contracts instead of reviving that compatibility layer.
+
+Model connection inheritance stays in the model owner. The catalog records legacy
+names (`aliases`), facade attribute bindings (`setting`), and local engine field
+visibility (`local_engines`). CLI numeric controls remain parsed strings;
+`control: "number"` supplies UI hints without changing command argument types.
+Bedrock bearer credentials now use the same surrounding-quote/whitespace
+normalization as other API secrets. AWS credential discovery remains unchanged.

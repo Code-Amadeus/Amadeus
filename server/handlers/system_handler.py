@@ -50,32 +50,39 @@ def _startup_field(
     return field
 
 
+def _catalog_field(key: str, settings: Any) -> dict[str, Any]:
+    group = next(group for group in configuration_groups().values() if key in group["config"])
+    definition = group["config"][key]
+    secret = definition.get("secret", False)
+    value = getattr(settings, definition.get("setting", key))
+    field = _startup_field(
+        key, definition["title"]["en-US"], "" if secret else value,
+        field_type="secret" if secret else {
+            "string": "text", "path": "path", "url": "url", "enum": "select",
+            "boolean": "boolean", "integer": "number", "number": "number",
+        }[definition["type"]],
+        options=tuple({"value": option, "label": option} if isinstance(option, str) else {
+            "value": option["value"], "label": option["label"]["en-US"],
+        } for option in definition.get("options", ())),
+        description=definition.get("description", {}).get("en-US", ""),
+        minimum=definition.get("min"), maximum=definition.get("max"), step=definition.get("step"),
+        secret_configured=bool(value) if secret else None,
+        editable=group["desktop"],
+    )
+    field["restart_required"] = group["restart_required"]
+    if definition.get("control"):
+        field["type"] = definition["control"]
+    return field
+
+
 def _catalog_configuration(
     group_id: str, settings: Any, *, options: dict[str, list[dict[str, str]]] | None = None,
 ) -> dict[str, Any]:
     group = configuration_groups()[group_id]
-    fields = []
-    for key, definition in group["config"].items():
-        secret = definition.get("secret", False)
-        value = getattr(settings, key)
-        field = _startup_field(
-            key, definition["title"]["en-US"], "" if secret else value,
-            field_type="secret" if secret else {
-                "string": "text", "path": "path", "url": "url", "enum": "select",
-                "boolean": "boolean", "integer": "number", "number": "number",
-            }[definition["type"]],
-            options=tuple({"value": option, "label": option} if isinstance(option, str) else {
-                "value": option["value"], "label": option["label"]["en-US"],
-            } for option in definition.get("options", ())),
-            description=definition.get("description", {}).get("en-US", ""),
-            minimum=definition.get("min"), maximum=definition.get("max"), step=definition.get("step"),
-            secret_configured=bool(value) if secret else None,
-            editable=group["desktop"],
-        )
-        field["restart_required"] = group["restart_required"]
-        if options and key in options:
-            field.update(type="select", options=options[key])
-        fields.append(field)
+    fields = [_catalog_field(key, settings) for key in group["config"]]
+    for field in fields:
+        if options and field["key"] in options:
+            field.update(type="select", options=options[field["key"]])
     return {
         "id": group["id"], "label": group["title"]["en-US"],
         "description": group["description"]["en-US"], "fields": fields,
@@ -306,89 +313,9 @@ def _model_connections(
         "hybrid3": {"hybrid_local", "openai"},
     }.get(active, {active})
     local_type = str(settings.LOCAL_LLM_TYPE or "llama_server").strip().lower()
-    local_fields = [
-        _startup_field(
-            "LOCAL_LLM_TYPE", "Backend type", local_type,
-            field_type="select", options=("llama_server", "lmstudio", "ollama", "cli"),
-        ),
-        _startup_field("LOCAL_LLM_MODEL", "Model", settings.LOCAL_LLM_MODEL),
-    ]
-    if local_type == "llama_server":
-        local_fields.extend(
-            [
-                _startup_field(
-                    "LOCAL_LLM_LAUNCH_MODE", "Server ownership",
-                    settings.LOCAL_LLM_LAUNCH_MODE,
-                    field_type="select", options=(
-                        {"value": "external", "label": "External server"},
-                        {"value": "managed", "label": "Managed by Amadeus"},
-                    ),
-                    description="External reuses an existing llama.cpp server; managed starts and stops it with Amadeus.",
-                ),
-                _startup_field(
-                    "LOCAL_LLM_URL", "llama.cpp server URL", settings.LOCAL_LLM_URL,
-                    field_type="url",
-                ),
-            ]
-        )
-        local_fields.extend(
-            [
-                _startup_field(
-                    "LOCAL_LLM_CLI_PATH", "llama-server executable",
-                    settings.LOCAL_LLM_CLI_PATH, field_type="path",
-                    description="Used by managed mode and the repository BAT launchers; optional for an independently managed external server.",
-                ),
-                _startup_field(
-                    "LOCAL_LLM_CLI_MODEL_PATH", "GGUF model file",
-                    settings.LOCAL_LLM_MODEL_PATH, field_type="path",
-                    description="Used by managed mode and the repository BAT launchers.",
-                ),
-                _startup_field(
-                    "LOCAL_LLM_CLI_CONTEXT", "Context size",
-                    getattr(settings, "_LLM_CONTEXT", "4096"),
-                ),
-                _startup_field(
-                    "LOCAL_LLM_CLI_THREADS", "CPU threads",
-                    getattr(settings, "_LLM_THREADS", "4"),
-                ),
-                _startup_field(
-                    "LOCAL_LLM_CLI_NGL", "GPU layers",
-                    getattr(settings, "_LLM_NGL", "99"),
-                ),
-                _startup_field(
-                    "LOCAL_LLM_CUDA_VISIBLE_DEVICES", "Visible GPU IDs",
-                    settings.LOCAL_LLM_CUDA_VISIBLE_DEVICES,
-                    description="Optional nvidia-smi indices, for example 1. Leave blank for automatic visibility.",
-                ),
-            ]
-        )
-    elif local_type == "lmstudio":
-        local_fields.append(
-            _startup_field(
-                "LOCAL_LLM_LM_STUDIO_URL", "LM Studio URL",
-                settings.LOCAL_LLM_LM_STUDIO_URL, field_type="url",
-            )
-        )
-    elif local_type == "ollama":
-        local_fields.append(
-            _startup_field(
-                "LOCAL_LLM_OLLAMA_URL", "Ollama URL",
-                settings.LOCAL_LLM_OLLAMA_URL, field_type="url",
-            )
-        )
-    else:
-        local_fields.extend(
-            [
-                _startup_field(
-                    "LOCAL_LLM_CLI_PATH", "llama-cli executable",
-                    settings.LOCAL_LLM_CLI_PATH, field_type="path",
-                ),
-                _startup_field(
-                    "LOCAL_LLM_CLI_MODEL_PATH", "GGUF model file",
-                    settings.LOCAL_LLM_MODEL_PATH, field_type="path",
-                ),
-            ]
-        )
+    local_fields = [field for field in _catalog_configuration("local", settings)["fields"]
+                    if not configuration_groups()["local"]["config"][field["key"]].get("local_engines")
+                    or local_type in configuration_groups()["local"]["config"][field["key"]]["local_engines"]]
 
     local_status = dict(local_status or {})
     hybrid_status = dict(hybrid_status or {})
@@ -408,104 +335,51 @@ def _model_connections(
             ],
         },
         {
-            "id": "character_rag",
-            "label": "Character knowledge (optional RAG)",
-            "description": "Local retrieval for all chat models. Build an index first; retrieved excerpts are sent to the selected model, including remote APIs. Restart after changes.",
+            **_catalog_configuration("character_rag", settings),
+
+
             "active": bool(settings.RAG_ENABLED),
             "configured": bool(rag_status["index_present"]),
             "status": rag_status["state"],
             "status_ok": rag_status["state"] in {"ready", "disabled"},
             "status_detail": rag_detail,
-            "fields": [
-                _startup_field("RAG_ENABLED", "Enable character knowledge", bool(settings.RAG_ENABLED), field_type="boolean"),
-                _startup_field("RAG_INDEX_DIR", "Built index directory", settings.RAG_INDEX_DIR, field_type="path"),
-                _startup_field("RAG_TOP_K", "Maximum results", settings.RAG_TOP_K, field_type="number", minimum=1, maximum=20, step=1),
-                _startup_field("RAG_MAX_DISTANCE", "Maximum squared L2 distance", settings.RAG_MAX_DISTANCE, field_type="number", minimum=0, maximum=4, step=0.01),
-            ],
+
         },
         {
-            "id": "deepseek",
-            "label": "DeepSeek",
+            **_catalog_configuration("deepseek", settings),
+
             "active": "deepseek" in active_connections,
             "configured": bool(settings.DEEPSEEK_API_KEY),
-            "fields": [
-                _startup_field(
-                    "DEEPSEEK_API_KEY", "API key", field_type="secret",
-                    secret_configured=bool(settings.DEEPSEEK_API_KEY),
-                ),
-                _startup_field(
-                    "DEEPSEEK_BASE_URL", "Base URL", settings.DEEPSEEK_BASE_URL,
-                    field_type="url",
-                ),
-                _startup_field(
-                    "DEEPSEEK_MODEL_NAME", "Model", settings.DEEPSEEK_MODEL_NAME,
-                    description="Independent from the Codex Work Provider model.",
-                ),
-            ],
+
         },
         {
-            "id": "openai",
-            "label": "OpenAI-compatible",
+            **_catalog_configuration("openai", settings),
+
             "active": "openai" in active_connections,
             "configured": bool(settings.OPENAI_API_KEY),
-            "fields": [
-                _startup_field(
-                    "OPENAI_API_KEY", "API key", field_type="secret",
-                    secret_configured=bool(settings.OPENAI_API_KEY),
-                ),
-                _startup_field(
-                    "OPENAI_BASE_URL", "Base URL", settings.OPENAI_BASE_URL,
-                    field_type="url",
-                ),
-                _startup_field("OPENAI_MODEL_NAME", "Model", settings.OPENAI_MODEL_NAME),
-            ],
+
         },
         {
-            "id": "gemini",
-            "label": "Gemini",
+            **_catalog_configuration("gemini", settings),
+
             "active": "gemini" in active_connections,
             "configured": bool(settings.GEMINI_API_KEY),
-            "fields": [
-                _startup_field(
-                    "GEMINI_API_KEY", "API key", field_type="secret",
-                    secret_configured=bool(settings.GEMINI_API_KEY),
-                ),
-                _startup_field("GEMINI_MODEL_NAME", "Model", settings.GEMINI_MODEL_NAME),
-            ],
+
         },
         {
-            "id": "bedrock",
-            "label": "AWS Bedrock",
+            **_catalog_configuration("bedrock", settings),
+
             "active": "bedrock" in active_connections,
             "configured": bool(
                 settings.AWS_BEDROCK_BEARER_TOKEN
                 or settings.AWS_BEDROCK_AUTH_MODE in {"auto", "boto3"}
             ),
-            "fields": [
-                _startup_field(
-                    "BEDROCK_AUTH_MODE", "Authentication", settings.AWS_BEDROCK_AUTH_MODE,
-                    field_type="select", options=("auto", "boto3", "bearer"),
-                ),
-                _startup_field(
-                    "AWS_BEARER_TOKEN_BEDROCK", "Bearer token", field_type="secret",
-                    secret_configured=bool(settings.AWS_BEDROCK_BEARER_TOKEN),
-                ),
-                _startup_field("AWS_BEDROCK_REGION", "Region", settings.AWS_BEDROCK_REGION),
-                _startup_field("AWS_BEDROCK_MODEL_ID", "Model ID", settings.AWS_BEDROCK_MODEL_ID),
-                _startup_field(
-                    "AWS_BEDROCK_USE_INFERENCE_PROFILE", "Use inference profile",
-                    bool(settings.AWS_BEDROCK_USE_INFERENCE_PROFILE), field_type="boolean",
-                ),
-                _startup_field(
-                    "AWS_BEDROCK_INFERENCE_PROFILE_ID", "Inference profile ID",
-                    settings.AWS_BEDROCK_INFERENCE_PROFILE_ID,
-                ),
-            ],
+
         },
         {
-            "id": "local",
-            "label": "Pure-local model",
-            "description": "Within the optional pure-local profile, llama.cpp is the default backend; LM Studio, Ollama, and llama-cli remain compatibility choices.",
+            **_catalog_configuration("local", settings),
+
+
             "active": "local" in active_connections,
             "configured": bool(local_status.get("configured")),
             "status": str(local_status.get("state") or "unavailable"),
@@ -514,24 +388,15 @@ def _model_connections(
             "fields": local_fields,
         },
         {
-            "id": "hybrid_local",
-            "label": "Hybrid local head",
-            "description": "Shared fast first-sentence endpoint. Hybrid pairs it with Bedrock, Hybrid2 with DeepSeek, and Hybrid3 with OpenAI-compatible. The optional Hybrid BAT launcher shares the llama.cpp executable and GGUF settings above.",
+            **_catalog_configuration("hybrid_local", settings),
+
+
             "active": "hybrid_local" in active_connections,
             "configured": bool(hybrid_status.get("configured")),
             "status": str(hybrid_status.get("state") or "unavailable"),
             "status_ok": bool(hybrid_status.get("available")),
             "status_detail": str(hybrid_status.get("detail") or "Status is checked at startup."),
-            "fields": [
-                _startup_field(
-                    "HYBRID_LOCAL_LLM_URL", "Head endpoint",
-                    settings.HYBRID_LOCAL_LLM_URL, field_type="url",
-                ),
-                _startup_field(
-                    "HYBRID_LOCAL_LLM_MODEL", "Head model",
-                    settings.HYBRID_LOCAL_LLM_MODEL,
-                ),
-            ],
+
         },
     ]
 
@@ -740,14 +605,13 @@ def _model_role_configuration(settings: Any) -> list[dict[str, Any]]:
     ]
 
 
-def _acp_credentials() -> list[dict[str, Any]]:
+def _acp_credentials(settings: Any) -> list[dict[str, Any]]:
     import os
 
     return [
         _startup_field("ANTHROPIC_API_KEY", "Anthropic API key", field_type="secret",
                        secret_configured=bool(os.environ.get("ANTHROPIC_API_KEY"))),
-        _startup_field("DEEPSEEK_API_KEY", "DeepSeek API key", field_type="secret",
-                       secret_configured=bool(os.environ.get("DEEPSEEK_API_KEY"))),
+        {**_catalog_field("DEEPSEEK_API_KEY", settings), "label": "DeepSeek API key"},
     ]
 
 
@@ -1018,7 +882,7 @@ class SystemHandler(RequestHandler):
                 "effective_max_fps": settings.RENDER_EFFECTIVE_MAX_FPS,
                 "effective_max_resolution": settings.RENDER_EFFECTIVE_MAX_RESOLUTION,
             },
-            "acp_credentials": _acp_credentials(),
+            "acp_credentials": _acp_credentials(settings),
             "artifact_configuration": _artifact_configuration(settings),
             "voice_configuration": voice_configuration,
             "avatar_configuration": _avatar_configuration(settings),

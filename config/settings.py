@@ -21,6 +21,8 @@ from config.catalog import configuration_groups, option_values, read_catalog_env
 # 加载项目根目录的 .env
 _ROOT = Path(__file__).resolve().parent.parent
 _ENV = load_project_environment(_ROOT)
+# Static declarations load before computed defaults and owner normalization.
+globals().update(read_catalog_environment(_ENV))
 
 # ---------------------------------------------------------------------------
 # 工具函数
@@ -91,32 +93,29 @@ if LLM_PROVIDER not in LLM_PROVIDERS:
         + ", ".join(sorted(LLM_PROVIDERS))
         + f"; observed {LLM_PROVIDER!r}"
     )
-DEEPSEEK_API_KEY   = _secret("DEEPSEEK_API_KEY")
-DEEPSEEK_BASE_URL  = _str("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-DEEPSEEK_MODEL_NAME = _str("DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
+
+
 
 # ===========================================================================
 # LLM 提供商 — OpenAI / GPT
 # ===========================================================================
-OPENAI_API_KEY    = _secret("OPENAI_API_KEY")
-OPENAI_BASE_URL   = _str("OPENAI_BASE_URL", "https://api.openai.com/v1")
-OPENAI_MODEL_NAME = _str("OPENAI_MODEL_NAME", "gpt-5.4-mini")
+
+
 
 # ===========================================================================
 # LLM 提供商 — Gemini
 # ===========================================================================
-GEMINI_API_KEY    = _secret("GEMINI_API_KEY")
-GEMINI_MODEL_NAME = _str("GEMINI_MODEL_NAME", "gemini-2.5-flash")
+
 
 # ===========================================================================
 # LLM 提供商 — AWS Bedrock
 # ===========================================================================
-AWS_BEDROCK_BEARER_TOKEN        = _str("AWS_BEARER_TOKEN_BEDROCK")
-AWS_BEDROCK_AUTH_MODE           = _str("BEDROCK_AUTH_MODE", "auto").strip().lower()  # auto | boto3 | bearer
-AWS_BEDROCK_REGION              = _str("AWS_BEDROCK_REGION", "us-west-2")
-AWS_BEDROCK_MODEL_ID            = _str("AWS_BEDROCK_MODEL_ID", "deepseek.v3-v1:0")
-AWS_BEDROCK_USE_INFERENCE_PROFILE = _bool("AWS_BEDROCK_USE_INFERENCE_PROFILE", False)
-AWS_BEDROCK_INFERENCE_PROFILE_ID  = _str("AWS_BEDROCK_INFERENCE_PROFILE_ID")
+AWS_BEDROCK_BEARER_TOKEN        = AWS_BEARER_TOKEN_BEDROCK
+AWS_BEDROCK_AUTH_MODE           = BEDROCK_AUTH_MODE.strip().lower()  # auto | boto3 | bearer
+
+
+
+
 AWS_BEDROCK_USE_CACHE           = _bool("AWS_BEDROCK_USE_CACHE", True)
 AWS_BEDROCK_CACHE_TTL           = _int("AWS_BEDROCK_CACHE_TTL", 3600)
 AWS_BEDROCK_CONNECTION_POOL_SIZE = _int("AWS_BEDROCK_CONNECTION_POOL_SIZE", 10)
@@ -131,59 +130,54 @@ AWS_BEDROCK_ENDPOINT = f"https://bedrock-runtime.{AWS_BEDROCK_REGION}.amazonaws.
 _LEGACY_USE_LOCAL_LLM = _bool("USE_LOCAL_LLM", False)
 # Compatibility projection only. LLM_PROVIDER is the sole routing authority.
 USE_LOCAL_LLM     = LLM_PROVIDER == "local"
-LOCAL_LLM_TYPES   = frozenset({"llama_server", "lmstudio", "ollama", "cli"})
-LOCAL_LLM_TYPE    = _str("LOCAL_LLM_TYPE", "llama_server").strip().lower()
+LOCAL_LLM_TYPES = frozenset(option_values(configuration_groups()["local"]["config"]["LOCAL_LLM_TYPE"]))
+LOCAL_LLM_TYPE    = LOCAL_LLM_TYPE.strip().lower()
 if LOCAL_LLM_TYPE not in LOCAL_LLM_TYPES:
     raise ValueError(
         "LOCAL_LLM_TYPE must be one of "
         + ", ".join(sorted(LOCAL_LLM_TYPES))
         + f"; observed {LOCAL_LLM_TYPE!r}"
     )
-LOCAL_LLM_LAUNCH_MODES = frozenset({"external", "managed"})
-LOCAL_LLM_LAUNCH_MODE = _str("LOCAL_LLM_LAUNCH_MODE", "external").strip().lower()
+LOCAL_LLM_LAUNCH_MODES = frozenset(option_values(configuration_groups()["local"]["config"]["LOCAL_LLM_LAUNCH_MODE"]))
+LOCAL_LLM_LAUNCH_MODE = LOCAL_LLM_LAUNCH_MODE.strip().lower()
 if LOCAL_LLM_LAUNCH_MODE not in LOCAL_LLM_LAUNCH_MODES:
     raise ValueError(
         "LOCAL_LLM_LAUNCH_MODE must be external or managed; "
         f"observed {LOCAL_LLM_LAUNCH_MODE!r}"
     )
-LOCAL_LLM_MODEL   = _str("LOCAL_LLM_MODEL", "qwen3-30b-a3b-instruct-2507@q4_k_m")
-LOCAL_LLM_URL     = _str("LOCAL_LLM_URL", "http://127.0.0.1:8080/v1")
-LOCAL_LLM_LM_STUDIO_URL = _str(
-    "LOCAL_LLM_LM_STUDIO_URL",
-    "http://127.0.0.1:1234",
-    aliases=("LM_STUDIO_URL",),
-)
-LOCAL_LLM_OLLAMA_URL = _str("LOCAL_LLM_OLLAMA_URL", "http://127.0.0.1:11434")
+
+
+
+
 # Compatibility export for callers that have not moved to the explicit name.
 LM_STUDIO_URL = LOCAL_LLM_LM_STUDIO_URL
 
 # Hybrid's local head is deliberately an OpenAI-compatible endpoint rather
 # than a selectable pure-local backend. Defaults preserve existing setups.
-HYBRID_LOCAL_LLM_URL = _str("HYBRID_LOCAL_LLM_URL", LOCAL_LLM_URL)
-HYBRID_LOCAL_LLM_MODEL = _str("HYBRID_LOCAL_LLM_MODEL", LOCAL_LLM_MODEL)
+HYBRID_LOCAL_LLM_URL = read_catalog_environment(_ENV, computed_defaults={"HYBRID_LOCAL_LLM_URL": LOCAL_LLM_URL})["HYBRID_LOCAL_LLM_URL"]
+HYBRID_LOCAL_LLM_MODEL = read_catalog_environment(_ENV, computed_defaults={"HYBRID_LOCAL_LLM_MODEL": LOCAL_LLM_MODEL})["HYBRID_LOCAL_LLM_MODEL"]
 
 # llama-server 可执行文件路径（本机绝对路径，写在 .env 中）
-LOCAL_LLM_CLI_PATH = _str("LOCAL_LLM_CLI_PATH")
 
 # llama-cli / llama-server 启动参数（各关键值可独立通过 .env 覆盖）
-_LLM_MODEL_FILE    = _str("LOCAL_LLM_CLI_MODEL_PATH")        # .gguf 模型文件完整路径
+_LLM_MODEL_FILE    = LOCAL_LLM_CLI_MODEL_PATH        # .gguf 模型文件完整路径
 LOCAL_LLM_MODEL_PATH = _LLM_MODEL_FILE
 _LLM_PORT          = _str("LOCAL_LLM_CLI_PORT",         "8080")
-_LLM_THREADS       = _str("LOCAL_LLM_CLI_THREADS",      "4")
+_LLM_THREADS       = LOCAL_LLM_CLI_THREADS
 # Shared CLI/Hybrid defaults remain 4k. Only the managed pure-local profile
 # needs the larger Cooperative prompt budget; explicit values apply to both.
-_LLM_CONTEXT       = _str("LOCAL_LLM_CLI_CONTEXT",      "4096")
+_LLM_CONTEXT       = LOCAL_LLM_CLI_CONTEXT
 LOCAL_LLM_SERVER_CONTEXT = (
     _LLM_CONTEXT if _ENV.configured("LOCAL_LLM_CLI_CONTEXT") else "16384"
 )
-_LLM_NGL           = _str("LOCAL_LLM_CLI_NGL",          "99")  # GPU 层数，99 = 全 GPU
+_LLM_NGL           = LOCAL_LLM_CLI_NGL  # GPU 层数，99 = 全 GPU
 _LLM_UBATCH        = _str("LOCAL_LLM_CLI_UBATCH_SIZE",  "512")
 _LLM_BATCH         = _str("LOCAL_LLM_CLI_BATCH_SIZE",   "2048")
 _LLM_TENSOR_SPLIT  = _str("LOCAL_LLM_CLI_TENSOR_SPLIT", "")    # 多卡分割比例（留空 = 不分卡）
 
 # llama-server 进程的 CUDA 可见性。默认留空以适配单 GPU 和 CPU 主机；
 # 多 GPU 用户可填写 nvidia-smi 序号，例如 "1"。
-LOCAL_LLM_CUDA_VISIBLE_DEVICES = _str("LOCAL_LLM_CUDA_VISIBLE_DEVICES", "")
+
 _LLM_CACHE_REUSE      = _str("LOCAL_LLM_CLI_CACHE_REUSE",      "256") # KV Cache 复用块数（仅 llama_server）
 _LLM_REASONING_BUDGET = _str("LOCAL_LLM_CLI_REASONING_BUDGET", "0")   # 0 = 禁用 Qwen3 思维链
 _LLM_N_PREDICT     = _str("LOCAL_LLM_CLI_N_PREDICT",    "512") # 单次最大生成 token（仅 cli）
@@ -239,10 +233,10 @@ FIRST_SENTENCE_AUDIO_CACHE_MAX_SECONDS = _float("FIRST_SENTENCE_AUDIO_CACHE_MAX_
 # Optional local retrieval for all Main Chat models (restart required).
 # The retired local-only flag does not authorize sending references remotely.
 # ===========================================================================
-RAG_ENABLED = _bool("RAG_ENABLED", False)
-RAG_INDEX_DIR = _str("RAG_INDEX_DIR", ".amadeus/character-rag")
-RAG_TOP_K             = _int("RAG_TOP_K", 3)
-RAG_MAX_DISTANCE      = _float("RAG_MAX_DISTANCE", 0.33)
+
+
+
+
 if RAG_ENABLED and (not 1 <= RAG_TOP_K <= 20 or not 0 <= RAG_MAX_DISTANCE <= 4):
     raise ValueError("RAG_TOP_K must be 1..20 and RAG_MAX_DISTANCE must be 0..4")
 
@@ -258,8 +252,6 @@ VTS_RECONNECT_ENABLED = _bool("VTS_RECONNECT_ENABLED", True)
 # ===========================================================================
 # TTS（Amadeus 低延迟 GPT-SoVITS v3 推理；本地后端仅支持 v3 权重）
 # ===========================================================================
-# Static catalog fields retain the settings.NAME interface used by backends.
-globals().update(read_catalog_environment(_ENV))
 TTS_BACKEND = TTS_BACKEND.strip().lower()
 TTS_API_STREAM_PROTOCOL = TTS_API_STREAM_PROTOCOL.strip().lower()
 TTS_API_TIMEOUT_SECONDS = _float("TTS_API_TIMEOUT_SECONDS", 60.0)

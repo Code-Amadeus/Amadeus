@@ -1,0 +1,50 @@
+{
+  "id": "deepseek",
+  "title": {
+    "en-US": "DeepSeek",
+    "zh-CN": "DeepSeek"
+  },
+  "description": {
+    "en-US": "DeepSeek",
+    "zh-CN": "DeepSeek"
+  },
+  "desktop": true,
+  "restart_required": true,
+  "config": {
+    "DEEPSEEK_API_KEY": {
+      "type": "string",
+      "title": {
+        "en-US": "API key",
+        "zh-CN": "API 密钥"
+      },
+      "secret": true,
+      "example_active": true
+    },
+    "DEEPSEEK_BASE_URL": {
+      "type": "url",
+      "title": {
+        "en-US": "Base URL",
+        "zh-CN": "基础 URL"
+      },
+      "default": "https://api.deepseek.com",
+      "schemes": [
+        "http",
+        "https"
+      ],
+      "example_active": true
+    },
+    "DEEPSEEK_MODEL_NAME": {
+      "type": "string",
+      "title": {
+        "en-US": "Model",
+        "zh-CN": "模型"
+      },
+      "description": {
+        "en-US": "Independent from the Codex Work Provider model.",
+        "zh-CN": "独立于 Codex Work Provider 使用的模型。"
+      },
+      "default": "deepseek-v4-flash",
+      "example_active": true
+    }
+  }
+}

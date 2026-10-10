@@ -2,7 +2,7 @@ import { safeStorage } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import process from 'node:process'
-import { catalogOptionValues, desktopCatalogFields } from '../shared/configCatalog.js'
+import { catalogInputKeys, catalogOptionValues, desktopCatalogFields } from '../shared/configCatalog.js'
 
 type StoredDesktopSettings = {
   version: 2
@@ -71,35 +71,6 @@ const VALUE_KEYS = new Set([
   'EXP_TTS_MAX_CONCURRENCY',
   'TTS_OUTPUT_LANGUAGE',
   'LLM_PROVIDER',
-  'DEEPSEEK_BASE_URL',
-  'DEEPSEEK_MODEL_NAME',
-  'OPENAI_BASE_URL',
-  'OPENAI_MODEL_NAME',
-  'GEMINI_MODEL_NAME',
-  'BEDROCK_AUTH_MODE',
-  'AWS_BEDROCK_REGION',
-  'AWS_BEDROCK_MODEL_ID',
-  'AWS_BEDROCK_USE_INFERENCE_PROFILE',
-  'AWS_BEDROCK_INFERENCE_PROFILE_ID',
-  'RAG_ENABLED',
-  'RAG_INDEX_DIR',
-  'RAG_TOP_K',
-  'RAG_MAX_DISTANCE',
-  'LOCAL_LLM_TYPE',
-  'LOCAL_LLM_LAUNCH_MODE',
-  'LOCAL_LLM_MODEL',
-  'LOCAL_LLM_URL',
-  'LM_STUDIO_URL',
-  'LOCAL_LLM_LM_STUDIO_URL',
-  'LOCAL_LLM_OLLAMA_URL',
-  'HYBRID_LOCAL_LLM_URL',
-  'HYBRID_LOCAL_LLM_MODEL',
-  'LOCAL_LLM_CLI_PATH',
-  'LOCAL_LLM_CLI_MODEL_PATH',
-  'LOCAL_LLM_CLI_THREADS',
-  'LOCAL_LLM_CLI_CONTEXT',
-  'LOCAL_LLM_CLI_NGL',
-  'LOCAL_LLM_CUDA_VISIBLE_DEVICES',
   'COOPERATIVE_WORK_PLANNER_MODEL',
   'WORK_OBSERVER_PROVIDER',
   'WORK_OBSERVER_MODEL',
@@ -149,10 +120,6 @@ const VALUE_KEYS = new Set([
 
 const SECRET_KEYS = new Set([
   'ANTHROPIC_API_KEY',
-  'DEEPSEEK_API_KEY',
-  'OPENAI_API_KEY',
-  'GEMINI_API_KEY',
-  'AWS_BEARER_TOKEN_BEDROCK',
   'OPENCLAW_GATEWAY_TOKEN',
   ...Object.keys(desktopCatalogFields).filter(key => desktopCatalogFields[key].secret),
 ])
@@ -175,11 +142,6 @@ const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
   ENABLE_CUDA_GRAPH: new Set(['1', '0']),
   TTS_OUTPUT_LANGUAGE: new Set(['日文', '英文']),
   LLM_PROVIDER: new Set(['deepseek', 'openai', 'gemini', 'bedrock', 'local', 'hybrid', 'hybrid2', 'hybrid3']),
-  BEDROCK_AUTH_MODE: new Set(['auto', 'boto3', 'bearer']),
-  AWS_BEDROCK_USE_INFERENCE_PROFILE: new Set(['true', 'false']),
-  RAG_ENABLED: new Set(['true', 'false']),
-  LOCAL_LLM_TYPE: new Set(['llama_server', 'lmstudio', 'ollama', 'cli']),
-  LOCAL_LLM_LAUNCH_MODE: new Set(['external', 'managed']),
   AUIP_ACTION_REASONING_EFFORT: new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']),
   AUIP_ACTION_SERVICE_TIER: new Set(['auto', 'default', 'fast', 'priority']),
   BROWSER_BRANCH_PROVIDER: new Set(['deepseek', 'openai']),
@@ -203,13 +165,6 @@ const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
 const IDENTIFIER_KEYS = new Set(['AMADEUS_CHARACTER_ID', 'ASR_BACKEND', 'TTS_BACKEND', 'WORK_CODING_PROVIDER', 'WORK_EXECUTION_PROVIDER'])
 
 const URL_KEYS = new Set([
-  'DEEPSEEK_BASE_URL',
-  'OPENAI_BASE_URL',
-  'LOCAL_LLM_URL',
-  'LM_STUDIO_URL',
-  'LOCAL_LLM_LM_STUDIO_URL',
-  'LOCAL_LLM_OLLAMA_URL',
-  'HYBRID_LOCAL_LLM_URL',
   'OPENCLAW_BASE_URL',
   'CODEX_APP_SERVER_PROVIDER_BASE_URL',
 ])
@@ -217,16 +172,14 @@ const URL_KEYS = new Set([
 const WEBSOCKET_URL_KEYS = new Set(['VTS_WS_URL'])
 
 const NUMBER_RANGES: Record<string, readonly [number, number]> = {
-  ...Object.fromEntries(Object.entries(desktopCatalogFields).filter(([, field]) => field.min !== undefined)
+  ...Object.fromEntries(Object.entries(desktopCatalogFields).filter(([, field]) => field.min !== undefined && !field.control)
     .map(([key, field]) => [key, [field.min!, field.max!] as const])),
-  RAG_TOP_K: [1, 20],
-  RAG_MAX_DISTANCE: [0, 4],
   AMADEUS_VISION_MAX_LONG_SIDE: [320, 4096],
   AMADEUS_VISION_JPEG_QUALITY: [35, 92],
   EXP_TTS_MAX_CONCURRENCY: [1, 2],
 }
 
-const INTEGER_KEYS = new Set([...Object.keys(desktopCatalogFields).filter(key => desktopCatalogFields[key].type === 'integer'), 'RAG_TOP_K', 'AMADEUS_VISION_MAX_LONG_SIDE', 'AMADEUS_VISION_JPEG_QUALITY', 'EXP_TTS_MAX_CONCURRENCY'])
+const INTEGER_KEYS = new Set([...Object.keys(desktopCatalogFields).filter(key => desktopCatalogFields[key].type === 'integer'), 'AMADEUS_VISION_MAX_LONG_SIDE', 'AMADEUS_VISION_JPEG_QUALITY', 'EXP_TTS_MAX_CONCURRENCY'])
 
 const MCP_CONNECTIONS_ENV = 'AMADEUS_MCP_CONNECTIONS'
 const FRONTEND_ONLY_VALUE_KEYS = new Set(['AMADEUS_UI_LOCALE', 'AMADEUS_UI_THEME', 'AMADEUS_WINDOWS_STARTUP_MODE'])
@@ -406,7 +359,7 @@ function explicitEnvironmentHas(
   if (key === 'CODEX_PROVIDER_TRANSPORT') {
     return CODEX_TRANSPORT_KEYS.some(candidate => environment[candidate] !== undefined)
   }
-  return environment[key] !== undefined
+  return catalogInputKeys(key).some(candidate => environment[candidate] !== undefined)
 }
 
 function sourceFor(
@@ -416,10 +369,10 @@ function sourceFor(
   dotenvKeys: ReadonlySet<string>,
 ): 'environment' | 'user' | 'dotenv' | 'default' {
   if (explicitEnvironmentHas(environment, key)) return 'environment'
-  if (stored.values[key] !== undefined || stored.encryptedSecrets[key] !== undefined) return 'user'
+  if (catalogInputKeys(key).some(candidate => stored.values[candidate] !== undefined || stored.encryptedSecrets[candidate] !== undefined)) return 'user'
   if (key === 'CODEX_PROVIDER_TRANSPORT') {
     if (CODEX_TRANSPORT_KEYS.some(candidate => dotenvKeys.has(candidate))) return 'dotenv'
-  } else if (dotenvKeys.has(key)) {
+  } else if (catalogInputKeys(key).some(candidate => dotenvKeys.has(candidate))) {
     return 'dotenv'
   }
   return 'default'
@@ -567,8 +520,10 @@ export class DesktopSettingsStore {
     const pendingKeys = Object.keys(stored.pendingRevisions)
     const startupValues = Object.fromEntries([...VALUE_KEYS].flatMap(key => {
       // Compound transport and dotenv interpolation need their owning parser.
-      const value = sources[key] === 'environment' ? (key === 'CODEX_PROVIDER_TRANSPORT' ? undefined : environment[key])
-        : sources[key] === 'user' ? stored.values[key] : undefined
+      const inputs = catalogInputKeys(key)
+      const value = sources[key] === 'environment' ? (key === 'CODEX_PROVIDER_TRANSPORT' ? undefined
+        : inputs.map(candidate => environment[candidate]).find(value => value !== undefined))
+        : sources[key] === 'user' ? inputs.map(candidate => stored.values[candidate]).find(value => value !== undefined) : undefined
       return value === undefined ? [] : [[key, value]]
     }))
     return {
@@ -707,8 +662,13 @@ export class DesktopSettingsStore {
       // Keep an explicit empty character prompt so restoring the built-in
       // role also overrides any project .env value on the next start.
       if (rawValue === null || (rawValue === '' && key !== 'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA')) {
-        if (stored.values[key] !== undefined) changedKeys.add(key)
-        delete stored.values[key]
+        for (const candidate of catalogInputKeys(key)) {
+          if (stored.values[candidate] !== undefined) {
+            changedKeys.add(candidate)
+            changedKeys.add(catalogInputKeys(key)[0])
+          }
+          delete stored.values[candidate]
+        }
         continue
       }
       if (key === 'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA' && typeof rawValue !== 'string') throw new Error('Character prompt must be a string')
@@ -802,6 +762,14 @@ export class DesktopSettingsStore {
     const stored = this.read()
     const dotenvKeys = this.dotenvKeys()
     const result: NodeJS.ProcessEnv = {}
+    // Canonicalize a parent-provided legacy name before Python loads dotenv.
+    // This keeps process authority above canonical names from the project file.
+    for (const key of VALUE_KEYS) {
+      const inputs = catalogInputKeys(key)
+      if (inputs[0] !== key || environment[key] !== undefined) continue
+      const inherited = inputs.slice(1).map(alias => environment[alias]).find(value => value !== undefined)
+      if (inherited !== undefined) result[key] = inherited
+    }
     for (const [key, value] of Object.entries(stored.values)) {
       if (key === 'CODEX_PROVIDER_TRANSPORT' || FRONTEND_ONLY_VALUE_KEYS.has(key) || explicitEnvironmentHas(environment, key)) continue
       result[key] = value

@@ -149,3 +149,19 @@ def test_new_tts_declaration_and_implementation_reach_registry_and_status(monkey
     assert calls == ["load"]
     with pytest.raises(ValueError, match="cannot unregister built-in"):
         registry.unregister_tts_backend("catalog_fixture")
+
+
+def test_model_catalog_keeps_legacy_alias_and_cli_string_contract():
+    reader = EnvironmentReader({'LM_STUDIO_URL': 'http://localhost:1235', 'LOCAL_LLM_CLI_CONTEXT': '8192'})
+    with pytest.warns(DeprecationWarning, match='LM_STUDIO_URL'):
+        values = catalog.read_catalog_environment(reader)
+    assert values['LOCAL_LLM_LM_STUDIO_URL'] == 'http://localhost:1235'
+    assert values['LOCAL_LLM_CLI_CONTEXT'] == '8192'
+    assert values['RAG_MAX_DISTANCE'] == 0.33
+    inherited = catalog.read_catalog_environment(reader, computed_defaults={
+        'HYBRID_LOCAL_LLM_URL': 'http://localhost:8089/v1', 'HYBRID_LOCAL_LLM_MODEL': 'local-test-model',
+    })
+    assert inherited == {'HYBRID_LOCAL_LLM_URL': 'http://localhost:8089/v1', 'HYBRID_LOCAL_LLM_MODEL': 'local-test-model'}
+    explicit = catalog.read_catalog_environment(EnvironmentReader({'HYBRID_LOCAL_LLM_MODEL': ''}),
+        computed_defaults={'HYBRID_LOCAL_LLM_MODEL': 'inherited'})
+    assert explicit['HYBRID_LOCAL_LLM_MODEL'] == ''

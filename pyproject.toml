@@ -224,6 +224,7 @@ packages = [
     "config.catalog.tts",
     "config.catalog.graphics",
     "config.catalog.voice",
+    "config.catalog.models",
     "core",
     "llm",
     "openclaw",
@@ -242,6 +243,7 @@ characters = ["*.toml"]
 "config.catalog.tts" = ["*.json"]
 "config.catalog.graphics" = ["*.json"]
 "config.catalog.voice" = ["*.json"]
+"config.catalog.models" = ["*.json"]
 
 # ---------------------------------------------------------------------------
 # Tool configuration below is declared but NOT yet enforced: neither ruff nor

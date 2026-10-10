@@ -12,6 +12,10 @@ interface CatalogField {
   example_active?: boolean
   secret?: boolean
   accepted_values?: string[]
+  aliases?: string[]
+  setting?: string
+  control?: 'number'
+  local_engines?: string[]
   options?: Array<string | { value: string; label: LocalizedText }>
   schemes?: string[]
   min?: number
@@ -41,7 +45,8 @@ export interface CatalogGroup {
 
 export const catalogGroups = generatedGroups
 export const desktopCatalogFields = Object.fromEntries(
-  catalogGroups.filter(group => group.desktop).flatMap(group => Object.entries(group.config)),
+  catalogGroups.filter(group => group.desktop).flatMap(group => Object.entries(group.config)
+    .flatMap(([key, field]) => [[key, field] as const, ...(field.aliases || []).map(alias => [alias, field] as const)])),
 )
 export const catalogTranslations = Object.fromEntries(catalogGroups.flatMap(group =>
   [group.title, group.description, ...(group.voice_backend ? [group.voice_backend.label] : []),
@@ -49,6 +54,12 @@ export const catalogTranslations = Object.fromEntries(catalogGroups.flatMap(grou
       ...(field.options || []).flatMap(option => typeof option === 'string' ? [] : [option.label])])]
     .map(text => [text['en-US'], text['zh-CN']]),
 ))
+
+export function catalogInputKeys(key: string): string[] {
+  const entry = catalogGroups.flatMap(group => Object.entries(group.config))
+    .find(([canonical, field]) => canonical === key || field.aliases?.includes(key))
+  return entry ? [entry[0], ...(entry[1].aliases || [])] : [key]
+}
 
 export const voiceBackendGroups = catalogGroups.filter(group => group.voice_backend)
   .sort((left, right) => left.voice_backend!.order - right.voice_backend!.order)
@@ -65,7 +76,7 @@ export const voiceBackendOptions = [
 export function catalogConfiguration(
   id: string,
   snapshot?: StartupSnapshot & { secrets?: Record<string, { configured?: boolean }> } | null,
-  effectiveValues: Record<string, string | number | boolean> = {},
+  effectiveValues: Record<string, string | number | boolean | undefined> = {},
 ) {
   const group = catalogGroups.find(item => item.id === id)
   if (!group) throw new Error(`Unknown configuration group: ${id}`)
@@ -82,7 +93,7 @@ export function catalogConfiguration(
       type: field.secret ? 'secret' as const : field.type === 'enum' ? 'select' as const
         : field.type === 'url' ? 'url' as const : field.type === 'path' ? 'path' as const
         : field.type === 'boolean' ? 'boolean' as const
-        : ['integer', 'number'].includes(field.type) ? 'number' as const : 'text' as const,
+        : field.control === 'number' || ['integer', 'number'].includes(field.type) ? 'number' as const : 'text' as const,
       value: field.secret ? '' : raw === undefined ? undefined : field.type === 'boolean'
         ? raw === true || ['1', 'true', 'yes'].includes(String(raw).toLowerCase()) : String(raw),
       ...(field.description ? { description: field.description['en-US'] } : {}),

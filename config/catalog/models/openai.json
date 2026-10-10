@@ -1,0 +1,46 @@
+{
+  "id": "openai",
+  "title": {
+    "en-US": "OpenAI-compatible",
+    "zh-CN": "OpenAI 兼容"
+  },
+  "description": {
+    "en-US": "Supports OpenAI and compatible endpoints through a configurable base URL.",
+    "zh-CN": "通过可配置的基础 URL 支持 OpenAI 及兼容端点。"
+  },
+  "desktop": true,
+  "restart_required": true,
+  "config": {
+    "OPENAI_API_KEY": {
+      "type": "string",
+      "title": {
+        "en-US": "API key",
+        "zh-CN": "API 密钥"
+      },
+      "secret": true,
+      "example_active": true
+    },
+    "OPENAI_BASE_URL": {
+      "type": "url",
+      "title": {
+        "en-US": "Base URL",
+        "zh-CN": "基础 URL"
+      },
+      "default": "https://api.openai.com/v1",
+      "schemes": [
+        "http",
+        "https"
+      ],
+      "example_active": true
+    },
+    "OPENAI_MODEL_NAME": {
+      "type": "string",
+      "title": {
+        "en-US": "Model",
+        "zh-CN": "模型"
+      },
+      "default": "gpt-5.4-mini",
+      "example_active": true
+    }
+  }
+}

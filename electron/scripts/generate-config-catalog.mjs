@@ -52,10 +52,18 @@ for (const group of groups) {
   assert.equal(group.restart_required, true)
   assert.ok(Object.keys(group.config).length, 'Empty configuration group')
   for (const [key, field] of Object.entries(group.config)) {
-    knownKeys(field, ['type', 'title', 'description', 'default', 'secret', 'options', 'schemes', 'min', 'max', 'step', 'computed_default', 'example', 'example_active', 'accepted_values'])
+    knownKeys(field, ['type', 'title', 'description', 'default', 'secret', 'options', 'schemes', 'min', 'max', 'step', 'computed_default', 'example', 'example_active', 'accepted_values', 'aliases', 'setting', 'control', 'local_engines'])
     assert.match(key, /^[A-Z][A-Z0-9_]*$/)
     assert.ok(!keys.has(key), `Duplicate setting ${key}`)
     keys.add(key)
+    if (field.setting) assert.match(field.setting, /^[A-Za-z_]\w*$/)
+    if (field.aliases) for (const alias of field.aliases) {
+      assert.match(alias, /^[A-Z][A-Z0-9_]*$/)
+      assert.ok(!keys.has(alias), `Duplicate setting alias ${alias}`)
+      keys.add(alias)
+    }
+    if (field.control) assert.ok(field.type === 'string' && field.control === 'number')
+    if (field.local_engines) assert.ok(group.id === 'local' && field.local_engines.every(engine => ['llama_server', 'lmstudio', 'ollama', 'cli'].includes(engine)))
     localized(field.title)
     if (field.description) localized(field.description)
     assert.ok(['string', 'path', 'url', 'enum', 'boolean', 'integer', 'number'].includes(field.type), `Unsupported type for ${key}`)
@@ -88,8 +96,10 @@ for (const group of groups) {
       }
     }
     if (['min', 'max', 'step'].some(name => name in field)) {
-      assert.ok(['integer', 'number'].includes(field.type))
-      assert.ok(Number.isFinite(field.min) && Number.isFinite(field.max) && field.min <= field.max)
+      assert.ok(['integer', 'number'].includes(field.type) || field.control === 'number')
+      if (field.min !== undefined) assert.ok(Number.isFinite(field.min))
+      if (field.max !== undefined) assert.ok(Number.isFinite(field.max))
+      if (field.min !== undefined && field.max !== undefined) assert.ok(field.min <= field.max)
       assert.ok(Number.isFinite(field.step) && field.step > 0)
     }
     if (field.type === 'enum') {
@@ -108,7 +118,9 @@ for (const group of groups) {
     if (field.type === 'url') {
       assert.ok(Array.isArray(field.schemes) && field.schemes.length)
       assert.ok(field.schemes.every(value => ['http', 'https', 'ws', 'wss'].includes(value)))
-      assert.ok(field.schemes.includes(new URL(field.default).protocol.slice(0, -1)), `Invalid URL default for ${key}`)
+      for (const value of [field.default, field.example].filter(value => value !== undefined && value !== '')) {
+        assert.ok(field.schemes.includes(new URL(value).protocol.slice(0, -1)), `Invalid URL default for ${key}`)
+      }
     }
   }
 }

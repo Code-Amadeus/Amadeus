@@ -61,5 +61,5 @@ incomplete configuration must not prevent the application from starting.
                 "boolean": reader.boolean, "integer": reader.integer,
                 "number": reader.number,
             }.get(field["type"], reader.string)
-            values[key] = read(key, default)
+            values[key] = read(key, default, aliases=tuple(field.get("aliases", ())))
     return values

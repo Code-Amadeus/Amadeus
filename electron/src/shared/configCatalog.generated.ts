@@ -126,6 +126,526 @@ export const catalogGroups: CatalogGroup[] = [
     }
   },
   {
+    "id": "bedrock",
+    "title": {
+      "en-US": "AWS Bedrock",
+      "zh-CN": "AWS Bedrock"
+    },
+    "description": {
+      "en-US": "Uses the AWS credential chain or an explicitly stored Bedrock bearer token.",
+      "zh-CN": "使用 AWS 凭据链或显式保存的 Bedrock Bearer Token。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "BEDROCK_AUTH_MODE": {
+        "type": "enum",
+        "title": {
+          "en-US": "Authentication",
+          "zh-CN": "认证方式"
+        },
+        "default": "auto",
+        "setting": "AWS_BEDROCK_AUTH_MODE",
+        "options": [
+          "auto",
+          "boto3",
+          "bearer"
+        ]
+      },
+      "AWS_BEARER_TOKEN_BEDROCK": {
+        "type": "string",
+        "title": {
+          "en-US": "Bearer token",
+          "zh-CN": "Bearer 令牌"
+        },
+        "secret": true,
+        "setting": "AWS_BEDROCK_BEARER_TOKEN",
+        "example_active": true
+      },
+      "AWS_BEDROCK_REGION": {
+        "type": "string",
+        "title": {
+          "en-US": "Region",
+          "zh-CN": "区域"
+        },
+        "default": "us-west-2",
+        "example_active": true
+      },
+      "AWS_BEDROCK_MODEL_ID": {
+        "type": "string",
+        "title": {
+          "en-US": "Model ID",
+          "zh-CN": "模型 ID"
+        },
+        "default": "deepseek.v3-v1:0",
+        "example_active": true
+      },
+      "AWS_BEDROCK_USE_INFERENCE_PROFILE": {
+        "type": "boolean",
+        "title": {
+          "en-US": "Use inference profile",
+          "zh-CN": "使用推理配置"
+        },
+        "default": false,
+        "example_active": true
+      },
+      "AWS_BEDROCK_INFERENCE_PROFILE_ID": {
+        "type": "string",
+        "title": {
+          "en-US": "Inference profile ID",
+          "zh-CN": "推理配置 ID"
+        },
+        "default": "",
+        "example_active": true
+      }
+    }
+  },
+  {
+    "id": "character_rag",
+    "title": {
+      "en-US": "Character knowledge (optional RAG)",
+      "zh-CN": "角色知识（可选 RAG）"
+    },
+    "description": {
+      "en-US": "Local retrieval shared by all Main conversation providers. Retrieved excerpts may be sent to the selected remote model.",
+      "zh-CN": "所有主对话服务共享的本地检索；检索片段可能会发送给所选远程模型。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "RAG_ENABLED": {
+        "type": "boolean",
+        "title": {
+          "en-US": "Enable character knowledge",
+          "zh-CN": "启用角色知识库"
+        },
+        "default": false,
+        "example_active": true
+      },
+      "RAG_INDEX_DIR": {
+        "type": "path",
+        "title": {
+          "en-US": "Built index directory",
+          "zh-CN": "已构建索引目录"
+        },
+        "default": ".amadeus/character-rag",
+        "example_active": true
+      },
+      "RAG_TOP_K": {
+        "type": "integer",
+        "title": {
+          "en-US": "Maximum results",
+          "zh-CN": "最多检索结果数"
+        },
+        "default": 3,
+        "min": 1,
+        "max": 20,
+        "step": 1,
+        "example_active": true
+      },
+      "RAG_MAX_DISTANCE": {
+        "type": "number",
+        "title": {
+          "en-US": "Maximum squared L2 distance",
+          "zh-CN": "最大 L2 距离平方"
+        },
+        "default": 0.33,
+        "min": 0,
+        "max": 4,
+        "step": 0.01,
+        "example_active": true
+      }
+    }
+  },
+  {
+    "id": "deepseek",
+    "title": {
+      "en-US": "DeepSeek",
+      "zh-CN": "DeepSeek"
+    },
+    "description": {
+      "en-US": "DeepSeek",
+      "zh-CN": "DeepSeek"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "DEEPSEEK_API_KEY": {
+        "type": "string",
+        "title": {
+          "en-US": "API key",
+          "zh-CN": "API 密钥"
+        },
+        "secret": true,
+        "example_active": true
+      },
+      "DEEPSEEK_BASE_URL": {
+        "type": "url",
+        "title": {
+          "en-US": "Base URL",
+          "zh-CN": "基础 URL"
+        },
+        "default": "https://api.deepseek.com",
+        "schemes": [
+          "http",
+          "https"
+        ],
+        "example_active": true
+      },
+      "DEEPSEEK_MODEL_NAME": {
+        "type": "string",
+        "title": {
+          "en-US": "Model",
+          "zh-CN": "模型"
+        },
+        "description": {
+          "en-US": "Independent from the Codex Work Provider model.",
+          "zh-CN": "独立于 Codex Work Provider 使用的模型。"
+        },
+        "default": "deepseek-v4-flash",
+        "example_active": true
+      }
+    }
+  },
+  {
+    "id": "gemini",
+    "title": {
+      "en-US": "Gemini",
+      "zh-CN": "Gemini"
+    },
+    "description": {
+      "en-US": "Gemini",
+      "zh-CN": "Gemini"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "GEMINI_API_KEY": {
+        "type": "string",
+        "title": {
+          "en-US": "API key",
+          "zh-CN": "API 密钥"
+        },
+        "secret": true,
+        "example_active": true
+      },
+      "GEMINI_MODEL_NAME": {
+        "type": "string",
+        "title": {
+          "en-US": "Model",
+          "zh-CN": "模型"
+        },
+        "default": "gemini-2.5-flash",
+        "example_active": true
+      }
+    }
+  },
+  {
+    "id": "hybrid_local",
+    "title": {
+      "en-US": "Hybrid local head",
+      "zh-CN": "混合模式本地头部"
+    },
+    "description": {
+      "en-US": "Shared fast first-sentence endpoint. Hybrid pairs it with Bedrock, Hybrid2 with DeepSeek, and Hybrid3 with OpenAI-compatible.",
+      "zh-CN": "共享的快速首句端点。Hybrid 搭配 Bedrock，Hybrid2 搭配 DeepSeek，Hybrid3 搭配 OpenAI 兼容服务。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "HYBRID_LOCAL_LLM_URL": {
+        "type": "url",
+        "title": {
+          "en-US": "Head endpoint",
+          "zh-CN": "首句端点"
+        },
+        "computed_default": true,
+        "example": "http://127.0.0.1:8080/v1",
+        "schemes": [
+          "http",
+          "https"
+        ],
+        "example_active": true
+      },
+      "HYBRID_LOCAL_LLM_MODEL": {
+        "type": "string",
+        "title": {
+          "en-US": "Head model",
+          "zh-CN": "首句模型"
+        },
+        "computed_default": true,
+        "example": "",
+        "example_active": true
+      }
+    }
+  },
+  {
+    "id": "local",
+    "title": {
+      "en-US": "Pure-local model",
+      "zh-CN": "纯本地模型"
+    },
+    "description": {
+      "en-US": "Choose and configure the local runtime used by the pure-local Main conversation profile.",
+      "zh-CN": "选择并配置纯本地主对话配置所使用的本地运行时。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "LOCAL_LLM_TYPE": {
+        "type": "enum",
+        "title": {
+          "en-US": "Backend type",
+          "zh-CN": "后端类型"
+        },
+        "default": "llama_server",
+        "options": [
+          "llama_server",
+          "lmstudio",
+          "ollama",
+          "cli"
+        ],
+        "example_active": true
+      },
+      "LOCAL_LLM_MODEL": {
+        "type": "string",
+        "title": {
+          "en-US": "Model",
+          "zh-CN": "模型"
+        },
+        "default": "qwen3-30b-a3b-instruct-2507@q4_k_m",
+        "example_active": true,
+        "example": ""
+      },
+      "LOCAL_LLM_LAUNCH_MODE": {
+        "type": "enum",
+        "title": {
+          "en-US": "Server ownership",
+          "zh-CN": "服务器管理方式"
+        },
+        "description": {
+          "en-US": "External reuses an existing llama.cpp server; managed starts and stops it with Amadeus.",
+          "zh-CN": "外部模式复用已运行的 llama.cpp 服务器；托管模式由 Amadeus 启停。"
+        },
+        "default": "external",
+        "local_engines": [
+          "llama_server"
+        ],
+        "options": [
+          {
+            "value": "external",
+            "label": {
+              "en-US": "External server",
+              "zh-CN": "外部服务器"
+            }
+          },
+          {
+            "value": "managed",
+            "label": {
+              "en-US": "Managed by Amadeus",
+              "zh-CN": "由 Amadeus 管理"
+            }
+          }
+        ],
+        "example_active": true
+      },
+      "LOCAL_LLM_URL": {
+        "type": "url",
+        "title": {
+          "en-US": "llama.cpp server URL",
+          "zh-CN": "llama.cpp 服务器 URL"
+        },
+        "default": "http://127.0.0.1:8080/v1",
+        "local_engines": [
+          "llama_server"
+        ],
+        "schemes": [
+          "http",
+          "https"
+        ],
+        "example_active": true
+      },
+      "LOCAL_LLM_CLI_PATH": {
+        "type": "path",
+        "title": {
+          "en-US": "llama.cpp executable",
+          "zh-CN": "llama.cpp 可执行文件"
+        },
+        "default": "",
+        "local_engines": [
+          "llama_server",
+          "cli"
+        ],
+        "example_active": true,
+        "example": "C:\\path\\to\\llama-server.exe"
+      },
+      "LOCAL_LLM_CLI_MODEL_PATH": {
+        "type": "path",
+        "title": {
+          "en-US": "GGUF model file",
+          "zh-CN": "GGUF 模型文件"
+        },
+        "default": "",
+        "setting": "LOCAL_LLM_MODEL_PATH",
+        "local_engines": [
+          "llama_server",
+          "cli"
+        ],
+        "example_active": true,
+        "example": "C:\\path\\to\\model.gguf"
+      },
+      "LOCAL_LLM_CLI_CONTEXT": {
+        "type": "string",
+        "title": {
+          "en-US": "Context size",
+          "zh-CN": "上下文长度"
+        },
+        "default": "4096",
+        "setting": "_LLM_CONTEXT",
+        "local_engines": [
+          "llama_server"
+        ],
+        "control": "number",
+        "min": 1,
+        "step": 1,
+        "example_active": false,
+        "example": "16384"
+      },
+      "LOCAL_LLM_CLI_THREADS": {
+        "type": "string",
+        "title": {
+          "en-US": "CPU threads",
+          "zh-CN": "CPU 线程数"
+        },
+        "default": "4",
+        "setting": "_LLM_THREADS",
+        "local_engines": [
+          "llama_server"
+        ],
+        "control": "number",
+        "min": 1,
+        "step": 1,
+        "example_active": true,
+        "example": "12"
+      },
+      "LOCAL_LLM_CLI_NGL": {
+        "type": "string",
+        "title": {
+          "en-US": "GPU layers",
+          "zh-CN": "GPU 层数"
+        },
+        "default": "99",
+        "setting": "_LLM_NGL",
+        "local_engines": [
+          "llama_server"
+        ],
+        "control": "number",
+        "min": 0,
+        "step": 1,
+        "example_active": true,
+        "example": "0"
+      },
+      "LOCAL_LLM_CUDA_VISIBLE_DEVICES": {
+        "type": "string",
+        "title": {
+          "en-US": "Visible GPU IDs",
+          "zh-CN": "可见 GPU 编号"
+        },
+        "description": {
+          "en-US": "Optional nvidia-smi indices, for example 1. Leave blank for automatic visibility.",
+          "zh-CN": "可选的 nvidia-smi 编号，例如 1。留空以自动选择可见设备。"
+        },
+        "default": "",
+        "local_engines": [
+          "llama_server"
+        ],
+        "example_active": true,
+        "example": "# optional nvidia-smi indices; blank = no filtering"
+      },
+      "LOCAL_LLM_LM_STUDIO_URL": {
+        "type": "url",
+        "title": {
+          "en-US": "LM Studio URL",
+          "zh-CN": "LM Studio 地址"
+        },
+        "default": "http://127.0.0.1:1234",
+        "local_engines": [
+          "lmstudio"
+        ],
+        "aliases": [
+          "LM_STUDIO_URL"
+        ],
+        "schemes": [
+          "http",
+          "https"
+        ],
+        "example_active": true
+      },
+      "LOCAL_LLM_OLLAMA_URL": {
+        "type": "url",
+        "title": {
+          "en-US": "Ollama URL",
+          "zh-CN": "Ollama 地址"
+        },
+        "default": "http://127.0.0.1:11434",
+        "local_engines": [
+          "ollama"
+        ],
+        "schemes": [
+          "http",
+          "https"
+        ],
+        "example_active": true
+      }
+    }
+  },
+  {
+    "id": "openai",
+    "title": {
+      "en-US": "OpenAI-compatible",
+      "zh-CN": "OpenAI 兼容"
+    },
+    "description": {
+      "en-US": "Supports OpenAI and compatible endpoints through a configurable base URL.",
+      "zh-CN": "通过可配置的基础 URL 支持 OpenAI 及兼容端点。"
+    },
+    "desktop": true,
+    "restart_required": true,
+    "config": {
+      "OPENAI_API_KEY": {
+        "type": "string",
+        "title": {
+          "en-US": "API key",
+          "zh-CN": "API 密钥"
+        },
+        "secret": true,
+        "example_active": true
+      },
+      "OPENAI_BASE_URL": {
+        "type": "url",
+        "title": {
+          "en-US": "Base URL",
+          "zh-CN": "基础 URL"
+        },
+        "default": "https://api.openai.com/v1",
+        "schemes": [
+          "http",
+          "https"
+        ],
+        "example_active": true
+      },
+      "OPENAI_MODEL_NAME": {
+        "type": "string",
+        "title": {
+          "en-US": "Model",
+          "zh-CN": "模型"
+        },
+        "default": "gpt-5.4-mini",
+        "example_active": true
+      }
+    }
+  },
+  {
     "id": "tts_fish_audio",
     "title": {
       "en-US": "Fish Audio speech API",

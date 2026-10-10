@@ -1,0 +1,57 @@
+{
+  "id": "character_rag",
+  "title": {
+    "en-US": "Character knowledge (optional RAG)",
+    "zh-CN": "角色知识（可选 RAG）"
+  },
+  "description": {
+    "en-US": "Local retrieval shared by all Main conversation providers. Retrieved excerpts may be sent to the selected remote model.",
+    "zh-CN": "所有主对话服务共享的本地检索；检索片段可能会发送给所选远程模型。"
+  },
+  "desktop": true,
+  "restart_required": true,
+  "config": {
+    "RAG_ENABLED": {
+      "type": "boolean",
+      "title": {
+        "en-US": "Enable character knowledge",
+        "zh-CN": "启用角色知识库"
+      },
+      "default": false,
+      "example_active": true
+    },
+    "RAG_INDEX_DIR": {
+      "type": "path",
+      "title": {
+        "en-US": "Built index directory",
+        "zh-CN": "已构建索引目录"
+      },
+      "default": ".amadeus/character-rag",
+      "example_active": true
+    },
+    "RAG_TOP_K": {
+      "type": "integer",
+      "title": {
+        "en-US": "Maximum results",
+        "zh-CN": "最多检索结果数"
+      },
+      "default": 3,
+      "min": 1,
+      "max": 20,
+      "step": 1,
+      "example_active": true
+    },
+    "RAG_MAX_DISTANCE": {
+      "type": "number",
+      "title": {
+        "en-US": "Maximum squared L2 distance",
+        "zh-CN": "最大 L2 距离平方"
+      },
+      "default": 0.33,
+      "min": 0,
+      "max": 4,
+      "step": 0.01,
+      "example_active": true
+    }
+  }
+}

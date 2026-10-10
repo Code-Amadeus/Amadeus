@@ -56,7 +56,9 @@ test('offline fields, translations and desktop persistence consume every declare
 test('all migrated controls share defaults, validation, translations and storage ownership', t => {
   const settings = store(t)
   for (const group of catalog.catalogGroups) {
-    const controls = catalog.catalogConfiguration(group.id, null, { RENDER_TEXTURE_SAMPLING: true }).fields
+    const computed = Object.fromEntries(Object.entries(group.config).filter(([, field]) => field.computed_default)
+      .map(([key, field]) => [key, field.example]))
+    const controls = catalog.catalogConfiguration(group.id, null, computed).fields
     for (const [key, field] of Object.entries(group.config)) {
       const control = controls.find(item => item.key === key)
       assert.equal(catalog.catalogTranslations[control.label], field.title['zh-CN'])
@@ -66,7 +68,7 @@ test('all migrated controls share defaults, validation, translations and storage
         assert.ok(!JSON.stringify(settings.snapshot({})).includes('test-credential'))
         assert.throws(() => settings.update({}, { values: { [key]: 'test-credential' } }))
       } else {
-        const value = field.computed_default ? true : field.default
+        const value = field.computed_default ? field.example : field.default
         assert.equal(control.value, typeof value === 'boolean' ? value : String(value))
         settings.update({}, { values: { [key]: typeof value === 'number' ? String(value) : value } })
         if (value !== '') assert.equal(settings.backendEnvironment({})[key], String(value))
@@ -183,4 +185,27 @@ test('generation rejects stale output and invalid declarations before they reach
   assert.ok(!fs.readFileSync(envPath, 'utf8').includes('FISH_TTS_MODEL='))
   fs.writeFileSync(envPath, '# BEGIN GENERATED CONFIG: broken\n')
   assert.throws(() => execFileSync(process.execPath, [script], { stdio: 'pipe' }), /Unpaired/)
+})
+
+test('LM Studio legacy inputs have the same authority, locking and canonical form value', t => {
+  const settings = store(t)
+  settings.update({}, { values: { LM_STUDIO_URL: 'http://localhost:1235', LOCAL_LLM_LM_STUDIO_URL: 'http://localhost:1236' } })
+  const environment = { LM_STUDIO_URL: 'http://localhost:1237' }
+  const snapshot = settings.snapshot(environment)
+  assert.equal(snapshot.sources.LOCAL_LLM_LM_STUDIO_URL, 'environment')
+  assert.equal(snapshot.locked.LOCAL_LLM_LM_STUDIO_URL, true)
+  assert.equal(catalog.catalogConfiguration('local', snapshot).fields.find(field => field.key === 'LOCAL_LLM_LM_STUDIO_URL').value, environment.LM_STUDIO_URL)
+  assert.equal(settings.backendEnvironment(environment).LOCAL_LLM_LM_STUDIO_URL, environment.LM_STUDIO_URL)
+  assert.throws(() => settings.update(environment, { values: { LOCAL_LLM_LM_STUDIO_URL: 'http://localhost:1238' } }), /locked/)
+  const canonical = { ...environment, LOCAL_LLM_LM_STUDIO_URL: 'http://localhost:1239' }
+  assert.equal(settings.snapshot(canonical).startupValues.LOCAL_LLM_LM_STUDIO_URL, canonical.LOCAL_LLM_LM_STUDIO_URL)
+  assert.ok(!('LOCAL_LLM_LM_STUDIO_URL' in settings.backendEnvironment(canonical)))
+  const cleared = settings.update({}, { values: { LOCAL_LLM_LM_STUDIO_URL: null } })
+  assert.equal(cleared.sources.LOCAL_LLM_LM_STUDIO_URL, 'default')
+  assert.ok(!('LM_STUDIO_URL' in cleared.values))
+  settings.markApplied({})
+  settings.update({}, { values: { LM_STUDIO_URL: 'http://localhost:1240' } })
+  settings.markApplied({})
+  const legacyClear = settings.update({}, { values: { LOCAL_LLM_LM_STUDIO_URL: null } })
+  assert.ok(legacyClear.pendingRevisions.LOCAL_LLM_LM_STUDIO_URL)
 })
