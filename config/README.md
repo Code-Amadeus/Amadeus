@@ -309,3 +309,18 @@ it contains no executable expressions. Provider availability and authorization
 remain runtime facts. String selectors offer choices without turning a previously
 open provider identifier into a new hard-coded enum. Structured ACP/MCP profiles
 retain their existing dedicated storage, validation and authorization owners.
+
+## Built-in handler composition
+
+`server/handlers/composition.py` is the built-in factory table. It constructs all
+request handlers against explicitly supplied startup services and registers every
+result before the server accepts clients. Adding a handler changes its
+implementation and this table, without editing `server/app.py`. Runtime owners
+still bind their live services and callbacks; this table is not a plugin loader
+and grants no new extension permissions. Duplicate request methods fail startup
+instead of replacing the existing owner.
+
+Run `python tools/smoke_builtin_handler_catalog.py` to start an isolated backend
+with models and external agents disabled. The smoke adds a synthetic factory,
+verifies an authenticated WebSocket round trip, reads the real configuration,
+checks voice routes, and shuts the process down cleanly.

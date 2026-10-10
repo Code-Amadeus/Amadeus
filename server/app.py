@@ -388,23 +388,10 @@ async def bootstrap(port: int = 17777) -> None:
     from server.ws_handler import manager as _mgr
     from server.protocol import Method
     from server.event_bus import bus
-    from server.handlers.chat_handler import ChatHandler
-    from server.handlers.session_handler import SessionHandler
-    from server.handlers.character_handler import CharacterHandler
-    from server.handlers.voice import VoiceHandlers, close_voice_input_services
-    from server.handlers.vts_handler import VtsHandler
-    from server.handlers.expression_handler import ExpressionHandler
-    from server.handlers.system_handler import SystemHandler
-    from server.handlers.render_handler import RenderHandler
-    from server.handlers.wallpaper_handler import WallpaperHandler
-    from server.handlers.provider_handler import ProviderHandler
-    from server.handlers.capability_handler import CapabilityHandler
-    from server.handlers.mcp_connection_handler import McpConnectionHandler
-    from server.handlers.provider_activity_handler import ProviderActivityHandler
+    from server.handlers.voice import close_voice_input_services
+    from server.handlers.composition import HandlerServices, create_builtin_handlers
     from server.handlers.work_activity_handler import WorkActivityCoordinator
-    from server.handlers.work_ledger_handler import WorkLedgerHandler
-    from server.work_preview import WorkPreviewHandler, WorkPreviewManager
-    from server.handlers.auip_handler import AuipHandler
+    from server.work_preview import WorkPreviewManager
     from server.auip_launch import (
         AuipLaunchCoordinator,
         set_auip_launch_coordinator,
@@ -417,8 +404,6 @@ async def bootstrap(port: int = 17777) -> None:
     from server.auip_app_connection import manager as auip_app_manager
     from server.auip_runtime import runtime as auip_runtime
     from server.auip_self_attach import AuipSelfAttachCoordinator
-    from server.handlers.vn_player_handler import VNPlayerHandler
-    from server.handlers.vn_launch_handler import VNLaunchHandler
     from server.work_observer import WorkObserverCoordinator
     from server.canvas_action_router import CanvasActionRouter
     from server.interaction_branch import InteractionBranchCoordinator
@@ -431,52 +416,30 @@ async def bootstrap(port: int = 17777) -> None:
     # worker thread (control-plane intake) reaches subscribers only through it.
     bus.bind_loop()
 
-    # create handlers & register methods FIRST.
-    # Handlers are registered before uvicorn starts so that methods are
-    # recognized immediately. Runtime deps are injected later via configure().
-    chat_h = ChatHandler()
-    from server.chat_role_delivery import ChatRoleDelivery
-
-    chat_role_delivery = ChatRoleDelivery()
-    session_h = SessionHandler()
-    character_h = CharacterHandler()
-    voice_handlers = VoiceHandlers()
-    tts_h, asr_h, wake_h = voice_handlers.tts, voice_handlers.asr, voice_handlers.wake
-    vts_h = VtsHandler()
-    expr_h = ExpressionHandler()
-    from server.handlers.visual_handler import VisualHandler
+    # Shared startup services precede handler construction. The built-in factory
+    # table owns the handler list; later runtime bindings remain explicit here.
     from render.visual_profile import VisualProfileStore
-    visual_h = VisualHandler()
     visual_user_data = Path(os.getenv("AMADEUS_ELECTRON_USER_DATA_DIR") or
                             (Path(ROOT) / ".electron-user-data"))
     visual_store = VisualProfileStore(
         os.getenv("AMADEUS_VISUAL_PROFILES_PATH") or visual_user_data / "visual_profiles.json",
         project_root=Path(ROOT),
     )
-    sys_h = SystemHandler()
-    render_h = RenderHandler()
-    wallpaper_h = WallpaperHandler()
     capability_catalog = CapabilityCatalog()
     capability_catalog.register_package(builtin_auip_authoring_package())
-    provider_h = ProviderHandler(capability_catalog=capability_catalog)
-    mcp_connection_h = McpConnectionHandler(provider_h.mcp_connections)
-    configured_activity_path = str(
-        os.environ.get("AMADEUS_PROVIDER_ACTIVITY_PATH") or ""
-    ).strip()
-    provider_activity_h = ProviderActivityHandler(
-        ProviderActivityJournal(
-            Path(configured_activity_path).expanduser()
-            if configured_activity_path
-            else Path(ROOT) / "runtime" / "provider_activity.jsonl"
-        )
+    configured_activity_path = str(os.environ.get("AMADEUS_PROVIDER_ACTIVITY_PATH") or "").strip()
+    provider_activity = ProviderActivityJournal(
+        Path(configured_activity_path).expanduser()
+        if configured_activity_path else Path(ROOT) / "runtime" / "provider_activity.jsonl"
     )
     configured_ledger_path = str(os.environ.get("AMADEUS_WORK_LEDGER_PATH") or "").strip()
     work_ledger_store = WorkLedgerStore(
         Path(configured_ledger_path).expanduser()
-        if configured_ledger_path
-        else Path(ROOT) / "runtime" / "work_ledger.sqlite3"
+        if configured_ledger_path else Path(ROOT) / "runtime" / "work_ledger.sqlite3"
     )
     from core import session_manager as _work_session_manager
+    from core import session_manager as _attention_session_manager
+    from server.attention_request import attention_requests
 
     work_ledger = WorkLedgerCoordinator(
         work_ledger_store,
@@ -484,50 +447,43 @@ async def bootstrap(port: int = 17777) -> None:
         provider_cancel=provider_runtime.cancel,
         current_session_id=_work_session_manager.get_current_session_id,
     )
-    session_h.configure(
-        work_coordinator=work_ledger,
-        is_chat_busy=chat_h.is_busy,
-    )
-    provider_h.configure_work_control(work_ledger)
     work_preview = WorkPreviewManager(work_ledger_store)
-    work_preview_h = WorkPreviewHandler(work_ledger, work_preview)
-    work_h = WorkLedgerHandler(
-        work_ledger,
-        provider_run=provider_h.run_provider,
-        provider_permission=provider_runtime.resolve_permission,
-        provider_input=provider_runtime.append_input,
-        preview_open=work_preview_h.open_from_work_action,
-    )
-    from core import session_manager as _attention_session_manager
-    from server.attention_request import attention_requests
-    from server.handlers.attention_handler import AttentionRequestHandler
-
-    attention_h = AttentionRequestHandler(
-        attention_requests,
-        current_session_id=lambda: _attention_session_manager.get_current_session_id() or "",
-    )
     auip_launch = AuipLaunchCoordinator(
-        artifacts=work_ledger_store,
-        work_roster=work_ledger,
-        attention=attention_requests,
-    )
-    capability_h = CapabilityHandler(
-        capability_catalog,
-        extra_packages=lambda: auip_app_capability_packages(
-            auip_launch.candidates(
-                _attention_session_manager.get_current_session_id() or ""
-            )
-        ),
+        artifacts=work_ledger_store, work_roster=work_ledger, attention=attention_requests,
     )
     set_auip_launch_coordinator(auip_launch)
-    auip_h = AuipHandler(
-        artifacts=work_ledger_store,
+    handler_bundle = create_builtin_handlers(HandlerServices(
+        capability_catalog=capability_catalog,
+        work_ledger=work_ledger, work_ledger_store=work_ledger_store,
+        work_preview=work_preview, attention=attention_requests,
+        auip_launch=auip_launch, provider_activity=provider_activity,
+        provider_runtime=provider_runtime,
         current_session_id=lambda: _attention_session_manager.get_current_session_id() or "",
-        app_websocket_url=f"ws://127.0.0.1:{port}/auip/ws",
-        launch=auip_launch,
-        preview_handoff=work_preview.begin_auip_handoff,
-    )
-    auip_launch.before_result_entry = auip_h.prepare_result_entry
+        auip_app_websocket_url=f"ws://127.0.0.1:{port}/auip/ws",
+        extra_capability_packages=lambda: auip_app_capability_packages(
+            auip_launch.candidates(_attention_session_manager.get_current_session_id() or "")
+        ),
+    ))
+    # References needed by existing domain runtime owners; registration below
+    # includes every factory result, including handlers without app bindings.
+    chat_h = handler_bundle.instances["chat"]
+    session_h = handler_bundle.instances["session"]
+    voice_handlers = handler_bundle.voice
+    tts_h, asr_h, wake_h = voice_handlers.tts, voice_handlers.asr, voice_handlers.wake
+    vts_h = handler_bundle.instances["vts"]
+    expr_h = handler_bundle.instances["expression"]
+    visual_h = handler_bundle.instances["visual"]
+    sys_h = handler_bundle.instances["system"]
+    render_h = handler_bundle.instances["render"]
+    wallpaper_h = handler_bundle.instances["wallpaper"]
+    provider_h = handler_bundle.instances["provider"]
+    provider_activity_h = handler_bundle.instances["provider_activity"]
+    work_h = handler_bundle.instances["work"]
+    attention_h = handler_bundle.instances["attention"]
+    auip_h = handler_bundle.instances["auip"]
+    vn_h = handler_bundle.instances["vn"]
+    vn_launch_h = handler_bundle.instances["vn_launch"]
+    chat_role_delivery = handler_bundle.instances["chat_role_delivery"]
     auip_app_manager.configure_self_attach(
         AuipSelfAttachCoordinator(
             runtime=auip_runtime,
@@ -616,16 +572,8 @@ async def bootstrap(port: int = 17777) -> None:
     provider_runtime.set_start_admission_validator(
         _validate_provider_start_admission
     )
-    vn_h = VNPlayerHandler()
-    vn_launch_h = VNLaunchHandler()
-
-    handlers = (chat_h, session_h, character_h, *voice_handlers.handlers, vts_h, expr_h, sys_h,
-        render_h, wallpaper_h, provider_h, capability_h, mcp_connection_h,
-        provider_activity_h, work_h, work_preview_h, attention_h, auip_h, vn_h,
-        vn_launch_h, visual_h)
-    handlers += (chat_role_delivery,)
-    for h in handlers:
-        _mgr.register_handler(h)
+    # Register before uvicorn starts; lazy runtime services are bound later.
+    handler_bundle.register(_mgr)
 
     # create FastAPI app.
     from fastapi import FastAPI, HTTPException, Request, WebSocket
