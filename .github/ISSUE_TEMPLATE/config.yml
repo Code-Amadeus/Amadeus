@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Setup and usage questions / 安装与使用问题
+    url: https://github.com/Code-Amadeus/Amadeus/discussions
+    about: Ask for help with installation or an existing feature. / 安装或使用遇到困难，可以在这里提问。
+  - name: Security reports / 安全问题报告
+    url: https://github.com/Code-Amadeus/Amadeus/blob/main/SECURITY.md
+    about: Follow the private reporting instructions for security-sensitive findings. / 安全敏感问题请按说明私下报告。

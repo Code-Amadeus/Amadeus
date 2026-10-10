@@ -91,7 +91,7 @@ def test_atomic_save_failure_preserves_previous_profile(tmp_path: Path) -> None:
     path = VNProfileStore(tmp_path).path
     original = path.read_bytes()
     request["profile"].update(id=saved["profileId"], name="Changed")
-    with patch("server.vn_profiles.os.replace", side_effect=OSError("disk failure")):
+    with patch("config.durable_io.os.replace", side_effect=OSError("disk failure")):
         with pytest.raises(OSError):
             instance.save_profile(request)
     assert path.read_bytes() == original

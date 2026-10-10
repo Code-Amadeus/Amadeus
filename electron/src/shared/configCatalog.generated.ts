@@ -2534,7 +2534,7 @@ export const catalogGroups: CatalogGroup[] = [
             "value": "wallpaper_surface",
             "label": {
               "en-US": "wallpaper_surface",
-              "zh-CN": "wallpaper_surface"
+              "zh-CN": "壁纸表面"
             },
             "hidden": true
           },
@@ -2542,7 +2542,7 @@ export const catalogGroups: CatalogGroup[] = [
             "value": "region",
             "label": {
               "en-US": "region",
-              "zh-CN": "region"
+              "zh-CN": "区域"
             },
             "hidden": true
           }

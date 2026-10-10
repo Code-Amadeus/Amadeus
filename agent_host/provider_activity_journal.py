@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from config.durable_io import write_text
 
 logger = logging.getLogger(__name__)
 
@@ -329,21 +330,12 @@ class ProviderActivityJournal:
     def _compact_locked(self) -> None:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            temp_path = self.path.with_suffix(f"{self.path.suffix}.tmp")
-            with temp_path.open("w", encoding="utf-8", newline="\n") as handle:
-                for run in sorted(
-                    self._runs.values(),
-                    key=lambda item: float(item.get("updated_at") or 0.0),
-                ):
-                    handle.write(
-                        json.dumps(
-                            {"kind": "snapshot", "data": run},
-                            ensure_ascii=False,
-                            separators=(",", ":"),
-                        )
-                        + "\n"
-                    )
-            os.replace(temp_path, self.path)
+            contents = "".join(
+                json.dumps({"kind": "snapshot", "data": run}, ensure_ascii=False,
+                           separators=(",", ":")) + "\n"
+                for run in sorted(self._runs.values(), key=lambda item: float(item.get("updated_at") or 0.0))
+            )
+            write_text(self.path, contents)
             self._writes_since_compact = 0
         except Exception:
             logger.warning("failed to compact Provider activity", exc_info=True)

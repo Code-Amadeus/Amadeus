@@ -144,7 +144,7 @@ async def start_llama_server() -> None:
         pass  # 端口未通，继续启动
 
     if _llm_server_proc is not None and _llm_server_proc.poll() is None:
-        logger.info("runtime log event at llm/llama_server.py:48")
+        logger.info("Managed llama-server is already running; skipping duplicate launch")
         return
 
     try:
@@ -229,11 +229,11 @@ async def warmup_local_llm_cache() -> None:
             async with session.post(api_url, json=payload) as resp:
                 if resp.status == 200:
                     await resp.json()
-                    logger.info("runtime log event at llm/llama_server.py:150")
+                    logger.info("Local LLM prompt cache warmup completed")
                 else:
-                    logger.warning("runtime log event at llm/llama_server.py:152")
-    except Exception:
-        logger.warning("runtime log event at llm/llama_server.py:154")
+                    logger.warning("Local LLM prompt cache warmup rejected (HTTP %s)", resp.status)
+    except Exception as exc:
+        logger.warning("Local LLM prompt cache warmup failed (%s)", type(exc).__name__)
 
 
 def stop_llama_server() -> None:
@@ -241,16 +241,16 @@ def stop_llama_server() -> None:
     global _llm_server_proc, _llm_server_log
     if not _llm_server_proc:
         return
-    logger.info("runtime log event at llm/llama_server.py:162")
+    logger.info("Stopping managed llama-server")
     try:
         _llm_server_proc.terminate()
         try:
             _llm_server_proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             _llm_server_proc.kill()
-        logger.info("runtime log event at llm/llama_server.py:169")
-    except Exception:
-        logger.error("runtime log event at llm/llama_server.py:171")
+        logger.info("Managed llama-server stop sequence completed")
+    except Exception as exc:
+        logger.error("Managed llama-server stop failed (%s)", type(exc).__name__)
     finally:
         _llm_server_proc = None
         if _llm_server_log is not None:

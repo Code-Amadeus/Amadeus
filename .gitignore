@@ -121,6 +121,7 @@ coverage.xml
 GPT_SoVITS/BigVGAN/alias_free_activation/cuda/build*/
 
 # ── 其他临时文件 ────────────────────────────────────────────────────────────
+.amadeus-test/
 tmp/
 *.tmp
 *.bak

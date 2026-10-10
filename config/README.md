@@ -320,6 +320,85 @@ These are not pending mechanical migrations:
 | wallpaper scenario helpers | wallpaper/scenario overrides | Both wallpaper hosts resolve component-local media overrides without importing the heavyweight application settings facade. |
 | `vn_player/runtime.py` | `VN_*` values | These describe one VN session, not the application startup snapshot. |
 | `server/runtime_status.py` | build/workspace metadata | The launcher supplies diagnostic facts for the current process. |
+| `asr/qwen3_asr_sidecar.py` | `QWEN3_ASR_DEVICE`, `QWEN3_ASR_REQUIRE_CUDA` | The isolated interpreter reads the environment supplied by its parent. |
+| `tts/gpt_sovits_sidecar.py` | `TTS_REQUIRE_CUDA` | The isolated interpreter enforces the device requirement supplied by its parent. |
+| `server/presentation_runtime.py` | `AMADEUS_PRESENTATION_LOCALE`, `AMADEUS_WALLPAPER_CAPTION_MODE` | Presentation resolves its current, component-owned preferences. |
+| `server/handlers/system_handler.py` | Browser/VN role provider and model overrides | Existing status projections distinguish explicit overrides from inherited values. Their empty-value semantics are retained; the ratchet does not mechanically replace these reads. |
+| `server/app.py` | `AMADEUS_ALLOW_MAIN_VOICE_DURING_VN` | The existing voice-route callback checks this override while deciding whether main voice may run during a VN session. |
+| `server/vn_tts_bridge.py`, `tts/utterance_scheduler.py` | dispatch, queue and utterance limits | Existing bridge/scheduler owners resolve their timing and grouping controls. Changing when they are read requires a separate behavior review. |
+| `server/wallpaper_subtitle_translator.py` | translation timeout and token budget | Each translator resolves its own request limits at construction. |
+
+The inventory also retains startup reads in `server/visual_runtime.py` and
+`server/chat_translation_runtime.py`. These initialize component-owned mutable
+state using catalog defaults, then accept live changes through `set_config`.
+They are legacy parsing sites, not justification for introducing new raw reads.
+The helper-aware audit added 47 existing file/key pairs across eight files;
+eight of these refer to declared catalog keys. No runtime reads were moved.
+
+`catalog_legacy.json.environment_reads` records exact file/key pairs, including
+process-boundary and remaining legacy reads. The AST scan recognizes literal
+keys in direct reads and same-file parameter-forwarding helpers, including
+nested helpers and positional/keyword calls. It does not resolve arbitrary
+runtime expressions, callbacks, or helpers imported from other modules; this
+is a bounded source guardrail, not a complete runtime inventory.
+New product settings belong in the
+catalog. A new intentional late read needs an explicit baseline review and an
+explanation here; moving a read to another file is not automatically permitted.
+`python tools/maintainability_ratchet.py --update` only tightens existing
+baselines and refuses new entries. It also reports silent broad exceptions for
+inspection; that observation is not a CI gate.
+
+## Serialized state writes
+
+`config/durable_io.py` provides `write_text` and `write_bytes` without loading
+application settings. Callers own serialization, parent-directory creation,
+locking, validation, exclusive creation and recovery. The file is written and
+synced in the destination directory before replacement. On Windows, known
+sharing/access conflicts receive bounded retries on ordinary threads. A call
+on a running asyncio event-loop thread propagates the first conflict without
+sleeping, preserving synchronous caller ordering and avoiding retry backoff
+that would stall unrelated events. Other errors propagate immediately. The
+write and file sync themselves remain synchronous.
+
+Replacement is the commit point. Pre-commit I/O errors preserve the previous
+file. A later directory-sync error logs a warning and returns normally: the new
+contents are visible but crash durability is unconfirmed. This does not promise
+multi-file transactions or coordinate concurrent writers. Text uses UTF-8 with
+no platform newline translation; existing Windows JSON saves may consequently
+change CRLF to LF without changing their parsed content or trailing-newline
+convention.
+
+The VN context store is explicitly deferred (2026-10-11). Its non-atomic fallback
+and recovery behavior are unchanged. Future work must distinguish a new session
+from missing/corrupt state in an existing session, preserve corrupt evidence,
+recover sequence ordering or refuse continuation on every subsequent startup,
+and define policies for all JSON files that are read and later overwritten.
+Permission failures must not be treated as malformed content. The R3 exception
+is limited to `VNContextStore.write_json`, not a general exception for VN code.
+
+## Built-in and extension configuration vocabularies
+
+The catalog is trusted, packaged application data. An external extension
+manifest is a separate validation and lifecycle boundary; this documentation
+does not enable extension discovery or runtime registration.
+
+| Vocabulary | Built-in catalog | Extension design boundary |
+| --- | --- | --- |
+| `type` | String, path, URL, enum, boolean, integer, number | No `path` type in the current draft; do not silently grant filesystem access. |
+| `title`, `description` | English and Chinese localized maps | May be a string or language map; normalize representation and enforce manifest length limits. |
+| `default` | Must match the declared field type | Must match the type and constraints; a secret cannot declare a default, including an empty one. |
+| `secret` | Host-owned string credentials | Host-owned bindings; omit built-in empty defaults when constructing a manifest, rather than copying them. |
+| `options` | Strings or objects with required label and optional description/hidden | Draft options permit optional labels and have a bounded count; adapt explicitly. |
+| `min`, `max`, `max_length` | Validated field constraints | Common concepts, with manifest-specific bounds and applicability. |
+| `apply` | `frontend`, `host`, `backend_restart`, `desktop_restart` | `live` or `reactivate`; these describe extension generations and are not interchangeable with built-in restart policy. |
+| `required` | Not a built-in field attribute | Missing required configuration keeps the extension in `needs_config`. |
+| Runtime and presentation wiring | `runtime_key`, `scope`, `setting`, computed/desktop defaults, visibility, factories and probes | Host implementation details, not a public manifest surface. |
+
+The generator already rejects unknown built-in attributes. Share only genuinely
+common value checks; keep manifest authority, secrets, application policy and
+lifecycle validation with their owners. A real out-of-tree adapter must exercise
+installation, configuration, enable/disable, failure and removal before fixing
+the registration API, followed by a second adapter to validate its generality.
 
 ## Compatibility notes
 

@@ -63,6 +63,16 @@ assert settings.AUIP_ACTION_PROVIDER == settings.AUIP_NARRATION_PROVIDER == sett
     subprocess.run([sys.executable, '-c', probe, str(dotenv)], cwd=root, check=True, capture_output=True, text=True)
 
 
+def test_no_new_direct_environment_reads_outside_configuration_boundary() -> None:
+    from tools.maintainability_ratchet import ROOT, additions, inventory
+
+    baseline = json.loads((ROOT / "config/catalog_legacy.json").read_text(encoding="utf-8"))
+    actual = {f: v["environment"] for f, v in inventory().items()
+              if not f.startswith("config/") and v["environment"]}
+    unexpected = additions(actual, baseline["environment_reads"])
+    assert not unexpected, f"Declare new product settings in config/catalog; document genuine process-boundary reads: {unexpected}"
+
+
 def test_no_new_or_migrated_handwritten_config_declarations() -> None:
     import ast
     from pathlib import Path

@@ -1,4 +1,4 @@
-﻿"""
+"""
 VTube Studio WebSocket 连接管理
 - VTSConnectionManager：连接/鉴权/重连/口型/表情/热键指令封装
 """
@@ -13,6 +13,7 @@ from threading import Lock, Thread
 
 import websocket as ws
 
+from config.durable_io import write_text
 logger = logging.getLogger(__name__)
 
 
@@ -67,8 +68,7 @@ class VTSConnectionManager:
 
     def _save_auth_token(self, token: str) -> None:
         try:
-            with open(self._token_file, "w") as f:
-                json.dump({"authenticationToken": token}, f)
+            write_text(self._token_file, json.dumps({"authenticationToken": token}))
             logger.info("VTS token saved to file")
         except Exception as e:
             logger.error(f"saving token failed: {e}")

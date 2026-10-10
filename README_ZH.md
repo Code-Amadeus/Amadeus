@@ -108,6 +108,19 @@ wallpaper/      Electron/Lively host 与 Win32 桌面放置
 vn_player/      Experimental VN Player integration
 assets/         Git-owned UI 资产与外部 runtime 资产落点
 release/        公开源码选择、provenance 与 deterministic archive policy
+config/         启动配置、config/catalog/ 共享声明与状态写入原语
+llm/            模型客户端、传输与角色提示词组合
+characters/     内置角色定义
+sdk/            AUIP 集成库
+schemas/        协议与资源包的机器可读契约
+examples/       外部应用和集成示例
+skills/         Provider 范围内的创作指引
+tools/          维护和验收入口，索引见 tools/README.md
+tests/          产品行为与边界的确定性测试
+docs/           安装指南、契约与带日期的工程证据
+architecture/   架构源文件与生成视图
+scripts/        各平台启动和安装辅助脚本
+local_tts_infer.py  由 tts/ 调用的 GPT-SoVITS 推理集成层
 ```
 
 `main.py` 不是应用入口，只输出退役提示。Python 主入口是

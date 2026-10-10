@@ -170,11 +170,11 @@ def multi_head_attention_forward_patched(
                         k = cached_k[:new_length]
                         v = cached_v[:new_length]
                 
-                logger.debug(f"runtime log event at GPT_SoVITS/AR/modules/patched_mha_with_cache_onnx.py:173")
+                logger.debug("Attention key/value cache updated in place")
                 
             except Exception as e:
                 # 🔄 兼容性回退：如果优化失败，使用原始逻辑
-                logger.warning(f"runtime log event at GPT_SoVITS/AR/modules/patched_mha_with_cache_onnx.py:177")
+                logger.warning("In-place attention cache update failed; using concatenation (%s)", type(e).__name__)
                 cache["k"][cache["stage"]] = torch.cat([cache["k"][cache["stage"]], k], 0)
                 cache["v"][cache["stage"]] = torch.cat([cache["v"][cache["stage"]], v], 0)
                 k = cache["k"][cache["stage"]]

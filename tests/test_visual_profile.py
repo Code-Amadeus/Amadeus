@@ -10,6 +10,7 @@ from urllib.request import urlopen
 
 import pytest
 
+from config import durable_io
 from render.server import AssetServer
 from render.visual_profile import VisualProfileStore, draft_profile, inspect_model
 from server.character_presentation import CharacterPresentationCoordinator
@@ -103,6 +104,32 @@ def test_corrupt_saved_profile_file_is_preserved_until_explicit_repair(tmp_path)
         store.save(store.config)
     assert target.read_text(encoding="utf-8") == original
     assert store.backend == "sprite"
+
+
+def test_failed_profile_replacement_preserves_file_config_and_revision(tmp_path, monkeypatch):
+    store, _, _, _ = configured_store(tmp_path)
+    previous, config, revision = store.path.read_bytes(), store.config, store.revision
+    changed = store.config
+    changed["backend"] = "sprite"
+    def fail(*args):
+        raise OSError("synthetic replacement failure")
+    monkeypatch.setattr(durable_io.os, "replace", fail)
+    with pytest.raises(OSError):
+        store.save(changed)
+    assert store.path.read_bytes() == previous
+    assert store.config == config and store.revision == revision
+
+
+def test_directory_sync_failure_keeps_saved_profile_and_memory_consistent(tmp_path, monkeypatch):
+    store, _, _, _ = configured_store(tmp_path)
+    changed, revision = store.config, store.revision
+    changed["backend"] = "sprite"
+    def fail(*args):
+        raise OSError("synthetic directory sync failure")
+    monkeypatch.setattr(durable_io, "_sync_directory", fail)
+    assert store.save(changed) == changed
+    assert store.revision == revision + 1
+    assert VisualProfileStore(store.path, project_root=tmp_path).config == store.config
 
 
 @pytest.mark.parametrize("change,message", [

@@ -8,13 +8,13 @@ import copy
 import hashlib
 import json
 import math
-import os
 from pathlib import Path
 import threading
 from typing import Any
 from urllib.parse import quote
 from uuid import uuid4
 
+from config.durable_io import write_text
 from render.spriteforge_intent import spriteforge_intent_payload
 
 _LAYOUT = {"scale": 1.0, "x": 0.0, "y": 0.0}
@@ -340,10 +340,7 @@ class VisualProfileStore:
                 if unknown:
                     raise ValueError(f"Unregistered model expressions: {', '.join(sorted(unknown))}")
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = self.path.with_suffix(".tmp")
-            temporary.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n",
-                                 encoding="utf-8")
-            os.replace(temporary, self.path)
+            write_text(self.path, json.dumps(config, indent=2, ensure_ascii=False) + "\n")
             self._config = config
             self._inspection = inspection
             self.revision += 1

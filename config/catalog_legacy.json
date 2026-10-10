@@ -178,5 +178,215 @@
       "WORK_WORKTREE_ROOT"
     ],
     "server/handlers/system_handler.py": []
+  },
+  "environment_reads": {
+    "agent_host/adapters/browser.py": [
+      "AMADEUS_BROWSER_SESSION_TTL_SECONDS"
+    ],
+    "agent_host/codex_desktop_provider.py": [
+      "CODEX_HOME"
+    ],
+    "agent_host/provider_activity_journal.py": [
+      "AMADEUS_PROVIDER_ACTIVITY_PATH"
+    ],
+    "asr/backends/qwen3_asr.py": [
+      "CUDA_VISIBLE_DEVICES",
+      "QWEN3_ASR_CUDA_FAILURE_SIDECAR_SECONDS",
+      "QWEN3_ASR_MODE",
+      "QWEN3_ASR_PYTHON"
+    ],
+    "asr/backends/sense_voice.py": [
+      "MODELSCOPE_LOG_LEVEL"
+    ],
+    "asr/manager.py": [
+      "CUDA_VISIBLE_DEVICES"
+    ],
+    "asr/mic_input_service.py": [
+      "MIC_INPUT_START_GRACE_SECONDS",
+      "MIC_INPUT_START_TIMEOUT_SECONDS"
+    ],
+    "asr/qwen3_asr_sidecar.py": [
+      "CUDA_VISIBLE_DEVICES",
+      "QWEN3_ASR_DEVICE",
+      "QWEN3_ASR_REQUIRE_CUDA",
+      "QWEN3_ASR_WARMUP"
+    ],
+    "asr/qwen_model.py": [
+      "HF_HOME",
+      "HF_HUB_CACHE"
+    ],
+    "asr/registry.py": [
+      "QWEN3_ASR_PYTHON"
+    ],
+    "core/chat_runtime.py": [
+      "AMADEUS_E2E_NO_TTS"
+    ],
+    "core/session_manager.py": [
+      "AMADEUS_SESSION_DIR"
+    ],
+    "llm/llama_server.py": [
+      "VIRTUAL_ENV"
+    ],
+    "render/texture_cache.py": [
+      "LOCALAPPDATA",
+      "XDG_CACHE_HOME"
+    ],
+    "server/app.py": [
+      "AMADEUS_ALLOW_MAIN_VOICE_DURING_VN",
+      "AMADEUS_E2E_NO_TTS",
+      "AMADEUS_ELECTRON_USER_DATA_DIR",
+      "AMADEUS_INTERACTION_BRANCH_ROOT",
+      "AMADEUS_PROVIDER_ACTIVITY_PATH",
+      "AMADEUS_SERVER_LOG",
+      "AMADEUS_VISUAL_PROFILES_PATH",
+      "AMADEUS_WORK_LEDGER_PATH"
+    ],
+    "server/browser_branch_planner.py": [
+      "AMADEUS_BROWSER_BRANCH_LLM_ENABLED",
+      "BROWSER_BRANCH_DOM_CHARS",
+      "BROWSER_BRANCH_MAX_TOKENS",
+      "BROWSER_BRANCH_TEXT_CHARS",
+      "BROWSER_BRANCH_TIMEOUT_SECONDS"
+    ],
+    "server/chat_translation_runtime.py": [
+      "AMADEUS_CHAT_TRANSLATION_SUBTITLES_ENABLED"
+    ],
+    "server/handlers/system_handler.py": [
+      "BROWSER_BRANCH_MODEL",
+      "BROWSER_BRANCH_PROVIDER",
+      "VN_LLM_MODEL",
+      "VN_LLM_PROVIDER",
+      "VN_SUBTITLE_TRANSLATE_MODEL",
+      "VN_SUBTITLE_TRANSLATE_PROVIDER",
+      "VN_TTS_TRANSLATE_MODEL",
+      "VN_TTS_TRANSLATE_PROVIDER"
+    ],
+    "server/presentation_runtime.py": [
+      "AMADEUS_PRESENTATION_LOCALE",
+      "AMADEUS_WALLPAPER_CAPTION_MODE",
+      "AMADEUS_WALLPAPER_SUBTITLE_LANG",
+      "AMADEUS_WALLPAPER_SUBTITLE_MODE"
+    ],
+    "server/runtime_status.py": [
+      "AMADEUS_CODE_SHA",
+      "AMADEUS_WORKSPACE_DIRTY",
+      "AMADEUS_WORKSPACE_FINGERPRINT"
+    ],
+    "server/visual_runtime.py": [
+      "AMADEUS_VISION_ENABLED",
+      "AMADEUS_VISION_JPEG_QUALITY",
+      "AMADEUS_VISION_MAX_LONG_SIDE",
+      "AMADEUS_VISION_MODE",
+      "AMADEUS_VISION_PROVIDER",
+      "AMADEUS_VISION_REGION",
+      "AMADEUS_VISION_SCOPE",
+      "AMADEUS_VISION_WINDOW_HANDLE"
+    ],
+    "server/vn_text_sources.py": [
+      "VN_AGENT_ACCEPT_TRANSLATE"
+    ],
+    "server/vn_tts_bridge.py": [
+      "VN_SUBTITLE_TRANSLATE_BASE_URL",
+      "VN_SUBTITLE_TRANSLATE_CONCURRENCY",
+      "VN_SUBTITLE_TRANSLATE_MAX_TOKENS",
+      "VN_SUBTITLE_TRANSLATE_TIMEOUT",
+      "VN_TTS_ENQUEUE_CONFIRM_TIMEOUT",
+      "VN_TTS_FIRST_MIN_DISPATCH_CHARS",
+      "VN_TTS_MAX_DISPATCH_CHARS",
+      "VN_TTS_MAX_PENDING",
+      "VN_TTS_MIN_DISPATCH_CHARS",
+      "VN_TTS_QUEUE_PUT_TIMEOUT",
+      "VN_TTS_TRANSLATE_BASE_URL",
+      "VN_TTS_TRANSLATE_CONCURRENCY",
+      "VN_TTS_TRANSLATE_MAX_TOKENS",
+      "VN_TTS_TRANSLATE_TIMEOUT"
+    ],
+    "server/wallpaper_subtitle_translator.py": [
+      "AMADEUS_SUBTITLE_TRANSLATE_BASE_URL",
+      "AMADEUS_SUBTITLE_TRANSLATE_MAX_TOKENS",
+      "AMADEUS_SUBTITLE_TRANSLATE_MODEL",
+      "AMADEUS_SUBTITLE_TRANSLATE_PROVIDER",
+      "AMADEUS_SUBTITLE_TRANSLATE_TIMEOUT",
+      "AMADEUS_WALLPAPER_SUBTITLE_TRANSLATE_PROVIDER"
+    ],
+    "server/work_export_service.py": [
+      "AMADEUS_DESKTOP_PATH"
+    ],
+    "tts/aec_debug_capture.py": [
+      "AEC_DEBUG_CAPTURE",
+      "AEC_DEBUG_CAPTURE_DIR",
+      "AEC_DEBUG_MIC_INDEX"
+    ],
+    "tts/aec_realtime.py": [
+      "AEC_REALTIME_DELAY_MS"
+    ],
+    "tts/backends/gpt_sovits.py": [
+      "TTS_MODE",
+      "TTS_PYTHON"
+    ],
+    "tts/gpt_sovits_sidecar.py": [
+      "TTS_REQUIRE_CUDA"
+    ],
+    "tts/pipeline.py": [
+      "ENABLE_CUDA_GRAPH"
+    ],
+    "tts/pre_translation_runtime.py": [
+      "AMADEUS_PRE_TRANSLATION_ENABLED",
+      "AMADUES_PRE_TRANSLATION_ENABLED"
+    ],
+    "tts/synthesis_backend.py": [
+      "ENABLE_CUDA_GRAPH"
+    ],
+    "tts/utterance_scheduler.py": [
+      "ENABLE_TTS_KV_WINDOW",
+      "ENABLE_TTS_UTTERANCE_SCHEDULER",
+      "TTS_UTTERANCE_FLUSH_TIMEOUT_MS",
+      "TTS_UTTERANCE_MAX_CHARS",
+      "TTS_UTTERANCE_MAX_SENTENCES",
+      "TTS_UTTERANCE_MIN_START_SEQ"
+    ],
+    "vn_player/runtime.py": [
+      "VN_ALLOW_SKIPPED_EVIDENCE_SPEAK",
+      "VN_GAME_GENRE",
+      "VN_GAME_ID",
+      "VN_GAME_TITLE",
+      "VN_IMMEDIATE_LLM_ENABLED",
+      "VN_IMMEDIATE_SILENCE_PRESSURE_ENABLED",
+      "VN_IMMEDIATE_SILENCE_PRESSURE_FORCE_AFTER",
+      "VN_IMMEDIATE_SILENCE_PRESSURE_OPENING_LINES",
+      "VN_IMMEDIATE_SILENCE_PRESSURE_OPENING_START",
+      "VN_IMMEDIATE_SILENCE_PRESSURE_START",
+      "VN_LLM_BASE_URL",
+      "VN_LLM_ENABLED",
+      "VN_LOOKAHEAD_ENABLED",
+      "VN_LOOKAHEAD_LLM_ENABLED",
+      "VN_LOOKAHEAD_MAX_CALLS",
+      "VN_LOOKAHEAD_MAX_LINES",
+      "VN_LOOKAHEAD_MIN_LINES",
+      "VN_LOOKAHEAD_REFRESH_MIN_LINES",
+      "VN_LOOKAHEAD_REFRESH_NEAR_TARGET_LINES",
+      "VN_MAX_REACTIONS_PER_MINUTE",
+      "VN_OUTPUT_LANGUAGE",
+      "VN_PROMPT_PACK",
+      "VN_REASONER_EVERY_LINES",
+      "VN_REASONER_LLM_ENABLED",
+      "VN_RETROSPECTIVE_ENABLED",
+      "VN_RETROSPECTIVE_EVERY_LINES",
+      "VN_RETROSPECTIVE_LLM_ENABLED",
+      "VN_RETROSPECTIVE_WINDOW_LINES",
+      "VN_SCRIPT_PATH",
+      "VN_SHORT_MEMORY_LINES",
+      "VN_SUMMARY_EVERY_LINES",
+      "VN_SUMMARY_LLM_ENABLED",
+      "VN_VERIFIER_ENABLED"
+    ],
+    "wallpaper/scene_assets.py": [
+      "AMADEUS_SCENARIO_BACKPLATE_PATH",
+      "AMADEUS_SCENARIO_FRAME_PLAYBACK",
+      "AMADEUS_SCENARIO_IDLE_SECONDS",
+      "AMADEUS_SCENARIO_ROOT",
+      "AMADEUS_SCENARIO_STATIC_SECONDS",
+      "AMADEUS_WALLPAPER_PATH"
+    ]
   }
 }

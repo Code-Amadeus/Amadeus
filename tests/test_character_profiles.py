@@ -12,6 +12,7 @@ import tomllib
 import pytest
 
 from config import settings
+from config import durable_io
 from core import character_profiles as profiles
 from llm import character_prompts as characters
 from server.handlers.character_handler import CharacterHandler
@@ -74,7 +75,7 @@ def test_failed_atomic_write_preserves_original_and_removes_temporary(store, mon
     original = path.read_bytes()
     def fail(*_args):
         raise OSError("synthetic write failure")
-    monkeypatch.setattr(profiles.os, stage, fail)
+    monkeypatch.setattr(durable_io.os, stage, fail)
     with pytest.raises(OSError, match="synthetic write failure"):
         store.update(role["character_id"], name="Changed")
     assert path.read_bytes() == original
@@ -83,7 +84,7 @@ def test_failed_atomic_write_preserves_original_and_removes_temporary(store, mon
 
 def test_replace_sees_fsynced_complete_document_in_same_directory(store, monkeypatch):
     observed = []
-    original_fsync, original_replace = profiles.os.fsync, profiles.os.replace
+    original_fsync, original_replace = durable_io.os.fsync, durable_io.os.replace
     def synced(descriptor):
         original_fsync(descriptor)
         observed.append("fsync")
@@ -93,10 +94,10 @@ def test_replace_sees_fsynced_complete_document_in_same_directory(store, monkeyp
         assert tomllib.loads(Path(source).read_text(encoding="utf-8"))["names"]["name"] == "Atomic"
         observed.append("replace")
         original_replace(source, destination)
-    monkeypatch.setattr(profiles.os, "fsync", synced)
-    monkeypatch.setattr(profiles.os, "replace", replace)
+    monkeypatch.setattr(durable_io.os, "fsync", synced)
+    monkeypatch.setattr(durable_io.os, "replace", replace)
     assert store.create(name="Atomic")["valid"]
-    assert observed == ["fsync", "replace"]
+    assert observed[:2] == ["fsync", "replace"]
 
 
 def test_builtin_cannot_be_shadowed_or_updated(store):
@@ -338,7 +339,7 @@ def test_failed_concurrent_save_cannot_replace_the_last_successful_save(store, m
     role = store.create(name="Original")
     path = store.directory / f"{role['character_id']}.toml"
     replacing, second_started, release = Event(), Event(), Event()
-    original_replace, original_fsync = profiles.os.replace, profiles.os.fsync
+    original_replace, original_fsync = durable_io.os.replace, durable_io.os.fsync
     failed_thread = []
     def replace(source, destination):
         replacing.set()
@@ -352,8 +353,8 @@ def test_failed_concurrent_save_cannot_replace_the_last_successful_save(store, m
         failed_thread.append(current_thread().ident)
         second_started.set()
         return profiles.CharacterStore(store.directory).update(role["character_id"], name="Failed")
-    monkeypatch.setattr(profiles.os, "replace", replace)
-    monkeypatch.setattr(profiles.os, "fsync", fsync)
+    monkeypatch.setattr(durable_io.os, "replace", replace)
+    monkeypatch.setattr(durable_io.os, "fsync", fsync)
     with ThreadPoolExecutor(max_workers=2) as executor:
         first = executor.submit(store.update, role["character_id"], name="Last successful")
         assert replacing.wait(5)

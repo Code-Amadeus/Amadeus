@@ -8,12 +8,7 @@ returning plain dict payloads that the existing event bus and renderer consume.
 
 from __future__ import annotations
 
-from typing import Any, Literal, TypedDict
-
-try:
-    from typing import NotRequired
-except ImportError:  # pragma: no cover - Python 3.10 compatibility
-    from typing_extensions import NotRequired  # type: ignore[assignment]
+from typing import Any, Literal, NotRequired, TypedDict
 
 
 SCHEMA_VERSION = "amadeus.ai_os.v1"

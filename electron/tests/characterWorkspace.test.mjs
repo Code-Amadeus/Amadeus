@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url)
 function compile(relative, imports = {}, globals = {}) {
   const source = fs.readFileSync(new URL(relative, import.meta.url), 'utf8')
   const code = ts.transpileModule(source, { compilerOptions: {
-    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
+    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true,
   } }).outputText
   const exports = {}
   new Function('require', 'exports', ...Object.keys(globals), code)(
@@ -30,7 +30,7 @@ function page(section, locale = 'en-US', identity = { ui_name: '牧瀬 紅莉栖
   const i18n = compile('../src/renderer/i18n.tsx', {}, { localStorage: store })
   const loaded = compile('../src/renderer/components/CharacterPage.tsx', {
     '../i18n': i18n, '../activeCharacter': { useActiveCharacter: () => identity },
-    './FluentIcon': { default: () => null }, './characterWorkspace': workspace, '../styles/characterWorkspace.css': {},
+    './FluentIcon': { __esModule: true, default: () => null }, './characterWorkspace': workspace, '../styles/characterWorkspace.css': {},
   }, { localStorage: store })
   const panels = Object.fromEntries(workspace.CHARACTER_SECTIONS.map(id => [id, React.createElement('div', { 'data-panel': id }, `${id} content`)]))
   return renderToStaticMarkup(React.createElement(i18n.I18nProvider, null, React.createElement(loaded.default, {

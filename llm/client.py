@@ -27,7 +27,7 @@ from config.settings import (
     AWS_BEDROCK_BEARER_TOKEN, AWS_BEDROCK_AUTH_MODE, AWS_BEDROCK_REGION,
     AWS_BEDROCK_MODEL_ID, AWS_BEDROCK_USE_INFERENCE_PROFILE,
     AWS_BEDROCK_INFERENCE_PROFILE_ID, AWS_BEDROCK_ENDPOINT,
-    AWS_BEDROCK_USE_CACHE, AWS_BEDROCK_CONNECTION_POOL_SIZE, AWS_BEDROCK_MAX_KEEPALIVE,
+    AWS_BEDROCK_USE_CACHE, AWS_BEDROCK_CACHE_TTL, AWS_BEDROCK_CONNECTION_POOL_SIZE, AWS_BEDROCK_MAX_KEEPALIVE,
     AWS_BEDROCK_KEEPALIVE_EXPIRY,
     LOCAL_LLM_TYPE, LOCAL_LLM_MODEL,
     LOCAL_LLM_URL, LOCAL_LLM_LM_STUDIO_URL, LOCAL_LLM_OLLAMA_URL,
@@ -124,7 +124,7 @@ def init_llm_client():
             base_url=OPENAI_BASE_URL,
             http_client=http_client,
         )
-        logger.info("runtime log event at llm/client.py:97")
+        logger.info("OpenAI-compatible client initialized with connection pooling")
         return llm_client
 
     elif LLM_PROVIDER == "gemini":
@@ -136,7 +136,7 @@ def init_llm_client():
         logger.info("Initializing AWS Bedrock client")
 
         if AWS_BEDROCK_AUTH_MODE == "bearer" and not AWS_BEDROCK_BEARER_TOKEN:
-            logger.error("runtime log event at llm/client.py:110")
+            logger.error("Bedrock bearer authentication selected but no token is configured")
             return None
 
         if AWS_BEDROCK_AUTH_MODE in ("auto", "bearer") and bedrock_http_client is None:
@@ -156,8 +156,8 @@ def init_llm_client():
                     f"最大连接数={AWS_BEDROCK_CONNECTION_POOL_SIZE}, "
                     f"保持连接数={AWS_BEDROCK_MAX_KEEPALIVE}"
                 )
-            except Exception:
-                logger.warning("runtime log event at llm/client.py:131")
+            except Exception as exc:
+                logger.warning("Bedrock HTTP client initialization failed (%s)", type(exc).__name__)
                 bedrock_http_client = None
 
         if AWS_BEDROCK_AUTH_MODE in ("auto", "boto3") and bedrock_runtime_client is None:
@@ -166,28 +166,26 @@ def init_llm_client():
                 bedrock_runtime_client = boto3.client(
                     "bedrock-runtime", region_name=AWS_BEDROCK_REGION
                 )
-                logger.info("runtime log event at llm/client.py:140")
-            except Exception:
-                logger.warning("runtime log event at llm/client.py:142")
+                logger.info("Bedrock SDK client initialized")
+            except Exception as exc:
+                logger.warning("Bedrock SDK client initialization failed (%s)", type(exc).__name__)
                 bedrock_runtime_client = None
 
         if AWS_BEDROCK_USE_INFERENCE_PROFILE and AWS_BEDROCK_INFERENCE_PROFILE_ID:
             model_id = AWS_BEDROCK_INFERENCE_PROFILE_ID
-            logger.info("runtime log event at llm/client.py:147")
-            logger.info("runtime log event at llm/client.py:148")
-            logger.info(f"   Inference Profile ID: {model_id}")
+            route = "inference_profile"
         else:
             model_id = AWS_BEDROCK_MODEL_ID
-            logger.info("runtime log event at llm/client.py:152")
-            logger.info("runtime log event at llm/client.py:153")
-            logger.info("runtime log event at llm/client.py:154")
+            route = "model"
             if AWS_BEDROCK_USE_INFERENCE_PROFILE:
-                logger.warning("runtime log event at llm/client.py:156")
-
-        if AWS_BEDROCK_USE_CACHE:
-            logger.info("runtime log event at llm/client.py:159")
-        else:
-            logger.info("runtime log event at llm/client.py:161")
+                logger.warning("Bedrock inference profile requested without an ID; using the model ID")
+        logger.info("Bedrock default configuration: region=%s model=%s route=%s auth_mode=%s",
+                    AWS_BEDROCK_REGION, model_id, route, AWS_BEDROCK_AUTH_MODE)
+        # These legacy settings are not applied by the current request builder.
+        # Report configured facts without promising cache behavior to operators.
+        logger.info("Bedrock prompt-cache settings: enabled=%s configured_ttl_seconds=%s; "
+                    "this client does not send cache controls",
+                    AWS_BEDROCK_USE_CACHE, AWS_BEDROCK_CACHE_TTL)
 
         return "bedrock_client"
 
@@ -200,9 +198,9 @@ def init_llm_client():
                 bedrock_runtime_client = boto3.client(
                     "bedrock-runtime", region_name=AWS_BEDROCK_REGION
                 )
-                logger.info("runtime log event at llm/client.py:174")
-            except Exception:
-                logger.warning("runtime log event at llm/client.py:176")
+                logger.info("Hybrid Bedrock SDK client initialized")
+            except Exception as exc:
+                logger.warning("Hybrid Bedrock SDK client initialization failed (%s)", type(exc).__name__)
         return "hybrid_client"
 
     elif LLM_PROVIDER == "local":
