@@ -14,10 +14,10 @@ import json
 import logging
 import os
 import re
-import tempfile
 import time
 from typing import Any, Callable
 
+from config.durable_io import write_text
 from llm import character_prompts
 
 logger = logging.getLogger(__name__)
@@ -430,21 +430,7 @@ def _persist_history(
                     logger.exception("could not remove incomplete new Session %r", sid)
             raise
         return
-    temporary = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=os.path.dirname(path),
-            prefix=".session-", suffix=".tmp", delete=False,
-        ) as output:
-            temporary = output.name
-            output.write(encoded)
-            output.flush()
-            os.fsync(output.fileno())
-        os.replace(temporary, path)
-        temporary = None
-    finally:
-        if temporary is not None:
-            os.remove(temporary)
+    write_text(path, encoded)
 
 
 def _read_session_history(session_id: str) -> tuple[ConversationHistory, bool]:
@@ -628,11 +614,10 @@ def set_session_title(session_id: str, title: str) -> bool:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         data["title"] = title
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        write_text(path, json.dumps(data, ensure_ascii=False, indent=2))
         return True
-    except Exception:
-        logger.error("runtime log event at core/session_manager.py:269")
+    except Exception as exc:
+        logger.error("Session title could not be saved (%s)", type(exc).__name__)
         return False
 
 

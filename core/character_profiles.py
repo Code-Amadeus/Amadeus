@@ -6,14 +6,13 @@ Disk edits never mutate the character object pinned by the prompt module at boot
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
-import tempfile
 from threading import RLock
 from typing import Any
 import tomllib
 import uuid
 
+from config.durable_io import write_text
 
 BUILTIN_CHARACTER_ID = "kurisu"
 CHARACTER_LOAD_EXIT_CODE = 78
@@ -90,18 +89,7 @@ def _atomic_write(path: Path, document: dict[str, Any]) -> None:
     """Only a fully validated document reaches this same-directory replace."""
     contents = _serialize(document)
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = None
-    try:
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n",
-                dir=path.parent, prefix=f".{path.stem}-", suffix=".tmp", delete=False) as stream:
-            temporary = Path(stream.name)
-            stream.write(contents)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, path)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    write_text(path, contents)
 
 
 class CharacterStore:

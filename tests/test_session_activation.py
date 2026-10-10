@@ -33,6 +33,27 @@ def state():
     return sm.get_current_session_id(), deepcopy(sm.conversation_history.__dict__)
 
 
+def test_title_replacement_failure_preserves_entire_conversation(sessions, monkeypatch):
+    from config import durable_io
+    path = Path(sm._session_path("A"))
+    previous, before = path.read_bytes(), state()
+    def fail(*args):
+        raise OSError("synthetic title write failure")
+    monkeypatch.setattr(durable_io.os, "replace", fail)
+    assert sm.set_session_title("A", "Updated") is False
+    assert path.read_bytes() == previous
+    assert state() == before
+
+
+def test_title_save_preserves_history_and_character_on_reload(sessions):
+    path = Path(sm._session_path("A"))
+    previous = json.loads(path.read_text(encoding="utf-8"))
+    assert sm.set_session_title("A", "会话 🌟")
+    expected = {**previous, "title": "会话 🌟"}
+    assert json.loads(path.read_text(encoding="utf-8")) == expected
+    assert sm.get_session_title("A") == "会话 🌟"
+
+
 def write_session(sid, **changes):
     data = {"session_id": sid, "dialog": [{"role": "user", "content": f"ONLY_{sid}"}]}
     data.update(changes)

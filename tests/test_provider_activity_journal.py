@@ -4,10 +4,25 @@ import asyncio
 import tempfile
 from pathlib import Path
 
+from config import durable_io
 from agent_host.provider_activity_journal import ProviderActivityJournal
 from server.event_bus import bus
 from server.handlers.provider_activity_handler import ProviderActivityHandler
 from server.protocol import Method
+
+
+def test_failed_compaction_preserves_journal_and_rehydration(tmp_path, monkeypatch):
+    path = tmp_path / "activity.jsonl"
+    journal = ProviderActivityJournal(path)
+    assert journal.record_event(_event("run-one", 1))
+    previous = path.read_bytes()
+    def fail(*args):
+        raise OSError("synthetic compaction failure")
+    monkeypatch.setattr(durable_io.os, "replace", fail)
+    journal._compact_locked()
+    assert path.read_bytes() == previous
+    assert not list(tmp_path.glob("*.tmp"))
+    assert ProviderActivityJournal(path).list_runs("session-one") == journal.list_runs("session-one")
 
 
 def _event(

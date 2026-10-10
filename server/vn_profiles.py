@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import tempfile
 import uuid
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from config.durable_io import write_text
 from vn_player.schemas import MAX_TERMINOLOGY_LENGTH
 
 
@@ -122,13 +121,4 @@ class VNProfileStore:
             if not item["terminology"]:
                 item.pop("terminology")
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd, temporary = tempfile.mkstemp(prefix="vn-profiles-", suffix=".tmp", dir=self.path.parent)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                json.dump(document, stream, ensure_ascii=False, indent=2)
-                stream.write("\n")
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, self.path)
-        finally:
-            Path(temporary).unlink(missing_ok=True)
+        write_text(self.path, json.dumps(document, ensure_ascii=False, indent=2) + "\n")
