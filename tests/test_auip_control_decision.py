@@ -113,6 +113,52 @@ class _Catalog:
         return self.preparation_items[:limit]
 
 
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_focused_catalog_preparation_is_async_and_preserves_captured_identity(cancel):
+    import threading
+
+    started, release = threading.Event(), threading.Event()
+    observed = []
+
+    class SlowCatalog(_Catalog):
+        def entry_candidates(self, *_args, **_kwargs):
+            started.set()
+            assert release.wait(3)
+            return [], []
+
+    async def query(messages):
+        observed.append(messages)
+        return '{"action":"none","work_relation":"subsumed"}'
+
+    runtime = _Runtime({"status":"active", "app_session_id":"original-app",
+        "app":{"title":"Original Board"}, "state":{}})
+    resolver = AuipControlDecisionResolver(query=query, app_runtime=runtime,
+        launch_catalog=SlowCatalog())
+    pending = resolver.capture(session_id="session", user_text="Hello", active_required=True)
+    assert pending is not None and not started.is_set()
+    # A later focus change cannot retarget the already received utterance.
+    runtime.projection["app_session_id"] = "successor-app"
+    runtime.projection["app"]["title"] = "Successor Board"
+    task = asyncio.create_task(pending)
+    try:
+        assert await asyncio.to_thread(started.wait, 1)
+        assert not task.done()
+        if cancel:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            assert observed == []
+        else:
+            release.set()
+            decision = await task
+            assert decision.app_session_id == "original-app"
+            assert "Original Board" in observed[0][0]["content"]
+            assert "Successor Board" not in observed[0][0]["content"]
+    finally:
+        release.set()
+        await asyncio.gather(task, return_exceptions=True)
+
+
 def test_active_application_launch_is_canonicalized_to_a_mode_transition() -> None:
     active = {
         "status": "active",

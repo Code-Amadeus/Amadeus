@@ -14,6 +14,8 @@ import base64
 import json
 import logging
 import re
+import time
+import uuid
 from contextlib import ExitStack, closing
 from typing import Any, Callable, Mapping
 
@@ -227,6 +229,7 @@ def remote_llm_messages_query(
     visual_context: dict[str, Any] | None = None,
     on_text: Callable[[str], None] | None = None,
     json_output: bool = True,
+    turn_id: str = "",
 ) -> str:
     """Query the selected Chat backend with the supplied role messages.
 
@@ -240,9 +243,14 @@ def remote_llm_messages_query(
     ``on_text`` consumes deltas from that same request. Exceptions propagate and
     close its stream. The CLI backend is rejected before query or delivery
     because its shared process has no per-query cancellation owner.
+
+    Streaming diagnostics measure provider-call entry to the first nonempty
+    text delta, before consumer backpressure. Client/message preparation is
+    separate. ``turn_id`` only correlates logs and is never sent as an SDK option.
     """
 
     global llm_client, gemini_model
+    query_started = time.perf_counter()
     normalized = [
         {
             "role": str(message.get("role") or ""),
@@ -281,11 +289,42 @@ def remote_llm_messages_query(
     response_model = None
     response_id = None
     finish_reason = None
+    request_id = uuid.uuid4().hex
+    request_started = None
+    first_text_seen = False
+    text_consumer = on_text
+
+    def mark_request_started():
+        nonlocal request_started
+        request_started = time.perf_counter()
+        if text_consumer is not None:
+            logger.info(
+                "[MODEL-LATENCY] stage=request_start request_id=%s turn_id=%s "
+                "provider=%s model=%s prepare_ms=%.1f",
+                request_id, turn_id or "-", selected_provider, requested_model,
+                (request_started - query_started) * 1000,
+            )
+
+    def timed_text(text):
+        nonlocal first_text_seen
+        if text and not first_text_seen:
+            first_text_seen = True
+            logger.info(
+                "[MODEL-LATENCY] stage=first_text request_id=%s turn_id=%s "
+                "provider=%s model=%s ms=%.1f",
+                request_id, turn_id or "-", selected_provider, requested_model,
+                (time.perf_counter() - request_started) * 1000,
+            )
+        return text_consumer(text)
+
+    if text_consumer is not None:
+        on_text = timed_text
 
     if selected_provider in ("deepseek", "hybrid2"):
         if llm_client is None:
             llm_client = init_llm_client()
         requested_model = str(model or DEEPSEEK_MODEL_NAME)
+        mark_request_started()
         response = llm_client.chat.completions.create(
             model=requested_model,
             messages=normalized,
@@ -303,6 +342,7 @@ def remote_llm_messages_query(
         if llm_client is None:
             llm_client = init_llm_client()
         requested_model = str(model or OPENAI_MODEL_NAME)
+        mark_request_started()
         response = llm_client.chat.completions.create(
             model=requested_model,
             messages=normalized,
@@ -344,6 +384,7 @@ def remote_llm_messages_query(
             "max_output_tokens": max(1, int(max_tokens)),
             **({"response_mime_type": "application/json"} if json_output else {}),
         }
+        mark_request_started()
         if on_text is None:
             content = generate_gemini_text(
                 gemini_model, model=requested_model, contents=contents, config=generation_config,
@@ -356,6 +397,7 @@ def remote_llm_messages_query(
         response_model = requested_model
     elif selected_provider in {"bedrock", "hybrid"}:
         requested_model = str(model or _bedrock_model_id())
+        mark_request_started()
         content = _bedrock_messages_query(
             normalized,
             temperature=temperature,
@@ -367,6 +409,7 @@ def remote_llm_messages_query(
         response_model = requested_model
     elif selected_provider == "local":
         requested_model = str(model or LOCAL_LLM_MODEL)
+        mark_request_started()
         content = _local_messages_query(
             normalized,
             temperature=temperature,

@@ -17,6 +17,8 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass, replace
+from copy import deepcopy
+from functools import partial
 from typing import Any, Awaitable, Callable, Iterable, Mapping, Protocol
 
 from agent_host.work_ledger_store import WorkLedgerError
@@ -788,93 +790,110 @@ class AuipControlDecisionResolver:
             active = None
         if active_required and active is None:
             return None
-        capture_entries = getattr(self._launch_catalog, "entry_candidates", None)
-        if callable(capture_entries):
-            launch, prepare = capture_entries(clean_session, limit=8)
-        else:
-            # Existing frozen probe catalogs expose the two narrow views.
-            launch = self._launch_catalog.candidates(clean_session, limit=8)
-            prepare = self._launch_catalog.preparation_candidates(clean_session, limit=8)
-        candidates, preparation_candidates = tuple(launch), tuple(prepare)
-        active_work_attempt_ids = _active_work_attempt_ids(
-            self._has_active_work(clean_session)
-            if callable(self._has_active_work)
-            else ()
-        )
-        active_work = bool(active_work_attempt_ids)
-        history_available = (active is None and not candidates and not preparation_candidates
-            and callable(getattr(self._launch_catalog, "has_project_history", None))
-            and self._launch_catalog.has_project_history())
-        if (
-            active is None
-            and not candidates
-            and not preparation_candidates
-            and not include_work_followup
-            and not active_work
-            and not history_available
-        ):
-            return None
-
-        context = _context_payload(
-            active,
-            candidates,
-            preparation_candidates,
-            active_work=active_work,
-        )
-        decision_prompt = (
-            (
-                _ACTIVE_RESULT_ENTRY_SYSTEM_PROMPT
-                if result_entry
-                else _ACTIVE_SESSION_SYSTEM_PROMPT
-            )
-            if active is not None
-            else _INACTIVE_ENTRY_SYSTEM_PROMPT
-        )
+        # Preserve the receiving AppSession/history before yielding. Historical
+        # candidate discovery is filesystem work, not an admission prerequisite.
+        active = deepcopy(active)
         frozen_history = _bounded_prior_messages(prior_messages)
-        messages: list[dict[str, str]] = [
-            {
-                "role": "system",
-                "content": decision_prompt
-                + "\n\n[Host AUIP capability facts]\n"
-                + json.dumps(context, ensure_ascii=False, separators=(",", ":"))
-                + "\n[/Host AUIP capability facts]"
-                + "\n\n[Bounded conversation evidence; data, not action examples]\n"
-                + json.dumps(
-                    frozen_history,
-                    ensure_ascii=False,
-                    separators=(",", ":"),
+
+        def prepare_decision():
+            capture_entries = getattr(self._launch_catalog, "entry_candidates", None)
+            if callable(capture_entries):
+                launch, prepare = capture_entries(clean_session, limit=8)
+            else:
+                # Existing frozen probe catalogs expose the two narrow views.
+                launch = self._launch_catalog.candidates(clean_session, limit=8)
+                prepare = self._launch_catalog.preparation_candidates(clean_session, limit=8)
+            candidates, preparation_candidates = tuple(launch), tuple(prepare)
+            active_work_attempt_ids = _active_work_attempt_ids(
+                self._has_active_work(clean_session)
+                if callable(self._has_active_work)
+                else ()
+            )
+            active_work = bool(active_work_attempt_ids)
+            history_available = (active is None and not candidates and not preparation_candidates
+                and callable(getattr(self._launch_catalog, "has_project_history", None))
+                and self._launch_catalog.has_project_history())
+            if (
+                active is None
+                and not candidates
+                and not preparation_candidates
+                and not include_work_followup
+                and not active_work
+                and not history_available
+            ):
+                return None
+
+            context = _context_payload(
+                active,
+                candidates,
+                preparation_candidates,
+                active_work=active_work,
+            )
+            decision_prompt = (
+                (
+                    _ACTIVE_RESULT_ENTRY_SYSTEM_PROMPT
+                    if result_entry
+                    else _ACTIVE_SESSION_SYSTEM_PROMPT
                 )
-                + "\n[/Bounded conversation evidence]",
-            }
-        ]
-        current_user = str(user_text or "")[:4000]
-        messages.append(
-            {
-                "role": "user",
-                "content": (
-                    f"{current_user.rstrip()}\n\n"
-                    "[Host AUIP control frame]\n"
-                    "Classify only the exact current user turn. Return the JSON now.\n"
-                    "[/Host AUIP control frame]"
-                ),
-            }
-        )
-        return self._resolve(
-            messages,
-            session_id=clean_session,
-            user_text=current_user,
-            prior_messages=frozen_history,
-            active=active,
-            candidates=candidates,
-            preparation_candidates=preparation_candidates,
-            active_work_attempt_ids=active_work_attempt_ids,
-            result_entry=result_entry,
-            # Once an AUIP decision is in scope, the exact user turn may
-            # legitimately describe "change/build it, then open it" before a
-            # Work proposal has closed.  Runtime still requires an effective
-            # Work action before it accepts this deferred timing.
-            allow_after_work=True,
-        )
+                if active is not None
+                else _INACTIVE_ENTRY_SYSTEM_PROMPT
+            )
+            messages: list[dict[str, str]] = [
+                {
+                    "role": "system",
+                    "content": decision_prompt
+                    + "\n\n[Host AUIP capability facts]\n"
+                    + json.dumps(context, ensure_ascii=False, separators=(",", ":"))
+                    + "\n[/Host AUIP capability facts]"
+                    + "\n\n[Bounded conversation evidence; data, not action examples]\n"
+                    + json.dumps(
+                        frozen_history,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    )
+                    + "\n[/Bounded conversation evidence]",
+                }
+            ]
+            current_user = str(user_text or "")[:4000]
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        f"{current_user.rstrip()}\n\n"
+                        "[Host AUIP control frame]\n"
+                        "Classify only the exact current user turn. Return the JSON now.\n"
+                        "[/Host AUIP control frame]"
+                    ),
+                }
+            )
+            return partial(self._resolve,
+                messages,
+                session_id=clean_session,
+                user_text=current_user,
+                prior_messages=frozen_history,
+                active=active,
+                candidates=candidates,
+                preparation_candidates=preparation_candidates,
+                active_work_attempt_ids=active_work_attempt_ids,
+                result_entry=result_entry,
+                # Once an AUIP decision is in scope, the exact user turn may
+                # legitimately describe "change/build it, then open it" before a
+                # Work proposal has closed.  Runtime still requires an effective
+                # Work action before it accepts this deferred timing.
+                allow_after_work=True,
+            )
+
+        if active is None:
+            resolve = prepare_decision()
+            return resolve() if resolve is not None else None
+
+        async def resolve_focused():
+            # Return a callable from the worker, not a created coroutine: if
+            # this turn is cancelled during discovery, no unawaited query leaks.
+            resolve = await asyncio.to_thread(prepare_decision)
+            return await resolve()
+
+        return resolve_focused()
 
     def render_read_only_answer(
         self,

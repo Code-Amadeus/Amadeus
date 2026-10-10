@@ -11,11 +11,14 @@ reattachment when the Provider cannot prove it.
 from __future__ import annotations
 
 import asyncio
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import replace
 import hashlib
 import inspect
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -85,6 +88,19 @@ from server.interaction_branch import (
     InteractionBranchRoutingLease,
     InteractionBranchRunStopUnconfirmed,
 )
+
+
+_prepared_auip_entry = ContextVar("prepared_auip_entry", default=None)
+
+
+@contextmanager
+def prepared_auip_entry_scope(prepared):
+    """Carry this utterance's read-only preparation into ChatHandler's turn task."""
+    token = _prepared_auip_entry.set(prepared)
+    try:
+        yield
+    finally:
+        _prepared_auip_entry.reset(token)
 
 
 def _is_planned_after_work_decision(decision) -> bool:
@@ -1496,6 +1512,32 @@ class CooperativeChatManager:
         self.auip_step = step_request
         self.auip_entry_context = entry_context
 
+    def prefetch_auip_entry_context(self, session_id: str):
+        """Prepare presentation during speech; never create a session or an action."""
+        context = self.auip_entry_context
+        if not session_id or context is None:
+            return None
+
+        async def prepare():
+            started = time.perf_counter()
+            try:
+                return await asyncio.to_thread(context, session_id)
+            finally:
+                logging.getLogger(__name__).info(
+                    "[CHAT-ENTRY-LATENCY] stage=prepare ms=%.2f",
+                    (time.perf_counter() - started) * 1000)
+
+        task = asyncio.create_task(prepare(), name="auip-entry-preparation")
+
+        def observe_completion(completed):
+            # Speech can be abandoned without a turn ever consuming this task.
+            if not completed.cancelled() and (error := completed.exception()) is not None:
+                logging.getLogger(__name__).warning(
+                    "AUIP entry preparation failed: %s", type(error).__name__)
+
+        task.add_done_callback(observe_completion)
+        return self, session_id, task
+
     def configure_browser(self, owner) -> None:
         """Install the existing InteractionBranch domain owner."""
 
@@ -1634,7 +1676,16 @@ class CooperativeChatManager:
             context = getattr(self, "auip_entry_context", None)
             if context is None:
                 return None
-            prompt = await asyncio.to_thread(context, ingress.session_id)
+            prepared = _prepared_auip_entry.get()
+            reused = prepared is not None and prepared[0] is self and prepared[1] == ingress.session_id
+            started = time.perf_counter()
+            if reused:
+                prompt = await asyncio.shield(prepared[2])
+            else:
+                prompt = await asyncio.to_thread(context, ingress.session_id)
+            logging.getLogger(__name__).info(
+                "[CHAT-ENTRY-LATENCY] stage=wait turn_id=%s prefetched=%s ms=%.2f",
+                turn_id, reused, (time.perf_counter() - started) * 1000)
             release = asyncio.Event()
 
             async def capture_entry(*, include_work_followup=False):
