@@ -9,7 +9,6 @@
     "zh-CN": "所有主对话服务共享的本地检索；检索片段可能会发送给所选远程模型。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "RAG_ENABLED": {
       "type": "boolean",
@@ -53,5 +52,6 @@
       "step": 0.01,
       "example_active": true
     }
-  }
+  },
+  "apply": "backend_restart"
 }

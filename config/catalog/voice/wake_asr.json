@@ -9,7 +9,6 @@
     "zh-CN": "独立的常驻唤醒识别器，可以使用与对话识别不同的本地后端。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "WAKE_ENABLED": {
       "type": "boolean",
@@ -88,5 +87,6 @@
       "example_active": false,
       "example": "C:\\path\\to\\SenseVoiceSmall"
     }
-  }
+  },
+  "apply": "backend_restart"
 }

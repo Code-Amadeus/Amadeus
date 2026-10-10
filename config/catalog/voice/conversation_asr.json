@@ -9,7 +9,6 @@
     "zh-CN": "手动监听或唤醒移交后的完整语音转写；Qwen 是内置默认实现。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "ASR_BACKEND": {
       "type": "string",
@@ -18,7 +17,10 @@
         "zh-CN": "后端"
       },
       "default": "qwen3_asr",
-      "example_active": true
+      "example_active": true,
+      "identifier": true,
+      "runtime_key": "asr_backend",
+      "apply": "host"
     },
     "ASR_LANGUAGE": {
       "type": "string",
@@ -142,5 +144,6 @@
       "step": 50,
       "example_active": true
     }
-  }
+  },
+  "apply": "backend_restart"
 }

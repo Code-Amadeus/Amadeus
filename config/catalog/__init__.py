@@ -38,14 +38,32 @@ def option_values(field: dict[str, Any]) -> tuple[str, ...]:
     return tuple(option if isinstance(option, str) else option["value"] for option in field["options"])
 
 
+def configuration_field(key: str) -> dict[str, Any]:
+    return next(group["config"][key] for group in configuration_groups().values() if key in group["config"])
+
+
+def application_policy(key: str) -> str:
+    group = next(group for group in configuration_groups().values() if key in group["config"])
+    return group["config"][key].get("apply", group["apply"])
+
+
+def runtime_fields() -> dict[str, dict[str, Any]]:
+    return {field["runtime_key"]: {"key": key, **field}
+            for group in configuration_groups().values() for key, field in group["config"].items()
+            if "runtime_key" in field}
+
+
 def read_catalog_value(reader: EnvironmentReader, key: str) -> Any:
     """Read a declared session input without importing the application facade."""
-    field = next(group["config"][key] for group in configuration_groups().values() if key in group["config"])
+    field = configuration_field(key)
     if field.get("computed_default") or field.get("scope") in {"virtual", "desktop"}:
         raise ValueError(f"{key} requires its owning configuration context")
     read = reader.secret if field.get("secret") else {
         "boolean": reader.boolean, "integer": reader.integer, "number": reader.number,
     }.get(field["type"], reader.string)
+    if field["type"] == "boolean" and "true_values" in field:
+        return reader.boolean(key, field["default"], aliases=tuple(field.get("aliases", ())),
+                              true_values=tuple(field["true_values"]))
     return read(key, field.get("default", ""), aliases=tuple(field.get("aliases", ())))
 
 
@@ -74,5 +92,8 @@ incomplete configuration must not prevent the application from starting.
                 "boolean": reader.boolean, "integer": reader.integer,
                 "number": reader.number,
             }.get(field["type"], reader.string)
-            values[key] = read(key, default, aliases=tuple(field.get("aliases", ())))
+            values[key] = (reader.boolean(key, default, aliases=tuple(field.get("aliases", ())),
+                                          true_values=tuple(field["true_values"]))
+                           if field["type"] == "boolean" and "true_values" in field else
+                           read(key, default, aliases=tuple(field.get("aliases", ()))))
     return values

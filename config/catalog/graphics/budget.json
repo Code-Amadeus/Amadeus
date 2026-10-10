@@ -9,7 +9,6 @@
     "zh-CN": "角色渲染和壁纸画面共用这些设置。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "GRAPHICS_PROFILE": {
       "type": "enum",
@@ -79,5 +78,6 @@
       "example_active": true,
       "default": 1.5
     }
-  }
+  },
+  "apply": "backend_restart"
 }

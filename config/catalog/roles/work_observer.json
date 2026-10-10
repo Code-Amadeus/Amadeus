@@ -9,7 +9,6 @@
     "zh-CN": "汇总 Provider 进度；覆盖值留空时继承主对话模型。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "WORK_OBSERVER_PROVIDER": {
       "type": "string",
@@ -59,5 +58,6 @@
     }
   },
   "section": "roles",
-  "order": 2
+  "order": 2,
+  "apply": "backend_restart"
 }

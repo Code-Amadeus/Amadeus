@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { isWallpaperStartup } from '../src/main/startupMode.ts'
+import { loadTypeScript } from './helpers/loadTypeScript.mjs'
+const { isWallpaperStartup } = loadTypeScript(new URL('../src/main/startupMode.ts', import.meta.url))
 import { managesWindowsWallpaper } from '../src/main/windowsWallpaper.ts'
 
 test('wallpaper startup is explicit in argv or environment', () => {

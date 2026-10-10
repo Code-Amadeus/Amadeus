@@ -16,7 +16,7 @@ import warnings
 from pathlib import Path
 
 from config.environment import load_project_environment
-from config.catalog import configuration_groups, option_values, read_catalog_environment
+from config.catalog import configuration_field, configuration_groups, option_values, read_catalog_environment
 
 # 加载项目根目录的 .env
 _ROOT = Path(__file__).resolve().parent.parent
@@ -77,15 +77,15 @@ LOG_USER_CONTENT = _bool("LOG_USER_CONTENT", False)
 # ===========================================================================
 # Main Chat LLM routing — remote DeepSeek first-release baseline
 # ===========================================================================
-CHARACTER_ID = _str("AMADEUS_CHARACTER_ID", "kurisu")
+CHARACTER_ID = AMADEUS_CHARACTER_ID
 # User-created role data is local state; packaged characters remain read-only.
 CHARACTER_DIR = _str("AMADEUS_CHARACTER_DIR", str(_ROOT / ".amadeus" / "characters"))
 # Japanese Main Chat identity/personality only; empty uses the built-in role.
-MAIN_CHAT_CHARACTER_PROMPT_JA = _str("AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA", "")
+MAIN_CHAT_CHARACTER_PROMPT_JA = AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA
 
-LLM_PROVIDER = _str("LLM_PROVIDER", "deepseek").strip().lower()
+LLM_PROVIDER = LLM_PROVIDER.strip().lower()
 LLM_PROVIDERS = frozenset(
-    {"deepseek", "openai", "gemini", "bedrock", "local", "hybrid", "hybrid2", "hybrid3"}
+    option_values(configuration_groups()["profile"]["config"]["LLM_PROVIDER"])
 )
 if LLM_PROVIDER not in LLM_PROVIDERS:
     raise ValueError(
@@ -243,9 +243,6 @@ if RAG_ENABLED and (not 1 <= RAG_TOP_K <= 20 or not 0 <= RAG_MAX_DISTANCE <= 4):
 # ===========================================================================
 # VTS（VTube Studio WebSocket）
 # ===========================================================================
-VTS_WS_URL    = _str("VTS_WS_URL",    "ws://127.0.0.1:8001")
-VTS_TOKEN_FILE = _str("VTS_TOKEN_FILE", "vts_auth_token.json")
-VTS_ENABLED = _bool("VTS_ENABLED", False)
 VTS_HEARTBEAT_ENABLED = _bool("VTS_HEARTBEAT_ENABLED", True)
 VTS_RECONNECT_ENABLED = _bool("VTS_RECONNECT_ENABLED", True)
 
@@ -322,7 +319,6 @@ TTS_GPT_MODEL_PATH, TTS_SOVITS_MODEL_PATH = _resolve_tts_voice_paths(
 
 # 输出语言："日文" | "英文"（对应 dict_language 中的键名）
 # 切换此项即可在日文 LoRA 管线和英文 base 管线之间手动选择
-TTS_OUTPUT_LANGUAGE   = _str("TTS_OUTPUT_LANGUAGE", "日文")
 
 # 日文管线参考音频 / 文本
 
@@ -338,7 +334,6 @@ TTS_RTF_INITIAL = _float("TTS_RTF_INITIAL", 0.6)
 TTS_CHARS_PER_SEC = _float("TTS_CHARS_PER_SEC", 7.5)
 SEGMENT_CHAR_LIMIT           = _int("SEGMENT_CHAR_LIMIT", 140)
 USE_EXPERIMENTAL_TTS_STREAM  = _bool("USE_EXPERIMENTAL_TTS_STREAM", True)
-EXP_TTS_MAX_CONCURRENCY      = _int("EXP_TTS_MAX_CONCURRENCY", 1)
 USE_FIRST_SENTENCE_SPRINT    = _bool("USE_FIRST_SENTENCE_SPRINT", False)
 DISPLAY_FALLBACK_WINDOW_SEC  = _float("DISPLAY_FALLBACK_WINDOW_SEC", 1.5)
 PLAYBACK_PREWARM_AUDIO       = _bool("PLAYBACK_PREWARM_AUDIO", True)
@@ -374,7 +369,7 @@ VAD_ENERGY_THRESHOLD = _int("VAD_ENERGY_THRESHOLD", 600)
 QWEN3_ASR_DEVICE = QWEN3_ASR_DEVICE.strip().lower()
 if QWEN3_ASR_DEVICE in {"cuda:0", "gpu"}:
     QWEN3_ASR_DEVICE = "cuda"
-if QWEN3_ASR_DEVICE not in {"auto", "cpu", "cuda"}:
+if QWEN3_ASR_DEVICE not in option_values(configuration_field("QWEN3_ASR_DEVICE")):
     raise ValueError(
         "QWEN3_ASR_DEVICE must be auto, cpu, or cuda; "
         f"observed {QWEN3_ASR_DEVICE!r}"
@@ -489,7 +484,7 @@ PROVIDER_DELEGATE_DEFAULT_PROVIDER = WORK_EXECUTION_PROVIDER
 CODEX_APP_SERVER_PROVIDER_ENABLED = _bool("CODEX_APP_SERVER_PROVIDER_ENABLED", True)
 
 CODEX_APP_SERVER_AUTH_MODE = CODEX_APP_SERVER_AUTH_MODE.strip().lower()
-if CODEX_APP_SERVER_AUTH_MODE not in {"model_api", "chatgpt"}:
+if CODEX_APP_SERVER_AUTH_MODE not in option_values(configuration_field("CODEX_APP_SERVER_AUTH_MODE")):
     raise ValueError("CODEX_APP_SERVER_AUTH_MODE must be model_api or chatgpt")
 # Provider-native execution settings belong to the Provider adapter, not to
 # the user's Codex Desktop profile.  Keeping all four values explicit prevents
@@ -757,7 +752,6 @@ TURN_DECISION_SHADOW_ENABLED = _bool("TURN_DECISION_SHADOW_ENABLED", True)
 AUIP_CONTROL_DECISION_ENABLED = _bool("AUIP_CONTROL_DECISION_ENABLED", True)
 
 # Generation preference; never restyles existing artifacts or overrides user design.
-AUIP_ARTIFACT_STYLE_ENABLED = _bool("AUIP_ARTIFACT_STYLE_ENABLED", True)
 
 # Resolve the entity of an already-proposed Project focus against complete
 # host catalogs.  Genuine ambiguity becomes a one-shot Slice selection before
@@ -844,7 +838,7 @@ AUIP_NARRATION_TIMEOUT_S = _float("AUIP_NARRATION_TIMEOUT_S", 12.0)
 
 
 AUIP_ACTION_SERVICE_TIER = AUIP_ACTION_SERVICE_TIER.strip().lower()
-if AUIP_ACTION_SERVICE_TIER not in {"auto", "default", "fast", "priority"}:
+if AUIP_ACTION_SERVICE_TIER not in option_values(configuration_field("AUIP_ACTION_SERVICE_TIER")):
     raise ValueError(
         "AUIP_ACTION_SERVICE_TIER must be auto, default, fast, or priority"
     )

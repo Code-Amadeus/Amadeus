@@ -2,6 +2,312 @@
 import type { CatalogGroup } from './configCatalog.js'
 export const catalogGroups: CatalogGroup[] = [
   {
+    "id": "character_identity",
+    "title": {
+      "en-US": "Character identity",
+      "zh-CN": "角色身份"
+    },
+    "description": {
+      "en-US": "Character selection applies when the backend starts; the Kurisu Japanese persona can also update live.",
+      "zh-CN": "角色选择在后端启动时生效；栗栖日文人格也可实时更新。"
+    },
+    "desktop": true,
+    "apply": "backend_restart",
+    "config": {
+      "AMADEUS_CHARACTER_ID": {
+        "type": "string",
+        "title": {
+          "en-US": "Character",
+          "zh-CN": "角色"
+        },
+        "default": "kurisu",
+        "setting": "CHARACTER_ID",
+        "identifier": true,
+        "example_active": true
+      },
+      "AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA": {
+        "type": "string",
+        "title": {
+          "en-US": "Kurisu Japanese persona override",
+          "zh-CN": "红莉栖日语人格覆盖"
+        },
+        "default": "",
+        "setting": "MAIN_CHAT_CHARACTER_PROMPT_JA",
+        "runtime_key": "main_chat_character_prompt_ja",
+        "apply": "host",
+        "allow_empty": true,
+        "trim": true,
+        "max_length": 8192
+      }
+    }
+  },
+  {
+    "id": "desktop_interface",
+    "title": {
+      "en-US": "Desktop interface",
+      "zh-CN": "桌面界面"
+    },
+    "description": {
+      "en-US": "Choose the visual style and language used across the Electron frontend.",
+      "zh-CN": "选择 Electron 前端使用的界面风格和语言。"
+    },
+    "desktop": true,
+    "apply": "frontend",
+    "config": {
+      "AMADEUS_UI_LOCALE": {
+        "type": "enum",
+        "title": {
+          "en-US": "Console language",
+          "zh-CN": "控制台语言"
+        },
+        "default": "en-US",
+        "description": {
+          "en-US": "Controls Electron navigation, Settings, and capability status pages.",
+          "zh-CN": "控制 Electron 导航、设置和能力状态页面。"
+        },
+        "scope": "desktop",
+        "options": [
+          {
+            "value": "en-US",
+            "label": {
+              "en-US": "English",
+              "zh-CN": "英语"
+            }
+          },
+          {
+            "value": "zh-CN",
+            "label": {
+              "en-US": "Simplified Chinese",
+              "zh-CN": "简体中文"
+            }
+          }
+        ]
+      },
+      "AMADEUS_UI_THEME": {
+        "type": "enum",
+        "title": {
+          "en-US": "Interface theme",
+          "zh-CN": "界面主题"
+        },
+        "default": "wallpaper-slice",
+        "scope": "desktop",
+        "options": [
+          {
+            "value": "classic",
+            "label": {
+              "en-US": "Classic light",
+              "zh-CN": "经典浅色"
+            }
+          },
+          {
+            "value": "wallpaper-slice",
+            "label": {
+              "en-US": "Wallpaper slice",
+              "zh-CN": "壁纸切片"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "desktop_startup",
+    "title": {
+      "en-US": "Startup",
+      "zh-CN": "启动"
+    },
+    "description": {
+      "en-US": "Quit and reopen Amadeus to apply. Wallpaper is always available in the sidebar.",
+      "zh-CN": "退出并重新打开 Amadeus 后生效；侧边栏始终可进入壁纸。"
+    },
+    "desktop": true,
+    "apply": "desktop_restart",
+    "config": {
+      "AMADEUS_WINDOWS_STARTUP_MODE": {
+        "type": "enum",
+        "title": {
+          "en-US": "Startup mode",
+          "zh-CN": "启动模式"
+        },
+        "default": "window",
+        "description": {
+          "en-US": "Choose whether to open the control panel first or enter wallpaper directly.",
+          "zh-CN": "选择先打开控制面板，或直接进入壁纸。"
+        },
+        "scope": "desktop",
+        "options": [
+          {
+            "value": "window",
+            "label": {
+              "en-US": "Open control panel first",
+              "zh-CN": "先打开控制面板"
+            }
+          },
+          {
+            "value": "wallpaper",
+            "label": {
+              "en-US": "Enter wallpaper directly",
+              "zh-CN": "直接进入壁纸"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "auip_artifact_style",
+    "title": {
+      "en-US": "Artifact appearance",
+      "zh-CN": "产物外观"
+    },
+    "description": {
+      "en-US": "A shared visual language for newly authored AUIP apps; each app keeps its own content and layout.",
+      "zh-CN": "为新创作的 AUIP 应用提供共享的视觉语言；各应用保留自己的内容和布局。"
+    },
+    "desktop": true,
+    "apply": "backend_restart",
+    "config": {
+      "AUIP_ARTIFACT_STYLE_ENABLED": {
+        "type": "boolean",
+        "title": {
+          "en-US": "Use Amadeus style",
+          "zh-CN": "使用 Amadeus 样式"
+        },
+        "default": true,
+        "example_active": true,
+        "description": {
+          "en-US": "After a backend restart, provide the style guide and CSS for future AUIP creation. Existing apps keep their design; explicit user design requests take priority.",
+          "zh-CN": "后端重启后，为今后的 AUIP 创建提供样式指南和 CSS；已有应用保留其设计，明确的用户设计要求优先。"
+        }
+      }
+    }
+  },
+  {
+    "id": "vts_compatibility",
+    "title": {
+      "en-US": "VTube Studio compatibility",
+      "zh-CN": "VTube Studio 兼容"
+    },
+    "description": {
+      "en-US": "Optional downstream mouth-signal and parameter forwarding. SpriteForge browser animation remains independent of this compatibility path.",
+      "zh-CN": "可选的下游口型信号与参数转发；SpriteForge 浏览器动画独立于此兼容路径。"
+    },
+    "desktop": true,
+    "apply": "backend_restart",
+    "config": {
+      "VTS_ENABLED": {
+        "type": "boolean",
+        "title": {
+          "en-US": "Enable compatibility output",
+          "zh-CN": "启用兼容输出"
+        },
+        "default": false,
+        "example_active": true
+      },
+      "VTS_WS_URL": {
+        "type": "url",
+        "title": {
+          "en-US": "WebSocket URL",
+          "zh-CN": "WebSocket 地址"
+        },
+        "default": "ws://127.0.0.1:8001",
+        "schemes": [
+          "ws",
+          "wss"
+        ],
+        "example_active": true
+      },
+      "VTS_TOKEN_FILE": {
+        "type": "path",
+        "title": {
+          "en-US": "Authentication token file",
+          "zh-CN": "认证令牌文件"
+        },
+        "default": "vts_auth_token.json",
+        "example_active": true,
+        "description": {
+          "en-US": "Local token cache path; the token itself is never shown in Settings.",
+          "zh-CN": "本地令牌缓存路径；设置页面不会显示令牌本身。"
+        }
+      }
+    }
+  },
+  {
+    "id": "presentation",
+    "title": {
+      "en-US": "Language & captions",
+      "zh-CN": "语言与字幕"
+    },
+    "description": {
+      "en-US": "Desktop settings are saved across restarts and applied to the current runtime immediately when possible.",
+      "zh-CN": "桌面设置在重启后保留，并在条件允许时立即应用到当前运行时。"
+    },
+    "desktop": true,
+    "apply": "host",
+    "config": {
+      "AMADEUS_PRESENTATION_LOCALE": {
+        "type": "enum",
+        "title": {
+          "en-US": "Slice Language",
+          "zh-CN": "切片语言"
+        },
+        "default": "en-US",
+        "description": {
+          "en-US": "Language for process cards and Provider summaries",
+          "zh-CN": "流程卡片和服务提供方摘要的语言"
+        },
+        "scope": "session",
+        "runtime_key": "presentation_locale",
+        "options": [
+          "en-US",
+          "zh-CN",
+          "ja-JP"
+        ]
+      },
+      "AMADEUS_CHAT_TRANSLATION_SUBTITLES_ENABLED": {
+        "type": "boolean",
+        "title": {
+          "en-US": "Chat Translation Subtitles",
+          "zh-CN": "聊天翻译字幕"
+        },
+        "default": false,
+        "description": {
+          "en-US": "Show Simplified Chinese below completed Japanese assistant messages. Display-only; never added to conversation history.",
+          "zh-CN": "在已完成的日文助手消息下显示简体中文。仅用于展示，不加入对话历史。"
+        },
+        "scope": "session",
+        "runtime_key": "chat_translation_subtitles_enabled",
+        "true_values": [
+          "1",
+          "true",
+          "yes",
+          "on"
+        ]
+      },
+      "AMADEUS_WALLPAPER_CAPTION_MODE": {
+        "type": "enum",
+        "title": {
+          "en-US": "Wallpaper Caption Mode",
+          "zh-CN": "壁纸字幕模式"
+        },
+        "description": {
+          "en-US": "Choose translated, source, bilingual, or no captions",
+          "zh-CN": "选择翻译、原文、双语或关闭字幕"
+        },
+        "scope": "session",
+        "runtime_key": "wallpaper_caption_mode",
+        "options": [
+          "translated",
+          "source",
+          "bilingual",
+          "off"
+        ],
+        "computed_default": true,
+        "example": "translated"
+      }
+    }
+  },
+  {
     "id": "graphics_budget",
     "title": {
       "en-US": "Rendering budget",
@@ -12,7 +318,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "角色渲染和壁纸画面共用这些设置。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "GRAPHICS_PROFILE": {
         "type": "enum",
@@ -82,7 +387,8 @@ export const catalogGroups: CatalogGroup[] = [
         "example_active": true,
         "default": 1.5
       }
-    }
+    },
+    "apply": "backend_restart"
   },
   {
     "id": "graphics_sampling",
@@ -95,7 +401,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "在限制纹理内存预算的同时，减少重复转码。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "RENDER_TEXTURE_SAMPLING": {
         "type": "boolean",
@@ -123,7 +428,8 @@ export const catalogGroups: CatalogGroup[] = [
         },
         "default": true
       }
-    }
+    },
+    "apply": "backend_restart"
   },
   {
     "id": "bedrock",
@@ -136,7 +442,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "使用 AWS 凭据链或显式保存的 Bedrock Bearer Token。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "BEDROCK_AUTH_MODE": {
         "type": "enum",
@@ -198,7 +503,8 @@ export const catalogGroups: CatalogGroup[] = [
         "default": "",
         "example_active": true
       }
-    }
+    },
+    "apply": "backend_restart"
   },
   {
     "id": "character_rag",
@@ -211,7 +517,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "所有主对话服务共享的本地检索；检索片段可能会发送给所选远程模型。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "RAG_ENABLED": {
         "type": "boolean",
@@ -255,7 +560,8 @@ export const catalogGroups: CatalogGroup[] = [
         "step": 0.01,
         "example_active": true
       }
-    }
+    },
+    "apply": "backend_restart"
   },
   {
     "id": "deepseek",
@@ -268,7 +574,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "DeepSeek"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "DEEPSEEK_API_KEY": {
         "type": "string",
@@ -305,7 +610,8 @@ export const catalogGroups: CatalogGroup[] = [
         "default": "deepseek-v4-flash",
         "example_active": true
       }
-    }
+    },
+    "apply": "backend_restart"
   },
   {
     "id": "gemini",
@@ -318,7 +624,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "Gemini"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "GEMINI_API_KEY": {
         "type": "string",
@@ -338,7 +643,8 @@ export const catalogGroups: CatalogGroup[] = [
         "default": "gemini-2.5-flash",
         "example_active": true
       }
-    }
+    },
+    "apply": "backend_restart"
   },
   {
     "id": "hybrid_local",
@@ -351,7 +657,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "共享的快速首句端点。Hybrid 搭配 Bedrock，Hybrid2 搭配 DeepSeek，Hybrid3 搭配 OpenAI 兼容服务。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "HYBRID_LOCAL_LLM_URL": {
         "type": "url",
@@ -377,7 +682,8 @@ export const catalogGroups: CatalogGroup[] = [
         "example": "",
         "example_active": true
       }
-    }
+    },
+    "apply": "backend_restart"
   },
   {
     "id": "local",
@@ -390,7 +696,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "选择并配置纯本地主对话配置所使用的本地运行时。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "LOCAL_LLM_TYPE": {
         "type": "enum",
@@ -405,7 +710,9 @@ export const catalogGroups: CatalogGroup[] = [
           "ollama",
           "cli"
         ],
-        "example_active": true
+        "example_active": true,
+        "runtime_key": "local_llm_type",
+        "apply": "host"
       },
       "LOCAL_LLM_MODEL": {
         "type": "string",
@@ -428,9 +735,6 @@ export const catalogGroups: CatalogGroup[] = [
           "zh-CN": "外部模式复用已运行的 llama.cpp 服务器；托管模式由 Amadeus 启停。"
         },
         "default": "external",
-        "local_engines": [
-          "llama_server"
-        ],
         "options": [
           {
             "value": "external",
@@ -447,7 +751,12 @@ export const catalogGroups: CatalogGroup[] = [
             }
           }
         ],
-        "example_active": true
+        "example_active": true,
+        "visible_when": {
+          "LOCAL_LLM_TYPE": [
+            "llama_server"
+          ]
+        }
       },
       "LOCAL_LLM_URL": {
         "type": "url",
@@ -456,14 +765,16 @@ export const catalogGroups: CatalogGroup[] = [
           "zh-CN": "llama.cpp 服务器 URL"
         },
         "default": "http://127.0.0.1:8080/v1",
-        "local_engines": [
-          "llama_server"
-        ],
         "schemes": [
           "http",
           "https"
         ],
-        "example_active": true
+        "example_active": true,
+        "visible_when": {
+          "LOCAL_LLM_TYPE": [
+            "llama_server"
+          ]
+        }
       },
       "LOCAL_LLM_CLI_PATH": {
         "type": "path",
@@ -472,12 +783,14 @@ export const catalogGroups: CatalogGroup[] = [
           "zh-CN": "llama.cpp 可执行文件"
         },
         "default": "",
-        "local_engines": [
-          "llama_server",
-          "cli"
-        ],
         "example_active": true,
-        "example": "C:\\path\\to\\llama-server.exe"
+        "example": "C:\\path\\to\\llama-server.exe",
+        "visible_when": {
+          "LOCAL_LLM_TYPE": [
+            "llama_server",
+            "cli"
+          ]
+        }
       },
       "LOCAL_LLM_CLI_MODEL_PATH": {
         "type": "path",
@@ -487,12 +800,14 @@ export const catalogGroups: CatalogGroup[] = [
         },
         "default": "",
         "setting": "LOCAL_LLM_MODEL_PATH",
-        "local_engines": [
-          "llama_server",
-          "cli"
-        ],
         "example_active": true,
-        "example": "C:\\path\\to\\model.gguf"
+        "example": "C:\\path\\to\\model.gguf",
+        "visible_when": {
+          "LOCAL_LLM_TYPE": [
+            "llama_server",
+            "cli"
+          ]
+        }
       },
       "LOCAL_LLM_CLI_CONTEXT": {
         "type": "string",
@@ -502,14 +817,16 @@ export const catalogGroups: CatalogGroup[] = [
         },
         "default": "4096",
         "setting": "_LLM_CONTEXT",
-        "local_engines": [
-          "llama_server"
-        ],
         "control": "number",
         "min": 1,
         "step": 1,
         "example_active": false,
-        "example": "16384"
+        "example": "16384",
+        "visible_when": {
+          "LOCAL_LLM_TYPE": [
+            "llama_server"
+          ]
+        }
       },
       "LOCAL_LLM_CLI_THREADS": {
         "type": "string",
@@ -519,14 +836,16 @@ export const catalogGroups: CatalogGroup[] = [
         },
         "default": "4",
         "setting": "_LLM_THREADS",
-        "local_engines": [
-          "llama_server"
-        ],
         "control": "number",
         "min": 1,
         "step": 1,
         "example_active": true,
-        "example": "12"
+        "example": "12",
+        "visible_when": {
+          "LOCAL_LLM_TYPE": [
+            "llama_server"
+          ]
+        }
       },
       "LOCAL_LLM_CLI_NGL": {
         "type": "string",
@@ -536,14 +855,16 @@ export const catalogGroups: CatalogGroup[] = [
         },
         "default": "99",
         "setting": "_LLM_NGL",
-        "local_engines": [
-          "llama_server"
-        ],
         "control": "number",
         "min": 0,
         "step": 1,
         "example_active": true,
-        "example": "0"
+        "example": "0",
+        "visible_when": {
+          "LOCAL_LLM_TYPE": [
+            "llama_server"
+          ]
+        }
       },
       "LOCAL_LLM_CUDA_VISIBLE_DEVICES": {
         "type": "string",
@@ -556,11 +877,13 @@ export const catalogGroups: CatalogGroup[] = [
           "zh-CN": "可选的 nvidia-smi 编号，例如 1。留空以自动选择可见设备。"
         },
         "default": "",
-        "local_engines": [
-          "llama_server"
-        ],
         "example_active": true,
-        "example": "# optional nvidia-smi indices; blank = no filtering"
+        "example": "# optional nvidia-smi indices; blank = no filtering",
+        "visible_when": {
+          "LOCAL_LLM_TYPE": [
+            "llama_server"
+          ]
+        }
       },
       "LOCAL_LLM_LM_STUDIO_URL": {
         "type": "url",
@@ -569,9 +892,6 @@ export const catalogGroups: CatalogGroup[] = [
           "zh-CN": "LM Studio 地址"
         },
         "default": "http://127.0.0.1:1234",
-        "local_engines": [
-          "lmstudio"
-        ],
         "aliases": [
           "LM_STUDIO_URL"
         ],
@@ -579,7 +899,12 @@ export const catalogGroups: CatalogGroup[] = [
           "http",
           "https"
         ],
-        "example_active": true
+        "example_active": true,
+        "visible_when": {
+          "LOCAL_LLM_TYPE": [
+            "lmstudio"
+          ]
+        }
       },
       "LOCAL_LLM_OLLAMA_URL": {
         "type": "url",
@@ -588,16 +913,19 @@ export const catalogGroups: CatalogGroup[] = [
           "zh-CN": "Ollama 地址"
         },
         "default": "http://127.0.0.1:11434",
-        "local_engines": [
-          "ollama"
-        ],
         "schemes": [
           "http",
           "https"
         ],
-        "example_active": true
+        "example_active": true,
+        "visible_when": {
+          "LOCAL_LLM_TYPE": [
+            "ollama"
+          ]
+        }
       }
-    }
+    },
+    "apply": "backend_restart"
   },
   {
     "id": "openai",
@@ -610,7 +938,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "通过可配置的基础 URL 支持 OpenAI 及兼容端点。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "OPENAI_API_KEY": {
         "type": "string",
@@ -643,6 +970,90 @@ export const catalogGroups: CatalogGroup[] = [
         "default": "gpt-5.4-mini",
         "example_active": true
       }
+    },
+    "apply": "backend_restart"
+  },
+  {
+    "id": "profile",
+    "title": {
+      "en-US": "Desktop default",
+      "zh-CN": "桌面默认"
+    },
+    "description": {
+      "en-US": "The model profile selected when the desktop backend starts.",
+      "zh-CN": "桌面后端启动时选定的模型配置。"
+    },
+    "desktop": true,
+    "apply": "host",
+    "config": {
+      "LLM_PROVIDER": {
+        "type": "enum",
+        "title": {
+          "en-US": "Default model profile",
+          "zh-CN": "默认模型配置"
+        },
+        "default": "deepseek",
+        "runtime_key": "llm_provider",
+        "options": [
+          {
+            "value": "deepseek",
+            "label": {
+              "en-US": "DeepSeek",
+              "zh-CN": "DeepSeek"
+            }
+          },
+          {
+            "value": "openai",
+            "label": {
+              "en-US": "OpenAI-compatible",
+              "zh-CN": "OpenAI 兼容"
+            }
+          },
+          {
+            "value": "gemini",
+            "label": {
+              "en-US": "Gemini",
+              "zh-CN": "Gemini"
+            }
+          },
+          {
+            "value": "bedrock",
+            "label": {
+              "en-US": "AWS Bedrock",
+              "zh-CN": "AWS Bedrock"
+            }
+          },
+          {
+            "value": "local",
+            "label": {
+              "en-US": "Pure-local model",
+              "zh-CN": "纯本地模型"
+            }
+          },
+          {
+            "value": "hybrid",
+            "label": {
+              "en-US": "Hybrid · Local + Bedrock",
+              "zh-CN": "混合 · 本地 + Bedrock"
+            }
+          },
+          {
+            "value": "hybrid2",
+            "label": {
+              "en-US": "Hybrid · Local + DeepSeek",
+              "zh-CN": "混合 · 本地 + DeepSeek"
+            }
+          },
+          {
+            "value": "hybrid3",
+            "label": {
+              "en-US": "Hybrid · Local + OpenAI",
+              "zh-CN": "混合 · 本地 + OpenAI"
+            }
+          }
+        ],
+        "example_active": true
+      }
     }
   },
   {
@@ -656,7 +1067,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "供已明确配置的 ACP 代理使用的凭据。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "ANTHROPIC_API_KEY": {
         "type": "string",
@@ -670,7 +1080,8 @@ export const catalogGroups: CatalogGroup[] = [
       }
     },
     "section": "providers",
-    "order": 12
+    "order": 12,
+    "apply": "backend_restart"
   },
   {
     "id": "codex",
@@ -683,7 +1094,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "编码工作服务提供方；App Server 与 Direct 传输中只能有一个持有此 Provider 标识。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "CODEX_PROVIDER_TRANSPORT": {
         "type": "enum",
@@ -923,7 +1333,8 @@ export const catalogGroups: CatalogGroup[] = [
       }
     },
     "section": "providers",
-    "order": 11
+    "order": 11,
+    "apply": "backend_restart"
   },
   {
     "id": "openclaw",
@@ -936,7 +1347,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "可选的 Gateway 提供商。可在上方分配角色或在任务中明确选择；继续支持现有会话。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "OPENCLAW_BASE_URL": {
         "type": "url",
@@ -973,7 +1383,8 @@ export const catalogGroups: CatalogGroup[] = [
       }
     },
     "section": "providers",
-    "order": 10
+    "order": 10,
+    "apply": "backend_restart"
   },
   {
     "id": "pi",
@@ -986,7 +1397,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "通过原生 RPC 运行的默认日常 Agent。桌面安装会包含其固定版本运行时；已知模型提供方复用“模型”中配置的凭据。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "PI_PROVIDER_ENABLED": {
         "type": "boolean",
@@ -1040,7 +1450,8 @@ export const catalogGroups: CatalogGroup[] = [
       }
     },
     "section": "providers",
-    "order": 9
+    "order": 9,
+    "apply": "backend_restart"
   },
   {
     "id": "work_routing",
@@ -1053,7 +1464,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "分别指定编码与日常执行角色。重启后端后按此分工路由；现有任务保留原归属。注册和连接设置在下方配置。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "WORK_CODING_PROVIDER": {
         "type": "string",
@@ -1063,7 +1473,8 @@ export const catalogGroups: CatalogGroup[] = [
         },
         "default": "codex",
         "control": "select",
-        "example_active": true
+        "example_active": true,
+        "identifier": true
       },
       "WORK_EXECUTION_PROVIDER": {
         "type": "string",
@@ -1077,11 +1488,13 @@ export const catalogGroups: CatalogGroup[] = [
           "PROVIDER_DELEGATE_DEFAULT_PROVIDER"
         ],
         "control": "select",
-        "example_active": true
+        "example_active": true,
+        "identifier": true
       }
     },
     "section": "routing",
-    "order": 8
+    "order": 8,
+    "apply": "backend_restart"
   },
   {
     "id": "auip_action",
@@ -1094,7 +1507,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "B2 应用操作流程使用的决策模型。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "AUIP_ACTION_PROVIDER": {
         "type": "string",
@@ -1174,7 +1586,8 @@ export const catalogGroups: CatalogGroup[] = [
       }
     },
     "section": "roles",
-    "order": 4
+    "order": 4,
+    "apply": "backend_restart"
   },
   {
     "id": "auip_narration",
@@ -1187,7 +1600,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "播报已验证的应用操作结果；覆盖值留空时依次继承 Work 观察者和主对话模型。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "AUIP_NARRATION_PROVIDER": {
         "type": "string",
@@ -1233,7 +1645,8 @@ export const catalogGroups: CatalogGroup[] = [
       }
     },
     "section": "roles",
-    "order": 5
+    "order": 5,
+    "apply": "backend_restart"
   },
   {
     "id": "browser_branch_planner",
@@ -1246,7 +1659,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "选择范围明确的浏览器分支；覆盖值留空时继承受支持的主模型提供商。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "BROWSER_BRANCH_PROVIDER": {
         "type": "enum",
@@ -1295,7 +1707,8 @@ export const catalogGroups: CatalogGroup[] = [
       }
     },
     "section": "roles",
-    "order": 3
+    "order": 3,
+    "apply": "backend_restart"
   },
   {
     "id": "vn_companion",
@@ -1308,7 +1721,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "独立的 VN 推理与反应职责。DeepSeek 是推荐默认值，也支持 OpenAI 兼容服务。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "VN_LLM_PROVIDER": {
         "type": "enum",
@@ -1350,7 +1762,8 @@ export const catalogGroups: CatalogGroup[] = [
       }
     },
     "section": "roles",
-    "order": 0
+    "order": 0,
+    "apply": "backend_restart"
   },
   {
     "id": "vn_speech_translation",
@@ -1363,7 +1776,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "在语音合成前将中文伴侣回应翻译为日语。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "VN_TTS_TRANSLATE_PROVIDER": {
         "type": "enum",
@@ -1412,7 +1824,8 @@ export const catalogGroups: CatalogGroup[] = [
       }
     },
     "section": "roles",
-    "order": 7
+    "order": 7,
+    "apply": "backend_restart"
   },
   {
     "id": "vn_subtitle_translation",
@@ -1425,7 +1838,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "将日语游戏对话翻译为简体中文用于显示。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "VN_SUBTITLE_TRANSLATE_PROVIDER": {
         "type": "enum",
@@ -1474,7 +1886,8 @@ export const catalogGroups: CatalogGroup[] = [
       }
     },
     "section": "roles",
-    "order": 6
+    "order": 6,
+    "apply": "backend_restart"
   },
   {
     "id": "work_observer",
@@ -1487,7 +1900,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "汇总 Provider 进度；覆盖值留空时继承主对话模型。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "WORK_OBSERVER_PROVIDER": {
         "type": "string",
@@ -1537,7 +1949,8 @@ export const catalogGroups: CatalogGroup[] = [
       }
     },
     "section": "roles",
-    "order": 2
+    "order": 2,
+    "apply": "backend_restart"
   },
   {
     "id": "work_planner",
@@ -1550,7 +1963,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "规划并路由协作任务；模型留空时继承主对话模型。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "COOPERATIVE_WORK_PLANNER_MODEL": {
         "type": "string",
@@ -1567,7 +1979,8 @@ export const catalogGroups: CatalogGroup[] = [
       }
     },
     "section": "roles",
-    "order": 1
+    "order": 1,
+    "apply": "backend_restart"
   },
   {
     "id": "tts_fish_audio",
@@ -1580,7 +1993,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "通过 WebSocket 流式生成语音；声音 ID 用于选择声音，模型用于选择推理引擎。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "FISH_TTS_WS_URL": {
         "type": "url",
@@ -1646,7 +2058,8 @@ export const catalogGroups: CatalogGroup[] = [
       "order": 3,
       "streaming": true,
       "reference_conditioning": false
-    }
+    },
+    "apply": "backend_restart"
   },
   {
     "id": "tts_embedded_v3",
@@ -1659,7 +2072,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "Amadeus 低延迟运行时使用的成对权重。SoVITS 权重文件头决定使用 v1、v2、v2Pro、v2ProPlus 或 v3 解码器。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "TTS_VOICE_PROFILE": {
         "type": "enum",
@@ -1753,7 +2165,8 @@ export const catalogGroups: CatalogGroup[] = [
       "order": 0,
       "streaming": true,
       "reference_conditioning": true
-    }
+    },
+    "apply": "backend_restart"
   },
   {
     "id": "tts_mimo",
@@ -1766,7 +2179,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "使用 PCM16 SSE 流的 MiMo chat-completions 语音合成。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "MIMO_TTS_BASE_URL": {
         "type": "url",
@@ -1819,7 +2231,8 @@ export const catalogGroups: CatalogGroup[] = [
       "order": 2,
       "streaming": true,
       "reference_conditioning": false
-    }
+    },
+    "apply": "backend_restart"
   },
   {
     "id": "tts_remote",
@@ -1832,7 +2245,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "兼容 OpenAI 的语音合成，支持缓冲 WAV 或显式 SSE 流式传输。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "TTS_API_BASE_URL": {
         "type": "url",
@@ -1914,6 +2326,76 @@ export const catalogGroups: CatalogGroup[] = [
       "order": 1,
       "streaming": "tts.backends.openai_compatible:streaming_enabled",
       "reference_conditioning": false
+    },
+    "apply": "backend_restart"
+  },
+  {
+    "id": "tts_runtime",
+    "title": {
+      "en-US": "Speech runtime",
+      "zh-CN": "语音运行时"
+    },
+    "description": {
+      "en-US": "Synthesis mode and output language use the existing live TTS conversion.",
+      "zh-CN": "合成模式和输出语言沿用现有 TTS 实时转换。"
+    },
+    "desktop": true,
+    "apply": "host",
+    "config": {
+      "ENABLE_CUDA_GRAPH": {
+        "type": "enum",
+        "title": {
+          "en-US": "CUDA Graph",
+          "zh-CN": "CUDA Graph"
+        },
+        "default": "0",
+        "scope": "session",
+        "options": [
+          "0",
+          "1"
+        ]
+      },
+      "EXP_TTS_MAX_CONCURRENCY": {
+        "type": "integer",
+        "title": {
+          "en-US": "Synthesis concurrency",
+          "zh-CN": "合成并发"
+        },
+        "default": 1,
+        "min": 1,
+        "max": 2,
+        "step": 1,
+        "example_active": true
+      },
+      "TTS_OUTPUT_LANGUAGE": {
+        "type": "enum",
+        "title": {
+          "en-US": "TTS output language",
+          "zh-CN": "TTS 输出语言"
+        },
+        "default": "日文",
+        "options": [
+          {
+            "value": "日文",
+            "label": {
+              "en-US": "Japanese",
+              "zh-CN": "日语"
+            }
+          },
+          {
+            "value": "英文",
+            "label": {
+              "en-US": "English",
+              "zh-CN": "英语"
+            }
+          }
+        ],
+        "example_active": true,
+        "description": {
+          "en-US": "Language used for sentence splitting and the matching voice reference.",
+          "zh-CN": "用于句子分段和匹配语音参考的语言。"
+        }
+      }
     }
   },
   {
@@ -1927,7 +2409,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "默认使用 Amadeus 低延迟 GPT-SoVITS 运行时，支持 v1、v2、v2Pro、v2ProPlus 和 v3 权重。远程音频共用播放、字幕、回声消除和口型信号管线。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "TTS_BACKEND": {
         "type": "string",
@@ -1936,10 +2417,160 @@ export const catalogGroups: CatalogGroup[] = [
           "zh-CN": "后端"
         },
         "example_active": true,
-        "default": "gpt_sovits"
+        "default": "gpt_sovits",
+        "identifier": true
       }
     },
-    "section": "output"
+    "section": "output",
+    "apply": "backend_restart"
+  },
+  {
+    "id": "vision",
+    "title": {
+      "en-US": "Multimodal & Vision",
+      "zh-CN": "多模态与视觉"
+    },
+    "description": {
+      "en-US": "General chat and desktop capture use these settings. VN vision is controlled separately in its game session.",
+      "zh-CN": "一般聊天和桌面捕获使用这些设置；VN 视觉由各游戏会话单独控制。"
+    },
+    "desktop": true,
+    "apply": "host",
+    "config": {
+      "AMADEUS_VISION_ENABLED": {
+        "type": "boolean",
+        "title": {
+          "en-US": "General vision (excluding VN)",
+          "zh-CN": "一般视觉（不含 VN）"
+        },
+        "default": false,
+        "description": {
+          "en-US": "Controls vision outside VN. Each VN session has its own vision setting.",
+          "zh-CN": "控制 VN 以外的视觉。每个 VN 会话使用独立的视觉设置。"
+        },
+        "scope": "session",
+        "runtime_key": "vision_enabled",
+        "true_values": [
+          "1",
+          "true",
+          "yes",
+          "on"
+        ]
+      },
+      "AMADEUS_VISION_MODE": {
+        "type": "enum",
+        "title": {
+          "en-US": "Vision Mode",
+          "zh-CN": "视觉模式"
+        },
+        "default": "off",
+        "description": {
+          "en-US": "On-demand captures when asked; watching attaches one fresh frame to each chat turn",
+          "zh-CN": "按需模式在请求时捕获；观察模式在每轮聊天附上一帧新画面"
+        },
+        "scope": "session",
+        "runtime_key": "vision_mode",
+        "options": [
+          "off",
+          "on_demand",
+          "watching",
+          "self_aware"
+        ]
+      },
+      "AMADEUS_VISION_SCOPE": {
+        "type": "enum",
+        "title": {
+          "en-US": "Vision Scope",
+          "zh-CN": "视觉范围"
+        },
+        "default": "full_screen",
+        "description": {
+          "en-US": "Choose what Amadeus may capture for a visual turn",
+          "zh-CN": "选择 Amadeus 在视觉请求中可捕获的范围"
+        },
+        "scope": "session",
+        "runtime_key": "vision_scope",
+        "options": [
+          "full_screen",
+          "current_window",
+          "selected_window",
+          "wallpaper_surface",
+          "region"
+        ]
+      },
+      "AMADEUS_VISION_MAX_LONG_SIDE": {
+        "type": "integer",
+        "title": {
+          "en-US": "Vision Image Size",
+          "zh-CN": "视觉图像尺寸"
+        },
+        "default": 960,
+        "description": {
+          "en-US": "Maximum long edge sent to the model",
+          "zh-CN": "发送给模型的图像最大长边"
+        },
+        "scope": "session",
+        "runtime_key": "vision_max_long_side",
+        "min": 320,
+        "max": 4096,
+        "step": 1,
+        "control": "select",
+        "options": [
+          "640",
+          "960",
+          "1280",
+          "1600"
+        ]
+      },
+      "AMADEUS_VISION_JPEG_QUALITY": {
+        "type": "integer",
+        "title": {
+          "en-US": "Vision JPEG Quality",
+          "zh-CN": "视觉 JPEG 质量"
+        },
+        "default": 68,
+        "description": {
+          "en-US": "Higher quality increases request payload size",
+          "zh-CN": "更高质量会增加请求数据量"
+        },
+        "scope": "session",
+        "runtime_key": "vision_jpeg_quality",
+        "min": 35,
+        "max": 92,
+        "step": 1,
+        "control": "select",
+        "options": [
+          "50",
+          "68",
+          "80",
+          "90"
+        ]
+      },
+      "AMADEUS_VISION_REGION": {
+        "type": "string",
+        "title": {
+          "en-US": "Vision region",
+          "zh-CN": "视觉区域"
+        },
+        "default": "",
+        "scope": "session",
+        "runtime_key": "vision_region"
+      },
+      "AMADEUS_VISION_WINDOW_HANDLE": {
+        "type": "string",
+        "title": {
+          "en-US": "Vision target window",
+          "zh-CN": "视觉目标窗口"
+        },
+        "default": "",
+        "description": {
+          "en-US": "Capture stops if this window closes or can no longer be verified.",
+          "zh-CN": "窗口关闭或无法验证时停止捕获。"
+        },
+        "scope": "session",
+        "runtime_key": "vision_window_handle"
+      }
+    }
   },
   {
     "id": "acoustic_pipeline",
@@ -1952,7 +2583,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "各场景麦克风路径共享的实时 AEC 与语音打断控制。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "AEC_REALTIME_ENABLED": {
         "type": "boolean",
@@ -1990,7 +2620,8 @@ export const catalogGroups: CatalogGroup[] = [
         "step": 10,
         "example_active": false
       }
-    }
+    },
+    "apply": "backend_restart"
   },
   {
     "id": "asr_remote",
@@ -2003,7 +2634,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "兼容 OpenAI 的 /audio/transcriptions 接口，仅在上方选择后使用。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "ASR_API_BASE_URL": {
         "type": "url",
@@ -2036,7 +2666,8 @@ export const catalogGroups: CatalogGroup[] = [
         "default": "gpt-4o-mini-transcribe",
         "example_active": false
       }
-    }
+    },
+    "apply": "backend_restart"
   },
   {
     "id": "conversation_asr",
@@ -2049,7 +2680,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "手动监听或唤醒移交后的完整语音转写；Qwen 是内置默认实现。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "ASR_BACKEND": {
         "type": "string",
@@ -2058,7 +2688,10 @@ export const catalogGroups: CatalogGroup[] = [
           "zh-CN": "后端"
         },
         "default": "qwen3_asr",
-        "example_active": true
+        "example_active": true,
+        "identifier": true,
+        "runtime_key": "asr_backend",
+        "apply": "host"
       },
       "ASR_LANGUAGE": {
         "type": "string",
@@ -2182,7 +2815,8 @@ export const catalogGroups: CatalogGroup[] = [
         "step": 50,
         "example_active": true
       }
-    }
+    },
+    "apply": "backend_restart"
   },
   {
     "id": "tts_emotion_references",
@@ -2195,7 +2829,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "为 Windows CUDA V3 日语语音启用可选情绪包，启动时提前准备参考音频。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING": {
         "type": "boolean",
@@ -2218,7 +2851,8 @@ export const catalogGroups: CatalogGroup[] = [
         ],
         "example_active": true
       }
-    }
+    },
+    "apply": "backend_restart"
   },
   {
     "id": "voice_reference_profile",
@@ -2231,7 +2865,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "共享参考音频与文本，仅由支持参考条件的 TTS 后端使用。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "TTS_REF_AUDIO_JA": {
         "type": "path",
@@ -2272,7 +2905,8 @@ export const catalogGroups: CatalogGroup[] = [
         "default": "",
         "example_active": true
       }
-    }
+    },
+    "apply": "backend_restart"
   },
   {
     "id": "wake_asr",
@@ -2285,7 +2919,6 @@ export const catalogGroups: CatalogGroup[] = [
       "zh-CN": "独立的常驻唤醒识别器，可以使用与对话识别不同的本地后端。"
     },
     "desktop": true,
-    "restart_required": true,
     "config": {
       "WAKE_ENABLED": {
         "type": "boolean",
@@ -2364,6 +2997,7 @@ export const catalogGroups: CatalogGroup[] = [
         "example_active": false,
         "example": "C:\\path\\to\\SenseVoiceSmall"
       }
-    }
+    },
+    "apply": "backend_restart"
   }
 ]

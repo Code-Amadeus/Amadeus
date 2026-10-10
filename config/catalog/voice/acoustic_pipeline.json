@@ -9,7 +9,6 @@
     "zh-CN": "各场景麦克风路径共享的实时 AEC 与语音打断控制。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "AEC_REALTIME_ENABLED": {
       "type": "boolean",
@@ -47,5 +46,6 @@
       "step": 10,
       "example_active": false
     }
-  }
+  },
+  "apply": "backend_restart"
 }

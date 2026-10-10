@@ -9,7 +9,6 @@
     "zh-CN": "共享参考音频与文本，仅由支持参考条件的 TTS 后端使用。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "TTS_REF_AUDIO_JA": {
       "type": "path",
@@ -50,5 +49,6 @@
       "default": "",
       "example_active": true
     }
-  }
+  },
+  "apply": "backend_restart"
 }

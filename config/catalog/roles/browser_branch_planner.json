@@ -9,7 +9,6 @@
     "zh-CN": "选择范围明确的浏览器分支；覆盖值留空时继承受支持的主模型提供商。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "BROWSER_BRANCH_PROVIDER": {
       "type": "enum",
@@ -58,5 +57,6 @@
     }
   },
   "section": "roles",
-  "order": 3
+  "order": 3,
+  "apply": "backend_restart"
 }

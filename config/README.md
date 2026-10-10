@@ -27,12 +27,13 @@ precedence, and records every setting declared through it. New startup
 configuration should use this boundary rather than calling `load_dotenv`
 again.
 
-## Shared startup declarations
+## Shared configuration declarations
 
 The shared catalog covers the TTS selector, all four built-in TTS connection/model
-groups, graphics, voice input/reference controls, model connections, model roles
-and Provider connections: 122 fields in the catalog domain directories. Edit the owning JSON for defaults, types, options,
-ranges, desktop editability, restart policy, and English/Chinese labels. The
+groups, graphics, voice input/reference controls, model connections, model roles,
+Provider connections, character, desktop and live presentation/vision settings:
+145 fields in 42 groups. Edit the owning JSON for defaults, types, options,
+ranges, desktop editability, application policy, and English/Chinese labels. The
 configuration keys retain their existing environment-variable names.
 Run `npm run generate:config` from `electron` after editing a declaration.
 
@@ -46,21 +47,38 @@ sections of `.env.example`. Commit generated output with its declaration;
 lose their old managed env sections; duplicate declared keys outside those sections
 are rejected. `catalog_legacy.json` bounds the remaining handwritten declarations:
 new keys and migrated keys cannot be added to legacy desktop lists/forms or Python
-parsing/status definitions. Shrink that inventory when migrating an owner.
+parsing/status definitions. The desktop list now contains only structured ACP
+records and removal of the retired route key. Internal Python tuning fields
+outside Settings remain in the bounded legacy inventory.
 
 Desktop snapshots distinguish stored overrides from known non-secret startup
 inputs. The form follows source precedence even when offline. Dotenv interpolation
 remains Python-owned: an unresolved offline value is shown as unknown, and a
 pending clear never reuses the running backend's superseded value. Secrets expose
-only configured state.
+only configured state. Computed defaults for the next launch use the projected
+inputs, so changing a local model also changes an unset Hybrid model without
+being overwritten by the old running value.
+
+`apply` is `frontend`, `host`, `backend_restart` or `desktop_restart`, with a
+field override when its group has mixed behavior. Desktop-only fields never
+enter the backend environment. A one-to-one Host setting declares its
+`runtime_key`; forms, persistence mapping and basic runtime validation derive
+from that declaration. The implementation still owns applying the value.
+Save failures never apply a change, and live application failures leave the
+saved revision pending. Only the matching application acknowledgment clears it.
 
 Supported field types are string, path, URL, enum, boolean, integer and number.
 `computed_default: true` omits the static default: its owner supplies a value
 when resolving it. Texture sampling still defaults to whether the effective
 frame rate is 60 FPS, with explicit choices taking precedence. Graphics presets,
 TTS device selection and atomic checkpoint-pair resolution remain ordinary code.
+The wallpaper caption default belongs to the presentation owner because the
+legacy combined subtitle input may select source, bilingual or disabled captions.
+An unresolved offline computed value stays unknown and editable.
 An `example` may differ from the runtime default (for example the curated Kurisu
 setup); `example_active` preserves whether that env example is enabled.
+Boolean `true_values` is used only where an existing owner accepts additional
+spellings such as `on`; other booleans retain the shared parser's contract.
 
 Each TTS declaration has `voice_backend` metadata and a `section` (`output` or
 `remote`). These drive the existing TTS registry, offline selector, Settings
@@ -75,7 +93,10 @@ Settings allowlist needs editing. New env sections are appended automatically.
 This is an internal catalog of packaged application data, not an extension
 manifest loader. Third-party code still needs the extension host's lifecycle
 and authorization boundary. ASR fields, shared reference/emotion controls and
-live runtime controls retain their existing owners.
+live runtime application retain their existing owners. TTS mode/language remain
+bounded composite conversions; window enumeration, character management and
+theme previews keep their dedicated UI behavior. ACP/MCP records keep their
+existing structured validation, encrypted storage and authorization boundaries.
 
 The catalog describes fields; it does not store user values or prove that a
 backend is available. `DesktopSettingsStore` still owns encryption, process
@@ -87,8 +108,9 @@ a credential is configured. Protocol-specific validation stays in the backend.
 ## Handler composition
 
 `server/handlers/voice.py` owns construction and binding of TTS, ASR and Wake
-handlers. `app.py` registers the domain's `handlers` before starting the server
-and supplies runtime dependencies later through `configure()`. Add a handler
+handlers. The built-in composition table registers the domain's handlers before
+starting the server; `app.py` supplies runtime dependencies later through
+`configure()`. Add a handler
 using existing voice dependencies inside this domain; `app.py` does not need a
 new import, constructor, registration entry or configure call. New cross-domain
 dependencies still belong at the application composition root.
@@ -294,7 +316,7 @@ These are not pending mechanical migrations:
 
 Model connection inheritance stays in the model owner. The catalog records legacy
 names (`aliases`), facade attribute bindings (`setting`), and local engine field
-visibility (`local_engines`). CLI numeric controls remain parsed strings;
+visibility (`visible_when`). CLI numeric controls remain parsed strings;
 `control: "number"` supplies UI hints without changing command argument types.
 Bedrock bearer credentials now use the same surrounding-quote/whitespace
 normalization as other API secrets. AWS credential discovery remains unchanged.

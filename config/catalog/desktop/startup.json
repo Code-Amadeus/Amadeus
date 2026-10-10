@@ -1,0 +1,44 @@
+{
+  "id": "desktop_startup",
+  "title": {
+    "en-US": "Startup",
+    "zh-CN": "启动"
+  },
+  "description": {
+    "en-US": "Quit and reopen Amadeus to apply. Wallpaper is always available in the sidebar.",
+    "zh-CN": "退出并重新打开 Amadeus 后生效；侧边栏始终可进入壁纸。"
+  },
+  "desktop": true,
+  "apply": "desktop_restart",
+  "config": {
+    "AMADEUS_WINDOWS_STARTUP_MODE": {
+      "type": "enum",
+      "title": {
+        "en-US": "Startup mode",
+        "zh-CN": "启动模式"
+      },
+      "default": "window",
+      "description": {
+        "en-US": "Choose whether to open the control panel first or enter wallpaper directly.",
+        "zh-CN": "选择先打开控制面板，或直接进入壁纸。"
+      },
+      "scope": "desktop",
+      "options": [
+        {
+          "value": "window",
+          "label": {
+            "en-US": "Open control panel first",
+            "zh-CN": "先打开控制面板"
+          }
+        },
+        {
+          "value": "wallpaper",
+          "label": {
+            "en-US": "Enter wallpaper directly",
+            "zh-CN": "直接进入壁纸"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -9,7 +9,6 @@
     "zh-CN": "将日语游戏对话翻译为简体中文用于显示。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "VN_SUBTITLE_TRANSLATE_PROVIDER": {
       "type": "enum",
@@ -58,5 +57,6 @@
     }
   },
   "section": "roles",
-  "order": 6
+  "order": 6,
+  "apply": "backend_restart"
 }

@@ -9,7 +9,6 @@
     "zh-CN": "兼容 OpenAI 的 /audio/transcriptions 接口，仅在上方选择后使用。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "ASR_API_BASE_URL": {
       "type": "url",
@@ -42,5 +41,6 @@
       "default": "gpt-4o-mini-transcribe",
       "example_active": false
     }
-  }
+  },
+  "apply": "backend_restart"
 }

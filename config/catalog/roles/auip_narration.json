@@ -9,7 +9,6 @@
     "zh-CN": "播报已验证的应用操作结果；覆盖值留空时依次继承 Work 观察者和主对话模型。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "AUIP_NARRATION_PROVIDER": {
       "type": "string",
@@ -55,5 +54,6 @@
     }
   },
   "section": "roles",
-  "order": 5
+  "order": 5,
+  "apply": "backend_restart"
 }

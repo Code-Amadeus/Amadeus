@@ -9,7 +9,6 @@
     "zh-CN": "为 Windows CUDA V3 日语语音启用可选情绪包，启动时提前准备参考音频。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING": {
       "type": "boolean",
@@ -32,5 +31,6 @@
       ],
       "example_active": true
     }
-  }
+  },
+  "apply": "backend_restart"
 }

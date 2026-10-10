@@ -9,7 +9,6 @@
     "zh-CN": "通过 WebSocket 流式生成语音；声音 ID 用于选择声音，模型用于选择推理引擎。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "FISH_TTS_WS_URL": {
       "type": "url",
@@ -75,5 +74,6 @@
     "order": 3,
     "streaming": true,
     "reference_conditioning": false
-  }
+  },
+  "apply": "backend_restart"
 }

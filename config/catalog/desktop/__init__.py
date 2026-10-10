@@ -1,0 +1,1 @@
+"""Packaged desktop interface declarations."""

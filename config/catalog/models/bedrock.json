@@ -9,7 +9,6 @@
     "zh-CN": "使用 AWS 凭据链或显式保存的 Bedrock Bearer Token。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "BEDROCK_AUTH_MODE": {
       "type": "enum",
@@ -71,5 +70,6 @@
       "default": "",
       "example_active": true
     }
-  }
+  },
+  "apply": "backend_restart"
 }

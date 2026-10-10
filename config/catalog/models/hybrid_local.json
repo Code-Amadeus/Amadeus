@@ -9,7 +9,6 @@
     "zh-CN": "共享的快速首句端点。Hybrid 搭配 Bedrock，Hybrid2 搭配 DeepSeek，Hybrid3 搭配 OpenAI 兼容服务。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "HYBRID_LOCAL_LLM_URL": {
       "type": "url",
@@ -35,5 +34,6 @@
       "example": "",
       "example_active": true
     }
-  }
+  },
+  "apply": "backend_restart"
 }

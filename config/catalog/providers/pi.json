@@ -9,7 +9,6 @@
     "zh-CN": "通过原生 RPC 运行的默认日常 Agent。桌面安装会包含其固定版本运行时；已知模型提供方复用“模型”中配置的凭据。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "PI_PROVIDER_ENABLED": {
       "type": "boolean",
@@ -63,5 +62,6 @@
     }
   },
   "section": "providers",
-  "order": 9
+  "order": 9,
+  "apply": "backend_restart"
 }

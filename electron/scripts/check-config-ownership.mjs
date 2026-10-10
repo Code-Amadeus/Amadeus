@@ -11,9 +11,10 @@ export function handwrittenKeys(file, source) {
   const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true)
   const keys = new Set()
   function visit(node) {
-    if (ts.isVariableDeclaration(node) && ['VALUE_KEYS', 'SECRET_KEYS'].includes(node.name.getText(tree))) {
+    if (ts.isVariableDeclaration(node) && ['VALUE_KEYS', 'SECRET_KEYS', 'STRUCTURED_VALUE_KEYS', 'VALUE_CHOICES', 'NUMBER_RANGES', 'INTEGER_KEYS', 'IDENTIFIER_KEYS'].includes(node.name.getText(tree))) {
       const collect = child => {
         if (ts.isStringLiteral(child) && /^[A-Z][A-Z0-9_]*$/.test(child.text)) keys.add(child.text)
+        if (ts.isPropertyAssignment(child) && ts.isIdentifier(child.name) && /^[A-Z][A-Z0-9_]*$/.test(child.name.text)) keys.add(child.name.text)
         ts.forEachChild(child, collect)
       }
       if (node.initializer) collect(node.initializer)

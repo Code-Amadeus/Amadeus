@@ -26,9 +26,9 @@ app.whenReady().then(async () => {
   const { isWallpaperStartup } = await import(pathToFileURL(path.join(root, 'electron/dist/main/startupMode.js')).href)
   const file = path.join(profile, 'settings.json')
   const store = new DesktopSettingsStore(file, path.join(profile, '.env'))
-  const environment = {}
+  const environment = { AMADEUS_UI_THEME: 'classic' }
   store.update({}, { values: {
-    AMADEUS_UI_LOCALE: 'en-US', TTS_BACKEND: null, FISH_TTS_MODEL: null, FISH_TTS_LATENCY: null,
+    AMADEUS_UI_LOCALE: 'en-US', AMADEUS_UI_THEME: 'wallpaper-slice', TTS_BACKEND: null, FISH_TTS_MODEL: null, FISH_TTS_LATENCY: null,
     MIMO_TTS_VOICE: null, TTS_API_VOICE: null,
     GRAPHICS_PROFILE: null, RENDER_MAX_FPS: null, RENDER_TEXTURE_SAMPLING: null,
   } })
@@ -50,6 +50,14 @@ app.whenReady().then(async () => {
   await until(`Array.from(document.querySelectorAll('button')).some(b => b.textContent.includes('General'))`)
   await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('General')).click(); true`)
   await until(`Boolean(document.querySelector('select[aria-label="Startup mode"]'))`)
+  await until(`(() => {
+    const choices = Array.from(document.querySelectorAll('[aria-label="Interface theme"] button'));
+    return choices.length === 2 && choices.every(button => button.disabled)
+      && document.querySelector('[data-preview-theme="classic"]')?.getAttribute('aria-checked') === 'true';
+  })()`)
+  assert.equal(store.snapshot(environment).values.AMADEUS_UI_THEME, 'wallpaper-slice')
+  assert.equal(store.backendEnvironment(environment).AMADEUS_UI_THEME, undefined)
+  console.log('PASS frontend theme follows the locked source and stays outside backend inputs')
   for (const mode of ['window', 'wallpaper']) {
     await win.webContents.executeJavaScript(`(() => { const s = document.querySelector('select[aria-label="Startup mode"]');
       s.value = ${JSON.stringify(mode)}; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`)

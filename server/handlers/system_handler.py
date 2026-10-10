@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 
-from config.catalog import configuration_groups, read_catalog_value, voice_backend_groups
+from config.catalog import application_policy, configuration_groups, option_values, read_catalog_value, runtime_fields, voice_backend_groups
 from server.event_bus import bus
 from server.protocol import Method
 from server.ws_handler import RequestHandler
@@ -32,7 +33,6 @@ def _startup_field(
         "label": label,
         "type": field_type,
         "description": description,
-        "restart_required": True,
         "editable": bool(editable),
     }
     if options:
@@ -76,7 +76,10 @@ def _catalog_field(key: str, settings: Any, values: dict[str, Any] | None = None
         secret_configured=bool(value) if secret else None,
         editable=group["desktop"],
     )
-    field["restart_required"] = group["restart_required"]
+    field["apply"] = application_policy(key)
+    field["restart_required"] = field["apply"] == "backend_restart"
+    if "true_values" in definition:
+        field["true_values"] = definition["true_values"]
     if definition.get("control"):
         field["type"] = definition["control"]
     return field
@@ -250,49 +253,17 @@ def _voice_configuration(settings: Any, emotion_pack: dict[str, Any] | None = No
 
 
 def _artifact_configuration(settings: Any) -> list[dict[str, Any]]:
-    return [{
-        "id": "auip_artifact_style",
-        "label": "Artifact appearance",
-        "configured": True,
-        "status_ok": True,
-        "status": "enabled" if settings.AUIP_ARTIFACT_STYLE_ENABLED else "disabled",
-        "description": "A shared visual language for newly authored AUIP apps; each app keeps its own content and layout.",
-        "fields": [_startup_field(
-            "AUIP_ARTIFACT_STYLE_ENABLED", "Use Amadeus style",
-            settings.AUIP_ARTIFACT_STYLE_ENABLED, field_type="boolean",
-            description="After a backend restart, provide the style guide and CSS for future AUIP creation. Existing apps keep their design; explicit user design requests take priority.",
-        )],
-    }]
+    return [{**_catalog_configuration("auip_artifact_style", settings),
+             "configured": True, "status_ok": True,
+             "status": "enabled" if settings.AUIP_ARTIFACT_STYLE_ENABLED else "disabled"}]
 
 
 def _avatar_configuration(settings: Any) -> list[dict[str, Any]]:
     enabled = bool(settings.VTS_ENABLED)
-    return [
-        {
-            "id": "vts_compatibility",
-            "label": "VTube Studio compatibility",
-            "description": "Optional downstream mouth-signal and parameter forwarding. SpriteForge browser animation remains independent of this compatibility path.",
-            "active": enabled,
-            "configured": not enabled or bool(str(settings.VTS_WS_URL or "").strip()),
-            "status": "available" if enabled else "disabled",
-            "status_ok": not enabled or bool(str(settings.VTS_WS_URL or "").strip()),
-            "fields": [
-                _startup_field(
-                    "VTS_ENABLED", "Enable compatibility output", enabled,
-                    field_type="boolean",
-                ),
-                _startup_field(
-                    "VTS_WS_URL", "WebSocket URL", settings.VTS_WS_URL,
-                    field_type="url",
-                ),
-                _startup_field(
-                    "VTS_TOKEN_FILE", "Authentication token file",
-                    settings.VTS_TOKEN_FILE, field_type="path",
-                    description="Local token cache path; the token itself is never shown in Settings.",
-                ),
-            ],
-        }
-    ]
+    configured = not enabled or bool(str(settings.VTS_WS_URL or "").strip())
+    return [{**_catalog_configuration("vts_compatibility", settings),
+             "active": enabled, "configured": configured,
+             "status": "available" if enabled else "disabled", "status_ok": configured}]
 
 
 def _model_connections(
@@ -325,27 +296,15 @@ def _model_connections(
         "hybrid2": {"hybrid_local", "deepseek"},
         "hybrid3": {"hybrid_local", "openai"},
     }.get(active, {active})
-    local_type = str(settings.LOCAL_LLM_TYPE or "llama_server").strip().lower()
-    local_fields = [field for field in _catalog_configuration("local", settings)["fields"]
-                    if not configuration_groups()["local"]["config"][field["key"]].get("local_engines")
-                    or local_type in configuration_groups()["local"]["config"][field["key"]]["local_engines"]]
+    local_fields = _catalog_configuration("local", settings)["fields"]
 
     local_status = dict(local_status or {})
     hybrid_status = dict(hybrid_status or {})
     return [
         {
-            "id": "profile",
-            "label": "Desktop default",
-            "description": "The model profile selected when the desktop backend starts.",
+            **_catalog_configuration("profile", settings),
             "active": True,
             "configured": True,
-            "fields": [
-                _startup_field(
-                    "LLM_PROVIDER", "Default model profile", settings.LLM_PROVIDER,
-                    field_type="select",
-                    options=("deepseek", "openai", "gemini", "bedrock", "local", "hybrid", "hybrid2", "hybrid3"),
-                ),
-            ],
         },
         {
             **_catalog_configuration("character_rag", settings),
@@ -739,14 +698,9 @@ class SystemHandler(RequestHandler):
             "tts_backends": tts_backend_statuses(
                 str(getattr(settings, "TTS_BACKEND", "gpt_sovits"))
             ),
-            "vision_enabled": vision.get("enabled", False),
-            "vision_mode": vision.get("mode", "off"),
-            "vision_scope": vision.get("scope", "full_screen"),
-            "vision_provider": vision.get("provider", "auto"),
-            "vision_max_long_side": vision.get("max_long_side", 960),
-            "vision_jpeg_quality": vision.get("jpeg_quality", 68),
-            "vision_region": vision.get("region", ""),
-            "vision_window_handle": vision.get("window_handle", ""),
+            **{field["runtime_key"]: vision[field["runtime_key"].removeprefix("vision_")]
+               for field in configuration_groups()["vision"]["config"].values()},
+            "vision_provider": vision["provider"],
             **presentation_runtime.get_config(),
             **chat_translation_runtime.get_config(),
             "control_decision_mode": "retired",
@@ -789,25 +743,9 @@ class SystemHandler(RequestHandler):
 
         from llm.prompts import CHARACTER_PROMPT_SETTING, normalize_character_prompt, set_character_prompt
 
-        allowed = {
-            CHARACTER_PROMPT_SETTING,
-            "llm_provider",
-            "local_llm_type",
-            "tts_mode",
-            "tts_output_language",
-            "asr_backend",
-            "vision_enabled",
-            "vision_mode",
-            "vision_scope",
-            "vision_max_long_side",
-            "vision_jpeg_quality",
-            "vision_region",
-            "vision_window_handle",
-            "presentation_locale",
-            "wallpaper_caption_mode",
-            "wallpaper_subtitle_language",
-            "chat_translation_subtitles_enabled",
-        }
+        # The three compound/legacy inputs are owned by TTS and presentation.
+        declared_runtime = runtime_fields()
+        allowed = {*declared_runtime, "tts_mode", "tts_output_language", "wallpaper_subtitle_language"}
         unknown = sorted(str(key) for key in values if str(key) not in allowed)
         if unknown:
             raise ValueError(f"unsupported runtime setting(s): {', '.join(unknown)}")
@@ -816,17 +754,31 @@ class SystemHandler(RequestHandler):
         if CHARACTER_PROMPT_SETTING in values:
             values[CHARACTER_PROMPT_SETTING] = normalize_character_prompt(values[CHARACTER_PROMPT_SETTING])
 
-        if "llm_provider" in values:
-            provider = str(values["llm_provider"] or "").strip().lower()
-            if provider not in {
-                "deepseek", "openai", "gemini", "bedrock", "local",
-                "hybrid", "hybrid2", "hybrid3",
-            }:
-                raise ValueError(f"unsupported LLM provider: {provider!r}")
-        if "local_llm_type" in values:
-            local_type = str(values["local_llm_type"] or "").strip().lower()
-            if local_type not in {"llama_server", "lmstudio", "ollama", "cli"}:
-                raise ValueError(f"unsupported local LLM type: {local_type!r}")
+        for key, definition in declared_runtime.items():
+            if key not in values:
+                continue
+            value = values[key]
+            if definition["type"] == "boolean" and not isinstance(value, bool):
+                raise ValueError(f"{key} must be a boolean")
+            if definition["type"] == "enum":
+                choices = option_values(definition)
+                value = str(value or "").strip()
+                if all(choice == choice.lower() for choice in choices):
+                    value = value.lower()
+                if value not in choices:
+                    raise ValueError(f"unsupported {key}: {value!r}")
+                values[key] = value
+            if definition["type"] in {"integer", "number"}:
+                try:
+                    value = (int if definition["type"] == "integer" else float)(value)
+                except (TypeError, ValueError, OverflowError) as exc:
+                    raise ValueError(f"{key} must be an {definition['type']}") from exc
+                if not math.isfinite(value):
+                    raise ValueError(f"{key} must be a finite number")
+                minimum, maximum = definition.get("min"), definition.get("max")
+                if (minimum is not None and value < minimum) or (maximum is not None and value > maximum):
+                    raise ValueError(f"{key} must be between {minimum} and {maximum}")
+                values[key] = value
         if "tts_mode" in values:
             mode = str(values["tts_mode"] or "").strip().lower()
             if mode not in {"cuda_graph", "parallel", "parallel2", "cuda graph ×1", "parallel ×2", "graph"}:
@@ -841,52 +793,6 @@ class SystemHandler(RequestHandler):
             backend = str(values["asr_backend"] or "").strip().lower()
             if backend not in set(asr_backend_ids()):
                 raise ValueError(f"unsupported ASR backend: {backend!r}")
-        if "vision_enabled" in values and not isinstance(values["vision_enabled"], bool):
-            raise ValueError("vision_enabled must be a boolean")
-        if "vision_mode" in values:
-            mode = str(values["vision_mode"] or "").strip().lower()
-            if mode not in {"off", "on_demand", "watching", "self_aware"}:
-                raise ValueError(f"unsupported vision mode: {mode!r}")
-            values["vision_mode"] = mode
-        if "vision_scope" in values:
-            scope = str(values["vision_scope"] or "").strip().lower()
-            if scope not in {
-                "full_screen", "current_window", "selected_window",
-                "wallpaper_surface", "region",
-            }:
-                raise ValueError(f"unsupported vision scope: {scope!r}")
-            values["vision_scope"] = scope
-        if "vision_max_long_side" in values:
-            try:
-                max_long_side = int(values["vision_max_long_side"])
-            except (TypeError, ValueError) as exc:
-                raise ValueError("vision_max_long_side must be an integer") from exc
-            if not 320 <= max_long_side <= 4096:
-                raise ValueError("vision_max_long_side must be between 320 and 4096")
-            values["vision_max_long_side"] = max_long_side
-        if "vision_jpeg_quality" in values:
-            try:
-                jpeg_quality = int(values["vision_jpeg_quality"])
-            except (TypeError, ValueError) as exc:
-                raise ValueError("vision_jpeg_quality must be an integer") from exc
-            if not 35 <= jpeg_quality <= 92:
-                raise ValueError("vision_jpeg_quality must be between 35 and 92")
-            values["vision_jpeg_quality"] = jpeg_quality
-        if "presentation_locale" in values:
-            locale = str(values["presentation_locale"] or "").strip()
-            if locale not in presentation_runtime.VALID_PRESENTATION_LOCALES:
-                raise ValueError(f"unsupported presentation locale: {locale!r}")
-        if "wallpaper_caption_mode" in values:
-            caption_mode = str(values["wallpaper_caption_mode"] or "").strip().lower()
-            if caption_mode not in presentation_runtime.VALID_CAPTION_MODES:
-                raise ValueError(f"unsupported wallpaper caption mode: {caption_mode!r}")
-            values["wallpaper_caption_mode"] = caption_mode
-        if (
-            "chat_translation_subtitles_enabled" in values
-            and not isinstance(values["chat_translation_subtitles_enabled"], bool)
-        ):
-            raise ValueError("chat_translation_subtitles_enabled must be a boolean")
-
         if {"llm_provider", "local_llm_type"}.intersection(values):
             if self._is_chat_busy is not None and self._is_chat_busy():
                 raise RuntimeError("wait for the active chat turn before changing LLM routing")

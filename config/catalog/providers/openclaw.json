@@ -9,7 +9,6 @@
     "zh-CN": "可选的 Gateway 提供商。可在上方分配角色或在任务中明确选择；继续支持现有会话。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "OPENCLAW_BASE_URL": {
       "type": "url",
@@ -46,5 +45,6 @@
     }
   },
   "section": "providers",
-  "order": 10
+  "order": 10,
+  "apply": "backend_restart"
 }

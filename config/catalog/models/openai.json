@@ -9,7 +9,6 @@
     "zh-CN": "通过可配置的基础 URL 支持 OpenAI 及兼容端点。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "OPENAI_API_KEY": {
       "type": "string",
@@ -42,5 +41,6 @@
       "default": "gpt-5.4-mini",
       "example_active": true
     }
-  }
+  },
+  "apply": "backend_restart"
 }

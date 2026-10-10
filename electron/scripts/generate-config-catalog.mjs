@@ -12,6 +12,8 @@ const ids = new Set()
 const backendIds = new Set()
 const keys = new Set()
 const translations = {}
+const runtimeKeys = new Set()
+const applications = ['frontend', 'host', 'backend_restart', 'desktop_restart']
 function knownKeys(value, allowed) {
   for (const key of Object.keys(value)) assert.ok(allowed.includes(key), `Unknown declaration property ${key}`)
 }
@@ -23,7 +25,7 @@ function localized(text) {
   translations[text['en-US']] = text['zh-CN']
 }
 for (const group of groups) {
-  knownKeys(group, ['id', 'title', 'description', 'desktop', 'restart_required', 'config', 'section', 'voice_backend', 'order'])
+  knownKeys(group, ['id', 'title', 'description', 'desktop', 'apply', 'config', 'section', 'voice_backend', 'order'])
   assert.match(group.id, /^[a-z][a-z0-9_]*$/)
   assert.ok(!ids.has(group.id), `Duplicate group ${group.id}`)
   ids.add(group.id)
@@ -49,11 +51,10 @@ for (const group of groups) {
     if (typeof backend.streaming !== 'boolean') assert.match(backend.streaming, entry)
   }
   assert.equal(typeof group.desktop, 'boolean')
-  // The initial catalog owns startup fields only; live application has a separate owner.
-  assert.equal(group.restart_required, true)
+  assert.ok(applications.includes(group.apply), `Missing/invalid application policy for ${group.id}`)
   assert.ok(Object.keys(group.config).length, 'Empty configuration group')
   for (const [key, field] of Object.entries(group.config)) {
-    knownKeys(field, ['type', 'title', 'description', 'default', 'secret', 'options', 'schemes', 'min', 'max', 'step', 'computed_default', 'example', 'example_active', 'accepted_values', 'aliases', 'setting', 'control', 'local_engines', 'scope', 'visible_when'])
+    knownKeys(field, ['type', 'title', 'description', 'default', 'secret', 'options', 'schemes', 'min', 'max', 'step', 'computed_default', 'example', 'example_active', 'accepted_values', 'true_values', 'aliases', 'setting', 'control', 'scope', 'visible_when', 'apply', 'runtime_key', 'identifier', 'max_length', 'allow_empty', 'trim'])
     assert.match(key, /^[A-Z][A-Z0-9_]*$/)
     assert.ok(!keys.has(key), `Duplicate setting ${key}`)
     keys.add(key)
@@ -63,13 +64,25 @@ for (const group of groups) {
       assert.ok(!keys.has(alias), `Duplicate setting alias ${alias}`)
       keys.add(alias)
     }
-    if (field.control) assert.ok(field.type === 'string' && ['number', 'select'].includes(field.control))
+    if (field.control) assert.ok(['string', 'integer', 'number'].includes(field.type) && ['number', 'select'].includes(field.control))
+    if (field.apply) assert.ok(applications.includes(field.apply))
+    const application = field.apply ?? group.apply
+    if (['frontend', 'desktop_restart'].includes(application)) assert.equal(field.scope, 'desktop', `${key} must stay out of backend startup inputs`)
+    if (application === 'host' && group.id !== 'tts_runtime') assert.ok(field.runtime_key, `${key} needs its one-to-one runtime key`)
+    if (field.runtime_key) {
+      assert.match(field.runtime_key, /^[a-z][a-z0-9_]*$/)
+      assert.ok(!runtimeKeys.has(field.runtime_key), `Duplicate runtime key ${field.runtime_key}`)
+      runtimeKeys.add(field.runtime_key)
+      assert.equal(field.apply ?? group.apply, 'host')
+      assert.ok(!field.secret, `Secret ${key} cannot be a public live setting`)
+    }
+    for (const name of ['identifier', 'allow_empty', 'trim']) if (name in field) assert.equal(typeof field[name], 'boolean')
+    if (field.max_length !== undefined) assert.ok(Number.isSafeInteger(field.max_length) && field.max_length > 0)
     if (field.scope) assert.ok(['backend', 'session', 'virtual', 'desktop'].includes(field.scope))
     if (field.visible_when) for (const [selector, choices] of Object.entries(field.visible_when)) {
       assert.ok(selector in group.config, `Unknown visibility selector ${selector}`)
       assert.ok(Array.isArray(choices) && choices.length && choices.every(value => typeof value === 'string'))
     }
-    if (field.local_engines) assert.ok(group.id === 'local' && field.local_engines.every(engine => ['llama_server', 'lmstudio', 'ollama', 'cli'].includes(engine)))
     localized(field.title)
     if (field.description) localized(field.description)
     assert.ok(['string', 'path', 'url', 'enum', 'boolean', 'integer', 'number'].includes(field.type), `Unsupported type for ${key}`)
@@ -79,6 +92,11 @@ for (const group of groups) {
     if (field.accepted_values) {
       assert.equal(field.type, 'boolean')
       assert.ok(field.accepted_values.every(value => ['true', 'false', '1', '0', 'yes', 'no'].includes(value)))
+    }
+    if (field.true_values) {
+      assert.equal(field.type, 'boolean')
+      assert.ok(Array.isArray(field.true_values) && field.true_values.length)
+      assert.ok(field.true_values.every(value => ['true', '1', 'yes', 'on'].includes(value)))
     }
     if (field.secret) {
       assert.equal(field.type, 'string')
@@ -118,8 +136,8 @@ for (const group of groups) {
         return option.value
       })
       assert.equal(new Set(values).size, values.length)
-      assert.ok(values.includes(field.default), `Invalid enum default for ${key}`)
-      if (field.example !== undefined) assert.ok(values.includes(field.example))
+      if (field.default !== undefined) assert.ok(values.includes(String(field.default)), `Invalid enum default for ${key}`)
+      if (field.example !== undefined) assert.ok(values.includes(String(field.example)))
     }
     if (field.type === 'url') {
       assert.ok(Array.isArray(field.schemes) && field.schemes.length)

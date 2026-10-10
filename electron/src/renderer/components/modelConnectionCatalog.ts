@@ -1,4 +1,4 @@
-import { catalogConfiguration, desktopCatalogFields } from '../../shared/configCatalog.js'
+import { catalogConfiguration, visibleCatalogFields } from '../../shared/configCatalog.js'
 import type { StartupSnapshot } from '../../shared/startupSettings.js'
 
 export interface ModelConnectionCatalogField {
@@ -49,20 +49,19 @@ export function buildRemoteModelConnectionCatalog(
 
 export function buildLocalModelConnectionCatalog(
   activeProvider: string, snapshot?: CatalogSnapshot | null,
+  effectiveValues: Record<string, string | boolean> = {},
 ): ModelConnectionCatalogGroup[] {
-  const local = catalogConfiguration('local', snapshot)
+  const local = catalogConfiguration('local', snapshot, effectiveValues)
   const value = (key: string) => local.fields.find(field => field.key === key)?.value
-  const localType = String(value('LOCAL_LLM_TYPE') ?? '')
   const hybrid = catalogConfiguration('hybrid_local', snapshot, {
     HYBRID_LOCAL_LLM_URL: value('LOCAL_LLM_URL'),
     HYBRID_LOCAL_LLM_MODEL: value('LOCAL_LLM_MODEL'),
-  })
+  }, effectiveValues)
   return [local, hybrid].map(group => {
     const active = group.id === 'local' ? activeProvider === 'local' : ['hybrid', 'hybrid2', 'hybrid3'].includes(activeProvider)
     return { ...group, active, configured: false,
       status: active ? 'Backend status unavailable' : 'Optional', status_ok: false,
-      fields: group.fields.filter(field => !desktopCatalogFields[field.key].local_engines
-        || desktopCatalogFields[field.key].local_engines!.includes(localType)),
+      fields: visibleCatalogFields(group.fields),
     }
   })
 }

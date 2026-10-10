@@ -9,7 +9,6 @@
     "zh-CN": "默认使用 Amadeus 低延迟 GPT-SoVITS 运行时，支持 v1、v2、v2Pro、v2ProPlus 和 v3 权重。远程音频共用播放、字幕、回声消除和口型信号管线。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "TTS_BACKEND": {
       "type": "string",
@@ -18,8 +17,10 @@
         "zh-CN": "后端"
       },
       "example_active": true,
-      "default": "gpt_sovits"
+      "default": "gpt_sovits",
+      "identifier": true
     }
   },
-  "section": "output"
+  "section": "output",
+  "apply": "backend_restart"
 }

@@ -9,7 +9,6 @@
     "zh-CN": "Amadeus 低延迟运行时使用的成对权重。SoVITS 权重文件头决定使用 v1、v2、v2Pro、v2ProPlus 或 v3 解码器。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "TTS_VOICE_PROFILE": {
       "type": "enum",
@@ -103,5 +102,6 @@
     "order": 0,
     "streaming": true,
     "reference_conditioning": true
-  }
+  },
+  "apply": "backend_restart"
 }

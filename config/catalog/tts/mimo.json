@@ -9,7 +9,6 @@
     "zh-CN": "使用 PCM16 SSE 流的 MiMo chat-completions 语音合成。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "MIMO_TTS_BASE_URL": {
       "type": "url",
@@ -62,5 +61,6 @@
     "order": 2,
     "streaming": true,
     "reference_conditioning": false
-  }
+  },
+  "apply": "backend_restart"
 }

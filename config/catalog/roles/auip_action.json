@@ -9,7 +9,6 @@
     "zh-CN": "B2 应用操作流程使用的决策模型。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "AUIP_ACTION_PROVIDER": {
       "type": "string",
@@ -89,5 +88,6 @@
     }
   },
   "section": "roles",
-  "order": 4
+  "order": 4,
+  "apply": "backend_restart"
 }

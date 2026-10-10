@@ -9,7 +9,6 @@
     "zh-CN": "DeepSeek"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "DEEPSEEK_API_KEY": {
       "type": "string",
@@ -46,5 +45,6 @@
       "default": "deepseek-v4-flash",
       "example_active": true
     }
-  }
+  },
+  "apply": "backend_restart"
 }

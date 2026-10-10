@@ -1,0 +1,28 @@
+{
+  "id": "auip_artifact_style",
+  "title": {
+    "en-US": "Artifact appearance",
+    "zh-CN": "产物外观"
+  },
+  "description": {
+    "en-US": "A shared visual language for newly authored AUIP apps; each app keeps its own content and layout.",
+    "zh-CN": "为新创作的 AUIP 应用提供共享的视觉语言；各应用保留自己的内容和布局。"
+  },
+  "desktop": true,
+  "apply": "backend_restart",
+  "config": {
+    "AUIP_ARTIFACT_STYLE_ENABLED": {
+      "type": "boolean",
+      "title": {
+        "en-US": "Use Amadeus style",
+        "zh-CN": "使用 Amadeus 样式"
+      },
+      "default": true,
+      "example_active": true,
+      "description": {
+        "en-US": "After a backend restart, provide the style guide and CSS for future AUIP creation. Existing apps keep their design; explicit user design requests take priority.",
+        "zh-CN": "后端重启后，为今后的 AUIP 创建提供样式指南和 CSS；已有应用保留其设计，明确的用户设计要求优先。"
+      }
+    }
+  }
+}

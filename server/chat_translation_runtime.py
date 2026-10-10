@@ -11,6 +11,7 @@ import os
 from collections.abc import Mapping
 from typing import Any
 
+from config.catalog import configuration_field
 from server.assistant_language import text_matches_assistant_language
 
 SETTING_KEY = "chat_translation_subtitles_enabled"
@@ -21,10 +22,10 @@ def _env_enabled(name: str, default: bool = False) -> bool:
     raw = os.environ.get(name)
     if raw is None:
         return default
-    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+    return str(raw).strip().lower() in configuration_field(name)["true_values"]
 
 
-_enabled = _env_enabled("AMADEUS_CHAT_TRANSLATION_SUBTITLES_ENABLED", False)
+_enabled = _env_enabled("AMADEUS_CHAT_TRANSLATION_SUBTITLES_ENABLED", configuration_field("AMADEUS_CHAT_TRANSLATION_SUBTITLES_ENABLED")["default"])
 
 
 def is_enabled() -> bool:

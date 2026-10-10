@@ -9,7 +9,6 @@
     "zh-CN": "在限制纹理内存预算的同时，减少重复转码。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "RENDER_TEXTURE_SAMPLING": {
       "type": "boolean",
@@ -37,5 +36,6 @@
       },
       "default": true
     }
-  }
+  },
+  "apply": "backend_restart"
 }

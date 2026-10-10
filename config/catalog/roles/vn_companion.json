@@ -9,7 +9,6 @@
     "zh-CN": "独立的 VN 推理与反应职责。DeepSeek 是推荐默认值，也支持 OpenAI 兼容服务。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "VN_LLM_PROVIDER": {
       "type": "enum",
@@ -51,5 +50,6 @@
     }
   },
   "section": "roles",
-  "order": 0
+  "order": 0,
+  "apply": "backend_restart"
 }

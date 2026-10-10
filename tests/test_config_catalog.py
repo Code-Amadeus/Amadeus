@@ -43,7 +43,7 @@ def test_catalog_defaults_remain_registered_in_the_environment_reader() -> None:
         for key, field in group["config"].items():
             if field.get("scope", "backend") != "backend":
                 assert key not in values
-                if field.get("scope") == "session":
+                if field.get("scope") == "session" and not field.get("computed_default"):
                     assert catalog.read_catalog_value(EnvironmentReader({}), key) == field.get("default", "")
                 continue
             if field.get("computed_default"):

@@ -9,7 +9,6 @@
     "zh-CN": "兼容 OpenAI 的语音合成，支持缓冲 WAV 或显式 SSE 流式传输。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "TTS_API_BASE_URL": {
       "type": "url",
@@ -91,5 +90,6 @@
     "order": 1,
     "streaming": "tts.backends.openai_compatible:streaming_enabled",
     "reference_conditioning": false
-  }
+  },
+  "apply": "backend_restart"
 }

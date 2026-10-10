@@ -9,7 +9,6 @@
     "zh-CN": "规划并路由协作任务；模型留空时继承主对话模型。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "COOPERATIVE_WORK_PLANNER_MODEL": {
       "type": "string",
@@ -26,5 +25,6 @@
     }
   },
   "section": "roles",
-  "order": 1
+  "order": 1,
+  "apply": "backend_restart"
 }

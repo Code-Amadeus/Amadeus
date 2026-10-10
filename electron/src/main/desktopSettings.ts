@@ -2,7 +2,7 @@ import { safeStorage } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import process from 'node:process'
-import { catalogInputKeys, catalogOptionValues, desktopCatalogFields } from '../shared/configCatalog.js'
+import { catalogApplication, catalogInputKeys, catalogOptionValues, desktopCatalogFields } from '../shared/configCatalog.js'
 
 type StoredDesktopSettings = {
   version: 2
@@ -51,34 +51,11 @@ type StoredMcpConnection = {
   encryptedEnvironment: Record<string, string>
 }
 
+// Structured records and retired-key removal have dedicated validators below.
+const STRUCTURED_VALUE_KEYS = new Set(['AMADEUS_ACP_PROVIDERS', 'COOPERATIVE_CHAT_ENABLED'])
 const VALUE_KEYS = new Set([
-  'AMADEUS_CHARACTER_ID',
-  'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA',
-  'AMADEUS_UI_LOCALE',
-  'AMADEUS_UI_THEME',
-  'AMADEUS_WINDOWS_STARTUP_MODE',
-  'AMADEUS_PRESENTATION_LOCALE',
-  'AMADEUS_WALLPAPER_CAPTION_MODE',
-  'AMADEUS_CHAT_TRANSLATION_SUBTITLES_ENABLED',
-  'AMADEUS_VISION_ENABLED',
-  'AMADEUS_VISION_MODE',
-  'AMADEUS_VISION_SCOPE',
-  'AMADEUS_VISION_MAX_LONG_SIDE',
-  'AMADEUS_VISION_JPEG_QUALITY',
-  'AMADEUS_VISION_REGION',
-  'AMADEUS_VISION_WINDOW_HANDLE',
-  'ENABLE_CUDA_GRAPH',
-  'EXP_TTS_MAX_CONCURRENCY',
-  'TTS_OUTPUT_LANGUAGE',
-  'LLM_PROVIDER',
-  // Transitional read whitelist: unrelated saves must preserve a retired value.
-  'COOPERATIVE_CHAT_ENABLED',
-  'AMADEUS_ACP_PROVIDERS',
+  ...STRUCTURED_VALUE_KEYS,
   ...Object.keys(desktopCatalogFields).filter(key => !desktopCatalogFields[key].secret),
-  'VTS_ENABLED',
-  'AUIP_ARTIFACT_STYLE_ENABLED',
-  'VTS_WS_URL',
-  'VTS_TOKEN_FILE',
 ])
 
 const SECRET_KEYS = new Set([
@@ -90,42 +67,13 @@ const CODEX_TRANSPORT_KEYS = [
   'DIRECT_CODEX_PROVIDER_ENABLED',
 ] as const
 
-const VALUE_CHOICES: Record<string, ReadonlySet<string>> = {
-  AMADEUS_UI_LOCALE: new Set(['en-US', 'zh-CN']),
-  AMADEUS_UI_THEME: new Set(['classic', 'wallpaper-slice']),
-  AMADEUS_WINDOWS_STARTUP_MODE: new Set(['window', 'wallpaper']),
-  AMADEUS_PRESENTATION_LOCALE: new Set(['en-US', 'zh-CN', 'ja-JP']),
-  AMADEUS_WALLPAPER_CAPTION_MODE: new Set(['translated', 'source', 'bilingual', 'off']),
-  AMADEUS_CHAT_TRANSLATION_SUBTITLES_ENABLED: new Set(['true', 'false']),
-  AMADEUS_VISION_ENABLED: new Set(['true', 'false']),
-  AMADEUS_VISION_MODE: new Set(['off', 'on_demand', 'watching', 'self_aware']),
-  AMADEUS_VISION_SCOPE: new Set(['full_screen', 'current_window', 'selected_window', 'wallpaper_surface', 'region']),
-  ENABLE_CUDA_GRAPH: new Set(['1', '0']),
-  TTS_OUTPUT_LANGUAGE: new Set(['日文', '英文']),
-  LLM_PROVIDER: new Set(['deepseek', 'openai', 'gemini', 'bedrock', 'local', 'hybrid', 'hybrid2', 'hybrid3']),
-  ...Object.fromEntries(Object.entries(desktopCatalogFields)
-    .filter(([, field]) => field.type === 'enum' || field.type === 'boolean')
-    .map(([key, field]) => [key, new Set(field.type === 'boolean' ? field.accepted_values ?? ['true', 'false'] : catalogOptionValues(field))])),
-  VTS_ENABLED: new Set(['true', 'false']),
-  AUIP_ARTIFACT_STYLE_ENABLED: new Set(['true', 'false']),
-}
+const VALUE_CHOICES: Record<string, ReadonlySet<string>> = Object.fromEntries(Object.entries(desktopCatalogFields)
+  .filter(([, field]) => field.type === 'enum' || field.type === 'boolean')
+  .map(([key, field]) => [key, new Set(field.type === 'boolean' ? field.accepted_values ?? ['true', 'false'] : catalogOptionValues(field))]))
 
-const IDENTIFIER_KEYS = new Set(['AMADEUS_CHARACTER_ID', 'ASR_BACKEND', 'TTS_BACKEND', 'WORK_CODING_PROVIDER', 'WORK_EXECUTION_PROVIDER'])
-
-const WEBSOCKET_URL_KEYS = new Set(['VTS_WS_URL'])
-
-const NUMBER_RANGES: Record<string, readonly [number, number]> = {
-  ...Object.fromEntries(Object.entries(desktopCatalogFields).filter(([, field]) => field.min !== undefined && !field.control)
-    .map(([key, field]) => [key, [field.min!, field.max!] as const])),
-  AMADEUS_VISION_MAX_LONG_SIDE: [320, 4096],
-  AMADEUS_VISION_JPEG_QUALITY: [35, 92],
-  EXP_TTS_MAX_CONCURRENCY: [1, 2],
-}
-
-const INTEGER_KEYS = new Set([...Object.keys(desktopCatalogFields).filter(key => desktopCatalogFields[key].type === 'integer'), 'AMADEUS_VISION_MAX_LONG_SIDE', 'AMADEUS_VISION_JPEG_QUALITY', 'EXP_TTS_MAX_CONCURRENCY'])
-
+const IDENTIFIER_KEYS = new Set(Object.keys(desktopCatalogFields).filter(key => desktopCatalogFields[key].identifier))
 const MCP_CONNECTIONS_ENV = 'AMADEUS_MCP_CONNECTIONS'
-const FRONTEND_ONLY_VALUE_KEYS = new Set(['AMADEUS_UI_LOCALE', 'AMADEUS_UI_THEME', 'AMADEUS_WINDOWS_STARTUP_MODE'])
+const FRONTEND_ONLY_VALUE_KEYS = new Set(Object.keys(desktopCatalogFields).filter(key => desktopCatalogFields[key].scope === 'desktop'))
 const RETIRED_ROUTE_KEY = 'COOPERATIVE_CHAT_ENABLED'
 const MCP_ID_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/
 const MCP_ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/
@@ -604,7 +552,7 @@ export class DesktopSettingsStore {
       }
       // Keep an explicit empty character prompt so restoring the built-in
       // role also overrides any project .env value on the next start.
-      if (rawValue === null || (rawValue === '' && key !== 'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA')) {
+      if (rawValue === null || (rawValue === '' && !desktopCatalogFields[key]?.allow_empty)) {
         for (const candidate of catalogInputKeys(key)) {
           if (stored.values[candidate] !== undefined) {
             changedKeys.add(candidate)
@@ -614,10 +562,10 @@ export class DesktopSettingsStore {
         }
         continue
       }
-      if (key === 'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA' && typeof rawValue !== 'string') throw new Error('Character prompt must be a string')
-      const value = key === 'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA' ? String(rawValue).trim()
+      if (desktopCatalogFields[key]?.trim && typeof rawValue !== 'string') throw new Error(`${key} must be a string`)
+      const value = desktopCatalogFields[key]?.trim ? String(rawValue).trim()
         : typeof rawValue === 'boolean' ? (rawValue ? 'true' : 'false') : String(rawValue)
-      const maxLength = key === 'AMADEUS_ACP_PROVIDERS' ? 65536 : key === 'AMADEUS_MAIN_CHAT_CHARACTER_PROMPT_JA' ? 8192 : 4096
+      const maxLength = key === 'AMADEUS_ACP_PROVIDERS' ? 65536 : desktopCatalogFields[key]?.max_length ?? 4096
       if (value.includes('\0') || String(rawValue).length > maxLength) throw new Error(`Invalid value for ${key}`)
       if (key === 'AMADEUS_ACP_PROVIDERS') validateAcpProviders(value)
       const choices = VALUE_CHOICES[key]
@@ -631,20 +579,14 @@ export class DesktopSettingsStore {
       if (IDENTIFIER_KEYS.has(key) && !/^[a-z][a-z0-9_-]{0,63}$/.test(value)) {
         throw new Error(`Invalid backend identifier for ${key}`)
       }
-      const numberRange = NUMBER_RANGES[key]
-      if (numberRange) {
+      const definition = desktopCatalogFields[key]
+      if (definition && ['integer', 'number'].includes(definition.type)) {
         const parsed = Number(value)
-        if (!Number.isFinite(parsed) || parsed < numberRange[0] || parsed > numberRange[1]) {
-          throw new Error(`${key} must be between ${numberRange[0]} and ${numberRange[1]}`)
+        if (!Number.isFinite(parsed)) throw new Error(`${key} must be a number`)
+        if (definition.type === 'integer' && !Number.isInteger(parsed)) throw new Error(`${key} must be an integer`)
+        if (definition.min !== undefined && parsed < definition.min || definition.max !== undefined && parsed > definition.max) {
+          throw new Error(`${key} must be between ${definition.min} and ${definition.max}`)
         }
-        if (INTEGER_KEYS.has(key) && !Number.isInteger(parsed)) {
-          throw new Error(`${key} must be an integer`)
-        }
-      }
-      if (WEBSOCKET_URL_KEYS.has(key)) {
-        let protocol = ''
-        try { protocol = new URL(value).protocol } catch { /* rejected below */ }
-        if (!['ws:', 'wss:'].includes(protocol)) throw new Error(`${key} must be a WebSocket URL`)
       }
       if (stored.values[key] !== value) changedKeys.add(key)
       stored.values[key] = value
@@ -671,7 +613,7 @@ export class DesktopSettingsStore {
       changedKeys.add(key)
     }
 
-    markPending(stored, [...changedKeys].filter(key => !FRONTEND_ONLY_VALUE_KEYS.has(key)))
+    markPending(stored, [...changedKeys].filter(key => !['frontend', 'desktop_restart'].includes(catalogApplication(key))))
     this.write(stored)
     return this.snapshot(environment)
   }
@@ -703,6 +645,7 @@ export class DesktopSettingsStore {
     // Canonicalize a parent-provided legacy name before Python loads dotenv.
     // This keeps process authority above canonical names from the project file.
     for (const key of VALUE_KEYS) {
+      if (FRONTEND_ONLY_VALUE_KEYS.has(key)) continue
       const inputs = catalogInputKeys(key)
       if (inputs[0] !== key || environment[key] !== undefined) continue
       const inherited = inputs.slice(1).map(alias => environment[alias]).find(value => value !== undefined)

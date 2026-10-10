@@ -9,7 +9,6 @@
     "zh-CN": "编码工作服务提供方；App Server 与 Direct 传输中只能有一个持有此 Provider 标识。"
   },
   "desktop": true,
-  "restart_required": true,
   "config": {
     "CODEX_PROVIDER_TRANSPORT": {
       "type": "enum",
@@ -249,5 +248,6 @@
     }
   },
   "section": "providers",
-  "order": 11
+  "order": 11,
+  "apply": "backend_restart"
 }
