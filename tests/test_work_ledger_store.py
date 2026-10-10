@@ -27,6 +27,35 @@ from server.work_completion import CompletionEvidence, assess_completion
 from work_ledger_fixtures import create_historical_schema, seed_historical_work
 
 
+def test_work_item_artifact_recall_keeps_recency_and_all_statuses(tmp_path):
+    with WorkLedgerStore(tmp_path / "recall.sqlite3") as store:
+        project = store.create_or_get_project(tmp_path / "project")
+        ids = []
+        for index, (name, kind, status) in enumerate([
+            ("AUIP.MANIFEST.JSON", "business.file", "registered"),
+            ("auip.manifest.json", "business.export", "approved"),
+            ("auip.manifest.json", "business.file", "pending"),
+            ("other-auip.manifest.json", "business.file", "registered"),
+            ("a%_.json", "business.file", "registered"),
+        ]):
+            item = store.create_work_item(project.project_id, title=str(index),
+                workspace_path=tmp_path / str(index))
+            store.register_artifact(item.work_item_id, kind=kind, status=status,
+                title=name, path=tmp_path / str(index) / name)
+            ids.append(item.work_item_id)
+        all_rows = store.list_work_items()
+        recalled = store.list_work_items(artifact_name="auip.manifest.json")
+        assert [row.work_item_id for row in recalled] == [
+            row.work_item_id for row in all_rows if row.work_item_id in ids[:3]]
+        assert store.list_work_items(artifact_name="auip.manifest.json", limit=1) == recalled[:1]
+        assert [row.work_item_id for row in store.list_work_items(artifact_name="a%_.json")] == ids[4:]
+        # Same basename rule, while the finder retains its own kind filter.
+        assert set(store.find_work_item_ids_by_artifact_name("auip.manifest.json")) == {ids[0], ids[2]}
+        assert store.find_work_item_ids_by_artifact_name("auip.manifest.json",
+            kind="business.export") == [ids[1]]
+        assert store.find_work_item_ids_by_artifact_name("a%_.json") == ids[4:]
+
+
 def test_lightweight_reads_trim_json_before_decode_without_changing_full_records(tmp_path, monkeypatch):
     with WorkLedgerStore(tmp_path / "lightweight.sqlite3", clock=lambda:10.0) as store:
         project, item = _create_project_and_item(store, tmp_path / "project")

@@ -274,6 +274,13 @@ class MicInputService:
             ]
             speech_times = [frame.timestamp for frame in handoff_frames]
             speech_started = True
+            # Buffered barge-in speech starts a new capture too. Announce it
+            # once here; a later VAD takeover must not announce it again.
+            if on_speech_start is not None:
+                try:
+                    on_speech_start()
+                except Exception:
+                    logger.debug("[MicInput] speech-start callback failed", exc_info=True)
             logger.info("[MicInput] ASR capture consumed handoff frames=%s", len(handoff_frames))
 
         preroll_chunks = max(1, int(preroll_ms / (self.chunk_samples / self.sample_rate * 1000.0)))
