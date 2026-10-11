@@ -81,7 +81,8 @@ export async function startDevelopment({
       else {
         const { default: executable } = await import('electron')
         child = spawn(executable, [electronRoot, '--amadeus-dev-launcher', ...electronArgs], {
-          cwd: electronRoot, env: childEnvironment, stdio: ['ignore', 'inherit', 'inherit', 'ipc'], windowsHide: true,
+          // Electron is a GUI executable: windowsHide suppresses its first window show.
+          cwd: electronRoot, env: childEnvironment, stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
           // The cleanup owner must outlive a lost launcher. Windows otherwise
           // kills the child job before Electron can handle IPC disconnect.
           detached: true,

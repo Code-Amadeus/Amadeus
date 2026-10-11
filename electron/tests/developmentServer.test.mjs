@@ -15,7 +15,8 @@ import { startDevelopment, startupFailure } from '../scripts/dev.mjs'
 import { ApplicationLifecycle } from '../src/main/appLifecycle.ts'
 
 function fixture(t, dotenv) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'amadeus-dev-port-'))
+  // Windows CI can expose TEMP through an 8.3 alias that Vite refuses to serve.
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'amadeus-dev-port-')))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
   fs.mkdirSync(path.join(root, 'electron'))
   fs.writeFileSync(path.join(root, 'electron', 'package.json'), '{"type":"module"}')
@@ -218,6 +219,37 @@ test('explicit shutdown requests child-owned cleanup before releasing the listen
   assert.equal(await session.exited, 130)
   assert.ok(session.child.exitCode !== null || session.child.signalCode !== null)
   assert.equal(fs.readFileSync(cleaned, 'utf8'), 'cleaned')
+  assert.equal(session.server.httpServer.listening, false)
+})
+
+test('real Windows Electron is visible on its first show through the development launcher', {
+  skip: process.platform !== 'win32', timeout: 30000,
+}, async t => {
+  const root = fixture(t, 'AMADEUS_DEV_PORT=15173')
+  fs.writeFileSync(path.join(root, 'electron', 'package.json'), JSON.stringify({ type: 'module', main: 'main.cjs' }))
+  fs.writeFileSync(path.join(root, 'electron', 'main.cjs'), `
+    const { app, BrowserWindow } = require('electron')
+    app.setPath('userData', require('node:path').join(__dirname, 'profile'))
+    process.on('message', message => { if (message === 'amadeus-dev-quit') app.quit() })
+    process.once('disconnect', () => app.quit())
+    app.whenReady().then(async () => {
+      const window = new BrowserWindow({ width: 160, height: 90, show: true })
+      await window.loadURL('http://localhost:' + process.env.AMADEUS_DEV_PORT)
+      process.send({ firstWindowVisible: window.isVisible() })
+    })
+  `)
+  const environment = { ...process.env, AMADEUS_DEV_PORT: undefined }
+  delete environment.ELECTRON_RUN_AS_NODE
+  // Exercise the production spawn call and flags, without startElectron injection.
+  const session = await startDevelopment({ projectRoot: root, environment, withElectron: true })
+  try {
+    const [report] = await once(session.child, 'message', { signal: AbortSignal.timeout(15000) })
+    assert.equal(report.firstWindowVisible, true)
+  } finally {
+    // Close Electron before the fixture cleanup removes its open profile files.
+    await session.close()
+  }
+  assert.equal(await session.exited, 0)
   assert.equal(session.server.httpServer.listening, false)
 })
 
