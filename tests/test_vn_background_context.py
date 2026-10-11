@@ -76,13 +76,17 @@ def test_slow_context_lanes_preserve_cadence_snapshot_and_immediate_order(tmp_pa
             params = {"bridgeMode": "websocket", "agentWsPort": port, "lunaWsUrl": f"ws://127.0.0.1:{port}/api/ws/text/origin"}
             await source.start({}, params, target_pid=None)
             try:
-                await asyncio.wait_for(published_all.wait(), 5)
-                await asyncio.gather(*(event.wait() for event in entered.values()))
-                assert shown == lines
-                assert not summaries, "a model result must not be fabricated while blocked"
-                await runtime.drain_lines()
-                release.set()
-                await asyncio.wait_for(runtime.wait_for_context_updates(), 5)
+                # The contract is progress while both model lanes stay blocked,
+                # not 81 file-backed admissions within five seconds on CI.
+                # One watchdog also bounds lane entry and immediate draining.
+                async with asyncio.timeout(30):
+                    await published_all.wait()
+                    await asyncio.gather(*(event.wait() for event in entered.values()))
+                    assert shown == lines
+                    assert not summaries, "a model result must not be fabricated while blocked"
+                    await runtime.drain_lines()
+                    release.set()
+                    await runtime.wait_for_context_updates()
                 assert immediate == list(range(1, 82))
                 assert [p["current_line"]["seq"] for p in calls["summary"]] == [12, 24, 36, 48, 60, 72]
                 assert [p["current_line"]["seq"] for p in calls["retrospective"]] == [40, 80]

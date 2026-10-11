@@ -94,11 +94,17 @@ def test_startup_consumes_raw_registry_and_rebuild_after_removal_drops_package(m
 
 async def test_manual_mcp_keeps_sdk_command_handling_without_host_secret_inheritance(monkeypatch):
     import mcp
+    from mcp.client import stdio
     observed = []
+    transport = object()
+
+    def stdio_client(parameters):
+        observed.append(parameters)
+        return transport
 
     class Client:
-        def __init__(self, transport, **kwargs):
-            observed.append(transport)
+        def __init__(self, connection, **kwargs):
+            assert connection is transport
 
         async def __aenter__(self):
             return self
@@ -107,6 +113,7 @@ async def test_manual_mcp_keeps_sdk_command_handling_without_host_secret_inherit
             pass
 
     monkeypatch.setattr(mcp, 'Client', Client)
+    monkeypatch.setattr(stdio, 'stdio_client', stdio_client)
     monkeypatch.setenv('HOST_ONLY_SECRET', 'must-not-forward')
     connection = mcp_connections.McpConnectionSpec(
         connection_id='manual', display_name='Manual', transport='stdio',
@@ -114,9 +121,9 @@ async def test_manual_mcp_keeps_sdk_command_handling_without_host_secret_inherit
         environment={'OWN_KEY': 'own-secret'})
     async with mcp_connections.open_mcp_connection(connection):
         pass
-    transport, = observed
-    assert isinstance(transport, mcp.StdioServerParameters)
-    assert transport.command == 'npx.cmd'
-    assert transport.args == ['--yes', 'synthetic-mcp']
-    assert transport.env['OWN_KEY'] == 'own-secret'
-    assert 'HOST_ONLY_SECRET' not in transport.env
+    parameters, = observed
+    assert isinstance(parameters, mcp.StdioServerParameters)
+    assert parameters.command == 'npx.cmd'
+    assert parameters.args == ['--yes', 'synthetic-mcp']
+    assert parameters.env['OWN_KEY'] == 'own-secret'
+    assert 'HOST_ONLY_SECRET' not in parameters.env
