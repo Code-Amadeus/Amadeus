@@ -149,6 +149,15 @@ do not depend on arbitrary Host `.env` inheritance. Native Agent launchers retai
 their own environment behavior; successful execution there does not prove that
 the connection probe has the required explicit bindings.
 
+This also changes pre-extension manual connections. Their existing record format,
+command, arguments and working directory remain supported. A real stdio
+regression loads a version-1 manual record: a token present only in the Host
+environment fails, adding it to the connection makes both the probe and tool call
+succeed, and an unrelated Host secret stays absent. Desktop persistence tests
+cover adding the encrypted binding, reloading it and projecting the registry
+without exposing plaintext credentials. The transport uses MCP's `stdio_client`
+context manager; passing launch parameters directly to `Client` is not supported.
+
 The schema and semantic validator are pinned to a canonical source commit in
 `server/extensions/protocol-source.json`. `tests/test_extension_protocol_provenance.py`
 checks the copies offline. To verify the source as well, run
@@ -163,6 +172,27 @@ is pending; Fish has one live Japanese synthesis, not a listening
 or performance certification. Codex/Pi native lifecycle tests use controlled
 model endpoints; DSH additionally has real-model and desktop evidence.
 
+The native Windows Electron lifecycle was also exercised in an isolated profile,
+with a loopback model endpoint and a local synthetic tone wheel. The production
+file picker, install/update/enable disclosures, settings store, Python backend,
+independent Runner and playback path were used; no installer or confirmation
+handler was mocked. This verifies lifecycle and playback, not paid-model or
+natural-speech quality.
+
+| Native GUI journey | Observed outcome |
+| --- | --- |
+| Install 0.1.0, confirm, enable, select voice, restart | Installed disabled first; activation required confirmation and restart; Chat invoked the Runner with `ja`, neutral `speed=1.0` and 4,800 samples; physical playback started and finished |
+| Update to 0.2.0 while active | Saved version became 0.2.0 while 0.1.0 and its installation stayed active until restart; afterwards the old process and directory were gone and only 0.2.0 synthesized |
+| Resume Chat after restart | Previous messages reappeared and another reply completed through the new Runner |
+| Remove with default data retention, restart | Package, process and installation were removed; data remained; saved voice was visibly unavailable and a new Chat reply remained text-only |
+| Reinstall, then remove with explicit data deletion | Reinstalled disabled with the retained data; after confirmed deletion and restart, both installation and saved data were absent |
+
+![Native installation disclosure](images/extensions/native-install-confirmation.jpg)
+
+![Chat invoking the installed local test voice](images/extensions/native-chat-use.jpg)
+
+![Unavailable saved voice after removal](images/extensions/native-uninstalled-voice.jpg)
+
 DSH 0.2.0-rc.2 with MCP client 2.0.0 has a reproduced SDK diagnostic-to-stdout
 defect when listing unsupported resources. Keep this combination experimental
 until an upstream fix is consumed and the clean-wire probe passes. No Host line
@@ -175,6 +205,10 @@ access. A directory can be writable and owned by the user while lacking
 relocate work or downgrade to unrestricted execution. Use the read-only
 diagnostic documented in [ACP setup](acp_provider.md).
 
-Release qualification still needs SDK distribution/licensing decisions, other
-platforms and manual Chat/Wallpaper/VN voice acceptance. Memory remains outside
-this implementation.
+SDK preparation is covered from an extracted source fixture with no prebuilt
+wheel: the normal desktop build entry creates the SDK offline, which installs
+and imports in a fresh environment. Windows packaging also places the wheel in
+`resources/extension-sdk`, and the installer uses that packaged location.
+Public SDK publication/licensing decisions, other-platform runtime qualification
+and natural-voice Chat/Wallpaper/VN acceptance remain release work. Memory
+remains outside this implementation.
