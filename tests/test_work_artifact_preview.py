@@ -274,3 +274,121 @@ def test_provider_claim_cannot_replace_host_file_receipt(ledger, status, claimed
     shelf = request(store, Method.WORK_ARTIFACTS_LIST, {'scope': 'drafts'})
     assert [row['artifactId'] for row in shelf['files']] == [host_file.artifact_id]
     assert shelf['files'][0]['previewable'] is (status == 'registered')
+
+
+def prepare_export(store, item, attempt, desktop, files):
+    from server.work_export_service import WorkExportService
+    desktop.mkdir(exist_ok=True)
+    service = WorkExportService(store, desktop_path=desktop)
+    plan = service.prepare_plan(provider='codex', mode='agent', task=attempt.task,
+        item=item, attempt=attempt, metadata={'external_export': {'target': 'desktop'}})
+    assert plan is not None
+    store.update_attempt(attempt.attempt_id, metadata={'export_plan': dict(plan)})
+    for name, raw in files.items():
+        target = Path(plan['staging_root']) / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(raw)
+    permission = service.discover_staged_exports(attempt, item, plan)['permission']
+    assert permission is not None
+    return service, permission
+
+
+@pytest.mark.parametrize('scope', ['drafts', 'project'])
+def test_approved_external_report_is_listed_without_workspace_preview(ledger, tmp_path, scope):
+    store, item, attempt = ledger
+    if scope == 'project':
+        project = store.create_or_get_project(item.workspace_path)
+        store.reassign_workspace_to_project(item.workspace_path, project.project_id)
+        item = store.get_work_item(item.work_item_id)
+    params = {'scope': scope, **({'project_id': item.project_id} if scope == 'project' else {})}
+    service, permission = prepare_export(store, item, attempt, tmp_path / 'Desktop',
+        {'report.md': b'# Approved external report'})
+    assert request(store, Method.WORK_ARTIFACTS_LIST, params)['files'] == []
+    service.resolve(permission.request_id, allow=True)
+    exported = next(row for row in store.list_artifacts(item.work_item_id) if row.kind == 'business.export')
+    assert exported.status == 'approved' and Path(exported.path).is_file()
+
+    def check(current):
+        shelf = request(current, Method.WORK_ARTIFACTS_LIST, params)
+        assert len(shelf['files']) == 1 and not shelf['apps']
+        row = shelf['files'][0]
+        assert row['artifactId'] == exported.artifact_id
+        assert row['artifactKind'] == 'business.export' and row['artifactStatus'] == 'approved'
+        assert not row['previewable'] and 'path' not in row
+        assert shelf['filesComplete']
+        assert not request(current, Method.WORK_ARTIFACT_READ,
+            {'work_item_id': item.work_item_id, 'artifact_id': exported.artifact_id})['ok']
+    check(store)
+    # Catalog rows are durable receipts; preview is never an external read.
+    Path(exported.path).unlink()
+    with WorkLedgerStore(tmp_path / 'ledger.sqlite3') as reopened:
+        check(reopened)
+
+
+def test_denied_and_provider_claimed_exports_do_not_enter_files(ledger, tmp_path):
+    store, item, attempt = ledger
+    service, permission = prepare_export(store, item, attempt, tmp_path / 'Desktop',
+        {'report.md': b'# Not approved'})
+    service.resolve(permission.request_id, allow=False)
+    WorkLedgerCoordinator(store)._register_artifact_payload(attempt, {
+        'kind': 'business.export', 'status': 'approved',
+        'path': str(tmp_path / 'Desktop' / 'claimed.md'), 'sha256': 'f' * 64})
+    assert not (tmp_path / 'Desktop' / 'report.md').exists()
+    assert request(store, Method.WORK_ARTIFACTS_LIST, {'scope': 'drafts'})['files'] == []
+
+
+def test_external_revisions_supersede_only_after_approval(ledger, tmp_path):
+    store, item, attempt = ledger
+    service, permission = prepare_export(store, item, attempt, tmp_path / 'Desktop',
+        {'report.md': b'# First version'})
+    service.resolve(permission.request_id, allow=True)
+    original = next(row for row in store.list_artifacts(item.work_item_id) if row.kind == 'business.export')
+    newer = store.create_attempt(item.work_item_id, provider='codex', task='Update report')
+    pending = store.register_artifact(item.work_item_id, attempt_id=newer.attempt_id,
+        kind='business.export', status='pending', path=original.path, sha256='f' * 64)
+    assert [row['artifactId'] for row in request(store, Method.WORK_ARTIFACTS_LIST, {'scope': 'drafts'})['files']] == [original.artifact_id]
+    store.register_artifact(item.work_item_id, artifact_id=pending.artifact_id,
+        attempt_id=newer.attempt_id, kind='business.export', status='approved',
+        path=original.path, sha256='f' * 64)
+    assert [row['artifactId'] for row in request(store, Method.WORK_ARTIFACTS_LIST, {'scope': 'drafts'})['files']] == [pending.artifact_id]
+
+
+def test_exported_auip_members_do_not_swallow_independent_export(ledger, tmp_path):
+    import json
+    from test_auip_launch import _manifest
+    store, item, attempt = ledger
+    local = register(store, item, attempt, 'local.txt', b'Workspace report')
+    service, permission = prepare_export(store, item, attempt, tmp_path / 'Desktop',
+        {'report.md': b'# Independent export'})
+    service.resolve(permission.request_id, allow=True)
+    report = next(row for row in store.list_artifacts(item.work_item_id) if row.kind == 'business.export')
+    app_attempt = store.create_attempt(item.work_item_id, provider='codex', task='Deliver application')
+    service, permission = prepare_export(store, item, app_attempt, tmp_path / 'Desktop', {
+        'demo/index.html': b'<title>Exported app</title>',
+        'demo/auip.manifest.json': json.dumps(_manifest('Exported app')).encode(),
+        'demo/runtime.js': b'// application resource',
+    })
+    service.resolve(permission.request_id, allow=True)
+    shelf = request(store, Method.WORK_ARTIFACTS_LIST, {'scope': 'drafts'})
+    assert {row['artifactId'] for row in shelf['files']} == {local.artifact_id, report.artifact_id}
+    assert len(shelf['apps']) == 1
+    assert len(shelf['apps'][0]['files']) == 3
+    assert all(not row['previewable'] for row in shelf['apps'][0]['files'])
+    # A broken bundle gains no launch authority; its delivered files are visible.
+    (tmp_path / 'Desktop/demo/auip.manifest.json').write_text('{}', encoding='utf-8')
+    invalid = request(store, Method.WORK_ARTIFACTS_LIST, {'scope': 'drafts'})
+    assert not invalid['apps'] and len(invalid['files']) == 5
+
+
+def test_catalog_io_does_not_block_request_loop(ledger, monkeypatch):
+    import threading
+    store, _, _ = ledger
+    coordinator = WorkLedgerCoordinator(store)
+    caller_thread = threading.get_ident()
+    original = coordinator.read_model.artifacts
+    def project(**kwargs):
+        assert threading.get_ident() != caller_thread
+        return original(**kwargs)
+    monkeypatch.setattr(coordinator.read_model, 'artifacts', project)
+    result = asyncio.run(WorkLedgerHandler(coordinator).handle(Method.WORK_ARTIFACTS_LIST, {'scope': 'drafts'}))
+    assert result['ok']

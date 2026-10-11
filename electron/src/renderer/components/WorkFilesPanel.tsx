@@ -10,6 +10,7 @@ export interface WorkFileSummary {
   title: string
   relativePath: string
   artifactStatus: string
+  artifactKind?: string
   sizeBytes?: number
   previewable: boolean
 }
@@ -27,7 +28,7 @@ export default function WorkFilesPanel({ files, read }: Props) {
   useEffect(() => {
     let active = true
     setPreview({})
-    if (selected) void read(selected).then(result => {
+    if (selected?.previewable) void read(selected).then(result => {
       if (!active) return
       setPreview({ artifactId: selected.artifactId, ...(result.ok === false
         ? { error: String(result.error || 'File could not be opened.') }
@@ -50,13 +51,14 @@ export default function WorkFilesPanel({ files, read }: Props) {
           </button>
         </div>
         <p className="truncate" style={{ margin: '5px 0', fontSize: 10, color: 'var(--muted)' }}>{file.workTitle}</p>
+        {file.artifactKind === 'business.export' && <p style={{ margin: '5px 0', fontSize: 10, color: 'var(--muted)' }}>Approved external export · In-app preview unavailable</p>}
         <span style={{ fontSize: 10, color: 'var(--faint)' }}>
           Execution: {file.execution} · {file.workState === 'review_ready' ? 'Awaiting review' : `Work: ${file.workState}`} · {file.artifactStatus}
           {file.sizeBytes != null ? ` · ${file.sizeBytes} bytes` : ''}
         </span>
       </article>)}
     </div>
-    {selected && <section aria-label={`File preview: ${selected.title}`} style={{ marginTop: 14, border: '1px solid var(--border)', borderRadius: 8, padding: 12, background: 'var(--surface)' }}>
+    {selected?.previewable && <section aria-label={`File preview: ${selected.title}`} style={{ marginTop: 14, border: '1px solid var(--border)', borderRadius: 8, padding: 12, background: 'var(--surface)' }}>
       <div className="flex items-center gap-2">
         <strong className="min-w-0 flex-1 truncate" style={{ color: 'var(--text)', fontSize: 12 }}>{selected.title}</strong>
         <button type="button" onClick={() => setSelectedId('')} style={{ color: 'var(--muted)', fontSize: 11 }}>Close preview</button>

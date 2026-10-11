@@ -5,6 +5,18 @@ from verified AUIP applications, with independent counts and recent lists.
 A report delivered beside an application remains an ordinary file. Application
 details list the exact verified entry, manifest and Host-receipted members.
 
+Files also lists completed, approved external exports from the Host ledger,
+including reports delivered only to Desktop. Pending, denied and Provider-claimed
+exports are not completed deliveries. Exported AUIP members stay with their
+verified application; an independent export remains a file. External exports
+are labelled and have no in-app preview: approval to publish a file does not
+broaden the workspace-only preview boundary. The list describes the recorded
+delivery, not a fresh verification that an external file still exists unchanged.
+
+Catalog projection runs off the asynchronous request thread because AUIP
+verification may read and hash files. Its existing bounded/incomplete-result
+semantics are retained.
+
 Only a current artifact revision can be previewed. The Host checks the WorkItem,
 workspace containment and registered SHA-256 before returning at most 512 KiB
 of UTF-8 JSON, CSV, TSV, Markdown or text. The renderer displays escaped text.

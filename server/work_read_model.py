@@ -14,7 +14,7 @@ from typing import Any, Callable
 
 from agent_host.work_ledger_store import WorkLedgerNotFound, WorkLedgerStore
 from agent_host.work_ledger_types import ArtifactRecord, PermissionRequestRecord, WorkItemRecord
-from server.auip_app_source import discover_launchable_auip_app, discover_registered_auip_app
+from server.auip_app_source import discover_approved_auip_app, discover_launchable_auip_app, discover_registered_auip_app
 from server.scratch_workspace import is_scratch_path
 from server.work_activity_snapshot import ACTIVITY_METADATA_KEY, activity_report_fields
 from server.work_artifact_source import TEXT_SUFFIXES, latest_artifacts_by_path
@@ -180,20 +180,25 @@ class WorkReadModel:
                    else self.draft_apps(limit=item_limit))
         scan_limit, file_limit = 500, 200
         items = self.store.list_work_items(project_id=project_id, limit=scan_limit,
-            artifact_kinds=("business.file",), include_presentation=False)
+            artifact_kinds=("business.file", "business.export"), include_presentation=False)
         files = []
         count = 0
         complete = len(items) < scan_limit
         for item in items:
             if not project_id and not self._is_unkept_draft(item.workspace_path):
                 continue
-            records = [row for row in latest_artifacts_by_path(
-                self.store, self.store.list_artifacts(item.work_item_id))
-                if row.kind == "business.file"]
+            # Only completed Host exports are deliveries. A pending/denied
+            # export cannot replace the last approved revision of that path.
+            records = latest_artifacts_by_path(self.store, [
+                row for row in self.store.list_artifacts(item.work_item_id)
+                if row.kind == "business.file"
+                or (row.kind == "business.export" and row.status == "approved")])
             # A current workspace app may coexist with its approved export.
             # Each owns its exact members; neither owns unrelated Work files.
             workspace_app = discover_registered_auip_app(self.store, item.work_item_id)
             members = set((workspace_app or {}).get("member_artifact_ids") or [])
+            exported_app = discover_approved_auip_app(self.store, item.work_item_id)
+            members.update((exported_app or {}).get("member_artifact_ids") or [])
             records = [row for row in records if row.artifact_id not in members]
             if not records:
                 continue
@@ -222,7 +227,7 @@ class WorkReadModel:
         return {"artifactId": record.artifact_id,
             "title": record.title or Path(record.path).name,
             "relativePath": str(record.metadata.get("relative_path") or Path(record.path).name),
-            "artifactStatus": record.status, "sizeBytes": record.size_bytes,
+            "artifactStatus": record.status, "artifactKind": record.kind, "sizeBytes": record.size_bytes,
             "previewable": record.kind == "business.file" and record.status == "registered"
                 and Path(record.path).suffix.lower() in TEXT_SUFFIXES}
 

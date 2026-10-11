@@ -39,6 +39,8 @@ const report = { passed: false, checks: [], screenshots: [] }
 try {
   await window.loadURL(url)
   await until("document.body.textContent.includes('audit.json')", 'Files did not render')
+  assert.equal(await ui("document.body.textContent.includes('Approved external export')"), true)
+  assert.equal(await ui("document.querySelector('button[aria-label=\"View exported-report.md\"]').disabled"), true)
   await fs.writeFile(path.join(output, 'files-desktop.png'), (await window.webContents.capturePage()).toPNG())
   report.screenshots.push('files-desktop.png')
   for (const [title, content] of [['audit.json','{"rows":5}'],['orders.csv','id,amount'],['issues.txt','negative amount'],['notes.md','<script>']]) {
@@ -83,7 +85,7 @@ try {
   await pause(100)
   assert.equal(await ui('document.documentElement.scrollWidth <= innerWidth'), true)
   report.passed = true
-  report.checks = ['JSON CSV TXT Markdown previews', 'registered IDs only', 'text escaped', 'execution vs review state', 'missing file has no stale content', 'AUIP open and interact unchanged', 'refresh and narrow layout', 'late response cannot replace another file', 'separate file and AUIP views with application members']
+  report.checks = ['JSON CSV TXT Markdown previews', 'approved external export listed without preview', 'registered IDs only', 'text escaped', 'execution vs review state', 'missing file has no stale content', 'AUIP open and interact unchanged', 'refresh and narrow layout', 'late response cannot replace another file', 'separate file and AUIP views with application members']
 } finally {
   await fs.writeFile(path.join(output, 'report.json'), JSON.stringify(report, null, 2))
   console.log(JSON.stringify(report))

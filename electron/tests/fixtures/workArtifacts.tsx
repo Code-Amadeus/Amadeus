@@ -1,17 +1,21 @@
 import React, { useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import ProjectAppsPanel from '../../src/renderer/components/ProjectAppsPanel'
+import type { WorkFileSummary } from '../../src/renderer/components/WorkFilesPanel'
 import '../../src/renderer/styles/index.css'
 
 const host = window as any
 host.artifactFixture = { reads: [], opened: [], missing: false, apps: 0 }
 const f = host.artifactFixture
-const files = ['audit.json', 'orders.csv', 'issues.txt', 'notes.md'].map((title, index) => ({
+const files: WorkFileSummary[] = ['audit.json', 'orders.csv', 'issues.txt', 'notes.md'].map((title, index) => ({
   projectId: 'draft-project', workItemId: 'audit-work', workTitle: 'Audit orders',
   workState: 'review_ready', execution: 'succeeded', artifactId: `file-${index}`,
   title, relativePath: title, artifactStatus: 'registered', sizeBytes: 12, previewable: true,
 }))
 const contents = ['{"rows":5}', 'id,amount\nA,10', 'row 2: negative amount', '<script>window.attacked = true</script>\n# Plain Markdown']
+files.push({ ...files[0], artifactId: 'external-report', title: 'exported-report.md',
+  relativePath: 'exported-report.md', artifactStatus: 'approved', previewable: false,
+  artifactKind: 'business.export' })
 const readFile = async file => {
   f.reads.push({ work_item_id: file.workItemId, artifact_id: file.artifactId })
   if (f.pause) return new Promise<Record<string, unknown>>(resolve => { f.release = () => resolve({ ok: true, content: 'Late response' }) })

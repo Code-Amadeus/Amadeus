@@ -69,7 +69,7 @@ class WorkLedgerHandler(RequestHandler):
                     project_id = project.project_id
                 elif scope != "drafts" or project_id:
                     raise ValueError("Choose a Project or the Draft artifact shelf.")
-                return {"ok": True, **self.coordinator.read_model.artifacts(
+                return {"ok": True, **await asyncio.to_thread(self.coordinator.read_model.artifacts,
                     project_id=project_id, limit=int(params.get("limit") or (100 if project_id else 5)))}
             except (ValueError, WorkLedgerConflict, WorkLedgerNotFound) as exc:
                 return {"ok": False, "error": str(exc)}
