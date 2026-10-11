@@ -200,7 +200,8 @@ export class ExtensionInstaller {
   constructor(private readonly root: string, private readonly projectRoot: string, private readonly store: DesktopSettingsStore,
     private readonly helper: ExtensionPackageHelper, private readonly python: () => string,
     private readonly environment: NodeJS.ProcessEnv, private readonly run: ExtensionCommandRunner = runExtensionCommand,
-    private readonly confirm: (review: ExtensionConfirmation) => Promise<boolean> = async () => false) {}
+    private readonly confirm: (review: ExtensionConfirmation) => Promise<boolean> = async () => false,
+    private readonly sdkDirectory = path.join(projectRoot, 'build', 'extension-sdk')) {}
 
   private get dataRoot(): string { return path.join(path.dirname(this.root), 'extension-data') }
 
@@ -292,7 +293,7 @@ export class ExtensionInstaller {
           || Object.keys(pipConfiguration).some(key => /\.(root|prefix|target|user)$/.test(key))) {
           throw new Error('Configured pip installation path overrides are unsupported; use index, proxy, and certificate transport settings')
         }
-        const sdkWheel = path.join(this.projectRoot, 'build', 'extension-sdk', 'amadeus_extension_sdk-0.1.0-py3-none-any.whl')
+        const sdkWheel = path.join(this.sdkDirectory, 'amadeus_extension_sdk-0.1.0-py3-none-any.whl')
         if (!fs.existsSync(sdkWheel)) throw new Error('The bundled extension SDK wheel is unavailable')
         await this.run(privatePython, ['-I', '-m', 'pip', 'install', '--target', purelib, '--no-user', '--no-deps', '--only-binary=:all:', sdkWheel], { cwd: directory, env })
         const constraints = path.join(directory, 'constraints.txt')

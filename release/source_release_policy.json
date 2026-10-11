@@ -9,6 +9,12 @@
   },
   "archive_prefix": "amadeus-{version}",
   "required_files": [
+    "tools/build_extension_sdk.py",
+    "electron/scripts/build-extension-sdk.mjs",
+    "electron/src/main/pythonRuntime.ts",
+    "sdk/extension-python/pyproject.toml",
+    "sdk/extension-python/src/amadeus_extension/__init__.py",
+    "sdk/extension-python/src/amadeus_extension/runner.py",
     "characters/__init__.py",
     "characters/kurisu.toml",
     "llm/character_prompts.py",

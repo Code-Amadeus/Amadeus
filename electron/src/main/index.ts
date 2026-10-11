@@ -11,6 +11,7 @@ import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { CompanionPanel } from './companionPanel.js'
 import { companionPortraitStatus } from './companionPortraits.js'
+import { projectPythonCommand } from './pythonRuntime.js'
 import {
   DesktopSettingsStore,
   type DesktopSettingsUpdate,
@@ -66,7 +67,7 @@ const extensionInstaller = new ExtensionInstaller(path.join(USER_DATA_DIR, 'exte
       detail: extensionDisclosure(review.manifest), buttons: ['Cancel', 'Confirm'], defaultId: 0, cancelId: 0, noLink: true }
     const result = mainWindow ? await dialog.showMessageBox(mainWindow, options) : await dialog.showMessageBox(options)
     return result.response === 1
-  })
+  }, app.isPackaged ? path.join(process.resourcesPath, 'extension-sdk') : undefined)
 const chatAvatars = new ChatAvatarStore(
   path.join(USER_DATA_DIR, 'assets', 'chat-avatars'),
 )
@@ -286,51 +287,7 @@ function wantsWallpaper(): boolean {
 // Python backend management.
 
 function getPythonCommand(): string {
-  const envPython = process.env.AMADEUS_PYTHON || process.env.AMADUES_PYTHON
-  if (envPython && fs.existsSync(envPython)) return envPython
-
-  // Resolve original git repo from worktree .git file
-  function resolveOriginalRepo(): string | null {
-    try {
-      const gitFile = path.join(PROJECT_ROOT, '.git')
-      if (!fs.existsSync(gitFile)) return null
-      const content = fs.readFileSync(gitFile, 'utf-8').trim()
-      // gitdir: F:/path/to/repo/.git/worktrees/name
-      const match = content.match(/^gitdir:\s*(.+?)[/\\]\.git[/\\]worktrees[/\\]/)
-      if (match) return match[1]
-    } catch { /* ignore */ }
-    return null
-  }
-
-  const originalRepo = resolveOriginalRepo()
-
-  // 1. Check project root and original repo for venvs
-  const roots = [PROJECT_ROOT, originalRepo].filter(Boolean) as string[]
-  const venvNames = ['.venv']
-  const venvPaths: string[] = []
-  for (const root of roots) {
-    for (const name of venvNames) {
-      venvPaths.push(path.join(root, name, 'Scripts', 'python.exe'))  // Windows
-      venvPaths.push(path.join(root, name, 'bin', 'python3'))          // Unix
-    }
-  }
-  for (const p of venvPaths) {
-    if (fs.existsSync(p)) return p
-  }
-
-  // 2. Common Python 3.x install locations on Windows
-  if (process.platform === 'win32') {
-    const localAppData = process.env.LOCALAPPDATA ?? 'C:/Users/' + (process.env.USERNAME ?? '') + '/AppData/Local'
-    for (const ver of ['312', '311', '310', '39', '38']) {
-      const p = path.join(localAppData, 'Programs', 'Python', 'Python' + ver, 'python.exe')
-      if (fs.existsSync(p)) return p
-    }
-    const storePy3 = path.join(localAppData, 'Microsoft', 'WindowsApps', 'python3.exe')
-    if (fs.existsSync(storePy3)) return storePy3
-  }
-
-  // 3. PATH fallback
-  return 'python3'
+  return projectPythonCommand(PROJECT_ROOT)
 }
 
 type BackendHealth = 'ready' | 'starting' | 'foreign' | 'unavailable'

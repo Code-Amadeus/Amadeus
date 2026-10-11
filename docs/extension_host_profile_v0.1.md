@@ -23,6 +23,10 @@ Notes MCP stores its own notes and has no Amadeus memory/history authority.
 
 Electron main owns local-wheel installation, private Python environments,
 desired records, encrypted secret storage, explicit version updates and removal.
+Normal Electron builds and `electron:dev` prepare the trusted SDK wheel offline
+using the configured Python development environment. Packaged Electron ships it
+in `resources/extension-sdk`; source installations use the generated build
+artifact. Installation never downloads or builds the SDK from a third party.
 The manifest and referenced package files are checked before importing code.
 The wheel's `amadeus.extensions` entry point names the package containing
 `amadeus-extension.json`; a TTS manifest additionally names its Runner object.

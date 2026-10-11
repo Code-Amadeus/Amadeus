@@ -86,10 +86,24 @@ function fixture(t, options = {}) {
   }
   const root = path.join(directory, 'extensions')
   const environment = options.environment || {}
+  const sdkDirectory = options.packagedSdk ? path.join(directory, 'resources', 'extension-sdk') : undefined
+  if (sdkDirectory) {
+    fs.mkdirSync(sdkDirectory, { recursive: true })
+    const name = 'amadeus_extension_sdk-0.1.0-py3-none-any.whl'
+    fs.renameSync(path.join(directory, 'build', 'extension-sdk', name), path.join(sdkDirectory, name))
+  }
   const installer = new ExtensionInstaller(root, directory, store, helper, () => 'trusted-python', environment, run,
-    async review => { calls.push({ command: 'confirm', review }); return options.confirm !== false })
+    async review => { calls.push({ command: 'confirm', review }); return options.confirm !== false }, sdkDirectory)
   return { directory, root, file, store, installer, selectedWheel, calls, commandCalls, metadata }
 }
+
+test('packaged installer uses the shipped SDK without a source build directory', async t => {
+  const f = fixture(t, { packagedSdk: true })
+  await f.installer.install(f.selectedWheel)
+  const shipped = path.join(f.directory, 'resources', 'extension-sdk', 'amadeus_extension_sdk-0.1.0-py3-none-any.whl')
+  assert.ok(f.commandCalls.some(call => call.args.at(-1) === shipped))
+  assert.equal(f.store.extensionRecords().length, 1)
+})
 
 test('version update preserves enabled bindings and credentials without removing running code', async t => {
   const f = fixture(t)

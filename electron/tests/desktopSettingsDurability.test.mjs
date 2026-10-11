@@ -34,6 +34,24 @@ function zeroFill(file) {
   fs.writeFileSync(file, Buffer.alloc(fs.statSync(file).size))
 }
 
+test('legacy manual MCP bindings survive explicit encrypted environment migration and restart', t => {
+  const { file, store, root } = savedStore(t)
+  const connection = { id: 'legacy', name: 'Legacy manual MCP', transport: 'stdio', command: 'python',
+    arguments: ['fixture.py'], cwd: root, enabled: true, providerIds: ['pi'] }
+  store.upsertMcpConnection({}, { connection })
+  const old = new exports.DesktopSettingsStore(file, path.join(root, '.env'))
+  const initial = JSON.parse(old.backendEnvironment({ FIXTURE_TOKEN: 'ambient-only' }).AMADEUS_MCP_CONNECTIONS)
+  assert.deepEqual(initial.connections[0].environment, {})
+  old.upsertMcpConnection({}, { connection, environment: { FIXTURE_TOKEN: 'synthetic-explicit-token' } })
+  assert.ok(!fs.readFileSync(file, 'utf8').includes('synthetic-explicit-token'))
+  const restarted = new exports.DesktopSettingsStore(file, path.join(root, '.env'))
+  const registry = JSON.parse(restarted.backendEnvironment({}).AMADEUS_MCP_CONNECTIONS)
+  assert.equal(registry.connections[0].environment.FIXTURE_TOKEN, 'synthetic-explicit-token')
+  assert.deepEqual(registry.connections[0].provider_ids, ['pi'])
+  assert.equal(registry.connections[0].command, 'python')
+  assert.ok(!JSON.stringify(restarted.snapshot({})).includes('synthetic-explicit-token'))
+})
+
 test('a damaged settings file is restored from its last save instead of reset by the next launch', t => {
   const { file, store } = savedStore(t)
   zeroFill(file)

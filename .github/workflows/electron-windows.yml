@@ -29,6 +29,16 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12.10'
+
+      - name: Prepare trusted SDK build backend
+        shell: pwsh
+        run: |
+          python -m pip install setuptools==83.0.0 wheel==0.47.0
+          "AMADEUS_PYTHON=$((Get-Command python).Source)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Install locked dependencies
         run: npm ci
 

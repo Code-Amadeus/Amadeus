@@ -288,12 +288,13 @@ async def open_mcp_connection(
             # (including Windows npx.cmd); extension executables are constrained
             # by the package profile and use pre-execution containment.
             from mcp import StdioServerParameters
+            from mcp.client.stdio import stdio_client
             from config.subprocess_environment import isolated_child_environment
-            transport = StdioServerParameters(
+            transport = stdio_client(StdioServerParameters(
                 command=connection.command, args=list(connection.arguments),
                 cwd=connection.cwd or None,
                 env=isolated_child_environment(extra=connection.environment),
-            )
+            ))
         async with Client(transport, raise_exceptions=False) as client:
             yield client
         return

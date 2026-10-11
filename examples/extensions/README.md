@@ -33,10 +33,15 @@ accepted subset; broader fields in the protocol draft may be unsupported here.
   then writes a structured audit without changing the source. This and the
   handoff Skill have also been exercised with a real DeepSeek model over ACP.
 
-From the repository root, using the supported Python development environment:
+The normal `npm run build` and `npm run electron:dev` commands in `electron/`
+prepare the trusted SDK wheel automatically, offline from bundled sources.
+Packaged Electron includes that wheel in its resources. Use the documented
+Python development environment, or select it with `AMADEUS_PYTHON`; no separate
+SDK build command is needed to install a local extension.
+
+To build the example wheels from the repository root:
 
 ```powershell
-python -m pip wheel --no-build-isolation --no-deps --no-index sdk/extension-python -w build/extension-sdk
 python -m pip wheel --no-build-isolation --no-deps --no-index examples/extensions/mimo-tts -w build/extension-examples
 python -m pip wheel --no-build-isolation --no-deps --no-index examples/extensions/notes-mcp -w build/extension-examples
 python -m pip wheel --no-build-isolation --no-deps --no-index examples/extensions/fish-audio -w build/extension-examples
@@ -44,8 +49,9 @@ python -m pip wheel --no-build-isolation --no-deps --no-index examples/extension
 python -m pip wheel --no-build-isolation --no-deps --no-index examples/extensions/csv-audit-skill -w build/extension-examples
 ```
 
-The trusted SDK wheel must be present before installing these packages. A
-wheel manifest is inspected without importing package code. The notes package
+For SDK-only development, `python tools/build_extension_sdk.py` performs the
+same build without downloading dependencies. A wheel manifest is inspected
+without importing package code. The notes package
 does not need the Runner protocol: its native runtime is MCP, managed by its
 selected Provider. All share installation identity, configuration, restart
 semantics, removal and the Host's lifecycle diagnostics.
