@@ -133,7 +133,7 @@ async def test_failed_initialization_can_be_retried(monkeypatch, streaming):
         return object()
 
     def create(**kwargs):
-        return iter([chunk("一。")]) if kwargs["stream"] else response()
+        return (item for item in [chunk("一。")]) if kwargs["stream"] else response()
 
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
     monkeypatch.setattr(httpx, "Client", http_client)
