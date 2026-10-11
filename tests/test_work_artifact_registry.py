@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -26,6 +29,36 @@ def _git(cwd: Path, *args: str) -> str:
         encoding="utf-8",
     )
     return result.stdout.strip()
+
+
+@pytest.mark.parametrize('reason', ['auip_validation_failed', 'progress_only_completion'])
+@pytest.mark.parametrize('changed_between_attempts', [False, True])
+def test_recovery_inherits_only_unchanged_predecessor_file_facts(tmp_path, reason, changed_between_attempts):
+    from test_work_recovery_input_requirements import _seed_parent, _add_successor
+
+    async def run():
+        with WorkLedgerStore(tmp_path / 'ledger.sqlite3') as store:
+            item, operation, parent, _ = _seed_parent(store, tmp_path)
+            root = Path(item.workspace_path)
+            owned = root / 'app.txt'
+            owned.write_bytes(b'failed application')
+            (root / 'user.txt').write_bytes(b'unrelated dirty file')
+            store.register_artifact(item.work_item_id, attempt_id=parent.attempt_id,
+                kind='business.file', path=owned, sha256=hashlib.sha256(owned.read_bytes()).hexdigest(),
+                metadata={'relative_path': 'app.txt'})
+            if changed_between_attempts:
+                owned.write_bytes(b'user changed this before recovery')
+            _, successor = _add_successor(store, item, operation, parent, reason=reason)
+            registry = WorkArtifactRegistry(store)
+            baseline = await registry.capture_baseline(successor, item)
+            assert baseline.get('lineage_owned_dirty_paths', []) == ([] if changed_between_attempts else ['app.txt'])
+            owned.write_bytes(b'repaired application')
+            (root / 'user.txt').write_bytes(b'attempt changed unrelated dirty file')
+            delta = await registry.finalize_attempt(store.get_attempt(successor.attempt_id), item)
+            assert 'user.txt' in delta['ambiguous_paths']
+            assert ('app.txt' in delta['ambiguous_paths']) is changed_between_attempts
+
+    asyncio.run(run())
 
 
 def test_committed_delta_survives_and_baseline_dirty_is_not_stolen() -> None:

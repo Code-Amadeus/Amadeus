@@ -51,6 +51,9 @@ def test_project_apps_are_derived_from_verified_work_artifacts() -> None:
                         title="Notes without an application",
                         workspace_path=project_root,
                     )
+                    store.register_artifact(item.work_item_id, attempt_id=attempt.attempt_id,
+                        kind="business.file", title="auip.manifest.json",
+                        path=project_root / "auip.manifest.json")
                     discovered = {
                         "artifact_id": artifact.artifact_id,
                         "artifact_ref": f"artifact:{artifact.artifact_id}@verified",

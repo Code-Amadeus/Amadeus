@@ -5420,6 +5420,10 @@ class WorkLedgerCoordinator:
         path = self._first_text(payload, ("path", "file", "file_path", "output_path"))
         uri = self._first_text(payload, ("uri", "url", "ref"))
         kind = self._first_text(payload, ("artifact_type", "kind", "type", "role")) or "provider.artifact"
+        # Business receipts belong to Host attribution/export owners. Preserve
+        # Provider claims as evidence without minting a competing file receipt.
+        if kind.startswith("business."):
+            kind = "provider.artifact"
         title = self._first_text(payload, ("title", "name", "label"))
         identity = ""
         if not path and not uri:
@@ -5442,7 +5446,12 @@ class WorkLedgerCoordinator:
         artifact_status = None
         size_bytes = None
         modified_at = None
+        if uri:
+            identity = "provider.uri:" + uri
+        elif identity:
+            identity = "provider." + identity
         if path:
+            identity = "provider.path:" + canonicalize_path(path).identity_key
             try:
                 candidate = Path(path).expanduser()
                 if not candidate.exists():
@@ -5573,6 +5582,7 @@ class WorkLedgerCoordinator:
             kind=kind,
             title=candidate.name or kind,
             path=str(candidate),
+            identity="provider.path:" + canonicalize_path(candidate).identity_key,
             size_bytes=stat.st_size if candidate.is_file() else None,
             modified_at=stat.st_mtime,
             metadata={"discovered_from": discovered_from},
