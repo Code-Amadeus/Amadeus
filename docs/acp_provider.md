@@ -121,9 +121,12 @@ An enabled persistent-session setting requires `session/resume` or
 `loadSession` in the native handshake. An unsupported or stale attachment fails;
 it never creates a fresh session or silently resubmits an old prompt. ACP v1's
 advertised optional resume/close methods are used through the official SDK.
-The first version does not advertise active append-input, immediate steering,
-submission reconciliation, or Host Skill projection. Native Agent skills and
-configuration remain Agent-owned. No ACP v2 or Agent-specific extension is implied.
+The adapter does not advertise active append-input, immediate steering, or
+submission reconciliation. The extension pilot projects selected Host Skills as
+a task-level file catalog; native Agent Skill registries and configuration remain
+Agent-owned. The 2026-10-11 DSH real-model experiment compares that portable path
+with an explicitly configured native Skill directory. No ACP v2 or universal
+native Skill-registration RPC is implied.
 
 The existing MCP settings can bind connections to the individual ACP Provider
 ids. Only enabled bindings for that Provider are projected. HTTP support is
@@ -168,15 +171,17 @@ and that Agent prose cannot create artifacts or user acceptance.
 `electron/tests/acpSettings.test.mjs` verifies persistence, encrypted credential
 separation, environment precedence, validation and MCP bindings for configured ids.
 
-An explicit native probe is available:
+The current real-model extension probe is opt-in:
 
 ```powershell
-python tools/probes/probe_acp_provider.py --config C:/agents/amadeus-acp.json --provider deepseek --workspace C:/agents/test-workspace
+python tools/probes/probe_dsh_extension_live.py --help
 ```
 
-By default it only initializes the Agent. Add `--task "Reply briefly without
-tools"` to exercise the adapter with a real model; this mode rejects native
-permission requests and does not create or complete a Host WorkItem.
+See [DSH extension acceptance](extension_dsh_live_2026-10-11.md) for setup,
+credentials, disposable inputs, phases, and observed limitations. Running a phase
+uses real inference and tools. It does not create or complete a Host WorkItem.
+The older `probe_acp_provider.py` referred to by historical notes is not present
+in this checkout.
 
 ### Historical local examples (2026-09-13, Windows)
 

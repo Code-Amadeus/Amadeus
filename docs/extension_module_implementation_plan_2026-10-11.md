@@ -6,7 +6,9 @@
 
 ## 1. 交付范围
 
-P1 验证 TTS、MCP 和 Agent Skill 三种接入。四份独立包使用同一安装生命周期；Skill 补充验收见[专项记录](extension_skill_experiment_2026-10-11.md)。
+P1 验证 TTS、MCP 和 Agent Skill 三种接入。五份独立包使用同一安装生命周期；Skill 补充验收见[专项记录](extension_skill_experiment_2026-10-11.md)。
+新增 CSV 审核 Skill 与 DeepSeek Harness ACP 真模型验收见[实机记录](extension_dsh_live_2026-10-11.md)。
+ACP 文件目录投递与各 Harness 的原生 Skill 注册分开验收；DSH 原生注册对照使用 Agent 自有配置，不将其冒充通用 ACP 方法。
 
 | 包 | 原生接入点 | 作用与限制 |
 |---|---|---|

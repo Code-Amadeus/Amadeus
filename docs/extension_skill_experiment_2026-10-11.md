@@ -3,6 +3,9 @@
 2026-10-11，基于实验分支 `codex/extension-pilot` 的 TTS/MCP 提交 `a24f584`。
 本次补齐独立 Skill 包、Agent 绑定、版本更新和会话兼容边界。仍为实验协议，未发布稳定 SDK。
 
+后续已补充 [DeepSeek Harness ACP 真实模型验收](extension_dsh_live_2026-10-11.md)：两种 Skill、两个 MCP 服务和原生网页工具。
+下文的 Codex/Codex ACP/Pi 结果仍是本地可控模型；不能把后续 DeepSeek 的真实推理结果扩大到其他 Agent。
+
 ## 用户操作
 
 1. 在 Extensions 选择 **Install or update local wheel…**，安装包含 `skill` contribution 的 wheel。

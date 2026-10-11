@@ -26,6 +26,10 @@ backend. Removing or disabling a package also takes effect after restart.
   requires a new Agent session; unchanged revisions resume normally. Resources
   grant no additional write/shell permissions. Native tests use real processes
   with a controlled local model; they do not certify LLM selection quality.
+- `csv-audit-skill`: a second declarative Skill with packaged data quality rules.
+  It checks required values, duplicate IDs and negative amounts in a small CSV,
+  then writes a structured audit without changing the source. This and the
+  handoff Skill have also been exercised with a real DeepSeek model over ACP.
 
 From the repository root, using the supported Python development environment:
 
@@ -35,6 +39,7 @@ python -m pip wheel --no-build-isolation --no-deps --no-index examples/extension
 python -m pip wheel --no-build-isolation --no-deps --no-index examples/extensions/notes-mcp -w build/extension-examples
 python -m pip wheel --no-build-isolation --no-deps --no-index examples/extensions/fish-audio -w build/extension-examples
 python -m pip wheel --no-build-isolation --no-deps --no-index examples/extensions/handoff-skill -w build/extension-examples
+python -m pip wheel --no-build-isolation --no-deps --no-index examples/extensions/csv-audit-skill -w build/extension-examples
 ```
 
 The trusted SDK wheel must be present before installing these packages. A
@@ -50,3 +55,4 @@ malicious local package. Source/package licensing follows this repository;
 separate SDK publication and licensing decisions remain pending.
 
 See [Skill lifecycle evidence](../../docs/extension_skill_experiment_2026-10-11.md) for native discovery, restoration, update and removal tests.
+The [DeepSeek ACP live report](../../docs/extension_dsh_live_2026-10-11.md) records actual model selection, native Skill registration differences, MCP use, and lifecycle results.

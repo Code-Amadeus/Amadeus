@@ -1,0 +1,442 @@
+{
+  "date": "2026-10-11",
+  "source": "Real DeepSeek API through Amadeus ACP adapter; synthetic task data",
+  "runtime": {
+    "dsh_npm": "0.2.0-rc.2",
+    "filesystem_mcp_npm": "1.0.0",
+    "model": "deepseek-v4-flash",
+    "reasoning_effort": "low",
+    "python": "3.12.10",
+    "os": "Windows"
+  },
+  "upstream_checked_head": "d743267388641bc76f17c45ce8b4c231aed1d32c",
+  "upstream_head_is_not_asserted_to_equal_npm_build": true,
+  "cases": [
+    {
+      "phase": "prepare",
+      "case": "handoff",
+      "passed": true,
+      "terminal_status": "done",
+      "expected_pre_model_rejection": false,
+      "elapsed_s": 13.5,
+      "checks": {
+        "skill_read": true,
+        "reference_read": true,
+        "artifact": true
+      },
+      "tools": [
+        {
+          "name": "skill",
+          "success": false
+        },
+        {
+          "name": "glob",
+          "success": true
+        },
+        {
+          "name": "read",
+          "success": true
+        },
+        {
+          "name": "read",
+          "success": true
+        },
+        {
+          "name": "read",
+          "success": true
+        },
+        {
+          "name": "write",
+          "success": true
+        },
+        {
+          "name": "read",
+          "success": true
+        }
+      ]
+    },
+    {
+      "phase": "prepare",
+      "case": "csv",
+      "passed": true,
+      "terminal_status": "done",
+      "expected_pre_model_rejection": false,
+      "elapsed_s": 18.41,
+      "checks": {
+        "skill_read": true,
+        "reference_read": true,
+        "artifact": true
+      },
+      "tools": [
+        {
+          "name": "skill",
+          "success": false
+        },
+        {
+          "name": "glob",
+          "success": true
+        },
+        {
+          "name": "read",
+          "success": true
+        },
+        {
+          "name": "read",
+          "success": true
+        },
+        {
+          "name": "read",
+          "success": true
+        },
+        {
+          "name": "write",
+          "success": true
+        },
+        {
+          "name": "read",
+          "success": true
+        },
+        {
+          "name": "read",
+          "success": true
+        },
+        {
+          "name": "edit",
+          "success": true
+        },
+        {
+          "name": "read",
+          "success": true
+        }
+      ]
+    },
+    {
+      "phase": "prepare",
+      "case": "notes",
+      "passed": true,
+      "terminal_status": "done",
+      "expected_pre_model_rejection": false,
+      "elapsed_s": 8.17,
+      "checks": {
+        "save_call": true,
+        "read_call": true,
+        "persisted": true
+      },
+      "tools": [
+        {
+          "name": "mcp__ext_0dd27fde59ba9aba_4b5f21f3__save_note",
+          "success": true
+        },
+        {
+          "name": "mcp__ext_0dd27fde59ba9aba_4b5f21f3__read_note",
+          "success": true
+        }
+      ]
+    },
+    {
+      "phase": "prepare",
+      "case": "filesystem",
+      "passed": true,
+      "terminal_status": "done",
+      "expected_pre_model_rejection": false,
+      "elapsed_s": 9.48,
+      "checks": {
+        "service_used": true,
+        "content": true
+      },
+      "tools": [
+        {
+          "name": "mcp__archive__search_files",
+          "success": false
+        },
+        {
+          "name": "mcp__archive__list_allowed_directories",
+          "success": true
+        },
+        {
+          "name": "mcp__archive__search_files",
+          "success": true
+        },
+        {
+          "name": "mcp__archive__directory_tree",
+          "success": true
+        },
+        {
+          "name": "mcp__archive__read_text_file",
+          "success": true
+        }
+      ]
+    },
+    {
+      "phase": "prepare",
+      "case": "web",
+      "passed": true,
+      "terminal_status": "done",
+      "expected_pre_model_rejection": false,
+      "elapsed_s": 8.55,
+      "checks": {
+        "fetch_used": true,
+        "content": true
+      },
+      "tools": [
+        {
+          "name": "web_fetch",
+          "success": false
+        },
+        {
+          "name": "web_fetch",
+          "success": false
+        },
+        {
+          "name": "web_fetch",
+          "success": true
+        }
+      ]
+    },
+    {
+      "phase": "prepare",
+      "case": "resume",
+      "passed": true,
+      "terminal_status": "done",
+      "expected_pre_model_rejection": false,
+      "elapsed_s": 4.02,
+      "checks": {
+        "history": true,
+        "no_tool_calls": true
+      },
+      "tools": []
+    },
+    {
+      "phase": "native",
+      "case": "native-handoff",
+      "passed": true,
+      "terminal_status": "done",
+      "expected_pre_model_rejection": false,
+      "elapsed_s": 12.08,
+      "checks": {
+        "native_skill_used": true,
+        "artifact": true,
+        "no_skill_lookup_failure": true
+      },
+      "tools": [
+        {
+          "name": "skill",
+          "success": true
+        },
+        {
+          "name": "glob",
+          "success": true
+        },
+        {
+          "name": "read",
+          "success": true
+        },
+        {
+          "name": "read",
+          "success": true
+        },
+        {
+          "name": "write",
+          "success": true
+        },
+        {
+          "name": "read",
+          "success": true
+        }
+      ]
+    },
+    {
+      "phase": "native",
+      "case": "native-csv",
+      "passed": true,
+      "terminal_status": "done",
+      "expected_pre_model_rejection": false,
+      "elapsed_s": 12.23,
+      "checks": {
+        "native_skill_used": true,
+        "artifact": true,
+        "source_unchanged": true
+      },
+      "tools": [
+        {
+          "name": "skill",
+          "success": true
+        },
+        {
+          "name": "glob",
+          "success": true
+        },
+        {
+          "name": "read",
+          "success": true
+        },
+        {
+          "name": "read",
+          "success": true
+        },
+        {
+          "name": "write",
+          "success": true
+        },
+        {
+          "name": "read",
+          "success": true
+        },
+        {
+          "name": "read",
+          "success": true
+        }
+      ]
+    },
+    {
+      "phase": "update",
+      "case": "old-session-after-update",
+      "passed": true,
+      "terminal_status": "error",
+      "expected_pre_model_rejection": true,
+      "elapsed_s": 0.67,
+      "checks": {},
+      "tools": []
+    },
+    {
+      "phase": "update",
+      "case": "updated-handoff",
+      "passed": true,
+      "terminal_status": "done",
+      "expected_pre_model_rejection": false,
+      "elapsed_s": 12.27,
+      "checks": {
+        "new_reference": true,
+        "new_version": true,
+        "old_version_absent": true
+      },
+      "tools": [
+        {
+          "name": "skill",
+          "success": false
+        },
+        {
+          "name": "glob",
+          "success": true
+        },
+        {
+          "name": "read",
+          "success": true
+        },
+        {
+          "name": "read",
+          "success": true
+        },
+        {
+          "name": "read",
+          "success": true
+        },
+        {
+          "name": "write",
+          "success": true
+        },
+        {
+          "name": "read",
+          "success": true
+        }
+      ]
+    },
+    {
+      "phase": "persistence",
+      "case": "notes-after-restart",
+      "passed": true,
+      "terminal_status": "done",
+      "expected_pre_model_rejection": false,
+      "elapsed_s": 6.77,
+      "checks": {
+        "read_call": true,
+        "persisted_across_processes": true
+      },
+      "tools": [
+        {
+          "name": "mcp__ext_0dd27fde59ba9aba_4b5f21f3__read_note",
+          "success": true
+        }
+      ]
+    },
+    {
+      "phase": "remove",
+      "case": "old-session-after-uninstall",
+      "passed": true,
+      "terminal_status": "error",
+      "expected_pre_model_rejection": true,
+      "elapsed_s": 0.72,
+      "checks": {},
+      "tools": []
+    },
+    {
+      "phase": "remove",
+      "case": "after-uninstall",
+      "passed": true,
+      "terminal_status": "done",
+      "expected_pre_model_rejection": false,
+      "elapsed_s": 14.84,
+      "checks": {
+        "no_skill_catalog": true,
+        "no_removed_tool": true
+      },
+      "tools": [
+        {
+          "name": "list_mcp_resources",
+          "success": true
+        },
+        {
+          "name": "list_mcp_resource_templates",
+          "success": true
+        },
+        {
+          "name": "mcp__archive__list_allowed_directories",
+          "success": true
+        },
+        {
+          "name": "glob",
+          "success": true
+        },
+        {
+          "name": "mcp__archive__directory_tree",
+          "success": true
+        },
+        {
+          "name": "mcp__archive__read_text_file",
+          "success": true
+        }
+      ]
+    },
+    {
+      "phase": "web-off",
+      "case": "native-web-disabled",
+      "passed": true,
+      "terminal_status": "done",
+      "expected_pre_model_rejection": false,
+      "elapsed_s": 4.8,
+      "checks": {
+        "no_fetch": true,
+        "unavailable": true
+      },
+      "tools": []
+    }
+  ],
+  "artifact_sha256": {
+    "handoff.md": "398a2c3df27e040157966519e604fe5d17776eb6e1fdc6a6e70c0e30b841f819",
+    "audit.json": "00058f20129cca076e39b03206e9aa5c93dc5d71fa4015b77ee46b5ea1e65380",
+    "native-handoff.md": "398a2c3df27e040157966519e604fe5d17776eb6e1fdc6a6e70c0e30b841f819",
+    "native-audit.json": "97198a024ed678200db6cd3fd9bae6b09558768743a193728e25797985156b76",
+    "handoff-v2.md": "c40fc79772930b09729be52c93757511e458a30fc8b4e674e29e8f69fa2e1b3c",
+    "orders.csv": "198eaa41007308eeb7a374e1cfac33b4e0869f6e27d22f39973ffd3c28132432"
+  },
+  "observed_children_exited": true,
+  "installed_environments_removed": true,
+  "notes_data_retained": true,
+  "limits": [
+    "One run per scenario; no statistical reliability claim",
+    "ACP file catalog does not register native DSH skills",
+    "Native skills comparison uses explicit DSH profile configuration",
+    "Not a full Electron-to-Chat-to-Work acceptance run"
+  ],
+  "test_instrument_correction": "Web-disabled initial English answer was incorrectly rejected by a Chinese-text assertion. Probe now requests a JSON boolean; targeted rerun passed."
+}
