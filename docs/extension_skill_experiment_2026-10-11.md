@@ -1,5 +1,7 @@
 # Skill 插件实验：安装一次，选择 Agent
 
+后续状态：普通文件交付与 DSH 自动原生 Skill 适配已完成，见[补齐与验收记录](extension_delivery_native_2026-10-11.md)。下文保留当时结果与限制。
+
 2026-10-11，基于实验分支 `codex/extension-pilot` 的 TTS/MCP 提交 `a24f584`。
 本次补齐独立 Skill 包、Agent 绑定、版本更新和会话兼容边界。仍为实验协议，未发布稳定 SDK。
 

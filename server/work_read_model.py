@@ -17,6 +17,7 @@ from agent_host.work_ledger_types import PermissionRequestRecord, WorkItemRecord
 from server.auip_app_source import discover_launchable_auip_app
 from server.scratch_workspace import is_scratch_path
 from server.work_activity_snapshot import ACTIVITY_METADATA_KEY, activity_report_fields
+from server.work_artifact_source import TEXT_SUFFIXES, latest_artifacts_by_path
 
 
 _ACTIVE_EXECUTION = frozenset({"queued", "running"})
@@ -171,6 +172,54 @@ class WorkReadModel:
             "complete": len(items) < scan_limit,
             "recentLimit": app_limit,
         }
+
+    def artifacts(self, *, project_id: str = "", limit: int = 5) -> dict[str, Any]:
+        """A bounded shelf of current files and verified applications.
+
+        A Draft limit counts WorkItems, so a delivery's files stay together.
+        File metadata survives missing/changed bytes; preview revalidates them.
+        Existing app-only catalogs remain capability lookups for AUIP callers.
+        """
+        item_limit = max(1, min(int(limit), 100 if project_id else 20))
+        scan_limit, file_limit = 500, 200
+        items = self.store.list_work_items(project_id=project_id, limit=scan_limit,
+            artifact_kinds=("business.file", "business.export"), include_presentation=False)
+        apps, files = [], []
+        count = 0
+        complete = len(items) < scan_limit
+        for item in items:
+            if not project_id and not self._is_unkept_draft(item.workspace_path):
+                continue
+            records = [row for row in latest_artifacts_by_path(
+                self.store, self.store.list_artifacts(item.work_item_id))
+                if row.kind == "business.file"]
+            app = discover_launchable_auip_app(self.store, item.work_item_id)
+            if not records and app is None:
+                continue
+            if count >= item_limit:
+                complete = False
+                break
+            count += 1
+            if app is not None:
+                apps.append(self._app_summary(item, app, can_promote=not bool(project_id)))
+            latest = self.store.latest_attempt(item.work_item_id, include_provider_branch=False)
+            common = {
+                "projectId": item.project_id, "workItemId": item.work_item_id,
+                "workTitle": item.title, "workState": item.state,
+                "execution": latest.execution_status if latest else "idle",
+                "updatedAt": self._iso_time(item.last_activity_at),
+            }
+            for record in records:
+                if len(files) >= file_limit:
+                    complete = False
+                    break
+                files.append({**common, "artifactId": record.artifact_id,
+                    "title": record.title or Path(record.path).name,
+                    "relativePath": str(record.metadata.get("relative_path") or Path(record.path).name),
+                    "artifactStatus": record.status, "sizeBytes": record.size_bytes,
+                    "previewable": record.status == "registered"
+                        and Path(record.path).suffix.lower() in TEXT_SUFFIXES})
+        return {"apps": apps, "files": files, "complete": complete, "recentLimit": item_limit}
 
     def _app_summary(
         self,

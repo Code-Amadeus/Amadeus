@@ -8,10 +8,11 @@
 
 P1 验证 TTS、MCP 和 Agent Skill 三种接入。五份独立包使用同一安装生命周期；Skill 补充验收见[专项记录](extension_skill_experiment_2026-10-11.md)。
 新增 CSV 审核 Skill 与 DeepSeek Harness ACP 真模型验收见[实机记录](extension_dsh_live_2026-10-11.md)。
-ACP 文件目录投递与各 Harness 的原生 Skill 注册分开验收；DSH 原生注册对照使用 Agent 自有配置，不将其冒充通用 ACP 方法。
+ACP 文件目录投递与各 Harness 的原生 Skill 注册分开验收；DSH 现在通过显式 `skill_discovery=dsh` 的启动适配自动投影所选目录，不将其冒充通用 ACP 方法。
 
-完整桌面抽样已运行，见[桌面真机记录](extension_desktop_live_2026-10-11.md)：Chat → Work → DSH → Skill → 文件、重启续接和 UI 更新生效通过；普通 JSON/CSV 产物尚不能从当前 AUIP 产物列表打开。
-下一优先级是复用已有 Work artifact 登记补齐普通文件交付入口及桌面验收，再完善原生 Skill 发现，随后进入记忆阶段。当前不标记桌面端到端全部通过。
+首轮[桌面真机记录](extension_desktop_live_2026-10-11.md)确认了 Chat → Work → DSH → Skill、重启续接和 UI 更新，也发现普通文件交付缺口。
+后续已补普通文件列表与按登记 ID 查看，并接入 DSH 原生 Skill 发现；[本轮交付与原生适配验收](extension_delivery_native_2026-10-11.md)覆盖 JSON/CSV/TXT/Markdown、重启、缺失提示及 11 个真实模型生命周期场景。
+先审阅本实验分支及保留异常，再进入 M0 → M2 → M1；不把抽样验收扩大为全平台或零故障认证。
 
 | 包 | 原生接入点 | 作用与限制 |
 |---|---|---|
@@ -21,7 +22,7 @@ ACP 文件目录投递与各 Harness 的原生 Skill 注册分开验收；DSH �
 | Handoff Skill | Codex / ACP / Pi | 安装一次、选择 Agent；原生发现/实际资源读取/产物/恢复/更新/卸载均有测试。 |
 
 样例位于 `examples/extensions/`，不导入 Host 内部实现。共同语义为**保存后重启后端生效**。
-Skill 已从 AUIP 专用路径扩展为独立声明式资源，绑定兼容 Agent；本次 ACP 实测目标是 Codex ACP。
+Skill 已从 AUIP 专用路径扩展为独立声明式资源，绑定兼容 Agent；ACP 已实测 Codex ACP 和 DeepSeek Harness；二者原生发现方式不同。
 拒绝 ASR、context_source、observer、proactive、第三方 UI 和任何 Host 权限。
 不引入 Grant 存储，不做市场、源码安装、自动更新、广泛目录发现或 OS 沙箱。允许用户显式安装同 ID 的另一版本，确认停机后回收旧环境。
 
@@ -76,7 +77,7 @@ Provider 自行启动的 MCP 进程仍由 Provider 管理，不能把 Host probe
 | 已有功能回归 | 隔离全仓 Python suites、Electron 测试与 production build |
 
 单次 Fish 时间仅是一个样本，不称 p50/p95 或性能门槛已达成。
-不声称已完成人工 Chat/Wallpaper/VN 听感、真实 Codex/ACP Work 回合、macOS/Linux 或签名分发验收。
+不声称已完成人工 Chat/Wallpaper/VN 听感、真实付费 Codex/Pi 推理、macOS/Linux 或签名分发验收；DeepSeek ACP 真实 Work 回合已单独记录。
 这些列入发布前门槛；实验通过不等于稳定 SDK。
 
 Skill 会话保存所绑定资源的 revision；相同版本可恢复，更新/卸载/重装后旧会话在模型调用前拒绝恢复并要求新会话，其他 Agent 不受无关绑定变化影响。

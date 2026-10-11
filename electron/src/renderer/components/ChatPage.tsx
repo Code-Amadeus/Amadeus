@@ -14,6 +14,7 @@ import ChatSessionRail, {
 import ChatWorkActivityCard from './ChatWorkActivityCard'
 import FluentIcon from './FluentIcon'
 import ProjectAppsPanel, { type ProjectAppSummary } from './ProjectAppsPanel'
+import type { WorkFileSummary } from './WorkFilesPanel'
 import CrtWorkWidget from './work/CrtWorkWidget'
 import { attentionRequestsFromEnvelope } from './work/attentionProjection'
 import type { AttentionRequest } from './work/types'
@@ -164,6 +165,8 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   const [projectCorrectionOpen, setProjectCorrectionOpen] = useState(false)
   const [projectViewId, setProjectViewId] = useState('')
   const [projectApps, setProjectApps] = useState<ProjectAppSummary[]>([])
+  const [projectFiles, setProjectFiles] = useState<WorkFileSummary[]>([])
+  const artifactLoadRevision = useRef(0)
   const [projectAppsComplete, setProjectAppsComplete] = useState(true)
   const [projectAppsLoading, setProjectAppsLoading] = useState(false)
   const [projectAppsFeedback, setProjectAppsFeedback] = useState('')
@@ -1029,47 +1032,38 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
     }
   }, [selectSession])
 
-  const loadProjectApps = useCallback(async (projectId: string) => {
-    if (!projectId) return
+  const loadArtifactCatalog = useCallback(async (projectId: string) => {
+    const revision = ++artifactLoadRevision.current
     setProjectAppsLoading(true)
     setProjectAppsFeedback('')
     try {
-      const res = await send('project.apps.list', { project_id: projectId, limit: 100 })
-      if (res.ok === false) {
-        throw new Error(String(res.message || res.error || 'Could not load Project apps'))
-      }
+      const res = await send('work.artifacts.list', projectId
+        ? { scope: 'project', project_id: projectId, limit: 100 }
+        : { scope: 'drafts', limit: 5 })
+      if (revision !== artifactLoadRevision.current) return
+      if (res.ok === false) throw new Error(String(res.message || res.error || 'Could not load artifacts'))
       setProjectApps(Array.isArray(res.apps) ? res.apps as unknown as ProjectAppSummary[] : [])
+      setProjectFiles(Array.isArray(res.files) ? res.files as unknown as WorkFileSummary[] : [])
       setProjectAppsComplete(res.complete !== false)
     } catch (error) {
+      if (revision !== artifactLoadRevision.current) return
       setProjectApps([])
+      setProjectFiles([])
       setProjectAppsComplete(true)
       setProjectAppsFeedback(error instanceof Error ? error.message : String(error))
     } finally {
-      setProjectAppsLoading(false)
+      if (revision === artifactLoadRevision.current) setProjectAppsLoading(false)
     }
   }, [send])
-
-  const loadDraftApps = useCallback(async () => {
-    setProjectAppsLoading(true)
-    setProjectAppsFeedback('')
-    try {
-      const res = await send('draft.apps.list', { limit: 5 })
-      if (res.ok === false) {
-        throw new Error(String(res.message || res.error || 'Could not load recent Draft apps'))
-      }
-      setProjectApps(Array.isArray(res.apps) ? res.apps as unknown as ProjectAppSummary[] : [])
-      setProjectAppsComplete(res.complete !== false)
-    } catch (error) {
-      setProjectApps([])
-      setProjectAppsComplete(true)
-      setProjectAppsFeedback(error instanceof Error ? error.message : String(error))
-    } finally {
-      setProjectAppsLoading(false)
-    }
-  }, [send])
+  const loadProjectApps = useCallback((projectId: string) => loadArtifactCatalog(projectId), [loadArtifactCatalog])
+  const loadDraftApps = useCallback(() => loadArtifactCatalog(''), [loadArtifactCatalog])
+  const readArtifactFile = useCallback((file: WorkFileSummary) => send('work.artifact.read', {
+    work_item_id: file.workItemId, artifact_id: file.artifactId,
+  }), [send])
 
   const handleOpenProject = useCallback((projectId: string) => {
     setProjectViewId(projectId)
+    setProjectFiles([])
     setProjectApps([])
     setProjectAppsFeedback('')
     void loadProjectApps(projectId)
@@ -1077,6 +1071,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
 
   const handleOpenDraftApps = useCallback(() => {
     setProjectViewId(DRAFT_APPS_VIEW_ID)
+    setProjectFiles([])
     setProjectApps([])
     setProjectAppsFeedback('')
     void loadDraftApps()
@@ -1373,6 +1368,9 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       )}
       {projectView && (
         <ProjectAppsPanel
+          key={projectViewId}
+          files={projectFiles}
+          readFile={readArtifactFile}
           project={projectView}
           scope={projectViewId === DRAFT_APPS_VIEW_ID ? 'drafts' : 'project'}
           apps={projectApps}

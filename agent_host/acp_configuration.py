@@ -26,6 +26,7 @@ class AcpAgentSpec:
     environment: dict[str, str] = field(default_factory=dict)
     config_options: dict[str, str] = field(default_factory=dict)
     resume: bool = False
+    skill_discovery: str = "catalog"
 
     @classmethod
     def from_dict(cls, value: Any) -> AcpAgentSpec:
@@ -40,6 +41,7 @@ class AcpAgentSpec:
             "environment",
             "config_options",
             "resume",
+            "skill_discovery",
         }
         if unknown:
             raise ValueError("Unknown ACP agent configuration field")
@@ -92,6 +94,9 @@ class AcpAgentSpec:
             )
         ):
             raise ValueError("ACP config_options must contain string selections")
+        discovery = value.get("skill_discovery", "catalog")
+        if discovery not in ("catalog", "dsh"):
+            raise ValueError("ACP skill_discovery must be catalog or dsh")
         return cls(
             provider_id,
             name.strip(),
@@ -101,6 +106,7 @@ class AcpAgentSpec:
             dict(environment),
             dict(options),
             value.get("resume", False),
+            discovery,
         )
 
     def process_environment(self) -> dict[str, str]:
@@ -131,6 +137,7 @@ class AcpAgentSpec:
             "environment": dict(self.environment),
             "config_options": dict(self.config_options),
             "resume": self.resume,
+            "skill_discovery": self.skill_discovery,
         }
 
 

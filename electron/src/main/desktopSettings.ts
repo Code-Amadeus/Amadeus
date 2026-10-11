@@ -105,13 +105,16 @@ export function validateAcpProviders(raw: string): Array<Record<string, unknown>
   const ids = new Set<string>()
   for (const profile of profiles) {
     if (!profile || typeof profile !== 'object' || Array.isArray(profile)) throw new Error('Invalid ACP agent')
-    const allowed = new Set(['id', 'name', 'command', 'args', 'enabled', 'environment', 'config_options', 'resume'])
+    const allowed = new Set(['id', 'name', 'command', 'args', 'enabled', 'environment', 'config_options', 'resume', 'skill_discovery'])
     if (Object.keys(profile).some(key => !allowed.has(key))) throw new Error('Unknown ACP configuration field')
     const id = profile.id
     if (typeof id !== 'string' || !MCP_ID_PATTERN.test(id) || ['codex', 'browser', 'openclaw', 'pi'].includes(id) || ids.has(id)) {
       throw new Error('ACP agents require unique ids distinct from built-in Providers')
     }
     ids.add(id)
+    if (profile.skill_discovery !== undefined && !['catalog', 'dsh'].includes(profile.skill_discovery)) {
+      throw new Error('ACP Skill discovery must be catalog or dsh')
+    }
     for (const [key, limit] of [['name', 80], ['command', 4096]] as const) {
       const value = profile[key] ?? (key === 'name' ? id : '')
       if (typeof value !== 'string' || !value.trim() || value.includes('\0') || value.length > limit) throw new Error(`Invalid ACP ${key}`)

@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT))
 async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('phase', choices=['prepare', 'native', 'update', 'persistence', 'remove', 'web-off'])
+    parser.add_argument('--native-skills', action='store_true', help='Use the production DSH Skill launch integration')
     parser.add_argument('--state', type=Path, default=ROOT / 'build/deepseek-acp-live')
     parser.add_argument('--env-file', type=Path, help='Optional local credential source; values are never printed')
     args = parser.parse_args()
@@ -48,7 +49,7 @@ async def main():
     os.environ['AMADEUS_DSH_LIVE_HOME'] = str(base/'home')
     snapshot_phase = {'native':'prepare', 'persistence':'update', 'web-off':'remove'}.get(args.phase,args.phase)
     records = json.loads((base/(snapshot_phase+'-snapshot.json')).read_text(encoding='utf-8'))
-    roots = [str(Path(r['package_path'])/'skills') for r in records if r['manifest']['contributes'].get('skill')] if args.phase == 'native' else []
+    roots = [str(Path(r['package_path'])/'skills') for r in records if r['manifest']['contributes'].get('skill')] if args.phase == 'native' and not args.native_skills else []
     patch = base/'live.patch.yml'
     patch.write_text('- id: skill-filesystem\n  config:\n    includeDefaultRoots: false\n    customSkillDirs: '+json.dumps(roots)+'\n'
                      '- id: tool-plugin-manager\n  disabled: true\n'
@@ -61,7 +62,7 @@ async def main():
     spec = AcpAgentSpec('deepseek_live','DeepSeek Harness Live',shutil.which('node'),
         args=(str(entry),'--profile','acp','--patch',str(patch)), enabled=True,resume=True,
         environment={'DEEPSEEK_API_KEY':'AMADEUS_DSH_LIVE_KEY','DSH_HOME':'AMADEUS_DSH_LIVE_HOME'},
-        config_options={'reasoning_effort':'low'})
+        config_options={'reasoning_effort':'low'}, skill_discovery='dsh' if args.native_skills else 'catalog')
     connections = [c for record in records for c in project_extension_mcp_connections(record)]
     connections.append(McpConnectionSpec('archive','Fixture file service','stdio',True,('deepseek_live',),
         shutil.which('node'),(str(base/'runtime/node_modules/@modelcontextprotocol/server-filesystem/dist/index.js'),str(archive))))
@@ -110,6 +111,10 @@ async def main():
             await adapter.close()
 
     def checked(item, checks):
+        if args.native_skills and item['case'] in {'handoff', 'csv', 'updated-handoff'}:
+            skill_results = [e for e in item['events'] if e['type'] == 'tool.result' and e['payload'].get('name') == 'skill']
+            checks['native_skill_used'] = any(e['payload'].get('success') for e in skill_results)
+            checks['no_skill_lookup_failure'] = bool(skill_results) and all(e['payload'].get('success') for e in skill_results)
         item['checks'] = checks
         item['passed'] = item['status']=='done' and all(checks.values())
         print(json.dumps({'case':item['case'],'passed':item['passed'],'checks':checks}),flush=True)
@@ -134,7 +139,7 @@ async def main():
     elif args.phase == 'prepare':
         item,handoff = await run('handoff','根据 facts.json 整理简洁的工作交接报告，保存为 handoff.md。只使用给定事实。')
         body = (work/'handoff.md').read_text(encoding='utf-8') if (work/'handoff.md').exists() else ''
-        checked(item,{'skill_read':used(item,'SKILL.md'),'reference_read':used(item,'layout.json'),'artifact':all(s in body for s in ['handoff-layout-v1','Added CSV import','Human review'])})
+        checked(item,{'skill_read':(used(item,'SKILL.md') or used(item,'handoff-brief')),'reference_read':used(item,'layout.json'),'artifact':all(s in body for s in ['handoff-layout-v1','Added CSV import','Human review'])})
         item,_ = await run('csv','检查 orders.csv 的数据质量，将每项问题及数据行号保存为 audit.json，不修改原始 CSV。')
         try:
             audit = json.loads((work/'audit.json').read_text(encoding='utf-8'))

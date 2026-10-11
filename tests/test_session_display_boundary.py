@@ -101,16 +101,16 @@ def test_chat_history_uses_an_internal_project_and_draft_rail() -> None:
     assert "toggleGroup" not in rail
     assert "aria-label={t('Current chat project')}" in chat
     assert "title={t('New chat')}" in chat
-    assert "send('project.apps.list'" in chat
+    assert "send('work.artifacts.list'" in chat
     assert "selectSession('session.open_context'" in chat
     assert "mode: 'observe'" in chat
     assert "Interact with Amadeus" in apps
     assert "Promote to Project" in apps
-    assert "The five most recent verified Draft artifacts" in apps
+    assert "the five most recent Drafts with artifacts" in apps
     assert "onInteract(app)" in apps
     assert "project.apps.list" not in apps
     assert "Promoted artifacts appear here without copying their files" in apps
-    assert "send('draft.apps.list', { limit: 5 })" in chat
+    assert "{ scope: 'drafts', limit: 5 }" in chat
     assert "DRAFT_APPS_VIEW_ID" in chat
     assert "sourceSessionId" in chat
 

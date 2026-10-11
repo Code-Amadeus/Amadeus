@@ -1,5 +1,7 @@
 # 插件桌面真机验收与下一步
 
+后续状态：普通文件交付与 DSH 自动原生 Skill 适配已完成，见[补齐与验收记录](extension_delivery_native_2026-10-11.md)。下文保留当时结果与限制。
+
 2026-10-11，基于实验分支 `51e9baa`。本轮使用未修改的 production Electron renderer/main、真实 Python 后端、DeepSeek 主对话与 DSH ACP。
 通过 computer-use 操作桌面窗口，任务确实从 Chat 进入 Host Work。设置、会话、Work 账本、DSH home 和插件安装均使用 `build/desktop-live` 下的隔离目录；关闭 TTS、唤醒与 VTS。
 不是组件 mock，也不是直接调用 Adapter 代替用户入口；没有验证语音链路。

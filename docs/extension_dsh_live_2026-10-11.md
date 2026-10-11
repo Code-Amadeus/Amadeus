@@ -1,5 +1,7 @@
 # DeepSeek Harness ACP：真实模型与多插件验收
 
+后续状态：普通文件交付与 DSH 自动原生 Skill 适配已完成，见[补齐与验收记录](extension_delivery_native_2026-10-11.md)。下文保留当时结果与限制。
+
 日期：2026-10-11。基线：`codex/extension-pilot` 的 Skill 提交 `5dbcee4`。
 本次直接使用已配置的 DeepSeek 凭据和官方 `deepseek-v4-flash`，不是本地模型替身。
 经由 Amadeus `AcpProviderAdapter`、官方 ACP Python SDK 和真实 DSH/MCP 进程执行。

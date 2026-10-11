@@ -1854,6 +1854,7 @@ class WorkLedgerStore:
         limit: int = 200,
         include_presentation: bool = True,
         artifact_name: str = "",
+        artifact_kinds: Sequence[str] | None = None,
     ) -> list[WorkItemRecord]:
         clauses: list[str] = []
         params: list[Any] = []
@@ -1884,6 +1885,11 @@ class WorkLedgerStore:
                 "WHERE a.work_item_id = work_items.work_item_id AND "
                 + _ARTIFACT_NAME_MATCH_SQL + ")")
             params.extend((escaped, escaped, escaped))
+        if artifact_kinds:
+            clauses.append("EXISTS (SELECT 1 FROM artifacts a WHERE "
+                "a.work_item_id = work_items.work_item_id AND a.kind IN ("
+                + ",".join("?" for _ in artifact_kinds) + "))")
+            params.extend(artifact_kinds)
         projection = "*" if include_presentation else self._record_projection(
             WorkItemRecord, "json_remove(metadata_json, '$.presentation')")
         sql = f"SELECT {projection} FROM work_items"

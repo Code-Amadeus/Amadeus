@@ -20,7 +20,12 @@ import logging
 from pathlib import Path
 from typing import Any, Protocol
 
-from agent_host.work_ledger_types import canonicalize_path, path_is_within
+from agent_host.work_ledger_types import canonicalize_path
+from server.work_artifact_source import (
+    latest_artifacts_by_path as _latest_artifacts_by_path,
+    artifact_path_key as _path_key,
+    contained_artifact_path as _contained_path,
+)
 from server.auip_contract import AuipProtocolError, parse_manifest
 
 
@@ -525,52 +530,6 @@ def _registered_file(record: Any) -> bool:
     )
 
 
-def _latest_artifacts_by_path(store: ArtifactSource, records: list[Any]) -> list[Any]:
-    """Collapse attempt history into the WorkItem's current path view.
-
-    Artifact timestamps can tie at the platform clock's resolution.  Attempt
-    number is the ledger's stable causal order, so a later delivery always
-    supersedes an older record for the same path.  Timestamps only order
-    updates within one attempt.  Narrow simulation stores without attempt
-    records retain deterministic fallback ordering.
-    """
-
-    attempt_numbers: dict[str, int] = {}
-
-    def revision_key(record: Any) -> tuple[int, float, float, str]:
-        attempt_id = str(getattr(record, "attempt_id", "") or "").strip()
-        number = attempt_numbers.get(attempt_id)
-        if number is None:
-            number = 0
-            get_attempt = getattr(store, "get_attempt", None)
-            if attempt_id and callable(get_attempt):
-                attempt = get_attempt(attempt_id)
-                number = int(getattr(attempt, "attempt_number", 0) or 0)
-            attempt_numbers[attempt_id] = number
-        return (
-            number,
-            float(getattr(record, "updated_at", 0.0) or 0.0),
-            float(getattr(record, "created_at", 0.0) or 0.0),
-            str(getattr(record, "artifact_id", "") or ""),
-        )
-
-    ordered = sorted(
-        records,
-        key=revision_key,
-        reverse=True,
-    )
-    latest: list[Any] = []
-    seen: set[str] = set()
-    for record in ordered:
-        path = str(getattr(record, "path", "") or "").strip()
-        identity = str(getattr(record, "path_identity", "") or "").strip()
-        key = identity or _path_key(path)
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        latest.append(record)
-    return latest
-
 
 def _bundle_contributing_attempt_ids(
     store: ArtifactSource,
@@ -818,15 +777,6 @@ def _verified_export_path(record: Any) -> Path | None:
     return path if expected and actual == expected else None
 
 
-def _path_key(value: str) -> str:
-    clean = str(value or "").strip()
-    if not clean:
-        return ""
-    try:
-        return canonicalize_path(clean).identity_key
-    except (OSError, ValueError):
-        return clean.casefold()
-
 
 def _is_proposed_export_path(path: Path) -> bool:
     """Whether a path belongs to Amadeus' reserved delivery staging tree."""
@@ -864,31 +814,3 @@ def _verified_artifact_path(store: ArtifactSource, record: Any) -> Path | None:
     if expected_digest and expected_digest != actual_digest:
         return None
     return path
-
-
-def _contained_path(workspace_path: str, artifact_path: str) -> Path | None:
-    """Resolve the artifact inside its workspace, or refuse.
-
-    The registry writes absolute paths, so this is not translating a relative
-    path -- it is checking that a stored one still points where it claims,
-    before the host reads it on a renderer's request.
-    """
-
-    root_text = str(workspace_path or "").strip()
-    target_text = str(artifact_path or "").strip()
-    if not root_text or not target_text:
-        return None
-    try:
-        root = canonicalize_path(root_text)
-        candidate = canonicalize_path(target_text)
-    except (OSError, ValueError):
-        return None
-    if candidate.identity_key == root.identity_key or not path_is_within(
-        candidate.canonical_path,
-        root.canonical_path,
-    ):
-        return None
-    candidate_path = Path(candidate.canonical_path)
-    if not candidate_path.is_file():
-        return None
-    return candidate_path

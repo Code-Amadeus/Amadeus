@@ -1,5 +1,6 @@
 import FluentIcon from './FluentIcon'
 import type { ChatProjectSummary } from './ChatSessionRail'
+import WorkFilesPanel, { type WorkFileSummary } from './WorkFilesPanel'
 
 export interface ProjectAppSummary {
   projectId: string
@@ -27,6 +28,8 @@ interface Props {
   project: ChatProjectSummary
   scope?: 'project' | 'drafts'
   apps: ProjectAppSummary[]
+  files: WorkFileSummary[]
+  readFile: (file: WorkFileSummary) => Promise<Record<string, unknown>>
   complete: boolean
   loading: boolean
   actionKey: string
@@ -70,6 +73,8 @@ export default function ProjectAppsPanel({
   project,
   scope = 'project',
   apps,
+  files,
+  readFile,
   complete,
   loading,
   actionKey,
@@ -98,10 +103,10 @@ export default function ProjectAppsPanel({
         <div className="min-w-0 flex-1">
           <strong className="block truncate" style={{ color: 'var(--text)', fontSize: 12 }}>{project.name}</strong>
           <span style={{ color: 'var(--faint)', fontSize: 9 }}>
-            {draftMode ? 'RECENT DRAFT ARTIFACTS' : 'PROJECT ARTIFACTS'} · {apps.length}
+            {draftMode ? 'RECENT DRAFT ARTIFACTS' : 'PROJECT ARTIFACTS'} · {apps.length + files.length}
           </span>
         </div>
-        <button type="button" onClick={onRefresh} disabled={loading} title="Refresh apps" style={quietButton}>
+        <button type="button" onClick={onRefresh} disabled={loading} title="Refresh artifacts" style={quietButton}>
           <FluentIcon name="Sync" size={13} /> {loading ? 'Loading' : 'Refresh'}
         </button>
         <button type="button" onClick={onNewChat} style={{ ...quietButton, color: 'var(--accent)' }}>
@@ -115,8 +120,8 @@ export default function ProjectAppsPanel({
             <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 18, fontWeight: 650 }}>Artifacts</h2>
             <p style={{ margin: '5px 0 0', color: 'var(--muted)', fontSize: 11, lineHeight: 1.55 }}>
               {draftMode
-                ? 'The five most recent verified Draft artifacts. Open one, continue its original conversation, or promote the Draft to keep it as a Project.'
-                : 'Verified AUIP artifacts kept by this Project. Open the current revision, or enter its exact WorkItem conversation to continue with Amadeus.'}
+                ? 'Files and verified applications from the five most recent Drafts with artifacts. File previews show the registered revision.'
+                : 'Registered files and verified applications kept by this Project. Promoted artifacts appear here without copying their files.'}
             </p>
           </div>
 
@@ -129,23 +134,25 @@ export default function ProjectAppsPanel({
           {!complete && (
             <p role="status" style={{ color: 'var(--muted)', fontSize: 10 }}>
               {draftMode
-                ? 'Older Drafts fall outside this bounded recent view.'
-                : 'This Project has more WorkItems than this bounded view can show.'}
+                ? 'This recent view is limited to five Drafts and 200 files.'
+                : 'This view is limited to 100 WorkItems and 200 files.'}
             </p>
           )}
 
-          {!loading && apps.length === 0 && (
+          {!loading && apps.length === 0 && files.length === 0 && (
             <div style={{ padding: '36px 22px', textAlign: 'center', border: '1px dashed var(--border-strong)', borderRadius: 12, background: 'var(--surface)' }}>
               <FluentIcon name="Tiles" size={24} style={{ color: 'var(--faint)', marginBottom: 8 }} />
-              <strong className="block" style={{ color: 'var(--text)', fontSize: 12 }}>No verified AUIP artifacts yet</strong>
+              <strong className="block" style={{ color: 'var(--text)', fontSize: 12 }}>No registered artifacts yet</strong>
               <p style={{ margin: '6px auto 0', maxWidth: 420, color: 'var(--muted)', fontSize: 10, lineHeight: 1.5 }}>
                 {draftMode
-                  ? 'No recent Draft contains a currently verified AUIP artifact.'
+                  ? 'No recent Draft contains a registered file or verified application.'
                   : 'Draft outputs stay with their WorkItem until you promote that Draft. Promoted artifacts appear here without copying their files.'}
               </p>
             </div>
           )}
 
+          {files.length > 0 && <WorkFilesPanel files={files} read={readFile} />}
+          {apps.length > 0 && <h3 style={{ fontSize: 13, color: 'var(--text)' }}>Applications · {apps.length}</h3>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
             {apps.map(app => {
               const opening = actionKey === `open:${app.workItemId}`
@@ -174,7 +181,8 @@ export default function ProjectAppsPanel({
                   <div className="flex items-center gap-2" style={{ marginBottom: 11, color: 'var(--faint)', fontSize: 9 }}>
                     <span>{app.artifactStatus || 'registered'}</span>
                     <span aria-hidden="true">·</span>
-                    <span>{app.execution && app.execution !== 'idle' ? app.execution : app.workState || 'open'}</span>
+                    <span>Execution: {app.execution || 'idle'}</span>
+                    <span>{app.workState === 'review_ready' ? 'Awaiting review' : app.workState || 'open'}</span>
                     {formatUpdatedAt(app.updatedAt) && <><span aria-hidden="true">·</span><span>{formatUpdatedAt(app.updatedAt)}</span></>}
                   </div>
 

@@ -15,7 +15,7 @@ new Function('require', 'exports', compiled)(name => name === 'electron'
   : require(name), exports)
 
 const profile = { id: 'deepseek', name: 'DeepSeek Harness', command: 'node', args: ['C:/agent/bin.js', '--profile', 'acp'],
-  enabled: true, resume: true, environment: { DEEPSEEK_API_KEY: 'DEEPSEEK_API_KEY' }, config_options: { model: 'chosen-model' } }
+  enabled: true, resume: true, skill_discovery: 'dsh', environment: { DEEPSEEK_API_KEY: 'DEEPSEEK_API_KEY' }, config_options: { model: 'chosen-model' } }
 
 test('ACP profiles survive restart, keep credentials separate and allow explicit MCP bindings', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'amadeus-acp-settings-'))
@@ -43,7 +43,7 @@ test('ACP profiles survive restart, keep credentials separate and allow explicit
 
 test('ACP configuration rejects duplicate identities, built-in collisions and inline secrets', () => {
   for (const profiles of [[profile, profile], [{ ...profile, id: 'codex' }], [{ ...profile, environment: { KEY: 'sk-not-a-reference' } }],
-    [{ ...profile, enabled: 'false' }], [{ ...profile, config_options: { model: true } }], [{ ...profile, extra: 'unknown' }], [null]]) {
+    [{ ...profile, skill_discovery: 'guess' }], [{ ...profile, enabled: 'false' }], [{ ...profile, config_options: { model: true } }], [{ ...profile, extra: 'unknown' }], [null]]) {
     assert.throws(() => exports.validateAcpProviders(JSON.stringify(profiles)))
   }
   assert.deepEqual(exports.validateAcpProviders('[]'), [])
