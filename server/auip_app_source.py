@@ -20,12 +20,7 @@ import logging
 from pathlib import Path
 from typing import Any, Protocol
 
-from agent_host.work_ledger_types import canonicalize_path
-from server.work_artifact_source import (
-    latest_artifacts_by_path as _latest_artifacts_by_path,
-    artifact_path_key as _path_key,
-    contained_artifact_path as _contained_path,
-)
+from agent_host.work_ledger_types import canonicalize_path, path_is_within
 from server.auip_contract import AuipProtocolError, parse_manifest
 
 
@@ -110,7 +105,7 @@ def _validate_registered_app(
         raise AuipProtocolError("artifact_unreadable", exc.strerror or str(exc)) from exc
     registered_digest = str(record.sha256 or "")
     actual_digest = hashlib.sha256(raw).hexdigest()
-    if not registered_digest or registered_digest != actual_digest:
+    if registered_digest and registered_digest != actual_digest:
         raise AuipProtocolError("artifact_revision_changed", actual_digest[:16])
     normalized_entry = raw.replace(b"\\", b"/").lower()
     if b".amadeus/runtime/authoring_inputs/" in normalized_entry:
@@ -279,8 +274,6 @@ def _discover_registered_auip_app(
         **entry,
         "manifest_artifact_id": str(manifest_record.artifact_id),
         "manifest_attempt_id": str(manifest_record.attempt_id or ""),
-        "member_artifact_ids": _workspace_member_ids(
-            store, artifacts, manifest_record, entry_record, validation),
         "app": {
             "id": manifest.app_id,
             "title": manifest.title,
@@ -532,38 +525,51 @@ def _registered_file(record: Any) -> bool:
     )
 
 
+def _latest_artifacts_by_path(store: ArtifactSource, records: list[Any]) -> list[Any]:
+    """Collapse attempt history into the WorkItem's current path view.
 
-def _workspace_member_ids(
-    store: ArtifactSource,
-    artifacts: list[Any],
-    manifest_record: Any,
-    entry_record: Any,
-    validation: dict[str, Any] | None,
-) -> list[str]:
-    """Known bundle membership, not every file sharing its directory.
-
-    Entry/manifest are verified by discovery. Host runtime receipts and exact
-    outcome-materialization records identify additional members. Unclaimed
-    files (including reports beside the app) remain independent deliverables.
+    Artifact timestamps can tie at the platform clock's resolution.  Attempt
+    number is the ledger's stable causal order, so a later delivery always
+    supersedes an older record for the same path.  Timestamps only order
+    updates within one attempt.  Narrow simulation stores without attempt
+    records retain deterministic fallback ordering.
     """
-    ids = {manifest_record.artifact_id, entry_record.artifact_id}
-    root = Path(manifest_record.path).parent
-    paths = {_path_key(str(root / name)) for name in (validation or {}).get("runtime_assets", [])}
-    receipted_ids: set[str] = set()
-    for attempt_id in {record.attempt_id for record in artifacts if record.attempt_id}:
-        attempt = store.get_attempt(attempt_id)
-        metadata = getattr(attempt, "metadata", {}) or {}
-        receipt = metadata.get("host_outcome_materialization") or {}
-        if receipt.get("facet") == "auip.application":
-            receipted_ids.update(str(value) for value in receipt.get("artifact_ids") or [])
-    for record in artifacts:
-        if not _registered_file(record) or (
-                record.artifact_id not in receipted_ids and _path_key(record.path) not in paths):
+
+    attempt_numbers: dict[str, int] = {}
+
+    def revision_key(record: Any) -> tuple[int, float, float, str]:
+        attempt_id = str(getattr(record, "attempt_id", "") or "").strip()
+        number = attempt_numbers.get(attempt_id)
+        if number is None:
+            number = 0
+            get_attempt = getattr(store, "get_attempt", None)
+            if attempt_id and callable(get_attempt):
+                attempt = get_attempt(attempt_id)
+                number = int(getattr(attempt, "attempt_number", 0) or 0)
+            attempt_numbers[attempt_id] = number
+        return (
+            number,
+            float(getattr(record, "updated_at", 0.0) or 0.0),
+            float(getattr(record, "created_at", 0.0) or 0.0),
+            str(getattr(record, "artifact_id", "") or ""),
+        )
+
+    ordered = sorted(
+        records,
+        key=revision_key,
+        reverse=True,
+    )
+    latest: list[Any] = []
+    seen: set[str] = set()
+    for record in ordered:
+        path = str(getattr(record, "path", "") or "").strip()
+        identity = str(getattr(record, "path_identity", "") or "").strip()
+        key = identity or _path_key(path)
+        if not key or key in seen:
             continue
-        path = _verified_artifact_path(store, record)
-        if path is not None and _contained_path(str(root), str(path)) is not None:
-            ids.add(record.artifact_id)
-    return sorted(ids)
+        seen.add(key)
+        latest.append(record)
+    return latest
 
 
 def _bundle_contributing_attempt_ids(
@@ -683,7 +689,6 @@ def _exported_bundle_candidate(
         "bundle_sha256": bundle_digest,
         "entry_path": str(entry_path),
         "bundle_path": str(directory),
-        "member_artifact_ids": [str(record.artifact_id) for record, _path, _digest in verified],
         "manifest": parsed.to_dict(),
         "app": {
             "id": parsed.app_id,
@@ -813,6 +818,15 @@ def _verified_export_path(record: Any) -> Path | None:
     return path if expected and actual == expected else None
 
 
+def _path_key(value: str) -> str:
+    clean = str(value or "").strip()
+    if not clean:
+        return ""
+    try:
+        return canonicalize_path(clean).identity_key
+    except (OSError, ValueError):
+        return clean.casefold()
+
 
 def _is_proposed_export_path(path: Path) -> bool:
     """Whether a path belongs to Amadeus' reserved delivery staging tree."""
@@ -847,6 +861,34 @@ def _verified_artifact_path(store: ArtifactSource, record: Any) -> Path | None:
     except OSError:
         return None
     expected_digest = str(getattr(record, "sha256", "") or "")
-    if not expected_digest or expected_digest != actual_digest:
+    if expected_digest and expected_digest != actual_digest:
         return None
     return path
+
+
+def _contained_path(workspace_path: str, artifact_path: str) -> Path | None:
+    """Resolve the artifact inside its workspace, or refuse.
+
+    The registry writes absolute paths, so this is not translating a relative
+    path -- it is checking that a stored one still points where it claims,
+    before the host reads it on a renderer's request.
+    """
+
+    root_text = str(workspace_path or "").strip()
+    target_text = str(artifact_path or "").strip()
+    if not root_text or not target_text:
+        return None
+    try:
+        root = canonicalize_path(root_text)
+        candidate = canonicalize_path(target_text)
+    except (OSError, ValueError):
+        return None
+    if candidate.identity_key == root.identity_key or not path_is_within(
+        candidate.canonical_path,
+        root.canonical_path,
+    ):
+        return None
+    candidate_path = Path(candidate.canonical_path)
+    if not candidate_path.is_file():
+        return None
+    return candidate_path

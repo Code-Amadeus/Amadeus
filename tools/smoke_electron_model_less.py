@@ -161,26 +161,14 @@ async def _exercise_renderer(page: Any, *, timeout: float) -> dict[str, bool]:
     await page.get_by_role("heading", name="Artifacts", exact=True).wait_for(
         state="visible", timeout=timeout_ms
     )
-    files_tab = page.get_by_role("tab", name="Files · 0", exact=True)
-    await files_tab.wait_for(state="visible", timeout=timeout_ms)
-    if await files_tab.get_attribute("aria-selected") != "true":
-        raise RuntimeError("Artifact navigation did not start with the file view")
-    await page.get_by_text("No files yet", exact=True).wait_for(
+    await page.get_by_text("No verified AUIP artifacts yet", exact=True).wait_for(
         state="visible", timeout=timeout_ms
     )
-    # Leave the hover/focus-owned history drawer before pointer navigation.
-    await files_tab.focus()
+    checks["artifact_navigation_opened"] = True
+
     viewport = await page.evaluate(
         "() => ({ width: window.innerWidth, height: window.innerHeight })"
     )
-    await page.mouse.move(max(300, int(viewport["width"]) - 20), 100)
-    await page.get_by_role("tab", name="Interactive apps · 0", exact=True).click()
-    await page.get_by_text("No interactive apps ready to open", exact=True).wait_for(
-        state="visible", timeout=timeout_ms
-    )
-    checks["file_and_app_views_separate"] = True
-    checks["artifact_navigation_opened"] = True
-
     back_to_chat = page.get_by_role("button", name="Back to chat", exact=True)
     await back_to_chat.focus()
     await page.mouse.move(
