@@ -2,8 +2,9 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
+import { developmentServer } from './src/main/developmentServer.ts'
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react(), tailwindcss()],
   root: '.',
   base: './',
@@ -18,8 +19,8 @@ export default defineConfig({
     outDir: 'dist/renderer',
     emptyOutDir: true,
   },
-  server: {
-    port: 5173,
+  server: command === 'serve' ? {
+    ...developmentServer(path.resolve(import.meta.dirname, '..')),
     strictPort: true,
-  },
-})
+  } : undefined,
+}))
