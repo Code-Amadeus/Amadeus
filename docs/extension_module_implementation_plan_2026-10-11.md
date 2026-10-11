@@ -10,6 +10,9 @@ P1 验证 TTS、MCP 和 Agent Skill 三种接入。五份独立包使用同一�
 新增 CSV 审核 Skill 与 DeepSeek Harness ACP 真模型验收见[实机记录](extension_dsh_live_2026-10-11.md)。
 ACP 文件目录投递与各 Harness 的原生 Skill 注册分开验收；DSH 原生注册对照使用 Agent 自有配置，不将其冒充通用 ACP 方法。
 
+完整桌面抽样已运行，见[桌面真机记录](extension_desktop_live_2026-10-11.md)：Chat → Work → DSH → Skill → 文件、重启续接和 UI 更新生效通过；普通 JSON/CSV 产物尚不能从当前 AUIP 产物列表打开。
+下一优先级是复用已有 Work artifact 登记补齐普通文件交付入口及桌面验收，再完善原生 Skill 发现，随后进入记忆阶段。当前不标记桌面端到端全部通过。
+
 | 包 | 原生接入点 | 作用与限制 |
 |---|---|---|
 | MiMo | BaseTTSBackend 代理 | 英语语音。用户确认不支持日语，取消日语试听待办。真实英语验收因未配置 key 留待后续。 |

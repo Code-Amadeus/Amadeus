@@ -5,6 +5,8 @@
 经由 Amadeus `AcpProviderAdapter`、官方 ACP Python SDK 和真实 DSH/MCP 进程执行。
 仍是隔离环境的适配器验收，不等于完整 Electron → Chat → Work 用户旅程或长期可靠性认证。
 
+后续已执行[桌面用户流程抽样](extension_desktop_live_2026-10-11.md)，确认了真实 Chat/Work、重启续接与 UI 更新，同时发现普通文件的产物展示缺口；尚未判定桌面端到端全部通过。
+
 ## 版本与材料
 
 - `@deepseek-ai/dsh@0.2.0-rc.2`，ACP 返回协议版本 1；模型从其真实 `configOptions` 读取，推理强度选 `low`。
