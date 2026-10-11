@@ -33,6 +33,13 @@ a package. Updating an enabled package requires fresh confirmation.
 Use **Settings → Extensions** for the complete lifecycle; Voice settings link
 back to that manager rather than maintaining a second package record.
 
+The baseline has no extension manager. These screenshots use synthetic packages
+and the production settings components:
+
+![Installed packages, disclosures and saved/runtime state](images/extensions/packages.png)
+
+![One Skill installation with selected Work Agents](images/extensions/skill-agent-bindings.png)
+
 The backend reads one startup snapshot. Install/configure/enable/disable,
 Provider bindings, voice selection, same-ID version update and uninstall all
 take effect after backend restart. Manifest `live`/`reactivate` labels cannot
