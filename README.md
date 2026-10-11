@@ -894,6 +894,7 @@ automatic rights to character, model, reference-audio, or external asset packs.
 
 - [Aqua-TTS](https://github.com/Lucas1479/Aqua-TTS): an MIT-licensed low-latency GPT-SoVITS v3 inference runtime. Amadeus does not require Aqua to start today.
 - [Amadeus SpriteForge](https://github.com/Code-Amadeus/Amadeus-SpriteForge): public **0.1.0 Source Alpha** for local sprite inspection, behavior-graph editing, and KTX2 character-pack preview/export. Licensed under AGPL-3.0-only; generation services are separate from the Amadeus runtime.
+- [Experimental extension Host profile](docs/extension_host_profile_v0.1.md): the implemented local-wheel TTS/MCP/Skill subset, restart lifecycle, Agent binding and current limits. This is not a stable SDK or a full extension protocol conformance claim.
 - [AUIP](https://github.com/Code-Amadeus/AUIP): the experimental application-session / typed-action protocol implemented in Amadeus. The separate repository documents its status and public implementation entry points; a separately versioned SDK and conformance suite are not yet published.
 - [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS): the embedded speech-synthesis inference foundation.
 - [OpenClaw](https://github.com/openclaw/openclaw): an optional external Work gateway.

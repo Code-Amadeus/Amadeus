@@ -1,0 +1,60 @@
+--- a/spec/extension-protocol-v0.1.md
++++ b/spec/extension-protocol-v0.1.md
+@@ -2,7 +2,7 @@
+ 
+ > **Status: draft for discussion.** An unmerged Amadeus experimental branch
+ > implements the restart-based TTS/MCP/Skill subset in §1.3.1; no stable SDK has shipped.
+-> First draft: 2026-10-05. Implementation alignment: 2026-10-11.
++> First draft: 2026-10-05. Implementation alignment: 2026-10-12.
+ > Product baseline: Amadeus 6147acbc36e2b16faa5d8192a873d40a7feb5965.
+ > Interfaces may change; schema validation does not prove runtime support or
+ > full v0.1 conformance. TTS/MCP/Skill remain provisional.
+@@ -106,14 +106,28 @@
+ Codex process-level extra roots and native discovery, Pi explicit --skill paths
+ and native discovery, or a portable name/description/path catalog in ACP prompts.
+ Agents read skill bodies and referenced resources using their existing tools.
+-The current ACP native pilot uses @agentclientprotocol/codex-acp 2.2.2; this does
+-not certify every ACP implementation or claim a universal skill-install RPC.
++Generic ACP defaults to a portable file catalog. Explicit ACP configuration
++`skill_discovery=dsh` adds the selected contribution directories through DSH's
++startup overlay; DSH retains its registry and native tools. This is not a
++manifest field or a universal ACP skill-install RPC. The pilot covers Codex ACP
++2.2.2 with a controlled model, and DSH 0.2.0-rc.2 with controlled and real models.
++DSH's MCP client 2.0.0 has a reproduced diagnostic-to-stdout defect when listing
++unsupported resources; its Windows sandbox also requires workspace WRITE_OWNER
++for integrity labels. Neither condition is resolved by weakening Host parsing
++or execution policy. Keep this combination experimental pending clean-wire and
++sandbox-environment qualification.
+ 
+ Skill native sessions carry a Host-owned revision of selected packages, versions,
+ digests and installation paths. Unchanged revisions resume across restart.
+ Updates, removal, unbinding or reinstallation require a new native session;
+ old contexts are rejected before submission, never silently resumed with removed
+ instructions. Changes to another Agent's bindings do not invalidate this one.
++
++The versioned implementation map is Amadeus `docs/extension_host_profile_v0.1.md`.
++Work outputs do not register extensions: ordinary files and verified AUIP apps
++share ledger provenance but have distinct views and activation paths. Exact
++application members are shown in app details; independent reports remain files.
++These Host UI reads do not grant packages artifact or history access.
+ 
+ ASR, context_source, observer and third-party surfaces remain unsupported.
+ Explicit same-id, different-version wheel updates prepare beside the running
+--- a/README.md
++++ b/README.md
+@@ -33,8 +33,13 @@
+ Agent Skills can be installed once and bound to selected Codex, ACP and Pi
+ Agents in the experimental Host. Unchanged native sessions resume; changing
+ the selected Skill revision requires a new session so old instructions cannot
+-linger unnoticed. Current process tests use a controlled local model and do not
+-claim autonomous LLM selection quality.
++linger unnoticed. Codex/Pi process tests use controlled local models; DeepSeek
++Harness additionally has real-model and desktop evidence. ACP defaults to a
++portable Skill catalog; explicit `skill_discovery=dsh` enables DSH native
++startup discovery. The implementation's accepted subset and limits live in
++Amadeus `docs/extension_host_profile_v0.1.md`. The experiment retains identified
++upstream stdout and Windows sandbox-environment limitations; these are not
++claims of production qualification.
+ 
+ To validate a manifest or a package directory:
+ 

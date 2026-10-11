@@ -4,6 +4,8 @@ These source packages exercise TTS, MCP and Agent Skill contribution owners. The
 published packages or a claim of a stable SDK. Build local wheels, install them
 from Settings → Extensions, then configure, select/enable and restart the
 backend. Removing or disabling a package also takes effect after restart.
+The versioned [Host profile](../../docs/extension_host_profile_v0.1.md) defines the
+accepted subset; broader fields in the protocol draft may be unsupported here.
 
 - `mimo-tts`: one remote speech contribution using the standalone public SDK.
   It makes a single paid request for a synthesis, supports cancellation and
@@ -47,6 +49,17 @@ wheel manifest is inspected without importing package code. The notes package
 does not need the Runner protocol: its native runtime is MCP, managed by its
 selected Provider. All share installation identity, configuration, restart
 semantics, removal and the Host's lifecycle diagnostics.
+For Skills, applying the changed selection and restoring an old Agent session
+are separate steps: only unchanged selected resource revisions may resume.
+
+To use DSH native discovery, choose **DeepSeek Harness native Skills** in the
+ACP connection's advanced settings (`skill_discovery: "dsh"`), bind the installed
+packages to that Agent, save and restart. Other ACP connections default to the
+portable file catalog. See [ACP setup and known constraints](../../docs/acp_provider.md).
+
+Work outputs are not extension registrations. Ordinary files appear under
+**Files**; verified AUIP applications under **Interactive apps**, with their
+known component files in application details. A separate report remains a file.
 
 No package imports `server`, `core`, `config.settings` or a private TTS helper.
 Package code still runs with the user's OS privileges. The experiment prevents

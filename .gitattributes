@@ -21,3 +21,6 @@
 # Vendored cache provenance hashes must survive Windows autocrlf checkouts.
 /render/web/vendor/zstd/**/*.js text eol=lf
 /render/web/vendor/zstd/provenance.json text eol=lf
+
+# Unified-diff context markers are payload, including blank context lines.
+/docs/extension_protocol_alignment_2026-10-12.patch -whitespace

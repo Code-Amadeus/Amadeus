@@ -1,5 +1,9 @@
 # Standalone Python extension SDK
 
+Implemented subset: [experimental Host profile 0.1](../../docs/extension_host_profile_v0.1.md).
+This SDK provides the TTS Runner API. MCP and Skill packages share installation
+and lifecycle, but use their own native interfaces and do not call this API.
+
 Install the `amadeus-extension-sdk` wheel in the package's private environment.
 It uses only the Python standard library and imports no Amadeus Host modules.
 The package manifest's `runtime.entry` references an `Extension` object:
@@ -39,3 +43,8 @@ contributions are accepted; nonempty `permissions.host` is rejected. OS
 permission declarations are disclosures, not an OS security sandbox.
 Skills use packaged SKILL.md resources and Agent bindings; they do not run this
 SDK or a Runner. Same-ID version updates are explicit and take effect on restart.
+After a selected Skill revision changes, saved Agent sessions also require a
+new session; a backend restart does not clear instructions from old histories.
+General draft live configuration, Host Grants, ASR and context interfaces are
+not implemented by this SDK. Successful schema validation is not full protocol
+conformance.

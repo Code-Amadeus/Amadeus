@@ -1,5 +1,7 @@
 # 普通文件交付与 DSH 原生 Skill 适配
 
+后续（2026-10-12）：两类产物已分视图与最近范围；ACP/ACL 异常已定位，见[审查入口](extension_merge_review_2026-10-12.md)。以下保留本轮原始观察。
+
 2026-10-11，实验分支 `codex/extension-pilot`，本轮基于 `40d62d3`。
 补齐上一轮桌面验收发现的两个缺口：普通文件已经生成但产物列表不可见；DSH 只能从通用任务目录读 Skill，原生按名称查找会失败。
 结构化结果见 [验收 JSON](evidence/extension_delivery_native_2026-10-11.json)。未合并或发布。

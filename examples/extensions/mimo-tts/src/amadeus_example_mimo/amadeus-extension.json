@@ -3,7 +3,7 @@
   "id": "com.example.mimo-tts",
   "version": "0.1.0",
   "display_name": {"en": "MiMo speech (experimental)", "zh-CN": "MiMo 语音（实验）"},
-  "description": {"en": "An independent MiMo streaming speech package. English output only; Japanese support has not been verified.", "zh-CN": "独立的 MiMo 流式语音包。仅声明英语输出，日语尚未验证。"},
+  "description": {"en": "An independent MiMo streaming speech package. English output only; Japanese is not supported.", "zh-CN": "独立的 MiMo 流式语音包。仅支持英语输出，不支持日语。"},
   "author": {"name": "Amadeus contributors"},
   "engines": {"amadeus_host_api": ">=0.1,<0.2", "platforms": ["win32"]},
   "runtime": {"kind": "python", "entry": "amadeus_example_mimo:extension", "requires_python": ">=3.12"},

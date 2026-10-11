@@ -4,6 +4,11 @@
 本版替代原热切换提案，采纳[审计](extension_module_implementation_plan_review_2026-10-11.md)与用户后续决定。
 实验代码尚未合并或发布，不宣称完整 v0.1 合规。验收结果见[施工记录](extension_experiment_execution_2026-10-11.md)。
 
+2026-10-12 审查收口：普通文件与 AUIP 已分视图、计数和最近范围；混合交付测试覆盖同目录独立报告。
+ACP stdout 告警已定位到上游 MCP SDK 日志；Windows ACL 已定位到缺失 WRITE_OWNER，保持失败关闭。
+本分支实现范围以[Host profile](extension_host_profile_v0.1.md)为准；
+[审查入口](extension_merge_review_2026-10-12.md)列出代码归属、验证和外部限制。
+
 ## 1. 交付范围
 
 P1 验证 TTS、MCP 和 Agent Skill 三种接入。五份独立包使用同一安装生命周期；Skill 补充验收见[专项记录](extension_skill_experiment_2026-10-11.md)。
@@ -19,6 +24,7 @@ ACP 文件目录投递与各 Harness 的原生 Skill 注册分开验收；DSH �
 | MiMo | BaseTTSBackend 代理 | 英语语音。用户确认不支持日语，取消日语试听待办。真实英语验收因未配置 key 留待后续。 |
 | Fish Audio | 同一个 TTS 代理 | 日语/英语，MessagePack WebSocket、44.1 kHz PCM；已有一次真实日语合成，音质由用户试听。 |
 | Notes MCP | MCP connection → 兼容 Work Provider | 列出、读取、保存包自己目录内的笔记；不是 Amadeus 语义记忆，Main Chat 没有工具权限。 |
+| CSV Audit Skill | 同一 Agent Skill 契约 | 第二种领域技能，验证结构化报告与原始数据保持。 |
 | Handoff Skill | Codex / ACP / Pi | 安装一次、选择 Agent；原生发现/实际资源读取/产物/恢复/更新/卸载均有测试。 |
 
 样例位于 `examples/extensions/`，不导入 Host 内部实现。共同语义为**保存后重启后端生效**。
@@ -84,7 +90,7 @@ Skill 会话保存所绑定资源的 revision；相同版本可恢复，更新/�
 
 ## 5. 后续顺序
 
-先审阅 P1 接口和生命周期证据再决定合并。发布前确定 SDK 分发/许可证和平台，补真实 Provider 启停及三种发声界面人工体验。
+本轮已整理为可审查的实验实现，见审查入口。合并不等于稳定发布或 DSH 组合认证：先审阅目录归属与公共契约，保留上游 stdout 门槛及 Windows 原生沙箱环境前提。发布前仍需确定 SDK 分发/许可证和平台，补三种发声界面人工体验。
 MiMo 英语实机验收独立安排，日语不再测试。内置 MiMo 保留；迁移移出 P1。
 真正移除时才显式迁移有效 `MIMO_TTS_BASE_URL`、`MIMO_TTS_API_KEY`、`MIMO_TTS_MODEL`、`MIMO_TTS_VOICE`，
 覆盖 CLI/env 使用者，不编辑用户 .env。

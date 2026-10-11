@@ -1,0 +1,162 @@
+{
+  "date": "2026-10-12",
+  "branch_base": "766354922ddac7e5e2205c6a40ece6418b4a14c1",
+  "full_experiment_base": "6147acbc36e2b16faa5d8192a873d40a7feb5965",
+  "artifact_checks": [
+    "Separate Files and Interactive apps tabs and counts",
+    "Exact verified/Host-receipted members only; same-directory report and standalone HTML remain files",
+    "Invalid AUIP revision exposes no runnable app",
+    "Independent recent windows for Draft and Project",
+    "Membership survives ledger reopen"
+  ],
+  "ui": {
+    "passed": true,
+    "checks": [
+      "JSON CSV TXT Markdown previews",
+      "registered IDs only",
+      "text escaped",
+      "execution vs review state",
+      "missing file has no stale content",
+      "AUIP open and interact unchanged",
+      "refresh and narrow layout",
+      "late response cannot replace another file",
+      "separate file and AUIP views with application members"
+    ],
+    "screenshots": []
+  },
+  "tests": {
+    "python_related": {
+      "passed": 271,
+      "skipped": 2,
+      "note": "270 passed in combined run; final Project/Draft parameterization adds one passing case, verified by the final 16-pass/1-skip artifact suite"
+    },
+    "electron": {
+      "passed": 428
+    },
+    "protocol_repository": {
+      "passed": 61,
+      "skipped": 1
+    },
+    "production_build": true
+  },
+  "stdio": {
+    "status": "done",
+    "error": null,
+    "model_requests": 3,
+    "expected_tools_observed": true,
+    "clean_wire": false,
+    "tool_results": [
+      {
+        "name": "list_mcp_resources",
+        "success": true
+      },
+      {
+        "name": "list_mcp_resource_templates",
+        "success": true
+      }
+    ],
+    "non_json_lines": [
+      "Client.listResources() called but server does not advertise resources capability - returning empty list",
+      "Client.listResourceTemplates() called but server does not advertise resources capability - returning empty list"
+    ]
+  },
+  "mcp_isolation": {
+    "upstream": {
+      "nonProtocol": [
+        "Client.listResources() called but server does not advertise resources capability - returning empty list",
+        "Client.listResourceTemplates() called but server does not advertise resources capability - returning empty list"
+      ],
+      "messages": [
+        {
+          "resources": {
+            "resources": []
+          },
+          "templates": {
+            "resourceTemplates": []
+          }
+        }
+      ]
+    },
+    "stderrCandidate": {
+      "nonProtocol": [],
+      "messages": [
+        {
+          "resources": {
+            "resources": []
+          },
+          "templates": {
+            "resourceTemplates": []
+          }
+        }
+      ]
+    },
+    "resultsUnchanged": true
+  },
+  "upstream": {
+    "repository": "https://github.com/modelcontextprotocol/typescript-sdk",
+    "checked_commit": "b022522089a0c8b632595c6e7b536453945ed5a9",
+    "related_issue": 1262,
+    "related_pr": 2370,
+    "pr_head": "1b92074cc7db1cc87be641029436fd8c58ba53fe",
+    "pr_state": "open, not merged at check",
+    "published": false
+  },
+  "acl_access": {
+    "checkout": {
+      "READ_CONTROL": {
+        "allowed": true,
+        "win32_error": 0
+      },
+      "WRITE_DAC": {
+        "allowed": true,
+        "win32_error": 0
+      },
+      "WRITE_OWNER": {
+        "allowed": false,
+        "win32_error": 5
+      }
+    },
+    "temporary": {
+      "READ_CONTROL": {
+        "allowed": true,
+        "win32_error": 0
+      },
+      "WRITE_DAC": {
+        "allowed": true,
+        "win32_error": 0
+      },
+      "WRITE_OWNER": {
+        "allowed": true,
+        "win32_error": 0
+      }
+    }
+  },
+  "acl_runtime": {
+    "checkout_initialization": false,
+    "checkout_error": "SetNamedSecurityInfoW Win32 5 / grantWrite",
+    "temporary_initialization": true,
+    "inside_write": true,
+    "outside_write_denied": true,
+    "child_exit_code": 0,
+    "existing_workspace_acl_modified": false
+  },
+  "environment": {
+    "os": "Windows",
+    "os_version": "10.0.26200",
+    "architecture": "AMD64",
+    "python": "3.12.10",
+    "node": "22.21.1",
+    "acp_sdk": "0.12.1",
+    "dsh": "0.2.0-rc.2",
+    "mcp_client": "2.0.0"
+  },
+  "scope": {
+    "memory_changed": false,
+    "dependencies_patched_in_production": false,
+    "paid_inference_used_this_pass": false
+  },
+  "implementation_commits": {
+    "artifacts": "2e33684",
+    "diagnostics": "0be5054"
+  }
+}

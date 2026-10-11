@@ -5,6 +5,8 @@ import importlib
 import io
 import json
 import sys
+import ast
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -17,6 +19,35 @@ sys.path.insert(0, str(ROOT / "examples/extensions/notes-mcp/src"))
 
 from amadeus_extension import CancelledError, RequestContext, TTSRequest
 import amadeus_example_mimo as mimo
+
+
+@pytest.mark.parametrize('name', ['mimo-tts', 'fish-audio', 'notes-mcp', 'handoff-skill', 'csv-audit-skill'])
+def test_example_package_conforms_to_implemented_host_profile(name):
+    from server.extensions.package import validate_manifest, validate_installed
+    example = ROOT / 'examples/extensions' / name
+    packaging = tomllib.loads((example / 'pyproject.toml').read_text(encoding='utf-8'))
+    manifest_path, = (example / 'src').glob('*/amadeus-extension.json')
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+    validate_manifest(manifest, check_environment=False)
+    validate_installed(manifest, manifest_path.parent)
+    assert packaging['project']['version'] == manifest['version']
+    assert packaging['project']['entry-points']['amadeus.extensions'] == {manifest['id']: manifest_path.parent.name}
+    kinds = set(manifest['contributes'])
+    assert kinds <= {'voice_backend', 'mcp_server', 'skill'}
+    assert not manifest.get('permissions', {}).get('host')
+    dependencies = packaging['project'].get('dependencies', [])
+    if 'voice_backend' in kinds:
+        from amadeus_extension import __version__
+        assert f'amadeus-extension-sdk=={__version__}' in dependencies
+    else:
+        assert not any(dep.startswith('amadeus-extension-sdk') for dep in dependencies)
+        assert 'entry' not in manifest['runtime']
+    # Community examples must not depend on a private Host import to run.
+    for source in manifest_path.parent.rglob('*.py'):
+        for node in ast.walk(ast.parse(source.read_text(encoding='utf-8'))):
+            modules = ([node.module or ''] if isinstance(node, ast.ImportFrom)
+                       else [item.name for item in node.names] if isinstance(node, ast.Import) else [])
+            assert not any(module.split('.')[0] in {'server', 'core', 'agent_host', 'tts', 'config'} for module in modules)
 
 
 def context():
