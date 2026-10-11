@@ -3,6 +3,8 @@ export class ApplicationLifecycle {
   private startupComplete = false
   private restoreAfterStartup = false
 
+  get isQuitting(): boolean { return this.quitting }
+
   requestMainWindow(hasMainWindow: boolean): 'defer' | 'create' | 'restore' {
     if (hasMainWindow) return 'restore'
     if (this.startupComplete) return 'create'

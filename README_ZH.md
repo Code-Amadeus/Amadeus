@@ -489,6 +489,26 @@ macOS：`cp .env.example .env`），然后在 Settings 中核对：
 - Windows：`run_electron_utf8.bat`（单一启动器；自动发现 `.venv`，L1–L4 通用）
 - macOS：`cd electron && npm run electron:dev`
 
+开发启动器和 `npm run dev` 默认使用 `5173` 端口。若终端提示 `EACCES`
+（监听被拒绝，可能是系统保留端口）或 `EADDRINUSE`（端口被占用），在
+**项目根目录 `.env`** 中选择其他可用端口，例如：
+
+```dotenv
+AMADEUS_DEV_PORT=15173
+```
+
+填写 1–65535 的整数，不使用变量插值。已设置的进程环境变量优先于 `.env`；
+`electron/.env` 不配置此端口。修改后需完整重启开发启动器。Vite、Electron
+各窗口及后端来源校验统一使用选定端口；Vite 监听成功后才启动 Electron。
+监听失败会显示操作提示并退出，不会一直等待或静默切换端口。Windows 可用
+`netsh interface ipv4 show excludedportrange protocol=tcp` 检查排除范围，
+也应检查对应的 `ipv6` 范围。此设置不改变后端的 `17777` 端口。
+
+更新源码后，先在 `electron/` 下执行 `npm run build`，再启动，以更新编译后的
+Electron 主进程。之后仅修改端口值无需重新构建，完整重启启动器即可。启动器
+关闭时会请求 Electron 正常退出，完成后端和壁纸清理。无效开发端口会阻止开发
+启动器启动；单独运行的后端会记录警告并拒绝开发浏览器来源，保留原生／文件来源客户端。
+
 macOS 登录后自动启动壁纸可使用原生 `Amadeus Wallpaper.app`；构建、验证和
 LaunchAgent 安装步骤见 [macOS 壁纸自启动](docs/macos_wallpaper_startup.md)。
 

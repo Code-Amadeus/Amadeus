@@ -17,7 +17,9 @@ test('explicit quit closes wallpaper windows when the backend is absent', () => 
 
 test('explicit quit stops a live backend once and then permits window closure', () => {
   const lifecycle = new ApplicationLifecycle()
+  assert.equal(lifecycle.isQuitting, false)
   assert.equal(lifecycle.beginQuit(true), true)
+  assert.equal(lifecycle.isQuitting, true)
   assert.equal(lifecycle.shouldHideWallpaperWindow(true), false)
   assert.equal(lifecycle.beginQuit(true), false)
 })

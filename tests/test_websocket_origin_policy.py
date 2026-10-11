@@ -4,7 +4,13 @@ import asyncio
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from config.development import development_server_origin
+from config.environment import EnvironmentReader
+from server import app as server_app
 
 from server.app import (
     _handle_websocket_connection,
@@ -17,6 +23,46 @@ from server.local_auth import LocalAuthPolicy
 
 _TOKEN = "desktop-token-abcdefghijklmnopqrstuvwxyz-0123456789"
 _NONCE = "instance-nonce-abcdefghijklmnop"
+
+
+@pytest.fixture(autouse=True)
+def default_development_origin(monkeypatch):
+    monkeypatch.setattr(server_app, "_DEVELOPMENT_SERVER_ORIGIN", development_server_origin(EnvironmentReader({})))
+
+
+@pytest.mark.parametrize("value", ["", "0", "-1", "65536", "1.5", "1e4", "${PORT}"])
+def test_invalid_development_port_disables_only_development_origins(value, monkeypatch, caplog):
+    origin = development_server_origin(EnvironmentReader({"AMADEUS_DEV_PORT": value}))
+    assert origin is None
+    assert "development browser origin disabled" in caplog.text
+    monkeypatch.setattr(server_app, "_DEVELOPMENT_SERVER_ORIGIN", origin)
+    for browser_origin in ("http://localhost:5173", "http://localhost:15173"):
+        assert not _websocket_origin_allowed(browser_origin, backend_port=17777)
+        assert not _http_request_origin_allowed({"origin": browser_origin}, backend_port=17777)
+    for native_origin in (None, "file://", "http://127.0.0.1:17777"):
+        assert _websocket_origin_allowed(native_origin, backend_port=17777)
+    assert _websocket_origin_allowed("null", backend_port=17777, user_agent="Electron/44.0.0")
+
+
+@pytest.mark.parametrize("port,origin", [(15173, "http://localhost:15173"), (80, "http://localhost")])
+def test_configured_origin_replaces_default_for_websocket_and_http(monkeypatch, port, origin):
+    configured = development_server_origin(EnvironmentReader({"AMADEUS_DEV_PORT": str(port)}))
+    assert configured == origin
+    monkeypatch.setattr(server_app, "_DEVELOPMENT_SERVER_ORIGIN", configured)
+    assert _websocket_origin_allowed(origin, backend_port=17777)
+    assert _http_request_origin_allowed({"origin": origin}, backend_port=17777)
+    for other in ("http://localhost:5173", "http://localhost:25173", f"http://127.0.0.1:{port}",
+                  f"http://localhost.evil.example:{port}", f"https://localhost:{port}"):
+        assert not _websocket_origin_allowed(other, backend_port=17777)
+        assert not _http_request_origin_allowed({"origin": other}, backend_port=17777)
+
+    async def connect():
+        ws = _FakeWebSocket(origin, protocols="amadeus.local.v1, amadeus.auth." + _TOKEN)
+        manager = _FakeManager()
+        assert await _handle_websocket_connection(ws, manager, backend_port=17777, auth_policy=_required_auth())
+        assert manager.calls == 1
+
+    asyncio.run(connect())
 
 
 def _required_auth() -> LocalAuthPolicy:

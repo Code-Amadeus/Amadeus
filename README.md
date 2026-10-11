@@ -548,6 +548,31 @@ Launch Amadeus:
 - Windows: `run_electron_utf8.bat`, the shared launcher for L1–L4; it discovers `.venv` automatically.
 - macOS: `cd electron && npm run electron:dev`.
 
+The development launcher and `npm run dev` use port `5173` by default. If the
+terminal reports `EACCES` (binding denied, possibly a system-reserved port) or
+`EADDRINUSE` (port occupied), choose an available port in the **repository-root
+`.env`**, for example:
+
+```dotenv
+AMADEUS_DEV_PORT=15173
+```
+
+Use a literal integer from 1 to 65535. An existing process environment variable
+overrides `.env`; `electron/.env` does not configure this port. Restart the whole
+launcher after changing it. Vite, Electron windows and backend origin checks
+share the selected port; Electron starts only after Vite is listening. A bind
+failure exits with an actionable terminal message instead of waiting forever
+or silently switching ports. On Windows, inspect exclusions with
+`netsh interface ipv4 show excludedportrange protocol=tcp` (also check `ipv6`).
+This setting does not change the backend's port `17777`.
+
+After updating the source, run `npm run build` from `electron/` before launching
+to refresh the compiled Electron main process. Changing only the port afterwards
+requires a launcher restart, not another build. Launcher shutdown asks Electron
+to quit so its backend and wallpaper cleanup can finish. An invalid development
+port stops the development launcher; a standalone backend logs a warning and
+rejects development browser origins while retaining its native/file clients.
+
 For wallpaper startup at macOS login, use the native `Amadeus Wallpaper.app`.
 Build, verification, and LaunchAgent installation steps are documented in
 [macOS wallpaper startup](docs/macos_wallpaper_startup.md).

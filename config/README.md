@@ -27,6 +27,21 @@ precedence, and records every setting declared through it. New startup
 configuration should use this boundary rather than calling `load_dotenv`
 again.
 
+Development bootstrap is an explicit exception: `AMADEUS_DEV_PORT` is read by
+`electron/src/main/developmentServer.ts` before Python exists. It reads only this
+key from the repository-root `.env`, with process environment taking priority
+and `5173` as the default. Supply a literal integer from 1 to 65535 (no variable
+interpolation). Both development commands and Electron use that resolver;
+Electron passes the resolved port to its Python child. Headless Python uses
+`config/development.py` with the existing `EnvironmentReader` to accept the same
+exact development origin for HTTP/WebSocket requests. This is a development
+transport setting, not a desktop Settings field. Changing it requires restarting
+the development launcher, not just the backend. Production frontend builds do
+not read this setting, and packaged Electron never trusts a development URL.
+Invalid input stops the development launcher. Python instead disables the
+development browser origin and logs a warning, so this development-only setting
+cannot prevent native/file-origin backend clients from starting.
+
 ## Shared configuration declarations
 
 The shared catalog covers the TTS selector, all four built-in TTS connection/model
