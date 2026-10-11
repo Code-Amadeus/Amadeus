@@ -5,6 +5,8 @@
 用户确认当前重点为插件/接口模块；记忆先记录。2026-10-11 补充要求：验证常用、符合 Amadeus
 语义的其他社区接口，以及安装、装载、运行和卸载的完整生命周期，不能只证明一个简单 TTS 样例。
 
+后续已补齐 Skill 和显式版本更新，见[Skill 专项验收](extension_skill_experiment_2026-10-11.md)。下列测试数量记录首个 TTS/MCP 提交时的结果。
+
 ## 已采纳的施工决定
 
 - 安装、配置、启停、选用和卸载均保存后待后端重启生效，与 MCP/ACP 和内置 TTS 一致。
@@ -12,7 +14,7 @@
 - Electron main 唯一拥有安装事务、持久扩展记录、密钥和 pending revision。Python 只消费
   启动快照并管理 Runner/原生注册，不拥有另一份可写安装记录。
 - 首阶段支持 `voice_backend` TTS 与声明式 `mcp_server`。后者仍由用户选择可消费的 Work
-  Provider，绝不暴露给 Main Chat。Skill 已核对，缺少通用消费者，暂不支持。
+  Provider，绝不暴露给 Main Chat。后续 Skill 实现已按用户补充要求接入 Codex、ACP 和 Pi。
 - `permissions.host` 非空拒绝。暂不保存 Grant、实现观察者或历史读取服务。
 - 显式本地 wheel 安装，独立环境；文件检查不执行包代码。运行环境由白名单从空构造，不继承
   Host 全部环境。启动快照读后从环境移除。包只收到自己的密钥；日志/错误不得返回原始密钥。

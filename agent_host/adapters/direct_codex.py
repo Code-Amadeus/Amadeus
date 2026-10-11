@@ -7,6 +7,8 @@ truth, UI projection, and user acceptance.
 
 from __future__ import annotations
 
+from agent_host.skills import skill_session_error, with_skill_catalog
+
 import asyncio
 import hashlib
 import json
@@ -233,6 +235,8 @@ class DirectCodexAdapter:
         run_id: str,
         emit: EmitProviderEvent,
     ) -> ProviderRunResult:
+        if error := skill_session_error(self.provider_id, request.session):
+            return ProviderRunResult(status='error', error=error)
         cwd = self._validated_cwd(request.cwd)
         if cwd is None:
             return ProviderRunResult(
@@ -289,7 +293,7 @@ class DirectCodexAdapter:
                 with_progress_contract(
                     with_host_authoring_capabilities(
                         with_parent_conversation_context(
-                            request.task,
+                            with_skill_catalog(request.task, self.provider_id),
                             metadata=request.metadata,
                             execution_provider=self.provider_id,
                         ),

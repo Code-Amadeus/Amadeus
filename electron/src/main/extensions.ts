@@ -242,7 +242,10 @@ export class ExtensionInstaller {
         if (!manifest || !inspection.digest || !inspection.package_root || !safeRelative(inspection.package_root)) {
           throw new Error('The wheel inspector returned incomplete installation metadata')
         }
-        if (this.store.extensionIsInstalled(manifest.id)) throw new Error('This extension is already installed; remove it and restart before installing another version')
+        const existing = this.store.extensionRecords().find(record => record.id === manifest.id)
+        if (this.store.extensionIsInstalled(manifest.id) && (!existing || existing.pendingRemoval || existing.version === manifest.version)) {
+          throw new Error('This extension is already installed; select a different version to update, or finish its pending removal')
+        }
         const env = extensionInstallerEnvironment(this.environment)
         const venv = path.join(directory, 'venv')
         await this.run(this.python(), ['-I', '-m', 'venv', '--copies', venv], { cwd: directory, env })
@@ -278,11 +281,18 @@ export class ExtensionInstaller {
         const installedManifest = JSON.parse(fs.readFileSync(installedManifestPath, 'utf8')) as unknown
         if (JSON.stringify(installedManifest) !== JSON.stringify(manifest)) throw new Error('The installed extension manifest differs from the inspected wheel')
         await this.helper.call('validate-installed', [packagePath], { manifest })
-        const checked = await this.helper.call('validate-config', [], { manifest, config: {}, allow_incomplete: true })
+        // A replacement is prepared beside the running version. Only a complete
+        // validated installation replaces desired state; old code is collected
+        // after confirmed backend stop, using the existing ownership markers.
+        const retainedValues = Object.fromEntries(Object.entries(existing?.values || {})
+          .filter(([key]) => manifest.config?.[key] && !manifest.config[key].secret))
+        const retainedSecrets = Object.fromEntries(Object.entries(existing?.encryptedSecrets || {})
+          .filter(([key]) => manifest.config?.[key]?.secret))
+        const checked = await this.helper.call('validate-config', [], { manifest, config: retainedValues, allow_incomplete: true })
         const record: StoredExtension = { id: manifest.id, version: manifest.version, digest: inspection.digest,
-          installId, packageRoot: inspection.package_root, sitePackages, manifest, enabled: false, pendingRemoval: false,
+          installId, packageRoot: inspection.package_root, sitePackages, manifest, enabled: existing?.enabled || false, pendingRemoval: false,
           deleteDataOnRemoval: false,
-          values: checked.config || {}, encryptedSecrets: {}, providers: [] }
+          values: checked.config || {}, encryptedSecrets: retainedSecrets, providers: existing?.providers || [] }
         const snapshot = this.store.saveExtension(this.environment, record)
         committed = true
         return snapshot
@@ -312,7 +322,7 @@ export class ExtensionInstaller {
       const providers = raw.providers === undefined ? record.providers : raw.providers
       if (!Array.isArray(providers) || providers.length > 32 || providers.some(id => typeof id !== 'string' || !/^[a-z][a-z0-9_-]{0,63}$/.test(id))) throw new Error('Invalid extension Work Provider binding')
       const enabled = raw.enabled ?? record.enabled
-      if (enabled && record.manifest.contributes.mcp_server?.length && !providers.length) throw new Error('Select a compatible Work Provider before enabling this extension')
+      if (enabled && (record.manifest.contributes.mcp_server?.length || record.manifest.contributes.skill?.length) && !providers.length) throw new Error('Select a compatible Work Provider before enabling this extension')
       const values = { ...record.values }
       for (const [key, value] of Object.entries(raw.values || {})) {
         if (record.manifest.config?.[key]?.secret) throw new Error('Extension secrets must use the credential field')

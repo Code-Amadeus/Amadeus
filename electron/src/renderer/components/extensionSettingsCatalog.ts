@@ -55,8 +55,12 @@ export function extensionUpdate(extension: ExtensionSummary, draft: ExtensionDra
   return { id: extension.id, enabled: draft.enabled, values, secrets, providers: [...draft.providers] }
 }
 
-export function compatibleExtensionProviders(providers: ExtensionProvider[]): ExtensionProvider[] {
-  return providers.filter(provider => provider.capabilities?.capability_projections?.includes('mcp_connection'))
+export function compatibleExtensionProviders(providers: ExtensionProvider[], extension?: ExtensionSummary | null): ExtensionProvider[] {
+  const required = extension?.manifest ? [
+    ...(extension.manifest.contributes.mcp_server?.length ? ['mcp_connection'] : []),
+    ...(extension.manifest.contributes.skill?.length ? ['agent_skill'] : []),
+  ] : ['mcp_connection']
+  return providers.filter(provider => required.every(projection => provider.capabilities?.capability_projections?.includes(projection)))
 }
 
 export function extensionLanguageSupported(languages: string[], language: string): boolean {

@@ -30,6 +30,7 @@ export type ExtensionContribution = {
   env?: Record<string, string>
   url?: string
   bearer_token?: string
+  path?: string
 }
 export type ExtensionManifest = {
   schema: 'amadeus.extension/v0'

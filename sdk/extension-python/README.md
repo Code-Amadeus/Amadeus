@@ -34,6 +34,8 @@ Stdout is reserved for JSON-RPC and package prints go to stderr. Health and
 errors returned by the Runner omit arbitrary exception contents.
 
 The experimental Host applies installation, configuration, enablement,
-selection, and removal after backend restart. Only TTS and declarative MCP
+selection, and removal after backend restart. TTS, declarative MCP and Agent Skill
 contributions are accepted; nonempty `permissions.host` is rejected. OS
 permission declarations are disclosures, not an OS security sandbox.
+Skills use packaged SKILL.md resources and Agent bindings; they do not run this
+SDK or a Runner. Same-ID version updates are explicit and take effect on restart.

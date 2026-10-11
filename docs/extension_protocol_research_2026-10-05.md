@@ -5,15 +5,16 @@
 
 ## 0. 当前结论
 
-- 首阶段验证 TTS 和声明式 MCP 两个真实 owner，共享包身份、安装、配置、重启和卸载。
+- 首阶段验证 TTS、声明式 MCP 和 Agent Skill 三种接入，共享包身份、安装、配置、重启和卸载。
   MiMo 仅英语，用户确认不支持日语；Fish Audio 验证日语/英语；Notes MCP 验证自己的笔记数据生命周期。
 - 统一保存后重启生效，和内置 TTS、MCP、ACP 一致。进程内稳定 TTS 代理管理 Runner 恢复，
   不修改 pipeline 做热切换，不实现配置 generation 交接。内置 MiMo 用户迁移移到真正删除内置后端时。
 - Electron main 唯一拥有安装事务、加密密钥和期望记录；Python 只消费启动快照并拥有运行期。
   拒绝任何 Host 权限，不保存 Grant。复用现有设置恢复策略，验证器暂时不可用则保留记录。
 - Runner 环境从白名单构造，仅注入自己的密钥；快照移出后端环境。此举防止自动继承，不是 OS 沙箱。
-- MCP 只投影到兼容 Work Provider，Main Chat 没有工具权。Skill 的通用消费者尚未实现；AUIP stager
-  不构成通用接口证据，因此本轮拒绝 Skill、记忆、observer、ASR 和主动行为。
+- MCP 和 Skill 只投影到选中的兼容 Work Provider，Main Chat 没有工具权或 Skill 正文。
+  Skill 已验证 Codex 原生发现、ACP 任务目录和 Pi 原生加载；记忆、observer、ASR 和主动行为仍拒绝。
+  具体消费差异、更新和旧会话边界见[Skill 专项记录](extension_skill_experiment_2026-10-11.md)。
 - TTS/MCP/Skill 均保留 provisional，实验不自动将其升为 normative。公开稳定性需通过约定的完整验收。
 
 详细 owner、边界、测试与后续门槛以[实施计划](extension_module_implementation_plan_2026-10-11.md)

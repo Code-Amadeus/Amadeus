@@ -31,6 +31,8 @@ from openai_codex.generated.v2_all import (
     AskForApproval,
     AskForApprovalValue,
     ConfigWriteResponse,
+    SkillsExtraRootsSetResponse,
+    SkillsListResponse,
     ReasoningEffort,
     ThreadInjectItemsResponse,
     ThreadResumeParams,
@@ -49,6 +51,7 @@ from agent_host.provider_authoring import (
     with_host_authoring_capabilities,
 )
 from agent_host.provider_catalog import CODEX_APP_SERVER_MANIFEST
+from agent_host.skills import provider_skills, skill_revision, skill_session_error
 from agent_host.provider_handoff import (
     CODEX_HANDOFF_CONVERSATION_CONTRACT,
     codex_handoff_presentation,
@@ -212,6 +215,20 @@ class _ApprovalAwareAsyncCodex(AsyncCodex):
     def __init__(self, config: CodexConfig, approval_handler: Callable[..., Any]) -> None:
         super().__init__(config)
         self._client = _ApprovalAwareAsyncCodexClient(config, approval_handler)
+
+    async def prepare_skills(self, cwd: Path) -> None:
+        await self._ensure_initialized()
+        skills = provider_skills('codex')
+        await self._client.request('skills/extraRoots/set',
+            {'extraRoots': [str(s.path.parent) for s in skills]}, response_model=SkillsExtraRootsSetResponse)
+        response = await self._client.request('skills/list', {'cwds': [str(cwd)], 'forceReload': True},
+                                              response_model=SkillsListResponse)
+        data = response.model_dump(mode='json', by_alias=True)
+        discovered = [skill for entry in data.get('data', []) for skill in entry.get('skills', [])]
+        for skill in skills:
+            matches = [item for item in discovered if item.get('name') == skill.name and item.get('enabled')]
+            if len(matches) != 1 or Path(matches[0]['path']).resolve() != skill.path.resolve():
+                raise ValueError('Codex did not uniquely discover an installed Skill')
 
     async def thread_start_host_approval(
         self,
@@ -559,6 +576,8 @@ class CodexAppServerAdapter:
         run_id: str,
         emit: EmitProviderEvent,
     ) -> ProviderRunResult:
+        if error := skill_session_error(self.provider_id, request.session):
+            return ProviderRunResult(status='error', error=error)
         cwd = self._validated_cwd(request.cwd)
         if cwd is None:
             return ProviderRunResult(
@@ -573,6 +592,8 @@ class CodexAppServerAdapter:
         try:
             codex = await self._ensure_codex()
             await self._ensure_desktop_provider_config(codex)
+            if provider_skills(self.provider_id):
+                await codex.prepare_skills(cwd)
             thread = await self._open_thread(codex, request, cwd)
             await emit(ProviderEvent(provider=self.provider_id, run_id=run_id,
                 type="session.opened", session=self._session(str(thread.id), request.session)))
@@ -1997,6 +2018,7 @@ class CodexAppServerAdapter:
             provider=self.provider_id,
             session_id=thread_id,
             scope=attached.scope if attached is not None else "interaction",
+            skill_revision=skill_revision(self.provider_id),
         )
 
     @staticmethod

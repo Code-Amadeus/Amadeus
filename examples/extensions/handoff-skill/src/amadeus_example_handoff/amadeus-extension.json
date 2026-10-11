@@ -1,0 +1,11 @@
+{
+  "schema": "amadeus.extension/v0",
+  "id": "com.example.handoff-skill",
+  "version": "0.1.0",
+  "display_name": {"en": "Work handoff Skill", "zh-CN": "工作交接 Skill"},
+  "description": {"en": "Write a concise handoff using the supplied facts and a packaged report layout.", "zh-CN": "根据提供的事实及随包模板整理工作交接。"},
+  "author": {"name": "Amadeus contributors"},
+  "engines": {"amadeus_host_api": ">=0.1,<0.2", "platforms": ["win32", "darwin", "linux"]},
+  "runtime": {"kind": "none"},
+  "contributes": {"skill": [{"id": "handoff", "contract": "amadeus.skill/v0", "path": "skills/handoff-brief", "title": {"en": "Work handoff", "zh-CN": "工作交接"}}]}
+}

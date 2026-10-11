@@ -45,11 +45,20 @@ const tools: ExtensionSummary = {
     config: { endpoint: { type: 'url', title: { en: 'Endpoint', 'zh-CN': '服务地址' }, required: true } },
   },
 }
+const skill: ExtensionSummary = {
+  id: 'org.example.skill', version: '0.1.0', digest: 'c'.repeat(64), enabled: false, pendingRemoval: false,
+  values: {}, secretConfigured: {}, providers: [], status: 'disabled', restartRequired: false,
+  manifest: { schema: 'amadeus.extension/v0', id: 'org.example.skill', version: '0.1.0', display_name: { en: 'Example handoff Skill', 'zh-CN': '示例交接 Skill' },
+    description: { en: 'Prepare a Work handoff with packaged references.', 'zh-CN': '使用随包参考资料整理工作交接。' }, author: { name: 'Example author' },
+    runtime: { kind: 'none' }, engines: { amadeus_host_api: '>=0.1,<0.2' },
+    contributes: { skill: [{ id: 'handoff', contract: 'amadeus.skill/v0', path: 'skills/handoff-brief' }] },
+  },
+}
 const desktop = {
   platform: 'win32', values: { AMADEUS_UI_LOCALE: locale, AMADEUS_UI_THEME: theme, TTS_BACKEND: 'gpt_sovits', TTS_OUTPUT_LANGUAGE: '日文' } as Record<string, string>,
   sources: { AMADEUS_UI_LOCALE: 'user', AMADEUS_UI_THEME: 'user', TTS_BACKEND: 'user', TTS_OUTPUT_LANGUAGE: 'user' }, locked: {}, secrets: {}, encryptionAvailable: true,
   mcpConnections: [], mcpConnectionsLocked: false, restartRequired: false, pendingKeys: [] as string[], pendingRevisions: {} as Record<string, number>, retired_settings: [],
-  extensions: [voice, tools],
+  extensions: [voice, tools, skill],
 }
 let runtime = desktop.extensions.map(extension => ({ id: extension.id, version: extension.version, enabled: extension.enabled,
   state: extension.enabled ? 'active' : 'inactive', detail: extension.enabled ? 'Runner is ready' : 'Package is disabled',
@@ -67,7 +76,9 @@ const send = async (method: string): Promise<Record<string, unknown>> => {
   calls.push({ method, params: {} })
   if (method === 'system.get_config') return { values: config() }
   if (method === 'provider.list') return { provider_availability: [], provider_manifests: [
-    { provider_id: 'pi', display_name: 'Pi', runtime_kind: 'native', capabilities: { capability_projections: ['mcp_connection'] } },
+    { provider_id: 'codex', display_name: 'Codex', runtime_kind: 'native', capabilities: { capability_projections: ['mcp_connection', 'agent_skill'] } },
+    { provider_id: 'codex_acp', display_name: 'Codex ACP', runtime_kind: 'agent', capabilities: { capability_projections: ['mcp_connection', 'agent_skill'] } },
+    { provider_id: 'pi', display_name: 'Pi', runtime_kind: 'native', capabilities: { capability_projections: ['agent_skill'] } },
     { provider_id: 'unsupported', display_name: 'Incompatible agent', runtime_kind: 'native', capabilities: { capability_projections: [] } },
   ], acp_agents: [], provider_configurations: [] }
   if (method === 'capability.list') return { packages: [] }

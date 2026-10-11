@@ -52,8 +52,8 @@ def validate_manifest(manifest: Any, *, check_environment: bool = True) -> dict[
     if manifest.get("permissions", {}).get("host"):
         raise ValueError("permissions.host is unsupported in this experiment")
     contributes = manifest["contributes"]
-    if set(contributes) - {"voice_backend", "mcp_server"}:
-        raise ValueError("this experiment supports only TTS voice_backend and mcp_server")
+    if set(contributes) - {"voice_backend", "mcp_server", "skill"}:
+        raise ValueError("this experiment supports only TTS voice_backend, mcp_server and skill")
     if any(item["role"] != "tts" for item in contributes.get("voice_backend", [])):
         raise ValueError("ASR extensions are unsupported in this experiment")
     if check_environment:
@@ -214,3 +214,6 @@ def validate_installed(manifest: dict[str, Any], package_path: Path) -> None:
     issues = package_issues(manifest, package_path)
     if issues:
         raise ValueError(f"invalid installed package: {issues[0].code} at {issues[0].path}")
+    from agent_host.skills import read_skill_metadata
+    for skill in manifest['contributes'].get('skill', ()):
+        read_skill_metadata(package_path / skill['path'])

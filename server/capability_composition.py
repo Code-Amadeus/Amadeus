@@ -334,11 +334,11 @@ def extension_capability_packages(records, statuses) -> tuple[CapabilityPackage,
                 if mapped_health not in {'ready', 'degraded', 'error', 'disabled'}:
                     mapped_health = 'error'
                 is_voice = kind == 'voice_backend'
-                native_ref = f'tts:{qualified_id}' if is_voice else f'mcp-connection:{extension_mcp_connection_id(record["id"], item["id"])}'
+                native_ref = f'tts:{qualified_id}' if is_voice else f'skill:{qualified_id}' if kind == 'skill' else f'mcp-connection:{extension_mcp_connection_id(record["id"], item["id"])}'
                 contributions.append(CapabilityContribution(
                     kind=kind, contribution_id=qualified_id, contract_version=item['contract'],
                     native_ref=native_ref, summary=localized_text(item.get('summary'), localized_text(record['manifest']['description'])),
-                    bindings=(CapabilityBinding(surface='voice_output' if is_voice else 'work_execution', projection='tts_backend' if is_voice else 'mcp_connection'),),
+                    bindings=(CapabilityBinding(surface='voice_output' if is_voice else 'work_execution', projection='tts_backend' if is_voice else 'agent_skill' if kind == 'skill' else 'mcp_connection'),),
                     enabled=record['enabled'] and health != 'starting', health=mapped_health,
                     health_detail=state['detail'],
                     metadata={'observed_state': status['state'], 'qualified_id': qualified_id,

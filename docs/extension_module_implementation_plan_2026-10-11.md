@@ -6,18 +6,19 @@
 
 ## 1. 交付范围
 
-P1 验证两个已有产品 owner：TTS 和 Work Provider 的 MCP 连接。三份独立包使用同一安装生命周期：
+P1 验证 TTS、MCP 和 Agent Skill 三种接入。四份独立包使用同一安装生命周期；Skill 补充验收见[专项记录](extension_skill_experiment_2026-10-11.md)。
 
 | 包 | 原生接入点 | 作用与限制 |
 |---|---|---|
 | MiMo | BaseTTSBackend 代理 | 英语语音。用户确认不支持日语，取消日语试听待办。真实英语验收因未配置 key 留待后续。 |
 | Fish Audio | 同一个 TTS 代理 | 日语/英语，MessagePack WebSocket、44.1 kHz PCM；已有一次真实日语合成，音质由用户试听。 |
 | Notes MCP | MCP connection → 兼容 Work Provider | 列出、读取、保存包自己目录内的笔记；不是 Amadeus 语义记忆，Main Chat 没有工具权限。 |
+| Handoff Skill | Codex / ACP / Pi | 安装一次、选择 Agent；原生发现/实际资源读取/产物/恢复/更新/卸载均有测试。 |
 
 样例位于 `examples/extensions/`，不导入 Host 内部实现。共同语义为**保存后重启后端生效**。
-Skill 已检查：AUIP authoring stager 不能充当通用任意 Skill 消费路径，因此暂不开放。
-拒绝 Skill、ASR、context_source、observer、proactive、第三方 UI 和任何 Host 权限。
-不引入 Grant 存储，不做市场、源码安装、自动更新、版本替换、广泛目录发现或 OS 沙箱。
+Skill 已从 AUIP 专用路径扩展为独立声明式资源，绑定兼容 Agent；本次 ACP 实测目标是 Codex ACP。
+拒绝 ASR、context_source、observer、proactive、第三方 UI 和任何 Host 权限。
+不引入 Grant 存储，不做市场、源码安装、自动更新、广泛目录发现或 OS 沙箱。允许用户显式安装同 ID 的另一版本，确认停机后回收旧环境。
 
 ## 2. 当前代码归属
 
@@ -72,6 +73,8 @@ Provider 自行启动的 MCP 进程仍由 Provider 管理，不能把 Host probe
 单次 Fish 时间仅是一个样本，不称 p50/p95 或性能门槛已达成。
 不声称已完成人工 Chat/Wallpaper/VN 听感、真实 Codex/ACP Work 回合、macOS/Linux 或签名分发验收。
 这些列入发布前门槛；实验通过不等于稳定 SDK。
+
+Skill 会话保存所绑定资源的 revision；相同版本可恢复，更新/卸载/重装后旧会话在模型调用前拒绝恢复并要求新会话，其他 Agent 不受无关绑定变化影响。
 
 ## 5. 后续顺序
 

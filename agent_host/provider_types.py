@@ -47,6 +47,7 @@ class ProviderSessionHandle:
     session_id: str
     scope: ProviderSessionScope = "work_item"
     version: int = 1
+    skill_revision: str = ""
 
     def __post_init__(self) -> None:
         provider = str(self.provider or "").strip().lower()
@@ -61,6 +62,8 @@ class ProviderSessionHandle:
             raise ValueError(f"invalid provider session scope: {self.scope}")
         if int(self.version) != 1:
             raise ValueError(f"unsupported provider session version: {self.version}")
+        if self.skill_revision and (len(self.skill_revision) != 64 or any(char not in '0123456789abcdef' for char in self.skill_revision)):
+            raise ValueError('invalid Provider Session Skill revision')
         object.__setattr__(self, "provider", provider)
         object.__setattr__(self, "session_id", session_id)
         object.__setattr__(self, "version", 1)
@@ -71,6 +74,7 @@ class ProviderSessionHandle:
             "session_id": self.session_id,
             "scope": self.scope,
             "version": self.version,
+            **({"skill_revision": self.skill_revision} if self.skill_revision else {}),
         }
 
     @classmethod
@@ -82,6 +86,7 @@ class ProviderSessionHandle:
             session_id=str(value.get("session_id") or value.get("sessionId") or ""),
             scope=str(value.get("scope") or "work_item"),  # type: ignore[arg-type]
             version=int(value.get("version") or 1),
+            skill_revision=str(value.get('skill_revision') or ''),
         )
 
 

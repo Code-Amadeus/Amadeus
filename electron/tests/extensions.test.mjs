@@ -87,6 +87,38 @@ function fixture(t, options = {}) {
   return { directory, root, file, store, installer, selectedWheel, calls, commandCalls, metadata }
 }
 
+test('version update preserves enabled bindings and credentials without removing running code', async t => {
+  const f = fixture(t)
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: f.metadata.id, enabled: true, providers: ['codex', 'pi'], secrets: { token: 'own-key' } })
+  const [before] = f.store.extensionRecords()
+  f.metadata.version = '0.2.0'
+  fs.writeFileSync(f.selectedWheel, 'different wheel bytes')
+  await f.installer.install(f.selectedWheel)
+  const [after] = f.store.extensionRecords()
+  assert.equal(after.version, '0.2.0')
+  assert.equal(after.enabled, true)
+  assert.deepEqual(after.providers, ['codex', 'pi'])
+  assert.deepEqual(after.encryptedSecrets, before.encryptedSecrets)
+  assert.notEqual(after.installId, before.installId)
+  assert.ok(fs.existsSync(path.join(f.root, before.installId)))
+  await f.installer.cleanupStoppedBackend()
+  assert.ok(!fs.existsSync(path.join(f.root, before.installId)))
+  assert.ok(fs.existsSync(path.join(f.root, after.installId)))
+})
+
+test('failed update leaves the installed version and saved intent unchanged', async t => {
+  const options = {}
+  const f = fixture(t, options)
+  await f.installer.install(f.selectedWheel)
+  const before = f.store.extensionRecords()
+  f.metadata.version = '0.2.0'
+  options.failPreparation = true
+  await assert.rejects(f.installer.install(f.selectedWheel), /preparation failure/)
+  assert.deepEqual(f.store.extensionRecords(), before)
+  assert.deepEqual(fs.readdirSync(f.root), [before[0].installId])
+})
+
 test('wheel install prepares an independent environment, validates, saves disabled intent and pending restart', async t => {
   const f = fixture(t)
   const settings = await f.installer.install(f.selectedWheel)

@@ -6,6 +6,19 @@ import { loadTypeScript } from './helpers/loadTypeScript.mjs'
 
 const catalog = loadTypeScript(new URL('../src/renderer/components/extensionSettingsCatalog.ts', import.meta.url))
 const voiceCatalog = loadTypeScript(new URL('../src/renderer/components/voiceConfigurationCatalog.ts', import.meta.url))
+
+test('Skill binding lists supported Agents and mixed packages require every native projection', () => {
+  const providers = [
+    { provider_id: 'codex', capabilities: { capability_projections: ['agent_skill', 'mcp_connection'] } },
+    { provider_id: 'acp_local', capabilities: { capability_projections: ['agent_skill', 'mcp_connection'] } },
+    { provider_id: 'pi', capabilities: { capability_projections: ['agent_skill'] } },
+    { provider_id: 'browser', capabilities: { capability_projections: [] } },
+  ]
+  const selected = { manifest: { contributes: { skill: [{ id: 'handoff' }] } } }
+  assert.deepEqual(catalog.compatibleExtensionProviders(providers, selected).map(p => p.provider_id), ['codex', 'acp_local', 'pi'])
+  selected.manifest.contributes.mcp_server = [{ id: 'notes' }]
+  assert.deepEqual(catalog.compatibleExtensionProviders(providers, selected).map(p => p.provider_id), ['codex', 'acp_local'])
+})
 const translate = (text, variables = {}) => Object.entries(variables).reduce((value, [key, item]) => value.replaceAll(`{${key}}`, String(item)), text)
 const mocks = { '../i18n': { useI18n: () => ({ locale: 'en-US', t: translate }) }, './FluentIcon': { default: () => null } }
 const extension = (overrides = {}) => ({
@@ -104,7 +117,7 @@ test('extension lifecycle and English-only compatibility use the real Chinese di
   const i18n = loadTypeScript(new URL('../src/renderer/i18n.tsx', import.meta.url), {}, cache)
   const Component = loadTypeScript(new URL('../src/renderer/components/ExtensionSettings.tsx', import.meta.url), { './FluentIcon': { default: () => null } }, cache).default
   const html = renderToStaticMarkup(React.createElement(i18n.I18nProvider, null, React.createElement(Component, props({ extensions: [extension({ pendingRemoval: true, restartRequired: true })] }))))
-  for (const label of ['示例语音', '已保存状态', '当前后端', '重启后卸载', '安装本地 wheel', '日语输出尚未验证']) assert.ok(html.includes(label), label)
+  for (const label of ['示例语音', '已保存状态', '当前后端', '重启后卸载', '安装或更新本地 wheel', '日语输出尚未验证']) assert.ok(html.includes(label), label)
   assert.ok(!html.includes('Saved state'))
 })
 
@@ -171,7 +184,7 @@ test('wheel cancellation retains a draft; compatible Provider choices and secret
   t.after(() => page.restore())
   page.button('Configure extension').props.onClick(); page.render()
   page.find(node => node.props?.id === 'extension-config-note' && node.type === 'input').props.onChange({ target: { value: 'draft' } }); page.render()
-  page.button('Install local wheel…').props.onClick(); await flush(); page.render()
+  page.button('Install or update local wheel…').props.onClick(); await flush(); page.render()
   assert.equal(installs, 1)
   assert.equal(page.find(node => node.props?.id === 'extension-config-note' && node.type === 'input').props.value, 'draft')
   assert.equal(page.find(node => node.type === 'label' && node.props.children?.[1] === 'Incompatible agent'), undefined)
@@ -215,9 +228,9 @@ test('pending installation reports a busy navigation guard; failed installation 
   })
   t.after(() => page.restore())
   assert.deepEqual(state, { dirty: false, busy: false })
-  page.button('Install local wheel…').props.onClick(); page.render()
+  page.button('Install or update local wheel…').props.onClick(); page.render()
   assert.deepEqual(state, { dirty: false, busy: true })
-  assert.equal(page.button('Install local wheel…'), undefined)
+  assert.equal(page.button('Install or update local wheel…'), undefined)
   resolve({ ok: false, error: 'Synthetic invalid wheel' }); await flush(); page.render()
   assert.equal(writes, 0)
   assert.equal(state.busy, false)

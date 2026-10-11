@@ -1,6 +1,6 @@
 # Experimental extension packages
 
-These source packages exercise two native contribution owners. They are not
+These source packages exercise TTS, MCP and Agent Skill contribution owners. They are not
 published packages or a claim of a stable SDK. Build local wheels, install them
 from Settings → Extensions, then configure, select/enable and restart the
 backend. Removing or disabling a package also takes effect after restart.
@@ -21,6 +21,12 @@ backend. Removing or disabling a package also takes effect after restart.
   Main Chat gets no tools or execution authority. This is a note utility, not
   Amadeus semantic memory. Retain or explicitly delete its data when removing it.
 
+- `handoff-skill`: declarative SKILL.md plus a report-layout reference. Install once,
+  choose Codex/ACP/Pi, then restart. Updating or removing its installed revision
+  requires a new Agent session; unchanged revisions resume normally. Resources
+  grant no additional write/shell permissions. Native tests use real processes
+  with a controlled local model; they do not certify LLM selection quality.
+
 From the repository root, using the supported Python development environment:
 
 ```powershell
@@ -28,6 +34,7 @@ python -m pip wheel --no-build-isolation --no-deps --no-index sdk/extension-pyth
 python -m pip wheel --no-build-isolation --no-deps --no-index examples/extensions/mimo-tts -w build/extension-examples
 python -m pip wheel --no-build-isolation --no-deps --no-index examples/extensions/notes-mcp -w build/extension-examples
 python -m pip wheel --no-build-isolation --no-deps --no-index examples/extensions/fish-audio -w build/extension-examples
+python -m pip wheel --no-build-isolation --no-deps --no-index examples/extensions/handoff-skill -w build/extension-examples
 ```
 
 The trusted SDK wheel must be present before installing these packages. A
@@ -41,3 +48,5 @@ Package code still runs with the user's OS privileges. The experiment prevents
 ambient Host credentials from being forwarded, not arbitrary OS access by a
 malicious local package. Source/package licensing follows this repository;
 separate SDK publication and licensing decisions remain pending.
+
+See [Skill lifecycle evidence](../../docs/extension_skill_experiment_2026-10-11.md) for native discovery, restoration, update and removal tests.

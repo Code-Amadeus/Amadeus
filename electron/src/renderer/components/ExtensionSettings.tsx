@@ -92,7 +92,7 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
     } catch (reason) { setError(reason instanceof Error ? reason.message : t('Could not remove extension')) }
     finally { setBusy(false) }
   }
-  const compatibleProviders = compatibleExtensionProviders(providers)
+  const compatibleProviders = compatibleExtensionProviders(providers, selected)
   const selectedMetadataAvailable = selected && extensions.some(extension => extension.id === selected.id && extension.manifest)
   const missingProviders = draft?.providers.filter(id => !compatibleProviders.some(provider => provider.provider_id === id)) || []
 
@@ -100,8 +100,8 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
     <CardShell vertical>
       <div className="settings-note-title">{t('Local community packages')}</div>
       <div className="settings-note-description">{t('Install a local Python wheel from an author you trust. Extension code runs on this computer. Installation, configuration, enablement and removal apply after a backend restart.')}</div>
-      <div className="settings-note-description">{t('This pilot supports TTS and declarative MCP servers. MCP tools are available only to selected compatible Work Providers; Main Chat has no access.')}</div>
-      <div className="settings-form-actions-end"><SettingsButton tone="primary" disabled={!available || busy} onClick={() => void install()}>{t(busy && !selected ? 'Working…' : 'Install local wheel…')}</SettingsButton></div>
+      <div className="settings-note-description">{t('This pilot supports TTS, MCP servers and Agent Skills. Install once, then select compatible Agents. Main Chat has no tool or Skill access.')}</div>
+      <div className="settings-form-actions-end"><SettingsButton tone="primary" disabled={!available || busy} onClick={() => void install()}>{t(busy && !selected ? 'Working…' : 'Install or update local wheel…')}</SettingsButton></div>
     </CardShell>
     {!available ? <div className="settings-field-description">{t('Extension management is available in the Electron app.')}</div> : null}
     {error ? <div role="alert" className="settings-form-error">{t(error)}</div> : null}
@@ -115,7 +115,10 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
       </CardShell>
       const observed = connected ? runtime.find(item => item.id === extension.id) : undefined
       const voices = extension.manifest.contributes.voice_backend || []
-      const servers = extension.manifest.contributes.mcp_server || []
+      const nativeContributions = [
+        ...(extension.manifest.contributes.mcp_server || []).map(item => ({ ...item, kind: 'mcp_server', label: 'MCP' })),
+        ...(extension.manifest.contributes.skill || []).map(item => ({ ...item, kind: 'skill', label: 'Skill' })),
+      ]
       const selectedVoice = voices.some(voice => `${extension.id}/${voice.id}` === selectedVoiceBackend)
       const savedState = extension.pendingRemoval ? 'Removal pending restart' : extension.enabled ? 'Enabled on startup' : 'Disabled'
       return <CardShell vertical key={extension.id}>
@@ -141,10 +144,10 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
             {(() => { const status = observed?.contributions.find(item => item.kind === 'voice_backend' && item.id === voice.id)
               return status ? <div>{t('Current backend')}: {t(extensionRuntimeLabel(status.health))}{status.detail ? ` · ${t(status.detail)}` : ''}</div> : null })()}
           </li>)}
-          {servers.map(server => <li key={`mcp-${server.id}`}>
-            <strong>MCP · {extensionText(server.title, locale, server.id)}</strong>
+          {nativeContributions.map(server => <li key={`${server.kind}-${server.id}`}>
+            <strong>{server.label} · {extensionText(server.title, locale, server.id)}</strong>
             <div>{t('Providers')}: {extension.providers.length ? extension.providers.join(', ') : t('Not bound')} · {t('Main Chat')}: {t('No access')}</div>
-            {(() => { const status = observed?.contributions.find(item => item.kind === 'mcp_server' && item.id === server.id)
+            {(() => { const status = observed?.contributions.find(item => item.kind === server.kind && item.id === server.id)
               return status ? <div>{t('Current backend')}: {t(extensionRuntimeLabel(status.health))}{status.detail ? ` · ${t(status.detail)}` : ''}</div> : null })()}
           </li>)}
         </ul>
@@ -198,9 +201,9 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
                 onChange={event => change({ values: { ...draft.values, [key]: event.target.value } })} />}
           </SettingsField>
         })}
-        {selected.manifest.contributes.mcp_server?.length ? <section className="settings-form-section">
+        {selected.manifest.contributes.mcp_server?.length || selected.manifest.contributes.skill?.length ? <section className="settings-form-section">
           <h4 className="settings-card-title">{t('Compatible Work Providers')}</h4>
-          <p className="settings-field-description">{t('Choose the Providers that may consume this package’s MCP servers. Main Chat cannot access these tools.')}</p>
+          <p className="settings-field-description">{t('Select the Agents that may use this package. Changes apply after restarting the backend. Skill updates or removal require a new Agent session; existing context cannot be erased by deleting files.')}</p>
           <div className="settings-form-provider-choices">{compatibleProviders.map(provider => <label key={provider.provider_id}>
             <input type="checkbox" checked={draft.providers.includes(provider.provider_id)} onChange={event => change({ providers: event.target.checked ? [...draft.providers, provider.provider_id] : draft.providers.filter(id => id !== provider.provider_id) })} />{provider.display_name}
           </label>)}</div>

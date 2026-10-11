@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "amadeus-example-handoff-skill"
+version = "0.1.0"
+description = "Portable Work handoff Skill for selected Amadeus Agents"
+requires-python = ">=3.12"
+
+[project.entry-points."amadeus.extensions"]
+"com.example.handoff-skill" = "amadeus_example_handoff"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+amadeus_example_handoff = ["amadeus-extension.json", "skills/handoff-brief/SKILL.md", "skills/handoff-brief/references/*.json"]

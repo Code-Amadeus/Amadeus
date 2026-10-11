@@ -12,6 +12,7 @@ from typing import Any
 from server.extensions.package import validate_config, validate_installed, validate_manifest
 from server.extensions.runner import RunnerClient
 from server.extensions.tts import ExtensionTTSBackend
+from agent_host.skills import SkillCatalog, configure_skills
 
 _current: ExtensionRuntime | None = None
 
@@ -77,6 +78,8 @@ class ExtensionRuntime:
                 except (ValueError, KeyError, TypeError):
                     pass
 
+        self.skills = SkillCatalog(self.activation_records)
+
     @staticmethod
     def _validate_record(raw: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         record = copy.deepcopy(raw)
@@ -122,6 +125,7 @@ class ExtensionRuntime:
             return
         self._started = True
         _current = self
+        configure_skills(self.skills)
         atexit.register(self.close)
         from tts.registry import TTSBackendDescriptor, register_tts_backend
 
@@ -174,18 +178,20 @@ class ExtensionRuntime:
                         if status["state"] == "active":
                             health, detail = own_health, own_detail
                     provider_targets = None
-                    if kind == "mcp_server":
+                    if kind == "skill" and record['id'] in self.skills.errors:
+                        health, detail = 'error', self.skills.errors[record['id']]
+                    elif kind in {"mcp_server", "skill"}:
                         if record["id"] in self._mcp_errors:
                             health, detail = "error", self._mcp_errors[record["id"]]
                         elif record["enabled"] and record["id"] not in self._blocked and self._observed[record["id"]]["state"] != "needs_config":
-                            health, detail, provider_targets = self._mcp_health(record["providers"])
+                            health, detail, provider_targets = self._provider_health(record["providers"], 'agent_skill' if kind == 'skill' else 'mcp_connection')
                     status["contributions"].append({"kind": kind, "id": contribution["id"], "qualified_id": f"{record['id']}/{contribution['id']}", "health": health, "detail": detail,
                                                   **({"provider_targets": provider_targets} if provider_targets is not None else {})})
             if client is None and status["state"] == "active" and all(item["health"] == "error" for item in status["contributions"]):
                 status["state"], status["detail"] = "error", status["contributions"][0]["detail"]
         return statuses
 
-    def _mcp_health(self, provider_ids: list[str]) -> tuple[str, str, list[dict[str, str]]]:
+    def _provider_health(self, provider_ids: list[str], projection: str) -> tuple[str, str, list[dict[str, str]]]:
         if self._provider_manifest_lookup is None:
             from agent_host.provider_runtime import runtime as provider_runtime
             lookup = provider_runtime.get_manifest
@@ -194,16 +200,16 @@ class ExtensionRuntime:
         targets = []
         for provider_id in provider_ids:
             manifest = lookup(provider_id)
-            state = "unavailable" if manifest is None else "ready" if "mcp_connection" in manifest.capabilities.capability_projections else "incompatible"
+            state = "unavailable" if manifest is None else "ready" if projection in manifest.capabilities.capability_projections else "incompatible"
             targets.append({"id": provider_id, "state": state})
         compatible = [target for target in targets if target["state"] == "ready"]
         if not targets:
             return "degraded", "No Work Provider selected", targets
         if not compatible:
-            return "error", "Selected Work Providers are unavailable or do not support MCP connections", targets
+            return "error", "Selected Work Providers are unavailable or do not support this contribution", targets
         if len(compatible) != len(targets):
-            return "degraded", "Some selected Work Providers are unavailable or do not support MCP connections", targets
-        return "ready", "Declarative MCP connection is registered for compatible Work Providers", targets
+            return "degraded", "Some selected Work Providers are unavailable or do not support this contribution", targets
+        return "ready", "Contribution is available to compatible selected Work Providers", targets
 
     def mark_mcp_projection_failed(self, package_id: str) -> None:
         self._mcp_errors[package_id] = "Declarative MCP contribution could not be registered"
@@ -228,6 +234,7 @@ class ExtensionRuntime:
             unregister_tts_backend(backend_id)
         if _current is self:
             _current = None
+            configure_skills(SkillCatalog())
         atexit.unregister(self.close)
 
 

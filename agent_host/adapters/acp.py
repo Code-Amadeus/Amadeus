@@ -16,6 +16,7 @@ from typing import Any
 from uuid import uuid4
 
 from agent_host.acp_configuration import AcpAgentSpec
+from agent_host.skills import skill_revision, skill_session_error, with_skill_catalog
 from agent_host.mcp_connections import (
     McpConnectionSpec,
     connections_for_provider,
@@ -159,7 +160,7 @@ class AcpProviderAdapter:
                 resume="attach" if spec.resume else "none",
                 cancellation="confirmed",
                 interaction="bidirectional",
-                capability_projections=("mcp_connection",),
+                capability_projections=("mcp_connection", "agent_skill"),
             ),
         )
         self._connections = load_mcp_connections() if mcp_connections is None else mcp_connections
@@ -220,6 +221,8 @@ class AcpProviderAdapter:
     ) -> ProviderRunResult:
         import acp
 
+        if error := skill_session_error(self.provider_id, request.session):
+            return ProviderRunResult(status='error', error=error)
         if (
             request.provider != self.provider_id
             or not request.cwd
@@ -324,7 +327,7 @@ class AcpProviderAdapter:
                                 else "work_item"
                             )
                         )
-                        run.session = ProviderSessionHandle(self.provider_id, session_id, scope)
+                        run.session = ProviderSessionHandle(self.provider_id, session_id, scope, skill_revision=skill_revision(self.provider_id))
                         self._attached.add(session_id)
                         # Bind the native address durably before any user execution.
                         await emit(
@@ -761,7 +764,7 @@ class AcpProviderAdapter:
         return with_progress_contract(
             with_host_authoring_capabilities(
                 with_parent_conversation_context(
-                    request.task, metadata=metadata, execution_provider=self.provider_id
+                    with_skill_catalog(request.task, self.provider_id), metadata=metadata, execution_provider=self.provider_id
                 ),
                 require_auip_preparation=requires_auip_authoring(metadata),
                 authoring_skill_path=str(metadata.get("auip_authoring_skill_path") or ""),
