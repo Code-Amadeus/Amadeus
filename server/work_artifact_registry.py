@@ -61,7 +61,7 @@ class WorkArtifactRegistry:
         item: WorkItemRecord,
         baseline: dict[str, Any],
     ) -> list[str]:
-        """Return baseline-dirty paths an explicit amendment may own.
+        """Return baseline-dirty paths an amendment or accepted recovery owns.
 
         A dirty working tree normally has unknown authorship and remains a
         conflict boundary. The narrow exception is an explicit amendment whose
@@ -71,7 +71,8 @@ class WorkArtifactRegistry:
         changes.
         """
 
-        if str(attempt.metadata.get("intent") or "").strip().lower() != "amend":
+        recovery_predecessor = self.store.get_recovery_predecessor(attempt)
+        if str(attempt.metadata.get("intent") or "").strip().lower() != "amend" and recovery_predecessor is None:
             return []
         related_id = str(
             attempt.metadata.get("related_work_item_id") or item.work_item_id
@@ -100,6 +101,7 @@ class WorkArtifactRegistry:
             if str(path or "").strip()
         }
         owned: list[str] = []
+        fingerprints = baseline.get("files" if baseline.get("source") == "filesystem" else "fingerprints") or {}
         for artifact in self.store.list_artifacts(related_id):
             if artifact.kind != "business.file" or artifact.status not in {
                 "registered",
@@ -109,6 +111,16 @@ class WorkArtifactRegistry:
             relative_path = str(artifact.metadata.get("relative_path") or "").strip()
             if not relative_path:
                 continue
+            if recovery_predecessor is not None:
+                # Recovery reuses the predecessor's exact output, not arbitrary
+                # edits made between attempts or claims reported by a Provider.
+                fact = fingerprints.get(relative_path) or {}
+                if baseline.get("source") == "filesystem":
+                    candidate = _safe_repo_path(Path(item.workspace_path), relative_path)
+                    fact = _file_fact(candidate) if candidate is not None else {}
+                if (artifact.attempt_id != recovery_predecessor.attempt_id or
+                        not artifact.sha256 or artifact.sha256 != fact.get("sha256")):
+                    continue
             key = _path_key(relative_path)
             if key in dirty_by_key and dirty_by_key[key] not in owned:
                 owned.append(dirty_by_key[key])

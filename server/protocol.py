@@ -63,6 +63,8 @@ class Method(str, Enum):
     PROJECT_CREATE     = "project.create"
     PROJECT_APPS_LIST  = "project.apps.list"
     DRAFT_APPS_LIST    = "draft.apps.list"
+    WORK_ARTIFACTS_LIST = "work.artifacts.list"
+    WORK_ARTIFACT_READ = "work.artifact.read"
 
     # TTS
     TTS_SET_MODE       = "tts.set_mode"

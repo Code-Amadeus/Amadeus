@@ -13,6 +13,7 @@ from agent_host.provider_identity import MAIN_ROLE_NAME_METADATA_KEY
 from agent_host.provider_types import ProviderInputDelivery, ProviderPermissionResponse
 from agent_host.work_ledger_store import WorkLedgerConflict, WorkLedgerNotFound
 from server.auip_app_source import discover_registered_auip_app
+from server.work_artifact_source import read_registered_text
 from server.protocol import Method
 from server.event_bus import bus
 from server.work_ledger_coordinator import DEFAULT_WORK_SURFACE, WorkLedgerCoordinator
@@ -38,6 +39,8 @@ class WorkLedgerHandler(RequestHandler):
         Method.WORK_PERMISSION_RESOLVE,
         Method.PROJECT_APPS_LIST,
         Method.DRAFT_APPS_LIST,
+        Method.WORK_ARTIFACTS_LIST,
+        Method.WORK_ARTIFACT_READ,
     ]
 
     def __init__(
@@ -57,6 +60,26 @@ class WorkLedgerHandler(RequestHandler):
         self._preview_open = preview_open
 
     async def handle(self, method: str, params: dict[str, Any]) -> dict[str, Any] | None:
+        if method == Method.WORK_ARTIFACTS_LIST:
+            try:
+                scope = str(params.get("scope") or "")
+                project_id = str(params.get("project_id") or "").strip()
+                if scope == "project":
+                    project = self.coordinator.destination.available_project(project_id)
+                    project_id = project.project_id
+                elif scope != "drafts" or project_id:
+                    raise ValueError("Choose a Project or the Draft artifact shelf.")
+                return {"ok": True, **self.coordinator.read_model.artifacts(
+                    project_id=project_id, limit=int(params.get("limit") or (100 if project_id else 5)))}
+            except (ValueError, WorkLedgerConflict, WorkLedgerNotFound) as exc:
+                return {"ok": False, "error": str(exc)}
+        if method == Method.WORK_ARTIFACT_READ:
+            try:
+                return {"ok": True, **await asyncio.to_thread(read_registered_text,
+                    self.coordinator.store, self._work_item_id(params),
+                    str(params.get("artifact_id") or "").strip())}
+            except ValueError as exc:
+                return {"ok": False, "error": str(exc)}
         if method == Method.WORK_LIST:
             return self._projection_response(self.coordinator.snapshot(surface=self._surface(params)))
         if method == Method.WORK_GET:
