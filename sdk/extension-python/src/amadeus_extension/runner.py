@@ -58,10 +58,11 @@ class Runner:
                 extension = getattr(extension, part)
             if not isinstance(extension, Extension):
                 raise TypeError("entry must be an Extension")
+            # Own cleanup before initialization can allocate resources and fail.
+            self.extension = extension
             context = self.context()
             if extension._initialize:
                 extension._initialize(context)
-            self.extension = extension
             self.send({"id": request_id, "result": {
                 "sdk": {"name": "amadeus-extension-sdk", "version": __version__},
                 "contributions": [{"kind": "voice_backend", "id": key, "contract": "amadeus.voice.tts/v0"} for key in extension._tts],
@@ -166,9 +167,11 @@ class Runner:
             pending = list(self._requests)
         for request_id in pending:
             self.cancel(request_id)
-        if self.extension and self.extension._shutdown:
-            self.extension._shutdown()
-        self._pool.shutdown(wait=False, cancel_futures=True)
+        try:
+            if self.extension and self.extension._shutdown:
+                self.extension._shutdown()
+        finally:
+            self._pool.shutdown(wait=False, cancel_futures=True)
 
     def run(self) -> None:
         try:

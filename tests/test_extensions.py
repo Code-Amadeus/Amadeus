@@ -63,8 +63,13 @@ import json, os, subprocess, sys, time
 from pathlib import Path
 from amadeus_extension import Extension, AudioChunk
 extension = Extension()
+data_directory = None
 @extension.initialize
 def initialize(context):
+    global data_directory
+    data_directory = Path(context.paths["data"])
+    if context.config.get("mode") == "initialization_failure":
+        raise RuntimeError("synthetic initialization failure")
     time.sleep(context.config.get("delay", 0))
     if context.config.get("mode") == "mismatch":
         extension._tts["wrong"] = extension._tts.pop("tone")
@@ -73,6 +78,11 @@ def initialize(context):
     print("package stdout is redirected 日本語")
     Path(context.paths["data"], "init.json").write_text(json.dumps({
         "env": dict(os.environ), "secrets": dict(context.secrets)}))
+@extension.shutdown
+def shutdown():
+    if data_directory:
+        with (data_directory / "shutdown.txt").open("a") as log:
+            log.write("closed\\n")
 @extension.tts("tone")
 def speak(request, context):
     data = Path(context.paths["data"])
@@ -121,6 +131,20 @@ def fast_limits(monkeypatch):
     monkeypatch.setattr(client, "READY_TIMEOUT", 2)
     monkeypatch.setattr(client, "REQUEST_TIMEOUT", 2)
     monkeypatch.setattr(client, "SHUTDOWN_TIMEOUT", 1)
+
+
+def test_sdk_failed_initialization_runs_shutdown_once(record):
+    client = RunnerClient(record)
+    params = client._initialize()
+    params["config"] = {"mode": "initialization_failure"}
+    reply = subprocess.run([record["python_path"], "-I", "-m", "amadeus_extension.runner",
+        "--entry", record["manifest"]["runtime"]["entry"]],
+        input=json.dumps({"jsonrpc": "2.0", "id": "init", "method": "initialize", "params": params}) + "\n",
+        capture_output=True, text=True, encoding="utf-8", timeout=10)
+    assert reply.returncode == 0, reply.stderr
+    messages = [json.loads(line) for line in reply.stdout.splitlines()]
+    assert len(messages) == 1 and messages[0]["error"]["code"] == -32010
+    assert Path(record["data_path"], "shutdown.txt").read_text() == "closed\n"
 
 
 def test_manifest_subset_and_semantics():

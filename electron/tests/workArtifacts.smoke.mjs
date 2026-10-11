@@ -39,6 +39,8 @@ const report = { passed: false, checks: [], screenshots: [] }
 try {
   await window.loadURL(url)
   await until("document.body.textContent.includes('audit.json')", 'Files did not render')
+  await fs.writeFile(path.join(output, 'files-desktop.png'), (await window.webContents.capturePage()).toPNG())
+  report.screenshots.push('files-desktop.png')
   for (const [title, content] of [['audit.json','{"rows":5}'],['orders.csv','id,amount'],['issues.txt','negative amount'],['notes.md','<script>']]) {
     await ui(`document.querySelector('button[aria-label="View ${title}"]').click()`)
     await until(`document.querySelector('pre')?.textContent.includes(${JSON.stringify(content)})`, 'Preview did not load ' + title)
@@ -69,6 +71,8 @@ try {
   await ui(`document.querySelector('button[aria-label="View auip.manifest.json"]').click()`)
   await until("document.querySelector('pre')?.textContent.includes('auip/v0')", 'Application member preview missing')
   assert.deepEqual(await ui('window.artifactFixture.reads.at(-1)'), { work_item_id: 'app-work', artifact_id: 'manifest' })
+  await fs.writeFile(path.join(output, 'apps-desktop.png'), (await window.webContents.capturePage()).toPNG())
+  report.screenshots.push('apps-desktop.png')
   await click('Open')
   assert.deepEqual(await ui('window.artifactFixture.opened'), ['app'])
   await click('Interact with Amadeus')

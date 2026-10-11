@@ -110,7 +110,7 @@ def _validate_registered_app(
         raise AuipProtocolError("artifact_unreadable", exc.strerror or str(exc)) from exc
     registered_digest = str(record.sha256 or "")
     actual_digest = hashlib.sha256(raw).hexdigest()
-    if registered_digest and registered_digest != actual_digest:
+    if not registered_digest or registered_digest != actual_digest:
         raise AuipProtocolError("artifact_revision_changed", actual_digest[:16])
     normalized_entry = raw.replace(b"\\", b"/").lower()
     if b".amadeus/runtime/authoring_inputs/" in normalized_entry:
@@ -549,17 +549,16 @@ def _workspace_member_ids(
     ids = {manifest_record.artifact_id, entry_record.artifact_id}
     root = Path(manifest_record.path).parent
     paths = {_path_key(str(root / name)) for name in (validation or {}).get("runtime_assets", [])}
+    receipted_ids: set[str] = set()
     for attempt_id in {record.attempt_id for record in artifacts if record.attempt_id}:
         attempt = store.get_attempt(attempt_id)
         metadata = getattr(attempt, "metadata", {}) or {}
         receipt = metadata.get("host_outcome_materialization") or {}
         if receipt.get("facet") == "auip.application":
-            for artifact_id in receipt.get("artifact_ids") or []:
-                record = store.get_artifact(str(artifact_id))
-                if record is not None:
-                    paths.add(_path_key(record.path))
+            receipted_ids.update(str(value) for value in receipt.get("artifact_ids") or [])
     for record in artifacts:
-        if not _registered_file(record) or _path_key(record.path) not in paths:
+        if not _registered_file(record) or (
+                record.artifact_id not in receipted_ids and _path_key(record.path) not in paths):
             continue
         path = _verified_artifact_path(store, record)
         if path is not None and _contained_path(str(root), str(path)) is not None:
@@ -848,6 +847,6 @@ def _verified_artifact_path(store: ArtifactSource, record: Any) -> Path | None:
     except OSError:
         return None
     expected_digest = str(getattr(record, "sha256", "") or "")
-    if expected_digest and expected_digest != actual_digest:
+    if not expected_digest or expected_digest != actual_digest:
         return None
     return path

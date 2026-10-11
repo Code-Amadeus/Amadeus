@@ -36,6 +36,8 @@ Optional `@extension.initialize` receives the context before ready; optional
 `python -I -X utf8 -m amadeus_extension.runner --entry your_package:extension`.
 Stdout is reserved for JSON-RPC and package prints go to stderr. Health and
 errors returned by the Runner omit arbitrary exception contents.
+Shutdown also runs when the initialization hook raises after allocating
+resources; write cleanup so it tolerates partially initialized state.
 
 The experimental Host applies installation, configuration, enablement,
 selection, and removal after backend restart. TTS, declarative MCP and Agent Skill

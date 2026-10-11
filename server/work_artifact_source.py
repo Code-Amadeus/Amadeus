@@ -56,7 +56,7 @@ def read_registered_text(store: Any, work_item_id: str, artifact_id: str) -> dic
 
 
 def latest_artifacts_by_path(store: Any, records: list[Any]) -> list[Any]:
-    """Collapse attempt history into the WorkItem's current path view.
+    """Collapse attempt history into each artifact kind's current path view.
 
     Artifact timestamps can tie at the platform clock's resolution.  Attempt
     number is the ledger's stable causal order, so a later delivery always
@@ -90,12 +90,14 @@ def latest_artifacts_by_path(store: Any, records: list[Any]) -> list[Any]:
         reverse=True,
     )
     latest: list[Any] = []
-    seen: set[str] = set()
+    seen: set[tuple[str, str]] = set()
     for record in ordered:
         path = str(getattr(record, "path", "") or "").strip()
         identity = str(getattr(record, "path_identity", "") or "").strip()
-        key = identity or artifact_path_key(path)
-        if not key or key in seen:
+        path_key = identity or artifact_path_key(path)
+        # A later Provider declaration is not a new Host business.file revision.
+        key = str(getattr(record, "kind", "")), path_key
+        if not path_key or key in seen:
             continue
         seen.add(key)
         latest.append(record)

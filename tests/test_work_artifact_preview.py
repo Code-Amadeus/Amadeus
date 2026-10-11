@@ -218,3 +218,59 @@ def test_file_and_application_recency_do_not_evict_each_other(ledger, scope):
     shelf2 = request(store, Method.WORK_ARTIFACTS_LIST, params)
     assert [f['artifactId'] for f in shelf2['files']] == [f['artifactId'] for f in shelf['files']]
     assert len(shelf2['apps']) == 5 and not shelf2['appsComplete']
+
+
+def test_previous_app_receipt_does_not_claim_a_new_ordinary_revision(ledger):
+    import json
+    from test_auip_launch import _manifest
+    store, item, attempt = ledger
+    register(store, item, attempt, 'index.html', b'<title>Application</title>')
+    register(store, item, attempt, 'auip.manifest.json', json.dumps(_manifest('App')).encode())
+    old = register(store, item, attempt, 'data.json', b'{"application":true}')
+    store.update_attempt(attempt.attempt_id, metadata={'host_outcome_materialization': {
+        'facet': 'auip.application', 'artifact_ids': [old.artifact_id]}})
+    newer = store.create_attempt(item.work_item_id, provider='test', task='Write independent data report')
+    report = register(store, item, newer, 'data.json', b'{"report":true}')
+    shelf = request(store, Method.WORK_ARTIFACTS_LIST, {'scope': 'drafts'})
+    assert [f['artifactId'] for f in shelf['files']] == [report.artifact_id]
+    assert report.artifact_id not in {f['artifactId'] for f in shelf['apps'][0]['files']}
+    # An explicit receipt for the new revision does claim it as an app member.
+    store.update_attempt(newer.attempt_id, metadata={'host_outcome_materialization': {
+        'facet': 'auip.application', 'artifact_ids': [report.artifact_id]}})
+    updated = request(store, Method.WORK_ARTIFACTS_LIST, {'scope': 'drafts'})
+    assert not updated['files']
+    assert report.artifact_id in {f['artifactId'] for f in updated['apps'][0]['files']}
+
+
+@pytest.mark.parametrize('unhashed', ['index.html', 'auip.manifest.json'])
+def test_unhashed_application_files_remain_files_without_launch_authority(ledger, unhashed):
+    import json
+    from test_auip_launch import _manifest
+    store, item, attempt = ledger
+    for name, raw in [('index.html', b'<title>App</title>'),
+                      ('auip.manifest.json', json.dumps(_manifest('App')).encode())]:
+        path = Path(item.workspace_path) / name
+        path.write_bytes(raw)
+        store.register_artifact(item.work_item_id, attempt_id=attempt.attempt_id,
+            kind='business.file', title=name, path=path,
+            sha256='' if name == unhashed else hashlib.sha256(raw).hexdigest())
+    shelf = request(store, Method.WORK_ARTIFACTS_LIST, {'scope': 'drafts'})
+    assert not shelf['apps']
+    assert len(shelf['files']) == 2
+
+
+@pytest.mark.parametrize('status', ['registered', 'pending'])
+@pytest.mark.parametrize('claimed_kind', ['business.file', 'business.export'])
+def test_provider_claim_cannot_replace_host_file_receipt(ledger, status, claimed_kind):
+    store, item, attempt = ledger
+    host_file = register(store, item, attempt, status=status)
+    coordinator = WorkLedgerCoordinator(store)
+    coordinator._register_artifact_payload(attempt, {'kind': claimed_kind,
+        'path': host_file.path, 'sha256': 'f' * 64, 'status': 'approved'})
+    claims = [row for row in store.list_artifacts(item.work_item_id) if row.metadata.get('provider_payload')]
+    assert len(claims) == 1 and claims[0].kind == 'provider.artifact'
+    coordinator._register_result_artifacts(attempt, metadata={'artifacts': [host_file.path]})
+    coordinator._register_path(attempt, host_file.path, kind='tool.output', discovered_from='provider_tool_event')
+    shelf = request(store, Method.WORK_ARTIFACTS_LIST, {'scope': 'drafts'})
+    assert [row['artifactId'] for row in shelf['files']] == [host_file.artifact_id]
+    assert shelf['files'][0]['previewable'] is (status == 'registered')
