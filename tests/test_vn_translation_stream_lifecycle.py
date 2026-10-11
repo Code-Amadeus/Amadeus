@@ -212,7 +212,7 @@ async def test_cancelled_unread_sdk_streams_release_shared_connection_pool(monke
     release = threading.Event()
     task = None
     http_client = httpx.Client(limits=httpx.Limits(max_connections=1), trust_env=False)
-    client = OpenAI(api_key="synthetic-key", base_url=f"http://127.0.0.1:{server.server_port}/v1",
+    client = OpenAI(api_key="test-key", base_url=f"http://127.0.0.1:{server.server_port}/v1",
                     http_client=http_client, max_retries=0)
 
     def create(**kwargs):
