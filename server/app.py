@@ -131,6 +131,9 @@ if ROOT not in sys.path:
 
 from server.log_encoding import install_mojibake_repair_filter, install_stdio_mojibake_repair
 from server.local_auth import LocalAuthPolicy, clear_inherited_auth_environment
+from config.development import development_server_origin
+from config.environment import load_project_environment
+
 from config import settings
 from config.log_privacy import protected_text
 
@@ -253,6 +256,7 @@ work_status_narrator = None
 # post-condition waits for the shared character lane in a tracked background
 # task.  This keeps a compound "switch and edit" from delaying Provider start.
 _focus_confirmation_tasks: set[asyncio.Task] = set()
+_DEVELOPMENT_SERVER_ORIGIN = development_server_origin(load_project_environment(Path(ROOT)))
 
 
 def _websocket_origin_allowed(
@@ -264,7 +268,7 @@ def _websocket_origin_allowed(
     """Allow only the browser origins that Amadeus actually owns.
 
     Native clients normally omit ``Origin``. Packaged Electron uses a file or
-    opaque origin, while development Electron is served by the fixed Vite
+    opaque origin, while development Electron is served by the configured Vite
     origin. Opaque origins are accepted only with Chromium's Electron UA.
     """
 
@@ -280,7 +284,7 @@ def _websocket_origin_allowed(
         return "Electron/" in str(user_agent or "")
     return value in {
         "file://",
-        "http://localhost:5173",
+        _DEVELOPMENT_SERVER_ORIGIN,
         f"http://127.0.0.1:{int(backend_port)}",
     }
 

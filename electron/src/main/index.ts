@@ -38,6 +38,7 @@ import { ExtensionInstaller, ExtensionPackageHelper } from './extensions.js'
 import { EXTENSIONS_ENV } from './desktopSettings.js'
 import type { ExtensionRemovalOptions, ExtensionUpdate } from '../shared/extensions.js'
 import { forceStopBackendTree } from './backendProcessTree.js'
+import { developmentServer, isDevelopmentRendererUrl } from './developmentServer.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -78,6 +79,7 @@ Menu.setApplicationMenu(menuTemplate ? Menu.buildFromTemplate(menuTemplate) : nu
 // development port. NODE_ENV is not guaranteed to be set by electron-builder,
 // so packaging identity is the owning security boundary.
 const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production'
+const devServer = isDev ? developmentServer(PROJECT_ROOT) : null
 const windowsWallpaper = managesWindowsWallpaper(process.platform, process.env)
   ? new WindowsWallpaperSession({
       ...windowsWallpaperDependencies(PROJECT_ROOT, process.resourcesPath, app.isPackaged),
@@ -450,6 +452,7 @@ function startBackend(): Promise<void> {
 
 async function launchBackend(): Promise<void> {
   const health = await backendHealthStatus()
+  if (applicationLifecycle.isQuitting) return
   if (health === 'ready') {
     backendOwned = true
     console.log(`[electron] backend already available on ${BACKEND_WS}; reusing it`)
@@ -496,6 +499,7 @@ async function launchBackend(): Promise<void> {
       AMADEUS_BACKEND_AUTH_MODE: 'required',
       AMADEUS_BACKEND_TOKEN: BACKEND_TOKEN,
       AMADEUS_BACKEND_INSTANCE_NONCE: BACKEND_INSTANCE_NONCE,
+      ...(devServer ? { AMADEUS_DEV_PORT: String(devServer.port) } : {}),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -561,13 +565,7 @@ const RENDERER_ENTRY_PATH = path.resolve(
 function isTrustedRendererShellUrl(rawUrl: string): boolean {
   try {
     const target = new URL(rawUrl)
-    if (
-      isDev
-      && target.protocol === 'http:'
-      && target.hostname === 'localhost'
-      && target.port === '5173'
-      && target.pathname === '/'
-    ) return true
+    if (devServer && isDevelopmentRendererUrl(rawUrl, devServer.origin)) return true
     return target.protocol === 'file:'
       && path.resolve(fileURLToPath(target)) === RENDERER_ENTRY_PATH
   } catch {
@@ -625,8 +623,8 @@ function createWindow(): void {
   const rendererQuery = { mainWindow: '1', ...(wantsWallpaper() ? { wallpaper: '1' } : {}) }
   const query = new URLSearchParams(rendererQuery)
   const queryParam = `?${query.toString()}`
-  if (isDev) {
-    mainWindow.loadURL(`http://localhost:5173${queryParam}`)
+  if (devServer) {
+    mainWindow.loadURL(`${devServer.origin}${queryParam}`)
       .catch(() => {
         // fallback: try built files
         const p = path.join(__dirname, '..', 'renderer', 'index.html')
@@ -1100,13 +1098,13 @@ function createElectronSliceWindow(rawBridge: unknown): boolean {
 
 function workOverlayUrl(): string {
   const params = 'page=work&desktopProjection=1&panelWindow=1'
-  if (isDev) return `http://localhost:5173?${params}`
+  if (devServer) return `${devServer.origin}?${params}`
   return `file://${path.join(__dirname, '..', 'renderer', 'index.html')}?${params}`
 }
 
 function workGlowUrl(): string {
   const params = 'desktopProjection=1&glowWindow=1'
-  if (isDev) return `http://localhost:5173?${params}`
+  if (devServer) return `${devServer.origin}?${params}`
   return `file://${path.join(__dirname, '..', 'renderer', 'index.html')}?${params}`
 }
 
@@ -1628,7 +1626,7 @@ function updateWorkPreviewSurface(descriptor: WorkPreviewDescriptor): {
 
 function workPreviewShellUrl(previewId: string): string {
   const query = new URLSearchParams({ previewWindow: '1', previewId })
-  if (isDev) return `http://localhost:5173?${query.toString()}`
+  if (devServer) return `${devServer.origin}?${query.toString()}`
   return `file://${path.join(__dirname, '..', 'renderer', 'index.html')}?${query.toString()}`
 }
 
@@ -2769,6 +2767,17 @@ ipcMain.handle('work-overlay.set-hit-regions', (event, boundsList: Electron.Rect
 
 // app lifecycle.
 
+if (!app.isPackaged && process.argv.includes('--amadeus-dev-launcher')) {
+  // Electron owns cleanup. Launcher IPC disconnect also covers a lost terminal
+  // or crashed launcher; Windows Electron's stdin is not a usable lifetime pipe.
+  const requestQuit = () => { if (!applicationLifecycle.isQuitting) app.quit() }
+  process.on('message', message => { if (message === 'amadeus-dev-quit') requestQuit() })
+  process.once('disconnect', requestQuit)
+  process.on('SIGINT', requestQuit)
+  process.on('SIGTERM', requestQuit)
+  if (!process.connected) requestQuit()
+}
+
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
   app.quit()
@@ -2802,6 +2811,7 @@ function ensureWindowsWallpaperTray(): void {
 }
 
 app.whenReady().then(async () => {
+  if (applicationLifecycle.isQuitting) return
   // This change owns Windows startup only; retain the existing non-Windows
   // second-instance lifecycle until that path is qualified independently.
   if (process.platform === 'win32' && !gotSingleInstanceLock) return
@@ -2815,6 +2825,7 @@ app.whenReady().then(async () => {
     backendStartFailed = true
     console.error('[electron] backend failed to become ready', error)
   }
+  if (applicationLifecycle.isQuitting) return
   createWindow()
   if (process.platform === 'win32' && (backendStartFailed || windowsWallpaperTray?.hasIcon === false)) mainWindow?.show()
   if (applicationLifecycle.completeStartup()) {
