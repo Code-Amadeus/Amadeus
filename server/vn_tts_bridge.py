@@ -19,6 +19,7 @@ from config.environment import EnvironmentReader
 from llm.character_prompts import render
 
 import asyncio
+from contextlib import aclosing
 import logging
 import os
 import re
@@ -343,8 +344,9 @@ async def _run_vn_tts_job(
             if voice_text:
                 await dispatcher.feed(voice_text, allow_early_cut=False)
             else:
-                async for piece in _stream_translate_zh_to_ja(display_text):
-                    await dispatcher.feed(piece)
+                async with aclosing(_stream_translate_zh_to_ja(display_text)) as translation:
+                    async for piece in translation:
+                        await dispatcher.feed(piece)
             await dispatcher.flush()
             dispatcher.finish_receipt()
             return dispatcher.completion_result()
@@ -838,15 +840,15 @@ async def _stream_translate_zh_to_ja(chinese_text: str) -> AsyncIterator[str]:
         client = _get_client(provider, api_key, base_url)
         return client.chat.completions.create(**kwargs)
 
-    stream = await asyncio.to_thread(request)
-    async for chunk in _aiter_sync_iter(stream):
-        try:
-            piece = chunk.choices[0].delta.content or ""
-        except Exception:
-            piece = ""
-        piece = _strip_translation_noise(piece)
-        if piece:
-            yield piece
+    async with aclosing(_aiter_sync_stream(request)) as chunks:
+        async for chunk in chunks:
+            try:
+                piece = chunk.choices[0].delta.content or ""
+            except Exception:
+                piece = ""
+            piece = _strip_translation_noise(piece)
+            if piece:
+                yield piece
 
 
 def _get_client(provider: str, api_key: str, base_url: str):
@@ -870,13 +872,43 @@ def _get_client(provider: str, api_key: str, base_url: str):
         return client
 
 
-async def _aiter_sync_iter(sync_iterable) -> AsyncIterator[Any]:
-    iterator = iter(sync_iterable)
-    while True:
-        has_item, item = await asyncio.to_thread(_next_or_sentinel, iterator)
-        if not has_item:
-            break
-        yield item
+async def _aiter_sync_stream(request) -> AsyncIterator[Any]:
+    """Own the stream until closed, even if its current worker outlives the consumer."""
+    loop = asyncio.get_running_loop()
+    stream = None
+    pending = loop.run_in_executor(None, request)
+
+    def close_stream():
+        # Retrieve late failures too. A failed create has no stream to close;
+        # a failed read still leaves us responsible for the acquired stream.
+        try:
+            result = pending.result()
+        except Exception:
+            result = None
+        owned_stream = stream if stream is not None else result
+        if owned_stream is not None:
+            try:
+                owned_stream.close()
+            except Exception as exc:
+                logger.warning("[VN TTS] stream close failed: %s", type(exc).__name__)
+
+    try:
+        # shield preserves the worker result so cancellation cannot orphan it.
+        stream = await asyncio.shield(pending)
+        iterator = iter(stream)
+        while True:
+            pending = loop.run_in_executor(None, _next_or_sentinel, iterator)
+            has_item, item = await asyncio.shield(pending)
+            if not has_item:
+                break
+            yield item
+    finally:
+        if pending.done():
+            await asyncio.shield(loop.run_in_executor(None, close_stream))
+        else:
+            # Cancellation stays prompt. Close off-loop after create/next ends,
+            # never concurrently with a synchronous read on the same stream.
+            pending.add_done_callback(lambda _: loop.run_in_executor(None, close_stream))
 
 
 def _next_or_sentinel(iterator) -> tuple[bool, Any]:
