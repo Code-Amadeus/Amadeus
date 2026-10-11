@@ -111,6 +111,11 @@ Verified entry/manifest and Host-receipted members appear in application details
 independent reports in the same Work/directory remain ordinary files. Unclaimed
 files are never hidden merely because their extension or directory looks like
 application code. An invalid AUIP revision has no runnable application card.
+Membership receipts name exact artifact revisions, not a path's future contents.
+Entry and manifest records require a registered digest. Provider declarations
+remain separately identified evidence and cannot replace Host file receipts.
+An accepted recovery inherits only its predecessor's unchanged, hashed outputs;
+unrelated or intervening edits remain ambiguous.
 
 Text preview accepts registered Work/artifact IDs, validates current revision,
 workspace containment and SHA-256, and returns at most 512 KiB UTF-8. AUIP open
