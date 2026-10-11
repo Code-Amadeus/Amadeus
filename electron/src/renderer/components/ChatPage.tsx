@@ -167,6 +167,7 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
   const [projectApps, setProjectApps] = useState<ProjectAppSummary[]>([])
   const [projectFiles, setProjectFiles] = useState<WorkFileSummary[]>([])
   const artifactLoadRevision = useRef(0)
+  const [projectFilesComplete, setProjectFilesComplete] = useState(true)
   const [projectAppsComplete, setProjectAppsComplete] = useState(true)
   const [projectAppsLoading, setProjectAppsLoading] = useState(false)
   const [projectAppsFeedback, setProjectAppsFeedback] = useState('')
@@ -1044,12 +1045,14 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
       if (res.ok === false) throw new Error(String(res.message || res.error || 'Could not load artifacts'))
       setProjectApps(Array.isArray(res.apps) ? res.apps as unknown as ProjectAppSummary[] : [])
       setProjectFiles(Array.isArray(res.files) ? res.files as unknown as WorkFileSummary[] : [])
-      setProjectAppsComplete(res.complete !== false)
+      setProjectAppsComplete(res.appsComplete !== false)
+      setProjectFilesComplete(res.filesComplete !== false)
     } catch (error) {
       if (revision !== artifactLoadRevision.current) return
       setProjectApps([])
       setProjectFiles([])
       setProjectAppsComplete(true)
+      setProjectFilesComplete(true)
       setProjectAppsFeedback(error instanceof Error ? error.message : String(error))
     } finally {
       if (revision === artifactLoadRevision.current) setProjectAppsLoading(false)
@@ -1374,7 +1377,8 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
           project={projectView}
           scope={projectViewId === DRAFT_APPS_VIEW_ID ? 'drafts' : 'project'}
           apps={projectApps}
-          complete={projectAppsComplete}
+          appsComplete={projectAppsComplete}
+          filesComplete={projectFilesComplete}
           loading={projectAppsLoading}
           actionKey={streaming ? 'chat-busy' : projectAppAction}
           feedback={projectAppsFeedback}

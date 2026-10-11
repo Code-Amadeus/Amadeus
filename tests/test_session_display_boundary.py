@@ -106,7 +106,7 @@ def test_chat_history_uses_an_internal_project_and_draft_rail() -> None:
     assert "mode: 'observe'" in chat
     assert "Interact with Amadeus" in apps
     assert "Promote to Project" in apps
-    assert "the five most recent Drafts with artifacts" in apps
+    assert "Files and interactive applications have separate recent lists" in apps
     assert "onInteract(app)" in apps
     assert "project.apps.list" not in apps
     assert "Promoted artifacts appear here without copying their files" in apps

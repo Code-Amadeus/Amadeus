@@ -60,6 +60,15 @@ try {
   await ui(`document.querySelector('button[aria-label="View audit.json"]').click()`)
   await until("document.querySelector('[role=alert]')?.textContent.includes('missing')", 'Missing file feedback absent')
   assert.equal(await ui("document.querySelector('pre') === null"), true)
+  assert.equal(await ui("[...document.querySelectorAll('button')].some(node=>node.textContent.trim()==='Open')"), false)
+  await click('Interactive apps · 1')
+  await until("document.body.textContent.includes('Verified application')", 'Application view missing')
+  assert.equal(await ui("document.querySelector('button[aria-label=\"View audit.json\"]') === null"), true)
+  assert.equal(await ui("document.body.textContent.includes('Application files · 1')"), true)
+  await ui("[...document.querySelectorAll('summary')].find(node=>node.textContent.includes('Application files')).click()")
+  await ui(`document.querySelector('button[aria-label="View auip.manifest.json"]').click()`)
+  await until("document.querySelector('pre')?.textContent.includes('auip/v0')", 'Application member preview missing')
+  assert.deepEqual(await ui('window.artifactFixture.reads.at(-1)'), { work_item_id: 'app-work', artifact_id: 'manifest' })
   await click('Open')
   assert.deepEqual(await ui('window.artifactFixture.opened'), ['app'])
   await click('Interact with Amadeus')
@@ -70,7 +79,7 @@ try {
   await pause(100)
   assert.equal(await ui('document.documentElement.scrollWidth <= innerWidth'), true)
   report.passed = true
-  report.checks = ['JSON CSV TXT Markdown previews', 'registered IDs only', 'text escaped', 'execution vs review state', 'missing file has no stale content', 'AUIP open and interact unchanged', 'refresh and narrow layout', 'late response cannot replace another file']
+  report.checks = ['JSON CSV TXT Markdown previews', 'registered IDs only', 'text escaped', 'execution vs review state', 'missing file has no stale content', 'AUIP open and interact unchanged', 'refresh and narrow layout', 'late response cannot replace another file', 'separate file and AUIP views with application members']
 } finally {
   await fs.writeFile(path.join(output, 'report.json'), JSON.stringify(report, null, 2))
   console.log(JSON.stringify(report))

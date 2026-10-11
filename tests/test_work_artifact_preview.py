@@ -158,3 +158,63 @@ def test_artifact_preview_survives_ledger_reopen(ledger, tmp_path):
         result = request(reopened, Method.WORK_ARTIFACTS_LIST, {"scope": "drafts"})
         assert result["files"][0]["artifactId"] == artifact.artifact_id
         assert read_registered_text(reopened, item.work_item_id, artifact.artifact_id)["content"] == '{"rows":5}'
+
+
+def test_mixed_delivery_separates_verified_members_from_adjacent_reports(ledger, tmp_path):
+    import json
+    from test_auip_launch import _manifest
+    store, item, attempt = ledger
+    entry = register(store, item, attempt, 'index.html', b'<!doctype html><title>Mixed</title>')
+    manifest = register(store, item, attempt, 'auip.manifest.json', json.dumps(_manifest('Mixed')).encode())
+    asset = register(store, item, attempt, 'runtime.js', b'// Host-owned resource')
+    report = register(store, item, attempt, 'report.md', b'# Independent report')
+    unrelated = register(store, item, attempt, 'standalone.html', b'<h1>Independent HTML</h1>')
+    store.update_attempt(attempt.attempt_id, metadata={'host_outcome_materialization': {
+        'facet': 'auip.application', 'artifact_ids': [entry.artifact_id, manifest.artifact_id, asset.artifact_id]}})
+    def check(current):
+        shelf = request(current, Method.WORK_ARTIFACTS_LIST, {'scope': 'drafts'})
+        assert {f['artifactId'] for f in shelf['files']} == {report.artifact_id, unrelated.artifact_id}
+        assert len(shelf['apps']) == 1
+        assert {f['artifactId'] for f in shelf['apps'][0]['files']} == {entry.artifact_id, manifest.artifact_id, asset.artifact_id}
+        assert read_registered_text(current, item.work_item_id, report.artifact_id)['content'] == '# Independent report'
+        assert shelf['filesComplete'] and shelf['appsComplete']
+    check(store)
+    with WorkLedgerStore(tmp_path / 'ledger.sqlite3') as reopened:
+        check(reopened)
+    # No validated app means no hidden components and no runnable app card.
+    Path(manifest.path).write_text('{}', encoding='utf-8')
+    shelf = request(store, Method.WORK_ARTIFACTS_LIST, {'scope': 'drafts'})
+    assert not shelf['apps']
+    assert len(shelf['files']) == 5
+    assert all(not f['previewable'] for f in shelf['files'] if f['title'].endswith('.html'))
+
+
+@pytest.mark.parametrize('scope', ['drafts', 'project'])
+def test_file_and_application_recency_do_not_evict_each_other(ledger, scope):
+    from test_auip_launch import _seed_app
+    store, item, attempt = ledger
+    root = Path(item.workspace_path).parent
+    project = store.get_project(item.project_id)
+    if scope == 'project':
+        root = root.parent / 'retained'
+        root.mkdir()
+        project = store.create_or_get_project(root)
+        item = store.create_work_item(project.project_id, title='Retained report', workspace_path=root)
+        attempt = store.create_attempt(item.work_item_id, provider='test', task='Report')
+    register(store, item, attempt, 'old-report.txt')
+    params = {'scope': scope, 'limit': 5, **({'project_id': project.project_id} if scope == 'project' else {})}
+    old_app, _, _ = _seed_app(store, project, root, title='Older app', turn_id='old-app')
+    for index in range(6):
+        workspace = root / f'files-{index}'
+        workspace.mkdir()
+        work = store.create_work_item(project.project_id, title=f'Files {index}', workspace_path=workspace)
+        run = store.create_attempt(work.work_item_id, provider='test', task='Report')
+        register(store, work, run, 'report.txt')
+    shelf = request(store, Method.WORK_ARTIFACTS_LIST, params)
+    assert [a['workItemId'] for a in shelf['apps']] == [old_app.work_item_id]
+    assert len(shelf['files']) == 5 and not shelf['filesComplete'] and shelf['appsComplete']
+    for index in range(6):
+        _seed_app(store, project, root, title=f'New app {index}', turn_id=f'app-{index}')
+    shelf2 = request(store, Method.WORK_ARTIFACTS_LIST, params)
+    assert [f['artifactId'] for f in shelf2['files']] == [f['artifactId'] for f in shelf['files']]
+    assert len(shelf2['apps']) == 5 and not shelf2['appsComplete']

@@ -279,6 +279,8 @@ def _discover_registered_auip_app(
         **entry,
         "manifest_artifact_id": str(manifest_record.artifact_id),
         "manifest_attempt_id": str(manifest_record.attempt_id or ""),
+        "member_artifact_ids": _workspace_member_ids(
+            store, artifacts, manifest_record, entry_record, validation),
         "app": {
             "id": manifest.app_id,
             "title": manifest.title,
@@ -531,6 +533,40 @@ def _registered_file(record: Any) -> bool:
 
 
 
+def _workspace_member_ids(
+    store: ArtifactSource,
+    artifacts: list[Any],
+    manifest_record: Any,
+    entry_record: Any,
+    validation: dict[str, Any] | None,
+) -> list[str]:
+    """Known bundle membership, not every file sharing its directory.
+
+    Entry/manifest are verified by discovery. Host runtime receipts and exact
+    outcome-materialization records identify additional members. Unclaimed
+    files (including reports beside the app) remain independent deliverables.
+    """
+    ids = {manifest_record.artifact_id, entry_record.artifact_id}
+    root = Path(manifest_record.path).parent
+    paths = {_path_key(str(root / name)) for name in (validation or {}).get("runtime_assets", [])}
+    for attempt_id in {record.attempt_id for record in artifacts if record.attempt_id}:
+        attempt = store.get_attempt(attempt_id)
+        metadata = getattr(attempt, "metadata", {}) or {}
+        receipt = metadata.get("host_outcome_materialization") or {}
+        if receipt.get("facet") == "auip.application":
+            for artifact_id in receipt.get("artifact_ids") or []:
+                record = store.get_artifact(str(artifact_id))
+                if record is not None:
+                    paths.add(_path_key(record.path))
+    for record in artifacts:
+        if not _registered_file(record) or _path_key(record.path) not in paths:
+            continue
+        path = _verified_artifact_path(store, record)
+        if path is not None and _contained_path(str(root), str(path)) is not None:
+            ids.add(record.artifact_id)
+    return sorted(ids)
+
+
 def _bundle_contributing_attempt_ids(
     store: ArtifactSource,
     artifacts: list[Any],
@@ -648,6 +684,7 @@ def _exported_bundle_candidate(
         "bundle_sha256": bundle_digest,
         "entry_path": str(entry_path),
         "bundle_path": str(directory),
+        "member_artifact_ids": [str(record.artifact_id) for record, _path, _digest in verified],
         "manifest": parsed.to_dict(),
         "app": {
             "id": parsed.app_id,

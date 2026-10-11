@@ -15,6 +15,7 @@ const contents = ['{"rows":5}', 'id,amount\nA,10', 'row 2: negative amount', '<s
 const readFile = async file => {
   f.reads.push({ work_item_id: file.workItemId, artifact_id: file.artifactId })
   if (f.pause) return new Promise<Record<string, unknown>>(resolve => { f.release = () => resolve({ ok: true, content: 'Late response' }) })
+  if (file.artifactId === 'manifest') return { ok: true, content: '{"schema":"auip/v0"}' }
   return f.missing ? { ok: false, error: 'File is missing or no longer inside its WorkItem workspace.' }
     : { ok: true, content: contents[files.indexOf(file)] }
 }
@@ -22,8 +23,8 @@ function Fixture() {
   const [refresh, setRefresh] = useState(0)
   return <ProjectAppsPanel key={refresh} project={{ projectId: 'drafts', name: 'Draft artifacts' }} scope="drafts"
     apps={[{ projectId: 'draft-project', workItemId: 'app-work', workTitle: 'Interactive demo', artifactId: 'app', artifactRef: 'artifact:app@abc',
-      appId: 'demo', title: 'Verified application', version: '1', modes: ['observe'], revision: 1, workState: 'review_ready', execution: 'succeeded' }]}
-    files={files} readFile={readFile} complete loading={false} actionKey="" feedback="" onBack={() => {}} onNewChat={() => {}}
+      appId: 'demo', title: 'Verified application', version: '1', modes: ['observe'], revision: 1, workState: 'review_ready', execution: 'succeeded', files: [{ artifactId: 'manifest', title: 'auip.manifest.json', relativePath: 'auip.manifest.json', artifactStatus: 'registered', previewable: true }] }]}
+    files={files} readFile={readFile} appsComplete filesComplete loading={false} actionKey="" feedback="" onBack={() => {}} onNewChat={() => {}}
     onRefresh={() => setRefresh(value => value + 1)} onOpen={app => f.opened.push(app.artifactId)} onInteract={() => f.apps++} />
 }
 ReactDOM.createRoot(document.getElementById('root')!).render(<Fixture />)
