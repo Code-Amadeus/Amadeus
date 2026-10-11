@@ -635,6 +635,7 @@ class SystemHandler(RequestHandler):
             asyncio.to_thread(hybrid_local_status, settings),
         )
         from server.runtime_status import status_collector
+        from server.extensions.runtime import extension_statuses
 
         head = status_collector.hybrid_head()
         outcome_detail = {
@@ -695,6 +696,7 @@ class SystemHandler(RequestHandler):
             "tts_backends": tts_backend_statuses(
                 str(getattr(settings, "TTS_BACKEND", "gpt_sovits"))
             ),
+            "extensions": extension_statuses(),
             **{field["runtime_key"]: vision[field["runtime_key"].removeprefix("vision_")]
                for field in configuration_groups()["vision"]["config"].values()},
             "vision_provider": vision["provider"],

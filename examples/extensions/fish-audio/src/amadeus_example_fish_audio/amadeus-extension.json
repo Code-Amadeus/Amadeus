@@ -1,0 +1,18 @@
+{
+  "schema": "amadeus.extension/v0",
+  "id": "com.example.fish-audio",
+  "version": "0.1.0",
+  "display_name": {"en": "Fish Audio speech (experimental)", "zh-CN": "Fish Audio 语音（实验）"},
+  "description": {"en": "Independent streaming speech over the official Fish Audio MessagePack WebSocket API.", "zh-CN": "通过 Fish Audio 官方 MessagePack WebSocket API 提供独立流式语音。"},
+  "author": {"name": "Amadeus contributors"},
+  "engines": {"amadeus_host_api": ">=0.1,<0.2", "platforms": ["win32", "darwin", "linux"]},
+  "runtime": {"kind": "python", "entry": "amadeus_example_fish_audio:extension", "requires_python": ">=3.12"},
+  "contributes": {"voice_backend": [{"id": "fish", "contract": "amadeus.voice.tts/v0", "role": "tts", "deployment": "remote", "languages": ["ja", "en"], "streaming": true}]},
+  "config": {
+    "api_key": {"type": "string", "title": {"en": "API key", "zh-CN": "API 密钥"}, "secret": true, "required": true},
+    "reference_id": {"type": "string", "title": {"en": "Voice reference ID", "zh-CN": "音色参考 ID"}, "required": true, "max_length": 256},
+    "model": {"type": "string", "title": {"en": "Inference model", "zh-CN": "推理模型"}, "default": "s2.1-pro-free", "required": true, "max_length": 80},
+    "latency": {"type": "enum", "title": {"en": "Latency", "zh-CN": "延迟"}, "options": ["normal", "balanced", "low"], "default": "balanced", "required": true}
+  },
+  "permissions": {"os": {"network": ["api.fish.audio"]}}
+}

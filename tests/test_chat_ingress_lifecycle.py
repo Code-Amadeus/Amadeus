@@ -476,9 +476,11 @@ def test_actual_app_finally_drains_chat_before_provider_and_continues_after_fenc
                 order.append("cooperative_ledger")
 
         vts_worker_stop = threading.Event()
+        extension_close = Mock()
         loop = asyncio.get_running_loop()
         vts_workers = [loop.run_in_executor(None, vts_worker_stop.wait) for _ in range(2)]
         async def provider_close():
+            extension_close.assert_called_once_with()
             assert handler._stream_task.done() and not handler.is_busy()
             assert vts_worker_stop.is_set() and all(worker.done() for worker in vts_workers)
             assert not any(worker.cancelled() for worker in vts_workers)
@@ -504,6 +506,7 @@ def test_actual_app_finally_drains_chat_before_provider_and_continues_after_fenc
         logger = Mock()
         from server.handlers.voice import close_voice_input_services
         namespace = dict(asyncio=asyncio, chat_h=handler, logger=logger, bus=SimpleNamespace(off=Mock()),
+            extension_runtime=SimpleNamespace(close=extension_close),
             close_voice_input_services=close_voice_input_services,
             vts_worker_stop=vts_worker_stop, vts_workers=vts_workers,
             Method=Method, auip_launch_callback=None, work_preview_auip_callback=None,

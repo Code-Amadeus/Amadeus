@@ -4,6 +4,7 @@
 
 import { contextBridge, ipcRenderer } from 'electron'
 import type { BackendStartupFailure } from '../shared/characterStartup.js'
+import type { ExtensionMutationResult, ExtensionRemovalOptions, ExtensionUpdate } from '../shared/extensions.js'
 
 type WorkPreviewBounds = { x: number; y: number; width: number; height: number }
 type WorkPreviewListener = (payload: Record<string, unknown>) => void
@@ -43,6 +44,9 @@ contextBridge.exposeInMainWorld('amadeus', {
     clearEnvironment?: boolean
   }): Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }> => ipcRenderer.invoke('mcp-connections.upsert', update),
   removeMcpConnection: (connectionId: string): Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }> => ipcRenderer.invoke('mcp-connections.remove', connectionId),
+  installExtension: (): Promise<ExtensionMutationResult> => ipcRenderer.invoke('extensions.install'),
+  updateExtension: (update: ExtensionUpdate): Promise<ExtensionMutationResult> => ipcRenderer.invoke('extensions.update', update),
+  removeExtension: (id: string, options?: ExtensionRemovalOptions): Promise<ExtensionMutationResult> => ipcRenderer.invoke('extensions.remove', id, options),
   getChatAvatars: (): Promise<{ user: string; assistant: string } | null> => ipcRenderer.invoke('chat-avatars.get'),
   selectChatAvatar: (role: 'user' | 'assistant'): Promise<{ ok: boolean; cancelled: boolean; error?: string; avatars?: { user: string; assistant: string } }> => ipcRenderer.invoke('chat-avatars.select', role),
   clearChatAvatar: (role: 'user' | 'assistant'): Promise<{ ok: boolean; error?: string; avatars?: { user: string; assistant: string } }> => ipcRenderer.invoke('chat-avatars.clear', role),

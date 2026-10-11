@@ -21,16 +21,18 @@ class TtsHandler(RequestHandler):
         self._player = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._on_interrupt = None
+        self._cancel_synthesis = None
         if sentence_sequence_manager is None:
             from tts.sentence_state import sentence_state_manager
 
             sentence_sequence_manager = sentence_state_manager
         self._sentence_sequence_manager = sentence_sequence_manager
 
-    def configure(self, playback_manager, player, on_interrupt=None) -> None:
+    def configure(self, playback_manager, player, on_interrupt=None, cancel_synthesis=None) -> None:
         self._playback_manager = playback_manager
         self._player = player
         self._on_interrupt = on_interrupt
+        self._cancel_synthesis = cancel_synthesis
         try:
             self._loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -98,6 +100,12 @@ class TtsHandler(RequestHandler):
             tts_pipeline.interrupt_pending_tts()
         except Exception:
             logger.exception("failed to invalidate pending TTS work")
+
+        if self._cancel_synthesis is not None:
+            try:
+                self._cancel_synthesis()
+            except Exception:
+                logger.exception("failed to cancel admitted synthesis")
 
         if self._playback_manager and hasattr(self._playback_manager, "interrupt"):
             await self._playback_manager.interrupt()

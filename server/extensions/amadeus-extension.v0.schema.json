@@ -1,0 +1,495 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Code-Amadeus/Amadeus-Extensions/main/schemas/amadeus-extension.v0.schema.json",
+  "title": "Amadeus extension manifest (amadeus.extension/v0)",
+  "description": "Manifest format defined by the Amadeus Extension Protocol v0.1 draft. Rules that this schema does not express are listed in spec/extension-protocol-v0.1.md section 3.9 and implemented by tools/validate_manifest.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "version",
+    "display_name",
+    "description",
+    "author",
+    "engines",
+    "runtime",
+    "contributes"
+  ],
+  "properties": {
+    "schema": { "const": "amadeus.extension/v0" },
+    "id": { "$ref": "#/$defs/packageId" },
+    "version": { "$ref": "#/$defs/semver" },
+    "display_name": { "$ref": "#/$defs/text80" },
+    "description": { "$ref": "#/$defs/text500" },
+    "author": { "$ref": "#/$defs/author" },
+    "license": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "homepage": { "$ref": "#/$defs/httpsUrl" },
+    "repository": { "$ref": "#/$defs/httpsUrl" },
+    "engines": { "$ref": "#/$defs/engines" },
+    "runtime": { "$ref": "#/$defs/runtime" },
+    "contributes": { "$ref": "#/$defs/contributes" },
+    "config": { "$ref": "#/$defs/config" },
+    "permissions": { "$ref": "#/$defs/permissions" }
+  },
+  "$defs": {
+    "packageId": {
+      "description": "Lowercase reverse-DNS package id. The amadeus. prefix is reserved for built-in packages.",
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z0-9][a-z0-9-]*)+$",
+      "not": { "pattern": "^amadeus\\." }
+    },
+    "contributionId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+    },
+    "configKey": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "semver": {
+      "description": "Semantic Versioning 2.0.0 version.",
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*))*))?(\\+([0-9a-zA-Z-]+(\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "versionRange": {
+      "description": "Comma-separated comparators that must all hold, for example '>=0.1,<0.2'.",
+      "type": "string",
+      "maxLength": 200,
+      "pattern": "^\\s*(>=|<=|==|!=|>|<)\\s*[0-9]+(\\.[0-9]+)*(\\s*,\\s*(>=|<=|==|!=|>|<)\\s*[0-9]+(\\.[0-9]+)*)*\\s*$"
+    },
+    "entryRef": {
+      "description": "Python object reference in module:attribute form.",
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"
+    },
+    "languageTag": {
+      "type": "string",
+      "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+    },
+    "languages": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/languageTag" }
+    },
+    "httpsUrl": {
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^https://[^\\s]+$"
+    },
+    "relativePath": {
+      "description": "Package-relative path with forward slashes. Segments may not start with a dot, which also excludes '..'.",
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*$"
+    },
+    "text80": {
+      "oneOf": [
+        { "type": "string", "minLength": 1, "maxLength": 80 },
+        {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/languageTag" },
+          "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 80 }
+        }
+      ]
+    },
+    "text200": {
+      "oneOf": [
+        { "type": "string", "minLength": 1, "maxLength": 200 },
+        {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/languageTag" },
+          "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 200 }
+        }
+      ]
+    },
+    "text500": {
+      "oneOf": [
+        { "type": "string", "minLength": 1, "maxLength": 500 },
+        {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/languageTag" },
+          "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 500 }
+        }
+      ]
+    },
+    "author": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "email": { "type": "string", "maxLength": 320, "pattern": "^[^@\\s]+@[^@\\s]+$" },
+        "url": { "$ref": "#/$defs/httpsUrl" }
+      }
+    },
+    "engines": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["amadeus_host_api"],
+      "properties": {
+        "amadeus_host_api": { "$ref": "#/$defs/versionRange" },
+        "platforms": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["win32", "darwin", "linux"] }
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": { "kind": { "enum": ["none", "python"] } },
+      "if": { "properties": { "kind": { "const": "python" } } },
+      "then": { "$ref": "#/$defs/pythonRuntime" },
+      "else": { "$ref": "#/$defs/noneRuntime" }
+    },
+    "noneRuntime": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "kind": { "const": "none" } }
+    },
+    "pythonRuntime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requires_python"],
+      "properties": {
+        "kind": { "const": "python" },
+        "entry": { "$ref": "#/$defs/entryRef" },
+        "requires_python": { "$ref": "#/$defs/versionRange" }
+      }
+    },
+    "contributes": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "voice_backend": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/voiceBackend" }
+        },
+        "skill": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/skill" }
+        },
+        "mcp_server": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/mcpServer" }
+        },
+        "context_source": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/contextSource" }
+        },
+        "observer": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/observer" }
+        }
+      }
+    },
+    "voiceBackend": {
+      "type": "object",
+      "required": ["role"],
+      "properties": { "role": { "enum": ["tts", "asr"] } },
+      "if": { "properties": { "role": { "const": "tts" } } },
+      "then": { "$ref": "#/$defs/ttsBackend" },
+      "else": { "$ref": "#/$defs/asrBackend" }
+    },
+    "ttsBackend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "contract", "role", "deployment", "languages", "streaming"],
+      "properties": {
+        "id": { "$ref": "#/$defs/contributionId" },
+        "contract": { "const": "amadeus.voice.tts/v0" },
+        "role": { "const": "tts" },
+        "deployment": { "enum": ["local", "remote"] },
+        "languages": { "$ref": "#/$defs/languages" },
+        "streaming": { "type": "boolean" },
+        "title": { "$ref": "#/$defs/text80" },
+        "summary": { "$ref": "#/$defs/text500" }
+      }
+    },
+    "asrBackend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "contract", "role", "deployment", "languages", "speculative"],
+      "properties": {
+        "id": { "$ref": "#/$defs/contributionId" },
+        "contract": { "const": "amadeus.voice.asr/v0" },
+        "role": { "const": "asr" },
+        "deployment": { "enum": ["local", "remote"] },
+        "languages": { "$ref": "#/$defs/languages" },
+        "speculative": { "type": "boolean" },
+        "title": { "$ref": "#/$defs/text80" },
+        "summary": { "$ref": "#/$defs/text500" }
+      }
+    },
+    "skill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "contract", "path"],
+      "properties": {
+        "id": { "$ref": "#/$defs/contributionId" },
+        "contract": { "const": "amadeus.skill/v0" },
+        "path": { "$ref": "#/$defs/relativePath" },
+        "title": { "$ref": "#/$defs/text80" },
+        "summary": { "$ref": "#/$defs/text500" }
+      }
+    },
+    "mcpServer": {
+      "type": "object",
+      "required": ["transport"],
+      "properties": { "transport": { "enum": ["stdio", "http"] } },
+      "if": { "properties": { "transport": { "const": "stdio" } } },
+      "then": { "$ref": "#/$defs/mcpStdio" },
+      "else": { "$ref": "#/$defs/mcpHttp" }
+    },
+    "mcpStdio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "contract", "transport", "command"],
+      "properties": {
+        "id": { "$ref": "#/$defs/contributionId" },
+        "contract": { "const": "amadeus.mcp-server/v0" },
+        "transport": { "const": "stdio" },
+        "command": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "args": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "type": "string", "maxLength": 4096 }
+        },
+        "env": {
+          "type": "object",
+          "maxProperties": 64,
+          "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$" },
+          "additionalProperties": { "type": "string", "maxLength": 16384 }
+        },
+        "title": { "$ref": "#/$defs/text80" },
+        "summary": { "$ref": "#/$defs/text500" }
+      }
+    },
+    "mcpHttp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "contract", "transport", "url"],
+      "properties": {
+        "id": { "$ref": "#/$defs/contributionId" },
+        "contract": { "const": "amadeus.mcp-server/v0" },
+        "transport": { "const": "http" },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "^(https?://|\\$\\{config\\.[a-z][a-z0-9_]{0,63}\\})"
+        },
+        "bearer_token": {
+          "type": "string",
+          "pattern": "^\\$\\{config\\.[a-z][a-z0-9_]{0,63}\\}$"
+        },
+        "title": { "$ref": "#/$defs/text80" },
+        "summary": { "$ref": "#/$defs/text500" }
+      }
+    },
+    "contextSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "contract", "category", "max_tokens", "deadline_ms"],
+      "properties": {
+        "id": { "$ref": "#/$defs/contributionId" },
+        "contract": { "const": "amadeus.context.source/v0" },
+        "category": { "enum": ["memory", "knowledge", "situation"] },
+        "max_tokens": { "type": "integer", "minimum": 1, "maximum": 2000 },
+        "deadline_ms": { "type": "integer", "minimum": 20, "maximum": 500 },
+        "title": { "$ref": "#/$defs/text80" },
+        "summary": { "$ref": "#/$defs/text500" }
+      }
+    },
+    "observer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "contract", "topics"],
+      "properties": {
+        "id": { "$ref": "#/$defs/contributionId" },
+        "contract": { "const": "amadeus.events.observer/v0" },
+        "topics": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["work.item.updated", "conversation.turn.completed"] }
+        },
+        "title": { "$ref": "#/$defs/text80" },
+        "summary": { "$ref": "#/$defs/text500" }
+      }
+    },
+    "config": {
+      "type": "object",
+      "maxProperties": 64,
+      "propertyNames": { "$ref": "#/$defs/configKey" },
+      "additionalProperties": { "$ref": "#/$defs/configField" }
+    },
+    "configField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "title"],
+      "properties": {
+        "type": { "enum": ["string", "url", "boolean", "integer", "number", "enum"] },
+        "title": { "$ref": "#/$defs/text80" },
+        "description": { "$ref": "#/$defs/text500" },
+        "required": { "type": "boolean" },
+        "default": true,
+        "secret": { "type": "boolean" },
+        "options": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/configOption" }
+        },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "max_length": { "type": "integer", "minimum": 1, "maximum": 16384 },
+        "apply": { "enum": ["live", "reactivate"] }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["secret"], "properties": { "secret": { "const": true } } },
+          "then": {
+            "properties": { "type": { "const": "string" }, "default": { "not": {} } }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "enum" } } },
+          "then": {
+            "required": ["options"],
+            "properties": { "default": { "type": "string" } }
+          },
+          "else": { "properties": { "options": { "not": {} } } }
+        },
+        {
+          "if": { "properties": { "type": { "enum": ["integer", "number"] } } },
+          "else": { "properties": { "min": { "not": {} }, "max": { "not": {} } } }
+        },
+        {
+          "if": { "properties": { "type": { "enum": ["string", "url"] } } },
+          "then": { "properties": { "default": { "type": "string" } } },
+          "else": { "properties": { "max_length": { "not": {} } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "boolean" } } },
+          "then": { "properties": { "default": { "type": "boolean" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "integer" } } },
+          "then": {
+            "properties": {
+              "default": { "type": "integer" },
+              "min": { "type": "integer" },
+              "max": { "type": "integer" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "number" } } },
+          "then": { "properties": { "default": { "type": "number" } } }
+        }
+      ]
+    },
+    "configOption": {
+      "oneOf": [
+        { "type": "string", "minLength": 1, "maxLength": 200 },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["value"],
+          "properties": {
+            "value": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "label": { "$ref": "#/$defs/text80" }
+          }
+        }
+      ]
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/hostPermission" }
+        },
+        "os": { "$ref": "#/$defs/osDisclosure" }
+      }
+    },
+    "hostPermission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capability", "reason"],
+      "properties": {
+        "capability": {
+          "enum": [
+            "conversation.current:read",
+            "conversation.history:read",
+            "events.work:read",
+            "presentation:notify"
+          ]
+        },
+        "reason": { "$ref": "#/$defs/text200" }
+      }
+    },
+    "osDisclosure": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "network": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(\\*|(\\*\\.)?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*)$"
+          }
+        },
+        "filesystem": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "access"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1, "maxLength": 1024 },
+              "access": { "enum": ["read", "read_write"] }
+            }
+          }
+        },
+        "process": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(\\*|[A-Za-z0-9][A-Za-z0-9._-]{0,127})$"
+          }
+        }
+      }
+    }
+  }
+}

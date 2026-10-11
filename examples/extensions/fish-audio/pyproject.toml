@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "amadeus-example-fish-audio"
+version = "0.1.0"
+description = "Independent Fish Audio WebSocket speech contribution for Amadeus"
+requires-python = ">=3.12"
+dependencies = ["amadeus-extension-sdk==0.1.0", "websockets==16.0", "msgpack==1.2.2"]
+
+[project.optional-dependencies]
+socks = ["python-socks>=2.7,<3"]
+
+[project.entry-points."amadeus.extensions"]
+"com.example.fish-audio" = "amadeus_example_fish_audio"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+amadeus_example_fish_audio = ["amadeus-extension.json"]

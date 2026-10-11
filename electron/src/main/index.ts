@@ -34,6 +34,10 @@ import { BackendStartupExitError, backendStartupFailure, recoverCharacterStartup
 import { startupCharacterSelection, type BackendStartupFailure } from '../shared/characterStartup.js'
 import { desktopCatalogFields } from '../shared/configCatalog.js'
 import { startupValue } from '../shared/startupSettings.js'
+import { ExtensionInstaller, ExtensionPackageHelper } from './extensions.js'
+import { EXTENSIONS_ENV } from './desktopSettings.js'
+import type { ExtensionRemovalOptions, ExtensionUpdate } from '../shared/extensions.js'
+import { forceStopBackendTree } from './backendProcessTree.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -46,10 +50,15 @@ const CACHE_DIR = process.env.AMADEUS_ELECTRON_CACHE_DIR
   ? path.resolve(process.env.AMADEUS_ELECTRON_CACHE_DIR)
   : path.join(PROJECT_ROOT, '.electron-cache')
 const APP_ICON_PATH = path.join(PROJECT_ROOT, 'assets', 'icons', 'app', 'app_icon.ico')
+const extensionPackageHelper = new ExtensionPackageHelper(PROJECT_ROOT, getPythonCommand, process.env)
 const desktopSettings = new DesktopSettingsStore(
   path.join(USER_DATA_DIR, 'settings.json'),
   path.join(PROJECT_ROOT, '.env'),
+  process.platform,
+  extensionPackageHelper.validateRecord,
 )
+const extensionInstaller = new ExtensionInstaller(path.join(USER_DATA_DIR, 'extensions'), PROJECT_ROOT,
+  desktopSettings, extensionPackageHelper, getPythonCommand, process.env)
 const chatAvatars = new ChatAvatarStore(
   path.join(USER_DATA_DIR, 'assets', 'chat-avatars'),
 )
@@ -207,6 +216,7 @@ let workOverlayIgnoringMouse = false
 let workOverlayPanelBounds: Electron.Rectangle | null = null
 let workOverlayHitRegions: Electron.Rectangle[] = []
 let pythonProcess: ChildProcess | null = null
+let extensionCleanupConfirmed = true
 let backendStopping: Promise<void> | null = null
 const applicationLifecycle = new ApplicationLifecycle()
 let backendOwned = false
@@ -458,15 +468,23 @@ async function launchBackend(): Promise<void> {
 
   const python = getPythonCommand()
 
+  // No process owns this instance/port. Pending uninstall and orphan cleanup
+  // happen before a new backend can create Runner children.
+  if (extensionCleanupConfirmed) await extensionInstaller.cleanupStoppedBackend()
+
   console.log(`[electron] starting backend: ${python} -m server.app --port ${BACKEND_PORT}`)
   console.log(`[electron] project root: ${PROJECT_ROOT}`)
 
-  const launchPendingRevisions = desktopSettings.pendingRevisionSnapshot()
-  const backendEnvironment = desktopSettings.backendEnvironment(process.env)
+  const launchSettings = await extensionInstaller.prepareLaunch()
+  const launchPendingRevisions = launchSettings.pendingRevisions
+  const backendEnvironment = launchSettings.environment
   const backendProcessEnvironment = {
     ...backendEnvironment,
     ...process.env,
   }
+  // An inherited string cannot replace Electron's installation authority.
+  delete backendProcessEnvironment[EXTENSIONS_ENV]
+  backendProcessEnvironment[EXTENSIONS_ENV] = launchSettings.extensions
   pythonProcess = spawn(python, ['-m', 'server.app', '--port', String(BACKEND_PORT)], {
     cwd: PROJECT_ROOT,
     env: {
@@ -508,12 +526,17 @@ async function stopBackend(): Promise<void> {
     const requested = await requestBackendAction('/shutdown', 900)
     const exited = requested ? await waitForProcessExit(proc, 2500) : false
     if (!exited && proc.exitCode === null && proc.signalCode === null) {
-      proc.kill()
-      await waitForProcessExit(proc, 1200)
+      extensionCleanupConfirmed = false
+      await forceStopBackendTree(proc)
+      const killed = await waitForProcessExit(proc, 1200)
+      if (!killed && proc.exitCode === null && proc.signalCode === null) throw new Error('Backend shutdown did not complete; extension files were retained')
+      extensionCleanupConfirmed = process.platform === 'win32'
+      if (!extensionCleanupConfirmed) desktopSettings.reportExtensionWarning('A forced backend shutdown could not confirm extension child lifetime; extension files were retained.')
     }
     if (pythonProcess === proc) pythonProcess = null
     backendOwned = false
   })().finally(() => {
+    if (!extensionCleanupConfirmed) desktopSettings.reportExtensionWarning('Extension child shutdown could not be confirmed; pending removal files were retained.')
     backendStopping = null
   })
   return backendStopping
@@ -2185,7 +2208,8 @@ ipcMain.handle('desktop-settings.mark-applied', (event, revisions: Record<string
   try {
     return { ok: true, settings: desktopSettings.markApplied(
       process.env,
-      revisions && typeof revisions === 'object' && !Array.isArray(revisions) ? revisions : {},
+      revisions && typeof revisions === 'object' && !Array.isArray(revisions)
+        ? Object.fromEntries(Object.entries(revisions).filter(([key]) => key !== EXTENSIONS_ENV)) : {},
     ) }
   } catch (error) {
     return {
@@ -2219,6 +2243,24 @@ ipcMain.handle('mcp-connections.remove', (event, connectionId: string) => {
       error: error instanceof Error ? error.message : String(error),
     }
   }
+})
+ipcMain.handle('extensions.install', async (event) => {
+  if (!isTrustedBackendRenderer(event.sender)) return { ok: false, error: 'Untrusted extension requester.' }
+  const options: Electron.OpenDialogOptions = { title: 'Install Amadeus extension', properties: ['openFile'], filters: [{ name: 'Python wheel', extensions: ['whl'] }] }
+  const selection = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
+  if (selection.canceled || selection.filePaths.length !== 1) return { ok: false, cancelled: true }
+  try { return { ok: true, settings: await extensionInstaller.install(selection.filePaths[0]) } }
+  catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'Extension installation failed' } }
+})
+ipcMain.handle('extensions.update', async (event, update: ExtensionUpdate) => {
+  if (!isTrustedBackendRenderer(event.sender)) return { ok: false, error: 'Untrusted extension requester.' }
+  try { return { ok: true, settings: await extensionInstaller.update(update) } }
+  catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'Extension update failed' } }
+})
+ipcMain.handle('extensions.remove', async (event, id: string, options?: ExtensionRemovalOptions) => {
+  if (!isTrustedBackendRenderer(event.sender)) return { ok: false, error: 'Untrusted extension requester.' }
+  try { return { ok: true, settings: await extensionInstaller.remove(id, options) } }
+  catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'Extension removal failed' } }
 })
 ipcMain.handle('chat-avatars.get', (event) => {
   if (!isTrustedBackendRenderer(event.sender)) return null

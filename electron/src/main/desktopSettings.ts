@@ -3,12 +3,32 @@ import fs from 'fs'
 import path from 'path'
 import process from 'node:process'
 import { catalogApplication, catalogInputKeys, catalogLaunchDefaults, catalogOptionValues, desktopCatalogFields } from '../shared/configCatalog.js'
+import type { ExtensionConfigValue, ExtensionManifest, InstalledExtensionSummary } from '../shared/extensions.js'
+
+export const EXTENSIONS_ENV = 'AMADEUS_EXTENSIONS'
+export type StoredExtension = {
+  id: string
+  version: string
+  digest: string
+  installId: string
+  packageRoot: string
+  sitePackages: string
+  manifest: ExtensionManifest
+  enabled: boolean
+  pendingRemoval: boolean
+  deleteDataOnRemoval: boolean
+  values: Record<string, ExtensionConfigValue>
+  encryptedSecrets: Record<string, string>
+  providers: string[]
+}
+export type ExtensionRecordValidator = (manifest: ExtensionManifest, values: Record<string, ExtensionConfigValue>) => boolean | 'unavailable'
 
 type StoredDesktopSettings = {
   version: 2
   values: Record<string, string>
   encryptedSecrets: Record<string, string>
   mcpConnections: Record<string, StoredMcpConnection>
+  extensions: Record<string, StoredExtension>
   pendingRevisions: Record<string, number>
   nextRevision: number
 }
@@ -121,11 +141,56 @@ export function validateAcpProviders(raw: string): Array<Record<string, unknown>
 }
 
 function emptyStore(): StoredDesktopSettings {
-  return { version: 2, values: {}, encryptedSecrets: {}, mcpConnections: {}, pendingRevisions: {}, nextRevision: 1 }
+  return { version: 2, values: {}, encryptedSecrets: {}, mcpConnections: {}, extensions: {}, pendingRevisions: {}, nextRevision: 1 }
 }
 
 function allowedPendingKey(key: string): boolean {
-  return key === MCP_CONNECTIONS_ENV || (VALUE_KEYS.has(key) && !FRONTEND_ONLY_VALUE_KEYS.has(key)) || SECRET_KEYS.has(key)
+  return key === MCP_CONNECTIONS_ENV || key === EXTENSIONS_ENV || (VALUE_KEYS.has(key) && !FRONTEND_ONLY_VALUE_KEYS.has(key)) || SECRET_KEYS.has(key)
+}
+
+// Paths are identities relative to the installation owner, never arbitrary
+// filesystem targets. Manifest/config semantics belong to the Python helper.
+function cleanStoredExtensions(value: unknown, validate: ExtensionRecordValidator): { records: Record<string, StoredExtension>; errors: string[] } {
+  const records: Record<string, StoredExtension> = {}
+  const errors: string[] = []
+  if (value === undefined) return { records, errors }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return { records, errors: ['Stored extension records are invalid; no extensions were enabled.'] }
+  for (const [key, raw] of Object.entries(value)) {
+    try {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error()
+      const record = raw as StoredExtension
+      if (Object.keys(records).length >= 64 || record.id !== key || typeof record.id !== 'string'
+        || !/^[a-z][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$/.test(record.id) || record.id.length > 128
+        || typeof record.version !== 'string' || record.version.length > 128
+        || !record.manifest || record.manifest.id !== record.id || record.manifest.version !== record.version
+        || typeof record.digest !== 'string' || !/^[a-f0-9]{64}$/.test(record.digest)
+        || typeof record.installId !== 'string' || !/^[a-f0-9]{32}$/.test(record.installId)
+        || typeof record.packageRoot !== 'string' || !/^[A-Za-z0-9_][A-Za-z0-9._-]*(\/[A-Za-z0-9_][A-Za-z0-9._-]*)*$/.test(record.packageRoot)
+        || typeof record.sitePackages !== 'string' || !/^(Lib\/site-packages|lib\/python\d+\.\d+\/site-packages)$/.test(record.sitePackages)
+        || typeof record.enabled !== 'boolean' || typeof record.pendingRemoval !== 'boolean'
+        || typeof record.deleteDataOnRemoval !== 'boolean'
+        || !record.values || typeof record.values !== 'object' || Array.isArray(record.values)
+        || !record.encryptedSecrets || typeof record.encryptedSecrets !== 'object' || Array.isArray(record.encryptedSecrets)
+        || !Array.isArray(record.providers) || record.providers.length > 32
+        || record.providers.some(id => typeof id !== 'string' || !MCP_ID_PATTERN.test(id))) throw new Error()
+      for (const [name, entry] of Object.entries(record.values)) {
+        if (!record.manifest.config?.[name] || record.manifest.config[name].secret || !['string', 'number', 'boolean'].includes(typeof entry)
+          || (typeof entry === 'string' && entry.length > 16_384) || (typeof entry === 'number' && !Number.isFinite(entry))) throw new Error()
+      }
+      for (const [name, encrypted] of Object.entries(record.encryptedSecrets)) {
+        if (!record.manifest.config?.[name]?.secret || typeof encrypted !== 'string' || !encrypted || encrypted.length > 32_768) throw new Error()
+      }
+      const validated = validate(record.manifest, record.values)
+      if (validated === false) throw new Error()
+      if (validated === 'unavailable') errors.push('Extension validation is temporarily unavailable; saved records were retained and activation was skipped.')
+      records[key] = { ...record, enabled: record.enabled && !record.pendingRemoval,
+        deleteDataOnRemoval: record.deleteDataOnRemoval,
+        values: { ...record.values }, encryptedSecrets: { ...record.encryptedSecrets }, providers: [...new Set(record.providers)] }
+    } catch {
+      errors.push('A stored extension record could not be validated and was excluded from startup.')
+    }
+  }
+  return { records, errors }
 }
 
 function cleanPendingRevisions(value: unknown, legacyKeys: unknown): Record<string, number> {
@@ -269,18 +334,21 @@ function sourceFor(
   return 'default'
 }
 
-function storedSettingsFrom(text: string): StoredDesktopSettings {
+function storedSettingsFrom(text: string, validate: ExtensionRecordValidator, errors: string[]): StoredDesktopSettings {
   const parsed = JSON.parse(text) as Record<string, unknown>
   const pendingRevisions = cleanPendingRevisions(parsed.pendingRevisions, parsed.pendingKeys)
   const highestRevision = Math.max(0, ...Object.values(pendingRevisions))
   const storedNextRevision = Number.isSafeInteger(parsed.nextRevision) && Number(parsed.nextRevision) > 0
     ? Number(parsed.nextRevision)
     : 1
+  const extensions = cleanStoredExtensions(parsed.extensions, validate)
+  errors.push(...extensions.errors)
   return {
     version: 2,
     values: cleanRecord(parsed.values, VALUE_KEYS),
     encryptedSecrets: cleanRecord(parsed.encryptedSecrets, SECRET_KEYS),
     mcpConnections: cleanStoredMcpConnections(parsed.mcpConnections),
+    extensions: extensions.records,
     pendingRevisions,
     nextRevision: Math.max(storedNextRevision, highestRevision + 1),
   }
@@ -301,10 +369,15 @@ function writeFileDurably(target: string, text: string): void {
 }
 
 export class DesktopSettingsStore {
+  private extensionErrors: string[] = []
+  private extensionWarnings = new Set<string>()
+  private validatedExtensionIds = new Set<string>()
+  private extensionValidationUnavailable = false
   constructor(
     private readonly filePath: string,
     private readonly dotenvPath: string,
     private readonly platform: string = process.platform,
+    private readonly validateExtensionRecord: ExtensionRecordValidator = () => false,
   ) {}
 
   private get backupPath(): string {
@@ -314,9 +387,18 @@ export class DesktopSettingsStore {
   // Every save rewrites the store, so reading must never turn settings it
   // could not read into an empty store that the next save makes permanent.
   private read(): StoredDesktopSettings {
+    this.extensionErrors = []
+    this.validatedExtensionIds.clear()
+    this.extensionValidationUnavailable = false
+    const validate: ExtensionRecordValidator = (manifest, values) => {
+      const result = this.validateExtensionRecord(manifest, values)
+      if (result === true) this.validatedExtensionIds.add(manifest.id)
+      if (result === 'unavailable') this.extensionValidationUnavailable = true
+      return result
+    }
     let failure: unknown
     try {
-      return storedSettingsFrom(fs.readFileSync(this.filePath, 'utf8'))
+      return storedSettingsFrom(fs.readFileSync(this.filePath, 'utf8'), validate, this.extensionErrors)
     } catch (error) {
       failure = error
     }
@@ -324,7 +406,7 @@ export class DesktopSettingsStore {
     // A missing file is a first launch or a deliberate reset, not damage.
     if (code === 'ENOENT') return emptyStore()
     try {
-      const saved = storedSettingsFrom(fs.readFileSync(this.backupPath, 'utf8'))
+      const saved = storedSettingsFrom(fs.readFileSync(this.backupPath, 'utf8'), validate, this.extensionErrors)
       console.error(`[desktop-settings] ${this.filePath} is unreadable; using the copy from its last save`, failure)
       return saved
     } catch {
@@ -437,6 +519,104 @@ export class DesktopSettingsStore {
         .sort((left, right) => left.name.localeCompare(right.name))
         .map(mcpConnectionSnapshot),
       mcpConnectionsLocked: environment[MCP_CONNECTIONS_ENV] !== undefined,
+      extensions: Object.values(stored.extensions).map(record => this.extensionSummary(record, pendingKeys.includes(EXTENSIONS_ENV), this.validatedExtensionIds.has(record.id))),
+      extensionErrors: [...this.extensionErrors, ...this.extensionWarnings, ...(environment[EXTENSIONS_ENV] !== undefined
+        ? ['Parent AMADEUS_EXTENSIONS was ignored; extension startup is owned by desktop installation records.'] : [])],
+    }
+  }
+
+  private extensionSummary(record: StoredExtension, restartRequired: boolean, validated: boolean): InstalledExtensionSummary {
+    if (!validated) return { id: record.id, version: record.version, digest: record.digest, manifest: null,
+      enabled: record.enabled, pendingRemoval: record.pendingRemoval, values: {}, secretConfigured: {}, providers: [],
+      status: 'unavailable', restartRequired: restartRequired || record.enabled, validationError: 'Trusted extension validation is temporarily unavailable; saved configuration and credentials were retained.' }
+    return { id: record.id, version: record.version, digest: record.digest, manifest: record.manifest,
+      enabled: record.enabled, pendingRemoval: record.pendingRemoval, values: { ...record.values },
+      secretConfigured: Object.fromEntries(Object.entries(record.manifest.config || {}).filter(([, field]) => field.secret)
+        .map(([key]) => [key, Boolean(record.encryptedSecrets[key])])), providers: [...record.providers],
+      status: record.pendingRemoval ? 'pending_removal' : record.enabled ? 'enabled' : 'disabled', restartRequired }
+  }
+
+  extensionRecords(): StoredExtension[] {
+    const records = Object.values(this.read().extensions)
+    return records.filter(record => this.validatedExtensionIds.has(record.id))
+  }
+  extensionIsInstalled(id: string): boolean { return Object.hasOwn(this.read().extensions, id) }
+  deferIncompleteExtensionApplication(): boolean {
+    const stored = this.read()
+    const incomplete = this.extensionValidationUnavailable || Object.values(stored.extensions).some(record => record.pendingRemoval)
+    if (incomplete && !stored.pendingRevisions[EXTENSIONS_ENV] && Object.values(stored.extensions).some(record => record.enabled || record.pendingRemoval)) {
+      markPending(stored, [EXTENSIONS_ENV])
+      this.write(stored)
+    }
+    return incomplete
+  }
+  reportExtensionWarning(message: string): void { this.extensionWarnings.add(message) }
+
+  // The durable writer commits the backup before the primary. A failed save
+  // may therefore leave a recoverable record only in the existing backup.
+  extensionInstallationReferences(): Set<string> {
+    const result = new Set<string>()
+    for (const file of [this.filePath, this.backupPath]) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>
+        const records = cleanStoredExtensions(parsed.extensions, this.validateExtensionRecord).records
+        for (const record of Object.values(records)) result.add(record.installId)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code && (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+        // Missing or malformed copies cannot restore valid install authority.
+      }
+    }
+    return result
+  }
+
+  extensionSecrets(record: StoredExtension, replacedKeys: ReadonlySet<string> = new Set()): Record<string, string> {
+    const result: Record<string, string> = {}
+    for (const [key, encrypted] of Object.entries(record.encryptedSecrets)) {
+      if (replacedKeys.has(key)) continue
+      if (!safeStorage.isEncryptionAvailable()) throw new Error('System credential encryption is unavailable; extension secrets cannot be loaded')
+      try { result[key] = safeStorage.decryptString(Buffer.from(encrypted, 'base64')) }
+      catch { throw new Error('An extension credential could not be decrypted; configure it again before enabling the extension') }
+    }
+    return result
+  }
+
+  /** Called only by the installation owner after canonical validation. */
+  saveExtension(environment: NodeJS.ProcessEnv, record: StoredExtension, secrets: Record<string, string | null> = {}): Record<string, unknown> {
+    const stored = this.read()
+    const encryptedSecrets = { ...record.encryptedSecrets }
+    for (const [key, value] of Object.entries(secrets)) {
+      if (!record.manifest.config?.[key]?.secret) throw new Error('Unknown extension secret field')
+      if (value === null) { delete encryptedSecrets[key]; continue }
+      if (!safeStorage.isEncryptionAvailable()) throw new Error('System credential encryption is unavailable; extension secrets were not saved')
+      encryptedSecrets[key] = safeStorage.encryptString(secretText(value, 'extension secret', 16_384)).toString('base64')
+    }
+    const clean = cleanStoredExtensions({ [record.id]: { ...record, encryptedSecrets } }, this.validateExtensionRecord)
+    if (clean.errors.length) throw new Error('Extension record validation failed')
+    stored.extensions[record.id] = clean.records[record.id]
+    markPending(stored, [EXTENSIONS_ENV])
+    this.write(stored)
+    return this.snapshot(environment)
+  }
+
+  requestExtensionRemoval(environment: NodeJS.ProcessEnv, id: string, deleteData: boolean = false): Record<string, unknown> {
+    const stored = this.read()
+    if (typeof id !== 'string' || !Object.hasOwn(stored.extensions, id)) throw new Error('Extension was not found')
+    const record = stored.extensions[id]
+    if (!record) throw new Error('Extension was not found')
+    record.enabled = false
+    record.pendingRemoval = true
+    record.deleteDataOnRemoval = deleteData
+    markPending(stored, [EXTENSIONS_ENV])
+    this.write(stored)
+    return this.snapshot(environment)
+  }
+
+  /** Physical deletion has already succeeded while the backend was stopped. */
+  finishExtensionRemoval(id: string, installId: string): void {
+    const stored = this.read()
+    if (stored.extensions[id]?.pendingRemoval && stored.extensions[id].installId === installId) {
+      delete stored.extensions[id]
+      this.write(stored)
     }
   }
 
@@ -571,15 +751,17 @@ export class DesktopSettingsStore {
       const maxLength = key === 'AMADEUS_ACP_PROVIDERS' ? 65536 : desktopCatalogFields[key]?.max_length ?? 4096
       if (value.includes('\0') || String(rawValue).length > maxLength) throw new Error(`Invalid value for ${key}`)
       if (key === 'AMADEUS_ACP_PROVIDERS') validateAcpProviders(value)
+      const extensionTts = key === 'TTS_BACKEND' && Object.values(stored.extensions).some(record => this.validatedExtensionIds.has(record.id) && !record.pendingRemoval
+        && record.manifest.contributes.voice_backend?.some(item => item.role === 'tts' && value === `${record.id}/${item.id}`))
       const choices = VALUE_CHOICES[key]
-      if (choices && !choices.has(value)) throw new Error(`Invalid value for ${key}: ${value}`)
+      if (choices && !choices.has(value) && !extensionTts) throw new Error(`Invalid value for ${key}: ${value}`)
       const schemes = desktopCatalogFields[key]?.schemes
       if (schemes) {
         let protocol = ''
         try { protocol = new URL(value).protocol.slice(0, -1) } catch { /* rejected below */ }
         if (!schemes.includes(protocol)) throw new Error(`${key} must use ${schemes.join(' or ')} URL`)
       }
-      if (IDENTIFIER_KEYS.has(key) && !/^[a-z][a-z0-9_-]{0,63}$/.test(value)) {
+      if (IDENTIFIER_KEYS.has(key) && !/^[a-z][a-z0-9_-]{0,63}$/.test(value) && !extensionTts) {
         throw new Error(`Invalid backend identifier for ${key}`)
       }
       const definition = desktopCatalogFields[key]

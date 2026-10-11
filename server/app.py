@@ -30,6 +30,11 @@ from typing import Any, TYPE_CHECKING
 # inference. This must run before anything imports torch.
 os.environ.setdefault("KMP_BLOCKTIME", "1")
 
+# The launch snapshot contains package-scoped credentials. Remove it before
+# eager model/runtime imports can create any child process.
+from server.extensions.snapshot import pop_snapshot_environment
+_EXTENSION_STARTUP_SNAPSHOT = pop_snapshot_environment()
+
 # Classify only selected-role load failures before eager runtime imports. A
 # library import retains the typed exception; only this executable maps it to 78.
 from core.character_profiles import CharacterLoadError, CHARACTER_LOAD_EXIT_CODE
@@ -341,6 +346,7 @@ def _http_request_authenticated(headers, auth_policy: LocalAuthPolicy) -> bool:
 
 async def bootstrap(port: int = 17777) -> None:
     """Mirrors main.py's main() init sequence, minus GUI."""
+    global _EXTENSION_STARTUP_SNAPSHOT
     global vts_manager, player, playback_manager, tts_runtime, asr_manager, wake_service
     global tts_executor, translation_executor, pending_actions, pending_sentence_items
     global exp_tts_semaphore, exp_play_condition, output_idle_probe, host_readonly_voice_sink
@@ -427,6 +433,27 @@ async def bootstrap(port: int = 17777) -> None:
     )
     capability_catalog = CapabilityCatalog()
     capability_catalog.register_package(builtin_auip_authoring_package())
+    from server.extensions.runtime import ExtensionRuntime
+    from server.extensions.snapshot import parse_snapshot
+    from agent_host.extension_mcp import project_extension_mcp_connections
+    from agent_host.mcp_connections import configure_mcp_connections
+
+    try:
+        extension_records = parse_snapshot(_EXTENSION_STARTUP_SNAPSHOT)
+    except (ValueError, TypeError):
+        logger.warning("Extension startup snapshot is invalid; extension activation blocked")
+        extension_records = []
+    _EXTENSION_STARTUP_SNAPSHOT = ""
+    extension_runtime = ExtensionRuntime(extension_records)
+    extension_records.clear()
+    extension_connections = []
+    for entry in extension_runtime.activation_records:
+        try:
+            extension_connections.extend(project_extension_mcp_connections(entry))
+        except (ValueError, TypeError, OSError):
+            extension_runtime.mark_mcp_projection_failed(entry["id"])
+    configure_mcp_connections(extra_connections=tuple(extension_connections))
+    extension_runtime.start()
     configured_activity_path = str(os.environ.get("AMADEUS_PROVIDER_ACTIVITY_PATH") or "").strip()
     provider_activity = ProviderActivityJournal(
         Path(configured_activity_path).expanduser()
@@ -460,9 +487,9 @@ async def bootstrap(port: int = 17777) -> None:
         provider_runtime=provider_runtime,
         current_session_id=lambda: _attention_session_manager.get_current_session_id() or "",
         auip_app_websocket_url=f"ws://127.0.0.1:{port}/auip/ws",
-        extra_capability_packages=lambda: auip_app_capability_packages(
+        extra_capability_packages=lambda: (*extension_runtime.capability_packages(), *auip_app_capability_packages(
             auip_launch.candidates(_attention_session_manager.get_current_session_id() or "")
-        ),
+        )),
     ))
     # References needed by existing domain runtime owners; registration below
     # includes every factory result, including handlers without app bindings.
@@ -733,7 +760,7 @@ async def bootstrap(port: int = 17777) -> None:
             from tts.registry import create_tts_runtime
 
             tts_runtime = create_tts_runtime(TTS_BACKEND)
-            logger.info("tts backend ready: %s", TTS_BACKEND)
+            logger.info("tts backend initialized: %s", TTS_BACKEND)
         except Exception as e:
             logger.warning("tts init failed (expected if model files missing): %s", e)
             tts_runtime = None
@@ -2247,6 +2274,7 @@ async def bootstrap(port: int = 17777) -> None:
         playback_manager=playback_manager,
         player=player,
         on_interrupt=_handle_tts_interrupt,
+        cancel_synthesis=tts_runtime.cancel_pending if tts_runtime is not None else None,
         asr_manager_factory=_get_or_create_asr_manager,
         on_asr_unload=_clear_asr_manager,
         on_recognized=_handle_asr_recognized,
@@ -2405,6 +2433,8 @@ async def bootstrap(port: int = 17777) -> None:
 
         async def _close_runtime() -> None:
             vts_worker_stop.set()
+            # Stop external requests before shared playback and Provider teardown.
+            await asyncio.to_thread(extension_runtime.close)
             try:
                 await chat_h.close()
             except Exception:

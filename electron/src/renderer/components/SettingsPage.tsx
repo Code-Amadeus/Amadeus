@@ -26,6 +26,9 @@ import {
   buildRemoteModelConnectionCatalog,
 } from './modelConnectionCatalog'
 import { buildVoiceConfigurationCatalog, voiceConfigurationSections } from './voiceConfigurationCatalog'
+import ExtensionSettings from './ExtensionSettings'
+import type { ExtensionSummary } from '../../shared/extensions.js'
+import { extensionLanguageSupported, type ExtensionRuntimeStatus } from './extensionSettingsCatalog'
 import { buildWorkProviderCatalog } from './providerConnectionCatalog'
 import { buildModelRoleCatalog } from './modelRoleCatalog'
 import { buildGraphicsConfiguration, type GraphicsRuntimeSettings } from './graphicsConfigurationCatalog'
@@ -39,10 +42,10 @@ interface Props {
   reconnectBackend: () => Promise<void>
 }
 
-type SettingsSection = 'capabilities' | 'characters' | 'graphics' | SceneConfigureSection
+type SettingsSection = 'capabilities' | 'characters' | 'graphics' | 'extensions' | SceneConfigureSection
 type ModelsPage = 'roles' | 'connections'
 
-type StartupOption = string | { value: string; label: string }
+type StartupOption = string | { value: string; label: string; disabled?: boolean; unavailable?: boolean }
 
 interface StartupField {
   key: string
@@ -130,6 +133,8 @@ interface DesktopSettingsSnapshot {
   pendingKeys: string[]
   pendingRevisions: Record<string, number>
   retired_settings: RetiredSettingFact[]
+  extensions?: ExtensionSummary[]
+  extensionErrors?: string[]
 }
 
 interface CompanionPortraitStatus {
@@ -418,7 +423,7 @@ function StartupFieldRow({ field, desktop, onSave }: {
             {(unknown ? field.options || [] : optionsWithCurrentValue(field.options || [], String(draft))).map(option => {
               const optionValue = typeof option === 'string' ? option : option.value
               const optionLabel = typeof option === 'string' ? option || 'Inherit' : option.label
-              return <option key={optionValue} value={optionValue}>{t(optionLabel)}</option>
+              return <option key={optionValue} value={optionValue} disabled={typeof option !== 'string' && option.disabled}>{typeof option !== 'string' && option.unavailable ? `${t('Unavailable voice')} · ` : ''}{t(optionLabel)}</option>
             })}
           </select>
         ) : field.type === 'boolean' ? (
@@ -627,7 +632,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   const [section, setSectionState] = useState<SettingsSection>(() => {
     const saved = window.localStorage.getItem('amadeus.settings.section')
     if (saved === 'visuals') return 'characters'
-    return ['capabilities', 'general', 'characters', 'graphics', 'models', 'voice', 'providers'].includes(String(saved))
+    return ['capabilities', 'general', 'characters', 'graphics', 'models', 'voice', 'providers', 'extensions'].includes(String(saved))
       ? saved as SettingsSection
       : 'capabilities'
   })
@@ -635,6 +640,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   const editors = useRef<Record<string, SettingsEditorState>>({})
   const acpEditorChanged = useCallback((state: SettingsEditorState) => { editors.current.acp = state }, [])
   const mcpEditorChanged = useCallback((state: SettingsEditorState) => { editors.current.mcp = state }, [])
+  const extensionEditorChanged = useCallback((state: SettingsEditorState) => { editors.current.extensions = state }, [])
   const canLeave = useCallback(() => canLeaveSettingsEditors(Object.values(editors.current),
     () => window.confirm(t(DISCARD_CONNECTION_CHANGES))), [t])
   useEffect(() => {
@@ -809,7 +815,8 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   }, [handleChange])
 
   const restartBackend = useCallback(async () => {
-    if (!window.amadeus) return
+    // Restart preserves unsubmitted drafts, but cannot interrupt a pending write.
+    if (!window.amadeus || !canLeaveSettingsEditors(Object.values(editors.current), () => true)) return
     setRestarting(true)
     setError('')
     setNotice('')
@@ -1106,18 +1113,21 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
         wakeEnabled: desktop?.sources?.WAKE_ENABLED === 'user' ? desktop.values.WAKE_ENABLED === 'true' : bool('wake_enabled'),
         aecEnabled: desktop?.sources?.AEC_REALTIME_ENABLED === 'user' ? desktop.values.AEC_REALTIME_ENABLED === 'true' : config.aec_realtime_enabled === undefined ? Boolean(desktopCatalogFields.AEC_REALTIME_ENABLED.default) : bool('aec_realtime_enabled'),
         emotionReferencesEnabled: backendVoiceConfiguration.find(group => group.id === 'tts_emotion_references')?.fields.find(field => field.key === 'ENABLE_EXPERIMENTAL_V3_EMOTION_ROUTING')?.value === true,
-      }, catalogDesktop)
+      }, { ...catalogDesktop, extensions: desktop?.extensions }, locale)
   const voiceConfiguration: ConfigurationGroup[] = voiceCatalog.map(base => {
     const backend = backendVoiceConfiguration.find(group => group.id === base.id)
+    const fields = projectStartupFields(base.fields, backend?.fields, desktop).map(field => field.key === 'TTS_BACKEND'
+      ? { ...field, options: base.fields.find(item => item.key === 'TTS_BACKEND')?.options }
+      : field)
     return backend ? {
       ...backend,
       ...base,
-      fields: projectStartupFields(base.fields, backend.fields, desktop),
+      fields,
       configured: backend.configured ?? base.configured,
       status: backend.status || base.status,
       status_ok: backend.status_ok ?? base.status_ok,
       status_detail: backend.status_detail,
-    } : { ...base, fields: projectStartupFields(base.fields, undefined, desktop) }
+    } : { ...base, fields }
   })
   // Keep complete voice groups together; voice files and engine settings share one editor.
   const { output: outputVoiceIds, input: inputVoiceIds, remote: remoteVoiceIds } = voiceConfigurationSections
@@ -1127,7 +1137,10 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   const advancedVoiceConfiguration = voiceConfiguration.filter(group => !outputVoiceIds.has(group.id) && !inputVoiceIds.has(group.id) && !remoteVoiceIds.has(group.id))
   const speechBackend = voiceConfiguration.find(group => group.id === 'speech_synthesis')?.fields.find(field => field.key === 'TTS_BACKEND')
   const speechBackendOption = speechBackend?.options?.find(option => typeof option !== 'string' && option.value === speechBackend.value)
-  const voiceSummary = typeof speechBackendOption === 'object' ? speechBackendOption.label : String(speechBackend?.value || '')
+  const voiceSummary = typeof speechBackendOption === 'object' ? `${speechBackendOption.unavailable ? `${t('Unavailable voice')} · ` : ''}${speechBackendOption.label}` : String(speechBackend?.value || '')
+  const selectedExtensionVoice = desktop?.extensions?.flatMap(extension => (extension.manifest?.contributes.voice_backend || []).map(voice => ({ extension, voice })))
+    .find(({ extension, voice }) => `${extension.id}/${voice.id}` === speechBackend?.value)
+  const savedSpeechLanguage = String(runtimeSettingValue('tts_output_language', desktop, connected ? config.tts_output_language : undefined) ?? 'ja')
   const visionWindowHandle = val('vision_window_handle')
   const visionWindowOptions: ComboOption[] = [
     { value: '', label: 'Select a window…' },
@@ -1280,6 +1293,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
               ['models', 'Models', 'Robot'],
               ['voice', 'Voice', 'Microphone'],
               ['providers', 'Providers', 'Work'],
+              ['extensions', 'Extensions', 'Tiles'],
             ] as Array<[SettingsSection, string, FluentIconName]>).map(([id, label, icon]) => (
               <button key={id} onClick={() => setSection(id)} aria-current={section === id ? 'page' : undefined} className="flex items-center gap-2 text-[11.5px] text-left rounded-md px-2.5" style={{ height: 32, color: section === id ? 'var(--text)' : 'var(--muted)', background: section === id ? 'var(--selected-fill)' : 'transparent', border: 0, fontWeight: section === id ? 650 : 500 }}>
                 <FluentIcon name={icon} size={14} />{t(label)}
@@ -1289,6 +1303,14 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
 
           <main className="settings-main flex-1 min-w-0" style={{ maxWidth: section === 'characters' && characterTab === 'appearance' ? undefined : 760 }}>
             {section === 'characters' ? characterWorkspace : null}
+            {section === 'extensions' ? <SettingsGroup title="Community extensions" detail="Manage locally installed packages and their startup configuration.">
+              {(desktop?.extensionErrors || []).map((detail, index) => <div key={index} role="alert" className="settings-form-error">{t(detail)}</div>)}
+              <ExtensionSettings extensions={desktop?.extensions || []} runtime={connected && Array.isArray(config.extensions) ? config.extensions as ExtensionRuntimeStatus[] : []}
+                providers={providerManifests} connected={connected} available={Boolean(desktop && window.amadeus?.installExtension)} encryptionAvailable={Boolean(desktop?.encryptionAvailable)}
+                selectedVoiceBackend={String(speechBackend?.value || '')}
+                onSettingsChanged={settings => setDesktop(settings as unknown as DesktopSettingsSnapshot)} onRestartRequired={() => setRestartPending(true)}
+                onOpenVoice={() => setSection('voice')} onEditorStateChange={extensionEditorChanged} />
+            </SettingsGroup> : null}
             {section === 'capabilities' ? (
               <CapabilitiesPanel capabilities={capabilityProfiles} runtimePackages={runtimePackages} onOpenSection={openCapabilityTarget} />
             ) : null}
@@ -1468,6 +1490,14 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                 </BoundaryNote>
                 <SettingsGroup title="Speech output" detail="Choose a synthesis engine, then its model weights and reference audio. Save and restart the backend to apply startup settings.">
                   {outputVoiceConfiguration.map(group => <ConfigurationCard key={group.id} group={group} desktop={desktop} onSave={handleStartupSave} collapsible defaultOpen={group.id === 'speech_synthesis'} optionalWhenInactive />)}
+                  <div className="settings-form-actions-end"><button className="settings-button" type="button" onClick={() => setSection('extensions')}>{t('Manage community voices')}</button></div>
+                  {typeof speechBackendOption === 'object' && speechBackendOption.unavailable ? <BoundaryNote title="Unavailable voice">{t('The saved speech engine is unavailable. After restarting, speech is unavailable while text responses continue. Choose an enabled voice to restore speech.')}</BoundaryNote> : null}
+                  {selectedExtensionVoice ? <BoundaryNote title="Extension voice compatibility">
+                    <div>{t('Declared languages')}: {(selectedExtensionVoice.voice.languages || []).join(', ')}</div>
+                    <div>{t('Amadeus speech languages: Japanese and English.')}</div>
+                    {!extensionLanguageSupported(selectedExtensionVoice.voice.languages || [], savedSpeechLanguage) ? <div>{t('The saved speech language is not declared by this extension. Choose a declared language before restarting.')}</div> : null}
+                    {!extensionLanguageSupported(selectedExtensionVoice.voice.languages || [], 'ja') ? <div>{t('Japanese support is not declared. Select English for this voice; Japanese output has not been verified.')}</div> : null}
+                  </BoundaryNote> : null}
                 </SettingsGroup>
                 <SettingsGroup title="Speech language" detail="User-facing language for generated speech.">
                   <ComboCard icon="Language" title={desktopCatalogFields.TTS_OUTPUT_LANGUAGE.title['en-US']} content={desktopCatalogFields.TTS_OUTPUT_LANGUAGE.description?.['en-US'] || ''} value={val('tts_output_language', 'ja')} onChange={value => handleChange('tts_output_language', value)} options={desktopCatalogFields.TTS_OUTPUT_LANGUAGE.options!.map(option => ({ value: String(runtimeSettingFromDesktopValues('tts_output_language', { TTS_OUTPUT_LANGUAGE: typeof option === 'string' ? option : option.value })), label: typeof option === 'string' ? option : option.label['en-US'] }))} />

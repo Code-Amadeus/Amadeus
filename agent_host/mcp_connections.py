@@ -18,12 +18,12 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-
 MCP_CONNECTIONS_ENV = "AMADEUS_MCP_CONNECTIONS"
 MCP_CONNECTION_PROJECTION = "mcp_connection"
 _REGISTRY_LIMIT_BYTES = 512 * 1024
 _IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 _ENVIRONMENT_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+_PROCESS_CONNECTIONS: tuple[McpConnectionSpec, ...] | None = None
 
 
 McpTransport = Literal["stdio", "http"]
@@ -83,6 +83,8 @@ class McpConnectionSpec:
     url: str = ""
     bearer_token_env_var: str = ""
     environment: dict[str, str] = field(default_factory=dict, repr=False)
+    # Native projection provenance; never accepted from the user connection JSON.
+    extension_package_id: str = ""
 
     def __post_init__(self) -> None:
         connection_id = str(self.connection_id or "").strip().lower()
@@ -175,6 +177,8 @@ class McpConnectionSpec:
 
 
 def load_mcp_connections(raw: str | None = None) -> tuple[McpConnectionSpec, ...]:
+    if raw is None and _PROCESS_CONNECTIONS is not None:
+        return _PROCESS_CONNECTIONS
     encoded = os.environ.get(MCP_CONNECTIONS_ENV, "") if raw is None else raw
     if not str(encoded or "").strip():
         return ()
@@ -196,6 +200,24 @@ def load_mcp_connections(raw: str | None = None) -> tuple[McpConnectionSpec, ...
     if len(ids) != len(set(ids)):
         raise ValueError("MCP registry contains duplicate connection ids")
     return connections
+
+
+def configure_mcp_connections(
+    *, extra_connections: tuple[McpConnectionSpec, ...] = (),
+) -> tuple[McpConnectionSpec, ...]:
+    """Consume the launch registry before creating any Provider children.
+
+    The process snapshot remains available to native adapter constructors,
+    while raw aggregate credentials no longer leak through os.environ.
+    """
+    global _PROCESS_CONNECTIONS
+    raw = os.environ.pop(MCP_CONNECTIONS_ENV, "")
+    connections = (*load_mcp_connections(raw), *extra_connections)
+    ids = [item.connection_id for item in connections]
+    if len(ids) != len(set(ids)):
+        raise ValueError("MCP registry contains duplicate connection ids")
+    _PROCESS_CONNECTIONS = tuple(connections)
+    return _PROCESS_CONNECTIONS
 
 
 def connections_for_provider(
@@ -258,15 +280,21 @@ async def open_mcp_connection(
     from mcp import Client
 
     if connection.transport == "stdio":
-        from mcp.client.stdio import StdioServerParameters, stdio_client
-
-        parameters = StdioServerParameters(
-            command=connection.command,
-            args=list(connection.arguments),
-            cwd=connection.cwd or None,
-            env={**os.environ, **connection.environment},
-        )
-        async with Client(stdio_client(parameters), raise_exceptions=False) as client:
+        if connection.extension_package_id:
+            from agent_host.mcp_stdio import managed_mcp_stdio
+            transport = managed_mcp_stdio(connection)
+        else:
+            # Manual MCP connections retain SDK platform command handling
+            # (including Windows npx.cmd); extension executables are constrained
+            # by the package profile and use pre-execution containment.
+            from mcp import StdioServerParameters
+            from config.subprocess_environment import isolated_child_environment
+            transport = StdioServerParameters(
+                command=connection.command, args=list(connection.arguments),
+                cwd=connection.cwd or None,
+                env=isolated_child_environment(extra=connection.environment),
+            )
+        async with Client(transport, raise_exceptions=False) as client:
             yield client
         return
 
