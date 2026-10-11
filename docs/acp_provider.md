@@ -181,8 +181,8 @@ The current real-model extension probe is opt-in:
 python tools/probes/probe_dsh_extension_live.py --help
 ```
 
-See [DSH extension acceptance](extension_dsh_live_2026-10-11.md) for setup,
-credentials, disposable inputs, phases, and observed limitations. Running a phase
+See [the extension Host profile](extension_host_profile_v0.1.md) for supported
+contributions and limits. The probe's help describes its disposable inputs and phases. Running a phase
 uses real inference and tools. It does not create or complete a Host WorkItem.
 The older `probe_acp_provider.py` referred to by historical notes is not present
 in this checkout.
@@ -220,8 +220,7 @@ node tools/probes/probe_mcp_stdout.mjs
 
 The second command compares unmodified upstream code with a disposable module
 copy that routes diagnostics to stderr; the original installed SDK is unchanged.
-Track the [existing SDK logger work](https://github.com/modelcontextprotocol/typescript-sdk/pull/2370)
-and the [sanitized follow-up draft](upstream/mcp-sdk-stdout-followup_2026-10-12.md).
+Track the [existing SDK logger work](https://github.com/modelcontextprotocol/typescript-sdk/pull/2370).
 There is no production Host line filter, global console override, or Agent
 package patch. Keep this runtime combination experimental until the corrected
 dependency/integration passes the clean-wire probe.

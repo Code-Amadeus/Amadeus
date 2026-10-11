@@ -269,6 +269,7 @@ export default function McpConnections({
               <details className="settings-form-advanced">
                 <summary><span>{t('Encrypted environment values')}</span><span className="settings-meta-text">{t('Optional')}</span></summary>
                 <div className="settings-form-advanced-body">
+                  <p className="settings-field-description">{t('Connection tests and Pi use a platform environment allowlist. Add every required token or toolchain variable here; Host .env variables are not inherited automatically.')}</p>
                   <SettingsField id="mcp-environment" label="Environment values" description="Leave blank to keep stored values; use KEY= to remove one. Values are stored encrypted by the Host.">
                     <textarea id="mcp-environment" aria-describedby="mcp-environment-hint" className="settings-form-input settings-form-code" rows={3} value={draft.environmentText} onChange={event => updateDraft('environmentText', event.target.value)} placeholder={t('One KEY=value per line')} autoComplete="off" spellCheck={false} />
                   </SettingsField>

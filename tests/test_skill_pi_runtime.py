@@ -58,7 +58,7 @@ async def test_native_pi_skill_is_read_used_restored_replaced_and_removed(native
     assert any('handoff-brief' in str(message) for message in requests[0]['messages'])
     assert any('handoff-layout-v1' in str(message) for message in requests[-1]['messages'])
     session = ProviderSessionHandle.from_dict(json.loads(json.dumps(result.session.to_dict())))
-    assert session.skill_revision
+    assert session.skill_bindings
 
     # The adapter starts a fresh real Pi process on every run; this restores its
     # native JSONL session, including actual skill-read tool results.
@@ -115,3 +115,39 @@ async def test_pi_skill_reads_do_not_grant_writes_or_neighboring_package_access(
     assert result.status == 'done', result
     assert [e.payload['ok'] for e in events if e.type == 'tool.result'] == [True, False, False]
     assert skill.path.read_text(encoding='utf-8').startswith('---')
+
+
+async def test_pi_addition_and_name_collision_do_not_disable_the_agent(native_pi, tmp_path):
+    adapter, requests, selected, _ = native_pi
+    workspace = tmp_path / 'added-work'
+    workspace.mkdir()
+    (workspace / 'facts.json').write_text(json.dumps({'changes': ['Added skill'], 'verification': ['Native read'], 'remaining': ['Review']}))
+    request = ProviderRunRequest('pi', 'Report capabilities.', cwd=str(workspace),
+        requirements=ProviderRequirements(workspace_access='write', workspace_ownership='caller'))
+    async def emit(_event):
+        pass
+    selected['steps'] = []
+    before = await adapter.run(request, 'before-addition', emit)
+    assert before.status == 'done', before
+    duplicate = adapter.agent_dir / 'skills/handoff-brief'
+    duplicate.mkdir(parents=True)
+    (duplicate / 'SKILL.md').write_text('---\nname: handoff-brief\ndescription: Native unrelated skill\n---\nNative unrelated guidance', encoding='utf-8')
+    record = skill_record(tmp_path / 'added-install', providers=('pi',))
+    catalog = SkillCatalog([record])
+    configure_skills(catalog)
+    skill, = provider_skills('pi')
+    output = workspace / 'handoff.md'
+    selected['steps'] = []
+    conflict = await adapter.run(replace(request, session=before.session), 'native-collision', emit)
+    assert conflict.status == 'done', conflict
+    assert catalog.native_errors
+    assert 'Selected installed Skills unavailable' in str(requests[-1]['messages'])
+    (duplicate / 'SKILL.md').unlink()
+    duplicate.rmdir()
+    selected['steps'] = handoff_steps(skill, workspace, output)
+    after = await adapter.run(replace(request, session=before.session, task='Use the installed handoff skill.'), 'after-addition', emit)
+    assert after.status == 'done', after
+    assert after.session.session_id == before.session.session_id
+    assert after.session.skill_bindings
+    assert 'handoff-layout-v1' in output.read_text()
+    assert not catalog.native_errors

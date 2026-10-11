@@ -1,19 +1,22 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { randomBytes, createHash } from 'node:crypto'
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { forceStopBackendTree } from './backendProcessTree.js'
 import { DesktopSettingsStore, EXTENSIONS_ENV, type StoredExtension } from './desktopSettings.js'
-import type { ExtensionConfigValue, ExtensionManifest, ExtensionRemovalOptions, ExtensionUpdate } from '../shared/extensions.js'
+import type { ExtensionConfigValue, ExtensionManifest, ExtensionRemovalOptions, ExtensionUpdate, ExtensionConfirmation } from '../shared/extensions.js'
 
-type HelperReply = { ok: boolean; error?: string; manifest?: ExtensionManifest; digest?: string;
+type HelperReply = { ok: boolean; error?: string; unavailable?: boolean; manifest?: ExtensionManifest; digest?: string;
   package_root?: string; manifest_member?: string; distribution?: string; config?: Record<string, ExtensionConfigValue>; missing?: string[] }
-type RunOptions = { cwd: string; env: NodeJS.ProcessEnv; input?: string; allowFailureJson?: boolean }
+type RunOptions = { cwd: string; env: NodeJS.ProcessEnv; input?: string; allowFailureJson?: boolean; timeoutMs?: number }
 export type ExtensionCommandRunner = (command: string, args: string[], options: RunOptions) => Promise<string>
 
 export class ExtensionPreparationShutdownError extends Error {
   constructor() { super('Extension preparation shutdown could not be confirmed; its files were retained') }
+}
+export class ExtensionChangeCancelled extends Error {
+  constructor() { super('Extension change cancelled') }
 }
 
 // Only trusted inspection/install helpers receive transport configuration.
@@ -41,7 +44,7 @@ export const runExtensionCommand: ExtensionCommandRunner = (command, args, optio
     termination = forceStopBackendTree(child)
     void termination.catch(() => reject(new ExtensionPreparationShutdownError()))
   }
-  const timeout = setTimeout(() => { timedOut = true; terminate() }, 300_000)
+  const timeout = setTimeout(() => { timedOut = true; terminate() }, options.timeoutMs ?? 300_000)
   child.stdout?.on('data', chunk => {
     size += chunk.length
     if (size > 1_048_576) { overflow = true; terminate(); return }
@@ -75,24 +78,29 @@ export class ExtensionPackageHelper {
   private get script(): string { return path.join(this.projectRoot, 'tools', 'extension_package.py') }
 
   validateRecord = (manifest: ExtensionManifest, config: Record<string, ExtensionConfigValue>): boolean | 'unavailable' => {
-    const input = JSON.stringify({ manifest, config, allow_incomplete: true })
-    const key = createHash('sha256').update(input).digest('hex')
-    if (this.validRecords.has(key)) return this.validRecords.get(key)!
-    if (Date.now() < this.unavailableUntil) return 'unavailable'
-    let valid: boolean | 'unavailable' = 'unavailable'
-    try {
-      const result = spawnSync(this.python(), ['-I', this.script, 'validate-config'], {
-        cwd: this.projectRoot, env: extensionInstallerEnvironment(this.environment), input,
-        encoding: 'utf8', windowsHide: true, timeout: 10_000, maxBuffer: 1_048_576,
-      })
-      const reply = JSON.parse(result.stdout) as { ok?: unknown }
-      if (!result.error && result.status === 0 && reply.ok === true) valid = true
-      else if (!result.error && result.status !== null && reply.ok === false) valid = false
-    } catch { /* Validator failure is not evidence that saved records are invalid. */ }
-    if (valid === 'unavailable') { this.unavailableUntil = Date.now() + 1000; return valid }
-    if (this.validRecords.size >= 256) this.validRecords.clear()
-    this.validRecords.set(key, valid)
-    return valid
+    return this.validRecords.get(this.recordKey(manifest, config)) ?? 'unavailable'
+  }
+
+  private recordKey(manifest: ExtensionManifest, config: Record<string, ExtensionConfigValue>): string {
+    return createHash('sha256').update(JSON.stringify({ manifest, config, allow_incomplete: true })).digest('hex')
+  }
+
+  async refreshRecords(records: StoredExtension[]): Promise<void> {
+    for (const record of records) {
+      if (Date.now() < this.unavailableUntil) return
+      const key = this.recordKey(record.manifest, record.values)
+      if (this.validRecords.has(key)) continue
+      try {
+        const output = await this.run(this.python(), ['-I', this.script, 'validate-config'], {
+          cwd: this.projectRoot, env: extensionInstallerEnvironment(this.environment),
+          input: JSON.stringify({ manifest: record.manifest, config: record.values, allow_incomplete: true }),
+          allowFailureJson: true, timeoutMs: 10_000,
+        })
+        const reply = JSON.parse(output) as HelperReply
+        if (reply.unavailable || typeof reply.ok !== 'boolean') throw new Error('validator unavailable')
+        this.validRecords.set(key, reply.ok)
+      } catch { this.unavailableUntil = Date.now() + 1000 }
+    }
   }
 
   async call(command: 'inspect-wheel' | 'validate-config' | 'validate-installed', args: string[] = [], input?: unknown): Promise<HelperReply> {
@@ -105,6 +113,10 @@ export class ExtensionPackageHelper {
     try { reply = JSON.parse(output) as HelperReply }
     catch { throw new Error('The trusted extension validator returned an invalid response') }
     if (!reply || reply.ok !== true) throw new Error(reply?.error || 'Extension validation failed')
+    if (command === 'validate-config' && input && typeof input === 'object' && 'manifest' in input && reply.config) {
+      const definition = (input as { manifest: ExtensionManifest }).manifest
+      this.validRecords.set(this.recordKey(definition, reply.config), true)
+    }
     return reply
   }
 }
@@ -113,7 +125,7 @@ function safeRelative(value: string): boolean {
   return /^[A-Za-z0-9_][A-Za-z0-9._-]*(\/[A-Za-z0-9_][A-Za-z0-9._-]*)*$/.test(value)
 }
 
-/** Verify every ancestor and never traverse a symbolic link or Windows junction. */
+/** The installation root and its descendants must not be links or junctions. */
 export function assertExtensionPath(root: string, target: string): void {
   const absoluteRoot = path.resolve(root)
   const absoluteTarget = path.resolve(target)
@@ -121,9 +133,9 @@ export function assertExtensionPath(root: string, target: string): void {
   if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     throw new Error('Extension filesystem target is outside its installation directory')
   }
-  const rootParts = path.parse(absoluteRoot)
-  let current = rootParts.root
-  for (const segment of absoluteTarget.slice(rootParts.root.length).split(path.sep)) {
+  let current = absoluteRoot
+  if (fs.existsSync(current) && fs.lstatSync(current).isSymbolicLink()) throw new Error('Extension installation root must not be a link or junction')
+  for (const segment of relative.split(path.sep)) {
     current = path.join(current, segment)
     if (!fs.existsSync(current)) continue
     if (fs.lstatSync(current).isSymbolicLink()) throw new Error('Extension filesystem paths must not contain links or junctions')
@@ -141,10 +153,10 @@ export function removeExtensionDirectory(root: string, target: string, installId
   try { marker = JSON.parse(fs.readFileSync(markerPath, 'utf8')) }
   catch { throw new Error('Extension installation ownership could not be verified') }
   if (marker.installId !== installId) throw new Error('Extension installation ownership does not match')
-  removeVerifiedDirectory(root, target)
+  removeVerifiedDirectory(root, target, '.amadeus-extension-install.json')
 }
 
-function removeVerifiedDirectory(root: string, target: string): void {
+function removeVerifiedDirectory(root: string, target: string, markerName: string): void {
   function verify(directory: string): void {
     assertExtensionPath(root, directory)
     for (const item of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -155,10 +167,13 @@ function removeVerifiedDirectory(root: string, target: string): void {
     }
   }
   verify(target)
+  const markerPath = path.join(target, markerName)
+  const marker = fs.readFileSync(markerPath)
   // Do not use recursive rm: traversal and deletion both recheck each boundary.
   function remove(directory: string): void {
     assertExtensionPath(root, directory)
     for (const name of fs.readdirSync(directory)) {
+      if (directory === target && name === markerName) continue
       const child = path.join(directory, name)
       assertExtensionPath(root, child)
       const stat = fs.lstatSync(child)
@@ -166,9 +181,16 @@ function removeVerifiedDirectory(root: string, target: string): void {
       else if (stat.isFile()) fs.unlinkSync(child)
       else throw new Error('Extension cleanup encountered an unsupported filesystem entry')
     }
-    fs.rmdirSync(directory)
+    if (directory !== target) fs.rmdirSync(directory)
   }
   remove(target)
+  // A transient lock must not erase the proof needed by the next cleanup.
+  fs.unlinkSync(markerPath)
+  try { fs.rmdirSync(target) }
+  catch (error) {
+    fs.writeFileSync(markerPath, marker, { mode: 0o600, flag: 'wx' })
+    throw error
+  }
 }
 
 export class ExtensionInstaller {
@@ -177,7 +199,8 @@ export class ExtensionInstaller {
   private uncertainPreparations = new Set<string>()
   constructor(private readonly root: string, private readonly projectRoot: string, private readonly store: DesktopSettingsStore,
     private readonly helper: ExtensionPackageHelper, private readonly python: () => string,
-    private readonly environment: NodeJS.ProcessEnv, private readonly run: ExtensionCommandRunner = runExtensionCommand) {}
+    private readonly environment: NodeJS.ProcessEnv, private readonly run: ExtensionCommandRunner = runExtensionCommand,
+    private readonly confirm: (review: ExtensionConfirmation) => Promise<boolean> = async () => false) {}
 
   private get dataRoot(): string { return path.join(path.dirname(this.root), 'extension-data') }
 
@@ -210,7 +233,7 @@ export class ExtensionInstaller {
     try { marker = JSON.parse(fs.readFileSync(markerPath, 'utf8')) }
     catch { throw new Error('Extension data deletion ownership could not be verified') }
     if (marker.id !== id) throw new Error('Extension data deletion ownership does not match')
-    removeVerifiedDirectory(this.dataRoot, directory)
+    removeVerifiedDirectory(this.dataRoot, directory, '.amadeus-extension-data.json')
   }
 
   private serialize<T>(operation: () => Promise<T>): Promise<T> {
@@ -242,9 +265,12 @@ export class ExtensionInstaller {
         if (!manifest || !inspection.digest || !inspection.package_root || !safeRelative(inspection.package_root)) {
           throw new Error('The wheel inspector returned incomplete installation metadata')
         }
-        const existing = this.store.extensionRecords().find(record => record.id === manifest.id)
+        const existing = this.store.storedExtensionRecords().find(record => record.id === manifest.id)
         if (this.store.extensionIsInstalled(manifest.id) && (!existing || existing.pendingRemoval || existing.version === manifest.version)) {
           throw new Error('This extension is already installed; select a different version to update, or finish its pending removal')
+        }
+        if (!await this.confirm({ operation: existing ? 'update' : 'install', manifest, previousVersion: existing?.version })) {
+          throw new ExtensionChangeCancelled()
         }
         const env = extensionInstallerEnvironment(this.environment)
         const venv = path.join(directory, 'venv')
@@ -322,6 +348,9 @@ export class ExtensionInstaller {
       const providers = raw.providers === undefined ? record.providers : raw.providers
       if (!Array.isArray(providers) || providers.length > 32 || providers.some(id => typeof id !== 'string' || !/^[a-z][a-z0-9_-]{0,63}$/.test(id))) throw new Error('Invalid extension Work Provider binding')
       const enabled = raw.enabled ?? record.enabled
+      if (enabled && !record.enabled && !await this.confirm({ operation: 'enable', manifest: record.manifest })) {
+        throw new ExtensionChangeCancelled()
+      }
       if (enabled && (record.manifest.contributes.mcp_server?.length || record.manifest.contributes.skill?.length) && !providers.length) throw new Error('Select a compatible Work Provider before enabling this extension')
       const values = { ...record.values }
       for (const [key, value] of Object.entries(raw.values || {})) {
@@ -357,20 +386,20 @@ export class ExtensionInstaller {
   /** Called only after confirmed backend shutdown, before starting a new one. */
   cleanupStoppedBackend(): Promise<void> {
     return this.serialize(async () => {
-      const records = this.store.extensionRecords()
+      const records = this.store.storedExtensionRecords()
       for (const record of records.filter(item => item.pendingRemoval)) {
         try {
           removeExtensionDirectory(this.root, path.join(this.root, record.installId), record.installId)
           if (record.deleteDataOnRemoval) this.removePackageData(record.id)
           this.store.finishExtensionRemoval(record.id, record.installId)
         } catch {
-          this.store.reportExtensionWarning('Extension cleanup could not verify a pending removal; its files were retained.')
+          this.store.reportExtensionWarning('Extension cleanup did not complete; ownership records were retained for retry.')
         }
       }
       if (!fs.existsSync(this.root)) return
       try {
-        assertExtensionPath(path.dirname(this.root), this.root)
-        if (!fs.lstatSync(this.root).isDirectory()) throw new Error('invalid root')
+        const rootStat = fs.lstatSync(this.root)
+        if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) throw new Error('invalid root')
       } catch {
         this.store.reportExtensionWarning('Extension cleanup could not verify the installation root; files were retained.')
         return
@@ -386,10 +415,18 @@ export class ExtensionInstaller {
     })
   }
 
-  launchSnapshot(): Promise<string> { return this.serialize(() => this.buildLaunchSnapshot()) }
+  refreshValidation(): Promise<void> {
+    return this.serialize(async () => { await this.helper.refreshRecords(this.store.storedExtensionRecords()) })
+  }
+
+  launchSnapshot(): Promise<string> { return this.serialize(async () => {
+    await this.helper.refreshRecords(this.store.storedExtensionRecords())
+    return this.buildLaunchSnapshot()
+  }) }
 
   prepareLaunch(): Promise<{ extensions: string; environment: NodeJS.ProcessEnv; pendingRevisions: Record<string, number> }> {
     return this.serialize(async () => {
+      await this.helper.refreshRecords(this.store.storedExtensionRecords())
       const incomplete = this.store.deferIncompleteExtensionApplication()
       const pendingRevisions = this.store.pendingRevisionSnapshot()
       // Failed/retained removals have not completed the requested lifecycle,

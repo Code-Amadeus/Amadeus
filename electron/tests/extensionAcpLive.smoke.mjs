@@ -16,7 +16,7 @@ const python = process.env.AMADEUS_TEST_PYTHON
 assert.ok(python)
 const helper = new ExtensionPackageHelper(root,()=>python,env)
 const store = new DesktopSettingsStore(path.join(base,'settings.json'),path.join(base,'.env'),process.platform,helper.validateRecord)
-const installer = new ExtensionInstaller(path.join(base,'extensions'),root,store,helper,()=>python,env)
+const installer = new ExtensionInstaller(path.join(base,'extensions'),root,store,helper,()=>python,env,undefined,async()=>true)
 const phase = process.argv[2] || 'prepare'
 if (phase === 'prepare') {
   for (const [wheel,id] of [['amadeus_example_handoff_skill-0.1.0-py3-none-any.whl','com.example.handoff-skill'],['amadeus_example_csv_audit_skill-0.1.0-py3-none-any.whl','com.example.csv-audit-skill'],['amadeus_example_notes_mcp-0.1.0-py3-none-any.whl','com.example.notes-mcp']]) {

@@ -43,6 +43,7 @@ class Pending:
     must_cancel: bool = False
     contribution_id: str = ""
     dispatched: bool = False
+    responded: bool = False
     finished: threading.Event = field(default_factory=threading.Event)
 
 
@@ -165,10 +166,6 @@ class RunnerClient:
                         if process is None or process.poll() is not None:
                             raise ExtensionUnavailable("Runner exited")
                         with self._lock:
-                            expired_cancel = any(time.monotonic() - stamp > 2 for stamp in self._cancelled.values())
-                        if expired_cancel:
-                            raise ExtensionUnavailable("Runner did not acknowledge cancellation")
-                        with self._lock:
                             idle = not self._pending
                         if idle and time.monotonic() - max(last_ping, self._last_traffic) >= 15:
                             self._rpc("$/ping", {}, timeout=5)
@@ -287,6 +284,8 @@ class RunnerClient:
             with self._lock:
                 control = self._control.get(request_id)
                 pending = self._pending.get(request_id)
+                if pending is not None:
+                    pending.responded = True
                 self._cancelled.pop(request_id, None)
             if control:
                 control.put_nowait(message)
@@ -354,8 +353,8 @@ class RunnerClient:
             health, _ = self.health.get(contribution_id, ("error", ""))
             if self.state != "active" or not self._ready.is_set() or not self._registration_checked or health not in {"ready", "degraded"}:
                 raise ExtensionUnavailable(self.detail or "extension voice is unavailable")
-            if len(self._pending) >= 2:
-                raise ExtensionUnavailable("extension voice concurrency limit reached")
+            if len(self._pending.keys() | self._cancelled.keys()) >= 2:
+                raise ExtensionUnavailable("extension voice concurrency limit reached; cancellation cleanup may still be pending")
             self._pending[request_id] = pending
         timeout = deadline_ms / 1000 if deadline_ms is not None else REQUEST_TIMEOUT
         expires = time.monotonic() + timeout
@@ -386,13 +385,18 @@ class RunnerClient:
                         break
         finally:
             with self._lock:
+                if pending.dispatched and not pending.responded:
+                    self._cancel(request_id)
+                pending.finished.set()
                 self._pending.pop(request_id, None)
-            if pending.dispatched and (not pending.finished.is_set() or pending.must_cancel):
-                self._cancel(request_id)
 
     def _cancel(self, request_id: str) -> None:
         try:
             with self._lock:
+                pending = self._pending.get(request_id)
+                if pending is None or pending.responded or request_id in self._cancelled:
+                    return
+                pending.finished.set()
                 self._cancelled[request_id] = time.monotonic()
             self._send("$/cancel", {"id": request_id})
         except ExtensionUnavailable:

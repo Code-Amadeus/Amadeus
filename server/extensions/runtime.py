@@ -184,14 +184,15 @@ class ExtensionRuntime:
                         if record["id"] in self._mcp_errors:
                             health, detail = "error", self._mcp_errors[record["id"]]
                         elif record["enabled"] and record["id"] not in self._blocked and self._observed[record["id"]]["state"] != "needs_config":
-                            health, detail, provider_targets = self._provider_health(record["providers"], 'agent_skill' if kind == 'skill' else 'mcp_connection')
+                            health, detail, provider_targets = self._provider_health(record["providers"], 'agent_skill' if kind == 'skill' else 'mcp_connection',
+                                f"{record['id']}/{contribution['id']}" if kind == 'skill' else '')
                     status["contributions"].append({"kind": kind, "id": contribution["id"], "qualified_id": f"{record['id']}/{contribution['id']}", "health": health, "detail": detail,
                                                   **({"provider_targets": provider_targets} if provider_targets is not None else {})})
             if client is None and status["state"] == "active" and all(item["health"] == "error" for item in status["contributions"]):
                 status["state"], status["detail"] = "error", status["contributions"][0]["detail"]
         return statuses
 
-    def _provider_health(self, provider_ids: list[str], projection: str) -> tuple[str, str, list[dict[str, str]]]:
+    def _provider_health(self, provider_ids: list[str], projection: str, skill_id: str = '') -> tuple[str, str, list[dict[str, str]]]:
         if self._provider_manifest_lookup is None:
             from agent_host.provider_runtime import runtime as provider_runtime
             lookup = provider_runtime.get_manifest
@@ -199,6 +200,10 @@ class ExtensionRuntime:
             lookup = self._provider_manifest_lookup
         targets = []
         for provider_id in provider_ids:
+            native_error = self.skills.native_errors.get((provider_id, skill_id))
+            if native_error:
+                targets.append({"id": provider_id, "state": "error", "detail": native_error})
+                continue
             manifest = lookup(provider_id)
             state = "unavailable" if manifest is None else "ready" if projection in manifest.capabilities.capability_projections else "incompatible"
             targets.append({"id": provider_id, "state": state})
@@ -206,9 +211,10 @@ class ExtensionRuntime:
         if not targets:
             return "degraded", "No Work Provider selected", targets
         if not compatible:
-            return "error", "Selected Work Providers are unavailable or do not support this contribution", targets
+            return "error", next((target['detail'] for target in targets if target.get('detail')), "Selected Work Providers are unavailable or do not support this contribution"), targets
         if len(compatible) != len(targets):
-            return "degraded", "Some selected Work Providers are unavailable or do not support this contribution", targets
+            return "degraded", next((f"{target['id']}: {target['detail']}" for target in targets if target.get('detail')),
+                "Some selected Work Providers are unavailable or do not support this contribution"), targets
         return "ready", "Contribution is available to compatible selected Work Providers", targets
 
     def mark_mcp_projection_failed(self, package_id: str) -> None:

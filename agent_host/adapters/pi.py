@@ -1,7 +1,7 @@
 """Optional native Pi RPC adapter using the existing Host Provider contract."""
 from __future__ import annotations
 
-from agent_host.skills import provider_skills, skill_revision, skill_session_error
+from agent_host.skills import provider_skills, skill_bindings, skill_session_error, record_native_skill_discovery
 
 import asyncio
 from dataclasses import dataclass, field
@@ -195,12 +195,10 @@ class PiAdapter:
         try:
             await client.start()
             skills = provider_skills('pi')
+            skill_notice = ''
             if skills:
                 commands = (await client.request('get_commands')).get('commands', [])
-                for skill in skills:
-                    matches = [c for c in commands if c.get('name') == 'skill:' + skill.name and c.get('source') == 'skill']
-                    if len(matches) != 1 or Path(matches[0].get('sourceInfo', {}).get('path', '')).resolve() != skill.path.resolve():
-                        raise PiCommandRejected('Pi did not uniquely discover the selected installed Skill')
+                skill_notice = record_native_skill_discovery('pi', [c.get('sourceInfo', {}).get('path', '') for c in commands if c.get('source') == 'skill'])
             if attached:
                 path = Path(attached.session_id)
                 if not path.is_absolute() or not path.is_file():
@@ -228,7 +226,7 @@ class PiAdapter:
                     raise PiCommandRejected("Pi native session already has an active owner")
                 self._attached.add(session_key)
                 owned_session = session_key
-            run.session = attached or ProviderSessionHandle("pi", session_file, "interaction", skill_revision=skill_revision('pi'))
+            run.session = ProviderSessionHandle("pi", session_file, attached.scope if attached else "interaction", skill_bindings=skill_bindings('pi'))
             if state.get("isStreaming") or state.get("pendingMessageCount"):
                 raise PiCommandRejected("Pi session is not idle")
             await self._emit(run_id, run, "session.opened", session=run.session)
@@ -238,6 +236,8 @@ class PiAdapter:
                 task = with_progress_contract(with_parent_conversation_context(
                     request.task, metadata=request.metadata, execution_provider="pi"),
                     presentation_locale=request.metadata.get("presentation_locale"))
+                if skill_notice:
+                    task += '\n\n' + skill_notice
                 run.submitted = True
                 try:
                     await client.request("prompt", message=task)

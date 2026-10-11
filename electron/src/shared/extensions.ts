@@ -58,7 +58,7 @@ export type InstalledExtensionSummary = {
   values: Record<string, ExtensionConfigValue>
   secretConfigured: Record<string, boolean>
   providers: string[]
-  status: 'disabled' | 'enabled' | 'pending_removal' | 'unavailable'
+  status: 'disabled' | 'enabled' | 'pending_removal' | 'unavailable' | 'incompatible'
   restartRequired: boolean
   validationError?: string
 }
@@ -71,6 +71,20 @@ export type ExtensionUpdate = {
   providers?: string[]
 }
 export type ExtensionRemovalOptions = { deleteData?: boolean }
+export type ExtensionConfirmation = { operation: 'install' | 'update' | 'enable'; manifest: ExtensionManifest; previousVersion?: string }
+
+export function extensionDisclosure(manifest: ExtensionManifest): string {
+  const name = typeof manifest.display_name === 'string' ? manifest.display_name : manifest.display_name['en-US'] || manifest.display_name.en || manifest.id
+  return [
+    `${name}\n${manifest.id} · ${manifest.version}\nAuthor: ${manifest.author.name}`,
+    `Contributions:\n${Object.entries(manifest.contributes).flatMap(([kind, items]) => items.map(item =>
+      `${kind}: ${item.id}${item.command ? `\nCommand: ${item.command} ${(item.args || []).join(' ')}` : ''}${item.url ? `\nURL: ${item.url}` : ''}${item.path ? `\nResource: ${item.path}` : ''}`)).join('\n')}`,
+    `Runtime: ${manifest.runtime.kind}${manifest.runtime.entry ? ` · ${manifest.runtime.entry}` : ''}`,
+    `OS access declared by the author:\n${JSON.stringify(manifest.permissions?.os || {}, null, 2)}`,
+    'These declarations are not an OS sandbox. Package code runs with your local user access. Installation may download dependencies. Changes apply after backend restart.',
+  ].join('\n\n')
+}
+
 export type ExtensionMutationResult = {
   ok: boolean
   cancelled?: boolean

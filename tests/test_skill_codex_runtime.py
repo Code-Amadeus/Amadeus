@@ -202,8 +202,9 @@ async def test_native_skill_discovery_use_restart_update_and_uninstall(native_sk
     assert 'handoff-brief' in json.dumps(state['requests'][0])
     assert len([e for e in events if e.type == 'tool.result' and e.payload.get('ok', True)]) >= 4
     saved = ProviderSessionHandle.from_dict(json.loads(json.dumps(first_result.session.to_dict())))
-    assert saved.skill_revision
+    assert saved.skill_bindings
     await adapter.close()
+
     for client in clients:
         await client.close()
 
@@ -245,3 +246,27 @@ async def test_native_skill_discovery_use_restart_update_and_uninstall(native_sk
     assert fresh.status == 'done', fresh
     assert 'handoff-brief' not in json.dumps(state['requests'][-1])
     await adapter.close()
+
+
+async def test_native_session_created_before_skills_can_resume_and_use_new_skill(native_skill_agent, tmp_path):
+    factory, state, workspace, output, provider, _clients = native_skill_agent
+    adapter = factory()
+    async def emit(_event):
+        pass
+    request = ProviderRunRequest(provider, 'Report available capabilities.', cwd=str(workspace),
+        requirements=ProviderRequirements(workspace_access='write', workspace_ownership='caller'))
+    try:
+        empty = await adapter.run(request, 'before-skills', emit)
+        assert empty.status == 'done', empty
+        assert not empty.session.skill_bindings and not empty.session.skill_revision
+        record = skill_record(tmp_path / 'new-install', providers=(provider,))
+        configure_skills(SkillCatalog([record]))
+        state['skill'], = provider_skills(provider)
+        state['step'] = 0
+        result = await adapter.run(replace(request, task='Use the handoff skill with facts.json.', session=empty.session), 'after-addition', emit)
+        assert result.status == 'done', result
+        assert result.session.session_id == empty.session.session_id
+        assert result.session.skill_bindings
+        assert 'handoff-layout-v1' in output.read_text(encoding='utf-8')
+    finally:
+        await adapter.close()

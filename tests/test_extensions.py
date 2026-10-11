@@ -90,6 +90,9 @@ def speak(request, context):
         log.write(request.text + "\\n")
     if request.text == "crash":
         os._exit(7)
+    if request.text == "slow_before_chunk":
+        (data / "blocking").write_text("started")
+        time.sleep(3)
     if request.text == "spawn":
         child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
         (data / "child.pid").write_text(str(child.pid))
@@ -416,13 +419,53 @@ def test_fast_valid_burst_backpressure_and_first_chunk_text(record, fast_limits)
         client.close()
 
 
-def test_language_and_speed_reject_before_remote_request(record):
+def test_language_rejects_before_remote_request(record):
     client = RunnerClient(record)
     proxy = ExtensionTTSBackend(record["id"], record["manifest"]["contributes"]["voice_backend"][0], client)
     with pytest.raises(TTSBackendError, match="language"):
         proxy.synthesize(TTSSynthesisRequest("text", language="ja"))
-    with pytest.raises(TTSBackendError, match="speed"):
-        proxy.synthesize(TTSSynthesisRequest("text", language="en", speed=0))
+
+
+def test_regional_language_matches_ui_and_native_pacing_is_not_sent(record):
+    calls = []
+    def stream(contribution, **kwargs):
+        calls.append(kwargs)
+        yield 24000, b'\x00\x00' * 16
+    contribution = {**record['manifest']['contributes']['voice_backend'][0], 'languages': ['ja-JP', 'en-US']}
+    proxy = ExtensionTTSBackend(record['id'], contribution, SimpleNamespace(stream=stream))
+    for language, speed in [('ja', 1.067), ('en', .97)]:
+        assert proxy.synthesize(TTSSynthesisRequest('text', language=language, speed=speed)).audio.size == 16
+    assert [call['speed'] for call in calls] == [1.0, 1.0]
+    assert [call['language'] for call in calls] == ['ja', 'en']
+
+
+def test_slow_cancellation_keeps_runner_and_does_not_consume_crash_budget(record):
+    client = RunnerClient(record)
+    try:
+        client.start()
+        wait_until(lambda: client.state == 'active')
+        process = client._process
+        for _ in range(4):
+            marker = Path(record['data_path'], 'blocking')
+            marker.unlink(missing_ok=True)
+            failures = []
+            def consume():
+                try:
+                    list(client.stream('tone', text='slow_before_chunk', language='en', speed=1))
+                except ExtensionUnavailable as error:
+                    failures.append(str(error))
+            task = threading.Thread(target=consume)
+            task.start()
+            wait_until(marker.exists)
+            client.cancel_inflight()
+            task.join(timeout=1)
+            assert not task.is_alive() and failures
+            wait_until(lambda: not client._cancelled, timeout=5)
+            assert client._process is process and client.state == 'active'
+        assert client._restarts == []
+        assert len(list(client.stream('tone', text='normal', language='en', speed=1))) == 2
+    finally:
+        client.close()
     assert client._pending == {}
 
 

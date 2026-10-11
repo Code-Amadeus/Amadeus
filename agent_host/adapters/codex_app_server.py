@@ -51,7 +51,7 @@ from agent_host.provider_authoring import (
     with_host_authoring_capabilities,
 )
 from agent_host.provider_catalog import CODEX_APP_SERVER_MANIFEST
-from agent_host.skills import provider_skills, skill_revision, skill_session_error
+from agent_host.skills import provider_skills, skill_bindings, skill_session_error, record_native_skill_discovery
 from agent_host.provider_handoff import (
     CODEX_HANDOFF_CONVERSATION_CONTRACT,
     codex_handoff_presentation,
@@ -216,7 +216,7 @@ class _ApprovalAwareAsyncCodex(AsyncCodex):
         super().__init__(config)
         self._client = _ApprovalAwareAsyncCodexClient(config, approval_handler)
 
-    async def prepare_skills(self, cwd: Path) -> None:
+    async def prepare_skills(self, cwd: Path) -> str:
         await self._ensure_initialized()
         skills = provider_skills('codex')
         await self._client.request('skills/extraRoots/set',
@@ -225,10 +225,7 @@ class _ApprovalAwareAsyncCodex(AsyncCodex):
                                               response_model=SkillsListResponse)
         data = response.model_dump(mode='json', by_alias=True)
         discovered = [skill for entry in data.get('data', []) for skill in entry.get('skills', [])]
-        for skill in skills:
-            matches = [item for item in discovered if item.get('name') == skill.name and item.get('enabled')]
-            if len(matches) != 1 or Path(matches[0]['path']).resolve() != skill.path.resolve():
-                raise ValueError('Codex did not uniquely discover an installed Skill')
+        return record_native_skill_discovery('codex', [item['path'] for item in discovered if item.get('enabled') and item.get('path')])
 
     async def thread_start_host_approval(
         self,
@@ -592,8 +589,7 @@ class CodexAppServerAdapter:
         try:
             codex = await self._ensure_codex()
             await self._ensure_desktop_provider_config(codex)
-            if provider_skills(self.provider_id):
-                await codex.prepare_skills(cwd)
+            skill_notice = await codex.prepare_skills(cwd) if provider_skills(self.provider_id) else ''
             thread = await self._open_thread(codex, request, cwd)
             await emit(ProviderEvent(provider=self.provider_id, run_id=run_id,
                 type="session.opened", session=self._session(str(thread.id), request.session)))
@@ -603,6 +599,8 @@ class CodexAppServerAdapter:
                 request,
                 rename_thread=request.session is None,
             )
+            if skill_notice:
+                task_text += '\n\n' + skill_notice
             if starting.cancel_requested:
                 return ProviderRunResult(
                     status="cancelled",
@@ -2018,7 +2016,7 @@ class CodexAppServerAdapter:
             provider=self.provider_id,
             session_id=thread_id,
             scope=attached.scope if attached is not None else "interaction",
-            skill_revision=skill_revision(self.provider_id),
+            skill_bindings=skill_bindings(self.provider_id),
         )
 
     @staticmethod

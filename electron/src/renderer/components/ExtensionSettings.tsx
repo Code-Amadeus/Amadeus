@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ExtensionSummary, ExtensionMutationResult } from '../../shared/extensions.js'
+import { extensionDisclosure } from '../../shared/extensions.js'
 import { useI18n } from '../i18n'
 import { CardShell, SettingsButton, SettingsField, StatusPill } from './SettingsPrimitives'
 import { canLeaveSettingsEditors, DISCARD_CONNECTION_CHANGES, type SettingsEditorState } from './settingsDraft'
@@ -83,12 +84,12 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
     } catch (reason) { setError(reason instanceof Error ? reason.message : t('Could not save extension')) }
     finally { setBusy(false) }
   }
-  const remove = async (id: string) => {
+  const remove = async (id: string, deleteSavedData = deleteData) => {
     if (!window.amadeus || !canLeave()) return
     setBusy(true)
     setError('')
     try {
-      if (complete(await window.amadeus.removeExtension(id, { deleteData }), 'Could not remove extension')) close()
+      if (complete(await window.amadeus.removeExtension(id, { deleteData: deleteSavedData }), 'Could not remove extension')) close()
     } catch (reason) { setError(reason instanceof Error ? reason.message : t('Could not remove extension')) }
     finally { setBusy(false) }
   }
@@ -110,8 +111,13 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
     {extensions.map(extension => {
       if (!extension.manifest) return <CardShell vertical key={extension.id}>
         <div className="extension-card-heading"><div className="settings-card-title extension-package-identity">{extension.id} · {extension.version}</div>
-          <StatusPill ok={false}>{t('Extension unavailable')}</StatusPill></div>
+          <StatusPill ok={false}>{t(extension.status === 'incompatible' ? 'Incompatible' : 'Extension unavailable')}</StatusPill></div>
         <div role="alert" className="settings-field-description">{t(extension.validationError || 'Extension metadata is unavailable.')}</div>
+        {!extension.pendingRemoval && <div className="settings-form-actions-end">
+          <SettingsButton tone="danger" disabled={!available || busy} onClick={() => {
+            if (canLeave() && window.confirm(t('Remove extension? Saved data will be retained.'))) void remove(extension.id, false)
+          }}>{t('Remove')}</SettingsButton>
+        </div>}
       </CardShell>
       const observed = connected ? runtime.find(item => item.id === extension.id) : undefined
       const voices = extension.manifest.contributes.voice_backend || []
@@ -128,6 +134,9 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
           <StatusPill ok={false} tone={extension.restartRequired || extension.pendingRemoval ? 'warning' : 'neutral'}>{t(extension.restartRequired ? 'Restart required' : savedState)}</StatusPill>
         </div>
         <div className="settings-card-description">{extensionText(extension.manifest.description, locale)}</div>
+        <details className="settings-field-description"><summary>{t('Declared access and commands')}</summary>
+          <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{extensionDisclosure(extension.manifest)}</pre>
+        </details>
         <div className="settings-connection-facts">
           <span><strong>{t('Saved state')}:</strong> {t(savedState)}</span>
           <span><strong>{t('Current backend')}:</strong> <StatusPill ok={observed?.state === 'active'} tone={!observed ? 'neutral' : undefined}>{t(extensionRuntimeLabel(observed?.state))}</StatusPill></span>

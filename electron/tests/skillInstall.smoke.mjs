@@ -21,7 +21,7 @@ const { ExtensionInstaller, ExtensionPackageHelper } = loadTypeScript(new URL('.
 const environment = { ...process.env, PIP_NO_INDEX: '1', PIP_FIND_LINKS: path.join(root, 'build/extension-examples') }
 const helper = new ExtensionPackageHelper(root, () => python, environment)
 const store = new DesktopSettingsStore(path.join(directory, 'settings.json'), path.join(directory, '.env'), process.platform, helper.validateRecord)
-const installer = new ExtensionInstaller(path.join(directory, 'extensions'), root, store, helper, () => python, environment)
+const installer = new ExtensionInstaller(path.join(directory, 'extensions'), root, store, helper, () => python, environment, undefined, async () => true)
 const wheel = version => path.join(root, 'build/extension-examples', `amadeus_example_handoff_skill-${version}-py3-none-any.whl`)
 const id = 'com.example.handoff-skill'
 if (phase === '--prepare') {

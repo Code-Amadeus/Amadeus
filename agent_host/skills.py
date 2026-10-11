@@ -51,6 +51,7 @@ class SkillCatalog:
     def __init__(self, records=()):
         candidates = []
         self.errors: dict[str, str] = {}
+        self.native_errors: dict[tuple[str, str], str] = {}
         for record in records:
             if not record.get('enabled') or record.get('startup_error'):
                 continue
@@ -91,6 +92,23 @@ def provider_skills(provider: str) -> tuple[AgentSkill, ...]:
     return _catalog.for_provider(provider)
 
 
+def record_native_skill_discovery(provider: str, paths: list[str]) -> str:
+    """Report exact native discovery without disabling unrelated Agent work."""
+    discovered = {os.path.normcase(str(Path(path).resolve())) for path in paths if path}
+    unavailable = []
+    for skill in provider_skills(provider):
+        key = provider, f'{skill.package_id}/{skill.contribution_id}'
+        if os.path.normcase(str(skill.path.resolve())) in discovered:
+            _catalog.native_errors.pop(key, None)
+        else:
+            _catalog.native_errors[key] = 'Selected installed Skill was not discovered at its source path; check native Skill name conflicts.'
+            unavailable.append(skill.name)
+    if not unavailable:
+        return ''
+    return ('Selected installed Skills unavailable in this Agent native registry: ' + ', '.join(unavailable)
+        + '. Do not claim to have used those packages. Other native Skills retain their existing Agent configuration.')
+
+
 def skill_revision(provider: str) -> str:
     skills = provider_skills(provider)
     if not skills:
@@ -102,9 +120,22 @@ def skill_revision(provider: str) -> str:
 
 
 def skill_session_error(provider: str, session) -> str:
-    if session is not None and session.skill_revision != skill_revision(provider):
+    if session is None:
+        return ''
+    current = dict(skill_bindings(provider))
+    changed = any(current.get(key) != revision for key, revision in session.skill_bindings)
+    # Existing experimental histories persisted only an opaque digest. When it
+    # matches we can upgrade on resume; a mismatch cannot reveal the old set.
+    changed |= bool(session.skill_revision and session.skill_revision != skill_revision(provider))
+    if changed:
         return 'Installed Skills changed since this Agent session was saved. Start a new Agent session; the old context may contain removed or superseded instructions.'
     return ''
+
+
+def skill_bindings(provider: str) -> tuple[tuple[str, str], ...]:
+    return tuple(sorted((f'{s.package_id}/{s.contribution_id}', hashlib.sha256(json.dumps(
+        [s.version, s.digest, os.path.normcase(str(s.path))], separators=(',', ':')).encode()).hexdigest())
+        for s in provider_skills(provider)))
 
 
 def with_skill_catalog(task: str, provider: str) -> str:

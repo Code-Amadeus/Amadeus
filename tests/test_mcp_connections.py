@@ -96,6 +96,27 @@ def test_provider_environment_rejects_conflicting_values() -> None:
         mcp_provider_environment((left, right), "codex")
 
 
+def test_manual_stdio_probe_uses_explicit_connection_variables(monkeypatch):
+    import mcp
+    from agent_host.mcp_connections import open_mcp_connection
+    seen = []
+    class Client:
+        def __init__(self, transport, **_kwargs):
+            seen.append(transport.env)
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *_args):
+            pass
+    monkeypatch.setattr(mcp, 'Client', Client)
+    monkeypatch.setenv('UNRELATED_HOST_CREDENTIAL', 'must-not-inherit')
+    async def check():
+        async with open_mcp_connection(_stdio_connection()):
+            pass
+    asyncio.run(check())
+    assert seen[0]['FIXTURE_TOKEN'] == 'not-public'
+    assert 'UNRELATED_HOST_CREDENTIAL' not in seen[0]
+
+
 def test_capability_projection_is_provider_only_and_secret_free() -> None:
     package = mcp_connection_capability_package((_stdio_connection(),))
     assert package is not None

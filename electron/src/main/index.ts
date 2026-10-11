@@ -34,9 +34,10 @@ import { BackendStartupExitError, backendStartupFailure, recoverCharacterStartup
 import { startupCharacterSelection, type BackendStartupFailure } from '../shared/characterStartup.js'
 import { desktopCatalogFields } from '../shared/configCatalog.js'
 import { startupValue } from '../shared/startupSettings.js'
-import { ExtensionInstaller, ExtensionPackageHelper } from './extensions.js'
+import { ExtensionInstaller, ExtensionPackageHelper, ExtensionChangeCancelled } from './extensions.js'
 import { EXTENSIONS_ENV } from './desktopSettings.js'
 import type { ExtensionRemovalOptions, ExtensionUpdate } from '../shared/extensions.js'
+import { extensionDisclosure } from '../shared/extensions.js'
 import { forceStopBackendTree } from './backendProcessTree.js'
 import { developmentServer, isDevelopmentRendererUrl } from './developmentServer.js'
 
@@ -59,7 +60,13 @@ const desktopSettings = new DesktopSettingsStore(
   extensionPackageHelper.validateRecord,
 )
 const extensionInstaller = new ExtensionInstaller(path.join(USER_DATA_DIR, 'extensions'), PROJECT_ROOT,
-  desktopSettings, extensionPackageHelper, getPythonCommand, process.env)
+  desktopSettings, extensionPackageHelper, getPythonCommand, process.env, undefined, async review => {
+    const options: Electron.MessageBoxOptions = { type: 'question', title: 'Review extension access',
+      message: `${review.operation === 'update' ? `Update ${review.previousVersion} → ${review.manifest.version}` : review.operation === 'enable' ? 'Enable extension' : 'Install extension'}: ${review.manifest.id}`,
+      detail: extensionDisclosure(review.manifest), buttons: ['Cancel', 'Confirm'], defaultId: 0, cancelId: 0, noLink: true }
+    const result = mainWindow ? await dialog.showMessageBox(mainWindow, options) : await dialog.showMessageBox(options)
+    return result.response === 1
+  })
 const chatAvatars = new ChatAvatarStore(
   path.join(USER_DATA_DIR, 'assets', 'chat-avatars'),
 )
@@ -2174,8 +2181,9 @@ ipcMain.handle('backend-startup.recover-character', async (event) => {
       settings: desktopSettings.snapshot(process.env), failure: startupFailure }
   }
 })
-ipcMain.handle('desktop-settings.get', (event) => {
+ipcMain.handle('desktop-settings.get', async (event) => {
   if (!isTrustedBackendRenderer(event.sender)) return null
+  await extensionInstaller.refreshValidation()
   return desktopSettings.snapshot(process.env)
 })
 ipcMain.handle('window-theme.set', (event, theme: unknown) => {
@@ -2248,12 +2256,12 @@ ipcMain.handle('extensions.install', async (event) => {
   const selection = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
   if (selection.canceled || selection.filePaths.length !== 1) return { ok: false, cancelled: true }
   try { return { ok: true, settings: await extensionInstaller.install(selection.filePaths[0]) } }
-  catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'Extension installation failed' } }
+  catch (error) { return error instanceof ExtensionChangeCancelled ? { ok: false, cancelled: true } : { ok: false, error: error instanceof Error ? error.message : 'Extension installation failed' } }
 })
 ipcMain.handle('extensions.update', async (event, update: ExtensionUpdate) => {
   if (!isTrustedBackendRenderer(event.sender)) return { ok: false, error: 'Untrusted extension requester.' }
   try { return { ok: true, settings: await extensionInstaller.update(update) } }
-  catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'Extension update failed' } }
+  catch (error) { return error instanceof ExtensionChangeCancelled ? { ok: false, cancelled: true } : { ok: false, error: error instanceof Error ? error.message : 'Extension update failed' } }
 })
 ipcMain.handle('extensions.remove', async (event, id: string, options?: ExtensionRemovalOptions) => {
   if (!isTrustedBackendRenderer(event.sender)) return { ok: false, error: 'Untrusted extension requester.' }

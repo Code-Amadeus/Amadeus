@@ -23,6 +23,8 @@ def synthesize(request, context):
 `deadline_ms`. A synchronous generator emits mono signed PCM16 little-endian
 chunks (8–48 kHz, at most 1 MiB each). The sample rate stays constant within a
 request. The Runner admits at most two requests concurrently.
+The Host sends `speed=1.0`; backend-specific speed belongs in explicit package
+configuration. Language support matches the primary tag (`en`/`en-US`, `ja`/`ja-JP`).
 
 `context.config`, `context.secrets`, and `context.paths` are read-only snapshots.
 Use `context.on_cancel(response.close)` to release network streams promptly,
@@ -30,6 +32,9 @@ call `context.check_cancelled()` between blocking operations, and put resource
 cleanup in `finally`. Bound all network timeouts. The Host never repeats failed
 synthesis requests. Backend-specific voice and credentials belong in manifest
 config; v0 has no reference-audio or emotion input.
+Cancellation suppresses audio immediately. A cancelled request retains an
+admission slot until its terminal reply or process exit; slow cleanup does not
+count as a Runner crash. Use bounded I/O to release those slots.
 
 Optional `@extension.initialize` receives the context before ready; optional
 `@extension.shutdown` releases package resources. Run with
@@ -45,8 +50,9 @@ contributions are accepted; nonempty `permissions.host` is rejected. OS
 permission declarations are disclosures, not an OS security sandbox.
 Skills use packaged SKILL.md resources and Agent bindings; they do not run this
 SDK or a Runner. Same-ID version updates are explicit and take effect on restart.
-After a selected Skill revision changes, saved Agent sessions also require a
-new session; a backend restart does not clear instructions from old histories.
+Adding a Skill preserves saved Agent sessions. Changing or removing a Skill
+already recorded by a session requires a new session; backend restart does not
+clear instructions from old histories.
 General draft live configuration, Host Grants, ASR and context interfaces are
 not implemented by this SDK. Successful schema validation is not full protocol
 conformance.

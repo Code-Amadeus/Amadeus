@@ -184,7 +184,7 @@ function cleanStoredExtensions(value: unknown, validate: ExtensionRecordValidato
         if (!record.manifest.config?.[name]?.secret || typeof encrypted !== 'string' || !encrypted || encrypted.length > 32_768) throw new Error()
       }
       const validated = validate(record.manifest, record.values)
-      if (validated === false) throw new Error()
+      if (validated === false) errors.push('Extension is incompatible with this Host or configuration; saved records were retained and activation was skipped.')
       if (validated === 'unavailable') errors.push('Extension validation is temporarily unavailable; saved records were retained and activation was skipped.')
       records[key] = { ...record, enabled: record.enabled && !record.pendingRemoval,
         deleteDataOnRemoval: record.deleteDataOnRemoval,
@@ -375,6 +375,7 @@ export class DesktopSettingsStore {
   private extensionErrors: string[] = []
   private extensionWarnings = new Set<string>()
   private validatedExtensionIds = new Set<string>()
+  private incompatibleExtensionIds = new Set<string>()
   private extensionValidationUnavailable = false
   constructor(
     private readonly filePath: string,
@@ -392,11 +393,13 @@ export class DesktopSettingsStore {
   private read(): StoredDesktopSettings {
     this.extensionErrors = []
     this.validatedExtensionIds.clear()
+    this.incompatibleExtensionIds.clear()
     this.extensionValidationUnavailable = false
     const validate: ExtensionRecordValidator = (manifest, values) => {
       const result = this.validateExtensionRecord(manifest, values)
       if (result === true) this.validatedExtensionIds.add(manifest.id)
-      if (result === 'unavailable') this.extensionValidationUnavailable = true
+      if (result === false) this.incompatibleExtensionIds.add(manifest.id)
+      if (result !== true) this.extensionValidationUnavailable = true
       return result
     }
     let failure: unknown
@@ -531,7 +534,10 @@ export class DesktopSettingsStore {
   private extensionSummary(record: StoredExtension, restartRequired: boolean, validated: boolean): InstalledExtensionSummary {
     if (!validated) return { id: record.id, version: record.version, digest: record.digest, manifest: null,
       enabled: record.enabled, pendingRemoval: record.pendingRemoval, values: {}, secretConfigured: {}, providers: [],
-      status: 'unavailable', restartRequired: restartRequired || record.enabled, validationError: 'Trusted extension validation is temporarily unavailable; saved configuration and credentials were retained.' }
+      status: this.incompatibleExtensionIds.has(record.id) ? 'incompatible' : 'unavailable', restartRequired: restartRequired || record.enabled,
+      validationError: this.incompatibleExtensionIds.has(record.id)
+        ? 'Extension is incompatible with this Host or configuration; saved configuration and credentials were retained.'
+        : 'Trusted extension validation is temporarily unavailable; saved configuration and credentials were retained.' }
     return { id: record.id, version: record.version, digest: record.digest, manifest: record.manifest,
       enabled: record.enabled, pendingRemoval: record.pendingRemoval, values: { ...record.values },
       secretConfigured: Object.fromEntries(Object.entries(record.manifest.config || {}).filter(([, field]) => field.secret)
@@ -543,6 +549,7 @@ export class DesktopSettingsStore {
     const records = Object.values(this.read().extensions)
     return records.filter(record => this.validatedExtensionIds.has(record.id))
   }
+  storedExtensionRecords(): StoredExtension[] { return Object.values(this.read().extensions) }
   extensionIsInstalled(id: string): boolean { return Object.hasOwn(this.read().extensions, id) }
   deferIncompleteExtensionApplication(): boolean {
     const stored = this.read()
@@ -562,7 +569,7 @@ export class DesktopSettingsStore {
     for (const file of [this.filePath, this.backupPath]) {
       try {
         const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>
-        const records = cleanStoredExtensions(parsed.extensions, this.validateExtensionRecord).records
+        const records = cleanStoredExtensions(parsed.extensions, () => 'unavailable').records
         for (const record of Object.values(records)) result.add(record.installId)
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code && (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error

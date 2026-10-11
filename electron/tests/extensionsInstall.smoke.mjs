@@ -28,7 +28,7 @@ const directory = phase === '--prepare' ? fs.mkdtempSync(path.join(smokeRoot, 'c
 const relative = path.relative(smokeRoot, directory)
 assert.ok(relative && !relative.startsWith('..') && !path.isAbsolute(relative), 'Smoke state must remain under the worktree smoke root')
 const store = new DesktopSettingsStore(path.join(directory, 'settings.json'), path.join(projectRoot, '.env'), process.platform, helper.validateRecord)
-const installer = new ExtensionInstaller(path.join(directory, 'extensions'), projectRoot, store, helper, () => basePython, environment)
+const installer = new ExtensionInstaller(path.join(directory, 'extensions'), projectRoot, store, helper, () => basePython, environment, undefined, async () => true)
 const wheels = ['amadeus_example_mimo_tts-0.1.0-py3-none-any.whl', 'amadeus_example_notes_mcp-0.1.0-py3-none-any.whl',
   'amadeus_example_fish_audio-0.1.0-py3-none-any.whl']
   .map(name => path.join(projectRoot, 'build', 'extension-examples', name))

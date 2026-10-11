@@ -57,15 +57,15 @@ ACP connection's advanced settings (`skill_discovery: "dsh"`), bind the installe
 packages to that Agent, save and restart. Other ACP connections default to the
 portable file catalog. See [ACP setup and known constraints](../../docs/acp_provider.md).
 
-Work outputs are not extension registrations. Ordinary files appear under
-**Files**; verified AUIP applications under **Interactive apps**, with their
-known component files in application details. A separate report remains a file.
+Work outputs are not extension registrations; artifact presentation and AUIP
+Attach belong to the Host's separate Work output lifecycle.
 
 No package imports `server`, `core`, `config.settings` or a private TTS helper.
-Package code still runs with the user's OS privileges. The experiment prevents
-ambient Host credentials from being forwarded, not arbitrary OS access by a
-malicious local package. Source/package licensing follows this repository;
+Package code still runs with the user's OS privileges. TTS Runners and Host-owned
+MCP probes use explicit environment bindings; native Agents retain their own
+configuration and security model. These mechanisms do not prevent arbitrary OS
+access by a malicious local package. Source/package licensing follows this repository;
 separate SDK publication and licensing decisions remain pending.
 
-See [Skill lifecycle evidence](../../docs/extension_skill_experiment_2026-10-11.md) for native discovery, restoration, update and removal tests.
-The [DeepSeek ACP live report](../../docs/extension_dsh_live_2026-10-11.md) records actual model selection, native Skill registration differences, MCP use, and lifecycle results.
+Native discovery, resource use, restoration, addition, update and removal are
+exercised in `tests/test_skill_codex_runtime.py` and `tests/test_skill_pi_runtime.py`.

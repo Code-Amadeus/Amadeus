@@ -48,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     except (ValueError, KeyError, TypeError, OSError, EOFError, UnicodeError, zipfile.BadZipFile) as exc:
         # Config validators never include values; malformed JSON may carry secret input.
         error = "invalid JSON input" if isinstance(exc, json.JSONDecodeError) else "invalid UTF-8 input" if isinstance(exc, UnicodeError) else str(exc) if isinstance(exc, ValueError) else "package validation failed"
-        print(json.dumps({"ok": False, "error": error}, ensure_ascii=True))
+        print(json.dumps({"ok": False, "error": error, **({"unavailable": True} if isinstance(exc, OSError) else {})}, ensure_ascii=True))
         return 1
 
 

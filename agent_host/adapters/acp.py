@@ -17,7 +17,7 @@ from uuid import uuid4
 
 from agent_host.acp_configuration import AcpAgentSpec
 from agent_host.acp_skills import skill_launch_arguments
-from agent_host.skills import skill_revision, skill_session_error, with_skill_catalog
+from agent_host.skills import skill_bindings, skill_session_error, with_skill_catalog
 from agent_host.mcp_connections import (
     McpConnectionSpec,
     connections_for_provider,
@@ -330,7 +330,7 @@ class AcpProviderAdapter:
                                 else "work_item"
                             )
                         )
-                        run.session = ProviderSessionHandle(self.provider_id, session_id, scope, skill_revision=skill_revision(self.provider_id))
+                        run.session = ProviderSessionHandle(self.provider_id, session_id, scope, skill_bindings=skill_bindings(self.provider_id))
                         self._attached.add(session_id)
                         # Bind the native address durably before any user execution.
                         await emit(

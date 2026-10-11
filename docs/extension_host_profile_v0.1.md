@@ -27,6 +27,11 @@ The manifest and referenced package files are checked before importing code.
 The wheel's `amadeus.extensions` entry point names the package containing
 `amadeus-extension.json`; a TTS manifest additionally names its Runner object.
 All five [examples](../examples/extensions/) are validated against these rules.
+The manager shows package identity, contributions, commands and OS disclosures
+and asks for confirmation before preparing an installation/update or enabling
+a package. Updating an enabled package requires fresh confirmation.
+Use **Settings → Extensions** for the complete lifecycle; Voice settings link
+back to that manager rather than maintaining a second package record.
 
 The backend reads one startup snapshot. Install/configure/enable/disable,
 Provider bindings, voice selection, same-ID version update and uninstall all
@@ -40,6 +45,10 @@ environment is collected only after backend shutdown is confirmed. Removal
 defaults to keeping package data; explicit data deletion is a separate choice.
 Reinstall does not restore activation, bindings or removed credentials.
 Unavailable saved TTS selections remain visible and use text-only behavior.
+Host/Python incompatibility or an unavailable validator never deletes installed
+records, encrypted credentials or installation references. Validation runs
+asynchronously; incompatibility blocks activation while retaining update/removal.
+Transient deletion failures retain ownership markers for the next cleanup.
 
 Runner crash recovery is separate from configuration application: it stays
 inside the process-lifetime proxy, is bounded, and never repeats failed TTS
@@ -65,6 +74,10 @@ lines are bounded to 8 MiB. Use `context.on_cancel` to release blocking I/O and
 `context.check_cancelled`; bound network timeouts and close resources in `finally`.
 Context config/secrets/paths are read-only startup snapshots. TTS does not own
 playback, subtitles, role language, interruption policy or fallback selection.
+Cancelled work immediately stops reaching playback; late audio is discarded.
+Pending cancellation responses occupy the two-request limit until completion
+or process exit. Slow cancellation alone does not restart a healthy Runner or
+spend the crash budget. Shutdown still has a bounded process cleanup path.
 
 Stdout carries JSON-RPC only. The SDK redirects ordinary package prints to
 stderr, including imports; package code must not write raw protocol descriptors.
@@ -75,6 +88,9 @@ Host's decrypted credential environment. This is not malicious-code isolation.
 MiMo declares English only and does not support Japanese. Fish declares Japanese
 and English. Backend-specific speed controls are optional adaptations, not a
 requirement to reproduce GPT-SoVITS behavior. Paid synthesis is not retried.
+The Host sends neutral `speed=1.0`, without GPT-SoVITS sentence pacing.
+Language matching uses case-insensitive primary tags, so `ja-JP` accepts `ja`
+and `en-US` accepts `en`.
 
 ## Skills and native sessions
 
@@ -95,47 +111,52 @@ The overlay is removed after the SDK-owned Agent process exits, including failed
 startup. No package resources are copied. DSH's independently configured built-in
 skills/plugins are outside the Amadeus extension registry.
 
-Native session handles store the selected resource revision (package,
-contribution, version, digest and actual installation path). Unchanged revisions
-resume. Updating, disabling, removing, unbinding or relocating a selected Skill
-rejects old handles before native resume/model submission; start a new Agent
-session. Restarting the backend applies the selection but does not erase old
-Agent history. Other Agents' unrelated binding changes do not invalidate it.
+Native session handles store the selected package/contribution revision set
+(version, digest and actual installation path). Adding Skills preserves existing
+sessions, including sessions created before any Skills were installed. Updating,
+disabling, removing, unbinding or relocating a previously recorded Skill rejects
+the handle before native submission. Other Agents' changes do not invalidate it.
+Older experimental handles with only an opaque digest upgrade on unchanged
+resume; a changed digest cannot reveal its original set and requires a new session.
+Native discovery checks exact paths. A missing or shadowed package is reported
+as unavailable for that Agent while ordinary Agent tasks can continue; the Host
+does not silently claim that a same-name native Skill is the selected package.
 
 ## Work artifacts and AUIP
 
 Plugins are installed capabilities; files and AUIP applications are Work outputs.
-They share ledger identity, provenance and user-acceptance ownership. The artifact
-UI has separate file and interactive-app views, counts and recent windows.
-Verified entry/manifest and Host-receipted members appear in application details;
-independent reports in the same Work/directory remain ordinary files. Unclaimed
-files are never hidden merely because their extension or directory looks like
-application code. An invalid AUIP revision has no runnable application card.
-Membership receipts name exact artifact revisions, not a path's future contents.
-Entry and manifest records require a registered digest. Provider declarations
-remain separately identified evidence and cannot replace Host file receipts.
-An accepted recovery inherits only its predecessor's unchanged, hashed outputs;
-unrelated or intervening edits remain ambiguous.
+Output classification, preview and AUIP Attach belong to the Work artifact
+owner and are reviewed separately from this extension implementation. They are
+not extension RPC methods or package permissions to read Host history.
 
-Text preview accepts registered Work/artifact IDs, validates current revision,
-workspace containment and SHA-256, and returns at most 512 KiB UTF-8. AUIP open
-continues through manifest/entry validation and explicit session Attach. File
-preview does not execute HTML or accept a WorkItem.
-These artifact APIs belong to the Host UI; they are not extension RPC methods
-and do not create a package permission to read Host artifacts or history.
+## Configuration migration and protocol source
+
+Manual MCP connection tests and Pi stdio calls receive the platform allowlist
+plus that connection's explicitly encrypted environment. Move required tokens
+and toolchain variables into **Providers → MCP → Encrypted environment values**;
+do not depend on arbitrary Host `.env` inheritance. Native Agent launchers retain
+their own environment behavior; successful execution there does not prove that
+the connection probe has the required explicit bindings.
+
+The schema and semantic validator are pinned to a canonical source commit in
+`server/extensions/protocol-source.json`. `tests/test_extension_protocol_provenance.py`
+checks the copies offline. To verify the source as well, run
+`python tools/check_extension_protocol.py --source <Amadeus-Extensions checkout>`.
+Updating the protocol requires updating the reviewed pin and matching copies;
+an upstream draft change does not silently change the Host's accepted subset.
 
 ## Evidence and explicit limits
 
-Windows local source builds are the tested target. MiMo English live acceptance
-was deferred by the user; Fish has one live Japanese synthesis, not a listening
+Windows local source builds are the tested runtime target. MiMo English live acceptance
+is pending; Fish has one live Japanese synthesis, not a listening
 or performance certification. Codex/Pi native lifecycle tests use controlled
 model endpoints; DSH additionally has real-model and desktop evidence.
 
 DSH 0.2.0-rc.2 with MCP client 2.0.0 has a reproduced SDK diagnostic-to-stdout
 defect when listing unsupported resources. Keep this combination experimental
 until an upstream fix is consumed and the clean-wire probe passes. No Host line
-filter or global console monkeypatch is installed. Existing upstream tracking
-and a sanitized follow-up draft are in [the diagnosis](extension_diagnostics_2026-10-12.md).
+filter or global console monkeypatch is installed. See the
+[ACP diagnostics and upstream tracking](acp_provider.md#current-dsh-constraints-and-diagnostics-2026-10-12).
 
 DSH Windows workspace-write confinement requires both DACL and integrity-label
 access. A directory can be writable and owned by the user while lacking
@@ -145,4 +166,4 @@ diagnostic documented in [ACP setup](acp_provider.md).
 
 Release qualification still needs SDK distribution/licensing decisions, other
 platforms and manual Chat/Wallpaper/VN voice acceptance. Memory remains outside
-this change; its recorded order stays M0 → M2 → M1.
+this implementation.

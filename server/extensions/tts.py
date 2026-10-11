@@ -1,7 +1,6 @@
 """Stable public TTS backend identity; Runner recovery remains inside the proxy."""
 from __future__ import annotations
 
-import math
 from typing import Iterator
 
 import numpy as np
@@ -27,13 +26,14 @@ class ExtensionTTSBackend(BaseTTSBackend):
     def synthesize_stream(self, request: TTSSynthesisRequest) -> Iterator[TTSAudioChunk]:
         if self.client is None:
             raise TTSBackendError("extension voice is inactive or needs configuration")
-        if request.language not in self.languages:
+        language = request.language.lower().split('-')[0]
+        if not any(value.lower().split('-')[0] == language for value in self.languages):
             raise TTSBackendError("extension voice does not declare this output language")
         if not 1 <= len(request.text) <= 2000:
             raise TTSBackendError("extension voice requires text of 1 to 2000 characters")
-        if not math.isfinite(request.speed) or not 0.5 <= request.speed <= 2:
-            raise TTSBackendError("extension voice requires speed between 0.5 and 2.0")
-        stream = self.client.stream(self.contribution_id, text=request.text, language=request.language, speed=request.speed)
+        # The native pipeline's first-utterance pacing belongs to GPT-SoVITS.
+        # Extension authors may expose their own explicit voice-speed setting.
+        stream = self.client.stream(self.contribution_id, text=request.text, language=request.language, speed=1.0)
         try:
             for index, (sample_rate, pcm) in enumerate(stream):
                 audio = np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768.0

@@ -37,12 +37,15 @@ function fixture(t, options = {}) {
   fs.mkdirSync(path.dirname(sdk), { recursive: true })
   fs.writeFileSync(sdk, 'trusted SDK')
   const metadata = options.manifest || manifest()
+  const sitePackages = process.platform === 'win32' ? ['Lib', 'site-packages'] : ['lib', 'python3.12', 'site-packages']
+  const pythonParts = process.platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python']
   const store = new DesktopSettingsStore(file, path.join(directory, '.env'), process.platform, (value, config) => {
     if (options.validatorState?.unavailable) return 'unavailable'
+    if (options.validatorState?.incompatible) return false
     return value.id === metadata.id && !value.permissions?.host?.length && !Object.keys(config).some(key => !value.config?.[key] || value.config[key].secret)
   })
   const calls = []
-  const helper = { call: async (command, args = [], input) => {
+  const helper = { refreshRecords: async () => {}, call: async (command, args = [], input) => {
     calls.push({ command, args, input })
     if (command === 'inspect-wheel') {
       assert.notEqual(args[0], selectedWheel)
@@ -66,15 +69,15 @@ function fixture(t, options = {}) {
     if (options.failPreparation) throw new Error('simulated preparation failure')
     if (args.includes('venv')) {
       const venv = args.at(-1)
-      fs.mkdirSync(path.join(venv, 'Lib', 'site-packages'), { recursive: true })
-      fs.mkdirSync(path.join(venv, 'Scripts'), { recursive: true })
-      fs.writeFileSync(path.join(venv, 'Scripts', 'python.exe'), '')
+      fs.mkdirSync(path.join(venv, ...sitePackages), { recursive: true })
+      fs.mkdirSync(path.join(venv, pythonParts[0]), { recursive: true })
+      fs.writeFileSync(path.join(venv, ...pythonParts), '')
       return ''
     }
     if (args.includes('-c')) return args.at(-1).includes('configuration') ? JSON.stringify(options.pipConfiguration || {})
-      : path.join(path.dirname(path.dirname(command)), 'Lib', 'site-packages')
+      : path.join(path.dirname(path.dirname(command)), ...sitePackages)
     if (args.at(-1).endsWith('demo-0.1.0-py3-none-any.whl')) {
-      const packageDir = path.join(path.dirname(path.dirname(command)), 'Lib', 'site-packages', 'demo')
+      const packageDir = path.join(path.dirname(path.dirname(command)), ...sitePackages, 'demo')
       fs.mkdirSync(packageDir)
       fs.writeFileSync(path.join(packageDir, 'amadeus-extension.json'), JSON.stringify(metadata))
       fs.writeFileSync(path.join(packageDir, 'extension.py'), 'raise Exception("package code must not execute during preparation")')
@@ -83,7 +86,8 @@ function fixture(t, options = {}) {
   }
   const root = path.join(directory, 'extensions')
   const environment = options.environment || {}
-  const installer = new ExtensionInstaller(root, directory, store, helper, () => 'trusted-python', environment, run)
+  const installer = new ExtensionInstaller(root, directory, store, helper, () => 'trusted-python', environment, run,
+    async review => { calls.push({ command: 'confirm', review }); return options.confirm !== false })
   return { directory, root, file, store, installer, selectedWheel, calls, commandCalls, metadata }
 }
 
@@ -117,6 +121,48 @@ test('failed update leaves the installed version and saved intent unchanged', as
   await assert.rejects(f.installer.install(f.selectedWheel), /preparation failure/)
   assert.deepEqual(f.store.extensionRecords(), before)
   assert.deepEqual(fs.readdirSync(f.root), [before[0].installId])
+})
+
+test('install, expanded update and enable require disclosure confirmation before execution or persistence', async t => {
+  const options = { confirm: false }
+  const f = fixture(t, options)
+  await assert.rejects(f.installer.install(f.selectedWheel), /cancelled/)
+  assert.deepEqual(f.commandCalls, [])
+  assert.deepEqual(f.store.storedExtensionRecords(), [])
+  options.confirm = true
+  await f.installer.install(f.selectedWheel)
+  const before = f.store.storedExtensionRecords()
+  options.confirm = false
+  await assert.rejects(f.installer.update({ id: f.metadata.id, enabled: true, secrets: { token: 'never saved' } }), /cancelled/)
+  assert.deepEqual(f.store.storedExtensionRecords(), before)
+  const commands = f.commandCalls.length
+  f.metadata.version = '0.2.0'
+  f.metadata.permissions = { os: { network: ['new.example.invalid'], process: ['python'] } }
+  await assert.rejects(f.installer.install(f.selectedWheel), /cancelled/)
+  assert.equal(f.commandCalls.length, commands)
+  assert.deepEqual(f.store.storedExtensionRecords(), before)
+  const review = f.calls.filter(call => call.command === 'confirm').at(-1).review
+  assert.equal(review.operation, 'update')
+  assert.equal(review.previousVersion, '0.1.0')
+  assert.deepEqual(review.manifest.permissions.os.network, ['new.example.invalid'])
+})
+
+test('ownership marker is restored if removing the empty installation directory fails', async t => {
+  const f = fixture(t)
+  await f.installer.install(f.selectedWheel)
+  const record = f.store.extensionRecords()[0]
+  const directory = path.join(f.root, record.installId)
+  const remove = fs.rmdirSync
+  let locked = true
+  t.mock.method(fs, 'rmdirSync', target => {
+    if (target === directory && locked) throw Object.assign(new Error('busy'), { code: 'EBUSY' })
+    return remove(target)
+  })
+  assert.throws(() => removeExtensionDirectory(f.root, directory, record.installId), /busy/)
+  assert.equal(JSON.parse(fs.readFileSync(path.join(directory, '.amadeus-extension-install.json'), 'utf8')).installId, record.installId)
+  locked = false
+  removeExtensionDirectory(f.root, directory, record.installId)
+  assert.ok(!fs.existsSync(directory))
 })
 
 test('wheel install prepares an independent environment, validates, saves disabled intent and pending restart', async t => {
@@ -385,6 +431,69 @@ test('junction cleanup fails closed without traversing or deleting its target', 
   assert.ok(f.store.snapshot({}).pendingRevisions[EXTENSIONS_ENV])
 })
 
+test('incompatible records and credentials survive reads, markApplied and orphan cleanup', async t => {
+  const validatorState = { incompatible: false }
+  const f = fixture(t, { validatorState })
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: f.metadata.id, enabled: true, secrets: { token: 'preserved' } })
+  const before = f.store.storedExtensionRecords()[0]
+  validatorState.incompatible = true
+  assert.equal(f.store.snapshot({}).extensions[0].status, 'incompatible')
+  assert.deepEqual(JSON.parse(await f.installer.launchSnapshot()), [])
+  f.store.markApplied({}, f.store.pendingRevisionSnapshot())
+  f.store.update({}, { values: { AMADEUS_UI_THEME: 'classic' } })
+  for (const file of [f.file, `${f.file}.bak`]) {
+    assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).extensions[before.id], before)
+  }
+  await f.installer.cleanupStoppedBackend()
+  assert.ok(fs.existsSync(path.join(f.root, before.installId)))
+  assert.ok(f.store.extensionInstallationReferences().has(before.installId))
+  validatorState.incompatible = false
+  assert.equal(JSON.parse(await f.installer.launchSnapshot())[0].secrets.token, 'preserved')
+  validatorState.incompatible = true
+  await f.installer.remove(before.id)
+  await f.installer.cleanupStoppedBackend()
+  assert.deepEqual(f.store.storedExtensionRecords(), [])
+})
+
+for (const target of ['installation', 'data']) test(`partial ${target} deletion retains ownership and succeeds on retry`, async t => {
+  const f = fixture(t)
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: f.metadata.id, enabled: true, secrets: { token: 'synthetic' } })
+  const [entry] = JSON.parse(await f.installer.launchSnapshot())
+  const record = f.store.extensionRecords()[0]
+  const directory = target === 'installation' ? path.join(f.root, record.installId) : entry.data_path
+  const marker = path.join(directory, `.amadeus-extension-${target === 'installation' ? 'install' : 'data'}.json`)
+  const locked = path.join(directory, 'locked.txt')
+  fs.writeFileSync(locked, 'temporary lock')
+  const unlink = fs.unlinkSync
+  let deny = true
+  t.mock.method(fs, 'unlinkSync', file => {
+    if (file === locked && deny) throw Object.assign(new Error('temporarily busy'), { code: 'EBUSY' })
+    return unlink(file)
+  })
+  await f.installer.remove(record.id, { deleteData: true })
+  await f.installer.cleanupStoppedBackend()
+  assert.ok(fs.existsSync(marker))
+  assert.equal(f.store.storedExtensionRecords()[0].pendingRemoval, true)
+  deny = false
+  await f.installer.cleanupStoppedBackend()
+  assert.deepEqual(f.store.storedExtensionRecords(), [])
+  assert.ok(!fs.existsSync(directory))
+})
+
+test('a junction above the installation root is allowed, links inside or at the root are refused', t => {
+  const f = fixture(t)
+  const actual = path.join(f.directory, 'actual')
+  fs.mkdirSync(path.join(actual, 'extensions'), { recursive: true })
+  const alias = path.join(f.directory, 'alias')
+  fs.symlinkSync(actual, alias, process.platform === 'win32' ? 'junction' : 'dir')
+  try {
+    assert.doesNotThrow(() => assertExtensionPath(path.join(alias, 'extensions'), path.join(alias, 'extensions', 'new')))
+    assert.throws(() => assertExtensionPath(alias, path.join(alias, 'new')), /root/)
+  } finally { fs.unlinkSync(alias) }
+})
+
 test('corrupt extension credentials can be disabled, replaced, and cleared without exposing them', async t => {
   const f = fixture(t)
   await f.installer.install(f.selectedWheel)
@@ -463,7 +572,7 @@ test('missing enabled package reports a startup error without secrets or blockin
   await f.installer.install(f.selectedWheel)
   await f.installer.update({ id: f.metadata.id, enabled: true, secrets: { token: 'secret' } })
   const record = f.store.extensionRecords()[0]
-  fs.rmSync(path.join(f.root, record.installId, 'venv', 'Scripts', 'python.exe'))
+  fs.rmSync(path.join(f.root, record.installId, 'venv', ...(process.platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python'])))
   const snapshot = JSON.parse(await f.installer.launchSnapshot())[0]
   assert.equal(snapshot.enabled, true)
   assert.ok(snapshot.startup_error)
@@ -481,13 +590,20 @@ test('trusted installer transport environment excludes unrelated credentials and
   assert.equal(env.PYTHONPATH, undefined)
 })
 
-test('trusted record validation runs isolated, excludes unrelated secrets, and caches identical content', () => {
+test('trusted record validation is asynchronous, isolated and cached; reads never spawn Python', async () => {
   const root = fileURLToPath(new URL('../../', import.meta.url))
   const invocations = []
-  const { ExtensionPackageHelper: Helper } = loadTypeScript(new URL('../src/main/extensions.ts', import.meta.url), { ...mocks,
-    'node:child_process': { spawnSync: (command, args, options) => { invocations.push({ command, args, options });
-      return { status: 0, stdout: '{"ok":true}' } } } })
-  const helper = new Helper(root, () => 'trusted-python', { PATH: 'runtime', SECRET_TOKEN: 'private', AMADEUS_EXTENSIONS: 'injected' })
+  let release
+  const helper = new ExtensionPackageHelper(root, () => 'trusted-python', { PATH: 'runtime', SECRET_TOKEN: 'private', AMADEUS_EXTENSIONS: 'injected' },
+    async (command, args, options) => { invocations.push({ command, args, options }); return new Promise(resolve => { release = resolve }) })
+  const values = { endpoint: 'https://example.invalid/api', streaming: true }
+  assert.equal(helper.validateRecord(manifest(), values), 'unavailable')
+  assert.equal(invocations.length, 0)
+  const refresh = helper.refreshRecords([{ manifest: manifest(), values }])
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(helper.validateRecord(manifest(), values), 'unavailable')
+  release('{"ok":true}')
+  await refresh
   assert.equal(helper.validateRecord(manifest(), { endpoint: 'https://example.invalid/api', streaming: true }), true)
   assert.equal(helper.validateRecord(manifest(), { endpoint: 'https://example.invalid/api', streaming: true }), true)
   assert.equal(invocations.length, 1)
