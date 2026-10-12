@@ -457,16 +457,28 @@ export class ExtensionInstaller {
     })
   }
 
-  acceptLaunch(launch: { records: StoredExtension[]; extensions: string }, accepted: Record<string, number>): Promise<boolean> {
+  acceptLaunch(launch: { records: StoredExtension[]; extensions: string }, statuses: unknown): Promise<boolean> {
     return this.serialize(async () => {
       let complete = true
+      const receipts = new Map<string, { revision: number; startup: 'accepted' | 'rejected' }>()
+      const seen = new Set<string>()
+      for (const row of Array.isArray(statuses) ? statuses : []) {
+        if (!row || typeof row !== 'object' || typeof row.id !== 'string') continue
+        if (seen.has(row.id)) { receipts.delete(row.id); continue }
+        seen.add(row.id)
+        if (Number.isSafeInteger(row.revision) && row.revision > 0 && ['accepted', 'rejected'].includes(row.startup)) receipts.set(row.id, row)
+      }
       const sent = JSON.parse(launch.extensions) as Array<{ id: string; revision: number; startup_error?: string }>
       const blocked = new Map(sent.filter(item => item.startup_error).map(item => [item.id, item.revision]))
       for (const record of launch.records.filter(item => extensionRequiresRestart(item.manifest) && !item.pendingRemoval)) {
         // Host-preflight rejection is a handled revision, not a loaded receipt.
         if (blocked.get(record.id) === (record.revision ?? 1)) continue
-        if (!record.enabled || accepted[record.id] === (record.revision ?? 1)) this.store.acceptExtensionApplication(record)
-        else complete = false
+        const receipt = receipts.get(record.id)
+        if (!record.enabled) this.store.acceptExtensionApplication(record)
+        else if (receipt?.revision !== (record.revision ?? 1)) complete = false
+        else if (receipt.startup === 'accepted') this.store.acceptExtensionApplication(record)
+        // Explicit rejection settles pending work without creating a loaded receipt.
+        // Missing/invalid/ambiguous status above never implies a rejection.
       }
       return complete
     })

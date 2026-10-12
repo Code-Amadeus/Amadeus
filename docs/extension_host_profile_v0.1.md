@@ -272,3 +272,21 @@ compares wheels built independently on Windows and Linux. The Host carries that
 artifact unchanged; runtime still requires Python >=3.11. Matching SDK build
 bytes do not imply cross-platform qualification of the Host or third-party
 extensions.
+
+
+### Explicit backend startup receipts (2026-10-13 audit follow-up)
+
+The paired Electron/Python Host reports a received revision and a separate
+`startup: accepted|rejected` result. A unique valid identity/revision rejected
+by Python validation settles that launch without creating a loaded receipt.
+A missing required configuration also rejects startup. Dynamic Runner health
+and per-contribution availability do not rewrite a successfully accepted
+snapshot. These receipts describe Host snapshot admission, not voice readiness.
+
+HTTP/JSON/status-section failures, an unreadable whole startup snapshot,
+duplicate identities, missing/invalid results and mismatched revisions are
+unconfirmed. They never count as rejection or success, never confer loaded
+state, and retain pending work with a diagnostic. Host preflight failures remain
+known rejections. Revision comparisons still prevent late replies from clearing
+newer edits. No package filesystem or Runner authority is granted by a failure
+receipt, and SDK bytes/wire contracts are unchanged.

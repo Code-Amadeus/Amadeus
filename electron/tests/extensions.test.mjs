@@ -148,7 +148,7 @@ test('package revisions change only with committed content; backend receipt owns
   const launch = await f.installer.prepareLaunch()
   assert.equal(await f.installer.acceptLaunch(launch, {}), false)
   assert.equal(f.store.snapshot({}).extensions[0].appliedRevision, undefined)
-  assert.equal(await f.installer.acceptLaunch(launch, { [f.metadata.id]: 2 }), true)
+  assert.equal(await f.installer.acceptLaunch(launch, [{ id: f.metadata.id, revision: 2, startup: 'accepted' }]), true)
   f.store.markApplied({}, launch.pendingRevisions)
   assert.equal(f.store.snapshot({}).extensions[0].appliedRevision, 2)
   await f.installer.update({ id: f.metadata.id, values: { streaming: false } })
@@ -754,7 +754,7 @@ test('a new launch retires logical backend receipts without authorizing file cle
   await f.installer.install(f.selectedWheel)
   await f.installer.update({ id: f.metadata.id, enabled: true, secrets: { token: 'token' } })
   const v1 = await f.installer.prepareLaunch()
-  assert.equal(await f.installer.acceptLaunch(v1, { [f.metadata.id]: 2 }), true)
+  assert.equal(await f.installer.acceptLaunch(v1, [{ id: f.metadata.id, revision: 2, startup: 'accepted' }]), true)
   const old = f.store.appliedExtensionRecords()[0]
   await f.installer.update({ id: f.metadata.id, values: { streaming: false } })
   const v2 = await f.installer.prepareLaunch() // unconfirmed old child stop: no cleanup call
@@ -802,4 +802,33 @@ test('unavailable or pending-removal frontend-only records do not create backend
   await f.installer.remove(metadata.id)
   await f.installer.prepareLaunch()
   assert.equal(f.store.snapshot({}).restartRequired, false)
+})
+
+test('explicit backend rejection settles a revision without claiming it loaded', async t => {
+  const f = fixture(t)
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: f.metadata.id, enabled: true, secrets: { token: 'token' } })
+  const launch = await f.installer.prepareLaunch()
+  const receipt = [{ id: f.metadata.id, revision: 2, startup: 'rejected', state: 'error' }]
+  assert.equal(await f.installer.acceptLaunch(launch, receipt), true)
+  f.store.markApplied({}, launch.pendingRevisions)
+  assert.equal(f.store.snapshot({}).restartRequired, false)
+  assert.equal(f.store.snapshot({}).extensions[0].appliedRevision, undefined)
+  await f.installer.update({ id: f.metadata.id, values: { streaming: false } })
+  await f.installer.acceptLaunch(launch, receipt)
+  f.store.markApplied({}, launch.pendingRevisions)
+  assert.equal(f.store.snapshot({}).restartRequired, true)
+})
+
+for (const response of [null, [], { error: 'unavailable' }, [{ id: 'org.example.demo', revision: 2, state: 'error' }],
+  [{ id: 'org.example.demo', revision: 1, startup: 'rejected' }],
+  [{ id: 'org.example.demo', revision: 2, startup: 'accepted' }, { id: 'org.example.demo', revision: 2, startup: 'rejected' }],
+  [{ id: 'org.example.demo', revision: -1, startup: 'rejected' }]]) test(`unconfirmed startup cannot settle saved state: ${JSON.stringify(response)}`, async t => {
+  const f = fixture(t)
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: f.metadata.id, enabled: true, secrets: { token: 'token' } })
+  const launch = await f.installer.prepareLaunch()
+  assert.equal(await f.installer.acceptLaunch(launch, response), false)
+  assert.equal(f.store.snapshot({}).restartRequired, true)
+  assert.equal(f.store.snapshot({}).extensions[0].appliedRevision, undefined)
 })
