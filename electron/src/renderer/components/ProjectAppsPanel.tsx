@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import FluentIcon from './FluentIcon'
 import type { ChatProjectSummary } from './ChatSessionRail'
+import WorkFilesPanel, { type WorkFileSummary } from './WorkFilesPanel'
 
 export interface ProjectAppSummary {
   projectId: string
@@ -20,6 +22,7 @@ export interface ProjectAppSummary {
   artifactStatus?: string
   location?: string
   sourceSessionId?: string
+  files?: Omit<WorkFileSummary, 'projectId' | 'workItemId' | 'workTitle' | 'workState' | 'execution'>[]
   canPromote?: boolean
 }
 
@@ -27,7 +30,10 @@ interface Props {
   project: ChatProjectSummary
   scope?: 'project' | 'drafts'
   apps: ProjectAppSummary[]
-  complete: boolean
+  files: WorkFileSummary[]
+  readFile: (file: WorkFileSummary) => Promise<Record<string, unknown>>
+  appsComplete: boolean
+  filesComplete: boolean
   loading: boolean
   actionKey: string
   feedback: string
@@ -70,7 +76,10 @@ export default function ProjectAppsPanel({
   project,
   scope = 'project',
   apps,
-  complete,
+  files,
+  readFile,
+  appsComplete,
+  filesComplete,
   loading,
   actionKey,
   feedback,
@@ -82,6 +91,8 @@ export default function ProjectAppsPanel({
   onPromote,
 }: Props) {
   const draftMode = scope === 'drafts'
+  const [view, setView] = useState<'files' | 'apps'>('files')
+  const complete = view === 'files' ? filesComplete : appsComplete
   return (
     <section
       className="absolute inset-0 z-[4] flex flex-col"
@@ -98,10 +109,10 @@ export default function ProjectAppsPanel({
         <div className="min-w-0 flex-1">
           <strong className="block truncate" style={{ color: 'var(--text)', fontSize: 12 }}>{project.name}</strong>
           <span style={{ color: 'var(--faint)', fontSize: 9 }}>
-            {draftMode ? 'RECENT DRAFT ARTIFACTS' : 'PROJECT ARTIFACTS'} · {apps.length}
+            {draftMode ? 'RECENT DRAFT ARTIFACTS' : 'PROJECT ARTIFACTS'}
           </span>
         </div>
-        <button type="button" onClick={onRefresh} disabled={loading} title="Refresh apps" style={quietButton}>
+        <button type="button" onClick={onRefresh} disabled={loading} title="Refresh artifacts" style={quietButton}>
           <FluentIcon name="Sync" size={13} /> {loading ? 'Loading' : 'Refresh'}
         </button>
         <button type="button" onClick={onNewChat} style={{ ...quietButton, color: 'var(--accent)' }}>
@@ -115,9 +126,16 @@ export default function ProjectAppsPanel({
             <h2 style={{ margin: 0, color: 'var(--text)', fontSize: 18, fontWeight: 650 }}>Artifacts</h2>
             <p style={{ margin: '5px 0 0', color: 'var(--muted)', fontSize: 11, lineHeight: 1.55 }}>
               {draftMode
-                ? 'The five most recent verified Draft artifacts. Open one, continue its original conversation, or promote the Draft to keep it as a Project.'
-                : 'Verified AUIP artifacts kept by this Project. Open the current revision, or enter its exact WorkItem conversation to continue with Amadeus.'}
+                ? 'Files and interactive applications have separate recent lists. Application components stay with their application.'
+                : 'Files and interactive applications kept by this Project. Promoted artifacts appear here without copying their files.'}
             </p>
+          </div>
+
+          <div role="tablist" aria-label="Artifact types" className="flex gap-2" style={{ marginBottom: 16 }}>
+            <button type="button" role="tab" aria-selected={view === 'files'} onClick={() => setView('files')}
+              style={{ ...quietButton, color: view === 'files' ? 'var(--accent)' : 'var(--muted)' }}>Files · {files.length}</button>
+            <button type="button" role="tab" aria-selected={view === 'apps'} onClick={() => setView('apps')}
+              style={{ ...quietButton, color: view === 'apps' ? 'var(--accent)' : 'var(--muted)' }}>Interactive apps · {apps.length}</button>
           </div>
 
           {feedback && (
@@ -128,25 +146,22 @@ export default function ProjectAppsPanel({
 
           {!complete && (
             <p role="status" style={{ color: 'var(--muted)', fontSize: 10 }}>
-              {draftMode
-                ? 'Older Drafts fall outside this bounded recent view.'
-                : 'This Project has more WorkItems than this bounded view can show.'}
+              {view === 'files' ? 'More files may exist outside this recent view.' : 'More applications may exist outside this recent view.'}
             </p>
           )}
 
-          {!loading && apps.length === 0 && (
+          {!loading && (view === 'files' ? files.length === 0 : apps.length === 0) && (
             <div style={{ padding: '36px 22px', textAlign: 'center', border: '1px dashed var(--border-strong)', borderRadius: 12, background: 'var(--surface)' }}>
               <FluentIcon name="Tiles" size={24} style={{ color: 'var(--faint)', marginBottom: 8 }} />
-              <strong className="block" style={{ color: 'var(--text)', fontSize: 12 }}>No verified AUIP artifacts yet</strong>
+              <strong className="block" style={{ color: 'var(--text)', fontSize: 12 }}>{view === 'files' ? 'No files yet' : 'No interactive apps ready to open'}</strong>
               <p style={{ margin: '6px auto 0', maxWidth: 420, color: 'var(--muted)', fontSize: 10, lineHeight: 1.5 }}>
-                {draftMode
-                  ? 'No recent Draft contains a currently verified AUIP artifact.'
-                  : 'Draft outputs stay with their WorkItem until you promote that Draft. Promoted artifacts appear here without copying their files.'}
+                {view === 'files' ? 'Application components are available in their application details.' : 'Applications appear here when they are ready to open.'}
               </p>
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+          {view === 'files' && files.length > 0 && <WorkFilesPanel files={files} read={readFile} />}
+          {view === 'apps' && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
             {apps.map(app => {
               const opening = actionKey === `open:${app.workItemId}`
               const interacting = actionKey === `interact:${app.workItemId}`
@@ -174,7 +189,8 @@ export default function ProjectAppsPanel({
                   <div className="flex items-center gap-2" style={{ marginBottom: 11, color: 'var(--faint)', fontSize: 9 }}>
                     <span>{app.artifactStatus || 'registered'}</span>
                     <span aria-hidden="true">·</span>
-                    <span>{app.execution && app.execution !== 'idle' ? app.execution : app.workState || 'open'}</span>
+                    <span>Execution: {app.execution || 'idle'}</span>
+                    <span>{app.workState === 'review_ready' ? 'Awaiting review' : app.workState || 'open'}</span>
                     {formatUpdatedAt(app.updatedAt) && <><span aria-hidden="true">·</span><span>{formatUpdatedAt(app.updatedAt)}</span></>}
                   </div>
 
@@ -196,6 +212,13 @@ export default function ProjectAppsPanel({
                       <FluentIcon name="Chat" size={13} /> {interacting ? 'Opening chat' : 'Interact with Amadeus'}
                     </button>
                   </div>
+                  {Boolean(app.files?.length) && <details style={{ marginTop: 12 }}>
+                    <summary style={{ cursor: 'pointer', fontSize: 11, color: 'var(--muted)' }}>Application files · {app.files!.length}</summary>
+                    <WorkFilesPanel files={app.files!.map(file => ({
+                      projectId: app.projectId, workItemId: app.workItemId, workTitle: app.title,
+                      workState: app.workState || 'open', execution: app.execution || 'idle', ...file,
+                    }))} read={readFile} />
+                  </details>}
                   {draftMode && app.canPromote && onPromote && (
                     <button
                       type="button"
@@ -210,7 +233,7 @@ export default function ProjectAppsPanel({
                 </article>
               )
             })}
-          </div>
+          </div>}
         </div>
       </div>
     </section>
