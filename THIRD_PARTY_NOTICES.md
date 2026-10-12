@@ -182,3 +182,14 @@ SoundStorm and `opencpop-strict.txt` source-chain caveats remain documented
 risk, not hidden facts.
 
 This is an engineering provenance record, not legal advice.
+
+## Amadeus extension protocol, SDK and examples
+
+The schema/reference validator and vendored standalone SDK are Apache-2.0 from
+[Amadeus-Extensions](https://github.com/Code-Amadeus/Amadeus-Extensions). Exact
+source commits, adaptations and wheel/source SHA-256 values are recorded in
+`server/extensions/protocol-source.json`; the license is preserved in
+`LICENSES/Apache-2.0.txt` and inside the wheel. The draft-source pin remains
+pending upstream main acceptance. Authored `examples/extensions/` code is MIT-0
+under its LICENSE, as recorded in `LICENSES/provenance.json`. These scoped grants
+do not relicense the Host or external voices, models, artwork or dependencies.

@@ -52,6 +52,9 @@ class BaseTTSBackend(ABC):
     def close(self) -> None:
         """Release optional backend resources."""
 
+    def cancel_pending(self) -> None:
+        """Cancel admitted synthesis without replacing the backend identity."""
+
 
 def _language_code(value: str) -> str:
     clean = str(value or "").strip().lower()
@@ -75,6 +78,9 @@ class TTSRuntimeAdapter:
     @property
     def backend_id(self) -> str:
         return str(self.backend.backend_id)
+
+    def cancel_pending(self) -> None:
+        self.backend.cancel_pending()
 
     @property
     def deployment(self) -> str:

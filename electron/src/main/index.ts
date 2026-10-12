@@ -11,6 +11,7 @@ import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { CompanionPanel } from './companionPanel.js'
 import { companionPortraitStatus } from './companionPortraits.js'
+import { projectPythonCommand } from './pythonRuntime.js'
 import {
   DesktopSettingsStore,
   type DesktopSettingsUpdate,
@@ -35,6 +36,10 @@ import { BackendStartupExitError, backendStartupFailure, recoverCharacterStartup
 import { startupCharacterSelection, type BackendStartupFailure } from '../shared/characterStartup.js'
 import { desktopCatalogFields } from '../shared/configCatalog.js'
 import { startupValue } from '../shared/startupSettings.js'
+import { ExtensionInstaller, ExtensionPackageHelper, ExtensionChangeCancelled } from './extensions.js'
+import { EXTENSIONS_ENV } from './desktopSettings.js'
+import type { ExtensionRemovalOptions, ExtensionUpdate } from '../shared/extensions.js'
+import { extensionDisclosure } from '../shared/extensions.js'
 import { developmentServer, isDevelopmentRendererUrl } from './developmentServer.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -48,10 +53,21 @@ const CACHE_DIR = process.env.AMADEUS_ELECTRON_CACHE_DIR
   ? path.resolve(process.env.AMADEUS_ELECTRON_CACHE_DIR)
   : path.join(PROJECT_ROOT, '.electron-cache')
 const APP_ICON_PATH = path.join(PROJECT_ROOT, 'assets', 'icons', 'app', 'app_icon.ico')
+const extensionPackageHelper = new ExtensionPackageHelper(PROJECT_ROOT, getPythonCommand, process.env)
 const desktopSettings = new DesktopSettingsStore(
   path.join(USER_DATA_DIR, 'settings.json'),
   path.join(PROJECT_ROOT, '.env'),
+  process.platform,
+  extensionPackageHelper.validateRecord,
 )
+const extensionInstaller = new ExtensionInstaller(path.join(USER_DATA_DIR, 'extensions'), PROJECT_ROOT,
+  desktopSettings, extensionPackageHelper, getPythonCommand, process.env, undefined, async review => {
+    const options: Electron.MessageBoxOptions = { type: 'question', title: 'Review extension access',
+      message: `${review.operation === 'update' ? `Update ${review.previousVersion} → ${review.manifest.version}` : review.operation === 'enable' ? 'Enable extension' : 'Install extension'}: ${review.manifest.id}`,
+      detail: extensionDisclosure(review.manifest, review), buttons: ['Cancel', 'Confirm'], defaultId: 0, cancelId: 0, noLink: true }
+    const result = mainWindow ? await dialog.showMessageBox(mainWindow, options) : await dialog.showMessageBox(options)
+    return result.response === 1
+  }, app.isPackaged ? path.join(process.resourcesPath, 'extension-sdk') : undefined)
 const chatAvatars = new ChatAvatarStore(
   path.join(USER_DATA_DIR, 'assets', 'chat-avatars'),
 )
@@ -210,6 +226,7 @@ let workOverlayIgnoringMouse = false
 let workOverlayPanelBounds: Electron.Rectangle | null = null
 let workOverlayHitRegions: Electron.Rectangle[] = []
 let pythonProcess: ChildProcess | null = null
+let extensionCleanupConfirmed = true
 let backendStopping: Promise<void> | null = null
 const applicationLifecycle = new ApplicationLifecycle()
 let backendOwned = false
@@ -270,51 +287,7 @@ function wantsWallpaper(): boolean {
 // Python backend management.
 
 function getPythonCommand(): string {
-  const envPython = process.env.AMADEUS_PYTHON || process.env.AMADUES_PYTHON
-  if (envPython && fs.existsSync(envPython)) return envPython
-
-  // Resolve original git repo from worktree .git file
-  function resolveOriginalRepo(): string | null {
-    try {
-      const gitFile = path.join(PROJECT_ROOT, '.git')
-      if (!fs.existsSync(gitFile)) return null
-      const content = fs.readFileSync(gitFile, 'utf-8').trim()
-      // gitdir: F:/path/to/repo/.git/worktrees/name
-      const match = content.match(/^gitdir:\s*(.+?)[/\\]\.git[/\\]worktrees[/\\]/)
-      if (match) return match[1]
-    } catch { /* ignore */ }
-    return null
-  }
-
-  const originalRepo = resolveOriginalRepo()
-
-  // 1. Check project root and original repo for venvs
-  const roots = [PROJECT_ROOT, originalRepo].filter(Boolean) as string[]
-  const venvNames = ['.venv']
-  const venvPaths: string[] = []
-  for (const root of roots) {
-    for (const name of venvNames) {
-      venvPaths.push(path.join(root, name, 'Scripts', 'python.exe'))  // Windows
-      venvPaths.push(path.join(root, name, 'bin', 'python3'))          // Unix
-    }
-  }
-  for (const p of venvPaths) {
-    if (fs.existsSync(p)) return p
-  }
-
-  // 2. Common Python 3.x install locations on Windows
-  if (process.platform === 'win32') {
-    const localAppData = process.env.LOCALAPPDATA ?? 'C:/Users/' + (process.env.USERNAME ?? '') + '/AppData/Local'
-    for (const ver of ['312', '311', '310', '39', '38']) {
-      const p = path.join(localAppData, 'Programs', 'Python', 'Python' + ver, 'python.exe')
-      if (fs.existsSync(p)) return p
-    }
-    const storePy3 = path.join(localAppData, 'Microsoft', 'WindowsApps', 'python3.exe')
-    if (fs.existsSync(storePy3)) return storePy3
-  }
-
-  // 3. PATH fallback
-  return 'python3'
+  return projectPythonCommand(PROJECT_ROOT)
 }
 
 type BackendHealth = 'ready' | 'starting' | 'foreign' | 'unavailable'
@@ -444,15 +417,23 @@ async function launchBackend(): Promise<void> {
 
   const python = getPythonCommand()
 
+  // No process owns this instance/port. Pending uninstall and orphan cleanup
+  // happen before a new backend can create Runner children.
+  if (extensionCleanupConfirmed) await extensionInstaller.cleanupStoppedBackend()
+
   console.log(`[electron] starting backend: ${python} -m server.app --port ${BACKEND_PORT}`)
   console.log(`[electron] project root: ${PROJECT_ROOT}`)
 
-  const launchPendingRevisions = desktopSettings.pendingRevisionSnapshot()
-  const backendEnvironment = desktopSettings.backendEnvironment(process.env)
+  const launchSettings = await extensionInstaller.prepareLaunch()
+  const launchPendingRevisions = launchSettings.pendingRevisions
+  const backendEnvironment = launchSettings.environment
   const backendProcessEnvironment = {
     ...backendEnvironment,
     ...process.env,
   }
+  // An inherited string cannot replace Electron's installation authority.
+  delete backendProcessEnvironment[EXTENSIONS_ENV]
+  backendProcessEnvironment[EXTENSIONS_ENV] = launchSettings.extensions
   pythonProcess = spawn(python, ['-m', 'server.app', '--port', String(BACKEND_PORT)], {
     cwd: PROJECT_ROOT,
     env: {
@@ -492,11 +473,12 @@ async function stopBackend(): Promise<void> {
   if (!proc) return
 
   backendStopping = (async () => {
-    const childrenConfirmed = await stopOwnedBackend(proc, () => requestBackendAction('/shutdown', 900))
-    if (!childrenConfirmed) console.warn('[electron] Backend stopped without confirmed child cleanup')
+    extensionCleanupConfirmed = false
+    extensionCleanupConfirmed = await stopOwnedBackend(proc, () => requestBackendAction('/shutdown', 900))
     if (pythonProcess === proc) pythonProcess = null
     backendOwned = false
   })().finally(() => {
+    if (!extensionCleanupConfirmed) desktopSettings.reportExtensionWarning('Extension child shutdown could not be confirmed; pending removal files were retained.')
     backendStopping = null
   })
   return backendStopping
@@ -2130,8 +2112,9 @@ ipcMain.handle('backend-startup.recover-character', async (event) => {
       settings: desktopSettings.snapshot(process.env), failure: startupFailure }
   }
 })
-ipcMain.handle('desktop-settings.get', (event) => {
+ipcMain.handle('desktop-settings.get', async (event) => {
   if (!isTrustedBackendRenderer(event.sender)) return null
+  await extensionInstaller.refreshValidation()
   return desktopSettings.snapshot(process.env)
 })
 ipcMain.handle('window-theme.set', (event, theme: unknown) => {
@@ -2162,7 +2145,8 @@ ipcMain.handle('desktop-settings.mark-applied', (event, revisions: Record<string
   try {
     return { ok: true, settings: desktopSettings.markApplied(
       process.env,
-      revisions && typeof revisions === 'object' && !Array.isArray(revisions) ? revisions : {},
+      revisions && typeof revisions === 'object' && !Array.isArray(revisions)
+        ? Object.fromEntries(Object.entries(revisions).filter(([key]) => key !== EXTENSIONS_ENV)) : {},
     ) }
   } catch (error) {
     return {
@@ -2196,6 +2180,24 @@ ipcMain.handle('mcp-connections.remove', (event, connectionId: string) => {
       error: error instanceof Error ? error.message : String(error),
     }
   }
+})
+ipcMain.handle('extensions.install', async (event) => {
+  if (!isTrustedBackendRenderer(event.sender)) return { ok: false, error: 'Untrusted extension requester.' }
+  const options: Electron.OpenDialogOptions = { title: 'Install Amadeus extension', properties: ['openFile'], filters: [{ name: 'Python wheel', extensions: ['whl'] }] }
+  const selection = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
+  if (selection.canceled || selection.filePaths.length !== 1) return { ok: false, cancelled: true }
+  try { return { ok: true, settings: await extensionInstaller.install(selection.filePaths[0]) } }
+  catch (error) { return error instanceof ExtensionChangeCancelled ? { ok: false, cancelled: true } : { ok: false, error: error instanceof Error ? error.message : 'Extension installation failed' } }
+})
+ipcMain.handle('extensions.update', async (event, update: ExtensionUpdate) => {
+  if (!isTrustedBackendRenderer(event.sender)) return { ok: false, error: 'Untrusted extension requester.' }
+  try { return { ok: true, settings: await extensionInstaller.update(update) } }
+  catch (error) { return error instanceof ExtensionChangeCancelled ? { ok: false, cancelled: true } : { ok: false, error: error instanceof Error ? error.message : 'Extension update failed' } }
+})
+ipcMain.handle('extensions.remove', async (event, id: string, options?: ExtensionRemovalOptions) => {
+  if (!isTrustedBackendRenderer(event.sender)) return { ok: false, error: 'Untrusted extension requester.' }
+  try { return { ok: true, settings: await extensionInstaller.remove(id, options) } }
+  catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'Extension removal failed' } }
 })
 ipcMain.handle('chat-avatars.get', (event) => {
   if (!isTrustedBackendRenderer(event.sender)) return null

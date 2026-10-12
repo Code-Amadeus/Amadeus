@@ -134,7 +134,10 @@ def mcp_connection_capability_package(
 ) -> CapabilityPackage | None:
     """Project the encrypted desktop registry without copying its secrets."""
 
-    ordered = tuple(sorted(tuple(connections), key=lambda item: item.connection_id))
+    # Extension packages already project their native connection with package
+    # identity and runtime health. Do not duplicate them as user-owned records.
+    ordered = tuple(sorted((item for item in connections if not item.extension_package_id),
+                           key=lambda item: item.connection_id))
     if not ordered:
         return None
     public_projection = [item.public_dict() for item in ordered]
@@ -308,4 +311,42 @@ def auip_app_capability_packages(
                 metadata={"dynamic_projection": True},
             )
         )
+    return tuple(packages)
+
+
+def extension_capability_packages(records, statuses) -> tuple[CapabilityPackage, ...]:
+    """Index extension-native bindings without copying configuration or secrets."""
+    from agent_host.extension_mcp import extension_mcp_connection_id
+    from server.extensions.runtime import localized_text
+
+    observed = {item['id']: item for item in statuses}
+    packages = []
+    for record in records:
+        status = observed[record['id']]
+        contribution_status = {(item['kind'], item['id']): item for item in status['contributions']}
+        contributions = []
+        for kind, items in record['manifest']['contributes'].items():
+            for item in items:
+                state = contribution_status[(kind, item['id'])]
+                qualified_id = state['qualified_id']
+                health = state['health']
+                mapped_health = 'degraded' if health == 'starting' else health
+                if mapped_health not in {'ready', 'degraded', 'error', 'disabled'}:
+                    mapped_health = 'error'
+                is_voice = kind == 'voice_backend'
+                native_ref = f'tts:{qualified_id}' if is_voice else f'skill:{qualified_id}' if kind == 'skill' else f'mcp-connection:{extension_mcp_connection_id(record["id"], item["id"])}'
+                contributions.append(CapabilityContribution(
+                    kind=kind, contribution_id=qualified_id, contract_version=item['contract'],
+                    native_ref=native_ref, summary=localized_text(item.get('summary'), localized_text(record['manifest']['description'])),
+                    bindings=(CapabilityBinding(surface='voice_output' if is_voice else 'work_execution', projection='tts_backend' if is_voice else 'agent_skill' if kind == 'skill' else 'mcp_connection'),),
+                    enabled=record['enabled'] and health != 'starting', health=mapped_health,
+                    health_detail=state['detail'],
+                    metadata={'observed_state': status['state'], 'qualified_id': qualified_id,
+                              **({'role': 'tts', 'deployment': item['deployment'], 'languages': item['languages'], 'streaming': item['streaming']} if is_voice else {'provider_ids': record['providers'], 'provider_targets': state.get('provider_targets', [])})},
+                ))
+        packages.append(CapabilityPackage(
+            package_id=record['id'], version=record['version'], source='local-wheel', digest=record['digest'],
+            trust='external_protocol', contributions=tuple(contributions), enabled=record['enabled'],
+            metadata={'display_name': record['manifest']['display_name'], 'observed_state': status['state'], 'apply': 'backend_restart'},
+        ))
     return tuple(packages)

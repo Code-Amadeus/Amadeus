@@ -209,6 +209,7 @@ def test_actual_bootstrap_owns_workers_even_if_second_submit_fails(isolated_acti
         module = ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[]))
         loop = asyncio.get_running_loop()
         futures, stops, callbacks = [], [], []
+        extension_close = Mock()
 
         def submit(executor, worker, stop):
             if heartbeat_start_fails and futures:
@@ -219,6 +220,7 @@ def test_actual_bootstrap_owns_workers_even_if_second_submit_fails(isolated_acti
             return future
 
         async def provider_close():
+            extension_close.assert_called_once_with()
             assert stops and all(stop.is_set() for stop in stops)
             assert all(future.done() and not future.cancelled() for future in futures)
             callbacks.append("provider")
@@ -237,6 +239,7 @@ def test_actual_bootstrap_owns_workers_even_if_second_submit_fails(isolated_acti
         monkeypatch.setitem(sys.modules, "llm.llama_server", SimpleNamespace(stop_llama_server=Mock()))
         from server.handlers.voice import close_voice_input_services
         namespace = dict(asyncio=asyncio, threading=SimpleNamespace(Event=Event),
+            extension_runtime=SimpleNamespace(close=extension_close),
             close_voice_input_services=close_voice_input_services,
             loop=SimpleNamespace(run_in_executor=submit), _vts_action_mod=action,
             vts_manager=isolated_action, VTS_HEARTBEAT_ENABLED=True, port=0,

@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import type { BackendStartupFailure } from '../shared/characterStartup'
+import type { ExtensionMutationResult, ExtensionRemovalOptions, ExtensionUpdate } from '../shared/extensions'
 
 export declare global {
   interface WorkPreviewDescriptor {
@@ -62,6 +63,9 @@ export declare global {
       clearEnvironment?: boolean
     }) => Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }>
     removeMcpConnection: (connectionId: string) => Promise<{ ok: boolean; error?: string; settings?: Record<string, unknown> }>
+    installExtension: () => Promise<ExtensionMutationResult>
+    updateExtension: (update: ExtensionUpdate) => Promise<ExtensionMutationResult>
+    removeExtension: (id: string, options?: ExtensionRemovalOptions) => Promise<ExtensionMutationResult>
     getChatAvatars: () => Promise<{ user: string; assistant: string } | null>
     selectChatAvatar: (role: 'user' | 'assistant') => Promise<{
       ok: boolean

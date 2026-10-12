@@ -33,6 +33,8 @@ async def native_pi(tmp_path):
         steps = selected.get("steps")
         if steps is not None:
             step = steps.pop(0) if steps else {}
+            if callable(step):
+                step = step(data)
             tool = step.get("tool")
             args = step.get("args", {})
         else:

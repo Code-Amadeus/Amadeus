@@ -1,6 +1,8 @@
 """Optional native Pi RPC adapter using the existing Host Provider contract."""
 from __future__ import annotations
 
+from agent_host.skills import provider_skills, skill_bindings, skill_session_error, record_native_skill_discovery
+
 import asyncio
 from dataclasses import dataclass, field
 import json
@@ -135,6 +137,7 @@ class PiAdapter:
     def _child_environment(self, *, cwd: Path | None = None, access: str = "none") -> dict[str, str]:
         env = {**os.environ, "PI_CODING_AGENT_DIR": str(self.agent_dir),
             "PI_SKIP_VERSION_CHECK": "1", "PI_TELEMETRY": "0", "PI_OFFLINE": "1"}
+        env['AMADEUS_PI_SKILL_ROOTS'] = json.dumps([str(s.path.parent) for s in provider_skills('pi')])
         # config.settings owns process-over-desktop-over-dotenv precedence. Pi is
         # a trusted child-process boundary, so pass those same effective model
         # credentials without copying them into command-line arguments.
@@ -165,9 +168,13 @@ class PiAdapter:
         # The Host, not a workspace settings file, chooses extra native code.
         for extension in json.loads(settings.PI_EXTENSIONS_JSON):
             command += ["-e", str(Path(extension).expanduser().resolve())]
+        for skill in provider_skills('pi'):
+            command += ['--skill', str(skill.path.parent)]
         return command
 
     async def run(self, request, run_id, emit):
+        if error := skill_session_error('pi', request.session):
+            return ProviderRunResult(status='error', error=error)
         cwd = Path(request.cwd).resolve() if request.cwd else self.agent_dir / "workspace"
         attached = request.session
         owned_session = os.path.normcase(str(Path(attached.session_id).resolve())) if attached else ""
@@ -187,6 +194,11 @@ class PiAdapter:
             self._attached.add(owned_session)
         try:
             await client.start()
+            skills = provider_skills('pi')
+            skill_notice = ''
+            if skills:
+                commands = (await client.request('get_commands')).get('commands', [])
+                skill_notice = record_native_skill_discovery('pi', [c.get('sourceInfo', {}).get('path', '') for c in commands if c.get('source') == 'skill'])
             if attached:
                 path = Path(attached.session_id)
                 if not path.is_absolute() or not path.is_file():
@@ -214,7 +226,7 @@ class PiAdapter:
                     raise PiCommandRejected("Pi native session already has an active owner")
                 self._attached.add(session_key)
                 owned_session = session_key
-            run.session = attached or ProviderSessionHandle("pi", session_file, "interaction")
+            run.session = ProviderSessionHandle("pi", session_file, attached.scope if attached else "interaction", skill_bindings=skill_bindings('pi'))
             if state.get("isStreaming") or state.get("pendingMessageCount"):
                 raise PiCommandRejected("Pi session is not idle")
             await self._emit(run_id, run, "session.opened", session=run.session)
@@ -224,6 +236,8 @@ class PiAdapter:
                 task = with_progress_contract(with_parent_conversation_context(
                     request.task, metadata=request.metadata, execution_provider="pi"),
                     presentation_locale=request.metadata.get("presentation_locale"))
+                if skill_notice:
+                    task += '\n\n' + skill_notice
                 run.submitted = True
                 try:
                     await client.request("prompt", message=task)

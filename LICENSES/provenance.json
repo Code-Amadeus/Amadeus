@@ -9,7 +9,8 @@
     "tools/uvr5",
     "render/web/vendor",
     "assets/audio/sfx",
-    "vendor/aec-audio-processing"
+    "vendor/aec-audio-processing",
+    "vendor/extension-sdk"
   ],
   "components": [
     {
@@ -389,6 +390,45 @@
       "release_action": "include",
       "gate_status": "ready",
       "notes": "Published package.json and README explicitly declare MIT for TypeScript glue and BSD-3-Clause for Zstandard. Upstream does not ship a separate glue copyright/LICENSE file; this limitation is preserved in the local notice. Browser-relative imports and source-map comments were adjusted. Initialization promises now propagate WASM fetch/compile failures. WASM bytes are unchanged. Used by the bounded BC7 cache workers."
+    },
+    {
+      "id": "amadeus-extension-protocol-sdk",
+      "name": "Amadeus extension protocol and standalone SDK",
+      "category": "vendored-source",
+      "paths": [
+        "server/extensions/manifest.py",
+        "server/extensions/amadeus-extension.v0.schema.json",
+        "vendor/extension-sdk/**"
+      ],
+      "source_url": "https://github.com/Code-Amadeus/Amadeus-Extensions",
+      "source_revision": "49449a0f3572e74ac7269129c02c5b9a9e685bef",
+      "license_expression": "Apache-2.0",
+      "license_evidence": [
+        "LICENSES/Apache-2.0.txt"
+      ],
+      "modified": true,
+      "release_action": "include",
+      "gate_status": "ready",
+      "notes": "Protocol validator adapts module help and schema location only. SDK wheel is unmodified, built offline from sdk.source_commit; protocol-source.json records separate text/source/binary digests. The pinned source commit is retained in protocol main history by the merge of protocol #1."
+    },
+    {
+      "id": "amadeus-extension-examples",
+      "name": "Amadeus authored extension examples",
+      "category": "authored-examples",
+      "paths": [
+        "examples/extensions/**"
+      ],
+      "source_url": "https://github.com/Code-Amadeus/Amadeus",
+      "source_revision": "Initial examples from 388e9733676e06e37e82629d5c7c89b8bbf84f58; maintainer MIT-0 grant 2026-10-13",
+      "license_expression": "MIT-0",
+      "license_evidence": [
+        "LICENSES/Amadeus-Extension-Examples-MIT-0.txt",
+        "examples/extensions/LICENSE"
+      ],
+      "modified": true,
+      "release_action": "include",
+      "gate_status": "ready",
+      "notes": "Scoped license for authored examples only; dependencies, voices/models and external assets retain their own rights. Host implementation remains AGPL-3.0."
     }
   ]
 }

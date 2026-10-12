@@ -21,11 +21,11 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Iterable, Literal
 
 
-CapabilityKind = Literal["provider", "mcp_server", "skill", "auip_app"]
+CapabilityKind = Literal["provider", "mcp_server", "skill", "auip_app", "voice_backend"]
 CapabilityHealth = Literal["ready", "degraded", "error", "disabled"]
 PackageTrust = Literal["builtin", "trusted_local", "external_protocol"]
 
-CAPABILITY_KINDS = frozenset({"provider", "mcp_server", "skill", "auip_app"})
+CAPABILITY_KINDS = frozenset({"provider", "mcp_server", "skill", "auip_app", "voice_backend"})
 _WORK_PROVIDER_ONLY_KINDS = frozenset({"mcp_server", "skill"})
 CAPABILITY_HEALTH_STATES = frozenset({"ready", "degraded", "error", "disabled"})
 PACKAGE_TRUST_STATES = frozenset({"builtin", "trusted_local", "external_protocol"})

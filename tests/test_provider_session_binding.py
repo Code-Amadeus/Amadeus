@@ -44,6 +44,15 @@ def _handle(*, provider: str = "locus", scope: str = "work_item") -> dict:
     ).to_dict()
 
 
+def test_attachment_preserves_the_durable_skill_revision():
+    session = ProviderSessionHandle('locus', 'saved-context', 'work_item', skill_revision='a' * 64)
+    previous = _attempt(metadata={'provider_session': session.to_dict()})
+    attached = resolve_provider_session_attachment(has_existing_item=True, previous_attempt=previous,
+        continuation='amend', provider_capabilities={'resume': 'attach'}, request_provider='locus')
+    assert attached.session == session
+    assert attached.session.skill_revision == 'a' * 64
+
+
 def test_attachment_requires_the_declared_capability_and_amendment() -> None:
     previous = _attempt(metadata={"provider_session": _handle()})
     for continuation, resume in (

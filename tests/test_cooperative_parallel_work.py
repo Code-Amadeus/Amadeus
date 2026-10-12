@@ -63,7 +63,10 @@ async def test_independent_drafts_keep_separate_execution_input_and_stop(pending
 
     async def send(text, turn):
         await context.handler.send_text(text, session_id=context.session_id, turn_id=turn)
-        await asyncio.wait_for(context.handler._stream_task, 5)
+        # This is an ownership/parallelism contract, not a latency benchmark.
+        # Completion includes real session/ledger I/O and event delivery; keep
+        # a bounded deadlock watchdog without imposing a 5s shared-CI SLA.
+        await asyncio.wait_for(context.handler._stream_task, 30)
         receipt = context.manager.ingresses[context.session_id].receipts[turn]
         if receipt["state"] == "work_started":
             assert await asyncio.wait_for(started.get(), 3) == receipt["run_id"]
