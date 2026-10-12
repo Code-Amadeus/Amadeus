@@ -198,7 +198,7 @@ export default function McpConnections({
       const result = await send('mcp.connection.test', { connection_id: connectionId })
       const detail = result.status === 'connected'
         ? t('Connected · {count} tools discovered', { count: Number(result.tool_count || 0) })
-        : t(String(result.detail || result.code || 'Connection failed'))
+        : String(result.detail || result.code || 'Connection failed').split('\n').map(line => t(line)).join('\n')
       setTestState(current => ({ ...current, [connectionId]: { message: detail, ok: result.status === 'connected' } }))
     } catch (reason) {
       setTestState(current => ({
@@ -235,7 +235,7 @@ export default function McpConnections({
             <div><span className="font-[600]">{t('Main Chat')}:</span> {t('No access')}</div>
             <div className="col-span-2"><span className="font-[600]">{t('Encrypted environment')}:</span> {connection.environmentKeys.length ? connection.environmentKeys.join(', ') : t('None')}</div>
           </div>
-          {testState[connection.id] ? <div role="status" className="settings-field-description" style={{ color: testState[connection.id].ok ? 'var(--success)' : 'var(--muted)' }}>{testState[connection.id].message}</div> : null}
+          {testState[connection.id] ? <div role="status" className="settings-field-description" style={{ color: testState[connection.id].ok ? 'var(--success)' : 'var(--muted)', whiteSpace: 'pre-line' }}>{testState[connection.id].message}</div> : null}
           <div className="settings-form-actions-end">
             <SettingsButton tone="quiet" onClick={() => void test(connection.id)} disabled={restartPending || saving} title={t(restartPending ? 'Restart the backend before testing' : 'Connect and discover tools')}>{t('Test')}</SettingsButton>
             <SettingsButton onClick={() => beginEdit(draftFrom(connection))} disabled={locked || saving}>{t('Edit')}</SettingsButton>
@@ -268,7 +268,7 @@ export default function McpConnections({
               </section>
               <details className="settings-form-advanced">
                 <summary><span>{t('Encrypted environment values')}</span><span className="settings-meta-text">{t('Optional')}</span></summary>
-                  <p className="settings-field-description">{t('Connection tests and Pi use a platform environment allowlist. Add every required token or toolchain variable here; Host .env variables are not inherited automatically.')}</p>
+                  {draft.transport === 'stdio' ? <p className="settings-field-description">{t('Host connection tests use a platform environment allowlist. Add required tokens or toolchain variables here; Host .env credentials are not inherited. Codex and ACP launch MCP independently.')}</p> : null}
                 <div className="settings-form-advanced-body">
                   <SettingsField id="mcp-environment" label="Environment values" description="Leave blank to keep stored values; use KEY= to remove one. Values are stored encrypted by the Host.">
                     <textarea id="mcp-environment" aria-describedby="mcp-environment-hint" className="settings-form-input settings-form-code" rows={3} value={draft.environmentText} onChange={event => updateDraft('environmentText', event.target.value)} placeholder={t('One KEY=value per line')} autoComplete="off" spellCheck={false} />

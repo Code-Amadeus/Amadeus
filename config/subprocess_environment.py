@@ -37,5 +37,11 @@ def isolated_child_environment(
     for key, value in (extra or {}).items():
         if not isinstance(key, str) or not isinstance(value, str) or "\0" in key + value:
             raise ValueError("Invalid child environment binding")
+        if os.name == 'nt':
+            # Windows treats Path/PATH as one variable. Do not leave competing
+            # spellings for CreateProcess to choose between.
+            for inherited_key in tuple(result):
+                if inherited_key.upper() == key.upper():
+                    del result[inherited_key]
         result[key] = value
     return result
