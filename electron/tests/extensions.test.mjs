@@ -992,13 +992,41 @@ for (const change of ['drop', 'rename', 'add']) test(`mixed theme ${change} foll
   assert.equal((await f.installer.themeState()).theme.version, '0.1.0')
   if (change === 'add') {
     f.store.update({}, { values: { AMADEUS_UI_THEME: `${f.metadata.id}/new-palette` } })
-    assert.equal((await f.installer.themeState()).theme, undefined)
+    const pending = await f.installer.themeState()
+    assert.equal(pending.theme, undefined)
+    assert.match(pending.reason, /Restart the backend/)
     f.store.update({}, { values: { AMADEUS_UI_THEME: selection } })
   }
   await f.installer.cleanupStoppedBackend()
   const next = await f.installer.prepareLaunch()
   await f.installer.acceptLaunch(next, JSON.parse(next.extensions).map(row => ({ ...row, startup: 'accepted' })))
-  assert.equal((await f.installer.themeState()).theme?.version, change === 'add' ? '0.2.0' : undefined)
+  const current = await f.installer.themeState()
+  assert.equal(current.theme?.version, change === 'add' ? '0.2.0' : undefined)
+  if (change !== 'add') {
+    assert.equal(current.selected, selection)
+    assert.doesNotMatch(current.reason, /restart/i)
+    assert.match(current.reason, /Choose another theme/)
+  }
   await f.installer.update({ id: f.metadata.id, enabled: false })
   assert.equal((await f.installer.themeState()).theme, undefined)
+})
+
+
+test('removed frontend theme keeps its identity and directs the user to Appearance without a restart', async t => {
+  const f = fixture(t, { manifest: themeManifest() })
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: f.metadata.id, enabled: true })
+  const selection = `${f.metadata.id}/palette`
+  f.store.update({}, { values: { AMADEUS_UI_THEME: selection } })
+  assert.equal((await f.installer.themeState()).theme.version, '0.1.0')
+  f.metadata.version = '0.2.0'
+  f.metadata.contributes.theme[0].id = 'replacement'
+  await f.installer.install(f.selectedWheel)
+  const current = await f.installer.themeState()
+  assert.equal(current.selected, selection)
+  assert.equal(current.base, 'classic')
+  assert.equal(current.theme, undefined)
+  assert.doesNotMatch(current.reason, /restart/i)
+  assert.match(current.reason, /Choose another theme/)
+  assert.deepEqual(f.store.snapshot({}).pendingKeys, [])
 })

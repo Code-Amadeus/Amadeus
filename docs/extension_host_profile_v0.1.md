@@ -1,6 +1,6 @@
 # Experimental extension Host profile 0.1
 
-Status: implemented experimental subset, extended locally on `codex/extension-theme-pilot`.
+Status: implemented experimental subset.
 Updated 2026-10-13. This document describes what this checkout actually accepts;
 it does not upgrade the broader Extension Protocol v0.1 draft or its provisional
 TTS/MCP/Skill/theme contracts to a stable SDK. The schema is wider than this profile.
@@ -564,7 +564,7 @@ comparison; downstream Host final-head checks remain separate merge gates.
 
 ## Second audit: rendered surfaces and receipt evidence (2026-10-13)
 
-Protocol #2 is now pinned to `d5c8a7d`. Theme v0 supports PNG/JPEG only, including
+This audit pinned protocol #2 to `d5c8a7d` (superseded by the merge follow-up below). Theme v0 supports PNG/JPEG only, including
 matching signatures and actual native decoding. WebP declarations fail before
 installation, and renaming WebP bytes does not grant acceptance. The canonical
 night example and shared valid/invalid CSS literal cases are pinned as fixtures;
@@ -622,4 +622,23 @@ the final clean-build GUI runs; historical reports above remain distinguishable.
 Installation dialog decisions in the separate lifecycle probe remain driver
 supplied. Mixed-package startup failure still does not guarantee rollback after
 old references are released. No developer mode, logs feature, memory or later
-phase is added by this repair; all three PRs remain Draft.
+phase was added by that repair; all three PRs were kept Draft for external review.
+
+
+## Merge follow-up (2026-10-13)
+
+Host P1 (#191) was merged as `2799ba8`. Protocol #2 was merged using merge
+commit `bf1a848`, retaining the pinned source `b30df73` in protocol main history.
+P2 was moved onto Host main without changing its file tree; its final head is
+subject to fresh CI before the authorized merge. Protocol source is now pinned
+to `b30df73`. Both the main specification's P4
+check and the theme contract consistently restrict v0 images to PNG/JPEG; the
+WebP exclusion no longer interrupts the background-field description. Protocol
+runtime/validator/SDK bytes are unchanged by this documentation correction.
+
+If a selected theme is absent from the loaded package, the Host recommends a
+restart only when a different saved revision contains that theme and the
+package requires restart. A theme removed by a frontend-only update or absent
+after backend restart instead directs the user to choose another theme in
+Appearance, preserving the saved identity and last verified base. Regressions
+cover both actionable pending additions and removed frontend/mixed themes.

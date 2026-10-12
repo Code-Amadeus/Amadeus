@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/Code-Amadeus/Amadeus-Extensions",
-  "commit": "d5c8a7db599398b62a38d1b31585ebc9babd4b37",
+  "commit": "b30df73669c50d95d08fb2cd57c289ecddc959f2",
   "normalization": "UTF-8 text with LF line endings",
   "adaptations": "Validator module help and SCHEMA_PATH only; rules from MANIFEST_NAME onward are identical.",
   "files": [

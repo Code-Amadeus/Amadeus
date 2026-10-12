@@ -568,7 +568,13 @@ export class ExtensionInstaller {
       const applied = this.store.appliedExtensionRecords().find(record => record.id === desired.id && record.enabled)
       if (!applied) return fallback('This theme is waiting for its package to be applied.')
       const item = (applied.manifest.contributes.theme || []).find(theme => selected === `${applied.id}/${theme.id}`)
-      if (!item) return fallback('This theme is not in the currently loaded package. Restart the backend to apply the update.')
+      if (!item) {
+        const pendingTheme = applied.revision !== desired.revision && this.store.extensionChangeNeedsRestart(desired)
+          && (desired.manifest.contributes.theme || []).some(theme => selected === `${desired.id}/${theme.id}`)
+        return fallback(pendingTheme
+          ? 'This theme is in the saved update. Restart the backend to apply it.'
+          : 'The selected theme is no longer available in this package. Choose another theme in Appearance.')
+      }
       try {
         const palettes = await this.themes.validate(applied.manifest, this.packagePath(applied), item.id)
         const palette = palettes[item.id]
