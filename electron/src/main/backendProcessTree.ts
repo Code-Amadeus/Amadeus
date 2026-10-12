@@ -23,3 +23,37 @@ export async function forceStopBackendTree(proc: ChildProcess, platform: string 
     })
   })
 }
+
+function hasExited(proc: ChildProcess): boolean {
+  return proc.exitCode !== null || proc.signalCode !== null
+}
+
+export function waitForProcessExit(proc: ChildProcess, timeoutMs: number): Promise<boolean> {
+  return new Promise(resolve => {
+    if (hasExited(proc)) { resolve(true); return }
+    const onExit = () => { clearTimeout(timer); resolve(true) }
+    const timer = setTimeout(() => { proc.off('exit', onExit); resolve(false) }, timeoutMs)
+    proc.once('exit', onExit)
+  })
+}
+
+/** Returns whether child lifetime was confirmed, after the owned backend exits. */
+export async function stopOwnedBackend(proc: ChildProcess, requestShutdown: () => Promise<boolean>,
+  { platform = process.platform, forceStop = forceStopBackendTree, waitForExit = waitForProcessExit }: {
+    platform?: string; forceStop?: typeof forceStopBackendTree; waitForExit?: typeof waitForProcessExit;
+  } = {}): Promise<boolean> {
+  const requested = await requestShutdown()
+  if (requested && await waitForExit(proc, 2500)) return true
+  // The process may have exited between the request/timeout and escalation.
+  // That proves the backend stopped, but not that a forced tree cleanup ran.
+  if (hasExited(proc)) return false
+  try { await forceStop(proc, platform) }
+  catch (error) {
+    if (hasExited(proc)) return false
+    throw error
+  }
+  if (!await waitForExit(proc, 1200) && !hasExited(proc)) {
+    throw new Error('Owned backend shutdown did not complete')
+  }
+  return platform === 'win32'
+}

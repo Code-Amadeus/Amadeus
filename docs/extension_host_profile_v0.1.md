@@ -87,8 +87,12 @@ Context config/secrets/paths are read-only startup snapshots. TTS does not own
 playback, subtitles, role language, interruption policy or fallback selection.
 Cancelled work immediately stops reaching playback; late audio is discarded.
 Pending cancellation responses occupy the two-request limit until completion
-or process exit. Slow cancellation alone does not restart a healthy Runner or
-spend the crash budget. Shutdown still has a bounded process cleanup path.
+or process exit. Cooperative cancellation has a 10-second cleanup grace period;
+completion within it preserves the Runner and restart budget. An overdue
+cancellation terminates the Runner and uses the existing bounded restart budget,
+without replaying any admitted utterance. Exhaustion reports an error instead
+of leaving a supposedly healthy voice permanently full. Shutdown still has a
+bounded process cleanup path.
 
 Stdout carries JSON-RPC only. The SDK redirects ordinary package prints to
 stderr, including imports; package code must not write raw protocol descriptors.
@@ -141,6 +145,11 @@ owner and are reviewed separately from this extension implementation. They are
 not extension RPC methods or package permissions to read Host history.
 
 ## Configuration migration and protocol source
+
+The shared [manual MCP migration](mcp_environment.md) and
+[owned backend shutdown policy](backend_shutdown.md) are independent desktop
+boundaries. Extension cleanup consumes the confirmed child-lifetime outcome;
+uncertainty retains installed resources and reports a warning.
 
 Manual MCP connection tests and Pi stdio calls receive the platform allowlist
 plus that connection's explicitly encrypted environment. Move required tokens
@@ -209,6 +218,9 @@ SDK preparation is covered from an extracted source fixture with no prebuilt
 wheel: the normal desktop build entry creates the SDK offline, which installs
 and imports in a fresh environment. Windows packaging also places the wheel in
 `resources/extension-sdk`, and the installer uses that packaged location.
+The normal `uv sync --locked` core environment includes its pinned setuptools
+and wheel build backend; `--extra dev` is not required to build the desktop.
+Windows Electron CI installs this exact base profile before the normal build.
 Public SDK publication/licensing decisions, other-platform runtime qualification
 and natural-voice Chat/Wallpaper/VN acceptance remain release work. Memory
 remains outside this implementation.

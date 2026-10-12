@@ -32,7 +32,7 @@ def build_sdk(source: Path, output: Path) -> Path:
             'import sys; from setuptools.build_meta import build_wheel; build_wheel(sys.argv[1])',
             str(wheels)], cwd=package, capture_output=True, text=True, encoding='utf-8')
         if result.returncode:
-            raise RuntimeError('SDK build failed. Use the documented Python development environment '
+            raise RuntimeError('SDK build failed. Use the documented core Python environment '
                 '(setuptools and wheel must be installed).\n' + result.stderr)
         built = list(wheels.glob('*.whl'))
         if len(built) != 1:

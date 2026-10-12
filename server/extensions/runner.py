@@ -22,6 +22,7 @@ MAX_CHUNK = 1024 * 1024
 READY_TIMEOUT = 30.0
 REQUEST_TIMEOUT = 60.0
 SHUTDOWN_TIMEOUT = 5.0
+CANCEL_GRACE_TIMEOUT = 10.0
 RESTART_BACKOFF = (1.0, 5.0, 30.0)
 
 
@@ -167,6 +168,10 @@ class RunnerClient:
                             raise ExtensionUnavailable("Runner exited")
                         with self._lock:
                             idle = not self._pending
+                            overdue = any(time.monotonic() - cancelled_at >= CANCEL_GRACE_TIMEOUT
+                                          for cancelled_at in self._cancelled.values())
+                        if overdue:
+                            raise ExtensionUnavailable("Runner cancellation cleanup exceeded its grace period")
                         if idle and time.monotonic() - max(last_ping, self._last_traffic) >= 15:
                             self._rpc("$/ping", {}, timeout=5)
                             last_ping = time.monotonic()
