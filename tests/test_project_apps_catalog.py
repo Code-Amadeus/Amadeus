@@ -77,14 +77,14 @@ def test_project_apps_are_derived_from_verified_work_artifacts() -> None:
                         ),
                     ):
                         response = await handler.handle(
-                            Method.PROJECT_APPS_LIST,
-                            {"project_id": project.project_id},
+                            Method.WORK_ARTIFACTS_LIST,
+                            {"scope": "project", "project_id": project.project_id},
                         )
                     assert response is not None and response["ok"] is True
-                    assert response["project"]["projectId"] == project.project_id
-                    assert response["complete"] is True
+                    assert response["appsComplete"] is True
                     assert len(response["apps"]) == 1
                     app = response["apps"][0]
+                    assert app["projectId"] == project.project_id
                     assert app["workItemId"] == item.work_item_id
                     assert app["artifactId"] == artifact.artifact_id
                     assert app["appId"] == "research-lab"
@@ -98,8 +98,8 @@ def test_project_apps_are_derived_from_verified_work_artifacts() -> None:
                     scratch_root.mkdir()
                     scratch_project = store.create_or_get_project(scratch_root, name="Drafts")
                     hidden = await handler.handle(
-                        Method.PROJECT_APPS_LIST,
-                        {"project_id": scratch_project.project_id},
+                        Method.WORK_ARTIFACTS_LIST,
+                        {"scope": "project", "project_id": scratch_project.project_id},
                     )
                     assert hidden is not None and hidden["ok"] is False
                     assert hidden["error"] == "the scratch container is not a project"
@@ -170,7 +170,7 @@ def test_draft_apps_are_bounded_to_the_five_most_recent_launchable_items() -> No
                         "server.work_read_model.discover_launchable_auip_app",
                         side_effect=lambda _store, work_item_id: discovered.get(work_item_id),
                     ):
-                        response = await handler.handle(Method.DRAFT_APPS_LIST, {"limit": 5})
+                        response = await handler.handle(Method.WORK_ARTIFACTS_LIST, {"scope": "drafts", "limit": 5})
 
                     assert response is not None and response["ok"] is True
                     assert response["recentLimit"] == 5

@@ -37,7 +37,9 @@ export default function WorkFilesPanel({ files, read }: Props) {
       if (active) setPreview({ artifactId: selected.artifactId, error: error instanceof Error ? error.message : String(error) })
     })
     return () => { active = false }
-  }, [selected, read])
+    // Catalog projections may create fresh objects on unrelated parent renders.
+    // Only changing the selected artifact/owner or its availability reloads it.
+  }, [selected?.artifactId, selected?.workItemId, selected?.previewable, read])
 
   return <section aria-label="Files" style={{ marginBottom: 18 }}>
     <h3 style={{ fontSize: 13, color: 'var(--text)' }}>Files · {files.length}</h3>

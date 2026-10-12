@@ -73,6 +73,14 @@ try {
   await ui(`document.querySelector('button[aria-label="View auip.manifest.json"]').click()`)
   await until("document.querySelector('pre')?.textContent.includes('auip/v0')", 'Application member preview missing')
   assert.deepEqual(await ui('window.artifactFixture.reads.at(-1)'), { work_item_id: 'app-work', artifact_id: 'manifest' })
+  const previewReads = await ui('window.artifactFixture.reads.length')
+  for (let index = 0; index < 10; index++) {
+    const rendered = await ui('window.artifactFixture.renders')
+    await ui('window.artifactFixture.rerender()')
+    await until(`window.artifactFixture.renders > ${rendered}`, 'Parent did not rerender')
+    assert.equal(await ui('window.artifactFixture.reads.length'), previewReads, 'Unrelated renders must retain the open file preview')
+    assert.equal(await ui("document.querySelector('pre')?.textContent.includes('auip/v0')"), true)
+  }
   await fs.writeFile(path.join(output, 'apps-desktop.png'), (await window.webContents.capturePage()).toPNG())
   report.screenshots.push('apps-desktop.png')
   await click('Open')
