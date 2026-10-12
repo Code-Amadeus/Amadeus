@@ -113,6 +113,8 @@
     "wallpaper"
   ],
   "include_files": [
+    "docs/mcp_environment.md",
+    "docs/backend_shutdown.md",
     "docs/configuration_convergence_plan_2026-10-10.md",
     "docs/images/configuration-convergence-before.png",
     "docs/images/configuration-convergence-after.png",
