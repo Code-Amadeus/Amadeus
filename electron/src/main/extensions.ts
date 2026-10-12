@@ -4,6 +4,7 @@ import { randomBytes, createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { forceStopBackendTree } from './backendProcessTree.js'
+import { bundledExtensionSdk } from './extensionSdk.js'
 import { DesktopSettingsStore, EXTENSIONS_ENV, type StoredExtension } from './desktopSettings.js'
 import type { ExtensionConfigValue, ExtensionManifest, ExtensionRemovalOptions, ExtensionUpdate, ExtensionConfirmation } from '../shared/extensions.js'
 
@@ -201,7 +202,7 @@ export class ExtensionInstaller {
     private readonly helper: ExtensionPackageHelper, private readonly python: () => string,
     private readonly environment: NodeJS.ProcessEnv, private readonly run: ExtensionCommandRunner = runExtensionCommand,
     private readonly confirm: (review: ExtensionConfirmation) => Promise<boolean> = async () => false,
-    private readonly sdkDirectory = path.join(projectRoot, 'build', 'extension-sdk')) {}
+    private readonly sdkDirectory = path.join(projectRoot, 'vendor', 'extension-sdk')) {}
 
   private get dataRoot(): string { return path.join(path.dirname(this.root), 'extension-data') }
 
@@ -266,11 +267,15 @@ export class ExtensionInstaller {
         if (!manifest || !inspection.digest || !inspection.package_root || !safeRelative(inspection.package_root)) {
           throw new Error('The wheel inspector returned incomplete installation metadata')
         }
+        const bundledSdk = bundledExtensionSdk(this.projectRoot, this.sdkDirectory)
+        fs.copyFileSync(bundledSdk, path.join(directory, path.basename(bundledSdk)), fs.constants.COPYFILE_EXCL)
+        const sdkWheel = bundledExtensionSdk(this.projectRoot, directory)
         const existing = this.store.storedExtensionRecords().find(record => record.id === manifest.id)
         if (this.store.extensionIsInstalled(manifest.id) && (!existing || existing.pendingRemoval || existing.version === manifest.version)) {
           throw new Error('This extension is already installed; select a different version to update, or finish its pending removal')
         }
-        if (!await this.confirm({ operation: existing ? 'update' : 'install', manifest, previousVersion: existing?.version })) {
+        if (!await this.confirm({ operation: existing ? 'update' : 'install', manifest, previousVersion: existing?.version,
+          digest: inspection.digest, sourceFile: path.basename(wheel) })) {
           throw new ExtensionChangeCancelled()
         }
         const env = extensionInstallerEnvironment(this.environment)
@@ -293,8 +298,6 @@ export class ExtensionInstaller {
           || Object.keys(pipConfiguration).some(key => /\.(root|prefix|target|user)$/.test(key))) {
           throw new Error('Configured pip installation path overrides are unsupported; use index, proxy, and certificate transport settings')
         }
-        const sdkWheel = path.join(this.sdkDirectory, 'amadeus_extension_sdk-0.1.0-py3-none-any.whl')
-        if (!fs.existsSync(sdkWheel)) throw new Error('The bundled extension SDK wheel is unavailable')
         await this.run(privatePython, ['-I', '-m', 'pip', 'install', '--target', purelib, '--no-user', '--no-deps', '--only-binary=:all:', sdkWheel], { cwd: directory, env })
         const constraints = path.join(directory, 'constraints.txt')
         fs.writeFileSync(constraints, `amadeus-extension-sdk @ ${pathToFileURL(sdkWheel).href}\n`, { mode: 0o600 })
@@ -349,7 +352,7 @@ export class ExtensionInstaller {
       const providers = raw.providers === undefined ? record.providers : raw.providers
       if (!Array.isArray(providers) || providers.length > 32 || providers.some(id => typeof id !== 'string' || !/^[a-z][a-z0-9_-]{0,63}$/.test(id))) throw new Error('Invalid extension Work Provider binding')
       const enabled = raw.enabled ?? record.enabled
-      if (enabled && !record.enabled && !await this.confirm({ operation: 'enable', manifest: record.manifest })) {
+      if (enabled && !record.enabled && !await this.confirm({ operation: 'enable', manifest: record.manifest, digest: record.digest })) {
         throw new ExtensionChangeCancelled()
       }
       if (enabled && (record.manifest.contributes.mcp_server?.length || record.manifest.contributes.skill?.length) && !providers.length) throw new Error('Select a compatible Work Provider before enabling this extension')
