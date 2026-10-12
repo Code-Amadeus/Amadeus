@@ -1059,10 +1059,12 @@ class ElectronProduct:
         identity: dict[str, Any],
         chat_route: str = "inherit",
         packaged_executable: Path | None = None,
+        main_debug_port: int = 0,
     ) -> None:
         self.packaged_executable = packaged_executable
         self.run_root = run_root
         self.debug_port = int(debug_port)
+        self.main_debug_port = int(main_debug_port)
         self.no_tts = bool(no_tts)
         self.identity = dict(identity)
         self.chat_route = str(chat_route or "inherit")
@@ -1185,6 +1187,7 @@ class ElectronProduct:
         self.process = subprocess.Popen(
             [
                 str(electron),
+                *([f"--inspect=127.0.0.1:{self.main_debug_port}"] if self.main_debug_port else []),
                 *([] if self.packaged_executable else ["."]),
                 f"--remote-debugging-port={self.debug_port}",
             ],

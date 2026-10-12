@@ -94,9 +94,7 @@ test('image validation bounds canvas and bytes before native decoding, and expor
   assert.equal(calls, previousCalls)
   const jpeg = Buffer.from([255,216,255,192,0,11,8,0,20,0,30,1,1,17,0])
   assert.deepEqual(imageDimensions(jpeg, 'image/jpeg'), { width: 30, height: 20 })
-  const webp = Buffer.alloc(30); webp.write('RIFF'); webp.write('WEBP', 8); webp.write('VP8X', 12)
-  webp.writeUInt32LE(10,16); webp.writeUIntLE(99,24,3); webp.writeUIntLE(79,27,3)
-  assert.deepEqual(imageDimensions(webp, 'image/webp'), { width: 100, height: 80 })
+
 })
 
 test('theme resources refuse linked paths even when the target image is valid', async t => {
@@ -152,4 +150,20 @@ test('accent text on either base receives a readable Host-owned button label', (
     const a = luminance(fill), b = luminance(palette.tokens['--on-accent'])
     assert.ok((Math.max(a, b) + .05) / (Math.min(a, b) + .05) >= 4.5)
   }
+})
+
+
+test('pinned protocol color cases match the Host parser', () => {
+  const cases = JSON.parse(fs.readFileSync(new URL('../../tests/fixtures/extension_theme_colors.json', import.meta.url), 'utf8'))
+  for (const value of cases.accepted) assert.doesNotThrow(() => parseThemeColor(value), value)
+  for (const value of cases.rejected) assert.throws(() => parseThemeColor(value), undefined, value)
+})
+
+test('the pinned canonical author example passes Host palette validation', () => {
+  const manifest = JSON.parse(fs.readFileSync(new URL('../../tests/fixtures/extension_protocol_theme.json', import.meta.url), 'utf8'))
+  for (const theme of manifest.contributes.theme) assert.doesNotThrow(() => validateThemePalette(theme))
+})
+
+test('v0 rejects WebP declarations before image decoding', () => {
+  assert.throws(() => validateThemePalette({ ...theme(), background: { image: 'bg.webp', fit: 'cover', dim: .8 } }), /background/)
 })

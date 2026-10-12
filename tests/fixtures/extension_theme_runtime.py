@@ -21,7 +21,7 @@ def main() -> None:
     runtime.start()
     reply({
         "pid": os.getpid(),
-        "accepted": {row["id"]: row["revision"] for row in runtime.statuses() if "revision" in row},
+        "accepted": runtime.statuses(),
     })
     try:
         for line in sys.stdin:

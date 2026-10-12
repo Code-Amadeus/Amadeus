@@ -27,7 +27,19 @@ export function parseThemeColor(value: string): Color {
   }
   const match = /^(rgb|rgba|hsl|hsla)\(([^()]*)\)$/.exec(text)
   if (!match) throw new Error('Use a hex, rgb/rgba or hsl/hsla literal')
-  const parts = match[2].trim().split(/\s*[,/]\s*|\s+/)
+  const body = match[2].trim()
+  let parts: string[]
+  if (body.includes(',')) {
+    if (body.includes('/')) throw new Error('Do not mix comma and slash color syntax')
+    parts = body.split(',').map(part => part.trim())
+    if (match[1].startsWith('rgb') && new Set(parts.slice(0, 3).map(part => part.endsWith('%'))).size !== 1) throw new Error('Comma RGB components must use consistent units')
+  } else {
+    const groups = body.split('/')
+    if (groups.length > 2) throw new Error('Only one alpha separator is allowed')
+    parts = groups[0].trim().split(/\s+/)
+    if (parts.length !== 3) throw new Error('Space color syntax requires three components')
+    if (groups.length === 2) parts.push(groups[1].trim())
+  }
   if (parts.length < 3 || parts.length > 4) throw new Error('Invalid color component count')
   const alpha = parts.length === 4 ? number(parts[3], 1) : 1
   if (match[1].startsWith('rgb')) return [...parts.slice(0, 3).map(x => number(x, 255) / 255), alpha] as Color
@@ -90,7 +102,7 @@ export function validateThemePalette(theme: ExtensionContribution, installedFont
   }
   const colors = Object.fromEntries(Object.entries(source).filter(([key]) => !key.startsWith('--font')).map(([key, value]) => [key, parseThemeColor(value)]))
   const background = theme.background
-  if (background && (typeof background.image !== 'string' || !/^[A-Za-z0-9_][A-Za-z0-9._-]*(\/[A-Za-z0-9_][A-Za-z0-9._-]*)*$/.test(background.image)
+  if (background && (typeof background.image !== 'string' || !/\.(?:png|jpe?g)$/i.test(background.image) || !/^[A-Za-z0-9_][A-Za-z0-9._-]*(\/[A-Za-z0-9_][A-Za-z0-9._-]*)*$/.test(background.image)
     || !['cover', 'contain'].includes(background.fit) || !Number.isFinite(background.dim) || background.dim < 0 || background.dim > 1)) fail('background', 'invalid image, fit or dim')
   const baseBackground = parseThemeColor(themeBases[base]['--bg'])
   if (!background) {

@@ -560,7 +560,8 @@ export class ExtensionInstaller {
       const selected = String(startupValue('AMADEUS_UI_THEME', this.store.snapshot(this.environment), 'wallpaper-slice'))
       if (selected === 'classic' || selected === 'wallpaper-slice') { this.store.rememberThemeBase(selected); return { selected, base: selected, reason: '' } }
       const fallback = (reason: string): DesktopThemeState => ({ selected, base: this.store.verifiedThemeBase(), reason })
-      const desired = this.store.extensionRecords().find(record => (record.manifest.contributes.theme || []).some(theme => selected === `${record.id}/${theme.id}`))
+      const [packageId] = selected.split('/')
+      const desired = this.store.extensionRecords().find(record => record.id === packageId)
       if (!desired) return fallback('The saved theme is unavailable. Its last verified base is shown.')
       if (!desired.enabled || desired.pendingRemoval) return fallback('The saved theme is disabled or being removed. Its base is shown.')
       if (this.store.extensionFrontendClosed(desired.id)) return fallback('Frontend access is closed until the updated package is applied after restart.')

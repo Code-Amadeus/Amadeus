@@ -1,17 +1,22 @@
 from __future__ import annotations
 
 import sys
+import asyncio
+import pytest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
-from tools.smoke_electron_model_less import model_less_backend_environment
+from tools.smoke_electron_model_less import model_less_backend_environment, _wait_desktop_value
 
 
 def test_model_less_smoke_uses_isolated_disabled_voice_profile(tmp_path: Path) -> None:
     env = model_less_backend_environment(
         {
+            "AMADEUS_UI_THEME": "wallpaper-slice",
+            "MIMO_TTS_API_KEY": "synthetic-parent-secret",
+            "UNRELATED_SECRET": "synthetic-parent-secret",
             "AMADEUS_SESSION_DIR": str(tmp_path / "sessions"),
             "AMADEUS_WORK_LEDGER_PATH": str(tmp_path / "work.sqlite3"),
             "AMADEUS_ELECTRON_USER_DATA_DIR": str(tmp_path / "electron"),
@@ -19,6 +24,9 @@ def test_model_less_smoke_uses_isolated_disabled_voice_profile(tmp_path: Path) -
         python_executable=sys.executable,
     )
 
+    assert "AMADEUS_UI_THEME" not in env
+    assert "MIMO_TTS_API_KEY" not in env
+    assert "UNRELATED_SECRET" not in env
     assert env["AMADEUS_PYTHON"] == sys.executable
     assert env["AMADEUS_E2E_NO_TTS"] == "1"
     assert env["TTS_BACKEND"] == "disabled"
@@ -49,3 +57,32 @@ def test_python_windows_ci_runs_the_real_electron_smoke() -> None:
     assert "tools\\smoke_electron_model_less.py" in workflow
     assert "build\\electron-smoke" in workflow
     assert "AUIP_APPSESSION_ROLE_BRANCH_MODE" not in workflow
+
+
+@pytest.mark.parametrize('saved', [None, 'wallpaper-slice'])
+def test_recovery_wait_rejects_unpersisted_values(saved):
+    class Page:
+        async def evaluate(self, expression):
+            return {'values': {'AMADEUS_UI_THEME': saved}}
+    with pytest.raises(TimeoutError):
+        asyncio.run(_wait_desktop_value(Page(), 'AMADEUS_UI_THEME', 'classic', timeout=0))
+
+
+def test_recovery_wait_observes_eventual_persisted_value():
+    class Page:
+        calls = 0
+        async def evaluate(self, expression):
+            self.calls += 1
+            return {'values': {'AMADEUS_UI_THEME': 'classic' if self.calls > 1 else 'wallpaper-slice'}}
+    page = Page()
+    asyncio.run(_wait_desktop_value(page, 'AMADEUS_UI_THEME', 'classic', timeout=2))
+    assert page.calls >= 2
+
+
+
+def test_recovery_wait_bounds_an_ipc_call_that_never_returns():
+    class Page:
+        async def evaluate(self, expression):
+            return await asyncio.Future()
+    with pytest.raises(TimeoutError):
+        asyncio.run(_wait_desktop_value(Page(), 'AMADEUS_UI_THEME', 'classic', timeout=.02))

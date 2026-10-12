@@ -144,7 +144,7 @@ tray also offers Restore built-in theme. Neither uses package fonts or rendered
 controls. An explicit launch-environment theme override remains authoritative;
 a native error explains how to remove it if it prevents saving the reset.
 
-Backgrounds are package-relative PNG/JPEG/WebP, at most 8 MiB and 4096 pixels
+Backgrounds are package-relative PNG/JPEG, at most 8 MiB and 4096 pixels
 per dimension. Main validates paths, headers and native decoding; only bounded
 bytes and MIME enter the renderer. No package filesystem URL or custom URL
 scheme is admitted to the main window. Switching releases the previous style
@@ -512,7 +512,11 @@ above remains historical evidence; it was not repeated or relabeled as a new
 manual acceptance run. Final-head CI and focused external review remain the
 merge gates for P1/P2 and protocol #2.
 
-## Audit repairs (2026-10-13)
+## First audit repairs (historical, 2026-10-13)
+
+**Evidence correction:** the historical 14-check model-less smoke claim below is
+withdrawn. Its asynchronous predicate could return false without failing the
+wait; see the second audit investigation and replacement acceptance below.
 
 P1 now retires logical backend receipts at every new launch, independently of
 whether prior process-tree cleanup was confirmed. File deletion still requires
@@ -522,7 +526,7 @@ bundled command on Linux/macOS. A Host-generated `startup_error` settles that
 launch revision without pretending it loaded; later edits remain pending.
 Frontend-only validation/removal errors do not create backend restart work.
 
-P2 pins protocol #2 `d06f319`: its published 25-token allowlist and literal/image
+That first repair pinned protocol #2 `d06f319`: its published 25-token allowlist and literal/image
 signature checks are shared by the Host. Runtime font availability, full native
 image decoding and palette contrast remain Host responsibilities. The stricter
 readability rules and theme-independent recovery described above replace the
@@ -532,9 +536,10 @@ section. Theme notifications no longer expose raw Electron events; startup
 chrome uses the last verified theme base. Screenshot fixtures carry real-shaped
 loaded revisions and the current component screenshots were refreshed.
 
-Fresh checks: 492 Electron tests, production build, eight offline startup GUI
-checks, eight component visual journeys, and 14 real model-less Electron/backend
-checks (including native shortcut recovery and clean shutdown) passed. The real
+Other checks from that first repair: 492 Electron tests, production build, eight
+offline startup GUI checks and eight component visual journeys passed. The
+separate 14-check model-less report is withdrawn as recovery evidence; see
+the investigation below. The real
 installer/store/native image/font/SDK Runner lifecycle probe passed for both
 resource-only and mixed packages; it reports `nativeDialogs: false`. It is not
 a new manual confirmation or natural-voice playback run. Protocol tests passed
@@ -555,3 +560,66 @@ Canonical-source comparison passed. Clean release gates passed for P1 (3,991
 selected / 101 excluded) and P2 (4,021 / 95), each with zero errors or warnings.
 Protocol #2 final-head CI also passed Windows/Linux contracts and wheel byte
 comparison; downstream Host final-head checks remain separate merge gates.
+
+
+## Second audit: rendered surfaces and receipt evidence (2026-10-13)
+
+Protocol #2 is now pinned to `d5c8a7d`. Theme v0 supports PNG/JPEG only, including
+matching signatures and actual native decoding. WebP declarations fail before
+installation, and renaming WebP bytes does not grant acceptance. The canonical
+night example and shared valid/invalid CSS literal cases are pinned as fixtures;
+Host tests validate that example and real Chromium accepts the supported syntax.
+Comma and space/slash forms cannot be mixed. Host-specific validator help and
+provenance match again; the SDK wheel is unchanged.
+
+Hard-coded wallpaper-slice card/tab decorations now apply only to the builtin
+base. Extension capability cards and nested visual controls paint the same
+opaque token surfaces used by the Host proof. A native Electron regression
+checks decoded PNG/JPEG files and actual Chromium computed styles/contrast for
+an accepted near-threshold black palette and an image-backed translucent canvas.
+It also verifies builtin decoration returns after leaving the extension theme.
+
+Mixed-package selection resolves content from the applied manifest while the
+current desired record retains enable/removal authority. A saved v2 that drops
+or renames a selected v1 theme therefore leaves v1 visible until restart.
+New themes wait for v2 admission; disable/remove still closes frontend access.
+
+### Why the earlier 14/14 result was invalid
+
+A clean rebuild of `d7988dc` produced the same renderer asset names as the old
+build log. Running its real application in a new profile returned
+`AMADEUS_UI_THEME is locked by the parent process environment` for the theme
+setup. The probe stopped before invoking the native error dialog. An independent
+Chromium reproduction with Playwright 1.60.0 showed that
+`wait_for_function("async () => false")` immediately returned a handle to false,
+while a synchronous false predicate timed out. This known Promise-truthiness
+behavior is recorded in [Playwright #29132](https://github.com/microsoft/playwright/issues/29132).
+The checked release tag is `87bb9ddbd78f329df18c2b24847bc9409240cd07`;
+this was reproduced without modifying Playwright. No duplicate upstream issue
+was opened.
+
+The smoke made two errors: it ignored a failed setting-save reply and used an
+asynchronous wait predicate as proof of persistence. The resulting true check
+flag did not establish recovery, so the prior local and CI green results are
+not accepted as recovery evidence. This was a test-instrument defect, not a
+reason to relax the product's environment lock.
+
+The corrected smoke removes the inherited theme variable, checks each IPC save
+reply, verifies classic -> wallpaper-slice -> shortcut -> classic, and awaits
+saved values in Python with explicit comparisons and a deadline. The existing
+startup-mode persistence check uses the same corrected polling. DOM theme changes
+use locator attribute assertions, avoiding wait-for-function eval under the
+shipping CSP. The GUI launcher uses an explicit environment allowlist, a temporary
+profile and a checkout without `.env`. A temporary loopback main inspector
+checks the owned PID and sole main-window identity, then uses Electron
+`sendInputEvent` to exercise the actual `before-input-event` hook. The probe
+does not call recovery directly; its connection closes immediately and the
+inspector exits with the owned test process. Production startup and CSP remain
+unchanged. Regressions prove a missing/wrong saved value times out. Fresh reports bind source identity
+and the actual dist/packaged-ASAR digest to the result. The accompanying PR lists
+the final clean-build GUI runs; historical reports above remain distinguishable.
+
+Installation dialog decisions in the separate lifecycle probe remain driver
+supplied. Mixed-package startup failure still does not guarantee rollback after
+old references are released. No developer mode, logs feature, memory or later
+phase is added by this repair; all three PRs remain Draft.

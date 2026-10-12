@@ -399,10 +399,11 @@
         "server/extensions/manifest.py",
         "server/extensions/amadeus-extension.v0.schema.json",
         "server/extensions/theme-tokens.v0.json",
-        "vendor/extension-sdk/**"
+        "vendor/extension-sdk/**",
+        "tests/fixtures/extension_theme_colors.json"
       ],
       "source_url": "https://github.com/Code-Amadeus/Amadeus-Extensions",
-      "source_revision": "Protocol d06f3193e214543e40d933e227aae785598457a4; SDK 49449a0f3572e74ac7269129c02c5b9a9e685bef (exact file digests in protocol-source.json)",
+      "source_revision": "Protocol d5c8a7db599398b62a38d1b31585ebc9babd4b37; SDK 49449a0f3572e74ac7269129c02c5b9a9e685bef (exact file digests in protocol-source.json)",
       "license_expression": "Apache-2.0",
       "license_evidence": [
         "LICENSES/Apache-2.0.txt"
@@ -430,6 +431,24 @@
       "release_action": "include",
       "gate_status": "ready",
       "notes": "Scoped license for authored examples only; dependencies, voices/models and external assets retain their own rights. Host implementation remains AGPL-3.0."
+    },
+    {
+      "id": "amadeus-extension-protocol-theme-example",
+      "name": "Canonical protocol theme example",
+      "category": "authored-examples",
+      "paths": [
+        "tests/fixtures/extension_protocol_theme.json"
+      ],
+      "source_url": "https://github.com/Code-Amadeus/Amadeus-Extensions",
+      "source_revision": "d5c8a7db599398b62a38d1b31585ebc9babd4b37",
+      "license_expression": "MIT-0",
+      "license_evidence": [
+        "LICENSES/Amadeus-Extension-Examples-MIT-0.txt"
+      ],
+      "modified": false,
+      "release_action": "include",
+      "gate_status": "ready",
+      "notes": "Unmodified canonical example used to verify the pinned protocol against Host rendering policy. Exact digest is recorded in protocol-source.json."
     }
   ]
 }

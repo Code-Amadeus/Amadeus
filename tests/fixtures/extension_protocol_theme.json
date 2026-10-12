@@ -1,0 +1,44 @@
+{
+  "license": "MIT-0",
+  "schema": "amadeus.extension/v0",
+  "id": "org.example.desktop-theme",
+  "version": "0.1.0",
+  "display_name": {
+    "en": "Quiet desktop",
+    "zh-CN": "静谧桌面"
+  },
+  "description": "A declarative desktop palette; no package code runs.",
+  "author": {
+    "name": "Amadeus contributors"
+  },
+  "engines": {
+    "amadeus_host_api": ">=0.1,<0.2"
+  },
+  "runtime": {
+    "kind": "none"
+  },
+  "contributes": {
+    "theme": [
+      {
+        "id": "night",
+        "contract": "amadeus.ui.theme/v0",
+        "base": "wallpaper-slice",
+        "title": {
+          "en": "Quiet night",
+          "zh-CN": "静谧夜色"
+        },
+        "tokens": {
+          "--bg": "rgba(6,17,22,.85)",
+          "--surface": "#0A1D22",
+          "--surface-alt": "#0D252A",
+          "--text": "#E0F8F1",
+          "--muted": "#A3CFC4",
+          "--accent": "#7DE0CC",
+          "--accent-hover": "#62BDA8",
+          "--faint": "#A3CFC4",
+          "--selection-bg": "rgba(84,255,221,.10)"
+        }
+      }
+    ]
+  }
+}

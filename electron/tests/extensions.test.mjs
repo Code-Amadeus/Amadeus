@@ -767,7 +767,7 @@ test('mixed theme and TTS use one loaded snapshot and cannot reopen after disabl
   assert.equal((await f.installer.themeState()).theme, undefined)
   const launch = await f.installer.prepareLaunch()
   const [sent] = JSON.parse(launch.extensions)
-  assert.ok(await f.installer.acceptLaunch(launch, { [sent.id]: sent.revision }))
+  assert.ok(await f.installer.acceptLaunch(launch, [{ id: sent.id, revision: sent.revision, startup: 'accepted' }]))
   f.store.markApplied({}, launch.pendingRevisions)
   const old = f.store.appliedExtensionRecords()[0]
   f.metadata.version = '0.2.0'
@@ -781,12 +781,12 @@ test('mixed theme and TTS use one loaded snapshot and cannot reopen after disabl
   assert.equal(f.store.snapshot({}).extensions[0].backendStillRunning, true)
   await f.installer.update({ id: f.metadata.id, enabled: true })
   assert.equal((await f.installer.themeState()).theme, undefined)
-  await f.installer.acceptLaunch(launch, { [sent.id]: sent.revision }) // A late old receipt cannot reopen it.
+  await f.installer.acceptLaunch(launch, [{ id: sent.id, revision: sent.revision, startup: 'accepted' }]) // A late old receipt cannot reopen it.
   assert.equal((await f.installer.themeState()).theme, undefined)
   await f.installer.cleanupStoppedBackend()
   assert.ok(!fs.existsSync(path.join(f.root, old.installId)))
   const updated = await f.installer.prepareLaunch(), [next] = JSON.parse(updated.extensions)
-  await f.installer.acceptLaunch(updated, { [next.id]: next.revision })
+  await f.installer.acceptLaunch(updated, [{ id: next.id, revision: next.revision, startup: 'accepted' }])
   f.store.markApplied({}, updated.pendingRevisions)
   assert.equal((await f.installer.themeState()).base, 'classic')
   assert.equal((await f.installer.themeState()).theme.version, '0.2.0')
@@ -815,7 +815,7 @@ for (const startsMixed of [true, false]) test(`switching ${startsMixed ? 'mixed 
   f.store.update({}, { values: { AMADEUS_UI_THEME: `${f.metadata.id}/palette` } })
   if (startsMixed) {
     const launch = await f.installer.prepareLaunch(), [sent] = JSON.parse(launch.extensions)
-    await f.installer.acceptLaunch(launch, { [sent.id]: sent.revision })
+    await f.installer.acceptLaunch(launch, [{ id: sent.id, revision: sent.revision, startup: 'accepted' }])
   }
   assert.equal((await f.installer.themeState()).base, 'wallpaper-slice')
   const next = themeManifest('classic', !startsMixed)
@@ -829,7 +829,7 @@ for (const startsMixed of [true, false]) test(`switching ${startsMixed ? 'mixed 
   assert.equal((await f.installer.themeState()).theme.version, '0.1.0')
   await f.installer.cleanupStoppedBackend()
   const launch = await f.installer.prepareLaunch()
-  const accepted = Object.fromEntries(JSON.parse(launch.extensions).map(row => [row.id, row.revision]))
+  const accepted = JSON.parse(launch.extensions).map(row => ({ id: row.id, revision: row.revision, startup: 'accepted' }))
   await f.installer.acceptLaunch(launch, accepted)
   assert.equal((await f.installer.themeState()).base, 'classic')
   assert.equal((await f.installer.themeState()).theme.version, '0.2.0')
@@ -972,4 +972,33 @@ test('theme-independent recovery restores and persists a builtin without uninsta
   assert.deepEqual(await f.installer.themeState(), { selected: 'classic', base: 'classic', reason: '' })
   assert.equal(f.store.snapshot({}).values.AMADEUS_UI_THEME, 'classic')
   assert.equal(f.store.extensionRecords()[0].enabled, true)
+})
+
+
+for (const change of ['drop', 'rename', 'add']) test(`mixed theme ${change} follows the loaded manifest until restart`, async t => {
+  const f = fixture(t, { manifest: themeManifest('wallpaper-slice', true) })
+  await f.installer.cleanupStoppedBackend()
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: f.metadata.id, enabled: true, secrets: { token: 'synthetic' } })
+  const selection = `${f.metadata.id}/palette`
+  f.store.update({}, { values: { AMADEUS_UI_THEME: selection } })
+  const launch = await f.installer.prepareLaunch()
+  await f.installer.acceptLaunch(launch, JSON.parse(launch.extensions).map(row => ({ ...row, startup: 'accepted' })))
+  f.metadata.version = '0.2.0'
+  if (change === 'drop') delete f.metadata.contributes.theme
+  else if (change === 'rename') f.metadata.contributes.theme[0].id = 'new-palette'
+  else f.metadata.contributes.theme.push({ ...f.metadata.contributes.theme[0], id: 'new-palette' })
+  await f.installer.install(f.selectedWheel)
+  assert.equal((await f.installer.themeState()).theme.version, '0.1.0')
+  if (change === 'add') {
+    f.store.update({}, { values: { AMADEUS_UI_THEME: `${f.metadata.id}/new-palette` } })
+    assert.equal((await f.installer.themeState()).theme, undefined)
+    f.store.update({}, { values: { AMADEUS_UI_THEME: selection } })
+  }
+  await f.installer.cleanupStoppedBackend()
+  const next = await f.installer.prepareLaunch()
+  await f.installer.acceptLaunch(next, JSON.parse(next.extensions).map(row => ({ ...row, startup: 'accepted' })))
+  assert.equal((await f.installer.themeState()).theme?.version, change === 'add' ? '0.2.0' : undefined)
+  await f.installer.update({ id: f.metadata.id, enabled: false })
+  assert.equal((await f.installer.themeState()).theme, undefined)
 })

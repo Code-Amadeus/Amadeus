@@ -461,7 +461,7 @@ html[data-theme='wallpaper-slice'] option {
   background: var(--surface);
 }
 
-html[data-theme='wallpaper-slice'] .setting-card {
+html[data-theme='wallpaper-slice']:not([data-theme-extension]) .setting-card {
   border-color: var(--card-border) !important;
   background:
     linear-gradient(135deg, rgba(11, 35, 40, 0.96), rgba(8, 26, 32, 0.92)),
@@ -478,11 +478,11 @@ html[data-theme='wallpaper-slice'] .settings-section-nav > button[aria-current='
   background: var(--selected-fill) !important;
 }
 
-html[data-theme='wallpaper-slice'] .capability-scene-item {
+html[data-theme='wallpaper-slice']:not([data-theme-extension]) .capability-scene-item {
   background: rgba(9, 31, 36, 0.72);
 }
 
-html[data-theme='wallpaper-slice'] .capability-page-tabs > button[aria-selected='true'] {
+html[data-theme='wallpaper-slice']:not([data-theme-extension]) .capability-page-tabs > button[aria-selected='true'] {
   background: rgba(15, 45, 50, 0.88);
   box-shadow: 0 1px 12px rgba(50, 238, 207, 0.06);
 }
@@ -6251,3 +6251,10 @@ html[data-theme='wallpaper-slice'] .crt-render-stage {
 .character-prompt-actions button { padding: 7px 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 12px; cursor: pointer; }
 .character-prompt-actions button:disabled { opacity: 0.5; cursor: default; }
 .character-prompt-editor :is(textarea, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Extension surfaces are the same opaque token surfaces the Host validates. */
+html[data-theme-extension] .capability-scene-item { background: var(--surface); }
+html[data-theme-extension] .settings-inline-action[data-tone='danger']:is(:hover, :focus-visible):not(:disabled) {
+  color: var(--danger);
+  background: var(--danger-bg) !important;
+}

@@ -62,3 +62,9 @@
 @media (max-width: 700px) {
   .visuals-layouts { grid-template-columns: 1fr; }
 }
+
+/* A canvas may be translucent over an image; nested controls use opaque surfaces. */
+html[data-theme-extension] .visuals-header,
+html[data-theme-extension] .visuals-page input[type="text"],
+html[data-theme-extension] .visuals-page input[type="number"],
+html[data-theme-extension] .visuals-page select { background: var(--surface-alt); }

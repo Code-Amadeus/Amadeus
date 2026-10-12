@@ -1,16 +1,8 @@
-#!/usr/bin/env python3
-"""Validate Amadeus extension manifests against the v0.1 draft.
+"""Host copy of the pinned extension manifest validator.
 
-Usage:
-    python tools/validate_manifest.py PATH [PATH ...]
-
-Each PATH is an ``amadeus-extension.json`` file or a package directory that
-contains one. A directory is also checked for the files its manifest refers
-to. The exit status is 0 when every PATH is valid and 1 otherwise.
-
-The JSON Schema in ``schemas/amadeus-extension.v0.schema.json`` holds the
-structural rules. This module adds the semantic rules of spec section 3.9,
-which JSON Schema cannot express, and the package checks of section 3.10.
+Use ``python tools/extension_package.py inspect-wheel PATH`` to inspect an
+installable wheel. The adjacent schema and theme token allowlist supply the
+canonical structural rules; protocol-source.json records their origin.
 """
 
 from __future__ import annotations
@@ -30,7 +22,6 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import best_match
 
 
-ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = Path(__file__).with_name("amadeus-extension.v0.schema.json")
 THEME_TOKENS = json.loads(SCHEMA_PATH.with_name("theme-tokens.v0.json").read_text(encoding="utf-8"))
 MANIFEST_NAME = "amadeus-extension.json"
@@ -103,7 +94,22 @@ def _theme_color_literal(value: str) -> bool:
     match = re.fullmatch(r'(rgb|rgba|hsl|hsla)\(([^()]*)\)', text)
     if not match:
         return False
-    parts = re.split(r'\s*[,/]\s*|\s+', match[2].strip())
+    body = match[2].strip()
+    if ',' in body:
+        if '/' in body:
+            return False
+        parts = [part.strip() for part in body.split(',')]
+        if match[1].startswith('rgb') and len({part.endswith('%') for part in parts[:3]}) != 1:
+            return False
+    else:
+        groups = body.split('/')
+        if len(groups) > 2:
+            return False
+        parts = groups[0].split()
+        if len(parts) != 3:
+            return False
+        if len(groups) == 2:
+            parts.append(groups[1].strip())
     if len(parts) not in (3, 4):
         return False
 
@@ -157,6 +163,9 @@ def semantic_issues(manifest: dict[str, Any]) -> list[Issue]:
         ))
 
     for index, theme in enumerate(contributes.get('theme', [])):
+        background = theme.get('background')
+        if background and Path(background['image']).suffix.lower() not in {'.png', '.jpg', '.jpeg'}:
+            issues.append(Issue('P4.theme_image', f'/contributes/theme/{index}/background/image', 'Theme v0 images must be PNG/JPEG'))
         for name, value in theme['tokens'].items():
             pointer = f'/contributes/theme/{index}/tokens/{name}'
             kind = THEME_TOKENS.get(name)
@@ -345,14 +354,13 @@ def package_issues(manifest: dict[str, Any], package_dir: Path) -> list[Issue]:
             issues.extend(found)
             if not found:
                 image = package_dir / background['image']
-                if image.suffix.lower() not in {'.png', '.jpg', '.jpeg', '.webp'} or image.stat().st_size > 8 * 1024 * 1024:
-                    issues.append(Issue('P4.theme_image', pointer, 'Theme images must be PNG/JPEG/WebP, at most 8 MiB'))
+                if image.suffix.lower() not in {'.png', '.jpg', '.jpeg'} or image.stat().st_size > 8 * 1024 * 1024:
+                    issues.append(Issue('P4.theme_image', pointer, 'Theme images must be PNG/JPEG, at most 8 MiB'))
                 else:
                     with image.open('rb') as stream:
                         header = stream.read(16)
                     matches = (image.suffix.lower() == '.png' and header.startswith(b'\x89PNG\r\n\x1a\n')
-                               or image.suffix.lower() in {'.jpg', '.jpeg'} and header.startswith(b'\xff\xd8\xff')
-                               or image.suffix.lower() == '.webp' and header[:4] == b'RIFF' and header[8:12] == b'WEBP')
+                               or image.suffix.lower() in {'.jpg', '.jpeg'} and header.startswith(b'\xff\xd8\xff'))
                     if not matches:
                         issues.append(Issue('P4.theme_image', pointer, 'Theme image signature does not match its file type'))
     for index, server in enumerate(manifest["contributes"].get("mcp_server", [])):
