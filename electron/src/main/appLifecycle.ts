@@ -23,6 +23,13 @@ export class ApplicationLifecycle {
     return wallpaperMode && !this.quitting
   }
 
+  async finishQuit(cleanup: () => Promise<void>, reportFailure: (error: unknown) => void,
+    quit: () => void): Promise<void> {
+    try { await cleanup() }
+    catch (error) { reportFailure(error) }
+    finally { quit() }
+  }
+
   beginQuit(hasOwnedBackend: boolean): boolean {
     if (this.quitting) return false
     this.quitting = true
