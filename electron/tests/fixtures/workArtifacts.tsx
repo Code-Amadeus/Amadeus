@@ -25,6 +25,9 @@ const readFile = async file => {
 }
 function Fixture() {
   const [refresh, setRefresh] = useState(0)
+  const [, setPresentation] = useState(0)
+  f.renders = (f.renders || 0) + 1
+  f.rerender = () => setPresentation(value => value + 1)
   return <ProjectAppsPanel key={refresh} project={{ projectId: 'drafts', name: 'Draft artifacts' }} scope="drafts"
     apps={[{ projectId: 'draft-project', workItemId: 'app-work', workTitle: 'Interactive demo', artifactId: 'app', artifactRef: 'artifact:app@abc',
       appId: 'demo', title: 'Verified application', version: '1', modes: ['observe'], revision: 1, workState: 'review_ready', execution: 'succeeded', files: [{ artifactId: 'manifest', title: 'auip.manifest.json', relativePath: 'auip.manifest.json', artifactStatus: 'registered', previewable: true }] }]}

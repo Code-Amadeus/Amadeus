@@ -71,8 +71,9 @@ class WorkArtifactRegistry:
         changes.
         """
 
+        is_amendment = str(attempt.metadata.get("intent") or "").strip().lower() == "amend"
         recovery_predecessor = self.store.get_recovery_predecessor(attempt)
-        if str(attempt.metadata.get("intent") or "").strip().lower() != "amend" and recovery_predecessor is None:
+        if not is_amendment and recovery_predecessor is None:
             return []
         related_id = str(
             attempt.metadata.get("related_work_item_id") or item.work_item_id
@@ -111,9 +112,11 @@ class WorkArtifactRegistry:
             relative_path = str(artifact.metadata.get("relative_path") or "").strip()
             if not relative_path:
                 continue
-            if recovery_predecessor is not None:
+            if not is_amendment and recovery_predecessor is not None:
                 # Recovery reuses the predecessor's exact output, not arbitrary
                 # edits made between attempts or claims reported by a Provider.
+                # It adds ownership to an execute attempt; it cannot narrow an
+                # amendment's existing authority over the goal's deliverables.
                 fact = fingerprints.get(relative_path) or {}
                 if baseline.get("source") == "filesystem":
                     candidate = _safe_repo_path(Path(item.workspace_path), relative_path)

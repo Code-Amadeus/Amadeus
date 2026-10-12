@@ -37,8 +37,6 @@ class WorkLedgerHandler(RequestHandler):
         Method.WORK_PROJECT_STATE,
         Method.WORK_ARCHIVE,
         Method.WORK_PERMISSION_RESOLVE,
-        Method.PROJECT_APPS_LIST,
-        Method.DRAFT_APPS_LIST,
         Method.WORK_ARTIFACTS_LIST,
         Method.WORK_ARTIFACT_READ,
     ]
@@ -127,27 +125,6 @@ class WorkLedgerHandler(RequestHandler):
             return await self._archive(params)
         if method == Method.WORK_PERMISSION_RESOLVE:
             return await self._resolve_permission(params)
-        if method == Method.PROJECT_APPS_LIST:
-            try:
-                return {
-                    "ok": True,
-                    **self.coordinator.project_apps(
-                        str(params.get("project_id") or params.get("projectId") or ""),
-                        limit=int(params.get("limit") or 100),
-                    ),
-                }
-            except (ValueError, WorkLedgerConflict, WorkLedgerNotFound) as exc:
-                return {"ok": False, "error": str(exc)}
-        if method == Method.DRAFT_APPS_LIST:
-            try:
-                return {
-                    "ok": True,
-                    **self.coordinator.draft_apps(
-                        limit=int(params.get("limit") or 5),
-                    ),
-                }
-            except ValueError as exc:
-                return {"ok": False, "error": str(exc)}
         return None
 
     async def route_action(self, payload: dict[str, Any] | None) -> dict[str, Any]:

@@ -60,3 +60,17 @@ Independent file view:
 Application and its registered members:
 
 ![Application details](images/work-artifacts/apps-desktop.png)
+
+## Catalog and recovery compatibility
+
+The desktop uses `work.artifacts.list` for both Project and Draft catalogs. The
+superseded `project.apps.list` and `draft.apps.list` WebSocket methods are removed;
+callers should use the shared catalog's `apps` and `files` collections. Internal
+AUIP app lookup remains in its existing owner.
+
+An accepted recovery adds ownership of the predecessor's unchanged output. An
+explicit amendment also retains its existing ownership of earlier registered
+deliverables; a recovery of that amendment does not narrow it to the most recent
+attempt. Unrelated pre-existing dirty files remain outside either exception.
+File previews retain their content across unrelated parent rerenders and reload
+when the selected artifact, its Work owner or availability changes.
