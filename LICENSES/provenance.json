@@ -401,7 +401,7 @@
         "vendor/extension-sdk/**"
       ],
       "source_url": "https://github.com/Code-Amadeus/Amadeus-Extensions",
-      "source_revision": "49449a0f3572e74ac7269129c02c5b9a9e685bef",
+      "source_revision": "Protocol 223aac577be418301bbe73e02f79d6af59383374; SDK 49449a0f3572e74ac7269129c02c5b9a9e685bef (exact file digests in protocol-source.json)",
       "license_expression": "Apache-2.0",
       "license_evidence": [
         "LICENSES/Apache-2.0.txt"
@@ -409,7 +409,7 @@
       "modified": true,
       "release_action": "include",
       "gate_status": "ready",
-      "notes": "Protocol validator adapts module help and schema location only. SDK wheel is unmodified, built offline from sdk.source_commit; protocol-source.json records separate text/source/binary digests. The pinned source commit is retained in protocol main history by the merge of protocol #1."
+      "notes": "Protocol validator adapts module help and schema location only. SDK wheel is unmodified, built offline from sdk.source_commit; protocol-source.json records separate text/source/binary digests. The SDK source commit is retained in protocol main history. The theme schema/validator source remains provisional in protocol PR #2."
     },
     {
       "id": "amadeus-extension-examples",

@@ -1,0 +1,68 @@
+{
+  "license": "MIT-0",
+  "schema": "amadeus.extension/v0",
+  "id": "com.example.desktop-theme",
+  "version": "0.1.0",
+  "display_name": {
+    "en": "Quiet desktop",
+    "zh-CN": "静谧桌面"
+  },
+  "description": {
+    "en": "Two local palettes with no package code or network access.",
+    "zh-CN": "两款本地配色，不运行包代码，也不联网。"
+  },
+  "author": {
+    "name": "Amadeus contributors"
+  },
+  "engines": {
+    "amadeus_host_api": ">=0.1,<0.2"
+  },
+  "runtime": {
+    "kind": "none"
+  },
+  "contributes": {
+    "theme": [
+      {
+        "id": "day",
+        "contract": "amadeus.ui.theme/v0",
+        "base": "classic",
+        "title": {
+          "en": "Quiet day",
+          "zh-CN": "静谧日光"
+        },
+        "tokens": {
+          "--bg": "#EAF1F7",
+          "--surface": "#FFFFFF",
+          "--surface-alt": "#F4F7FA",
+          "--text": "#132B3D",
+          "--muted": "#526B7F",
+          "--accent": "#154A70",
+          "--accent-hover": "#0C3957"
+        }
+      },
+      {
+        "id": "night",
+        "contract": "amadeus.ui.theme/v0",
+        "base": "wallpaper-slice",
+        "title": {
+          "en": "Quiet night",
+          "zh-CN": "静谧夜色"
+        },
+        "tokens": {
+          "--bg": "rgba(6,17,22,.6)",
+          "--surface": "rgba(10,29,34,.86)",
+          "--surface-alt": "#15303B",
+          "--text": "#E0F8F1",
+          "--muted": "#A3CFC4",
+          "--accent": "#207969",
+          "--accent-hover": "#1A6355"
+        },
+        "background": {
+          "image": "background.png",
+          "fit": "cover",
+          "dim": 0.65
+        }
+      }
+    ]
+  }
+}

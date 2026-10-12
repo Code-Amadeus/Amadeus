@@ -13,7 +13,7 @@ interface Props {
 }
 
 type NavItem =
-  | { kind: 'page'; page: Page; label: string; icon: 'Edit' | 'Setting' | 'CommandPrompt' | 'Movie' }
+  | { kind: 'page'; page: Page; label: string; icon: 'Edit' | 'Setting' | 'CommandPrompt' | 'Movie' | 'Tiles' }
   | { kind: 'toggle'; label: string; icon: 'Video'; iconActive: 'Movie'; active: boolean; onClick: () => void }
   | { kind: 'toggle-simple'; label: string; icon: 'Tiles'; active: boolean; onClick: () => void }
 
@@ -64,6 +64,7 @@ export default function Sidebar({
       onClick: onToggleWallpaper,
     },
     { kind: 'page', page: 'vn', label: 'VN Player', icon: 'Movie' },
+    { kind: 'page', page: 'plugins', label: 'Plugins', icon: 'Tiles' },
   ]
 
   const bottomItems: NavItem[] = [

@@ -50,8 +50,8 @@ export const extensionProfile = [
       "AMADEUS_UI_THEME"
     ],
     "apply": "frontend",
-    "status": "closed",
-    "reason": "Theme lifecycle is not yet available."
+    "status": "open",
+    "reason": ""
   },
   {
     "kind": "surface",

@@ -88,7 +88,15 @@
     "server/extensions/profile.py",
     "electron/scripts/generate-extension-profile.mjs",
     "electron/src/shared/extensionProfile.ts",
-    "electron/src/shared/extensionProfile.generated.ts"
+    "electron/src/shared/extensionProfile.generated.ts",
+    "electron/scripts/generate-theme-tokens.mjs",
+    "electron/src/main/extensionPaths.ts",
+    "electron/src/main/extensionThemes.ts",
+    "electron/src/shared/extensionTheme.ts",
+    "electron/src/shared/themeTokens.generated.ts",
+    "electron/src/renderer/themeApplication.ts",
+    "examples/extensions/desktop-theme/src/amadeus_example_theme/amadeus-extension.json",
+    "docs/extension_host_profile_v0.1.md"
   ],
   "include_roots": [
     "characters",
@@ -223,7 +231,19 @@
     "docs/evidence/texture-pipeline-2026-10-03/stage_timings.json",
     "docs/evidence/texture-pipeline-2026-10-03/ticker_gate_sim.cjs",
     "docs/evidence/texture-pipeline-2026-10-03/tier_quality.json",
-    "docs/evidence/texture-pipeline-2026-10-03/tier_quality.py"
+    "docs/evidence/texture-pipeline-2026-10-03/tier_quality.py",
+    "docs/extension_host_profile_v0.1.md",
+    "docs/images/extensions/native-chat-use.jpg",
+    "docs/images/extensions/native-install-confirmation.jpg",
+    "docs/images/extensions/native-uninstalled-voice.jpg",
+    "docs/images/extensions/packages.png",
+    "docs/images/extensions/skill-agent-bindings.png",
+    "docs/images/extensions/theme-day-plugins-en-US-1100.png",
+    "docs/images/extensions/theme-night-settings-zh-CN-620.png",
+    "docs/images/extensions/theme-native-mixed-update.jpg",
+    "docs/images/extensions/theme-native-mixed-pending.jpg",
+    "docs/images/extensions/theme-native-mixed-chat.jpg",
+    "docs/images/extensions/theme-native-removed-identity.jpg"
   ],
   "exclude_globs": [
     "docs/reports/**",

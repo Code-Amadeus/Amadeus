@@ -3,7 +3,7 @@
 Status: implemented experimental subset, extended locally on `codex/extension-theme-pilot`.
 Updated 2026-10-13. This document describes what this checkout actually accepts;
 it does not upgrade the broader Extension Protocol v0.1 draft or its provisional
-TTS/MCP/Skill contracts to a stable SDK. The schema is wider than this profile.
+TTS/MCP/Skill/theme contracts to a stable SDK. The schema is wider than this profile.
 
 ## Supported contribution owners
 
@@ -12,9 +12,10 @@ TTS/MCP/Skill contracts to a stable SDK. The schema is wider than this profile.
 | `voice_backend`, role `tts` | Host TTS proxy + separate Runner | `amadeus-extension-sdk==0.1.0`, `amadeus.voice.tts/v0` |
 | `mcp_server` | Selected compatible Work Provider | Declarative MCP command/arguments/environment; native MCP protocol |
 | `skill` | Selected compatible Work Agent | Packaged `SKILL.md`, description and relative resources |
+| `theme` | Electron main + trusted desktop renderer | Data-only palettes and bounded images; `amadeus.ui.theme/v0` |
 
 `permissions.host` must be empty. ASR, context sources, observers, proactive
-execution and third-party UI contributions are rejected. No Grant records are
+execution and third-party executable UI contributions are rejected. No Grant records are
 created. OS permission declarations disclose intent; they are not an OS sandbox.
 Main Chat receives neither MCP execution authority nor installed Skill bodies.
 Notes MCP stores its own notes and has no Amadeus memory/history authority.
@@ -36,7 +37,7 @@ never downloads or builds an SDK from a third party.
 The manifest and referenced package files are checked before importing code.
 The wheel's `amadeus.extensions` entry point names the package containing
 `amadeus-extension.json`; a TTS manifest additionally names its Runner object.
-All five [examples](../examples/extensions/) are validated against these rules.
+All six [examples](../examples/extensions/) are validated against these rules.
 New `runtime.kind=none` wheels contain resources only: their inspected package
 directory is extracted without creating a venv, invoking pip or importing code.
 They cannot declare `Requires-Dist`. Existing no-code installations retain their
@@ -63,25 +64,36 @@ The manager shows package identity, author-declared license (or Not declared),
 full wheel SHA-256, local source filename, contributions, commands and OS disclosures
 and asks for confirmation before preparing an installation/update or enabling
 a package. Updating an enabled package requires fresh confirmation.
-Use **Settings → Extensions** for the complete lifecycle; Voice settings link
-back to that manager rather than maintaining a second package record.
+Use **Plugins** in the main navigation for the complete lifecycle. Settings →
+Extensions renders the same manager and records. Voice and Appearance settings
+link to it; selection remains in the relevant settings page. Update confirmation
+highlights new or changed contributions, commands and OS access.
 
-The baseline has no extension manager. These screenshots use synthetic packages
-and the production settings components:
+These baseline screenshots use synthetic packages and the production manager
+components (main-navigation access was added in the theme pilot):
 
 ![Installed packages, disclosures and saved/runtime state](images/extensions/packages.png)
 
 ![One Skill installation with selected Work Agents](images/extensions/skill-agent-bindings.png)
 
-The backend reads one startup snapshot. Install/configure/enable/disable,
-Provider bindings, voice selection, same-ID version update and uninstall all
-take effect after backend restart. Manifest `live`/`reactivate` labels cannot
-override this profile. There is no `config.changed` notification or rolling
-configuration generation handover in this implementation.
+The backend reads one startup snapshot. TTS/MCP/Skill installation, configuration,
+bindings, voice selection, enable/disable and removal apply after backend restart.
+Manifest labels cannot override that boundary. There is no live configuration
+notification or rolling TTS handover.
+
+Pure frontend theme packages apply immediately and never mark the backend for
+restart. If either the old or new package includes a backend contribution, the
+whole package switches at the backend boundary. Until then, the theme reads
+the old accepted manifest, path and configuration. The manager distinguishes
+saved and loaded versions/revisions from health and cleanup errors.
+Disabling/removing a mixed package immediately closes frontend admission and
+falls back to the theme base; its old backend may still be running. Re-enabling
+does not reopen the old frontend before a new startup acknowledgement.
 
 An update prepares a new environment, validates it, then commits the desired
-record; compatible configuration/secrets and bindings survive. The old
-environment is collected only after backend shutdown is confirmed. Removal
+record; compatible configuration/secrets and bindings survive. Backend installation
+references, including an in-flight startup snapshot, survive until confirmed
+shutdown. Superseded pure frontend resources are collected after application. Removal
 defaults to keeping package data; explicit data deletion is a separate choice.
 Reinstall does not restore activation, bindings or removed credentials.
 Unavailable saved TTS selections remain visible and use text-only behavior.
@@ -93,6 +105,40 @@ Transient deletion failures retain ownership markers for the next cleanup.
 Runner crash recovery is separate from configuration application: it stays
 inside the process-lifetime proxy, is bounded, and never repeats failed TTS
 requests. Installation trust is not reconstructed by scanning directories.
+
+## Data-only desktop themes
+
+Build the [desktop theme example](../examples/extensions/desktop-theme/) and
+install its wheel from Plugins. Enable it, then choose Quiet day or Quiet night
+in **Settings → General → Appearance**. The example has no dependencies and
+runs no package code. Themes do not enter the Work capability catalog or a Runner.
+
+The builtin base remains `data-theme=classic|wallpaper-slice`; the qualified
+package selection uses `data-theme-extension`. Component selectors, native
+title bar and color scheme continue to follow the builtin base.
+`electron/src/shared/themeTokens.generated.ts` publishes allowed tokens,
+generated from the actual base CSS. Danger, warning and success tokens are
+reserved. Only literal colors and installed font families are accepted; CSS
+URLs, variable references and declarations are rejected.
+
+The Host validates the same normalized palette it sends to the renderer.
+Normal/muted text must retain contrast of 4.5/3 across actual surfaces and
+interaction overlays. An image background is tested over all possible RGB
+backgrounds after dimming/compositing, including interior contrast minima.
+Host status text remains readable; overridden accent button fills retain
+readable white labels. Borderline cases whose contrast cannot be proven are
+rejected before committing a desired record.
+
+Backgrounds are package-relative PNG/JPEG/WebP, at most 8 MiB and 4096 pixels
+per dimension. Main validates paths, headers and native decoding; only bounded
+bytes and MIME enter the renderer. No package filesystem URL or custom URL
+scheme is admitted to the main window. Switching releases the previous style
+and Blob URL. Invalid updates preserve the previous installation and selection.
+
+An unavailable selected theme retains its saved identity and falls back to the
+last verified builtin base, with a reason shown in Appearance. Reinstalling
+never silently enables it. Uninstall defaults to keeping package data, with
+explicit deletion available; cleanup failure remains owned and retryable.
 
 ## TTS wire and SDK contract
 
@@ -256,7 +302,8 @@ Chat/Wallpaper/VN acceptance remain release work. Memory remains out of scope.
 Host code remains AGPL-3.0. The canonical protocol/schema/validator and standalone
 SDK in Amadeus-Extensions are Apache-2.0. Authored examples carry MIT-0; external
 assets, voices, models and dependencies retain their own rights. The current
-source pins are retained in protocol main history by the merge of protocol #1;
+SDK source pin is retained in protocol main history by the merge of protocol #1.
+Theme schema/validator provenance tracks protocol #2 pending its acceptance;
 the reviewed SDK wheel and digest are unchanged. There is no PyPI release,
 development-directory loader or new diagnostic-log feature in this change.
 
@@ -290,3 +337,158 @@ state, and retain pending work with a diagnostic. Host preflight failures remain
 known rejections. Revision comparisons still prevent late replies from clearing
 newer edits. No package filesystem or Runner authority is granted by a failure
 receipt, and SDK bytes/wire contracts are unchanged.
+## Local theme pilot acceptance (2026-10-12)
+
+The local branch integrates extension lifecycle 55551e1 and Work files/AUIP
+adf1632 without changing either parent PR. P1 support/profile and persistence
+rules are committed separately from P2 theme/UI work. The companion schema
+source is pinned to 9c3f3a5 on a local protocol branch; publish that source
+before opening a downstream PR that references it.
+
+Automated evidence includes 470 desktop unit tests; 130 Python extension,
+SDK, files/AUIP regressions (2 skips); the official model-less Electron smoke;
+and the production-component visual smoke in English/classic at 1100 px and
+Chinese/wallpaper-slice at 620 px. These visual fixtures use synthetic Host
+snapshots, actual React components and the actual theme validator/renderer.
+They verify base identity, one installed style, Blob image visibility, absence
+of covering builtin gradients and no horizontal overflow. They do not exercise
+native installation confirmation.
+
+![Plugins with the light extension theme](images/extensions/theme-day-plugins-en-US-1100.png)
+
+![Appearance with the dark extension theme in a narrow Chinese window](images/extensions/theme-night-settings-zh-CN-620.png)
+
+A separate local diagnostic used the real Electron installer/store, trusted Python
+wheel helper, native image/font APIs and an independent SDK Runner. Confirmation
+decisions were supplied by the driver; it did not operate native dialogs.
+The pure-theme lifecycle retained backend PID 11912, including cancel, invalid
+update rejection, disable/re-enable, retained-data reinstall and explicit deletion.
+The mixed journey used backend PIDs 12788 then 2272 and Runner PIDs 4296 then
+34160. Completed tone requests were v1, v1 (after v2 was saved), then v2 (after
+restart), each 4,800 samples at 24 kHz. Old installation references survived until
+shutdown; final removal deleted the requested data. This is process/contract
+evidence, not Chat playback or native GUI acceptance.
+
+The process journey is reproducible on Windows after the normal desktop build:
+
+```powershell
+python tools/probes/extension_theme_lifecycle.py
+```
+
+The probe builds all synthetic wheels offline, creates a fresh profile, and
+records the report under `build/extension-theme-lifecycle/<run>/report.json`.
+It verifies real image decoding and installed fonts, pure-theme preparation
+without pip/venv, actual revision acknowledgements, two mixed-package versions,
+SDK audio and removal. Its isolated Python process hosts `ExtensionRuntime`;
+it is not the HTTP/WebSocket server or the Chat playback path. Confirmation
+choices are supplied by the driver and reported explicitly.
+
+The P2 native Windows GUI journey also passed in an isolated profile. The real
+file picker and native install/update/enable dialogs were operated, followed by
+production settings, the backend, independent Runner and Chat playback. A local
+synthetic model and tone package keep this repeatable without paid services.
+
+| Native theme journey | Observed outcome |
+| --- | --- |
+| Pure theme install, enable and select day/night | Installed disabled first; both palettes applied immediately without backend restart |
+| Cancel v2 update, then accept it | Cancellation preserved v1, its revision and installation; acceptance applied v2 and reclaimed the old resources |
+| Invalid v3 theme | Contrast validation rejected the update and preserved working v2 |
+| Disable/re-enable, remove, reinstall and delete data | Immediate fallback preserved the saved theme identity; re-enable restored it; retained data survived a disabled reinstall; explicit deletion removed it |
+| Mixed theme/TTS v1, then save v2 | Saved revision 3/version 0.2.0 while loaded revision 2/version 0.1.0 remained active; Chat still invoked the same v1 Runner |
+| Disable, then re-enable before restart | Frontend access closed immediately and stayed closed; the UI disclosed that the old backend continued until restart |
+| Restart mixed package and resume Chat | Revision 5/version 0.2.0 applied together; old process and installation disappeared; history resumed and the new Runner played a response |
+| Remove mixed package with data deletion, restart | Record, installation, data and Runner disappeared; theme/voice selections retained their unavailable identities; another Chat turn completed without speech |
+
+The pure-theme journey kept the same backend process throughout. The mixed
+journey completed three Japanese-tagged requests in order: v1, v1 after v2 was
+saved, and v2 after restart. Each produced 4,800 samples at 24 kHz; playback logs
+recorded physical start and completion. The final text-only turn added no
+playback. These are observed process and playback results, not a subjective
+listening assessment of natural speech.
+
+Acceptance found two stale-feedback cases: a rejected update left an earlier
+success notice, and a successful restart left the old pending-start notice.
+Operation feedback now clears at the next attempt and confirms only that saving
+succeeded; package cards remain the source of current application state. Both
+cases have component regressions. The final build and visual smoke passed after
+this presentation fix; the full native journey above preceded that final fix.
+
+![Native mixed-package update disclosure](images/extensions/theme-native-mixed-update.jpg)
+
+![Saved v2 while the original theme and backend remain active](images/extensions/theme-native-mixed-pending.jpg)
+
+![Chat history and playback after the whole mixed package switches to v2](images/extensions/theme-native-mixed-chat.jpg)
+
+![Saved theme identity remains visible after removal](images/extensions/theme-native-removed-identity.jpg)
+
+No remote paid synthesis, natural voice audition or cross-platform GUI
+certification is claimed. Narrow-window evidence is from the production-component
+Electron smoke, not the native-dialog journey. DSH/ACL constraints described
+above are unchanged; this theme work does not qualify a new Agent path.
+
+## Audit repair revalidation (2026-10-13)
+
+The parent file-delivery branch now preserves amendment ownership through
+recovery and keeps previews stable during unrelated renderer updates. The
+extension branch builds with the documented core-only Python environment and
+recovers overdue cancellation under the existing bounded budget. General MCP
+environment migration and desktop process shutdown are separate reviewed
+dependencies; this pilot consumes their contracts.
+
+After synchronizing those changes, the P1-only head passed 464 Electron tests
+and the normal build. The combined P1/P2 head passed 478 Electron tests and
+211 scoped Python regressions (2 skips), plus the core-environment build. The
+actual model-less Electron smoke passed all 13 checks, including Plugins,
+file/app separation and clean shutdown. The reusable theme lifecycle probe also
+passed with the real installer/store and SDK Runner; its confirmation choices
+are supplied by the driver, not native dialog input.
+
+The earlier native-dialog and physical-playback acceptance remains historical
+evidence for its recorded head. No second full manual GUI run, natural-voice
+audition or new Agent/cross-platform qualification is claimed for this repair.
+The new cancellation and shutdown failure regressions address gaps that the
+earlier normal lifecycle journey did not cover.
+
+## Mainline reconstruction and focused revalidation (2026-10-13)
+
+P1 is rebuilt from its own reviewed diff on main `c569a0f`, which contains
+the accepted file/AUIP, MCP migration, backend shutdown and extension lifecycle
+PRs. Its stable patch-id is unchanged. P2 is rebuilt on that P1, preserving
+the accepted SDK source `49449a0` and wheel digest. Theme schema/validator
+provenance now points at protocol #2 `223aac5`; that theme contract remains
+provisional pending separate review and merge. Developer mode, logs and memory
+are outside this reconstruction.
+
+The prior Electron Windows failure was reproduced in the real offline settings
+smoke: its standalone test entry did not register `desktop-theme.get`, so the
+theme provider could not obtain the locked theme and the GUI assertion timed
+out. The smoke now calls the production `ExtensionInstaller.themeState` owner
+through that IPC handler. Its eight existing outcome checks pass without a
+backend or Python process. No production fallback or timeout increase was added.
+
+Fresh local evidence on the rebuilt implementation:
+
+- P1: 99 Python tests passed, one symlink privilege skip; 467 Electron tests
+  passed and the production build passed with an unavailable Python override.
+- P2: 264 scoped Python tests passed, three skips (two Windows symlink privileges
+  and the optional DSH runtime); all 481 Electron tests passed. The scoped suite
+  includes ordinary-file/AUIP ownership, preview and launch boundaries.
+- The actual Electron/backend model-less smoke passed all 13 checks, including
+  Plugins navigation, saved startup mode, separate file/app views and clean
+  process shutdown.
+- The production-component smoke passed its seven journeys, including theme
+  rendering at 1100px English and 620px Chinese and the 560px configuration form.
+  Host responses in this visual fixture are synthetic; image/font validation
+  and component rendering use the real implementation.
+- The real installer/store, native image/font validation and independent SDK
+  Runner lifecycle probe passed. Pure themes retained their backend process
+  with no venv or pip; mixed synthesis used v1, v1 after saving v2, then v2 after
+  restart. Cancellation/rejected updates retained the working version, frontend
+  admission closed on disable/remove, and owned processes/resources/data were
+  cleaned according to the selected retention policy.
+
+The lifecycle probe reports `nativeDialogs: false`: confirmation decisions were
+supplied by the driver. The 2026-10-12 manual native-dialog/Chat playback journey
+above remains historical evidence; it was not repeated or relabeled as a new
+manual acceptance run. Final-head CI and focused external review remain the
+merge gates for P1/P2 and protocol #2.

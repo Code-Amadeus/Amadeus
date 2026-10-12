@@ -22,7 +22,7 @@ from amadeus_extension import CancelledError, RequestContext, TTSRequest
 import amadeus_example_mimo as mimo
 
 
-@pytest.mark.parametrize('name', ['mimo-tts', 'fish-audio', 'notes-mcp', 'handoff-skill', 'csv-audit-skill'])
+@pytest.mark.parametrize('name', ['mimo-tts', 'fish-audio', 'notes-mcp', 'handoff-skill', 'csv-audit-skill', 'desktop-theme'])
 def test_example_package_conforms_to_implemented_host_profile(name):
     from server.extensions.package import validate_manifest, validate_installed
     example = ROOT / 'examples/extensions' / name
@@ -36,7 +36,7 @@ def test_example_package_conforms_to_implemented_host_profile(name):
     assert packaging['project']['version'] == manifest['version']
     assert packaging['project']['entry-points']['amadeus.extensions'] == {manifest['id']: manifest_path.parent.name}
     kinds = set(manifest['contributes'])
-    assert kinds <= {'voice_backend', 'mcp_server', 'skill'}
+    assert kinds <= {'voice_backend', 'mcp_server', 'skill', 'theme'}
     assert not manifest.get('permissions', {}).get('host')
     dependencies = packaging['project'].get('dependencies', [])
     if 'voice_backend' in kinds:

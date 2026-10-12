@@ -3,6 +3,9 @@ import ReactDOM from 'react-dom/client'
 import SettingsPage from '../../src/renderer/components/SettingsPage'
 import { I18nProvider } from '../../src/renderer/i18n'
 import { ThemeProvider } from '../../src/renderer/theme'
+import Sidebar from '../../src/renderer/components/Sidebar'
+import { validateThemePalette } from '../../src/shared/extensionTheme'
+import themeManifest from '../../../examples/extensions/desktop-theme/src/amadeus_example_theme/amadeus-extension.json'
 import type { ExtensionSummary, ExtensionUpdate } from '../../src/shared/extensions'
 import '../../src/renderer/styles/index.css'
 
@@ -12,6 +15,7 @@ const host = window as any
 const query = new URLSearchParams(location.search)
 const locale = query.get('locale') || 'en-US'
 const theme = query.get('theme') || 'classic'
+const palette = themeManifest.contributes.theme.find(item => item.id === query.get('palette'))
 const listeners: Record<string, Set<(payload: Record<string, unknown>) => void>> = {}
 const calls: Array<{ method: string; params: unknown }> = []
 const errors: string[] = []
@@ -20,9 +24,9 @@ window.addEventListener('unhandledrejection', event => errors.push(String(event.
 window.confirm = () => true
 localStorage.setItem('amadeus.ui.locale', locale)
 localStorage.setItem('amadeus.ui.theme', theme)
-localStorage.setItem('amadeus.settings.section', 'extensions')
+localStorage.setItem('amadeus.settings.section', query.get('section') || 'extensions')
 const voice: ExtensionSummary = {
-  id: 'org.example.voice', version: '1.0.0', digest: 'a'.repeat(64), enabled: true, pendingRemoval: false,
+  id: 'org.example.voice', version: '1.0.0', revision: 1, digest: 'a'.repeat(64), enabled: true, pendingRemoval: false,
   values: { voice: 'sample-english', model: 'standard', speed: 1, normalize: true }, secretConfigured: { api_key: true }, providers: [], status: 'enabled', restartRequired: false,
   manifest: { schema: 'amadeus.extension/v0', id: 'org.example.voice', version: '1.0.0', display_name: { en: 'Example English voice', 'zh-CN': '示例英语语音' },
     description: { en: 'Synthetic remote speech package for UI verification.', 'zh-CN': '用于界面验证的模拟远程语音包。' },
@@ -36,7 +40,7 @@ const voice: ExtensionSummary = {
   },
 }
 const tools: ExtensionSummary = {
-  id: 'org.example.tools', version: '1.2.0', digest: 'b'.repeat(64), enabled: false, pendingRemoval: false,
+  id: 'org.example.tools', version: '1.2.0', revision: 1, digest: 'b'.repeat(64), enabled: false, pendingRemoval: false,
   values: { endpoint: 'https://example.invalid/mcp' }, secretConfigured: {}, providers: [], status: 'disabled', restartRequired: false,
   manifest: { schema: 'amadeus.extension/v0', id: 'org.example.tools', version: '1.2.0', display_name: { en: 'Example Work tools', 'zh-CN': '示例工作工具' },
     description: { en: 'Synthetic declarative MCP package.', 'zh-CN': '模拟声明式 MCP 扩展包。' }, author: { name: 'Example author' },
@@ -46,7 +50,7 @@ const tools: ExtensionSummary = {
   },
 }
 const skill: ExtensionSummary = {
-  id: 'org.example.skill', version: '0.1.0', digest: 'c'.repeat(64), enabled: false, pendingRemoval: false,
+  id: 'org.example.skill', version: '0.1.0', revision: 1, digest: 'c'.repeat(64), enabled: false, pendingRemoval: false,
   values: {}, secretConfigured: {}, providers: [], status: 'disabled', restartRequired: false,
   manifest: { schema: 'amadeus.extension/v0', id: 'org.example.skill', version: '0.1.0', display_name: { en: 'Example handoff Skill', 'zh-CN': '示例交接 Skill' },
     description: { en: 'Prepare a Work handoff with packaged references.', 'zh-CN': '使用随包参考资料整理工作交接。' }, author: { name: 'Example author' },
@@ -65,6 +69,12 @@ let runtime = desktop.extensions.map(extension => ({ id: extension.id, version: 
   contributions: Object.entries(extension.manifest.contributes).flatMap(([kind, items]) => items.map(item => ({ kind, id: item.id, qualified_id: `${extension.id}/${item.id}`, health: extension.enabled ? 'ready' : 'disabled' }))),
 }))
 let failSave = false
+if (palette) {
+  desktop.values.AMADEUS_UI_THEME = `${themeManifest.id}/${palette.id}`
+  desktop.extensions.push({ id: themeManifest.id, version: themeManifest.version, revision: 2, appliedRevision: 2, appliedVersion: themeManifest.version,
+    digest: 'd'.repeat(64), enabled: true, pendingRemoval: false, application: 'frontend', frontendSuppressed: false, backendStillRunning: false,
+    values: {}, secretConfigured: {}, providers: [], status: 'enabled', restartRequired: false, manifest: themeManifest } as ExtensionSummary)
+}
 const snapshot = () => structuredClone(desktop)
 const config = () => ({ tts_backend: desktop.values.TTS_BACKEND, tts_output_language: desktop.values.TTS_OUTPUT_LANGUAGE === '英文' ? 'en' : 'ja', extensions: structuredClone(runtime) })
 const emit = () => { for (const listener of listeners['system.config'] || []) listener({ values: config() }) }
@@ -85,6 +95,14 @@ const send = async (method: string): Promise<Record<string, unknown>> => {
   throw new Error('Unexpected synthetic RPC: ' + method)
 }
 host.amadeus = {
+  getDesktopTheme: async () => {
+    if (!palette) return { selected: theme, base: theme, reason: '' }
+    const normalized = validateThemePalette(palette)
+    const image = 'background' in palette ? { mime: 'image/png', base64: btoa(String.fromCharCode(...new Uint8Array(await (await fetch('/fixture-theme-background.png')).arrayBuffer()))) } : undefined
+    return { selected: desktop.values.AMADEUS_UI_THEME, base: palette.base, reason: '',
+      theme: { ...normalized, id: desktop.values.AMADEUS_UI_THEME, version: themeManifest.version, revision: 2, image } }
+  },
+  onDesktopThemeChanged: () => () => {},
   getDesktopSettings: async () => snapshot(),
   getCompanionPortraitStatus: async () => ({ installed: false, state: 'not_installed', emotionCount: 0, frameCount: 0, detail: '' }),
   setTitleBarTheme: async () => true,
@@ -96,7 +114,7 @@ host.amadeus = {
     saved.enabled = update.enabled ?? saved.enabled; saved.status = saved.enabled ? 'enabled' : 'disabled'
     Object.assign(saved.values, update.values); saved.providers = update.providers || saved.providers
     for (const [key, value] of Object.entries(update.secrets || {})) saved.secretConfigured[key] = value !== null
-    saved.restartRequired = true; pending()
+    saved.revision = (saved.revision || 1) + 1; saved.restartRequired = true; pending()
     return { ok: true, settings: snapshot() }
   },
   removeExtension: async (id: string, options: unknown) => {
@@ -128,5 +146,6 @@ document.documentElement.style.height = '100%'
 document.body.style.cssText = 'margin:0;height:100%;overflow:hidden'
 document.getElementById('root')!.style.cssText = 'height:100%;display:flex'
 ReactDOM.createRoot(document.getElementById('root')!).render(<ThemeProvider><I18nProvider>
-  <SettingsPage send={send} subscribe={subscribe} connected reconnectBackend={async () => {}} />
+  {query.get('presentation') === 'plugins' && <Sidebar page="plugins" onNavigate={() => {}} renderActive={false} wallpaperActive={false} onToggleRender={() => {}} onToggleWallpaper={() => {}} />}
+  <div className="desktop-main-content flex-1 flex min-w-0"><SettingsPage presentation={query.get('presentation') === 'plugins' ? 'plugins' : 'settings'} send={send} subscribe={subscribe} connected reconnectBackend={async () => {}} /></div>
 </I18nProvider></ThemeProvider>)

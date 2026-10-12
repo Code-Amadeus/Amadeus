@@ -72,3 +72,21 @@ def test_resource_mcp_command_preserves_execute_bits_without_special_permissions
     assert stat.S_IMODE(command.stat().st_mode) & 0o7000 == 0
     assert stat.S_IMODE((destination / 'resources/guide/SKILL.md').stat().st_mode) & 0o111 == 0
     assert subprocess.check_output([str(command)], text=True) == 'resource-command-ready'
+
+def test_theme_only_has_no_runner_or_work_capability_projection(tmp_path):
+    from server.extensions.runtime import ExtensionRuntime
+    from server.capability_composition import extension_capability_packages
+    definition = {
+        'schema': 'amadeus.extension/v0', 'id': 'org.example.theme', 'version': '0.1.0',
+        'display_name': 'Theme', 'description': 'No backend authority', 'author': {'name': 'Test'},
+        'engines': {'amadeus_host_api': '>=0.1,<0.2'}, 'runtime': {'kind': 'none'},
+        'contributes': {'theme': [{'id': 'day', 'contract': 'amadeus.ui.theme/v0', 'base': 'classic', 'tokens': {}}]},
+    }
+    (tmp_path / 'amadeus-extension.json').write_text(json.dumps(definition), encoding='utf-8')
+    runtime = ExtensionRuntime([{'id': definition['id'], 'version': '0.1.0', 'revision': 2,
+        'digest': 'a' * 64, 'enabled': True, 'manifest': definition,
+        'package_path': str(tmp_path), 'data_path': str(tmp_path / 'data'), 'config': {}, 'secrets': {}}])
+    assert not runtime.clients and not runtime.backends
+    assert runtime.statuses()[0]['revision'] == 2
+    assert runtime.statuses()[0]['contributions'] == []
+    assert extension_capability_packages(runtime.records, runtime.statuses()) == ()

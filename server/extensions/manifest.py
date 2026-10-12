@@ -111,6 +111,14 @@ def semantic_issues(manifest: dict[str, Any]) -> list[Issue]:
             "an entry is allowed only when the package contributes a runner kind",
         ))
 
+    for index, theme in enumerate(contributes.get('theme', [])):
+        for name, value in theme['tokens'].items():
+            pointer = f'/contributes/theme/{index}/tokens/{name}'
+            if name.startswith(('--danger', '--warning', '--success')):
+                issues.append(Issue('T1.reserved_token', pointer, 'Host status colors cannot be overridden'))
+            if re.search(r'url\s*\(|var\s*\(|[;{}\\]|/\*|\*/', value, re.IGNORECASE):
+                issues.append(Issue('T2.css_input', pointer, 'Theme tokens must be literals, not CSS declarations or references'))
+
     secret_keys = {key for key, field in config.items() if field.get("secret")}
     disclosed = set(permissions.get("os", {}).get("process", []))
     python_runtime = runtime["kind"] == "python"
@@ -281,6 +289,16 @@ def package_issues(manifest: dict[str, Any], package_dir: Path) -> list[Issue]:
     issues = []
     for index, skill in enumerate(manifest["contributes"].get("skill", [])):
         issues.extend(_skill_issues(f"/contributes/skill/{index}/path", package_dir, skill["path"]))
+    for index, theme in enumerate(manifest['contributes'].get('theme', [])):
+        background = theme.get('background')
+        if background:
+            pointer = f'/contributes/theme/{index}/background/image'
+            found = _package_file_issues(pointer, package_dir, background['image'])
+            issues.extend(found)
+            if not found:
+                image = package_dir / background['image']
+                if image.suffix.lower() not in {'.png', '.jpg', '.jpeg', '.webp'} or image.stat().st_size > 8 * 1024 * 1024:
+                    issues.append(Issue('P4.theme_image', pointer, 'Theme images must be PNG/JPEG/WebP, at most 8 MiB'))
     for index, server in enumerate(manifest["contributes"].get("mcp_server", [])):
         command = server.get("command", "")
         if server["transport"] != "stdio" or not command.startswith(_PACKAGE_PREFIX):

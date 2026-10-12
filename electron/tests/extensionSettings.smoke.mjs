@@ -16,6 +16,11 @@ const server = await createServer({ configFile: path.join(electronRoot, 'vite.co
   cacheDir: path.join(output, 'vite-cache'), server: { host: '127.0.0.1', port: 0, strictPort: false },
   plugins: [{ name: 'extension-settings-smoke', configureServer(server) {
     server.middlewares.use(async (request, response, next) => {
+      if (request.url === '/fixture-theme-background.png') {
+        response.setHeader('Content-Type', 'image/png')
+        response.end(await fs.readFile(path.join(electronRoot, '../examples/extensions/desktop-theme/src/amadeus_example_theme/background.png')))
+        return
+      }
       if (request.url?.split('?')[0] !== '/extension-settings-smoke.html') return next()
       response.setHeader('Content-Type', 'text/html; charset=utf-8')
       response.end(await server.transformIndexHtml('/extension-settings-smoke.html', '<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><script type="module" src="/tests/fixtures/extensionSettings.tsx"></script></body></html>'))
@@ -116,8 +121,32 @@ try {
   assert.equal(await ui("[...document.querySelectorAll('.settings-form input, .settings-form select')].every(node => { const box=node.getBoundingClientRect(); return box.left>=0 && box.right<=innerWidth && node.labels?.length>0 })"), true)
   assert.deepEqual(await ui('window.extensionFixture.errors'), [])
   report.checks.push('Chinese dark-theme editor fits 560px window; fields have labels; no browser errors')
+  for (const [locale, palette, base, width] of [['en-US', 'day', 'classic', 1100], ['zh-CN', 'night', 'wallpaper-slice', 620]]) {
+    window.setSize(width, 950)
+    for (const presentation of ['plugins', 'settings']) {
+      await window.loadURL(`${url}?locale=${locale}&palette=${palette}&theme=${base}&presentation=${presentation}&section=general`)
+      await until(`document.documentElement.dataset.themeExtension?.endsWith('/${palette}')`, 'Production theme did not render')
+      assert.equal(await ui('document.documentElement.dataset.theme'), base)
+      assert.equal(await ui('document.querySelectorAll("style[data-amadeus-extension-theme]").length'), 1)
+      assert.equal(await ui('document.documentElement.scrollWidth <= innerWidth'), true)
+      assert.equal(await ui('getComputedStyle(document.body).backgroundImage'), 'none', 'Base gradient must not cover the extension canvas')
+      assert.equal(await ui('getComputedStyle(document.getElementById("root")).backgroundImage'), 'none')
+      if (palette === 'night') assert.match(await ui('getComputedStyle(document.documentElement).backgroundImage'), /blob:/)
+      if (presentation === 'plugins') assert.equal(await ui(`document.body.textContent.includes(${JSON.stringify(locale === 'en-US' ? 'Quiet desktop' : '静谧桌面')})`), true)
+      const name = `theme-${palette}-${presentation}-${locale}-${width}.png`
+      await capture(name); report.screenshots.push(name)
+      assert.deepEqual(await ui('window.extensionFixture.errors'), [])
+    }
+  }
+  report.checks.push('Production themes preserve both base identities, show native manager and Appearance at 1100px English / 620px Chinese, and leave one style with no covering base gradients')
   report.passed = true
   console.log(JSON.stringify(report, null, 2))
+} catch (error) {
+  report.error = String(error?.stack || error)
+  report.rendererErrors = await ui('window.extensionFixture?.errors || []').catch(() => [])
+  report.theme = await ui('({ ...document.documentElement.dataset })').catch(() => ({}))
+  report.themeResponse = await ui('window.amadeus.getDesktopTheme().then(value => ({ base: value.base, reason: value.reason }), error => ({ error: String(error) }))').catch(error => String(error))
+  await capture('failure.png').catch(() => {})
 } finally {
   await fs.writeFile(path.join(output, 'report.json'), JSON.stringify(report, null, 2))
   window.destroy(); await server.close(); app.exit(report.passed ? 0 : 1)

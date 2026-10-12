@@ -1,4 +1,6 @@
 import fs from 'node:fs'
+import { assertExtensionPath } from './extensionPaths.js'
+export { assertExtensionPath } from './extensionPaths.js'
 import path from 'node:path'
 import { randomBytes, createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
@@ -7,6 +9,9 @@ import { forceStopBackendTree } from './backendProcessTree.js'
 import { bundledExtensionSdk } from './extensionSdk.js'
 import { DesktopSettingsStore, EXTENSIONS_ENV, type StoredExtension } from './desktopSettings.js'
 import type { ExtensionConfigValue, ExtensionManifest, ExtensionRemovalOptions, ExtensionUpdate, ExtensionConfirmation } from '../shared/extensions.js'
+import { ExtensionThemeResources } from './extensionThemes.js'
+import { startupValue } from '../shared/startupSettings.js'
+import type { DesktopThemeState } from '../shared/extensionTheme.js'
 import { extensionNeedsAgent, extensionRequiresRestart } from '../shared/extensionProfile.js'
 
 type HelperReply = { ok: boolean; error?: string; unavailable?: boolean; manifest?: ExtensionManifest; digest?: string;
@@ -127,23 +132,6 @@ function safeRelative(value: string): boolean {
   return /^[A-Za-z0-9_][A-Za-z0-9._-]*(\/[A-Za-z0-9_][A-Za-z0-9._-]*)*$/.test(value)
 }
 
-/** The installation root and its descendants must not be links or junctions. */
-export function assertExtensionPath(root: string, target: string): void {
-  const absoluteRoot = path.resolve(root)
-  const absoluteTarget = path.resolve(target)
-  const relative = path.relative(absoluteRoot, absoluteTarget)
-  if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-    throw new Error('Extension filesystem target is outside its installation directory')
-  }
-  let current = absoluteRoot
-  if (fs.existsSync(current) && fs.lstatSync(current).isSymbolicLink()) throw new Error('Extension installation root must not be a link or junction')
-  for (const segment of relative.split(path.sep)) {
-    current = path.join(current, segment)
-    if (!fs.existsSync(current)) continue
-    if (fs.lstatSync(current).isSymbolicLink()) throw new Error('Extension filesystem paths must not contain links or junctions')
-  }
-}
-
 /** Unlinks files recursively only after verifying the entire tree has no links. */
 export function removeExtensionDirectory(root: string, target: string, installId: string): void {
   assertExtensionPath(root, target)
@@ -198,12 +186,16 @@ function removeVerifiedDirectory(root: string, target: string, markerName: strin
 export class ExtensionInstaller {
   private mutation: Promise<unknown> = Promise.resolve()
   private preparing = new Set<string>()
+  private backendReferences = new Set<string>()
+  private cleanupReady = false
   private uncertainPreparations = new Set<string>()
   constructor(private readonly root: string, private readonly projectRoot: string, private readonly store: DesktopSettingsStore,
     private readonly helper: ExtensionPackageHelper, private readonly python: () => string,
     private readonly environment: NodeJS.ProcessEnv, private readonly run: ExtensionCommandRunner = runExtensionCommand,
     private readonly confirm: (review: ExtensionConfirmation) => Promise<boolean> = async () => false,
-    private readonly sdkDirectory = path.join(projectRoot, 'vendor', 'extension-sdk')) {}
+    private readonly sdkDirectory = path.join(projectRoot, 'vendor', 'extension-sdk'),
+    private readonly themes = new ExtensionThemeResources(),
+    private readonly changed: () => void = () => {}) {}
 
   private get dataRoot(): string { return path.join(path.dirname(this.root), 'extension-data') }
 
@@ -268,6 +260,7 @@ export class ExtensionInstaller {
         if (!manifest || !inspection.digest || !inspection.package_root || !safeRelative(inspection.package_root)) {
           throw new Error('The wheel inspector returned incomplete installation metadata')
         }
+        await this.themes.validate(manifest)
         let sdkWheel = ''
         if (manifest.runtime.kind === 'python') {
           const bundledSdk = bundledExtensionSdk(this.projectRoot, this.sdkDirectory)
@@ -278,7 +271,7 @@ export class ExtensionInstaller {
         if (this.store.extensionIsInstalled(manifest.id) && (!existing || existing.pendingRemoval || existing.version === manifest.version)) {
           throw new Error('This extension is already installed; select a different version to update, or finish its pending removal')
         }
-        if (!await this.confirm({ operation: existing ? 'update' : 'install', manifest, previousVersion: existing?.version,
+        if (!await this.confirm({ operation: existing ? 'update' : 'install', manifest, previousVersion: existing?.version, previousManifest: existing?.manifest,
           digest: inspection.digest, sourceFile: path.basename(wheel) })) {
           throw new ExtensionChangeCancelled()
         }
@@ -322,6 +315,7 @@ export class ExtensionInstaller {
         const installedManifest = JSON.parse(fs.readFileSync(installedManifestPath, 'utf8')) as unknown
         if (JSON.stringify(installedManifest) !== JSON.stringify(manifest)) throw new Error('The installed extension manifest differs from the inspected wheel')
         await this.helper.call('validate-installed', [packagePath], { manifest })
+        await this.themes.validate(manifest, packagePath)
         // A replacement is prepared beside the running version. Only a complete
         // validated installation replaces desired state; old code is collected
         // after confirmed backend stop, using the existing ownership markers.
@@ -334,9 +328,12 @@ export class ExtensionInstaller {
           installId, packageRoot: inspection.package_root, sitePackages, manifest, enabled: existing?.enabled || false, pendingRemoval: false,
           deleteDataOnRemoval: false,
           values: checked.config || {}, encryptedSecrets: retainedSecrets, providers: existing?.providers || [] }
-        const snapshot = this.store.saveExtension(this.environment, record)
+        if (existing && (extensionRequiresRestart(existing.manifest) || extensionRequiresRestart(manifest))) this.backendReferences.add(existing.installId)
+        this.store.saveExtension(this.environment, record)
         committed = true
-        return snapshot
+        await this.applyFrontendChanges()
+        this.changed()
+        return this.store.snapshot(this.environment)
       } catch (error) {
         retainFiles = error instanceof ExtensionPreparationShutdownError
         if (retainFiles) {
@@ -384,8 +381,12 @@ export class ExtensionInstaller {
       // Values and secrets enter only the trusted validator via stdin, never
       // command arguments, environment variables, or plaintext temporary files.
       const validated = await this.helper.call('validate-config', [], { manifest: record.manifest, config: { ...values, ...secrets }, allow_incomplete: !enabled })
-      return this.store.saveExtension(this.environment, { ...record, values: validated.config || {}, enabled,
+      if (enabled) await this.themes.validate(record.manifest, this.packagePath(record))
+      this.store.saveExtension(this.environment, { ...record, values: validated.config || {}, enabled,
         providers: [...new Set(providers)] }, changedSecrets)
+      await this.applyFrontendChanges()
+      this.changed()
+      return this.store.snapshot(this.environment)
     })
   }
 
@@ -394,17 +395,23 @@ export class ExtensionInstaller {
       if (!options || typeof options !== 'object' || Array.isArray(options)
         || Object.keys(options).some(key => key !== 'deleteData')
         || (options.deleteData !== undefined && typeof options.deleteData !== 'boolean')) throw new Error('Invalid extension data removal choice')
-      return this.store.requestExtensionRemoval(this.environment, id, options.deleteData === true)
+      this.store.requestExtensionRemoval(this.environment, id, options.deleteData === true)
+      await this.applyFrontendChanges()
+      this.changed()
+      return this.store.snapshot(this.environment)
     })
   }
 
   /** Called only after confirmed backend shutdown, before starting a new one. */
   cleanupStoppedBackend(): Promise<void> {
     return this.serialize(async () => {
+      this.backendReferences.clear()
+      this.cleanupReady = true
       this.store.releaseBackendExtensionApplications()
       const records = this.store.storedExtensionRecords()
       for (const record of records.filter(item => item.pendingRemoval)) {
         try {
+          this.store.releaseExtensionApplication(record.id)
           removeExtensionDirectory(this.root, path.join(this.root, record.installId), record.installId)
           if (record.deleteDataOnRemoval) this.removePackageData(record.id)
           this.store.finishExtensionRemoval(record.id, record.installId)
@@ -412,6 +419,15 @@ export class ExtensionInstaller {
           this.store.reportExtensionWarning('Extension cleanup did not complete; ownership records were retained for retry.')
         }
       }
+      await this.applyFrontendChanges()
+      this.changed()
+    })
+  }
+
+  private collectUnusedInstallations(releasedFrontend: ReadonlySet<string> = new Set()): void {
+      // Before the first confirmed stop, discovered old directories may still
+      // belong to a backend from a prior desktop lifetime.
+      if (!this.cleanupReady && !releasedFrontend.size) return
       if (!fs.existsSync(this.root)) return
       try {
         const rootStat = fs.lstatSync(this.root)
@@ -422,18 +438,19 @@ export class ExtensionInstaller {
       }
       const retained = this.store.extensionInstallationReferences()
       for (const applied of this.store.appliedExtensionRecords()) retained.add(applied.installId)
+      for (const installId of this.backendReferences) retained.add(installId)
       for (const entry of fs.readdirSync(this.root)) {
+        if (!this.cleanupReady && !releasedFrontend.has(entry)) continue
         if (!/^[a-f0-9]{32}$/.test(entry) || retained.has(entry) || this.preparing.has(entry) || this.uncertainPreparations.has(entry)) continue
         // A marker proves installation ownership; directory discovery cannot
         // create records, enable packages, or infer trust.
         try { removeExtensionDirectory(this.root, path.join(this.root, entry), entry) }
         catch { this.store.reportExtensionWarning('Extension orphan cleanup could not verify installation ownership; its files were retained.') }
       }
-    })
   }
 
   refreshValidation(): Promise<void> {
-    return this.serialize(async () => { await this.helper.refreshRecords(this.store.storedExtensionRecords()) })
+    return this.serialize(async () => { await this.helper.refreshRecords(this.store.storedExtensionRecords()); await this.applyFrontendChanges() })
   }
 
   launchSnapshot(): Promise<string> { return this.serialize(async () => {
@@ -447,6 +464,8 @@ export class ExtensionInstaller {
       // This retires logical state only; cleanup still requires confirmed stop.
       this.store.releaseBackendExtensionApplications()
       await this.helper.refreshRecords(this.store.storedExtensionRecords())
+      await this.applyFrontendChanges()
+      for (const record of this.store.extensionRecords()) if (record.enabled && !record.pendingRemoval && extensionRequiresRestart(record.manifest)) this.backendReferences.add(record.installId)
       const incomplete = this.store.deferIncompleteExtensionApplication()
       const pendingRevisions = this.store.pendingRevisionSnapshot()
       // Failed/retained removals have not completed the requested lifecycle,
@@ -480,7 +499,73 @@ export class ExtensionInstaller {
         // Explicit rejection settles pending work without creating a loaded receipt.
         // Missing/invalid/ambiguous status above never implies a rejection.
       }
+      await this.applyFrontendChanges()
+      this.changed()
       return complete
+    })
+  }
+
+  private packagePath(record: StoredExtension): string {
+    const directory = path.join(this.root, record.installId)
+    const packagePath = record.sitePackages === '' ? path.join(directory, 'package', record.packageRoot)
+      : path.join(directory, 'venv', record.sitePackages, record.packageRoot)
+    assertExtensionPath(this.root, packagePath)
+    return packagePath
+  }
+
+  private async applyFrontendChanges(): Promise<void> {
+    const released = new Set<string>()
+    const valid = new Set(this.store.extensionRecords().map(record => record.id))
+    for (const record of this.store.storedExtensionRecords()) {
+      if (this.store.extensionChangeNeedsRestart(record)) continue
+      if (record.pendingRemoval) {
+        this.store.releaseExtensionApplication(record.id)
+        try {
+          removeExtensionDirectory(this.root, path.join(this.root, record.installId), record.installId)
+          if (record.deleteDataOnRemoval) this.removePackageData(record.id)
+          this.store.finishExtensionRemoval(record.id, record.installId)
+        } catch { this.store.reportExtensionApplicationError(record.id, 'Extension cleanup is incomplete; ownership records were retained for retry.') }
+        continue
+      }
+      if (!valid.has(record.id)) continue
+      const applied = this.store.appliedExtensionRecords().find(item => item.id === record.id)
+      if (applied?.revision === record.revision) continue
+      try {
+        if (record.enabled) {
+          const packagePath = this.packagePath(record)
+          await this.helper.call('validate-installed', [packagePath], { manifest: record.manifest })
+          await this.themes.validate(record.manifest, packagePath)
+          this.packageData(record.id)
+        }
+        this.store.acceptExtensionApplication(record)
+        if (applied && applied.installId !== record.installId) released.add(applied.installId)
+        this.changed()
+      } catch (error) {
+        this.store.reportExtensionApplicationError(record.id, error instanceof Error ? error.message : 'Theme application failed')
+      }
+    }
+    this.collectUnusedInstallations(released)
+  }
+
+  themeState(): Promise<DesktopThemeState> {
+    return this.serialize(async () => {
+      const selected = String(startupValue('AMADEUS_UI_THEME', this.store.snapshot(this.environment), 'wallpaper-slice'))
+      if (selected === 'classic' || selected === 'wallpaper-slice') { this.store.rememberThemeBase(selected); return { selected, base: selected, reason: '' } }
+      const fallback = (reason: string): DesktopThemeState => ({ selected, base: this.store.verifiedThemeBase(), reason })
+      const desired = this.store.extensionRecords().find(record => (record.manifest.contributes.theme || []).some(theme => selected === `${record.id}/${theme.id}`))
+      if (!desired) return fallback('The saved theme is unavailable. Its last verified base is shown.')
+      if (!desired.enabled || desired.pendingRemoval) return fallback('The saved theme is disabled or being removed. Its base is shown.')
+      if (this.store.extensionFrontendClosed(desired.id)) return fallback('Frontend access is closed until the updated package is applied after restart.')
+      const applied = this.store.appliedExtensionRecords().find(record => record.id === desired.id && record.enabled)
+      if (!applied) return fallback('This theme is waiting for its package to be applied.')
+      const item = (applied.manifest.contributes.theme || []).find(theme => selected === `${applied.id}/${theme.id}`)
+      if (!item) return fallback('This theme is not in the currently loaded package. Restart the backend to apply the update.')
+      try {
+        const palettes = await this.themes.validate(applied.manifest, this.packagePath(applied), item.id)
+        const palette = palettes[item.id]
+        this.store.rememberThemeBase(palette.base)
+        return { selected, base: palette.base, reason: applied.revision === desired.revision ? '' : 'Saved changes are pending restart; the loaded theme is unchanged.', theme: { ...palette, id: selected, version: applied.version, revision: applied.revision ?? 1 } }
+      } catch (error) { return fallback(error instanceof Error ? error.message : 'Theme resources are unavailable') }
     })
   }
 

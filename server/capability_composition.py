@@ -318,6 +318,7 @@ def extension_capability_packages(records, statuses) -> tuple[CapabilityPackage,
     """Index extension-native bindings without copying configuration or secrets."""
     from agent_host.extension_mcp import extension_mcp_connection_id
     from server.extensions.runtime import localized_text
+    from server.extensions.profile import contribution_profile
 
     observed = {item['id']: item for item in statuses}
     packages = []
@@ -327,6 +328,8 @@ def extension_capability_packages(records, statuses) -> tuple[CapabilityPackage,
         contributions = []
         for kind, items in record['manifest']['contributes'].items():
             for item in items:
+                if (contribution_profile(kind, item.get('role')) or {}).get('apply') == 'frontend':
+                    continue
                 state = contribution_status[(kind, item['id'])]
                 qualified_id = state['qualified_id']
                 health = state['health']
@@ -344,6 +347,8 @@ def extension_capability_packages(records, statuses) -> tuple[CapabilityPackage,
                     metadata={'observed_state': status['state'], 'qualified_id': qualified_id,
                               **({'role': 'tts', 'deployment': item['deployment'], 'languages': item['languages'], 'streaming': item['streaming']} if is_voice else {'provider_ids': record['providers'], 'provider_targets': state.get('provider_targets', [])})},
                 ))
+        if not contributions:
+            continue
         packages.append(CapabilityPackage(
             package_id=record['id'], version=record['version'], source='local-wheel', digest=record['digest'],
             trust='external_protocol', contributions=tuple(contributions), enabled=record['enabled'],

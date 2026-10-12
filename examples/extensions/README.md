@@ -1,12 +1,17 @@
 # Experimental extension packages
 
-These source packages exercise TTS, MCP and Agent Skill contribution owners. They are not
+These source packages exercise TTS, MCP, Agent Skill and data-only theme contribution owners. They are not
 published packages or a claim of a stable SDK. Build local wheels, install them
-from Settings → Extensions, then configure, select/enable and restart the
-backend. Removing or disabling a package also takes effect after restart.
+from **Plugins** (also in Settings → Extensions), then configure and select/enable
+them. Pure theme packages apply immediately. Packages with backend contributions
+apply after backend restart; their frontend closes immediately on disable/removal.
 The versioned [Host profile](../../docs/extension_host_profile_v0.1.md) defines the
 accepted subset; broader fields in the protocol draft may be unsupported here.
 
+- `desktop-theme`: Quiet day and Quiet night palettes plus a bounded local image.
+  Enable in Plugins and select in Appearance. Its lifecycle needs no backend
+  restart, venv, pip or package code. A theme mixed with TTS follows the whole-package
+  restart boundary described in the Host profile.
 - `mimo-tts`: one remote speech contribution using the standalone public SDK.
   It makes a single paid request for a synthesis, supports cancellation and
   rejects undeclared languages. The experiment declares **English only**;
@@ -24,7 +29,7 @@ accepted subset; broader fields in the protocol draft may be unsupported here.
   Amadeus semantic memory. Retain or explicitly delete its data when removing it.
 
 - `handoff-skill`: declarative SKILL.md plus a report-layout reference. Install once,
-  choose Codex/ACP/Pi, then restart. Updating or removing its installed revision
+  choose Codex/ACP/Pi, then restart the backend. Updating or removing its installed revision
   requires a new Agent session; unchanged revisions resume normally. Resources
   grant no additional write/shell permissions. Native tests use real processes
   with a controlled local model; they do not certify LLM selection quality.
@@ -46,14 +51,15 @@ python -m pip wheel --no-build-isolation --no-deps --no-index examples/extension
 python -m pip wheel --no-build-isolation --no-deps --no-index examples/extensions/fish-audio -w build/extension-examples
 python -m pip wheel --no-build-isolation --no-deps --no-index examples/extensions/handoff-skill -w build/extension-examples
 python -m pip wheel --no-build-isolation --no-deps --no-index examples/extensions/csv-audit-skill -w build/extension-examples
+python -m pip wheel --no-build-isolation --no-deps --no-index examples/extensions/desktop-theme -w build/extension-examples
 ```
 
 The canonical SDK source and offline build command live in
 [Amadeus-Extensions](https://github.com/Code-Amadeus/Amadeus-Extensions/tree/codex/extension-protocol-review/sdk/python).
 A wheel manifest is inspected without importing package code. The notes package
 does not need the Runner protocol: its native runtime is MCP, managed by its
-selected Provider. All share installation identity, configuration, restart
-semantics, removal and the Host's lifecycle diagnostics.
+selected Provider. All share installation identity, configuration, removal and
+the Host's lifecycle diagnostics; application timing follows the package owners.
 For Skills, applying the changed selection and restoring an old Agent session
 are separate steps: only unchanged selected resource revisions may resume.
 

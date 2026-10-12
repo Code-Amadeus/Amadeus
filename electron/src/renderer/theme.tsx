@@ -1,68 +1,60 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { desktopCatalogFields } from '../shared/configCatalog.js'
-import { startupValue } from '../shared/startupSettings.js'
+import type { BuiltinTheme, DesktopThemeState } from '../shared/extensionTheme.js'
+import { createThemeApplication } from './themeApplication.js'
 
-export type UiTheme = 'classic' | 'wallpaper-slice'
-
-const DESKTOP_THEME_KEY = 'AMADEUS_UI_THEME'
+export type UiTheme = BuiltinTheme
+const DEFAULT_THEME = desktopCatalogFields.AMADEUS_UI_THEME.default as UiTheme
 const LOCAL_THEME_KEY = 'amadeus.ui.theme'
-
 interface ThemeContextValue {
   theme: UiTheme
-  setTheme: (theme: UiTheme) => Promise<void>
+  selection: string
+  reason: string
+  appliedVersion?: string
+  setTheme: (theme: string) => Promise<void>
 }
-
-const ThemeContext = createContext<ThemeContextValue>({
-  theme: desktopCatalogFields.AMADEUS_UI_THEME.default as UiTheme,
-  setTheme: async () => {},
-})
-
-function normalizeTheme(value: unknown): UiTheme {
-  return desktopCatalogFields.AMADEUS_UI_THEME.options!.some(option => (typeof option === 'string' ? option : option.value) === value)
-    ? value as UiTheme : desktopCatalogFields.AMADEUS_UI_THEME.default as UiTheme
-}
-
-function applyTheme(theme: UiTheme): void {
-  document.documentElement.dataset.theme = theme
-  document.documentElement.style.colorScheme = theme === 'wallpaper-slice' ? 'dark' : 'light'
-  void window.amadeus?.setTitleBarTheme(theme).catch(() => {})
-}
+const ThemeContext = createContext<ThemeContextValue>({ theme: DEFAULT_THEME, selection: DEFAULT_THEME, reason: '', setTheme: async () => {} })
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<UiTheme>(() => {
-    const initial = normalizeTheme(localStorage.getItem(LOCAL_THEME_KEY))
-    applyTheme(initial)
-    return initial
+  const [state, setState] = useState<DesktopThemeState>(() => {
+    const cached = localStorage.getItem(LOCAL_THEME_KEY)
+    const base = cached === 'classic' || cached === 'wallpaper-slice' ? cached : DEFAULT_THEME
+    return { selected: base, base, reason: '' }
   })
-
-  useEffect(() => {
-    let active = true
-    void window.amadeus?.getDesktopSettings().then(snapshot => {
-      if (!active || !snapshot) return
-      const saved = startupValue(DESKTOP_THEME_KEY, snapshot, desktopCatalogFields.AMADEUS_UI_THEME.default)
-      if (saved !== undefined) setThemeState(normalizeTheme(saved))
-    }).catch(() => {})
-    return () => { active = false }
+  const application = useMemo(() => createThemeApplication(document), [])
+  const generation = useRef(0)
+  const refresh = useCallback(async () => {
+    const own = ++generation.current
+    if (!window.amadeus) return
+    const next = await window.amadeus.getDesktopTheme()
+    if (next && own === generation.current) setState(next)
   }, [])
-
   useEffect(() => {
-    localStorage.setItem(LOCAL_THEME_KEY, theme)
-    applyTheme(theme)
-  }, [theme])
-
-  const setTheme = useCallback(async (nextTheme: UiTheme) => {
-    const normalized = normalizeTheme(nextTheme)
-    if (!window.amadeus) { setThemeState(normalized); return }
-    const result = await window.amadeus.updateDesktopSettings({ values: { [DESKTOP_THEME_KEY]: normalized } })
+    void refresh().catch(() => {})
+    const remove = window.amadeus?.onDesktopThemeChanged(() => { void refresh().catch(() => {}) })
+    return () => { generation.current++; remove?.() }
+  }, [refresh])
+  useLayoutEffect(() => {
+    try { application.apply(state) }
+    catch {
+      application.dispose()
+      setState({ selected: state.selected, base: state.base, reason: 'The theme could not be displayed. Its base is shown.' })
+    }
+    // Cache only a verified built-in base; extension tokens are never trusted from localStorage.
+    localStorage.setItem(LOCAL_THEME_KEY, state.base)
+    void window.amadeus?.setTitleBarTheme(state.base).catch(() => {})
+  }, [state, application])
+  useEffect(() => () => application.dispose(), [application])
+  const setTheme = useCallback(async (selection: string) => {
+    if (!window.amadeus) {
+      if (selection === 'classic' || selection === 'wallpaper-slice') setState({ selected: selection, base: selection, reason: '' })
+      return
+    }
+    const result = await window.amadeus.updateDesktopSettings({ values: { AMADEUS_UI_THEME: selection } })
     if (!result.ok) throw new Error(result.error || 'Could not save interface theme')
-    setThemeState(normalized)
-  }, [])
-
-  const value = useMemo(() => ({ theme, setTheme }), [theme, setTheme])
+    await refresh()
+  }, [refresh])
+  const value = useMemo(() => ({ theme: state.base, selection: state.selected, reason: state.reason, appliedVersion: state.theme?.version, setTheme }), [state, setTheme])
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
 }
-
-export function useTheme(): ThemeContextValue {
-  return useContext(ThemeContext)
-}
+export function useTheme(): ThemeContextValue { return useContext(ThemeContext) }

@@ -91,6 +91,11 @@ async def _exercise_renderer(page: Any, *, timeout: float) -> dict[str, bool]:
     )
     checks["backend_page_connected"] = True
 
+    await page.get_by_role('button', name='Plugins', exact=True).click()
+    await page.get_by_role('heading', name='Plugins', exact=True).wait_for(state='visible', timeout=timeout_ms)
+    await page.get_by_role('button', name='Install or update local wheel…', exact=True).wait_for(state='visible', timeout=timeout_ms)
+    checks['unified_plugin_navigation_rendered'] = True
+
     await page.get_by_role("button", name="Settings", exact=True).click()
     await page.get_by_role("heading", name="Settings", exact=True).wait_for(
         state="visible", timeout=timeout_ms

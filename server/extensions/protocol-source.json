@@ -1,20 +1,20 @@
 {
   "repository": "https://github.com/Code-Amadeus/Amadeus-Extensions",
-  "commit": "49449a0f3572e74ac7269129c02c5b9a9e685bef",
+  "commit": "223aac577be418301bbe73e02f79d6af59383374",
   "normalization": "UTF-8 text with LF line endings",
   "adaptations": "Validator module help and SCHEMA_PATH only; rules from MANIFEST_NAME onward are identical.",
   "files": [
     {
       "source_path": "schemas/amadeus-extension.v0.schema.json",
       "host_path": "server/extensions/amadeus-extension.v0.schema.json",
-      "source_sha256": "1e0d40824286e8605869a3d805da380da216ccc106cc80d11b30297a9a06b35d",
-      "host_sha256": "1e0d40824286e8605869a3d805da380da216ccc106cc80d11b30297a9a06b35d"
+      "source_sha256": "d8a47722fe2a154b5d92c0411f21f4e06bd29885c18d374ba934feb8dc9641f7",
+      "host_sha256": "d8a47722fe2a154b5d92c0411f21f4e06bd29885c18d374ba934feb8dc9641f7"
     },
     {
       "source_path": "tools/validate_manifest.py",
       "host_path": "server/extensions/manifest.py",
-      "source_sha256": "f6091303ca34b81b24a8f18c8c8017f2be9f51400fff8cecf89c9221c059ef58",
-      "host_sha256": "7141c9c7c33723bed008da8e9d7c5ce7ba203048c53a78af6d22a0774d2a2d2b"
+      "source_sha256": "1faeee78aed8b452397a8ab187884e058a7cc614255370f03431b3fc0838ccd6",
+      "host_sha256": "73e05791e4ba8a50c898707d7c8c32caee104de36b0808d6f3ea781ca9419f64"
     }
   ],
   "sdk": {

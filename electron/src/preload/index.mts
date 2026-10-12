@@ -5,6 +5,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { BackendStartupFailure } from '../shared/characterStartup.js'
 import type { ExtensionMutationResult, ExtensionRemovalOptions, ExtensionUpdate } from '../shared/extensions.js'
+import type { DesktopThemeState } from '../shared/extensionTheme.js'
 
 type WorkPreviewBounds = { x: number; y: number; width: number; height: number }
 type WorkPreviewListener = (payload: Record<string, unknown>) => void
@@ -20,6 +21,11 @@ contextBridge.exposeInMainWorld('amadeus', {
   getBackendStartupFailure: (): Promise<BackendStartupFailure | null> => ipcRenderer.invoke('backend-startup.failure'),
   recoverCharacterStartup: (): Promise<{ ok: boolean; saved?: boolean; error?: string; settings?: Record<string, unknown>; failure?: BackendStartupFailure | null }> => ipcRenderer.invoke('backend-startup.recover-character'),
   getDesktopSettings: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('desktop-settings.get'),
+  getDesktopTheme: (): Promise<DesktopThemeState | null> => ipcRenderer.invoke('desktop-theme.get'),
+  onDesktopThemeChanged: (listener: () => void): (() => void) => {
+    ipcRenderer.on('desktop-theme.changed', listener)
+    return () => ipcRenderer.removeListener('desktop-theme.changed', listener)
+  },
   setTitleBarTheme: (theme: 'classic' | 'wallpaper-slice'): Promise<boolean> => ipcRenderer.invoke('window-theme.set', theme),
   getCompanionPortraitStatus: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('companion-portraits.status'),
   updateDesktopSettings: (update: {
