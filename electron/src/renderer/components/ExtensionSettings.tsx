@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ExtensionSummary, ExtensionMutationResult } from '../../shared/extensions.js'
 import { extensionDisclosure } from '../../shared/extensions.js'
+import { extensionNeedsAgent } from '../../shared/extensionProfile.js'
 import { useI18n } from '../i18n'
 import { CardShell, SettingsButton, SettingsField, StatusPill } from './SettingsPrimitives'
 import { canLeaveSettingsEditors, DISCARD_CONNECTION_CHANGES, type SettingsEditorState } from './settingsDraft'
@@ -15,13 +16,16 @@ interface Props {
   available: boolean
   encryptionAvailable: boolean
   selectedVoiceBackend: string
+  selectedTheme?: string
+  appliedThemeVersion?: string
+  onOpenAppearance?: () => void
   onSettingsChanged: (settings: Record<string, unknown>) => void
   onRestartRequired: () => void
   onOpenVoice: () => void
   onEditorStateChange?: (state: SettingsEditorState) => void
 }
 
-export default function ExtensionSettings({ extensions, runtime, providers, connected, available, encryptionAvailable, selectedVoiceBackend,
+export default function ExtensionSettings({ extensions, runtime, providers, connected, available, encryptionAvailable, selectedVoiceBackend, selectedTheme, appliedThemeVersion, onOpenAppearance,
   onSettingsChanged, onRestartRequired, onOpenVoice, onEditorStateChange }: Props) {
   const { locale, t } = useI18n()
   const [selected, setSelected] = useState<ExtensionSummary | null>(null)
@@ -62,14 +66,16 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
     if (result.cancelled) return false
     if (!result.ok) throw new Error(result.error || failure)
     if (result.settings) onSettingsChanged(result.settings)
-    onRestartRequired()
-    setNotice('Saved for the next backend start; the current runtime did not change.')
+    if (result.settings?.restartRequired) onRestartRequired()
+    // This is an operation receipt. Package cards own the changing applied state.
+    setNotice('Saved. Current application status is shown on each package.')
     return true
   }
   const install = async () => {
     if (!window.amadeus || !canLeave()) return
     setBusy(true)
     setError('')
+    setNotice('')
     try {
       if (complete(await window.amadeus.installExtension(), 'Could not install extension')) close()
     } catch (reason) { setError(reason instanceof Error ? reason.message : t('Could not install extension')) }
@@ -79,6 +85,7 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
     if (!window.amadeus || !selected || !draft) return
     setBusy(true)
     setError('')
+    setNotice('')
     try {
       if (complete(await window.amadeus.updateExtension(extensionUpdate(selected, draft)), 'Could not save extension')) close()
     } catch (reason) { setError(reason instanceof Error ? reason.message : t('Could not save extension')) }
@@ -88,6 +95,7 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
     if (!window.amadeus || !canLeave()) return
     setBusy(true)
     setError('')
+    setNotice('')
     try {
       if (complete(await window.amadeus.removeExtension(id, { deleteData: deleteSavedData }), 'Could not remove extension')) close()
     } catch (reason) { setError(reason instanceof Error ? reason.message : t('Could not remove extension')) }
@@ -100,8 +108,8 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
   return <div className="settings-embedded-stack extension-settings">
     <CardShell vertical>
       <div className="settings-note-title">{t('Local community packages')}</div>
-      <div className="settings-note-description">{t('Install a local Python wheel from an author you trust. Extension code runs on this computer. Installation, configuration, enablement and removal apply after a backend restart.')}</div>
-      <div className="settings-note-description">{t('This pilot supports TTS, MCP servers and Agent Skills. Install once, then select compatible Agents. Main Chat has no tool or Skill access.')}</div>
+      <div className="settings-note-description">{t('Install a local wheel from an author you trust. Frontend-only packages apply immediately. Packages with backend contributions apply together after backend restart.')}</div>
+      <div className="settings-note-description">{t('This pilot supports themes, TTS, MCP servers and Agent Skills. Install once, then choose a theme, voice or compatible Agents. Main Chat has no tool or Skill access.')}</div>
       <div className="settings-form-actions-end"><SettingsButton tone="primary" disabled={!available || busy} onClick={() => void install()}>{t(busy && !selected ? 'Working…' : 'Install or update local wheel…')}</SettingsButton></div>
     </CardShell>
     {!available ? <div className="settings-field-description">{t('Extension management is available in the Electron app.')}</div> : null}
@@ -121,12 +129,14 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
       </CardShell>
       const observed = connected ? runtime.find(item => item.id === extension.id) : undefined
       const voices = extension.manifest.contributes.voice_backend || []
+      const themes = extension.manifest.contributes.theme || []
+      const frontend = extension.application === 'frontend'
       const nativeContributions = [
         ...(extension.manifest.contributes.mcp_server || []).map(item => ({ ...item, kind: 'mcp_server', label: 'MCP' })),
         ...(extension.manifest.contributes.skill || []).map(item => ({ ...item, kind: 'skill', label: 'Skill' })),
       ]
       const selectedVoice = voices.some(voice => `${extension.id}/${voice.id}` === selectedVoiceBackend)
-      const savedState = extension.pendingRemoval ? 'Removal pending restart' : extension.enabled ? 'Enabled on startup' : 'Disabled'
+      const savedState = extension.pendingRemoval ? (frontend ? 'Cleanup pending' : 'Removal pending restart') : extension.enabled ? (frontend ? 'Enabled' : 'Enabled on startup') : 'Disabled'
       return <CardShell vertical key={extension.id}>
         <div className="extension-card-heading">
           <div className="min-w-0"><h4 className="settings-card-title">{extensionText(extension.manifest.display_name, locale, extension.id)}</h4>
@@ -139,11 +149,20 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
         </details>
         <div className="settings-connection-facts">
           <span><strong>{t('Saved state')}:</strong> {t(savedState)}</span>
-          <span><strong>{t('Current backend')}:</strong> <StatusPill ok={observed?.state === 'active'} tone={!observed ? 'neutral' : undefined}>{t(extensionRuntimeLabel(observed?.state))}</StatusPill></span>
+          {frontend ? <span><strong>{t('Current appearance')}:</strong> {t(extension.applicationError ? 'Unavailable' : extension.enabled && extension.appliedRevision === extension.revision ? 'Applied' : 'Disabled')}</span>
+            : <span><strong>{t('Current backend')}:</strong> <StatusPill ok={observed?.state === 'active'} tone={!observed ? 'neutral' : undefined}>{t(extensionRuntimeLabel(observed?.state))}</StatusPill></span>}
+          {extension.revision !== undefined ? <span>{t('Saved revision')}: {extension.revision} · {t('Loaded revision')}: {extension.appliedRevision ?? '—'}</span> : null}
           {observed && observed.version !== extension.version ? <span>{t('Running version')}: {observed.version}</span> : null}
         </div>
+        {extension.frontendSuppressed && extension.backendStillRunning ? <div role="status" className="settings-field-description">{t('Frontend access is closed; the previous backend still runs until restart.')}</div> : null}
+        {extension.applicationError ? <div role="alert" className="settings-form-error">{extension.applicationError}</div> : null}
         {observed?.detail ? <div className="settings-field-description extension-detail">{t(observed.detail)}</div> : null}
         <ul className="extension-contributions" aria-label={t('Contributions')}>
+          {themes.map(theme => <li key={`theme-${theme.id}`}>
+            <strong>{t('Theme')} · {extensionText(theme.title, locale, theme.id)}</strong>
+            <div>{t('Base theme')}: {t(theme.base === 'classic' ? 'Classic light' : 'Wallpaper slice')}</div>
+            {selectedTheme === `${extension.id}/${theme.id}` ? <div>{t('Saved theme')}{appliedThemeVersion ? ` · ${t('Running version')}: ${appliedThemeVersion}` : ` · ${t('Unavailable')}`}</div> : null}
+          </li>)}
           {voices.map(voice => <li key={`voice-${voice.id}`}>
             <strong>{t('Speech synthesis')} · {extensionText(voice.title, locale, voice.id)}</strong>
             <div>{t(voice.deployment === 'remote' ? 'Remote speech service' : 'Local speech engine')} · {t('Declared languages')}: {(voice.languages || []).join(', ')}</div>
@@ -161,13 +180,14 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
           </li>)}
         </ul>
         {removeCandidate === extension.id && selected?.id !== extension.id ? <div className="settings-form-remove" role="group" aria-label={t('Remove extension')}>
-          <span>{t('Remove this package after the backend restarts?')}</span>
+          <span>{t(frontend ? 'Remove this package now?' : 'Remove this package after the backend restarts?')}</span>
           {selectedVoice ? <div className="settings-field-description extension-removal-data">{t('This package contains the saved speech engine. After restarting, speech is unavailable while text responses continue. Choose an enabled voice to restore speech.')}</div> : null}
-          <div className="extension-removal-data"><div className="settings-field-description">{t('After restart, package code and saved credentials are removed. Its saved data is kept unless you choose to delete it. Retaining data does not keep the extension running.')}</div>
+          <div className="extension-removal-data"><div className="settings-field-description">{t(frontend ? 'Package resources are removed now. Saved data is kept unless you choose to delete it.' : 'After restart, package code and saved credentials are removed. Its saved data is kept unless you choose to delete it. Retaining data does not keep the extension running.')}</div>
             <label><input type="checkbox" checked={deleteData} disabled={busy} onChange={event => setDeleteData(event.target.checked)} />{t('Also delete this extension’s saved data')}</label></div>
           <SettingsButton disabled={busy} onClick={() => setRemoveCandidate('')}>{t('Keep extension')}</SettingsButton>
           <SettingsButton tone="danger" disabled={busy} onClick={() => void remove(extension.id)}>{t('Confirm remove')}</SettingsButton>
         </div> : <div className="settings-form-actions-end">
+          {themes.length ? <SettingsButton tone="quiet" disabled={busy} onClick={onOpenAppearance}>{t('Open appearance settings')}</SettingsButton> : null}
           {voices.length ? <SettingsButton tone="quiet" disabled={busy} onClick={onOpenVoice}>{t('Open voice settings')}</SettingsButton> : null}
           <SettingsButton disabled={!available || busy || extension.pendingRemoval} onClick={() => edit(extension)}>{t('Configure extension')}</SettingsButton>
           <SettingsButton tone="danger" disabled={!available || busy || extension.pendingRemoval} onClick={() => { if (canLeave()) { close(); setRemoveCandidate(extension.id) } }}>{t('Remove')}</SettingsButton>
@@ -179,7 +199,7 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
       <div className="settings-connection-editor-heading"><h4 className="settings-card-title">{extensionText(selected.manifest.display_name, locale, selected.id)}</h4>
         <div className="settings-card-description">{selected.id} · {selected.version}</div></div>
       <fieldset className="settings-form-body" disabled={busy}>
-        <SettingsField id="extension-enabled" label="Enable extension" description="Applies after saving and restarting the backend.">
+        <SettingsField id="extension-enabled" label="Enable extension" description={selected.application === 'frontend' ? 'Applies immediately after saving.' : 'Applies after saving and restarting the backend.'}>
           <label className="settings-form-switch"><input id="extension-enabled" type="checkbox" checked={draft.enabled} onChange={event => change({ enabled: event.target.checked })} /><span>{t(draft.enabled ? 'On' : 'Off')}</span></label>
         </SettingsField>
         {!draft.enabled && (selected.manifest.contributes.voice_backend || []).some(voice => `${selected.id}/${voice.id}` === selectedVoiceBackend) ? <div className="settings-field-description">{t('This package contains the saved speech engine. After restarting, speech is unavailable while text responses continue. Choose an enabled voice to restore speech.')}</div> : null}
@@ -210,7 +230,7 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
                 onChange={event => change({ values: { ...draft.values, [key]: event.target.value } })} />}
           </SettingsField>
         })}
-        {selected.manifest.contributes.mcp_server?.length || selected.manifest.contributes.skill?.length ? <section className="settings-form-section">
+        {extensionNeedsAgent(selected.manifest) ? <section className="settings-form-section">
           <h4 className="settings-card-title">{t('Compatible Work Providers')}</h4>
           <p className="settings-field-description">{t('Select the Agents that may use this package. Changes apply after restarting the backend. Skill updates or removal require a new Agent session; existing context cannot be erased by deleting files.')}</p>
           <div className="settings-form-provider-choices">{compatibleProviders.map(provider => <label key={provider.provider_id}>
@@ -220,7 +240,7 @@ export default function ExtensionSettings({ extensions, runtime, providers, conn
           {missingProviders.map(id => <div key={id} className="extension-unavailable-binding"><span>{id} · {t('Compatibility unavailable')}</span><SettingsButton tone="quiet" onClick={() => change({ providers: draft.providers.filter(value => value !== id) })}>{t('Remove binding')}</SettingsButton></div>)}
         </section> : null}
       </fieldset>
-      <div className="settings-form-footer"><div className="settings-form-save-hint">{t('Save, then restart the backend to apply. The current runtime keeps its existing extension state.')}</div>
+      <div className="settings-form-footer"><div className="settings-form-save-hint">{t(selected.application === 'frontend' ? 'Save to apply immediately without restarting the backend.' : 'Save, then restart the backend to apply. The current runtime keeps its existing extension state.')}</div>
         <div className="settings-form-actions-end"><SettingsButton tone="quiet" disabled={busy} onClick={() => { if (canLeave()) close() }}>{t('Cancel')}</SettingsButton>
           <button type="submit" className="settings-button" data-tone="primary" disabled={busy || !dirty}>{t(busy ? 'Saving…' : 'Save extension')}</button></div>
       </div>

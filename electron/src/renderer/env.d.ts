@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import type { BackendStartupFailure } from '../shared/characterStartup'
 import type { ExtensionMutationResult, ExtensionRemovalOptions, ExtensionUpdate } from '../shared/extensions'
+import type { DesktopThemeState } from '../shared/extensionTheme'
 
 export declare global {
   interface WorkPreviewDescriptor {
@@ -39,6 +40,8 @@ export declare global {
     getBackendStartupFailure: () => Promise<BackendStartupFailure | null>
     recoverCharacterStartup: () => Promise<{ ok: boolean; saved?: boolean; error?: string; settings?: Record<string, unknown>; failure?: BackendStartupFailure | null }>
     getDesktopSettings: () => Promise<Record<string, unknown> | null>
+    getDesktopTheme: () => Promise<DesktopThemeState | null>
+    onDesktopThemeChanged: (listener: () => void) => () => void
     setTitleBarTheme: (theme: 'classic' | 'wallpaper-slice') => Promise<boolean>
     getCompanionPortraitStatus: () => Promise<Record<string, unknown> | null>
     updateDesktopSettings: (update: {

@@ -12,7 +12,7 @@ import { stopElectronSliceHost, syncElectronSliceHost } from './wallpaperSlice'
 import { createProjectionController } from './projectionController'
 import appIconUrl from '@assets/icons/app/app_icon.png'
 
-export type Page = 'chat' | 'vn' | 'backend' | 'settings'
+export type Page = 'chat' | 'vn' | 'backend' | 'settings' | 'plugins'
 
 const WORK_FOCUS_RUN_KEY = 'amadeus.work.focusRunId'
 const WORK_FOCUS_ACTION_KEY = 'amadeus.work.focusAction'
@@ -21,7 +21,7 @@ const WORK_FOCUS_CWD_KEY = 'amadeus.work.focusCwd'
 
 function initialPage(): Page {
   const page = new URLSearchParams(window.location.search).get('page')
-  if (page === 'vn' || page === 'backend' || page === 'settings') {
+  if (page === 'vn' || page === 'backend' || page === 'settings' || page === 'plugins') {
     return page
   }
   return 'chat'
@@ -67,9 +67,10 @@ function AmadeusApp() {
   const settingsNavigationGuard = useRef<(() => boolean) | null>(null)
   const registerSettingsGuard = useCallback((guard: (() => boolean) | null) => { settingsNavigationGuard.current = guard }, [])
   const handleNavigate = useCallback((p: Page) => {
-    if (p !== 'settings' && settingsNavigationGuard.current && !settingsNavigationGuard.current()) return
+    if (p === page) return
+    if (settingsNavigationGuard.current && !settingsNavigationGuard.current()) return
     setPage(p)
-  }, [])
+  }, [page])
 
   useEffect(() => {
     document.documentElement.classList.toggle('desktop-work-overlay', desktopProjection)
@@ -246,11 +247,17 @@ function AmadeusApp() {
           renderActive={renderActive} wallpaperActive={wallpaperActive}
           onToggleRender={handleToggleRender} onToggleWallpaper={handleToggleWallpaper}
         />
-        <div className="flex-1 flex flex-col min-w-0" style={{ backgroundColor: 'var(--bg)' }}>
+        <div className="desktop-main-content flex-1 flex flex-col min-w-0">
           {page === 'chat' && <ChatPage send={send} subscribe={subscribe} connected={connected} renderActive={Boolean(renderAssetUrl)} renderAssetUrl={renderAssetUrl} />}
           {page === 'vn' && <VNPage send={send} subscribe={subscribe} connected={connected} />}
           {page === 'backend' && <BackendPage projections={projections} send={send} subscribe={subscribe} connected={connected} renderActive={renderActive} wallpaperActive={wallpaperActive} />}
-          {page === 'settings' && <SettingsPage send={send} subscribe={subscribe} connected={connected} reconnectBackend={reconnect} onNavigationGuardChange={registerSettingsGuard} />}
+          {(page === 'settings' || page === 'plugins') && <SettingsPage key={page} presentation={page}
+            send={send} subscribe={subscribe} connected={connected} reconnectBackend={reconnect} onNavigationGuardChange={registerSettingsGuard}
+            onOpenPlugins={() => handleNavigate('plugins')} onOpenSettings={section => {
+              if (settingsNavigationGuard.current && !settingsNavigationGuard.current()) return
+              localStorage.setItem('amadeus.settings.section', section)
+              setPage('settings')
+            }} />}
         </div>
       </div>
     </ActiveCharacterContext.Provider>

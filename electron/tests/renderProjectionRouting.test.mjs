@@ -240,7 +240,7 @@ test('sidebar navigation follows the current Settings discard decision', () => {
   for (const accepted of [false, true]) {
     const pages = []
     const fn = bindCallback(productionCallback('../src/renderer/App.tsx', 'AmadeusApp', 'handleNavigate'), {
-      setPage: page => pages.push(page), settingsNavigationGuard: { current: () => accepted },
+      page: 'settings', setPage: page => pages.push(page), settingsNavigationGuard: { current: () => accepted },
     })
     fn('chat'); fn('vn')
     assert.deepEqual(pages, accepted ? ['chat', 'vn'] : [])

@@ -22,7 +22,7 @@ test('Skill binding lists supported Agents and mixed packages require every nati
 const translate = (text, variables = {}) => Object.entries(variables).reduce((value, [key, item]) => value.replaceAll(`{${key}}`, String(item)), text)
 const mocks = { '../i18n': { useI18n: () => ({ locale: 'en-US', t: translate }) }, './FluentIcon': { default: () => null } }
 const extension = (overrides = {}) => ({
-  id: 'org.example.voice', version: '1.0.0', digest: 'a'.repeat(64), enabled: true,
+  id: 'org.example.voice', version: '1.0.0', revision: 1, digest: 'a'.repeat(64), enabled: true,
   pendingRemoval: false, status: 'enabled', restartRequired: false,
   values: { retries: 2, speed: 1.2, style: 'neutral', normalize: true }, secretConfigured: { token: true }, providers: ['pi'],
   manifest: { schema: 'amadeus.extension/v0', id: 'org.example.voice', version: '1.0.0', display_name: { en: 'Example voice', 'zh-CN': '示例语音' }, description: 'Synthetic test package',
@@ -146,7 +146,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve))
 
 test('editor preserves drafts across snapshots and failed saves, then submits typed edits and pending restart', async t => {
   let submitted, settings, restarts = 0, fail = true
-  const page = harness({ updateExtension: async update => { submitted = update; return fail ? { ok: false, error: 'Synthetic save failure' } : { ok: true, settings: { extensions: [extension({ restartRequired: true })] } } } },
+  const page = harness({ updateExtension: async update => { submitted = update; return fail ? { ok: false, error: 'Synthetic save failure' } : { ok: true, settings: { restartRequired: true, extensions: [extension({ revision: 2, restartRequired: true })] } } } },
     { onSettingsChanged: value => { settings = value }, onRestartRequired: () => { restarts++ } })
   t.after(() => page.restore())
   page.button('Configure extension').props.onClick(); page.render()
@@ -198,6 +198,34 @@ test('wheel cancellation retains a draft; compatible Provider choices and secret
   page.button('Confirm remove').props.onClick(); await flush(); page.render()
   assert.equal(removed, 'org.example.voice')
   assert.deepEqual(removalOptions, { deleteData: false })
+})
+
+test('a rejected update replaces previous success feedback without claiming it applied', async t => {
+  let reject = false
+  const page = harness({ installExtension: async () => reject
+    ? { ok: false, error: 'Theme contrast is invalid' }
+    : { ok: true, settings: { extensions: [extension({ revision: 2 })] } } })
+  t.after(() => page.restore())
+  page.button('Install or update local wheel…').props.onClick(); await flush(); page.render()
+  assert.ok(page.find(node => node.props?.role === 'status'))
+  reject = true
+  page.button('Install or update local wheel…').props.onClick(); await flush(); page.render()
+  assert.equal(page.find(node => node.props?.role === 'status'), undefined)
+  assert.equal(page.find(node => node.props?.role === 'alert').props.children, 'Theme contrast is invalid')
+})
+
+test('a save receipt remains accurate when a later backend restart applies the package', async t => {
+  const pending = extension({ revision: 2, appliedRevision: 1, restartRequired: true })
+  const page = harness({ installExtension: async () => ({ ok: true, settings: { restartRequired: true, extensions: [pending] } }) })
+  t.after(() => page.restore())
+  page.button('Install or update local wheel…').props.onClick(); await flush()
+  page.render({ extensions: [pending] })
+  const receipt = page.find(node => node.props?.role === 'status').props.children
+  assert.equal(receipt, 'Saved. Current application status is shown on each package.')
+  page.render({ extensions: [extension({ revision: 2, appliedRevision: 2, restartRequired: false })], connected: true,
+    runtime: [{ id: 'org.example.voice', version: '1.0.0', state: 'active', contributions: [] }] })
+  assert.equal(page.find(node => node.props?.role === 'status').props.children, receipt)
+  assert.equal(page.find(node => node.props?.children === 'Restart required'), undefined)
 })
 
 test('removal requests data deletion only when explicitly selected', async t => {

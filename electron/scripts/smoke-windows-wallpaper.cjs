@@ -21,7 +21,7 @@ app.whenReady().then(async () => {
   assert.equal(managesWindowsWallpaper('win32', external), false, 'Wallpaper startup must not override external host ownership')
   const icon = path.join(resources, 'assets/icons/app/app_icon.ico')
   assert.ok(fs.existsSync(icon), 'Packaged Windows tray icon is missing')
-  const tray = new WindowsWallpaperTray(icon, () => {}, () => {})
+  const tray = new WindowsWallpaperTray(icon, () => {}, () => {}, () => {})
   try {
     assert.equal(tray.hasIcon, true)
     tray.setStatus('preparing')
@@ -33,7 +33,7 @@ app.whenReady().then(async () => {
 
   const missing = path.join(resources, 'missing-icon.ico')
   assert.throws(() => new Tray(missing), /image|path/i, 'Regression premise: a raw missing icon path must fail')
-  const fallback = new WindowsWallpaperTray(missing, () => {}, () => {})
+  const fallback = new WindowsWallpaperTray(missing, () => {}, () => {}, () => {})
   try { assert.equal(fallback.hasIcon, false) }
   finally { fallback.destroy() }
 

@@ -4,8 +4,8 @@
 .vn-player button, .vn-profile-dialog button { min-height: 36px; padding: 7px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; transition: background .15s, border-color .15s; }
 .vn-player button:hover:not(:disabled), .vn-profile-dialog button:hover:not(:disabled) { background: var(--hover); border-color: var(--border-strong); }
 .vn-player button:disabled, .vn-profile-dialog button:disabled { opacity: .45; cursor: not-allowed; }
-.vn-player .vn-primary, .vn-profile-dialog .vn-primary { background: var(--accent); border-color: var(--accent); color: white; font-weight: 600; }
-.vn-player .vn-primary:hover:not(:disabled), .vn-profile-dialog .vn-primary:hover:not(:disabled) { background: var(--accent-hover); color: white; }
+.vn-player .vn-primary, .vn-profile-dialog .vn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent, white); font-weight: 600; }
+.vn-player .vn-primary:hover:not(:disabled), .vn-profile-dialog .vn-primary:hover:not(:disabled) { background: var(--accent-hover); color: var(--on-accent, white); }
 .vn-player :where(input:not([type=checkbox]):not([type=radio]), select, textarea), .vn-profile-dialog :where(input:not([type=checkbox]):not([type=radio]), select, textarea) { width: 100%; min-width: 0; min-height: 38px; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
 .vn-player :is(button, input, select, textarea, summary):focus-visible, .vn-profile-dialog :is(button, input, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .vn-page-heading, .vn-game-bar, .vn-editor-heading, .vn-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
@@ -106,7 +106,7 @@
 .vn-editor-heading { padding: 20px 24px; border-bottom: 1px solid var(--border); }
 .vn-profile-dialog .vn-icon-button { border: 0; font-size: 23px; }
 .vn-editor-fields { display: contents; font-size: 13px; }
-.vn-editor-layout { display: grid; grid-template-columns: 158px minmax(0, 1fr); min-height: 0; background: var(--bg); }
+.vn-editor-layout { display: grid; grid-template-columns: 158px minmax(0, 1fr); min-height: 0; background: var(--surface); }
 .vn-editor-nav { display: flex; flex-direction: column; gap: 4px; padding: 18px 10px; border-right: 1px solid var(--divider); }
 .vn-profile-dialog .vn-editor-nav button { display: flex; align-items: center; gap: 8px; text-align: left; min-height: 34px; padding: 7px 10px; border: 0; background: transparent; color: var(--muted); font-size: 11.5px; }
 .vn-profile-dialog .vn-editor-nav button[aria-selected=true] { background: var(--selected-fill); color: var(--text); font-weight: 650; }
@@ -235,6 +235,8 @@
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
+
+.desktop-main-content { background-color: var(--bg); }
 
 html, body, #root {
   height: 100%;
@@ -459,7 +461,7 @@ html[data-theme='wallpaper-slice'] option {
   background: var(--surface);
 }
 
-html[data-theme='wallpaper-slice'] .setting-card {
+html[data-theme='wallpaper-slice']:not([data-theme-extension]) .setting-card {
   border-color: var(--card-border) !important;
   background:
     linear-gradient(135deg, rgba(11, 35, 40, 0.96), rgba(8, 26, 32, 0.92)),
@@ -476,11 +478,11 @@ html[data-theme='wallpaper-slice'] .settings-section-nav > button[aria-current='
   background: var(--selected-fill) !important;
 }
 
-html[data-theme='wallpaper-slice'] .capability-scene-item {
+html[data-theme='wallpaper-slice']:not([data-theme-extension]) .capability-scene-item {
   background: rgba(9, 31, 36, 0.72);
 }
 
-html[data-theme='wallpaper-slice'] .capability-page-tabs > button[aria-selected='true'] {
+html[data-theme='wallpaper-slice']:not([data-theme-extension]) .capability-page-tabs > button[aria-selected='true'] {
   background: rgba(15, 45, 50, 0.88);
   box-shadow: 0 1px 12px rgba(50, 238, 207, 0.06);
 }
@@ -1604,7 +1606,7 @@ textarea.settings-form-input { display: block; resize: vertical; }
 .settings-form-input:disabled, fieldset:disabled .settings-form-input { opacity: .55; }
 .settings-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); font: inherit; font-size: 12px; line-height: 18px; cursor: pointer; }
 .settings-button:hover:not(:disabled) { background: var(--focus-fill); border-color: var(--border-strong); }
-.settings-button[data-tone='primary'] { background: var(--accent); border-color: var(--accent); color: white; font-weight: 600; }
+.settings-button[data-tone='primary'] { background: var(--accent); border-color: var(--accent); color: var(--on-accent, white); font-weight: 600; }
 .settings-button[data-tone='primary']:hover:not(:disabled) { filter: brightness(1.08); }
 .settings-button[data-tone='quiet'], .settings-button[data-tone='danger'] { border-color: transparent; background: transparent; }
 .settings-button[data-tone='quiet'] { color: var(--muted); }
@@ -6249,3 +6251,10 @@ html[data-theme='wallpaper-slice'] .crt-render-stage {
 .character-prompt-actions button { padding: 7px 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 12px; cursor: pointer; }
 .character-prompt-actions button:disabled { opacity: 0.5; cursor: default; }
 .character-prompt-editor :is(textarea, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Extension surfaces are the same opaque token surfaces the Host validates. */
+html[data-theme-extension] .capability-scene-item { background: var(--surface); }
+html[data-theme-extension] .settings-inline-action[data-tone='danger']:is(:hover, :focus-visible):not(:disabled) {
+  color: var(--danger);
+  background: var(--danger-bg) !important;
+}

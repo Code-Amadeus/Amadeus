@@ -28,13 +28,16 @@ import {
 import { buildVoiceConfigurationCatalog, voiceConfigurationSections } from './voiceConfigurationCatalog'
 import ExtensionSettings from './ExtensionSettings'
 import type { ExtensionSummary } from '../../shared/extensions.js'
-import { extensionLanguageSupported, type ExtensionRuntimeStatus } from './extensionSettingsCatalog'
+import { extensionLanguageSupported, extensionText, type ExtensionRuntimeStatus } from './extensionSettingsCatalog'
 import { buildWorkProviderCatalog } from './providerConnectionCatalog'
 import { buildModelRoleCatalog } from './modelRoleCatalog'
 import { buildGraphicsConfiguration, type GraphicsRuntimeSettings } from './graphicsConfigurationCatalog'
 import { markRuntimeSettingsApplied, persistDesktopRuntimeSettings, runtimeSettingFromDesktopValues, runtimeSettingValue } from './desktopRuntimeSettings'
 
 interface Props {
+  presentation?: 'settings' | 'plugins'
+  onOpenSettings?: (section: 'voice' | 'general') => void
+  onOpenPlugins?: () => void
   onNavigationGuardChange?: (guard: (() => boolean) | null) => void
   send: (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
   subscribe: (method: string, fn: (p: Record<string, unknown>) => void) => () => void
@@ -583,13 +586,18 @@ function BoundaryNote({ title, children }: { title: string; children: ReactNode 
   )
 }
 
-function ThemePicker({ value, onChange, disabled }: { value: UiTheme; onChange: (theme: UiTheme) => void; disabled?: boolean }) {
-  const { t } = useI18n()
-  const choices = desktopCatalogFields.AMADEUS_UI_THEME.options!.map(option => ({
+function ThemePicker({ value, onChange, disabled, extensions }: { value: string; onChange: (theme: string) => void; disabled?: boolean; extensions: ExtensionSummary[] }) {
+  const { t, locale } = useI18n()
+  const choices: Array<{ id: string; base: UiTheme; title: string; description?: string }> = desktopCatalogFields.AMADEUS_UI_THEME.options!.map(option => ({
     id: (typeof option === 'string' ? option : option.value) as UiTheme,
+    base: (typeof option === 'string' ? option : option.value) as UiTheme,
     title: typeof option === 'string' ? option : option.label['en-US'],
     description: typeof option === 'string' ? undefined : option.description?.['en-US'],
   }))
+  choices.push(...extensions.filter(item => !item.pendingRemoval).flatMap(extension => (extension.manifest?.contributes.theme || []).map(item => ({
+    id: `${extension.id}/${item.id}`, base: item.base!, title: extensionText(item.title, locale, item.id),
+    description: `${extensionText(extension.manifest!.display_name, locale)} - ${extension.version}${extension.enabled ? '' : ` - ${t('Disabled')}`}`,
+  }))))
   return (
     <div className="settings-theme-picker" role="radiogroup" aria-label={t(desktopCatalogFields.AMADEUS_UI_THEME.title['en-US'])}>
       {choices.map(choice => {
@@ -602,7 +610,7 @@ function ThemePicker({ value, onChange, disabled }: { value: UiTheme; onChange: 
             aria-checked={selected}
             disabled={disabled}
             className="settings-theme-option"
-            data-preview-theme={choice.id}
+            data-preview-theme={choice.base}
             data-selected={selected ? 'true' : undefined}
             onClick={() => onChange(choice.id)}
           >
@@ -626,10 +634,11 @@ function ThemePicker({ value, onChange, disabled }: { value: UiTheme; onChange: 
   )
 }
 
-export default function SettingsPage({ send, subscribe, connected, reconnectBackend, onNavigationGuardChange }: Props) {
+export default function SettingsPage({ send, subscribe, connected, reconnectBackend, onNavigationGuardChange, presentation = 'settings', onOpenSettings, onOpenPlugins }: Props) {
   const { locale, setLocale, t } = useI18n()
-  const { theme, setTheme } = useTheme()
+  const { selection: selectedTheme, reason: themeReason, appliedVersion: themeVersion, setTheme } = useTheme()
   const [section, setSectionState] = useState<SettingsSection>(() => {
+    if (presentation === 'plugins') return 'extensions'
     const saved = window.localStorage.getItem('amadeus.settings.section')
     if (saved === 'visuals') return 'characters'
     return ['capabilities', 'general', 'characters', 'graphics', 'models', 'voice', 'providers', 'extensions'].includes(String(saved))
@@ -677,8 +686,8 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   const [visionWindowsLoading, setVisionWindowsLoading] = useState(false)
 
   useLayoutEffect(() => { scrollArea.current?.scrollTo({ top: 0 }) }, [section, characterTab, modelsPage])
-  useEffect(() => { window.localStorage.setItem('amadeus.settings.section', section) }, [section])
-  useEffect(() => { window.localStorage.setItem(CHARACTER_SECTION_KEY, characterTab) }, [characterTab])
+  useEffect(() => { if (presentation === 'settings') window.localStorage.setItem('amadeus.settings.section', section) }, [section, presentation])
+  useEffect(() => { if (presentation === 'settings') window.localStorage.setItem(CHARACTER_SECTION_KEY, characterTab) }, [characterTab, presentation])
 
   const refreshDesktop = useCallback(async () => {
     const snapshot = await window.amadeus?.getDesktopSettings()
@@ -1209,7 +1218,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   }, [openCharacters, setSection])
 
   const characterWorkspace = <CharacterPage connected={connected} section={characterTab} onSectionChange={setCharacterTab}
-    voiceSummary={(connected ? config.tts_backend : desktop) ? voiceSummary : ''} onOpenVoice={() => setSection('voice')}
+    voiceSummary={(connected ? config.tts_backend : desktop) ? voiceSummary : ''} onOpenVoice={() => presentation === 'plugins' ? onOpenSettings?.('voice') : setSection('voice')}
     panels={{
       identity: <>
                 <SettingsGroup title="Character roles" detail="Create user roles and choose the role for the next backend start.">
@@ -1256,14 +1265,14 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
       <div style={{ width: section === 'characters' && characterTab === 'appearance' ? '100%' : 'min(100%, 1010px)', padding: '20px 24px 32px' }}>
         <div className="flex items-center justify-between gap-4" style={{ marginBottom: 16 }}>
           <div>
-            <h2 className="settings-page-title">{t('Settings')}</h2>
+            <h2 className="settings-page-title">{t(presentation === 'plugins' ? 'Plugins' : 'Settings')}</h2>
             <div className="settings-page-context">
-              {t(section === 'capabilities' ? 'Shared capabilities, implementations, and scene use.'
+              {t(presentation === 'plugins' ? 'Install once. Manage contributions and their application state here.' : section === 'capabilities' ? 'Shared capabilities, implementations, and scene use.'
                 : 'Runtime controls and desktop connection profiles.')}
             </div>
           </div>
           {restartPending || (section === 'characters' && desktop) ? (
-            <button onClick={() => void restartBackend()} disabled={restarting} className="text-[11px] font-[600] rounded-md disabled:opacity-50" style={{ height: 32, padding: '0 12px', whiteSpace: 'nowrap', flexShrink: 0, color: 'white', background: 'var(--accent)', border: 0 }}>
+            <button onClick={() => void restartBackend()} disabled={restarting} className="text-[11px] font-[600] rounded-md disabled:opacity-50" style={{ height: 32, padding: '0 12px', whiteSpace: 'nowrap', flexShrink: 0, color: 'var(--on-accent, white)', background: 'var(--accent)', border: 0 }}>
               {t(restarting ? 'Restarting…' : restartPending ? 'Restart backend to apply' : 'Restart backend')}
             </button>
           ) : null}
@@ -1284,7 +1293,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
           saving={saving === RETIRED_ROUTE_KEY} onConfirm={confirmRetiredRoute} />
 
         <div className="settings-layout flex gap-6 items-start" style={{ width: '100%' }}>
-          <nav className="settings-section-nav shrink-0 flex flex-col gap-0.5 sticky" style={{ width: 138, top: 16 }} aria-label={t('Settings sections')}>
+          {presentation !== 'plugins' && <nav className="settings-section-nav shrink-0 flex flex-col gap-0.5 sticky" style={{ width: 138, top: 16 }} aria-label={t('Settings sections')}>
             {([
               ['capabilities', 'Capabilities', 'Tiles'],
               ['general', 'General', 'Setting'],
@@ -1299,17 +1308,18 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                 <FluentIcon name={icon} size={14} />{t(label)}
               </button>
             ))}
-          </nav>
+          </nav>}
 
           <main className="settings-main flex-1 min-w-0" style={{ maxWidth: section === 'characters' && characterTab === 'appearance' ? undefined : 760 }}>
             {section === 'characters' ? characterWorkspace : null}
-            {section === 'extensions' ? <SettingsGroup title="Community extensions" detail="Manage locally installed packages and their startup configuration.">
+            {section === 'extensions' ? <SettingsGroup title="Community extensions" detail="Manage installed packages, their contributions and application state.">
               {(desktop?.extensionErrors || []).map((detail, index) => <div key={index} role="alert" className="settings-form-error">{t(detail)}</div>)}
               <ExtensionSettings extensions={desktop?.extensions || []} runtime={connected && Array.isArray(config.extensions) ? config.extensions as ExtensionRuntimeStatus[] : []}
                 providers={providerManifests} connected={connected} available={Boolean(desktop && window.amadeus?.installExtension)} encryptionAvailable={Boolean(desktop?.encryptionAvailable)}
-                selectedVoiceBackend={String(speechBackend?.value || '')}
+                selectedVoiceBackend={String(speechBackend?.value || '')} selectedTheme={selectedTheme} appliedThemeVersion={themeVersion}
+                onOpenAppearance={() => presentation === 'plugins' ? onOpenSettings?.('general') : setSection('general')}
                 onSettingsChanged={settings => setDesktop(settings as unknown as DesktopSettingsSnapshot)} onRestartRequired={() => setRestartPending(true)}
-                onOpenVoice={() => setSection('voice')} onEditorStateChange={extensionEditorChanged} />
+                onOpenVoice={() => presentation === 'plugins' ? onOpenSettings?.('voice') : setSection('voice')} onEditorStateChange={extensionEditorChanged} />
             </SettingsGroup> : null}
             {section === 'capabilities' ? (
               <CapabilitiesPanel capabilities={capabilityProfiles} runtimePackages={runtimePackages} onOpenSection={openCapabilityTarget} />
@@ -1347,10 +1357,12 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                 ) : null}
                 <SettingsGroup title="Appearance" detail="Choose the visual style used across the Electron frontend.">
                   <ThemePicker
-                    value={theme}
+                    value={selectedTheme} extensions={desktop?.extensions || []}
                     disabled={Boolean(desktop?.locked?.AMADEUS_UI_THEME)}
                     onChange={value => void setTheme(value).catch(reason => setError(reason instanceof Error ? reason.message : 'Could not save interface theme'))}
                   />
+                  {themeReason ? <div role="status" className="settings-field-description">{t(themeReason)}<br />{selectedTheme}{themeVersion ? ` - ${t('Running version')}: ${themeVersion}` : ''}</div> : null}
+                  <button className="settings-button" type="button" onClick={() => onOpenPlugins ? onOpenPlugins() : setSection('extensions')}>{t('Manage plugins')}</button>
                 </SettingsGroup>
                 <SettingsGroup title="Characters" detail="Manage personalities, artwork, voice and reference knowledge together.">
                   <button className="character-secondary-button" onClick={() => openCharacters('overview')}>{t('Open Characters')}</button>

@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import http.client
+import hashlib
 import json
 import os
 import re
@@ -35,7 +36,20 @@ SCHEMA = "amadeus.electron-model-less-smoke.v1"
 def model_less_backend_environment(
     base: dict[str, str], *, python_executable: str
 ) -> dict[str, str]:
-    env = dict(base)
+    # The native-key probe opens a temporary main inspector in this isolated
+    # test process. Never forward arbitrary parent secrets into that process.
+    platform_keys = {'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'PATH', 'PATHEXT', 'TEMP', 'TMP',
+                     'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA', 'PROGRAMFILES',
+                     'PROGRAMFILES(X86)', 'COMMONPROGRAMFILES', 'HOMEDRIVE', 'HOMEPATH',
+                     'HOME', 'LANG', 'LC_ALL', 'DISPLAY', 'XAUTHORITY'}
+    test_keys = {'NODE_ENV', 'AMADEUS_SESSION_DIR', 'AMADEUS_WORK_LEDGER_PATH',
+                'AMADEUS_PROVIDER_ACTIVITY_PATH', 'AMADEUS_SERVER_LOG_PATH', 'AMADEUS_DESKTOP_PATH',
+                'AMADEUS_ELECTRON_USER_DATA_DIR', 'AMADEUS_ELECTRON_CACHE_DIR',
+                'WORK_SCRATCH_ROOT', 'WORK_WORKTREE_ROOT', 'WORK_PROJECT_ALLOWLIST',
+                'AMADEUS_PRE_TRANSLATION_ENABLED', 'PYTHONUTF8', 'PYTHONIOENCODING',
+                'AMADEUS_CODE_SHA', 'AMADEUS_WORKSPACE_DIRTY', 'AMADEUS_WORKSPACE_FINGERPRINT',
+                'AMADEUS_BACKEND_AUTH_MODE', 'AMADEUS_BACKEND_TOKEN', 'AMADEUS_BACKEND_INSTANCE_NONCE'}
+    env = {key: value for key, value in base.items() if key.upper() in platform_keys or key in test_keys}
     env.update(
         {
             "AMADEUS_PYTHON": python_executable,
@@ -73,7 +87,76 @@ async def _wait_enabled(locator: Any, *, timeout: float) -> None:
     raise TimeoutError("Chat input did not become enabled after backend connection")
 
 
-async def _exercise_renderer(page: Any, *, timeout: float) -> dict[str, bool]:
+async def _wait_desktop_value(page: Any, key: str, expected: str, *, timeout: float) -> None:
+    # wait_for_function polls Promise truthiness, not its asynchronously resolved
+    # value. Await the IPC result in Python and compare the actual saved value.
+    deadline = time.monotonic() + timeout
+    while True:
+        snapshot = await asyncio.wait_for(page.evaluate("window.amadeus.getDesktopSettings()"),
+                                          timeout=max(0.001, deadline - time.monotonic()))
+        if snapshot.get("values", {}).get(key) == expected:
+            return
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"Desktop setting {key} did not persist the expected value")
+        await asyncio.sleep(0.1)
+
+
+def _frontend_build_identity(directory: Path) -> dict[str, Any]:
+    digest = hashlib.sha256()
+    files = [directory] if directory.is_file() else sorted(file for file in directory.rglob('*') if file.is_file())
+    if not files:
+        raise FileNotFoundError('The frontend must be built before the smoke')
+    for file in files:
+        digest.update((file.name if directory.is_file() else file.relative_to(directory).as_posix()).encode())
+        digest.update(b"\0")
+        digest.update(hashlib.sha256(file.read_bytes()).digest())
+    return {"kind": "packaged-asar" if directory.is_file() else "source-dist", "sha256": digest.hexdigest(), "file_count": len(files)}
+
+
+async def _press_native_theme_recovery(process_id: int, inspector_port: int) -> None:
+    """Exercise the actual Electron input hook in this isolated owned process."""
+    import websockets
+
+    def target() -> str:
+        connection = http.client.HTTPConnection("127.0.0.1", inspector_port, timeout=3)
+        try:
+            connection.request("GET", "/json/list")
+            response = connection.getresponse()
+            targets = json.loads(response.read())
+            if response.status != 200 or len(targets) != 1:
+                raise RuntimeError("The smoke's main inspector is unavailable or ambiguous")
+            address = targets[0]["webSocketDebuggerUrl"]
+            if not address.startswith(f"ws://127.0.0.1:{inspector_port}/"):
+                raise RuntimeError("The smoke inspector must remain on its own loopback port")
+            return address
+        finally:
+            connection.close()
+
+    expression = """(() => {
+      if (process.pid !== %d) throw new Error('Unexpected Electron process');
+      const { BrowserWindow } = process.getBuiltinModule('module').createRequire(process.execPath)('electron');
+      const windows = BrowserWindow.getAllWindows().filter(window => {
+        try { return new URL(window.webContents.getURL()).searchParams.get('mainWindow') === '1' } catch { return false }
+      });
+      if (windows.length !== 1) throw new Error('Main window identity is ambiguous');
+      const contents = windows[0].webContents;
+      contents.sendInputEvent({type:'keyDown',keyCode:'F12',modifiers:['control','shift']});
+      contents.sendInputEvent({type:'keyUp',keyCode:'F12',modifiers:['control','shift']});
+      return true;
+    })()""" % process_id
+    async with websockets.connect(await asyncio.to_thread(target), open_timeout=3) as websocket:
+        await websocket.send(json.dumps({"id": 1, "method": "Runtime.evaluate", "params": {"expression": expression, "returnByValue": True}}))
+        while True:
+            reply = json.loads(await asyncio.wait_for(websocket.recv(), timeout=3))
+            if reply.get('id') == 1:
+                if reply.get('result', {}).get('result', {}).get('value') is not True:
+                    raise RuntimeError('The owned Electron process did not accept the native recovery key')
+                return
+
+
+async def _exercise_renderer(page: Any, *, timeout: float, process_id: int, inspector_port: int) -> dict[str, bool]:
+    from playwright.async_api import expect
+
     timeout_ms = max(1_000, int(timeout * 1_000))
     checks: dict[str, bool] = {}
 
@@ -91,6 +174,23 @@ async def _exercise_renderer(page: Any, *, timeout: float) -> dict[str, bool]:
     )
     checks["backend_page_connected"] = True
 
+    await page.get_by_role('button', name='Plugins', exact=True).click()
+    await page.get_by_role('heading', name='Plugins', exact=True).wait_for(state='visible', timeout=timeout_ms)
+    await page.get_by_role('button', name='Install or update local wheel…', exact=True).wait_for(state='visible', timeout=timeout_ms)
+    checks['unified_plugin_navigation_rendered'] = True
+
+    # Establish an actual transition, checking IPC results before any native key.
+    for theme in ('classic', 'wallpaper-slice'):
+        update = await page.evaluate("theme => window.amadeus.updateDesktopSettings({values:{AMADEUS_UI_THEME:theme}})", theme)
+        if not update.get('ok'):
+            raise RuntimeError(f"Theme setup failed: {update.get('error')}")
+        await expect(page.locator("html")).to_have_attribute("data-theme", theme, timeout=timeout_ms)
+        await _wait_desktop_value(page, 'AMADEUS_UI_THEME', theme, timeout=timeout)
+    await _press_native_theme_recovery(process_id, inspector_port)
+    await expect(page.locator("html")).to_have_attribute("data-theme", "classic", timeout=timeout_ms)
+    await _wait_desktop_value(page, 'AMADEUS_UI_THEME', 'classic', timeout=timeout)
+    checks['theme_recovery_uses_native_keyboard_boundary'] = True
+
     await page.get_by_role("button", name="Settings", exact=True).click()
     await page.get_by_role("heading", name="Settings", exact=True).wait_for(
         state="visible", timeout=timeout_ms
@@ -100,10 +200,7 @@ async def _exercise_renderer(page: Any, *, timeout: float) -> dict[str, bool]:
     await startup_mode.wait_for(state="visible", timeout=timeout_ms)
     for mode in ("window", "wallpaper"):
         await startup_mode.select_option(mode)
-        await page.wait_for_function(
-            "async mode => (await window.amadeus.getDesktopSettings()).values.AMADEUS_WINDOWS_STARTUP_MODE === mode",
-            arg=mode, timeout=timeout_ms,
-        )
+        await _wait_desktop_value(page, 'AMADEUS_WINDOWS_STARTUP_MODE', mode, timeout=timeout)
     desktop = await page.evaluate("window.amadeus.getDesktopSettings()")
     if "AMADEUS_WINDOWS_STARTUP_MODE" in desktop.get("pendingKeys", []):
         raise RuntimeError("startup preference incorrectly requires a backend restart")
@@ -252,6 +349,8 @@ async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                 environment["PYTHONPATH"] = str(ROOT)
             return environment
 
+    if (ROOT / ".env").exists():
+        raise RuntimeError("Use an isolated checkout without .env for the main-inspector GUI smoke")
     started_at = datetime.now(timezone.utc)
     report_root = Path(args.report_dir).resolve()
     run_root = report_root / (
@@ -262,12 +361,15 @@ async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     product = ModelLessElectronProduct(
         run_root=run_root,
         debug_port=int(args.debug_port or _free_port()),
+        main_debug_port=_free_port(),
         no_tts=True,
         identity=code_identity(ROOT),
         packaged_executable=args.packaged_executable.resolve() if args.packaged_executable else None,
     )
     report: dict[str, Any] = {
         "schema": SCHEMA,
+        "launcher_code_identity": product.identity,
+        "frontend_build": _frontend_build_identity(args.packaged_executable.parent / "resources/app.asar" if args.packaged_executable else ROOT / "electron" / "dist"),
         "status": "failed",
         "started_at": started_at.isoformat(),
         "paths": {
@@ -315,7 +417,7 @@ async def run_smoke(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         if product.page is None:
             raise RuntimeError("Electron renderer is unavailable")
         report["checks"].update(
-            await _exercise_renderer(product.page, timeout=float(args.ui_timeout))
+            await _exercise_renderer(product.page, timeout=float(args.ui_timeout), process_id=product.process.pid, inspector_port=product.main_debug_port)
         )
         if product.app_page_errors or product.app_console_errors:
             raise RuntimeError(

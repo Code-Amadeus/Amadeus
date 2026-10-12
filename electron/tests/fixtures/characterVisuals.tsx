@@ -76,6 +76,8 @@ const send = async (method: string, params: Record<string, unknown> = {}): Promi
   throw new Error('Unexpected smoke RPC: ' + method)
 }
 host.amadeus = {
+  getDesktopTheme: async () => ({ selected: 'wallpaper-slice', base: 'wallpaper-slice', reason: '' }),
+  onDesktopThemeChanged: () => () => {},
   getDesktopSettings: async () => desktop,
   getCompanionPortraitStatus: async () => ({ installed: false, state: 'not_installed', emotionCount: 0, frameCount: 0, detail: '' }),
   getChatAvatars: async () => ({ user: '', assistant: '' }),

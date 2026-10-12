@@ -55,6 +55,10 @@ jobs:
           Get-Content $err
           if ($probe.ExitCode -ne 0) { throw "Composer smoke failed: $($probe.ExitCode)" }
 
+      - name: Test native extension theme decoding and paint
+        working-directory: electron
+        run: node -e "require('node:child_process').execFileSync(require('electron'), ['tests/extensionThemeNative.smoke.mjs'], {stdio:'inherit',windowsHide:true,timeout:60000})"
+
       - name: Test offline startup settings GUI
         shell: pwsh
         run: |

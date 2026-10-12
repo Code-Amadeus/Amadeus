@@ -1748,14 +1748,14 @@ export default function ChatPage({ send, subscribe, connected, renderActive, ren
               <button onClick={handleSend} disabled={!connected || !sessionReady || sessionSwitching || (!input.trim() && !pendingVisualAttachment)}
                 className="flex items-center justify-center shrink-0 cursor-pointer transition-colors"
                 style={{
-                  width: 38, height: 38, borderRadius: 19, color: '#FFFFFF',
+                  width: 38, height: 38, borderRadius: 19, color: 'var(--on-accent, #FFFFFF)',
                   backgroundColor: connected && sessionReady && !sessionSwitching && (input.trim() || pendingVisualAttachment) ? 'var(--accent)' : 'var(--border-strong)',
                   border: '1px solid ' + (connected && sessionReady && !sessionSwitching && (input.trim() || pendingVisualAttachment) ? 'var(--accent)' : 'var(--border-strong)'),
                 }}
                 onMouseEnter={e => { if (connected && sessionReady && !sessionSwitching && (input.trim() || pendingVisualAttachment)) (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--accent-hover)' }}
                 onMouseLeave={e => { if (connected && sessionReady && !sessionSwitching && (input.trim() || pendingVisualAttachment)) (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--accent)' }}
               >
-                <FluentIcon name="Send" size={18} color="#FFFFFF" />
+                <FluentIcon name="Send" size={18} color="currentColor" />
               </button>
             </div>
 

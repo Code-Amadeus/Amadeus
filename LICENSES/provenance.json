@@ -398,10 +398,12 @@
       "paths": [
         "server/extensions/manifest.py",
         "server/extensions/amadeus-extension.v0.schema.json",
-        "vendor/extension-sdk/**"
+        "server/extensions/theme-tokens.v0.json",
+        "vendor/extension-sdk/**",
+        "tests/fixtures/extension_theme_colors.json"
       ],
       "source_url": "https://github.com/Code-Amadeus/Amadeus-Extensions",
-      "source_revision": "49449a0f3572e74ac7269129c02c5b9a9e685bef",
+      "source_revision": "Protocol b30df73669c50d95d08fb2cd57c289ecddc959f2; SDK 49449a0f3572e74ac7269129c02c5b9a9e685bef (exact file digests in protocol-source.json)",
       "license_expression": "Apache-2.0",
       "license_evidence": [
         "LICENSES/Apache-2.0.txt"
@@ -409,7 +411,7 @@
       "modified": true,
       "release_action": "include",
       "gate_status": "ready",
-      "notes": "Protocol validator adapts module help and schema location only. SDK wheel is unmodified, built offline from sdk.source_commit; protocol-source.json records separate text/source/binary digests. The pinned source commit is retained in protocol main history by the merge of protocol #1."
+      "notes": "Protocol validator adapts module help and schema location only. SDK wheel is unmodified, built offline from sdk.source_commit; protocol-source.json records separate text/source/binary digests. The SDK source commit is retained in protocol main history. The pinned theme schema/validator source is retained in protocol main history by merge commit bf1a848448a19ed20eca029e8cc3991563e42e95 (PR #2); the contract remains experimental."
     },
     {
       "id": "amadeus-extension-examples",
@@ -429,6 +431,24 @@
       "release_action": "include",
       "gate_status": "ready",
       "notes": "Scoped license for authored examples only; dependencies, voices/models and external assets retain their own rights. Host implementation remains AGPL-3.0."
+    },
+    {
+      "id": "amadeus-extension-protocol-theme-example",
+      "name": "Canonical protocol theme example",
+      "category": "authored-examples",
+      "paths": [
+        "tests/fixtures/extension_protocol_theme.json"
+      ],
+      "source_url": "https://github.com/Code-Amadeus/Amadeus-Extensions",
+      "source_revision": "b30df73669c50d95d08fb2cd57c289ecddc959f2",
+      "license_expression": "MIT-0",
+      "license_evidence": [
+        "LICENSES/Amadeus-Extension-Examples-MIT-0.txt"
+      ],
+      "modified": false,
+      "release_action": "include",
+      "gate_status": "ready",
+      "notes": "Unmodified canonical example used to verify the pinned protocol against Host rendering policy. Exact digest is recorded in protocol-source.json."
     }
   ]
 }

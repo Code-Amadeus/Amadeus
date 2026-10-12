@@ -23,10 +23,15 @@ app.whenReady().then(async () => {
   session.defaultSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] },
     (_request, callback) => callback({ cancel: true }))
   const { DesktopSettingsStore } = await import(pathToFileURL(path.join(root, 'electron/dist/main/desktopSettings.js')).href)
+  const { ExtensionInstaller, ExtensionPackageHelper } = await import(pathToFileURL(path.join(root, 'electron/dist/main/extensions.js')).href)
   const { isWallpaperStartup } = await import(pathToFileURL(path.join(root, 'electron/dist/main/startupMode.js')).href)
   const file = path.join(profile, 'settings.json')
   const store = new DesktopSettingsStore(file, path.join(profile, '.env'))
   const environment = { AMADEUS_UI_THEME: 'classic' }
+  // Exercise the real theme owner without launching Python or a backend.
+  const offlinePython = () => { throw new Error('Offline settings smoke must not start Python') }
+  const extensionHelper = new ExtensionPackageHelper(root, offlinePython, environment)
+  const extensions = new ExtensionInstaller(path.join(profile, 'extensions'), root, store, extensionHelper, offlinePython, environment)
   store.update({}, { values: {
     AMADEUS_UI_LOCALE: 'en-US', AMADEUS_UI_THEME: 'wallpaper-slice', TTS_BACKEND: null, FISH_TTS_MODEL: null, FISH_TTS_LATENCY: null,
     MIMO_TTS_VOICE: null, TTS_API_VOICE: null,
@@ -39,6 +44,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('get-backend-connection', () => null)
   ipcMain.handle('backend-startup.failure', () => null)
   ipcMain.handle('desktop-settings.get', () => store.snapshot(environment))
+  ipcMain.handle('desktop-theme.get', () => extensions.themeState())
   ipcMain.handle('desktop-settings.update', (_event, update) => ({ ok: true, settings: store.update(environment, update) }))
   ipcMain.handle('window-theme.set', () => true)
   ipcMain.handle('chat-avatars.get', () => ({ user: '', assistant: '' }))

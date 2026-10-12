@@ -27,6 +27,7 @@ export type StoredExtension = {
 export type ExtensionRecordValidator = (manifest: ExtensionManifest, values: Record<string, ExtensionConfigValue>) => boolean | 'unavailable'
 
 type StoredDesktopSettings = {
+  themeBase?: 'classic' | 'wallpaper-slice'
   version: 2
   values: Record<string, string>
   encryptedSecrets: Record<string, string>
@@ -357,6 +358,7 @@ function storedSettingsFrom(text: string, validate: ExtensionRecordValidator, er
     encryptedSecrets: cleanRecord(parsed.encryptedSecrets, SECRET_KEYS),
     mcpConnections: cleanStoredMcpConnections(parsed.mcpConnections),
     extensions: extensions.records,
+    ...(parsed.themeBase === 'classic' || parsed.themeBase === 'wallpaper-slice' ? { themeBase: parsed.themeBase } : {}),
     pendingRevisions,
     nextRevision: Math.max(storedNextRevision, highestRevision + 1),
   }
@@ -378,6 +380,8 @@ function writeFileDurably(target: string, text: string): void {
 
 export class DesktopSettingsStore {
   private appliedExtensions = new Map<string, StoredExtension>()
+  private closedFrontends = new Set<string>()
+  private applicationErrors = new Map<string, string>()
   private extensionErrors: string[] = []
   private extensionWarnings = new Set<string>()
   private validatedExtensionIds = new Set<string>()
@@ -539,6 +543,7 @@ export class DesktopSettingsStore {
     const application = this.extensionChangeNeedsRestart(record) ? 'backend_restart' : 'frontend'
     restartRequired = restartRequired && application === 'backend_restart' && (record.pendingRemoval || applied?.revision !== record.revision)
     const revisions = { revision: record.revision ?? 1, appliedRevision: applied?.revision, appliedVersion: applied?.version, application,
+      frontendSuppressed: this.closedFrontends.has(record.id), applicationError: this.applicationErrors.get(record.id),
       backendStillRunning: Boolean(applied?.enabled && extensionRequiresRestart(applied.manifest)) } as const
     if (!validated) return { id: record.id, version: record.version, digest: record.digest, manifest: null,
       ...revisions,
@@ -561,7 +566,21 @@ export class DesktopSettingsStore {
   }
   storedExtensionRecords(): StoredExtension[] { return Object.values(this.read().extensions) }
   appliedExtensionRecords(): StoredExtension[] { return structuredClone([...this.appliedExtensions.values()]) }
-  acceptExtensionApplication(record: StoredExtension): void { this.appliedExtensions.set(record.id, structuredClone(record)) }
+  acceptExtensionApplication(record: StoredExtension): void {
+    this.appliedExtensions.set(record.id, structuredClone(record))
+    const desired = this.read().extensions[record.id]
+    if (record.enabled && desired?.enabled && desired.revision === record.revision) this.closedFrontends.delete(record.id)
+    this.applicationErrors.delete(record.id)
+  }
+  extensionFrontendClosed(id: string): boolean { return this.closedFrontends.has(id) }
+  reportExtensionApplicationError(id: string, error: string): void { this.applicationErrors.set(id, error) }
+  verifiedThemeBase(): 'classic' | 'wallpaper-slice' { return this.read().themeBase ?? 'wallpaper-slice' }
+  rememberThemeBase(base: 'classic' | 'wallpaper-slice'): void {
+    const stored = this.read()
+    if (stored.themeBase === base) return
+    stored.themeBase = base
+    this.write(stored)
+  }
   releaseExtensionApplication(id: string): void { this.appliedExtensions.delete(id) }
   releaseBackendExtensionApplications(): void {
     for (const record of this.appliedExtensions.values()) if (extensionRequiresRestart(record.manifest)) this.appliedExtensions.delete(record.id)
@@ -633,6 +652,7 @@ export class DesktopSettingsStore {
     stored.extensions[record.id] = next
     if (this.extensionChangeNeedsRestart(next, previous)) markPending(stored, [EXTENSIONS_ENV])
     this.write(stored)
+    if (!next.enabled && this.extensionChangeNeedsRestart(next, previous)) this.closedFrontends.add(record.id)
     return this.snapshot(environment)
   }
 
@@ -648,6 +668,7 @@ export class DesktopSettingsStore {
     record.deleteDataOnRemoval = deleteData
     if (this.extensionChangeNeedsRestart(record)) markPending(stored, [EXTENSIONS_ENV])
     this.write(stored)
+    this.closedFrontends.add(id)
     return this.snapshot(environment)
   }
 

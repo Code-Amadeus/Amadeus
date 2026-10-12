@@ -7,7 +7,7 @@
   "scripts": {
     "postinstall": "install-electron && npm ci --ignore-scripts --prefix ../agent_host/pi_runtime",
     "generate:config": "node scripts/generate-config-catalog.mjs",
-    "check:config": "node scripts/generate-extension-profile.mjs --check && node scripts/generate-config-catalog.mjs --check && node scripts/check-config-ownership.mjs",
+    "check:config": "node scripts/generate-extension-profile.mjs --check && node scripts/generate-theme-tokens.mjs --check && node scripts/generate-config-catalog.mjs --check && node scripts/check-config-ownership.mjs",
     "test": "npm run check:config && node --experimental-strip-types --test tests/*.test.mjs",
     "dev": "node --experimental-strip-types scripts/dev.mjs",
     "check:extension-sdk": "node --experimental-strip-types scripts/check-extension-sdk.mjs",

@@ -12,6 +12,7 @@ from typing import Any
 from server.extensions.package import validate_config, validate_installed, validate_manifest
 from server.extensions.runner import RunnerClient
 from server.extensions.tts import ExtensionTTSBackend
+from server.extensions.profile import contribution_profile
 from agent_host.skills import SkillCatalog, configure_skills
 
 _current: ExtensionRuntime | None = None
@@ -179,6 +180,8 @@ class ExtensionRuntime:
                 status["state"], status["detail"] = "error", self._mcp_errors[status["id"]]
             for kind, contributions in record["manifest"]["contributes"].items():
                 for contribution in contributions:
+                    if (contribution_profile(kind, contribution.get('role')) or {}).get('apply') == 'frontend':
+                        continue
                     health = "disabled" if not status["enabled"] else "error" if status["state"] in {"needs_config", "incompatible", "error"} else "starting" if status["state"] == "starting" else "ready"
                     detail = status["detail"]
                     if kind == "voice_backend" and client:
@@ -197,7 +200,7 @@ class ExtensionRuntime:
                                 f"{record['id']}/{contribution['id']}" if kind == 'skill' else '')
                     status["contributions"].append({"kind": kind, "id": contribution["id"], "qualified_id": f"{record['id']}/{contribution['id']}", "health": health, "detail": detail,
                                                   **({"provider_targets": provider_targets} if provider_targets is not None else {})})
-            if client is None and status["state"] == "active" and all(item["health"] == "error" for item in status["contributions"]):
+            if client is None and status["state"] == "active" and status['contributions'] and all(item["health"] == "error" for item in status["contributions"]):
                 status["state"], status["detail"] = "error", status["contributions"][0]["detail"]
         return statuses
 

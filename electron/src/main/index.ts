@@ -40,6 +40,7 @@ import { ExtensionInstaller, ExtensionPackageHelper, ExtensionChangeCancelled } 
 import { EXTENSIONS_ENV } from './desktopSettings.js'
 import type { ExtensionRemovalOptions, ExtensionUpdate } from '../shared/extensions.js'
 import { extensionDisclosure } from '../shared/extensions.js'
+import { ExtensionThemeResources } from './extensionThemes.js'
 import { developmentServer, isDevelopmentRendererUrl } from './developmentServer.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -64,10 +65,18 @@ const extensionInstaller = new ExtensionInstaller(path.join(USER_DATA_DIR, 'exte
   desktopSettings, extensionPackageHelper, getPythonCommand, process.env, undefined, async review => {
     const options: Electron.MessageBoxOptions = { type: 'question', title: 'Review extension access',
       message: `${review.operation === 'update' ? `Update ${review.previousVersion} → ${review.manifest.version}` : review.operation === 'enable' ? 'Enable extension' : 'Install extension'}: ${review.manifest.id}`,
-      detail: extensionDisclosure(review.manifest, review), buttons: ['Cancel', 'Confirm'], defaultId: 0, cancelId: 0, noLink: true }
+      detail: extensionDisclosure(review.manifest, review.previousManifest, review), buttons: ['Cancel', 'Confirm'], defaultId: 0, cancelId: 0, noLink: true }
     const result = mainWindow ? await dialog.showMessageBox(mainWindow, options) : await dialog.showMessageBox(options)
     return result.response === 1
-  }, app.isPackaged ? path.join(process.resourcesPath, 'extension-sdk') : undefined)
+  }, app.isPackaged ? path.join(process.resourcesPath, 'extension-sdk') : undefined,
+  new ExtensionThemeResources(async () => {
+    if (!mainWindow || mainWindow.isDestroyed()) throw new Error('System fonts cannot be checked before the main window is available')
+    return mainWindow.webContents.executeJavaScript("(async () => { if (typeof queryLocalFonts !== 'function') throw new Error('System font enumeration is unavailable'); return [...new Set((await queryLocalFonts()).map(font => font.family))] })()", true)
+  }), () => notifyDesktopThemeChanged())
+
+function notifyDesktopThemeChanged(): void {
+  for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed() && isTrustedBackendRenderer(window.webContents)) window.webContents.send('desktop-theme.changed')
+}
 const chatAvatars = new ChatAvatarStore(
   path.join(USER_DATA_DIR, 'assets', 'chat-avatars'),
 )
@@ -541,7 +550,7 @@ function createWindow(): void {
   const themeDefinition = desktopCatalogFields.AMADEUS_UI_THEME
   const startupTheme = startupValue('AMADEUS_UI_THEME', desktopSettings.snapshot(process.env), themeDefinition.default)
   const theme = (themeDefinition.options!.some(option => (typeof option === 'string' ? option : option.value) === startupTheme)
-    ? String(startupTheme) : String(themeDefinition.default)) as keyof typeof TITLE_BAR_THEMES
+    ? String(startupTheme) : desktopSettings.verifiedThemeBase()) as keyof typeof TITLE_BAR_THEMES
   mainWindow = new BrowserWindow({
     width: 1100,
     height: 800,
@@ -566,6 +575,12 @@ function createWindow(): void {
   setMainWindowTheme(theme)
   mainWindow.setMenuBarVisibility(false)
   mainWindow.setTitle('')
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && (input.control || input.meta) && input.shift && input.key.toLowerCase() === 'f12') {
+      event.preventDefault()
+      void restoreBuiltinTheme()
+    }
+  })
   guardTrustedRendererShell(mainWindow)
   mainWindow.on('page-title-updated', (event) => {
     event.preventDefault()
@@ -2132,6 +2147,11 @@ ipcMain.handle('desktop-settings.get', async (event) => {
   await extensionInstaller.refreshValidation()
   return desktopSettings.snapshot(process.env)
 })
+ipcMain.handle('desktop-theme.get', async event => {
+  if (!isTrustedBackendRenderer(event.sender)) return null
+  await extensionInstaller.refreshValidation()
+  return extensionInstaller.themeState()
+})
 ipcMain.handle('window-theme.set', (event, theme: unknown) => {
   if (!isTrustedBackendRenderer(event.sender)) return false
   return setMainWindowTheme(theme)
@@ -2145,7 +2165,9 @@ ipcMain.handle('desktop-settings.update', (event, update: DesktopSettingsUpdate)
     return { ok: false, error: 'Untrusted desktop settings requester.' }
   }
   try {
-    return { ok: true, settings: desktopSettings.update(process.env, update || {}) }
+    const settings = desktopSettings.update(process.env, update || {})
+    if (Object.hasOwn(update?.values || {}, 'AMADEUS_UI_THEME')) notifyDesktopThemeChanged()
+    return { ok: true, settings }
   } catch (error) {
     return {
       ok: false,
@@ -2753,6 +2775,16 @@ app.on('second-instance', (_event, commandLine) => {
   mainWindow.focus()
 })
 
+async function restoreBuiltinTheme(): Promise<void> {
+  try {
+    await extensionInstaller.restoreBuiltinTheme()
+    setMainWindowTheme('classic')
+  } catch (error) {
+    dialog.showErrorBox('Cannot restore the interface theme',
+      `${error instanceof Error ? error.message : String(error)}\nIf AMADEUS_UI_THEME is set by your launch environment, remove that override and restart Amadeus.`)
+  }
+}
+
 function ensureWindowsWallpaperTray(): void {
   if (windowsWallpaperTray) return
   const showMain = () => {
@@ -2761,7 +2793,7 @@ function ensureWindowsWallpaperTray(): void {
     mainWindow?.show()
     mainWindow?.focus()
   }
-  windowsWallpaperTray = new WindowsWallpaperTray(APP_ICON_PATH, showMain, () => app.quit())
+  windowsWallpaperTray = new WindowsWallpaperTray(APP_ICON_PATH, showMain, () => app.quit(), () => { void restoreBuiltinTheme() })
 }
 
 app.whenReady().then(async () => {

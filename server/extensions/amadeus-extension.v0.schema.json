@@ -173,6 +173,12 @@
       "additionalProperties": false,
       "minProperties": 1,
       "properties": {
+        "theme": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/theme" }
+        },
         "voice_backend": {
           "type": "array",
           "minItems": 1,
@@ -202,6 +208,34 @@
           "minItems": 1,
           "maxItems": 8,
           "items": { "$ref": "#/$defs/observer" }
+        }
+      }
+    },
+    "theme": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "contract", "base", "tokens"],
+      "properties": {
+        "id": { "$ref": "#/$defs/contributionId" },
+        "contract": { "const": "amadeus.ui.theme/v0" },
+        "title": { "$ref": "#/$defs/text80" },
+        "summary": { "$ref": "#/$defs/text500" },
+        "base": { "enum": ["classic", "wallpaper-slice"] },
+        "tokens": {
+          "type": "object",
+          "maxProperties": 32,
+          "propertyNames": { "pattern": "^--[a-z][a-z-]{0,63}$" },
+          "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 256 }
+        },
+        "background": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["image", "fit", "dim"],
+          "properties": {
+            "image": { "$ref": "#/$defs/relativePath" },
+            "fit": { "enum": ["cover", "contain"] },
+            "dim": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
         }
       }
     },

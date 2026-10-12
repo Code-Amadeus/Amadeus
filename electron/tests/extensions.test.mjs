@@ -62,6 +62,7 @@ function fixture(t, options = {}) {
       return { ok: true }
     }
     if (command === 'prepare-data-wheel') {
+      if (options.failPreparation) throw new Error('simulated preparation failure')
       const packageDir = path.join(args[2], 'demo')
       fs.mkdirSync(packageDir, { recursive: true })
       fs.writeFileSync(path.join(packageDir, 'amadeus-extension.json'), JSON.stringify(metadata))
@@ -69,10 +70,11 @@ function fixture(t, options = {}) {
       return { ok: true }
     }
     const { config, allow_incomplete } = input
-    if (Object.keys(config).some(key => !metadata.config[key])) throw new Error('configuration contains undeclared fields')
-    if (!allow_incomplete && !config.token) throw new Error('required configuration is missing: token')
+    if (Object.keys(config).some(key => !metadata.config?.[key])) throw new Error('configuration contains undeclared fields')
+    if (!allow_incomplete && metadata.config?.token?.required && !config.token) throw new Error('required configuration is missing: token')
     if (config.streaming !== undefined && typeof config.streaming !== 'boolean') throw new Error('invalid configuration type for streaming')
-    return { ok: true, config: { endpoint: 'https://example.invalid/api', streaming: true, ...Object.fromEntries(Object.entries(config).filter(([key]) => !metadata.config[key].secret)) } }
+    return { ok: true, config: { ...Object.fromEntries(Object.entries(metadata.config || {}).filter(([, field]) => !field.secret && field.default !== undefined).map(([key, field]) => [key, field.default])),
+      ...Object.fromEntries(Object.entries(config).filter(([key]) => !metadata.config[key].secret)) } }
   } }
   const commandCalls = []
   const run = async (command, args, invocation) => {
@@ -705,6 +707,133 @@ test('trusted record validation is asynchronous, isolated and cached; reads neve
   assert.equal(JSON.parse(invocations[0].options.input).allow_incomplete, true)
 })
 
+function themeManifest(base = 'classic', mixed = false) {
+  const value = manifest()
+  value.contributes.theme = [{ id: 'palette', contract: 'amadeus.ui.theme/v0', base, tokens: base === 'classic' ? { '--faint': '#667085', '--selection-bg': '#F2F4F7', '--subtle-fill': '#F2F4F7', '--selected-fill': '#EAECF0', '--focus-fill': '#F2F4F7' } : { '--faint': '#95C5BA', '--accent': '#7DE0CC', '--accent-hover': '#62BDA8', '--selection-bg': 'rgba(84,255,221,.10)' } }]
+  if (!mixed) { value.runtime = { kind: 'none' }; delete value.contributes.voice_backend; value.config = {} }
+  return value
+}
+
+test('frontend theme lifecycle applies immediately and preserves selection and retained data', async t => {
+  const f = fixture(t, { manifest: themeManifest() })
+  await f.installer.install(f.selectedWheel)
+  assert.deepEqual(f.store.snapshot({}).pendingKeys, [])
+  const selected = `${f.metadata.id}/palette`
+  f.store.update({}, { values: { AMADEUS_UI_THEME: selected } })
+  assert.ok((await f.installer.themeState()).reason)
+  await f.installer.update({ id: f.metadata.id, enabled: true })
+  const v1 = f.store.storedExtensionRecords()[0]
+  assert.equal((await f.installer.themeState()).theme.version, '0.1.0')
+  assert.equal((await f.installer.themeState()).base, 'classic')
+  assert.deepEqual(JSON.parse(await f.installer.launchSnapshot()), [])
+  const data = path.join(f.directory, 'extension-data', createHash('sha256').update(f.metadata.id).digest('hex'))
+  fs.writeFileSync(path.join(data, 'sentinel.txt'), 'kept')
+  f.metadata.version = '0.2.0'
+  await f.installer.install(f.selectedWheel)
+  assert.equal((await f.installer.themeState()).theme.version, '0.2.0')
+  assert.ok(!fs.existsSync(path.join(f.root, v1.installId)))
+  assert.equal(fs.readFileSync(path.join(data, 'sentinel.txt'), 'utf8'), 'kept')
+  const saved = f.store.storedExtensionRecords()
+  f.metadata.version = '0.3.0'
+  f.metadata.contributes.theme[0].tokens = { '--text': '#FFFFFF' }
+  await assert.rejects(f.installer.install(f.selectedWheel), /contrast/)
+  assert.deepEqual(f.store.storedExtensionRecords(), saved)
+  assert.equal((await f.installer.themeState()).theme.version, '0.2.0')
+  await f.installer.update({ id: f.metadata.id, enabled: false })
+  assert.equal((await f.installer.themeState()).base, 'classic')
+  assert.equal((await f.installer.themeState()).theme, undefined)
+  await f.installer.remove(f.metadata.id)
+  assert.deepEqual(f.store.storedExtensionRecords(), [])
+  assert.equal((await f.installer.themeState()).selected, selected)
+  assert.equal((await f.installer.themeState()).base, 'classic')
+  assert.ok(fs.existsSync(data))
+  f.metadata.version = '0.2.0'; f.metadata.contributes.theme[0].tokens = themeManifest().contributes.theme[0].tokens
+  await f.installer.install(f.selectedWheel)
+  assert.equal(f.store.extensionRecords()[0].enabled, false)
+  await f.installer.remove(f.metadata.id, { deleteData: true })
+  assert.ok(!fs.existsSync(data))
+  assert.deepEqual(f.store.snapshot({}).pendingKeys, [])
+  assert.deepEqual(f.commandCalls, [])
+  const reloaded = new DesktopSettingsStore(f.file, path.join(f.directory, '.env'))
+  assert.equal(reloaded.verifiedThemeBase(), 'classic')
+})
+
+test('mixed theme and TTS use one loaded snapshot and cannot reopen after disable until restart', async t => {
+  const f = fixture(t, { manifest: themeManifest('wallpaper-slice', true) })
+  await f.installer.cleanupStoppedBackend()
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: f.metadata.id, enabled: true, secrets: { token: 'synthetic' } })
+  f.store.update({}, { values: { AMADEUS_UI_THEME: `${f.metadata.id}/palette` } })
+  assert.equal((await f.installer.themeState()).theme, undefined)
+  const launch = await f.installer.prepareLaunch()
+  const [sent] = JSON.parse(launch.extensions)
+  assert.ok(await f.installer.acceptLaunch(launch, [{ id: sent.id, revision: sent.revision, startup: 'accepted' }]))
+  f.store.markApplied({}, launch.pendingRevisions)
+  const old = f.store.appliedExtensionRecords()[0]
+  f.metadata.version = '0.2.0'
+  f.metadata.contributes.theme[0] = themeManifest().contributes.theme[0]
+  await f.installer.install(f.selectedWheel)
+  assert.equal((await f.installer.themeState()).base, 'wallpaper-slice')
+  assert.equal((await f.installer.themeState()).theme.version, '0.1.0')
+  assert.ok(fs.existsSync(path.join(f.root, old.installId)))
+  await f.installer.update({ id: f.metadata.id, enabled: false })
+  assert.equal((await f.installer.themeState()).theme, undefined)
+  assert.equal(f.store.snapshot({}).extensions[0].backendStillRunning, true)
+  await f.installer.update({ id: f.metadata.id, enabled: true })
+  assert.equal((await f.installer.themeState()).theme, undefined)
+  await f.installer.acceptLaunch(launch, [{ id: sent.id, revision: sent.revision, startup: 'accepted' }]) // A late old receipt cannot reopen it.
+  assert.equal((await f.installer.themeState()).theme, undefined)
+  await f.installer.cleanupStoppedBackend()
+  assert.ok(!fs.existsSync(path.join(f.root, old.installId)))
+  const updated = await f.installer.prepareLaunch(), [next] = JSON.parse(updated.extensions)
+  await f.installer.acceptLaunch(updated, [{ id: next.id, revision: next.revision, startup: 'accepted' }])
+  f.store.markApplied({}, updated.pendingRevisions)
+  assert.equal((await f.installer.themeState()).base, 'classic')
+  assert.equal((await f.installer.themeState()).theme.version, '0.2.0')
+})
+
+test('starting backend keeps its installation even when desired state changes before its receipt', async t => {
+  const f = fixture(t, { manifest: themeManifest('classic', true) })
+  await f.installer.cleanupStoppedBackend()
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: f.metadata.id, enabled: true, secrets: { token: 'synthetic' } })
+  const launch = await f.installer.prepareLaunch(), old = launch.records[0]
+  f.metadata.version = '0.2.0'
+  await f.installer.install(f.selectedWheel)
+  assert.ok(fs.existsSync(path.join(f.root, old.installId)))
+  await f.installer.acceptLaunch(launch, {}) // Unavailable receipt is not proof of process exit.
+  assert.ok(fs.existsSync(path.join(f.root, old.installId)))
+  await f.installer.cleanupStoppedBackend()
+  assert.ok(!fs.existsSync(path.join(f.root, old.installId)))
+})
+
+for (const startsMixed of [true, false]) test(`switching ${startsMixed ? 'mixed to frontend' : 'frontend to mixed'} waits for the same restart boundary`, async t => {
+  const f = fixture(t, { manifest: themeManifest('wallpaper-slice', startsMixed) })
+  await f.installer.cleanupStoppedBackend()
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: f.metadata.id, enabled: true, ...(startsMixed ? { secrets: { token: 'synthetic' } } : {}) })
+  f.store.update({}, { values: { AMADEUS_UI_THEME: `${f.metadata.id}/palette` } })
+  if (startsMixed) {
+    const launch = await f.installer.prepareLaunch(), [sent] = JSON.parse(launch.extensions)
+    await f.installer.acceptLaunch(launch, [{ id: sent.id, revision: sent.revision, startup: 'accepted' }])
+  }
+  assert.equal((await f.installer.themeState()).base, 'wallpaper-slice')
+  const next = themeManifest('classic', !startsMixed)
+  next.version = '0.2.0'
+  // This fixture changes the inspected package as a real replacement wheel would.
+  for (const key of Object.keys(f.metadata)) delete f.metadata[key]
+  Object.assign(f.metadata, next)
+  await f.installer.install(f.selectedWheel)
+  if (!startsMixed) await f.installer.update({ id: f.metadata.id, secrets: { token: 'synthetic' } })
+  assert.equal((await f.installer.themeState()).base, 'wallpaper-slice')
+  assert.equal((await f.installer.themeState()).theme.version, '0.1.0')
+  await f.installer.cleanupStoppedBackend()
+  const launch = await f.installer.prepareLaunch()
+  const accepted = JSON.parse(launch.extensions).map(row => ({ id: row.id, revision: row.revision, startup: 'accepted' }))
+  await f.installer.acceptLaunch(launch, accepted)
+  assert.equal((await f.installer.themeState()).base, 'classic')
+  assert.equal((await f.installer.themeState()).theme.version, '0.2.0')
+})
 
 test('SDK integrity failure and incompatible wheel stop before confirmation or pip', async t => {
   const damaged = fixture(t)
@@ -727,7 +856,7 @@ test('installation disclosure uses inspected bytes and source basename', async t
   assert.equal(review.digest, createHash('sha256').update('synthetic wheel bytes').digest('hex'))
   assert.equal(review.sourceFile, path.basename(f.selectedWheel))
   const { extensionDisclosure } = loadTypeScript(new URL('../src/shared/extensions.ts', import.meta.url))
-  const text = extensionDisclosure(review.manifest, review)
+  const text = extensionDisclosure(review.manifest, review.previousManifest, review)
   assert.ok(text.includes('License: MIT-0') && text.includes(review.digest) && text.includes(review.sourceFile))
   assert.ok(!text.includes(f.directory))
   delete f.metadata.license
@@ -790,7 +919,7 @@ for (const blocked of ['credentials', 'installation', 'configuration']) test(`ha
 test('unavailable or pending-removal frontend-only records do not create backend restart work', async t => {
   const metadata = manifest()
   metadata.runtime = { kind: 'none' }
-  metadata.contributes = { theme: [{ id: 'light', base: 'classic', contract: 'amadeus.ui.theme/v0', tokens: {} }] }
+  metadata.contributes = { theme: [{ id: 'light', base: 'classic', contract: 'amadeus.ui.theme/v0', tokens: { '--faint': '#667085', '--selection-bg': '#F2F4F7', '--subtle-fill': '#F2F4F7', '--selected-fill': '#EAECF0', '--focus-fill': '#F2F4F7' } }] }
   const validatorState = { unavailable: false }
   const f = fixture(t, { manifest: metadata, validatorState })
   await f.installer.install(f.selectedWheel)
@@ -831,4 +960,73 @@ for (const response of [null, [], { error: 'unavailable' }, [{ id: 'org.example.
   assert.equal(await f.installer.acceptLaunch(launch, response), false)
   assert.equal(f.store.snapshot({}).restartRequired, true)
   assert.equal(f.store.snapshot({}).extensions[0].appliedRevision, undefined)
+})
+
+test('theme-independent recovery restores and persists a builtin without uninstalling the package', async t => {
+  const f = fixture(t, { manifest: themeManifest() })
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: f.metadata.id, enabled: true })
+  f.store.update({}, { values: { AMADEUS_UI_THEME: `${f.metadata.id}/palette` } })
+  assert.ok((await f.installer.themeState()).theme)
+  await f.installer.restoreBuiltinTheme()
+  assert.deepEqual(await f.installer.themeState(), { selected: 'classic', base: 'classic', reason: '' })
+  assert.equal(f.store.snapshot({}).values.AMADEUS_UI_THEME, 'classic')
+  assert.equal(f.store.extensionRecords()[0].enabled, true)
+})
+
+
+for (const change of ['drop', 'rename', 'add']) test(`mixed theme ${change} follows the loaded manifest until restart`, async t => {
+  const f = fixture(t, { manifest: themeManifest('wallpaper-slice', true) })
+  await f.installer.cleanupStoppedBackend()
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: f.metadata.id, enabled: true, secrets: { token: 'synthetic' } })
+  const selection = `${f.metadata.id}/palette`
+  f.store.update({}, { values: { AMADEUS_UI_THEME: selection } })
+  const launch = await f.installer.prepareLaunch()
+  await f.installer.acceptLaunch(launch, JSON.parse(launch.extensions).map(row => ({ ...row, startup: 'accepted' })))
+  f.metadata.version = '0.2.0'
+  if (change === 'drop') delete f.metadata.contributes.theme
+  else if (change === 'rename') f.metadata.contributes.theme[0].id = 'new-palette'
+  else f.metadata.contributes.theme.push({ ...f.metadata.contributes.theme[0], id: 'new-palette' })
+  await f.installer.install(f.selectedWheel)
+  assert.equal((await f.installer.themeState()).theme.version, '0.1.0')
+  if (change === 'add') {
+    f.store.update({}, { values: { AMADEUS_UI_THEME: `${f.metadata.id}/new-palette` } })
+    const pending = await f.installer.themeState()
+    assert.equal(pending.theme, undefined)
+    assert.match(pending.reason, /Restart the backend/)
+    f.store.update({}, { values: { AMADEUS_UI_THEME: selection } })
+  }
+  await f.installer.cleanupStoppedBackend()
+  const next = await f.installer.prepareLaunch()
+  await f.installer.acceptLaunch(next, JSON.parse(next.extensions).map(row => ({ ...row, startup: 'accepted' })))
+  const current = await f.installer.themeState()
+  assert.equal(current.theme?.version, change === 'add' ? '0.2.0' : undefined)
+  if (change !== 'add') {
+    assert.equal(current.selected, selection)
+    assert.doesNotMatch(current.reason, /restart/i)
+    assert.match(current.reason, /Choose another theme/)
+  }
+  await f.installer.update({ id: f.metadata.id, enabled: false })
+  assert.equal((await f.installer.themeState()).theme, undefined)
+})
+
+
+test('removed frontend theme keeps its identity and directs the user to Appearance without a restart', async t => {
+  const f = fixture(t, { manifest: themeManifest() })
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: f.metadata.id, enabled: true })
+  const selection = `${f.metadata.id}/palette`
+  f.store.update({}, { values: { AMADEUS_UI_THEME: selection } })
+  assert.equal((await f.installer.themeState()).theme.version, '0.1.0')
+  f.metadata.version = '0.2.0'
+  f.metadata.contributes.theme[0].id = 'replacement'
+  await f.installer.install(f.selectedWheel)
+  const current = await f.installer.themeState()
+  assert.equal(current.selected, selection)
+  assert.equal(current.base, 'classic')
+  assert.equal(current.theme, undefined)
+  assert.doesNotMatch(current.reason, /restart/i)
+  assert.match(current.reason, /Choose another theme/)
+  assert.deepEqual(f.store.snapshot({}).pendingKeys, [])
 })
