@@ -388,6 +388,8 @@
   "History": "历史",
   "Hook": "Hook",
   "Horizontal position": "水平位置",
+  "Host connection tests do not inherit Host credentials. If this server needs environment variables, add them in Settings → Providers → MCP → Encrypted environment values, then save and restart the backend.": "Host 的连接测试不会继承 Host 凭据。如果此服务需要环境变量，请在“设置 → Providers → MCP → 加密环境变量”中补充，然后保存并重启后端。",
+  "Host connection tests use a platform environment allowlist. Add required tokens or toolchain variables here; Host .env credentials are not inherited. Codex and ACP launch MCP independently.": "Host 的连接测试使用平台环境变量白名单。请在此添加所需的令牌或工具链变量；不会继承 Host .env 中的凭据。Codex 和 ACP 独立启动 MCP。",
   "Host-governed interaction with applications": "由宿主管理的应用交互",
   "Host-governed interaction with verified AUIP applications. AUIP is the protocol; application interaction is the user-facing capability.": "由宿主管理与已验证 AUIP 应用的交互。AUIP 是协议，应用交互是面向用户的能力。",
   "Host-managed browser Work Provider; no user-managed connection settings.": "由宿主管理的浏览器工作服务提供方，无需用户维护连接设置。",
