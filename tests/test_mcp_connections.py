@@ -183,4 +183,3 @@ def test_legacy_manual_stdio_migrates_with_real_probe_and_tool_call(tmp_path, mo
             assert Path(facts['cwd']) == tmp_path
         assert 'synthetic-explicit-token' not in str(tested)
     asyncio.run(scenario())
-

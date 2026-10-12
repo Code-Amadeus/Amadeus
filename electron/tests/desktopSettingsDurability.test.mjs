@@ -109,4 +109,3 @@ test('legacy manual MCP bindings survive explicit encrypted environment migratio
   assert.equal(registry.connections[0].command, 'python')
   assert.ok(!JSON.stringify(restarted.snapshot({})).includes('synthetic-explicit-token'))
 })
-
