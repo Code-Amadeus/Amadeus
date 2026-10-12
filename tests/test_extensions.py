@@ -93,6 +93,9 @@ def speak(request, context):
     if request.text == "slow_before_chunk":
         (data / "blocking").write_text("started")
         time.sleep(3)
+    if request.text == "ignore_cancel":
+        yield AudioChunk(24000, b"\\x00\\x40" * 100)
+        time.sleep(120)
     if request.text == "spawn":
         child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
         (data / "child.pid").write_text(str(child.pid))
@@ -467,6 +470,40 @@ def test_slow_cancellation_keeps_runner_and_does_not_consume_crash_budget(record
     finally:
         client.close()
     assert client._pending == {}
+
+
+def test_uncooperative_cancellation_recovers_capacity_without_replaying_speech(record, monkeypatch):
+    import server.extensions.runner as runner
+    monkeypatch.setattr(runner, 'CANCEL_GRACE_TIMEOUT', 1.0)
+    monkeypatch.setattr(runner, 'RESTART_BACKOFF', (.05,))
+    client = RunnerClient(record)
+    try:
+        client.start()
+        wait_until(lambda: client.state == 'active')
+        old = client._process
+        for _ in range(2):
+            stream = client.stream('tone', text='ignore_cancel', language='en', speed=1)
+            next(stream)
+            stream.close()
+        wait_until(lambda: client._process is not old and client.state == 'active', timeout=8)
+        assert old.poll() is not None
+        assert client._cancelled == {}
+        assert len(client._restarts) == 1
+        assert len(list(client.stream('tone', text='normal', language='en', speed=1))) == 2
+        assert Path(record['data_path'], 'requests.txt').read_text().splitlines() == [
+            'ignore_cancel', 'ignore_cancel', 'normal']
+        # A pathological package cannot turn repeated hangs into an unbounded
+        # process-spawn loop. Cancellation recovery uses the existing budget.
+        stream = client.stream('tone', text='ignore_cancel', language='en', speed=1)
+        next(stream)
+        stream.close()
+        wait_until(lambda: 'restart budget exhausted' in client.detail, timeout=8)
+        assert client.state == 'error'
+        with pytest.raises(ExtensionUnavailable):
+            list(client.stream('tone', text='must not dispatch', language='en', speed=1))
+        assert 'must not dispatch' not in Path(record['data_path'], 'requests.txt').read_text()
+    finally:
+        client.close()
 
 
 def test_catalog_retains_unavailable_voice_without_secrets(record):

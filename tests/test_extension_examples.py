@@ -29,6 +29,8 @@ def test_example_package_conforms_to_implemented_host_profile(name):
     manifest_path, = (example / 'src').glob('*/amadeus-extension.json')
     manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
     validate_manifest(manifest, check_environment=False)
+    if sys.platform not in manifest.get('engines', {}).get('platforms', [sys.platform]):
+        pytest.skip('example does not declare support for this platform')
     validate_installed(manifest, manifest_path.parent)
     assert packaging['project']['version'] == manifest['version']
     assert packaging['project']['entry-points']['amadeus.extensions'] == {manifest['id']: manifest_path.parent.name}
