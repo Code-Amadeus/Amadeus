@@ -41,3 +41,16 @@ test('a second launch after startup creates or restores exactly one main window'
   assert.equal(startup.requestMainWindow(false), 'create')
   assert.equal(startup.requestMainWindow(true), 'restore')
 })
+
+for (const fail of [false, true]) {
+  test(`quit settles cleanup and requests exit exactly once (failure=${fail})`, async () => {
+    const lifecycle = new ApplicationLifecycle()
+    const calls = []
+    const failure = Error('synthetic backend cleanup failure')
+    await lifecycle.finishQuit(async () => {
+      calls.push('cleanup')
+      if (fail) throw failure
+    }, error => { assert.equal(error, failure); calls.push('reported') }, () => calls.push('quit'))
+    assert.deepEqual(calls, fail ? ['cleanup', 'reported', 'quit'] : ['cleanup', 'quit'])
+  })
+}

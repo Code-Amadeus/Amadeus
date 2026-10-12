@@ -27,6 +27,7 @@ import { isWallpaperStartup } from './startupMode.js'
 import { managesWindowsWallpaper, recoverWindowsWallpaperHostExit, WINDOWS_WALLPAPER_STOP_TIMEOUT_MS, stopWallpaperForRenderer, WindowsWallpaperSession, windowsWallpaperDependencies } from './windowsWallpaper.js'
 import { WindowsWallpaperTray } from './windowsWallpaperTray.js'
 import { ApplicationLifecycle } from './appLifecycle.js'
+import { stopOwnedBackend } from './backendProcessTree.js'
 import { applicationMenuTemplate } from './applicationMenu.js'
 import { defaultMpsFallbackEnvironment } from './mpsFallbackPolicy.js'
 import { auipStoragePartition } from './auipStorage.js'
@@ -405,24 +406,6 @@ function requestBackendAction(endpoint: string, timeoutMs: number): Promise<bool
   })
 }
 
-function waitForProcessExit(proc: ChildProcess, timeoutMs: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    if (proc.exitCode !== null || proc.signalCode !== null) {
-      resolve(true)
-      return
-    }
-    const timer = setTimeout(() => {
-      proc.off('exit', onExit)
-      resolve(false)
-    }, timeoutMs)
-    const onExit = () => {
-      clearTimeout(timer)
-      resolve(true)
-    }
-    proc.once('exit', onExit)
-  })
-}
-
 function startBackend(): Promise<void> {
   if (backendStarting) return backendStarting
   const snapshot = desktopSettings.snapshot(process.env)
@@ -509,12 +492,8 @@ async function stopBackend(): Promise<void> {
   if (!proc) return
 
   backendStopping = (async () => {
-    const requested = await requestBackendAction('/shutdown', 900)
-    const exited = requested ? await waitForProcessExit(proc, 2500) : false
-    if (!exited && proc.exitCode === null && proc.signalCode === null) {
-      proc.kill()
-      await waitForProcessExit(proc, 1200)
-    }
+    const childrenConfirmed = await stopOwnedBackend(proc, () => requestBackendAction('/shutdown', 900))
+    if (!childrenConfirmed) console.warn('[electron] Backend stopped without confirmed child cleanup')
     if (pythonProcess === proc) pythonProcess = null
     backendOwned = false
   })().finally(() => {
@@ -2821,14 +2800,12 @@ app.on('before-quit', (event) => {
   auipAppSurfacesById.clear()
   if (!applicationLifecycle.beginQuit(Boolean(pythonProcess) || windowsWallpaper !== null)) return
   event.preventDefault()
-  void (async () => {
+  void applicationLifecycle.finishQuit(async () => {
     try { await windowsWallpaper?.stop() }
     catch (error) {
       console.error('[windows-wallpaper] exit cleanup failed:', error)
       dialog.showErrorBox('Amadeus wallpaper recovery', `Wallpaper restoration failed. Recovery will resume on the next wallpaper start.\n${String(error)}`)
     }
     await stopBackend()
-  })().finally(() => {
-    app.quit()
-  })
+  }, error => console.error('[electron] exit cleanup failed:', error), () => app.quit())
 })
