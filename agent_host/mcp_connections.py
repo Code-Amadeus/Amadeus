@@ -259,12 +259,13 @@ async def open_mcp_connection(
 
     if connection.transport == "stdio":
         from mcp.client.stdio import StdioServerParameters, stdio_client
+        from config.subprocess_environment import isolated_child_environment
 
         parameters = StdioServerParameters(
             command=connection.command,
             args=list(connection.arguments),
             cwd=connection.cwd or None,
-            env={**os.environ, **connection.environment},
+            env=isolated_child_environment(extra=connection.environment),
         )
         async with Client(stdio_client(parameters), raise_exceptions=False) as client:
             yield client

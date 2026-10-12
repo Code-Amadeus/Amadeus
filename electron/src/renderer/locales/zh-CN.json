@@ -233,6 +233,7 @@
   "Connection details and diagnostics": "连接详情与诊断",
   "Connection failed": "连接失败",
   "Connection implementation for the optional pure-local Main conversation profile.": "可选纯本地主对话配置所使用的连接实现。",
+  "Connection tests and Pi use a platform environment allowlist. Add every required token or toolchain variable here; Host .env variables are not inherited automatically.": "连接测试和 Pi 使用平台环境变量白名单。请在此添加所需的令牌及工具链变量；不会自动继承 Host 的 .env 变量。",
   "Connects to Luna text only; VN behavior still uses the selected experimental profile.": "仅连接 Luna 原文流；VN 的行为仍使用当前选定的实验配置。",
   "Consumers": "使用方",
   "Continuous visual observation": "持续视觉观察",

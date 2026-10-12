@@ -150,3 +150,37 @@ def test_connection_handler_lists_sanitized_state_and_only_discovers_tools() -> 
         assert calls == ["connect", "list:"]
 
     asyncio.run(scenario())
+
+
+def test_legacy_manual_stdio_migrates_with_real_probe_and_tool_call(tmp_path, monkeypatch):
+    from pathlib import Path
+    import sys
+    from agent_host.mcp_connections import open_mcp_connection
+    record = tmp_path / 'child.json'
+    peer = Path(__file__).parent / 'fixtures/manual_mcp_environment.py'
+    monkeypatch.setenv('FIXTURE_TOKEN', 'synthetic-explicit-token')
+    monkeypatch.setenv('UNRELATED_HOST_CREDENTIAL', 'synthetic-host-secret')
+    # Original registry shape, with no extension metadata or explicit bindings.
+    raw = {'version': 1, 'connections': [{'id': 'legacy', 'name': 'Legacy manual MCP',
+        'transport': 'stdio', 'command': sys.executable,
+        'arguments': ['-I', str(peer), str(record)], 'cwd': str(tmp_path),
+        'enabled': True, 'provider_ids': ['pi']}]}
+    async def scenario():
+        legacy = load_mcp_connections(json.dumps(raw))[0]
+        failed = await McpConnectionHandler((legacy,)).handle(Method.MCP_CONNECTION_TEST, {'connection_id': 'legacy'})
+        assert failed['status'] == 'error'
+        facts = json.loads(record.read_text())
+        assert not facts['token_present'] and not facts['host_secret_present']
+        raw['connections'][0]['environment'] = {'FIXTURE_TOKEN': 'synthetic-explicit-token'}
+        migrated = load_mcp_connections(json.dumps(raw))[0]
+        tested = await McpConnectionHandler((migrated,)).handle(Method.MCP_CONNECTION_TEST, {'connection_id': 'legacy'})
+        assert tested['status'] == 'connected' and tested['tools'] == ['echo']
+        async with open_mcp_connection(migrated) as client:
+            result = await client.call_tool('echo', {'text': 'Migrated manual connection'})
+            assert not result.is_error and result.content[0].text == 'Migrated manual connection'
+            facts = json.loads(record.read_text())
+            assert facts['token_present'] and not facts['host_secret_present']
+            assert Path(facts['cwd']) == tmp_path
+        assert 'synthetic-explicit-token' not in str(tested)
+    asyncio.run(scenario())
+
