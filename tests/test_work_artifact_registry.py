@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -26,6 +29,92 @@ def _git(cwd: Path, *args: str) -> str:
         encoding="utf-8",
     )
     return result.stdout.strip()
+
+
+@pytest.mark.parametrize('git_workspace', [False, True])
+def test_amend_recovery_keeps_earlier_deliverable_ownership(tmp_path, git_workspace):
+    from test_work_recovery_input_requirements import _marker, _recovery
+    from agent_host.work_ledger_store import PROVIDER_RECOVERY_METADATA_KEYS
+
+    async def run():
+        root = tmp_path / 'workspace'
+        root.mkdir()
+        if git_workspace:
+            _git(root, 'init')
+            _git(root, 'config', 'user.email', 'test@example.invalid')
+            _git(root, 'config', 'user.name', 'Synthetic Test')
+            (root / 'README.md').write_text('baseline')
+            _git(root, 'add', '.')
+            _git(root, 'commit', '-m', 'baseline')
+        (root / 'user.txt').write_text('unrelated pre-existing work')
+        with WorkLedgerStore(tmp_path / 'ledger.sqlite3') as store:
+            project = store.create_or_get_project(root)
+            item = store.create_work_item(project.project_id, title='Application', workspace_path=root)
+            registry = WorkArtifactRegistry(store)
+            _, first = store.create_operation_attempt(item.work_item_id, intent='execute',
+                instruction='Create application', provider='codex', task='Create application')
+            await registry.capture_baseline(first, item)
+            (root / 'manifest.json').write_text('{"version":1}')
+            (root / 'index.html').write_text('<p>v1</p>')
+            await registry.finalize_attempt(store.get_attempt(first.attempt_id), item)
+            store.update_attempt(first.attempt_id, execution_status='succeeded')
+            operation, amendment = store.create_operation_attempt(item.work_item_id, intent='amend',
+                instruction='Update application', provider='codex', task='Update application',
+                attempt_metadata={'intent': 'amend'})
+            await registry.capture_baseline(amendment, item)
+            (root / 'index.html').write_text('<p>v2 requires updated manifest</p>')
+            await registry.finalize_attempt(store.get_attempt(amendment.attempt_id), item)
+            amendment = store.update_attempt(amendment.attempt_id, execution_status='succeeded')
+            reason = 'auip_validation_failed'
+            recovery = store.create_attempt(item.work_item_id, operation_id=operation.operation_id,
+                provider='codex', task='Repair manifest', provider_run_id='repair-run',
+                metadata={'intent': 'amend', 'provider_recovery': _recovery(reason, amendment).to_dict()})
+            recovery = store.update_attempt(recovery.attempt_id, execution_status='running')
+            store.update_attempt(amendment.attempt_id, metadata={
+                PROVIDER_RECOVERY_METADATA_KEYS[reason]: _marker(reason, amendment, recovery)})
+            assert store.get_recovery_predecessor(recovery) is not None
+            baseline = await registry.capture_baseline(recovery, item)
+            assert set(baseline['lineage_owned_dirty_paths']) == {'manifest.json', 'index.html'}
+            (root / 'manifest.json').write_text('{"version":2}')
+            delta = await registry.finalize_attempt(store.get_attempt(recovery.attempt_id), item)
+            assert delta['ambiguous_paths'] == []
+            assert delta['conflicts'] == []
+            manifest, = [artifact for artifact in store.list_artifacts(item.work_item_id,
+                attempt_id=recovery.attempt_id) if artifact.metadata.get('relative_path') == 'manifest.json']
+            assert manifest.status == 'registered'
+            assert manifest.metadata['attribution'] == 'lineage_amendment'
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('reason', ['auip_validation_failed', 'progress_only_completion'])
+@pytest.mark.parametrize('changed_between_attempts', [False, True])
+def test_recovery_inherits_only_unchanged_predecessor_file_facts(tmp_path, reason, changed_between_attempts):
+    from test_work_recovery_input_requirements import _seed_parent, _add_successor
+
+    async def run():
+        with WorkLedgerStore(tmp_path / 'ledger.sqlite3') as store:
+            item, operation, parent, _ = _seed_parent(store, tmp_path)
+            root = Path(item.workspace_path)
+            owned = root / 'app.txt'
+            owned.write_bytes(b'failed application')
+            (root / 'user.txt').write_bytes(b'unrelated dirty file')
+            store.register_artifact(item.work_item_id, attempt_id=parent.attempt_id,
+                kind='business.file', path=owned, sha256=hashlib.sha256(owned.read_bytes()).hexdigest(),
+                metadata={'relative_path': 'app.txt'})
+            if changed_between_attempts:
+                owned.write_bytes(b'user changed this before recovery')
+            _, successor = _add_successor(store, item, operation, parent, reason=reason)
+            registry = WorkArtifactRegistry(store)
+            baseline = await registry.capture_baseline(successor, item)
+            assert baseline.get('lineage_owned_dirty_paths', []) == ([] if changed_between_attempts else ['app.txt'])
+            owned.write_bytes(b'repaired application')
+            (root / 'user.txt').write_bytes(b'attempt changed unrelated dirty file')
+            delta = await registry.finalize_attempt(store.get_attempt(successor.attempt_id), item)
+            assert 'user.txt' in delta['ambiguous_paths']
+            assert ('app.txt' in delta['ambiguous_paths']) is changed_between_attempts
+
+    asyncio.run(run())
 
 
 def test_committed_delta_survives_and_baseline_dirty_is_not_stolen() -> None:
