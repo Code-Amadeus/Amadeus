@@ -506,6 +506,31 @@ def test_uncooperative_cancellation_recovers_capacity_without_replaying_speech(r
         client.close()
 
 
+def test_closing_old_stream_after_recovery_does_not_cancel_in_new_runner(record, monkeypatch):
+    import server.extensions.runner as runner
+    monkeypatch.setattr(runner, 'CANCEL_GRACE_TIMEOUT', .5)
+    monkeypatch.setattr(runner, 'RESTART_BACKOFF', (.05, .05, .05))
+    client = RunnerClient(record)
+    stale = None
+    try:
+        client.start()
+        wait_until(lambda: client.state == 'active')
+        old = client._process
+        abandoned = client.stream('tone', text='ignore_cancel', language='en', speed=1)
+        next(abandoned)
+        stale = client.stream('tone', text='cancel', language='en', speed=1)
+        next(stale)
+        abandoned.close()
+        wait_until(lambda: client._process is not old and client.state == 'active', timeout=8)
+        stale.close()
+        assert client._cancelled == {}, 'A disposed process has no request left to cancel'
+        assert len(list(client.stream('tone', text='normal', language='en', speed=1))) == 2
+    finally:
+        if stale is not None:
+            stale.close()
+        client.close()
+
+
 def test_catalog_retains_unavailable_voice_without_secrets(record):
     runtime = ExtensionRuntime([record])
     packages = runtime.capability_packages()
