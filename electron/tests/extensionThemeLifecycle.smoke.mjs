@@ -55,7 +55,7 @@ async function start(){
   child.stdin.write(snapshot.extensions+'\n')
   const ready=await response()
   backend.pid=ready.pid
-  assert.ok(await installer.acceptLaunch(snapshot.records,ready.accepted))
+  assert.ok(await installer.acceptLaunch(snapshot,ready.accepted))
   report.backendPids.push(ready.pid)
 }
 async function response(){

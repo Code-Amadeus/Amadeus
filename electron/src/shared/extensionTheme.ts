@@ -108,20 +108,33 @@ export function validateThemePalette(theme: ExtensionContribution, installedFont
     const minimum = Math.min(low[i], canvas[i]), maximum = Math.max(high[i], canvas[i])
     return minimum + (maximum - minimum) * image[i]
   }).concat(1) as Color
+  for (const key of ['--surface', '--surface-alt']) if (colors[key][3] !== 1) fail(`tokens.${key}`, 'surface colors must be opaque')
   const surfaces: Array<[string, (image: Color) => Color]> = [['--bg', bg]]
   for (const key of ['--surface', '--surface-alt']) surfaces.push([key, image => over(colors[key], bg(image))])
-  for (const [name, surface] of [...surfaces]) for (const key of ['--hover', '--pressed', '--selection-bg', '--subtle-fill', '--selected-fill', '--focus-fill']) {
+  const baseSurfaces = [...surfaces]
+  for (const [name, surface] of baseSurfaces) {
+    const dark = luminance(surface([0, 0, 0, 1])), light = luminance(surface([1, 1, 1, 1]))
+    if (base === 'classic' ? dark < .5 : light > .1) fail(`tokens.${name}`, 'base brightness must stay light for classic and dark for wallpaper-slice across the entire image range')
+  }
+  for (const [name, surface] of baseSurfaces) for (const key of ['--hover', '--pressed', '--selection-bg', '--subtle-fill', '--selected-fill', '--focus-fill']) {
     surfaces.push([`${name}/${key}`, image => over(colors[key], surface(image))])
   }
-  for (const [name, surface] of surfaces) for (const [key, minimum] of [['--text', 4.5], ['--muted', 3]] as const) {
+  for (const [name, surface] of surfaces) for (const [key, minimum] of [['--text', 4.5], ['--muted', 3], ['--faint', 3], ['--accent', 4.5]] as const) {
     if (!readable(colors[key], surface, minimum)) fail(`tokens.${key}`, `contrast must be at least ${minimum} on ${name}, including the entire image range`)
   }
-  for (const state of ['danger', 'warning', 'success', 'neutral-pill']) {
-    if (!readable(colors[`--${state}`], image => over(colors[`--${state}-bg`], bg(image)), 3)) fail('tokens.--bg', `Host ${state} text must remain readable`)
+  for (const [name, surface] of surfaces) {
+    for (const state of ['danger', 'warning', 'success']) {
+      if (!readable(colors[`--${state}`], surface, 4.5)) fail(`tokens.${name}`, `Host ${state} text requires contrast of at least 4.5`)
+    }
+    for (const state of ['danger', 'warning', 'success', 'neutral-pill']) {
+      if (!readable(colors[`--${state}`], image => over(colors[`--${state}-bg`], surface(image)), state === 'neutral-pill' ? 3 : 4.5)) fail(`tokens.${name}`, `Host ${state} label must remain readable`)
+    }
   }
-  // Existing base controls are unchanged; an override must preserve their white labels.
-  for (const key of ['--accent', '--accent-hover']) if (key in tokens && !readable([1, 1, 1, 1], image => over(colors[key], bg(image)), 4.5)) {
-    fail(`tokens.${key}`, 'white button labels require contrast of at least 4.5')
-  }
+  // Accent is both text and a fill. Fixed white labels are incompatible with
+  // readable accent text on dark surfaces; the Host owns the label color.
+  const label = [[1, 1, 1, 1], [0, 0, 0, 1]].find(foreground =>
+    ['--accent', '--accent-hover'].every(key => surfaces.every(([, surface]) => readable(foreground as Color, image => over(colors[key], surface(image)), 4.5))))
+  if (!label) fail('tokens.--accent', 'accent and hover fills need one readable black or white label')
+  tokens['--on-accent'] = label[0] ? '#ffffff' : '#000000'
   return { base, tokens, ...(background ? { background } : {}) }
 }

@@ -23,8 +23,9 @@ contextBridge.exposeInMainWorld('amadeus', {
   getDesktopSettings: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('desktop-settings.get'),
   getDesktopTheme: (): Promise<DesktopThemeState | null> => ipcRenderer.invoke('desktop-theme.get'),
   onDesktopThemeChanged: (listener: () => void): (() => void) => {
-    ipcRenderer.on('desktop-theme.changed', listener)
-    return () => ipcRenderer.removeListener('desktop-theme.changed', listener)
+    const handler = () => listener()
+    ipcRenderer.on('desktop-theme.changed', handler)
+    return () => ipcRenderer.removeListener('desktop-theme.changed', handler)
   },
   setTitleBarTheme: (theme: 'classic' | 'wallpaper-slice'): Promise<boolean> => ipcRenderer.invoke('window-theme.set', theme),
   getCompanionPortraitStatus: (): Promise<Record<string, unknown> | null> => ipcRenderer.invoke('companion-portraits.status'),

@@ -139,6 +139,16 @@ try {
     }
   }
   report.checks.push('Production themes preserve both base identities, show native manager and Appearance at 1100px English / 620px Chinese, and leave one style with no covering base gradients')
+  await window.loadURL(url + '?presentation=plugins&section=graphics')
+  await until("document.body.textContent.includes('Example English voice')", 'Plugin navigation fixture not ready')
+  assert.equal(await ui("localStorage.getItem('amadeus.settings.section')"), 'graphics')
+  await click('Open voice settings')
+  await until("document.querySelector('.settings-page-title')?.textContent === 'Settings'", 'Voice link did not open Settings')
+  assert.equal(await ui("localStorage.getItem('amadeus.settings.section')"), 'voice')
+  await click('Plugins')
+  await until("document.body.textContent.includes('Community extensions')", 'Could not return to Plugins')
+  assert.equal(await ui("localStorage.getItem('amadeus.settings.section')"), 'voice')
+  report.checks.push('Plugin voice link opens navigable Settings; returning to Plugins preserves the remembered Settings section')
   report.passed = true
   console.log(JSON.stringify(report, null, 2))
 } catch (error) {

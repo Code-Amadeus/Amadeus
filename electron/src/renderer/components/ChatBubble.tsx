@@ -91,7 +91,7 @@ export default function ChatBubble({ role, text, translation = '', streaming, on
           width: 28, height: 28, borderRadius: 14,
           fontWeight: 600, fontFamily: 'var(--font)',
           ...(isUser
-            ? { color: '#FFFFFF', backgroundColor: 'var(--accent)', border: '1px solid var(--accent)' }
+            ? { color: 'var(--on-accent, #FFFFFF)', backgroundColor: 'var(--accent)', border: '1px solid var(--accent)' }
             : { color: 'var(--text)', backgroundColor: 'var(--surface-alt)', border: '1px solid var(--border)' }
           ),
         }}
@@ -117,7 +117,7 @@ export default function ChatBubble({ role, text, translation = '', streaming, on
             borderRadius: 8, padding: '8px 11px',
             ...(isUser
               ? {
-                  color: '#FFFFFF', backgroundColor: 'var(--accent)',
+                  color: 'var(--on-accent, #FFFFFF)', backgroundColor: 'var(--accent)',
                   boxShadow: '0 5px 16px rgba(17,24,39,0.09)',
                 }
               : {

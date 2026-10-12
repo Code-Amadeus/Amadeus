@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """Validate Amadeus extension manifests against the v0.1 draft.
 
-The CLI entry point is ``tools/extension_package.py``. The packaged JSON Schema
-beside this module holds the
+Usage:
+    python tools/validate_manifest.py PATH [PATH ...]
+
+Each PATH is an ``amadeus-extension.json`` file or a package directory that
+contains one. A directory is also checked for the files its manifest refers
+to. The exit status is 0 when every PATH is valid and 1 otherwise.
+
+The JSON Schema in ``schemas/amadeus-extension.v0.schema.json`` holds the
 structural rules. This module adds the semantic rules of spec section 3.9,
 which JSON Schema cannot express, and the package checks of section 3.10.
 """
@@ -10,9 +16,11 @@ which JSON Schema cannot express, and the package checks of section 3.10.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import sys
+import unicodedata
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -22,7 +30,9 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import best_match
 
 
+ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = Path(__file__).with_name("amadeus-extension.v0.schema.json")
+THEME_TOKENS = json.loads(SCHEMA_PATH.with_name("theme-tokens.v0.json").read_text(encoding="utf-8"))
 MANIFEST_NAME = "amadeus-extension.json"
 MANIFEST_LIMIT_BYTES = 256 * 1024
 SKILL_LIMIT_BYTES = 16 * 1024 * 1024
@@ -77,6 +87,41 @@ def schema_issues(manifest: Any) -> list[Issue]:
     return sorted(issues, key=lambda issue: issue.path)
 
 
+def _theme_font_literal(value: str) -> bool:
+    if not 1 <= len(value) <= 128 or any(unicodedata.category(char)[0] not in 'LN' and char not in " '\"-" for char in value):
+        return False
+    family = value.strip()
+    if len(family) >= 2 and family[0] in "'\"" and family[-1] == family[0]:
+        family = family[1:-1]
+    return bool(family) and '"' not in family and "'" not in family
+
+
+def _theme_color_literal(value: str) -> bool:
+    text = value.strip().lower()
+    if re.fullmatch(r'#[a-f0-9]{3}(?:[a-f0-9]|[a-f0-9]{3}|[a-f0-9]{5})?', text):
+        return True
+    match = re.fullmatch(r'(rgb|rgba|hsl|hsla)\(([^()]*)\)', text)
+    if not match:
+        return False
+    parts = re.split(r'\s*[,/]\s*|\s+', match[2].strip())
+    if len(parts) not in (3, 4):
+        return False
+
+    def component(token: str, maximum: float, percent: bool = False) -> bool:
+        number = re.fullmatch(r'([+-]?(?:\d+(?:\.\d*)?|\.\d+))(%?)', token)
+        if not number or percent and number[2] != '%':
+            return False
+        numeric = float(number[1])
+        return math.isfinite(numeric) and 0 <= numeric <= (100 if number[2] else maximum)
+
+    if len(parts) == 4 and not component(parts[3], 1):
+        return False
+    if match[1].startswith('rgb'):
+        return all(component(token, 255) for token in parts[:3])
+    hue = re.fullmatch(r'([+-]?(?:\d+(?:\.\d*)?|\.\d+))(?:deg)?', parts[0])
+    return bool(hue and math.isfinite(float(hue[1])) and all(component(token, 1, True) for token in parts[1:3]))
+
+
 def semantic_issues(manifest: dict[str, Any]) -> list[Issue]:
     """Rules S1-S9 of spec section 3.9. Requires a schema-valid manifest."""
 
@@ -114,10 +159,13 @@ def semantic_issues(manifest: dict[str, Any]) -> list[Issue]:
     for index, theme in enumerate(contributes.get('theme', [])):
         for name, value in theme['tokens'].items():
             pointer = f'/contributes/theme/{index}/tokens/{name}'
-            if name.startswith(('--danger', '--warning', '--success')):
-                issues.append(Issue('T1.reserved_token', pointer, 'Host status colors cannot be overridden'))
-            if re.search(r'url\s*\(|var\s*\(|[;{}\\]|/\*|\*/', value, re.IGNORECASE):
-                issues.append(Issue('T2.css_input', pointer, 'Theme tokens must be literals, not CSS declarations or references'))
+            kind = THEME_TOKENS.get(name)
+            if kind is None:
+                code = 'T1.reserved_token' if name.startswith(('--danger', '--warning', '--success')) else 'T1.unknown_token'
+                issues.append(Issue(code, pointer, 'Use only the published theme token allowlist'))
+            elif (kind == 'font' and not _theme_font_literal(value)
+                  or kind == 'color' and not _theme_color_literal(value)):
+                issues.append(Issue('T2.css_input', pointer, 'Use a color literal or a single installed font family'))
 
     secret_keys = {key for key, field in config.items() if field.get("secret")}
     disclosed = set(permissions.get("os", {}).get("process", []))
@@ -299,6 +347,14 @@ def package_issues(manifest: dict[str, Any], package_dir: Path) -> list[Issue]:
                 image = package_dir / background['image']
                 if image.suffix.lower() not in {'.png', '.jpg', '.jpeg', '.webp'} or image.stat().st_size > 8 * 1024 * 1024:
                     issues.append(Issue('P4.theme_image', pointer, 'Theme images must be PNG/JPEG/WebP, at most 8 MiB'))
+                else:
+                    with image.open('rb') as stream:
+                        header = stream.read(16)
+                    matches = (image.suffix.lower() == '.png' and header.startswith(b'\x89PNG\r\n\x1a\n')
+                               or image.suffix.lower() in {'.jpg', '.jpeg'} and header.startswith(b'\xff\xd8\xff')
+                               or image.suffix.lower() == '.webp' and header[:4] == b'RIFF' and header[8:12] == b'WEBP')
+                    if not matches:
+                        issues.append(Issue('P4.theme_image', pointer, 'Theme image signature does not match its file type'))
     for index, server in enumerate(manifest["contributes"].get("mcp_server", [])):
         command = server.get("command", "")
         if server["transport"] != "stdio" or not command.startswith(_PACKAGE_PREFIX):

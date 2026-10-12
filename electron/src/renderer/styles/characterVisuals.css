@@ -26,7 +26,7 @@
 .visuals-page input:focus, .visuals-page select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .visuals-button { border: 1px solid var(--border); border-radius: 5px; padding: 7px 11px; color: var(--text); background: var(--surface-alt); cursor: pointer; font-size: 12px; white-space: nowrap; }
 .visuals-button:hover:enabled { background: var(--hover); }
-.visuals-button.primary { background: var(--accent); color: white; border-color: var(--accent); }
+.visuals-button.primary { background: var(--accent); color: var(--on-accent, white); border-color: var(--accent); }
 .visuals-button:disabled { opacity: .45; cursor: default; }
 .visuals-button.danger { color: var(--danger, #c43b3b); }
 .visuals-note { font-size: 11px; color: var(--muted); margin: 7px 0 0; line-height: 1.6; }

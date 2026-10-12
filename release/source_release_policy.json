@@ -96,7 +96,8 @@
     "electron/src/shared/themeTokens.generated.ts",
     "electron/src/renderer/themeApplication.ts",
     "examples/extensions/desktop-theme/src/amadeus_example_theme/amadeus-extension.json",
-    "docs/extension_host_profile_v0.1.md"
+    "docs/extension_host_profile_v0.1.md",
+    "server/extensions/theme-tokens.v0.json"
   ],
   "include_roots": [
     "characters",

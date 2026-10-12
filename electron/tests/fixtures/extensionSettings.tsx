@@ -26,7 +26,7 @@ localStorage.setItem('amadeus.ui.locale', locale)
 localStorage.setItem('amadeus.ui.theme', theme)
 localStorage.setItem('amadeus.settings.section', query.get('section') || 'extensions')
 const voice: ExtensionSummary = {
-  id: 'org.example.voice', version: '1.0.0', revision: 1, digest: 'a'.repeat(64), enabled: true, pendingRemoval: false,
+  id: 'org.example.voice', version: '1.0.0', revision: 1, appliedRevision: 1, appliedVersion: '1.0.0', digest: 'a'.repeat(64), enabled: true, pendingRemoval: false,
   values: { voice: 'sample-english', model: 'standard', speed: 1, normalize: true }, secretConfigured: { api_key: true }, providers: [], status: 'enabled', restartRequired: false,
   manifest: { schema: 'amadeus.extension/v0', id: 'org.example.voice', version: '1.0.0', display_name: { en: 'Example English voice', 'zh-CN': '示例英语语音' },
     description: { en: 'Synthetic remote speech package for UI verification.', 'zh-CN': '用于界面验证的模拟远程语音包。' },
@@ -131,7 +131,7 @@ host.amadeus = {
   restartBackend: async () => {
     calls.push({ method: 'restartBackend', params: {} })
     desktop.extensions = desktop.extensions.filter(extension => !extension.pendingRemoval)
-    desktop.extensions.forEach(extension => { extension.restartRequired = false })
+    desktop.extensions.forEach(extension => { extension.restartRequired = false; extension.appliedRevision = extension.revision; extension.appliedVersion = extension.version })
     runtime = runtime.filter(observed => desktop.extensions.some(extension => extension.id === observed.id)).map(observed => {
       const desired = desktop.extensions.find(extension => extension.id === observed.id)!
       return { ...observed, enabled: desired.enabled, state: desired.enabled ? 'active' : 'inactive', detail: desired.enabled ? 'Runner is ready' : 'Package is disabled',
@@ -145,7 +145,13 @@ host.extensionFixture = { calls, errors, snapshot, setFailSave: (value: boolean)
 document.documentElement.style.height = '100%'
 document.body.style.cssText = 'margin:0;height:100%;overflow:hidden'
 document.getElementById('root')!.style.cssText = 'height:100%;display:flex'
-ReactDOM.createRoot(document.getElementById('root')!).render(<ThemeProvider><I18nProvider>
-  {query.get('presentation') === 'plugins' && <Sidebar page="plugins" onNavigate={() => {}} renderActive={false} wallpaperActive={false} onToggleRender={() => {}} onToggleWallpaper={() => {}} />}
-  <div className="desktop-main-content flex-1 flex min-w-0"><SettingsPage presentation={query.get('presentation') === 'plugins' ? 'plugins' : 'settings'} send={send} subscribe={subscribe} connected reconnectBackend={async () => {}} /></div>
-</I18nProvider></ThemeProvider>)
+function FixtureApp() {
+  const withSidebar = query.get('presentation') === 'plugins'
+  const [page, setPage] = React.useState<'plugins' | 'settings'>(withSidebar ? 'plugins' : 'settings')
+  const openSettings = (section: string) => { localStorage.setItem('amadeus.settings.section', section); setPage('settings') }
+  return <ThemeProvider><I18nProvider>
+    {withSidebar && <Sidebar page={page} onNavigate={next => { if (next === 'plugins' || next === 'settings') setPage(next) }} renderActive={false} wallpaperActive={false} onToggleRender={() => {}} onToggleWallpaper={() => {}} />}
+    <div className="desktop-main-content flex-1 flex min-w-0"><SettingsPage key={page} presentation={page} onOpenSettings={openSettings} onOpenPlugins={() => setPage('plugins')} send={send} subscribe={subscribe} connected reconnectBackend={async () => {}} /></div>
+  </I18nProvider></ThemeProvider>
+}
+ReactDOM.createRoot(document.getElementById('root')!).render(<FixtureApp />)

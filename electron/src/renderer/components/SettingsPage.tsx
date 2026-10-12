@@ -686,8 +686,8 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
   const [visionWindowsLoading, setVisionWindowsLoading] = useState(false)
 
   useLayoutEffect(() => { scrollArea.current?.scrollTo({ top: 0 }) }, [section, characterTab, modelsPage])
-  useEffect(() => { window.localStorage.setItem('amadeus.settings.section', section) }, [section])
-  useEffect(() => { window.localStorage.setItem(CHARACTER_SECTION_KEY, characterTab) }, [characterTab])
+  useEffect(() => { if (presentation === 'settings') window.localStorage.setItem('amadeus.settings.section', section) }, [section, presentation])
+  useEffect(() => { if (presentation === 'settings') window.localStorage.setItem(CHARACTER_SECTION_KEY, characterTab) }, [characterTab, presentation])
 
   const refreshDesktop = useCallback(async () => {
     const snapshot = await window.amadeus?.getDesktopSettings()
@@ -1272,7 +1272,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
             </div>
           </div>
           {restartPending || (section === 'characters' && desktop) ? (
-            <button onClick={() => void restartBackend()} disabled={restarting} className="text-[11px] font-[600] rounded-md disabled:opacity-50" style={{ height: 32, padding: '0 12px', whiteSpace: 'nowrap', flexShrink: 0, color: 'white', background: 'var(--accent)', border: 0 }}>
+            <button onClick={() => void restartBackend()} disabled={restarting} className="text-[11px] font-[600] rounded-md disabled:opacity-50" style={{ height: 32, padding: '0 12px', whiteSpace: 'nowrap', flexShrink: 0, color: 'var(--on-accent, white)', background: 'var(--accent)', border: 0 }}>
               {t(restarting ? 'Restarting…' : restartPending ? 'Restart backend to apply' : 'Restart backend')}
             </button>
           ) : null}
@@ -1319,7 +1319,7 @@ export default function SettingsPage({ send, subscribe, connected, reconnectBack
                 selectedVoiceBackend={String(speechBackend?.value || '')} selectedTheme={selectedTheme} appliedThemeVersion={themeVersion}
                 onOpenAppearance={() => presentation === 'plugins' ? onOpenSettings?.('general') : setSection('general')}
                 onSettingsChanged={settings => setDesktop(settings as unknown as DesktopSettingsSnapshot)} onRestartRequired={() => setRestartPending(true)}
-                onOpenVoice={() => setSection('voice')} onEditorStateChange={extensionEditorChanged} />
+                onOpenVoice={() => presentation === 'plugins' ? onOpenSettings?.('voice') : setSection('voice')} onEditorStateChange={extensionEditorChanged} />
             </SettingsGroup> : null}
             {section === 'capabilities' ? (
               <CapabilitiesPanel capabilities={capabilityProfiles} runtimePackages={runtimePackages} onOpenSection={openCapabilityTarget} />

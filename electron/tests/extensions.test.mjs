@@ -709,7 +709,7 @@ test('trusted record validation is asynchronous, isolated and cached; reads neve
 
 function themeManifest(base = 'classic', mixed = false) {
   const value = manifest()
-  value.contributes.theme = [{ id: 'palette', contract: 'amadeus.ui.theme/v0', base, tokens: {} }]
+  value.contributes.theme = [{ id: 'palette', contract: 'amadeus.ui.theme/v0', base, tokens: base === 'classic' ? { '--faint': '#667085', '--selection-bg': '#F2F4F7', '--subtle-fill': '#F2F4F7', '--selected-fill': '#EAECF0', '--focus-fill': '#F2F4F7' } : { '--faint': '#95C5BA', '--accent': '#7DE0CC', '--accent-hover': '#62BDA8', '--selection-bg': 'rgba(84,255,221,.10)' } }]
   if (!mixed) { value.runtime = { kind: 'none' }; delete value.contributes.voice_backend; value.config = {} }
   return value
 }
@@ -747,7 +747,7 @@ test('frontend theme lifecycle applies immediately and preserves selection and r
   assert.equal((await f.installer.themeState()).selected, selected)
   assert.equal((await f.installer.themeState()).base, 'classic')
   assert.ok(fs.existsSync(data))
-  f.metadata.version = '0.2.0'; f.metadata.contributes.theme[0].tokens = {}
+  f.metadata.version = '0.2.0'; f.metadata.contributes.theme[0].tokens = themeManifest().contributes.theme[0].tokens
   await f.installer.install(f.selectedWheel)
   assert.equal(f.store.extensionRecords()[0].enabled, false)
   await f.installer.remove(f.metadata.id, { deleteData: true })
@@ -767,11 +767,11 @@ test('mixed theme and TTS use one loaded snapshot and cannot reopen after disabl
   assert.equal((await f.installer.themeState()).theme, undefined)
   const launch = await f.installer.prepareLaunch()
   const [sent] = JSON.parse(launch.extensions)
-  assert.ok(await f.installer.acceptLaunch(launch.records, { [sent.id]: sent.revision }))
+  assert.ok(await f.installer.acceptLaunch(launch, { [sent.id]: sent.revision }))
   f.store.markApplied({}, launch.pendingRevisions)
   const old = f.store.appliedExtensionRecords()[0]
   f.metadata.version = '0.2.0'
-  f.metadata.contributes.theme[0].base = 'classic'
+  f.metadata.contributes.theme[0] = themeManifest().contributes.theme[0]
   await f.installer.install(f.selectedWheel)
   assert.equal((await f.installer.themeState()).base, 'wallpaper-slice')
   assert.equal((await f.installer.themeState()).theme.version, '0.1.0')
@@ -781,12 +781,12 @@ test('mixed theme and TTS use one loaded snapshot and cannot reopen after disabl
   assert.equal(f.store.snapshot({}).extensions[0].backendStillRunning, true)
   await f.installer.update({ id: f.metadata.id, enabled: true })
   assert.equal((await f.installer.themeState()).theme, undefined)
-  await f.installer.acceptLaunch(launch.records, { [sent.id]: sent.revision }) // A late old receipt cannot reopen it.
+  await f.installer.acceptLaunch(launch, { [sent.id]: sent.revision }) // A late old receipt cannot reopen it.
   assert.equal((await f.installer.themeState()).theme, undefined)
   await f.installer.cleanupStoppedBackend()
   assert.ok(!fs.existsSync(path.join(f.root, old.installId)))
   const updated = await f.installer.prepareLaunch(), [next] = JSON.parse(updated.extensions)
-  await f.installer.acceptLaunch(updated.records, { [next.id]: next.revision })
+  await f.installer.acceptLaunch(updated, { [next.id]: next.revision })
   f.store.markApplied({}, updated.pendingRevisions)
   assert.equal((await f.installer.themeState()).base, 'classic')
   assert.equal((await f.installer.themeState()).theme.version, '0.2.0')
@@ -801,7 +801,7 @@ test('starting backend keeps its installation even when desired state changes be
   f.metadata.version = '0.2.0'
   await f.installer.install(f.selectedWheel)
   assert.ok(fs.existsSync(path.join(f.root, old.installId)))
-  await f.installer.acceptLaunch(launch.records, {}) // Unavailable receipt is not proof of process exit.
+  await f.installer.acceptLaunch(launch, {}) // Unavailable receipt is not proof of process exit.
   assert.ok(fs.existsSync(path.join(f.root, old.installId)))
   await f.installer.cleanupStoppedBackend()
   assert.ok(!fs.existsSync(path.join(f.root, old.installId)))
@@ -815,7 +815,7 @@ for (const startsMixed of [true, false]) test(`switching ${startsMixed ? 'mixed 
   f.store.update({}, { values: { AMADEUS_UI_THEME: `${f.metadata.id}/palette` } })
   if (startsMixed) {
     const launch = await f.installer.prepareLaunch(), [sent] = JSON.parse(launch.extensions)
-    await f.installer.acceptLaunch(launch.records, { [sent.id]: sent.revision })
+    await f.installer.acceptLaunch(launch, { [sent.id]: sent.revision })
   }
   assert.equal((await f.installer.themeState()).base, 'wallpaper-slice')
   const next = themeManifest('classic', !startsMixed)
@@ -830,7 +830,7 @@ for (const startsMixed of [true, false]) test(`switching ${startsMixed ? 'mixed 
   await f.installer.cleanupStoppedBackend()
   const launch = await f.installer.prepareLaunch()
   const accepted = Object.fromEntries(JSON.parse(launch.extensions).map(row => [row.id, row.revision]))
-  await f.installer.acceptLaunch(launch.records, accepted)
+  await f.installer.acceptLaunch(launch, accepted)
   assert.equal((await f.installer.themeState()).base, 'classic')
   assert.equal((await f.installer.themeState()).theme.version, '0.2.0')
 })
@@ -919,7 +919,7 @@ for (const blocked of ['credentials', 'installation', 'configuration']) test(`ha
 test('unavailable or pending-removal frontend-only records do not create backend restart work', async t => {
   const metadata = manifest()
   metadata.runtime = { kind: 'none' }
-  metadata.contributes = { theme: [{ id: 'light', base: 'classic', contract: 'amadeus.ui.theme/v0', tokens: {} }] }
+  metadata.contributes = { theme: [{ id: 'light', base: 'classic', contract: 'amadeus.ui.theme/v0', tokens: { '--faint': '#667085', '--selection-bg': '#F2F4F7', '--subtle-fill': '#F2F4F7', '--selected-fill': '#EAECF0', '--focus-fill': '#F2F4F7' } }] }
   const validatorState = { unavailable: false }
   const f = fixture(t, { manifest: metadata, validatorState })
   await f.installer.install(f.selectedWheel)
@@ -960,4 +960,16 @@ for (const response of [null, [], { error: 'unavailable' }, [{ id: 'org.example.
   assert.equal(await f.installer.acceptLaunch(launch, response), false)
   assert.equal(f.store.snapshot({}).restartRequired, true)
   assert.equal(f.store.snapshot({}).extensions[0].appliedRevision, undefined)
+})
+
+test('theme-independent recovery restores and persists a builtin without uninstalling the package', async t => {
+  const f = fixture(t, { manifest: themeManifest() })
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: f.metadata.id, enabled: true })
+  f.store.update({}, { values: { AMADEUS_UI_THEME: `${f.metadata.id}/palette` } })
+  assert.ok((await f.installer.themeState()).theme)
+  await f.installer.restoreBuiltinTheme()
+  assert.deepEqual(await f.installer.themeState(), { selected: 'classic', base: 'classic', reason: '' })
+  assert.equal(f.store.snapshot({}).values.AMADEUS_UI_THEME, 'classic')
+  assert.equal(f.store.extensionRecords()[0].enabled, true)
 })

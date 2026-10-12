@@ -37,7 +37,12 @@
           "--text": "#132B3D",
           "--muted": "#526B7F",
           "--accent": "#154A70",
-          "--accent-hover": "#0C3957"
+          "--accent-hover": "#0C3957",
+          "--faint": "#526B7F",
+          "--selection-bg": "#F2F4F7",
+          "--subtle-fill": "#F2F4F7",
+          "--selected-fill": "#EAECF0",
+          "--focus-fill": "#F2F4F7"
         }
       },
       {
@@ -49,18 +54,20 @@
           "zh-CN": "静谧夜色"
         },
         "tokens": {
-          "--bg": "rgba(6,17,22,.6)",
-          "--surface": "rgba(10,29,34,.86)",
-          "--surface-alt": "#15303B",
+          "--bg": "rgba(6,17,22,.85)",
+          "--surface": "#0A1D22",
+          "--surface-alt": "#0D252A",
           "--text": "#E0F8F1",
           "--muted": "#A3CFC4",
-          "--accent": "#207969",
-          "--accent-hover": "#1A6355"
+          "--accent": "#7DE0CC",
+          "--accent-hover": "#62BDA8",
+          "--faint": "#A3CFC4",
+          "--selection-bg": "rgba(84,255,221,.10)"
         },
         "background": {
           "image": "background.png",
           "fit": "cover",
-          "dim": 0.65
+          "dim": 0.8
         }
       }
     ]

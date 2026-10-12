@@ -550,7 +550,7 @@ function createWindow(): void {
   const themeDefinition = desktopCatalogFields.AMADEUS_UI_THEME
   const startupTheme = startupValue('AMADEUS_UI_THEME', desktopSettings.snapshot(process.env), themeDefinition.default)
   const theme = (themeDefinition.options!.some(option => (typeof option === 'string' ? option : option.value) === startupTheme)
-    ? String(startupTheme) : String(themeDefinition.default)) as keyof typeof TITLE_BAR_THEMES
+    ? String(startupTheme) : desktopSettings.verifiedThemeBase()) as keyof typeof TITLE_BAR_THEMES
   mainWindow = new BrowserWindow({
     width: 1100,
     height: 800,
@@ -575,6 +575,12 @@ function createWindow(): void {
   setMainWindowTheme(theme)
   mainWindow.setMenuBarVisibility(false)
   mainWindow.setTitle('')
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && (input.control || input.meta) && input.shift && input.key.toLowerCase() === 'f12') {
+      event.preventDefault()
+      void restoreBuiltinTheme()
+    }
+  })
   guardTrustedRendererShell(mainWindow)
   mainWindow.on('page-title-updated', (event) => {
     event.preventDefault()
@@ -2769,6 +2775,16 @@ app.on('second-instance', (_event, commandLine) => {
   mainWindow.focus()
 })
 
+async function restoreBuiltinTheme(): Promise<void> {
+  try {
+    await extensionInstaller.restoreBuiltinTheme()
+    setMainWindowTheme('classic')
+  } catch (error) {
+    dialog.showErrorBox('Cannot restore the interface theme',
+      `${error instanceof Error ? error.message : String(error)}\nIf AMADEUS_UI_THEME is set by your launch environment, remove that override and restart Amadeus.`)
+  }
+}
+
 function ensureWindowsWallpaperTray(): void {
   if (windowsWallpaperTray) return
   const showMain = () => {
@@ -2777,7 +2793,7 @@ function ensureWindowsWallpaperTray(): void {
     mainWindow?.show()
     mainWindow?.focus()
   }
-  windowsWallpaperTray = new WindowsWallpaperTray(APP_ICON_PATH, showMain, () => app.quit())
+  windowsWallpaperTray = new WindowsWallpaperTray(APP_ICON_PATH, showMain, () => app.quit(), () => { void restoreBuiltinTheme() })
 }
 
 app.whenReady().then(async () => {

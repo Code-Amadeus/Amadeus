@@ -117,17 +117,32 @@ The builtin base remains `data-theme=classic|wallpaper-slice`; the qualified
 package selection uses `data-theme-extension`. Component selectors, native
 title bar and color scheme continue to follow the builtin base.
 `electron/src/shared/themeTokens.generated.ts` publishes allowed tokens,
-generated from the actual base CSS. Danger, warning and success tokens are
+generated from the pinned protocol `theme-tokens.v0.json` allowlist; only their
+default values come from the actual base CSS. Danger, warning and success tokens are
 reserved. Only literal colors and installed font families are accepted; CSS
 URLs, variable references and declarations are rejected.
 
 The Host validates the same normalized palette it sends to the renderer.
-Normal/muted text must retain contrast of 4.5/3 across actual surfaces and
-interaction overlays. An image background is tested over all possible RGB
-backgrounds after dimming/compositing, including interior contrast minima.
-Host status text remains readable; overridden accent button fills retain
-readable white labels. Borderline cases whose contrast cannot be proven are
-rejected before committing a desired record.
+Normal text and accent links must retain contrast of 4.5; muted/faint text at
+least 3 across canvas, surface, alternate surface and their interaction overlays.
+Reserved status foregrounds must retain 4.5 both directly on those surfaces and
+on their own status fills. Surface and alternate-surface colors must be opaque;
+the VN editor uses a surface inside dialogs instead of repeating a translucent
+canvas. Relative luminance must stay at least 0.5 for classic and at most 0.1
+for wallpaper-slice across all three base surfaces. An image background is
+proved over its complete possible RGB range after dimming/compositing, including
+interior minima. The Host derives a private `--on-accent` black/white foreground
+that passes 4.5 on both accent fills; packages cannot set this extra token.
+Borderline cases whose contrast cannot be proven are rejected before committing
+a desired record. These checks qualify extension palettes, not the unchanged
+built-in themes; the example explicitly overrides faint text and interaction
+fills that otherwise inherit the older built-in defaults.
+
+Press Ctrl+Shift+F12 (Cmd+Shift+F12 on macOS) in the main window to restore and
+persist classic through Electron's native key handler. The Windows wallpaper
+tray also offers Restore built-in theme. Neither uses package fonts or rendered
+controls. An explicit launch-environment theme override remains authoritative;
+a native error explains how to remove it if it prevents saving the reset.
 
 Backgrounds are package-relative PNG/JPEG/WebP, at most 8 MiB and 4096 pixels
 per dimension. Main validates paths, headers and native decoding; only bounded
@@ -354,6 +369,10 @@ They verify base identity, one installed style, Blob image visibility, absence
 of covering builtin gradients and no horizontal overflow. They do not exercise
 native installation confirmation.
 
+The following component-fixture screenshots were refreshed after the 2026-10-13
+audit repairs, including the synthetic loaded revision. They are not new native
+dialog acceptance evidence.
+
 ![Plugins with the light extension theme](images/extensions/theme-day-plugins-en-US-1100.png)
 
 ![Appearance with the dark extension theme in a narrow Chinese window](images/extensions/theme-night-settings-zh-CN-620.png)
@@ -492,3 +511,47 @@ supplied by the driver. The 2026-10-12 manual native-dialog/Chat playback journe
 above remains historical evidence; it was not repeated or relabeled as a new
 manual acceptance run. Final-head CI and focused external review remain the
 merge gates for P1/P2 and protocol #2.
+
+## Audit repairs (2026-10-13)
+
+P1 now retires logical backend receipts at every new launch, independently of
+whether prior process-tree cleanup was confirmed. File deletion still requires
+the original confirmation/reference boundary. POSIX resource extraction keeps
+executable bits only (never setuid/setgid); its regression actually runs the
+bundled command on Linux/macOS. A Host-generated `startup_error` settles that
+launch revision without pretending it loaded; later edits remain pending.
+Frontend-only validation/removal errors do not create backend restart work.
+
+P2 pins protocol #2 `d06f319`: its published 25-token allowlist and literal/image
+signature checks are shared by the Host. Runtime font availability, full native
+image decoding and palette contrast remain Host responsibilities. The stricter
+readability rules and theme-independent recovery described above replace the
+previous fixed-white accent labels and translucent surface allowance. Plugins
+now opens Voice in the navigable Settings view and preserves its remembered
+section. Theme notifications no longer expose raw Electron events; startup
+chrome uses the last verified theme base. Screenshot fixtures carry real-shaped
+loaded revisions and the current component screenshots were refreshed.
+
+Fresh checks: 492 Electron tests, production build, eight offline startup GUI
+checks, eight component visual journeys, and 14 real model-less Electron/backend
+checks (including native shortcut recovery and clean shutdown) passed. The real
+installer/store/native image/font/SDK Runner lifecycle probe passed for both
+resource-only and mixed packages; it reports `nativeDialogs: false`. It is not
+a new manual confirmation or natural-voice playback run. Protocol tests passed
+91 cases with one local Windows symlink-privilege skip. SDK bytes remain unchanged.
+
+Known lifecycle limit: once the old backend has stopped and references are
+released, a mixed-package update may collect v1 before v2 finishes starting.
+Preparation failures preserve the old version, but a later startup failure does
+not provide automatic rollback. That behavior is disclosed, not expanded in
+this repair. Linux/macOS executable-bit execution is a required CI check rather
+than a claim of local Windows execution. These PRs remain Draft pending final
+head CI and focused external review; no merge, developer mode, logs or memory
+work is included.
+
+The final scoped Host Python run passed 264 tests with four skips (POSIX execute
+bits on Windows, two symlink privilege checks, and optional DSH availability).
+Canonical-source comparison passed. Clean release gates passed for P1 (3,991
+selected / 101 excluded) and P2 (4,021 / 95), each with zero errors or warnings.
+Protocol #2 final-head CI also passed Windows/Linux contracts and wheel byte
+comparison; downstream Host final-head checks remain separate merge gates.

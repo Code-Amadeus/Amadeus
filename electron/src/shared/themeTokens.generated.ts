@@ -1,4 +1,4 @@
-// Generated from renderer/styles/index.css; do not edit.
+// Generated from renderer/styles/index.css and pinned protocol theme-tokens.v0.json; do not edit.
 export const themeBases: Record<string, Record<string, string>> = {
   "classic": {
     "--bg": "#F6F7F9",

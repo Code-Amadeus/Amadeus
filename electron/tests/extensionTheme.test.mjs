@@ -7,7 +7,7 @@ import { loadTypeScript } from './helpers/loadTypeScript.mjs'
 
 const { validateThemePalette, parseThemeColor } = loadTypeScript(new URL('../src/shared/extensionTheme.ts', import.meta.url))
 const { createThemeApplication } = loadTypeScript(new URL('../src/renderer/themeApplication.ts', import.meta.url))
-const theme = (base = 'classic', tokens = {}) => ({ id: 'palette', contract: 'amadeus.ui.theme/v0', base, tokens })
+const theme = (base = 'classic', tokens = {}) => ({ id: 'palette', contract: 'amadeus.ui.theme/v0', base, tokens: { ...(base === 'classic' ? { '--faint': '#667085', '--selection-bg': '#F2F4F7', '--subtle-fill': '#F2F4F7', '--selected-fill': '#EAECF0', '--focus-fill': '#F2F4F7' } : { '--faint': '#95C5BA', '--accent': '#7DE0CC', '--accent-hover': '#62BDA8', '--selection-bg': 'rgba(84,255,221,.10)' }), ...tokens } })
 
 test('both built-in identities remain usable; only literal token overrides are accepted', () => {
   for (const base of ['classic', 'wallpaper-slice']) {
@@ -30,7 +30,7 @@ test('background contrast includes interior colors and transparent compositing',
   const background = { image: 'bg.png', fit: 'cover', dim: 0 }
   // #767676 passes 4.5 against black and white but disappears against an interior grey.
   assert.throws(() => validateThemePalette({ ...theme('classic', { '--bg': '#0000', '--text': '#767676' }), background }), /entire image range/)
-  assert.doesNotThrow(() => validateThemePalette({ ...theme('wallpaper-slice', { '--bg': 'rgba(6,17,22,.6)', '--surface': 'rgba(10,29,34,.86)' }),
+  assert.doesNotThrow(() => validateThemePalette({ ...theme('wallpaper-slice', { '--bg': 'rgba(6,17,22,.85)', '--surface': '#0A1D22' }),
     background: { ...background, dim: .65 } }))
   assert.throws(() => validateThemePalette({ ...theme('wallpaper-slice', { '--text': 'rgba(212,248,239,.01)' }), background }), /contrast/)
   assert.throws(() => validateThemePalette({ ...theme(), background: { ...background, image: '../outside.png' } }), /background/)
@@ -121,4 +121,35 @@ test('update disclosure highlights newly added contributions, commands and OS ac
   assert.match(added, /helper --notes/)
   assert.match(added, /new.invalid/)
   assert.ok(!added.includes('old.invalid'))
+})
+
+
+test('base identity and opaque surfaces bound nested palette composition', () => {
+  const dark = { '--bg': '#101010', '--surface': '#121212', '--surface-alt': '#151515', '--text': '#fff', '--muted': '#ccc', '--faint': '#bbb', '--accent': '#707070', ...Object.fromEntries(['--hover','--pressed','--selection-bg','--subtle-fill','--selected-fill','--focus-fill'].map(name => [name, '#181818'])) }
+  assert.throws(() => validateThemePalette(theme('classic', dark)), /base brightness/)
+  assert.throws(() => validateThemePalette(theme('wallpaper-slice', { '--surface': 'rgba(10,29,34,.8)' })), /opaque/)
+  assert.throws(() => validateThemePalette(theme('wallpaper-slice', { '--surface-alt': 'rgba(13,37,42,.5)' })), /opaque/)
+})
+
+test('direct status text, accent links and faint text cannot disappear on package surfaces', () => {
+  assert.throws(() => validateThemePalette(theme('classic', { '--surface': '#bde7a3' })), /danger|success|contrast/)
+  assert.throws(() => validateThemePalette(theme('wallpaper-slice', { '--accent': '#0d252a' })), /accent.*contrast/)
+  assert.throws(() => validateThemePalette(theme('classic', { '--faint': '#ffffff' })), /faint.*contrast/)
+  assert.throws(() => validateThemePalette(theme('classic', { '--on-accent': '#fff' })), /not an allowed/)
+})
+
+
+test('accent text on either base receives a readable Host-owned button label', () => {
+  const light = validateThemePalette(theme('classic'))
+  const dark = validateThemePalette(theme('wallpaper-slice'))
+  assert.equal(light.tokens['--on-accent'], '#ffffff')
+  assert.equal(dark.tokens['--on-accent'], '#000000')
+  // Independently evaluate the opaque accent fixtures, including hover.
+  const luminance = color => parseThemeColor(color).slice(0, 3).reduce((sum, value, i) =>
+    sum + (value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4) * [.2126,.7152,.0722][i], 0)
+  for (const palette of [light, dark]) for (const key of ['--accent', '--accent-hover']) {
+    const fill = palette.tokens[key] || (key === '--accent' ? '#111827' : '#1F2937')
+    const a = luminance(fill), b = luminance(palette.tokens['--on-accent'])
+    assert.ok((Math.max(a, b) + .05) / (Math.min(a, b) + .05) >= 4.5)
+  }
 })

@@ -4,8 +4,8 @@
 .vn-player button, .vn-profile-dialog button { min-height: 36px; padding: 7px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; transition: background .15s, border-color .15s; }
 .vn-player button:hover:not(:disabled), .vn-profile-dialog button:hover:not(:disabled) { background: var(--hover); border-color: var(--border-strong); }
 .vn-player button:disabled, .vn-profile-dialog button:disabled { opacity: .45; cursor: not-allowed; }
-.vn-player .vn-primary, .vn-profile-dialog .vn-primary { background: var(--accent); border-color: var(--accent); color: white; font-weight: 600; }
-.vn-player .vn-primary:hover:not(:disabled), .vn-profile-dialog .vn-primary:hover:not(:disabled) { background: var(--accent-hover); color: white; }
+.vn-player .vn-primary, .vn-profile-dialog .vn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent, white); font-weight: 600; }
+.vn-player .vn-primary:hover:not(:disabled), .vn-profile-dialog .vn-primary:hover:not(:disabled) { background: var(--accent-hover); color: var(--on-accent, white); }
 .vn-player :where(input:not([type=checkbox]):not([type=radio]), select, textarea), .vn-profile-dialog :where(input:not([type=checkbox]):not([type=radio]), select, textarea) { width: 100%; min-width: 0; min-height: 38px; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
 .vn-player :is(button, input, select, textarea, summary):focus-visible, .vn-profile-dialog :is(button, input, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .vn-page-heading, .vn-game-bar, .vn-editor-heading, .vn-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
@@ -106,7 +106,7 @@
 .vn-editor-heading { padding: 20px 24px; border-bottom: 1px solid var(--border); }
 .vn-profile-dialog .vn-icon-button { border: 0; font-size: 23px; }
 .vn-editor-fields { display: contents; font-size: 13px; }
-.vn-editor-layout { display: grid; grid-template-columns: 158px minmax(0, 1fr); min-height: 0; background: var(--bg); }
+.vn-editor-layout { display: grid; grid-template-columns: 158px minmax(0, 1fr); min-height: 0; background: var(--surface); }
 .vn-editor-nav { display: flex; flex-direction: column; gap: 4px; padding: 18px 10px; border-right: 1px solid var(--divider); }
 .vn-profile-dialog .vn-editor-nav button { display: flex; align-items: center; gap: 8px; text-align: left; min-height: 34px; padding: 7px 10px; border: 0; background: transparent; color: var(--muted); font-size: 11.5px; }
 .vn-profile-dialog .vn-editor-nav button[aria-selected=true] { background: var(--selected-fill); color: var(--text); font-weight: 650; }
@@ -1606,7 +1606,7 @@ textarea.settings-form-input { display: block; resize: vertical; }
 .settings-form-input:disabled, fieldset:disabled .settings-form-input { opacity: .55; }
 .settings-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); font: inherit; font-size: 12px; line-height: 18px; cursor: pointer; }
 .settings-button:hover:not(:disabled) { background: var(--focus-fill); border-color: var(--border-strong); }
-.settings-button[data-tone='primary'] { background: var(--accent); border-color: var(--accent); color: white; font-weight: 600; }
+.settings-button[data-tone='primary'] { background: var(--accent); border-color: var(--accent); color: var(--on-accent, white); font-weight: 600; }
 .settings-button[data-tone='primary']:hover:not(:disabled) { filter: brightness(1.08); }
 .settings-button[data-tone='quiet'], .settings-button[data-tone='danger'] { border-color: transparent; background: transparent; }
 .settings-button[data-tone='quiet'] { color: var(--muted); }

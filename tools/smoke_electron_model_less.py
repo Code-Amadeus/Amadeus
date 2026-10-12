@@ -48,6 +48,7 @@ def model_less_backend_environment(
             # This compatibility journey exercises Chat/Settings without a
             # wallpaper host or character pack, including on Windows.
             "AMADEUS_WALLPAPER": "0",
+            "AMADEUS_UI_THEME": "",
             # Exercise the shipping first-run boundary deterministically:
             # B2 remains selected, no remote credential can be inherited from
             # a developer desktop, and the backend must still expose Settings.
@@ -95,6 +96,12 @@ async def _exercise_renderer(page: Any, *, timeout: float) -> dict[str, bool]:
     await page.get_by_role('heading', name='Plugins', exact=True).wait_for(state='visible', timeout=timeout_ms)
     await page.get_by_role('button', name='Install or update local wheel…', exact=True).wait_for(state='visible', timeout=timeout_ms)
     checks['unified_plugin_navigation_rendered'] = True
+
+    await page.evaluate("window.amadeus.updateDesktopSettings({values:{AMADEUS_UI_THEME:'wallpaper-slice'}})")
+    await page.wait_for_function("document.documentElement.dataset.theme === 'wallpaper-slice'", timeout=timeout_ms)
+    await page.keyboard.press('Control+Shift+F12')
+    await page.wait_for_function("async () => document.documentElement.dataset.theme === 'classic' && (await window.amadeus.getDesktopSettings()).values.AMADEUS_UI_THEME === 'classic'", timeout=timeout_ms)
+    checks['theme_recovery_uses_native_keyboard_boundary'] = True
 
     await page.get_by_role("button", name="Settings", exact=True).click()
     await page.get_by_role("heading", name="Settings", exact=True).wait_for(

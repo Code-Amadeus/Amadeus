@@ -547,6 +547,14 @@ export class ExtensionInstaller {
     this.collectUnusedInstallations(released)
   }
 
+  restoreBuiltinTheme(): Promise<void> {
+    return this.serialize(async () => {
+      this.store.update(this.environment, { values: { AMADEUS_UI_THEME: 'classic' } })
+      this.store.rememberThemeBase('classic')
+      this.changed()
+    })
+  }
+
   themeState(): Promise<DesktopThemeState> {
     return this.serialize(async () => {
       const selected = String(startupValue('AMADEUS_UI_THEME', this.store.snapshot(this.environment), 'wallpaper-slice'))
