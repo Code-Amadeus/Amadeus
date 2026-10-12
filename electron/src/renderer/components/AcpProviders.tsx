@@ -7,6 +7,7 @@ import { canLeaveSettingsEditors, DISCARD_CONNECTION_CHANGES, type SettingsEdito
 type Profile = {
   id: string; name: string; command: string; args: string[]; enabled: boolean; resume: boolean
   environment: Record<string, string>; config_options: Record<string, string>
+  skill_discovery?: 'catalog' | 'dsh'
 }
 type Option = { id: string; name: string; type: string; currentValue: string; options?: Array<{ value?: string; name: string; options?: Array<{ value: string; name: string }> }> }
 export type AcpConfiguration = { provider_id: string; config_options?: Option[] }
@@ -67,6 +68,7 @@ export default function AcpProviders({ encoded, locked, electronUnavailable = fa
   const add = (kind: 'deepseek' | 'claude' | 'custom', key: string) => edit({
     id: kind === 'custom' ? '' : kind, name: kind === 'deepseek' ? 'DeepSeek Harness' : kind === 'claude' ? 'Claude' : '',
     command: 'node', args: [], enabled: false, resume: kind !== 'custom', config_options: {},
+    skill_discovery: kind === 'deepseek' ? 'dsh' : 'catalog',
     environment: kind === 'custom' ? {} : { [providerEnvironmentNames[kind]]: providerEnvironmentNames[kind] },
   }, -1, key)
   const save = async (next: Profile[]) => {
@@ -150,6 +152,12 @@ export default function AcpProviders({ encoded, locked, electronUnavailable = fa
           </SettingsField>
           <SettingsField id="acp-resume" label="Reuse persistent native sessions">
             <div className="settings-form-switch"><input id="acp-resume" type="checkbox" role="switch" checked={draft.resume} onChange={e => setDraft({ ...draft, resume: e.target.checked })}/><span>{t(draft.resume ? 'On' : 'Off')}</span></div>
+          </SettingsField>
+          <SettingsField id="acp-skills" label="Installed Skill discovery" description="Choose DeepSeek Harness only for a DSH agent. Selected Skills load at startup; save and restart to apply.">
+            <select id="acp-skills" className="settings-form-input" value={draft.skill_discovery || 'catalog'} onChange={e => setDraft({ ...draft, skill_discovery: e.target.value as 'catalog' | 'dsh' })}>
+              <option value="catalog">{t('Generic ACP file catalog')}</option>
+              <option value="dsh">{t('DeepSeek Harness native Skills')}</option>
+            </select>
           </SettingsField>
         </div>
       </details>

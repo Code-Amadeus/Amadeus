@@ -22,13 +22,13 @@ def test_voice_handlers_register_before_services_are_created() -> None:
 def test_voice_composition_binds_callbacks_without_starting_lazy_services() -> None:
     voice = VoiceHandlers(tts=Mock(), asr=Mock(), wake=Mock())
     callbacks = {name: Mock() for name in (
-        "on_interrupt", "asr_manager_factory", "on_asr_unload", "on_recognized",
+        "on_interrupt", "cancel_synthesis", "asr_manager_factory", "on_asr_unload", "on_recognized",
         "on_listening_stopped", "on_ready_to_listen", "tts_playing_fn",
         "wake_resumable_fn", "wake_service_factory",
     )}
     playback, player = object(), object()
     voice.configure(playback_manager=playback, player=player, **callbacks)
-    voice.tts.configure.assert_called_once_with(playback_manager=playback, player=player, on_interrupt=callbacks["on_interrupt"])
+    voice.tts.configure.assert_called_once_with(playback_manager=playback, player=player, on_interrupt=callbacks["on_interrupt"], cancel_synthesis=callbacks["cancel_synthesis"])
     voice.asr.configure.assert_called_once_with(
         asr_manager_factory=callbacks["asr_manager_factory"], on_unload=callbacks["on_asr_unload"],
         **{key: callbacks[key] for key in ("on_recognized", "on_listening_stopped", "on_ready_to_listen", "tts_playing_fn", "wake_resumable_fn")},

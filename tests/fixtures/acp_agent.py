@@ -33,6 +33,11 @@ def log(kind, **values):
         out.write(json.dumps({"kind": kind, **values}) + "\n")
 
 
+if "--patch" in sys.argv[3:]:
+    skill_patch = Path(sys.argv[-1])
+    log("skill_launch", path=str(skill_patch), config=json.loads(skill_patch.read_text()))
+
+
 OPTIONS = [
     {
         "id": "model",

@@ -1636,6 +1636,18 @@ textarea.settings-form-input { display: block; resize: vertical; }
 .settings-connection-editor { border: 1px solid var(--border-strong); border-radius: 11px; background: var(--surface); }
 .settings-connection-editor-heading { padding: 16px; border-bottom: 1px solid var(--divider); }
 .settings-connection-facts { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 12px 0; padding-top: 12px; font-size: 11px; overflow-wrap: anywhere; }
+.extension-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.extension-package-identity, .extension-detail { overflow-wrap: anywhere; }
+.extension-contributions { margin: 0 0 12px; padding: 0; list-style: none; color: var(--muted); font-size: 11px; line-height: 18px; }
+.extension-contributions li { padding: 10px 0; border-top: 1px solid var(--divider); overflow-wrap: anywhere; }
+.extension-contributions strong { color: var(--text); font-size: 12px; }
+.extension-secret-field { display: grid; gap: 8px; }
+.extension-secret-field .settings-button { justify-self: end; }
+.extension-unavailable-binding { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.extension-settings .settings-connection-facts .settings-status-pill { display: inline-block; }
+.extension-removal-data { flex-basis: 100%; display: grid; gap: 10px; }
+.extension-removal-data label { display: flex; align-items: flex-start; gap: 8px; color: var(--text); }
+.extension-removal-data input { accent-color: var(--accent); margin-top: 2px; flex-shrink: 0; }
 @container (max-width: 540px) {
   .settings-form-field { grid-template-columns: 1fr; gap: 8px; }
   .settings-form-switch { justify-content: flex-start; }

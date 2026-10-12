@@ -29,8 +29,9 @@ class VoiceHandlers:
         on_recognized: Callable, on_listening_stopped: Callable,
         on_ready_to_listen: Callable, tts_playing_fn: Callable,
         wake_resumable_fn: Callable, wake_service_factory: Callable,
+        cancel_synthesis: Callable | None = None,
     ) -> None:
-        self.tts.configure(playback_manager=playback_manager, player=player, on_interrupt=on_interrupt)
+        self.tts.configure(playback_manager=playback_manager, player=player, on_interrupt=on_interrupt, cancel_synthesis=cancel_synthesis)
         self.asr.configure(
             asr_manager_factory=asr_manager_factory, on_unload=on_asr_unload,
             on_recognized=on_recognized, on_listening_stopped=on_listening_stopped,

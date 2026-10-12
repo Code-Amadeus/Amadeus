@@ -32,6 +32,33 @@ class _Player:
         return None
 
 
+def test_interrupt_cancels_synthesis_even_without_history_annotation() -> None:
+    async def run() -> None:
+        cancelled = []
+        handler = TtsHandler()
+        handler.configure(_Playback(), _Player(), cancel_synthesis=lambda: cancelled.append(True))
+        with patch("tts.pipeline.interrupt_pending_tts", return_value=2):
+            await handler.handle(Method.TTS_INTERRUPT, {"annotate_history": False})
+        assert cancelled == [True]
+    asyncio.run(run())
+
+
+def test_synthesis_cancel_failure_still_stops_playback_and_resets_sequence() -> None:
+    async def run() -> None:
+        playback = _Playback()
+        sequence = SentenceStateManager()
+        sequence.create_sentence("old")
+        handler = TtsHandler(sentence_sequence_manager=sequence)
+        def failing_cancel():
+            raise RuntimeError("synthetic cancellation failure")
+        handler.configure(playback, _Player(), cancel_synthesis=failing_cancel)
+        with patch("tts.pipeline.interrupt_pending_tts", return_value=2):
+            result = await handler.handle(Method.TTS_INTERRUPT, {})
+        assert result == {"status": "interrupted"} and playback.interrupt_calls == 1
+        assert sequence.create_sentence("new").startswith("sentence_1_")
+    asyncio.run(run())
+
+
 def test_tts_interrupt_aligns_direct_branch_allocator_with_playback_sequence() -> None:
     async def run() -> None:
         sequence = SentenceStateManager()

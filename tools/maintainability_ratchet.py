@@ -22,6 +22,7 @@ PLACEHOLDER = "runtime log event at"
 
 # Scope exemptions to the existing owner and operation, not an entire file.
 WRITE_EXCEPTIONS = {
+    ("agent_host/acp_skills.py", "skill_launch_arguments", "json_text"): "Disposable process-launch overlay in TemporaryDirectory; no persistent state or rehydration, removed after Agent exit.",
     ("config/durable_io.py", "_replace", "replace"): "The shared commit point.",
     ("render/texture_cache.py", "TextureDiskCache._publish", "replace"): "Rebuildable cache with contention and quota rules.",
     ("server/work_export_service.py", "WorkExportService._publish_atomic_replace", "replace"): "Approved export replacement with target identity and hash verification.",

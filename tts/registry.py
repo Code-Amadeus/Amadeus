@@ -136,6 +136,14 @@ def tts_backend_statuses(selected: str = "") -> list[dict[str, Any]]:
     _ensure_builtins()
     clean = str(selected or "").strip().lower()
     statuses = [item.status(selected=item.backend_id == clean) for item in _REGISTRY.values()]
+    if "/" in clean and clean not in _REGISTRY:
+        statuses.append({
+            "id": clean, "label": clean, "deployment": "extension", "state": "unavailable",
+            "available": False, "selected": True,
+            "detail": "Selected extension voice is not installed or registered; text interaction continues",
+            "summary": "Install and enable this extension, then restart the backend.",
+            "supports_streaming": False, "supports_reference_conditioning": False,
+        })
     statuses.append(
         {
             "id": "disabled",

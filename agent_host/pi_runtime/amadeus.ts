@@ -84,6 +84,10 @@ async function fetchText(url: string, signal: AbortSignal | undefined, limit: nu
 export default function (pi: ExtensionAPI) {
   const root = process.env.AMADEUS_PI_WORKSPACE
   const access = process.env.AMADEUS_PI_ACCESS
+  const skillRoots: string[] = JSON.parse(process.env.AMADEUS_PI_SKILL_ROOTS || '[]')
+  if (!Array.isArray(skillRoots) || skillRoots.some(value => typeof value !== 'string' || !path.isAbsolute(value))) {
+    throw new Error('Invalid Host Skill paths')
+  }
   if (!root || !['none', 'read', 'write'].includes(access || '')) {
     throw new Error('Amadeus Host workspace policy is required')
   }
@@ -94,10 +98,16 @@ export default function (pi: ExtensionAPI) {
     const name = event.toolName
     if (web.has(name) || name === 'launch_app') return
     if (readers.has(name) || writers.has(name)) {
+      const target = path.resolve(root, String(event.input.path || '.'))
+      // User-selected Skill instructions/resources are inherent read inputs,
+      // never writable workspace grants or permission for neighboring packages.
+      if (readers.has(name) && skillRoots.some(skillRoot => withinWorkspace(target, skillRoot))) {
+        event.input.path = target
+        return
+      }
       if (access === 'none' || (writers.has(name) && access !== 'write')) {
         return { block: true, reason: 'This task has no permission for that filesystem operation' }
       }
-      const target = path.resolve(root, String(event.input.path || '.'))
       if (!withinWorkspace(target, root)) {
         return { block: true, reason: 'The path is outside the Host-assigned workspace' }
       }

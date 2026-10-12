@@ -1,0 +1,17 @@
+{
+  "license": "MIT-0",
+  "schema": "amadeus.extension/v0",
+  "id": "com.example.mimo-tts",
+  "version": "0.1.0",
+  "display_name": {"en": "MiMo speech (experimental)", "zh-CN": "MiMo 语音（实验）"},
+  "description": {"en": "An independent MiMo streaming speech package. English output only; Japanese is not supported.", "zh-CN": "独立的 MiMo 流式语音包。仅支持英语输出，不支持日语。"},
+  "author": {"name": "Amadeus contributors"},
+  "engines": {"amadeus_host_api": ">=0.1,<0.2", "platforms": ["win32"]},
+  "runtime": {"kind": "python", "entry": "amadeus_example_mimo:extension", "requires_python": ">=3.12"},
+  "contributes": {"voice_backend": [{"id": "mimo", "contract": "amadeus.voice.tts/v0", "role": "tts", "deployment": "remote", "languages": ["en"], "streaming": true}]},
+  "config": {
+    "api_key": {"type": "string", "title": {"en": "API key", "zh-CN": "API 密钥"}, "secret": true, "required": true},
+    "voice": {"type": "string", "title": {"en": "Voice", "zh-CN": "音色"}, "default": "Mia", "required": true, "max_length": 80}
+  },
+  "permissions": {"os": {"network": ["api.xiaomimimo.com"]}}
+}

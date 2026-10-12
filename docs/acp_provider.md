@@ -3,10 +3,10 @@
 Status: experimental, opt-in ACP v1 integration for 0.15 Alpha. It has not been
 integrated into real production use. Codex remains the existing default coding Provider.
 
-Claude and DeepSeek Harness (dsh) below are historical local integration examples,
-not production-qualified Providers. Native probes and deterministic protocol tests
-establish bounded behavior; they do not establish daily-use reliability or a complete
-Amadeus-to-agent production workflow.
+Claude's earlier setup below is a historical local example. DeepSeek Harness
+0.2.0-rc.2 additionally has real-model and Electron/Chat/Work extension acceptance
+on the experimental branch. These establish bounded behavior, not production
+qualification or daily-use reliability; see the current constraints below.
 
 Amadeus reuses `agent-client-protocol==0.12.1` for stdio framing, typed
 messages, notification draining, and subprocess lifetime. `AcpProviderAdapter`
@@ -80,6 +80,7 @@ points; it is not discovered from the delegated workspace:
     "command": "node",
     "args": ["C:/agents/node_modules/@deepseek-ai/dsh/lib/bin.js", "--profile", "acp"],
     "enabled": true,
+    "skill_discovery": "dsh",
     "resume": true,
     "environment": {"DEEPSEEK_API_KEY": "DEEPSEEK_API_KEY"},
     "config_options": {}
@@ -121,9 +122,15 @@ An enabled persistent-session setting requires `session/resume` or
 `loadSession` in the native handshake. An unsupported or stale attachment fails;
 it never creates a fresh session or silently resubmits an old prompt. ACP v1's
 advertised optional resume/close methods are used through the official SDK.
-The first version does not advertise active append-input, immediate steering,
-submission reconciliation, or Host Skill projection. Native Agent skills and
-configuration remain Agent-owned. No ACP v2 or Agent-specific extension is implied.
+The adapter does not advertise active append-input, immediate steering, or
+submission reconciliation. Installed Skills default to a task-level metadata
+catalog (`skill_discovery: "catalog"`). Set `skill_discovery: "dsh"` explicitly
+for DeepSeek Harness native discovery. The Host adds a temporary final DSH
+startup overlay for the selected installed Skill directories, while DSH owns
+registration, body loading and its independently configured native plugins.
+This is a DSH launch integration, not an ACP Skill-install RPC. Save and restart
+to apply either selection. Changed Skill revisions reject old native sessions;
+backend restart alone does not make old instructions disappear.
 
 The existing MCP settings can bind connections to the individual ACP Provider
 ids. Only enabled bindings for that Provider are projected. HTTP support is
@@ -168,15 +175,17 @@ and that Agent prose cannot create artifacts or user acceptance.
 `electron/tests/acpSettings.test.mjs` verifies persistence, encrypted credential
 separation, environment precedence, validation and MCP bindings for configured ids.
 
-An explicit native probe is available:
+The current real-model extension probe is opt-in:
 
 ```powershell
-python tools/probes/probe_acp_provider.py --config C:/agents/amadeus-acp.json --provider deepseek --workspace C:/agents/test-workspace
+python tools/probes/probe_dsh_extension_live.py --help
 ```
 
-By default it only initializes the Agent. Add `--task "Reply briefly without
-tools"` to exercise the adapter with a real model; this mode rejects native
-permission requests and does not create or complete a Host WorkItem.
+See [the extension Host profile](extension_host_profile_v0.1.md) for supported
+contributions and limits. The probe's help describes its disposable inputs and phases. Running a phase
+uses real inference and tools. It does not create or complete a Host WorkItem.
+The older `probe_acp_provider.py` referred to by historical notes is not present
+in this checkout.
 
 ### Historical local examples (2026-09-13, Windows)
 
@@ -195,6 +204,48 @@ disposable input file. Canonical `tool.call`/`tool.result` and progress events
 were observed for both. The settings form was rendered and its edit/save/model
 selector behavior checked in a browser with mocked Desktop IPC; this does not
 claim a full running-Electron end-to-end journey.
+
+## Current DSH constraints and diagnostics (2026-10-12)
+
+`@deepseek-ai/dsh@0.2.0-rc.2` uses `@modelcontextprotocol/client@2.0.0`.
+When the client lists resources/templates on a tools-only MCP server, two SDK
+`console.debug` diagnostics reach the ACP stdout channel. The ACP Python SDK
+logs parse errors and continues; successful tools therefore do not prove a
+clean wire. This was reproduced without an external model or credentials:
+
+```powershell
+python tools/probes/probe_dsh_stdio.py
+node tools/probes/probe_mcp_stdout.mjs
+```
+
+The second command compares unmodified upstream code with a disposable module
+copy that routes diagnostics to stderr; the original installed SDK is unchanged.
+Track the [existing SDK logger work](https://github.com/modelcontextprotocol/typescript-sdk/pull/2370).
+There is no production Host line filter, global console override, or Agent
+package patch. Keep this runtime combination experimental until the corrected
+dependency/integration passes the clean-wire probe.
+
+On Windows, workspace-write sandbox setup needs `WRITE_DAC` for its allowlist
+and `WRITE_OWNER` for the Low integrity label. Being able to write files or
+being the directory owner is insufficient. Check the effective access of an
+existing directory without changing it:
+
+```powershell
+python tools/probes/check_windows_acl.py <workspace>
+```
+
+`probe_dsh_acl.mjs` and `probe_dsh_acl.mjs temp` are opt-in sandbox experiments:
+they create their own test directory, initialize the real DSH sandbox, test
+inside/outside writes if setup succeeds, then clean up their files. They do
+not repair existing workspaces or change the configured project path.
+
+The observed checkout-local failure is missing `WRITE_OWNER`; a fresh directory
+under the user's temporary root has both rights and passed inside-write and
+outside-write-denial tests. Use an explicitly chosen workspace whose permissions
+meet the native sandbox's requirements, or have its owner review the ACL outside
+Amadeus. Do not automatically take ownership, broadly grant rights, suppress the
+label operation or fall back to unrestricted execution. An initialization error
+is not proof that a model honored a natural-language no-shell instruction.
 
 ## Upstream references
 

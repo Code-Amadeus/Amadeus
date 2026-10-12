@@ -131,3 +131,10 @@ The source-release gate is a required release invariant. Any newly included
 third-party code or asset must add its source, revision, license evidence, and
 release disposition. Do not weaken or bypass that gate in a feature
 contribution.
+
+The standalone extension SDK and pinned protocol copies retain Apache-2.0;
+authored `examples/extensions/` retain MIT-0 under their scoped LICENSE.
+Change the canonical SDK/schema/validator in Amadeus-Extensions first, then
+update the recorded source commit, wheel and checksums together. Do not edit
+pinned copies in place; provenance checks reject drift. These scopes do not
+change the AGPL-3.0 license of Host implementation code.

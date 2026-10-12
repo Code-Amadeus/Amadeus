@@ -16,6 +16,8 @@ from typing import Any
 from uuid import uuid4
 
 from agent_host.acp_configuration import AcpAgentSpec
+from agent_host.acp_skills import skill_launch_arguments
+from agent_host.skills import skill_bindings, skill_session_error, with_skill_catalog
 from agent_host.mcp_connections import (
     McpConnectionSpec,
     connections_for_provider,
@@ -159,7 +161,7 @@ class AcpProviderAdapter:
                 resume="attach" if spec.resume else "none",
                 cancellation="confirmed",
                 interaction="bidirectional",
-                capability_projections=("mcp_connection",),
+                capability_projections=("mcp_connection", "agent_skill"),
             ),
         )
         self._connections = load_mcp_connections() if mcp_connections is None else mcp_connections
@@ -200,7 +202,7 @@ class AcpProviderAdapter:
         }
 
     def configuration(self) -> dict[str, Any]:
-        return {"provider_id": self.provider_id, **self._configuration}
+        return {"provider_id": self.provider_id, "skill_discovery": self.spec.skill_discovery, **self._configuration}
 
     async def close(self) -> None:
         runs = tuple(self._runs.values())
@@ -220,6 +222,8 @@ class AcpProviderAdapter:
     ) -> ProviderRunResult:
         import acp
 
+        if error := skill_session_error(self.provider_id, request.session):
+            return ProviderRunResult(status='error', error=error)
         if (
             request.provider != self.provider_id
             or not request.cwd
@@ -248,15 +252,17 @@ class AcpProviderAdapter:
         capabilities: dict[str, Any] = {}
         try:
             client = _Client(self, run)
-            async with acp.spawn_agent_process(
-                client,
-                self.spec.executable(),
-                *self.spec.args,
-                env=self.spec.process_environment(),
-                cwd=str(cwd),
-                transport_kwargs={"stderr": asyncio.subprocess.DEVNULL, "limit": 8 * 1024 * 1024},
-                observers=[client.observe],
-            ) as (connection, _process):
+            async with contextlib.AsyncExitStack() as stack:
+                arguments = stack.enter_context(skill_launch_arguments(self.spec))
+                connection, _process = await stack.enter_async_context(acp.spawn_agent_process(
+                    client,
+                    self.spec.executable(),
+                    *arguments,
+                    env=self.spec.process_environment(),
+                    cwd=str(cwd),
+                    transport_kwargs={"stderr": asyncio.subprocess.DEVNULL, "limit": 8 * 1024 * 1024},
+                    observers=[client.observe],
+                ))
                 run.connection = connection
                 try:
                     async with asyncio.timeout(self.setup_timeout):
@@ -324,7 +330,7 @@ class AcpProviderAdapter:
                                 else "work_item"
                             )
                         )
-                        run.session = ProviderSessionHandle(self.provider_id, session_id, scope)
+                        run.session = ProviderSessionHandle(self.provider_id, session_id, scope, skill_bindings=skill_bindings(self.provider_id))
                         self._attached.add(session_id)
                         # Bind the native address durably before any user execution.
                         await emit(
@@ -761,7 +767,9 @@ class AcpProviderAdapter:
         return with_progress_contract(
             with_host_authoring_capabilities(
                 with_parent_conversation_context(
-                    request.task, metadata=metadata, execution_provider=self.provider_id
+                    (request.task if self.spec.skill_discovery == "dsh"
+                     else with_skill_catalog(request.task, self.provider_id)),
+                    metadata=metadata, execution_provider=self.provider_id
                 ),
                 require_auip_preparation=requires_auip_authoring(metadata),
                 authoring_skill_path=str(metadata.get("auip_authoring_skill_path") or ""),

@@ -1,10 +1,13 @@
 import { startupValues, type StartupSnapshot } from '../../shared/startupSettings.js'
 import type { ModelConnectionCatalogGroup } from './modelConnectionCatalog'
 import { catalogConfiguration, desktopCatalogFields, voiceBackendGroups, voiceBackendOptions } from '../../shared/configCatalog.js'
+import type { ExtensionSummary } from '../../shared/extensions.js'
+import { extensionVoiceOptions } from './extensionSettingsCatalog'
 
 interface VoiceDesktopSnapshot extends StartupSnapshot {
   values?: Record<string, string>
   secrets?: Record<string, { configured?: boolean }>
+  extensions?: ExtensionSummary[]
 }
 
 interface VoiceRuntimeSelection {
@@ -18,6 +21,7 @@ interface VoiceRuntimeSelection {
 export function buildVoiceConfigurationCatalog(
   selection: VoiceRuntimeSelection,
   snapshot?: VoiceDesktopSnapshot | null,
+  locale = 'en-US',
 ): ModelConnectionCatalogGroup[] {
   const values = startupValues(snapshot)
   const value = (key: string, fallback = '') => values[key] ?? String(desktopCatalogFields[key]?.default ?? fallback)
@@ -84,7 +88,7 @@ export function buildVoiceConfigurationCatalog(
       active: ttsBackend !== 'disabled', configured: false,
       status: ttsBackend === 'disabled' ? 'Off' : unknown,
       status_ok: ttsBackend === 'disabled',
-      fields: synthesis.fields.map(item => ({ ...item, type: 'select' as const, options: voiceBackendOptions })),
+      fields: synthesis.fields.map(item => ({ ...item, type: 'select' as const, options: [...voiceBackendOptions, ...extensionVoiceOptions(snapshot?.extensions || [], locale, ttsBackend)] })),
     },
     ...voiceBackendGroups.map(group => {
       const backend = group.voice_backend!;

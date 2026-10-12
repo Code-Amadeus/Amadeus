@@ -10,13 +10,15 @@
     "check:config": "node scripts/generate-config-catalog.mjs --check && node scripts/check-config-ownership.mjs",
     "test": "npm run check:config && node --experimental-strip-types --test tests/*.test.mjs",
     "dev": "node --experimental-strip-types scripts/dev.mjs",
-    "build": "npm run check:config && tsc && vite build",
-    "electron:dev": "node --experimental-strip-types scripts/dev.mjs --electron",
+    "check:extension-sdk": "node --experimental-strip-types scripts/check-extension-sdk.mjs",
+    "build": "npm run check:config && npm run check:extension-sdk && tsc && vite build",
+    "electron:dev": "npm run check:extension-sdk && node --experimental-strip-types scripts/dev.mjs --electron",
     "electron:build": "npm run build && electron-builder"
   },
   "build": {
     "directories": { "output": "build" },
     "files": ["dist/main/**/*", "dist/shared/**/*", "dist/preload/**/*", "dist/renderer/**/*", "package.json"],
+    "extraResources": [{ "from": "../vendor/extension-sdk", "to": "extension-sdk", "filter": ["*.whl"] }],
     "beforePack": "scripts/build-windows-wallpaper.cjs",
     "win": {
       "icon": "../assets/icons/app/app_icon.ico",
