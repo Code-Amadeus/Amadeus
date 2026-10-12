@@ -71,12 +71,16 @@ export type ExtensionUpdate = {
   providers?: string[]
 }
 export type ExtensionRemovalOptions = { deleteData?: boolean }
-export type ExtensionConfirmation = { operation: 'install' | 'update' | 'enable'; manifest: ExtensionManifest; previousVersion?: string }
+export type ExtensionDelivery = { digest?: string; sourceFile?: string }
+export type ExtensionConfirmation = ExtensionDelivery & { operation: 'install' | 'update' | 'enable'; manifest: ExtensionManifest; previousVersion?: string }
 
-export function extensionDisclosure(manifest: ExtensionManifest): string {
+export function extensionDisclosure(manifest: ExtensionManifest, delivery: ExtensionDelivery = {}): string {
   const name = typeof manifest.display_name === 'string' ? manifest.display_name : manifest.display_name['en-US'] || manifest.display_name.en || manifest.id
   return [
     `${name}\n${manifest.id} · ${manifest.version}\nAuthor: ${manifest.author.name}`,
+    `License: ${manifest.license || 'Not declared'}`,
+    ...(delivery.digest ? [`Wheel SHA-256: ${delivery.digest}`] : []),
+    ...(delivery.sourceFile ? [`Source: local file ${delivery.sourceFile}`] : []),
     `Contributions:\n${Object.entries(manifest.contributes).flatMap(([kind, items]) => items.map(item =>
       `${kind}: ${item.id}${item.command ? `\nCommand: ${item.command} ${(item.args || []).join(' ')}` : ''}${item.url ? `\nURL: ${item.url}` : ''}${item.path ? `\nResource: ${item.path}` : ''}`)).join('\n')}`,
     `Runtime: ${manifest.runtime.kind}${manifest.runtime.entry ? ` · ${manifest.runtime.entry}` : ''}`,

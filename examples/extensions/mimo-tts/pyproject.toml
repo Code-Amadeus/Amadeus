@@ -1,8 +1,10 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
+license = "MIT-0"
+license-files = ["LICENSE"]
 name = "amadeus-example-mimo-tts"
 version = "0.1.0"
 description = "Experimental out-of-tree MiMo speech contribution for Amadeus"

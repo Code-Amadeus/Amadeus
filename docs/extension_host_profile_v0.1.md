@@ -1,7 +1,7 @@
 # Experimental extension Host profile 0.1
 
 Status: implemented experimental subset, prepared for review on `codex/extension-pilot`.
-Updated 2026-10-12. This document describes what this checkout actually accepts;
+Updated 2026-10-13. This document describes what this checkout actually accepts;
 it does not upgrade the broader Extension Protocol v0.1 draft or its provisional
 TTS/MCP/Skill contracts to a stable SDK. The schema is wider than this profile.
 
@@ -23,15 +23,22 @@ Notes MCP stores its own notes and has no Amadeus memory/history authority.
 
 Electron main owns local-wheel installation, private Python environments,
 desired records, encrypted secret storage, explicit version updates and removal.
-Normal Electron builds and `electron:dev` prepare the trusted SDK wheel offline
-using the configured Python development environment. Packaged Electron ships it
-in `resources/extension-sdk`; source installations use the generated build
-artifact. Installation never downloads or builds the SDK from a third party.
+The Host carries one SDK wheel in `vendor/extension-sdk`, selected by
+`server/extensions/protocol-source.json` (source commit, version, filename and
+SHA-256). Normal frontend builds verify its bytes with Node and need no Python
+SDK build. Packaged Electron ships the same wheel in `resources/extension-sdk`.
+Installation checks direct SDK requirements using Python dependency semantics,
+including active environment markers, before pip. Compatible ranges and exact
+pins are accepted; incompatible constraints and SDK direct URLs get explicit
+errors without exposing URL credentials. Transitive dependency conflicts remain
+pip resolver errors. Installation stages and verifies the local SDK bytes; it
+never downloads or builds an SDK from a third party.
 The manifest and referenced package files are checked before importing code.
 The wheel's `amadeus.extensions` entry point names the package containing
 `amadeus-extension.json`; a TTS manifest additionally names its Runner object.
 All five [examples](../examples/extensions/) are validated against these rules.
-The manager shows package identity, contributions, commands and OS disclosures
+The manager shows package identity, author-declared license (or Not declared),
+full wheel SHA-256, local source filename, contributions, commands and OS disclosures
 and asks for confirmation before preparing an installation/update or enabling
 a package. Updating an enabled package requires fresh confirmation.
 Use **Settings → Extensions** for the complete lifecycle; Voice settings link
@@ -67,7 +74,7 @@ requests. Installation trust is not reconstructed by scanning directories.
 
 ## TTS wire and SDK contract
 
-The public [SDK README](../sdk/extension-python/README.md) is the authoring entry.
+The public [SDK README](https://github.com/Code-Amadeus/Amadeus-Extensions/blob/codex/extension-protocol-review/sdk/python/README.md) is the authoring entry.
 An `Extension` registers exactly the TTS IDs declared by the manifest. The Host
 compares registration with the manifest before accepting `ready`.
 
@@ -214,13 +221,24 @@ access. A directory can be writable and owned by the user while lacking
 relocate work or downgrade to unrestricted execution. Use the read-only
 diagnostic documented in [ACP setup](acp_provider.md).
 
-SDK preparation is covered from an extracted source fixture with no prebuilt
-wheel: the normal desktop build entry creates the SDK offline, which installs
-and imports in a fresh environment. Windows packaging also places the wheel in
-`resources/extension-sdk`, and the installer uses that packaged location.
-The normal `uv sync --locked` core environment includes its pinned setuptools
-and wheel build backend; `--extra dev` is not required to build the desktop.
-Windows Electron CI installs this exact base profile before the normal build.
-Public SDK publication/licensing decisions, other-platform runtime qualification
-and natural-voice Chat/Wallpaper/VN acceptance remain release work. Memory
-remains outside this implementation.
+An extracted source fixture verifies the shipped SDK using Node with an empty
+PATH and an unavailable Python override, then installs/imports the wheel offline
+in a fresh environment. Damaged bytes fail verification. Runtime Runner and
+example tests consume that same wheel, not a second source tree. Build tools
+remain development dependencies; frontend builds do not invoke Python.
+Public SDK publication, other-platform runtime qualification and natural-voice
+Chat/Wallpaper/VN acceptance remain release work. Memory remains out of scope.
+
+## Licensing and SDK delivery (2026-10-13)
+
+Host code remains AGPL-3.0. The canonical protocol/schema/validator and standalone
+SDK in Amadeus-Extensions are Apache-2.0. Authored examples carry MIT-0; external
+assets, voices, models and dependencies retain their own rights. The current
+source pins are review-branch commits, pending protocol acceptance and final
+repinning to main. There is no PyPI release, development-directory loader or
+new diagnostic-log feature in this change.
+
+The installed SDK has PEP 639 license metadata and an embedded LICENSE.
+`tools/check_extension_protocol.py --source <protocol-checkout>` verifies the
+pinned text copies, wheel digest, metadata/license and packaged SDK source
+against the recorded upstream commit. Source releases contain the same wheel.

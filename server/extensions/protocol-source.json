@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/Code-Amadeus/Amadeus-Extensions",
-  "commit": "1463c6bc2b71f21f0adecee40e2daa222dc9e85b",
+  "commit": "6c37e0619396a92e786227e5c270a302fa9d93db",
   "normalization": "UTF-8 text with LF line endings",
   "adaptations": "Validator module help and SCHEMA_PATH only; rules from MANIFEST_NAME onward are identical.",
   "files": [
@@ -16,5 +16,34 @@
       "source_sha256": "f6091303ca34b81b24a8f18c8c8017f2be9f51400fff8cecf89c9221c059ef58",
       "host_sha256": "7141c9c7c33723bed008da8e9d7c5ce7ba203048c53a78af6d22a0774d2a2d2b"
     }
-  ]
+  ],
+  "sdk": {
+    "name": "amadeus-extension-sdk",
+    "version": "0.1.0",
+    "filename": "amadeus_extension_sdk-0.1.0-py3-none-any.whl",
+    "sha256": "e6c755401833f0392ba6a2aed8e13202c1e2a723a7a9a59159a58f8df4ff8938",
+    "source_commit": "6c37e0619396a92e786227e5c270a302fa9d93db",
+    "source_files": [
+      {
+        "path": "sdk/python/LICENSE",
+        "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+      },
+      {
+        "path": "sdk/python/README.md",
+        "sha256": "8422feec85f71eb0ac207ee95822f0672bdd54b68dda62b594760e32cdf52009"
+      },
+      {
+        "path": "sdk/python/pyproject.toml",
+        "sha256": "306aa6f6462d8857eaf15efcf1c2f18078d9bc49a6a64906c2bb5b3285d13fe3"
+      },
+      {
+        "path": "sdk/python/src/amadeus_extension/__init__.py",
+        "sha256": "ff1bc57092b1f153933fb40f3fce224805e070d0bb09cabdcabd374d7c48600e"
+      },
+      {
+        "path": "sdk/python/src/amadeus_extension/runner.py",
+        "sha256": "dcb856bb1efdc290d7897be72570e835e7729cb904b56928ab0523bfd98dbfb9"
+      }
+    ]
+  }
 }

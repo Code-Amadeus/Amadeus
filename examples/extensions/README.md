@@ -33,11 +33,10 @@ accepted subset; broader fields in the protocol draft may be unsupported here.
   then writes a structured audit without changing the source. This and the
   handoff Skill have also been exercised with a real DeepSeek model over ACP.
 
-The normal `npm run build` and `npm run electron:dev` commands in `electron/`
-prepare the trusted SDK wheel automatically, offline from bundled sources.
-Packaged Electron includes that wheel in its resources. Use the documented
-Python development environment, or select it with `AMADEUS_PYTHON`; no separate
-SDK build command is needed to install a local extension.
+The Host carries a SHA-256-pinned SDK wheel in `vendor/extension-sdk`. Normal
+frontend builds verify it using Node without a Python SDK build; packaged
+Electron carries the identical bytes. Authors may declare compatible SDK ranges
+or exact versions. SDK incompatibility is reported before pip installation.
 
 To build the example wheels from the repository root:
 
@@ -49,9 +48,9 @@ python -m pip wheel --no-build-isolation --no-deps --no-index examples/extension
 python -m pip wheel --no-build-isolation --no-deps --no-index examples/extensions/csv-audit-skill -w build/extension-examples
 ```
 
-For SDK-only development, `python tools/build_extension_sdk.py` performs the
-same build without downloading dependencies. A wheel manifest is inspected
-without importing package code. The notes package
+The canonical SDK source and offline build command live in
+[Amadeus-Extensions](https://github.com/Code-Amadeus/Amadeus-Extensions/tree/codex/extension-protocol-review/sdk/python).
+A wheel manifest is inspected without importing package code. The notes package
 does not need the Runner protocol: its native runtime is MCP, managed by its
 selected Provider. All share installation identity, configuration, restart
 semantics, removal and the Host's lifecycle diagnostics.
@@ -70,8 +69,9 @@ No package imports `server`, `core`, `config.settings` or a private TTS helper.
 Package code still runs with the user's OS privileges. TTS Runners and Host-owned
 MCP probes use explicit environment bindings; native Agents retain their own
 configuration and security model. These mechanisms do not prevent arbitrary OS
-access by a malicious local package. Source/package licensing follows this repository;
-separate SDK publication and licensing decisions remain pending.
+access by a malicious local package. Authored examples are MIT-0 under [LICENSE](LICENSE). The SDK is Apache-2.0;
+external service/model/voice rights are separate. Public SDK publication remains
+a release decision; the checked-in wheel has a recorded source commit and digest.
 
 Native discovery, resource use, restoration, addition, update and removal are
 exercised in `tests/test_skill_codex_runtime.py` and `tests/test_skill_pi_runtime.py`.

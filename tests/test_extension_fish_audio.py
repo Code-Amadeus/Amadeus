@@ -14,7 +14,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "examples/extensions/fish-audio/src"
-sys.path.insert(0, str(ROOT / "sdk/extension-python/src"))
+from server.extensions.sdk import sdk_spec
+sys.path.insert(0, str(ROOT / "vendor/extension-sdk" / sdk_spec()["filename"]))
 sys.path.insert(0, str(PACKAGE))
 
 import msgpack

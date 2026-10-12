@@ -33,9 +33,13 @@ function fixture(t, options = {}) {
   const file = path.join(directory, 'settings.json')
   const selectedWheel = path.join(directory, 'demo-0.1.0-py3-none-any.whl')
   fs.writeFileSync(selectedWheel, 'synthetic wheel bytes')
-  const sdk = path.join(directory, 'build', 'extension-sdk', 'amadeus_extension_sdk-0.1.0-py3-none-any.whl')
+  const sdk = path.join(directory, 'vendor', 'extension-sdk', 'amadeus_extension_sdk-0.1.0-py3-none-any.whl')
   fs.mkdirSync(path.dirname(sdk), { recursive: true })
   fs.writeFileSync(sdk, 'trusted SDK')
+  const provenance = path.join(directory, 'server', 'extensions', 'protocol-source.json')
+  fs.mkdirSync(path.dirname(provenance), { recursive: true })
+  fs.writeFileSync(provenance, JSON.stringify({ sdk: { version: '0.1.0', filename: path.basename(sdk),
+    sha256: createHash('sha256').update('trusted SDK').digest('hex') } }))
   const metadata = options.manifest || manifest()
   const sitePackages = process.platform === 'win32' ? ['Lib', 'site-packages'] : ['lib', 'python3.12', 'site-packages']
   const pythonParts = process.platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python']
@@ -48,6 +52,7 @@ function fixture(t, options = {}) {
   const helper = { refreshRecords: async () => {}, call: async (command, args = [], input) => {
     calls.push({ command, args, input })
     if (command === 'inspect-wheel') {
+      if (options.inspectionError) throw new Error(options.inspectionError)
       assert.notEqual(args[0], selectedWheel)
       return { ok: true, manifest: metadata, digest: createHash('sha256').update(fs.readFileSync(args[0])).digest('hex'),
         package_root: 'demo', manifest_member: 'demo/amadeus-extension.json', distribution: 'demo' }
@@ -90,7 +95,7 @@ function fixture(t, options = {}) {
   if (sdkDirectory) {
     fs.mkdirSync(sdkDirectory, { recursive: true })
     const name = 'amadeus_extension_sdk-0.1.0-py3-none-any.whl'
-    fs.renameSync(path.join(directory, 'build', 'extension-sdk', name), path.join(sdkDirectory, name))
+    fs.renameSync(path.join(directory, 'vendor', 'extension-sdk', name), path.join(sdkDirectory, name))
   }
   const installer = new ExtensionInstaller(root, directory, store, helper, () => 'trusted-python', environment, run,
     async review => { calls.push({ command: 'confirm', review }); return options.confirm !== false }, sdkDirectory)
@@ -101,7 +106,9 @@ test('packaged installer uses the shipped SDK without a source build directory',
   const f = fixture(t, { packagedSdk: true })
   await f.installer.install(f.selectedWheel)
   const shipped = path.join(f.directory, 'resources', 'extension-sdk', 'amadeus_extension_sdk-0.1.0-py3-none-any.whl')
-  assert.ok(f.commandCalls.some(call => call.args.at(-1) === shipped))
+  const stagedSdk = f.commandCalls.find(call => call.args.at(-1).endsWith(path.basename(shipped)))?.args.at(-1)
+  assert.ok(stagedSdk && stagedSdk !== shipped)
+  assert.deepEqual(fs.readFileSync(stagedSdk), fs.readFileSync(shipped))
   assert.equal(f.store.extensionRecords().length, 1)
 })
 
@@ -625,4 +632,47 @@ test('trusted record validation is asynchronous, isolated and cached; reads neve
   assert.equal(invocations[0].options.env.SECRET_TOKEN, undefined)
   assert.equal(invocations[0].options.env.AMADEUS_EXTENSIONS, undefined)
   assert.equal(JSON.parse(invocations[0].options.input).allow_incomplete, true)
+})
+
+
+test('SDK integrity failure and incompatible wheel stop before confirmation or pip', async t => {
+  const damaged = fixture(t)
+  fs.writeFileSync(path.join(damaged.directory, 'vendor/extension-sdk/amadeus_extension_sdk-0.1.0-py3-none-any.whl'), 'damaged')
+  await assert.rejects(damaged.installer.install(damaged.selectedWheel), /SHA-256 verification/)
+  assert.deepEqual(damaged.commandCalls, [])
+  assert.ok(!damaged.calls.some(call => call.command === 'confirm'))
+  assert.deepEqual(damaged.store.storedExtensionRecords(), [])
+  const incompatible = fixture(t, { inspectionError: 'extension requires SDK >=0.2; Amadeus provides 0.1.0' })
+  await assert.rejects(incompatible.installer.install(incompatible.selectedWheel), /requires SDK >=0.2/)
+  assert.deepEqual(incompatible.commandCalls, [])
+  assert.ok(!incompatible.calls.some(call => call.command === 'confirm'))
+})
+
+test('installation disclosure uses inspected bytes and source basename', async t => {
+  const f = fixture(t)
+  f.metadata.license = 'MIT-0'
+  await f.installer.install(f.selectedWheel)
+  const review = f.calls.find(call => call.command === 'confirm').review
+  assert.equal(review.digest, createHash('sha256').update('synthetic wheel bytes').digest('hex'))
+  assert.equal(review.sourceFile, path.basename(f.selectedWheel))
+  const { extensionDisclosure } = loadTypeScript(new URL('../src/shared/extensions.ts', import.meta.url))
+  const text = extensionDisclosure(review.manifest, review)
+  assert.ok(text.includes('License: MIT-0') && text.includes(review.digest) && text.includes(review.sourceFile))
+  assert.ok(!text.includes(f.directory))
+  delete f.metadata.license
+  assert.ok(extensionDisclosure(f.metadata).includes('License: Not declared'))
+})
+
+test('installer selects SDK artifact from the pinned manifest instead of a fixed filename', async t => {
+  const f = fixture(t)
+  const provenance = path.join(f.directory, 'server/extensions/protocol-source.json')
+  const pin = JSON.parse(fs.readFileSync(provenance, 'utf8'))
+  const old = path.join(f.directory, 'vendor/extension-sdk', pin.sdk.filename)
+  pin.sdk.version = '0.1.7'
+  pin.sdk.filename = 'amadeus_extension_sdk-0.1.7-py3-none-any.whl'
+  fs.renameSync(old, path.join(path.dirname(old), pin.sdk.filename))
+  fs.writeFileSync(provenance, JSON.stringify(pin))
+  await f.installer.install(f.selectedWheel)
+  assert.ok(f.commandCalls.some(call => call.args.at(-1).endsWith(pin.sdk.filename)))
+  assert.ok(!f.commandCalls.some(call => call.args.at(-1).endsWith('amadeus_extension_sdk-0.1.0-py3-none-any.whl')))
 })

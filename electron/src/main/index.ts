@@ -64,7 +64,7 @@ const extensionInstaller = new ExtensionInstaller(path.join(USER_DATA_DIR, 'exte
   desktopSettings, extensionPackageHelper, getPythonCommand, process.env, undefined, async review => {
     const options: Electron.MessageBoxOptions = { type: 'question', title: 'Review extension access',
       message: `${review.operation === 'update' ? `Update ${review.previousVersion} → ${review.manifest.version}` : review.operation === 'enable' ? 'Enable extension' : 'Install extension'}: ${review.manifest.id}`,
-      detail: extensionDisclosure(review.manifest), buttons: ['Cancel', 'Confirm'], defaultId: 0, cancelId: 0, noLink: true }
+      detail: extensionDisclosure(review.manifest, review), buttons: ['Cancel', 'Confirm'], defaultId: 0, cancelId: 0, noLink: true }
     const result = mainWindow ? await dialog.showMessageBox(mainWindow, options) : await dialog.showMessageBox(options)
     return result.response === 1
   }, app.isPackaged ? path.join(process.resourcesPath, 'extension-sdk') : undefined)

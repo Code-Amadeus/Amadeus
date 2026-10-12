@@ -5,7 +5,6 @@ import asyncio
 import copy
 import json
 import os
-import shutil
 import subprocess
 import sys
 import threading
@@ -55,7 +54,9 @@ def private_environment(tmp_path_factory):
     python = directory / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     info = subprocess.run([str(python), "-I", "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"], check=True, capture_output=True, text=True)
     site = Path(info.stdout.strip())
-    shutil.copytree(ROOT / "sdk/extension-python/src/amadeus_extension", site / "amadeus_extension")
+    from server.extensions.sdk import sdk_spec
+    with zipfile.ZipFile(ROOT / "vendor/extension-sdk" / sdk_spec()["filename"]) as sdk:
+        sdk.extractall(site)
     fixture = site / "synthetic_voice"
     fixture.mkdir()
     fixture.joinpath("__init__.py").write_text('''
