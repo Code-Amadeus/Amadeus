@@ -436,6 +436,9 @@ class RunnerClient:
         with self._lock:
             tree, process = self._tree, self._process
             self._tree, self._process = None, None
+            # Consumers retain their failed Pending object. Retired requests
+            # must not reserve capacity or send cancel to a replacement process.
+            self._pending.clear()
             self._cancelled.clear()
         if tree:
             tree.terminate()
