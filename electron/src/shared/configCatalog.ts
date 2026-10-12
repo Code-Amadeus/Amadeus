@@ -28,6 +28,7 @@ export interface CatalogField {
   max_length?: number
   allow_empty?: boolean
   trim?: boolean
+  extension_selection?: { kind: string; role?: string }
   options?: Array<string | { value: string; label: LocalizedText; description?: LocalizedText; hidden?: boolean }>
   schemes?: string[]
   min?: number

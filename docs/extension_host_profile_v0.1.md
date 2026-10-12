@@ -1,6 +1,6 @@
 # Experimental extension Host profile 0.1
 
-Status: implemented experimental subset, prepared for review on `codex/extension-pilot`.
+Status: implemented experimental subset, extended locally on `codex/extension-theme-pilot`.
 Updated 2026-10-13. This document describes what this checkout actually accepts;
 it does not upgrade the broader Extension Protocol v0.1 draft or its provisional
 TTS/MCP/Skill contracts to a stable SDK. The schema is wider than this profile.
@@ -37,6 +37,28 @@ The manifest and referenced package files are checked before importing code.
 The wheel's `amadeus.extensions` entry point names the package containing
 `amadeus-extension.json`; a TTS manifest additionally names its Runner object.
 All five [examples](../examples/extensions/) are validated against these rules.
+New `runtime.kind=none` wheels contain resources only: their inspected package
+directory is extracted without creating a venv, invoking pip or importing code.
+They cannot declare `Requires-Dist`. Existing no-code installations retain their
+previous private-environment layout until explicitly updated.
+
+The Host's support matrix lives in `server/extensions/profile.json`; Electron
+uses its checked generated copy. It controls contribution acceptance, selection
+and Agent-binding requirements, not dynamic imports or execution authority.
+Saved package revisions advance only after a real, committed change. Runtime
+status reports the revision of each validated startup snapshot separately from
+contribution health; Electron never treats a saved revision as an acknowledgement
+from the backend. Reading older records supplies initial revision 1 without
+rewriting them.
+
+A fresh backend launch retires previous logical loaded revisions even when
+child-process exit was not confirmed. This never authorizes deleting files;
+cleanup still requires confirmed shutdown. A Host-generated `startup_error`
+settles the attempted revision without marking it loaded or requiring endless
+restarts; newer edits remain pending. Frontend-only validation or removal errors
+do not create backend-restart work. POSIX resource extraction retains executable
+bits for bundled MCP commands, but never archive setuid/setgid permissions.
+
 The manager shows package identity, author-declared license (or Not declared),
 full wheel SHA-256, local source filename, contributions, commands and OS disclosures
 and asks for confirmation before preparing an installation/update or enabling
@@ -250,3 +272,21 @@ compares wheels built independently on Windows and Linux. The Host carries that
 artifact unchanged; runtime still requires Python >=3.11. Matching SDK build
 bytes do not imply cross-platform qualification of the Host or third-party
 extensions.
+
+
+### Explicit backend startup receipts (2026-10-13 audit follow-up)
+
+The paired Electron/Python Host reports a received revision and a separate
+`startup: accepted|rejected` result. A unique valid identity/revision rejected
+by Python validation settles that launch without creating a loaded receipt.
+A missing required configuration also rejects startup. Dynamic Runner health
+and per-contribution availability do not rewrite a successfully accepted
+snapshot. These receipts describe Host snapshot admission, not voice readiness.
+
+HTTP/JSON/status-section failures, an unreadable whole startup snapshot,
+duplicate identities, missing/invalid results and mismatched revisions are
+unconfirmed. They never count as rejection or success, never confer loaded
+state, and retain pending work with a diagnostic. Host preflight failures remain
+known rejections. Revision comparisons still prevent late replies from clearing
+newer edits. No package filesystem or Runner authority is granted by a failure
+receipt, and SDK bytes/wire contracts are unchanged.

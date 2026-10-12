@@ -379,6 +379,17 @@ function requestBackendAction(endpoint: string, timeoutMs: number): Promise<bool
   })
 }
 
+async function extensionStartupStatus(): Promise<unknown> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${BACKEND_PORT}/runtime/status`, {
+      headers: { [BACKEND_TOKEN_HEADER]: BACKEND_TOKEN }, signal: AbortSignal.timeout(3000),
+    })
+    if (!response.ok) return null
+    const payload = await response.json() as { extensions?: unknown }
+    return payload.extensions
+  } catch { return null }
+}
+
 function startBackend(): Promise<void> {
   if (backendStarting) return backendStarting
   const snapshot = desktopSettings.snapshot(process.env)
@@ -464,6 +475,10 @@ async function launchBackend(): Promise<void> {
     void windowsWallpaper?.stop().catch(error => console.error('[windows-wallpaper] backend exit cleanup:', error))
   })
   await waitForBackendReady(120_000, proc)
+  if (!await extensionInstaller.acceptLaunch(launchSettings, await extensionStartupStatus())) {
+    delete launchPendingRevisions[EXTENSIONS_ENV]
+    desktopSettings.reportExtensionWarning('Some extension startup revisions could not be confirmed; saved changes remain pending. Check the backend status before retrying.')
+  }
   desktopSettings.markApplied(process.env, launchPendingRevisions)
 }
 

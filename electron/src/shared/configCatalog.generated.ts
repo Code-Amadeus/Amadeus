@@ -114,7 +114,10 @@ export const catalogGroups: CatalogGroup[] = [
               "zh-CN": "以壁纸切片为灵感的深色半透明界面。"
             }
           }
-        ]
+        ],
+        "extension_selection": {
+          "kind": "theme"
+        }
       }
     }
   },
@@ -2451,7 +2454,11 @@ export const catalogGroups: CatalogGroup[] = [
         },
         "example_active": true,
         "default": "gpt_sovits",
-        "identifier": true
+        "identifier": true,
+        "extension_selection": {
+          "kind": "voice_backend",
+          "role": "tts"
+        }
       }
     },
     "section": "output",

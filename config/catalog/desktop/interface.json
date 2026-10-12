@@ -71,7 +71,10 @@
             "zh-CN": "以壁纸切片为灵感的深色半透明界面。"
           }
         }
-      ]
+      ],
+      "extension_selection": {
+        "kind": "theme"
+      }
     }
   }
 }

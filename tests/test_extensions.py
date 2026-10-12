@@ -161,6 +161,7 @@ def test_manifest_subset_and_semantics():
     bad["permissions"] = {"host": [{"capability": "conversation.current:read", "reason": "test"}]}
     with pytest.raises(ValueError, match="permissions.host"):
         validate_manifest(bad)
+
     bad = copy.deepcopy(good)
     bad["contributes"]["voice_backend"][0]["role"] = "asr"
     with pytest.raises(ValueError):
@@ -173,6 +174,19 @@ def test_manifest_subset_and_semantics():
     bad["engines"]["amadeus_host_api"] = ">=0.2"
     with pytest.raises(ValueError, match="incompatible"):
         validate_manifest(bad)
+
+
+def test_runtime_reports_only_validated_startup_revision(record):
+    record = {**record, 'revision': 7, 'secrets': {}}
+    runtime = ExtensionRuntime([record])
+    assert runtime.statuses()[0]['revision'] == 7
+    assert runtime.clients == {}
+    assert runtime.statuses()[0]['startup'] == 'rejected'  # Configuration is required for admission.
+    invalid = {**record, 'revision': -1}
+    assert 'revision' not in ExtensionRuntime([invalid]).statuses()[0]
+    blocked = {**record, 'startup_error': 'synthetic blocked installation'}
+    assert ExtensionRuntime([blocked]).statuses()[0]['startup'] == 'rejected'
+    assert ExtensionRuntime([blocked]).statuses()[0]['revision'] == 7
 
 
 def test_config_types_defaults_required_and_secret_errors():
@@ -698,3 +712,34 @@ time.sleep(120)
             host.stdout.close()
         if host.stderr:
             host.stderr.close()
+
+@pytest.mark.parametrize('failure', ['installation', 'config', 'blocked'])
+def test_backend_rejection_keeps_received_revision_without_activation(record, failure):
+    record = {**record, 'revision': 7}
+    if failure == 'installation':
+        record['package_path'] = str(Path(record['package_path']) / 'missing')
+    elif failure == 'config':
+        record['config'] = {'delay': 'invalid'}
+    else:
+        record['startup_error'] = 'blocked by desktop'
+    runtime = ExtensionRuntime([record])
+    status = runtime.statuses()[0]
+    assert status['revision'] == 7
+    assert status['startup'] == 'rejected'
+    assert runtime.activation_records == []
+    assert runtime.clients == {}
+
+
+def test_duplicate_identity_cannot_acknowledge_any_revision(record):
+    runtime = ExtensionRuntime([{**record, 'revision': 7}, {**record, 'revision': 8}])
+    assert all('revision' not in status and 'startup' not in status for status in runtime.statuses())
+
+
+def test_runtime_health_errors_do_not_rewrite_successful_startup_receipt(record):
+    runtime = ExtensionRuntime([{**record, 'revision': 7}])
+    status = runtime.statuses()[0]
+    assert status['startup'] == 'accepted'
+    client = next(iter(runtime.clients.values()))
+    client.state = 'error'
+    assert runtime.statuses()[0]['startup'] == 'accepted'
+    assert runtime.statuses()[0]['state'] == 'error'

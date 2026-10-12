@@ -83,7 +83,12 @@
     "docs/alpha-0.16.1.md",
     "docs/alpha-0.16.1-acceptance.md",
     "docs/chat-runtime-convergence.md",
-    "docs/live2d_character_visuals.md"
+    "docs/live2d_character_visuals.md",
+    "server/extensions/profile.json",
+    "server/extensions/profile.py",
+    "electron/scripts/generate-extension-profile.mjs",
+    "electron/src/shared/extensionProfile.ts",
+    "electron/src/shared/extensionProfile.generated.ts"
   ],
   "include_roots": [
     "characters",

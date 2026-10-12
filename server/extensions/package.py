@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import configparser
 import json
+import os
 import math
 import platform
 import re
@@ -16,6 +17,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from server.extensions.manifest import MANIFEST_LIMIT_BYTES, MANIFEST_NAME, _is_link, manifest_issues, package_issues
+from server.extensions.profile import validate_supported_contributions
 from server.extensions.sdk import validate_sdk_requirements
 
 HOST_API = "0.1"
@@ -52,11 +54,7 @@ def validate_manifest(manifest: Any, *, check_environment: bool = True) -> dict[
         raise ValueError(f"invalid manifest: {issues[0].code} at {issues[0].path}")
     if manifest.get("permissions", {}).get("host"):
         raise ValueError("permissions.host is unsupported in this experiment")
-    contributes = manifest["contributes"]
-    if set(contributes) - {"voice_backend", "mcp_server", "skill"}:
-        raise ValueError("this experiment supports only TTS voice_backend, mcp_server and skill")
-    if any(item["role"] != "tts" for item in contributes.get("voice_backend", [])):
-        raise ValueError("ASR extensions are unsupported in this experiment")
+    validate_supported_contributions(manifest["contributes"])
     if check_environment:
         engines = manifest["engines"]
         if not matches_version(HOST_API, engines["amadeus_host_api"]):
@@ -190,10 +188,40 @@ def inspect_wheel(path: Path) -> dict[str, Any]:
             raise ValueError("distribution metadata lacks identity")
         if metadata.get("Version") != manifest["version"]:
             raise ValueError("wheel version differs from extension manifest")
+        if manifest['runtime']['kind'] == 'none' and metadata.get_all('Requires-Dist', []):
+            raise ValueError('No-code extensions cannot declare Requires-Dist dependencies')
         validate_sdk_requirements(metadata.get_all("Requires-Dist", []))
         return {"manifest": manifest, "digest": digest, "manifest_member": member.filename,
                 "package_root": package_root, "distribution": metadata["Name"],
                 "requires_dist": metadata.get_all("Requires-Dist", []), "requires_python": metadata.get("Requires-Python", "")}
+
+
+def prepare_data_wheel(path: Path, destination: Path) -> dict[str, Any]:
+    """Extract inspected resources only; never create an interpreter or invoke pip."""
+    inspection = inspect_wheel(path)
+    if inspection['manifest']['runtime']['kind'] != 'none':
+        raise ValueError('Resource extraction requires runtime.kind none')
+    destination = Path(destination)
+    if destination.exists() or _is_link(destination):
+        raise ValueError('Resource destination must be new')
+    destination.mkdir()
+    prefix = inspection['package_root'] + '/'
+    with zipfile.ZipFile(path) as archive:
+        for member in archive.infolist():
+            if not member.filename.startswith(prefix):
+                continue
+            target = destination.joinpath(*PurePosixPath(member.filename).parts)
+            if member.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with target.open('xb') as output:
+                    output.write(archive.read(member))
+                if os.name != 'nt':
+                    # Preserve executable bits, never setuid/setgid or archive write permissions.
+                    target.chmod(target.stat().st_mode | ((member.external_attr >> 16) & 0o111))
+    validate_installed(inspection['manifest'], destination / inspection['package_root'])
+    return inspection
 
 
 def validate_installed(manifest: dict[str, Any], package_path: Path) -> None:

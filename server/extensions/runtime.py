@@ -48,7 +48,7 @@ class ExtensionRuntime:
                 enabled = record["enabled"]
                 state = "inactive" if not enabled else "needs_config" if missing else "starting" if "entry" in record["manifest"]["runtime"] else "active"
                 detail = "Package is disabled" if not enabled else "Required configuration is missing: " + ", ".join(missing) if missing else "Runner is starting" if state == "starting" else "Declarative contributions are registered at startup"
-                self._observed[package_id] = {"id": package_id, "version": record["version"], "enabled": enabled, "state": state, "detail": detail, "contributions": []}
+                self._observed[package_id] = {"id": package_id, "version": record["version"], "revision": record['revision'], "startup": "rejected" if missing else "accepted", "enabled": enabled, "state": state, "detail": detail, "contributions": []}
                 client = None
                 if enabled and not missing and "entry" in record["manifest"]["runtime"]:
                     client = RunnerClient(record)
@@ -60,6 +60,12 @@ class ExtensionRuntime:
                 # The failing boundary may contain paths or secrets; return one safe signal.
                 self._observed[package_id] = {"id": package_id, "version": str(raw.get("version") or ""), "enabled": False,
                                               "state": "incompatible", "detail": "Extension startup record is invalid or incompatible", "contributions": []}
+                # A terminal rejection acknowledges a unique received identity/revision,
+                # not a loaded package. Malformed identities/revisions remain unconfirmed.
+                revision = raw.get("revision", 1)
+                if (isinstance(raw.get("id"), str) and raw["id"] and package_id not in duplicate_ids
+                        and type(revision) is int and 1 <= revision <= 2**53 - 1):
+                    self._observed[package_id].update(revision=revision, startup="rejected")
                 self._blocked.add(package_id)
                 # Retain a valid manifest's saved intent and unavailable contribution
                 # identities while refusing to execute unavailable installation paths.
@@ -83,6 +89,9 @@ class ExtensionRuntime:
     @staticmethod
     def _validate_record(raw: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         record = copy.deepcopy(raw)
+        record['revision'] = record.get('revision', 1)
+        if type(record['revision']) is not int or not 1 <= record['revision'] <= 2**53 - 1:
+            raise ValueError('invalid extension revision')
         if record.get("startup_error"):
             raise ValueError("desktop blocked extension startup")
         manifest = record["manifest"]
