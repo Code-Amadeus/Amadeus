@@ -146,6 +146,11 @@ not extension RPC methods or package permissions to read Host history.
 
 ## Configuration migration and protocol source
 
+The shared [manual MCP migration](mcp_environment.md) and
+[owned backend shutdown policy](backend_shutdown.md) are independent desktop
+boundaries. Extension cleanup consumes the confirmed child-lifetime outcome;
+uncertainty retains installed resources and reports a warning.
+
 Manual MCP connection tests and Pi stdio calls receive the platform allowlist
 plus that connection's explicitly encrypted environment. Move required tokens
 and toolchain variables into **Providers → MCP → Encrypted environment values**;
