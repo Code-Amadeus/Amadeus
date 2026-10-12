@@ -146,9 +146,9 @@ test('package revisions change only with committed content; backend receipt owns
   assert.equal(f.store.extensionRecords()[0].revision, 2)
   assert.deepEqual(f.store.pendingRevisionSnapshot(), pending)
   const launch = await f.installer.prepareLaunch()
-  assert.equal(await f.installer.acceptLaunch(launch.records, {}), false)
+  assert.equal(await f.installer.acceptLaunch(launch, {}), false)
   assert.equal(f.store.snapshot({}).extensions[0].appliedRevision, undefined)
-  assert.equal(await f.installer.acceptLaunch(launch.records, { [f.metadata.id]: 2 }), true)
+  assert.equal(await f.installer.acceptLaunch(launch, { [f.metadata.id]: 2 }), true)
   f.store.markApplied({}, launch.pendingRevisions)
   assert.equal(f.store.snapshot({}).extensions[0].appliedRevision, 2)
   await f.installer.update({ id: f.metadata.id, values: { streaming: false } })
@@ -746,4 +746,60 @@ test('installer selects SDK artifact from the pinned manifest instead of a fixed
   await f.installer.install(f.selectedWheel)
   assert.ok(f.commandCalls.some(call => call.args.at(-1).endsWith(pin.sdk.filename)))
   assert.ok(!f.commandCalls.some(call => call.args.at(-1).endsWith('amadeus_extension_sdk-0.1.0-py3-none-any.whl')))
+})
+
+
+test('a new launch retires logical backend receipts without authorizing file cleanup', async t => {
+  const f = fixture(t)
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: f.metadata.id, enabled: true, secrets: { token: 'token' } })
+  const v1 = await f.installer.prepareLaunch()
+  assert.equal(await f.installer.acceptLaunch(v1, { [f.metadata.id]: 2 }), true)
+  const old = f.store.appliedExtensionRecords()[0]
+  await f.installer.update({ id: f.metadata.id, values: { streaming: false } })
+  const v2 = await f.installer.prepareLaunch() // unconfirmed old child stop: no cleanup call
+  assert.deepEqual(f.store.appliedExtensionRecords(), [])
+  assert.equal(await f.installer.acceptLaunch(v2, {}), false)
+  assert.equal(f.store.snapshot({}).extensions[0].appliedVersion, undefined)
+  assert.ok(fs.existsSync(path.join(f.root, old.installId)))
+})
+
+for (const blocked of ['credentials', 'installation', 'configuration']) test(`handled ${blocked} startup failure does not demand repeated restarts`, async t => {
+  const f = fixture(t)
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: f.metadata.id, enabled: true, secrets: { token: 'token' } })
+  const record = f.store.extensionRecords()[0]
+  if (blocked === 'credentials') {
+    const saved = JSON.parse(fs.readFileSync(f.file, 'utf8'))
+    saved.extensions[record.id].encryptedSecrets.token = Buffer.from('bad ciphertext').toString('base64')
+    fs.writeFileSync(f.file, JSON.stringify(saved))
+  } else if (blocked === 'installation') {
+    fs.renameSync(path.join(f.root, record.installId), path.join(f.root, record.installId + '-missing'))
+  } else f.store.saveExtension({}, record, { token: null })
+  const launch = await f.installer.prepareLaunch()
+  assert.ok(JSON.parse(launch.extensions)[0].startup_error)
+  assert.equal(await f.installer.acceptLaunch(launch, {}), true)
+  f.store.markApplied({}, launch.pendingRevisions)
+  assert.equal(f.store.snapshot({}).restartRequired, false)
+  assert.equal(f.store.snapshot({}).extensions[0].appliedRevision, undefined)
+  await f.installer.update({ id: record.id, enabled: false })
+  f.store.markApplied({}, launch.pendingRevisions)
+  assert.equal(f.store.snapshot({}).restartRequired, true, 'an old blocked receipt must not acknowledge a newer edit')
+})
+
+test('unavailable or pending-removal frontend-only records do not create backend restart work', async t => {
+  const metadata = manifest()
+  metadata.runtime = { kind: 'none' }
+  metadata.contributes = { theme: [{ id: 'light', base: 'classic', contract: 'amadeus.ui.theme/v0', tokens: {} }] }
+  const validatorState = { unavailable: false }
+  const f = fixture(t, { manifest: metadata, validatorState })
+  await f.installer.install(f.selectedWheel)
+  await f.installer.update({ id: metadata.id, enabled: true, secrets: { token: 'token' } })
+  validatorState.unavailable = true
+  await f.installer.prepareLaunch()
+  assert.equal(f.store.snapshot({}).restartRequired, false)
+  validatorState.unavailable = false
+  await f.installer.remove(metadata.id)
+  await f.installer.prepareLaunch()
+  assert.equal(f.store.snapshot({}).restartRequired, false)
 })

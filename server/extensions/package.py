@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import configparser
 import json
+import os
 import math
 import platform
 import re
@@ -216,6 +217,9 @@ def prepare_data_wheel(path: Path, destination: Path) -> dict[str, Any]:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with target.open('xb') as output:
                     output.write(archive.read(member))
+                if os.name != 'nt':
+                    # Preserve executable bits, never setuid/setgid or archive write permissions.
+                    target.chmod(target.stat().st_mode | ((member.external_attr >> 16) & 0o111))
     validate_installed(inspection['manifest'], destination / inspection['package_root'])
     return inspection
 

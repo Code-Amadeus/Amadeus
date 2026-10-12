@@ -51,6 +51,14 @@ contribution health; Electron never treats a saved revision as an acknowledgemen
 from the backend. Reading older records supplies initial revision 1 without
 rewriting them.
 
+A fresh backend launch retires previous logical loaded revisions even when
+child-process exit was not confirmed. This never authorizes deleting files;
+cleanup still requires confirmed shutdown. A Host-generated `startup_error`
+settles the attempted revision without marking it loaded or requiring endless
+restarts; newer edits remain pending. Frontend-only validation or removal errors
+do not create backend-restart work. POSIX resource extraction retains executable
+bits for bundled MCP commands, but never archive setuid/setgid permissions.
+
 The manager shows package identity, author-declared license (or Not declared),
 full wheel SHA-256, local source filename, contributions, commands and OS disclosures
 and asks for confirmation before preparing an installation/update or enabling

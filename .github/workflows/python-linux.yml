@@ -65,6 +65,7 @@ jobs:
           tests/test_system_settings.py
           tests/test_voice_backend_registry.py
           tests/test_extension_examples.py
+          tests/test_extension_resources.py
 
       - name: Build Electron renderer (Linux)
         working-directory: electron

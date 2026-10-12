@@ -382,7 +382,6 @@ export class DesktopSettingsStore {
   private extensionWarnings = new Set<string>()
   private validatedExtensionIds = new Set<string>()
   private incompatibleExtensionIds = new Set<string>()
-  private extensionValidationUnavailable = false
   constructor(
     private readonly filePath: string,
     private readonly dotenvPath: string,
@@ -400,12 +399,10 @@ export class DesktopSettingsStore {
     this.extensionErrors = []
     this.validatedExtensionIds.clear()
     this.incompatibleExtensionIds.clear()
-    this.extensionValidationUnavailable = false
     const validate: ExtensionRecordValidator = (manifest, values) => {
       const result = this.validateExtensionRecord(manifest, values)
       if (result === true) this.validatedExtensionIds.add(manifest.id)
       if (result === false) this.incompatibleExtensionIds.add(manifest.id)
-      if (result !== true) this.extensionValidationUnavailable = true
       return result
     }
     let failure: unknown
@@ -575,8 +572,9 @@ export class DesktopSettingsStore {
   extensionIsInstalled(id: string): boolean { return Object.hasOwn(this.read().extensions, id) }
   deferIncompleteExtensionApplication(): boolean {
     const stored = this.read()
-    const incomplete = this.extensionValidationUnavailable || Object.values(stored.extensions).some(record => record.pendingRemoval)
-    if (incomplete && !stored.pendingRevisions[EXTENSIONS_ENV] && Object.values(stored.extensions).some(record => record.enabled || record.pendingRemoval)) {
+    const incomplete = Object.values(stored.extensions).some(record => this.extensionChangeNeedsRestart(record)
+      && (record.pendingRemoval || record.enabled && !this.validatedExtensionIds.has(record.id)))
+    if (incomplete && !stored.pendingRevisions[EXTENSIONS_ENV]) {
       markPending(stored, [EXTENSIONS_ENV])
       this.write(stored)
     }

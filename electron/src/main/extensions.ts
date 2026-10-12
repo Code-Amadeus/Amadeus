@@ -443,6 +443,9 @@ export class ExtensionInstaller {
 
   prepareLaunch(): Promise<{ extensions: string; environment: NodeJS.ProcessEnv; pendingRevisions: Record<string, number>; records: StoredExtension[] }> {
     return this.serialize(async () => {
+      // A fresh process cannot inherit a receipt from the previous process.
+      // This retires logical state only; cleanup still requires confirmed stop.
+      this.store.releaseBackendExtensionApplications()
       await this.helper.refreshRecords(this.store.storedExtensionRecords())
       const incomplete = this.store.deferIncompleteExtensionApplication()
       const pendingRevisions = this.store.pendingRevisionSnapshot()
@@ -454,10 +457,14 @@ export class ExtensionInstaller {
     })
   }
 
-  acceptLaunch(records: StoredExtension[], accepted: Record<string, number>): Promise<boolean> {
+  acceptLaunch(launch: { records: StoredExtension[]; extensions: string }, accepted: Record<string, number>): Promise<boolean> {
     return this.serialize(async () => {
       let complete = true
-      for (const record of records.filter(item => extensionRequiresRestart(item.manifest) && !item.pendingRemoval)) {
+      const sent = JSON.parse(launch.extensions) as Array<{ id: string; revision: number; startup_error?: string }>
+      const blocked = new Map(sent.filter(item => item.startup_error).map(item => [item.id, item.revision]))
+      for (const record of launch.records.filter(item => extensionRequiresRestart(item.manifest) && !item.pendingRemoval)) {
+        // Host-preflight rejection is a handled revision, not a loaded receipt.
+        if (blocked.get(record.id) === (record.revision ?? 1)) continue
         if (!record.enabled || accepted[record.id] === (record.revision ?? 1)) this.store.acceptExtensionApplication(record)
         else complete = false
       }

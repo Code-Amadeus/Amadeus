@@ -477,7 +477,7 @@ async function launchBackend(): Promise<void> {
     void windowsWallpaper?.stop().catch(error => console.error('[windows-wallpaper] backend exit cleanup:', error))
   })
   await waitForBackendReady(120_000, proc)
-  if (!await extensionInstaller.acceptLaunch(launchSettings.records, await acceptedExtensionRevisions())) {
+  if (!await extensionInstaller.acceptLaunch(launchSettings, await acceptedExtensionRevisions())) {
     delete launchPendingRevisions[EXTENSIONS_ENV]
     desktopSettings.reportExtensionWarning('Some extension startup revisions were not accepted; saved changes remain pending.')
   }
