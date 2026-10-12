@@ -407,6 +407,7 @@ does not enable extension discovery or runtime registration.
 | `min`, `max`, `max_length` | Validated field constraints | Common concepts, with manifest-specific bounds and applicability. |
 | `apply` | `frontend`, `host`, `backend_restart`, `desktop_restart` | `live` or `reactivate`; these describe extension generations and are not interchangeable with built-in restart policy. |
 | `required` | Not a built-in field attribute | Missing required configuration keeps the extension in `needs_config`. |
+| `extension_selection` | Identifies the supported contribution kind/role for an existing selector; currently TTS and interface theme only | Not a manifest field; the Host support profile owns selection and application policy. |
 | Runtime and presentation wiring | `runtime_key`, `scope`, `setting`, computed/desktop defaults, visibility, factories and probes | Host implementation details, not a public manifest surface. |
 
 The generator already rejects unknown built-in attributes. Share only genuinely

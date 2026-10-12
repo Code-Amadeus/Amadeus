@@ -18,7 +18,11 @@
       },
       "example_active": true,
       "default": "gpt_sovits",
-      "identifier": true
+      "identifier": true,
+      "extension_selection": {
+        "kind": "voice_backend",
+        "role": "tts"
+      }
     }
   },
   "section": "output",

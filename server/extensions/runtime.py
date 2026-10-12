@@ -48,7 +48,7 @@ class ExtensionRuntime:
                 enabled = record["enabled"]
                 state = "inactive" if not enabled else "needs_config" if missing else "starting" if "entry" in record["manifest"]["runtime"] else "active"
                 detail = "Package is disabled" if not enabled else "Required configuration is missing: " + ", ".join(missing) if missing else "Runner is starting" if state == "starting" else "Declarative contributions are registered at startup"
-                self._observed[package_id] = {"id": package_id, "version": record["version"], "enabled": enabled, "state": state, "detail": detail, "contributions": []}
+                self._observed[package_id] = {"id": package_id, "version": record["version"], "revision": record['revision'], "enabled": enabled, "state": state, "detail": detail, "contributions": []}
                 client = None
                 if enabled and not missing and "entry" in record["manifest"]["runtime"]:
                     client = RunnerClient(record)
@@ -83,6 +83,9 @@ class ExtensionRuntime:
     @staticmethod
     def _validate_record(raw: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         record = copy.deepcopy(raw)
+        record['revision'] = record.get('revision', 1)
+        if type(record['revision']) is not int or not 1 <= record['revision'] <= 2**53 - 1:
+            raise ValueError('invalid extension revision')
         if record.get("startup_error"):
             raise ValueError("desktop blocked extension startup")
         manifest = record["manifest"]

@@ -1,6 +1,6 @@
 # Experimental extension Host profile 0.1
 
-Status: implemented experimental subset, prepared for review on `codex/extension-pilot`.
+Status: implemented experimental subset, extended locally on `codex/extension-theme-pilot`.
 Updated 2026-10-13. This document describes what this checkout actually accepts;
 it does not upgrade the broader Extension Protocol v0.1 draft or its provisional
 TTS/MCP/Skill contracts to a stable SDK. The schema is wider than this profile.
@@ -37,6 +37,20 @@ The manifest and referenced package files are checked before importing code.
 The wheel's `amadeus.extensions` entry point names the package containing
 `amadeus-extension.json`; a TTS manifest additionally names its Runner object.
 All five [examples](../examples/extensions/) are validated against these rules.
+New `runtime.kind=none` wheels contain resources only: their inspected package
+directory is extracted without creating a venv, invoking pip or importing code.
+They cannot declare `Requires-Dist`. Existing no-code installations retain their
+previous private-environment layout until explicitly updated.
+
+The Host's support matrix lives in `server/extensions/profile.json`; Electron
+uses its checked generated copy. It controls contribution acceptance, selection
+and Agent-binding requirements, not dynamic imports or execution authority.
+Saved package revisions advance only after a real, committed change. Runtime
+status reports the revision of each validated startup snapshot separately from
+contribution health; Electron never treats a saved revision as an acknowledgement
+from the backend. Reading older records supplies initial revision 1 without
+rewriting them.
+
 The manager shows package identity, author-declared license (or Not declared),
 full wheel SHA-256, local source filename, contributions, commands and OS disclosures
 and asks for confirmation before preparing an installation/update or enabling

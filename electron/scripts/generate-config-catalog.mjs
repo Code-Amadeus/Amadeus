@@ -8,6 +8,7 @@ const catalogRoot = path.join(root, 'config/catalog')
 const check = process.argv.includes('--check')
 const files = fs.readdirSync(catalogRoot, { recursive: true }).filter(name => name.endsWith('.json')).sort()
 const groups = files.map(name => JSON.parse(fs.readFileSync(path.join(catalogRoot, name), 'utf8')))
+const extensionProfile = JSON.parse(fs.readFileSync(path.join(root, 'server/extensions/profile.json'), 'utf8'))
 const ids = new Set()
 const backendIds = new Set()
 const keys = new Set()
@@ -55,7 +56,12 @@ for (const group of groups) {
   assert.ok(applications.includes(group.apply), `Missing/invalid application policy for ${group.id}`)
   assert.ok(Object.keys(group.config).length, 'Empty configuration group')
   for (const [key, field] of Object.entries(group.config)) {
-    knownKeys(field, ['type', 'title', 'description', 'ui_description', 'icon', 'default', 'desktop_default', 'secret', 'options', 'schemes', 'min', 'max', 'step', 'computed_default', 'example', 'example_active', 'accepted_values', 'true_values', 'aliases', 'setting', 'control', 'scope', 'visible_when', 'apply', 'runtime_key', 'identifier', 'max_length', 'allow_empty', 'trim'])
+    knownKeys(field, ['type', 'title', 'description', 'ui_description', 'icon', 'default', 'desktop_default', 'secret', 'options', 'schemes', 'min', 'max', 'step', 'computed_default', 'example', 'example_active', 'accepted_values', 'true_values', 'aliases', 'setting', 'control', 'scope', 'visible_when', 'apply', 'runtime_key', 'identifier', 'max_length', 'allow_empty', 'trim', 'extension_selection'])
+    if (field.extension_selection) {
+      knownKeys(field.extension_selection, ['kind', 'role'])
+      assert.ok(extensionProfile.some(row => row.kind === field.extension_selection.kind && row.role === field.extension_selection.role
+        && row.select_keys.includes(key)), `Invalid extension selector for ${key}`)
+    }
     assert.match(key, /^[A-Z][A-Z0-9_]*$/)
     assert.ok(!keys.has(key), `Duplicate setting ${key}`)
     keys.add(key)

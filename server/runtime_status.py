@@ -185,10 +185,16 @@ class RuntimeStatusCollector:
             "coordinator": self._section(self._coordinator),
             "turn_decision_shadow": self._section(self._turn_decision_shadow),
             "retired_settings": self._section(self._retired_settings),
+            "extensions": self._section(self._extensions),
         }
         snapshot["ready"] = self._ready(snapshot)
         snapshot["derived"] = self._section(lambda: self._derived(snapshot))
         return snapshot
+
+    @staticmethod
+    def _extensions() -> list[dict[str, Any]]:
+        from server.extensions.runtime import extension_statuses
+        return extension_statuses()
 
     @staticmethod
     def _retired_settings() -> list[dict[str, object]]:

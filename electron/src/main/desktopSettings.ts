@@ -2,11 +2,14 @@ import { safeStorage } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import process from 'node:process'
+import { isDeepStrictEqual } from 'node:util'
 import { catalogApplication, catalogInputKeys, catalogLaunchDefaults, catalogOptionValues, desktopCatalogFields } from '../shared/configCatalog.js'
 import type { ExtensionConfigValue, ExtensionManifest, InstalledExtensionSummary } from '../shared/extensions.js'
+import { matchesExtensionSelection, extensionRequiresRestart } from '../shared/extensionProfile.js'
 
 export const EXTENSIONS_ENV = 'AMADEUS_EXTENSIONS'
 export type StoredExtension = {
+  revision?: number
   id: string
   version: string
   digest: string
@@ -169,7 +172,9 @@ function cleanStoredExtensions(value: unknown, validate: ExtensionRecordValidato
         || typeof record.digest !== 'string' || !/^[a-f0-9]{64}$/.test(record.digest)
         || typeof record.installId !== 'string' || !/^[a-f0-9]{32}$/.test(record.installId)
         || typeof record.packageRoot !== 'string' || !/^[A-Za-z0-9_][A-Za-z0-9._-]*(\/[A-Za-z0-9_][A-Za-z0-9._-]*)*$/.test(record.packageRoot)
-        || typeof record.sitePackages !== 'string' || !/^(Lib\/site-packages|lib\/python\d+\.\d+\/site-packages)$/.test(record.sitePackages)
+        || typeof record.sitePackages !== 'string' || !(record.manifest.runtime?.kind === 'none' && record.sitePackages === ''
+          || /^(Lib\/site-packages|lib\/python\d+\.\d+\/site-packages)$/.test(record.sitePackages))
+        || (record.revision !== undefined && (!Number.isSafeInteger(record.revision) || record.revision < 1))
         || typeof record.enabled !== 'boolean' || typeof record.pendingRemoval !== 'boolean'
         || typeof record.deleteDataOnRemoval !== 'boolean'
         || !record.values || typeof record.values !== 'object' || Array.isArray(record.values)
@@ -186,9 +191,9 @@ function cleanStoredExtensions(value: unknown, validate: ExtensionRecordValidato
       const validated = validate(record.manifest, record.values)
       if (validated === false) errors.push('Extension is incompatible with this Host or configuration; saved records were retained and activation was skipped.')
       if (validated === 'unavailable') errors.push('Extension validation is temporarily unavailable; saved records were retained and activation was skipped.')
-      records[key] = { ...record, enabled: record.enabled && !record.pendingRemoval,
+      records[key] = { ...record, revision: record.revision ?? 1, enabled: record.enabled && !record.pendingRemoval,
         deleteDataOnRemoval: record.deleteDataOnRemoval,
-        values: { ...record.values }, encryptedSecrets: { ...record.encryptedSecrets }, providers: [...new Set(record.providers)] }
+        values: { ...record.values }, encryptedSecrets: { ...record.encryptedSecrets }, providers: [...new Set(record.providers)].sort() }
     } catch {
       errors.push('A stored extension record could not be validated and was excluded from startup.')
     }
@@ -372,6 +377,7 @@ function writeFileDurably(target: string, text: string): void {
 }
 
 export class DesktopSettingsStore {
+  private appliedExtensions = new Map<string, StoredExtension>()
   private extensionErrors: string[] = []
   private extensionWarnings = new Set<string>()
   private validatedExtensionIds = new Set<string>()
@@ -532,13 +538,20 @@ export class DesktopSettingsStore {
   }
 
   private extensionSummary(record: StoredExtension, restartRequired: boolean, validated: boolean): InstalledExtensionSummary {
+    const applied = this.appliedExtensions.get(record.id)
+    const application = this.extensionChangeNeedsRestart(record) ? 'backend_restart' : 'frontend'
+    restartRequired = restartRequired && application === 'backend_restart' && (record.pendingRemoval || applied?.revision !== record.revision)
+    const revisions = { revision: record.revision ?? 1, appliedRevision: applied?.revision, appliedVersion: applied?.version, application,
+      backendStillRunning: Boolean(applied?.enabled && extensionRequiresRestart(applied.manifest)) } as const
     if (!validated) return { id: record.id, version: record.version, digest: record.digest, manifest: null,
+      ...revisions,
       enabled: record.enabled, pendingRemoval: record.pendingRemoval, values: {}, secretConfigured: {}, providers: [],
-      status: this.incompatibleExtensionIds.has(record.id) ? 'incompatible' : 'unavailable', restartRequired: restartRequired || record.enabled,
+      status: this.incompatibleExtensionIds.has(record.id) ? 'incompatible' : 'unavailable', restartRequired,
       validationError: this.incompatibleExtensionIds.has(record.id)
         ? 'Extension is incompatible with this Host or configuration; saved configuration and credentials were retained.'
         : 'Trusted extension validation is temporarily unavailable; saved configuration and credentials were retained.' }
     return { id: record.id, version: record.version, digest: record.digest, manifest: record.manifest,
+      ...revisions,
       enabled: record.enabled, pendingRemoval: record.pendingRemoval, values: { ...record.values },
       secretConfigured: Object.fromEntries(Object.entries(record.manifest.config || {}).filter(([, field]) => field.secret)
         .map(([key]) => [key, Boolean(record.encryptedSecrets[key])])), providers: [...record.providers],
@@ -550,6 +563,15 @@ export class DesktopSettingsStore {
     return records.filter(record => this.validatedExtensionIds.has(record.id))
   }
   storedExtensionRecords(): StoredExtension[] { return Object.values(this.read().extensions) }
+  appliedExtensionRecords(): StoredExtension[] { return structuredClone([...this.appliedExtensions.values()]) }
+  acceptExtensionApplication(record: StoredExtension): void { this.appliedExtensions.set(record.id, structuredClone(record)) }
+  releaseExtensionApplication(id: string): void { this.appliedExtensions.delete(id) }
+  releaseBackendExtensionApplications(): void {
+    for (const record of this.appliedExtensions.values()) if (extensionRequiresRestart(record.manifest)) this.appliedExtensions.delete(record.id)
+  }
+  extensionChangeNeedsRestart(record: StoredExtension, previous?: StoredExtension): boolean {
+    return [record, previous, this.appliedExtensions.get(record.id)].some(item => item && extensionRequiresRestart(item.manifest))
+  }
   extensionIsInstalled(id: string): boolean { return Object.hasOwn(this.read().extensions, id) }
   deferIncompleteExtensionApplication(): boolean {
     const stored = this.read()
@@ -593,17 +615,25 @@ export class DesktopSettingsStore {
   /** Called only by the installation owner after canonical validation. */
   saveExtension(environment: NodeJS.ProcessEnv, record: StoredExtension, secrets: Record<string, string | null> = {}): Record<string, unknown> {
     const stored = this.read()
+    const previous = stored.extensions[record.id]
     const encryptedSecrets = { ...record.encryptedSecrets }
     for (const [key, value] of Object.entries(secrets)) {
       if (!record.manifest.config?.[key]?.secret) throw new Error('Unknown extension secret field')
       if (value === null) { delete encryptedSecrets[key]; continue }
       if (!safeStorage.isEncryptionAvailable()) throw new Error('System credential encryption is unavailable; extension secrets were not saved')
-      encryptedSecrets[key] = safeStorage.encryptString(secretText(value, 'extension secret', 16_384)).toString('base64')
+      const text = secretText(value, 'extension secret', 16_384)
+      let unchanged = false
+      try { unchanged = Boolean(encryptedSecrets[key]) && safeStorage.decryptString(Buffer.from(encryptedSecrets[key], 'base64')) === text } catch { /* replacement repairs an unreadable credential */ }
+      if (!unchanged) encryptedSecrets[key] = safeStorage.encryptString(text).toString('base64')
     }
     const clean = cleanStoredExtensions({ [record.id]: { ...record, encryptedSecrets } }, this.validateExtensionRecord)
     if (clean.errors.length) throw new Error('Extension record validation failed')
-    stored.extensions[record.id] = clean.records[record.id]
-    markPending(stored, [EXTENSIONS_ENV])
+    const next = { ...clean.records[record.id], revision: previous?.revision ?? 1 }
+    if (previous && isDeepStrictEqual(previous, next)) return this.snapshot(environment)
+    next.revision = previous ? (previous.revision ?? 1) + 1 : 1
+    if (!Number.isSafeInteger(next.revision)) throw new Error('Extension revision limit reached')
+    stored.extensions[record.id] = next
+    if (this.extensionChangeNeedsRestart(next, previous)) markPending(stored, [EXTENSIONS_ENV])
     this.write(stored)
     return this.snapshot(environment)
   }
@@ -613,10 +643,12 @@ export class DesktopSettingsStore {
     if (typeof id !== 'string' || !Object.hasOwn(stored.extensions, id)) throw new Error('Extension was not found')
     const record = stored.extensions[id]
     if (!record) throw new Error('Extension was not found')
+    if (record.pendingRemoval && record.deleteDataOnRemoval === deleteData) return this.snapshot(environment)
+    record.revision = (record.revision ?? 1) + 1
     record.enabled = false
     record.pendingRemoval = true
     record.deleteDataOnRemoval = deleteData
-    markPending(stored, [EXTENSIONS_ENV])
+    if (this.extensionChangeNeedsRestart(record)) markPending(stored, [EXTENSIONS_ENV])
     this.write(stored)
     return this.snapshot(environment)
   }
@@ -761,17 +793,17 @@ export class DesktopSettingsStore {
       const maxLength = key === 'AMADEUS_ACP_PROVIDERS' ? 65536 : desktopCatalogFields[key]?.max_length ?? 4096
       if (value.includes('\0') || String(rawValue).length > maxLength) throw new Error(`Invalid value for ${key}`)
       if (key === 'AMADEUS_ACP_PROVIDERS') validateAcpProviders(value)
-      const extensionTts = key === 'TTS_BACKEND' && Object.values(stored.extensions).some(record => this.validatedExtensionIds.has(record.id) && !record.pendingRemoval
-        && record.manifest.contributes.voice_backend?.some(item => item.role === 'tts' && value === `${record.id}/${item.id}`))
+      const extensionSelection = Object.values(stored.extensions).some(record => this.validatedExtensionIds.has(record.id) && !record.pendingRemoval
+        && matchesExtensionSelection(record.manifest, desktopCatalogFields[key]?.extension_selection, value))
       const choices = VALUE_CHOICES[key]
-      if (choices && !choices.has(value) && !extensionTts) throw new Error(`Invalid value for ${key}: ${value}`)
+      if (choices && !choices.has(value) && !extensionSelection) throw new Error(`Invalid value for ${key}: ${value}`)
       const schemes = desktopCatalogFields[key]?.schemes
       if (schemes) {
         let protocol = ''
         try { protocol = new URL(value).protocol.slice(0, -1) } catch { /* rejected below */ }
         if (!schemes.includes(protocol)) throw new Error(`${key} must use ${schemes.join(' or ')} URL`)
       }
-      if (IDENTIFIER_KEYS.has(key) && !/^[a-z][a-z0-9_-]{0,63}$/.test(value) && !extensionTts) {
+      if (IDENTIFIER_KEYS.has(key) && !/^[a-z][a-z0-9_-]{0,63}$/.test(value) && !extensionSelection) {
         throw new Error(`Invalid backend identifier for ${key}`)
       }
       const definition = desktopCatalogFields[key]

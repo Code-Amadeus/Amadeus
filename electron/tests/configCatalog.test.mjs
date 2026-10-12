@@ -196,6 +196,8 @@ test('generation rejects stale output and invalid declarations before they reach
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
   fs.mkdirSync(path.join(root, 'electron/scripts'), { recursive: true })
   fs.mkdirSync(path.join(root, 'config/catalog/tts'), { recursive: true })
+  fs.mkdirSync(path.join(root, 'server/extensions'), { recursive: true })
+  fs.copyFileSync(new URL('../../server/extensions/profile.json', import.meta.url), path.join(root, 'server/extensions/profile.json'))
   const script = path.join(root, 'electron/scripts/generate-config-catalog.mjs')
   fs.copyFileSync(new URL('../scripts/generate-config-catalog.mjs', import.meta.url), script)
   fs.writeFileSync(path.join(root, 'config/settings.py'), '# BEGIN GENERATED CATALOG BINDINGS\n# END GENERATED CATALOG BINDINGS\n')

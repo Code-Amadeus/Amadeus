@@ -49,6 +49,11 @@ export type ExtensionManifest = {
   permissions?: { host?: unknown[]; os?: Record<string, unknown> }
 }
 export type InstalledExtensionSummary = {
+  revision?: number
+  appliedRevision?: number
+  appliedVersion?: string
+  application?: 'frontend' | 'backend_restart'
+  backendStillRunning?: boolean
   id: string
   version: string
   digest: string

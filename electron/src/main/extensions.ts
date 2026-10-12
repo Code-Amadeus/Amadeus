@@ -7,6 +7,7 @@ import { forceStopBackendTree } from './backendProcessTree.js'
 import { bundledExtensionSdk } from './extensionSdk.js'
 import { DesktopSettingsStore, EXTENSIONS_ENV, type StoredExtension } from './desktopSettings.js'
 import type { ExtensionConfigValue, ExtensionManifest, ExtensionRemovalOptions, ExtensionUpdate, ExtensionConfirmation } from '../shared/extensions.js'
+import { extensionNeedsAgent, extensionRequiresRestart } from '../shared/extensionProfile.js'
 
 type HelperReply = { ok: boolean; error?: string; unavailable?: boolean; manifest?: ExtensionManifest; digest?: string;
   package_root?: string; manifest_member?: string; distribution?: string; config?: Record<string, ExtensionConfigValue>; missing?: string[] }
@@ -104,7 +105,7 @@ export class ExtensionPackageHelper {
     }
   }
 
-  async call(command: 'inspect-wheel' | 'validate-config' | 'validate-installed', args: string[] = [], input?: unknown): Promise<HelperReply> {
+  async call(command: 'inspect-wheel' | 'prepare-data-wheel' | 'validate-config' | 'validate-installed', args: string[] = [], input?: unknown): Promise<HelperReply> {
     const output = await this.run(this.python(), ['-I', this.script, command, ...args], {
       cwd: this.projectRoot, env: extensionInstallerEnvironment(this.environment),
       allowFailureJson: true,
@@ -267,9 +268,12 @@ export class ExtensionInstaller {
         if (!manifest || !inspection.digest || !inspection.package_root || !safeRelative(inspection.package_root)) {
           throw new Error('The wheel inspector returned incomplete installation metadata')
         }
-        const bundledSdk = bundledExtensionSdk(this.projectRoot, this.sdkDirectory)
-        fs.copyFileSync(bundledSdk, path.join(directory, path.basename(bundledSdk)), fs.constants.COPYFILE_EXCL)
-        const sdkWheel = bundledExtensionSdk(this.projectRoot, directory)
+        let sdkWheel = ''
+        if (manifest.runtime.kind === 'python') {
+          const bundledSdk = bundledExtensionSdk(this.projectRoot, this.sdkDirectory)
+          fs.copyFileSync(bundledSdk, path.join(directory, path.basename(bundledSdk)), fs.constants.COPYFILE_EXCL)
+          sdkWheel = bundledExtensionSdk(this.projectRoot, directory)
+        }
         const existing = this.store.storedExtensionRecords().find(record => record.id === manifest.id)
         if (this.store.extensionIsInstalled(manifest.id) && (!existing || existing.pendingRemoval || existing.version === manifest.version)) {
           throw new Error('This extension is already installed; select a different version to update, or finish its pending removal')
@@ -280,28 +284,35 @@ export class ExtensionInstaller {
         }
         const env = extensionInstallerEnvironment(this.environment)
         const venv = path.join(directory, 'venv')
-        await this.run(this.python(), ['-I', '-m', 'venv', '--copies', venv], { cwd: directory, env })
-        const privatePython = path.join(venv, process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
-        // Resolve stdlib-owned paths before any third-party wheel is installed.
-        const purelib = (await this.run(privatePython, ['-I', '-c', 'import sysconfig; print(sysconfig.get_path("purelib"))'], { cwd: directory, env })).trim()
-        assertExtensionPath(directory, purelib)
-        const sitePackages = path.relative(venv, purelib).split(path.sep).join('/')
-        if (!/^(Lib\/site-packages|lib\/python\d+\.\d+\/site-packages)$/.test(sitePackages)) throw new Error('Unsupported private Python environment layout')
-        // Transport settings are supported; a configured root/prefix/target
-        // must not redirect this transaction outside its private environment.
-        const pipConfigurationText = await this.run(privatePython, ['-I', '-c',
-          'import json; from pip._internal.configuration import Configuration; c=Configuration(isolated=False); c.load(); print(json.dumps(dict(c.items())))'], { cwd: directory, env })
-        let pipConfiguration: Record<string, unknown>
-        try { pipConfiguration = JSON.parse(pipConfigurationText) as Record<string, unknown> }
-        catch { throw new Error('The trusted pip configuration could not be inspected') }
-        if (!pipConfiguration || typeof pipConfiguration !== 'object' || Array.isArray(pipConfiguration)
-          || Object.keys(pipConfiguration).some(key => /\.(root|prefix|target|user)$/.test(key))) {
-          throw new Error('Configured pip installation path overrides are unsupported; use index, proxy, and certificate transport settings')
+        let purelib: string
+        let sitePackages = ''
+        if (manifest.runtime.kind === 'none') {
+          purelib = path.join(directory, 'package')
+          await this.helper.call('prepare-data-wheel', [copied, '--destination', purelib])
+        } else {
+          await this.run(this.python(), ['-I', '-m', 'venv', '--copies', venv], { cwd: directory, env })
+          const privatePython = path.join(venv, process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
+          // Resolve stdlib-owned paths before any third-party wheel is installed.
+          purelib = (await this.run(privatePython, ['-I', '-c', 'import sysconfig; print(sysconfig.get_path("purelib"))'], { cwd: directory, env })).trim()
+          assertExtensionPath(directory, purelib)
+          sitePackages = path.relative(venv, purelib).split(path.sep).join('/')
+          if (!/^(Lib\/site-packages|lib\/python\d+\.\d+\/site-packages)$/.test(sitePackages)) throw new Error('Unsupported private Python environment layout')
+          // Transport settings are supported; a configured root/prefix/target
+          // must not redirect this transaction outside its private environment.
+          const pipConfigurationText = await this.run(privatePython, ['-I', '-c',
+            'import json; from pip._internal.configuration import Configuration; c=Configuration(isolated=False); c.load(); print(json.dumps(dict(c.items())))'], { cwd: directory, env })
+          let pipConfiguration: Record<string, unknown>
+          try { pipConfiguration = JSON.parse(pipConfigurationText) as Record<string, unknown> }
+          catch { throw new Error('The trusted pip configuration could not be inspected') }
+          if (!pipConfiguration || typeof pipConfiguration !== 'object' || Array.isArray(pipConfiguration)
+            || Object.keys(pipConfiguration).some(key => /\.(root|prefix|target|user)$/.test(key))) {
+            throw new Error('Configured pip installation path overrides are unsupported; use index, proxy, and certificate transport settings')
+          }
+          await this.run(privatePython, ['-I', '-m', 'pip', 'install', '--target', purelib, '--no-user', '--no-deps', '--only-binary=:all:', sdkWheel], { cwd: directory, env })
+          const constraints = path.join(directory, 'constraints.txt')
+          fs.writeFileSync(constraints, `amadeus-extension-sdk @ ${pathToFileURL(sdkWheel).href}\n`, { mode: 0o600 })
+          await this.run(privatePython, ['-I', '-m', 'pip', 'install', '--target', purelib, '--no-user', '--only-binary=:all:', '--constraint', constraints, copied], { cwd: directory, env })
         }
-        await this.run(privatePython, ['-I', '-m', 'pip', 'install', '--target', purelib, '--no-user', '--no-deps', '--only-binary=:all:', sdkWheel], { cwd: directory, env })
-        const constraints = path.join(directory, 'constraints.txt')
-        fs.writeFileSync(constraints, `amadeus-extension-sdk @ ${pathToFileURL(sdkWheel).href}\n`, { mode: 0o600 })
-        await this.run(privatePython, ['-I', '-m', 'pip', 'install', '--target', purelib, '--no-user', '--only-binary=:all:', '--constraint', constraints, copied], { cwd: directory, env })
         const packagePath = path.join(purelib, inspection.package_root)
         assertExtensionPath(directory, packagePath)
         if (!fs.lstatSync(packagePath).isDirectory()) throw new Error('The installed extension package directory is missing')
@@ -355,7 +366,7 @@ export class ExtensionInstaller {
       if (enabled && !record.enabled && !await this.confirm({ operation: 'enable', manifest: record.manifest, digest: record.digest })) {
         throw new ExtensionChangeCancelled()
       }
-      if (enabled && (record.manifest.contributes.mcp_server?.length || record.manifest.contributes.skill?.length) && !providers.length) throw new Error('Select a compatible Work Provider before enabling this extension')
+      if (enabled && extensionNeedsAgent(record.manifest) && !providers.length) throw new Error('Select a compatible Work Provider before enabling this extension')
       const values = { ...record.values }
       for (const [key, value] of Object.entries(raw.values || {})) {
         if (record.manifest.config?.[key]?.secret) throw new Error('Extension secrets must use the credential field')
@@ -390,6 +401,7 @@ export class ExtensionInstaller {
   /** Called only after confirmed backend shutdown, before starting a new one. */
   cleanupStoppedBackend(): Promise<void> {
     return this.serialize(async () => {
+      this.store.releaseBackendExtensionApplications()
       const records = this.store.storedExtensionRecords()
       for (const record of records.filter(item => item.pendingRemoval)) {
         try {
@@ -409,6 +421,7 @@ export class ExtensionInstaller {
         return
       }
       const retained = this.store.extensionInstallationReferences()
+      for (const applied of this.store.appliedExtensionRecords()) retained.add(applied.installId)
       for (const entry of fs.readdirSync(this.root)) {
         if (!/^[a-f0-9]{32}$/.test(entry) || retained.has(entry) || this.preparing.has(entry) || this.uncertainPreparations.has(entry)) continue
         // A marker proves installation ownership; directory discovery cannot
@@ -428,7 +441,7 @@ export class ExtensionInstaller {
     return this.buildLaunchSnapshot()
   }) }
 
-  prepareLaunch(): Promise<{ extensions: string; environment: NodeJS.ProcessEnv; pendingRevisions: Record<string, number> }> {
+  prepareLaunch(): Promise<{ extensions: string; environment: NodeJS.ProcessEnv; pendingRevisions: Record<string, number>; records: StoredExtension[] }> {
     return this.serialize(async () => {
       await this.helper.refreshRecords(this.store.storedExtensionRecords())
       const incomplete = this.store.deferIncompleteExtensionApplication()
@@ -437,24 +450,37 @@ export class ExtensionInstaller {
       // even though their code is absent from this new backend snapshot.
       if (incomplete) delete pendingRevisions[EXTENSIONS_ENV]
       const environment = this.store.backendEnvironment(this.environment)
-      return { extensions: await this.buildLaunchSnapshot(), environment, pendingRevisions }
+      return { extensions: await this.buildLaunchSnapshot(), environment, pendingRevisions, records: this.store.extensionRecords() }
+    })
+  }
+
+  acceptLaunch(records: StoredExtension[], accepted: Record<string, number>): Promise<boolean> {
+    return this.serialize(async () => {
+      let complete = true
+      for (const record of records.filter(item => extensionRequiresRestart(item.manifest) && !item.pendingRemoval)) {
+        if (!record.enabled || accepted[record.id] === (record.revision ?? 1)) this.store.acceptExtensionApplication(record)
+        else complete = false
+      }
+      return complete
     })
   }
 
   private async buildLaunchSnapshot(): Promise<string> {
     const snapshot: Array<Record<string, unknown>> = []
-    for (const record of this.store.extensionRecords().filter(item => item.enabled && !item.pendingRemoval)) {
+    for (const record of this.store.extensionRecords().filter(item => item.enabled && !item.pendingRemoval && extensionRequiresRestart(item.manifest))) {
       const directory = path.join(this.root, record.installId)
-      const packagePath = path.join(directory, 'venv', record.sitePackages, record.packageRoot)
-      const privatePython = path.join(directory, 'venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
+      const packagePath = record.sitePackages === '' ? path.join(directory, 'package', record.packageRoot)
+        : path.join(directory, 'venv', record.sitePackages, record.packageRoot)
+      const privatePython = record.sitePackages === '' ? ''
+        : path.join(directory, 'venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
       const dataPath = this.dataPath(record.id)
       let secrets: Record<string, string> = {}
       let config: Record<string, ExtensionConfigValue> = { ...record.values }
       let startupError = ''
       try {
         assertExtensionPath(this.root, packagePath)
-        assertExtensionPath(this.root, privatePython)
-        if (!fs.existsSync(packagePath) || !fs.existsSync(privatePython)) throw new Error('missing installation')
+        if (privatePython) assertExtensionPath(this.root, privatePython)
+        if (!fs.existsSync(packagePath) || (privatePython && !fs.existsSync(privatePython))) throw new Error('missing installation')
         secrets = this.store.extensionSecrets(record)
         const checked = await this.helper.call('validate-config', [], { manifest: record.manifest, config: { ...record.values, ...secrets }, allow_incomplete: false })
         config = checked.config || {}
@@ -466,7 +492,7 @@ export class ExtensionInstaller {
         secrets = {}
         this.store.reportExtensionWarning(startupError)
       }
-      snapshot.push({ id: record.id, version: record.version, digest: record.digest, manifest: record.manifest,
+      snapshot.push({ id: record.id, version: record.version, revision: record.revision ?? 1, digest: record.digest, manifest: record.manifest,
         package_path: packagePath, python_path: privatePython, data_path: dataPath, enabled: true,
         config, secrets, providers: [...record.providers], ...(startupError ? { startup_error: startupError } : {}) })
     }

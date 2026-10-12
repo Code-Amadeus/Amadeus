@@ -61,6 +61,13 @@ function fixture(t, options = {}) {
       assert.ok(fs.existsSync(path.join(args[0], 'amadeus-extension.json')))
       return { ok: true }
     }
+    if (command === 'prepare-data-wheel') {
+      const packageDir = path.join(args[2], 'demo')
+      fs.mkdirSync(packageDir, { recursive: true })
+      fs.writeFileSync(path.join(packageDir, 'amadeus-extension.json'), JSON.stringify(metadata))
+      fs.writeFileSync(path.join(packageDir, '__init__.py'), 'raise Exception("not an import")')
+      return { ok: true }
+    }
     const { config, allow_incomplete } = input
     if (Object.keys(config).some(key => !metadata.config[key])) throw new Error('configuration contains undeclared fields')
     if (!allow_incomplete && !config.token) throw new Error('required configuration is missing: token')
@@ -110,6 +117,70 @@ test('packaged installer uses the shipped SDK without a source build directory',
   assert.ok(stagedSdk && stagedSdk !== shipped)
   assert.deepEqual(fs.readFileSync(stagedSdk), fs.readFileSync(shipped))
   assert.equal(f.store.extensionRecords().length, 1)
+})
+
+test('no-code installation uses inspected resource preparation without Python environment or pip', async t => {
+  const metadata = manifest('mcp_server')
+  metadata.runtime = { kind: 'none' }
+  const f = fixture(t, { manifest: metadata })
+  fs.unlinkSync(path.join(f.directory, 'vendor/extension-sdk/amadeus_extension_sdk-0.1.0-py3-none-any.whl'))
+  await f.installer.install(f.selectedWheel)
+  assert.equal(f.store.extensionRecords()[0].sitePackages, '')
+  assert.deepEqual(f.commandCalls, [])
+  assert.equal(f.calls.filter(call => call.command === 'prepare-data-wheel').length, 1)
+  await f.installer.update({ id: metadata.id, enabled: true, providers: ['pi'], secrets: { token: 'synthetic' } })
+  const [startup] = JSON.parse(await f.installer.launchSnapshot())
+  assert.equal(startup.python_path, '')
+  assert.ok(startup.package_path.includes(`${path.sep}package${path.sep}demo`))
+})
+
+test('package revisions change only with committed content; backend receipt owns applied revision', async t => {
+  const f = fixture(t)
+  await f.installer.install(f.selectedWheel)
+  assert.equal(f.store.extensionRecords()[0].revision, 1)
+  const change = { id: f.metadata.id, enabled: true, secrets: { token: 'synthetic' } }
+  await f.installer.update(change)
+  assert.equal(f.store.extensionRecords()[0].revision, 2)
+  const pending = f.store.pendingRevisionSnapshot()
+  await f.installer.update(change)
+  assert.equal(f.store.extensionRecords()[0].revision, 2)
+  assert.deepEqual(f.store.pendingRevisionSnapshot(), pending)
+  const launch = await f.installer.prepareLaunch()
+  assert.equal(await f.installer.acceptLaunch(launch.records, {}), false)
+  assert.equal(f.store.snapshot({}).extensions[0].appliedRevision, undefined)
+  assert.equal(await f.installer.acceptLaunch(launch.records, { [f.metadata.id]: 2 }), true)
+  f.store.markApplied({}, launch.pendingRevisions)
+  assert.equal(f.store.snapshot({}).extensions[0].appliedRevision, 2)
+  await f.installer.update({ id: f.metadata.id, values: { streaming: false } })
+  const status = f.store.snapshot({}).extensions[0]
+  assert.equal(status.revision, 3)
+  assert.equal(status.appliedRevision, 2)
+  assert.equal(status.restartRequired, true)
+})
+
+test('legacy record revision is interpreted without rewriting or losing its installation', async t => {
+  const f = fixture(t)
+  await f.installer.install(f.selectedWheel)
+  const persisted = JSON.parse(fs.readFileSync(f.file, 'utf8'))
+  delete persisted.extensions[f.metadata.id].revision
+  fs.writeFileSync(f.file, JSON.stringify(persisted))
+  const bytes = fs.readFileSync(f.file, 'utf8')
+  assert.equal(f.store.snapshot({}).extensions[0].revision, 1)
+  assert.equal(fs.readFileSync(f.file, 'utf8'), bytes)
+  assert.equal(f.store.extensionRecords()[0].installId, persisted.extensions[f.metadata.id].installId)
+})
+
+test('existing no-code packages in private environments retain their original layout', async t => {
+  const f = fixture(t, { manifest: manifest('mcp_server') })
+  await f.installer.install(f.selectedWheel)
+  f.metadata.runtime = { kind: 'none' }
+  const [legacy] = f.store.storedExtensionRecords()
+  legacy.manifest.runtime = { kind: 'none' }
+  f.store.saveExtension({}, legacy)
+  await f.installer.update({ id: f.metadata.id, enabled: true, providers: ['pi'], secrets: { token: 'synthetic' } })
+  const [startup] = JSON.parse(await f.installer.launchSnapshot())
+  assert.ok(startup.package_path.includes(`${path.sep}venv${path.sep}`))
+  assert.ok(startup.python_path)
 })
 
 test('version update preserves enabled bindings and credentials without removing running code', async t => {

@@ -161,6 +161,7 @@ def test_manifest_subset_and_semantics():
     bad["permissions"] = {"host": [{"capability": "conversation.current:read", "reason": "test"}]}
     with pytest.raises(ValueError, match="permissions.host"):
         validate_manifest(bad)
+
     bad = copy.deepcopy(good)
     bad["contributes"]["voice_backend"][0]["role"] = "asr"
     with pytest.raises(ValueError):
@@ -173,6 +174,17 @@ def test_manifest_subset_and_semantics():
     bad["engines"]["amadeus_host_api"] = ">=0.2"
     with pytest.raises(ValueError, match="incompatible"):
         validate_manifest(bad)
+
+
+def test_runtime_reports_only_validated_startup_revision(record):
+    record = {**record, 'revision': 7, 'secrets': {}}
+    runtime = ExtensionRuntime([record])
+    assert runtime.statuses()[0]['revision'] == 7
+    assert runtime.clients == {}  # Missing configuration is a separate health fact.
+    invalid = {**record, 'revision': -1}
+    assert 'revision' not in ExtensionRuntime([invalid]).statuses()[0]
+    blocked = {**record, 'startup_error': 'synthetic blocked installation'}
+    assert 'revision' not in ExtensionRuntime([blocked]).statuses()[0]
 
 
 def test_config_types_defaults_required_and_secret_errors():

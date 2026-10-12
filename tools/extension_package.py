@@ -10,20 +10,25 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from server.extensions.package import inspect_wheel, validate_config, validate_installed, validate_manifest
+from server.extensions.package import inspect_wheel, prepare_data_wheel, validate_config, validate_installed, validate_manifest
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["inspect-wheel", "validate-config", "validate-manifest", "validate-installed"])
+    parser.add_argument("command", choices=["inspect-wheel", "prepare-data-wheel", "validate-config", "validate-manifest", "validate-installed"])
     parser.add_argument("path", nargs="?")
     parser.add_argument("--manifest")
     parser.add_argument("--config")
+    parser.add_argument('--destination')
     parser.add_argument("--allow-incomplete", action="store_true")
     args = parser.parse_args(argv)
     try:
         if args.command == "inspect-wheel":
             result = inspect_wheel(Path(args.path or ""))
+        elif args.command == 'prepare-data-wheel':
+            if not args.destination:
+                raise ValueError('Resource destination is required')
+            result = prepare_data_wheel(Path(args.path or ''), Path(args.destination))
         else:
             if args.manifest:
                 body = {"manifest": json.loads(Path(args.manifest).read_text(encoding="utf-8")),
