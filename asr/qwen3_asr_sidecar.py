@@ -63,7 +63,7 @@ def _calc_max_tokens(duration_s: float) -> int:
     return max(_MAX_TOKENS_FLOOR, min(estimated, _MAX_TOKENS_CAP))
 
 
-def main(argv=None):
+def main(argv=()):
     import argparse
     from asr.qwen_inference import ENGINES, apply_qwen_attention_policy, qwen_attention_configs, transcribe_qwen
 
@@ -219,4 +219,4 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])
