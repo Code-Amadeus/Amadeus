@@ -202,6 +202,7 @@ def test_default_capacity_shared_with_backend_and_explicit_larger_bucket_is_reta
 
 def test_production_backend_default_explicitly_selects_official_on_cpu(model, monkeypatch):
     from asr.backends.qwen3_asr import Qwen3ASRBackend
+    monkeypatch.setattr("asr.backends.qwen3_asr.QWEN3_ASR_CUDA_GRAPH", True)
     wrapper = Qwen3ASRModel("transformers", model, SyntheticProcessor(), max_inference_batch_size=1)
     pcm = np.zeros(1600, dtype=np.float32)
     expected, _ = transcribe_qwen(wrapper, pcm, 16000, "context", None, 32, engine="official")

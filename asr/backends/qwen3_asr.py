@@ -25,11 +25,11 @@ import numpy as np
 
 from asr.backend import ASRBackendFatalError, BaseASRBackend, current_asr_call_context
 from asr.qwen_model import resolve_qwen_model_source
-from asr.qwen_inference import ENGINES, apply_qwen_attention_policy, qwen_attention_configs, transcribe_qwen
-from asr.qwen_cuda_graph import DEFAULT_CAPACITIES, invalidate_qwen_cuda_graphs, prepare_qwen_cuda_graphs, qwen_cuda_graph_support_reason
+from asr.qwen_inference import ENGINES, apply_qwen_attention_policy, qwen_attention_configs, qwen_loader_attention, transcribe_qwen
+from asr.qwen_cuda_graph import DEFAULT_CAPACITIES, invalidate_qwen_cuda_graphs, is_fatal_qwen_cuda_error, prepare_qwen_cuda_graphs, qwen_cuda_graph_support_reason
 from core.cuda_execution import cuda_work, speech_cuda
 from config.environment import venv_python as _venv_python
-from config.settings import QWEN3_ASR_DEVICE, QWEN3_ASR_REQUIRE_CUDA
+from config.settings import QWEN3_ASR_CUDA_GRAPH, QWEN3_ASR_DEVICE, QWEN3_ASR_FLASH_ATTN, QWEN3_ASR_REQUIRE_CUDA
 from config.local_model_loading import enforce_local_model_loading
 
 logger = logging.getLogger(__name__)
@@ -88,14 +88,6 @@ def _qwen_language(value: object) -> str | None:
     if clean in {"", "auto", "automatic", "detect"}:
         return None
     return _LANGUAGE_ALIASES.get(clean, raw[:1].upper() + raw[1:].lower())
-_FATAL_CUDA_MARKERS = (
-    "unspecified launch failure",
-    "illegal memory access",
-    "device-side assert",
-    "cuda error",
-    "cublas_status",
-    "cudnn_status",
-)
 
 
 def _calc_max_tokens(duration_s: float) -> int:
@@ -122,13 +114,16 @@ class Qwen3ASRBackend(BaseASRBackend):
     _inprocess_disabled_until = 0.0
     _inprocess_disabled_reason = ""
 
-    def __init__(self, *, inference_engine: str = "cuda_graph", profile: bool = False) -> None:
+    def __init__(self, *, inference_engine: str | None = None, profile: bool = False) -> None:
         # Prepared CUDA graphs are the measured production path. Unsupported
         # devices/configurations or missing readiness choose official before
         # inference; prefill/greedy remain explicit offline comparison choices.
+        if inference_engine is None:
+            inference_engine = "cuda_graph" if QWEN3_ASR_CUDA_GRAPH else "official"
         if inference_engine not in ENGINES:
             raise ValueError(f"Unknown Qwen inference engine: {inference_engine}")
         self._inference_engine = inference_engine
+        self._flash_attn_enabled = bool(QWEN3_ASR_FLASH_ATTN)
         self._profile_inference = profile
         self.last_inference_metrics: dict = {}
         self._proc: Optional[subprocess.Popen] = None
@@ -193,8 +188,7 @@ class Qwen3ASRBackend(BaseASRBackend):
 
     @staticmethod
     def _is_fatal_cuda_error(exc: Exception) -> bool:
-        text = str(exc).lower()
-        return any(marker in text for marker in _FATAL_CUDA_MARKERS)
+        return is_fatal_qwen_cuda_error(exc)
 
     @classmethod
     def _disable_inprocess_temporarily(cls, reason: str) -> None:
@@ -258,13 +252,21 @@ class Qwen3ASRBackend(BaseASRBackend):
             self._prepare_graphs_locked()
 
     def _prepare_graphs_locked(self):
-        if self._inference_engine != "cuda_graph" or self._model is None:
+        if (self._inference_engine != "cuda_graph" or self._model is None
+                or Qwen3ASRBackend._shared_parked):
             return
         reason = qwen_cuda_graph_support_reason(self._model.model)
         if reason is not None:
             return
-        evidence = prepare_qwen_cuda_graphs(self._model.model, capture_allowed=True)
-        logger.info("[ASR:Qwen3ASR] graph preparation %s", json.dumps(evidence))
+        evidence = self.prepare_cuda_graphs(capture_allowed=True)
+        if evidence.get("failed"):
+            logger.warning("[ASR:Qwen3ASR] graph preparation disabled for this residency: %s", json.dumps(evidence))
+        elif evidence.get("deferred"):
+            logger.debug("[ASR:Qwen3ASR] graph preparation deferred: %s", evidence.get("reason"))
+        elif all(item.get("cache_hit") for item in evidence["buckets"]):
+            logger.debug("[ASR:Qwen3ASR] graph preparation already ready")
+        else:
+            logger.info("[ASR:Qwen3ASR] graph preparation %s", json.dumps(evidence))
 
     def prepare_cuda_graphs(self, capacities=DEFAULT_CAPACITIES, *, capture_allowed=False):
         """Explicitly admitted quiet-window preparation, including after restore."""
@@ -272,19 +274,28 @@ class Qwen3ASRBackend(BaseASRBackend):
             if self._mode != "inprocess" or self._model is None:
                 raise RuntimeError("Qwen graph preparation requires a loaded in-process model")
             self._restore_device_locked()
-            return prepare_qwen_cuda_graphs(self._model.model, capacities, capture_allowed=capture_allowed)
+            try:
+                return prepare_qwen_cuda_graphs(self._model.model, capacities, capture_allowed=capture_allowed)
+            except Exception as exc:
+                if is_fatal_qwen_cuda_error(exc, include_context=True):
+                    message = str(exc).splitlines()
+                    reason = message[0] if message else type(exc).__name__
+                    self._disable_inprocess_temporarily(reason)
+                    self._drop_inprocess_model(reason)
+                    raise ASRBackendFatalError(reason) from exc
+                raise
 
-    @cuda_work
     def _restore_device_locked(self) -> None:
         if self._model is None:
             return
         if Qwen3ASRBackend._shared_parked:
             started = time.perf_counter()
-            self._model.model.to(self._device)
-            Qwen3ASRBackend._shared_parked = False
+            with speech_cuda.work():
+                self._model.model.to(self._device)
+                Qwen3ASRBackend._shared_parked = False
             logger.info("[ASR:Qwen3ASR] model restored to %s from RAM in %.0f ms",
                         self._device, (time.perf_counter() - started) * 1000)
-        Qwen3ASRBackend._last_used = time.monotonic()
+            Qwen3ASRBackend._last_used = time.monotonic()
 
     @classmethod
     @cuda_work
@@ -330,8 +341,8 @@ class Qwen3ASRBackend(BaseASRBackend):
                     self._attn_impl,
                     qwen_attention_configs(self._model.model),
                 )
-                if self._inference_engine == "cuda_graph":
-                    self._restore_device_locked()
+                # Borrowing is not a speech request. Preserve a parked owner's
+                # residency until actual speech-start preparation or inference.
                 self._prepare_graphs_locked()
                 return
 
@@ -342,22 +353,9 @@ class Qwen3ASRBackend(BaseASRBackend):
             device_map = "cuda:0" if str(device).startswith("cuda") and cuda_available else "cpu"
             dtype = torch.bfloat16 if "cuda" in device_map else torch.float32
             extra_kwargs = {}
-            attn_impl = "eager"
+            attn_impl = qwen_loader_attention(device_map, flash_attn_enabled=self._flash_attn_enabled)
             if "cuda" in device_map:
-                # ROCm reuses the torch.cuda API.  The current Windows ROCm
-                # build has unreliable default SDPA kernels on RDNA 4, so use
-                # eager attention for correctness until that runtime is fixed.
-                if getattr(torch.version, "hip", None):
-                    extra_kwargs["attn_implementation"] = "eager"
-                    attn_impl = "eager"
-                else:
-                    try:
-                        import flash_attn  # noqa: F401
-                        extra_kwargs["attn_implementation"] = "flash_attention_2"
-                        attn_impl = "flash_attention_2"
-                    except ImportError:
-                        extra_kwargs["attn_implementation"] = "sdpa"
-                        attn_impl = "sdpa"
+                extra_kwargs["attn_implementation"] = attn_impl
 
             logger.info(
                 "[ASR:Qwen3ASR] torch runtime exe=%s torch=%s cuda_available=%s "
@@ -457,7 +455,8 @@ class Qwen3ASRBackend(BaseASRBackend):
             logger.info("[ASR:Qwen3ASR] starting sidecar process: %s", python)
             self._device = str(device)
             proc = subprocess.Popen(
-                [python, str(_SIDECAR_SCRIPT), "--engine", self._inference_engine],
+                [python, str(_SIDECAR_SCRIPT), "--engine", self._inference_engine,
+                 *([] if self._flash_attn_enabled else ["--disable-flash-attn"])],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

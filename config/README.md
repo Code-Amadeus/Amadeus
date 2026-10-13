@@ -482,3 +482,17 @@ apply to both paths. The GUI shows observed per-surface state separately from
 saved choices. Restart the backend and reopen existing render windows after saving.
 No launcher override or old-pack path migration is required. See
 [frame-source integration](../docs/frame_video_candidate.md).
+
+## Qwen recognition acceleration
+
+`QWEN3_ASR_CUDA_GRAPH` and `QWEN3_ASR_FLASH_ATTN` default to `true` and
+are independently editable in Conversation recognition settings. Both apply
+after a backend restart. Set the first to `false` for official decoding, and
+the second to `false` for PyTorch SDPA on NVIDIA CUDA. Set both to `false`
+to compare against the official SDPA path; TTS acceleration settings are
+independent. CPU and ROCm keep their existing attention paths. FlashAttention 2
+requires a supported installed package and an NVIDIA GPU with compute capability
+8.0 or newer; older NVIDIA devices use SDPA regardless of the preference.
+
+The explicit Python `inference_engine` constructor argument remains an offline
+benchmark control; ordinary application callers use the parsed startup setting.

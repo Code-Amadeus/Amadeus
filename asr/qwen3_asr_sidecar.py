@@ -65,13 +65,15 @@ def _calc_max_tokens(duration_s: float) -> int:
 
 def main(argv=()):
     import argparse
-    from asr.qwen_inference import ENGINES, apply_qwen_attention_policy, qwen_attention_configs, transcribe_qwen
+    from asr.qwen_inference import ENGINES, apply_qwen_attention_policy, qwen_attention_configs, qwen_loader_attention, transcribe_qwen
 
     # The parent passes its constructor option explicitly. This internal launch
     # argument is not a product environment setting; standalone callers stay official.
     parser = argparse.ArgumentParser(description="Qwen3-ASR JSONL sidecar")
     parser.add_argument("--engine", choices=ENGINES, default="official")
-    engine = parser.parse_args(argv).engine
+    parser.add_argument("--disable-flash-attn", action="store_true")
+    options = parser.parse_args(argv)
+    engine = options.engine
 
     import numpy as np
     import torch
@@ -107,23 +109,9 @@ def main(argv=()):
     # uses FA2 audio with SDPA text on supported NVIDIA installations; loader
     # availability alone does not establish which attention path runs fastest.
     extra_kwargs = {}
-    attn_impl = "eager"
+    attn_impl = qwen_loader_attention(device_map, flash_attn_enabled=not options.disable_flash_attn)
     if "cuda" in device_map:
-        # PyTorch ROCm intentionally exposes AMD GPUs through the torch.cuda API.
-        # The current Windows ROCm build can return invalid or silently incorrect
-        # results through its default SDPA kernels, so prefer the stable eager path.
-        if getattr(torch.version, "hip", None):
-            extra_kwargs["attn_implementation"] = "eager"
-            attn_impl = "eager"
-        else:
-            try:
-                import flash_attn  # noqa: F401
-                extra_kwargs["attn_implementation"] = "flash_attention_2"
-                attn_impl = "flash_attention_2"
-            except ImportError:
-                # sdpa：torch 2.0+ 内置，不需要额外包，加速显著
-                extra_kwargs["attn_implementation"] = "sdpa"
-                attn_impl = "sdpa"
+        extra_kwargs["attn_implementation"] = attn_impl
 
     try:
         model = Qwen3ASRModel.from_pretrained(

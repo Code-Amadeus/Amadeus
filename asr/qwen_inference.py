@@ -25,6 +25,26 @@ AUDIO_FA2_TEXT_SDPA_CONFIGS = {
 }
 
 
+def qwen_loader_attention(device, *, flash_attn_enabled=True):
+    """Choose once for both loaders using the resolved logical device.
+
+    flash-attn 2.7 requires NVIDIA Ampere or newer. Package availability alone
+    is insufficient; older CUDA devices retain SDPA and can still use graphs.
+    """
+    if not str(device).startswith("cuda"):
+        return "eager"
+    import torch
+    if getattr(torch.version, "hip", None):
+        return "eager"
+    if not flash_attn_enabled or torch.cuda.get_device_capability(device)[0] < 8:
+        return "sdpa"
+    try:
+        import flash_attn  # noqa: F401
+    except ImportError:
+        return "sdpa"
+    return "flash_attention_2"
+
+
 def _qwen_attention_components(model):
     return {"model": model, "thinker": model.thinker,
             "audio_tower": model.thinker.audio_tower, "text_decoder": model.thinker.model}

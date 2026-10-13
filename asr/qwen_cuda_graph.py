@@ -6,11 +6,35 @@ No global attention/math/thread flags or model weights are changed here.
 """
 from __future__ import annotations
 
+import gc
 import time
 from core.cuda_execution import speech_cuda
 
 _OWNER_ATTRIBUTE = "_amadeus_qwen_cuda_graphs"
+_FAILURE_ATTRIBUTE = "_amadeus_qwen_cuda_graph_failure"
 DEFAULT_CAPACITIES = (384,)
+_FATAL_CUDA_MARKERS = (
+    "unspecified launch failure",
+    "illegal memory access",
+    "device-side assert",
+    "cuda error",
+    "cublas_status",
+    "cudnn_status",
+)
+
+
+def is_fatal_qwen_cuda_error(exc, *, include_context=False):
+    """Preserve inference string policy; preparation also checks wrapped errors."""
+    error, seen = exc, set()
+    while error is not None and id(error) not in seen:
+        seen.add(id(error))
+        text = str(error).lower()
+        if any(marker in text for marker in _FATAL_CUDA_MARKERS):
+            return True
+        if not include_context:
+            return False
+        error = error.__cause__ or error.__context__
+    return False
 
 
 def invalidate_qwen_cuda_graphs(model):
@@ -20,6 +44,8 @@ def invalidate_qwen_cuda_graphs(model):
         for state in buckets.values():
             state.close()
         delattr(model, _OWNER_ATTRIBUTE)
+    if hasattr(model, _FAILURE_ATTRIBUTE):
+        delattr(model, _FAILURE_ATTRIBUTE)
 
 
 class QwenStaticDecode:
@@ -33,8 +59,15 @@ class QwenStaticDecode:
         import torch
         # Persistent graph inputs must be ordinary mutable tensors even when
         # preparation was called by an inference-mode caller.
-        with torch.inference_mode(False), torch.no_grad():
-            self._initialize(thinker, capacity)
+        self.graph = None
+        try:
+            with torch.inference_mode(False), torch.no_grad():
+                self._initialize(thinker, capacity)
+        except Exception:
+            # Allocation can fail before the factory returns a state to its
+            # caller. Release every partially initialized buffer here too.
+            self.close()
+            raise
 
     def _initialize(self, thinker, capacity: int):
         import torch
@@ -145,6 +178,7 @@ class QwenStaticDecode:
             self.reset()
             stream.wait_stream(current)
             graph = torch.cuda.CUDAGraph()
+            self.graph = graph
             started = time.perf_counter()
             # Global error checks are intentional. Relaxed capture does not
             # supply the missing cross-owner quiescence guarantee.
@@ -181,6 +215,10 @@ def prepare_qwen_cuda_graphs(model, capacities=DEFAULT_CAPACITIES, *, capture_al
     if not capacities or any(not isinstance(size, int) or size < 2 for size in capacities):
         raise ValueError("Qwen graph capacities must be integers greater than one")
     capacities = tuple(sorted(set(capacities)))
+    failure = getattr(model, _FAILURE_ATTRIBUTE, None)
+    if failure is not None:
+        return {**failure, "failed": True, "deferred": False, "cache_hit": True,
+                "buckets": [], "prepared_capacities": []}
     buckets = getattr(model, _OWNER_ATTRIBUTE, {})
     if all(capacity in buckets for capacity in capacities):
         # No CUDA query/synchronization/admission on a fully prepared hot model.
@@ -195,40 +233,92 @@ def prepare_qwen_cuda_graphs(model, capacities=DEFAULT_CAPACITIES, *, capture_al
         return _prepare_admitted(model, capacities)
 
 
+def _recoverable_preparation_reason(exc, stage):
+    import torch
+    if isinstance(exc, torch.OutOfMemoryError):
+        return "out_of_memory"
+    if not isinstance(exc, RuntimeError) or stage != "capture":
+        return None
+    recoverable_capture_markers = (
+        "operation not permitted when stream is capturing",
+        "operation failed due to a previous error during capture",
+    )
+    # capture_end may wrap the original failure. A known capture-invalidated
+    # message must not hide a fatal device error in that exception chain.
+    error, seen = exc, set()
+    while error is not None and id(error) not in seen:
+        seen.add(id(error))
+        if (is_fatal_qwen_cuda_error(error) and not isinstance(error, torch.OutOfMemoryError)
+                and not any(marker in str(error).lower() for marker in recoverable_capture_markers)):
+            return None
+        error = error.__cause__ or error.__context__
+    text = str(exc).lower()
+    if any(marker in text for marker in recoverable_capture_markers):
+        return "capture_unavailable"
+    # Preparation may be unsupported without a poisoned CUDA context. This
+    # permission to keep the loaded model belongs only to the capture stage;
+    # unknown CUDA/library errors and constructor contracts still propagate.
+    if not any(marker in text for marker in ("cuda", "cublas", "cudnn")):
+        return "capture_failed"
+    return None
+
+
 def _prepare_admitted(model, capacities):
     import torch
     if model.device.type != "cuda" or getattr(torch.version, "hip", None):
         raise ValueError("Qwen CUDA graph preparation requires NVIDIA CUDA")
     if model.thinker.model.config._attn_implementation != "sdpa":
         raise ValueError("Qwen CUDA graph preparation requires the measured SDPA text decoder")
-    # Leases have drained, but asynchronous work may outlive its Python call.
-    # Admission prevents new owners entering while this boundary is waited.
-    torch.cuda.synchronize(model.device)
-    buckets = getattr(model, _OWNER_ATTRIBUTE, None)
-    if buckets is None:
-        buckets = {}
-        setattr(model, _OWNER_ATTRIBUTE, buckets)
-    evidence = []
-    for capacity in capacities:
-        if capacity in buckets:
-            evidence.append({**buckets[capacity].statistics, "cache_hit": True})
-            continue
-        allocated = torch.cuda.memory_allocated(model.device)
-        reserved = torch.cuda.memory_reserved(model.device)
-        state = QwenStaticDecode(model.thinker, capacity)
-        try:
+    state = None
+    stage = "synchronize"
+    try:
+        # Leases have drained, but asynchronous work may outlive its Python call.
+        torch.cuda.synchronize(model.device)
+        buckets = getattr(model, _OWNER_ATTRIBUTE, None)
+        if buckets is None:
+            buckets = {}
+            setattr(model, _OWNER_ATTRIBUTE, buckets)
+        evidence = []
+        for capacity in capacities:
+            if capacity in buckets:
+                evidence.append({**buckets[capacity].statistics, "cache_hit": True})
+                continue
+            allocated = torch.cuda.memory_allocated(model.device)
+            reserved = torch.cuda.memory_reserved(model.device)
+            stage = "allocation"
+            state = QwenStaticDecode(model.thinker, capacity)
+            stage = "capture"
             state.capture()
-        except Exception:
+            buckets[capacity] = state
+            state.statistics.update(allocated_delta_bytes=torch.cuda.memory_allocated(model.device) - allocated,
+                                    reserved_delta_bytes=torch.cuda.memory_reserved(model.device) - reserved)
+            evidence.append({**state.statistics, "cache_hit": False})
+            state = None
+        return {"deferred": False, "buckets": evidence, "prepared_capacities": sorted(buckets)}
+    except Exception as exc:
+        if state is not None:
             state.close()
+        invalidate_qwen_cuda_graphs(model)
+        reason = _recoverable_preparation_reason(exc, stage)
+        if reason is None:
             raise
-        buckets[capacity] = state
-        state.statistics.update(allocated_delta_bytes=torch.cuda.memory_allocated(model.device) - allocated,
-                                reserved_delta_bytes=torch.cuda.memory_reserved(model.device) - reserved)
-        evidence.append({**state.statistics, "cache_hit": False})
-    return {"deferred": False, "buckets": evidence, "prepared_capacities": sorted(buckets)}
+        message = str(exc).splitlines()
+        failure = {"reason": reason, "stage": stage,
+                   "error": message[0] if message else type(exc).__name__}
+        setattr(model, _FAILURE_ATTRIBUTE, failure)
+        # Keep only diagnostic strings. Exception frames can otherwise retain
+        # failed-constructor buffers or capture-local graph pools during cleanup.
+        exc.__traceback__ = exc.__cause__ = exc.__context__ = None
+        gc.collect()
+        torch.cuda.empty_cache()
+        return {**failure, "failed": True, "deferred": False, "cache_hit": False,
+                "buckets": [], "prepared_capacities": []}
 
 
 def qwen_cuda_graph_support_reason(model):
+    failure = getattr(model, _FAILURE_ATTRIBUTE, None)
+    if failure is not None:
+        return "graph_preparation_failed:" + failure["reason"]
     import torch
     if model.device.type != "cuda":
         return "not_cuda"

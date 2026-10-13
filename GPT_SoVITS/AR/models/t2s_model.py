@@ -897,7 +897,7 @@ class Text2SemanticDecoder(nn.Module):
                     success = self._warmup_and_capture_bucket(bucket, initial_len, device)
                     if not success:
                         bucket_ok = False
-                        print(f"[CUDA Graph] precapture failed: key={graph_key}")
+                        print(f"[CUDA Graph] key={graph_key} not prepared; static decoding remains available")
             results[bucket] = bucket_ok
         return results
 

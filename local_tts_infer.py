@@ -294,6 +294,7 @@ class TTSInferencer:
             audio = audio[..., :samples]
         return audio
 
+    @cuda_work
     def _synchronize_device(self):
         if self._uses_torch_cuda_api:
             with torch.cuda.device(self._tts_device_idx):

@@ -52,7 +52,8 @@ avoids stale nested-config markers in this Transformers runtime. Each record and
 summary carries attention; decoding comparisons use raw_official from the same
 attention group. Compare attention separately from a fixed-attention engine ablation. The loader
 request is recorded separately: it is not proof that nested modules use that
-implementation. This experiment does not create a production attention setting.
+implementation. These detailed attention presets remain offline benchmark controls;
+production settings only enable or disable the qualified FA2 audio path.
 The supported device arguments are cpu/cuda/cuda:0; this tool does not imply
 support for a second CUDA device through the existing loader.
 
@@ -116,8 +117,12 @@ silently prepare graphs in the baseline setup.
 defers capture while another owner is working; already prepared graphs require
 no new capture or GPU synchronization. Unsupported devices/configurations,
 missing graphs and requests exceeding prepared capacity select official before
-generation and report `fallback_reason`. Capture/replay failures are visible;
-there is no failed-inference retry. Metrics distinguish requested and actual
+generation and report `fallback_reason`. A recoverable preparation failure releases
+partial graphs and stays on official decoding for that model/device lifecycle;
+ordinary `prepare()` calls do not repeat the failed capture. Capture contention
+only defers preparation and may be tried again later. Fatal CUDA errors keep the
+existing model-drop policy. Replay failures remain visible, with no
+failed-inference retry. Metrics distinguish requested and actual
 engines, per-chunk prompt/required capacity, cache hit and replay steps. Persistent
 buffers and capture use `inference_mode(False)` plus `no_grad()` so a first ASR
 capture cannot poison a later TTS capture on PyTorch 2.6; ordinary ASR inference
@@ -143,3 +148,20 @@ this probe concurrently with other GPU benchmarks or CI timing workloads.
 Pass multiple presets, for example `--attention sdpa audio_fa2_text_sdpa`,
 to rotate attention × engine combinations within the same process. Each row
 records its verified actual configs; setter work stays outside measured calls.
+
+## Production compatibility controls
+
+The Conversation recognition settings expose `QWEN3_ASR_CUDA_GRAPH` and
+`QWEN3_ASR_FLASH_ATTN` (both default `true`, applied after backend restart).
+Disable the former for official decoding and the latter for NVIDIA SDPA.
+Disable both for the official SDPA comparison path. These settings do not
+change TTS preferences, and explicit benchmark engine arguments override the
+default engine choice. CPU and ROCm retain their existing attention policy.
+
+FA2 audio is selected only when the package imports and the selected NVIDIA
+device has compute capability at least 8.0, consistent with the
+[FlashAttention 2.7.4 requirements](https://github.com/Dao-AILab/flash-attention/blob/v2.7.4.post1/README.md#nvidia-cuda-support).
+Older NVIDIA devices use SDPA and remain eligible for the existing Graph support
+checks. Borrowing a shared model parked in RAM does not restore it; actual
+prepare/inference owns restoration. A hot preparation cache hit does not
+extend the idle residency timer.

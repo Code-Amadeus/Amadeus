@@ -166,3 +166,24 @@ def test_aec_activation_logs_the_delay_given_to_native_processor(monkeypatch, ca
         processor.set_delay_for_device_class('internal')
     native.set_stream_delay.assert_called_with(round(aec.AEC_DELAY_MS_INTERNAL))
     assert f'delay_ms={aec.AEC_DELAY_MS_INTERNAL:.1f}' in caplog.text
+
+
+@pytest.mark.parametrize("graph_enabled,flash_enabled", [(False, False), (False, True), (True, False), (True, True)])
+def test_qwen_child_receives_independent_parsed_graph_and_flash_options(monkeypatch, graph_enabled, flash_enabled):
+    from asr.backends import qwen3_asr as module
+    monkeypatch.setattr(module, "QWEN3_ASR_CUDA_GRAPH", graph_enabled)
+    monkeypatch.setattr(module, "QWEN3_ASR_FLASH_ATTN", flash_enabled)
+    monkeypatch.setenv("QWEN3_ASR_CUDA_GRAPH", str(not graph_enabled))
+    monkeypatch.setenv("QWEN3_ASR_FLASH_ATTN", str(not flash_enabled))
+    monkeypatch.setenv("QWEN3_ASR_MODE", "sidecar")
+    backend = module.Qwen3ASRBackend()
+    monkeypatch.setattr(backend, "_can_use_inprocess", lambda: False)
+    monkeypatch.setattr(backend, "_select_python", lambda: __file__)
+    monkeypatch.setattr(module.Qwen3ASRBackend, "_shared_proc", None)
+    process = Mock(stdout=io.BytesIO(b'{"type":"ready"}\n'), poll=lambda: None)
+    launch = Mock(return_value=process)
+    monkeypatch.setattr(module.subprocess, "Popen", launch)
+    backend.load("cpu")
+    arguments = launch.call_args.args[0]
+    assert arguments[2:4] == ["--engine", "cuda_graph" if graph_enabled else "official"]
+    assert ("--disable-flash-attn" in arguments) is not flash_enabled

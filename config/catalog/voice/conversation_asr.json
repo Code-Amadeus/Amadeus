@@ -86,6 +86,44 @@
       "default": false,
       "example_active": true
     },
+    "QWEN3_ASR_CUDA_GRAPH": {
+      "type": "boolean",
+      "true_values": [
+        "1",
+        "true",
+        "yes",
+        "on"
+      ],
+      "title": {
+        "en-US": "Qwen CUDA Graph",
+        "zh-CN": "Qwen CUDA Graph"
+      },
+      "description": {
+        "en-US": "Reduce decoding latency on supported NVIDIA devices. Turn off to use official decoding. This setting is independent of TTS.",
+        "zh-CN": "在支持的 NVIDIA 设备上降低解码延迟；关闭后使用官方解码。此设置独立于 TTS。"
+      },
+      "default": true,
+      "example_active": true
+    },
+    "QWEN3_ASR_FLASH_ATTN": {
+      "type": "boolean",
+      "true_values": [
+        "1",
+        "true",
+        "yes",
+        "on"
+      ],
+      "title": {
+        "en-US": "Qwen FlashAttention",
+        "zh-CN": "Qwen FlashAttention"
+      },
+      "description": {
+        "en-US": "Accelerate audio encoding on supported NVIDIA devices. Turn off to use PyTorch attention for compatibility or transcription comparison.",
+        "zh-CN": "在支持的 NVIDIA 设备上加速音频编码；关闭后使用 PyTorch 注意力实现，可用于兼容性或转写结果对比。"
+      },
+      "default": true,
+      "example_active": true
+    },
     "MICROPHONE_DEVICE_INDEX": {
       "type": "integer",
       "title": {

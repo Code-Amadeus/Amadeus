@@ -94,7 +94,7 @@ TTS 总生成 p95：短句顺序 979→869 ms，中句顺序 1,201→1,039 ms，
 
 ## 默认行为、恢复成本与模块边界
 
-按最终测量，`Qwen3ASRBackend()` 默认选择 Graph、预捕获单 384；保留 `inference_engine="official"` 作为显式对照入口。CPU、ROCm、不支持的生成配置、未准备或容量不足的请求在生成前选择 official，并记录实际引擎和原因。没有修改用户配置、重启当前应用或热替换其模型；默认策略在下次正常启动后生效。
+按最终测量，`Qwen3ASRBackend()` 默认选择 Graph、预捕获单 384；保留 `inference_engine="official"` 作为显式对照入口。CPU、ROCm、不支持的生成配置、未准备或容量不足的请求在生成前选择 official，并记录实际引擎和原因。新增 `QWEN3_ASR_CUDA_GRAPH` 和 `QWEN3_ASR_FLASH_ATTN` 两个独立开关，均默认开启，设置页保存后重启后端生效。前者关闭时采用 official 解码，后者关闭时 NVIDIA 使用 SDPA；两者都关闭可回到 official＋SDPA 对照路径。TTS 配置独立，离线构造参数仍可显式覆盖解码引擎。
 
 最终 384 生命周期实机验证共 13 次识别，包含默认构造的进程内后端与真实 sidecar。文本/token 与基线相同；park 释放图及其模型引用、恢复后重新准备、共享模型在最后一个使用者关闭时释放、未经准备的恢复先走 official、随后 prepare 恢复 Graph 均通过。sidecar 由父后端明确传入 engine，启动时捕获；删除了没有真实调用方的额外 prepare 协议分支。
 
@@ -118,7 +118,27 @@ TTS 总生成 p95：短句顺序 979→869 ms，中句顺序 1,201→1,039 ms，
 
 独立 PR 工作树按锁文件安装无 Torch 的 CI profile 后，相同 14 文件为 **147 passed、6 个可选模型模块跳过**。全仓 Ruff、7 份架构视图、README overview 和 CI 环境检查均通过。静态检查收尾仅补了 continuation token 的显式初始绑定及 pytest fixture 再导出，两文件再跑 **38/38 通过**。重建本地 CUDA profile 后另行复核：114 次 ASR 文本/token 与原运行相同，TTS 冷捕获契约报告和波形 hash 也相同；这轮是功能复核，不替代正式性能数据。
 
-当前最终补丁未重新执行整套 CI。上一阶段 450 个 suite 的历史结果保留原记录：一次 localhost 临时连接失败已单独通过；工作区既有 TTS catalog 文案与旧断言不一致的失败未混入本次修复，也不能声称历史全量全绿。结构化汇总和源码/原始结果 SHA-256 见[脱敏验证证据](evidence/asr_cuda_graph_validation_2026-10-14.json)。
+上述数字为初版实施记录，结构化汇总和源码/原始结果 SHA-256 见[初版验证证据](evidence/asr_cuda_graph_validation_2026-10-14.json)。外部审计后的增量修复与验证见下节；完整远端检查以 PR 对应提交的 CI 状态为准。
+
+## 外部审计修复
+
+两处 loader 统一根据实际逻辑设备选择 attention：NVIDIA 算力低于 8.0 时采用 SDPA，不再仅依据能否 import `flash_attn`。CPU、ROCm 保留既有路径；Graph 的资格检查独立。门槛符合 [FlashAttention 2.7.4 支持范围](https://github.com/Dao-AILab/flash-attention/blob/v2.7.4.post1/README.md#nvidia-cuda-support)。没有旧卡实机，旧架构分支通过合成 capability 的契约测试验证，4070 Ti SUPER 实测仍为音频 FA2＋文本 SDPA。
+
+Graph 准备的可恢复 OOM、已知捕获失效和不涉及 CUDA 故障的捕获 RuntimeError，现在释放部分图和缓冲区，在模型实例上记录失败原因，使后续识别在生成前选择 official。当前驻留期间不再重复预热或打印 traceback；park、关闭或 attention 失效清理会解除这一状态。争用仅表示 deferred，可在之后的空闲窗口重试。未支持的 API 契约错误和未知 CUDA/library 错误继续抛出；致命 CUDA 错误沿既有 drop 路径释放模型，包括包装异常中的致命原因。没有增加识别失败后重跑。
+
+TTS 的实际同步边界 `_synchronize_device` 纳入工作租约，覆盖 SoVITS/T2S 计时调用。预捕获遇到争用时日志描述未准备好及可用的 static 路径。热态 ASR prepare 使用 DEBUG 日志且不更新闲置时间；新增使用者借用已经停驻的共享模型时保持 RAM 驻留，实际 prepare/识别才恢复。
+
+sidecar 的直接 `main()` 调用使用空参数默认值，独立命令行入口明确传入 `sys.argv[1:]`，因此 pytest 参数不会被误解析。包含此修复的 `df5e695` 全部 15 项远端检查通过；硬件资格、捕获恢复和配置修复作为后续提交独立重跑 CI。
+
+增量回归在 14 个 Python 文件中共 **333 passed、1 skipped**，跳过项为未 opt-in 的 NVIDIA kernel probe；其中依赖 Torch/Qwen 的测试已使用完整解释器单独执行，未把 model-less 模块跳过当作通过。另有 22 项前端配置契约通过，生成配置检查及 Electron build 通过。
+
+真实模型功能检查共 **29 次 ASR**，音频 3.82–9.57 秒。注入一次捕获 OOM 后，三次 prepare 没有重试，七段音频均采用 official 且文字/token 与本轮 official 基线一致；park/恢复重新准备后，七段 Graph 输出与故障前一致。借用停驻模型、热准备闲置时间、两个关闭开关及真实 CUDA 图与 TTS 计时同步的协调均通过。这是可控故障注入，未故意耗尽整卡显存，也不是新性能基准。
+
+同卡真实 TTS 冷启动验证覆盖 ASR 先捕获、TTS 捕获被推迟而采用 static、随后重新捕获，以及 ASR park 后的 TTS 图继续运行。三条 TTS 路径的完整波形 hash 均与修复前基线相同，ASR 输出 hash 也相同。回放代码来自独立 PR 工作树，资产与已编译 GPU 扩展复用现有文件，没有安装或清理原环境。汇总及原始结果哈希见[审计修复验证证据](evidence/asr_review_fixes_2026-10-14.json)。
+
+本次修复后另做 9.29 秒输入的 80 组同卡回放（两句 TTS、顺序/重叠、official/Graph、每格 10 轮）。ASR 输出完全一致，各 TTS 用例的波形唯一，math flags 不变。Graph 的顺序 ASR 中位数为 266–270 ms，official 为 1,314–1,337 ms；重叠 TTS 首段中位数短句 655→568 ms、中句 825→716 ms。短句顺序首段 p95 出现 464→670 ms 的异常，因此**本轮不能声称所有尾延迟无回退**，不覆盖此前 20 轮正式测量。
+
+针对该异常，另外交替执行 40 次热态短 TTS，仅切换同步方法是否登记租约。实际同步调用次数全部为零，说明这组生产参数没有走计时同步边界，两个标签执行相同计算；波形相同但尾部仍波动。首段中位数为 361/376 ms、p95 为 457/475 ms，总生成 p95 为 836/1,199 ms。这排除了将该轮波动直接归因于新同步租约的解释，不能证明所有系统环境的延迟都不回退。捕获安全契约另由真实 CUDA 图与同步调用、CPU 并发测试验证。未为取得更好数值而继续反复测量。
 
 ## 复现
 
