@@ -529,11 +529,14 @@
       },
     },
     speaking: false,
+    lastSpeechEndedAt: null,
     asrStatus: "",
     asrSuppressesWorkSfx: false,
     idleSeconds: 0,
     inactivitySeconds: 60,
-    staticHoldSeconds: 15,
+    staticHoldSeconds: 45,
+    staticHoldMaxSeconds: 60,
+    nodeHoldSeconds: 45,
     sourceCrop: null,
     sourceCropNorm: null,
     backplateCropNorm: null,
@@ -577,9 +580,12 @@
         sampleUrl: String(this.payload.keyboardSfxUrl || ""),
       });
       this.inactivitySeconds = Math.max(1, Number(this.payload.inactivitySeconds) || 60);
-      this.staticHoldSeconds = Math.max(1, Number(this.payload.staticHoldSeconds) || 15);
+      this.staticHoldSeconds = Math.max(1, Number(this.payload.staticHoldSeconds) || 45);
+      this.staticHoldMaxSeconds = Math.max(this.staticHoldSeconds,
+        Number(this.payload.staticHoldMaxSeconds) || (this.payload.staticHoldSeconds ? this.staticHoldSeconds : 60));
       this._maxTextureCache = Math.max(32, Number(this.payload.maxTextureCache) || 256);
       this.enableFramePlayback = !!this.payload.enableFramePlayback;
+      if (this.lastSpeechEndedAt === null && !this.speaking) this.lastSpeechEndedAt = Date.now();
       if (!this._textureCache) this._textureCache = new Map();
       this.sourceCrop = Array.isArray(this.payload.sourceCrop) ? this.payload.sourceCrop : null;
       this.sourceCropNorm = Array.isArray(this.payload.sourceCropNorm) ? this.payload.sourceCropNorm : null;
@@ -607,11 +613,13 @@
       console.info("[ScenarioRuntime] ready:", {
         nodes: (this.graph.nodes || []).length,
         staticHoldSeconds: this.staticHoldSeconds,
+        staticHoldMaxSeconds: this.staticHoldMaxSeconds,
         inactivitySeconds: this.inactivitySeconds,
       });
       diag("scenario.ready", {
         nodes: (this.graph.nodes || []).length,
         staticHoldSeconds: this.staticHoldSeconds,
+        staticHoldMaxSeconds: this.staticHoldMaxSeconds,
         inactivitySeconds: this.inactivitySeconds,
         resources: Object.keys(this.resources || {}).length,
         framePlayback: this.enableFramePlayback,
@@ -704,7 +712,17 @@
     },
 
     setSpeaking(speaking) {
+      const wasSpeaking = this.speaking;
       this.speaking = !!speaking;
+      // Every actual voice playback resets the same quiet clock, including
+      // narration that keeps the character inside a background work scene.
+      if (this.speaking) {
+        this.lastSpeechEndedAt = null;
+        this.idleSeconds = 0;
+      } else if (wasSpeaking) {
+        this.lastSpeechEndedAt = Date.now();
+        this.idleSeconds = 0;
+      }
       this._updateComputerUseSfx();
       if (this.activeActivity && this._activityHoldDuringSpeech(this.activeActivity)) {
         this.idleSeconds = 0;
@@ -757,7 +775,8 @@
       }
       if (!this.active) {
         if (!this.speaking) {
-          this.idleSeconds += dt;
+          this.idleSeconds = this.lastSpeechEndedAt === null ? 0
+            : Math.max(0, (Date.now() - this.lastSpeechEndedAt) / 1000);
           if (this.idleSeconds >= this.inactivitySeconds) this.activate();
         }
         return;
@@ -789,7 +808,7 @@
         this._tickFrames(dt);
         return;
       }
-      if (this.nodeElapsed >= this.staticHoldSeconds) {
+      if (this.nodeElapsed >= this.nodeHoldSeconds) {
         this._goNext();
       }
     },
@@ -1216,7 +1235,7 @@
       this.currentNodeId = id;
       this.currentResource = res;
       this._updateComputerUseSfx();
-      this.nodeElapsed = 0;
+      this._resetNodeClock();
       this.frameElapsed = 0;
       this.frameIndex = 0;
       if (res.type === "frames" && Array.isArray(res.frames) && res.frames.length > 0) {
@@ -1255,14 +1274,22 @@
         }
       }
       this._setTexture(frames[this.frameIndex]);
-      if (looped) this._goNext();
+      // Keep authored motion looping; change poses only after the ambient
+      // dwell has elapsed, at a complete animation boundary.
+      if (looped && this.nodeElapsed >= this.nodeHoldSeconds) this._goNext();
+    },
+
+    _resetNodeClock() {
+      this.nodeElapsed = 0;
+      this.nodeHoldSeconds = this.staticHoldSeconds
+        + Math.random() * (this.staticHoldMaxSeconds - this.staticHoldSeconds);
     },
 
     _goNext() {
       const next = this._chooseNext(this.currentNodeId);
       if (!next) return;
       if (next === this.currentNodeId) {
-        this.nodeElapsed = 0;
+        this._resetNodeClock();
         return;
       }
       // Load next node while keeping old texture visible — no fade-out gap.

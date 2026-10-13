@@ -59,6 +59,8 @@ _CLOSED_EYE_SPEAKING_ELIGIBLE_LABELS = {
     "idle_closed_eye",
     *_DEFAULT_SPEAKING_LABELS,
 }
+_IDLE_STANDBY_ENTRY_LABEL = "trans_standby"
+IDLE_STANDBY_DELAY_SEC = 30.0
 _THINKING_SPEAKING_LABELS = {"thinking_speaking1", "thinking_speaking2", "key_point_speaking"}
 _THINKING_ENTRY_LABELS = {"thinking_trans", "thinking_to_serious", "thinking_to_key_point"}
 _SERIOUS_ENTRY_LABELS = {"speaking_trans", "thinking_to_serious"}
@@ -189,6 +191,7 @@ class SpriteForgeAnimator:
         self._pending_expression: str | None = None
         self._forced_node_id: str | None = None
         self._speech_active = False
+        self._last_speech_ended_at: float | None = time.monotonic()
         self._active_speech_intent: str | None = None
         self._transition_hold_active = False
         self._post_speech_hold_until = 0.0
@@ -293,6 +296,7 @@ class SpriteForgeAnimator:
             with self._lock:
                 already_speaking = self._speech_active
                 self._speech_active = True
+                self._last_speech_ended_at = None
                 emit_speaking = not already_speaking
                 self._clear_post_speech_hold_locked()
                 if self._transition_hold_active and current_label in TRANSITION_HOLD_LABELS:
@@ -337,6 +341,8 @@ class SpriteForgeAnimator:
             current_is_performance = current_label in _SPEAKING_RELEASE_LABELS
             with self._lock:
                 emit_speaking = self._speech_active
+                if emit_speaking:
+                    self._last_speech_ended_at = time.monotonic()
                 self._speech_active = False
                 pending_label = self._pending_expression
                 pending_is_performance = pending_label in _SPEAKING_RELEASE_LABELS
@@ -652,6 +658,8 @@ class SpriteForgeAnimator:
                 "closedEyeSpeakingTriggerLabel": _CLOSED_EYE_SPEAKING_TRIGGER_LABEL,
                 "closedEyeSpeakingChance": _CLOSED_EYE_SPEAKING_CHANCE,
                 "postSpeechHoldSec": POST_SPEECH_HOLD_SEC,
+                "idleStandbyEntryLabel": _IDLE_STANDBY_ENTRY_LABEL,
+                "idleStandbyDelaySec": IDLE_STANDBY_DELAY_SEC,
                 "seriousSpeakingLabels": sorted(_SERIOUS_SPEAKING_LABELS),
                 "defaultSpeakingLabels": sorted(_DEFAULT_SPEAKING_LABELS),
                 "closedEyeSpeakingLabels": sorted(_CLOSED_EYE_SPEAKING_LABELS),
@@ -699,8 +707,14 @@ class SpriteForgeAnimator:
         return self._loop_durations.get(node_id, 2.5)
 
     def _next_auto_node(self, from_id: str) -> str:
+        standby_allowed = (
+            not self._speech_active
+            and self._last_speech_ended_at is not None
+            and time.monotonic() - self._last_speech_ended_at >= IDLE_STANDBY_DELAY_SEC
+        )
         edges = [e for e in self._graph["edges"]
-                 if e["from"] == from_id and e.get("prob", 0) > 0]
+                 if e["from"] == from_id and e.get("prob", 0) > 0
+                 and (standby_allowed or self._label(e["to"]) != _IDLE_STANDBY_ENTRY_LABEL)]
         if not edges:
             return from_id
         total = sum(e["prob"] for e in edges)

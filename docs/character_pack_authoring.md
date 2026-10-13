@@ -101,6 +101,12 @@ authored route from the current node, then from the root, and finally falls back
 to a directly matching node label. Character-specific aliases and speaking
 policy currently remain Amadeus runtime configuration rather than graph fields.
 
+Kurisu's automatic `trans_standby` side turn becomes eligible only after 30
+seconds without voice playback, counted from the last playback end. Background
+narration also restarts this wait; idle variations and expression events do not.
+After the wait, the authored edge weight still decides whether to turn. Explicit
+triggers and speech entry do not wait for this ambient eligibility timer.
+
 ## Validate a pack
 
 From the repository root:

@@ -1114,6 +1114,7 @@
       this.pendingExpression = null;
       this.forcedNodeId = null;
       this.speechActive = false;
+      this.lastSpeechEndedAt = Date.now();
       this.activeSpeechIntent = null;
       this.transitionHoldActive = false;
       this.postSpeechTimer = null;
@@ -1143,6 +1144,7 @@
       this.rootNodeId = payload.rootNodeId || null;
       this.nodeDurations = payload.durations || {};
       this.cfg = payload.config || {};
+      this.lastSpeechEndedAt = this.speechActive ? null : Date.now();
       this.nodesById = {};
       this.labelToIds = {};
       for (const node of this.graph.nodes || []) {
@@ -1236,6 +1238,7 @@
       this.pendingExpression = null;
       this.forcedNodeId = null;
       this._prefetchLabels([], "interactive", { reason: "trigger" });
+      if (this.speechActive) this.lastSpeechEndedAt = Date.now();
       this.speechActive = false;
       this.activeSpeechIntent = null;
       this.transitionHoldActive = false;
@@ -1260,6 +1263,7 @@
       if (speaking) {
         const already = this.speechActive;
         this.speechActive = true;
+        this.lastSpeechEndedAt = null;
         this.sprite.setSpeaking(true);
         this._clearPostSpeechTimer();
         this.deferredPresentationIntent = null;
@@ -1302,6 +1306,7 @@
       }
 
       const currentLabel = this._label(this.currentNodeId);
+      if (this.speechActive) this.lastSpeechEndedAt = Date.now();
       this.speechActive = false;
       this.sprite.setSpeaking(false);
       const pendingLabel = this.pendingExpression || "";
@@ -1527,7 +1532,12 @@
     }
 
     _nextAutoNode(fromId) {
-      const edges = (this.graph.edges || []).filter((e) => e.from === fromId && Number(e.prob || 0) > 0);
+      const standbyAllowed = !this.speechActive && this.lastSpeechEndedAt !== null
+        && Date.now() - this.lastSpeechEndedAt >= Number(this.cfg.idleStandbyDelaySec ?? 30) * 1000;
+      // Gate only automatic side entry; explicit expression paths still use
+      // the authored graph and speech can interrupt without waiting.
+      const edges = (this.graph.edges || []).filter((e) => e.from === fromId && Number(e.prob || 0) > 0
+        && (standbyAllowed || this._label(e.to) !== (this.cfg.idleStandbyEntryLabel || "trans_standby")));
       if (!edges.length) return fromId;
       const total = edges.reduce((sum, e) => sum + Number(e.prob || 0), 0);
       let r = Math.random() * total;

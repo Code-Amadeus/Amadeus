@@ -219,6 +219,21 @@ verifies both persisted choices and their launch policy without a running backen
 The composer native smoke also checks the gear button; the real-desktop lifecycle
 probe checks that opening/closing the control panel preserves the mounted scene.
 
+## Ambient character cadence
+
+The idle scenario activates 60 seconds after the most recent voice playback
+ends. All voice playback, including background work narration, resets this
+clock; duplicate stopped-state events do not restart it. The quiet clock uses
+elapsed time rather than render ticks, so a lower frame rate cannot change it.
+Once active, each pose samples a 45–60 second dwell before the graph can choose
+the next pose. Animated resources keep playing at their authored rate and finish
+the current loop before changing poses. Speech interrupts an idle scenario;
+work activity enters its scene immediately and retains its narration behavior.
+
+`AMADEUS_SCENARIO_STATIC_SECONDS` overrides the default range with a fixed
+interval. Restart the backend and reopen the wallpaper to reload
+the policy; changing these values does not require re-encoding character assets.
+
 ## Verification
 
 ```powershell

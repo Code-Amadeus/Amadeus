@@ -431,11 +431,15 @@ def _prepare_scenario_payload(port: int) -> dict:
             str(node.get("resource") or ""),
         )
     backplate, backplate_crop_norm = _prepare_scenario_backplate(backplate_source_root, _RUNTIME_SCENARIOS)
+    static_hold_seconds = float(os.environ.get("AMADEUS_SCENARIO_STATIC_SECONDS", "45"))
+    # Preserve explicit fixed intervals; the default ambient dwell is 45–60s.
+    static_hold_max_seconds = static_hold_seconds if "AMADEUS_SCENARIO_STATIC_SECONDS" in os.environ else 60.0
 
     return {
         "enabled": True,
         "inactivitySeconds": float(os.environ.get("AMADEUS_SCENARIO_IDLE_SECONDS", "60")),
-        "staticHoldSeconds": float(os.environ.get("AMADEUS_SCENARIO_STATIC_SECONDS", "15")),
+        "staticHoldSeconds": static_hold_seconds,
+        "staticHoldMaxSeconds": static_hold_max_seconds,
         "enableFramePlayback": os.environ.get("AMADEUS_SCENARIO_FRAME_PLAYBACK", "1").strip().lower()
         not in {"0", "false", "no", "off"},
         "graph": graph,
