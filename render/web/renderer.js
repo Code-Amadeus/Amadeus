@@ -304,9 +304,11 @@
 
     _staticFrameDemand(label, index, exactHold = false) {
       if (!this._isVideoBodyIndex(label, index)) return true;
-      if (this._videoFrozenHold) return false;
       const config = this._experimentalFrameVideos.get(label);
-      const reason = config.failed ? "Fallback" : exactHold && this._held && label === this._currentEmotion ? "Hold" : null;
+      // A frozen display belongs to the current healthy clip. It must not
+      // suppress static recovery for a different, already failed video label.
+      const reason = config.failed ? "Fallback"
+        : exactHold && this._held && !this._videoFrozenHold && label === this._currentEmotion ? "Hold" : null;
       if (reason) {
         const key = label + ":" + reason + ":" + index;
         if (!this._frameVideoStaticDemands.has(key)) {

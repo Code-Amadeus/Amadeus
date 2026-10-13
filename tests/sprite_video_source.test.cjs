@@ -619,3 +619,26 @@ test('an exact static hold never expands entry hints into video-body loads after
   s.clearHold();await settle(f);
   assert.deepEqual(f.loads.filter(row=>{const i=Number(row.url.split(':').at(-1));return i>=3&&i<99;}).map(row=>Number(row.url.split(':').at(-1))),[held]);
 });
+
+
+test('freezing a healthy video cannot suppress a failed successor static prefetch', async t => {
+  const f = fixture(t, { sampling: false }), s = f.sprite;
+  install(f, { count: 40, head: 3, interval: 20, allReady: true });
+  const failed = 'failed-successor';
+  s.loadFrames(failed, Array.from({ length: 40 }, (_, i) => `${failed}:${i}`));
+  s.setIdleFrameIntervalMs(failed, 20);
+  s.setExperimentalFrameVideoSource(failed, f.videoDescriptor({ head: 3, count: 40, allReady: true }));
+  s.setEmotion(failed);
+  f.sessions.at(-1).fail();
+  s.setEmotion(label); await settle(f);
+  s._showFrame(8); s.holdFrame(null);
+  assert.equal(s._videoFrozenHold, true);
+  s.prefetchLabels([failed], 'interactive', { reason: 'failed-next', headMs: 120 });
+  await settle(f);
+  assert.ok(f.demands.get('prefetch:failed-next').some(row => row.url === `${failed}:5`),
+    'the failed successor needs its body in the static prefetch while another video is frozen');
+  assert.ok(!f.demands.get('current').some(row => row.url === `${label}:8`),
+    'the healthy frozen display still needs no redundant static hold');
+  s.clearHold(); await settle(f);
+  assert.ok(f.demands.get('prefetch:failed-next').some(row => row.url === `${failed}:5`));
+});
