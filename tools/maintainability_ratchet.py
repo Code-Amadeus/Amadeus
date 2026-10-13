@@ -16,8 +16,10 @@ LAYERS = {name: level for level, names in enumerate((
     ("config",), ("llm", "asr", "tts", "render", "wallpaper", "vts", "vn_player"),
     ("core", "agent_host"), ("server",),
 )) for name in names}
+# Process-wide resource coordination is shared by lower-layer speech owners;
+# cuda_execution stays independent of models and application orchestration.
 SHARED = {"server.protocol", "server.event_bus", "server.local_auth",
-          "core.pyaudio_lifecycle", "core.turn_coordinator"}
+          "core.pyaudio_lifecycle", "core.turn_coordinator", "core.cuda_execution"}
 PLACEHOLDER = "runtime log event at"
 
 # Scope exemptions to the existing owner and operation, not an entire file.

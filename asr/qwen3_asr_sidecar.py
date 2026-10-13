@@ -63,11 +63,19 @@ def _calc_max_tokens(duration_s: float) -> int:
     return max(_MAX_TOKENS_FLOOR, min(estimated, _MAX_TOKENS_CAP))
 
 
-def main():
+def main(argv=None):
+    import argparse
+    from asr.qwen_inference import ENGINES, apply_qwen_attention_policy, qwen_attention_configs, transcribe_qwen
+
+    # The parent passes its constructor option explicitly. This internal launch
+    # argument is not a product environment setting; standalone callers stay official.
+    parser = argparse.ArgumentParser(description="Qwen3-ASR JSONL sidecar")
+    parser.add_argument("--engine", choices=ENGINES, default="official")
+    engine = parser.parse_args(argv).engine
+
     import numpy as np
     import torch
     from asr.backend import asr_call_context
-    from asr.qwen_inference import ENGINES, apply_qwen_attention_policy, qwen_attention_configs, transcribe_qwen
     from asr.qwen_cuda_graph import prepare_qwen_cuda_graphs, qwen_cuda_graph_support_reason
     from qwen_asr import Qwen3ASRModel
     from asr.qwen_model import resolve_qwen_model_source
@@ -118,9 +126,6 @@ def main():
                 attn_impl = "sdpa"
 
     try:
-        engine = os.environ.get("QWEN3_ASR_INFERENCE_ENGINE", "official")
-        if engine not in ENGINES:
-            raise ValueError(f"Unknown Qwen inference engine: {engine}")
         model = Qwen3ASRModel.from_pretrained(
             resolve_qwen_model_source(),
             local_files_only=True,

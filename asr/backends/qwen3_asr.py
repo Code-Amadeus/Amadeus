@@ -457,7 +457,7 @@ class Qwen3ASRBackend(BaseASRBackend):
             logger.info("[ASR:Qwen3ASR] starting sidecar process: %s", python)
             self._device = str(device)
             proc = subprocess.Popen(
-                [python, str(_SIDECAR_SCRIPT)],
+                [python, str(_SIDECAR_SCRIPT), "--engine", self._inference_engine],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -467,7 +467,6 @@ class Qwen3ASRBackend(BaseASRBackend):
                     **os.environ,
                     "QWEN3_ASR_DEVICE": str(device),
                     "QWEN3_ASR_REQUIRE_CUDA": "true" if QWEN3_ASR_REQUIRE_CUDA else "false",
-                    "QWEN3_ASR_INFERENCE_ENGINE": self._inference_engine,
                 },
             )
             self._proc = proc
