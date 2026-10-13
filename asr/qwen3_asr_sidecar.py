@@ -63,9 +63,22 @@ def _calc_max_tokens(duration_s: float) -> int:
     return max(_MAX_TOKENS_FLOOR, min(estimated, _MAX_TOKENS_CAP))
 
 
-def main():
+def main(argv=()):
+    import argparse
+    from asr.qwen_inference import ENGINES, apply_qwen_attention_policy, qwen_attention_configs, qwen_loader_attention, transcribe_qwen
+
+    # The parent passes its constructor option explicitly. This internal launch
+    # argument is not a product environment setting; standalone callers stay official.
+    parser = argparse.ArgumentParser(description="Qwen3-ASR JSONL sidecar")
+    parser.add_argument("--engine", choices=ENGINES, default="official")
+    parser.add_argument("--disable-flash-attn", action="store_true")
+    options = parser.parse_args(argv)
+    engine = options.engine
+
     import numpy as np
     import torch
+    from asr.backend import asr_call_context
+    from asr.qwen_cuda_graph import prepare_qwen_cuda_graphs, qwen_cuda_graph_support_reason
     from qwen_asr import Qwen3ASRModel
     from asr.qwen_model import resolve_qwen_model_source
 
@@ -92,28 +105,13 @@ def main():
         })
         sys.exit(1)
 
-    # 注意实现选择优先级：
-    #   1. flash_attention_2 — 最快，需要 flash-attn 包（Windows 源码编译困难）
-    #   2. sdpa             — PyTorch 2.0+ 内置，无额外依赖，性能接近 FA2
-    #   3. eager            — 默认，最慢
+    # Select an available loader backend. The shared post-load policy below
+    # uses FA2 audio with SDPA text on supported NVIDIA installations; loader
+    # availability alone does not establish which attention path runs fastest.
     extra_kwargs = {}
-    attn_impl = "eager"
+    attn_impl = qwen_loader_attention(device_map, flash_attn_enabled=not options.disable_flash_attn)
     if "cuda" in device_map:
-        # PyTorch ROCm intentionally exposes AMD GPUs through the torch.cuda API.
-        # The current Windows ROCm build can return invalid or silently incorrect
-        # results through its default SDPA kernels, so prefer the stable eager path.
-        if getattr(torch.version, "hip", None):
-            extra_kwargs["attn_implementation"] = "eager"
-            attn_impl = "eager"
-        else:
-            try:
-                import flash_attn  # noqa: F401
-                extra_kwargs["attn_implementation"] = "flash_attention_2"
-                attn_impl = "flash_attention_2"
-            except ImportError:
-                # sdpa：torch 2.0+ 内置，不需要额外包，加速显著
-                extra_kwargs["attn_implementation"] = "sdpa"
-                attn_impl = "sdpa"
+        extra_kwargs["attn_implementation"] = attn_impl
 
     try:
         model = Qwen3ASRModel.from_pretrained(
@@ -134,12 +132,12 @@ def main():
             set_attention = getattr(hf_model, "set_attn_implementation", None)
             if callable(set_attention):
                 set_attention("eager")
-                attn_impl = "eager_recursive"
             else:
                 torch.backends.cuda.enable_flash_sdp(False)
                 torch.backends.cuda.enable_mem_efficient_sdp(False)
                 torch.backends.cuda.enable_math_sdp(True)
-                attn_impl = "eager+math_sdp"
+        else:
+            apply_qwen_attention_policy(model.model, attn_impl)
         warmup_ms = 0
         warmup_setting = os.environ.get("QWEN3_ASR_WARMUP")
         warmup_enabled = bool(getattr(torch.version, "hip", None)) if warmup_setting is None else (
@@ -161,11 +159,17 @@ def main():
             finally:
                 model.max_new_tokens = previous_tokens
             warmup_ms = round((time.perf_counter() - warmup_started) * 1000)
+        graph_preparation = None
+        if engine == "cuda_graph" and qwen_cuda_graph_support_reason(model.model) is None:
+            graph_preparation = prepare_qwen_cuda_graphs(model.model, capture_allowed=True)
         _emit({
             "type": "ready",
             "device": device_map,
             "attn_impl": attn_impl,
+            "loader_attention_requested": attn_impl,
+            "attention_configs": qwen_attention_configs(model.model),
             "warmup_ms": warmup_ms,
+            "graph_preparation": graph_preparation,
         })
     except Exception as e:
         _emit({"type": "error", "msg": f"LOAD_FAIL: {e}"})
@@ -191,23 +195,16 @@ def main():
             lang_val = req.get("language", "Chinese")
             language = lang_val if lang_val else None
 
-            # max_new_tokens 是实例属性，transcribe() 不接受该参数
-            # 调用前临时覆盖，调用后恢复
-            _prev_tokens = model.max_new_tokens
-            model.max_new_tokens = max_tokens
-            try:
-                results = model.transcribe(
-                    audio=(audio, sr),
-                    language=language,
-                    context=context,
-                )
-            finally:
-                model.max_new_tokens = _prev_tokens
+            with asr_call_context(req.get("request_kind", "direct"), req.get("request_id")):
+                results, metrics = transcribe_qwen(
+                    model, audio, sr, context, language, max_tokens,
+                    engine=req.get("engine", engine), profile=bool(req.get("profile", False)))
             text = (results[0].text if results else "").strip()
-            _emit({"type": "result", "text": text})
+            metrics["loader_attention_requested"] = attn_impl
+            _emit({"type": "result", "text": text, "metrics": metrics})
         except Exception as e:
             _emit({"type": "error", "msg": str(e)})
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

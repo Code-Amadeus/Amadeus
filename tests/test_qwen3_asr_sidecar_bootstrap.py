@@ -59,5 +59,40 @@ class Qwen3ASRSidecarBootstrapTest(unittest.TestCase):
         self.assertIn("sidecar-project-import-ok", completed.stdout)
 
 
+    def test_launch_argument_is_validated_before_optional_model_loading(self) -> None:
+        sidecar = PROJECT_ROOT / "asr/qwen3_asr_sidecar.py"
+        for arguments, expected_code in ((["--help"], 0), (["--engine", "unsupported"], 2)):
+            with self.subTest(arguments=arguments):
+                completed = subprocess.run(
+                    [sys.executable, str(sidecar), *arguments], cwd=PROJECT_ROOT,
+                    capture_output=True, text=True, encoding="utf-8", timeout=20,
+                )
+                self.assertEqual(completed.returncode, expected_code, completed.stderr)
+                self.assertIn("--engine", completed.stdout + completed.stderr)
+                self.assertNotIn("LOAD_FAIL", completed.stdout)
+
+    def test_parent_passes_its_engine_as_a_launch_argument(self) -> None:
+        from io import BytesIO
+        from types import SimpleNamespace
+        from unittest.mock import Mock, patch
+        from asr.backends import qwen3_asr as backend_module
+
+        process = SimpleNamespace(
+            poll=lambda: None, stdout=BytesIO(b'{"type": "ready"}\n'),
+            stderr=BytesIO(), stdin=Mock(),
+        )
+        backend = backend_module.Qwen3ASRBackend(inference_engine="cuda_graph")
+        with patch.object(backend, "_can_use_inprocess", return_value=False), \
+                patch.object(backend, "_select_python", return_value=sys.executable), \
+                patch.object(backend_module.Qwen3ASRBackend, "_shared_proc", None), \
+                patch.dict(backend_module.os.environ, {"QWEN3_ASR_MODE": "sidecar",
+                                                      "QWEN3_ASR_INFERENCE_ENGINE": "official"}), \
+                patch.object(backend_module.subprocess, "Popen", return_value=process) as launch:
+            backend.load("cpu")
+            self.assertEqual(launch.call_args.args[0][2:], ["--engine", "cuda_graph"])
+            self.assertEqual(launch.call_args.kwargs["env"]["QWEN3_ASR_INFERENCE_ENGINE"], "official")
+            self.assertIs(backend._proc, process)
+
+
 if __name__ == "__main__":
     unittest.main()

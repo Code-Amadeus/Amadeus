@@ -24,6 +24,24 @@ def test_no_new_upward_import_edges(source_inventory):
     )
 
 
+def test_shared_cuda_admission_has_no_application_dependencies():
+    import ast
+    import sys
+
+    tree = ast.parse((ROOT / "core/cuda_execution.py").read_text(encoding="utf-8"))
+    dependencies = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            dependencies.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            assert node.level == 0, "Shared CUDA admission cannot depend on application packages"
+            dependencies.add(node.module.split(".")[0])
+    assert dependencies <= sys.stdlib_module_names, (
+        "Shared CUDA admission must remain a stdlib resource contract: "
+        + repr(dependencies - sys.stdlib_module_names)
+    )
+
+
 def test_persistent_replacements_use_the_shared_commit_boundary(source_inventory):
     hits = {(f, w["owner"], w["kind"]) for f, v in source_inventory.items() for w in v["writes"]}
     assert not hits - WRITE_EXCEPTIONS.keys(), (

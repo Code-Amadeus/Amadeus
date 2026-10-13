@@ -292,3 +292,37 @@ def test_auto_graph_and_flash_capture_replay_on_nvidia(monkeypatch):
         assert torch.isfinite(decoder.bucket_static_outputs[key]["logits"]).all()
     monkeypatch.setenv("ENABLE_CUDA_GRAPH", "0")
     assert not infer.cuda_graph_enabled
+
+
+def test_tts_timing_sync_participates_in_capture_admission(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from contextlib import nullcontext
+    from core.cuda_execution import speech_cuda
+
+    inferencer = _inferencer("cuda:0", uses_torch_cuda_api=True)
+    monkeypatch.setattr(torch.cuda, "device", lambda *_args: nullcontext())
+
+    def try_capture():
+        with speech_cuda.try_capture() as admitted:
+            return admitted
+
+    with ThreadPoolExecutor(1) as pool:
+        observed = []
+
+        def synchronize():
+            observed.append(pool.submit(try_capture).result(timeout=2))
+
+        monkeypatch.setattr(torch.cuda, "synchronize", synchronize)
+        inferencer._sync_sovits_timing()
+        inferencer._sync_t2s_timing()
+        assert observed == [False, False]
+        assert pool.submit(try_capture).result(timeout=2)
+
+        def broken_synchronize():
+            assert not pool.submit(try_capture).result(timeout=2)
+            raise RuntimeError("synthetic timing failure")
+
+        monkeypatch.setattr(torch.cuda, "synchronize", broken_synchronize)
+        with pytest.raises(RuntimeError, match="synthetic timing failure"):
+            inferencer._sync_sovits_timing()
+        assert pool.submit(try_capture).result(timeout=2)

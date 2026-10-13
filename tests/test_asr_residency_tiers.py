@@ -54,12 +54,19 @@ def backend(monkeypatch):
     monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(
         _C=SimpleNamespace(), version=SimpleNamespace(hip=None),
         bfloat16="bf16", float32="fp32",
-        cuda=SimpleNamespace(is_available=lambda: True, empty_cache=lambda: None)))
+        cuda=SimpleNamespace(is_available=lambda: True, empty_cache=lambda: None,
+                             get_device_capability=lambda _device: (8, 0))))
     monkeypatch.setitem(sys.modules, "flash_attn", None)
     monkeypatch.setitem(sys.modules, "qwen_asr", SimpleNamespace(
         Qwen3ASRModel=SimpleNamespace(from_pretrained=lambda *_args, **_kwargs: FakeQwen())))
     monkeypatch.setattr("asr.backends.qwen3_asr.resolve_qwen_model_source", lambda: "synthetic-model")
-    engine = Qwen3ASRBackend()
+    monkeypatch.setattr("asr.backends.qwen3_asr.qwen_attention_configs", lambda _model: {"model": "synthetic"})
+    # Lifecycle tests own the recognizer boundary, not Qwen/Transformers internals.
+    def fake_inference(model, audio, sample_rate, context, language, max_tokens, **_kwargs):
+        results = model.transcribe(audio=(audio, sample_rate), context=context, language=language)
+        return results, {"engine": "official", "wall_ms": {}, "gpu_ms": {}}
+    monkeypatch.setattr("asr.backends.qwen3_asr.transcribe_qwen", fake_inference)
+    engine = Qwen3ASRBackend(inference_engine="official")
     engine._load_inprocess("cuda")
     Qwen3ASRBackend._last_used = time.monotonic() - 1000
     yield engine
@@ -79,6 +86,37 @@ def test_a_recently_used_model_stays_in_vram(backend):
     Qwen3ASRBackend._last_used = time.monotonic()
     assert not backend.release_vram(180)
     assert backend._model.model.moves == []
+
+
+def test_park_releases_model_owned_graph_before_weights_move(backend, monkeypatch):
+    closed = []
+    class Graph:
+        def close(self):
+            assert backend._model.model.device == "cuda:0"
+            closed.append(True)
+    backend._model.model._amadeus_qwen_cuda_graphs = {256: Graph()}
+    assert backend.release_vram()
+    assert closed == [True]
+    assert not hasattr(backend._model.model, "_amadeus_qwen_cuda_graphs")
+
+
+def test_default_prepares_on_shared_load_and_speech_prepare_but_explicit_official_does_not(backend, monkeypatch):
+    from asr.qwen_cuda_graph import DEFAULT_CAPACITIES
+    monkeypatch.setattr("asr.backends.qwen3_asr.QWEN3_ASR_CUDA_GRAPH", True)
+    prepared = []
+    monkeypatch.setattr("asr.backends.qwen3_asr.qwen_cuda_graph_support_reason", lambda _model: None)
+    monkeypatch.setattr("asr.backends.qwen3_asr.prepare_qwen_cuda_graphs",
+                        lambda model, capacities, **kwargs: prepared.append((model, kwargs, capacities)) or {"deferred": True})
+    backend.prepare()
+    assert prepared == []
+    graph_user = Qwen3ASRBackend()
+    graph_user._load_inprocess("cuda")
+    assert len(prepared) == 1 and prepared[0][1]["capture_allowed"]
+    graph_user.prepare()
+    assert len(prepared) == 2
+    assert all(model is backend._model.model and capacities == DEFAULT_CAPACITIES
+               and options["capture_allowed"] for model, options, capacities in prepared)
+    graph_user.close()
 
 
 def test_a_transcription_in_progress_keeps_the_model_hot(backend):
@@ -216,7 +254,7 @@ async def test_reply_completion_keeps_model_hot_for_the_renewed_window(backend, 
 
 @pytest.mark.parametrize("first_closes", ["conversation", "wake"])
 def test_shared_model_survives_either_users_close_until_the_last_release(backend, first_closes):
-    wake = Qwen3ASRBackend()
+    wake = Qwen3ASRBackend(inference_engine="official")
     wake._load_inprocess("cuda")
     model = backend._model
     assert wake._model is model
@@ -229,7 +267,7 @@ def test_shared_model_survives_either_users_close_until_the_last_release(backend
     assert remaining.transcribe(np.zeros(1600, dtype=np.float32)) == "こんにちは"
     assert model.devices_seen == ["cuda:0"]
     # Restarting Conversation while Wake holds the model must reuse its residency facts.
-    rejoined = Qwen3ASRBackend()
+    rejoined = Qwen3ASRBackend(inference_engine="official")
     rejoined._load_inprocess("cuda")
     rejoined._load_inprocess("cuda")
     assert rejoined._model is model
@@ -276,7 +314,7 @@ def test_close_waits_for_model_use_before_replacement(backend, monkeypatch, oper
         closed.result(timeout=3)
     assert backend._model is None and Qwen3ASRBackend._shared_model is None
     assert not Qwen3ASRBackend._shared_parked
-    replacement = Qwen3ASRBackend()
+    replacement = Qwen3ASRBackend(inference_engine="official")
     replacement._load_inprocess("cuda")
     assert replacement._model is not model and not replacement.parked
     backend.prepare()  # A late prepare from the retired manager cannot touch the new model.
@@ -287,7 +325,7 @@ def test_close_waits_for_model_use_before_replacement(backend, monkeypatch, oper
 
 @pytest.mark.parametrize("failure_at", ["restore", "transcribe"])
 def test_fatal_model_failure_invalidates_all_shared_users(backend, monkeypatch, failure_at):
-    wake = Qwen3ASRBackend()
+    wake = Qwen3ASRBackend(inference_engine="official")
     wake._load_inprocess("cuda")
 
     def fail(*_args, **_kwargs):
@@ -358,3 +396,81 @@ def test_sidecar_shutdown_does_not_wait_for_blocked_pipe_io(backend, monkeypatch
         finally:
             release.set()
         reading.result(timeout=3)
+
+
+def test_hot_graph_prepare_keeps_idle_time_and_does_not_take_a_cuda_work_lease(backend, monkeypatch, caplog):
+    from asr.backends import qwen3_asr as module
+    import logging
+    monkeypatch.setattr(module, "qwen_cuda_graph_support_reason", lambda _: None)
+    monkeypatch.setattr(module, "prepare_qwen_cuda_graphs", lambda *_, **__: {
+        "buckets": [{"cache_hit": True}], "prepared_capacities": [384]})
+    graph_user = Qwen3ASRBackend(inference_engine="cuda_graph")
+    graph_user._load_inprocess("cuda")
+    used = Qwen3ASRBackend._last_used
+    caplog.clear()
+    with monkeypatch.context() as hot, caplog.at_level(logging.INFO):
+        hot.setattr(module.speech_cuda, "work", Mock(side_effect=AssertionError("hot CUDA work lease")))
+        graph_user.prepare()
+        graph_user.prepare()
+    assert Qwen3ASRBackend._last_used == used
+    assert not any("graph preparation" in record.message for record in caplog.records)
+    assert backend.release_vram(180)
+
+
+def test_default_graph_borrower_preserves_parked_residency_until_speech_prepare(backend, monkeypatch):
+    from asr.backends import qwen3_asr as module
+    monkeypatch.setattr(module, "QWEN3_ASR_CUDA_GRAPH", True)
+    monkeypatch.setattr(module, "qwen_cuda_graph_support_reason", lambda _: None)
+    prepare = Mock(return_value={"buckets": [{"cache_hit": True}]})
+    monkeypatch.setattr(module, "prepare_qwen_cuda_graphs", prepare)
+    assert backend.release_vram()
+    used = Qwen3ASRBackend._last_used
+    borrower = Qwen3ASRBackend()
+    borrower._load_inprocess("cuda")
+    assert borrower.parked and borrower._model is backend._model
+    assert borrower._model.model.moves == ["cpu"]
+    assert Qwen3ASRBackend._last_used == used
+    prepare.assert_not_called()
+    borrower.prepare()
+    assert not borrower.parked and borrower._model.model.moves == ["cpu", "cuda:0"]
+    assert Qwen3ASRBackend._last_used > used
+    prepare.assert_called_once()
+
+
+def test_unknown_cuda_prepare_failure_keeps_the_existing_fatal_drop_contract(backend, monkeypatch):
+    from asr.backends import qwen3_asr as module
+    monkeypatch.setattr(module, "prepare_qwen_cuda_graphs", Mock(side_effect=RuntimeError("CUDA error: unknown capture failure")))
+    other = Qwen3ASRBackend(inference_engine="official")
+    other._load_inprocess("cuda")
+    with pytest.raises(ASRBackendFatalError, match="unknown capture failure"):
+        backend.prepare_cuda_graphs(capture_allowed=True)
+    assert backend._model is None and other._model is None
+    assert Qwen3ASRBackend._shared_model is None
+    assert Qwen3ASRBackend._inprocess_disabled_until > time.time()
+
+
+@pytest.mark.parametrize("message", ["operation failed due to a previous error during capture", ""])
+def test_capture_end_wrapped_fatal_error_drops_all_shared_users(backend, monkeypatch, message):
+    from asr import qwen_cuda_graph as graph
+    from asr.backends import qwen3_asr as module
+    runtime = sys.modules["torch"]
+    monkeypatch.setattr(runtime, "OutOfMemoryError", type("OutOfMemoryError", (RuntimeError,), {}), raising=False)
+    for name in ("synchronize", "memory_allocated", "memory_reserved"):
+        monkeypatch.setattr(runtime.cuda, name, Mock(return_value=0), raising=False)
+    other = Qwen3ASRBackend(inference_engine="official")
+    other._load_inprocess("cuda")
+    weights = backend._model.model
+    weights.device = SimpleNamespace(type="cuda")
+    weights.thinker = SimpleNamespace(model=SimpleNamespace(config=SimpleNamespace(_attn_implementation="sdpa")))
+    error = RuntimeError(message)
+    error.__cause__ = RuntimeError("illegal memory access")
+    partial = SimpleNamespace(statistics={"capacity": 384}, capture=Mock(side_effect=error), close=Mock())
+    monkeypatch.setattr(graph, "QwenStaticDecode", Mock(return_value=partial))
+    # Normal inference still applies its pre-existing top-level string policy.
+    assert not module.Qwen3ASRBackend._is_fatal_cuda_error(error)
+    with pytest.raises(ASRBackendFatalError, match=message or "RuntimeError"):
+        backend.prepare_cuda_graphs(capture_allowed=True)
+    partial.close.assert_called_once_with()
+    assert backend._model is None and other._model is None
+    assert Qwen3ASRBackend._shared_model is None and not Qwen3ASRBackend._model_users
+    assert Qwen3ASRBackend._inprocess_disabled_until > time.time()

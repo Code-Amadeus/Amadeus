@@ -43,6 +43,7 @@ from config.settings import (
     QWEN3_ASR_DEVICE as _CFG_QWEN3_ASR_DEVICE,
 )
 from asr.mic_input_service import get_mic_input_service
+from asr.backend import asr_call_context
 from asr.text_filter import is_asr_prompt_leak
 from asr.backend import ASRBackendFatalError
 from asr.registry import create_asr_backend
@@ -121,15 +122,20 @@ class _SpeculativeTranscription:
             self._valid = True
             self._audio_samples = int(audio.shape[0])
             self._submitted_at = time.monotonic()
+            with asr_call_context("speculative") as timing_context:
+                request_id = timing_context["request_id"]
+            self._request_id = request_id
         audio_ms = self._audio_samples / self._sample_rate * 1000.0
-        logger.info("[ASR-SPEC] probable end: speculative transcribe submitted (%.0fms audio)", audio_ms)
+        logger.info("[ASR-SPEC] probable end: speculative transcribe submitted (%.0fms audio, request_id=%s)",
+                    audio_ms, request_id)
         threading.Thread(
-            target=self._run, args=(audio, done), daemon=True, name="asr-speculative"
+            target=self._run, args=(audio, done, request_id), daemon=True, name="asr-speculative"
         ).start()
 
-    def _run(self, audio: np.ndarray, done: threading.Event) -> None:
+    def _run(self, audio: np.ndarray, done: threading.Event, request_id: str) -> None:
         try:
-            self._text = self._backend.transcribe(audio, self._sample_rate, context=self._context)
+            with asr_call_context("speculative", request_id):
+                self._text = self._backend.transcribe(audio, self._sample_rate, context=self._context)
         except Exception as exc:
             self._error = exc
         finally:
@@ -148,7 +154,7 @@ class _SpeculativeTranscription:
         with self._lock:
             if self._valid:
                 self._valid = False
-                logger.info("[ASR-SPEC] speculation invalidated: %s", reason)
+                logger.info("[ASR-SPEC] speculation invalidated: %s (request_id=%s)", reason, self._request_id)
 
     def consume(self, final_audio: np.ndarray, timeout: float = 8.0) -> Optional[str]:
         with self._lock:
@@ -173,9 +179,10 @@ class _SpeculativeTranscription:
         total_ms = (time.monotonic() - self._submitted_at) * 1000.0
         logger.info(
             "[ASR-SPEC] hit: reused speculative text "
-            "(transcribe total %.0fms, post-endpoint wait %.0fms)",
+            "(transcribe total %.0fms, post-endpoint wait %.0fms, request_id=%s)",
             total_ms,
             post_endpoint_ms,
+            self._request_id,
         )
         return text
 
@@ -255,13 +262,13 @@ class ASRManager:
         return bool(release(idle_seconds)) if callable(release) else False
 
     def prepare_backend_async(self) -> None:
-        """Start moving a model that waits in RAM back while the user speaks.
+        """Let the backend prepare device state while the user starts speaking.
 
-        Recognition only runs after the end of speech, so the move (about
-        0.1–0.5 s) overlaps the utterance instead of delaying the result.
+        A resident model may still need a graph whose capture was deferred by
+        concurrent TTS. The backend owns readiness and makes hot prepare a no-op.
         """
         backend = self._backend
-        if getattr(backend, "parked", False):
+        if callable(getattr(backend, "prepare", None)):
             threading.Thread(target=self._prepare_quietly, args=(backend,),
                              daemon=True, name="asr-prepare").start()
 
@@ -270,7 +277,7 @@ class ASRManager:
         try:
             backend.prepare()
         except Exception:
-            logger.exception("[ASR] moving the model back from RAM failed")
+            logger.exception("[ASR] preparing the recognizer device state failed")
 
     def _speech_started(self) -> None:
         self.prepare_backend_async()
@@ -584,13 +591,15 @@ class ASRManager:
         text = speculative.consume(audio) if speculative is not None else None
         if text is None:
             try:
-                text = self._backend.transcribe(audio, _SAMPLE_RATE, context=self.context)
+                with asr_call_context("final"):
+                    text = self._backend.transcribe(audio, _SAMPLE_RATE, context=self.context)
             except ASRBackendFatalError as exc:
                 if not self._recover_backend_after_failure(exc):
                     return None
                 try:
                     logger.info("[ASR] retrying captured audio after backend recovery")
-                    text = self._backend.transcribe(audio, _SAMPLE_RATE, context=self.context)
+                    with asr_call_context("recovery"):
+                        text = self._backend.transcribe(audio, _SAMPLE_RATE, context=self.context)
                 except Exception as retry_exc:
                     logger.error("[ASR] retry after backend recovery failed: %s", retry_exc)
                     return None
