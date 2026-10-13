@@ -10,9 +10,29 @@ VAD 和麦克风管理由 ASRManager 负责，后端只关心"给我 PCM，我�
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Optional
+from uuid import uuid4
 
 import numpy as np
+
+_call_context: ContextVar[dict[str, str] | None] = ContextVar("asr_call_context", default=None)
+
+
+@contextmanager
+def asr_call_context(kind: str, request_id: str | None = None):
+    """Correlate recognizer telemetry with manager-owned speculative/final calls."""
+    value = {"request_kind": kind, "request_id": request_id or uuid4().hex[:12]}
+    token = _call_context.set(value)
+    try:
+        yield value
+    finally:
+        _call_context.reset(token)
+
+
+def current_asr_call_context() -> dict[str, str]:
+    return dict(_call_context.get() or {"request_kind": "direct", "request_id": uuid4().hex[:12]})
 
 
 class ASRBackendError(RuntimeError):

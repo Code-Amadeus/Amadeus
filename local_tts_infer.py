@@ -14,6 +14,7 @@ import string
 from string import punctuation
 
 from config.local_model_loading import enforce_local_model_loading
+from core.cuda_execution import cuda_work
 
 # Apply before importing model code, including when Hub/Transformers were
 # already imported by another optional component in the same process.
@@ -127,6 +128,7 @@ except ImportError as e:
 
 
 class TTSInferencer:
+    @cuda_work
     def __init__(self,
                  device="cuda",
                  gpt_path=None,
@@ -1019,6 +1021,7 @@ class TTSInferencer:
             text += "." if prompt_language == "英文" else "。"
         return text, self.dict_language.get(prompt_language, _default_lang_code())
 
+    @cuda_work
     def warm_reference_cache(self, audio_path: str, text: str, prompt_language: str):
         """Use the same normalized key for startup warmup and live synthesis."""
         text, language_code = self._normalize_reference_prompt(text, prompt_language)
@@ -1208,6 +1211,7 @@ class TTSInferencer:
         audio = audio.half() if self.is_half else audio.float()
         return self.sv_model.compute_embedding3(audio)
 
+    @cuda_work
     def infer(self,
               text,
               ref_audio_path,
@@ -1603,6 +1607,7 @@ class TTSInferencer:
             logger.error(traceback.format_exc())
             raise
 
+    @cuda_work
     def infer_stream(self,
                      text,
                      ref_audio_path,

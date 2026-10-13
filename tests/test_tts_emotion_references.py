@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from config import settings
+from core.cuda_execution import cuda_work
 from tts.backend import TTSSynthesisRequest, TTSRuntimeAdapter
 from tts.backends import gpt_sovits
 from tts.reference_pack import PACK_FORMAT, PACK_ID, PACK_TREE, ReferencePackError, load_reference_pack
@@ -34,7 +35,7 @@ cache_methods = [node for node in engine_class.body if isinstance(node, ast.Func
                  and node.name in {'_normalize_reference_prompt', 'warm_reference_cache', '_build_synthesis_cache'}]
 fallback_methods = [node for node in source.body if isinstance(node, ast.FunctionDef)
                     and node.name in {'_default_lang_code', '_default_ref_free_prompt'}]
-scope = dict(_TTS_OUTPUT_LANGUAGE='日文', _TTS_REF_TEXT_JA='', _TTS_REF_TEXT_EN='')
+scope = dict(_TTS_OUTPUT_LANGUAGE='日文', _TTS_REF_TEXT_JA='', _TTS_REF_TEXT_EN='', cuda_work=cuda_work)
 exec(compile(ast.Module(body=fallback_methods + cache_methods, type_ignores=[]), 'local_tts_infer.py', 'exec'), scope)
 
 

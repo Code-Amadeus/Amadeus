@@ -23,8 +23,11 @@ from typing import Optional
 
 import numpy as np
 
-from asr.backend import ASRBackendFatalError, BaseASRBackend
+from asr.backend import ASRBackendFatalError, BaseASRBackend, current_asr_call_context
 from asr.qwen_model import resolve_qwen_model_source
+from asr.qwen_inference import ENGINES, apply_qwen_attention_policy, qwen_attention_configs, transcribe_qwen
+from asr.qwen_cuda_graph import DEFAULT_CAPACITIES, invalidate_qwen_cuda_graphs, prepare_qwen_cuda_graphs, qwen_cuda_graph_support_reason
+from core.cuda_execution import cuda_work, speech_cuda
 from config.environment import venv_python as _venv_python
 from config.settings import QWEN3_ASR_DEVICE, QWEN3_ASR_REQUIRE_CUDA
 from config.local_model_loading import enforce_local_model_loading
@@ -119,7 +122,15 @@ class Qwen3ASRBackend(BaseASRBackend):
     _inprocess_disabled_until = 0.0
     _inprocess_disabled_reason = ""
 
-    def __init__(self) -> None:
+    def __init__(self, *, inference_engine: str = "cuda_graph", profile: bool = False) -> None:
+        # Prepared CUDA graphs are the measured production path. Unsupported
+        # devices/configurations or missing readiness choose official before
+        # inference; prefill/greedy remain explicit offline comparison choices.
+        if inference_engine not in ENGINES:
+            raise ValueError(f"Unknown Qwen inference engine: {inference_engine}")
+        self._inference_engine = inference_engine
+        self._profile_inference = profile
+        self.last_inference_metrics: dict = {}
         self._proc: Optional[subprocess.Popen] = None
         self._model = None
         self._device = ""
@@ -211,7 +222,7 @@ class Qwen3ASRBackend(BaseASRBackend):
         Returns True when the model now waits in RAM, False when it stays on
         the GPU or this backend cannot be parked (sidecar, CPU).
         """
-        with self._lock:
+        with self._lock, speech_cuda.work():
             if self._mode != "inprocess" or self._model is None or not str(self._device).startswith("cuda"):
                 return False
             if Qwen3ASRBackend._shared_parked:
@@ -221,6 +232,7 @@ class Qwen3ASRBackend(BaseASRBackend):
             if time.monotonic() - Qwen3ASRBackend._last_used < idle_seconds:
                 return False
             started = time.perf_counter()
+            invalidate_qwen_cuda_graphs(self._model.model)
             self._model.model.to("cpu")
             Qwen3ASRBackend._shared_parked = True
             try:
@@ -243,7 +255,26 @@ class Qwen3ASRBackend(BaseASRBackend):
         """Return a model waiting in RAM to its device before it is needed."""
         with self._lock:
             self._restore_device_locked()
+            self._prepare_graphs_locked()
 
+    def _prepare_graphs_locked(self):
+        if self._inference_engine != "cuda_graph" or self._model is None:
+            return
+        reason = qwen_cuda_graph_support_reason(self._model.model)
+        if reason is not None:
+            return
+        evidence = prepare_qwen_cuda_graphs(self._model.model, capture_allowed=True)
+        logger.info("[ASR:Qwen3ASR] graph preparation %s", json.dumps(evidence))
+
+    def prepare_cuda_graphs(self, capacities=DEFAULT_CAPACITIES, *, capture_allowed=False):
+        """Explicitly admitted quiet-window preparation, including after restore."""
+        with self._lock:
+            if self._mode != "inprocess" or self._model is None:
+                raise RuntimeError("Qwen graph preparation requires a loaded in-process model")
+            self._restore_device_locked()
+            return prepare_qwen_cuda_graphs(self._model.model, capacities, capture_allowed=capture_allowed)
+
+    @cuda_work
     def _restore_device_locked(self) -> None:
         if self._model is None:
             return
@@ -256,7 +287,10 @@ class Qwen3ASRBackend(BaseASRBackend):
         Qwen3ASRBackend._last_used = time.monotonic()
 
     @classmethod
+    @cuda_work
     def _clear_shared_model_locked(cls) -> None:
+        if cls._shared_model is not None:
+            invalidate_qwen_cuda_graphs(cls._shared_model.model)
         cls._shared_model = None
         cls._shared_device = ""
         cls._shared_attn_impl = ""
@@ -265,7 +299,7 @@ class Qwen3ASRBackend(BaseASRBackend):
         cls._model_users.clear()
 
     def _drop_inprocess_model(self, reason: str) -> None:
-        with self._lock:
+        with self._lock, speech_cuda.work():
             # A fatal device error invalidates the shared model for every user.
             # No borrower can keep using it after another backend replaces it.
             for backend in list(Qwen3ASRBackend._model_users):
@@ -282,7 +316,7 @@ class Qwen3ASRBackend(BaseASRBackend):
                 logger.debug("[ASR:Qwen3ASR] cuda cache cleanup skipped after %s", reason, exc_info=True)
 
     def _load_inprocess(self, device: str) -> None:
-        with self._lock:
+        with self._lock, speech_cuda.work():
             if Qwen3ASRBackend._shared_model is not None:
                 self._model = Qwen3ASRBackend._shared_model
                 self._device = Qwen3ASRBackend._shared_device
@@ -291,10 +325,14 @@ class Qwen3ASRBackend(BaseASRBackend):
                 self._mode = "inprocess"
                 logger.info(
                     "[ASR:Qwen3ASR] in-process model already loaded; reuse "
-                    "(device=%s, attn=%s)",
+                    "(device=%s, loader_attention_requested=%s, actual_attention=%s)",
                     self._device,
                     self._attn_impl,
+                    qwen_attention_configs(self._model.model),
                 )
+                if self._inference_engine == "cuda_graph":
+                    self._restore_device_locked()
+                self._prepare_graphs_locked()
                 return
 
             import torch
@@ -323,7 +361,7 @@ class Qwen3ASRBackend(BaseASRBackend):
 
             logger.info(
                 "[ASR:Qwen3ASR] torch runtime exe=%s torch=%s cuda_available=%s "
-                "cuda_version=%s visible=%s requested=%s resolved=%s attn=%s",
+                "cuda_version=%s visible=%s requested=%s resolved=%s loader_attention_requested=%s",
                 sys.executable,
                 getattr(torch, "__version__", "?"),
                 cuda_available,
@@ -361,12 +399,12 @@ class Qwen3ASRBackend(BaseASRBackend):
                 set_attention = getattr(hf_model, "set_attn_implementation", None)
                 if callable(set_attention):
                     set_attention("eager")
-                    attn_impl = "eager_recursive"
                 else:
                     torch.backends.cuda.enable_flash_sdp(False)
                     torch.backends.cuda.enable_mem_efficient_sdp(False)
                     torch.backends.cuda.enable_math_sdp(True)
-                    attn_impl = "eager+math_sdp"
+            else:
+                apply_qwen_attention_policy(model.model, attn_impl)
             dt = time.perf_counter() - t0
             Qwen3ASRBackend._shared_model = model
             Qwen3ASRBackend._shared_device = device_map
@@ -378,10 +416,13 @@ class Qwen3ASRBackend(BaseASRBackend):
             self._attn_impl = attn_impl
             Qwen3ASRBackend._model_users.add(self)
             self._mode = "inprocess"
+            self._prepare_graphs_locked()
+            dt = time.perf_counter() - t0
             logger.info(
-                "[ASR:Qwen3ASR] in-process ready (device=%s, attn=%s, %.2fs)",
+                "[ASR:Qwen3ASR] in-process ready (device=%s, loader_attention_requested=%s, actual_attention=%s, %.2fs)",
                 device_map,
                 attn_impl,
+                qwen_attention_configs(model.model),
                 dt,
             )
 
@@ -426,6 +467,7 @@ class Qwen3ASRBackend(BaseASRBackend):
                     **os.environ,
                     "QWEN3_ASR_DEVICE": str(device),
                     "QWEN3_ASR_REQUIRE_CUDA": "true" if QWEN3_ASR_REQUIRE_CUDA else "false",
+                    "QWEN3_ASR_INFERENCE_ENGINE": self._inference_engine,
                 },
             )
             self._proc = proc
@@ -459,7 +501,8 @@ class Qwen3ASRBackend(BaseASRBackend):
                     logger.info(
                         "[ASR:Qwen3ASR] ready "
                         f"(device={msg.get('device', '?')}, "
-                        f"attn={msg.get('attn_impl', msg.get('flash_attn', '?'))}, "
+                        f"loader_attention_requested={msg.get('loader_attention_requested', msg.get('attn_impl', '?'))}, "
+                        f"actual_attention={msg.get('attention_configs', {})}, "
                         f"warmup={msg.get('warmup_ms', 0)}ms)"
                     )
                     Qwen3ASRBackend._shared_proc = proc
@@ -499,13 +542,17 @@ class Qwen3ASRBackend(BaseASRBackend):
                 "sample_rate": sample_rate,
                 "context": context,
                 "language": getattr(self, "_language", "Chinese"),
+                "engine": self._inference_engine,
+                "profile": self._profile_inference,
+                **current_asr_call_context(),
             }
         ) + "\n"
 
-        duration_ms = len(audio) / sample_rate * 1000
         t0 = time.perf_counter()
         try:
             with self._lock:
+                lock_wait_ms = (time.perf_counter() - t0) * 1000
+                self.last_inference_metrics = {}
                 self._proc.stdin.write(req.encode("utf-8"))
                 self._proc.stdin.flush()
                 deadline = time.time() + 30
@@ -518,9 +565,11 @@ class Qwen3ASRBackend(BaseASRBackend):
                     if msg.get("type") == "result":
                         text = msg.get("text", "").strip()
                         dt = (time.perf_counter() - t0) * 1000
-                        logger.info(
-                            f"[ASR:Qwen3ASR] {duration_ms:.0f}ms audio -> {dt:.0f}ms: {text!r}"
-                        )
+                        metrics = msg.get("metrics", {})
+                        metrics.update(lock_wait_ms=lock_wait_ms, total_wall_ms=dt, deployment="sidecar")
+                        self.last_inference_metrics = metrics
+                        logger.info("[ASR:Qwen3ASR] timing %s", json.dumps(
+                            {k: v for k, v in metrics.items() if k != "token_ids"}, ensure_ascii=False))
                         return text or None
                     if msg.get("type") == "error":
                         logger.error(f"[ASR:Qwen3ASR] sidecar inference error: {msg.get('msg')}")
@@ -540,29 +589,28 @@ class Qwen3ASRBackend(BaseASRBackend):
         context: str = "",
     ) -> Optional[str]:
         audio = audio.astype(np.float32, copy=False)
-        duration_ms = len(audio) / sample_rate * 1000
         max_tokens = _calc_max_tokens(len(audio) / sample_rate)
         language = getattr(self, "_language", "Chinese")
         t0 = time.perf_counter()
         try:
             with self._lock:
+                lock_wait_ms = (time.perf_counter() - t0) * 1000
                 # close() may have won the lock after transcribe() selected
                 # this path. A retired backend must not resurrect its model.
                 model = self._model
                 if model is None:
                     return None
+                self.last_inference_metrics = {}
                 try:
+                    was_parked = Qwen3ASRBackend._shared_parked
+                    restore_started = time.perf_counter()
                     self._restore_device_locked()
-                    prev_tokens = getattr(model, "max_new_tokens", _MAX_TOKENS_CAP)
-                    model.max_new_tokens = max_tokens
+                    restore_ms = (time.perf_counter() - restore_started) * 1000 if was_parked else 0.0
                     try:
-                        results = model.transcribe(
-                            audio=(audio, sample_rate),
-                            language=language,
-                            context=context,
-                        )
+                        results, metrics = transcribe_qwen(
+                            model, audio, sample_rate, context, language, max_tokens,
+                            engine=self._inference_engine, profile=self._profile_inference)
                     finally:
-                        model.max_new_tokens = prev_tokens
                         Qwen3ASRBackend._last_used = time.monotonic()
                 except Exception as exc:
                     if self._is_fatal_cuda_error(exc):
@@ -571,13 +619,15 @@ class Qwen3ASRBackend(BaseASRBackend):
                         self._drop_inprocess_model(reason)
                         raise ASRBackendFatalError(reason) from exc
                     raise
+                metrics.update(lock_wait_ms=lock_wait_ms, restore_exposed_ms=restore_ms,
+                               total_wall_ms=(time.perf_counter() - t0) * 1000,
+                               loader_attention_requested=self._attn_impl,
+                               residency="restore" if was_parked else "warm")
+                self.last_inference_metrics = metrics
             text = (results[0].text if results else "").strip()
-            dt = (time.perf_counter() - t0) * 1000
             logger.info(
-                "[ASR:Qwen3ASR] in-process %sms audio -> %sms: %r",
-                f"{duration_ms:.0f}",
-                f"{dt:.0f}",
-                text,
+                "[ASR:Qwen3ASR] timing %s",
+                json.dumps({k: v for k, v in metrics.items() if k != "token_ids"}, ensure_ascii=False),
             )
             return text or None
         except ASRBackendFatalError:
@@ -590,7 +640,7 @@ class Qwen3ASRBackend(BaseASRBackend):
         # A sidecar may be blocked reading its pipe under the I/O lock. Its
         # existing shutdown must still terminate that process without waiting.
         if self._mode != "sidecar":
-            with self._lock:
+            with self._lock, speech_cuda.work():
                 if self._model is not None:
                     self._model = None
                     self._mode = "unloaded"

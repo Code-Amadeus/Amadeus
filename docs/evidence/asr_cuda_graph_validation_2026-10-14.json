@@ -1,0 +1,1380 @@
+{
+  "schema": 1,
+  "date": "2026-10-14",
+  "status": "gpu_validation_and_focused_regression_complete",
+  "scope": "Single GPU; conversational audio <=10s; raw audio/transcripts/local paths excluded",
+  "production_default": {
+    "attention": "audio_fa2_text_sdpa",
+    "inference_engine": "cuda_graph",
+    "capacities": [
+      384
+    ],
+    "fallback": "official selected before generation on unsupported/unprepared/over-capacity requests; no retry after inference failure",
+    "application_restarted": false
+  },
+  "runtime": {
+    "python": "3.12.10",
+    "os": "Windows-11-10.0.26200-SP0",
+    "architecture": "AMD64",
+    "packages": {
+      "torch": "2.6.0+cu124",
+      "transformers": "4.57.6",
+      "qwen-asr": "0.0.6"
+    },
+    "torch_cuda": "12.4",
+    "torch_hip": null,
+    "device": "cuda:0",
+    "device_name": "NVIDIA GeForce RTX 4070 Ti SUPER",
+    "dtype": "torch.bfloat16",
+    "attention_configs": {
+      "model": "flash_attention_2",
+      "thinker": "flash_attention_2",
+      "audio_tower": "flash_attention_2",
+      "text_decoder": "sdpa"
+    },
+    "model": "Qwen/Qwen3-ASR-0.6B",
+    "model_revision": "5eb144179a02acc5e5ba31e748d22b0cf3e303b0",
+    "flash_attn": "2.7.4.post1",
+    "driver": "581.57"
+  },
+  "quality": {
+    "source": "conversation_quality_final.json",
+    "cases": 57,
+    "calls": 114,
+    "differences": [
+      {
+        "group": "warm",
+        "attention": "audio_fa2_text_sdpa",
+        "repeat": 0,
+        "sample_id": "ja_01_question_tail_silence",
+        "engine": "cuda_graph",
+        "baseline": "official",
+        "text_equal": false,
+        "text_char_edits": 1,
+        "tokens_equal_to_official": false
+      },
+      {
+        "group": "warm",
+        "attention": "audio_fa2_text_sdpa",
+        "repeat": 0,
+        "sample_id": "ja_02_continuity_clean",
+        "engine": "cuda_graph",
+        "baseline": "official",
+        "text_equal": false,
+        "text_char_edits": 1,
+        "tokens_equal_to_official": false
+      },
+      {
+        "group": "warm",
+        "attention": "audio_fa2_text_sdpa",
+        "repeat": 0,
+        "sample_id": "ja_02_continuity_quiet",
+        "engine": "cuda_graph",
+        "baseline": "official",
+        "text_equal": false,
+        "text_char_edits": 1,
+        "tokens_equal_to_official": false
+      },
+      {
+        "group": "warm",
+        "attention": "audio_fa2_text_sdpa",
+        "repeat": 0,
+        "sample_id": "ja_04_explanation_quiet",
+        "engine": "cuda_graph",
+        "baseline": "official",
+        "text_equal": false,
+        "text_char_edits": 2,
+        "tokens_equal_to_official": false
+      }
+    ],
+    "official": {
+      "reference_cases": 24,
+      "reference_characters": 1086,
+      "character_edits": 72,
+      "cer": 0.06629834254143646
+    },
+    "cuda_graph": {
+      "reference_cases": 24,
+      "reference_characters": 1086,
+      "character_edits": 70,
+      "cer": 0.06445672191528545
+    },
+    "graph_actual_engines": [
+      "cuda_graph"
+    ],
+    "max_required_capacity": 285,
+    "silence_empty": true
+  },
+  "warm_asr": {
+    "source": "conversation_latency_final.json",
+    "calls": 280,
+    "by_sample": [
+      {
+        "sample": "en_sentence_clean",
+        "engine": "cuda_graph",
+        "n": 20,
+        "p50_ms": 129.85820000176318,
+        "p95_ms": 143.95220001460984
+      },
+      {
+        "sample": "en_sentence_clean",
+        "engine": "official",
+        "n": 20,
+        "p50_ms": 464.75999998801854,
+        "p95_ms": 505.3265999886207
+      },
+      {
+        "sample": "ja_01_question_clean",
+        "engine": "cuda_graph",
+        "n": 20,
+        "p50_ms": 171.14649999712128,
+        "p95_ms": 178.6558000021614
+      },
+      {
+        "sample": "ja_01_question_clean",
+        "engine": "official",
+        "n": 20,
+        "p50_ms": 710.5236000061268,
+        "p95_ms": 738.3664999797475
+      },
+      {
+        "sample": "ja_02_continuity_clean",
+        "engine": "cuda_graph",
+        "n": 20,
+        "p50_ms": 220.68390001368243,
+        "p95_ms": 281.96520000346936
+      },
+      {
+        "sample": "ja_02_continuity_clean",
+        "engine": "official",
+        "n": 20,
+        "p50_ms": 946.852699998999,
+        "p95_ms": 1031.855400011409
+      },
+      {
+        "sample": "ja_04_explanation_clean",
+        "engine": "cuda_graph",
+        "n": 20,
+        "p50_ms": 269.32035000936594,
+        "p95_ms": 323.14240001142025
+      },
+      {
+        "sample": "ja_04_explanation_clean",
+        "engine": "official",
+        "n": 20,
+        "p50_ms": 1225.8451000088826,
+        "p95_ms": 1399.8824000009336
+      },
+      {
+        "sample": "ja_reference_clean",
+        "engine": "cuda_graph",
+        "n": 20,
+        "p50_ms": 246.7676000087522,
+        "p95_ms": 257.7731000201311
+      },
+      {
+        "sample": "ja_reference_clean",
+        "engine": "official",
+        "n": 20,
+        "p50_ms": 1128.055300010601,
+        "p95_ms": 1227.8975000081118
+      },
+      {
+        "sample": "zh_en_sequence",
+        "engine": "cuda_graph",
+        "n": 20,
+        "p50_ms": 140.52390000142623,
+        "p95_ms": 167.01020000618882
+      },
+      {
+        "sample": "zh_en_sequence",
+        "engine": "official",
+        "n": 20,
+        "p50_ms": 522.4471499968786,
+        "p95_ms": 569.7598000115249
+      },
+      {
+        "sample": "zh_example_clean",
+        "engine": "cuda_graph",
+        "n": 20,
+        "p50_ms": 139.8773499968229,
+        "p95_ms": 149.39040000899695
+      },
+      {
+        "sample": "zh_example_clean",
+        "engine": "official",
+        "n": 20,
+        "p50_ms": 525.5264000006719,
+        "p95_ms": 569.2066999909002
+      }
+    ],
+    "comparisons": [
+      {
+        "engine": "cuda_graph",
+        "baseline": "official",
+        "paired_calls": 140,
+        "repeat_blocks": 20,
+        "median_reduction_percent": 75.17236786135432,
+        "bootstrap_95_percent_ci": [
+          74.80624958681312,
+          75.56992278278753
+        ]
+      }
+    ],
+    "preparation": {
+      "deferred": false,
+      "buckets": [
+        {
+          "capacity": 384,
+          "capture_ms": 191.5146000101231,
+          "warmup_ms": 292.82709999824874,
+          "allocated_delta_bytes": 52868608,
+          "reserved_delta_bytes": 104857600,
+          "buffer_bytes": 44345264,
+          "cache_hit": false
+        }
+      ],
+      "prepared_capacities": [
+        384
+      ]
+    },
+    "quality": {
+      "text_differences": 20,
+      "token_differences": 20,
+      "changed_samples": [
+        "ja_02_continuity_clean"
+      ],
+      "within_engine_token_variants": {
+        "en_sentence_clean": {
+          "official": 1,
+          "cuda_graph": 1
+        },
+        "ja_01_question_clean": {
+          "official": 1,
+          "cuda_graph": 1
+        },
+        "ja_02_continuity_clean": {
+          "official": 1,
+          "cuda_graph": 1
+        },
+        "ja_04_explanation_clean": {
+          "official": 1,
+          "cuda_graph": 1
+        },
+        "ja_reference_clean": {
+          "official": 1,
+          "cuda_graph": 1
+        },
+        "zh_en_sequence": {
+          "official": 1,
+          "cuda_graph": 1
+        },
+        "zh_example_clean": {
+          "official": 1,
+          "cuda_graph": 1
+        }
+      }
+    },
+    "graph_actual_engines": [
+      "cuda_graph"
+    ],
+    "graph_replay_steps": 3140,
+    "graph_fallback_reasons": [],
+    "five_to_ten_seconds": {
+      "paired_calls": 100,
+      "repeat_blocks": 20,
+      "median_reduction_percent": 76.439211687562,
+      "bootstrap_95_percent_ci": [
+        75.34318070916785,
+        76.85758474898965
+      ]
+    }
+  },
+  "capacity_comparison": {
+    "source": "capacity_compare.json",
+    "groups": [
+      {
+        "sample": "en_sentence_clean",
+        "required_capacity": [
+          149
+        ],
+        "token_differences": 0,
+        "adaptive_256_384": {
+          "n": 10,
+          "p50_ms": 125.10070001007989,
+          "p95_ms": 146.1503000173252
+        },
+        "single_384": {
+          "n": 10,
+          "p50_ms": 132.22134999523405,
+          "p95_ms": 145.74680000077933
+        }
+      },
+      {
+        "sample": "ja_01_question_clean",
+        "required_capacity": [
+          175
+        ],
+        "token_differences": 0,
+        "adaptive_256_384": {
+          "n": 10,
+          "p50_ms": 166.73370001080912,
+          "p95_ms": 182.82600000384264
+        },
+        "single_384": {
+          "n": 10,
+          "p50_ms": 173.0171499948483,
+          "p95_ms": 185.30919999466278
+        }
+      },
+      {
+        "sample": "ja_02_continuity_clean",
+        "required_capacity": [
+          257
+        ],
+        "token_differences": 0,
+        "adaptive_256_384": {
+          "n": 10,
+          "p50_ms": 223.7252500053728,
+          "p95_ms": 247.45209998218343
+        },
+        "single_384": {
+          "n": 10,
+          "p50_ms": 219.596900002216,
+          "p95_ms": 237.92709998087958
+        }
+      },
+      {
+        "sample": "ja_04_explanation_clean",
+        "required_capacity": [
+          274
+        ],
+        "token_differences": 0,
+        "adaptive_256_384": {
+          "n": 10,
+          "p50_ms": 262.81444999040104,
+          "p95_ms": 299.534699996002
+        },
+        "single_384": {
+          "n": 10,
+          "p50_ms": 266.65499999944586,
+          "p95_ms": 286.40849998919293
+        }
+      },
+      {
+        "sample": "ja_reference_clean",
+        "required_capacity": [
+          234
+        ],
+        "token_differences": 0,
+        "adaptive_256_384": {
+          "n": 10,
+          "p50_ms": 240.73355000291485,
+          "p95_ms": 273.070800001733
+        },
+        "single_384": {
+          "n": 10,
+          "p50_ms": 249.22025001433212,
+          "p95_ms": 265.3889999783132
+        }
+      },
+      {
+        "sample": "zh_en_sequence",
+        "required_capacity": [
+          280
+        ],
+        "token_differences": 0,
+        "adaptive_256_384": {
+          "n": 10,
+          "p50_ms": 145.64070000778884,
+          "p95_ms": 169.33579999022186
+        },
+        "single_384": {
+          "n": 10,
+          "p50_ms": 141.1103499995079,
+          "p95_ms": 162.40129998186603
+        }
+      },
+      {
+        "sample": "zh_example_clean",
+        "required_capacity": [
+          188
+        ],
+        "token_differences": 0,
+        "adaptive_256_384": {
+          "n": 10,
+          "p50_ms": 140.6120000174269,
+          "p95_ms": 155.8849999855738
+        },
+        "single_384": {
+          "n": 10,
+          "p50_ms": 144.0172000147868,
+          "p95_ms": 151.05250000488013
+        }
+      }
+    ],
+    "pairs": {
+      "paired_calls": 70,
+      "repeat_blocks": 10,
+      "median_reduction_percent": -1.3859930408261278,
+      "bootstrap_95_percent_ci": [
+        -3.1948990380493925,
+        -0.08027801150264358
+      ]
+    }
+  },
+  "same_gpu_tts": {
+    "source": "tts_conversation_final.json",
+    "calls": 160,
+    "completed": true,
+    "flags_unchanged": true,
+    "groups": [
+      {
+        "case": "medium",
+        "schedule": "overlap",
+        "metric": "tts.first_voiced_chunk_ms",
+        "baseline": {
+          "n": 20,
+          "p50_ms": 857.637449997128,
+          "p95_ms": 970.3842000162695
+        },
+        "graph": {
+          "n": 20,
+          "p50_ms": 740.7914999930654,
+          "p95_ms": 771.9636000110768
+        },
+        "p95_change_percent": -20.44763300988062,
+        "paired_calls": 20,
+        "repeat_blocks": 20,
+        "median_reduction_percent": 14.628934029282114,
+        "bootstrap_95_percent_ci": [
+          9.678652089698108,
+          15.177491686146759
+        ]
+      },
+      {
+        "case": "medium",
+        "schedule": "overlap",
+        "metric": "tts.total_ms",
+        "baseline": {
+          "n": 20,
+          "p50_ms": 1888.7282999930903,
+          "p95_ms": 2036.7329000146128
+        },
+        "graph": {
+          "n": 20,
+          "p50_ms": 1256.3486999861198,
+          "p95_ms": 1336.878500005696
+        },
+        "p95_change_percent": -34.3616190421383,
+        "paired_calls": 20,
+        "repeat_blocks": 20,
+        "median_reduction_percent": 33.30741730031365,
+        "bootstrap_95_percent_ci": [
+          28.25316671805622,
+          34.452041915690906
+        ]
+      },
+      {
+        "case": "medium",
+        "schedule": "overlap",
+        "metric": "asr.ms",
+        "baseline": {
+          "n": 20,
+          "p50_ms": 2436.9332500064047,
+          "p95_ms": 2682.1782999904826
+        },
+        "graph": {
+          "n": 20,
+          "p50_ms": 366.00345000624657,
+          "p95_ms": 383.37179998052306
+        },
+        "p95_change_percent": -85.70669966340853,
+        "paired_calls": 20,
+        "repeat_blocks": 20,
+        "median_reduction_percent": 84.49412144748749,
+        "bootstrap_95_percent_ci": [
+          84.18614571444911,
+          85.10981650931433
+        ]
+      },
+      {
+        "case": "medium",
+        "schedule": "serial",
+        "metric": "tts.first_voiced_chunk_ms",
+        "baseline": {
+          "n": 20,
+          "p50_ms": 497.63545001042075,
+          "p95_ms": 592.47800000594
+        },
+        "graph": {
+          "n": 20,
+          "p50_ms": 482.55369999969844,
+          "p95_ms": 515.7676999806426
+        },
+        "p95_change_percent": -12.947366826199158,
+        "paired_calls": 20,
+        "repeat_blocks": 20,
+        "median_reduction_percent": 4.329819382947825,
+        "bootstrap_95_percent_ci": [
+          0.901065395242634,
+          7.34408336741409
+        ]
+      },
+      {
+        "case": "medium",
+        "schedule": "serial",
+        "metric": "tts.total_ms",
+        "baseline": {
+          "n": 20,
+          "p50_ms": 1023.3606999827316,
+          "p95_ms": 1201.3214000035077
+        },
+        "graph": {
+          "n": 20,
+          "p50_ms": 1008.6452499963343,
+          "p95_ms": 1039.1800999932457
+        },
+        "p95_change_percent": -13.496912650502068,
+        "paired_calls": 20,
+        "repeat_blocks": 20,
+        "median_reduction_percent": 3.1384698076755866,
+        "bootstrap_95_percent_ci": [
+          -0.19082655780914282,
+          8.595462583166917
+        ]
+      },
+      {
+        "case": "medium",
+        "schedule": "serial",
+        "metric": "asr.ms",
+        "baseline": {
+          "n": 20,
+          "p50_ms": 1396.7036999965785,
+          "p95_ms": 1570.7770999870263
+        },
+        "graph": {
+          "n": 20,
+          "p50_ms": 271.8257999949856,
+          "p95_ms": 302.7192000008654
+        },
+        "p95_change_percent": -80.72806128868535,
+        "paired_calls": 20,
+        "repeat_blocks": 20,
+        "median_reduction_percent": 79.49618225320293,
+        "bootstrap_95_percent_ci": [
+          78.47149198751961,
+          80.73251245309223
+        ]
+      },
+      {
+        "case": "short",
+        "schedule": "overlap",
+        "metric": "tts.first_voiced_chunk_ms",
+        "baseline": {
+          "n": 20,
+          "p50_ms": 686.9595000025583,
+          "p95_ms": 738.8877000194043
+        },
+        "graph": {
+          "n": 20,
+          "p50_ms": 591.7201499833027,
+          "p95_ms": 637.4137000238989
+        },
+        "p95_change_percent": -13.733345404564268,
+        "paired_calls": 20,
+        "repeat_blocks": 20,
+        "median_reduction_percent": 11.21951409777322,
+        "bootstrap_95_percent_ci": [
+          6.0539596782804574,
+          14.368829175319542
+        ]
+      },
+      {
+        "case": "short",
+        "schedule": "overlap",
+        "metric": "tts.total_ms",
+        "baseline": {
+          "n": 20,
+          "p50_ms": 1465.1832499948796,
+          "p95_ms": 1558.6682000139263
+        },
+        "graph": {
+          "n": 20,
+          "p50_ms": 977.9544999910286,
+          "p95_ms": 1098.6251000140328
+        },
+        "p95_change_percent": -29.5151399121239,
+        "paired_calls": 20,
+        "repeat_blocks": 20,
+        "median_reduction_percent": 29.536394773568006,
+        "bootstrap_95_percent_ci": [
+          25.220624951912782,
+          33.317880836666276
+        ]
+      },
+      {
+        "case": "short",
+        "schedule": "overlap",
+        "metric": "asr.ms",
+        "baseline": {
+          "n": 20,
+          "p50_ms": 2193.68994999968,
+          "p95_ms": 2466.849299991736
+        },
+        "graph": {
+          "n": 20,
+          "p50_ms": 397.6773500035051,
+          "p95_ms": 471.07109997887164
+        },
+        "p95_change_percent": -80.90393685660288,
+        "paired_calls": 20,
+        "repeat_blocks": 20,
+        "median_reduction_percent": 80.87031708608785,
+        "bootstrap_95_percent_ci": [
+          79.73155989002268,
+          81.78561136347354
+        ]
+      },
+      {
+        "case": "short",
+        "schedule": "serial",
+        "metric": "tts.first_voiced_chunk_ms",
+        "baseline": {
+          "n": 20,
+          "p50_ms": 379.04460000572726,
+          "p95_ms": 509.24480002140626
+        },
+        "graph": {
+          "n": 20,
+          "p50_ms": 376.3332999951672,
+          "p95_ms": 437.9948999849148
+        },
+        "p95_change_percent": -13.991286711910744,
+        "paired_calls": 20,
+        "repeat_blocks": 20,
+        "median_reduction_percent": 1.159101131915391,
+        "bootstrap_95_percent_ci": [
+          -0.27790048931895517,
+          3.688169588086965
+        ]
+      },
+      {
+        "case": "short",
+        "schedule": "serial",
+        "metric": "tts.total_ms",
+        "baseline": {
+          "n": 20,
+          "p50_ms": 758.4036999905948,
+          "p95_ms": 978.9273000205867
+        },
+        "graph": {
+          "n": 20,
+          "p50_ms": 761.9372500048485,
+          "p95_ms": 869.3442999792751
+        },
+        "p95_change_percent": -11.194191850508927,
+        "paired_calls": 20,
+        "repeat_blocks": 20,
+        "median_reduction_percent": 0.908679658174727,
+        "bootstrap_95_percent_ci": [
+          -0.92642211280487,
+          2.4035962684581857
+        ]
+      },
+      {
+        "case": "short",
+        "schedule": "serial",
+        "metric": "asr.ms",
+        "baseline": {
+          "n": 20,
+          "p50_ms": 1350.3610500047216,
+          "p95_ms": 1664.0560000087135
+        },
+        "graph": {
+          "n": 20,
+          "p50_ms": 277.50294998986647,
+          "p95_ms": 304.9176999775227
+        },
+        "p95_change_percent": -81.67623565697752,
+        "paired_calls": 20,
+        "repeat_blocks": 20,
+        "median_reduction_percent": 79.34770560301098,
+        "bootstrap_95_percent_ci": [
+          78.89022548763978,
+          79.7762790254728
+        ]
+      }
+    ],
+    "waveform_hash_counts": {
+      "short": 1,
+      "medium": 1
+    },
+    "graph_actual_engines": [
+      "cuda_graph"
+    ]
+  },
+  "lifecycle": {
+    "note": "Startup/restore diagnostics, n=3, not a warmed latency confidence estimate.",
+    "calls": [
+      {
+        "sample": "zh_example_clean",
+        "label": "baseline",
+        "elapsed_ms": 977.8745999792591,
+        "actual_engine": "official",
+        "graph": [],
+        "text_equal": true,
+        "tokens_equal": true
+      },
+      {
+        "sample": "en_sentence_clean",
+        "label": "baseline",
+        "elapsed_ms": 450.4083000065293,
+        "actual_engine": "official",
+        "graph": [],
+        "text_equal": true,
+        "tokens_equal": true
+      },
+      {
+        "sample": "ja_01_question_clean",
+        "label": "baseline",
+        "elapsed_ms": 756.7108999937773,
+        "actual_engine": "official",
+        "graph": [],
+        "text_equal": true,
+        "tokens_equal": true
+      },
+      {
+        "sample": "zh_example_clean",
+        "label": "after_background_prepare",
+        "elapsed_ms": 527.4600000120699,
+        "actual_engine": "official",
+        "graph": [],
+        "text_equal": true,
+        "tokens_equal": true
+      },
+      {
+        "sample": "zh_example_clean",
+        "label": "after_background_prepare",
+        "elapsed_ms": 148.18970000487752,
+        "actual_engine": "cuda_graph",
+        "graph": [
+          {
+            "actual_engine": "cuda_graph",
+            "fallback_reason": null,
+            "capacity": 384,
+            "cache_hit": true,
+            "replay_steps": 14,
+            "capture_ms": 0.0,
+            "prompt_tokens": 133,
+            "required_capacity": 188
+          }
+        ],
+        "text_equal": true,
+        "tokens_equal": true
+      },
+      {
+        "sample": "en_sentence_clean",
+        "label": "after_background_prepare",
+        "elapsed_ms": 129.64550001197495,
+        "actual_engine": "cuda_graph",
+        "graph": [
+          {
+            "actual_engine": "cuda_graph",
+            "fallback_reason": null,
+            "capacity": 384,
+            "cache_hit": true,
+            "replay_steps": 12,
+            "capture_ms": 0.0,
+            "prompt_tokens": 111,
+            "required_capacity": 149
+          }
+        ],
+        "text_equal": true,
+        "tokens_equal": true
+      },
+      {
+        "sample": "en_sentence_clean",
+        "label": "after_background_prepare",
+        "elapsed_ms": 474.0073000139091,
+        "actual_engine": "official",
+        "graph": [],
+        "text_equal": true,
+        "tokens_equal": true
+      },
+      {
+        "sample": "ja_01_question_clean",
+        "label": "after_background_prepare",
+        "elapsed_ms": 884.9914000020362,
+        "actual_engine": "official",
+        "graph": [],
+        "text_equal": true,
+        "tokens_equal": true
+      },
+      {
+        "sample": "ja_01_question_clean",
+        "label": "after_background_prepare",
+        "elapsed_ms": 218.24449999257922,
+        "actual_engine": "cuda_graph",
+        "graph": [
+          {
+            "actual_engine": "cuda_graph",
+            "fallback_reason": null,
+            "capacity": 384,
+            "cache_hit": true,
+            "replay_steps": 20,
+            "capture_ms": 0.0,
+            "prompt_tokens": 126,
+            "required_capacity": 175
+          }
+        ],
+        "text_equal": true,
+        "tokens_equal": true
+      },
+      {
+        "sample": "en_sentence_clean",
+        "label": "restore_without_preparation",
+        "elapsed_ms": 1017.4007999885362,
+        "actual_engine": "official",
+        "graph": [
+          {
+            "actual_engine": "official",
+            "fallback_reason": "graphs_not_prepared",
+            "capacity": null,
+            "cache_hit": false,
+            "replay_steps": 0,
+            "capture_ms": 0.0,
+            "prompt_tokens": 111,
+            "required_capacity": 149
+          }
+        ],
+        "text_equal": true,
+        "tokens_equal": true
+      },
+      {
+        "sample": "en_sentence_clean",
+        "label": "prepared_again",
+        "elapsed_ms": 165.6551999913063,
+        "actual_engine": "cuda_graph",
+        "graph": [
+          {
+            "actual_engine": "cuda_graph",
+            "fallback_reason": null,
+            "capacity": 384,
+            "cache_hit": true,
+            "replay_steps": 12,
+            "capture_ms": 0.0,
+            "prompt_tokens": 111,
+            "required_capacity": 149
+          }
+        ],
+        "text_equal": true,
+        "tokens_equal": true
+      },
+      {
+        "sample": "en_sentence_clean",
+        "label": "sidecar_prepared",
+        "elapsed_ms": 351.8736000114586,
+        "actual_engine": "cuda_graph",
+        "graph": [
+          {
+            "actual_engine": "cuda_graph",
+            "fallback_reason": null,
+            "capacity": 384,
+            "cache_hit": true,
+            "replay_steps": 12,
+            "capture_ms": 0.0,
+            "prompt_tokens": 111,
+            "required_capacity": 149
+          }
+        ],
+        "text_equal": true,
+        "tokens_equal": true
+      },
+      {
+        "sample": "ja_01_question_clean",
+        "label": "sidecar_prepared",
+        "elapsed_ms": 200.73040001443587,
+        "actual_engine": "cuda_graph",
+        "graph": [
+          {
+            "actual_engine": "cuda_graph",
+            "fallback_reason": null,
+            "capacity": 384,
+            "cache_hit": true,
+            "replay_steps": 20,
+            "capture_ms": 0.0,
+            "prompt_tokens": 126,
+            "required_capacity": 175
+          }
+        ],
+        "text_equal": true,
+        "tokens_equal": true
+      }
+    ],
+    "cycles": [
+      {
+        "sample": "zh_example_clean",
+        "repeat": 0,
+        "official_parked_memory": {
+          "allocated_bytes": 512,
+          "reserved_bytes": 2097152
+        },
+        "official": {
+          "prepare_ms": 553.266100003384,
+          "inference_ms": 527.4600000120699,
+          "unhidden_sum_ms": 1080.726100015454,
+          "sum_after_1s_speech_overlap_ms": 527.4600000120699
+        },
+        "cuda_graph_parked_memory": {
+          "allocated_bytes": 512,
+          "reserved_bytes": 2097152
+        },
+        "cuda_graph": {
+          "prepare_ms": 866.3220000162255,
+          "inference_ms": 148.18970000487752,
+          "unhidden_sum_ms": 1014.511700021103,
+          "sum_after_1s_speech_overlap_ms": 148.18970000487752
+        }
+      },
+      {
+        "sample": "en_sentence_clean",
+        "repeat": 1,
+        "cuda_graph_parked_memory": {
+          "allocated_bytes": 512,
+          "reserved_bytes": 2097152
+        },
+        "cuda_graph": {
+          "prepare_ms": 822.9008000053,
+          "inference_ms": 129.64550001197495,
+          "unhidden_sum_ms": 952.5463000172749,
+          "sum_after_1s_speech_overlap_ms": 129.64550001197495
+        },
+        "official_parked_memory": {
+          "allocated_bytes": 512,
+          "reserved_bytes": 2097152
+        },
+        "official": {
+          "prepare_ms": 536.5512999997009,
+          "inference_ms": 474.0073000139091,
+          "unhidden_sum_ms": 1010.55860001361,
+          "sum_after_1s_speech_overlap_ms": 474.0073000139091
+        }
+      },
+      {
+        "sample": "ja_01_question_clean",
+        "repeat": 2,
+        "official_parked_memory": {
+          "allocated_bytes": 512,
+          "reserved_bytes": 2097152
+        },
+        "official": {
+          "prepare_ms": 559.5825000200421,
+          "inference_ms": 884.9914000020362,
+          "unhidden_sum_ms": 1444.5739000220783,
+          "sum_after_1s_speech_overlap_ms": 884.9914000020362
+        },
+        "cuda_graph_parked_memory": {
+          "allocated_bytes": 512,
+          "reserved_bytes": 2097152
+        },
+        "cuda_graph": {
+          "prepare_ms": 870.8091000153217,
+          "inference_ms": 218.24449999257922,
+          "unhidden_sum_ms": 1089.053600007901,
+          "sum_after_1s_speech_overlap_ms": 218.24449999257922
+        }
+      }
+    ],
+    "official_initial_load_ms": 18739.801299991086,
+    "before_graph_memory": {
+      "allocated_bytes": 1579721216,
+      "reserved_bytes": 1910505472
+    },
+    "initial_graph_prepare_ms": 322.70509999943897,
+    "after_graph_memory": {
+      "allocated_bytes": 1632589824,
+      "reserved_bytes": 1990197248
+    },
+    "prepared_buckets": [
+      {
+        "capacity": 384,
+        "capture_ms": 214.4006000016816,
+        "warmup_ms": 101.9265000068117,
+        "allocated_delta_bytes": 52868608,
+        "reserved_delta_bytes": 79691776,
+        "buffer_bytes": 44345264
+      }
+    ],
+    "last_close_memory": {
+      "allocated_bytes": 17039360,
+      "reserved_bytes": 1621098496
+    },
+    "sidecar_startup_with_preparation_ms": 26487.947200017516,
+    "completed": true
+  },
+  "static_replay_parity": {
+    "calls": 54,
+    "samples": 6,
+    "static_vs_replay_token_differences": [],
+    "within_variant_stable": true,
+    "prepared_capacities": [
+      384
+    ]
+  },
+  "cold_capture_contracts": {
+    "note": "Deterministic admission contention, real short ASR/TTS outputs; artificial rendezvous excluded from latency evidence.",
+    "asr_first_then_tts_first_capture_finite_wave_hash": "cebc4de840b545116f583d64adc186d5f981ab02b5bc6f09125546e9c2217925",
+    "baseline_wave_hash": "20355c05c2178f7129f0337a07a5060cbec97f41a29cea9763fb6327d9914706",
+    "wave_hashes": {
+      "baseline": "20355c05c2178f7129f0337a07a5060cbec97f41a29cea9763fb6327d9914706",
+      "contended": "20355c05c2178f7129f0337a07a5060cbec97f41a29cea9763fb6327d9914706",
+      "recaptured": "20355c05c2178f7129f0337a07a5060cbec97f41a29cea9763fb6327d9914706"
+    },
+    "tts_cold_capture_deferred": true,
+    "tts_static_then_recaptured_wave_equal": true,
+    "asr_graph_replay_while_tts_static": true,
+    "asr_text_sha256": "1346a83cc33c1b5ef46d6bc7a37104b14d20b7debd8362b54054963bb938a724",
+    "asr_capture_deferred_then_official_then_reprepared": true,
+    "tts_graph_survives_asr_park_cleanup": true,
+    "completed": true
+  },
+  "focused_regression": {
+    "files": 14,
+    "passed": 271,
+    "skipped": 1,
+    "results": [
+      {
+        "name": "test_qwen_inference.py",
+        "collected": 25,
+        "passed": 25,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "name": "test_qwen_cuda_graph.py",
+        "collected": 13,
+        "passed": 13,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "name": "test_asr_residency_tiers.py",
+        "collected": 26,
+        "passed": 26,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "name": "test_asr_handler_start_lifecycle.py",
+        "collected": 6,
+        "passed": 6,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "name": "test_mic_input_handoff_endpointing.py",
+        "collected": 11,
+        "passed": 11,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "name": "test_qwen3_asr_sidecar_bootstrap.py",
+        "collected": 1,
+        "passed": 1,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "name": "test_cuda_execution.py",
+        "collected": 6,
+        "passed": 6,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "name": "test_asr_prepare.py",
+        "collected": 2,
+        "passed": 2,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "name": "test_t2s_cuda_graph_sync_policy.py",
+        "collected": 5,
+        "passed": 5,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "name": "test_t2s_static_kv_mask.py",
+        "collected": 3,
+        "passed": 3,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "name": "test_local_tts_device_context.py",
+        "collected": 28,
+        "passed": 27,
+        "skipped": 1,
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "name": "test_local_tts_punctuation.py",
+        "collected": 51,
+        "passed": 51,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "name": "test_tts_emotion_references.py",
+        "collected": 60,
+        "passed": 60,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "name": "test_tts_threading.py",
+        "collected": 35,
+        "passed": 35,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      }
+    ],
+    "command": "python -X utf8 -m pytest -q --disable-warnings <file>, per-file isolation via tools.run_tests._run_suite",
+    "skip_reason": "Explicit NVIDIA kernel probe not opted in during CPU regression"
+  },
+  "full_ci": {
+    "status": "not_repeated_for_final_graph_patch_yet",
+    "previous_phase": "450 suites; texture localhost transient rerun passed; unrelated pre-existing dirty TTS catalog wording assertion remained; not claimed all green"
+  },
+  "limitations": [
+    "No manually verified speech labels; synthetic Japanese target CER is limited evidence, not real-world Mandarin/code-switching accuracy.",
+    "Final latency compares the selected mixed-attention official baseline with Graph; repeated fixed samples, not a population study.",
+    "The Chinese/English 9.57s sample is concatenated, not natural code-switching.",
+    "Warm ASR and first voiced TTS generation are not microphone-to-speaker conversational latency.",
+    "Only this Windows BF16 RTX 4070 Ti SUPER stack was measured; clocks were not pinned.",
+    "Preparation and RAM restore cost are reported separately; no dual-GPU split."
+  ],
+  "failed_diagnostics": {
+    "capture_order": "PyTorch 2.6 first inference-mode capture poisons subsequent no_grad capture; synthetic reproduction failed before local boundary fix and passed with no_grad. Upstream fix 58a1b7229545c3bd21966dfa933d1ae20d24fc7b.",
+    "cold_wave_comparison": "An intermediate cold TTS probe compared unequal reference/session cache state; corrected equal-cache comparison passes. This was a test-instrument defect, distinct from the capture-order product failure."
+  },
+  "audited_source_sha256": {
+    "asr/backend.py": "4a7021363c805c0d5507b59603cdf2b66fa7408e0f49d16e4979335a410845fb",
+    "asr/backends/qwen3_asr.py": "29b6ac7a599cea791a76d36e4ad96a51c689b8fff5b6f63adc99ee48a60cab11",
+    "asr/manager.py": "5e23b50836f37a8109248f19a3459b54eaed030bf90b075e28dac1d985ce89e3",
+    "asr/qwen3_asr_sidecar.py": "57b190cd50dbbd5da71cc2576364eea07af36b1204103093a193ceedc3bf1e3f",
+    "asr/qwen_inference.py": "17dbcca7eca3cb8e875bf7ac20734039856e97040d02ef329872ff00d2204724",
+    "asr/qwen_cuda_graph.py": "d39311d42e09f7468b419b432aa641b89acbeb7648396bafca0ba2849d3cdd05",
+    "core/cuda_execution.py": "5f14bbe6517df1c0c537fd1bc5b4db0356fb6b7dbc9f704389b6fb428cb27388",
+    "local_tts_infer.py": "8f9174e36b6afff1c64c51b26948d2d64f8d300de2152a7394d23048fa8eb2da",
+    "GPT_SoVITS/AR/models/t2s_model.py": "e1becea8e46cbf5f424339dcf231861d3d9694e30041fb57802f96dfef065a48",
+    "tools/asr/benchmark_qwen_replay.py": "7646dd2bec0bb81d6389300ad64e74073659e50e9da610e04810d83e8df34f7c",
+    "tools/asr/benchmark_qwen_tts_coexistence.py": "279a3c29b4467d9d128e142ea016d7018efea7d6449cd37017650ee4520241ac",
+    "tests/test_qwen_inference.py": "39a0ff178a506b45920e85c396d0570a49fbb2e4d61dbc7fe4e2c2cd47629a0a",
+    "tests/test_qwen_cuda_graph.py": "e32748bf82452b499b7381579c1d7585f7da9822fc0afbb99c0a55c7b911868a",
+    "tests/test_asr_residency_tiers.py": "fcdf7b2f5a628508767f4e5bdba6856ba22ceba6ef9bae9ec7dd37f9bb6a3d5b",
+    "tests/test_asr_handler_start_lifecycle.py": "ec9acdfeec78a9ce9421c9ea98215a0dc5ff61b4645649e67cb82877d9bef0a6",
+    "tests/test_mic_input_handoff_endpointing.py": "715fe163146a97238007f2f7ce8a1403c584b0572e8d565577859690ee2959c5",
+    "tests/test_qwen3_asr_sidecar_bootstrap.py": "ed49b9a2ad9fc607d926ba66a7bc1ed96ea467f34d01e1ad3f4ae89e40c71fff",
+    "tests/test_cuda_execution.py": "20f09e6ebd58bd6fe98a4466fb3a9c461cd57099cfb1fb9bd6164f5e2d4a0998",
+    "tests/test_asr_prepare.py": "f1d5b34d7bfa904241891caf61f6dd756b3ebfac243012a613c3900739107416",
+    "tests/test_t2s_cuda_graph_sync_policy.py": "cfa8194637088061c1e5af8e3fa7c8f493aae01c12b920f5b8ed00b2e45691ac",
+    "tests/test_t2s_static_kv_mask.py": "7ddbbb7971516ab27accd0fecfa5dd3dec61394dd910183130c3f8e5cdf29514",
+    "tests/test_local_tts_device_context.py": "d44cf0adacbe60460e04d2b97a6d551a5ff34f960c5a7f904083b18b3cd84153",
+    "tests/test_local_tts_punctuation.py": "5c053bbc1ab645e07f4143f4c14d0316142a1883d93b287c241b46e7156c4e0a",
+    "tests/test_tts_emotion_references.py": "bee12071bbcad02b11897edc3fe17fea671964207754586db890e8a7a488b632",
+    "tests/test_tts_threading.py": "cf94e3b08afb09628e563c179cead968aac8641b9306c515bd28c71e72fb31ef"
+  },
+  "raw_evidence_sha256": {
+    "conversation_quality_final.json": "7389bb5e9eb046d07b2082eedb5de4e870bcccb044fb35fe6ca5d8d819b326d5",
+    "conversation_latency_final.json": "cdeed60110241b31f900754b4f654d3547469afdaceb88a402ff2b7650f37163",
+    "capacity_compare.json": "fea2f5fc7225d3eaf78f9a3eef137d01e843193d8c0026b6db117c8918669bd8",
+    "tts_conversation_final.json": "3c428511ccf7265881204d365dfe993b72ae148881a3177e1c20b28057f98de0",
+    "graph_lifecycle_final.json": "99673838f1fc2c10a4f2c252db253d2c5786f423ac38c980464176b089d960a0",
+    "static_parity_final.json": "0926d27279b1ea127d2a5c301bed3b431013ec35007329c2f192e2238d1a22b4",
+    "cold_capture_tts_probe.json": "270edeaf8be725cc544db2105200e7a2f150b1fb5516309b7e81126ee74fcce3",
+    "short_latency_formal.json": "abbe42db953b1080761506b4f6d70a4c9f476079c27f1a7cfd56841408acfada",
+    "tts_graph_formal.json": "e7418c2d7706f14fa3600788ee13ec5f3e8904926a8f2a667b3553f97a025deb",
+    "final_focused_cpu_summary.json": "25d79f04607ff115fce7770752ad653c8c59cb0cefeb7bc3807db3df28dad3a0",
+    "rng_graph_order_inference.log": "6e02656ba660e3d3fba2a6f494d8f987e48df20b9dbe70702c9ca3e7695db986",
+    "rng_graph_order_no_grad.log": "a1e3f782a33c3fdd4f948a52fe6abd06c6506200ed4e23a1d194a5b17fa88a40",
+    "pr_model_less_summary.json": "b099011fab095de773ad001cc84b53a6d9b901c3fa389a6221002730f1f78fca",
+    "post_lint_qwen_summary.json": "5c4841267c1f351b631138e18737ac64931486abecc5da095ed30fdc8be05817",
+    "repeat_install_asr_quality.json": "3fcbcf03fbe3479a60dc398f7ba6ac820b6102ad170061316546644bfc296509"
+  },
+  "pr_model_less_regression": {
+    "status": "passed",
+    "files": 14,
+    "passed": 147,
+    "skipped": 6,
+    "results": [
+      {
+        "name": "test_qwen_inference.py",
+        "collected": 0,
+        "passed": 0,
+        "skipped": 1,
+        "returncode": 5,
+        "ok": true
+      },
+      {
+        "name": "test_qwen_cuda_graph.py",
+        "collected": 0,
+        "passed": 0,
+        "skipped": 1,
+        "returncode": 5,
+        "ok": true
+      },
+      {
+        "name": "test_asr_residency_tiers.py",
+        "collected": 26,
+        "passed": 26,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "name": "test_asr_handler_start_lifecycle.py",
+        "collected": 6,
+        "passed": 6,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "name": "test_mic_input_handoff_endpointing.py",
+        "collected": 11,
+        "passed": 11,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "name": "test_qwen3_asr_sidecar_bootstrap.py",
+        "collected": 1,
+        "passed": 1,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "name": "test_cuda_execution.py",
+        "collected": 6,
+        "passed": 6,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "name": "test_asr_prepare.py",
+        "collected": 2,
+        "passed": 2,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "name": "test_t2s_cuda_graph_sync_policy.py",
+        "collected": 0,
+        "passed": 0,
+        "skipped": 1,
+        "returncode": 5,
+        "ok": true
+      },
+      {
+        "name": "test_t2s_static_kv_mask.py",
+        "collected": 0,
+        "passed": 0,
+        "skipped": 1,
+        "returncode": 5,
+        "ok": true
+      },
+      {
+        "name": "test_local_tts_device_context.py",
+        "collected": 0,
+        "passed": 0,
+        "skipped": 1,
+        "returncode": 5,
+        "ok": true
+      },
+      {
+        "name": "test_local_tts_punctuation.py",
+        "collected": 0,
+        "passed": 0,
+        "skipped": 1,
+        "returncode": 5,
+        "ok": true
+      },
+      {
+        "name": "test_tts_emotion_references.py",
+        "collected": 60,
+        "passed": 60,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "name": "test_tts_threading.py",
+        "collected": 35,
+        "passed": 35,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      }
+    ]
+  },
+  "post_lint_qwen_regression": {
+    "status": "passed",
+    "files": 2,
+    "passed": 38,
+    "skipped": 0,
+    "results": [
+      {
+        "name": "test_qwen_inference.py",
+        "collected": 25,
+        "passed": 25,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      },
+      {
+        "name": "test_qwen_cuda_graph.py",
+        "collected": 13,
+        "passed": 13,
+        "skipped": 0,
+        "returncode": 0,
+        "ok": true
+      }
+    ]
+  },
+  "static_checks": {
+    "ruff": "passed (entire clean PR tree)",
+    "architecture_views": "7 checked",
+    "readme_overview": "passed",
+    "locked_ci_environment": "passed, 110 packages compatible"
+  },
+  "repeat_install_validation": {
+    "profile": "voice + vad + local-cu124 + rag + dev, original FA2 wheel",
+    "asr_calls": 114,
+    "text_and_token_differences_vs_original_run": 0,
+    "cold_asr_tts_contract_report_matches": true,
+    "note": "Quality and lifecycle verification, not a replacement warmed performance run. No complete pre-rebuild package freeze was available."
+  }
+}

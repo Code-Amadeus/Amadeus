@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
@@ -20,6 +22,7 @@ pytest.importorskip("torchmetrics", reason="local-model tier (torchmetrics) is n
 
 from AR.models.t2s_model import Text2SemanticDecoder, _env_flag_enabled, _should_stop_on_eos
 import AR.models.t2s_model as t2s_model
+from core.cuda_execution import speech_cuda
 
 
 class _FakeGraph:
@@ -28,6 +31,30 @@ class _FakeGraph:
 
     def replay(self) -> None:
         self.replays += 1
+
+
+def test_new_capture_defers_before_warmup_when_asr_work_is_active():
+    decoder = Text2SemanticDecoder.__new__(Text2SemanticDecoder)
+    calls = []
+    decoder._capture_bucket = lambda *args: calls.append(args) or True
+    entered, release = threading.Event(), threading.Event()
+
+    def asr_work():
+        with speech_cuda.work():
+            entered.set()
+            assert release.wait(3)
+
+    with ThreadPoolExecutor(1) as pool:
+        future = pool.submit(asr_work)
+        assert entered.wait(2)
+        try:
+            assert decoder._warmup_and_capture_bucket(256, 64, "cuda:0") is False
+            assert not calls
+        finally:
+            release.set()
+        future.result(timeout=3)
+    assert decoder._warmup_and_capture_bucket(256, 64, "cuda:0") is True
+    assert calls == [(256, 64, "cuda:0")]
 
 
 def test_replay_does_not_synchronize_by_default():

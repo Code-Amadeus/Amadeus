@@ -25,6 +25,7 @@ from AR.modules.transformer import TransformerEncoderLayer
 from torch import nn
 from torch.nn import functional as F
 from torchmetrics.classification import MulticlassAccuracy
+from core.cuda_execution import speech_cuda
 
 # graph_initial_len 向上对齐到此步长，减少需要 capture 的不同 graph 数量。
 # kv_cache_len=337/345/351 均映射到 352，共享同一张 graph，消除每句重复 capture 的开销。
@@ -700,6 +701,15 @@ class Text2SemanticDecoder(nn.Module):
         return lock
 
     def _warmup_and_capture_bucket(self, bucket_size, initial_len, device):
+        # Ordinary ASR/TTS calls keep running concurrently. A new capture needs
+        # an exclusive window; defer it before any warmup/capture work if busy.
+        with speech_cuda.try_capture() as admitted:
+            if not admitted:
+                print("[CUDA Graph] capture deferred: another speech CUDA owner is active")
+                return False
+            return self._capture_bucket(bucket_size, initial_len, device)
+
+    def _capture_bucket(self, bucket_size, initial_len, device):
         """
         为指定的桶大小和 initial_len 预热并捕获 CUDA Graph。
         initial_len 是图捕获时模拟的 prompt KV 长度（写入位置固定于此），
