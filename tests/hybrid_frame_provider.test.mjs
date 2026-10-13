@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { FrameDecoder } from '../tools/probes/frame-video/decoder.mjs';
-import { createHybridDescriptor } from '../tools/probes/frame-video/hybrid_source.mjs';
+import { FrameDecoder } from '../render/web/frame_video/decoder.mjs';
+import { createHybridDescriptor } from '../render/web/frame_video/hybrid_source.mjs';
 
 // The real bounded FrameDecoder runs against a manually driven native decoder
 // fake. No WebCodecs implementation, Pixi application or GPU is instantiated.
@@ -320,7 +320,7 @@ test('a synchronous first-stream configuration failure cannot start or leave the
 });
 
 test('lazy fixture ownership aborts obsolete entry and cannot create decoders after replacement', async () => {
-  const { createLazyHybridDescriptor } = await import('../tools/probes/frame-video/hybrid_source.mjs');
+  const { createLazyHybridDescriptor } = await import('../render/web/frame_video/hybrid_source.mjs');
   let resolve, signal, created = 0;
   const experiment = createLazyHybridDescriptor({headFrames:3}, s => {signal=s; return new Promise(r=>{resolve=r});},
     () => {created++; throw Error('must not create');});
@@ -333,7 +333,7 @@ test('lazy fixture ownership aborts obsolete entry and cannot create decoders af
 });
 
 test('lazy fixture resolves with the newest demand and retains output until display release', async () => {
-  const { createLazyHybridDescriptor } = await import('../tools/probes/frame-video/hybrid_source.mjs');
+  const { createLazyHybridDescriptor } = await import('../render/web/frame_video/hybrid_source.mjs');
   let resolve, requests=[], retains=0, destroyed=false;
   const native={hasAny:()=>true,has:()=>true,texture:()=>42,requestWindow:r=>requests.push(r),
     retainDisplay(){retains++;},releaseDisplay(){retains--;},releaseClip(){},destroy(){destroyed=true;},
@@ -353,7 +353,7 @@ test('lazy fixture resolves with the newest demand and retains output until disp
 
 
 test('only aliases with identical indexed assets and timing share a canonical video descriptor', async () => {
-  const {findVideoAliases}=await import('../tools/probes/frame-video/hybrid_source.mjs');
+  const {findVideoAliases}=await import('../render/web/frame_video/hybrid_source.mjs');
   const sprite={_frameUrls:{smile:['a','b'],happy:['a','b'],fast:['a','b'],reverse:['b','a'],short:['a']},
     _frameIntervals:{smile:17,happy:17,fast:5,reverse:17,short:17}};
   const aliases=findVideoAliases(sprite,[{label:'smile',metadata:{frameIntervalMs:17}}]);

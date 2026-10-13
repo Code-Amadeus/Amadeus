@@ -38,7 +38,7 @@
    */
   function createFrameStore(options) {
     const { backend } = options;
-    const budgetBytes = Number(options.budgetBytes);
+    let budgetBytes = Number(options.budgetBytes);
     if (!Number.isFinite(budgetBytes) || budgetBytes < 0) throw new Error("Invalid texture budget");
     const maxInFlight = Math.max(1, Math.min(3, Math.floor(Number(options.maxInFlight) || 2)));
     const onViewChange = options.onViewChange || (() => {});
@@ -380,7 +380,15 @@
       }
     }
 
-    return { replaceViews, replaceDemand, replacePins, get, stats, destroy };
+    function setBudgetBytes(value) {
+      const next = Number(value);
+      if (!Number.isFinite(next) || next < 0) throw new Error("Invalid texture budget");
+      budgetBytes = next;
+      trim();
+      schedulePump();
+    }
+
+    return { replaceViews, replaceDemand, replacePins, get, stats, destroy, setBudgetBytes };
   }
 
   return { createFrameStore };

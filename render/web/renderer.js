@@ -80,6 +80,7 @@
       // FrameStore owns static URLs; the source owns decoded video and
       // independently retained output.
       this._experimentalFrameVideos = new Map();
+      this._frameResourcePolicy = { mode: "static", budgetMiB: 2048 };
       this._frameVideoConfig = null;
       this._frameVideoSource = null;
       this._videoDisplay = null;
@@ -142,7 +143,7 @@
         backend: this._frameBackend,
         // With sampling off, a lower presentation rate still visits the same
         // source frames. Halving residency makes those frames churn on loops.
-        budgetBytes: 2 * 1024 * 1024 * 1024,
+        budgetBytes: this._frameResourcePolicy.budgetMiB * 1024 * 1024,
         maxInFlight: 3,
         onViewChange: (view, index, texture) => this._onTextureViewChange(view, index, texture),
       });
@@ -254,8 +255,9 @@
       }
       if (this._frameVideoConfig === config) this._releaseFrameVideoSource();
       this._textureDemandRevision++;
-      console.warn("[SpriteRenderer] experimental frame video fallback:", error);
+      console.warn("[SpriteRenderer] frame video fallback:", error);
       this._refreshTextureDemand();
+      this._frameVideoFailureHandler?.(error);
     }
 
     _syncFrameVideoSource(label) {
@@ -1146,24 +1148,33 @@
         this.rootNodeId = this.graph.nodes[0].id;
       }
       if (this.rootNodeId) this._playNode(this.rootNodeId);
-      // Entry heads are reloadable hints, not graph decisions. Do not call
-      // _nextAutoNode here: prefetch must not consume an extra random draw.
+      this._prefetchGraphEntries();
+      console.log("[SpriteForgeRuntime] graph loaded:", (this.graph.nodes || []).length, "nodes");
+    }
+
+    refreshResourcePolicy() {
+      if (!this.currentNodeId) return;
+      this._prefetchGraphEntries();
+      this._prefetchNodeNeighborhood(this.currentNodeId);
+    }
+
+    _prefetchGraphEntries() {
+      const video = this.sprite?._frameResourcePolicy?.mode === "video";
       const entries = new Set([
-        this._label(this.rootNodeId),
+        ...(video ? [this._label(this.rootNodeId)] : []),
         this.cfg.defaultSpeakingTriggerLabel, this.cfg.closedEyeSpeakingTriggerLabel,
         ...Object.values(this.cfg.emotionEntryByIntent || {}),
         ...(this.cfg.thinkingEntryLabels || []), ...(this.cfg.seriousEntryLabels || []),
         ...Object.values(this.cfg.postSpeechEmotionLabelByIntent || {}),
       ]);
-      // _findTriggerEntry can fall back through either kind of root edge,
-      // or to the root itself. Those first hops need the same finite reserve.
       for (const edge of this.graph.edges || []) {
-        if (edge.from === this.rootNodeId && Number(edge.prob || 0) >= 0) entries.add(this._label(edge.to));
+        if (edge.from === this.rootNodeId && (video ? Number(edge.prob || 0) >= 0 : Number(edge.prob || 0) === 0)) {
+          entries.add(this._label(edge.to));
+        }
       }
-      // Experimental reserve: cover immediate entry while keeping the longer
-      // speculative tails from competing with repeated playback history.
-      this._prefetchLabels(entries, 95, { reason: "graph-entries", headMs: 50 });
-      console.log("[SpriteForgeRuntime] graph loaded:", (this.graph.nodes || []).length, "nodes");
+      this._prefetchLabels(entries, video ? 95 : "warm", {
+        reason: "graph-entries", ...(video ? { headMs: 50 } : {}),
+      });
     }
 
     trigger(label, options = {}) {
@@ -1400,11 +1411,12 @@
     }
 
     _prefetchNodeNeighborhood(nodeId) {
+      const video = this.sprite?._frameResourcePolicy?.mode === "video";
       const edges = (this.graph.edges || [])
-        .filter((e) => e.from === nodeId && Number(e.prob || 0) >= 0);
-      // A first hop can come from an ordinary draw or a tag's manual edge.
-      // Prepare finite heads without executing either decision or waiting
-      // until a rare edge has already become the visible animation.
+        .filter((e) => e.from === nodeId && (video ? Number(e.prob || 0) >= 0 : Number(e.prob || 0) > 0));
+      // Video reserves natural and manual first hops. Static compatibility
+      // keeps its original natural-successor set and longer head horizons.
+      // Neither policy executes a graph decision.
       const next = this._labelsForNodeIds(edges.map(edge => edge.to));
       // Speech can exit through a deterministic release route rather than an
       // edge. Protect that known head too; retaining the current cycle must
@@ -1417,7 +1429,9 @@
       // Reserve every possible first hop before spending the budget on one
       // branch's longer tail. The current window prepares the body on entry;
       // the sprite still preserves a video's required decoder-start head.
-      this._prefetchLabels(next, 95, { reason: "graph-next", headMs: 50 });
+      this._prefetchLabels(next, video ? 95 : "interactive", {
+        reason: "graph-next", ...(video ? { headMs: 50 } : {}),
+      });
     }
 
     _has(name, label) {
@@ -1622,6 +1636,26 @@
       this._speaking = false;
       this._mouth = 0;
       this._characterConfig = null;
+      this._frameSourceConfig = null;
+      this._frameSourceGeneration = 0;
+      this._frameSourcePending = null;
+      this._frameVideoPackage = null;
+      this._frameSourceFailed = false;
+      this._frameSourceStatus = { mode: "static", reason: "video_pack_missing", budgetMiB: 2048 };
+      this._sprite._frameVideoFailureHandler = error => {
+        const generation = this._frameSourceGeneration;
+        // A synchronous decoder failure can happen during source registration.
+        // Retire the completed registration atomically on the next microtask.
+        Promise.resolve().then(() => {
+          if (generation === this._frameSourceGeneration && this._frameSourceConfig?.candidate) {
+            this._fallbackFrameVideo(error);
+          }
+        });
+      };
+      window.addEventListener("unload", () => {
+        this._frameSourceGeneration++;
+        this._frameSourceController?.abort();
+      }, { once: true });
 
       // Initialize layers: sprite below, Live2D above, subtitles on top.
       app.stage.removeChildren();
@@ -1692,6 +1726,7 @@
         this._sprite.setMouth(0);
       }
       this._sprite.setActive(selected === "sprite");
+      this._configureFrameSource(selected === "sprite" ? config.frame_source : null);
       this._sprite.container.visible = selected === "sprite";
       this._modelContainer.visible = selected !== "sprite";
       if (selected !== "sprite") {
@@ -1727,7 +1762,69 @@
       return {
         surface: config.surface || "render", profile_id: config.profile_id || "",
         revision: config.revision || 0, runtime_id: config.runtime_id || "", state: "ready",
+        diagnostic: { frame_source: { ...this._frameSourceStatus } },
       };
+    }
+
+    _applyFrameSourcePolicy(mode, reason, error = null) {
+      const budgetMiB = this._frameSourceConfig?.budgetMiB || (mode === "video" ? 384 : 2048);
+      this._sprite._frameResourcePolicy = { mode, budgetMiB };
+      this._sprite._frameStore.setBudgetBytes(budgetMiB * 1048576);
+      const gc = app.renderer.textureGC;
+      gc.maxIdle = mode === "video" ? 60 : 3600;
+      gc.checkCountMax = mode === "video" ? 30 : 600;
+      this._spriteforgeRuntime.refreshResourcePolicy();
+      this._frameSourceStatus = { requested: this._frameSourceConfig?.requested || "auto", mode,
+        budgetMiB, reason, gcMaxIdle: gc.maxIdle, gcCheckCountMax: gc.checkCountMax,
+        ...(error ? { error: String(error.message || error) } : {}) };
+      if (this._mode === "sprite") this._reportCharacterStatus(this.getCharacterStatus());
+    }
+
+    _configureFrameSource(config) {
+      const next = config || null;
+      if (JSON.stringify(next) === JSON.stringify(this._frameSourceConfig)) return;
+      this._frameSourceController?.abort();
+      this._frameSourceGeneration++;
+      this._frameVideoPackage?.disable();
+      this._frameVideoPackage = null;
+      this._frameSourcePending = null;
+      this._frameSourceFailed = false;
+      this._frameSourceConfig = next;
+      this._applyFrameSourcePolicy("static", next?.candidate ? "checking_video" : next?.reason || "video_pack_missing");
+      this._startFrameVideo();
+    }
+
+    _fallbackFrameVideo(error) {
+      this._frameSourceFailed = true;
+      this._frameVideoPackage?.disable();
+      this._frameVideoPackage = null;
+      this._applyFrameSourcePolicy("static", "video_unavailable", error);
+    }
+
+    _startFrameVideo() {
+      const config = this._frameSourceConfig;
+      if (this._mode !== "sprite" || !config?.candidate || this._frameSourceFailed
+          || !this._spriteforgeRuntime.currentNodeId || this._frameSourcePending || this._frameVideoPackage) return;
+      const generation = this._frameSourceGeneration;
+      const controller = this._frameSourceController = new AbortController();
+      this._frameSourcePending = this._loadFrameVideoSources(config, controller.signal).then(installed => {
+        if (generation !== this._frameSourceGeneration) { installed.disable(); return; }
+        this._frameVideoPackage = installed;
+        if (this._frameSourceFailed) { this._fallbackFrameVideo(new Error("Decoder startup failed")); return; }
+        this._applyFrameSourcePolicy("video", "video_ready");
+      }).catch(error => {
+        if (generation === this._frameSourceGeneration && !controller.signal.aborted) this._fallbackFrameVideo(error);
+      }).finally(() => {
+        if (generation === this._frameSourceGeneration) this._frameSourcePending = null;
+      });
+    }
+
+    async _loadFrameVideoSources(config, signal) {
+      const url = new URL("./frame_video/hybrid_source.mjs", window.location.href);
+      const module = await import(url.href);
+      signal.throwIfAborted();
+      return module.installHybridSources(this._sprite, app.renderer, PIXI,
+        config.candidate.baseUrl, config.candidate.pack, { bundle: true, verifySupport: true, signal });
     }
 
     _reportCharacterStatus(status) {
@@ -1767,6 +1864,7 @@
 
     loadSpriteForgeGraph(payload) {
       this._spriteforgeRuntime.loadGraph(payload || {});
+      this._startFrameVideo();
     }
 
     triggerCharacterIntent(label, options = {}) {

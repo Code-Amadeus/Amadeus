@@ -132,3 +132,27 @@ test('changing the preset preserves explicit dotenv sampling instead of substitu
     sources: { ...snapshot.sources, RENDER_TEXTURE_SAMPLING: 'default' },
   })[1].fields[0].value, false)
 })
+
+
+test('automatic frame-source defaults preserve legacy graphics choices and explicit cache overrides', t => {
+  const store = fixture(t)
+  const initial = buildGraphicsConfiguration(undefined, store.snapshot({}))
+  const group = initial.find(row => row.id === 'graphics_frame_source')
+  assert.equal(group.fields.find(field => field.key === 'RENDER_FRAME_SOURCE').value, 'auto')
+  assert.equal(group.fields.find(field => field.key === 'RENDER_FRAME_BUDGET_MIB').value, 'auto')
+  const existing = { GRAPHICS_PROFILE: 'power_saving', RENDER_MAX_FPS: '48', RENDER_MAX_RESOLUTION: '1.25', RENDER_TEXTURE_SAMPLING: false, RENDER_BC7_CACHE: false }
+  store.update({}, { values: existing })
+  store.update({}, { values: { RENDER_FRAME_SOURCE: 'static', RENDER_FRAME_BUDGET_MIB: '768' } })
+  const env = store.backendEnvironment({})
+  assert.equal(env.RENDER_FRAME_SOURCE, 'static')
+  assert.equal(env.RENDER_FRAME_BUDGET_MIB, '768')
+  assert.equal(env.GRAPHICS_PROFILE, 'power_saving')
+  assert.equal(env.RENDER_MAX_FPS, '48')
+  assert.equal(env.RENDER_MAX_RESOLUTION, '1.25')
+  assert.equal(env.RENDER_TEXTURE_SAMPLING, 'false')
+  assert.equal(env.RENDER_BC7_CACHE, 'false')
+  const reset = store.update({}, { values: { RENDER_FRAME_SOURCE: null, RENDER_FRAME_BUDGET_MIB: null } })
+  assert.equal(reset.values.GRAPHICS_PROFILE, 'power_saving')
+  assert.throws(() => store.update({}, { values: { RENDER_FRAME_SOURCE: 'forced' } }))
+  assert.throws(() => store.update({}, { values: { RENDER_FRAME_BUDGET_MIB: '1' } }))
+})

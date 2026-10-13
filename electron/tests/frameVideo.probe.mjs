@@ -63,7 +63,7 @@ async function main() {
   if (values['high-performance-gpu']) app.commandLine.appendSwitch('force-high-performance-gpu');
   app.on('window-all-closed', () => {});
   const names = ['probe.html', 'ivf.mjs', 'decoder.mjs', 'pixi-output.mjs'];
-  const routes = new Map(names.map(name => ['/tools/probes/frame-video/' + name, path.join(root, 'tools/probes/frame-video', name)]));
+  const routes = new Map(names.map(name => ['/tools/probes/frame-video/' + name, path.join(root, name === 'probe.html' ? 'tools/probes/frame-video' : 'render/web/frame_video', name)]));
   routes.set('/render/web/vendor/pixi.min.js', path.join(root, 'render/web/vendor/pixi.min.js'));
   for (const name of ['clip.json', 'clip.ivf', 'color.ivf', 'alpha.ivf']) routes.set('/fixture/' + name, path.join(fixture, name));
   const server = http.createServer(async (req, res) => {

@@ -8,6 +8,7 @@ import pytest
 
 @pytest.mark.parametrize("suite", [
     "sprite_video_source.test.cjs",
+    "frame_source_configuration.test.cjs",
     "hybrid_fixture.test.mjs",
     "hybrid_frame_provider.test.mjs",
     "hybrid_lifecycle.test.mjs",

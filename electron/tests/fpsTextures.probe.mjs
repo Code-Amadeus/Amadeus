@@ -84,7 +84,7 @@ else {
   }
 
   async function startHost() {
-    const hostArgs = ['-X', 'utf8', '-u', 'tools/probes/wallpaper_memory_host.py', ...(options.scenario ? ['--scenario'] : [])]
+    const hostArgs = ['-X', 'utf8', '-u', 'tools/probes/wallpaper_memory_host.py', ...(options.scenario ? ['--scenario'] : []), ...(options.productionFrameSource ? ['--production-frame-source'] : [])]
     const python = process.env.TEXTURE_PROBE_PYTHON || path.join(root, '.venv/Scripts/python.exe')
     if (!path.isAbsolute(python)) throw Error('TEXTURE_PROBE_PYTHON must be an absolute interpreter path')
     await fs.access(python)
@@ -159,7 +159,8 @@ else {
       currentLabelLoadedFrames:(s._frames?.[s._currentEmotion]||[]).filter(Boolean).length,
       currentLabelTotalFrames:s._frames?.[s._currentEmotion]?.length??null,
       textureStats,textureStatsError,transcodes:window.__textureTranscodes??null,bc7Cache:window.__bc7Cache??null,
-      video:window.__frameVideoExperiment?.snapshot?.()??null,
+      video:(window.__frameVideoExperiment || renderApp._frameVideoPackage)?.snapshot?.()??null,
+      frameSource:renderApp.getCharacterStatus()?.diagnostic?.frame_source??null,
       displayedTextureFormat:s.sprite?.texture?.baseTexture?.resource?.format??null};
     snapshotTimings.totalMs=performance.now()-innerStart;
     return {...result,snapshotTimings};
@@ -313,8 +314,8 @@ else {
       for (const source of ['render/texture_cache.py', 'render/web/texture_cache.js',
         'render/web/texture_cache_worker.mjs', 'render/web/texture_cache_codec.mjs',
         'render/web/vendor/zstd/zstd.wasm']) metadata.sourceSha256[source] = await sourceHash(source)
-      if (options.videoFixture) for (const source of ['tools/probes/frame-video/hybrid_source.mjs',
-        'tools/probes/frame-video/decoder.mjs', 'tools/probes/frame-video/ivf.mjs', 'tools/probes/frame-video/pixi-output.mjs',
+      if (options.videoFixture || options.productionFrameSource) for (const source of ['render/web/frame_video/hybrid_source.mjs',
+        'render/web/frame_video/decoder.mjs', 'render/web/frame_video/ivf.mjs', 'render/web/frame_video/pixi-output.mjs',
         'tools/probes/frame-video/hybrid_lifecycle.mjs', 'tools/probes/frame-video/hybrid_bundle_lifecycle.mjs']) {
         metadata.sourceSha256[source] = await sourceHash(source)
       }
@@ -390,7 +391,7 @@ else {
         metadata.instrumentation.fixedRoute = true
       }
       if (options.videoFixture) {
-        await js(`import('/tools/probes/frame-video/hybrid_source.mjs').then(async module => {
+        await js(`import('/render/web/frame_video/hybrid_source.mjs').then(async module => {
           window.__frameVideoExperiment = await module.installHybridProbe('/__frame_video/', ${JSON.stringify(bridge.pack)}, { bundle: ${await fs.stat(path.join(options.videoFixture, 'bundle.json')).then(()=>true,()=>false)} });
         })`)
         metadata.video = await js('window.__frameVideoExperiment.snapshot()')

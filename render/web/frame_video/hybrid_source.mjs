@@ -4,11 +4,13 @@ import { parseIvf } from './ivf.mjs';
 import { FrameDecoder } from './decoder.mjs';
 import { createVideoOutput } from './pixi-output.mjs';
 
+const fetchAsset = (...args) => (globalThis.PIXI?.settings?.ADAPTER?.fetch || globalThis.fetch)(...args);
+
 export async function loadHybridFixture(baseUrl, installedPack, { metadata: suppliedMetadata, signal } = {}) {
   const started = performance.now();
   const base = new URL(baseUrl, location.href);
   const get = async name => {
-    const response = await fetch(new URL(name, base), { cache: 'no-store', signal });
+    const response = await fetchAsset(new URL(name, base), { cache: 'no-store', signal });
     if (!response.ok) throw Error(`Video fixture fetch failed: ${response.status}`);
     return response;
   };
@@ -221,11 +223,11 @@ export function findVideoAliases(sprite, entries) {
   return aliases;
 }
 
-export async function installHybridProbe(baseUrl, installedPack, { bundle = false } = {}) {
-  const sprite = window.renderApp._sprite, renderer = window.wallpaperApp.scene.app.renderer;
+export async function installHybridSources(sprite, renderer, PIXI, baseUrl, installedPack,
+  { bundle = false, signal, verifySupport = false } = {}) {
   const base = new URL(baseUrl, location.href), entries = [];
   if (bundle) {
-    const response = await fetch(new URL('bundle.json', base), { cache: 'no-store' });
+    const response = await fetchAsset(new URL('bundle.json', base), { cache: 'no-store', signal });
     if (!response.ok) throw Error('Video bundle unavailable');
     const manifest = await response.json();
     if (manifest.schema !== 'amadeus.frame-video-bundle-experiment.v1'
@@ -236,21 +238,30 @@ export async function installHybridProbe(baseUrl, installedPack, { bundle = fals
       if (labels.has(item.label) || item.path !== item.label+'/') throw Error('Invalid bundle label/path');
       labels.add(item.label);
       const url = new URL(item.path, base);
-      const response = await fetch(new URL('clip.json',url), { cache: 'no-store' });
+      const response = await fetchAsset(new URL('clip.json',url), { cache: 'no-store', signal });
       if (!response.ok) throw Error('Video clip metadata unavailable');
       const metadata = await response.json();
       validateMetadata(metadata, installedPack);
       if (metadata.reference.clip !== item.label) throw Error('Video bundle label mismatch');
+      if (verifySupport) {
+        for (const description of [metadata.streams.color, metadata.streams.alpha]) {
+          const config = { codec: description.codec, codedWidth: metadata.layout.codedWidth,
+            codedHeight: metadata.layout.codedHeight, colorSpace: description.colorSpace,
+            hardwareAcceleration: 'prefer-hardware', optimizeForLatency: true };
+          if (!(await VideoDecoder.isConfigSupported(config)).supported) throw Error('Video configuration unsupported');
+        }
+      }
       const experiment = createLazyHybridDescriptor(metadata,
         signal => loadHybridFixture(url, installedPack, { metadata, signal }),
-        fixture => createHybridDescriptor(window.PIXI, renderer, fixture));
+        fixture => createHybridDescriptor(PIXI, renderer, fixture));
       entries.push({ label: item.label, metadata, experiment });
     }
   } else {
     const fixture = await loadHybridFixture(base, installedPack);
     entries.push({ label: fixture.metadata.reference.clip, metadata: fixture.metadata,
-      experiment: createHybridDescriptor(window.PIXI, renderer, fixture) });
+      experiment: createHybridDescriptor(PIXI, renderer, fixture) });
   }
+  signal?.throwIfAborted();
   const bodyUrls = new Map();
   for (const {label, metadata} of entries) {
     if (sprite._frameUrls[label]?.length !== metadata.frames) throw Error('Installed runtime frame count differs');
@@ -292,4 +303,15 @@ export async function installHybridProbe(baseUrl, installedPack, { bundle = fals
     reinstall() { for (const {label,experiment} of registrations) sprite.setExperimentalFrameVideoSource(label,experiment.descriptor); },
     disable() { for (const {label} of registrations) sprite.setExperimentalFrameVideoSource(label,null); backend.load=originalLoad; },
   };
+}
+
+
+export function installHybridProbe(baseUrl, installedPack, options) {
+  const app = window.renderApp;
+  if (app._sprite._frameResourcePolicy) {
+    app._sprite._frameResourcePolicy.mode = "video";
+    app._spriteforgeRuntime?.refreshResourcePolicy();
+  }
+  return installHybridSources(window.renderApp._sprite, window.wallpaperApp.scene.app.renderer,
+    window.PIXI, baseUrl, installedPack, options);
 }

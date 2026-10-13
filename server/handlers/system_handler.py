@@ -685,6 +685,8 @@ class SystemHandler(RequestHandler):
                 "custom_max_resolution": settings.RENDER_MAX_RESOLUTION,
                 "texture_sampling": settings.RENDER_TEXTURE_SAMPLING,
                 "bc7_cache": settings.RENDER_BC7_CACHE,
+                "frame_source": settings.RENDER_FRAME_SOURCE,
+                "frame_budget_mib": settings.RENDER_FRAME_BUDGET_MIB,
                 "effective_max_fps": settings.RENDER_EFFECTIVE_MAX_FPS,
                 "effective_max_resolution": settings.RENDER_EFFECTIVE_MAX_RESOLUTION,
             },

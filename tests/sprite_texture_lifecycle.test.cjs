@@ -420,6 +420,7 @@ test('the five-percent successor head is resident before the ordinary selection 
 test('speech release heads survive a larger active cycle for root and emotion return routes without extra draws', async t => {
   for (const emotionRoute of [false, true]) {
     const f = fixture(t, { budgetBytes: 120 }), s = f.sprite, runtime = f.runtime();
+  s._frameResourcePolicy.mode = 'video';
     s.loadFrames('normal', ['root-0', 'root-1', 'root-2']);
     s.loadFrames('calm', ['calm-0', 'calm-1', 'calm-2']);
     s.loadFrames('speaking', Array.from({ length: 12 }, (_, i) => `talk-${i}`));
@@ -746,6 +747,7 @@ test('graph entry-head hints use existing edges and config without extra decisio
   let randomCalls = 0, autoDecisions = 0, holdsCleared = 0;
   const sprite = {
     emotion: 'normal', frameIndex: 23, timeMs: 460,
+    _frameResourcePolicy: { mode: 'video' },
     clearHold() { holdsCleared++; },
     setEmotion(label) {
       selections.push(label);
@@ -851,6 +853,7 @@ async function settleFiniteDemand(f) {
 
 test('bounded branch prefixes prepare every possible first hop before one branch occupies the budget', async t => {
   const f = fixture(t, { budgetBytes: 90 }), s = f.sprite, runtime = f.runtime();
+  s._frameResourcePolicy.mode = 'video';
   s.loadFrames('normal', ['normal']);
   for (const label of ['common', 'rare']) {
     s.loadFrames(label, Array.from({ length: 8 }, (_, i) => `${label}-${i}`));
@@ -884,6 +887,7 @@ test('bounded branch prefixes prepare every possible first hop before one branch
 
 test('root fallback heads stay prepared after leaving the root even without a root self edge', async t => {
   const f = fixture(t, { budgetBytes: 120 }), s = f.sprite, runtime = f.runtime();
+  s._frameResourcePolicy.mode = 'video';
   for (const label of ['normal', 'automatic', 'manual', 'away']) {
     s.loadFrames(label, Array.from({ length: 4 }, (_, i) => `${label}-${i}`));
     s.setIdleFrameIntervalMs(label, 100);
@@ -903,4 +907,28 @@ test('root fallback heads stay prepared after leaving the root even without a ro
   assert.equal(s._frameIdx, 0);
   assert.ok(s._frameStore.stats().residentBytes <= 120);
   assert.equal(f.randomCalls, 0);
+});
+
+
+test('static compatibility keeps original entry and successor heads when video policy is absent or withdrawn', t => {
+  const f = fixture(t), s = f.sprite, runtime = f.runtime();
+  for (const name of ['normal', 'manual', 'automatic']) s.loadFrames(name, [name]);
+  runtime.loadGraph({ rootNodeId: 'root', graph: { nodes: [
+    { id: 'root', label: 'normal' }, { id: 'manual', label: 'manual' }, { id: 'automatic', label: 'automatic' },
+  ], edges: [{ from: 'root', to: 'manual', prob: 0 }, { from: 'root', to: 'automatic', prob: 1 }] } });
+  const checkStatic = () => {
+    const entries = s._prefetchHints.get('prefetch:graph-entries'), next = s._prefetchHints.get('prefetch:graph-next');
+    assert.deepEqual(Array.from(entries.labels), ['manual']);
+    assert.equal(entries.headMs, null);
+    assert.deepEqual(Array.from(next.labels), ['automatic']);
+    assert.equal(next.headMs, null);
+  };
+  checkStatic();
+  s._frameIdx = 7;
+  s._frameResourcePolicy.mode = 'video'; runtime.refreshResourcePolicy();
+  assert.equal(s._prefetchHints.get('prefetch:graph-entries').headMs, 50);
+  assert.equal(s._prefetchHints.get('prefetch:graph-next').headMs, 50);
+  assert.ok(s._prefetchHints.get('prefetch:graph-next').labels.includes('manual'));
+  s._frameResourcePolicy.mode = 'static'; runtime.refreshResourcePolicy(); checkStatic();
+  assert.equal(s._frameIdx, 7); assert.equal(f.randomCalls, 0);
 });

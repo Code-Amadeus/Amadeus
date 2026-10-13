@@ -751,3 +751,21 @@ test('pins protect residency without putting unrelated posters ahead of active p
   assert.ok(f.store.get('active-mouth'), 'lower scheduling urgency never removes pin protection');
   f.store.destroy();
 });
+
+
+test('switching resource budgets preserves displayed pins and resumes deferred demand', async () => {
+  const backend = { now: () => 0, load: async url => ({ texture: { url }, cpuBytes: 4, gpuBytes: 6 }),
+    upload: async () => {}, destroy() {} };
+  const store = createFrameStore({ backend, budgetBytes: 30, maxInFlight: 3 });
+  store.replacePins('display', ['visible']);
+  store.replaceDemand('warm', ['a', 'b'].map(url => demand(url)));
+  await flush();
+  const visible = store.get('visible'); assert.ok(visible);
+  store.setBudgetBytes(10);
+  assert.equal(store.stats().budgetBytes, 10); assert.equal(store.stats().residentBytes, 10);
+  assert.equal(store.get('visible'), visible);
+  store.setBudgetBytes(30); await flush();
+  assert.ok(store.get('a') && store.get('b'));
+  assert.throws(() => store.setBudgetBytes(NaN), /Invalid texture budget/);
+  store.destroy();
+});

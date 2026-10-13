@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { loadHybridFixture, installHybridProbe } from '../tools/probes/frame-video/hybrid_source.mjs';
+import { loadHybridFixture, installHybridProbe } from '../render/web/frame_video/hybrid_source.mjs';
 
 test('fixture loading requires the currently hosted pack identity, not just a historical verified flag', async t => {
   const bytes = new Uint8Array(32 + 3 * 13), view = new DataView(bytes.buffer);

@@ -4,8 +4,8 @@ import test from 'node:test';
 import vm from 'node:vm';
 import budget from '../render/web/render_budget.js';
 import storeApi from '../render/web/frame_store.js';
-import { FrameDecoder } from '../tools/probes/frame-video/decoder.mjs';
-import { createHybridDescriptor } from '../tools/probes/frame-video/hybrid_source.mjs';
+import { FrameDecoder } from '../render/web/frame_video/decoder.mjs';
+import { createHybridDescriptor } from '../render/web/frame_video/hybrid_source.mjs';
 import { runHybridLifecycle } from '../tools/probes/frame-video/hybrid_lifecycle.mjs';
 
 // Actual SpriteRenderer + FrameStore + provider/FrameDecoder, with manual

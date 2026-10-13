@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { parseIvf, keyframeAtOrBefore } from '../tools/probes/frame-video/ivf.mjs';
-import { FrameDecoder } from '../tools/probes/frame-video/decoder.mjs';
-import { createVideoOutput, readCalibrationIdentity } from '../tools/probes/frame-video/pixi-output.mjs';
+import { parseIvf, keyframeAtOrBefore } from '../render/web/frame_video/ivf.mjs';
+import { FrameDecoder } from '../render/web/frame_video/decoder.mjs';
+import { createVideoOutput, readCalibrationIdentity } from '../render/web/frame_video/pixi-output.mjs';
 
 function fixture(count = 8) {
   const bytes = Buffer.alloc(32 + count*13);

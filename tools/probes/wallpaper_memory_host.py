@@ -47,6 +47,7 @@ def pack_metadata(animator: SpriteForgeAnimator) -> dict:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scenario", action="store_true")
+    parser.add_argument("--production-frame-source", action="store_true")
     args = parser.parse_args()
     logging.basicConfig(level=logging.WARNING, stream=sys.stderr)
     scenario = {}
@@ -100,6 +101,14 @@ def main():
     animator = SpriteForgeAnimator(host)
     try:
         host.start()
+        if args.production_frame_source:
+            from render.visual_profile import VisualProfileStore
+            from uuid import uuid4
+            project = Path(__file__).resolve().parents[2]
+            # No user profile is read or written by this isolated smoke host.
+            profile = VisualProfileStore(project / "output/diagnostics" / f"probe-profile-{uuid4()}.json",
+                                         project_root=project)
+            host.configure_character(profile.runtime_config("wallpaper", asset_server=host._asset_server))
         available = animator.start()
 
         host.set_canvas_action_handler(lambda payload: {"ok": False, "error": "probe_only"})

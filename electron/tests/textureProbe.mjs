@@ -71,6 +71,7 @@ export const usage = `Usage: electron tests/fpsTextures.probe.mjs [baseline|samp
   --disk-cache            Exercise automatic product cache generation and reuse
   --cache-profile PATH    Shared isolated user-cache profile across product runs
   --video-fixture PATH    Experimental verified video clip or full bundle (default: disabled)
+  --production-frame-source  Use the normal installed-package and saved-settings activation path
   --video-lifecycle       Run video/static lifecycle diagnostics after the timed journey
   --texture-budget-mib N  Probe-only FrameStore CPU+GPU budget, 64..4096 MiB
   --only-clip LABEL       Repeat one real clip with its normal clock and global pins
@@ -107,6 +108,7 @@ export function parseArgs(argv) {
     else if (token === '--disk-cache') options.diskCache = true
     else if (token === '--high-performance-gpu') options.highPerformanceGpu = true
     else if (token === '--shared-texture-output') options.sharedTextureOutput = true
+    else if (token === '--production-frame-source') options.productionFrameSource = true
     else if (token === '--video-lifecycle') options.videoLifecycle = true
     else if (token === '--gpu-memory') options.gpuMemory = true
     else if (token === '--tag-preview') {
